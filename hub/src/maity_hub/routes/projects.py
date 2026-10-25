@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -13,7 +13,19 @@ from pydantic import Field, field_validator
 from pydantic_core import PydanticCustomError
 from sqlalchemy import Connection, delete, insert, select, update
 
-from maity_hub import clock, idempotency, images, ktw, placements, policy, releases, rules, ticker
+from maity_hub import (
+    availability,
+    clock,
+    idempotency,
+    images,
+    ktw,
+    onboarding,
+    placements,
+    policy,
+    releases,
+    rules,
+    ticker,
+)
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
@@ -21,11 +33,13 @@ from maity_hub.errors import ApiError, forbidden, humans_only, invalid
 from maity_hub.events import emit, lock_project
 from maity_hub.ids import new_id
 from maity_hub.models import SLUG_PATTERN, Strict, markdown, title
-from maity_hub.views import forge_of, member_view, principal_id, project_language, project_view
+from maity_hub.onboarding import OnboardingIn
+from maity_hub.views import forge_of, member_view, principal_id, project_view
 
 router = APIRouter()
 
 BROADCAST = ["all"]
+ABSENCE_AHEAD = timedelta(days=90)  # an absence cannot hold the owner's cover open (§6.1)
 
 
 class RepositoryIn(Strict):
@@ -45,6 +59,10 @@ class PolicyIn(Strict):
     spawn_requests: str | None = None
     spawn_consent_by: str | None = None
     max_placements: int | None = None
+    coordinator: str | None = None
+    coordinator_substitute: str | None = None
+    on_runner_revoke: str | None = None
+    badge: str | None = None
 
 
 class AbsenceIn(Strict):
@@ -85,6 +103,7 @@ class SettingsIn(Strict):
 
     release_checklist: list[str] | None = Field(default=None, max_length=50)
     ticker: TickerSettingsIn | None = None
+    onboarding: OnboardingIn | None = None
     language: str | None = None
 
     @field_validator("language", mode="before")
@@ -133,7 +152,12 @@ def _repository_columns(repository: RepositoryIn | None) -> dict[str, Any]:
 
 
 def _apply_policy(
-    conn: Connection, project_id: str, current: dict[str, Any], change: PolicyIn, owner_id: str
+    conn: Connection,
+    project_id: str,
+    current: dict[str, Any],
+    change: PolicyIn,
+    owner_id: str,
+    instance_rule: str,
 ) -> dict[str, Any]:
     proposed = dict(current)
     if change.preset is not None:
@@ -157,14 +181,41 @@ def _apply_policy(
         if not 0 <= change.max_placements <= policy.MAX_PLACEMENTS_MAX:
             errors["policy.max_placements"] = "out_of_range"
         proposed["max_placements"] = change.max_placements
+    if change.on_runner_revoke == "keep" and instance_rule == "stop_floor":
+        # The operator made stop a floor (§15.3, §16): no project keeps its agents.
+        errors["policy.on_runner_revoke"] = "stop_floor"
     if change.contract_arbiter is not None:
         arbiter = change.contract_arbiter
         if arbiter != "role:admin" and not _is_member(conn, project_id, arbiter):
             errors["policy.contract_arbiter"] = "not_a_member"
         proposed["contract_arbiter"] = arbiter
+    if change.coordinator is not None:
+        if (
+            change.coordinator != "role:admin"
+            and _agent_role(conn, project_id, change.coordinator) is None
+        ):
+            errors["policy.coordinator"] = "not_an_agent_member"
+        proposed["coordinator"] = change.coordinator
+    if "coordinator_substitute" in change.model_fields_set:
+        stand_in = change.coordinator_substitute
+        if stand_in is not None and _agent_role(conn, project_id, stand_in) != "admin":
+            errors["policy.coordinator_substitute"] = "not_an_agent_admin"
+        proposed["coordinator_substitute"] = stand_in
     if errors:
         raise invalid(errors)
     return proposed
+
+
+def _agent_role(conn: Connection, project_id: str, member_id: str) -> str | None:
+    """The role of an active agent member, or None when the id names no such member."""
+    role: str | None = conn.execute(
+        select(t.membership.c.role).where(
+            t.membership.c.project_id == project_id,
+            t.membership.c.agent_id == member_id,
+            t.membership.c.active.is_(True),
+        )
+    ).scalar()
+    return role
 
 
 def _is_member(conn: Connection, project_id: str, principal: str) -> bool:
@@ -255,7 +306,14 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
         assert key is not None
         owner = int(key[0])
         if body.policy is not None:
-            proposed = _apply_policy(conn, project_id, filled, body.policy, caller.principal_id)
+            proposed = _apply_policy(
+                conn,
+                project_id,
+                filled,
+                body.policy,
+                caller.principal_id,
+                settings_of(request).on_runner_revoke,
+            )
             conn.execute(
                 update(t.project)
                 .where(t.project.c.id == project_id)
@@ -297,13 +355,13 @@ def patch_project(
         # and make policy/event decisions from the current row under the shared project lock.
         mine = replace(mine, project=lock_project(conn, mine.project.id))
         _refuse_for_agents(mine, body, given)
-        _authorise_patch(mine, given)
+        _authorise_patch(mine, body, given)
         project = mine.project
         actor = caller.actor(mine.id)
         owner_id = _owner_id(conn, project.id)
         values: dict[str, Any] = {}
         rules_inputs_changed = False
-        language_changed: str | None = None
+        settings_changed: dict[str, Any] = {}
         if "name" in given and body.name is not None and body.name != project.name:
             values["name"] = body.name
             rules_inputs_changed = True
@@ -317,17 +375,31 @@ def patch_project(
             if body.settings.ticker is not None:
                 _check_ticker(body.settings.ticker)
             dumped = body.settings.model_dump()
+            if "onboarding" in named:
+                changed, stored, announcement = onboarding.replace_setting(
+                    conn, project, body.settings.onboarding, mine.id
+                )
+                dumped["onboarding"] = stored
+                if changed:
+                    settings_changed["settings.onboarding"] = announcement
             merged = dict(project.settings or {})
             for key in named:
+                if key == "language":
+                    effective = dumped[key] or "en"
+                    if effective != (merged.get(key) or "en"):
+                        settings_changed["settings.language"] = effective
+                elif key != "onboarding" and merged.get(key) != dumped[key]:
+                    settings_changed[f"settings.{key}"] = (
+                        True
+                        if key == "release_checklist" and dumped[key] is not None
+                        else dumped[key]
+                    )
                 if dumped[key] is None:
                     merged.pop(key, None)
                 else:
                     merged[key] = dumped[key]
             if merged != (project.settings or {}):
                 values["settings"] = merged
-            language = merged.get("language") or "en"
-            if language != project_language(project):
-                language_changed = language
             was_on = ticker.settings(project)["enabled"]
             now_on = bool((merged.get("ticker") or {}).get("enabled"))
             # Switched on now, or on from before the merges were announced (an install
@@ -336,7 +408,14 @@ def patch_project(
                 ticker.switched_on(conn, project.id)
         new_policy = None
         if "policy" in given and body.policy is not None:
-            new_policy = _apply_policy(conn, project.id, policy.of(project), body.policy, owner_id)
+            new_policy = _apply_policy(
+                conn,
+                project.id,
+                policy.of(project),
+                body.policy,
+                owner_id,
+                settings_of(request).on_runner_revoke,
+            )
             if new_policy == policy.of(project):
                 new_policy = None
         state_changes = "state" in given and body.state != project.state
@@ -346,13 +425,13 @@ def patch_project(
             raise invalid({"reason": "required"}, "a change of state or policy needs a reason")
         if values:
             conn.execute(update(t.project).where(t.project.c.id == project.id).values(**values))
-        if language_changed is not None:
+        if settings_changed:
             emit(
                 conn,
                 project.id,
                 "project_updated",
                 BROADCAST,
-                {"fields": {"settings.language": language_changed}},
+                {"fields": settings_changed},
                 actor=actor,
                 subject=("project", project.slug),
             )
@@ -409,6 +488,8 @@ def patch_project(
                 actor=actor,
             )
         if "absence" in given:
+            if body.absence is not None and body.absence.until > clock.now() + ABSENCE_AHEAD:
+                raise invalid({"absence": "too_far"}, "an absence ends within 90 days")
             new_absence = (
                 {"until": clock.rfc3339(body.absence.until), "scope": body.absence.scope}
                 if body.absence
@@ -432,6 +513,12 @@ def patch_project(
                     {"old": old, "new": new_absence, "reason": body.reason},
                     actor=actor,
                     subject=("project", project.slug),
+                )
+                availability.absence_changed(
+                    conn,
+                    _load(conn, project.id),
+                    body.absence.until if body.absence else None,
+                    actor,
                 )
         for name in ("rules_markdown", "keep_the_why"):
             new_value = getattr(body, name)
@@ -473,7 +560,15 @@ def _refuse_for_agents(mine: Membership, body: Any, given: set[str]) -> None:
         raise humans_only("no agent changes this, whatever its role")
 
 
-def _authorise_patch(mine: Membership, given: set[str]) -> None:
+def _authorise_patch(mine: Membership, body: ProjectPatch, given: set[str]) -> None:
+    if (
+        mine.kind == "agent"
+        and mine.role == "admin"
+        and given == {"settings"}
+        and body.settings is not None
+        and body.settings.model_fields_set == {"onboarding"}
+    ):
+        return  # §2.3 ʰ: coordination alone, never a mixed project/settings PATCH.
     # The absence is written by the owner, the human it concerns, and nobody else (§6.1).
     if "absence" in given and (mine.role != "owner" or mine.kind != "human"):
         raise forbidden(message="the absence is set by the owner only")

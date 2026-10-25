@@ -92,6 +92,12 @@ to NULL on every other, under a unique constraint with its scope
 CHECK that the marker is never false, since false would be a second value
 the constraint lets through. Ending a session, closing a release or
 removing a member sets the marker back to NULL in the same statement.
+A later rule uses the same form: a profile's handle is unique per owner
+among the profiles that are not deleted (`agent_profile.live`, under
+`owner_id, handle, live`, §6.3), so a deleted profile's handle is free at
+once. Downgrading that migration appends the id to a deleted profile's
+handle where a live one took it (`handle~<id>`), the only way the old
+`owner_id, handle` key can hold again.
 
 **Reason:** all three engines allow any number of NULLs in a unique
 constraint and refuse a second true, so the database enforces the rule
@@ -345,6 +351,40 @@ a read before it.
   `depends_on` changes stored a cycle, and a claim racing a cancel
   answered 500.
 
+## `maity-hub quickstart` migrates only a new, empty SQLite database
+
+**Id:** 83d063d3-b56c-46fe-b6b4-20751f9a6b0f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's approval of the quickstart command proposal, 2026-10-25 (empty database only, SQLite only, the address as the last line); docs/install/quickstart.md
+**Revisit when:** quickstart is asked to upgrade an existing personal hub, or to run on a server database
+
+`maity-hub quickstart` is `migrate`, `owner create` and `serve` in one, for
+a personal hub. It runs `migrate` only on a database with no tables at
+all. Having no schema version is not enough: a file that holds tables but
+no version is refused and left as it is, because only `migrate` may decide
+what to do with it. A database behind the current schema is refused with
+the same message as `serve`. The first account is created only while there
+is no human. The check and the insert are one statement, so an account that
+another process creates while the password is being typed stops
+quickstart instead of producing a second admin. Any database URL other
+than SQLite is refused. This narrows ce7a3627, the rule that migrations run only on
+`maity-hub migrate`. It does not replace it: an upgrade of a hub that
+holds data is still a deliberate `maity-hub migrate`.
+
+**Reason:** the five-minute path should be one command, and ce7a3627's
+reasons do not hold for a database that is still empty. Nothing in it can
+be changed without anyone asking, and one local process cannot race a
+replica. Restricting it to SQLite keeps the shortcut off the servers
+where ce7a3627 matters.
+
+**Rejected alternatives:**
+- Migrate whatever schema it finds: a restart after `pipx upgrade` would
+  change a hub with data on its own, which is what ce7a3627 rules out.
+- No single command, only the three steps: correct, but three more steps
+  where the quickstart promises five minutes.
+
 ## SQLite migrations run with foreign keys off, then check them, then switch them back on
 
 **Id:** 84988fb8-49b5-4b1d-8783-c90a8676deed
@@ -386,7 +426,7 @@ off.
 **Status:** active
 **Evidence:** inferred
 **Source:** implementation of card order (`docs/api.md` §6.4, contract #135), 2026-10-23
-**Revisit when:** a project's board grows to thousands of cards
+**Revisit when:** a project's board grows to thousands of cards, or a client reports paging through a board that does not finish while cards keep moving
 
 `GET …/tasks` reads a project's cards that match the filters and sorts them
 in Python by `ranks.board_key`: the columns in board order, then within
@@ -405,7 +445,11 @@ card that moved elsewhere takes the page with it (both found in
 review). A restart may repeat a card from an earlier page, but never
 skips one that did not move.
 When that card moves itself, the cards it passed may be skipped or
-repeated; the contract says so.
+repeated; the contract says so. Nothing bounds the repeats: while cards
+keep moving, a client can page on with restarts and repeats and has no
+guarantee of reaching the end until the moves stop. A board of a few
+hundred cards read 200 at a time rarely meets that, so no snapshot or
+version token was added for it.
 `order=updated` keeps the old keyset paging by `updated_at`, now bound to
 the filters as well. A rank is a string over digits and lower-case letters
 that never ends in `0`. A move keys between its ranked neighbours, a

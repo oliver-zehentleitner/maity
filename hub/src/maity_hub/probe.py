@@ -32,11 +32,13 @@ from sqlalchemy import Connection, Engine, delete, insert, select, update
 from maity_hub import clock, forge, releases, ticker
 from maity_hub import tables as t
 from maity_hub.events import emit, lock_project, transaction
+from maity_hub.instances import token
 from maity_hub.views import principal_id
 
 log = logging.getLogger(__name__)
 
 MAX_AGE = 60  # seconds an observation answers a read without asking the forge (§11)
+LINKS = "links"  # a job `(LINKS, project id)`: read that project's card links
 INTERVAL = 300  # seconds between the worker's sweeps
 MERGE_INTERVAL = 120  # seconds between the ticker's merge reads (§17.4)
 REPORT_WINDOW = timedelta(days=1)  # closed cards whose report a sweep still tries to observe
@@ -176,7 +178,8 @@ def _project(engine: Engine, project_id: str) -> Any:
 
 def _audience(conn: Connection, card: Any) -> list[str]:
     holder = principal_id(conn, card.claim_holder)
-    return [*([f"member:{holder}"] if holder else []), "role:admin"]
+    # The holding instance, which the observation wakes; its team reads it (§8.2).
+    return [*([token(holder, card.claim_instance)] if holder else []), "role:admin"]
 
 
 # --- reports (§6.6) ---------------------------------------------------------------------------
@@ -320,6 +323,7 @@ def sweep(engine: Engine, fg: forge.Forge, stop: threading.Event | None = None) 
         and card.report.get("code") is not False
     ]
     work += [(observe_release, (engine, fg, project_id)) for project_id in sorted(observable)]
+    work += [(observe_links, (engine, fg, project_id)) for project_id in sorted(observable)]
     for job, args in work:
         if stop is not None and stop.is_set():
             return
@@ -490,6 +494,13 @@ def merge_sweep(engine: Engine, fg: forge.Forge, stop: threading.Event | None = 
             return
 
 
+def observe_links(engine: Engine, fg: forge.Forge, project_id: str) -> int:
+    """The project's card links (§6.13): its own repository's issues and pull requests."""
+    from maity_hub.board import links  # board reads the views, which read the probe's rows
+
+    return links.observe(engine, fg, project_id)
+
+
 def _guarded(work: Callable[..., Any], *args: Any) -> bool:
     """Run one piece of work; False when the forge did not answer."""
     try:
@@ -510,6 +521,8 @@ class Worker:
         # A card id to probe, or ("merges"|"deploy", …) from a verified webhook delivery.
         self.jobs: queue.Queue[str | tuple[Any, ...] | None] = queue.Queue()
         self.stopping = threading.Event()
+        self._pending_links: set[str] = set()
+        self._pending_lock = threading.Lock()
         self.thread = threading.Thread(target=self._run, name="maity-probe", daemon=True)
 
     def start(self) -> None:
@@ -534,6 +547,15 @@ class Worker:
         """A verified `deployment_status` delivery: read that deployment now (§17.4)."""
         self.jobs.put(("deploy", project_id, deployment_id, delivery))
 
+    def links_added(self, project_id: str) -> None:
+        """Called after a link was added and committed: read that project's links soon
+        (§6.13). One job per project waits at a time, however many links were added."""
+        with self._pending_lock:
+            if project_id in self._pending_links:
+                return
+            self._pending_links.add(project_id)
+        self.jobs.put((LINKS, project_id))
+
     def _run(self) -> None:
         next_sweep = clock.now()
         next_merges = clock.now()
@@ -553,7 +575,11 @@ class Worker:
             if job is None:
                 return
             if isinstance(job, tuple):
-                if job[0] == "merges":
+                if job[0] == LINKS:
+                    with self._pending_lock:
+                        self._pending_links.discard(job[1])
+                    _guarded(observe_links, self.engine, self.fg, job[1])
+                elif job[0] == "merges":
                     _guarded(announce_merges, self.engine, self.fg, job[1], job[2], job[3])
                 else:
                     _guarded(announce_deploy, self.engine, self.fg, job[1], job[2], job[3])

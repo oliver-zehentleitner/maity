@@ -136,6 +136,10 @@ def test_lists_cost_the_same_for_3_rows_and_for_30(
         release_in_flight=True,
         release_data={"version": "1.0.0", "checklist": [], "pull_requests_typed": []},
     )
+    # The first resume stores the agent's silent availability baseline. Compare
+    # two initialized sessions so that one-time write is not mistaken for row cost.
+    warmup = calls["resume"]()
+    assert warmup.status_code == 200, warmup.text
     _grow(migrated, project_id, owner_membership, agents, 3)
     small = {name: _statements(migrated, call) for name, call in calls.items()}
     _grow(migrated, project_id, owner_membership, agents, 27)

@@ -31,7 +31,13 @@ def test_defined_unicode_substring(text: str, query: str, expected: bool) -> Non
 
 def test_match_order() -> None:
     row = SimpleNamespace(id="tsk-match", title="MATCH", body="match", report={"summary": "match"})
-    assert card_search.matches(row, "match") == ["id", "title", "body", "report"]
+    assert card_search.matches(row, "match", ["a Match"]) == [
+        "id",
+        "title",
+        "body",
+        "note",
+        "report",
+    ]
 
 
 def test_only_latest_report_summary_is_searched() -> None:
@@ -156,3 +162,25 @@ def test_search_includes_closed_cards_and_replaces_old_report_text(owner: flow.H
     page = owner.get("/projects/maity/tasks?q=latest&status=done").json()["items"]
     assert [(c["id"], c["match"]) for c in page] == [(hit["id"], ["report"])]
     assert owner.get("/projects/maity/tasks?q=latest&status=open").json()["items"] == []
+
+
+@pytest.mark.parametrize("state", ["open", "incorporated", "dismissed"])
+def test_a_note_in_every_state_is_searched(owner: flow.Human, state: str) -> None:
+    card = task(owner, title="plain", body=None)
+    path = f"/projects/maity/tasks/{card['id']}/notes"
+    posted = owner.post(path, {"body": "Überlauf im Cache"}).json()
+    if state != "open":
+        resolved = owner.post(f"{path}/{posted['id']}/resolve", {"state": state})
+        assert resolved.status_code == 200, resolved.text
+    [found] = owner.get("/projects/maity/tasks?q=überlauf&status=all").json()["items"]
+    assert found["id"] == card["id"] and found["match"] == ["note"]
+
+
+def test_a_redacted_note_is_not_searched(owner: flow.Human) -> None:
+    card = task(owner, title="plain", body=None)
+    path = f"/projects/maity/tasks/{card['id']}/notes"
+    posted = owner.post(path, {"body": "the token is s3cret"}).json()
+    assert owner.get("/projects/maity/tasks?q=s3cret").json()["items"][0]["match"] == ["note"]
+    redacted = owner.post(f"{path}/{posted['id']}/redact", {"reason": "secret"})
+    assert redacted.status_code == 200, redacted.text
+    assert owner.get("/projects/maity/tasks?q=s3cret").json()["items"] == []

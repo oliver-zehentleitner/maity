@@ -241,6 +241,241 @@ and prices are the operator's) and hand parts of it to members of their
 project — sponsoring, say, three more agents for someone on the free
 plan; whether a project allows this is a per-project setting.
 
+## Maity is a control plane for humans and their independent coding agents; an agent is a durable identity, the runtime is interchangeable
+
+**Id:** 70482b44-b087-4c9f-80f3-2aec43a5eda9
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision in the inbox, 2026-10-25, on the contract owner's proposal; the README's opening says the same in fewer words
+**Revisit when:** a feature is proposed that only works when the hub owns the agent's process, or counts tokens, or needs a project for a single developer to be useful
+**See:** scope.md#agents-are-brought-not-run-the-hub-organises-the-sessions-do-the-work — 517defc6-720e-4a17-90fb-a061279c8fee — as of 2026-10-25
+
+Maity is a control plane for humans and their independently running
+coding agents. An agent is a durable identity with an owner — not a
+pod, a worktree or a session — and the same identity is a member of
+several projects at once; rights hang on the membership, not on the
+process that currently carries it. A single developer has the full use
+of it alone; collaboration is optional. Maity runs no inference and
+counts no tokens.
+
+**Reason:** the identity is what the team addresses, trusts and gives
+rights to, and it has to survive the harness, the model and the machine
+changing underneath it; a process-bound identity would lose its cards,
+its history and its reputation at every restart. Binding rights to the
+membership keeps the hub out of the agent's runtime, which is the
+boundary the first entry of this file draws. Inference and token counts
+belong to whoever runs the agent; a hub that counted them would be a
+party to the agent's provider.
+
+**Rejected alternatives:**
+- An orchestration runtime that owns the agents' processes: the hub
+  would become the thing it coordinates, and every supported harness a
+  feature of the hub.
+- Identity per project or per session: the same agent would be a
+  stranger in its second project, and its history would not travel.
+
+## Maity is not a project memory: persistent project knowledge lives with an external provider, Keep the Why being the first
+
+**Id:** e22af31b-98cc-43f9-95bb-70a66067bdf3
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision in the inbox, 2026-10-25
+**Revisit when:** a second memory provider is asked for (then a provider interface is specified), or a hub feature needs to store project knowledge rather than coordination state
+**See:** scope.md#keep-the-why-stays-external-and-optional-the-hub-never-reimplements-it — a498e8a8-092d-44e1-9c4a-50c6aa3d1105 — as of 2026-10-25
+**See:** projects.md#the-memory-provider-is-chosen-at-creation-keep-the-why-preselected-the-setup-is-an-agents-work-through-cards-and-pull-requests — 822d63b0-99da-4092-aaef-93c0674934a2 — as of 2026-10-25
+
+The hub stores operative coordination data only: cards, messages,
+events, decisions, memberships. Persistent project knowledge — the
+reasoning, the decisions, the constraints of the code — lives with an
+external provider in the repository. Keep the Why is the first such
+provider, not the provider: the existing integration keeps its place,
+and a provider interface for other memory systems comes when a second
+one is wanted. This generalises the entry above, which drew the same
+boundary for Keep the Why alone.
+
+**Reason:** the one given above — project memory belongs in the
+repository, versioned and travelling with the clone — and one more: a
+hub that stored project knowledge would bind its users to one memory
+system; naming the provider as a choice keeps the hub a switchboard.
+
+**Rejected alternatives:**
+- Specifying the provider interface now: no second provider exists to
+  shape it; the maintainer chose to wait for one.
+- Keep the Why as the built-in memory: it would make the hub a second
+  copy of the repository's why layer.
+
+## The hosted offering runs no agent workloads: runners stay on the members' machines
+
+**Id:** df759e0f-d23b-4ff6-82c8-540406c3f409
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision in the inbox, 2026-10-25
+**Revisit when:** the per-member cost model of the hosted offering changes, or a customer asks for hub-side execution and is willing to carry its cost as a separate plan
+**See:** scope.md#a-runner-the-operator-runs-may-start-agents-the-hub-still-never-does — 6f8d6d1b-31fa-408c-be43-f0da404084bb — as of 2026-10-25
+**See:** scope.md#one-codebase-three-ways-to-run-it-alone-at-home-a-teams-own-instance-and-an-open-hosted-instance-with-paid-plans — 930cc491-24f2-4dbe-94b6-b5b49e7e2fb2 — as of 2026-10-25
+
+The hosted offering (maity.team) runs no agent workloads. Runners stay
+on the members' own machines, never in hub-side worker pods. The hub is
+a switchboard: it stores cards, messages, events and decisions and wakes
+whoever has to act; everything heavy — the agent sessions, their
+repositories, their inference — stays with the customer. This narrows
+the runner decision above for the hosted instance: an operator-run
+runner may start agents, but the hosted operator runs none.
+
+**Reason:** the per-member cost of the hosted instance must stay in the
+cents, so that a free tier carries itself and the paid plans price
+coordination, not compute. A hub that ran agents would have a cost that
+scales with agent runtime and model usage, which neither a free tier nor
+a per-seat plan can carry.
+
+**Rejected alternatives:**
+- Hub-side worker pods for members without a machine of their own: cost
+  scales with agent runtime, not with members; it would also make the
+  hosted operator a party to the agents' credentials and repositories.
+
+## Later stages, agreed in principle and deliberately not in V1: public projects and discovery, sponsoring and credits, a managed instance per customer, federation
+
+**Id:** 54e1a38b-1e54-480f-87f2-014139a563d1
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decisions in the inbox, 2026-10-25: build a stable core first, add from there
+**Revisit when:** the core has been in use long enough that the maintainer opens one of these stages; each then gets its own contract and its own entry, and this one is superseded by them
+
+Four things were discussed and agreed in principle on 2026-10-25, and
+each was put after the core on purpose. **Public projects and
+discovery**: a project flag that gives non-members a read-only view and
+a join request, later a discovery page on the hosted instance with
+projects that look for support; a join request always needs the owner's
+approval, never a self-join, because a foreign agent in a repository is
+a supply-chain question. **Sponsoring and credits**: two modes — a gift,
+where the sponsor earns standing and the receiver owes nothing, and a
+trade, where both balances move; the unit is a weight the receiving
+project's owner puts on the card when it is opened and the taker
+accepts by taking it, never a measure of tokens or time, never money;
+balances belong to the human owner across projects, not to the agent.
+**A managed instance per customer**: the operator runs a separate
+instance for one customer, on a provider and in a region the customer
+chooses, apart from the open hosted instance and under its own domain.
+**Federation**: self-hosted instances taking part in one community on
+the hosted instance (discovery, credits, standing); an idea, not a
+promise.
+
+**Reason:** the maintainer's direction is a stable core that the team
+tests and gets to know before it grows, and nothing that is not safe
+yet. Every one of these four either opens the hub to strangers or
+introduces value that can be gamed, so each needs the core's trust and
+review rules to be proven first.
+
+**Rejected alternatives:**
+- Starting the first stage of public projects before the launch: the
+  read-only view alone is cheap, but it is the first door to strangers
+  and was put after the core with the rest.
+- Credits as a measure of work done (tokens, time): the hub counts no
+  tokens and time is gameable; a price agreed before the work is the
+  only unit the hub can hold without measuring anything.
+
+## The beta is free; later plans price humans and organisations, never agents; one hard ceiling of agent profiles per human protects the hosted instance
+
+**Id:** 37803db9-3f8a-4a1a-b42f-20ba9c783e1f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision in the inbox, 2026-10-25; the ceiling in `docs/api.md` §16.5
+**Revisit when:** plans (§2.7 part two) are specified — then the ceiling becomes a per-plan value and this entry is superseded by the plans entry
+**See:** scope.md#one-codebase-three-ways-to-run-it-alone-at-home-a-teams-own-instance-and-an-open-hosted-instance-with-paid-plans — 930cc491-24f2-4dbe-94b6-b5b49e7e2fb2 — as of 2026-10-25
+
+The public beta of the hosted instance has no subscriptions. When
+plans come, they price what organisations need — private orgs and
+teams, roles and policies, audit and reporting, single sign-on,
+support — and never the number of agents or sessions; local and
+self-hosted use stays free. Price tiers and conversion figures stay out
+of the repository, and so does the configuration of the plans
+themselves — what each includes, its limits, its price is instance data
+in the hosted instance's database, never shipped to local or
+self-hosted installations. Independent of plans, the instance operator
+sets one ceiling: agent profiles per human (default 100), against
+runaway creation; lowering it deletes nothing.
+
+**Reason:** an agent is the user's tool, and charging per tool would
+punish exactly the use Maity exists for — many small agents, freely
+created and discarded. The ceiling is not a price: it is the one number
+that keeps a script or a mistake from filling the hosted instance, set
+high enough that nobody working alone meets it.
+
+**Rejected alternatives:**
+- Seats per agent or per session: the hub would tax the thing it wants
+  to make cheap.
+- No ceiling at all on the hosted instance: one runaway script could
+  create profiles without end; self-hosted instances may switch it off.
+- A ceiling per project instead of per human: that is the project
+  owner's policy (`max_placements`), not the operator's protection.
+
+## Usage is measured by counting what the hub already holds, never by tracking
+
+**Id:** 02f126c2-5d8c-4ea4-89bd-ceb499efd24d
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision in the inbox, 2026-10-25; contract `docs/api.md` §16.6
+**Revisit when:** a question about usage cannot be answered from the hub's own tables (then the answer is a new counted fact in the hub, not a tracker)
+**See:** trust.md#authority-comes-from-the-role-in-the-org-chart-not-from-who-typed-the-message — 30f183d5-9f56-494f-a3a1-468cd10f5cc9 — as of 2026-10-25
+
+The instance admin reads usage as counts derived from the hub's own
+tables — registrations, new agent instances, humans and agents active per day,
+cards created, claimed and done, reviews, people returning after seven
+and thirty days. There is no tracking cookie, no beacon in the
+dashboard or the CLI, no external analytics service, and nothing new is
+written to measure. An installation is never counted: what the hub sees is an
+agent instance's first join, and that is what it reports; a number the
+hub cannot derive from its rows is shown as unknown, not estimated.
+
+**Reason:** the questions a launch asks — do people sign up, do they
+bring an agent, do they come back — are answered by what the hub stores
+to work at all; a tracker would add a third party and a privacy promise
+to keep for numbers the tables already give. Counting what exists keeps
+the measurement honest about what it cannot see (a download that never
+joined) and costs nothing to defend.
+
+**Rejected alternatives:**
+- An external analytics service: a third party in the hub's pages for
+  numbers the database already has.
+- Counting downloads or installations: nobody can tell a download from
+  an installation that works, nor one installation from its many joins;
+  the first join of an instance is what the hub sees.
+
+## What one instance says about itself lives in its database, not in the repository
+
+**Id:** eec53587-3465-48d8-9c7e-ae24e05e7172
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's direction in the project chat, 2026-10-25; contract `docs/api.md` §16.7
+**Revisit when:** an instance needs more than one page of its own (then a small content store, still in the database), or a theme beyond the uploaded logo and banner
+**See:** scope.md#one-codebase-three-ways-to-run-it-alone-at-home-a-teams-own-instance-and-an-open-hosted-instance-with-paid-plans — 930cc491-24f2-4dbe-94b6-b5b49e7e2fb2 — as of 2026-10-25
+
+The hosted instance gets a landing page at its root; a self-hosted or
+local instance keeps the bare login page. The landing page's words are
+an instance setting the instance admin writes, stored in the database
+and rendered by the same dashboard everyone ships. Nothing that is
+particular to one instance — its pitch, its terms, its face — is a file
+in the repository.
+
+**Reason:** one codebase runs in three ways; what distinguishes the
+hosted instance must not be a branch or a build flag, or the three
+would drift apart. Content in the database is the one place that is
+per instance by nature, editable without a deploy, and absent by
+default — so the open-source checkout stays neutral and complete.
+
+**Rejected alternatives:**
+- A landing page in the repository behind a flag: marketing text in an
+  open-source checkout, and a rebuild for every edit.
+- A separate static site in front of the hub: a second deployment to
+  keep in step with the login page and the sign-in methods.
+
 ## A forwarded request's holder is a member or the admin pool; opening the pool reaches human admins only
 
 **Id:** 787ae7aa-e107-4a09-b8a5-6e44ac59a865

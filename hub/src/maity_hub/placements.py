@@ -21,7 +21,7 @@ from typing import Any
 from sqlalchemy import Connection, func, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import avatars, clock, events
+from maity_hub import availability, avatars, clock, events, mentions
 from maity_hub import tables as t
 from maity_hub.errors import ApiError
 from maity_hub.events import Actor
@@ -33,7 +33,16 @@ from maity_hub.views import principal_id, ts
 
 HARNESSES = ("claude-code", "codex", "opencode", "pi", "hermes", "kimi", "cline", "omp", "stub")
 MODES = ("interactive", "supervised")
-STATES = ("pending", "starting", "running", "stopping", "stopped", "exited", "failed")
+STATES = (
+    "pending",
+    "starting",
+    "running",
+    "stopping",
+    "stopped",
+    "exited",
+    "failed",
+    "rate_limited",
+)
 # reason -> the states it comes with (§15.7)
 REASONS: dict[str, tuple[str, ...]] = {
     "capacity": ("pending",),
@@ -46,7 +55,7 @@ REASONS: dict[str, tuple[str, ...]] = {
     "workspace_in_use": ("failed",),
     "join_failed": ("failed",),
     "crash_loop": ("failed",),
-    "quota": ("exited", "failed"),
+    "quota": ("rate_limited", "exited", "failed"),
     "agent_credential_revoked": ("failed",),
     "oom_killed": ("failed", "exited"),
     "evicted": ("failed", "exited"),
@@ -80,11 +89,12 @@ DETAILS: dict[str, tuple[str, str]] = {
     "hot_loop": ("reason", "crash_loop"),
     "mode_unsupported": ("reason", "harness_refused"),
     "model_unsupported": ("reason", "harness_refused"),
+    "reset_unknown": ("state", "rate_limited"),
 }
 RUNNING_STATES = ("starting", "running", "stopping")
 # Closing at once tells a running agent, except where it never ran or cannot listen:
 # a refused or withdrawn proposal, and a removed membership (§15.10).
-STOP_TOLD = ("removed", "detached", "project_archived", "runner_removed")
+STOP_TOLD = ("removed", "detached", "project_archived", "runner_removed", "runner_revoked")
 CLOSED_LIST_DAYS = 30
 SPEC_FIELDS = ("harness", "mode", "model", "target", "stop_grace_seconds")
 
@@ -133,15 +143,26 @@ def _agent(conn: Connection, placement: Any) -> dict[str, Any]:
         return {
             "id": found.id,
             "handle": found.handle,
+            "name": _name(conn, placement, found.handle),
             "display_name": found.display_name,
             "avatar_url": avatars.urls(conn, [found.id])[found.id],
         }
     return {  # a profile still to be created has no picture yet (§6.10)
         "id": None,
         "handle": placement.new_handle,
+        "name": _name(conn, placement, placement.new_handle),
         "display_name": (placement.new_profile or {}).get("display_name"),
         "avatar_url": None,
     }
+
+
+def _name(conn: Connection, placement: Any, handle: str) -> str:
+    """The agent's global name (§6.3): the runner view shows it outside one project."""
+    owner = profile_owner(conn, placement)
+    owner_handle: str = conn.execute(
+        select(t.human.c.handle).where(t.human.c.id == owner)
+    ).scalar_one()
+    return mentions.global_name(owner_handle, handle)
 
 
 def profile_owner_of(conn: Connection, values: dict[str, Any]) -> str:
@@ -541,6 +562,8 @@ def set_desired(
     if placement.desired == desired:
         return placement
     changed = _write(conn, placement.id, by, desired=desired)
+    if desired == "stopped":
+        revoke_unused_joins(conn, t.join_link.c.placement_id == placement.id)
     if desired == "stopped" and tell_agent:
         _stop_requested(conn, changed, actor, by)
     announce(conn, placement.id, "placement_updated", actor)
@@ -612,7 +635,9 @@ def close_now(
         closed_reason=closed_reason,
         closing=None,
     )
+    revoke_unused_joins(conn, t.join_link.c.placement_id == placement.id)
     announce(conn, placement.id, "placement_updated", actor)
+    availability.placement_closed(conn, closed, actor)
     return closed
 
 
@@ -697,6 +722,7 @@ def membership_removed(conn: Connection, membership_id: int, actor: Actor | None
 def runner_removed(conn: Connection, runner_id: str, by: str) -> list[str]:
     """Close every placement of a removed runner at once; returns those whose last report
     said they were still running (`still_running`, §15.3)."""
+    revoke_unused_joins(conn, t.join_link.c.runner_id == runner_id)
     still = []
     for placement in active_rows(conn, t.placement.c.runner_id == runner_id):
         if (placement.reported or {}).get("state") in RUNNING_STATES:
@@ -729,8 +755,22 @@ def project_archived(conn: Connection, project_id: str, actor: Actor | None, by:
         close_uniform(conn, row(conn, placement.id), "project_archived", actor, by)
 
 
+def revoke_unused_joins(conn: Connection, *where: Any) -> None:
+    """Revoke the runner pickups (§15.9) that `where` selects and nobody exchanged yet: a
+    stopped or closed placement, or a runner without its credential, mints no agent. The
+    exchange checks the placement and the runner again under the lock as well."""
+    j = t.join_link.c
+    conn.execute(
+        update(t.join_link)
+        .where(j.placement_id.is_not(None), j.used_at.is_(None), j.revoked_at.is_(None), *where)
+        .values(revoked_at=clock.now())
+    )
+
+
 def runner_credential_gone(conn: Connection, runner_id: str, by: str | None) -> None:
-    """A runner without a live credential reports nothing: what was closing closes now."""
+    """A runner without a live credential reports nothing: what was closing closes now.
+    Its unused pickups end with the credential that fetched them (§15.9)."""
+    revoke_unused_joins(conn, t.join_link.c.runner_id == runner_id)
     for placement in active_rows(
         conn, t.placement.c.runner_id == runner_id, t.placement.c.closing.isnot(None)
     ):
@@ -889,6 +929,9 @@ def report(conn: Connection, placement: Any, body: dict[str, Any], actor: Actor)
         actor=actor,
         subject=("placement", placement.id),
     )
+    if current:
+        # A rate limit is the agent's limit (§6.12, §15.7); the next other report ends it.
+        availability.runner_reported(conn, placement, body["state"], body.get("retry_at"), actor)
     after = row(conn, placement.id)
     if current and after.closing is not None and terminal(fields):
         return close_now(conn, after, after.closing, actor, None)

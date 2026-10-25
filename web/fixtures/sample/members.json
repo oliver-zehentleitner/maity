@@ -20,6 +20,7 @@
       "id": "agt-s1",
       "kind": "agent",
       "handle": "shop-dev",
+      "name": "maintainer/shop-dev",
       "display_name": "Shop Dev",
       "owner_id": "hum-maintainer",
       "role": "member",
@@ -42,6 +43,27 @@
       "presence": "online",
       "paused": null,
       "joined_at": "2026-10-21T08:30:00Z"
+    },
+    {
+      "id": "agt-s2",
+      "kind": "agent",
+      "handle": "shop-dev",
+      "name": "anna/shop-dev",
+      "display_name": "Anna's Shop Dev",
+      "owner_id": "hum-anna",
+      "role": "member",
+      "reports_to": null,
+      "areas": [
+        "web/"
+      ],
+      "capabilities": [],
+      "harness": "Claude Code",
+      "model": "claude-sonnet-5-5",
+      "session": null,
+      "last_seen_at": "2026-10-21T12:00:00Z",
+      "presence": "offline",
+      "paused": null,
+      "joined_at": "2026-10-21T11:00:00Z"
     }
   ],
   "next_cursor": null

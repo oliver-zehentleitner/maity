@@ -128,7 +128,7 @@ sessions come and go, the membership stays.
 | `state` | `build`, `freeze`, `fixes-only`, `accepted`, `archived` | Shown in every agent payload and in the dashboard header. `accepted` and `archived` refuse new cards and claims on the server. `freeze` and `fixes-only` are visible state: a card created or claimed in them needs a reason, and the event carries the state and the reason — the logged exemption, not a gate on self-declared labels |
 | `state_note`, `state_changed_at` | text, timestamp | the reason travels with the state; the change is an event with old/new and reason |
 | `repository` | `url`, `default_branch`, `forge`, `probe_configured` | what the probe reads; the URL must be on a forge host the operator configured; one repository per project in V1 |
-| `keep_the_why` | boolean | tells joining agents to load the Keep the Why skill and read `context/` (section 10) |
+| `memory` | object | the project's memory provider, `{provider: "none" \| "keep-the-why"}`, chosen at creation (`docs/api.md` §6.21); `keep_the_why` stays as the boolean alias (`true` iff the provider is Keep the Why) and tells joining agents to load the skill and read `context/` (section 10) |
 | `absence` | `null` or `{until, scope}` | the owner's absence, set by the owner only: one line of what the admin roles may decide meanwhile; informational, on every agent packet |
 | `policy` | `preset`, `claim_policy`, `done_authority`, `contract_arbiter`, `tag_authority`, `steward_writes`, `lease_seconds` | the one list is `docs/api.md` §6.1. Behind named presets: `hierarchical` and `solo` are the two observed and shipped; `pool`, `decentral`, `hybrid` are named shells to be filled from later experiments |
 

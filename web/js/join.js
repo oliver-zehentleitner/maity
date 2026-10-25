@@ -5,13 +5,15 @@
 // line carries a single-use code; it is held in the view only, never
 // stored, and gone when the view is left. Each join's state is derived from
 // its fields, expiry against the clock while the view is open; only an open
-// join (or one expired within the grace minute) can be revoked.
+// join (or one expired within the grace minute) can be revoked. A join
+// for an agent that is already a member says which instance it makes:
+// another one, or one in place of an instance (docs/api.md §3.1, §6.17).
 "use strict";
 
 window.Maity = window.Maity || {};
 
 (function (M) {
-  const { h, append, clear, formatTime } = M.dom;
+  const { h, append, clear, formatTime, formatAgo } = M.dom;
 
   // Expiry emits no event; the list re-judges it on this interval, by the
   // hub's clock (M.api.now). A join expired less than GRACE_MS ago keeps
@@ -38,14 +40,24 @@ window.Maity = window.Maity || {};
   function build(ctx, hooks, panel, listStatus, profilesRead, joinsRead) {
     let profiles = profilesRead;
     let joins = joinsRead;
+    // The project's members as last read: an agent among them joins as an
+    // instance. Agents the hub said are members count as such even when
+    // the list on screen does not show them yet.
+    let members = ctx.members;
+    const saidMember = new Set();
+    const memberOf = (id) => members.find((m) => m.id === id)
+      || (saidMember.has(id) ? { id, instances: null, team: null } : null);
     const profileName = (id) => {
       const p = profiles.items.find((x) => x.id === id);
       return p ? p.display_name : id;
     };
 
+    // A profile by its short handle, or its global name where a member of
+    // this project shares the short one (§6.3), as members are named here.
+    const profileHandle = (p) => M.dom.handleIn(ctx.members, { kind: "agent", handle: p.handle, name: p.name });
     const agentSelect = h("select", { id: "join-agent" });
     const profileOptions = () => append(clear(agentSelect),
-      profiles.items.map((p) => h("option", { value: p.id }, p.display_name + " (@" + p.handle + ")"
+      profiles.items.map((p) => h("option", { value: p.id }, p.display_name + " (@" + profileHandle(p) + ")"
         + (p.memberships.some((x) => x.project === ctx.slug) ? " · already a member" : ""))),
       h("option", { value: "" }, "A new agent profile…"));
     profileOptions();
@@ -76,8 +88,57 @@ window.Maity = window.Maity || {};
       h("label", { for: "join-handle" }, "Handle"), handle, h("p", { class: "hint", id: "join-handle-rule" }, HANDLE.text),
       handleState,
       h("label", { for: "join-display" }, "Display name"), display);
-    agentSelect.addEventListener("change", () => { newFields.hidden = agentSelect.value !== ""; });
     if (!profiles.items.length) newFields.hidden = false;
+
+    // An agent that is already a member: the new line starts another
+    // instance of it or replaces one of its instances (docs/api.md §6.17).
+    // Role, reports to, areas and briefing stay the membership's; the join
+    // leaves them out, as a change there goes through its card.
+    const replaceOne = h("input", { type: "radio", name: "join-instance", id: "join-replace", value: "replace" });
+    const another = h("input", { type: "radio", name: "join-instance", id: "join-new-instance", value: "new" });
+    const replaced = h("select", { id: "join-replaces", "aria-label": "The instance it replaces" });
+    const quota = h("p", { class: "hint", id: "join-quota" });
+    const instanceBox = h("fieldset", { class: "join-instance wide", hidden: true },
+      h("legend", null, "This agent is already a member of the project"),
+      h("p", { class: "hint" }, "The new line makes an instance of it: the same role, areas and briefing, "
+        + "which you change on its card. A different job is a different agent."),
+      h("div", { class: "instance-choice" }, replaceOne, h("label", { for: "join-replace" }, "Replace instance"), replaced),
+      h("p", { class: "hint" }, "When the new line is used, the replaced instance's credential is revoked and its cards move to the new one."),
+      h("div", { class: "instance-choice" }, another, h("label", { for: "join-new-instance" }, "Start another instance")),
+      quota);
+    const activeOf = (m) => (m.instances || []).filter((i) => !i.revoked_at);
+    const instanceText = (i) => (i.label || i.id) + " · " + (i.presence === "online" ? "online" : "last seen " + formatAgo(i.last_seen_at, M.api.now()))
+      + " · " + (i.claims === 1 ? "1 card" : (i.claims || 0) + " cards");
+    // The fields a member's join leaves out.
+    const membershipFields = [];
+    const membershipField = (el) => { membershipFields.push(el); return el; };
+    // The choice starts from its default for each agent shown as a member.
+    let shownFor = "";
+    function showAgent() {
+      const m = agentSelect.value ? memberOf(agentSelect.value) : null;
+      const fresh = (m ? m.id : "") !== shownFor;
+      shownFor = m ? m.id : "";
+      newFields.hidden = agentSelect.value !== "";
+      instanceBox.hidden = !m;
+      membershipFields.forEach((f) => { f.hidden = !!m; });
+      if (!m) return;
+      const active = activeOf(m);
+      const kept = replaced.value;
+      append(clear(replaced), active.map((i) => h("option", { value: i.id }, instanceText(i))));
+      replaced.value = active.some((i) => i.id === kept) ? kept : active.length ? active[0].id : "";
+      replaceOne.disabled = replaced.disabled = !active.length;
+      if (fresh || !active.length) { replaceOne.checked = active.length > 0; another.checked = !active.length; }
+      const max = m.team && m.team.max_instances;
+      quota.textContent = max ? active.length + " of " + max + " instances active" + (active.length >= max ? "; another one is over the team's limit." : ".")
+        : m.instances ? "" : "The hub has not listed its instances here.";
+    }
+    agentSelect.addEventListener("change", showAgent);
+    // Choosing an instance is choosing to replace it.
+    replaced.addEventListener("change", () => { replaceOne.checked = true; another.checked = false; });
+    // The project's members read again, for the instances a choice offers.
+    async function rereadMembers() {
+      try { members = (await M.api.getAll(ctx.base + "/members")).items; } catch (ignored) { /* the refusal shown says enough */ }
+    }
 
     const role = h("select", { id: "join-role" }, ROLES.map((r) => h("option", { value: r }, r)));
     const reportsTo = h("select", { id: "join-reports" },
@@ -142,20 +203,24 @@ window.Maity = window.Maity || {};
           }
           agent = { handle: handle.value.trim(), display_name: display.value.trim() || handle.value.trim() };
         }
-        const text = briefing.value.trim();
+        const member = agent.id ? memberOf(agent.id) : null;
+        const text = member ? "" : briefing.value.trim();
         if ([...text].length > BRIEFING_CHARS) {
           status.fail("No join created: ", { message: "the briefing is longer than 16,384 characters" });
           briefing.focus();
           return;
         }
-        const req = {
-          agent,
-          role: role.value,
-          reports_to: reportsTo.value || null,
-          areas: areas.value.split(",").map((a) => a.trim()).filter(Boolean),
-          capabilities: [],
-          ttl_seconds: Number(ttl.value),
-        };
+        const req = member
+          ? Object.assign({ agent, ttl_seconds: Number(ttl.value) },
+            replaceOne.checked && replaced.value ? { replaces: replaced.value } : { new_instance: true })
+          : {
+            agent,
+            role: role.value,
+            reports_to: reportsTo.value || null,
+            areas: areas.value.split(",").map((a) => a.trim()).filter(Boolean),
+            capabilities: [],
+            ttl_seconds: Number(ttl.value),
+          };
         if (text) req.briefing = text;
         status.busy("Creating…");
         create.disabled = true;
@@ -163,8 +228,27 @@ window.Maity = window.Maity || {};
         try {
           j = await M.api.post(ctx.base + "/joins", req);
         } catch (err) {
-          const why = err.code === "invalid" && err.details && err.details.fields && err.details.fields.handle;
+          const fields = (err.code === "invalid" && err.details && err.details.fields) || {};
+          const why = fields.handle;
           status.fail("No join created: ", why === "taken" ? { message: "you already have an agent with the handle @" + agent.handle } : err);
+          // A member the list on screen did not show, a first join the list
+          // took for a member's, or an instance revoked meanwhile: read the
+          // members again and offer what the hub has.
+          const notMember = fields.new_instance === "not_a_member" || fields.replaces === "not_a_member";
+          // The hub checks the membership's fields before the instance
+          // (routes/joins.py): a differing role, area or briefing says
+          // "member" as surely as instance: required does.
+          const saysMember = fields.instance === "required" || Object.values(fields).includes("differs_from_membership");
+          if (agent.id && (saysMember || fields.replaces || notMember || err.code === "instance_quota")) {
+            if (saysMember) saidMember.add(agent.id);
+            if (notMember) saidMember.delete(agent.id);
+            await rereadMembers();
+            if (notMember) members = members.filter((m) => m.id !== agent.id);
+            showAgent();
+            if (saysMember) status.fail("No join created: ", { message: "this agent is already a member of the project. "
+              + "Choose whether the line starts another instance or replaces one, then create it." });
+            (replaceOne.checked && !replaceOne.disabled ? replaced : another).focus();
+          }
           if (why) {
             // The hub knows better than the list on screen: read it again, and say so at the field.
             if (why === "taken") refused.add(agent.handle);
@@ -189,7 +273,7 @@ window.Maity = window.Maity || {};
         }
         profileOptions();
         agentSelect.value = j.agent_id;
-        newFields.hidden = agentSelect.value !== "";
+        showAgent();
         // The handle just created is one's own now: the hint says so.
         checkHandle();
         changed();
@@ -199,22 +283,24 @@ window.Maity = window.Maity || {};
       h("div", { class: "join-fields" },
         h("div", { class: "field wide" }, h("label", { for: "join-agent" }, "Agent"), agentSelect),
         newFields,
-        h("div", { class: "field" }, h("label", { for: "join-role" }, "Role"), role),
-        h("div", { class: "field" }, h("label", { for: "join-reports" }, "Reports to"), reportsTo),
-        h("div", { class: "field" }, h("label", { for: "join-areas" }, "Areas (comma separated)"), areas),
+        instanceBox,
+        membershipField(h("div", { class: "field" }, h("label", { for: "join-role" }, "Role"), role)),
+        membershipField(h("div", { class: "field" }, h("label", { for: "join-reports" }, "Reports to"), reportsTo)),
+        membershipField(h("div", { class: "field" }, h("label", { for: "join-areas" }, "Areas (comma separated)"), areas)),
         h("div", { class: "field" }, h("label", { for: "join-ttl" }, "Valid for"), ttl)),
       // Offered when the hub knows briefings: its member view then has the key.
       ctx.members.some((x) => "briefing" in x)
-        ? h("div", { class: "join-briefing" },
+        ? membershipField(h("div", { class: "join-briefing" },
           h("label", { for: "join-briefing" }, "Briefing (optional, Markdown; " + M.dom.SEND_KEYS + " creates the link)"), briefing,
           h("p", { class: "hint" }, "The agent reads it in its resume packet once it has joined, and on every resume "
-            + "after; it is never on the join page. You can change it later on the agent's card."))
+            + "after; it is never on the join page. You can change it later on the agent's card.")))
         : null),
     h("div", { class: "actions" }, h("button", { type: "button", onclick: () => close(true) }, "Cancel"), create),
     status.el);
 
     function showForm() { append(clear(body), form); }
     showForm();
+    showAgent();
     append(clear(panel), panelHead(() => close(true)), body);
 
     let opener = null;
@@ -285,7 +371,7 @@ window.Maity = window.Maity || {};
             h("header", null,
               h("span", { class: "seat-mark", "aria-hidden": "true" }),
               h("h3", null, profileName(j.agent_id)),
-              p ? h("span", { class: "handle" }, "@" + p.handle) : null,
+              p ? h("span", { class: "handle" }, "@" + profileHandle(p)) : null,
               h("span", { class: "seat-label" }, state.key === "open" ? "open seat" : "expired")),
             h("dl", { class: "facts" },
               h("dt", null, "Role"), h("dd", null, j.role, j.reports_to ? " · reports to " + ctx.nameOf(j.reports_to) : null),

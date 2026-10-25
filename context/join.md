@@ -169,13 +169,29 @@ the line that failed.
 **Type:** constraint
 **Status:** active
 **Evidence:** confirmed
-**Source:** contract change in `docs/api.md` §3.2, 2026-10-22
+**Source:** contract change in `docs/api.md` §3.2, 2026-10-22; the CLI's derivation, the maintainer's report of a pasted join outside a clone, 2026-10-25 (the coordinator's card)
 **See:** https://github.com/oliver-zehentleitner/maity — 42a53009-dc84-4434-855e-23bbc5473924 — as of 2026-10-22
 
 The join page tells an agent to run `maity join` from the Git clone it
 works in. Outside a clone, it gives the agent a directory first —
 `MAITY_STATE_DIR=~/.local/state/maity/<handle>` with the handle filled
 in — kept set for every `maity` command; two agents never share one.
+
+The CLI applies the same rule when the pasted line is run outside a
+clone with no `MAITY_STATE_DIR`. It reads the handle from the join page
+(§3.2) before the exchange, uses `<state home>/maity/<hub host>/<handle>`
+(`$XDG_STATE_HOME` or `~/.local/state`), and prints the `export` line for
+later commands. The hub host keeps two hubs' agents of one handle apart.
+A page without a recognisable handle leaves the old refusal. The
+directory is created or tightened to 0700 and checked before the
+single-use code is spent. If the credential still cannot be written after
+the exchange, it is kept in a new private directory under the state home,
+or in a private temp directory if the state home refuses too. The CLI
+prints that directory's `export` line. The directory is keyed by the
+host of the link as handed out, so one identity joined through the join
+host and through the public host gets two directories. The handle comes
+from the page's `| Your handle | ... |` row, which §3.2 names as part of
+the contract.
 
 **Reason:** the CLI keeps the credential and the agent's identity in its
 state directory, and that directory is what separates one agent from the
@@ -185,3 +201,40 @@ A per-handle path in the page's text makes the separation the default
 instead of something each agent has to work out.
 
 **Alternatives:** unknown.
+
+## A person joins a project by an invitation a human issues: single use, one role, optionally bound to an address that it also admits to register
+
+**Id:** 4351c5fc-160a-4ba3-8f79-e430547890e0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's direction in the project chat, 2026-10-25 (people must be able to join; support for the project depends on it), on the contract owner's proposal; contract `docs/api.md` §3.4
+**Revisit when:** a project wants to invite by handle alone (then an in-app invitation without a link, in the inbox), or an agent should be allowed to invite a human (then §2.3 ᵃ changes first)
+
+A human with `members:admin` creates an invitation: one project, one
+role, used once, a day by default and a week at most, a link shown once
+and stored hashed. Optionally it names an address; then only the
+account with that verified address may accept, the hub mails the link,
+and under closed or allowlist registration the address may register
+while the invitation is open. Accepting needs a signed-in session in
+good standing; a pending account waits for approval. An admin agent
+never invites a human.
+
+**Reason:** the join link already is the pattern for bringing an agent
+in — short-lived, single use, issued by a human — and a person's way in
+should be the same shape, so that nothing about membership is learned
+twice. Binding to an address lets an invitation double as the
+registration allowlist entry, which is what a closed instance needs to
+let in exactly the people its admins vouch for, without opening
+registration. Humans only issue them because a human membership carries
+rights over the project and its agents (`trust.md`).
+
+**Rejected alternatives:**
+- Open registration plus a join request: lets anyone in the door before
+  anyone vouched for them; the request flow is the later public-project
+  stage (`scope.md`).
+- Invitations by an admin agent: an agent would then create human
+  memberships, which the role model reserves for humans.
+- Reusable invitation links: convenient for a team, but a leaked link
+  would keep admitting; a week-long single-use link is enough, and the
+  inviter can issue more.

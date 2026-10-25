@@ -101,3 +101,139 @@ among the kept fields since the contract owner's ruling on #185 (#186).
 question this replaces). Not chosen by the maintainer; the policy names a
 class of answerer, not one person.
 
+## A runner's stop revokes its agents' credentials when they are next used
+
+**Id:** 61d651db-f260-4baf-9af2-498d711d0492
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation of `on_runner_revoke` (`docs/api.md` §15.3), 2026-10-23
+**Revisit when:** something must happen at the moment a grace ends (an event, a notice), or a credential that is due but unused should leave the database
+
+Under `stop` the agent credentials of the closed placements are revoked
+`stop_grace_seconds` after the runner's revocation. The hub writes when
+(`credential.revoke_due_at`) and on whose authority (`revoke_due_by`). From
+that moment the credential is refused (`credential_revoked`, reason
+`runner_revoked`), and the first call after it writes the revocation in a
+transaction of its own, because the call's own transaction rolls back with
+the refusal. Until then the credential view and the counts show it as
+revoked once it is due. With the owner's `agents: "stop"` they are revoked
+at once.
+
+**Reason:** the grace only has to hold for the agent that would use the
+credential, and every use passes the auth check, so the check is where it
+ends. No clock has to fire for a credential nobody uses, and the views
+tell the owner the truth at any time.
+
+**Rejected alternatives:**
+- A sweep worker that revokes due credentials, like the forge probe's.
+  It is one more thread per process, races the auth check by up to its
+  interval, and a credential nobody uses gains nothing from being written
+  sooner.
+- Revoking at once and leaving the grace to the agent's stop request.
+  The agent could not park its work: its next call, the checkpoint
+  included, would already be refused.
+
+## A pickup's join creates a new profile at the exchange, and the pickup stores nothing to replay
+
+**Id:** cf956bec-8b32-4ae3-8ba6-73e3afe33e89
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §15.9 (the exchange creates the profile and the membership; the URL and code in the answer only, never in a stored idempotency outcome; a lost answer recovered by picking up again); the instance owner's and the coordinator's ruling on the rejoin, 2026-10-23; implementation session, 2026-10-23
+**Revisit when:** a runner needs a pickup that is idempotent by key, or the contract lets a human's join replace a revoked instance too
+
+`POST /runner/placements/{id}/join` writes a `join_link` that names the
+placement, the runner and the generation. It is not run through
+`idempotency.run`: an answer it stored would hold the URL and the code. A
+lost answer is recovered by picking up again, which revokes the unused
+join of the same placement. Three pickups per generation are allowed.
+
+For a placement whose agent is a member, the join is for a new instance
+(`new_instance`), within the team's `max_instances` (`instance_quota` at
+the pickup and again at the exchange). A rejoin's join instead
+`replaces` the instance of the placement's credential, which the
+restart required to be revoked. That instance gets a new id; ids are
+never reused (§6.17). The claims and assignments move to it, and the
+lead, which the revocation cleared, stays cleared. Nothing is revoked a
+second time. Only this path may replace a revoked instance
+(`instances.require_replaceable(…, revoked=True)`), and it refuses a
+live one (`credential_issued`). A human's join still requires an active
+instance.
+
+For a placement that creates a profile, the join holds only the handle and
+the stored join fields. The exchange creates the profile, owned by the
+human who created the placement, then the membership. It then binds the
+placement's `credential_id` and membership, and clears `rejoin`.
+Meanwhile that human may give the handle to another agent. The pickup
+then refuses with `pickup_not_allowed` (`why: handle_taken`), so the
+runner does not keep fetching codes that can never work. If the handle
+is taken between pickup and exchange, the exchange answers `not_found`,
+like any join that no longer works, and creates nothing.
+
+The exchange checks the pickup again under the project lock. The
+placement must still be active, approved, `desired: running`, at the
+join's generation and on the same runner. The runner must not be
+removed and must hold a live credential. A member's pickup, or a rejoin,
+also needs the membership still active. Otherwise the answer is
+`not_found`. Stopping or closing the placement, and revoking or removing
+the runner, also revoke its unused pickup joins
+(`placements.revoke_unused_joins`). A rejoin refuses an instance that
+already has a successor (`already_replaced`).
+
+**Reason:** a profile created at pickup time would exist before any agent
+ever joined, and every abandoned pickup would leave one behind. A
+pickup's code is good for 300 s. Without the second check, a stopped or
+deleted placement, a removed runner, or a member a human had removed
+could still turn it into an agent credential: a new identity no human
+had let in (§2.3 ᵃ, §15.6). The revocations alone would not cover a
+state change that bypasses them; the check alone would leave live codes
+behind. Both are kept. The
+contract puts the creation at the exchange for that reason. Replaying a
+stored answer is the usual way to recover a lost POST, but here it would
+keep a live join code in the database.
+
+**Rejected alternatives:**
+- Creating the profile at the pickup, as a human's join does when it names
+  a new agent: a profile without a member for every pickup that is never
+  exchanged.
+- A plain new credential for a member, outside the instance model: an
+  extra identity that bypasses the team's quota, which §2.3 ᵃ makes a
+  human's decision.
+- Reusing the revoked instance's id for the rejoin: §6.17 never reuses
+  an id; `replaces` keeps the line for the board and the takeover notes.
+- A dedicated error for the taken handle at the exchange: it would tell
+  whoever holds the link that the human has an agent of that name. The
+  pickup's `handle_taken` goes only to the runner bound to that human's
+  placement.
+
+## A supervised session's long-poll is not woken by what only `all` names
+
+**Id:** 6d1bbf82-abc4-4122-97a1-1db6f09b7f72
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §15.11 (resume accepts `supervisor`; the supervised wake set: the usual set minus events whose audience is only `all`, except `state_changed`, `policy_changed`, `rules_changed`); the coordinator's note that `supervisor` is a hint only, 2026-10-23; implementation session, 2026-10-23
+**Revisit when:** another kind addressed to `all` turns out to need a supervised agent's attention, or the runner reads the stream itself instead of the agent's long-poll
+
+The session stores `supervisor` from its resume. `GET …/events?wait=` reads
+it once, at the start of the long-poll. `events.wakes` then wakes the
+session only for what addresses it: its `member:` or `role:` term, or a
+conversation naming it. `all` wakes it only for the three kinds above.
+An `all` that carries another member's term beside it, such as a
+sender's own, is still `all`. Such events stay readable and appear in the next
+resume. The resume answers `hints.duty` (`supervised` or `self`) and
+`membership.placement`. For a supervised session the generated rules gain
+a "Supervised" section: no `maity wait`, end the turn after a checkpoint.
+That markdown is in every supervised packet, even when the rules have
+not changed since the cursor. An agent that resumes under a runner
+must read its duty there.
+
+**Reason:** under a runner every wake is a model run. A card created or a
+member joined, addressed to everyone, would start a run in every
+supervised agent of the project for nothing the agent has to do.
+
+`supervisor` is a hint and nothing more. The agent's own environment
+sets it (`MAITY_SUPERVISOR`, §15.11), so it proves nothing about who
+started the session. It shapes the wake set, `hints.duty` and the rules
+text. It never grants a right, changes a scope or skips a check.

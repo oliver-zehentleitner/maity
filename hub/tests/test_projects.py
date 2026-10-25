@@ -73,6 +73,10 @@ def test_a_created_project_has_the_contract_shape(owner: flow.Human) -> None:
         "spawn_requests": "consent",
         "spawn_consent_by": "human",
         "max_placements": 8,
+        "coordinator": "role:admin",
+        "coordinator_substitute": None,
+        "on_runner_revoke": "inherit",  # the instance setting decides (§15.3)
+        "badge": "off",
     }
     assert body["absence"] is None and body["rules_version"] == 1
     me = owner.get("/me").json()
@@ -268,6 +272,7 @@ def test_settings_carry_the_release_checklist(owner: flow.Human) -> None:
     assert response.json()["settings"] == {
         "language": "en",
         "release_checklist": ["CHANGELOG has the version"],
+        "onboarding": {"check_in_with": "coordinator"},
     }
     unknown = owner.patch("/projects/maity", {"settings": {"other": 1}})
     assert unknown.headers["Maity-Error"] == "invalid"

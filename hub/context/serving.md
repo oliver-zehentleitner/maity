@@ -84,3 +84,35 @@ the API is agents, and `/help` is written for them.
 and serve them locally — keeps the convenience without the CDN, at the
 cost of a vendored JavaScript bundle to update for a page nobody depends
 on yet.
+
+## The badge template ships with the hub, and only the badge may choose public caching
+
+**Id:** bd085a65-130b-42cb-9f15-bbfc82a42382
+**Type:** workaround
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §6.20; coordinator implementation handoff and approved motion addition, 2026-10-25
+**Revisit when:** the hub's packaged templates can be generated from the approved brand sources during the build
+
+The hub carries the approved `maity-badge-template.svg` as a constant, copied
+byte for byte from the brand-assets branch. Its two rendered reference examples
+are checked by their independent designer-provided document hashes. A running
+hub never reads `web/brand/` to serve a badge: the dashboard is optional and the
+hub wheel must work without a source checkout. Each copy records its source commit so it can be reconciled with the brand assets.
+The online variant uses the approved CSS-only animated template when the canonical
+online count is positive; zero stays static grey, and member counts stay static.
+Both documents use the same six placeholders. Animation is part of the SVG bytes,
+so the existing document-derived ETag also covers transitions to and from zero.
+
+The middleware keeps its default `no-store`. It accepts `public, max-age=60`
+only for a successful GET of `/badge/{slug}.svg`, including a 304; a missing,
+closed or opted-out badge stays `no-store` and never validates an old ETag.
+
+**Reason:** relying on a dashboard file would make the public endpoint fail in
+an API-only installation. Packaging both templates preserves that behavior without a dashboard dependency.
+A global public-cache allowance would let an unrelated
+route cache private content by choosing that header. The approved badge is the
+specific exception, not a change to the hub's ordinary cache policy.
+
+**Rejected alternatives:** reading the template from the optional dashboard at
+request time, or enabling public caching for every route that asks for it.

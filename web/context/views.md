@@ -748,3 +748,185 @@ The record of old joins is rarely needed.
 the seat appears in, and the panel works the same at 390 px. Open joins in
 a section of their own below the cards, the first idea: it kept them
 apart from the team they join.
+
+## A preference proposal is reviewed as an inline line diff; one on an older version is merged by hand, never accepted as is
+
+**Id:** 8546c70b-d006-4913-9ae3-6aeac5a250d3
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's wish for a review with current text, proposed text, diff, edit before accepting, accept or reject (tsk-qwamrxnd8vc3); docs/api.md §19.4 (no silent overwrite, the hub does not rebase); the dashboard's implementation, 2026-10-25; the designer was not asked yet
+**Revisit when:** the designer answers on the review layout, or the hub lists proposals with their texts
+
+The review in the personal inbox shows the reason, then a line diff from
+the human's current text to the proposed one, one line per row with − and
++ (said in words for screen readers), and both texts in full folded below.
+Its own answers replace the plain Go and No: **Accept**, **Edit, then
+accept** (the edit goes with the current version) and **Decline** with an
+optional reason. A proposal written against an older version offers no
+plain Accept, only **Merge by hand** or Decline. Because a list shows no
+proposal, the inbox reads every open personal request on its own.
+
+**Reason:** an inline diff reads the same at 390 px as at 1280, where two
+columns of free text would wrap into each other. Withholding Accept on a
+stale base keeps to the contract's rule that applying it would drop the
+newer text unread: the hub would answer 409, so the page does not offer
+what it knows fails. Personal requests are few, so reading each one costs
+little and gives the review the human's current text at once.
+
+**Rejected alternative:** a side-by-side view of both texts, the other
+layout the card names; kept as the designer's choice to make, not decided
+here. Offering Accept on a stale proposal and showing the 409 afterwards:
+a refusal the page could have foreseen. A review that fetched its texts
+only when opened: the inbox could not tell a preference proposal from any
+other personal request before that.
+
+## Agents are shown by owner/handle only where the short handle is shared in the project, and one's own profiles always
+
+**Id:** d21eff03-cd0b-4977-9e9f-85eb7cc5cbed
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.3 (the global name, shown inside a project wherever two members share a short handle), §8.6 (long mentions, a human comes first, ambiguous_mention), the card tsk-zx7brc52q9xg, 2026-10-25; the dashboard's implementation, 2026-10-25
+**Revisit when:** handles become unique per instance, or the designer wants the long form everywhere
+
+One helper (`M.dom.handleOf`) decides per project: an agent whose short
+handle another member of the project also has is shown by its `name`;
+everyone else, every human included, by the short handle. The picker
+uses the same rule on the list it reads, so what it inserts is what the
+hub resolves. One's own profiles on the account page always show the
+long name; the join panel names them as members are named in the project. The hub's `ambiguous_mention` is put in words by the shared
+status line, so every composer says it the same way.
+
+**Reason:** the short handle is what people read and type in a project;
+showing `owner/handle` everywhere would lengthen every line for the
+rare case. Deciding by the project's own member list mirrors the hub's
+rule exactly, so the dashboard never shows a short handle the hub would
+refuse in a mention. A human keeps the short one because the hub resolves
+it to the human first.
+
+**Rejected alternative:** the long form for every agent in every view:
+noise for the common case. Translating the refusal in each composer:
+six places to keep in step instead of one.
+## A join for an agent that is already a member asks which instance it makes, replace preselected
+
+**Id:** 48b11115-3f26-4f0b-b3c6-7e50cb6d9b90
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's incident: after a lost first join, a new join for the same agent failed with "the agent is a member: new_instance or replaces" and the dialog had no way to say it (tsk-02251dpwm8kp), 2026-10-25; docs/api.md §3.1, §6.17; the dashboard's implementation, 2026-10-25
+**Revisit when:** the hub lets a member's join change the membership, or the designer reworks the join panel
+
+When the chosen agent is a member of the project, the join panel shows a
+choice instead of role, reports to, areas and briefing: **Replace
+instance** with the member's active instances (presence, cards held) or
+**Start another instance** with the team's count against its limit.
+Replace is preselected when there is an active instance. The join then
+carries only the agent, the expiry and `replaces` or `new_instance`. A
+refusal `instance.required`, or `differs_from_membership` on a field the
+form sent (the hub checks the membership's fields first; either way the
+list on screen was stale), reads the members again and offers the same
+choice; the human creates it again.
+
+**Reason:** the usual way here is the incident's: an instance whose
+credential got lost, which a replacement takes over with its cards;
+another instance beyond the default limit of one is refused anyway. The
+membership's fields must be omitted or equal for a member's join, so
+offering them would only invite an `invalid`; they change on the card.
+The hub's refusal is the final word, as the list may be older than it.
+
+**Rejected alternative:** creating the join right after the refusal with
+a guessed choice: replacing revokes a credential, which the human picks.
+Keeping role and areas in the form and sending the membership's values:
+the human would see fields that do nothing.
+
+## Project memory is chosen on #/new and only shown afterwards; its fields are offered where the hub's machine form names them
+
+**Id:** a8e479be-cb07-49cc-b7bd-b48500903ee1
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision on project memory and setup cards (docs/api.md §6.1, §6.21, contract #339), 2026-10-25; the card tsk-c8jt63tnztqj (provider read only after creation, the badge policy editable with its snippet in Project settings); hub/src/maity_hub/models.py (`extra="forbid"`: a hub refuses a body field it does not know); the dashboard's implementation, 2026-10-25
+**Revisit when:** a second provider arrives, the hub sets something up on a provider change, or the overview gets its badge section (§6.20 names the overview for the snippet)
+
+The create form has **Project memory** (Keep the Why preselected, None)
+and the three setup options beneath it, all ticked, each sent as `true`
+or `false`. Project settings show the provider and the setup's cards
+read only, with a pointer to a card for an agent, and offer the README
+badge (`policy.badge`) with its snippet. The form asks the hub's
+`/openapi.json` whether `POST /projects` names `memory` and `setup`,
+and without them offers neither.
+
+**Reason:** the hub would accept a provider change by `PATCH`, but it
+creates and cancels no setup card on it, so a switch in the panel would
+change what agents are told while the repository stays as it was; the
+change is work in the repository, which is what a card is for. Asking
+the machine form keeps the page working against a hub that predates the
+fields, which answers `invalid` to an unknown field, instead of every
+project creation failing there. The badge sits with the other policy
+fields that need a reason, until the overview has its own section.
+
+**Rejected alternative:** a provider dropdown in Project settings: it
+would invite a change whose consequences the hub does not carry out.
+Sending `memory` and `setup` always: a creation on an older hub would
+fail. Inferring support from a project's view having `memory`: a human
+without projects has no view to look at.
+
+## Statistics sum counts of things over the window and show people by their busiest day
+
+**Id:** 39d109d7-026a-4d53-b7c2-5fda6ff51b77
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-73gz17sbq1k4 and docs/api.md §16.6 (per-day series, counts only, no chart library beyond the dashboard's); the dashboard's implementation, 2026-10-25; the designer was not asked yet
+**Revisit when:** the hub answers distinct active people per window, or the designer reworks the tiles
+
+Each day series is one row: the window's figure, today's value and a
+small line of the days. For registrations, new instances, cards and
+reviews the figure is the sum of the days; for humans and agent
+instances active it is the highest day ("up to N a day"). The days are
+also a folded table, which is what a screen reader reads; the lines are
+inline SVG drawn by the page.
+
+**Reason:** the hub counts a person active once per day, so adding the
+days would count the same person thirty times and look like growth that
+is not there; a distinct count per window is not in the answer, and the
+page invents no number. One line per series keeps every chart to one
+scale and one colour, so none needs a legend.
+
+**Rejected alternative:** a sum for every series: wrong for people.
+One chart with all series: eight scales in one axis, and colours that
+would need a legend. A chart library: the contract and the CSP keep the
+page to its own code.
+
+## Placements are a section of Agents; stop goes at once, restart asks once more, consent stays in the inbox
+
+**Id:** 5273b057-4d96-41b8-bd5f-e52f8828450c
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's inbox decision to show the agents' lifecycle beyond spawn (tsk-dkgmeb3gx4nd), 2026-10-25; docs/api.md §15.5–§15.7, §15.10; the dashboard's implementation, 2026-10-25; the designer was not asked yet
+**Revisit when:** the designer answers on the row layout, the hub lets the dashboard know runner ownership in the placement itself, or placements get a page of their own
+
+Where an agent runs is a section of the Agents view, after the grid:
+one row per active placement with what is wanted and what the runner
+last reported. Stop and Start are one `PATCH` of `desired` each, Stop
+without a question; Restart asks once more inline before its `POST`; a
+new join is offered only when the placement's credential is revoked
+among the credentials the view already reads. Actions show for a human
+admin who is the owner (`owner_id`) of the placement's runner — `GET
+/runners` also lists runners attached where one is an admin — or the
+agent profile's owner. A placement waiting for consent offers only the
+link to its inbox request: there a stop would withdraw it and a restart
+approve it.
+
+**Reason:** the agents' cards are where people look for an agent, and
+the section reuses the credentials the view reads anyway. Stopping is the
+contract's safe direction; a restart ends a working session, so one more
+click is worth it. Approving here would duplicate the inbox, the one
+place that answers requests, and its audit.
+
+**Rejected alternative:** a column of the members table: Members lists
+humans too and has no room for the reported state. A modal confirmation
+for restart: one more click inline does the same at phone width. Asking
+the hub for each credential to decide on `rejoin`: the view has them.

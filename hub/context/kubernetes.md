@@ -150,3 +150,42 @@ instructions honest about what Helm can and cannot undo.
 **Alternatives:** none were in contention for this chart. Expand/contract
 migrations, where old and new versions both run on the new schema, would
 lift the rule. They are the revisit, not something V1 needs with one pod.
+
+## A stopping hub answers its open long-polls at once and bounds the graceful shutdown
+
+**Id:** 3194a790-29c5-43b6-a07a-cdb21f2f6aae
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the measurement of the upgrade on maity.team (events of 2026-10-25 06:35–06:36 UTC) and a local stop test, card tsk-4tad7bmbkzh2, agreed with the coordinator (seq 3405)
+**Revisit when:** the chart moves away from Recreate, or an upgrade's 503 window grows again
+**See:** kubernetes.md#one-pod-replaced-with-recreate-no-replica-count-in-the-chart — 5e42eb26-9883-49e2-89c0-9fe4e6517c62 — as of 2026-10-25
+
+`maity-hub serve` runs uvicorn through a server whose stop handler hands
+`longpoll.begin_shutdown` to the event loop (`call_soon_threadsafe`),
+which sets `longpoll.stopping` and wakes every waiter. The handler itself
+takes no lock: a signal can interrupt code that holds the registry's
+lock, and a handler waiting for that lock would never return (found in
+review). An events or runner
+long-poll then answers at once with what it has, empty and not
+superseded, as if its wait had ended. Uvicorn's
+`timeout_graceful_shutdown` (10 seconds) bounds any other request still
+running.
+
+**Reason:** an upgrade of maity.team was measured at about 43 seconds
+of 503. Four of them came from the migration (the old pod's `/health`
+answers 503 once the schema moved past it), about 32 from the old pod
+stopping, and about 7 from the new pod starting. The image was already
+on the node, pulled by the migrate hook. The old pod waited for its open
+long-polls (up to 55 seconds each) because uvicorn waits for every open
+connection unless told otherwise. Locally, with one long-poll open, a
+stop took 49 seconds before and 0.2 after. Clients wait again after an
+empty answer anyway (§8.3).
+
+**Rejected alternatives:**
+- `RollingUpdate` with `maxSurge: 1`: no gap, but two processes overlap
+  (the entry above).
+- Only a short `timeout_graceful_shutdown`: the long-polls would be cut
+  off mid-request instead of answering.
+- Pre-pulling the image before the rollout: the migrate hook already
+  pulls the same image, so there was nothing to gain.

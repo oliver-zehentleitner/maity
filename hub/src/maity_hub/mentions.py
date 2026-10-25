@@ -1,10 +1,13 @@
 """Mentions: `@handle` of an active member, resolved at write time (docs/api.md §8.6).
 
 The hub scans a text once, when it is written, and stores what it found on the object:
-`{member_id, handle, field, offset, length}` with offsets in code points. A mention is
-`@` plus the longest run of `[a-z0-9-]` (a trailing `-` is not part of it), with a word
-boundary before and after, outside inline code spans and fenced code blocks, naming
-exactly one active membership of the project. Group words are never mentions.
+`{member_id, handle, name, instance, field, offset, length}` with offsets in code
+points. A mention is `@` plus the longest run of `[a-z0-9-]` (a trailing `-` is not
+part of it), or an agent's global name `@owner/handle` (§6.3), with a word boundary
+before and after, outside inline code spans and fenced code blocks, naming an active
+membership of the project. A short handle two active agent members share is refused,
+naming the global names it could mean; a human with that handle comes first. Group
+words are never mentions.
 
 Which texts are scanned and who is pinged is the caller's; this module resolves, caps
 and counts pings against the writer's rate.
@@ -14,12 +17,12 @@ from __future__ import annotations
 
 import re
 from bisect import bisect_right
-from typing import Any
+from typing import Any, NamedTuple
 
 from sqlalchemy import Connection, select
 
 from maity_hub import tables as t
-from maity_hub.errors import invalid, rate_limited
+from maity_hub.errors import ApiError, invalid, rate_limited
 from maity_hub.events import on_rollback
 from maity_hub.ratelimit import Limiter
 
@@ -90,9 +93,17 @@ def code_ranges(text: str) -> list[tuple[int, int]]:
     return sorted(ranges)
 
 
-def candidates(text: str) -> list[tuple[int, int, str]]:
-    """(offset, length, handle) of every `@handle` the rule accepts, before the
-    membership check."""
+class Candidate(NamedTuple):
+    offset: int
+    length: int  # the `@` and the name
+    handle: str
+    owner: str | None  # the owner's handle in a global name `@owner/handle`, else None
+
+
+def candidates(text: str) -> list[Candidate]:
+    """Every `@handle` and `@owner/handle` the rule accepts, before the membership
+    check. A run followed by `/` and a second run is the global name, judged whole: a
+    boundary missing after it makes it no mention at all, never a short one."""
     found = []
     code = code_ranges(text)  # sorted and disjoint
     starts = [start for start, _ in code]
@@ -102,41 +113,65 @@ def candidates(text: str) -> list[tuple[int, int, str]]:
         run = _RUN.match(text, at + 1)
         if run is None:
             continue
+        owner: str | None = None
         handle = run.group().rstrip("-")
+        second = _RUN.match(text, run.end() + 1) if text[run.end() : run.end() + 1] == "/" else None
+        if second is not None and second.group().rstrip("-"):
+            owner, handle = run.group(), second.group().rstrip("-")
+            after = second.start() + len(handle)
+        else:
+            after = at + 1 + len(handle)
         if not handle:
             continue
-        after = at + 1 + len(handle)
         if after < len(text) and _NOT_AFTER.match(text[after]):
             continue
-        if handle in GROUP_WORDS or (handle == "role" and text[after : after + 1] == ":"):
+        if owner is None and (
+            handle in GROUP_WORDS or (handle == "role" and text[after : after + 1] == ":")
+        ):
             continue
         inside = bisect_right(starts, at) - 1
         if inside >= 0 and at < code[inside][1]:
             continue
-        found.append((at, len(handle) + 1, handle))
+        found.append(Candidate(at, after - at, handle, owner))
     return found
 
 
+def global_name(owner_handle: str, handle: str) -> str:
+    """An agent's name across owners and projects (§6.3); computed, never stored."""
+    return f"{owner_handle}/{handle}"
+
+
 def resolve(
-    conn: Connection, project_id: str, text: str | None, field: str
+    conn: Connection,
+    project_id: str,
+    text: str | None,
+    field: str,
+    *,
+    among: set[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """The mentions of one text field, oldest offset first; `invalid` past the caps.
-    A handle that names no active member, or more than one, stays text."""
+    """The mentions of one text field, oldest offset first; `invalid` past the caps and
+    for a short handle two active members share (`ambiguous_mention`, with the global
+    names it could mean in `details.mentions`). `among` narrows the members a mention
+    may name (a group chat's participants); anyone else's handle stays text, as an
+    unknown one does."""
     if not text:
         return []
     found = candidates(text)
     if not found:
         return []
-    handles = {handle for _, _, handle in found}
+    handles = {c.handle for c in found}
+    owner = t.human.alias("owner")
     rows = conn.execute(
         select(
             t.membership.c.agent_id,
             t.membership.c.human_id,
             t.agent_profile.c.handle.label("agent_handle"),
             t.human.c.handle.label("human_handle"),
+            owner.c.handle.label("owner_handle"),
         )
         .select_from(t.membership)
         .outerjoin(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
+        .outerjoin(owner, owner.c.id == t.agent_profile.c.owner_id)
         .outerjoin(t.human, t.human.c.id == t.membership.c.human_id)
         .where(
             t.membership.c.project_id == project_id,
@@ -144,15 +179,53 @@ def resolve(
             (t.agent_profile.c.handle.in_(handles)) | (t.human.c.handle.in_(handles)),
         )
     ).all()
-    members: dict[str, list[str]] = {}
+    humans: dict[str, str] = {}  # handle -> member id; human handles are unique
+    agents: dict[str, list[tuple[str, str]]] = {}  # handle -> (member id, global name)
+    long: dict[tuple[str, str], tuple[str, str]] = {}  # (owner, handle) -> (member id, name)
     for row in rows:
-        handle = row.agent_handle or row.human_handle
-        members.setdefault(handle, []).append(row.agent_id or row.human_id)
-    mentions = [
-        {"member_id": members[h][0], "handle": h, "field": field, "offset": o, "length": n}
-        for o, n, h in found
-        if len(members.get(h, [])) == 1
-    ]
+        member_id = row.agent_id or row.human_id
+        if among is not None and member_id not in among:
+            continue
+        if row.agent_id:
+            name = global_name(row.owner_handle, row.agent_handle)
+            agents.setdefault(row.agent_handle, []).append((member_id, name))
+            long[(row.owner_handle, row.agent_handle)] = (member_id, name)
+        else:
+            humans[row.human_handle] = member_id
+    # A human comes first: humans have no long form, the agent has (§8.6).
+    shared = {
+        c.handle: sorted(name for _, name in agents[c.handle])
+        for c in sorted(found, key=lambda c: c.handle)
+        if c.owner is None and c.handle not in humans and len(agents.get(c.handle, [])) > 1
+    }
+    if shared:
+        raise ApiError(
+            400,
+            "invalid",
+            "a short handle names more than one member: use the global name",
+            {"fields": {field: "ambiguous_mention"}, "mentions": shared},
+        )
+    mentions = []
+    for c in found:
+        named: tuple[str, str | None] | None
+        if c.owner is not None:
+            named = long.get((c.owner, c.handle))
+        elif c.handle in humans:
+            named = (humans[c.handle], None)  # a human's handle is the name
+        else:
+            named = agents[c.handle][0] if c.handle in agents else None
+        if named is not None:
+            mentions.append(
+                {
+                    "member_id": named[0],
+                    "handle": c.handle,
+                    "name": named[1],
+                    "instance": None,  # an instance mention comes with §6.17's suffix
+                    "field": field,
+                    "offset": c.offset,
+                    "length": c.length,
+                }
+            )
     if len({m["member_id"] for m in mentions}) > MAX_MEMBERS or len(mentions) > MAX_OCCURRENCES:
         raise invalid({field: "too_many_mentions"}, "too many mentions in one text")
     return mentions

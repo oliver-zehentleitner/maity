@@ -37,9 +37,15 @@ maity-hub = "maity_hub.cli:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/maity_hub"]
 
-# The join page template is written in docs/ next to the contract it follows.
+# The join page template is written in docs/ next to the contract it follows. The
+# dashboard rides along as maity_hub/web, so an installed hub serves it too; web/'s
+# fixtures/, tools/ and context/ stay in the checkout.
 [tool.hatch.build.targets.wheel.force-include]
 "../docs/join-page.md" = "maity_hub/join-page.md"
+"../web/index.html" = "maity_hub/web/index.html"
+"../web/css" = "maity_hub/web/css"
+"../web/js" = "maity_hub/web/js"
+"../web/brand" = "maity_hub/web/brand"
 
 [tool.black]
 line-length = 100

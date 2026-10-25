@@ -1,0 +1,4 @@
+/* Inline maity-lockup-currentcolor.svg: the text and seats take currentColor,
+   the agent takes the dashboard accent. The fill attribute in the SVG is the
+   fallback; no style attribute, so it survives the CSP (default-src 'self'). */
+.maity-accent { fill: var(--accent); }
