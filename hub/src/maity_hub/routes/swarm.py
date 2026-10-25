@@ -131,10 +131,11 @@ def public_swarm(slug: str, request: Request, days: int = DAYS) -> Response:
         agents = {r.id for r in rows}
         found = swarm.CACHE.get(conn, project.id, days)
         folded = swarm.fold(found, _who(rows, live), include=lambda m: m in agents)
+    # No `live_at`, and `as_of` to the minute: the ETag holds for the 60 s the page may
+    # be cached, and presence there may be up to a minute old (§6.22).
     body = {
-        "as_of": folded["as_of"],
+        "as_of": clock.rfc3339(found.as_of.replace(second=0, microsecond=0)),
         "window_days": folded["window_days"],
-        "live_at": clock.rfc3339(clock.now()),
         "live": [
             {
                 "handle": a["handle"],

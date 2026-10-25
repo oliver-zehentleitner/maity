@@ -279,6 +279,10 @@ def test_the_policy_is_checked_before_any_etag(
     assert switched.status_code == 200, switched.text
     on = public(visitor)
     assert on.status_code == 200 and on.headers["cache-control"] == "public, max-age=60"
+    assert "live_at" not in on.json() and on.json()["as_of"].endswith(":00Z")
+    later = NOW + timedelta(seconds=30)
+    clock.set_source(lambda: later)
+    assert public(visitor).headers["etag"] == on.headers["etag"]  # stable within the minute
     assert public(visitor, **{"If-None-Match": on.headers["etag"]}).status_code == 304
     owner.patch("/projects/maity", {"state": "accepted", "reason": "done"})
     closed = public(visitor, **{"If-None-Match": on.headers["etag"]})
