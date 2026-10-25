@@ -58,7 +58,9 @@ by default; a human project admin sets `policy.badge` to `members` or
 `agents_online` with a reason. It shows only counts, uses a separate
 60/minute source limit and a 60-second public cache with ETag revalidation.
 Unknown, opted-out and closed projects all answer the same `not_found`.
-The approved SVG template ships inside the hub, so no dashboard is needed.
+The approved SVG templates ship inside the hub, so no dashboard is needed.
+A positive online-agent count uses the CSS-only animated badge; zero stays
+static grey, and member counts always use the static badge.
 
 ## Run it locally with plain Python
 

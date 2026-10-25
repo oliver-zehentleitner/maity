@@ -28,13 +28,14 @@ def badge(slug: str, request: Request) -> Response:
         project = conn.execute(select(t.project).where(t.project.c.slug == slug)).first()
         if project is None or project.state in CLOSED_STATES or project.badge == "off":
             raise not_found()
+        animated = False
         if project.badge == "members":
             value, color = badges.members(conn, project.id)
         elif project.badge == "agents_online":
-            value, color = badges.agents_online(conn, project.id)
+            value, color, animated = badges.agents_online(conn, project.id)
         else:  # an unrecognised stored policy never makes a project public
             raise not_found()
-    document = badges.render(value, color)
+    document = badges.render(value, color, animated=animated)
     etag = '"' + hashlib.sha256(document).hexdigest() + '"'
     headers = {"ETag": etag, "Cache-Control": CACHE}
     candidates = request.headers.get("if-none-match", "").split(",")

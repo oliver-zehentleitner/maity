@@ -8,7 +8,7 @@ from html import escape
 from sqlalchemy import Connection, func, select
 
 from maity_hub import tables as t
-from maity_hub.badge_template import TEMPLATE
+from maity_hub.badge_template import ANIMATED_TEMPLATE, TEMPLATE
 from maity_hub.views import member_views
 
 # Verdana 11 px advances in hundredths, from web/brand/BADGE.md.
@@ -53,7 +53,7 @@ ADVANCES = {
 }
 
 
-def render(value: str, color: str) -> bytes:
+def render(value: str, color: str, *, animated: bool = False) -> bytes:
     text = (Decimal(sum(ADVANCES.get(c, 660) for c in value)) / 100).quantize(
         Decimal("0.1"), rounding=ROUND_HALF_UP
     )
@@ -65,7 +65,7 @@ def render(value: str, color: str) -> bytes:
         "RIGHT_W": f"{text + 12:.1f}",
         "WIDTH": f"{text + Decimal('72.9'):.1f}",
     }
-    document = TEMPLATE
+    document = ANIMATED_TEMPLATE if animated else TEMPLATE
     for key, replacement in fields.items():
         document = document.replace("{" + key + "}", replacement)
     return document.encode("utf-8")
@@ -83,7 +83,7 @@ def members(conn: Connection, project_id: str) -> tuple[str, str]:
     return value, "#1a66d9"
 
 
-def agents_online(conn: Connection, project_id: str) -> tuple[str, str]:
+def agents_online(conn: Connection, project_id: str) -> tuple[str, str, bool]:
     rows = conn.execute(
         select(t.membership).where(
             t.membership.c.project_id == project_id,
@@ -94,4 +94,8 @@ def agents_online(conn: Connection, project_id: str) -> tuple[str, str]:
     # Use the same member view as §6.2, including pauses and instance aggregation;
     # this endpoint never derives an alternative presence rule from timestamps.
     count = sum(view["presence"] == "online" for view in member_views(conn, rows))
-    return f"{count} agent{'s' if count != 1 else ''} online", "#1a7f37" if count else "#5e6670"
+    return (
+        f"{count} agent{'s' if count != 1 else ''} online",
+        "#1a7f37" if count else "#5e6670",
+        count > 0,
+    )

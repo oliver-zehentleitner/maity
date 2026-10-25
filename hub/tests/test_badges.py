@@ -118,6 +118,7 @@ def test_active_counts_and_no_private_text(
     for private in ("Private project name", "private-human", owner.id, removed.agent_id):
         assert private not in response.text
     assert "<script" not in response.text and "https://" not in response.text
+    assert "<style" not in response.text
     assert response.headers["content-type"] == "image/svg+xml"
     assert response.headers["cache-control"] == "public, max-age=60"
     assert response.headers["x-content-type-options"] == "nosniff"
@@ -151,12 +152,22 @@ def test_online_uses_canonical_presence(
     enable(owner, "agents_online")
     response = public.get("/badge/maity.svg")
     assert value(response) == "0 agents online" and 'fill="#5e6670"' in response.text
+    assert "<style" not in response.text
+    offline_etag = response.headers["etag"]
     listening.opened(recent.session_id or "")
     try:
         response = public.get("/badge/maity.svg")
         assert value(response) == "1 agent online" and 'fill="#1a7f37"' in response.text
+        assert "<style" in response.text and "<script" not in response.text
+        assert response.headers["etag"] != offline_etag
+        animated_etag = response.headers["etag"]
+        cached = public.get("/badge/maity.svg", headers={"If-None-Match": animated_etag})
+        assert cached.status_code == 304 and cached.content == b""
     finally:
         listening.closed(recent.session_id or "")
+    resting = public.get("/badge/maity.svg", headers={"If-None-Match": animated_etag})
+    assert resting.status_code == 200 and "<style" not in resting.text
+    assert resting.headers["etag"] == offline_etag
 
 
 def test_value_etag_and_revalidation(
@@ -218,6 +229,18 @@ def test_join_host_redirects_instead_of_serving(
 def test_approved_examples(text: str, color: str, reference_hash: str) -> None:
     # Designer's example SVG hashes at brand-assets c30e02b.
     assert hashlib.sha256(badges.render(text, color)).hexdigest() == reference_hash
+
+
+def test_approved_animated_example() -> None:
+    # Independent designer example from the approved motion brand source.
+    document = badges.render("7 agents online", "#1a7f37", animated=True)
+    assert (
+        hashlib.sha256(document).hexdigest()
+        == "05b6ce46f8cb6c02cc1c888d8bdf7f634bec6da2a664bdf3a551782d8d25cfbe"
+    )
+    root = ET.fromstring(document)
+    assert root.find("{http://www.w3.org/2000/svg}style") is not None
+    assert root.find("{http://www.w3.org/2000/svg}script") is None
 
 
 def test_xml_escaping() -> None:
