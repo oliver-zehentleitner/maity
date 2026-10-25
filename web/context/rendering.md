@@ -208,3 +208,30 @@ CSP refuses.
 contract excludes it, and it would parse untrusted bytes in the page.
 Uploading only on Send: a large file would hold the message back, and a
 failure would lose both.
+
+## The theme is set on <html> by a script in <head> without defer; the dark tokens answer the system and an explicit pick
+
+**Id:** ce73e8de-738e-4a8b-89ac-f98ef7d7ed81
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's ask for a light/dark switch next to settings and profile (tsk-9z69k7047w4h), 2026-10-23; the dashboard's implementation, 2026-10-23
+**Revisit when:** the theme is kept on the hub per human, or the CSP stops allowing the page's own scripts
+
+Three choices, System (default), Light and Dark, in a header menu beside
+the gear; the pick is kept per browser in `localStorage` (every access
+in try/catch: without storage it holds for the page). `js/theme.js`
+loads without `defer` from `<head>` and sets `data-theme` on `<html>`
+before the first paint. The dark tokens are written twice, the same:
+under `@media (prefers-color-scheme: dark)` for
+`:root:not([data-theme="light"])`, and for `:root[data-theme="dark"]`.
+
+**Reason:** every other script is deferred and would paint the page in
+the system's theme first, then flip; the CSP (`default-src 'self'`)
+allows the page's own script file but no inline script or style, so the
+theme cannot be set inline. Writing the tokens twice keeps both paths to
+dark in plain CSS, without a script to copy values.
+
+**Rejected alternative:** setting the theme in app.js after load: a flash
+of the other theme on every page load. A toggle of two states: no way
+back to following the system once a choice was made.

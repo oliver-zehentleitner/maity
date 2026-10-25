@@ -156,15 +156,22 @@ async def handle(
     a limit nor a held-back body tells a project that exists from one that does not.
     Every request first takes a place in the bucket of its source address (`NOBODY`)
     and in the bucket of its slug and address (`UNVERIFIED`), answered `rate_limited`
-    at once when either is full; then reads its declared body (at most 1 MiB); then is
-    refused, or verified. Only a verified delivery gets both places back, so the bodies
-    read at once stay bounded per address and per slug and address. The accepted cost:
-    failing deliveries from one forge address can delay a verified one from the same
+    at once when either is full, holding neither then; then reads its declared body
+    (at most 1 MiB); then is refused, or verified. Only a verified delivery gets its
+    two places back, its own and not the newest, so the bodies read at once stay
+    bounded per address and per slug and address. The accepted cost: failing
+    deliveries from one forge address can delay a verified one from the same
     address, which the probe then catches up on its interval."""
     slug = PATH.match(str(scope["path"])).group(1)  # type: ignore[union-attr]
     source = scope["state"]["origin"].address
     bucket = f"{slug}|{source}"
-    wait = NOBODY.hit(source) or UNVERIFIED.hit(bucket)
+    # Both places or neither: a full slug bucket keeps the address place free.
+    wait, address_mark = NOBODY.place(source)
+    bucket_mark = None
+    if not wait:
+        wait, bucket_mark = UNVERIFIED.place(bucket)
+        if wait:
+            NOBODY.release(source, address_mark)
     if wait:
         return await _answer(_limited(wait), scope, receive, send)
     declared = _declared(scope)
@@ -185,8 +192,10 @@ async def handle(
     # One signature or none: with two, which one the forge meant is anyone's guess.
     if len(given) != 1 or not hmac.compare_digest(given[0].encode(), expected.encode()):
         return await _answer(_refused(), scope, receive, send)
-    NOBODY.give_back(source, 1)
-    UNVERIFIED.give_back(bucket, 1)
+    # This request's own places, by their marks: after a body read that outlasted the
+    # window they are gone already, and nobody else's is freed instead.
+    NOBODY.release(source, address_mark)
+    UNVERIFIED.release(bucket, bucket_mark)
     wait = VERIFIED.hit(project.id)
     if wait:
         await run_in_threadpool(_record, engine, project.id, "rate_limited")

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -16,6 +16,7 @@ from sqlalchemy import Connection, and_, false, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from maity_hub import (
+    card_search,
     cards,
     clock,
     idempotency,
@@ -439,6 +440,7 @@ def list_tasks(
     area: str | None = None,
     closed_after: datetime | None = None,
     order: Literal["board", "updated"] = "board",
+    q: str | None = Query(default=None, min_length=1, max_length=200),
     limit: int = Query(default=PAGE_DEFAULT, ge=1, le=PAGE_MAX),
     cursor: str | None = None,
 ) -> JSONResponse:
@@ -477,14 +479,35 @@ def list_tasks(
         bound = paging.scope(
             status=status, kind=kind, label=label, holder=holder, assigned_to=assigned_to,
             area=area, closed_after=closed_after, order=order,
+            **({"q": q} if q is not None else {}),
         )  # fmt: skip
+        matched: dict[str, list[str]] = {}
+
+        def matching(rows: Sequence[Any]) -> list[Any]:
+            if q is None:
+                return list(rows)
+            result = []
+            for row in rows:
+                hit = card_search.matches(row, q)
+                if hit:
+                    matched[row.id] = hit
+                    result.append(row)
+            return result
+
+        def views(rows: Sequence[Any]) -> list[dict[str, Any]]:
+            shown = task_views(conn, rows, fg)
+            if q is not None:
+                for item in shown:
+                    item["match"] = matched[item["id"]]
+            return shown
+
         if order == "board":
             # The board's order (§6.4) is not one the database keeps: sorted here, a
             # project's cards at a time, and paged after the last item shown.
             def key(row: Any) -> tuple[Any, ...]:
                 return ranks.board_key(cards.STATUSES, row)
 
-            ordered = sorted(conn.execute(query).all(), key=key)
+            ordered = sorted(matching(conn.execute(query).all()), key=key)
             if cursor is not None:
                 ordered = _after(ordered, *paging.unkey(cursor, bound), key)
             shown = ordered[:limit]
@@ -499,7 +522,7 @@ def list_tasks(
                     in_column,
                     bound,
                 )
-            return JSONResponse({"items": task_views(conn, shown, fg), "next_cursor": following})
+            return JSONResponse({"items": views(shown), "next_cursor": following})
         if cursor is not None:
             after_at, after_id = paging.uncursor(cursor, bound)
             query = query.where(
@@ -508,14 +531,15 @@ def list_tasks(
                     and_(t.card.c.updated_at == after_at, t.card.c.id < after_id),
                 )
             )
-        rows = conn.execute(
-            query.order_by(t.card.c.updated_at.desc(), t.card.c.id.desc()).limit(limit + 1)
-        ).all()
+        query = query.order_by(t.card.c.updated_at.desc(), t.card.c.id.desc())
+        if q is None:
+            query = query.limit(limit + 1)
+        rows = matching(conn.execute(query).all())
         page = rows[:limit]
         next_cursor = (
             paging.cursor(page[-1].updated_at, page[-1].id, bound) if len(rows) > limit else None
         )
-        return JSONResponse({"items": task_views(conn, page, fg), "next_cursor": next_cursor})
+        return JSONResponse({"items": views(page), "next_cursor": next_cursor})
 
 
 def _after(
@@ -1225,10 +1249,29 @@ def report(
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         mine = _locked(conn, mine)
-        card = _holder_card(conn, mine, card_id)
-        if card.status not in ("in_progress", "blocked", "review"):
+        card = _project_card(conn, mine, card_id)
+        already_done = card.status == "done"
+        if already_done:
+            previous = card.report or {}
+            pr = previous.get("pr") or {}
+            observed = previous.get("observed") or {}
+            state = observed.get("pr_state") or pr.get("state")
+            if (
+                previous.get("reported_by") != mine.principal_id
+                or previous.get("pr_status") != "found"
+                or state != "open"
+            ):
+                raise cards.invalid_transition(card.status, "review")
+            if body.pr is None or body.pr.number != pr.get("number"):
+                raise invalid({"pr": "different_pull_request"})
+        elif card.status == "cancelled":
             raise cards.invalid_transition(card.status, "review")
-        if body.done:
+        else:
+            card = _holder_card(conn, mine, card_id)
+            if card.status not in ("in_progress", "blocked", "review"):
+                raise cards.invalid_transition(card.status, "review")
+        closing = body.done and not already_done
+        if closing:
             # Refused as a whole, nothing stored: the agent reports again without done.
             if not cards.has_done_authority(mine, card):
                 raise forbidden(
@@ -1260,12 +1303,13 @@ def report(
             "mismatch": None if body.code else False,
         }
         values: dict[str, Any] = {"report": stored}
-        if body.done:
-            values.update({**_closing(card), "status": "done", "closed_at": now})
-        elif card.status == "blocked":
-            values["status_before_block"] = "review"  # the answer restores review (§7)
-        else:
-            values["status"] = "review"
+        if not already_done:  # §6.6: a done card keeps its closure and claim.
+            if closing:
+                values.update({**_closing(card), "status": "done", "closed_at": now})
+            elif card.status == "blocked":
+                values["status_before_block"] = "review"  # the answer restores review (§7)
+            else:
+                values["status"] = "review"
         conn.execute(
             update(t.card)
             .where(t.card.c.id == card.id)
@@ -1290,7 +1334,7 @@ def report(
             subject=("task", card.id),
         )
         _ping(conn, mine, caller, card, found, "report.summary", before=[])
-        if body.done and card.kind == "release":
+        if closing and card.kind == "release":
             releases.close(conn, card.id, fg)  # after task_reported: release_ready comes last
             ticker.on_release_done(
                 conn, mine.project, card, caller.actor(mine.id), mine.principal_id

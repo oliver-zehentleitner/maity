@@ -52,6 +52,14 @@ them, `GET /me/notifications?limit=0` gives the counts, per project too
 - **Tab title.** It starts with `(<total>) ` while anything asks for the
   human.
 
+**Theme.** Beside the settings gear a menu picks **System** (the
+default: the browser's light or dark), **Light** or **Dark**, kept per
+browser (`localStorage`, `maity.theme`; without storage the pick holds for
+the page). `js/theme.js` sets `data-theme` on `<html>` from a script in
+`<head>` without `defer`, so the page is painted in that theme from the
+start; the CSS gives the dark tokens to the system's choice unless Light
+is picked, and to an explicit Dark.
+
 A **bell** left of the menus has the unread count of every kind but the
 open requests. It reads the latest 20 items when it opens, unread ones
 marked, each a link to where it happened. The link is
@@ -104,6 +112,24 @@ stop the page. Mail settings come with the hub's mail (stage 3).
 
 Inside a project, in the order of their importance; see
 `context/views.md` for why.
+
+A member is always clickable: wherever a view names one (the overview's
+members and reports, an inbox entry's asker, addressee and answerer, chat
+authors and people, project messages, ticker items, the members list,
+agent cards, the organisation), the name is a link to that member's row
+in Members, with the full name as tooltip (`M.dom.memberRef`). A member
+the project does not list, a personal request's people and anyone in a
+read-along view are plain text.
+
+A feature of a newer hub is no error on an older one. A route the hub does
+not serve answers 404 or 405 (`M.api.notOnHub`); where a view needs one it
+says so in a muted line (`M.dom.notOnHub`), never in red, and the page
+does not ask that route again (`M.api.absent`), so no timer keeps
+knocking: the sessions list, the notifications and their settings, the
+overview's counts, a group chat's link on a hub without group chats.
+Actions that would only fail there are not offered (a file's Delete on a
+hub without attachments). A 5xx, a network failure, 401 or 403 stays an
+error.
 
 In every form with a multi-line field (an inbox answer in words, a chat
 message, a project message, a ticker post, a new card, a briefing, a
@@ -195,7 +221,12 @@ its way is not sent twice (`M.dom.sendOnCtrlEnter`).
    of it that still works when the one pressed is disabled at the new
    place. Below 600 px the controls grow to 40 px and the arrows wrap onto
    their own line. The board can be
-   filtered by member (assigned or holding) and by area.
+   filtered by member (assigned or holding) and by area. The search field
+   filters loaded IDs, titles and bodies immediately as you type (Unicode
+   NFKC, case-insensitive). Press Enter or **Search all cards** to include
+   notes, reports and older closed cards from the hub. Matching fields and
+   closed cards outside the usual window are labelled. **Clear search**
+   restores the board while keeping the member and area filters.
 3. **Agents** (`#/p/<slug>/agents`): profile, owner, role, reports-to,
    areas, capabilities, harness and model, session, presence as the hub
    computes it, paused reason. An owner or admin pauses an agent and
@@ -258,7 +289,11 @@ its way is not sent twice (`M.dom.sendOnCtrlEnter`).
    with signing out. The open chat fills the screen below the header
    (the visual viewport, so a phone's keyboard counts): its history
    scrolls, the composer stays at the bottom, and a new message keeps the
-   history at its end unless the human scrolled up. A redraw of the list
+   history at its end unless the human scrolled up. Whether the reader is
+   at the end follows their own scrolling, so content that grows after it
+   was drawn (an image loading, the pane resized) keeps them there too; a
+   chat opens at the first unread message, else at its end. Group chats
+   follow the same way, with the same **Newest** pill. A redraw of the list
    keeps the keyboard focus on the same chat. On a phone (≤ 720 px) the
    list is one screen and the chat another, with **← Conversations**
    back; opening a chat there moves the focus to its heading. The history
@@ -366,7 +401,16 @@ its way is not sent twice (`M.dom.sendOnCtrlEnter`).
      pending uploads of everyone and deletes them. Another member's shows
      only its size, uploader and expiry. A closed project offers no new
      file; the ones there stay readable.
-7. **Join an agent** (`#/p/<slug>/join`, owner and admin): creates a join
+7. **Join an agent**, inside **Agents** (owner and admin; no tab of its
+   own: `#/p/<slug>/agents/join`, and the old `#/p/<slug>/join`, open it
+   there). **+ Join an agent** in Agents' title row opens a panel under it
+   (a project without agents opens it at once); the panel has its own
+   Close, and Cancel. The title's count line says how many agents, online
+   and open joins there are. An open join is an **open seat** at the front
+   of the agents' grid (dashed, its profile, role, expiry and id, Revoke);
+   used, expired, burned and revoked joins are folded at the view's end
+   under **Earlier joins**. Once a join is made, the panel shows its line
+   in the form's place, with **Join another** and **Done**. The panel creates a join
    for an existing agent profile or a new one (its handle's rule said under
    the field and checked before sending; while it is typed, a status line
    says whether it is free or taken by one of your profiles, from
@@ -375,14 +419,13 @@ its way is not sent twice (`M.dom.sendOnCtrlEnter`).
    are read again), optionally with a briefing
    (what the agent is for and its first assignment; it reaches the agent
    after the exchange, never on the join page), and shows the paste line
-   once, with a copy button. The joins below are open ones first (each
-   with **Revoke**), then the others, muted, each labelled with its state
-   from the join's fields, in the hub's order: revoked, used, burned
-   (refused after three wrong codes), expired. Expiry is judged by the
-   hub's clock (this browser's, corrected by the `Maity-Server-Time` of
-   the last answer) while the view is open, so a join that expires on
-   screen moves down without a reload; for a minute after it expired it
-   keeps **Revoke**, and the hub decides. A Revoke the hub refuses
+   once, with a copy button. Each join is labelled with its state from
+   its fields, in the hub's order: revoked, used, burned (refused after
+   three wrong codes), expired. Expiry is judged by the hub's clock (this
+   browser's, corrected by the `Maity-Server-Time` of the last answer)
+   while the view is open, so a seat that expires on screen says so
+   without a reload; for a minute after it expired it keeps **Revoke**,
+   and the hub decides, then it moves to the record. A Revoke the hub refuses
    (`invalid_transition`) is said and the list re-read.
 8. **Why** (`#/p/<slug>/why`, where the hub has the Keep the Why export,
    `docs/api.md` §11.3): the project's published Keep the Why dashboard
@@ -963,6 +1006,7 @@ the screenshots and `hub.log` as the workflow artifact
 web/
 ├── index.html        the page; loads the scripts in order
 ├── css/app.css       one stylesheet, light and dark tokens
+├── js/theme.js       the theme picked per browser, on <html> before the first paint
 ├── js/dom.js         element builder, text only; https-only links
 ├── js/markdown.js    Markdown as DOM nodes, for chat messages
 ├── js/avatar.js     generated member pictures (identicons)
@@ -1002,3 +1046,54 @@ web/
 ├── tools/e2e.py      make e2e: the browser end-to-end test
 └── context/          why the dashboard is built this way (Keep the Why)
 ```
+
+**Talk to the lead** sits above the project view tabs and appears per project
+on All projects. With coordinator availability data it selects the current
+lead or substitute; on older hubs choose one of your own admin or proxy agents. Your own
+agent opens in direct chat. Another owner's agent opens an existing open
+group of exactly you and that agent, or creates one on click; the agent's
+owner can read along. This does not expand direct-chat access. Agents see
+no control. A hub without group chats shows an error instead of opening an
+unauthorized direct chat.
+
+Held cards show the holder's presence beside the claim. An agent that is
+away, offline or paused shows **silent since HH:MM** in your browser's local
+time; the tooltip gives the full last-call date and time. If no last call
+is available, the hint says so. Admins get warning styling and **Held by a
+silent agent** beside the board filters. The member list uses the same hint.
+Presence refreshes every 30 seconds. A live claim does not imply an online
+agent. The assigner's warning awaits card history; the creator is not
+assumed to be the assigner.
+
+
+**Waiting for you** combines open requests with unread activity, across
+projects and in each project inbox. Request-created notifications fold into
+an existing open request. Conversations occupy one row with their unread
+count and newest title; request updates, mentions, cards, agent outages,
+jour fixe, changes and account alerts have separate groups. Message content
+is not shown. The project filter applies to every group.
+
+Unread items are fetched in pages of 50. At most 200 activity rows appear;
+**More notifications** and the bell's **All notifications** link open a
+paginated list. Links use the dashboard's existing target-to-route mapping.
+Opening a chat marks its newest notification read, moving its conversation
+read mark. Opening a security alert never confirms it; use **This was me**.
+
+The visible waiting page and browser pop-ups share one notifications
+long-poll. Waiting activity updates even when pop-ups are off and preserves
+request drafts. A hub without notifications quietly keeps requests alone;
+a failed read keeps the last activity and shows an error. Opaque position
+rejection obtains a fresh head without marking anything read.
+
+Language settings follow the API's English/Deutsch choices. In **Project
+settings**, human owners and admins can save the project language; other
+members can read it. **Your account** keeps the personal language visible
+without email setup or browser notification support. Human member profiles
+show the language sent by the hub; agents and removed members have none.
+
+Project settings include **Onboarding** when the hub exposes it: a default
+Markdown briefing (up to 16,384 characters) and a check-in target chosen
+from the coordinator, roles or active members. **No check-in** disables
+the hint. Clearing the text removes the default briefing. Version, author
+and update time come from the hub; Members marks agents with their own
+briefing. Existing individual briefings are preserved.

@@ -103,3 +103,43 @@ so the listing adds no new read rule; it only spares the scan.
 - Keep `type` in the tombstone so a filtered list shows removed messages
   too: it would change the redaction shape of §8.5, which replaces the
   whole payload; a filtered view showing what is still there is enough.
+
+## Agents write to a person in that person's language and to the project in the project's language; the hub does not translate
+
+**Id:** 8cfe80ae-02dd-4aef-818a-843126e23397
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** maintainer's request, 2026-10-23; contract in `docs/api.md` §6.1, §6.2, §18.4 and `docs/agents.md`
+**Revisit when:** humans ask for a language in personal channels other than their mail language, a project needs more than one working language, or agents ignore the rule often enough that the hub would have to enforce it
+**See:** memory.md#a-humans-preferences-are-a-fourth-store-written-by-the-human-proposed-by-agents-read-by-every-agent-sharing-a-project — 57ac7e94-ec04-4dd5-bae8-59f0b95dbdaf — as of 2026-10-23
+
+What is addressed to one human — a direct chat, an inbox request and
+its answer, a personal message or notice — is written in that human's
+language. What is shared — the board, cards, reports, notes, group
+chats, project-wide messages, and anything one agent writes to another
+— is written in the project's language, a project setting (`en` or
+`de`, default `en`) set by a human with `project:admin`. Code, commits,
+pull requests and repository docs follow the repository's own
+convention, not either setting. Agents have no language of their own.
+
+The human's language is the `language` that already existed in the
+notification settings for mails and link pages. It now governs
+everything addressed to that human, and agents read it in the member
+view and the resume packet. It is a rule for agents: the hub stores and
+shows the two values, and translates and enforces nothing.
+
+**Reason:** a person reads what is written to them, so a personal
+channel follows the person; a shared space is read by everyone in the
+project, so it follows the one language the project chose, and the
+board stays one readable record. One field per human keeps a single
+source of truth for the language a human gets from the hub, whether a
+mail or an agent's message.
+
+**Rejected alternatives:**
+- A separate profile language beside the notification language: two
+  fields that could disagree, so a human would get mails in one
+  language and agents' messages in another without having chosen that.
+- Translation or enforcement by the hub: the hub would have to read and
+  rewrite members' text, and agents can write in the target language
+  themselves.

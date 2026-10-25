@@ -1,9 +1,11 @@
-// Join an agent: create a join for one of the human's agent profiles (or a
-// new one) and show the paste line once (docs/api.md §3.1). The line
-// carries a single-use code; it is held in this view only, never stored,
-// and gone when the view is left. Each join's state is derived from its
-// fields, expiry against the clock while the view is open; only an open
-// join can be revoked.
+// Joining an agent, inside the Agents view (js/agents.js): a panel that
+// creates a join for one of the human's agent profiles (or a new one) and
+// shows the paste line once (docs/api.md §3.1); the open joins as seats at
+// the front of the agents' grid; the others folded at the view's end. The
+// line carries a single-use code; it is held in the view only, never
+// stored, and gone when the view is left. Each join's state is derived from
+// its fields, expiry against the clock while the view is open; only an open
+// join (or one expired within the grace minute) can be revoked.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -31,11 +33,11 @@ window.Maity = window.Maity || {};
     return { key: "open", label: "open", text: "open until " + formatTime(j.expires_at) };
   }
 
-  M.views.join = async function (ctx, root) {
-    let [profiles, joins] = await Promise.all([
-      M.api.getAll("/agents"),
-      M.api.getAll(ctx.base + "/joins"),
-    ]);
+  // The panel, the seats and the record, from the profiles and joins read;
+  // drawn into the panel the Agents view already holds.
+  function build(ctx, hooks, panel, listStatus, profilesRead, joinsRead) {
+    let profiles = profilesRead;
+    let joins = joinsRead;
     const profileName = (id) => {
       const p = profiles.items.find((x) => x.id === id);
       return p ? p.display_name : id;
@@ -94,7 +96,8 @@ window.Maity = window.Maity || {};
       [[900, "15 minutes"], [1800, "30 minutes"], [3600, "1 hour"]].map(([v, l]) => h("option", { value: String(v) }, l)));
 
     const status = M.statusLine();
-    const result = h("div", { class: "join-result", "aria-live": "polite" });
+    // The panel's body: the form, or once a join is made the line in its place.
+    const body = h("div", { class: "join-body", "aria-live": "polite" });
 
     function showLine(j) {
       const line = h("code", { class: "paste-line" }, j.paste_line);
@@ -109,17 +112,19 @@ window.Maity = window.Maity || {};
           }
         },
       }, "Copy");
-      append(clear(result), h("div", { class: "flag" },
-        h("strong", null, "Paste this into the agent's session. It is shown once and expires " + formatTime(j.expires_at) + "."),
-        h("p", null, line),
+      const again = h("button", { type: "button", onclick: () => { showForm(); agentSelect.focus(); } }, "Join another");
+      append(clear(body), h("div", { class: "join-result" },
+        h("p", null, h("strong", null, "Paste this into the agent's session. It is shown once and expires " + formatTime(j.expires_at) + ".")),
+        h("div", { class: "paste-row" }, line, copy),
         h("p", { class: "first-hint" }, "Send it to the agent (Claude Code, Codex, …) as a message in its clone of the "
           + "repository; the agent runs it. An agent without the maity CLI opens the link and follows the join page. "
-          + "You can also run it yourself in a terminal in that clone."),
-        h("div", { class: "actions" }, h("button", { type: "button", onclick: () => clear(result) }, "Hide"), copy)));
+          + "You can also run it yourself in a terminal in that clone. Until then it waits below as an open seat."),
+        h("div", { class: "actions" }, again, h("button", { type: "button", class: "primary", onclick: () => close(true) }, "Done"))));
+      copy.focus();
     }
 
     // Held while a join is being created: one join per submission, by click or Ctrl+Enter.
-    const create = h("button", { type: "submit" }, "Create join line");
+    const create = h("button", { type: "submit", class: "primary" }, "Create join line");
     const form = h("form", {
       class: "join-form",
       onsubmit: async (e) => {
@@ -143,7 +148,7 @@ window.Maity = window.Maity || {};
           briefing.focus();
           return;
         }
-        const body = {
+        const req = {
           agent,
           role: role.value,
           reports_to: reportsTo.value || null,
@@ -151,12 +156,12 @@ window.Maity = window.Maity || {};
           capabilities: [],
           ttl_seconds: Number(ttl.value),
         };
-        if (text) body.briefing = text;
+        if (text) req.briefing = text;
         status.busy("Creating…");
         create.disabled = true;
         let j;
         try {
-          j = await M.api.post(ctx.base + "/joins", body);
+          j = await M.api.post(ctx.base + "/joins", req);
         } catch (err) {
           const why = err.code === "invalid" && err.details && err.details.fields && err.details.fields.handle;
           status.fail("No join created: ", why === "taken" ? { message: "you already have an agent with the handle @" + agent.handle } : err);
@@ -175,11 +180,11 @@ window.Maity = window.Maity || {};
         }
         status.done();
         showLine(j);
-        // A new profile is named in the list and offered in the select.
+        // A new profile is named in the select, the new join is a seat.
         try {
           [profiles, joins] = await Promise.all([M.api.getAll("/agents"), M.api.getAll(ctx.base + "/joins")]);
         } catch (err) {
-          status.fail("Join created; the list could not be re-read: ", err);
+          listStatus.fail("Join created; the list could not be re-read: ", err);
           return;
         }
         profileOptions();
@@ -187,29 +192,47 @@ window.Maity = window.Maity || {};
         newFields.hidden = agentSelect.value !== "";
         // The handle just created is one's own now: the hint says so.
         checkHandle();
-        drawJoins(joins);
+        changed();
       },
     },
-    h("label", { for: "join-agent" }, "Agent"), agentSelect,
-    newFields,
-    h("label", { for: "join-role" }, "Role"), role,
-    h("label", { for: "join-reports" }, "Reports to"), reportsTo,
-    h("label", { for: "join-areas" }, "Areas (comma separated)"), areas,
-    // Offered when the hub knows briefings: its member view then has the key.
-    ctx.members.some((x) => "briefing" in x)
-      ? [h("label", { for: "join-briefing" }, "Briefing (optional, Markdown; " + M.dom.SEND_KEYS + " creates the link)"), briefing,
-        h("p", { class: "hint" }, "The agent reads it in its resume packet once it has joined, and on every resume "
-          + "after; it is never on the join page. You can change it later on the agent's card.")]
-      : null,
-    h("label", { for: "join-ttl" }, "Valid for"), ttl,
-    create,
+    h("div", { class: "join-columns" },
+      h("div", { class: "join-fields" },
+        h("div", { class: "field wide" }, h("label", { for: "join-agent" }, "Agent"), agentSelect),
+        newFields,
+        h("div", { class: "field" }, h("label", { for: "join-role" }, "Role"), role),
+        h("div", { class: "field" }, h("label", { for: "join-reports" }, "Reports to"), reportsTo),
+        h("div", { class: "field" }, h("label", { for: "join-areas" }, "Areas (comma separated)"), areas),
+        h("div", { class: "field" }, h("label", { for: "join-ttl" }, "Valid for"), ttl)),
+      // Offered when the hub knows briefings: its member view then has the key.
+      ctx.members.some((x) => "briefing" in x)
+        ? h("div", { class: "join-briefing" },
+          h("label", { for: "join-briefing" }, "Briefing (optional, Markdown; " + M.dom.SEND_KEYS + " creates the link)"), briefing,
+          h("p", { class: "hint" }, "The agent reads it in its resume packet once it has joined, and on every resume "
+            + "after; it is never on the join page. You can change it later on the agent's card."))
+        : null),
+    h("div", { class: "actions" }, h("button", { type: "button", onclick: () => close(true) }, "Cancel"), create),
     status.el);
 
-    const listBox = h("div");
-    let shownList = null;
+    function showForm() { append(clear(body), form); }
+    showForm();
+    append(clear(panel), panelHead(() => close(true)), body);
+
+    let opener = null;
+    function open(from) {
+      opener = from || null;
+      panel.hidden = false;
+      if (hooks.opened) hooks.opened(true);
+      focusSoon(agentSelect);
+    }
+    function close(refocus) {
+      panel.hidden = true;
+      showForm();
+      if (hooks.opened) hooks.opened(false);
+      if (refocus && opener && opener.focus) opener.focus();
+    }
+
+    // Seats and earlier joins, drawn by the Agents view where they stand.
     let shownKey = "";
-    // One status line for the list, so a redraw keeps an error on screen.
-    const listStatus = M.statusLine();
     const revocable = (j, state, now) => state.key === "open"
       || (state.key === "expired" && now - Date.parse(j.expires_at) < GRACE_MS);
     // What a redraw would change: the open set and the revocable set.
@@ -217,54 +240,164 @@ window.Maity = window.Maity || {};
       const state = joinState(j, now);
       return j.id + ":" + state.key + (revocable(j, state, now) ? "+" : "");
     }).join(" ");
+    function changed() {
+      shownKey = keyOf(joins, M.api.now());
+      hooks.changed();
+    }
+    // Leaves the status line alone: a refusal said just before stays said.
     async function reread() {
       try {
-        drawJoins(await M.api.getAll(ctx.base + "/joins"));
+        joins = await M.api.getAll(ctx.base + "/joins");
       } catch (err) {
         listStatus.fail("The joins could not be read: ", err);
+        return;
+      }
+      changed();
+    }
+    const profileOf = (id) => profiles.items.find((x) => x.id === id) || null;
+    function revoke(j) {
+      return h("button", {
+        type: "button",
+        class: "danger",
+        "aria-label": "Revoke the join for " + profileName(j.agent_id),
+        onclick: async () => {
+          listStatus.busy("Revoking…");
+          try {
+            await M.api.del(ctx.base + "/joins/" + encodeURIComponent(j.id));
+            listStatus.done();
+            await reread();
+          } catch (err) {
+            listStatus.fail("Not revoked: ", err);
+            // Used, burned or expired meanwhile: show it as the hub has it.
+            if (err.code === "invalid_transition") await reread();
+          }
+        },
+      }, "Revoke");
+    }
+    // An open join is a member who has not arrived yet: a seat in the grid.
+    function seats() {
+      const now = M.api.now();
+      return joins.items.map((j) => ({ j, state: joinState(j, now) }))
+        .filter(({ j, state }) => revocable(j, state, now))
+        .map(({ j, state }) => {
+          const p = profileOf(j.agent_id);
+          return h("article", { class: "profile seat join-" + state.key, "aria-label": "Open seat: " + profileName(j.agent_id), "data-join": j.id },
+            h("header", null,
+              h("span", { class: "seat-mark", "aria-hidden": "true" }),
+              h("h3", null, profileName(j.agent_id)),
+              p ? h("span", { class: "handle" }, "@" + p.handle) : null,
+              h("span", { class: "seat-label" }, state.key === "open" ? "open seat" : "expired")),
+            h("dl", { class: "facts" },
+              h("dt", null, "Role"), h("dd", null, j.role, j.reports_to ? " · reports to " + ctx.nameOf(j.reports_to) : null),
+              h("dt", null, "Join"), h("dd", null, state.text + " · ", h("code", null, j.id))),
+            h("p", { class: "muted" }, "Waiting for the agent to run its line."),
+            h("div", { class: "seat-actions" }, revoke(j)));
+        });
+    }
+    // The record: used, burned, revoked, expired past the grace minute.
+    function earlier() {
+      const now = M.api.now();
+      const rows = joins.items.map((j) => ({ j, state: joinState(j, now) })).filter(({ j, state }) => !revocable(j, state, now));
+      if (!rows.length) return null;
+      return h("details", { class: "earlier-joins" },
+        h("summary", null, "Earlier joins (" + rows.length + "): used, expired or revoked"),
+        h("ul", { class: "joins closed-joins" }, rows.map(({ j, state }) => h("li", { class: "join-" + state.key },
+          h("span", { class: "badge join-state" }, state.label), " ",
+          h("code", null, j.id), " " + profileName(j.agent_id) + " as " + j.role + " · " + state.text))));
+    }
+    const openCount = () => { const now = M.api.now(); return joins.items.filter((j) => joinState(j, now).key === "open").length; };
+
+    shownKey = keyOf(joins, M.api.now());
+    // A join that expires while the view is open moves on without a reload.
+    ctx.every(EXPIRY_MS, () => { if (keyOf(joins, M.api.now()) !== shownKey) changed(); });
+
+    return { open, close, seats, earlier, openCount, reread };
+  }
+
+  // On a page the router has not attached yet (a direct #/agents/join), the
+  // focus waits until it is in the document.
+  function focusSoon(el) {
+    if (el.isConnected === false) window.setTimeout(() => { if (el.isConnected !== false) el.focus(); }, 0);
+    else el.focus();
+  }
+
+  function panelHead(onClose) {
+    return [
+      h("div", { class: "join-head" },
+        h("h3", { id: "join-title" }, "Join an agent"),
+        h("button", { type: "button", class: "icon-button join-close", "aria-label": "Close", title: "Close", onclick: onClose }, "×")),
+      h("p", { class: "muted" }, "The agent's session runs wherever you run it; it joins by the line you paste into it."),
+    ];
+  }
+
+  // hooks.changed(): the seats and the earlier joins changed (a join made,
+  // revoked, expired, or read at last); the Agents view draws them again.
+  // A failed read of the profiles or the joins stays in the panel and the
+  // seats, with a retry: the agents' cards never depend on it.
+  async function mount(ctx, hooks) {
+    const panel = h("section", { class: "join-panel", "aria-labelledby": "join-title" });
+    panel.hidden = true;
+    const listStatus = M.statusLine();
+    let impl = null;
+    let opener = null;
+    const failedClose = () => {
+      panel.hidden = true;
+      if (hooks.opened) hooks.opened(false);
+      if (opener && opener.focus) opener.focus();
+    };
+    async function load() {
+      try {
+        const [profiles, joins] = await Promise.all([M.api.getAll("/agents"), M.api.getAll(ctx.base + "/joins")]);
+        impl = build(ctx, hooks, panel, listStatus, profiles, joins);
+        listStatus.done();
+        return true;
+      } catch (err) {
+        impl = null;
+        const retry = h("button", {
+          type: "button",
+          onclick: async () => {
+            retry.disabled = true;
+            if (await load()) {
+              hooks.changed();
+              if (!panel.hidden) impl.open(opener);
+            } else retry.disabled = false;
+          },
+        }, "Try again");
+        append(clear(panel), panelHead(failedClose),
+          h("p", { class: "error", role: "alert" }, "The joins could not be read: " + (err.message || err.code || "an error")), retry);
+        listStatus.fail("The joins could not be read: ", err);
+        return false;
       }
     }
-    function drawJoins(list) {
-      shownList = list;
-      const now = M.api.now();
-      shownKey = keyOf(list, now);
-      const rows = list.items.map((j) => ({ j, state: joinState(j, now) }));
-      const open = rows.filter((r) => r.state.key === "open");
-      const done = rows.filter((r) => r.state.key !== "open");
-      const row = ({ j, state }) => h("li", { class: "join-" + state.key },
-        h("span", { class: "badge join-state" }, state.label), " ",
-        h("code", null, j.id), " " + profileName(j.agent_id) + " as " + j.role + " · " + state.text,
-        revocable(j, state, now)
-          ? h("button", {
-                type: "button",
-                class: "danger",
-                onclick: async () => {
-                  listStatus.busy("Revoking…");
-                  try {
-                    await M.api.del(ctx.base + "/joins/" + encodeURIComponent(j.id));
-                    listStatus.done();
-                    await reread();
-                  } catch (err) {
-                    listStatus.fail("Not revoked: ", err);
-                    // Used, burned or expired meanwhile: show it as the hub has it.
-                    if (err.code === "invalid_transition") await reread();
-                  }
-                },
-              }, "Revoke")
-          : null);
-      append(clear(listBox), h("h3", null, "Joins"),
-        !rows.length ? h("p", { class: "muted" }, "No joins yet.") : null,
-        open.length ? h("ul", { class: "joins open-joins", "aria-label": "Open joins" }, open.map(row)) : null,
-        rows.length && !open.length ? h("p", { class: "muted" }, "No open join.") : null,
-        done.length ? [h("h4", null, "No longer usable"), h("ul", { class: "joins closed-joins" }, done.map(row))] : null,
-        listStatus.el);
-    }
-    drawJoins(joins);
-    // A join that expires while the view is open moves down without a reload.
-    ctx.every(EXPIRY_MS, () => { if (keyOf(shownList, M.api.now()) !== shownKey) drawJoins(shownList); });
+    await load();
+    return {
+      panel,
+      listStatus,
+      open: (from) => {
+        opener = from || null;
+        if (impl) { impl.open(from); return; }
+        panel.hidden = false;
+        if (hooks.opened) hooks.opened(true);
+        const retry = panel.querySelector ? Array.from(panel.querySelectorAll("button")).find((b) => b.textContent === "Try again") : null;
+        if (retry) focusSoon(retry);
+      },
+      close: (refocus) => (impl ? impl.close(refocus) : failedClose()),
+      seats: () => (impl ? impl.seats() : []),
+      earlier: () => (impl ? impl.earlier() : null),
+      openCount: () => (impl ? impl.openCount() : 0),
+      // A failed first read keeps its Try again.
+      reread: () => (impl ? impl.reread() : Promise.resolve()),
+      // An open panel holds a form being filled in or a line shown once: a
+      // redraw of the view would lose either.
+      busy: () => !panel.hidden,
+    };
+  }
 
-    append(root, h("h2", null, "Join an agent"),
-      h("p", { class: "muted" }, "The agent's session runs wherever you run it; it joins by the line you paste into it."),
-      form, result, listBox);
+  M.join = { mount };
+  // #/p/<slug>/join, from before joining moved into Agents: the same place, panel open.
+  M.views.join = async function (ctx, root) {
+    const there = "#/p/" + encodeURIComponent(ctx.slug) + "/agents/join";
+    if (window.history && window.history.replaceState) window.history.replaceState(null, "", there);
+    await M.views.agents(ctx, root, ["join"]);
   };
 })(window.Maity);

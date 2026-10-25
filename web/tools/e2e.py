@@ -97,6 +97,9 @@ class Run:
         for width, height, scheme in PASSES:
             page.set_viewport_size({"width": width, "height": height})
             page.emulate_media(color_scheme=scheme)
+            # From the page's top: content scrolled under the sticky header by an
+            # earlier step would be measured against the header's links.
+            page.evaluate("window.scrollTo(0, 0)")
             # Evaluated through the DevTools protocol, so the hub's CSP stays as it is.
             if not page.evaluate("typeof window.axe === 'object'"):
                 page.evaluate(self.axe)
@@ -117,6 +120,14 @@ class Run:
                         "url": v["helpUrl"],
                         "nodes": [n["target"] for n in v["nodes"]][:10],
                         "count": len(v["nodes"]),
+                        # axe's own words for the first node: which check failed and against what.
+                        "why": v["nodes"][0].get("failureSummary", "") if v["nodes"] else "",
+                        # ...and the elements it was measured against (a neighbour, an overlap).
+                        "related": [
+                            r["target"]
+                            for c in (v["nodes"][0].get("any", []) + v["nodes"][0].get("all", []) if v["nodes"] else [])
+                            for r in c.get("relatedNodes", [])
+                        ][:5],
                     }
                 )
         page.set_viewport_size({"width": 1280, "height": 900})
@@ -402,9 +413,14 @@ def join_line(
     display: str = "E2E Agent",
     role: str = "member",
 ) -> tuple[str, str]:
-    """Create a join line in the Join view; a new profile when handle is given."""
-    page.locator("nav.views").get_by_role("link", name="Join an agent", exact=True).click()
-    expect(page).to_have_url(re.compile(rf"#/p/{slug}/join$"))
+    """Create a join line in Agents' join panel; a new profile when handle is given."""
+    page.locator("nav.views").get_by_role("link", name="Agents", exact=True).click()
+    expect(page).to_have_url(re.compile(rf"#/p/{slug}/agents$"))
+    # A project without agents opens the panel itself; otherwise the title row's button does.
+    panel = page.locator(".join-panel")
+    if not panel.is_visible():
+        page.get_by_role("button", name="+ Join an agent", exact=True).click()
+    expect(panel).to_be_visible()
     if handle:
         page.locator("#join-agent").select_option("")  # "A new agent profile…"
         expect(page.locator("#join-handle")).to_be_visible()
@@ -418,11 +434,14 @@ def join_line(
     page.get_by_role("button", name="Create join line", exact=True).click()
     line = page.locator(".paste-line")
     expect(line).to_be_visible()
-    expect(page.locator("ul.joins li").first).to_contain_text(f"{display} as {role}")
-    if handle:
-        # The new profile is offered and selected at once, without a reload.
-        expect(page.locator("#join-agent option:checked")).to_contain_text(f"(@{handle})")
+    # The new join is an open seat at the front of the grid.
+    expect(page.locator("article.seat", has_text=display).first).to_contain_text(role)
     words = shlex.split(line.inner_text())
+    if handle:
+        # The new profile is offered and selected at once, without a reload: Join another shows it.
+        page.locator(".join-result").get_by_role("button", name="Join another", exact=True).click()
+        expect(page.locator("#join-agent option:checked")).to_contain_text(f"(@{handle})")
+        panel.get_by_role("button", name="Close", exact=True).click()
     assert words[:2] == ["maity", "join"] and words[3] == "--code", words
     return words[2], words[4]
 
@@ -786,7 +805,6 @@ def scenario(run: Run, page: Page) -> None:
         ("agents", "Agents"),
         ("members", "Members"),
         ("org", "Organisation"),
-        ("join", "Join an agent"),
     )
     # Why, where the hub offers it (its 409 ktw_not_configured is expected here).
     if page.locator("nav.views").get_by_role("link", name="Why", exact=True).count():
@@ -807,7 +825,7 @@ def scenario(run: Run, page: Page) -> None:
         hidden = [cls for cls, shown in page.evaluate(CURRENT_SHOWN_JS) if not shown]
         assert not hidden, f"{view}: the current entry of nav.{hidden} is scrolled out of view"
         # Revoke keeps its label on one line: one line box for its text.
-        lines = page.evaluate(ONE_LINE_JS, ".credentials button, .joins button")
+        lines = page.evaluate(ONE_LINE_JS, ".credentials button, .seat-actions button")
         assert all(n == 1 for n in lines), f"{view}: a Revoke label wraps ({lines} lines)"
         if view == "agents":
             assert lines, "agents: no Revoke button to measure"
@@ -1903,7 +1921,7 @@ def users_step(run: Run, page: Page) -> None:
 
 
 def join_expiry_step(run: Run, page: Page) -> None:
-    """A join that expires while Join an agent is open moves to the others, without Revoke."""
+    """A join that expires while Agents is open leaves the seats for the record, without Revoke."""
     run.step("joins: a join expires while the view is open; it is listed as expired, without Revoke")
     # A second tab of the same human whose clock can be moved: the hub's is not.
     other = page.context.browser.new_context(storage_state=page.context.storage_state())
@@ -1911,20 +1929,23 @@ def join_expiry_step(run: Run, page: Page) -> None:
     watch_page(run, second)
     second.clock.install()
     second.goto(f"{run.base}/#/p/e2e-alpha/join")
+    # A direct navigation: the old route lands on Agents with the panel open, the focus in its first field.
+    expect(second).to_have_url(re.compile(r"#/p/e2e-alpha/agents/join$"))
+    expect(second.locator("#join-agent")).to_be_focused()
     # A new profile: the existing one is a member here already.
     second.locator("#join-agent").select_option("")
     second.locator("#join-handle").fill("e2e-expiring")
     second.locator("#join-display").fill("E2E Expiring")
     second.get_by_role("button", name="Create join line", exact=True).click()
     expect(second.locator(".paste-line")).to_be_visible()
-    row = second.locator("ul.open-joins li").first
-    expect(row.get_by_role("button", name="Revoke", exact=True)).to_be_visible()
-    join_id = row.locator("code").inner_text()
+    row = second.locator("article.seat").first
+    expect(row.get_by_role("button", name=re.compile(r"^Revoke"))).to_be_visible()
+    join_id = row.get_attribute("data-join")
     second.clock.fast_forward("16:00")  # past the default 15 minutes
     gone = second.locator("ul.closed-joins li", has_text=join_id)
     expect(gone).to_contain_text("expired")
     expect(gone.get_by_role("button", name="Revoke")).to_have_count(0)
-    expect(second.locator("ul.open-joins li", has_text=join_id)).to_have_count(0)
+    expect(second.locator(f'article.seat[data-join="{join_id}"]')).to_have_count(0)
     run.shot(second, "join-expired")
     other.close()
     no_problems(run, "joins")

@@ -28,6 +28,7 @@ PACKET = {
     "ticker",
     "events",
     "peers",
+    "preferences",  # §19.4
     "operations",
     "team",
 }
@@ -76,6 +77,7 @@ def test_the_packet_has_every_part_of_the_contract(
             "updated_by": None,
             "updated_at": None,
         },
+        "owner_preferences": None,  # §19.4: not given
     }
     assert packet["me"]["instance"] == agent.instance
     assert packet["me"]["address"] == f"{agent.id}#{agent.instance}"

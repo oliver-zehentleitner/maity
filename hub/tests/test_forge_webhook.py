@@ -318,6 +318,15 @@ def test_sixty_held_bodies_on_one_slug_refuse_any_other_alike(
     assert (early, read) == ([429], 60)
 
 
+def test_a_full_slug_bucket_takes_no_place_of_the_address(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    # Refused at once on one slug, the address keeps its places for the others.
+    secret(owner)
+    forge_webhook.UNVERIFIED.take("maity|192.0.2.7", 60)
+    assert held(migrated, [HOOK] * 60 + [UNKNOWN]) == ([429] * 60, 1)
+
+
 def test_sixty_verified_deliveries_a_minute_per_project(owner: flow.Human) -> None:
     key = secret(owner)
     for _ in range(60):

@@ -1,5 +1,5 @@
-// Browser notifications on the account (#/account/notifications, docs/api.md
-// §18.4 browser): the account's wish, the browser's own permission beside
+// Personal language and browser notifications on the account
+// (#/account/notifications, docs/api.md §18.4): the account's wish, the browser's own permission beside
 // it, the kinds, and whether a chat's or mention's text may be shown. The
 // browser's permission is asked only when the human turns them on. Mail
 // settings follow with the hub's mail (stage 3).
@@ -28,13 +28,9 @@ window.Maity = window.Maity || {};
 
   M.notifySettings = async function (ctx) {
     const box = h("section", { class: "notify-settings", "aria-labelledby": "notify-heading" });
-    const heading = h("h3", { id: "notify-heading", class: "notify-heading", tabindex: "-1" }, "Browser notifications");
+    const heading = h("h3", { id: "notify-heading", class: "notify-heading", tabindex: "-1" }, "Language and notifications");
     const status = M.statusLine();
     append(box, heading);
-    if (!("Notification" in window)) {
-      append(box, h("p", { class: "muted" }, "This browser cannot show notifications."));
-      return { el: box, heading };
-    }
     // A hub that answered 404 to the notifications has no settings either: not asked.
     if (M.notify.state.available === false) {
       append(box, h("p", { class: "muted" }, "This hub has no notification settings yet."));
@@ -44,7 +40,36 @@ window.Maity = window.Maity || {};
     try {
       settings = await M.api.get("/me/notification-settings");
     } catch (err) {
-      append(box, h("p", { class: "muted" }, err.status === 404 ? "This hub has no notification settings yet." : "Could not read them: " + err.message));
+      append(box, await M.api.missingRoute(err, "GET", "/me/notification-settings") ? M.dom.notOnHub("This hub has no notification settings yet.")
+        : h("p", { class: "send-status failed" }, "Could not read them: " + err.message));
+      return { el: box, heading };
+    }
+
+    // Language belongs to the account, even without mail or browser notifications.
+    if (settings.email && "language" in settings.email) {
+      const language = h("select", { id: "personal-language" },
+        h("option", { value: "en" }, "English"), h("option", { value: "de" }, "Deutsch"));
+      language.value = settings.email.language;
+      const languageStatus = M.statusLine();
+      const button = h("button", { type: "submit" }, "Save personal language");
+      append(box, h("form", { class: "inline-form personal-language", onsubmit: async (e) => {
+        e.preventDefault();
+        if (button.disabled) return;
+        button.disabled = true;
+        languageStatus.busy("Saving…");
+        try {
+          settings = await M.api.patch("/me/notification-settings", { email: { language: language.value } });
+          language.value = settings.email.language;
+          languageStatus.done();
+          append(languageStatus.el, h("span", { class: "ok" }, "Personal language saved."));
+        } catch (err) { languageStatus.fail("Language not saved: ", err); }
+        button.disabled = false;
+      } }, h("h3", null, "Your language"), h("label", { for: "personal-language" }, "Language"), language,
+      h("p", { class: "hint" }, "For messages addressed to you personally, and for emails and sign-in links."),
+      button, languageStatus.el));
+    }
+    if (!("Notification" in window)) {
+      append(box, h("p", { class: "muted" }, "This browser cannot show notifications."));
       return { el: box, heading };
     }
 
