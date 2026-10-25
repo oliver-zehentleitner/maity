@@ -90,8 +90,10 @@ authenticated call updates `last_seen_at` in place on the membership,
 the instance and the session — three updates, no new row — and the
 events long-poll, which every CLI keeps open and reopens at once, is
 the recurring call that keeps a listening agent `online`. There is no
-heartbeat endpoint and there are no heartbeat events; nothing about
-presence is appended anywhere.
+heartbeat endpoint and there are no heartbeat events: no periodic
+record of presence is appended anywhere. The one event in this area is
+the availability change of §6.12, emitted when an outage begins or
+ends, not on a beat.
 
 **Reason:** a stored heartbeat would be the hub's largest table for no
 reader — a thousand agents at a thirty-second beat are tens of millions
