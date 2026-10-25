@@ -1693,11 +1693,27 @@ def notifications_step(run: Run, page: Page) -> None:
     bell = page.locator("header button.bell")
     if run.no_notifications:
         # Only a hub without the endpoint is skipped: no bell, and no error on the page.
-        run.step("notifications: this hub has no notifications yet; no bell, the counts from /me")
+        run.step("notifications: this hub has no notifications yet; the bell a link to everything waiting, no counts")
         expect(bell).to_have_count(0)
+        expect(page.locator('header a.bell[href="#/all"]')).to_have_attribute("aria-label", "Notifications")
+        expect(page.locator("header a.chat-button")).to_have_attribute("aria-label", "Chats")
         expect(page.locator("main")).not_to_contain_text("Could not read your notifications")
         no_problems(run, "notifications")
         return
+    # The header's right block: Chat, Notifications, the gear, the profile, in one row also on a phone.
+    order = page.evaluate("Array.from(document.querySelectorAll('header .me > *')).map((e) => e.className)")
+    assert len(order) == 4 and "chat-button" in order[0] and "bell" in order[1], f"header order: {order}"
+    page.set_viewport_size({"width": 390, "height": 844})
+    tops = page.evaluate("Array.from(document.querySelectorAll('header .me > *')).map((e) => Math.round(e.getBoundingClientRect().top))")
+    assert len(set(tops)) == 1, f"the header's four buttons wrap at 390 px: {tops}"
+    page.set_viewport_size({"width": 1280, "height": 900})
+    run.step("chats: the Chat button opens every chat across the projects")
+    page.locator("header a.chat-button").click()
+    expect(page).to_have_url(re.compile(r"#/chats$"))
+    expect(page.locator("main section.view-chats h2")).to_have_text("Chats")
+    run.a11y(page, "chats across projects")
+    page.goto(f"{run.base}/#/p/e2e-alpha/inbox")
+    expect(page.locator("main section.view-inbox")).to_be_visible()
     run.step("notifications: the owner opens the bell, reads the list, closes it with Escape")
     bell.click()
     panel = page.locator("header .bell-panel")

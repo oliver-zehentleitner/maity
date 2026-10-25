@@ -73,9 +73,15 @@ in the header has none, and **Your account → Theme** (`#/account/theme`)
 picks it with three radio buttons, saying that the choice is kept in this
 browser only. A pick made signed out stays after signing in.
 
-A **bell** left of the menus has the unread count of every kind but the
-open requests. It reads the latest 20 items when it opens, unread ones
-marked, each a link to where it happened. The link is
+Left of the menus are **Chat** and the **bell**, in that order (Chat,
+Notifications, gear, profile, in one row on a phone too). **Chat** leads
+to `#/chats` with the hub's count of unread chat messages
+(`counts.chat`); the **bell** has the count of every kind but the open
+requests. A badge is a number only, hidden at zero; the words are the
+button's name ("3 new notifications", "2 unread chat messages"). On a
+hub without notifications both stand without a count, the bell as a
+link to everything waiting (`#/all`). The bell reads the latest 20
+items when it opens, unread ones marked, each a link to where it happened. The link is
 built from the item's `target`, never from its `url`. Opening an item
 marks it read, except a sign-in or address alert (`security`): that is
 confirmed only explicitly, so opening it to look never gives the
@@ -112,6 +118,7 @@ stop the page. Mail settings come with the hub's mail (stage 3).
 
 | Route | What |
 |---|---|
+| `#/chats` | every chat across one's projects (`js/chats.js`): one §9.3 list per project, read when the view opens, unread first, then the newest; each with its project, last message time and unread count, opening in its project's Chat tab; from the header's **Chat** |
 | `#/all` | the inbox across every project, each entry with its project's badge (logo or monogram, name, state) before it, as a link to the project; filterable by project and groupable by project (each group a heading with its own list; the filter holds in `#/all` only, and answering opens the next entry as it stands on screen); the landing page with more than one project, and with none (then it offers **Create a project**) |
 | `#/new` | create a project; also **+ New project** in the switcher |
 | `#/login` | the login page, always; signed in, the dashboard's start (the root without a session shows the instance's landing page where it has one) |
@@ -1215,6 +1222,7 @@ web/
 ├── js/project-message.js message the project (§8.4)
 ├── js/attachments.js  files on messages: attach, show, delete; the admin's pending list
 ├── js/chat.js        (6) chat
+├── js/chats.js       every chat across the projects (#/chats)
 ├── js/group-chat.js  (6) group chats: create, open, manage, remove a message
 ├── js/observe.js     reading along in a project one is not in
 ├── js/join.js        (7) join an agent

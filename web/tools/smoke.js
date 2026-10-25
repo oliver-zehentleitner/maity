@@ -4119,8 +4119,25 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const bellBtn = () => header.querySelector("button.bell");
   const tabCountOf = (name) => { const a = header.querySelectorAll("nav.views a").find((x) => x.textContent.startsWith(name)); const c = a && a.querySelector(".count"); return c ? c.textContent : null; };
   // Unread on the bell: every kind but the open requests (the inbox shows those); a sign-in alert counts.
-  expect(bellBtn() && bellBtn().getAttribute("aria-label") === "Notifications, 4 unread" && text(bellBtn()).includes("4")
-    && tabCountOf("Chat") === "1", "notifications: the bell says how many are unread; the chat tab its unread chats");
+  expect(bellBtn() && bellBtn().getAttribute("aria-label") === "4 new notifications" && text(bellBtn()).includes("4")
+    && tabCountOf("Chat") === "1", "notifications: the bell says how many are new; the chat tab its unread chats");
+  // The header's right block: Chat, Notifications, the gear, the profile; the Chat badge is the hub's unread chat messages.
+  const chatBtn = () => header.querySelector("a.chat-button");
+  const meOrder = header.querySelector(".me").childNodes.map((el) => (el.getAttribute("class") || "").split(" ").concat(el.tagName ? [el.tagName.toLowerCase()] : []).join(" "));
+  expect(chatBtn() && chatBtn().getAttribute("href") === "#/chats" && chatBtn().getAttribute("aria-label") === "1 unread chat message"
+    && text(chatBtn().querySelector(".count")) === "1" && chatBtn().querySelector(".count").getAttribute("aria-hidden") === "true"
+    && /chat-button/.test(meOrder[0]) && /bell/.test(meOrder[1]) && !/chat-button/.test(meOrder[1]) && header.querySelector(".me").childNodes.length === 4,
+    "header: Chat, then Notifications, the gear and the profile; the chat badge a number, its words in the label " + JSON.stringify(meOrder));
+  await go("#/chats"); for (let k = 0; k < 4; k++) await tick();
+  const chLinks = main.querySelectorAll(".chats-all a");
+  expect(plainTitle() === "Chats · Maity" && chLinks.length === 7 && chLinks.slice(0, 2).every((a) => a.className === "conv unread")
+    && !chLinks.slice(2).some((a) => a.className.includes("unread"))
+    && chLinks[0].getAttribute("href") === "#/p/maity/chat/cnv-0007" && text(chLinks[0]).startsWith("Release 0.2 go/no-go, Maity")
+    && chLinks[1].getAttribute("href") === "#/p/maity/chat/agt-a" && text(chLinks[1]).includes("1 unread")
+    && chLinks[6].getAttribute("href") === "#/p/sample/chat/agt-s1" && text(chLinks[6]).includes("Sample shop")
+    && header.querySelector("a.chat-button").getAttribute("aria-current") === "page",
+    "chats: every project's chats in one list, unread first, then the newest, each with its project and opening in it");
+  await go("#/p/maity/inbox"); for (let k = 0; k < 2; k++) await tick();
   const nPosts = [];
   const nPost = win.Maity.api.post;
   win.Maity.api.post = (p, b) => { if (p.startsWith("/me/notifications")) nPosts.push([p, b]); return nPost(p, b); };
@@ -4143,18 +4160,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   bellBtn().click(); await tick(); await tick();
   const maityBefore = Number(chipCount("Maity"));
   bellItem("Agent A in agent-a").querySelector("a").click(); for (let k = 0; k < 4; k++) await tick();
-  expect(JSON.stringify(nPosts[0]) === JSON.stringify(["/me/notifications/read", { ids: ["ntf-4237"] }]) && bellBtn().getAttribute("aria-label") === "Notifications, 3 unread"
+  expect(JSON.stringify(nPosts[0]) === JSON.stringify(["/me/notifications/read", { ids: ["ntf-4237"] }]) && bellBtn().getAttribute("aria-label") === "3 new notifications"
     && Number(chipCount("Maity")) === maityBefore - 1, "notifications: opening an item marks it read, and the counts follow");
   // A sign-in alert is never confirmed by opening it (§2.6.5, §18.3).
   bellBtn().click(); await tick(); await tick();
   expect(text(bellPanel()).includes("stays unread: opening it here does not confirm it") && text(bellPanel()).includes("This was me under Sessions"),
     "notifications: the panel says a sign-in alert stays unread until This was me under Sessions");
   bellItem("New sign-in").querySelector("a").click(); for (let k = 0; k < 4; k++) await tick();
-  expect(nPosts.length === 1 && bellBtn().getAttribute("aria-label") === "Notifications, 3 unread", "notifications: opening a sign-in alert marks nothing");
+  expect(nPosts.length === 1 && bellBtn().getAttribute("aria-label") === "3 new notifications", "notifications: opening a sign-in alert marks nothing");
   bellBtn().click(); await tick(); await tick();
   btn(bellPanel(), "Mark all read").click(); for (let k = 0; k < 4; k++) await tick();
   const maityOpen = (await win.Maity.api.get("/me")).projects.find((x) => x.slug === "maity").open_requests;
-  expect(JSON.stringify(nPosts[1]) === JSON.stringify(["/me/notifications/read", { up_to: "4241.7" }]) && bellBtn().getAttribute("aria-label") === "Notifications, 1 unread"
+  expect(JSON.stringify(nPosts[1]) === JSON.stringify(["/me/notifications/read", { up_to: "4241.7" }]) && bellBtn().getAttribute("aria-label") === "1 new notification"
     && Number(chipCount("Maity")) === maityOpen,
     "notifications: Mark all read marks up to the bell's position, never the sign-in alert; the project's count is its open requests again");
   bellBtn().click(); await tick(); await tick();
@@ -4165,7 +4182,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const nGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p.startsWith("/me/notifications") ? Promise.reject(new win.Maity.api.ApiError("Not found", 404, p, "not_found", {})) : nGet(p));
   await go("#/p/maity/board"); await go("#/p/maity/inbox");
-  expect(!bellBtn() && !text(main).includes("Could not read your notifications") && !tabCountOf("Chat"), "notifications: a hub without them shows no bell and no error");
+  const bellLink = header.querySelectorAll("a.bell").find((a) => a.getAttribute("href") === "#/all");
+  expect(!bellBtn() && bellLink && bellLink.getAttribute("aria-label") === "Notifications" && !bellLink.querySelector(".count")
+    && chatBtn() && chatBtn().getAttribute("aria-label") === "Chats" && !chatBtn().querySelector(".count")
+    && !text(main).includes("Could not read your notifications") && !tabCountOf("Chat"),
+    "notifications: a hub without them keeps the bell as a link to everything waiting and Chat, both without a count, and no error");
   const nSettingsAsked = [];
   const nGetNone = win.Maity.api.get;
   win.Maity.api.get = (p) => { if (p === "/me/notification-settings") nSettingsAsked.push(p); return nGetNone(p); };
