@@ -130,9 +130,9 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_table("presence_minute")
     op.drop_table("jour_fixe_tag")
-    op.drop_index(op.f("ix_jour_fixe_answer_round_id"), table_name="jour_fixe_answer")
+    # The tables alone: each index goes with its table. Dropping an index first fails on
+    # MariaDB where a foreign key still uses it (round_id, project_id lead them).
     op.drop_table("jour_fixe_answer")
-    op.drop_index("ix_jour_fixe_round_project", table_name="jour_fixe_round")
     op.drop_table("jour_fixe_round")
     with op.batch_alter_table("project", schema=None) as batch_op:
         batch_op.drop_column("jour_fixe_last_slot")
