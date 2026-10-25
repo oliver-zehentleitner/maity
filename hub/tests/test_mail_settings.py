@@ -93,6 +93,7 @@ def test_the_environment_sets_every_value(tmp_path: Path) -> None:
         MAITY_MAIL_MAX_PER_HOUR="10",
         MAITY_MAIL_SECURITY_MAX_PER_HOUR="20",
         MAITY_MAIL_SIGN_IN_MAX_PER_HOUR="30",
+        MAITY_MAIL_REGISTRATION_MAX_PER_HOUR="40",
         MAITY_SECRET_KEY=KEY,
         MAITY_MAIL_SIGNING_KEY=SIGNING,
         KUBERNETES_SERVICE_HOST="10.0.0.1",
@@ -105,11 +106,13 @@ def test_the_environment_sets_every_value(tmp_path: Path) -> None:
         PASSWORD,
     )
     assert mail.sender == Sender("maity@example.org", "Maity Hub")
-    assert (mail.max_per_hour, mail.security_max_per_hour, mail.sign_in_max_per_hour) == (
-        10,
-        20,
-        30,
+    budgets = (
+        mail.max_per_hour,
+        mail.security_max_per_hour,
+        mail.sign_in_max_per_hour,
+        mail.registration_max_per_hour,
     )
+    assert budgets == (10, 20, 30, 40)
     assert mail.in_kubernetes and hub.secret_key == b"k" * 32
     assert PASSWORD not in repr(hub) and KEY not in repr(hub) and "kkkk" not in repr(hub)
 
@@ -168,6 +171,8 @@ def test_the_defaults_and_who_may_read_them(make_client: ClientFactory, migrated
     assert got["max_per_hour"] == {"value": 500, "source": "default"}
     assert got["security_max_per_hour"]["value"] == 100
     assert got["sign_in_max_per_hour"]["value"] == 60
+    assert got["registration_max_per_hour"] == {"value": 30, "source": "default"}
+    assert got["registration_sent_last_hour"] == got["registration_dropped_last_hour"] == 0
     assert got["warnings"] == [] and got["last_test"] is None
     assert got["sent_last_hour"] == got["failed_last_hour"] == got["security_queued"] == 0
 
