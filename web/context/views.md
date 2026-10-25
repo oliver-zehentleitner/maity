@@ -1005,3 +1005,34 @@ screen reader still reads where the page is.
 screen readers too, and the page title alone is read only on load.
 Shortening the text: the project names are the operators', of any
 length.
+
+## A card opens as a panel on the board, not as a page of its own
+
+**Id:** 254c3ddf-d7be-4e70-ad71-384a6eb3d36b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's report of 2026-10-25 that a board card could not be opened on a phone (tsk-1tva2482j90b), and the coordinator's ruling the same day on the proposal; the dashboard's implementation, 2026-10-25
+**Revisit when:** a card needs more than one screen of its own (sub-cards, a long discussion), or the board stops being the place where cards are worked on
+
+A card's title links to `#/p/<slug>/tasks/<id>`, which was already the
+board with that card marked. The board view now also opens the card
+there as a panel: beside the columns on a wide screen, full width above
+them on a phone. The panel holds the card as the board draws it,
+controls included, and what the board leaves out: the description, the
+links, the open notes with a form, the history. Close, Escape and Back
+return to the board with the card marked and its title focused.
+
+**Reason:** until then the dashboard had no way to open a card at all;
+the description, notes and history were nowhere to be read, which on a
+phone looked like a card that would not open. In place, the card keeps
+the board's controls and their reload and focus handling, the columns
+stay in view on a desktop, and the existing deep link and its marking
+need no second route.
+
+**Rejected alternative:** a page of its own per card: it would need its
+own copy of the board's move, assign and place handling, and Back would
+lose the board's filter and scroll. Expanding the card inside its
+column: a column is too narrow for a description and a history, and
+every board reload would close it again. A modal dialog: on a phone the
+same as the panel, on a desktop it hides the board the card belongs to.
