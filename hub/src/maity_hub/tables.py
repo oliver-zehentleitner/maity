@@ -23,6 +23,7 @@ from __future__ import annotations
 from typing import Any
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     Column,
@@ -239,7 +240,72 @@ human_session = Table(
     Column("os", String(64)),
     Column("ip", String(64)),
     Column("approved_by", String(ID)),
-    Column("ended_by", String(16)),
+    Column("ended_by", String(32)),
+    # Two-factor sign-in (docs/api.md §2.8): `full`, `second_factor` (the first factor is
+    # done, the code is not) or `enrolment` (the policy wants a factor first);
+    # `sign_in_complete` is false until the second step makes the sign-in count;
+    # `password_at` and `second_factor_at` are when this session last gave either
+    # (the proof of §2.8.1, the step-up of §2.8.4); `second_factor` how the sign-in's
+    # second step was given (`totp`, `recovery_code`), None without one; `next` is the
+    # login's `next`, kept until the second step answers it.
+    Column("state", String(16), nullable=False, server_default="full"),
+    Column("sign_in_complete", Boolean, nullable=False, server_default=true()),
+    Column("password_at", UtcDateTime),
+    Column("second_factor_at", UtcDateTime),
+    Column("second_factor", String(16)),
+    Column("next", String(512)),
+    **MYSQL_TABLE,
+)
+
+# A human's second factor (docs/api.md §2.8.1). The row outlives the factor: it carries
+# the generation every enrolment, confirmation, turning off, reset, new set of recovery
+# codes and recovery-code use moves, which reset links name. `secret` is the TOTP
+# secret sealed with MAITY_SECRET_KEY, None while not enrolled; `pending_*` is an
+# enrolment started and not yet confirmed, bound to the session that started it;
+# `last_step` the newest TOTP step accepted, so a code is accepted once.
+second_factor = Table(
+    "second_factor",
+    metadata,
+    _ref("human_id", "human.id", primary_key=True),
+    Column("secret", LargeBinary),
+    Column("enrolled_at", UtcDateTime),
+    Column("last_step", BigInteger),
+    Column("last_used_at", UtcDateTime),
+    Column("pending_secret", LargeBinary),
+    Column("pending_session", String(HEX_SHA256)),
+    Column("pending_expires_at", UtcDateTime),
+    Column("generation", Integer, nullable=False, server_default="0"),
+    # After a reset the next sign-in enrols first, whatever the policy (§2.8.3).
+    Column("reset_required", Boolean, nullable=False, server_default=false()),
+    **MYSQL_TABLE,
+)
+
+# Ten recovery codes per enrolled human, each an HMAC-SHA-256 under MAITY_SECRET_KEY
+# (a database copy alone opens none), each usable once (§2.8.1).
+recovery_code = Table(
+    "recovery_code",
+    metadata,
+    _ref("human_id", "human.id"),
+    Column("code_hash", String(HEX_SHA256), nullable=False),
+    Column("used_at", UtcDateTime),
+    PrimaryKeyConstraint("human_id", "code_hash"),
+    **MYSQL_TABLE,
+)
+
+# An instance admin's request to reset a human's second factor, confirmed by the human
+# through a mailed link (§2.8.3). `id` is the sha256 of the link's nonce; the link also
+# names `generation`, and a link whose generation is no longer the human's is dead.
+second_factor_reset = Table(
+    "second_factor_reset",
+    metadata,
+    Column("id", String(HEX_SHA256), primary_key=True),
+    _ref("human_id", "human.id", nullable=False, index=True),
+    Column("generation", Integer, nullable=False),
+    _ref("requested_by", "human.id", nullable=False),
+    Column("reason", Text, nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("expires_at", UtcDateTime, nullable=False),
+    Column("used_at", UtcDateTime),
     **MYSQL_TABLE,
 )
 
