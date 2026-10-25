@@ -406,6 +406,7 @@ def apply_address(
             .where(t.notification_settings.c.human_id == human_id)
             .values(
                 address=None,
+                address_normalized=None,
                 address_status="none",
                 verified_at=None,
                 pending_address=None,
@@ -491,11 +492,24 @@ def verify(
         or now >= row.pending_expires_at
     ):
         return False
+    # One account per address: the claim, under the per-address lock (§18.4). A link for
+    # an address another account verified meanwhile is a dead link, never why.
+    claimed = addresses.normalized(row.pending_address)
+    addresses.lock(conn, claimed)
+    taken = conn.execute(
+        select(t.notification_settings.c.human_id).where(
+            t.notification_settings.c.address_normalized == claimed,
+            t.notification_settings.c.human_id != owner,
+        )
+    ).first()
+    if taken is not None:
+        return False
     previous = row.address if row.address_status in ("verified", "disabled") else None
     conn.execute(
         update(t.notification_settings)
         .where(t.notification_settings.c.human_id == owner)
         .values(
+            address_normalized=claimed,
             address=row.pending_address,
             address_status="verified",
             verified_at=now,

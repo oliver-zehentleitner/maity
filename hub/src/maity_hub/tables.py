@@ -1104,6 +1104,8 @@ notification_settings = Table(
     _ref("human_id", "human.id", primary_key=True),
     Column("preferences", JSON_VALUE, nullable=False),
     Column("address", String(254)),
+    # The verified address trimmed and lower-cased: one account per address (§18.4).
+    Column("address_normalized", String(254), unique=True),
     Column("address_status", String(16), nullable=False),  # none pending verified disabled
     Column("verified_at", UtcDateTime),
     Column("pending_address", String(254)),
@@ -1114,6 +1116,16 @@ notification_settings = Table(
     Column("disabled_at", UtcDateTime),
     Column("address_change", JSON_VALUE),
     Column("updated_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# The per-address lock (docs/api.md §18.4, §2.7.1): verifying an address, changing it and
+# completing a registration lock the address's row here first, so of any number racing
+# for one address exactly one claims it.
+address_lock = Table(
+    "address_lock",
+    metadata,
+    Column("address", String(254), primary_key=True),
     **MYSQL_TABLE,
 )
 

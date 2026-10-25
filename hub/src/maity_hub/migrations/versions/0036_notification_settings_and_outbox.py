@@ -1,7 +1,9 @@
 """Notification settings and the mail outbox (docs/api.md §18.4, §18.6, §16.2).
 
 `notification_settings` holds a human's browser and mail preferences, the address and
-its verification. `mail_outbox` holds mail waiting for the mail worker.
+its verification, with the normalized verified address unique across accounts;
+`address_lock` is the per-address lock that claiming an address takes. `mail_outbox`
+holds mail waiting for the mail worker.
 
 Revision ID: 0036
 Revises: 0034
@@ -39,6 +41,7 @@ def upgrade() -> None:
         sa.Column("human_id", sa.String(length=40), nullable=False),
         sa.Column("preferences", JSON_VALUE, nullable=False),
         sa.Column("address", sa.String(length=254), nullable=True),
+        sa.Column("address_normalized", sa.String(length=254), nullable=True),
         sa.Column("address_status", sa.String(length=16), nullable=False),
         sa.Column("verified_at", TIMESTAMP, nullable=True),
         sa.Column("pending_address", sa.String(length=254), nullable=True),
@@ -53,6 +56,15 @@ def upgrade() -> None:
             ["human_id"], ["human.id"], name=op.f("fk_notification_settings_human_id_human")
         ),
         sa.PrimaryKeyConstraint("human_id", name=op.f("pk_notification_settings")),
+        sa.UniqueConstraint(
+            "address_normalized", name=op.f("uq_notification_settings_address_normalized")
+        ),
+        **TABLE_OPTIONS,
+    )
+    op.create_table(
+        "address_lock",
+        sa.Column("address", sa.String(length=254), nullable=False),
+        sa.PrimaryKeyConstraint("address", name=op.f("pk_address_lock")),
         **TABLE_OPTIONS,
     )
     op.create_table(
@@ -81,4 +93,5 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_index("ix_mail_outbox_due", table_name="mail_outbox")
     op.drop_table("mail_outbox")
+    op.drop_table("address_lock")
     op.drop_table("notification_settings")
