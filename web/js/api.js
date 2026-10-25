@@ -83,6 +83,24 @@ window.Maity = window.Maity || {};
     throw new ApiError(message, status, path, code, details);
   }
 
+  // A project's placements (fixtures/<slug>/placements.json, §15.5), none
+  // where the fixture has none; one of them, if the caller may steer it.
+  function placementsOf(slug) {
+    const data = fixtures();
+    if (!data[slug + "/placements.json"]) data[slug + "/placements.json"] = { items: [], next_cursor: null };
+    return data[slug + "/placements.json"].items;
+  }
+  function placementFor(slug, id, path) {
+    project(slug, path);
+    const p = placementsOf(slug).find((x) => x.id === id && x.active);
+    if (!p) fail(404, "not_found", "Not found", path);
+    const runner = runnersFile().items.find((r) => r.id === p.runner.id);
+    const admin = me().member.kind === "human" && ["owner", "admin"].includes(roleIn(slug)) && runner && runner.owner_id === me().member.id;
+    const profile = (fixtures()[slug + "/members.json"] || { items: [] }).items.find((x) => x.id === p.agent.id);
+    if (!admin && !(profile && profile.owner_id === me().member.id)) fail(403, "forbidden", "members:admin and the runner, or the agent's owner", path);
+    return p;
+  }
+
   // The fixture of one project: fixtures/<slug>/<name>.json.
   function file(slug, name, path) {
     const data = fixtures()[slug + "/" + name];
@@ -783,6 +801,32 @@ window.Maity = window.Maity || {};
     }],
     // Runners (docs/api.md §15.2–§15.3), instance level.
     ["GET", /^\/runners$/, () => ({ items: runnersFile().items.filter((r) => !r.removed_at), next_cursor: null })],
+    // §15.6 placements: the list, desired, restart; who may as the hub
+    // checks it (a human with members:admin who owns the runner, or the
+    // agent profile's owner).
+    ["GET", /^\/projects\/([^/]+)\/placements$/, (m, body, path) => {
+      project(m[1], path);
+      return { items: placementsOf(m[1]).filter((p) => p.active), next_cursor: null };
+    }],
+    ["PATCH", /^\/projects\/([^/]+)\/placements\/([^/]+)$/, (m, body, path) => {
+      const p = placementFor(m[1], m[2], path);
+      if (!["running", "stopped"].includes(body.desired)) fail(400, "invalid", "desired is running or stopped", path, { fields: { desired: "unknown" } });
+      if (body.desired === "running" && ["accepted", "archived"].includes(project(m[1], path).state)) fail(409, "project_closed", "the project is closed", path);
+      p.desired = body.desired;
+      p.updated_by = me().member.id; p.updated_at = nowIso();
+      return p;
+    }],
+    ["POST", /^\/projects\/([^/]+)\/placements\/([^/]+)\/restart$/, (m, body, path) => {
+      const p = placementFor(m[1], m[2], path);
+      const creds = (fixtures()[m[1] + "/credentials.json"] || {})[p.agent.id];
+      const cred = creds && creds.items.find((c) => c.id === p.credential_id);
+      if (body.rejoin && !(cred && cred.revoked_at)) {
+        fail(400, "invalid", "the placement's credential is not revoked", path, { fields: { rejoin: "credential_not_revoked" } });
+      }
+      p.generation += 1; p.desired = "running"; p.rejoin = !!body.rejoin; p.reported_current = false;
+      p.updated_by = me().member.id; p.updated_at = nowIso();
+      return p;
+    }],
     ["GET", /^\/runners\/enrollments$/, () => ({ items: fixtures()["runner-enrollments.json"].items.slice().reverse(), next_cursor: null })],
     ["POST", /^\/runners\/enrollments$/, (m, body, path) => {
       const ttl = body.ttl_seconds === undefined ? 900 : body.ttl_seconds;
@@ -1146,6 +1190,7 @@ window.Maity = window.Maity || {};
       "/api/v1/me/preferences": { get: {}, put: {} },
       "/api/v1/requests/{request_id}/withdraw": { post: {} },
       "/api/v1/projects": { get: {}, post: { requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/ProjectCreate" } } } } } },
+      "/api/v1/projects/{slug}/placements": { get: {}, post: {} },
     },
     components: { schemas: { ProjectCreate: { properties: {
       slug: {}, name: {}, repository: {}, memory: {}, setup: {}, keep_the_why: {}, policy: {},

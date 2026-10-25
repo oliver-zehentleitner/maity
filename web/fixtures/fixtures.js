@@ -1827,6 +1827,227 @@ window.MAITY_FIXTURES = {
     ],
     "next_cursor": null
   },
+  "maity/placements.json": {
+    "items": [
+      {
+        "active": true,
+        "agent": {
+          "avatar_url": null,
+          "display_name": "Agent B",
+          "handle": "agent-b",
+          "id": "agt-b"
+        },
+        "approval": {
+          "pending_change": null,
+          "request_id": null,
+          "status": "approved"
+        },
+        "closed_at": null,
+        "closed_reason": null,
+        "created_at": "2026-10-22T13:39:02Z",
+        "created_by": "hum-maintainer",
+        "credential_id": "crd-b-0003",
+        "desired": "running",
+        "generation": 4,
+        "harness": "claude-code",
+        "id": "plc-0001",
+        "logs_hint": "maity runner logs plc-0001",
+        "mode": "interactive",
+        "model": "opus",
+        "project": "maity",
+        "proposed_by": null,
+        "rejoin": false,
+        "reported": {
+          "crash_count": null,
+          "crash_window_seconds": null,
+          "deadline_at": null,
+          "detail": null,
+          "exit_code": null,
+          "observed_generation": 4,
+          "reason": null,
+          "reported_at": "2026-10-22T13:58:31Z",
+          "restarts": 0,
+          "retry_at": null,
+          "since": "2026-10-22T13:58:30Z",
+          "state": "running",
+          "target": "local"
+        },
+        "reported_current": true,
+        "runner": {
+          "id": "rnr-0002",
+          "name": "home-laptop"
+        },
+        "session_hint": "tmux -S /var/lib/maity-runner/tmux.sock attach -t maity_maity_agent-b",
+        "stop_grace_seconds": 120,
+        "target": null,
+        "updated_at": "2026-10-22T13:58:10Z",
+        "updated_by": "hum-maintainer",
+        "workspace": {
+          "branch": null,
+          "clone": "agent-b",
+          "continues_existing": true
+        }
+      },
+      {
+        "active": true,
+        "agent": {
+          "avatar_url": null,
+          "display_name": "Agent C",
+          "handle": "agent-c",
+          "id": "agt-c"
+        },
+        "approval": {
+          "pending_change": null,
+          "request_id": null,
+          "status": "approved"
+        },
+        "closed_at": null,
+        "closed_reason": null,
+        "created_at": "2026-10-21T09:30:00Z",
+        "created_by": "hum-maintainer",
+        "credential_id": "crd-c-0002",
+        "desired": "stopped",
+        "generation": 2,
+        "harness": "codex",
+        "id": "plc-0002",
+        "mode": "supervised",
+        "model": null,
+        "project": "maity",
+        "proposed_by": null,
+        "rejoin": false,
+        "reported": {
+          "crash_count": null,
+          "crash_window_seconds": null,
+          "deadline_at": null,
+          "detail": null,
+          "exit_code": 0,
+          "observed_generation": 2,
+          "reason": "stopped_by_hub",
+          "reported_at": "2026-10-21T12:09:01Z",
+          "restarts": 0,
+          "retry_at": null,
+          "since": "2026-10-21T12:09:00Z",
+          "state": "stopped",
+          "target": "local"
+        },
+        "reported_current": true,
+        "runner": {
+          "id": "rnr-0002",
+          "name": "home-laptop"
+        },
+        "stop_grace_seconds": 120,
+        "target": null,
+        "updated_at": "2026-10-21T12:08:00Z",
+        "updated_by": "hum-maintainer",
+        "workspace": {
+          "branch": null,
+          "clone": "agent-c",
+          "continues_existing": false
+        }
+      },
+      {
+        "active": true,
+        "agent": {
+          "avatar_url": null,
+          "display_name": "Agent D",
+          "handle": "agent-d",
+          "id": "agt-d"
+        },
+        "approval": {
+          "pending_change": null,
+          "request_id": null,
+          "status": "approved"
+        },
+        "closed_at": null,
+        "closed_reason": null,
+        "created_at": "2026-10-21T13:00:00Z",
+        "created_by": "hum-maintainer",
+        "credential_id": "crd-d-0001",
+        "desired": "running",
+        "generation": 3,
+        "harness": "claude-code",
+        "id": "plc-0003",
+        "mode": "supervised",
+        "model": null,
+        "project": "maity",
+        "proposed_by": null,
+        "rejoin": false,
+        "reported": {
+          "crash_count": 5,
+          "crash_window_seconds": 1800,
+          "deadline_at": null,
+          "detail": null,
+          "exit_code": 1,
+          "observed_generation": 3,
+          "reason": "crash_loop",
+          "reported_at": "2026-10-21T13:20:01Z",
+          "restarts": 5,
+          "retry_at": null,
+          "since": "2026-10-21T13:20:00Z",
+          "state": "failed",
+          "target": "local"
+        },
+        "reported_current": true,
+        "runner": {
+          "id": "rnr-0002",
+          "name": "home-laptop"
+        },
+        "stop_grace_seconds": 120,
+        "target": "local",
+        "updated_at": "2026-10-21T13:00:00Z",
+        "updated_by": "hum-maintainer",
+        "workspace": {
+          "branch": null,
+          "clone": "agent-d",
+          "continues_existing": false
+        }
+      },
+      {
+        "active": true,
+        "agent": {
+          "avatar_url": null,
+          "display_name": "Reviewer",
+          "handle": "reviewer",
+          "id": "agt-r"
+        },
+        "approval": {
+          "pending_change": null,
+          "request_id": "req-0012",
+          "status": "pending"
+        },
+        "closed_at": null,
+        "closed_reason": null,
+        "created_at": "2026-10-21T13:30:00Z",
+        "created_by": "hum-maintainer",
+        "credential_id": null,
+        "desired": "running",
+        "generation": 1,
+        "harness": "claude-code",
+        "id": "plc-0004",
+        "mode": "interactive",
+        "model": null,
+        "project": "maity",
+        "proposed_by": "agt-a",
+        "rejoin": false,
+        "reported": null,
+        "reported_current": false,
+        "runner": {
+          "id": "rnr-0002",
+          "name": "home-laptop"
+        },
+        "stop_grace_seconds": 120,
+        "target": null,
+        "updated_at": "2026-10-21T13:30:00Z",
+        "updated_by": "agt-a",
+        "workspace": {
+          "branch": null,
+          "clone": "reviewer",
+          "continues_existing": false
+        }
+      }
+    ],
+    "next_cursor": null
+  },
   "maity/project.json": {
     "absence": null,
     "banner": {

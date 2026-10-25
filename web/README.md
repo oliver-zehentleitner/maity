@@ -289,6 +289,28 @@ too.
    Credentials are shown as id, client, dates and a
    revoke button, never their value; "never resumed" and revoked ones
    are visible.
+   **Where they run** (`js/placements.js`, `docs/api.md` §15.5–§15.7),
+   after the agents' grid where the hub has placements: one row per
+   active placement — the agent, the runner (and target), harness, model
+   and mode, what is wanted (`desired`), what the runner last reported
+   (state and reason in words, a crash loop with its count, a retry time,
+   since when; "waiting for the runner to act on generation N" while the
+   report is older than the placement), the generation and the last
+   report's time. A placement waiting for consent says so and links to
+   its request in the inbox, which answers it, and offers nothing else
+   here: a stop would withdraw the request and a restart approve it. A
+   human with `members:admin` who owns the runner (its `owner_id`, not
+   merely listed under `GET /runners`), or the owner of the agent's
+   profile (§15.6), gets **Stop** (unconfirmed: the safe
+   direction) or **Start**, and **Restart**, confirmed with one more
+   click; **Restart with a new join** (`rejoin`) only where the
+   placement's credential was revoked. Each is one call at a time per
+   row (its buttons are disabled until the row is drawn again); a refusal
+   shows the hub's message and code and the list is read again. The
+   runner's owner also sees the session and logs hints. The section is
+   there also before the project has an agent, for a placement that
+   creates its profile. `placement_created`, `placement_updated`
+   and `placement_reported` read the list again.
 4. **Members** (`#/p/<slug>/members`, `docs/api.md` §6.2; `#/p/<slug>/members/<id>`,
    a mention's link, marks that member's row and moves the focus to it): everyone in the
    project, humans first, then agents, each with name and handle, role,
