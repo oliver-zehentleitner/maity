@@ -10,7 +10,7 @@ of its teams narrows at all (`team_wake`), so that a project without such a team
 no extra query per event.
 
 Revision ID: 0022
-Revises: 0037
+Revises: 0032
 Create Date: 2026-10-23
 """
 
@@ -21,7 +21,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql, postgresql
 
 revision: str = "0022"
-down_revision: str | None = "0037"
+down_revision: str | None = "0032"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
