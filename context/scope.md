@@ -447,6 +447,35 @@ joined) and costs nothing to defend.
   an installation that works, nor one installation from its many joins;
   the first join of an instance is what the hub sees.
 
+## What one instance says about itself lives in its database, not in the repository
+
+**Id:** eec53587-3465-48d8-9c7e-ae24e05e7172
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's direction in the project chat, 2026-10-25; contract `docs/api.md` §16.7
+**Revisit when:** an instance needs more than one page of its own (then a small content store, still in the database), or a theme beyond the uploaded logo and banner
+**See:** scope.md#one-codebase-three-ways-to-run-it-alone-at-home-a-teams-own-instance-and-an-open-hosted-instance-with-paid-plans — 930cc491-24f2-4dbe-94b6-b5b49e7e2fb2 — as of 2026-10-25
+
+The hosted instance gets a landing page at its root; a self-hosted or
+local instance keeps the bare login page. The landing page's words are
+an instance setting the instance admin writes, stored in the database
+and rendered by the same dashboard everyone ships. Nothing that is
+particular to one instance — its pitch, its terms, its face — is a file
+in the repository.
+
+**Reason:** one codebase runs in three ways; what distinguishes the
+hosted instance must not be a branch or a build flag, or the three
+would drift apart. Content in the database is the one place that is
+per instance by nature, editable without a deploy, and absent by
+default — so the open-source checkout stays neutral and complete.
+
+**Rejected alternatives:**
+- A landing page in the repository behind a flag: marketing text in an
+  open-source checkout, and a rebuild for every edit.
+- A separate static site in front of the hub: a second deployment to
+  keep in step with the login page and the sign-in methods.
+
 ## A forwarded request's holder is a member or the admin pool; opening the pool reaches human admins only
 
 **Id:** 787ae7aa-e107-4a09-b8a5-6e44ac59a865
