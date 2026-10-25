@@ -68,13 +68,14 @@ holds everything about what it had.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** implementation session, 2026-10-23 (the edit history)
-**Revisit when:** members ask why a partner card's history does not show the edge, or ships_with stops being mirrored
+**Source:** implementation session, 2026-10-23 (the edit history); related follows the same rule in docs/api.md §6.4 and §6.15, 2026-10-25
+**Revisit when:** members ask why a partner card's history does not show the edge, or either edge stops being mirrored
 
 When a member sets `ships_with` on one card, the hub mirrors the edge on
 the partner card. The member's card gets the history entry; the
 partner's `task_updated` names `fields: ["ships_with"]` with
-`history: []`.
+`history: []`. The same distinction applies to `related`: the authored
+card gets the history and the hub announces the mirror on its partner.
 
 **Reason:** the history records what a member changed; the mirror is the
 hub keeping both cards consistent, like a rank or a request's block,
