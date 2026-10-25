@@ -887,8 +887,11 @@ last reported. Stop and Start are one `PATCH` of `desired` each, Stop
 without a question; Restart asks once more inline before its `POST`; a
 new join is offered only when the placement's credential is revoked
 among the credentials the view already reads. Actions show for a human
-admin whose own runners (`GET /runners`) include the placement's, or the
-agent profile's owner. A pending consent links to its inbox request.
+admin who is the owner (`owner_id`) of the placement's runner — `GET
+/runners` also lists runners attached where one is an admin — or the
+agent profile's owner. A placement waiting for consent offers only the
+link to its inbox request: there a stop would withdraw it and a restart
+approve it.
 
 **Reason:** the agents' cards are where people look for an agent, and
 the section reuses the credentials the view reads anyway. Stopping is the
