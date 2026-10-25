@@ -95,6 +95,7 @@ def test_enrolment_needs_a_fresh_password_and_turns_on_with_a_code(
 ) -> None:
     human = signed_in(make_client, migrated)
     assert human.get("/auth/second-factor").json() == {
+        "instance_off": False,
         "enrolled": False,
         "enrolled_at": None,
         "recovery_codes_left": 0,
@@ -412,3 +413,131 @@ def test_a_device_code_sign_in_owes_the_second_step_too(
     # The first factor's method and lineage are kept through the second step (§2.8.2).
     assert mine["method"] == "device_code" and mine["approved_by"] is not None
     assert mine["second_factor"] is True
+
+
+# --- review round 1 --------------------------------------------------------------------------
+
+
+def parked_enrolment(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> tuple[flow.Human, TestClient]:
+    """An admin under `required_admins` with an enrolment session parked in a second
+    browser, before enrolling anywhere."""
+    admin = signed_in(make_client, migrated)
+    assert (
+        admin.patch("/admin/settings/sign-in", {"second_factor": "required_admins"}).status_code
+        == 200
+    )
+    parked = make_client(secret_key=KEY)
+    assert login(parked).json() == {"second_factor": "enrolment_required"}
+    return admin, parked
+
+
+def test_a_parked_enrolment_session_ends_once_the_human_enrolled_elsewhere(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    admin, parked = parked_enrolment(make_client, migrated, moment)
+    enrol(admin, moment)  # from the first session, which is held at enrolment too
+    assert parked.get("/api/v1/me").status_code == 401  # never full without a code
+    with migrated.connect() as conn:
+        ended = (
+            conn.execute(
+                select(t.human_session.c.ended_by).where(
+                    t.human_session.c.sign_in_complete.is_(False)
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert ended == ["second_factor_disabled"]  # the end committed
+
+
+def test_a_parked_enrolment_session_completes_when_the_policy_no_longer_asks(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    admin, parked = parked_enrolment(make_client, migrated, moment)
+    assert admin.patch("/admin/settings/sign-in", {"second_factor": "optional"}).status_code == 403
+    with migrated.begin() as conn:
+        from maity_hub import instance_settings as store
+
+        store.put(conn, "sign_in.second_factor", "optional", admin.id)
+    assert parked.get("/api/v1/me").status_code == 200  # no factor exists: it completes
+
+
+def test_an_ended_second_step_stays_ended_when_the_policy_returns(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    from maity_hub import instance_settings as store
+
+    human = signed_in(make_client, migrated)
+    enrol(human, moment)
+    pending = make_client(secret_key=KEY)
+    second_step(pending)
+    with migrated.begin() as conn:
+        store.put(conn, "sign_in.second_factor", "off", human.id)
+    assert pending.get("/api/v1/auth/session").status_code == 401
+    with migrated.begin() as conn:
+        store.put(conn, "sign_in.second_factor", "optional", human.id)
+    assert pending.get("/api/v1/auth/session").status_code == 401  # not revived
+
+
+def test_under_off_the_factor_calls_refuse_and_the_state_says_so(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    from maity_hub import instance_settings as store
+
+    human = signed_in(make_client, migrated)
+    enrol(human, moment)
+    with migrated.begin() as conn:
+        store.put(conn, "sign_in.second_factor", "off", human.id)
+    assert human.get("/auth/second-factor").json()["instance_off"] is True
+    for call in (
+        human.post("/auth/second-factor/totp/confirm", {"code": "123456"}),
+        human.post("/auth/second-factor/recovery-codes"),
+        human.post("/auth/second-factor/totp"),
+        human.delete("/auth/second-factor"),
+    ):
+        assert call.json()["error"]["details"]["reason"] == "method_disabled"
+
+
+def test_off_in_the_environment_is_told_once_at_startup(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    human = signed_in(make_client, migrated)
+    enrol(human, moment)
+    for _ in range(2):  # two starts with the environment's `off`: one notice
+        make_client(secret_key=KEY, sign_in_second_factor="off")
+    told = [
+        r.data
+        for r in records_of(migrated, "second_factor_changed")
+        if r.data["change"] == "instance_off"
+    ]
+    assert told == [{"change": "instance_off", "by": "environment"}]
+
+
+def test_one_second_step_completes_once(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    from maity_hub.auth import sessions
+
+    human = signed_in(make_client, migrated)
+    enrol(human, moment)
+    second_step(make_client(secret_key=KEY))
+    with migrated.begin() as conn:
+        row = conn.execute(
+            select(t.human_session).where(t.human_session.c.sign_in_complete.is_(False))
+        ).one()
+        sessions.complete_sign_in(conn, row, "totp")
+        with pytest.raises(LookupError):  # the row no longer owes the step
+            sessions.complete_sign_in(conn, row, "totp")
+
+
+def test_logging_out_of_a_second_step_names_nobody(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    human = signed_in(make_client, migrated)
+    enrol(human, moment)
+    pending = make_client(secret_key=KEY)
+    csrf = second_step(pending)
+    out = pending.post("/api/v1/auth/logout", headers={"X-CSRF-Token": csrf})
+    assert out.status_code == 200 and out.json() == {}
