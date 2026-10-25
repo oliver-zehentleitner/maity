@@ -1704,8 +1704,10 @@ def notifications_step(run: Run, page: Page) -> None:
     order = page.evaluate("Array.from(document.querySelectorAll('header .me > *')).map((e) => e.className)")
     assert len(order) == 4 and "chat-button" in order[0] and "bell" in order[1], f"header order: {order}"
     page.set_viewport_size({"width": 390, "height": 844})
-    tops = page.evaluate("Array.from(document.querySelectorAll('header .me > *')).map((e) => Math.round(e.getBoundingClientRect().top))")
-    assert len(set(tops)) == 1, f"the header's four buttons wrap at 390 px: {tops}"
+    # One row: every button's vertical middle within the others' height (a pixel of alignment is no wrap).
+    boxes = page.evaluate("Array.from(document.querySelectorAll('header .me > *')).map((e) => { const r = e.getBoundingClientRect(); return [r.top, r.bottom]; })")
+    middles = [(top + bottom) / 2 for top, bottom in boxes]
+    assert all(top <= m <= bottom for top, bottom in boxes for m in middles), f"the header's four buttons wrap at 390 px: {boxes}"
     page.set_viewport_size({"width": 1280, "height": 900})
     run.step("chats: the Chat button opens every chat across the projects")
     page.locator("header a.chat-button").click()
