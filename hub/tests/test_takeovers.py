@@ -11,7 +11,7 @@ from sqlalchemy import Engine, select, update
 
 from maity_hub import clock, takeovers
 from maity_hub import tables as t
-from tests import flow
+from tests import factory, flow
 from tests.conftest import ClientFactory
 
 
@@ -499,3 +499,20 @@ def test_an_escalation_is_neither_forwarded_nor_claimed_by_a_party(
     claimed = receiver.post(f"{requests}/claim", {})
     assert claimed.status_code == 403, claimed.text
     assert claimed.json()["error"]["details"]["reason"] == "party_to_takeover"
+
+
+def test_a_takeover_between_two_owners_is_refused_for_now(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    colleague = flow.human(make_client, migrated, "colleague")
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    factory.membership(migrated, project_id, "admin", human_id=colleague.id)
+    theirs = flow.agent(make_client, colleague, agent={"handle": "theirs", "display_name": "T"})
+    mine = flow.agent(make_client, owner)
+    card_id = _held(owner, theirs)
+    for who in (mine, owner):  # an agent of another owner, and that owner as a human admin
+        response = _open(who, card_id)
+        assert response.status_code == 403, response.text
+        assert response.json()["error"]["details"]["reason"] == "cross_owner"
+    assert _card(owner, card_id)["claim"]["holder"] == theirs.id

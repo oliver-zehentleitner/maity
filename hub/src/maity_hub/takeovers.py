@@ -175,6 +175,8 @@ def open_takeover(
         )
     if (receiver.id, instance) == (card.claim_holder, card.claim_instance):
         raise invalid({"to": "holds_it"}, "the card is already theirs")
+    if is_cross_owner(conn, holder.id, receiver.id, mine.id):
+        raise cross_owner()
     now = clock.now()
     window = mine.project.takeover_window_minutes
     takeover_id = new_id("takeover")
@@ -525,6 +527,35 @@ def _same_owner(conn: Connection, mine: Membership, row: Any) -> bool:
     return owners <= {own}
 
 
+def _owner(conn: Connection, membership_id: int) -> str | None:
+    """Whose side a member is on (§6.19): an agent's owner, a human themselves."""
+    row = conn.execute(
+        select(t.membership.c.agent_id, t.membership.c.human_id, t.agent_profile.c.owner_id)
+        .outerjoin(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
+        .where(t.membership.c.id == membership_id)
+    ).one()
+    owner: str | None = row.owner_id if row.agent_id is not None else row.human_id
+    return owner
+
+
+def is_cross_owner(conn: Connection, holder: int, receiver: int, requester: int | None) -> bool:
+    """The holding agent's owner differs from the receiver's or the requester's (§6.19)."""
+    side = _owner(conn, holder)
+    others = [receiver, *([requester] if requester is not None else [])]
+    return any(_owner(conn, m) != side for m in others)
+
+
+def cross_owner() -> ApiError:
+    """A takeover between two owners' sides needs the owner's notice and objection
+    (§6.19), which this hub does not offer yet: refused until it does."""
+    return ApiError(
+        403,
+        "forbidden",
+        "a takeover between two owners' agents is not supported yet",
+        {"reason": "cross_owner"},
+    )
+
+
 # --- escalation (§6.19) ----------------------------------------------------------------------
 
 
@@ -607,6 +638,8 @@ def _admin_team_answers(conn: Connection, request: Any, mine: Any) -> str | None
         return "party_to_takeover"
     if row is None or not admin_team(mine, row):
         return "admin_team_only"
+    if is_cross_owner(conn, row.from_member, row.to_member, row.requested_by):
+        return "cross_owner"  # fails closed until the cross-owner rules exist
     return None
 
 
@@ -621,6 +654,8 @@ def _settle_escalation(conn: Connection, settled: proposals.Settlement) -> None:
     ).first()
     if row is None or row.status != "escalated":
         return
+    if is_cross_owner(conn, row.from_member, row.to_member, row.requested_by):
+        raise cross_owner()  # never moved across owners by this path
     if settled.reply_id == "transfer":
         transfer(conn, row, "decided", settled.closer, by=settled.approver)
     elif settled.reply_id == "keep":
