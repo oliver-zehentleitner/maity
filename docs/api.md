@@ -4859,6 +4859,13 @@ files. The rendered document carries no script and no external
 reference, so it may be embedded wherever an image may; `ETag` may be
 the hash of the rendered document, since the value is all that varies.
 
+**Motion.** For `agents_online` with at least one agent online the hub
+fills `web/brand/maity-badge-online-animated-template.svg` instead (the
+same six placeholders; CSS inside the SVG, no script; the agent walks
+the round three times in 2.7 s and then rests, so the motion ends by
+itself). At zero, and for `members`, the static template is filled. The
+headers and the ETag rule are the same for both.
+
 **Rate limit.** The endpoint has a limit of its own, 60 per minute
 per source address, separate from the login and join buckets (§2.1,
 §3.3): a forge's image proxy fetching many badges from a few addresses

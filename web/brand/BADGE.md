@@ -8,7 +8,8 @@ A shields.io-style README badge, 20 px tall. The left part is fixed: ink `#1d212
 |---|---|
 | `maity-badge.svg` | static "maity · team project"; a plain file, links to maity.team, works without a hub |
 | `maity-badge-template.svg` | what the hub fills for `GET /badge/<slug>.svg` |
-| `maity-badge-members-example.svg`, `maity-badge-online-example.svg` | the template filled, for checking the hub's output |
+| `maity-badge-online-animated-template.svg` | the same, animated: what the hub fills for `agents_online` while at least one agent is online |
+| `maity-badge-members-example.svg`, `maity-badge-online-example.svg`, `maity-badge-online-animated-example.svg` | the templates filled, for checking the hub's output |
 
 ## Filling the template
 
@@ -67,6 +68,12 @@ Replace each placeholder; everything else stays byte for byte.
 | `x` | 6.51 |
 | `y` | 6.51 |
 | `z` | 5.77 |
+
+## Motion
+
+Only `agents_online` with at least one agent online uses the animated template; at zero it is the static template in grey, and `members` is always static. On load the agent walks the round three times with the trail of the loader (0.9 s per lap) and then rests on its seat at the top: 2.7 s in all, then the badge stands still. Motion here means that someone is at work right now.
+
+The file carries `prefers-reduced-motion: reduce`, which takes effect where the SVG is inlined. Chromium ignores it inside `<img>`, and READMEs embed badges that way. The motion is short and ends by itself (under 5 s, WCAG 2.2.2), so no pause control is needed.
 
 ## Rules
 
