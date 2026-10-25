@@ -9,7 +9,7 @@
 window.Maity = window.Maity || {};
 
 (function (M) {
-  const { h, append, formatAgo, formatTime } = M.dom;
+  const { h, append, clear, formatAgo, formatTime } = M.dom;
 
   const PRIORITY_RANK = { urgent: 0, high: 1, normal: 2, low: 3 };
 
@@ -168,8 +168,12 @@ window.Maity = window.Maity || {};
         nis.reason));
     }
 
+    const preference = M.preferences && M.preferences.isProposal(req);
+    // Not read in full: no reply that could apply a proposal unseen.
+    const unread = req.personal && req.status === "open" && req.unreadable;
     if (req.status !== "open") {
       const a = req.answer;
+      if (preference) append(body, M.preferences.outcome(req));
       append(body, h("p", { class: "answered" },
         (req.status === "withdrawn" ? "Withdrawn" : "Answered: " + answerLabel(req)),
         a && a.text ? [" — “", said("text", a.text, a.mentions), "”"] : null,
@@ -188,6 +192,22 @@ window.Maity = window.Maity || {};
         status.fail("Not sent: ", err);
       });
     };
+
+    if (unread) {
+      const again = h("button", { type: "button", onclick: async () => {
+        again.disabled = true;
+        await readInFull(req);
+        const fresh = entryBody(ctx, req, names, onAnswer, onLater);
+        append(clear(body), Array.from(fresh.childNodes));
+      } }, "Try again");
+      append(body, h("div", { class: "error", role: "alert" },
+        h("p", null, "This request could not be read in full, so it is not offered for an answer yet: it may be a proposal whose texts you should see first. "
+          + (req.unreadable.message || req.unreadable.code || "")),
+        again));
+    }
+    // A preference proposal (§19.4) is answered in its review: accept,
+    // accept an edit, decline; Later, talk and Withdraw stay below.
+    if (preference) append(body, M.preferences.review(ctx, req, (payload) => onAnswer(req, payload)));
 
     const textId = "reply-" + req.slug + "-" + req.id;
     const text = h("textarea", { id: textId, rows: "3", placeholder: "Reply in your own words" });
@@ -219,10 +239,11 @@ window.Maity = window.Maity || {};
           },
         }, "Withdraw") : null,
         // The primary reply last, the others in the hub's order before it.
-        [...(req.replies || []).filter((r) => replyClass(req, r) !== "reply primary"),
-          ...(req.replies || []).filter((r) => replyClass(req, r) === "reply primary")].map((r) =>
+        (preference || unread ? [] : [...(req.replies || []).filter((r) => replyClass(req, r) !== "reply primary"),
+          ...(req.replies || []).filter((r) => replyClass(req, r) === "reply primary")]).map((r) =>
           h("button", { type: "button", class: replyClass(req, r), onclick: () => send({ reply_id: r.id }) }, r.label))),
-      h("div", { class: "free-text" },
+      // A preference proposal's words go with its Decline, in the review.
+      preference || unread ? null : h("div", { class: "free-text" },
         h("label", { for: textId }, "Free text (" + M.dom.SEND_KEYS + " sends)"),
         text,
         // @ offers this project's members; the hub links them, it pings nobody (§8.6).
@@ -241,6 +262,15 @@ window.Maity = window.Maity || {};
     return body;
   }
 
+  // A personal request as GET /requests/{id} has it: a proposal with its
+  // texts (§19.4), or the error that kept it from being read.
+  function readInFull(r) {
+    return M.api.get("/requests/" + encodeURIComponent(r.id)).then((full) => {
+      delete r.unreadable;
+      if (full.memory_proposal) r.memory_proposal = full.memory_proposal;
+    }, (err) => { r.unreadable = err; });
+  }
+
   async function load(ctx) {
     if (ctx.scope === "project") {
       const requests = await M.api.getAll(ctx.base + "/requests?status=all");
@@ -249,6 +279,11 @@ window.Maity = window.Maity || {};
     }
     const requests = await M.api.getAll("/requests");
     requests.items.forEach((r) => { r.slug = r.project.slug; });
+    // A list shows no proposal (§7): an open personal request is read on its
+    // own, so a preference proposal (§19.4) comes with its review's texts.
+    // One that cannot be read is offered no reply until it is: it may be a
+    // proposal whose texts the human has to see first.
+    await Promise.all(requests.items.filter((r) => r.personal && r.status === "open").map(readInFull));
     return requests.items;
   }
 

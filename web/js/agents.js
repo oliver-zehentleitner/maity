@@ -283,6 +283,8 @@ window.Maity = window.Maity || {};
           ctx.canAdmin ? pauseControl(ctx, m) : null,
           // A hub that does not know briefings yet has no such key.
           ctx.canAdmin && m.kind === "agent" && "briefing" in m ? briefingControl(ctx, m) : null,
+          // Its owner gives it their preferences (§19.4); a hub without them has no key.
+          M.preferences && m.owner_id === ctx.me.id && "owner_preferences" in m ? M.preferences.ownerToggle(ctx, m) : null,
           creds[i].error
             ? h("div", { class: "credentials" }, h("h4", null, "Credentials"), M.errorBox(creds[i].error))
             : credentials(ctx, m, creds[i].list),

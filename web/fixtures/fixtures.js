@@ -3,6 +3,68 @@
 "use strict";
 
 window.MAITY_FIXTURES = {
+  "admin-mail.json": {
+    "complete": true,
+    "enabled": true,
+    "failed_last_hour": 0,
+    "from": {
+      "source": "admin",
+      "value": {
+        "address": "maity@example.org",
+        "name": "Maity"
+      }
+    },
+    "host": {
+      "source": "env",
+      "value": "smtp.example.org"
+    },
+    "last_test": null,
+    "max_per_hour": {
+      "source": "default",
+      "value": 500
+    },
+    "missing": [],
+    "password": {
+      "set": false,
+      "source": "admin"
+    },
+    "port": {
+      "source": "default",
+      "value": 587
+    },
+    "reply_to": {
+      "source": "default",
+      "value": null
+    },
+    "secret_key": {
+      "set": true
+    },
+    "security_max_per_hour": {
+      "source": "default",
+      "value": 100
+    },
+    "security_queued": 0,
+    "security_sent_last_hour": 1,
+    "sent_last_hour": 12,
+    "sign_in_dropped_last_hour": 0,
+    "sign_in_max_per_hour": {
+      "source": "default",
+      "value": 60
+    },
+    "sign_in_sent_last_hour": 0,
+    "signing_key": {
+      "set": true
+    },
+    "tls": {
+      "source": "default",
+      "value": "starttls"
+    },
+    "username": {
+      "source": "default",
+      "value": null
+    },
+    "warnings": []
+  },
   "admin-users.json": {
     "items": [
       {
@@ -898,6 +960,7 @@ window.MAITY_FIXTURES = {
         "last_seen_at": "2026-10-21T13:41:10Z",
         "model": "claude-opus-5-5",
         "owner_id": "hum-maintainer",
+        "owner_preferences": false,
         "paused": null,
         "presence": "online",
         "reports_to": "hum-maintainer",
@@ -2593,9 +2656,109 @@ window.MAITY_FIXTURES = {
         "to": "profile_owner:agt-q",
         "tried": null,
         "while_open": "proceed_provisionally"
+      },
+      {
+        "answer": null,
+        "answered_at": null,
+        "asked_by": {
+          "display_name": "Agent A",
+          "member_id": "agt-a",
+          "role": "admin",
+          "session_id": null
+        },
+        "class": "consent",
+        "created_at": "2026-10-24T07:10:00Z",
+        "id": "req-p002",
+        "ktw_ref": null,
+        "memory_proposal": {
+          "base_version": 2,
+          "human_id": "hum-maintainer",
+          "markdown": "Direct and short.\nPropose, don't push: I decide.\nNo apologies, no filler.\nSay so when you are unsure.\nGerman in chat, English in code and docs.",
+          "reason": "You asked twice this week for chat in German; this keeps it for every agent.",
+          "store": "preferences"
+        },
+        "needs_in_session": null,
+        "on_behalf_of": null,
+        "options": [],
+        "personal": true,
+        "priority": "normal",
+        "project": {
+          "name": "Maity",
+          "slug": "maity",
+          "state": "build"
+        },
+        "replies": [
+          {
+            "id": "go",
+            "label": "Go"
+          },
+          {
+            "id": "no",
+            "label": "No"
+          }
+        ],
+        "status": "open",
+        "summary": "Agent A, admin in Maity, proposes a change to your preferences.",
+        "task": null,
+        "task_id": null,
+        "title": "Agent A proposes a change to your preferences",
+        "to": "human:hum-maintainer",
+        "tried": null,
+        "while_open": "proceed_provisionally"
       }
     ],
     "next_cursor": null
+  },
+  "preferences.json": {
+    "current": {
+      "by": {
+        "handle": "maintainer",
+        "id": "hum-maintainer",
+        "kind": "human"
+      },
+      "confirmed_by": null,
+      "human_id": "hum-maintainer",
+      "markdown": "Direct and short.\nPropose, don't push: I decide.\nNo apologies, no filler.\nSay so when you are unsure.",
+      "proposed_by": null,
+      "updated_at": "2026-10-23T09:00:00Z",
+      "version": 2
+    },
+    "projects": [
+      {
+        "include": true,
+        "slug": "maity"
+      },
+      {
+        "include": false,
+        "slug": "sample"
+      }
+    ],
+    "versions": [
+      {
+        "at": "2026-10-23T09:00:00Z",
+        "by": {
+          "handle": "maintainer",
+          "id": "hum-maintainer",
+          "kind": "human"
+        },
+        "confirmed_by": null,
+        "markdown": "Direct and short.\nPropose, don't push: I decide.\nNo apologies, no filler.\nSay so when you are unsure.",
+        "proposed_by": null,
+        "version": 2
+      },
+      {
+        "at": "2026-10-22T08:00:00Z",
+        "by": {
+          "handle": "maintainer",
+          "id": "hum-maintainer",
+          "kind": "human"
+        },
+        "confirmed_by": null,
+        "markdown": "Direct and short.\nNo apologies.",
+        "proposed_by": null,
+        "version": 1
+      }
+    ]
   },
   "runner-enrollments.json": {
     "items": [

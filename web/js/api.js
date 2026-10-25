@@ -278,6 +278,30 @@ window.Maity = window.Maity || {};
     return all[slug + "/ticker.json"];
   }
   const personalRequests = () => (fixtures()["personal-requests.json"] || { items: [] }).items;
+  const prefs = () => fixtures()["preferences.json"];
+  function utf8Bytes(text) {
+    let n = 0;
+    for (const ch of text) { const c = ch.codePointAt(0); n += c < 0x80 ? 1 : c < 0x800 ? 2 : c < 0x10000 ? 3 : 4; }
+    return n;
+  }
+  // The next version of the preferences, as the hub writes it (§19.4).
+  function writePrefs(text, by, proposedBy, confirmedBy) {
+    const at = nowIso();
+    const next = { human_id: me().member.id, markdown: text, version: prefs().current.version + 1,
+      by, proposed_by: proposedBy, confirmed_by: confirmedBy, updated_at: at };
+    prefs().current = next;
+    prefs().versions.unshift({ markdown: text, version: next.version, by, proposed_by: proposedBy, confirmed_by: confirmedBy, at });
+    return next;
+  }
+  // A personal request as GET /requests/{id} shows it: a preference proposal
+  // with the human's current text and whether its base is stale.
+  function personalView(req) {
+    const p = req.memory_proposal;
+    if (!p || p.store !== "preferences" || req.status !== "open") return req;
+    const now = prefs().current;
+    return Object.assign({}, req, { memory_proposal: Object.assign({}, p, {
+      current: { markdown: now.markdown, version: now.version }, stale: p.base_version !== now.version }) });
+  }
   // A decision only to who may read its request (§17.5): here, its audience.
   const tickerReadable = (e) => e.payload.type !== "decision" || (e.audience || []).includes("member:" + me().member.id);
   // detail is added at read time from the request (§17.5): its title and
@@ -646,6 +670,32 @@ window.Maity = window.Maity || {};
       return notificationCounts();
     }],
     // §18.4: the account's settings; a PATCH merges what it names.
+    // §19.4: the human's preferences, their versions, the projects that read them.
+    ["GET", /^\/me\/preferences$/, () => Object.assign({}, prefs().current, { projects: prefs().projects })],
+    ["PUT", /^\/me\/preferences$/, (m, body, path) => {
+      const text = typeof body.markdown === "string" ? body.markdown : null;
+      if (text === null) fail(400, "invalid", "markdown is required", path, { fields: { markdown: "required" } });
+      if (utf8Bytes(text) > 8 * 1024) fail(400, "invalid", "over 8 KiB", path, { fields: { markdown: "too_long" } });
+      const now = prefs().current;
+      if (body.base_version !== undefined && body.base_version !== now.version) {
+        fail(409, "conflict", "the preferences changed", path, { current_version: now.version, base_version: body.base_version });
+      }
+      return Object.assign({}, writePrefs(text, { kind: "human", id: me().member.id, handle: me().member.handle }, null, null), { projects: prefs().projects });
+    }],
+    ["GET", /^\/me\/preferences\/versions$/, (m, body, path, query) => {
+      const limit = Number(query.get("limit") || 50);
+      const before = query.get("cursor") === null ? Infinity : Number(query.get("cursor"));
+      const all = prefs().versions.filter((v) => v.version < before);
+      const page = all.slice(0, limit);
+      return { items: page, next_cursor: all.length > limit ? String(page[page.length - 1].version) : null };
+    }],
+    ["PUT", /^\/me\/preferences\/projects\/([^/]+)$/, (m, body, path) => {
+      const entry = prefs().projects.find((p) => p.slug === m[1]);
+      if (!entry) fail(404, "not_found", "Not found", path);
+      if (typeof body.include !== "boolean") fail(400, "invalid", "include is a boolean", path, { fields: { include: "bool_type" } });
+      entry.include = body.include;
+      return { slug: entry.slug, include: entry.include };
+    }],
     ["GET", /^\/me\/notification-settings$/, () => fixtures()["notifications.json"].settings],
     ["PATCH", /^\/me\/notification-settings$/, (m, body, path) => {
       const set = fixtures()["notifications.json"].settings;
@@ -667,6 +717,28 @@ window.Maity = window.Maity || {};
       return set;
     }],
     ["GET", /^\/agents$/, () => fixtures()["agents.json"]],
+    ["GET", /^\/health$/, () => ({ status: "ok", version: "fixture", api: "v1", database: { reachable: true, revision: "fixture-head", head: "fixture-head" } })],
+    ["GET", /^\/admin\/settings\/mail$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
+      return fixtures()["admin-mail.json"];
+    }],
+    ["PATCH", /^\/admin\/settings\/mail$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
+      const value = fixtures()["admin-mail.json"];
+      Object.entries(body).forEach(([k]) => { if (value[k] && value[k].source === "env") fail(400, "invalid", "Set by the environment", path, { fields: { [k]: "set_by_environment" } }); });
+      Object.entries(body).forEach(([k, v]) => {
+        if (k === "enabled") value.enabled = v;
+        else if (k === "password") value.password = { set: v !== null, source: "admin" };
+        else value[k] = { value: v, source: v === null ? "default" : "admin" };
+      });
+      value.last_test = null; return value;
+    }],
+    ["POST", /^\/admin\/settings\/mail\/test$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
+      if (!body.to) fail(400, "invalid", "Recipient required", path);
+      const value = fixtures()["admin-mail.json"];
+      value.last_test = { ok: true, stage: null, smtp_code: 250, detail: null, at: nowIso() }; return value.last_test;
+    }],
     // §16.1: the instance admin's list, by handle, filtered and paged.
     ["GET", /^\/admin\/users$/, (m, body, path, query) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
@@ -787,13 +859,41 @@ window.Maity = window.Maity || {};
     ["GET", /^\/requests$/, () => ({
       items: me().projects.flatMap((p) => openFor(p.slug).map((r) => Object.assign(
         { project: { slug: p.slug, name: p.name, state: project(p.slug, "").state } }, r)))
-        .concat(personalRequests().filter((r) => r.status === "open")),
+        // A list shows no proposal (§7, §19.4): GET /requests/{id} has it.
+        .concat(personalRequests().filter((r) => r.status === "open").map((r) => {
+          const listed = Object.assign({}, r);
+          delete listed.memory_proposal;
+          return listed;
+        })),
       next_cursor: null,
     })],
+    ["GET", /^\/requests\/([^/]+)$/, (m, body, path) => {
+      const req = personalRequests().find((r) => r.id === m[1]);
+      if (!req) fail(404, "not_found", "Not found", path);
+      return personalView(req);
+    }],
     ["POST", /^\/requests\/([^/]+)\/(answer|withdraw)$/, (m, body, path) => {
       const req = personalRequests().find((r) => r.id === m[1]);
       if (!req) fail(404, "not_found", "Not found", path);
       if (req.status !== "open") fail(409, "request_not_open", "Request is not open", path);
+      const proposal = req.memory_proposal && req.memory_proposal.store === "preferences" ? req.memory_proposal : null;
+      const edited = "markdown" in body || "base_version" in body;
+      if (edited && !proposal) fail(400, "invalid", "not a preference proposal", path, { fields: { markdown: "not_a_preference_proposal" } });
+      if (proposal && m[2] === "answer" && body.reply_id === "go") {
+        if (edited && !("markdown" in body && "base_version" in body)) fail(400, "invalid", "markdown and base_version together", path, { fields: { markdown: "go_with_markdown_and_base_version" } });
+        const now = prefs().current.version;
+        const base = edited ? body.base_version : proposal.base_version;
+        if (base !== now) fail(409, "conflict", "the preferences changed", path, { current_version: now, base_version: base });
+        if (edited && utf8Bytes(body.markdown) > 8 * 1024) fail(400, "invalid", "over 8 KiB", path, { fields: { markdown: "too_long" } });
+        const agent = { kind: "agent", member_id: req.asked_by.member_id, handle: "agent-a", project: req.project.slug, request_id: req.id };
+        const human = { kind: "human", id: me().member.id, handle: me().member.handle };
+        const v = edited
+          ? writePrefs(body.markdown, human, agent, null)
+          : writePrefs(proposal.markdown, { kind: "agent", id: req.asked_by.member_id, handle: "agent-a" }, agent, human);
+        proposal.result = { version: v.version, edited };
+      } else if (edited) {
+        fail(400, "invalid", "markdown and base_version only with go", path, { fields: { markdown: "go_with_markdown_and_base_version" } });
+      }
       const at = nowIso();
       req.status = m[2] === "answer" ? "answered" : "withdrawn";
       req.answered_at = at;
@@ -974,11 +1074,16 @@ window.Maity = window.Maity || {};
     }],
     // The hub's machine form (§4): here only what the views ask of it.
     ["GET", /^\/openapi\.json$/, () => ({ openapi: "3.1.0", paths: {
+      "/api/v1/admin/users": { get: {} },
+      "/api/v1/admin/settings/mail": { get: {}, patch: {} },
+      "/api/v1/admin/settings/mail/test": { post: {} },
+      "/api/v1/health": { get: {} },
       "/api/v1/projects/{slug}/ticker": { get: {}, post: {} },
       "/api/v1/projects/{slug}/ticker/subscription": { get: {}, patch: {} },
       "/api/v1/projects/{slug}/conversations": { get: {}, post: {} },
       "/api/v1/projects/{slug}/attachments": { get: {}, post: {} },
       "/api/v1/requests/{request_id}/answer": { post: {} },
+      "/api/v1/me/preferences": { get: {}, put: {} },
       "/api/v1/requests/{request_id}/withdraw": { post: {} },
     } })],
     // §17.6: a manual post by an owner or admin.
@@ -1354,6 +1459,14 @@ window.Maity = window.Maity || {};
     // (#118). An admin agent stays within §2.3 ᵃ.
     ["PATCH", /^\/projects\/([^/]+)\/members\/([^/]+)$/, (m, body, path) => {
       const who = caller(m[1], path);
+      // §19.4: the agent's owner, and nobody else, gives it their preferences.
+      if ("owner_preferences" in body) {
+        const target = member(m[1], m[2], path);
+        if (Object.keys(body).length !== 1 || typeof body.owner_preferences !== "boolean") fail(400, "invalid", "set owner_preferences on its own", path, { fields: { owner_preferences: "alone" } });
+        if (target.kind !== "agent" || target.owner_id !== who.member.id) fail(403, "forbidden", "the profile's owner only", path, { reason: "not_the_owner" });
+        target.owner_preferences = body.owner_preferences;
+        return target;
+      }
       if (!who.admin) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
       const target = member(m[1], m[2], path);
       agentLimits(who.member, target, body, path);
@@ -1986,6 +2099,7 @@ window.Maity = window.Maity || {};
     get: (path) => request("GET", path),
     getAll,
     post: (path, body) => request("POST", path, body || {}),
+    put: (path, body) => request("PUT", path, body || {}),
     // PUT of an image as its raw bytes; type is the sniffed Content-Type.
     putImage: (path, blob, type) => request("PUT", path, blob, type),
     // POST of a file as its raw bytes (§8.7); type is its Content-Type.

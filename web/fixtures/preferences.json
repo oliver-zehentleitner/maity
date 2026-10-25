@@ -1,0 +1,33 @@
+{
+  "current": {
+    "human_id": "hum-maintainer",
+    "markdown": "Direct and short.\nPropose, don't push: I decide.\nNo apologies, no filler.\nSay so when you are unsure.",
+    "version": 2,
+    "by": { "kind": "human", "id": "hum-maintainer", "handle": "maintainer" },
+    "proposed_by": null,
+    "confirmed_by": null,
+    "updated_at": "2026-10-23T09:00:00Z"
+  },
+  "versions": [
+    {
+      "markdown": "Direct and short.\nPropose, don't push: I decide.\nNo apologies, no filler.\nSay so when you are unsure.",
+      "version": 2,
+      "by": { "kind": "human", "id": "hum-maintainer", "handle": "maintainer" },
+      "proposed_by": null,
+      "confirmed_by": null,
+      "at": "2026-10-23T09:00:00Z"
+    },
+    {
+      "markdown": "Direct and short.\nNo apologies.",
+      "version": 1,
+      "by": { "kind": "human", "id": "hum-maintainer", "handle": "maintainer" },
+      "proposed_by": null,
+      "confirmed_by": null,
+      "at": "2026-10-22T08:00:00Z"
+    }
+  ],
+  "projects": [
+    { "slug": "maity", "include": true },
+    { "slug": "sample", "include": false }
+  ]
+}

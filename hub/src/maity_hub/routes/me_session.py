@@ -14,12 +14,15 @@ from maity_hub import (
     __version__,
     availability,
     avatars,
+    briefings,
     clock,
     environment,
     events,
+    group_chats,
     idempotency,
     instances,
     memory,
+    onboarding,
     preferences,
     ranks,
     rules,
@@ -36,6 +39,7 @@ from maity_hub.ids import new_id
 from maity_hub.models import Strict
 from maity_hub.policy import CLOSED_STATES
 from maity_hub.policy import of as policy_of
+from maity_hub.routes.conversations import conversation_packet
 from maity_hub.routes.members import PausedIn, change_of, load_member, set_paused
 from maity_hub.routes.projects import arbiter_text
 from maity_hub.scopes import listed_scopes
@@ -266,14 +270,22 @@ def _packet(
     session: dict[str, Any],
     settings: Any,
 ) -> dict[str, Any]:
-    project = mine.project
+    project = events.lock_project(conn, mine.project.id)
     fg = Forge(settings.forge_github_token)
     agent = conn.execute(
         select(t.agent_profile).where(t.agent_profile.c.id == caller.agent_id)
     ).one()
     owner = conn.execute(select(t.human).where(t.human.c.id == agent.owner_id)).one()
+    # A group chat's message that does not mention the agent is counted in
+    # `conversations` instead, so a busy chat cannot push the work out (§5.2).
     rows, examined, truncated = events.read(
-        conn, project.id, mine.row, caller.principal_id, cursor, PACKET_EVENTS
+        conn,
+        project.id,
+        mine.row,
+        caller.principal_id,
+        cursor,
+        PACKET_EVENTS,
+        chat_windows=group_chats.windows(conn, mine.id),
     )
     events_cursor = rows[-1].seq if truncated else max(examined, started_seq, cursor)
     rows = [r for r in rows if r.seq != started_seq]  # never the session's own start
@@ -339,12 +351,18 @@ def _packet(
     scopes = listed_scopes(mine.role, "agent")
     # Below the rules, never a permission (§19.4); the owner's text once, here or there.
     preferences_block, owner_preferences = preferences.packet(conn, mine, cursor)
+    written = briefings.writers(conn, {mine.row.briefing_by} if mine.row.briefing_by else set())
     return {
         "server_time": clock.rfc3339(clock.now()),
         "api_version": API_VERSION,
         "hub_version": __version__,
         # First of the contents: the soul is what an agent loads before anything (§19.3).
         "memory": memory.packet_block(conn, mine, agent.id, cursor),
+        **(
+            {"onboarding": check_in}
+            if (check_in := onboarding.hint(conn, project, mine.row))
+            else {}
+        ),
         "session": session,
         "hints": {"wait_timeout": wait_timeout(body.harness)},
         "me": {
@@ -364,7 +382,7 @@ def _packet(
             "capabilities": mine.row.capabilities,
             "scopes": scopes,
             "paused": paused(mine.row),  # its own pause, so the agent knows it should rest
-            "briefing": mine.row.briefing,  # what the human told it about its job (§3.1)
+            **_briefing(project, mine.row, written),
             "team": instances.team(conn, mine.row),
             "owner_preferences": owner_preferences,
             "availability_policy": availability.policy_of(mine.row),  # §6.12
@@ -401,9 +419,23 @@ def _packet(
             "cursor": events_cursor,
             "truncated": truncated,
         },
+        "conversations": conversation_packet(conn, mine, caller),
         "peers": peers,
         "operations": operations(project, mine.role),
     }
+
+
+def _briefing(project: Any, membership: Any, written: dict[str, Any]) -> dict[str, Any]:
+    """`membership.briefing` and whose it is (§5.2): the membership's own, with who wrote
+    it and its version (§6.2), else the project default with the setting's author and
+    version, else none."""
+    block = onboarding.briefing(project, membership)
+    if block["briefing_source"] == "membership":
+        block["briefing_by"] = (
+            written.get(membership.briefing_by) if membership.briefing_by else None
+        )
+        block["briefing_version"] = membership.briefing_version
+    return block
 
 
 def _requests_block(conn: Connection, mine: Membership, cursor: int) -> dict[str, Any]:

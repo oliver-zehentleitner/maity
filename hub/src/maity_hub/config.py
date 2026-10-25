@@ -60,6 +60,10 @@ class Settings:
     # MAITY_SMTP_*, MAITY_MAIL_*: the mail settings the environment sets (§16.2); the
     # password and the signing key never appear in a repr.
     mail: MailEnvironment = field(default_factory=MailEnvironment)
+    # MAITY_ON_RUNNER_REVOKE: what revoking a runner does to its agents where a project
+    # says `inherit` (§15.3, §16): keep, stop, or stop_floor (stop, and a project's keep
+    # is refused).
+    on_runner_revoke: str = "keep"
 
     @property
     def join_host(self) -> str | None:
@@ -101,6 +105,9 @@ class Settings:
             avatar_decodes=int(parse_number(env, "MAITY_AVATAR_DECODES", 2, minimum=1, maximum=64)),
             secret_key=parse_secret_key(env.get("MAITY_SECRET_KEY", "")),
             mail=parse_mail(env),
+            on_runner_revoke=parse_choice(
+                env, "MAITY_ON_RUNNER_REVOKE", ("keep", "stop", "stop_floor"), "keep"
+            ),
         )
 
 
@@ -117,6 +124,16 @@ def parse_mail(env: dict[str, str]) -> MailEnvironment:
         return mail_environment.parse(env)
     except mail_environment.MailConfigError as error:
         raise ConfigError(str(error)) from None
+
+
+def parse_choice(env: dict[str, str], name: str, choices: tuple[str, ...], default: str) -> str:
+    """One of `choices`; unset is the default, anything else stops the hub."""
+    value = env.get(name, "").strip()
+    if not value:
+        return default
+    if value not in choices:
+        raise ConfigError(f"{name} must be one of {', '.join(choices)}: {value!r}")
+    return value
 
 
 def parse_number(

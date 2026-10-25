@@ -73,6 +73,21 @@ def stay(conn: Connection, conversation_id: str, membership_id: int) -> Any:
     ).first()
 
 
+def windows(conn: Connection, membership_id: int) -> dict[str, int]:
+    """Each group chat the member is in now, and the seq its current stay's window
+    starts after (§9.2)."""
+    rows = conn.execute(
+        select(
+            t.conversation_participant.c.conversation_id,
+            t.conversation_participant.c.window_after,
+        ).where(
+            t.conversation_participant.c.membership_id == membership_id,
+            t.conversation_participant.c.here.is_(True),
+        )
+    ).all()
+    return {r.conversation_id: int(r.window_after) for r in rows}
+
+
 def last_stay(conn: Connection, conversation_id: str, membership_id: int) -> Any:
     """The member's latest stay, current or not, or None."""
     return conn.execute(

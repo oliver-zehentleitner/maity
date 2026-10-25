@@ -1,0 +1,19 @@
+/* Maity loader: the agent walks the round clockwise, leaving a trail.
+   One lap = 0.9s. Colours follow the dashboard tokens, so light and dark need nothing extra.
+   Markup: see loader.html. */
+.maity-loader { width: 1.25em; height: 1.25em; vertical-align: middle; }
+.maity-loader circle { fill: var(--muted); }
+.maity-loader .maity-loader-t { fill: var(--accent); opacity: 0; animation: maity-loader-trail 0.9s linear infinite; }
+/* Phase per seat, clockwise from the top. Kept here, not in style attributes,
+   because the dashboard CSP (default-src 'self') drops inline styles. */
+.maity-loader .maity-loader-t:nth-of-type(1) { animation-delay: 0s; }
+.maity-loader .maity-loader-t:nth-of-type(2) { animation-delay: -0.75s; }
+.maity-loader .maity-loader-t:nth-of-type(3) { animation-delay: -0.6s; }
+.maity-loader .maity-loader-t:nth-of-type(4) { animation-delay: -0.45s; }
+.maity-loader .maity-loader-t:nth-of-type(5) { animation-delay: -0.3s; }
+.maity-loader .maity-loader-t:nth-of-type(6) { animation-delay: -0.15s; }
+@keyframes maity-loader-trail { 0% { opacity: 0 } 3% { opacity: 1 } 16.67% { opacity: 1 } 62% { opacity: 0 } 100% { opacity: 0 } }
+@media (prefers-reduced-motion: reduce) {
+  .maity-loader .maity-loader-t { animation: none; }
+  .maity-loader .maity-loader-t:first-of-type { opacity: 1; }
+}

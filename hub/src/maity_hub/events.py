@@ -126,7 +126,7 @@ def emit(
     conversation_id: str | None = None,
 ) -> int:
     """Append one event inside the caller's transaction; returns its `seq`."""
-    lock_project(conn, project_id)
+    project = lock_project(conn, project_id)
     # Under the project's lock `seq` follows commit order; `at` must not run backwards
     # against it (a clock step back, replicas whose clocks differ): never before the
     # project's last event (§18.2, "at is monotonic per project").
@@ -161,6 +161,17 @@ def emit(
     if key is None:
         raise RuntimeError("the event insert returned no seq")
     seq = int(key[0])
+    if kind in {"message", "task_claimed"}:
+        from maity_hub import onboarding
+
+        onboarding.observe(
+            conn,
+            project,
+            kind,
+            payload,
+            actor.membership_id if actor else None,
+            now if last is None or now >= last else last,
+        )
     pending = conn.info.get(_PENDING)
     if pending is None:
         raise RuntimeError("events.emit outside events.transaction(): nobody would be woken")
@@ -259,17 +270,32 @@ def readable_by(
 
 
 def read(
-    conn: Connection, project_id: str, membership: Any, principal: str, after: int, limit: int
+    conn: Connection,
+    project_id: str,
+    membership: Any,
+    principal: str,
+    after: int,
+    limit: int,
+    *,
+    chat_windows: dict[str, int] | None = None,
 ) -> tuple[list[Any], int, bool]:
-    """Readable events after `after`, oldest first: (rows, highest seq examined, truncated)."""
-    return _scan(
-        conn,
-        t.event.c.project_id == project_id,
-        lambda row, hidden: readable_by(row, membership, principal, hidden),
-        after,
-        limit,
-        membership,
-    )
+    """Readable events after `after`, oldest first: (rows, highest seq examined, truncated).
+    With `chat_windows` (the resume packet, §5.2: each group chat the member is in now,
+    and the seq its current stay's window starts after), a group chat's message is kept
+    only when it mentions `principal` and lies in that window; any other is passed over
+    and does not count against `limit`."""
+
+    def wanted(row: Any, hidden: frozenset[str]) -> bool:
+        if chat_windows is not None and _group_chat(row) and row.kind == "message":
+            window = chat_windows.get(row.conversation_id)
+            mentioned = (row.payload or {}).get("mentions") or []
+            if window is None or row.seq <= window:
+                return False
+            if not any(m.get("member_id") == principal for m in mentioned):
+                return False
+        return readable_by(row, membership, principal, hidden)
+
+    return _scan(conn, t.event.c.project_id == project_id, wanted, after, limit, membership)
 
 
 def _scan(

@@ -57,6 +57,9 @@ def test_the_member_view_has_the_contract_shape(
         "covering",
         "joined_at",
         "briefing",  # the owner holds members:admin
+        "briefing_by",  # with it: who wrote it, its version and when (§6.2)
+        "briefing_version",
+        "briefing_updated_at",
         "placement",
         "owner",  # likewise, and it owns the agent (§6.2)
         "credentials",

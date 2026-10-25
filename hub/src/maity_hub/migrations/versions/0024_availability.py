@@ -7,7 +7,7 @@ last announced, so that a change is announced once; `outage_since` is when the c
 outage began, the start the 24-hour lease bound counts from.
 
 Revision ID: 0024
-Revises: 0037
+Revises: 0031
 Create Date: 2026-10-23
 """
 
@@ -18,7 +18,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql, postgresql
 
 revision: str = "0024"
-down_revision: str | None = "0037"
+down_revision: str | None = "0031"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

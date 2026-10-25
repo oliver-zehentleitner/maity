@@ -8,7 +8,7 @@ from typing import Any
 
 from sqlalchemy import Connection, func, select
 
-from maity_hub import availability, avatars, clock, forge, policy, ticker_read
+from maity_hub import availability, avatars, clock, forge, onboarding, policy, ticker_read
 from maity_hub import tables as t
 from maity_hub.config import Settings
 
@@ -101,7 +101,11 @@ def project_view(
         "keep_the_why_export": export,
         "policy": policy.of(project),
         "absence": absence(project),
-        "settings": {**(project.settings or {}), "language": project_language(project)},
+        "settings": {
+            **(project.settings or {}),
+            "language": project_language(project),
+            "onboarding": onboarding.settings(project),
+        },
         "rules_version": project.rules_version,
         "created_at": ts(project.created_at),
     }
@@ -295,6 +299,10 @@ def member_views(
         if project_ids
         else {}
     )
+    from maity_hub import briefings  # briefings formats with this module's helpers
+
+    briefed = {r.id: r for r in rows if (briefing(r) if callable(briefing) else briefing)}
+    writers = briefings.writers(conn, {r.briefing_by for r in briefed.values() if r.briefing_by})
     views = []
     for row in rows:
         head = (
@@ -352,8 +360,9 @@ def member_views(
             view["instances"] = team_of.get(row.id, [])
         if row.removed_at is not None:
             view["removed_at"] = ts(row.removed_at)
-        if briefing(row) if callable(briefing) else briefing:
+        if row.id in briefed:
             view["briefing"] = row.briefing
+            view.update(briefings.fields(row, writers))
         if details(row) if callable(details) else details:
             view["owner"] = owners.get(row.agent_id) if row.agent_id else None
             view["credentials"] = counted.get(row.id, NO_CREDENTIALS) if row.agent_id else None
@@ -403,8 +412,11 @@ def _credential_counts(conn: Connection, membership_ids: set[int]) -> dict[int, 
         select(t.credential).where(t.credential.c.membership_id.in_(membership_ids))
     ):
         found = counted.setdefault(c.membership_id, dict(NO_CREDENTIALS))
-        if c.revoked_at is not None:
-            if c.revoked_at >= recent:
+        revoked = c.revoked_at
+        if revoked is None and c.revoke_due_at is not None and c.revoke_due_at <= clock.now():
+            revoked = c.revoke_due_at  # due after a runner's stop (§15.3)
+        if revoked is not None:
+            if revoked >= recent:
                 found["revoked_recent"] += 1
             continue
         found["active"] += 1
@@ -467,6 +479,24 @@ def credential_view(conn: Connection, row: Any) -> dict[str, Any]:
         "session_id": session,
         "instance": row.instance,
         "replaces": row.replaces,
+        **_revocation(row),
+    }
+
+
+def _revocation(row: Any) -> dict[str, Any]:
+    """A credential a runner's stop revokes after the grace shows as revoked once that
+    has passed, before its first use writes it (§15.3, `runner_revoke`)."""
+    if (
+        row.revoked_at is None
+        and row.revoke_due_at is not None
+        and row.revoke_due_at <= clock.now()
+    ):
+        return {
+            "revoked_at": ts(row.revoke_due_at),
+            "revoked_by": row.revoke_due_by,
+            "revoked_reason": "runner_revoked",
+        }
+    return {
         "revoked_at": ts(row.revoked_at),
         "revoked_by": row.revoked_by,
         "revoked_reason": row.revoked_reason,

@@ -23,7 +23,8 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
 ### 1.1 Base path, media types, headers
 
 - Every endpoint lives under `/api/v1`. The dashboard is served at `/`,
-  the join page at `/join/{token}`; neither is part of the API surface.
+  the join page at `/join/{token}` and the project badge at
+  `/badge/{slug}.svg` (§6.20); none of them is part of the API surface.
 - Hosts. The hub is reached under `MAITY_PUBLIC_URL`, and by default under
   nothing else: join links, pair links, `/help` and every `Maity-Hub`
   header name it. Optionally the operator sets `MAITY_JOIN_URL` (for
@@ -80,7 +81,9 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   (the dashboard, the HTML join page), `Content-Security-Policy:
   default-src 'self'`. The one exception to `no-store` is the images —
   the logo and banner (§11.2) and the avatars (§6.10) — and the
-  attachments (§8.7), which are revalidated by `ETag`. The hub serves no
+  attachments (§8.7), which are revalidated by `ETag`, and the project
+  badge (§6.20), the one answer with a public cache (`public,
+  max-age=60`), because it carries nothing but a count. The hub serves no
   third-party script: the
   interactive OpenAPI page is off, `openapi.json` is the machine form.
 - The hub writes its own request log: method, path and status, never a
@@ -130,7 +133,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
-| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on any write of an owner outside the project, a redaction included (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while the instance registers nobody — mode `closed`, or mail incomplete or disabled (§2.7.1); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists |
+| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on a post, chat change or redaction of an owner outside the project (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while the instance registers nobody — mode `closed`, or mail incomplete or disabled (§2.7.1); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -2576,6 +2579,7 @@ upload is `project_closed`, deleting one is not.
 | `coordinator_substitute` | agent member id holding `admin`, or `null` (default) | stands in for the coordinator role alone while the coordinator is out (§6.12); it takes over no cards. A later preset change keeps it. `invalid` codes: `policy.coordinator: "not_an_agent_member"`, `policy.coordinator_substitute: "not_an_agent_admin"` |
 | `jour_fixe` | `null` (default) or `{enabled, recurrence, time, timezone, moderator, answer_window_minutes, step_window_minutes, report_window_hours}` | the jour fixe series (§20.1); replaced as a whole when named; a later preset change keeps it |
 | `jour_fixe_moderators` | `null` (default: by time online) or an ordered list of agent member ids holding `admin` | the moderator order for `moderator: admin_agent` (§20.2); written by a human with `project:admin` and, through `PUT …/jour-fixe/moderators` only, by any agent with the role `admin`; a later preset change keeps it |
+| `badge` | `off` (default), `members`, `agents_online` | whether `GET /badge/{slug}.svg` serves the project's badge, and which count it shows (§6.20); `off` answers `not_found`. Every preset fills `off` at creation, a project that predates the field reads as `off`, and a later preset change keeps it, as `signing`. Set by a human with `project:admin` |
 
 `hierarchical` = self-claim, reviewer done authority, admin arbiter,
 human tag, cards only. `solo` = self-claim, holder done authority, owner
@@ -3748,6 +3752,8 @@ web owner's:
 - A count links to where its items are: a column count to the board
   column, the request counts to the inbox, a report to its card, a merge
   to `pr.url`.
+- The page also offers the project badge's Markdown snippet with a
+  preview and the variant picker (§6.20).
 
 ### 6.12 Availability and cover
 
@@ -4745,6 +4751,90 @@ holder continues from them. The previous holder's open requests on the
 card stay its own; they no longer block the card (§7 counts the
 holder's requests). Events: `task_claimed` with `takeover_id` and
 `from`, and `takeover_closed`.
+
+### 6.20 The project badge
+
+A project may show a README badge: the hub's mark, the word "maity" and
+one number about the project. The maintainer decided it with the
+designer on 2026-10-25 (`context/projects.md`): it is off unless the
+owner switches it on, and it shows counts, never names. The design is
+`web/brand/BADGE.md`; the hub renders `web/brand/maity-badge-template.svg`,
+and the two example files beside it (`maity-badge-members-example.svg`,
+`maity-badge-online-example.svg`) are the reference output.
+
+**`GET /badge/{slug}.svg`** — public: no credential, no session, no
+CSRF, on the public host (§1.1) at the root, not under `/api/v1` — like
+the dashboard and the join page, it is served by the hub but is not part
+of the API surface. The answer is the badge as `image/svg+xml`:
+
+| Header | Value |
+|---|---|
+| `Content-Type` | `image/svg+xml` |
+| `Cache-Control` | `public, max-age=60` — the one public cache in the hub (§1.1) |
+| `ETag` | derived from the rendered value: the same value gives the same tag, a changed value a new one |
+| `X-Content-Type-Options` | `nosniff`, as every response |
+
+`If-None-Match` naming the current tag answers `304` without a body.
+The counts are read at call time; a badge may therefore show a value up
+to a minute old, and no event is emitted for it.
+
+**Opt-in.** The policy field `badge` (§6.1) is `off` by default. It is
+set like every other policy field: `PATCH /projects/{slug}` with
+`policy` by a human with `project:admin` (§2.3 ʰ), with a `reason`;
+the change emits `policy_changed` with `old`, `new` and `reason` to
+everyone and bumps `rules_version`. Every preset fills `off` at
+creation, a project that predates the field reads as `off`, and a later
+preset change keeps the value, as it keeps `signing`.
+
+**When nothing is served.** While `badge` is `off`, for a slug the hub
+does not know, and for a project that is closed (`accepted` or
+`archived`, §6.1), the answer is `not_found` (§1.3) — the same answer
+in all three cases, as for any resource that does not exist, and never
+a `304`. The URL does not tell whether a project exists.
+
+**What it shows.** Counts only, never a name, a handle or an avatar:
+
+| `badge` | Value | Right part's colour |
+|---|---|---|
+| `members` | `N human(s) · M agent(s)`: the project's active members by `kind` (§6.2); the `·` is U+00B7; singular and plural per count — `1 human · 10 agents`, `2 humans · 1 agent`, `1 human · 0 agents` | `#1a66d9` |
+| `agents_online` | `K agents online`: the active agent members whose `presence` is `online` (§5.3; `paused` is not online, and a team of instances is one member); singular and plural per count — `7 agents online`, `1 agent online`, `0 agents online` | `#1a7f37` when `K` is at least 1, `#5e6670` when it is 0 |
+
+**Rendering.** The hub fills the template byte for byte; only the
+placeholders change, exactly as `web/brand/BADGE.md` specifies:
+
+| Placeholder | Value |
+|---|---|
+| `{VALUE}` | the value above, XML-escaped (`&amp;`, `&lt;`) — the only text the hub puts into the document |
+| `{COLOR}` | the colour above |
+| `{TITLE}` | `maity: ` + the value, escaped the same way; it is the accessible name |
+| `{TEXT_W}` | the value's width in px: the sum of the Verdana 11 px advances from the table in `BADGE.md`, 6.6 px for any character not in it, rounded to 0.1 |
+| `{RIGHT_W}` | `TEXT_W + 12` |
+| `{WIDTH}` | `60.9 + RIGHT_W`; the left part is fixed at 60.9 px |
+
+`1 human · 10 agents` gives `TEXT_W` 116.5, `RIGHT_W` 128.5, `WIDTH`
+189.4; `7 agents online` gives 85.0, 97.0, 157.9 — the two example
+files. The rendered document carries no script and no external
+reference, so it may be embedded wherever an image may; `ETag` may be
+the hash of the rendered document, since the value is all that varies.
+
+**Rate limit.** The endpoint has a limit of its own, 60 per minute
+per source address, separate from the login and join buckets (§2.1,
+§3.3): a forge's image proxy fetching many badges from a few addresses
+must never starve a login from those addresses. Over it the hub
+answers `rate_limited` with `Retry-After` (§1.3). The 60 s public
+cache is what keeps it cheap: a proxy or a browser that honours
+`max-age` asks at most once a minute per project, whatever the number
+of readers.
+
+**Dashboard (web/).** The overview page (§6.11) offers the Markdown
+snippet
+`[![maity](https://<hub>/badge/<slug>.svg)](https://<hub>/#/p/<slug>/overview)`
+(the overview route of §6.11) with a preview of the badge and a picker for the variant; the picker
+writes `policy.badge`, so it is offered where the caller may set the
+policy.
+
+**Not in this contract.** A third variant, "join the team", linking to
+a join-request page, waits for the decision on public projects.
 
 ## 7. Requests to humans (the inbox)
 
@@ -6104,10 +6194,11 @@ The conversation view:
   and `GET …/conversations/{id}/messages` answer for those chats as for
   an observer who is a member, and so do `GET …/attachments/{id}` and
   `…/content` for the attachments of their messages (§8.7), the one
-  exception besides the chats themselves. Any write it makes in the
-  project, a post, a change to a chat or a redaction included, is
-  `forbidden` with `details.reason: "observer"`. Every other read of the
-  project, `GET /events` and the member list included, stays
+  exception besides the chats themselves. Any write it makes in a chat
+  it reads along, a post (through the chat routes or `POST /events`), a
+  change to the chat or a redaction, is `forbidden` with
+  `details.reason: "observer"`. Every other write and every other read
+  of the project, `GET /events` and the member list included, stays
   `not_found` (§1.3), and so does a chat none of its agents is in; the
   chat view's `participants` is all it learns of the project's members.
   No event reaches a non-member, so there is no live update and no
@@ -6739,6 +6830,7 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | PUT, DELETE | `/projects/{slug}/logo`, `/projects/{slug}/banner` | `project:admin`, human only | 11.2 |
 | GET | `/projects/{slug}/keep-the-why` | `project:read` | 11.3 |
 | GET | `/projects/{slug}/overview` | `project:read` | 6.11 |
+| GET | `/badge/{slug}.svg` (outside the API) | — (served only while `policy.badge` is not `off`) | 6.20 |
 | GET | `/avatars/{id}` | the member, the profile's owner, a caller sharing a project with the member, `members:admin` where an agent it owns is a member; `instance:admin` for humans | 6.10 |
 | PUT, DELETE | `/me/avatar` | human for their account / agent for its profile | 6.10 |
 | PUT, DELETE | `/agents/{id}/avatar` | owner | 6.10 |
@@ -6796,7 +6888,8 @@ rule (§11.1) with the image and export checks (§11.2, §11.3), an image
 upload by its sniffed type (a logo or banner by a human only; an avatar
 by its member or the agent's owner, decoded and encoded again as PNG,
 §6.10), the Keep the Why family's
-path rule and caps, forge links held to the project's host and owner and
+path rule and caps, the badge served only under its policy field and
+with counts alone (§6.20), forge links held to the project's host and owner and
 observed by the hub only, notes that never change a card, every card
 edit in the history, mentions resolved by the hub against active members
 with their caps and rate (§8.6) and a chat never widened by one,
@@ -7120,7 +7213,10 @@ owner choose):
   revocation by the hub because the credential appeared in a payload
   (`leaked_in_payload`, §2.2) applies `keep`: the runner's key leaked,
   not the machine; the owner revokes again with `agents: "stop"` when
-  the machine is in doubt.
+  the machine is in doubt. Such a later revoke, on a key revoked already
+  (by a `keep` or for a leak), still applies `stop`: it revokes no runner
+  key, and what it stops is added to what that key's revocation applied
+  (the answer, its replay and `details.stop` below agree).
 - **The setting.** `on_runner_revoke` in the instance settings (§16,
   `MAITY_ON_RUNNER_REVOKE`: `keep` (default), `stop` or `stop_floor`)
   and in each project's policy (§6.1: `keep`, `stop` or `inherit`,
@@ -7152,8 +7248,11 @@ owner choose):
   those placements named are revoked `stop_grace_seconds` later
   (`revoked_reason: runner_revoked`, `revoked_by` the human), so an
   agent can park its work first; with `agents: "stop"` they are revoked
-  at once. After that the agent has lost the hub: every call answers
-  `credential_revoked`. The hub cannot end its process or its access to
+  at once, and so are those an earlier `stop` of this runner left to
+  their grace (never another agent's). Each revocation emits `credential_revoked` (§15.10, `reason:
+  runner_revoked`, to the agent and the owners), once, however many
+  calls find it due. After that the agent has lost the hub: every call
+  answers `credential_revoked`. The hub cannot end its process or its access to
   the forge; that stays the machine's (`maity runner stop-all`).
 - **What the runner learns.** A runner that is still honest learns it
   from the answer to its next call: `credential_revoked` — only after

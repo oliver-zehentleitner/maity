@@ -36,6 +36,7 @@ CHOICES = {
     "signing": ("optional", "required"),
     "spawn_requests": ("off", "consent", "direct"),
     "spawn_consent_by": ("human", "role"),
+    "on_runner_revoke": ("keep", "stop", "inherit"),
 }
 LEASE_MIN, LEASE_MAX, LEASE_DEFAULT = 600, 86400, 7200
 MAX_PLACEMENTS_DEFAULT, MAX_PLACEMENTS_MAX = 8, 1000
@@ -58,6 +59,7 @@ KEPT_ON_PRESET = (
     "max_placements",
     "coordinator",
     "coordinator_substitute",
+    "on_runner_revoke",
 )
 
 
@@ -69,6 +71,7 @@ def filled(preset: str, owner_id: str) -> dict[str, Any]:
         "max_placements": MAX_PLACEMENTS_DEFAULT,
         "coordinator": "role:admin",
         "coordinator_substitute": None,
+        "on_runner_revoke": "inherit",
     }
     if preset == "solo":
         policy["contract_arbiter"] = owner_id
@@ -91,6 +94,7 @@ def of(project: Any) -> dict[str, Any]:
         "max_placements": project.max_placements,
         "coordinator": project.coordinator,
         "coordinator_substitute": project.coordinator_substitute,
+        "on_runner_revoke": project.on_runner_revoke,
     }
 
 
@@ -110,4 +114,20 @@ def columns(policy: dict[str, Any]) -> dict[str, Any]:
         "max_placements": policy["max_placements"],
         "coordinator": policy["coordinator"],
         "coordinator_substitute": policy["coordinator_substitute"],
+        "on_runner_revoke": policy["on_runner_revoke"],
     }
+
+
+INSTANCE_RULES = ("keep", "stop", "stop_floor")
+
+
+def runner_revoke_rule(project: Any, instance_rule: str) -> str:
+    """`keep` or `stop`: the project's `on_runner_revoke` within the instance setting
+    (§15.3). `inherit` takes the setting; `stop_floor` means stop whatever the project
+    says, as a project's `keep` is refused under it."""
+    if instance_rule == "stop_floor":
+        return "stop"
+    if project.on_runner_revoke == "inherit":
+        return instance_rule
+    rule: str = project.on_runner_revoke
+    return rule

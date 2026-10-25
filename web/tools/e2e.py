@@ -1911,16 +1911,16 @@ def users_step(run: Run, page: Page) -> None:
     me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
     page.goto(f"{run.base}/#/all")
     page.locator("header").get_by_role("button", name="Settings", exact=True).click()
-    link = page.get_by_role("menuitem", name="Users of this hub", exact=True)
+    link = page.get_by_role("menuitem", name="Instance administration", exact=True)
     if "instance_admin" not in me:
-        run.step("users: this hub names no instance admin yet, so there is no Users link")
+        run.step("users: this hub names no instance admin yet, so there is no administration link")
         expect(link).to_have_count(0)
         page.keyboard.press("Escape")
         return
     run.step("users: the instance admin lists the hub's humans")
     assert me["instance_admin"] is True, me  # the first human, made by maity-hub owner create
     link.click()
-    expect(page).to_have_url(re.compile(r"#/admin/users$"))
+    expect(page).to_have_url(re.compile(r"#/admin$"))
     owner = page.locator("table.users tbody tr", has_text="(you)")
     expect(owner).to_contain_text("instance admin")
     expect(owner).to_contain_text("@" + OWNER)

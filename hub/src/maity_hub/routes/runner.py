@@ -286,7 +286,8 @@ async def runner_events(request: Request, caller: RunnerCaller) -> JSONResponse:
                 return answer(items, cursor, superseded=False)
             since = cursor
             remaining = deadline - time.monotonic()
-            if remaining <= 0:
+            if remaining <= 0 or longpoll.stopping.is_set():
+                # Also when the process stops: the client simply waits again (§8.3).
                 return answer([], cursor, superseded=False)
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(waiter.event.wait(), min(remaining, FALLBACK_SECONDS))

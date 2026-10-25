@@ -165,9 +165,12 @@ project = Table(
     # alone (§6.1, §6.12); the defaults fill projects made before 0024.
     Column("coordinator", String(ID + 8), nullable=False, server_default="role:admin"),
     Column("coordinator_substitute", String(ID)),
+    # What revoking a runner does to its agents here: keep, stop or inherit (§6.1, §15.3).
+    Column("on_runner_revoke", String(16), nullable=False, server_default="inherit"),
     Column("absence_until", UtcDateTime),
     Column("absence_scope", MARKDOWN_TEXT),
     Column("settings", JSON_VALUE, nullable=False),
+    Column("onboarding_version", Integer, nullable=False, server_default="0"),
     Column("rules_markdown", MARKDOWN_TEXT),
     Column("rules_version", Integer, nullable=False),
     # The event seq at the last rules change, set under the project lock, so
@@ -193,6 +196,12 @@ membership = Table(
     Column("paused_by", String(ID)),
     # What the human told this agent about its job (§3.1); its own and the admins' to read.
     Column("briefing", MARKDOWN_TEXT),
+    Column("onboarded_at", UtcDateTime),
+    # Its version (1 with the join, +1 on every change; 0 for a human), who wrote the
+    # current text (a `hum-…` or `agt-…` id, null when unknown) and when (§6.2).
+    Column("briefing_version", Integer, nullable=False, server_default="0"),
+    Column("briefing_by", String(ID)),
+    Column("briefing_updated_at", UtcDateTime),
     Column("joined_at", UtcDateTime, nullable=False),
     Column("last_seen_at", UtcDateTime),
     Column("removed_at", UtcDateTime),
@@ -269,6 +278,20 @@ preferences_version = Table(
     **MYSQL_TABLE,
 )
 
+# Every version of a membership's briefing, the current one included (§6.2):
+# `GET …/members/{id}/briefings` for the agent's owner and `members:admin`.
+member_briefing = Table(
+    "member_briefing",
+    metadata,
+    _membership_ref("membership_id", nullable=False),
+    Column("version", Integer, nullable=False),
+    Column("text", MARKDOWN_TEXT),
+    Column("by", String(ID)),
+    Column("at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("membership_id", "version"),
+    **MYSQL_TABLE,
+)
+
 # --- joining and credentials ----------------------------------------------------
 
 join_link = Table(
@@ -325,6 +348,10 @@ credential = Table(
     Column("revoked_at", UtcDateTime),
     Column("revoked_by", String(ID)),
     Column("revoked_reason", MARKDOWN_TEXT),
+    # A runner's stop revokes the agents' credentials after the placement's grace
+    # (§15.3): when, and on whose authority, until it is revoked.
+    Column("revoke_due_at", UtcDateTime),
+    Column("revoke_due_by", String(ID)),
     UniqueConstraint("membership_id", "instance", name="uq_credential_instance"),
     **MYSQL_TABLE,
 )
@@ -492,6 +519,9 @@ runner_credential = Table(
     Column("revoked_at", UtcDateTime),
     Column("revoked_by", String(ID)),
     Column("revoked_reason", MARKDOWN_TEXT),
+    # What its revocation applied, per attached project: `[{project_id, rule, stopped}]`;
+    # the runner is told the stopped placements on its next call (§15.3).
+    Column("stopped", JSON_VALUE),
     # True while unrevoked, NULL afterwards: one live credential per runner (§15.1).
     Column("live", Boolean, default=True),
     UniqueConstraint("runner_id", "live"),
