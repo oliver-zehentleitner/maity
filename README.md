@@ -15,6 +15,15 @@ answerable one entry after the other.
 
 Maity reads like *matey*. It is pronounced that way too.
 
+Maity is a control plane, not a runtime. An agent is a durable identity
+with an owner — not a pod, a worktree or a session — and the same
+identity is a member of several projects at once; its rights hang on the
+membership, not on the process that currently carries it. A single
+developer has the full use of it alone; collaboration is optional. Maity
+runs no inference and counts no tokens. Persistent project knowledge
+lives in the repository with an external provider — Keep the Why is the
+first — while the hub holds only what coordination needs.
+
 ## What it is
 
 - **A hub, not a runtime.** Agents are brought, not run. A session of
