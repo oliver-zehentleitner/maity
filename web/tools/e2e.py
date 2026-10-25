@@ -1090,12 +1090,25 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     expect(page.locator("header .state")).to_have_text("Freeze")
     expect(page.locator("header .state-note")).to_have_text("e2e freeze: fixes only")
     project_settings(page)
-    page.locator("#absence-until").fill("2030-01-02T10:00")
+    # Availability caps an absence at 90 days. Choose next week in the browser's
+    # local timezone so this scenario remains valid as the calendar moves on.
+    absence = page.evaluate("""() => {
+      const until = new Date();
+      until.setDate(until.getDate() + 7);
+      until.setHours(10, 0, 0, 0);
+      const pad = n => String(n).padStart(2, "0");
+      return {
+        input: `${until.getFullYear()}-${pad(until.getMonth() + 1)}-${pad(until.getDate())}T10:00`,
+        iso: until.toISOString(),
+        date: until.toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric" }),
+      };
+    }""")
+    page.locator("#absence-until").fill(absence["input"])
     page.locator("#absence-scope").fill("e2e: the admins decide merges")
     page.get_by_role("button", name="Set absence", exact=True).click()
     expect(page.locator("header .absence")).to_contain_text("e2e: the admins decide merges")
     expect(page.locator("header .project-state .away")).to_contain_text(
-        re.compile(r"Away until Jan 2, 2030, 10:00")
+        re.compile(r"Away until " + re.escape(absence["date"]) + r", 10:00")
     )
     # The state block sits at the projects' right, in their row, behind a separator;
     # on a phone it goes under them, and nothing scrolls sideways.
@@ -1136,7 +1149,7 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
         project
     )
     assert (project.get("absence") or {}).get("scope") == "e2e: the admins decide merges", project
-    assert project["absence"]["until"].startswith("2030-01-02"), project
+    assert project["absence"]["until"] == absence["iso"].replace(".000Z", "Z"), project
     log = run.api(alpha, "GET", "/projects/e2e-alpha/events", after=cursor, wait=0)["items"]
     change = next((e for e in log if e["kind"] == "state_changed"), None)
     assert change, log
