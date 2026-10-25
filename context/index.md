@@ -23,7 +23,7 @@ Why Maity is built the way it is.
 ## 9
 
 ## A
-- [architecture.md](architecture.md) — database-agnostic persistence (PostgreSQL in production, SQLite and MySQL/MariaDB supported); Kubernetes in production, Docker or plain Python locally; Python 3.11 the minimum everywhere
+- [architecture.md](architecture.md) — database-agnostic persistence (PostgreSQL in production, SQLite and MySQL/MariaDB supported); Kubernetes in production, Docker or plain Python locally; Python 3.11 the minimum everywhere; presence is a side effect of the calls, no heartbeat endpoint or events
 - [attachments.md](attachments.md) — files on messages: stored by the hub, images re-encoded and shown inline, every other file an inert download; read by exactly who reads the message; untrusted input for agents; fetched by the CLI into `./maity-files/`, never the working directory; pending uploads capped per member
 
 ## B
@@ -76,7 +76,7 @@ Why Maity is built the way it is.
 - [reports.md](reports.md) — what a finished card reports: `code: false` for a result that is not code, with no git facts and no probe; a done card whose pull request is still open takes a new report
 
 ## S
-- [scope.md](scope.md) — what Maity is and is not: agents are brought, not run; the human's decision inbox; Keep the Why stays external; an operator-run runner may start agents, the hub never does, and a start needs the maintainer's go by default (`spawn_consent_by`); a revoked runner's agents follow a setting with an operator floor; a forwarded request's holder is a member or the admin pool; one codebase runs alone at home, as a team's instance or as an open hosted instance, with no billing in the core; a control plane for humans and their agents, an agent a durable identity, the runtime interchangeable, no inference and no token counts; not a project memory, Keep the Why the first external provider; the hosted offering runs no agent workloads, runners stay on the members' machines
+- [scope.md](scope.md) — what Maity is and is not: agents are brought, not run; the human's decision inbox; Keep the Why stays external; an operator-run runner may start agents, the hub never does, and a start needs the maintainer's go by default (`spawn_consent_by`); a revoked runner's agents follow a setting with an operator floor; a forwarded request's holder is a member or the admin pool; one codebase runs alone at home, as a team's instance or as an open hosted instance, with no billing in the core; a control plane for humans and their agents, an agent a durable identity, the runtime interchangeable, no inference and no token counts; not a project memory, Keep the Why the first external provider; the hosted offering runs no agent workloads, runners stay on the members' machines; later stages agreed in principle and not in V1: public projects and discovery, sponsoring and credits, a managed instance per customer, federation
 - [security.md](security.md) — credentials never enter the model's context: a tool holds them; signing only through the CLI
 - [sign-in.md](sign-in.md) — passwordless sign-in for humans: a device code approved on a signed-in device with number matching, or a link by mail; no agent credential yields a human session, and the mail link is only as strong as the mailbox (stated, made visible); registration verifies the address before an account exists
 
