@@ -23,6 +23,12 @@ public site at maity.dev is `docs/index.html`, not this.
 
 ## Projects and routes
 
+The header starts with the Maity lockup (`web/brand/`, 28 px, the small
+mark; the dark file where the page is dark, by the system or by the theme
+picked), and the page shows the brand's loader until the first view is
+drawn. The favicons, the social image and the description come from the
+same folder; `web/brand/BRAND.md` has the rules.
+
 One account holds many projects. The header of every screen has a
 project switcher: each project with its state and the number of open
 requests waiting for the human, and **All projects** with the total. In a
@@ -1038,6 +1044,7 @@ the screenshots and `hub.log` as the workflow artifact
 ```text
 web/
 ├── index.html        the page; loads the scripts in order
+├── brand/            the Maity mark, lockups, favicons, loader, social image (BRAND.md)
 ├── css/app.css       one stylesheet, light and dark tokens
 ├── js/theme.js       the theme picked per browser, on <html> before the first paint
 ├── js/dom.js         element builder, text only; https-only links

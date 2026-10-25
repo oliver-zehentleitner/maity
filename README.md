@@ -1,4 +1,4 @@
-# Maity
+<h1><picture><source media="(prefers-color-scheme: dark)" srcset="web/brand/maity-lockup-large-dark.svg"><img src="web/brand/maity-lockup-large.svg" alt="Maity" height="64"></picture></h1>
 
 [![Keep the Why · live](https://maity.dev/keep-the-why-dashboard/badge-entries.svg)](https://maity.dev/keep-the-why-dashboard/)
 [![Licence](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
