@@ -64,9 +64,10 @@ MariaDB jobs.
 
 **Reason:** a compare-and-set or a lock is only shown to work by a second
 writer that reads, waits or loses at the right moment. SQLite serialises all
-writers, so the same test there would pass without proving anything.
-PostgreSQL (read committed) and MariaDB (repeatable read, current reads for
-updates) differ in exactly what such a race exercises.
+writers, so the same test there would pass without proving anything. Both
+server databases run under READ COMMITTED (`db.make_engine` sets it), but
+they lock rows and resolve a conditional UPDATE each in their own way, which
+is what such a race exercises.
 
 **Rejected alternatives:**
 - Simulate the second writer by changing the row between two calls on one

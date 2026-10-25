@@ -3,14 +3,16 @@
 SQLite has one writer and serialises everything, so a race between two transactions
 only shows on a server database: the helpers skip on SQLite, and CI runs them on
 PostgreSQL and MariaDB. A step that must wait for the other transaction runs in a
-thread; `waiting` says it is still blocked, `finished` takes its result.
+thread; `waiting` says it started and is still blocked, `finished` takes its result.
 """
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable, Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import Any
 
 import pytest
@@ -42,24 +44,44 @@ def two_transactions(engine: Engine) -> Iterator[tuple[Connection, Connection]]:
             conn.close()
 
 
+@dataclass
+class Step:
+    """A step running in its own thread. `started` is set right before its first
+    statement, so that `waiting` measures the database, not the thread's start."""
+
+    future: Future[Any]
+    started: threading.Event
+
+
 @contextmanager
-def background() -> Iterator[Callable[[Callable[[], Any]], Future[Any]]]:
+def background() -> Iterator[Callable[[Callable[[], Any]], Step]]:
     """Run steps in a thread of their own, so that one may block on the other."""
     pool = ThreadPoolExecutor(max_workers=2)
+
+    def run(fn: Callable[[], Any]) -> Step:
+        started = threading.Event()
+
+        def step() -> Any:
+            started.set()
+            return fn()
+
+        return Step(pool.submit(step), started)
+
     try:
-        yield pool.submit
+        yield run
     finally:
         pool.shutdown(wait=True, cancel_futures=True)
 
 
-def waiting(step: Future[Any]) -> bool:
-    """The step is still blocked after `BLOCKED_FOR` seconds."""
+def waiting(step: Step) -> bool:
+    """The step began and is still blocked `BLOCKED_FOR` seconds later."""
+    assert step.started.wait(FINISH_WITHIN), "the step never started"
     try:
-        step.result(timeout=BLOCKED_FOR)
+        step.future.result(timeout=BLOCKED_FOR)
     except TimeoutError:
         return True
     return False
 
 
-def finished[T](step: Future[T]) -> T:
-    return step.result(timeout=FINISH_WITHIN)
+def finished(step: Step) -> Any:
+    return step.future.result(timeout=FINISH_WITHIN)
