@@ -30,6 +30,7 @@ REQUEST_KEYS = {
     "while_open",
     "needs_in_session",
     "ktw_ref",
+    "jour_fixe",
     "status",
     "answer",
     "created_at",
