@@ -94,6 +94,11 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
             # A method the environment switched off voids its open codes at once (§2.6.5).
             if not sign_in.device_code_enabled(conn, settings):
                 codes.void_open(conn)
+            # A second factor the environment switched off is told, once (§2.8.5).
+            source = sign_in.resolve(conn, settings)["second_factor"][1]
+            sign_in.note_second_factor(
+                conn, settings, "environment" if source == "env" else "admin"
+            )
         reader = forge.Forge(settings.forge_github_token)
         worker = probe.Worker(engine, reader) if reader.token is not None else None
         _app.state.probe = worker

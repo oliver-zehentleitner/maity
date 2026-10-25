@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import secrets
+import time
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -39,7 +40,9 @@ WRONG_PER_SESSION = 5
 # 10 wrong codes per human in 15 minutes, every kind of check alike (§2.8.6).
 WRONG_BY_HUMAN = Limiter(10, 15 * 60)
 ENROLMENTS_BY_HUMAN = Limiter(5, 60 * 60)
-_wrong_in_session: dict[str, int] = {}
+# Wrong codes per second-factor session: (count, first seen), pruned once a session's
+# five minutes are over.
+_wrong_in_session: dict[str, tuple[int, float]] = {}
 
 SECRET_FIELD = "second_factor.secret"
 _CROCKFORD = "0123456789abcdefghjkmnpqrstvwxyz"
@@ -113,6 +116,16 @@ def asks(conn: Connection, hub: Settings, human_id: str) -> bool:
 # --- the session's state and the gate ------------------------------------------------
 
 
+class SessionEnded(Exception):
+    """The gate found a session that has to end at this call. The gate runs inside the
+    authentication transaction, which a refusal rolls back, so it cannot end the
+    session itself: `deps` ends it in a transaction of its own, then answers 401."""
+
+    def __init__(self, id_hash: str, by: str) -> None:
+        super().__init__(by)
+        self.id_hash, self.by = id_hash, by
+
+
 def state(conn: Connection, hub: Settings, row: Any) -> str:
     """The effective state of a live session: `full`, `second_factor`, `enrolment`, or
     `ended` / `expired` when the session has to end at this call."""
@@ -123,17 +136,19 @@ def state(conn: Connection, hub: Settings, row: Any) -> str:
         if clock.now() - row.created_at >= SECOND_STEP:
             return "expired"
         return "second_factor"
-    if row.state == "enrolment" or must_enrol(conn, hub, row.human_id):
-        if off and not row.sign_in_complete:
+    if not row.sign_in_complete:  # an enrolment session (§2.8.5)
+        if off:
             return "ended"
-        if not must_enrol(conn, hub, row.human_id):
-            # The reason went away (the policy changed, the human enrolled elsewhere):
-            # the sign-in completes as it is.
-            if not row.sign_in_complete:
-                sessions.complete_in_place(conn, row)
-            return "full"
-        return "enrolment"
-    return "full"
+        if enrolled(factor_of(conn, row.human_id)):
+            # The human enrolled elsewhere meanwhile: this sign-in never gave a code,
+            # so it ends rather than becoming a full session without one.
+            return "ended"
+        if must_enrol(conn, hub, row.human_id):
+            return "enrolment"
+        # The policy no longer asks and no factor exists: the sign-in completes as it is.
+        sessions.complete_in_place(conn, row)
+        return "full"
+    return "enrolment" if must_enrol(conn, hub, row.human_id) else "full"
 
 
 def gate(conn: Connection, hub: Settings, caller: Caller, method: str, path: str) -> None:
@@ -147,15 +162,12 @@ def gate(conn: Connection, hub: Settings, caller: Caller, method: str, path: str
         return
     if current in ("ended", "expired"):
         by = "expired" if current == "expired" else "second_factor_disabled"
-        sessions.end(conn, [row], by)
-        raise unauthenticated("the sign-in has to start again")
+        raise SessionEnded(row.id_hash, by)
     call = (method, path.removeprefix("/api/v1"))
     if current == "second_factor" and call not in SECOND_STEP_CALLS:
         raise refused("second_factor_required", "this session owes the second factor")
     if current == "enrolment" and call not in ENROLMENT_CALLS:
-        raise refused(
-            "second_factor_enrolment_required", "this session has to set up the second factor first"
-        )
+        raise refused("second_factor_enrolment_required", "set up the second factor first")
 
 
 def _session(conn: Connection, id_hash: str) -> Any:
@@ -336,8 +348,24 @@ def check(
     return None
 
 
+def _refuse_off(conn: Connection, hub: Settings) -> None:
+    if policy(conn, hub) == "off":
+        raise refused("method_disabled", "the second factor is switched off")
+
+
 def refused(reason: str, message: str) -> ApiError:
     return ApiError(403, "forbidden", message, {"reason": reason})
+
+
+def _count_wrong(id_hash: str) -> int:
+    now = time.monotonic()
+    if len(_wrong_in_session) > 1024:
+        horizon = now - SECOND_STEP.total_seconds()
+        for key in [k for k, (_, first) in _wrong_in_session.items() if first < horizon]:
+            del _wrong_in_session[key]
+    count, first = _wrong_in_session.get(id_hash, (0, now))
+    _wrong_in_session[id_hash] = (count + 1, first)
+    return count + 1
 
 
 def code_invalid() -> ApiError:
@@ -361,20 +389,18 @@ def verify(
     count, the ended session, the alert — the caller commits before it refuses."""
     if caller.human_session is None:
         raise unauthenticated("this endpoint needs a dashboard session")
-    if policy(conn, hub) == "off":
-        raise refused("method_disabled", "the second factor is switched off")
+    _refuse_off(conn, hub)
     row = _session(conn, caller.human_session)
     human_id = row.human_id
     second_step = row.state == "second_factor"
     used = check(conn, hub, human_id, code=code, recovery_code=recovery_code)
     if used is None:
         if second_step:
-            wrong = _wrong_in_session.get(row.id_hash, 0) + 1
-            _wrong_in_session[row.id_hash] = wrong
+            wrong = _count_wrong(row.id_hash)
             if wrong >= WRONG_PER_SESSION:
                 _wrong_in_session.pop(row.id_hash, None)
                 failed(conn, human_id, row.method, row.ip, row.browser, row.os)
-                sessions.end(conn, [row], "revoked")
+                sessions.end(conn, [row], "second_factor_failed")
         elif WRONG_BY_HUMAN.blocked(human_id):
             # The tenth wrong step-up code in the window is told too (§2.8.2).
             failed(conn, human_id, "step_up", row.ip, row.browser, row.os)
@@ -456,8 +482,7 @@ def reauthenticate(conn: Connection, caller: Caller, password: str) -> datetime:
 def start(conn: Connection, hub: Settings, caller: Caller, issuer: str) -> dict[str, Any]:
     """`POST /auth/second-factor/totp`: a new secret, shown this once."""
     key = _key(hub)
-    if policy(conn, hub) == "off":
-        raise refused("method_disabled", "the second factor is switched off")
+    _refuse_off(conn, hub)
     row = require_proof(conn, caller)
     human_id = row.human_id
     if enrolled(factor_of(conn, human_id)):
@@ -489,6 +514,7 @@ def confirm(conn: Connection, hub: Settings, caller: Caller, code: str) -> dict[
     key = _key(hub)
     if caller.human_session is None:
         raise unauthenticated("this endpoint needs a dashboard session")
+    _refuse_off(conn, hub)
     human_id = caller.principal_id
     wait = WRONG_BY_HUMAN.blocked(human_id)
     if wait:
@@ -541,6 +567,7 @@ def confirm(conn: Connection, hub: Settings, caller: Caller, code: str) -> dict[
 
 def regenerate(conn: Connection, hub: Settings, caller: Caller) -> list[str]:
     key = _key(hub)
+    _refuse_off(conn, hub)
     require_proof(conn, caller)
     require_step_up(conn, hub, caller)
     human_id = caller.principal_id
@@ -554,8 +581,7 @@ def regenerate(conn: Connection, hub: Settings, caller: Caller) -> list[str]:
 
 def disable(conn: Connection, hub: Settings, caller: Caller) -> None:
     """`DELETE /auth/second-factor`: off, and every other session ends (§2.8.1)."""
-    if policy(conn, hub) == "off":
-        raise refused("method_disabled", "the second factor is switched off")
+    _refuse_off(conn, hub)
     require_proof(conn, caller)
     require_step_up(conn, hub, caller)
     human_id = caller.principal_id
@@ -599,6 +625,7 @@ def view(conn: Connection, hub: Settings, human_id: str) -> dict[str, Any]:
     factor = factor_of(conn, human_id)
     on = enrolled(factor)
     return {
+        "instance_off": policy(conn, hub) == "off",
         "enrolled": on,
         "enrolled_at": clock.rfc3339(factor.enrolled_at) if on else None,
         "recovery_codes_left": recovery_codes_left(conn, human_id) if on else 0,

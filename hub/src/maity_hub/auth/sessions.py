@@ -179,7 +179,10 @@ def end_where(conn: Connection, which: Any, by: str) -> None:
     live = which & t.human_session.c.ended_at.is_(None)
     ending = conn.execute(
         select(
-            t.human_session.c.id_hash, t.human_session.c.human_id, t.human_session.c.public_id
+            t.human_session.c.id_hash,
+            t.human_session.c.human_id,
+            t.human_session.c.public_id,
+            t.human_session.c.sign_in_complete,
         ).where(live)
     ).all()
     hashes = [row.id_hash for row in ending]
@@ -199,7 +202,8 @@ def end_where(conn: Connection, which: Any, by: str) -> None:
         .values(status="denied")
     )
     for row in ending:
-        records.session_ended(conn, row.human_id, row.public_id, by)
+        if row.sign_in_complete:  # a session that never counted as a sign-in has no end
+            records.session_ended(conn, row.human_id, row.public_id, by)
 
 
 def forget_expired_addresses(conn: Connection) -> None:
@@ -353,6 +357,7 @@ def complete_sign_in(conn: Connection, row: Any, second_factor: str | None) -> t
         "state": "full",
         "sign_in_complete": True,
         "last_seen_at": now,
+        "next": None,  # answered now
     }
     if second_factor is not None:
         values.update(second_factor=second_factor, second_factor_at=now)

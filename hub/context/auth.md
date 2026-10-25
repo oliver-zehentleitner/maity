@@ -205,9 +205,14 @@ Three choices of the implementation that the contract leaves open:
   `deps._resolve` before any route). So a session the human held when
   the policy was switched on, or when they became an owner, is held at
   enrolment from its next call without anything writing to it, and is
-  released the moment the reason goes away. The gate refuses inside the
+  released the moment the reason goes away — except an enrolment session
+  whose human enrolled elsewhere meanwhile, which ends rather than
+  becoming full without ever giving a code. The gate refuses inside the
   authentication transaction, as the other-project check does, so a
-  refused call leaves no presence behind.
+  refused call leaves no presence behind; for the same reason the gate
+  cannot write: a session it has to end is ended by `deps` in a
+  transaction of its own before the 401, or the end would be rolled
+  back and the session revive.
 - **The second step re-keys the row.** Completing a sign-in replaces the
   session's `id_hash` and CSRF token in a conditional update (the row
   must still owe the step), instead of making a new row. The fresh

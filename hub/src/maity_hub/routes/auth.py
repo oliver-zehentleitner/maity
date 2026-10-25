@@ -184,9 +184,15 @@ def set_session_cookies(
 def logout(request: Request, caller: HumanCaller) -> JSONResponse:
     _require_cookie(caller)
     with engine_of(request).begin() as conn:
+        complete = conn.execute(
+            select(t.human_session.c.sign_in_complete).where(
+                t.human_session.c.id_hash == caller.human_session
+            )
+        ).scalar_one()
         sessions.end_where(conn, t.human_session.c.id_hash == caller.human_session, "logout")
-        member = member_of(conn, caller.principal_id)
-    response = JSONResponse({"member": member})
+        # No member before the sign-in counts (§2.8.2).
+        answer = {"member": member_of(conn, caller.principal_id)} if complete else {}
+    response = JSONResponse(answer)
     _clear_cookies(response, request)
     return response
 
