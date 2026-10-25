@@ -23,6 +23,8 @@ from typing import Any
 import pytest
 from sqlalchemy import Connection, Engine
 
+from maity_hub import events
+
 BLOCKED_FOR = 0.5  # seconds a blocked step must stay blocked to count as waiting
 FINISH_WITHIN = 10.0  # seconds a released step may take
 
@@ -76,8 +78,12 @@ def race(engine: Engine) -> Iterator[Race]:
         pytest.skip("a race needs two writers: PostgreSQL or MariaDB (CI)")
     first, second = engine.connect(), engine.connect()
     found = Race(first, second)
-    first.begin()
-    second.begin()
+    for conn in (first, second):
+        conn.begin()
+        # What `events.transaction` gives a connection, so that the hub's code may emit
+        # in it; the test commits by hand, and nobody is woken (no wake is under test).
+        conn.info[events._PENDING] = []
+        conn.info[events._UNDO] = []
     try:
         yield found
     finally:
