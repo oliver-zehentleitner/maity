@@ -345,6 +345,36 @@ a read before it.
   `depends_on` changes stored a cycle, and a claim racing a cancel
   answered 500.
 
+## `maity-hub quickstart` migrates only a new, empty SQLite database
+
+**Id:** 83d063d3-b56c-46fe-b6b4-20751f9a6b0f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's approval of the quickstart command proposal, 2026-10-25 (empty database only, SQLite only, the address as the last line); docs/install/quickstart.md
+**Revisit when:** quickstart is asked to upgrade an existing personal hub, or to run on a server database
+
+`maity-hub quickstart` is `migrate`, `owner create` and `serve` in one, for
+a personal hub. It runs `migrate` only when the database has no revision
+yet, which means a new file. A database behind the current schema is
+refused with the same message as `serve`. It creates the first account
+only while there is no human, and it refuses any database URL other than
+SQLite. This narrows ce7a3627, the rule that migrations run only on
+`maity-hub migrate`. It does not replace it: an upgrade of a hub that
+holds data is still a deliberate `maity-hub migrate`.
+
+**Reason:** the five-minute path should be one command, and ce7a3627's
+reasons do not hold for a database that is still empty. Nothing in it can
+be changed without anyone asking, and one local process cannot race a
+replica. Restricting it to SQLite keeps the shortcut off the servers
+where ce7a3627 matters.
+
+**Rejected alternatives:**
+- Migrate whatever schema it finds: a restart after `pipx upgrade` would
+  change a hub with data on its own, which is what ce7a3627 rules out.
+- No single command, only the three steps: correct, but three more steps
+  where the quickstart promises five minutes.
+
 ## SQLite migrations run with foreign keys off, then check them, then switch them back on
 
 **Id:** 84988fb8-49b5-4b1d-8783-c90a8676deed
