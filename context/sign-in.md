@@ -160,3 +160,38 @@ phone does not show makes the wrong device visible.
   carrier's address means nothing to most humans.
 - Hiding the code during screen sharing: the dashboard cannot detect
   screen sharing; number matching covers the case without it.
+
+## Registration verifies the address before an account exists
+
+**Id:** f592cf44-de6c-4eca-b83f-7c4125729373
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's direction in the project chat, 2026-10-23, recorded in `scope.md`; contract in `docs/api.md` §2.7 and §16.4
+**Revisit when:** a registration path is added that verifies the address elsewhere (OAuth with a provider's verified address), or pending registrations are found to be abused as stored state
+**See:** scope.md#one-codebase-three-ways-to-run-it-alone-at-home-a-teams-own-instance-and-an-open-hosted-instance-with-paid-plans — 930cc491-24f2-4dbe-94b6-b5b49e7e2fb2 — as of 2026-10-23
+
+`POST /auth/register` creates no account. It stores a pending
+registration for at most 24 hours and mails a signed link; the account
+is made only when the link is followed and completed. Every request
+gets the same `202`, whether or not the address has an account; only
+the mail differs. Registration is `closed` by default, and opening it
+needs mail.
+
+**Reason:** the maintainer's direction names it — on a team's own
+instance the address is verified before an account exists. An
+allowlist by domain means nothing if the account exists before anyone
+proved the address, and an open instance must not hand accounts to
+addresses nobody controls. Making no account before the proof also
+keeps handles and rows free of squatters and leaves nothing to clean up.
+
+**Rejected alternatives** (weighed while writing the contract; the
+maintainer's direction settled the choice, not each reason):
+- An account at once, unusable until verified: every request with any
+  address would leave a row and could take a handle, and the
+  anti-enumeration answer would have to cover a half-made account too.
+- An account usable at once, verified later: defeats the allowlist and
+  gives an open instance accounts for addresses nobody controls.
+- Completing only in the browser that registered (a pending cookie):
+  breaks reading the mail on another device; asking again for the
+  password chosen at registration proves the same person instead.

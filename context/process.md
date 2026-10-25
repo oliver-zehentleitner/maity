@@ -161,3 +161,36 @@ to the reviewer.
 its own on pull requests it had already handed back, and stopped them
 when it noticed. Learned: check the handback list before assigning a
 review.
+
+## A pull request runs only the suites its changes can affect; main still runs everything
+
+**Id:** 06b11a79-65dc-4364-b6ca-bd36927ae829
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's card of 2026-10-23 (the Actions queue held 30–100 runs with about seven running, and every merge waited hours); `.github/workflows/ci.yml`
+**Revisit when:** a suite starts depending on files outside the paths that gate it, or a regression reaches main that a skipped suite would have caught
+
+A first `changes` job compares a pull request's merge commit with the
+base it merges into (`git diff HEAD^1 HEAD`) and gates each suite on the
+paths it reads: the hub's suites on `hub/` and `docs/join-page.md` (the
+join page ships in the wheel), the image also on `deploy/Dockerfile*`,
+the join smoke and the browser test also on `cli/`, the dashboard on
+`web/`, the CLI on `cli/`, the Helm chart on `deploy/`. The changelog
+check always runs; a change to the workflow runs everything; a push to
+main runs everything. A new push to a pull request cancels its older run.
+`ci-ok` is the one check to require: green when every suite passed or
+was not needed.
+
+**Reason:** documentation and context pull requests ran the three
+database suites, the browser test, the image and the Helm cluster, and
+filled the queue that every merge waits for. Main's full run on every
+merge keeps the cost of a missed path to one red main, which the next
+run names.
+
+**Rejected alternatives:**
+- A third-party paths-filter action: one more pinned dependency with the
+  repository's token, for a `git diff` and a `case` the workflow can
+  hold itself.
+- Cancelling runs on main as well: each merge's own result is the
+  record a deploy is decided on.

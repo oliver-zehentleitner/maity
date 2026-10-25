@@ -1180,6 +1180,9 @@ window.MAITY_FIXTURES = {
     },
     "rules_version": 7,
     "settings": {
+      "onboarding": {
+        "check_in_with": "coordinator"
+      },
       "release_checklist": [
         "CHANGELOG has a section for this version",
         "live version equals the tag"
@@ -2534,6 +2537,7 @@ window.MAITY_FIXTURES = {
           "session_id": "hss-41d2"
         },
         "address_status": "verified",
+        "language": "en",
         "pending_address": null,
         "verified_at": "2026-10-01T09:12:00Z"
       },

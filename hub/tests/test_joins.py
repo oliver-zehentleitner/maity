@@ -187,6 +187,24 @@ def test_the_page_is_markdown_for_an_agent(owner: flow.Human, make_client: Clien
         assert "{{" not in text and "Template for the join page" not in text
 
 
+@pytest.mark.parametrize("repository", [None, "https://github.com/acme/widget"])
+def test_join_page_names_the_expected_repository(
+    owner: flow.Human, make_client: ClientFactory, repository: str | None
+) -> None:
+    if repository:
+        assert (
+            owner.patch("/projects/maity", {"repository": {"url": repository}}).status_code == 200
+        )
+    created = flow.join(owner, "maity")
+    for accept in ["text/markdown", "text/html"]:
+        response = make_client().get(f"/j/{_token(created)}", headers={"Accept": accept})
+        assert response.status_code == 200
+        assert "Expected repository" in response.text
+        assert (repository or "not configured") in response.text.replace("\\", "")
+        assert "{{project_repository}}" not in response.text
+        assert created["code"] not in response.text
+
+
 def test_the_page_is_html_for_a_browser_with_no_form(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:

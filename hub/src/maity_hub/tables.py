@@ -20,6 +20,8 @@ history is in the events.
 
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
@@ -34,6 +36,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     false,
+    true,
 )
 
 from maity_hub.db import metadata
@@ -206,6 +209,10 @@ membership = Table(
     Column("review_within_team", Boolean, nullable=False, server_default=false()),
     Column("team_updated_by", String(ID)),
     Column("team_updated_at", UtcDateTime),
+    # Preferences (§19.4): whether this membership's project reads its human's text, and
+    # whether this agent membership is given its owner's text.
+    Column("preferences_include", Boolean, nullable=False, server_default=true()),
+    Column("owner_preferences", Boolean, nullable=False, server_default=false()),
     *_audit(),
     CheckConstraint("active IS NOT FALSE", name="active_true_or_null"),
     CheckConstraint(
@@ -215,6 +222,39 @@ membership = Table(
     ),
     UniqueConstraint("project_id", "human_id", "active"),
     UniqueConstraint("project_id", "agent_id", "active"),
+    **MYSQL_TABLE,
+)
+
+# --- preferences (§19.4) -----------------------------------------------------------
+
+
+def _preference_columns() -> list[Column[Any]]:
+    return [
+        Column("markdown", MARKDOWN_TEXT, nullable=False),
+        Column("version", Integer, nullable=False),
+        Column("by_kind", String(16), nullable=False),
+        Column("by_id", String(ID), nullable=False),
+        Column("proposed_by", JSON_VALUE),  # the proposing agent, its project and request
+        Column("confirmed_by", String(ID)),
+    ]
+
+
+preferences = Table(
+    "preferences",
+    metadata,
+    _ref("human_id", "human.id", primary_key=True),
+    *_preference_columns(),
+    Column("updated_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+preferences_version = Table(
+    "preferences_version",
+    metadata,
+    _ref("human_id", "human.id", nullable=False),
+    *_preference_columns(),
+    Column("at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("human_id", "version"),
     **MYSQL_TABLE,
 )
 
@@ -654,6 +694,14 @@ request = Table(
     Column("answered_at", UtcDateTime),
     Column("withdrawn_at", UtcDateTime),
     Column("withdraw_reason", MARKDOWN_TEXT),
+    # Only a human answers it (§2.3, §7): the asker's flag, or the hub's on what it files.
+    Column("humans_only", Boolean, nullable=False, server_default=false()),
+    # Who holds a `decision` request after its first forward (§7): a member, or the
+    # admins as a pool (`holder_pool`, true until one claims it); both null while `to`
+    # still holds it. `forwarding` lists every step, oldest first.
+    _membership_ref("holder_member"),
+    Column("holder_pool", Boolean),
+    Column("forwarding", JSON_VALUE),
     *_audit(),
     Column("created_at", UtcDateTime, nullable=False),
     CheckConstraint(
@@ -661,11 +709,15 @@ request = Table(
         " OR (to_kind = 'role' AND to_role IS NOT NULL AND to_member IS NULL AND to_human IS NULL)"
         " OR (to_kind = 'owner' AND to_member IS NULL AND to_role IS NULL AND to_human IS NULL)"
         " OR (to_kind = 'profile_owner' AND to_profile IS NOT NULL AND to_human IS NOT NULL"
+        " AND to_member IS NULL AND to_role IS NULL)"
+        # A human in person (§19.4): a personal request no agent profile stands behind.
+        " OR (to_kind = 'human' AND to_human IS NOT NULL AND to_profile IS NULL"
         " AND to_member IS NULL AND to_role IS NULL)",
         name="to_shape",
     ),
     CheckConstraint(
-        "(personal AND to_kind = 'profile_owner') OR (NOT personal AND to_kind <> 'profile_owner')",
+        "(personal AND to_kind IN ('profile_owner', 'human'))"
+        " OR (NOT personal AND to_kind NOT IN ('profile_owner', 'human'))",
         name="personal_shape",
     ),
     Index("ix_request_project_status", "project_id", "status"),
@@ -721,8 +773,50 @@ message_delivery = Table(
     **MYSQL_TABLE,
 )
 
-# How far a human has read a conversation: `unread` counts the agent's
-# messages after `last_seq`.
+# A group chat (§9.2): a room of two to twelve members, created by a human, closed
+# for good when its last human leaves. Its messages are `message` events whose
+# `conversation_id` is the chat's id. `hub_thread` marks a jour fixe round's thread
+# (§20.5), which the hub creates: no participant cap, no `use_direct`, no quota.
+conversation = Table(
+    "conversation",
+    metadata,
+    _id(primary_key=True),
+    _ref("project_id", "project.id", nullable=False, index=True),
+    Column("title", String(TITLE)),
+    _membership_ref("created_by"),  # null for the hub's own thread
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("hub_thread", Boolean, nullable=False, server_default=false()),
+    Column("closed_at", UtcDateTime),
+    Column("closed_reason", String(32)),
+    **MYSQL_TABLE,
+)
+
+# One stay of a member in a group chat: a member who leaves and is added again gets a
+# new row, so its window (§9.2) starts at its latest join. `window_after` is the
+# project's highest event seq when it joined; `here` marks the open stay (true or
+# NULL, at most one per member and chat on every engine).
+conversation_participant = Table(
+    "conversation_participant",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    _ref("conversation_id", "conversation.id", nullable=False, index=True),
+    _membership_ref("membership_id", nullable=False, index=True),
+    Column("joined_at", UtcDateTime, nullable=False),
+    Column("window_after", BIG_ID, nullable=False),
+    Column("added_by", String(ID)),  # a member id; null when the hub added it
+    Column("left_at", UtcDateTime),
+    Column("removed_by", String(ID)),
+    Column("reason", String(32)),  # removed, left, membership_removed
+    Column("here", Boolean, default=True),
+    UniqueConstraint(
+        "conversation_id", "membership_id", "here", name="uq_conversation_participant_one_stay"
+    ),
+    CheckConstraint("here IS NOT FALSE", name="here_true_or_null"),
+    **MYSQL_TABLE,
+)
+
+# How far a member has read a conversation: `unread` counts the others' messages
+# after `last_seq` (a direct one's human party; a group chat's participants).
 conversation_read = Table(
     "conversation_read",
     metadata,

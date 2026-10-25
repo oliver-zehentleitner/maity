@@ -332,10 +332,10 @@ def test_the_browser_and_system_names(agent: str | None, expected: tuple[Any, An
 
 
 def test_the_migration_gives_existing_sessions_an_id(engine: Engine) -> None:
-    migrate(engine, "0026")
+    migrate(engine, "0037")
     human_id = factory.human(engine, "maintainer")
     now = clock.now()
-    # The table as revision 0026 had it: no column of the session list yet.
+    # The table as revision 0037 had it: no column of the session list yet.
     before = sa.table(
         "human_session",
         *(sa.column(c, sa.String) for c in ("id_hash", "human_id", "csrf_token", "source")),

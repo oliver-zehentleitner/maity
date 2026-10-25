@@ -145,3 +145,29 @@ next edit of the body. Neutralising every `@` needs no parsing.
 - Reading any repository of the owner and documenting the token's reach
   as the disclosure boundary: it leaves the boundary to how each
   operator scopes a token.
+
+## Cards are searched by a substring over their text, notes and latest report
+
+**Id:** 52c8d449-c648-4672-a16b-a0dcba6fbf70
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request of 2026-10-23 (a text search on the board, notes and reports included); contract in `docs/api.md` §6.4
+**Revisit when:** a project's cards are too many for a substring scan to answer fast, or people ask for words, phrases or ranking rather than a substring
+
+`GET …/tasks` takes `q`: a case-insensitive substring over the card's id,
+title, body, its notes' bodies and its latest report's summary, combined
+with the usual filters, with `match` naming where it hit. The dashboard
+filters the loaded board while typing and asks the hub for a kept search,
+with all statuses, so closed cards outside the board window are found.
+
+**Reason:** the board shows a window of cards, so a search only in the
+browser misses what was closed earlier; the hub already has a substring
+filter of this shape for memory (§19), and the same rule keeps one
+behaviour across both. Searching only what `project:read` shows adds no
+access.
+
+**Alternatives:** filtering in the browser only: rejected, it cannot find
+cards outside the loaded window. A full-text index with ranking: not now;
+it needs a different engine per database (SQLite, PostgreSQL, MariaDB)
+for a project of a few hundred cards.

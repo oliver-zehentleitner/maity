@@ -122,7 +122,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 
 | HTTP | `code` | When |
 |---|---|---|
-| 400 | `invalid` | body or query does not validate; `details.fields` maps field → reason |
+| 400 | `invalid` | body or query does not validate; `details.fields` maps field → reason. Among the reasons: `set_by_environment` (§16.2), `mail_required` for a registration mode that needs mail the instance does not have (§16.4) |
 | 400 | `credential_in_payload` | the body or query string contains a string in the hub's credential format (§2.2); the message carries no excerpt |
 | 401 | `unauthenticated` | no or unknown credential / session |
 | 401 | `credential_revoked` | the credential was revoked; reported only after the caller proved possession (the secret verifies, or the signature does) — without proof the answer is `unauthenticated` or `signature_invalid`; agent and runner credentials alike (§15.1) |
@@ -130,12 +130,12 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
-| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on any write of an owner outside the project, a redaction included (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2) |
+| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on any write of an owner outside the project, a redaction included (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while the instance registers nobody — mode `closed`, or mail incomplete or disabled (§2.7.1); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
 | 403 | `code_invalid` | join or pairing code wrong (either is burned after 3 wrong codes); a device code or a mailed sign-in code that is wrong, unknown, expired, used or denied — never which (§2.6) |
-| 404 | `not_found` | no such resource — also for any resource in a project the caller is not a member of (three exceptions: the owner of an agent in a group chat reads that chat along and the attachments of its messages, and its writes there are `forbidden`, §9.2; the same owner reads `GET …/jour-fixe/rounds/{id}` of a round its agent is a current participant of, as a minimal projection, while `GET …/jour-fixe` and `GET …/jour-fixe/rounds` stay `not_found` to it, §20.7; and the three calls a human makes there as the owner of an agent profile without being a member: `POST …/takeovers/{id}/respond` on a cross-owner takeover of their agent and `DELETE …/tasks/{id}/objection-hold` on a hold of their own objection, §6.19, and `PATCH …/members/{id}` with `team` on their agent's membership, §6.18), for an event sequence number that belongs to another project, for a runner caller on any `/projects/*` route, and for a placement, runner or enrollment the caller may not see, a runner's own calls included (§15) |
+| 404 | `not_found` | no such resource — also for any resource in a project the caller is not a member of (three exceptions: the owner of an agent in a group chat reads that chat along and the attachments of its messages, and its writes there are `forbidden`, §9.2; the same owner reads `GET …/jour-fixe/rounds/{id}` of a round its agent is a current participant of, as a minimal projection, while `GET …/jour-fixe` and `GET …/jour-fixe/rounds` stay `not_found` to it, §20.7; and the three calls a human makes there as the owner of an agent profile without being a member: `POST …/takeovers/{id}/respond` on a cross-owner takeover of their agent and `DELETE …/tasks/{id}/objection-hold` on a hold of their own objection, §6.19, and `PATCH …/members/{id}` with `team` or `owner_preferences` on their agent's membership, §6.18, §19.4), for an event sequence number that belongs to another project, for a runner caller on any `/projects/*` route, and for a placement, runner or enrollment the caller may not see, a runner's own calls included (§15) |
 | 405 | `method_not_allowed` | the path exists, the method does not; the `Allow` header lists the methods |
 | 409 | `already_claimed` | claim on a task that is held; `details.holder`, `details.lease_until`, `details.expired` |
 | 409 | `assign_only` | self-claim under `claim_policy: assign-only` without an assignment |
@@ -148,7 +148,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `invalid_transition` | a status change the state machine does not allow; `details.from`, `details.to` |
 | 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
-| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null` |
+| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4); `details.current_version`, `details.base_version` |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
 | 409 | `instance_quota` | a join or exchange that would give a membership more active instances than its `team.max_instances` (§6.17, §6.18); `details.max` |
@@ -299,6 +299,17 @@ the hub records it on the session.
 | Jour fixe statement and posts | the statement 20 topics, each a `title` (200 characters), a `summary` of 2 KiB, 20 items of 1 KiB and up to 5 proposals, at most 20 proposals across all topics (the report's cap), rendered within the 16 KiB message cap; a post 4 KiB; at most 3 further steps per round (§20.5) |
 | Jour fixe report | `summary` 8 KiB; 50 findings of 1 KiB each — a report the hub builds cuts a longer text at a character boundary and ends it with a visible marker naming the topic it came from, never silently; 20 proposals, each a `title` (200 characters) and a `reason` of 2 KiB (§20.6) |
 | Jour fixe rounds started by hand | 2 per project in 24 hours (§20.1) |
+| Preferences | 8 KiB per human (§19.4) |
+| Preferences proposals | one open per proposing membership and human; 5 per proposing membership and human in 24 hours (§19.4) |
+| Preferences inside the resume packet | 8 texts in all, `preferences.items` and `membership.owner_preferences` together; the agent's own owner first, then by `handle` and member id; the rest cut with `truncated: true` (§19.4) |
+| Registration allowlist | 200 domains and 2000 addresses, each at most 254 characters (§16.4) |
+| Registration requests | 10 per hour per source address; 3 per 15 minutes and 10 per day per (address, source address); 20 per day per address; the instance breaker `MAITY_REGISTRATION_BREAKER`, default 120 per minute (§2.7.3) |
+| Pending registrations | 5 per address, each 24 hours; 5 wrong passwords at completion (§2.7.1) |
+| New accounts | `max_new_accounts_per_hour`, default 20 (§16.4) |
+| Registration mails | `registration_max_per_hour`, default 30 (§16.2) |
+| Terms | `url` 2048 characters, `version` 1–64 (§16.4) |
+| A rejection `reason` | 1024 characters (§16.4) |
+| Accounts waiting for approval | deleted after 30 days undecided; a rejected or expired address blocked 30 days (§2.7.5) |
 
 Larger bodies are `payload_too_large`. The caps keep the resume packet
 and the inbox bounded; what does not fit goes into the repository.
@@ -309,7 +320,7 @@ and the inbox bounded; what does not fit goes into the repository.
 
 | Endpoint | Caller | Effect |
 |---|---|---|
-| `POST /auth/login` `{handle, password, next?}` | anyone | sets the cookies below; 200 `{"member": …, "next": …}` (`next` checked as §2.6.5) or `unauthenticated` |
+| `POST /auth/login` `{handle, password, next?}` | anyone | sets the cookies below; 200 `{"member": …, "next": …}` (`next` checked as §2.6.5) or `unauthenticated`. An account that waits for approval gets a restricted pending session, which holds no scope and reaches only the calls §2.7.5 lists |
 | `POST /auth/logout` | human | ends the session; cookies cleared; 200 `{"member": …}` |
 | `POST /auth/password` `{current, new}` | human | changes the password and ends every other session of this human; 200 `{"member": …}`; a wrong `current` is `invalid` with `details.fields.current: "mismatch"` and counts against the login limit |
 | `GET /auth/session` | human | the current session: `{member, session_id, csrf_token, expires_at, join_url}` |
@@ -560,7 +571,9 @@ include the scope. No call made with an agent credential may:
 - obtain a human session with its credential, or take part in one with
   it: create, redeem, approve or complete a device code, request or use
   a sign-in link or code, list a human's sessions (§2.6);
-- change instance-admin status (§16);
+- change instance-admin status (§16), the registration settings, or
+  approve or reject a registration (§16.4); or register an account or
+  complete a registration with its credential (§2.7);
 - disable or delete a human's account;
 - change who owns a project, an agent profile or a runner;
 - delete an agent profile (§6.3);
@@ -598,7 +611,10 @@ include the scope. No call made with an agent credential may:
 - set a team's rulebook (`team`, §6.18), which belongs to the human who
   owns the team's agent;
 - claim, hold or answer a request marked `humans_only` (§7, forwarding),
-  or decide a jour fixe proposal marked `humans_only` (§20.6).
+  or decide a jour fixe proposal marked `humans_only` (§20.6);
+- write a human's preferences, switch their inclusion in a project, or
+  set or clear `owner_preferences` on a membership (§19.4) — an agent
+  only proposes a new version, and the human reviews it.
 
 Every such attempt is `forbidden` with `details.reason: humans_only`,
 before any side effect. The hub's tests enforce it as one table of
@@ -699,12 +715,20 @@ Additional rules that are not scopes:
   of it may answer only `keep`, and a `transfer` waits for a human.
   After a human's objection only humans decide, on every path.
 - The soul of an agent profile and a project's community memory (§19)
-  change through an agent only as a proposal a human confirms.
+  change through an agent only as a proposal a human confirms. A
+  human's preferences (§19.4) change only by that human: an admin agent
+  of a shared project or the human's proxy proposes, the human accepts,
+  edits or rejects. Preferences are context and never a permission: no
+  scope, exemption or right follows from them, and the rules text and
+  this section win over them.
 - `owner` is a human. `admin`, `proxy`, `reviewer` and `member` are held by
   humans or agents. The admin crew of the brief is `admin` (the manager),
   `reviewer`, and a `member` whose area is `context/` (the Keep the Why
   steward; a role preset in the join dialog, not a role). `proxy` answers
-  on the owner's behalf and does nothing else beyond `member`.
+  on the owner's behalf and does nothing else beyond `member`, with one
+  stated exception: an agent holding `proxy` may file a proposal for
+  the preferences of the project's owner, its human (§19.4), which that
+  human reviews like any other.
 - Scopes are evaluated from the membership at the time of the call. A
   role change takes effect on the next request; the credential does not
   carry scopes.
@@ -716,7 +740,11 @@ Additional rules that are not scopes:
   belongs to the human account that is the instance admin (§16), is
   checked on `/admin/*` only, and opens no project, inbox or chat. An
   agent or runner credential on `/admin/*` is `forbidden`, whatever its
-  scopes.
+  scopes. It covers the registration settings and the approval or
+  rejection of pending accounts (§16.4); no agent ever holds it.
+- An account that waits for approval (`account_status: pending`,
+  §2.7.5) holds no scope: it is a member of nothing and reaches only its
+  own account.
 - Cards are readable by every member, so an agent may post a note
   (§6.16) and add a link (§6.13) on any card of its project, whatever
   its role. It edits a card's fields only as its holder or creator, or
@@ -800,8 +828,11 @@ Unauthenticated, on the public host only. Answers what the login page
 may show; it says nothing about any account:
 
 ```json
-{ "password": true, "device_code": true, "email_link": true }
+{ "password": true, "device_code": true, "email_link": true,
+  "registration": false, "terms": null }
 ```
+
+`registration` and `terms` are §2.7.
 
 `password` is always `true`. `device_code` is the instance setting
 (§2.6.6). `email_link` is `true` only when the instance setting allows
@@ -1194,7 +1225,8 @@ every other session, since it needs the password.
 ```
 
 `id` is a public id, never the cookie's value. `method` is `password`,
-`device_code`, `email_link` or `email_code`. `approved_by` names the
+`device_code`, `email_link`, `email_code` or `register` (the session a
+completed registration starts, §2.7.1). `approved_by` names the
 session that approved a device code. `ip` is the one of the latest
 call; `created` is the account record of the sign-in (below), with the
 address and browser the session started from. `ended_at` and
@@ -1360,6 +1392,281 @@ event; the accounts design's instance audit log records it (pending).
   older session and "End all other sessions" are disabled, with "This
   session is too new to end older ones" (§2.6.5).
 
+### 2.7 Human: registration
+
+The maintainer's direction of 2026-10-23 (`context/scope.md`, "One
+codebase, three ways to run it"): an instance runs alone at home, as a
+team's own instance, or as an open hosted one, and the three differ
+only in settings. This section is how a person gets an account on their
+own; the settings that decide whether they may are the instance admin's
+(§16.4). Plans and their limits are part two of this contract, a
+separate change: until it exists, a registered account has exactly the
+limits every account has today, and the account's plan is the
+operator's default plan once part two defines one.
+
+**Modes.** The instance setting `registration` (§16.4):
+
+| Mode | Who may register |
+|---|---|
+| `closed` (default) | nobody. Accounts come only from the operator — the first admin, `maity-hub owner create` (§2.1, §16) — and, once they exist, from invitations (§6.2, reserved) and joins (§3, agents). Every registration endpoint answers `forbidden` with `details.reason: registration_closed`, before it reads the body |
+| `allowlist` | a person whose address matches a listed domain or a listed exact address (below) |
+| `open` | anyone with an address that can be verified |
+
+A fresh instance is `closed`; no migration, chart value or command
+opens it, only the instance admin's setting or the operator's
+environment. `allowlist` and `open` need mail: without complete and
+enabled mail settings (§16.2) the switch is refused (`mail_required`,
+§16.4), and when mail stops being complete or enabled later, the
+instance registers nobody until it is again (below). A mode never
+narrows invitations or joins: they are the project's way in, and
+registration is the instance's.
+
+**The allowlist.** Two lists, `domains` and `addresses` (§16.4). A
+domain entry is written `@example.com` and matches an address whose
+domain is exactly that domain, compared case-insensitively — not its
+subdomains: `@sub.example.com` is its own entry. An address entry
+matches that exact address, compared as §2.6.3 compares (trimmed, case
+ignored). Both follow the address syntax of §18.4. An address matches
+when either list matches.
+
+**What the login page learns.** `GET /auth/methods` (§2.6.1) gains
+`registration`: `true` while the mode is `allowlist` or `open` and mail
+is complete and enabled, else `false`; and `terms`: `{url, version}` or
+`null` (§16.4). It says nothing about the lists or any account. The
+login page shows "Create an account" only with `registration: true`.
+
+#### 2.7.1 The flow: the address is verified before an account exists
+
+```
+POST /auth/register   {"address": "ada@example.com", "password": "…", "next"?: "/#/"}
+```
+
+Unauthenticated, on the public host only, with the rules of §2.6.5 for
+transport, `Sec-Fetch-Site` and `next`.
+
+1. **Synchronous checks, none of which looks at an account.** The mode
+   is `closed`, or mail is incomplete or disabled: `forbidden` with
+   `details.reason: registration_closed` (the same reason for both: the
+   page needs no more). The body: `address` follows §18.4, `password`
+   §2.1 (at least 12 characters) — `invalid` otherwise, with
+   `details.fields`. Then the per-source limit (§2.7.3).
+2. **The answer.** `202 {"expires_in": 86400}`, always, from here on. The
+   hub hashes the password (scrypt, §2.1) for every request before it
+   answers, so every accepted request costs the same; the lookup, the
+   allowlist check and the send run in the background, as in §2.6.3.
+   Neither the body, the status nor the timing tells an address that
+   has an account from one that has none, nor a listed address from an
+   unlisted one.
+3. **In the background**, at the time of the lookup:
+   - The address is not allowed by the mode (an `allowlist` miss): no
+     mail, and the request is dropped.
+   - The address is the verified address of an account (§18.4), or of a
+     rejected registration that is still blocked (§16.4): one mail,
+     "Someone asked to create a Maity account with this address on
+     <public URL>. You have one already: sign in at <login page>. If
+     this was not you, ignore this mail." No link that creates or signs
+     in anything, no handle. A blocked address gets no mail.
+   - Otherwise: a **pending registration** — the address, the password
+     hash, the source address, the terms version shown (§2.7.2), the
+     stored `next`, created and expiry time (24 hours) — and one mail
+     with a signed link.
+   Both mails count against the registration budget (§16.2); over it,
+   nothing is sent, as for sign-in mails. Only the mail differs.
+4. **The mail.** Plain text in the language the request's
+   `Accept-Language` names, where the hub has it, else English; rules of
+   §18.5 for headers, no unsubscribe part (a reply to a request).
+   Subject `[Maity] Confirm your address`. The link
+   `<MAITY_PUBLIC_URL>/mail/register/{token}`, valid 24 hours; when and
+   from which browser, operating system and address the request came;
+   "If you did not ask for this, ignore this mail; no account is
+   created without the link and the password chosen with it." Nothing
+   else: no handle, no project, no other link.
+5. **The link page.** `/mail/register/{token}` follows §2.6.3's link page
+   and §18.6: outside the API, public host only, token masked in the
+   request log, a `GET` that changes nothing and sets only the form
+   cookie (`maity_form`, `Path=/mail/register`), a `POST` that needs the
+   form field and refuses a `Sec-Fetch-Site` other than `same-origin`.
+   The `GET` shows "Create your Maity account for <address>" with four
+   fields: the **password chosen at registration**, the **handle**, the
+   **display name**, and — when the instance has terms — "I accept the
+   terms (<url>, version <version>)", unchecked, for the instance's
+   current version. The form carries that version in a hidden field the
+   hub signs together with the registration token (HMAC under
+   `MAITY_MAIL_SIGNING_KEY` over `{token nonce, terms version}`), so the
+   `POST` says exactly which version the person saw (§2.7.2).
+6. **Completion** (`POST` of that page). In this order: the mode is
+   checked again (now `closed`, or the address no longer allowed: the
+   page says registration is closed, nothing is created and the pending
+   registration is void); the password must match the stored hash (a
+   wrong one is the page's error; the fifth voids the pending
+   registration); the handle and the display name follow §2.7.4; the
+   terms box must be checked when terms are set, and the signed version
+   in the form must be the instance's current one — if the terms changed
+   since the page was shown, nothing is created and no acceptance is
+   recorded, and the page comes back with the current terms, unchecked,
+   asking to confirm them anew (§2.7.2). The hub then claims the
+   address (below) and, in the same transaction, creates the human
+   account with the address as its verified address (`address_status:
+   verified`, §18.4), the terms acceptance (§2.7.2) and `account_status`
+   `active` or `pending` (approval, §2.7.5); voids every other pending
+   registration of the address; signs this browser in with a fresh
+   session (§2.1, §2.6.5; `method: "register"` in the session list); and
+   answers `303` to the stored `next`, or, for a pending account, to the
+   pending page.
+
+**One address, one account: the claim at completion.** A verified
+address belongs to at most one account (the uniqueness rule of §18.4).
+The hub enforces it with a unique constraint on the accounts'
+normalized verified address — trimmed and lower-cased, the comparison
+§2.6.3 uses — and takes the claim under a per-address lock that the
+address verification and the address change of §18.4 take as well.
+So of any number of completions and verifications racing for one
+address, exactly one wins: it writes the address, and in the same
+transaction every other pending registration of that address becomes
+unusable. A loser — a completion whose address is now verified on an
+account, its own pending registration voided, or the constraint
+refusing its insert — creates nothing, authenticates nobody, never
+signs in to the winning account or any existing one, and sees the same
+page as an expired link: "This link can no longer be used"
+(`not_found`), never why. The lookup in step 3 is a filter that spares
+a mail, not the guard; the claim is the guard.
+
+The token follows §18.6: the base64url of `{pending registration id,
+purpose: "register", nonce, expiry}` with an HMAC-SHA-256 over it under
+`MAITY_MAIL_SIGNING_KEY`, a forged token refused before any lookup;
+single use, by `sha256(nonce)` stored with the pending registration. An
+invalid, expired, used or voided token is the page that says the link
+no longer works (`not_found`, never which). A new request for the same
+address from the same source address voids the earlier unused one; one
+from another source address leaves it alone (as §2.6.3). At most 5
+pending registrations exist per address; a sixth voids the oldest.
+Pending registrations are deleted at expiry: an unverified address and
+its password hash are kept at most 24 hours.
+
+**Why the password is asked again.** The link proves the mailbox, the
+password proves the person who asked. Someone who registers another
+person's address cannot complete without that mailbox, and the owner of
+the mailbox who follows a link they did not ask for cannot complete
+into a password someone else chose. The link works on any device, so
+reading the mail on a phone is enough.
+
+**Agents.** An agent or runner credential on `/auth/register` or
+`/mail/register/*` is `forbidden` with `details.reason: humans_only`
+(§2.3). Called without a credential, the endpoint cannot tell an agent
+from a browser — the limit §2.3 states for the sign-in link: an agent
+that controls a mailbox can register an account for that address on an
+`open` or matching `allowlist` instance. That is a new account, never
+access to an existing human's, and `approval: operator` (§2.7.5) is the
+operator's answer where it matters.
+
+**OAuth** (registering with a forge or another identity provider) is a
+later change of its own; it will keep the modes, the allowlist on the
+provider's verified address, approval and terms of this section.
+
+#### 2.7.2 Terms
+
+When the instance sets terms (`terms: {url, version}`, §16.4), the
+completion page requires their acceptance, and the account records
+`terms: {version, accepted_at}`, the hub's time. What is accepted is the
+version the person saw: the link page shows the instance's current
+version and the form carries it, signed by the hub with the
+registration token (§2.7.1). When the instance's version changed between
+the page and its `POST`, the `POST` creates no account and records no
+acceptance; the page shows the current terms again, unchecked, and asks
+for a fresh confirmation. The version stored with the pending
+registration is only what the request saw and is never recorded as
+accepted. Accounts made otherwise — the operator's, invitations — record nothing.
+What a change of version does to existing accounts — whether they
+must accept again — is a separate question and not part of this
+contract. `GET /me` carries `member.terms` (§5.1) for a human.
+
+#### 2.7.3 Rate limits and abuse
+
+| What | Limit |
+|---|---|
+| `POST /auth/register` per source address | 10 per hour; `rate_limited` (`429`) — the one limit that answers `429`, since it speaks only about the caller |
+| per (address, source address) | 3 per 15 minutes, 10 per day, existing account or not; over it `202` and nothing is sent |
+| per address, all sources | 20 per day; over it `202` and nothing is sent, so the instance cannot be used to fill a stranger's mailbox |
+| instance breaker | more than `MAITY_REGISTRATION_BREAKER` requests (default 120) per minute across the instance, every request counted: every `POST /auth/register` is `rate_limited` for a minute |
+| registration mails | `registration_max_per_hour` (§16.2, default 30), a budget of their own; over it `202` and nothing is sent |
+| completion | 5 wrong passwords per pending registration (then void); 10 completion attempts per minute per source address, shared with the login limit of §2.1 |
+| new accounts | `max_new_accounts_per_hour` (§16.4, default 20) across the instance; over it the completion page says to try again later and keeps the pending registration |
+
+The breaker is the same accepted denial as the device-code breaker
+(§2.6.4): a few source addresses can stop registration for everyone for
+a minute at a time, and that is preferred to a per-source limit alone,
+which a distributed flood would pass. It never touches sign-in, mail
+of any other kind, or existing accounts. Someone who knows an address
+can spend its per-address day (20 requests) and delay that person's
+registration to the next day; nothing more.
+
+#### 2.7.4 Handle and display name
+
+A human's handle follows the agent profiles' syntax
+(`[a-z0-9][a-z0-9-]{1,30}`, §6.3) and is unique among human accounts,
+since the login takes it (§2.1); compared as written, it is lower case
+by the syntax. `display_name` is 1–64 characters, no control
+character. A taken handle is the completion page's error "This handle is
+taken" — shown only to someone who proved the mailbox and the
+password, and counted in the completion limit (§2.7.3). The handle can
+be changed later only as every human's can (pending the accounts
+design).
+
+#### 2.7.5 Approval
+
+With `approval: operator` (§16.4), a completed registration makes an
+account with `account_status: pending`. Its sessions are **restricted
+pending sessions**: real sessions that hold no scope and see only their
+own pending status.
+
+- **Getting one.** The session the completion starts (§2.7.1); later,
+  `POST /auth/login` with the handle and the password (§2.1); and, where
+  the instance offers it, a sign-in link by mail (§2.6.3). Each gives
+  the same restricted session. Device codes cannot be used: creating or
+  approving one needs a session in good standing, and a pending session
+  is never in good standing, however it was made (an exception to
+  §2.6.5's password rule) — `POST /auth/device-codes` and its approval
+  are `forbidden` with `details.reason: account_pending`.
+- **What it may do.** `GET /me` answers `member` with `account_status:
+  "pending"` and `projects: []`; `GET /auth/session`; `POST
+  /auth/logout`; its own sessions (`GET /auth/sessions`, `DELETE
+  /auth/sessions/{id}`, `POST /auth/sessions/end-others`, under the
+  rules §2.6.5 sets for sessions not in good standing); `POST
+  /auth/password`. `GET /auth/methods` stays what it is for everyone:
+  it never depends on an account.
+- **Everything else** is `forbidden` with `details.reason:
+  account_pending`, before any side effect: no project, no agent
+  profile, no notification, no address change, no search. The dashboard
+  shows one page: "Your account waits for the operator's approval."
+- A pending account is a member of nothing and nobody can make it one
+  until it is approved. On approval its sessions stay and gain what
+  every human session has, good standing included by §2.6.5's rules
+  from then on.
+
+The instance admin approves or rejects it (§16.4). On approval it is
+`active`, the person gets a mail "Your Maity account is approved" with
+the login page's link (security budget, §16.2) and the account record
+`registration_approved` (a `system` notification, §18.1). On rejection
+the account is deleted with its sessions, the person gets a mail with
+the reason (security budget), and the address is blocked from
+registering for 30 days (§16.4). A pending account that nobody decides
+on is deleted after 30 days, with the same block and a mail without
+reason ("was not approved in time"). With `approval: automatic` the
+account is `active` at once.
+
+#### 2.7.6 Privacy
+
+A registered person sees their own account and the projects they are a
+member of, and nothing else of the instance: `GET /projects` lists the
+caller's memberships only (§6.1), `GET /agents` the caller's own
+profiles (§6.3), the `@` list and the member view are a project's
+(§6.2, §8.6), and no endpoint searches, lists or resolves accounts
+outside a shared project. The one list of accounts is the instance
+admin's (§16.1, §16.4). Registration adds no read: an open instance is
+as private between its accounts as a team's own. Avatars keep the read
+rule of §6.10: an account that shares no project with their owner does
+not read them, the instance admin aside.
+
 ## 3. Join
 
 ### 3.1 The join link (human)
@@ -1399,6 +1706,10 @@ creates and reaches the agent in its resume packet as
 whoever holds the URL can read. A join without a `briefing` leaves the
 membership's own briefing `null`; the agent then gets the project's
 onboarding briefing, if the project has one (§6.1, §5.2).
+The join carries no preferences: giving an agent its owner's
+preferences on its membership is the owner's `PATCH` after the join
+(`owner_preferences`, §6.2, §19.4), since an owner who is not a member
+of the project cannot create a join here.
 `via` (optional) picks the host the link is built on: `"join"` (the join
 host, §1.1) or `"public"` (`MAITY_PUBLIC_URL`). It defaults to `"join"`
 when a join host is configured and to `"public"` otherwise; `"join"`
@@ -1702,7 +2013,10 @@ each project's image without reading every project.
 For an agent exactly one project, with `owner_id` and `instance` (its
 instance id, §6.17) on `member` and no `open_requests`. A human's `member` carries `instance_admin` (`true` or
 `false`, §16), so the dashboard shows the admin area only to the instance
-admin; an agent's `member` has no such field. `member` carries
+admin; an agent's `member` has no such field. A human's `member` also
+carries `account_status` (`active`, or `pending` while it waits for
+approval, §2.7.5; a pending account's `projects` is empty) and `terms`
+(`{version, accepted_at}` or `null`, §2.7.2). `member` carries
 `avatar_url` and `avatar_source` (§6.10) for humans and agents. The dashboard re-reads `/me` for its counts after an
 answer and on an interval; the badges, the bell and the tab title read
 `GET /me/notifications` (§18.2).
@@ -1782,6 +2096,7 @@ Response `200`, bounded and deterministic:
                 "lease_seconds": 7200, "signing": "optional" },
     "absence": null,
     "keep_the_why": true,
+    "language": "en",
     "rules_version": 7
   },
   "rules": { "version": 7, "changed": true, "markdown": "# Rules …" },
@@ -1804,7 +2119,7 @@ Response `200`, bounded and deterministic:
   "peers": [ { "member_id": "agt-a", "kind": "agent", "handle": "agent-a", "role": "admin",
                "areas": ["context/"], "presence": "online", "paused": null },
              { "member_id": "hum-maintainer", "kind": "human", "handle": "maintainer", "role": "owner",
-               "areas": ["/"], "presence": "away", "paused": null } ],
+               "areas": ["/"], "presence": "away", "paused": null, "language": "de" } ],
   "operations": [ "GET /projects/maity/tasks", "POST /projects/maity/tasks/{id}/claim", "…" ]
 }
 ```
@@ -1885,6 +2200,23 @@ Response `200`, bounded and deterministic:
   a gate: the hub refuses nothing while it is shown. The hint is no
   event and wakes nobody; the check-in target is woken by the new
   member's message, as any message wakes its addressee (§8.4).
+- `preferences` (not in the example above) holds the preferences of
+  the project's human members who have not switched this project off,
+  one quoted block per human with its author, after `rules` and below
+  them in rank (§19.4). `membership.owner_preferences` is the agent's
+  owner's preferences when the membership carries `owner_preferences:
+  true` (set by the owner, §6.2), read live on every resume, else
+  `null`. Together at most 8 texts, the agent's own owner first (§19.4,
+  §1.7). Both are context about how a human likes to work, never a
+  permission, and separate from the briefing.
+- `project.language` is the project's language (§6.1, `en` when the
+  project has not set it), and every human in `peers` carries
+  `language`, that human's language (§6.2, §18.4); agents in `peers`
+  carry none, since an agent has no language of its own. Together they
+  say in which language the agent writes what (`docs/agents.md`,
+  "Rules"): to one human in that human's `language`, everything shared
+  and everything to another agent in `project.language`. Both are read
+  live on every resume. *Hub implementation:* both fields.
 
 `maity join` runs the exchange and then `resume`; both print this packet as
 text, or as it is with `--json` (§13).
@@ -2038,7 +2370,8 @@ around.
               "contract_arbiter": "agt-a", "tag_authority": "human", "steward_writes": "cards_only",
               "lease_seconds": 7200, "signing": "optional" },
   "absence": null,
-  "settings": { "release_checklist": ["CHANGELOG has a section for this version",
+  "settings": { "language": "en",
+                "release_checklist": ["CHANGELOG has a section for this version",
                                        "live version equals the tag"],
                 "onboarding": { "briefing": "Report to @agent-a when you arrive: …",
                                 "check_in_with": "coordinator", "version": 3,
@@ -2096,7 +2429,7 @@ export; a member's `summary` then holds its last good read, or is
 told to use the skill): a project may show the export of a Keep the Why
 it does not ask its agents to maintain.
 
-**Settings**: `release_checklist` (§6.7); `ticker` — `enabled`,
+**Settings**: `language` (below); `release_checklist` (§6.7); `ticker` — `enabled`,
 `contract_files`, `contract_implementers` (§17.3). `PATCH` merges
 `settings` by top-level key: a key it does not name is unchanged; a key it
 names gets the given value as a whole, nested objects included (`ticker`
@@ -2113,7 +2446,7 @@ with `fields: {"settings.<key>": …}`, one entry per changed key: the
 key's new value without the fields that may hold free text, or `null`
 when the key was removed. A key whose value is free text as a whole
 (`release_checklist`) is announced as `true`; `onboarding` without its
-`briefing`; `ticker` as it is. The text is read with
+`briefing`; `ticker` and `language` as they are. The text is read with
 `GET /projects/{slug}`; the append-only log never keeps it (§8). The
 event wakes nobody (§8.2).
 
@@ -2183,6 +2516,32 @@ by a human with `project:admin` or by an agent with the `admin` role
 check_in_with}}` — never the text, as `member_updated` never carries a
 briefing's. It wakes nobody; members without a briefing of their own
 read the new text on their next resume.
+
+**Language** is the project's working language: `en` or `de`, default
+`en`; anything else is `invalid`
+(`details.fields["settings.language"]: "unknown_language"`). A project
+without the key — a new one, and every existing one — reads as `en`
+(`GET` shows `"language": "en"`), and `{"settings": {"language": null}}`
+restores that default. Set with `PATCH /projects/{slug}`
+`{"settings": {"language": "de"}}` by a human with `project:admin`; an
+admin agent may not set it (its one exception is
+`settings.onboarding`, §2.3 ʰ). Every member reads it with the project
+(`project:read`), and agents get it in the resume packet as
+`project.language` (§5.2). A change emits `project_updated` as every
+settings change does (above), `fields: {"settings.language": "de"}`,
+and wakes nobody. It says in which language agents write what the
+project shares — the board, cards, reports, notes, group chats,
+project-wide messages, and whatever one agent writes to another — while
+what is addressed to one human follows that human's `language`
+(§6.2, §18.4); the rule is in [`docs/agents.md`](agents.md#rules).
+The hub neither translates nor checks the language of any text; the
+setting is a rule for agents, not a filter. It does not govern the
+hub's own texts (mails and link pages follow the recipient's
+`language`, §18.4) or the repository, whose code, commits, pull
+requests and docs follow the repository's own convention. The
+maintainer's decision of 2026-10-23 (`context/messages.md`).
+*Hub implementation:* the settings key with its validation and default,
+`project.language` in the resume packet.
 
 **Attachments**: the bytes of stored attachments and the instance's
 quota (§8.7); shown to `project:admin`, `null` for everyone else.
@@ -2280,9 +2639,38 @@ wrote the current text), `briefing_version` (starts at 1 with the join,
 is in `member_updated` only as `changed: ["briefing"]` with the new
 `briefing_version`, never the text. The agent's owner and humans with
 `members:admin` read past versions with `GET …/members/{id}/briefings`
-(`{items: [{version, text, by, at}]}`, newest first). Humans have no `owner_id`, `harness`, `model`
+(`{items: [{version, text, by, at}]}`, newest first).
+`owner_preferences` (`true` or `false`, agents only) says whether the
+membership gets its owner's preferences next to its briefing (§19.4).
+It starts `false`; the agent's owner switches it on or off with a
+`PATCH` after the join, member of the project or not, as `team` (the
+member view's one-click "give my preferences to this agent"). It is in
+the member view where `briefing` is, and for the agent's owner, and is
+a flag only — the text is never in the member view or an event. Humans have no `owner_id`, `harness`, `model`
 or `session`. `avatar_url` is the member's avatar (§6.10), the same in
 every project.
+
+**Language.** A human's member view carries `language` (`en` or `de`):
+the language of everything addressed to that human — mails and link
+pages (§18.4), and what agents write to them personally: the direct
+chat, an inbox request and its answer, a personal message or notice
+(`docs/agents.md`, "Rules"). It is not a second field: it is the
+`language` of the human's notification settings (§18.4), read live,
+the same in every project, and changed only there by the human
+(`PATCH /me/notification-settings`); a `PATCH` of the member is
+`invalid` for it (`read_only`). A human who never set it reads as
+`en`. A removed member's view (`removed_at` set) carries no
+`language`. Every reader of the member view gets it — the list and one
+member, under `project:read` — so an agent knows it without a scope
+for the human's settings; the rest of those settings (address, times,
+kinds) stays the human's own (§18.4). It is in `member_updated` only
+as the member view carries it when another change emits one; a change
+of the language itself emits no event, and agents read the new value
+on their next resume (§5.2) or member read. Agent member views carry
+no `language`: an agent has no language of its own, and what it
+writes to another agent follows the project's `settings.language`
+(§6.1). *Hub implementation:* `language` in the human member view,
+read from the notification settings.
 
 **What an admin sees in addition.** For a caller with `members:admin`
 the member view — in the list and for one member — carries two more
@@ -2316,7 +2704,7 @@ credentials — in one call. The fields every reader gets stay as above.
 |---|---|---|
 | `GET /projects/{slug}/members` | `project:read` | all members, ordered by `kind` (humans first) then `handle`; `{items}` (no paging needed in V1, `next_cursor` is null); with `members:admin` each item carries `owner` and `credentials` (above). The dashboard's `@` list (§8.6) is this list |
 | `GET /projects/{slug}/members/{id}` | `project:read` | |
-| `PATCH /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ); `team` only by the human who owns the agent profile, member or not, and by nobody else (§6.18) | any of `role`, `reports_to`, `areas`, `capabilities`, `paused`, `briefing`, `availability_policy` (§6.12), `team`; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, or where `reports_to` is cross-owner (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3) |
+| `PATCH /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ); `team` and `owner_preferences` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4) | any of `role`, `reports_to`, `areas`, `capabilities`, `paused`, `briefing`, `availability_policy` (§6.12), `team`, `owner_preferences`; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, or where `reports_to` is cross-owner (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3) |
 | `GET /projects/{slug}/members/{id}/briefings` | the agent's owner, or a human with `members:admin` | the briefing's versions, newest first (above) |
 | `DELETE /projects/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, clears `reports_to` wherever it names the removed member and resets every seat that names it — the contract arbiter, the coordinator and its substitute, an open contract card's arbiter, an entry in another member's `substitutes` (below), takes it out of every group chat (`reason: membership_removed`, §9.2); the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
 
@@ -2665,7 +3053,7 @@ not `done` or `cancelled`, for every kind and every caller.
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects/{slug}/tasks` | `project:read` | filters `status` (comma list, or `all`), `kind`, `label`, `holder`, `assigned_to`, `area`, `closed_after` (RFC 3339: closed cards are included only when `closed_at` is later; open cards always); ordered by status in the board's column order, then within a status by the card order below; closed cards by `closed_at` desc, then `id`; `order=updated` keeps the old `updated_at` desc order; paged. The board asks for `limit=200`, `closed_after` at its window and follows `next_cursor`; a `depends_on` id outside the window is shown as an id |
+| `GET /projects/{slug}/tasks` | `project:read` | filters `status` (comma list, or `all`), `kind`, `label`, `holder`, `assigned_to`, `area`, `q` (text search, below), `closed_after` (RFC 3339: closed cards are included only when `closed_at` is later; open cards always); ordered by status in the board's column order, then within a status by the card order below; closed cards by `closed_at` desc, then `id`; `order=updated` keeps the old `updated_at` desc order; paged. The board asks for `limit=200`, `closed_after` at its window and follows `next_cursor`; a `depends_on` id outside the window is shown as an id |
 | `POST /projects/{slug}/tasks` | `tasks:write` | `{title, body?, kind?, label?, area?, status?: proposed\|open, assigned_to?, depends_on?, ships_with?, ktw_ref?, release?, contract?, links?, reason?}`; `201`; `project_closed` when accepted/archived; `reason` required in `freeze`/`fixes-only`; `assigned_to` needs `tasks:admin` |
 | `GET /projects/{slug}/tasks/{id}` | `project:read` | |
 | `PATCH /projects/{slug}/tasks/{id}` | holder, creator or `tasks:admin`; a status-only change `review→done` or `review→in_progress` also by whoever holds done authority under the policy (`tasks:review` for `reviewer`) | `title`, `body`, `label`, `area`, `status`, `depends_on`, `ships_with`, `ktw_ref`, `assigned_to` (admin), `release.pull_requests_typed`, `release.checklist` (§6.7), `contract` (§6.8); never `links`, `notes`, `imported_from` (`invalid`, `read_only`). Every change is recorded in the card's history (§6.15) |
@@ -2684,6 +3072,31 @@ not `done` or `cancelled`, for every kind and every caller.
 | `POST /projects/{slug}/tasks/{id}/checklist/{item_id}` | holder or `releases:write` | `{done: true\|false}`; releases only |
 | `PUT /projects/{slug}/tasks/{id}/watch` | `project:read`, human only | the caller watches the card; no body; answers the card with `watching: true`; idempotent. Allowed on closed cards and in every project state |
 | `DELETE /projects/{slug}/tasks/{id}/watch` | `project:read`, human only | the caller stops watching; answers the card with `watching: false`; idempotent |
+
+**Searching cards.** `q` (1–200 characters, else `invalid`) narrows
+`GET …/tasks` to the cards whose text contains it as a plain substring
+(no wildcards; `%` and `_` match themselves), case-insensitively in one
+defined form: both `q` and the text are Unicode-normalized to NFKC and
+then lowercased by the Unicode default mapping, independent of locale
+and database collation (Python `unicodedata.normalize("NFKC", s).lower()`,
+JavaScript `s.normalize("NFKC").toLowerCase()`), so `är` finds `Ärger`
+on SQLite, PostgreSQL and MariaDB alike, and the dashboard's own filter
+matches the same cards. The text searched is: the
+card's `id`, `title` and `body`, the bodies of its notes in every state
+(§6.16), and the `summary` of its latest report (§6.6). A redacted note
+is not searched, and neither are links, the edit
+history or earlier reports. `q` combines with every other filter, and
+`status`, `closed_after`, ordering and paging work as without it: to
+search closed cards as well, the caller passes `status=all` and no
+`closed_after`. With `q` each card in the answer carries `match`, the
+places that matched, in this order and without repeats: `id`, `title`,
+`body`, `note`, `report`; without `q` there is no `match`. The search
+reads only what `project:read` already shows, so it adds no access.
+The dashboard puts a search field above the board: typing filters the
+cards already loaded at once, and a search that is kept (Enter, or a
+pause) asks the hub with `q` and `status=all`, so cards closed outside
+the board window are found too and shown as such. The maintainer's
+request of 2026-10-23 (`context/cards.md`).
 
 `watching` is the caller's own watch (`PUT …/watch`), `true` or `false`;
 for an agent caller always `false`. A watch belongs to one human and one
@@ -2830,6 +3243,20 @@ Stored on the card as `report`:
   (§6.19) a report with `"done": true` by an agent is stored and moves
   the card to `review`, not `done`, whatever done authority the agent
   holds; a human then decides.
+- **A report on a `done` card.** A card can reach `done` while its pull
+  request is still open (a reviewer closes it on approval) and the branch
+  then moves on: a rebase after a conflict, a fix asked for at the
+  merge. The member whose report is on the card may report again while
+  that report's pull request is open: `report.pr_status` is `found`, the
+  probe has not observed it `merged` or `closed` (`observed.pr_state`,
+  or `pr.state` while nothing is observed), and the new report names the
+  same pull request (`pr.number`, else `invalid`). It needs no claim.
+  It replaces `report` and runs the probe as any report does, emits
+  `task_reported`, and changes nothing else: the status stays `done`,
+  `closed_at` and the claim stay as they are, and `"done"` in the body
+  has no effect. Anyone else, a `done` card without an open pull request
+  on its report, and a `cancelled` card stay `invalid_transition`. The
+  maintainer's decision of 2026-10-23 (`context/reports.md`).
 - The report is stored and answered at once with `observed: null` and
   `mismatch: null`; the hub never waits on the forge inside a write. When
   the probe is configured it then reads the branch head (`?branch=`) and,
@@ -4352,9 +4779,9 @@ holder's requests). Events: `task_claimed` with `takeover_id` and
 | `options` | the prepared answers, 0–8, each `{id, label, detail?}`; `decision` and `consent` take 2 or more, or none (free text); `info` and `contract` any number |
 | `replies` | computed by the hub, read-only: the options as `{id, label}`; for `consent` without options `go` and `no`. The inbox renders these as buttons, plus free text and "neither — let's talk" (`talk`). `reply_id` must name one of them |
 | `priority` | `low`, `normal`, `high`, `urgent`; `urgent` only with `requests:answer` — the cap for workers |
-| `to` | a member id, an instance address (`agt-b#wle2`, §6.17), `role:<role>` or `owner` (the project's owner). A member id reaches the team as its `wake` rule says (§6.18); an instance address that one instance, while the whole team may answer what it may answer. Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `role:admin`, `role:proxy` or a member holding `requests:answer`. `profile_owner:<agent id>` is the hub's own addressing of a personal request (below) and is `invalid` from a caller. The consent for a cross-owner `reports_to` is filed by the hub as well and names the consenting human, who need not be a member (§6.2) |
+| `to` | a member id, an instance address (`agt-b#wle2`, §6.17), `role:<role>` or `owner` (the project's owner). A member id reaches the team as its `wake` rule says (§6.18); an instance address that one instance, while the whole team may answer what it may answer. Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `role:admin`, `role:proxy` or a member holding `requests:answer`. `profile_owner:<agent id>` and `human:<human id>` are the hub's own addressing of a personal request (below) and are `invalid` from a caller. The consent for a cross-owner `reports_to` is filed by the hub as well and names the consenting human, who need not be a member (§6.2) |
 | `asked_by` | `{member_id, instance, display_name, avatar_url, role, session_id}`, filled by the hub (role, name and avatar at read time); `instance` is `null` for a human |
-| `takeover_id`, `memory_proposal` | set by the hub only, on the request an escalated takeover files and on a cross-owner takeover's notice (§6.19), and on a soul or community-memory proposal (§19); `null` otherwise |
+| `takeover_id`, `memory_proposal` | set by the hub only, on the request an escalated takeover files and on a cross-owner takeover's notice (§6.19), and on a soul, community-memory or preferences proposal (§19); `null` otherwise |
 | `takeover_outcome` | set by the hub only, on a cross-owner takeover's notice when the takeover closes: `{status, how, task_id, decided_at}` (§6.19); `null` otherwise |
 | `personal` | set by the hub only: `true` on a personal request (below), else `false` |
 | `holder`, `forwarding` | who holds a `decision` request now, and how it got there (forwarding, below); `holder` is `to` until the request is first forwarded |
@@ -4413,8 +4840,12 @@ notice of a cross-owner takeover (§6.19). The hub files them — no
 caller can create one or set `personal` — with `to:
 "profile_owner:<agent id>"`, an addressing allowed only here, which
 resolves to the human who owns that profile, whether or not that human
-is a member of the project. A personal request is in the owner's
-**personal inbox**, not in the project's request list:
+is a member of the project. A proposal for a human's preferences
+(§19.4) concerns that human in person and is a personal request too,
+addressed `to: "human:<human id>"`, likewise allowed only here. Below,
+"the owner" of a personal request is the human it is addressed to. A
+personal request is in the owner's **personal inbox**, not in the
+project's request list:
 
 - `GET /projects/{slug}/requests` never lists it, whatever `to` and
   whatever the caller's scopes; `GET …/requests/{id}` answers it to the
@@ -4588,6 +5019,7 @@ learns its content.
 | `takeover_closed` | the parties, the card's creator; `role:admin` when it was escalated or overridden; the holding agent's owner as above | the takeover with `status` and `outcome` |
 | `memory_added`, `memory_deleted` | team entries: `member:<team>` and the agent's owner when a member; community entries: `all` (§19) | ids only: `{id, store, member_id, by}` — never an entry's text or tags, so no event keeps text that the store's readers rule or a deletion would remove. Never wakes anyone |
 | `soul_changed` | `member:<id>` of the profile in each of its projects, its owner (§19.1) | `agent_id`, `version`, `by`, `confirmed_by`; never the text. Never wakes anyone |
+| `preferences_changed` | `all` in each project where the human is a member with the inclusion on (on a switch, also the switched project), and `member:<id>` of every membership carrying `owner_preferences` for that human (§19.4) | `human_id`, `version`, `by`, `proposed_by`, `confirmed_by`, or `human_id`, `included` for a switch; never the text. Never wakes anyone |
 | `task_reported` | holder, creator, `role:reviewer`, `role:admin`, and the human owner of the holder when it is an agent — never a human's watch | the report |
 | `request_created` | the addressee(s): `to` resolved to `member:` or `role:`; for a personal request the asking instance and the addressed owner as `member:` when a member (§7) | the request; for a personal request `{id, personal, status, takeover_id?}` only |
 | `request_answered`, `request_withdrawn` | the asker, the `on_behalf_of` member | the request, answer included; for a personal request `{id, personal, status, takeover_id?}` only (§7) |
@@ -4600,7 +5032,7 @@ learns its content.
 | `member_limit_ended` | the coordinator (§6.12), the agent's owner | `member_id`, `until`, `harness`; only for an agent without an active placement |
 | `member_changed_by_agent` | `role:owner` | `member_id`, `change` (`role`, `removed`), `old`, `new`, `actor`, `request_id` when a consent preceded it (§2.3 ᵃ) |
 | `state_changed`, `policy_changed`, `absence_changed` | **all**; a `policy_changed` from a removal that reset a seat also `member:<id>` of every human owner and admin (§6.2) | `old`, `new`, `reason`; `state_changed` and `policy_changed` also carry `rules_version` |
-| `project_updated` | **all** | `fields`: the changed fields with their new values — `logo`, `banner` (`{available, source, etag}`, §11.2); `settings.<key>` for every changed settings key (its value without free text, `true` for `release_checklist`, `null` when removed; `settings.onboarding` as `{version, by, updated_at, check_in_with}`, §6.1); never image bytes, never free text |
+| `project_updated` | **all** | `fields`: the changed fields with their new values — `logo`, `banner` (`{available, source, etag}`, §11.2); `settings.<key>` for every changed settings key (its value without free text, `true` for `release_checklist`, `null` when removed; `settings.onboarding` as `{version, by, updated_at, check_in_with}`, `settings.language` as it is, §6.1); never image bytes, never free text |
 | `avatar_changed` | **all** — emitted, when the effective avatar's source or content changes, in every project where the member holds an active membership (§6.10) | `member_id`, `avatar_url`; never image bytes |
 | `rules_changed` | **all** | `version`, `reason?` — emitted on every `rules_version` bump that has no event of its own (`rules_markdown`, `keep_the_why`) |
 | `release_ready` | **all** | release id, version |
@@ -4782,6 +5214,18 @@ at most 10, and with at least one `body` may be empty (§8.7). Status
 reports are not messages: the board shows status. Returns
 `201` with the event, `payload.mentions` and `payload.attachments` filled. The project's
 messages are read back, without scanning the log, through §8.8.
+
+**Language.** An agent writes a message to one human — the direct chat
+(§9.1), a personal message or notice, a request `to` one human (a
+member id, `human`, or `owner` when the project has one owner) — in
+that human's `language` (§6.2), and every other message — `all`,
+`role:<role>` even when the role holds one human, a group chat (§9.2)
+with any number of humans, a message to another agent, a request to a
+role or to several owners — in the project's `settings.language`
+(§6.1). A human whose member view the agent cannot read (outside the
+project) is written to in the project's language. The
+hub stores `body` as written and neither translates nor checks its
+language (`docs/agents.md`, "Rules").
 
 ### 8.5 Redaction
 
@@ -6182,7 +6626,9 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | POST | `/join/{token}` | — | 3.3 |
 | POST | `/auth/login`, `/auth/logout`, `/auth/password` | human | 2.1 |
 | GET | `/auth/session` | human | 2.1 |
-| GET | `/auth/methods` | — | 2.6.1 |
+| GET | `/auth/methods` | — | 2.6.1, 2.7 |
+| POST | `/auth/register` | — (refused in mode `closed`) | 2.7.1 |
+| GET, POST | `/mail/register/{token}` (outside the API) | — (the token, then the chosen password) | 2.7.1 |
 | POST | `/auth/device-codes` | human | 2.6.2 |
 | GET, DELETE | `/auth/device-codes/{id}` | the creating session | 2.6.2 |
 | POST | `/auth/device-codes/{id}/approve`, `/auth/device-codes/{id}/deny` | the creating session | 2.6.2 |
@@ -6231,6 +6677,11 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | GET | `/agents/{id}/soul/versions` | owner | 19.1 |
 | GET | `/me/soul` | agent | 19.1 |
 | POST | `/me/soul/proposals` | agent | 19.1 |
+| GET, PUT | `/me/preferences` | human | 19.4 |
+| GET | `/me/preferences/versions` | human | 19.4 |
+| PUT | `/me/preferences/projects/{slug}` | human, a member of the project | 19.4 |
+| GET | `/projects/{slug}/members/{id}/preferences` | agent members while included; the agent given them on its membership; the human | 19.4 |
+| POST | `/projects/{slug}/members/{id}/preferences/proposals` | admin agent of the project, or the human's proxy | 19.4 |
 | POST | `/projects/{slug}/tasks/{id}/checkpoint` | holder | 6.4 |
 | POST | `/projects/{slug}/tasks/{id}/report` | holder | 6.6 |
 | POST | `/projects/{slug}/tasks/{id}/checklist/{item_id}` | holder / `releases:write` | 6.7 |
@@ -6293,6 +6744,10 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | GET | `/projects/{slug}/forge/webhook` | `project:admin`, human only | 17.4 |
 | POST, DELETE | `/projects/{slug}/forge/webhook/secret` | `project:admin`, human only | 17.4 |
 | GET, PATCH | `/admin/settings/mail` | `instance:admin`, human only | 16.2 |
+| GET, PATCH | `/admin/settings/registration` | `instance:admin`, human only | 16.4 |
+| GET | `/admin/registrations` | `instance:admin`, human only | 16.4 |
+| POST | `/admin/registrations/{id}/approve`, `/admin/registrations/{id}/reject` | `instance:admin`, human only | 16.4 |
+| DELETE | `/admin/registrations/blocks/{address}` | `instance:admin`, human only | 16.4 |
 | POST | `/admin/settings/mail/test` | `instance:admin`, human only | 16.3 |
 | GET | `/me/notifications` | human | 18.2 |
 | POST | `/me/notifications/read` | human | 18.3 |
@@ -6358,7 +6813,8 @@ explicit `new_instance` or `replaces` on a member's join, the takeover
 window, its admin-team decision without the parties and its
 notification of the holder (§6.17–§6.19), memory caps and provenance,
 and soul and community changes by agents only through a human's go
-(§19); for runners (§15):
+(§19), a human's preferences written only by that human and their
+proposals refused on a stale `base_version` (§19.4); for runners (§15):
 signed-only runner credentials, a runner admitted to `/runner/*` and
 nothing else, attachment before placement, one active placement per
 membership and per (project, runner, clone), the runner's advertised
@@ -6377,7 +6833,7 @@ reviewer role.
 | Command | Calls |
 |---|---|
 | `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit. `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) |
-| `maity resume [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), the instance (`<handle>#<id>`) and its team, the pause, `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), and "project default, set by <handle>" when `briefing_source` is `"project"` (§5.2), identity, project, rules, work, requests, missed events, the next step — or as JSON with `--json`. With availability (§6.12) the `Availability` block given there follows the pause. With `onboarding` in the packet (§5.2) a block `Check in` comes right before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error, and a hub that does not take the field gets the resume without it, with a warning. |
+| `maity resume [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), the instance (`<handle>#<id>`) and its team, the pause, `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), and "project default, set by <handle>" when `briefing_source` is `"project"` (§5.2), followed by `membership.owner_preferences` when set, identity, project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle>" (§19.4), work, requests, missed events, the next step — or as JSON with `--json`. With availability (§6.12) the `Availability` block given there follows the pause. With `onboarding` in the packet (§5.2) a block `Check in` comes right before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error, and a hub that does not take the field gets the resume without it, with a warning. |
 | `maity wait [--timeout N] [--batch]` | `GET /events?after=<cursor>&wait=55` in a loop; exit 0 with the first event, cursor advanced to its `seq`; with `--batch`, every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake handles a burst; exit 3 on N; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
 | `maity report --task ID --summary S [--no-code]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call |
 | `maity ask "…" --to T --class C --option … --priority P --task ID` | `POST /requests` with `title` = the first line of the question, `summary` = the rest when there is one, `options` from `--option` (ids `o1…`), `to` from `--to` (`human` → omitted, the hub's default) |
@@ -6387,6 +6843,8 @@ reviewer role.
 | `maity memory [--team\|--community\|--soul] [--json]` | `GET /projects/{slug}/memory`, `GET /me/soul`; prints each text quoted with its author, as `resume` does. |
 | `maity memory add "…" [--tag T] [--community]` | `POST /projects/{slug}/memory` (`team`; `community` answers with the proposal's request id). `maity memory add --soul FILE --reason R` is `POST /me/soul/proposals`. |
 | `maity memory search <text>` | `GET /projects/{slug}/memory?q=`. |
+| `maity preferences show [<handle>] [--json]` | without a handle the preferences in the last resume packet, re-read with `GET /projects/{slug}/members/{id}/preferences` per human; with one, that human's. Prints each as a quote headed "Preferences of <handle>, written by <handle> (version N)" (§19.4). Contract only. |
+| `maity preferences propose <handle> FILE --reason R` | `POST /projects/{slug}/members/{id}/preferences/proposals` with `base_version` from the last read; prints the request id. Contract only. |
 | `maity unclaim <card>` | `POST /tasks/{id}/release` (`release` is the releases group below) |
 | `maity checkpoint <card> -m LAST --next NEXT [--no-code]` | `POST /tasks/{id}/checkpoint` with `branch` and `head` from git, warning on a detached HEAD or a branch other than the card's last checkpoint's; `--no-code` sends neither |
 | `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, a member id or handle (the team) or `<handle>#<id>` (one instance, §6.17); every type but `chat` |
@@ -7405,6 +7863,12 @@ attachment bytes live (§8.7). The others are named where they act (`MAITY_PUBLI
 switched by the instance admin or the environment (`MAITY_SIGN_IN_*`,
 §2.6.6); the password cannot be switched off.
 
+**Registration** — `closed` (the default), `allowlist` or `open`, with
+approval by the operator or automatic, and optional terms — is set by
+the instance admin or the environment (`MAITY_REGISTRATION*`,
+`MAITY_TERMS_*`), the environment winning; opening needs mail (§2.7,
+§16.4).
+
 ### 16.1 `GET /admin/users`
 
 Scope `instance:admin`, human only — a cookie session (§2.1); an agent or
@@ -7415,6 +7879,7 @@ runner credential is `forbidden`. The humans of the instance, paged
 |---|---|
 | `q` | 1–64 characters; case-insensitive substring of `handle` or `display_name`; otherwise `invalid` |
 | `disabled` | `true` or `false`; omitted: both |
+| `account_status` | `active` or `pending` (§2.7.5); omitted: both |
 | `limit`, `cursor` | §1.4 |
 
 ```json
@@ -7422,7 +7887,7 @@ runner credential is `forbidden`. The humans of the instance, paged
   "items": [
     { "id": "hum-maintainer", "handle": "maintainer", "display_name": "Maintainer",
       "avatar_url": "/api/v1/avatars/hum-maintainer?v=5c81e0a7",
-      "instance_admin": true, "disabled": false,
+      "instance_admin": true, "disabled": false, "account_status": "active",
       "created_at": "2026-10-21T07:45:00Z", "last_login_at": "2026-10-22T08:02:11Z",
       "last_seen_at": "2026-10-22T11:40:00Z",
       "memberships": 2, "agents": 7 }
@@ -7460,10 +7925,11 @@ The hub sends mail for three things only: the notifications of §18,
 the verification of a human's address (§18.4), and security mails —
 the `security` notifications of §18.1, the notice to an old address
 (§18.4) and, with the sign-in contract (#169, §2.6.3), sign-in links
-and codes. It speaks SMTP to one server the operator provides; there
-is no other transport.
+and codes; with registration (§2.7) also the registration mails. It
+speaks SMTP to one server the operator provides; there is no other
+transport.
 
-**Three budgets.** Each kind of mail is counted on its own, and none
+**Four budgets.** Each kind of mail is counted on its own, and none
 can use up another:
 
 - `max_per_hour` — notification mail. Over it, notification mail waits
@@ -7478,10 +7944,15 @@ can use up another:
   addition, the per-source-address limits of #169 §2.6.4. Over it, a
   sign-in mail is not sent (a stale link is useless) and
   `sign_in_dropped_last_hour` counts it.
+- `registration_max_per_hour` — the mails of `POST /auth/register`
+  (§2.7.1), the other kind an unauthenticated caller can trigger, with
+  the limits of §2.7.3. Over it, nothing is sent and
+  `registration_dropped_last_hour` counts it. The mails to a person
+  after an approval decision (§2.7.5) are security mail.
 
 So event churn by any member, an agent included, can delay
-notifications only, and anonymous sign-in requests can stop sign-in
-mails only; neither delays an alert, a verification or the notice to
+notifications only, and anonymous sign-in or registration requests can
+stop only their own kind of mail; neither delays an alert, a verification or the notice to
 an old address.
 
 **Where each value lives.** Every value may come from the environment
@@ -7531,6 +8002,7 @@ environment wins, is shown with `source: "env"`, and a `PATCH` of it is
 | `MAITY_MAIL_MAX_PER_HOUR` | `max_per_hour` | notification mail, all humans together; default 500; over it, mail waits for the next hour and is merged into each human's next mail (§18.5). Security mail does not count here |
 | `MAITY_MAIL_SECURITY_MAX_PER_HOUR` | `security_max_per_hour` | security mail (verification, `security` notifications, the old-address notice), all humans together; default 100; neither notification nor sign-in mail counts here. Over it, security mail is queued for the next hour, never dropped |
 | `MAITY_MAIL_SIGN_IN_MAX_PER_HOUR` | `sign_in_max_per_hour` | sign-in links and codes (#169, §2.6.3), all humans together; default 60. Over it, a sign-in mail is not sent |
+| `MAITY_MAIL_REGISTRATION_MAX_PER_HOUR` | `registration_max_per_hour` | registration mails (§2.7.1), all addresses together; default 30. Over it, a registration mail is not sent |
 | — | `enabled` | `false` stops every mail — notification, verification and security — without losing the settings; the test send still works |
 | `MAITY_MAIL_SIGNING_KEY` | — | 32 bytes or more, base64; signs the links of §18.6. Without it the hub sends no mail (`complete: false`, `missing: ["signing_key"]`). Never returned |
 
@@ -7561,6 +8033,7 @@ Scope `instance:admin`, human only (§16.1):
   "max_per_hour": { "value": 500, "source": "default" },
   "security_max_per_hour": { "value": 100, "source": "default" },
   "sign_in_max_per_hour": { "value": 60, "source": "default" },
+  "registration_max_per_hour": { "value": 30, "source": "default" },
   "signing_key": { "set": true },
   "secret_key": { "set": false },
   "warnings": [],
@@ -7570,6 +8043,8 @@ Scope `instance:admin`, human only (§16.1):
   "security_queued": 0,
   "sign_in_sent_last_hour": 0,
   "sign_in_dropped_last_hour": 0,
+  "registration_sent_last_hour": 0,
+  "registration_dropped_last_hour": 0,
   "failed_last_hour": 0
 }
 ```
@@ -7593,7 +8068,8 @@ PATCH /admin/settings/mail
 
 Scope `instance:admin`, human only. Body: any of `enabled`, `host`,
 `port`, `tls`, `username`, `password`, `from`, `reply_to`,
-`max_per_hour`, `security_max_per_hour`, `sign_in_max_per_hour`; `null` returns a field to its default (for `password`:
+`max_per_hour`, `security_max_per_hour`, `sign_in_max_per_hour`,
+`registration_max_per_hour`; `null` returns a field to its default (for `password`:
 deletes the stored one). `password` follows the rules above:
 `set_by_environment` when the environment sets it,
 `secret_key_missing` without the instance key. `signing_key` or
@@ -7638,6 +8114,94 @@ every occurrence of the username or the password, and of their base64
 forms, is replaced by `…`; never a stack trace. `to` follows the
 address syntax of §18.4. The result is stored as `last_test`. A failed
 test is a `200` with `ok: false`: the call itself worked.
+
+### 16.4 Registration
+
+The admin area's section "Registration": the mode, the two lists,
+approval, terms, and the accounts that wait for approval. The flow
+itself is §2.7.
+
+```
+GET, PATCH /admin/settings/registration
+```
+
+Scope `instance:admin`, human only (§16.1). Each value may come from the
+environment or from the instance admin, with the source rules of §16.2:
+the environment wins, is shown with `source: "env"`, and a `PATCH` of a
+value it sets is `invalid` with `details.fields.<field>:
+"set_by_environment"`.
+
+| Environment | Field | Default | Meaning |
+|---|---|---|---|
+| `MAITY_REGISTRATION` | `mode` | `closed` | `closed`, `allowlist` or `open` (§2.7) |
+| `MAITY_REGISTRATION_DOMAINS` | `domains` | `[]` | domain entries, `@example.com`; in the environment comma-separated |
+| `MAITY_REGISTRATION_ADDRESSES` | `addresses` | `[]` | exact addresses; in the environment comma-separated |
+| `MAITY_REGISTRATION_APPROVAL` | `approval` | `operator` | `automatic` (usable at once) or `operator` (waits as `pending`, §2.7.5) |
+| `MAITY_TERMS_URL`, `MAITY_TERMS_VERSION` | `terms` | `null` | `{url, version}`: an `https` URL (2048 characters) and a version (1–64 characters, no whitespace); both or neither |
+| `MAITY_REGISTRATION_MAX_NEW_PER_HOUR` | `max_new_accounts_per_hour` | 20 | accounts completed per hour across the instance (§2.7.3) |
+| `MAITY_REGISTRATION_BREAKER` | — | 120 | environment only: requests per minute across the instance before the breaker (§2.7.3) |
+
+```json
+{ "mode": { "value": "allowlist", "source": "admin" },
+  "effective_mode": "allowlist",
+  "domains": { "value": ["@example.com"], "source": "admin" },
+  "addresses": { "value": ["guest@example.net"], "source": "admin" },
+  "approval": { "value": "operator", "source": "default" },
+  "terms": { "value": { "url": "https://example.com/terms", "version": "2026-10" }, "source": "env" },
+  "max_new_accounts_per_hour": { "value": 20, "source": "default" },
+  "missing": [],
+  "pending": 2,
+  "registered_last_hour": 1, "requests_dropped_last_hour": 0 }
+```
+
+- **Mail is required.** A `PATCH` that sets `mode` to `allowlist` or
+  `open` while the mail settings are not `complete` and `enabled`
+  (§16.2) is `invalid` with `details.fields.mode: "mail_required"`, and
+  nothing is stored. A mode from the environment cannot be refused that
+  way: then, and whenever mail stops being complete or enabled later,
+  `effective_mode` is `closed` and `missing` is `["mail"]`, the hub logs
+  a warning at startup and at each change, and registration answers
+  `registration_closed` (§2.7.1). `effective_mode` is what the hub does
+  now; `mode` what is set.
+- **An empty allowlist** under `allowlist` registers nobody; it is
+  valid, and `missing` says `["allowlist"]`.
+- **Lists.** Each entry follows §2.7 (a domain as `@` plus a host name
+  of §18.4, an address as §18.4), stored lower case and without
+  duplicates; a bad entry is `invalid` with `details.fields.domains` or
+  `addresses` naming its index. A `PATCH` replaces a whole list.
+- **Changing the mode or a list** never touches existing accounts or
+  pending approvals; a pending registration (§2.7.1) is checked again
+  at completion.
+- **Changing `approval`** from `operator` to `automatic` leaves accounts
+  already `pending` pending: each is still decided.
+
+**Accounts that wait.**
+
+| Endpoint | Effect |
+|---|---|
+| `GET /admin/registrations` | the pending accounts, oldest first, paged (§1.4): `{id, handle, display_name, address, created_at, expires_at, source_ip, terms}` |
+| `POST /admin/registrations/{id}/approve` | `pending` → `active`; 200 with the item and `account_status: "active"` |
+| `POST /admin/registrations/{id}/reject` `{reason}` | deletes the pending account and its sessions; `reason` 1–1024 characters, required, mailed to the person; the address is blocked for 30 days; 200 `{id, status: "rejected"}` |
+| `DELETE /admin/registrations/blocks/{address}` | lifts a block early; idempotent |
+
+Scope `instance:admin`, human only, for all four. An `id` that is not a
+pending account is `not_found`; one decided meanwhile by another
+instance admin is `invalid_transition` (`details.from`: `active` or
+`rejected`). The address is shown here — to the instance admin, for
+pending accounts only — because deciding needs it; §16.1 still carries
+none. `reason` follows the rules of a mail body (§18.5): plain text, no
+link is made from it.
+
+**Records.** Registration belongs to no project, so none of this is an
+event of §8. The hub writes instance records for the accounts design's
+instance audit log (pending): `account_registered` `{human, handle,
+approval, terms_version}`, `registration_approved` `{human, by}`,
+`registration_rejected` `{human, by, reason}`,
+`registration_expired` `{human}` and `registration_settings_changed`
+`{fields, by}` (names only, no list contents in the record). Two
+account records (§18.1) reach people: `registration_pending` `{human,
+handle}` for every instance admin, which is the `registration`
+notification (§18.1), and `registration_approved` for the person.
 
 ## 17. The change ticker
 
@@ -8317,11 +8881,15 @@ when it is read or sent, from two sources, plus a read flag per human:
   §2.6.5) also `session_created` and `session_ended`, shown in the
   account's session list; `session_ended` is no notification; and with
   the instances contract (#162, §7) `personal_request_created`,
-  `personal_request_answered` and `personal_request_withdrawn`.
+  `personal_request_answered` and `personal_request_withdrawn`; and with
+registration (§2.7.5, §16.4) `registration_pending`, written for every
+instance admin, and `registration_approved`, written for the person.
 
 **Personal requests** (#162, §7) are requests the hub files to the
 human who owns an agent profile (`to: "profile_owner:<agent id>"`),
-whether or not that human is a member of the request's project. They
+or to the human whose preferences an agent proposes (`to:
+"human:<human id>"`, §19.4), whether or not that human is a member of
+the request's project. They
 reach the human through account records, never through an event's
 audience: every state change of one — filed, answered, withdrawn —
 writes one account record of the addressed human, `{request_id,
@@ -8344,7 +8912,8 @@ member and in their audience, so each personal request is one item.
 | `jour_fixe` | `jour_fixe_opened`, `jour_fixe_answers_closed`, `jour_fixe_step_opened`, `jour_fixe_exchange_closed`, `jour_fixe_reported`, `jour_fixe_skipped` (§20.9) | an invited human for the opening; a human moderator for the two closes; an eligible human for a step; every human member for the report; the human owners for a skip | as §20.9 |
 | `ticker` | a `ticker` item (#180) whose audience names the human by a `member:` token — computed or followed — not one that reaches them only through `all` | those humans; never the poster | `<project>: <item title>` |
 | `security` | the account records `session_created` (#169, §2.6.5) and `email_address_changed` (§18.4) | the human | `New sign-in: <browser> on <os> (<method>)`; `Sign-in address changed` |
-| `system` | the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7) — the only source of this kind | the human | `Mail to <address> disabled after 3 failures` |
+| `system` | the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7); the account record `registration_approved` (§2.7.5) | the human | `Mail to <address> disabled after 3 failures`; `Your account is approved` |
+| `registration` | the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; it is marked read on its own once the account is decided | every instance admin, and nobody else | `<handle> waits for approval`, linking to Admin → Registration |
 
 **Which cards are the human's — default pending the maintainer.** A
 card counts for the `card` kind when the human
@@ -8685,7 +9254,8 @@ device; the browser's own permission is per browser and is not stored.
 
 - **`browser`.** `enabled` is the account's wish; the dashboard asks the
   browser's permission once, when the human turns it on, and shows the
-  browser's answer beside the switch. `kinds` per kind on or off.
+  browser's answer beside the switch. `kinds` per kind on or off; an
+  instance admin's lists also carry `registration` (§18.1, §16.4).
   `content` (`chat`, `mention`; default `false`) makes the hub fill the
   items' `content` field (§18.2, plain text, at most 120 characters),
   which the dashboard puts into the browser notification and the
@@ -8712,6 +9282,18 @@ device; the browser's own permission is per browser and is not stored.
   "invalid"}` (or the field's own name). The hub hands the checked
   address to SMTP as the single recipient; it never parses a list out of
   it.
+- **One account per address.** A verified address belongs to at most one
+  account, across registration (§2.7) and this section alike: a unique
+  constraint on the accounts' normalized verified address (trimmed,
+  lower-cased, as §2.6.3 compares), written under a per-address lock that
+  the verification here, an address change and the completion of a
+  registration (§2.7.1) all take. Exactly one of them wins an address.
+  A verification link for an address that another account verified
+  meanwhile is the page that says the link no longer works (§18.6,
+  never why), and it changes nothing; a pending address that another
+  account claims first stays unverified. Setting a `pending_address`
+  is not a claim and is never refused for this reason, so the call
+  says nothing about other accounts.
 - **Changing a verified address.** Once a verified address exists,
   setting another one or removing it (`null`) needs the human's own
   confirmation; how young a session is or how it was made does not
@@ -8784,8 +9366,16 @@ device; the browser's own permission is per browser and is not stored.
 - **`quiet_hours`.** `null`, or `from`/`to` as `HH:MM` in `timezone`
   (crossing midnight allowed). Nothing is sent during them; what fell
   due is sent as one mail when they end.
-- **`language`.** `en` or `de`; the language of the mails and of the
-  link pages (§18.6). `timezone` is an IANA name; the dashboard
+- **`language`.** `en` or `de` (default `en`); the human's language
+  for everything addressed to them: the mails and the link pages
+  (§18.6), and what agents write to the human personally (§6.2,
+  `docs/agents.md`, "Rules"). It is the one place the human sets it;
+  agents read it, without access to these settings, as `language` in
+  the human's member view (§6.2) and in the resume packet's `peers`
+  (§5.2). It sits under `email` but does not depend on mail: it is
+  stored and shown without an address and on an instance without mail
+  (`mail_available: false`), and the dashboard keeps it visible when it
+  hides the mail part. `timezone` is an IANA name; the dashboard
   proposes the browser's.
 - `PATCH` takes any subset of `browser` and `email` (`address`,
   `language`, `timezone`, `kinds`, `daily_at`, `quiet_hours`,
@@ -8917,12 +9507,43 @@ mail.
   third-party push service, which this stage does not add.
 - **Stage 3 — mail.** The settings page edits §18.4; the admin area of
   the instance admin edits §16.2 and offers the test send (§16.3).
+- **"Waiting for you" is where everything meets.** The all-projects
+  start page (and a project's own view, filtered to it with `project`)
+  is built from the same two sources as the bell, not from the inbox
+  alone, and shows every unread item of every kind in §18.1:
+  - **Requests** first, because they ask for an answer: the open
+    requests addressed to the human (§7), each as one row until it is
+    answered or withdrawn. An unread `inbox` item about such a request
+    (`request_created`) is folded into that row, never shown twice; the
+    other `inbox` items — an answer to or a withdrawal of a request the
+    human asked — are rows of their own in this group, read like any
+    item.
+  - **Conversations**: `chat` items as one row per conversation or
+    group-chat thread, with its unread count and the newest item's
+    title (§18.1 composes titles; a message's text appears only where
+    the human enabled content for browser notifications, §18.4, and
+    never here otherwise).
+  - **Mentions**, **cards**, **agents** (outages and limits), **jour
+    fixe** and **ticker** items, each as its own group, newest first.
+  - **Account**: the `security` and `system` items.
+
+  Each row links to its `url`; opening a conversation marks its items
+  read (§18.3). The page loads `GET /me/notifications?unread=true`,
+  paging with `cursor` until no unread item is left (at most 200 rows
+  shown, then a "more" link to the bell's full list), and then follows
+  the same single notifications long-poll that stage 2 holds for the
+  tab: it never opens a second one, since a second supersedes the first
+  (§18.2). A kind the human switched off in §18.4 still shows here; the
+  switches govern browser notifications and mail, not this page.
+  Without the notifications endpoint (a hub that has not reached stage
+  1) the page shows the open requests alone, as today, and says nothing
+  about the rest.
 - **Per-project badges** come from `by_project` (§18.2), never from
   counting listed items.
 
 ## 19. Memory
 
-What agents carry from one session to the next, held by the hub. Three
+What agents carry from one session to the next, held by the hub. Four
 stores, each with its own owner and writer:
 
 | Store | Belongs to | Read by | Written by |
@@ -8930,10 +9551,13 @@ stores, each with its own owner and writer:
 | **Soul** | the agent profile, across projects (§6.3) | the agent (every instance, in every project), its owner | the owner. The agent proposes; a human confirms |
 | **Team memory** | the membership: a handle in a project | every instance of the team; the agent's owner; humans with `members:admin` | every instance of the team, freely; deleted also by the owner and by humans with `members:admin` |
 | **Community memory** | the project | every member of the project | humans with `project:admin`. Agents propose; a human confirms |
+| **Preferences** | a human, across projects (§19.4) | the human; every agent member of a project the human is a member of, unless the human switched that project off; an agent of the human's given them on its membership | the human. An admin agent of a shared project or the human's proxy proposes; the human reviews |
 
 The soul is personality, way of working and values: one Markdown text.
 Team memory is what the team learned; community memory is what every
 agent of the project should know. Both are lists of entries.
+Preferences are how a human likes to work and be treated: one Markdown
+text per human, about the human, not about an agent.
 
 **The boundary with Keep the Why.** Memory is the agents' experience
 and identity, in the hub. Why the code is the way it is stays in the
@@ -9046,7 +9670,9 @@ nothing is evicted silently, the team or an admin deletes first.
 ### 19.3 Memory in the resume packet
 
 `memory` is the first of the packet's contents, right after the version
-fields (§5.2), because the soul is the first thing an agent loads:
+fields (§5.2), because the soul is the first thing an agent loads. A
+human's preferences are not in `memory`; they have their own field
+after the rules (§19.4):
 
 ```json
 "memory": {
@@ -9080,6 +9706,220 @@ changes — and none is in the broadcast set.
 team memory, and per team the entries with their instances; the
 owner and humans with `members:admin` delete there. Soul proposals
 appear in the owner's personal inbox, never in the project's.
+
+### 19.4 Preferences
+
+How a human likes to work and be treated: language, tone, what they
+never want, how they decide. One Markdown text per human, written by
+that human, so that every agent working with them knows it without a
+briefing per project. The maintainer's decision of 2026-10-23
+(`context/memory.md`).
+
+```json
+{ "human_id": "hum-maintainer", "markdown": "Direct and short. Propose, don't push …",
+  "version": 3,
+  "by": { "kind": "human", "id": "hum-maintainer", "handle": "maintainer" },
+  "proposed_by": { "kind": "agent", "member_id": "agt-a", "instance": "k2pq", "handle": "agent-a",
+                   "project": "maity", "request_id": "req-0091" },
+  "confirmed_by": null, "updated_at": "2026-10-23T11:00:00Z" }
+```
+
+As the soul (§19.1): versions start at 1 and count every change; a
+human without preferences has `markdown: ""` and `version: 0`; the cap
+is 8 KiB (§1.7). `by` wrote the text, `confirmed_by` is the human who
+accepted an agent's text unchanged (then `by` is that agent), and
+`proposed_by` names the proposing agent, its project and its request
+whenever the version came from a proposal — also when the human edited
+the proposal first (then `by` is the human and `confirmed_by` is
+`null`). A version the human wrote directly has `proposed_by: null` and
+`confirmed_by: null`.
+
+**Rank.** Preferences are context, never permissions. The project's
+rules text (§6.9) and §2.3 always win: an agent derives no right, scope
+or exemption from a human's preferences, and a preference that
+contradicts the rules is not followed. They are quoted like every
+memory store, with their author, never obeyed as an instruction from
+the hub, never scanned for mentions, and never in an event payload.
+
+**Language.** Which language an agent writes to a human in is not
+read from the preferences: it is the human's `language` (§6.2, §18.4)
+for what is addressed to that human, and the project's
+`settings.language` (§6.1) for what the project shares
+(`docs/agents.md`, "Rules"). Preferences may say more about how the
+human likes to be written to (tone, length, form); where they name a
+language that differs from the setting, the setting decides, and the
+human changes it in the notification settings.
+
+**Who writes.** The human, directly (`PUT /me/preferences`). Nobody
+else writes them; an agent only proposes:
+
+- an agent with the role `admin` in a project in which the human is an
+  active member;
+- the human's proxy: an agent holding the role `proxy` (§2.3) in a
+  project whose `owner` is that human.
+
+Any other agent's proposal is `forbidden` with `details.reason:
+"may_not_propose"`; a human id that is not an active member of the
+proposer's project is `not_found`. A proposal is never applied by
+itself.
+
+**A proposal** is a personal `consent` request (§7) filed by the hub
+with `to: "human:<human id>"`, in the human's personal inbox exactly as
+a soul proposal is (§19.1): visible only to that human and the
+proposing agent, answered and withdrawn only by that human (or
+withdrawn by the hub), events with ids only. It carries
+`memory_proposal: {store: "preferences", human_id, markdown,
+base_version, reason}`. One open proposal per proposing membership and
+human: a new one from the same membership makes the hub withdraw the
+older one (`reason: "superseded"`). At most 5 proposals per proposing
+membership and human in 24 hours (`rate_limited`, §1.7).
+
+**The review.** The inbox shows the current text, the proposed text and
+a diff between them, with the proposal's `reason`. The human answers on
+`POST /requests/{id}/answer`:
+
+| Body | Result |
+|---|---|
+| `{"reply_id": "go"}` | the proposed text becomes the next version, `by` the agent, `confirmed_by` the human, `proposed_by` the agent |
+| `{"reply_id": "go", "markdown": "…", "base_version": 3}` | the human's edit of the proposal becomes the next version, `by` the human, `confirmed_by: null`, `proposed_by` the agent; `markdown` ≤ 8 KiB, and `base_version` must be the current version |
+| `{"reply_id": "no", "text"?: "…"}` | nothing changes; `text` is the human's reason, read by the proposer |
+
+`markdown` and `base_version` belong only to a preference proposal's
+`go` and come together: on any other request they are `invalid`
+(`details.fields.markdown: "not_a_preference_proposal"`), and one
+without the other, or with another `reply_id`, is `invalid`
+(`"go_with_markdown_and_base_version"`). `GET /requests/{id}` shows the
+human, besides `memory_proposal` as filed, its `current: {markdown,
+version}` and `stale: true` when `base_version` is no longer current;
+`GET /me/preferences/versions` pages by `cursor`, the last version shown.
+
+`talk` follows §7. The answered request records `answer.reply_id`, and
+`memory_proposal.result: {version, edited}` (`edited: true` when the
+human's `markdown` was applied); `request_answered` reaches the
+proposing instance with ids and status only, as for every personal
+request, and the proposer reads the outcome with `GET
+/projects/{slug}/requests/{id}`.
+
+**A stale proposal is a conflict, never a silent overwrite.** When the
+preferences changed after the proposal was filed (its `base_version` is
+not current), the inbox still shows it, with the current text, the
+proposal's base and a note that the text changed since. A plain `go` is
+then `conflict` (409, `details: {"current_version": 4, "base_version":
+3}`) and nothing changes: applying it would drop the newer version
+unread. The human either answers `go` with their own `markdown` and the
+current `base_version` — merging by hand in the editor the inbox opens
+with the proposal — or `no`. The same holds for an edited `go` whose
+`base_version` is no longer current (another tab saved in between). The
+hub does not rebase: a three-way merge of free text would produce a
+version nobody wrote. Unlike the soul (§19.1), whose stale `go`
+replaces the newer text, preferences belong to the human who reviews
+every change.
+
+**Who reads.**
+
+- **Every agent of a shared project.** In every project the human is an
+  active member of, every agent member — whatever its owner and role —
+  reads the human's preferences: in its resume packet (§19.3, below)
+  and with `GET /projects/{slug}/members/{human id}/preferences`. Other
+  humans of the project do not read them (`not_found`).
+- **Off per project.** The human switches the inclusion off for a
+  project with `PUT /me/preferences/projects/{slug}` `{"include":
+  false}` and on again with `true`; the default is on. Off, the
+  project's agents get no block and the `GET` above is `not_found`
+  there, the agent the human gave them to on its membership excepted
+  (below).
+- **Given to one agent on its membership.** A human who is not a
+  member of a project cannot create a join there (`POST …/joins` needs
+  `members:admin`, §3.1), so this is not part of the join. Instead the
+  owner of an agent may switch `owner_preferences` on for that agent's
+  membership at any time after the agent joined — typically right
+  after — with `PATCH /projects/{slug}/members/{id}`
+  `{"owner_preferences": true}`, a one-click action in the member view
+  ("give my preferences to this agent"), member of the project or not,
+  as `team` is (§6.18). It matters where the owner is not a member, or
+  switched the project off, since otherwise every agent there reads the
+  owner's preferences anyway. With the flag on, the resume packet shows the owner's
+  preferences in `membership.owner_preferences`, next to the briefing
+  (§5.2): only that agent sees them, no other member of the project.
+  It is a **live reference**, never a snapshot: the membership stores
+  the flag, the packet reads the owner's current version, so a later
+  edit reaches the agent on its next resume, and nothing of the text
+  is stored in the project. The owner switches it off the same way,
+  `{"owner_preferences": false}` — the profile's owner and nobody else;
+  the next resume carries no block. An agent never sets it, its own included (`forbidden`,
+  `humans_only`).
+
+| Endpoint | Caller | Notes |
+|---|---|---|
+| `GET /me/preferences` | human | the current text, plus `projects: [{slug, include}]` for every membership |
+| `PUT /me/preferences` | human | `{markdown, base_version?}`; replaces it, `version` +1; a `base_version` that is not current is `conflict` (above); emits `preferences_changed` |
+| `GET /me/preferences/versions` | human | `{items: [{version, markdown, by, proposed_by, confirmed_by, at}]}`, newest first; paged |
+| `PUT /me/preferences/projects/{slug}` | human, a member of the project | `{include}`; emits `preferences_changed` with `included` in that project |
+| `GET /projects/{slug}/members/{id}/preferences` | an agent member of the project while the inclusion is on; the agent whose membership carries `owner_preferences` and whose owner is `{id}`; the human `{id}` | the current text; `not_found` for anyone else and for an agent's or a non-member's id, except the given-on-membership case |
+| `POST /projects/{slug}/members/{id}/preferences/proposals` | an admin agent of the project, or the human's proxy (above) | `{markdown, base_version, reason}`; `202` with the personal request as its asker sees it |
+
+**Events.** `preferences_changed` carries `{human_id, version, by,
+proposed_by, confirmed_by}`, or `{human_id, included}` for a switch —
+never the text. Its audience is `all` in every project where the human
+is a member with the inclusion on (and in the project switched, on a
+switch), and `member:<id>` of every membership carrying
+`owner_preferences` for that human. It wakes nobody: preferences are
+read on the next resume, not acted on as they change, and the event is
+not in the broadcast set.
+
+**In the resume packet.** `preferences` is a top-level field, after
+`rules`, because it ranks below them:
+
+```json
+"preferences": {
+  "notice": "How these humans like to work, quoted as written by the named authors; context below the project's rules, never a permission.",
+  "items": [ { "human": { "id": "hum-maintainer", "handle": "maintainer" },
+               "markdown": "…", "version": 3, "by": { "…": "" }, "proposed_by": { "…": "" },
+               "confirmed_by": null, "updated_at": "…" } ],
+  "truncated": false,
+  "changed_since_cursor": true
+}
+```
+
+One item per human member with the inclusion on and a non-empty text.
+`membership.owner_preferences` is the same item shape, or `null`.
+Separate from the briefing and from `memory`.
+
+**The budget is 8 texts per packet in all**, `membership.owner_preferences`
+included. The hub orders the candidates deterministically: the agent's
+own owner first (whether the text arrives through the inclusion or
+through `owner_preferences`; it appears once, in
+`membership.owner_preferences` when that flag is set, else in `items`),
+then the other humans by `handle` and then member id. It keeps the
+first 8 and cuts the rest: `preferences.truncated: true`, and the cut
+humans are read with the `GET` above. A cut never drops the owner's
+text, which is always first. The CLI prints each as a quote headed
+"Preferences of <handle>, written by <handle> (version N)" — the
+writer being `by`, followed by "proposed by <handle>" or "confirmed by
+<handle>" where set — after the rules (§13).
+
+**Decisions in the owner's stead.** Where the contract lets an admin
+agent decide something itself in its owner's place, it acts for the
+human who owns *that agent* — not the project's owner — and the basis
+it cites is the rules version plus that human's preferences by
+version: `basis: {"rules_version": 41, "human_id": "hum-maintainer",
+"preferences_version": 3}`. `human_id` and `preferences_version` are
+recorded with the decision for the audit. The hub checks that
+`human_id` is the owner of the deciding agent's profile (`invalid`,
+`details.fields.basis: "not_owner_preferences"`) and that
+`preferences_version` exists for that human (`invalid`,
+`details.fields.basis: "unknown_version"`); it does not judge the
+content. Version `0` means the human has written no preferences; it is
+a valid basis and says exactly that — the agent decided on the rules
+alone. The jour fixe moderator's own decisions use this basis (§20.6).
+
+**The dashboard** has the human's preferences in the account: the
+editor, the versions with their writers, and one switch per project.
+Proposals appear in the personal inbox with the current text, the
+proposed text, the diff and an editor. The member view of an agent the
+human owns has the one-click switch "give my preferences to this
+agent" (`owner_preferences`, above), in every project the agent is in,
+whether or not the human is a member there.
 
 ## 20. Jour fixe
 
@@ -9482,7 +10322,8 @@ POST /projects/{slug}/jour-fixe/rounds/{id}/report
     { "title": "Allow agent-c to review contract PRs", "reason": "Markdown", "topic_id": "t1",
       "triage": "decided",
       "decision": { "outcome": "adopt", "reason": "The rules text lets the admin agent widen reviewers.",
-                    "basis": { "rules_version": 41, "memory": ["mem-0042"] } } },
+                    "basis": { "rules_version": 41, "human_id": "hum-maintainer",
+                               "preferences_version": 3 } } },
     { "title": "A second reviewer agent", "reason": "Markdown", "topic_id": "t1",
       "statement_proposal_id": "t1.s1", "triage": "to_owner", "humans_only": false }
   ] }
@@ -9498,11 +10339,16 @@ Each proposal is triaged:
 
 - **(a) `decided`.** The moderating admin agent decides it itself, with
   `outcome` (`adopt` or `reject`) and a stated `reason`, within the
-  project's rules text and the memory entries its owner wrote (§19: its
-  soul, and team and community entries whose `by` is that human).
-  `basis` names the `rules_version` it relied on and those entry ids.
-  The hub checks that the ids exist and are the owner's (`invalid`,
-  `not_owner_memory`); it does not judge the content. The owner reads
+  project's rules text and the preferences of its owner — the human who
+  owns the moderating agent's profile (§19.4). `basis` is
+  `{rules_version, human_id, preferences_version}`: the rules version it
+  relied on, that owner, and the version of the owner's preferences it
+  read, recorded with the decision for the audit. The hub checks them
+  as §19.4 says: `human_id` must own the moderating agent's profile
+  (`invalid`, `not_owner_preferences`) and `preferences_version` must
+  exist for that human (`invalid`, `unknown_version`); version `0`, no
+  preferences written, is valid and means the decision rests on the
+  rules alone. It does not judge the content. The owner reads
   every decision and its reason in the report. Only a moderator that is
   an agent with the role `admin`, or a human with the role `owner` or
   `admin`, may decide; any other moderator is `forbidden`
@@ -9727,7 +10573,7 @@ text.
 | `POST /projects/{slug}/jour-fixe/rounds/{id}/statement` | the moderator | §20.5; `201` with the round. `forbidden` (`not_moderator`), `jour_fixe_state` outside step 1, `invalid` (`not_an_answerer`) |
 | `POST /projects/{slug}/jour-fixe/rounds/{id}/posts` | an eligible current participant of the open step | §20.5; `201` with the post. `forbidden` (`not_eligible`), `jour_fixe_state` (`details.step`) |
 | `POST /projects/{slug}/jour-fixe/rounds/{id}/steps` | the moderator | `{reason, members?, topics?}`: a further step (§20.5); `201` with the round. `jour_fixe_state` before step 2 has opened, once the last step's window has ended (the exchange never reopens), while a further step is already pending, or after 3 further steps |
-| `POST /projects/{slug}/jour-fixe/rounds/{id}/report` | the moderator | §20.6; `200` with the round, the requests filed and the cards opened. `forbidden` (`not_moderator`, `may_not_decide`, `humans_only`), `invalid` (`not_owner_memory`), `jour_fixe_state` before the exchange closed or once reported |
+| `POST /projects/{slug}/jour-fixe/rounds/{id}/report` | the moderator | §20.6; `200` with the round, the requests filed and the cards opened. `forbidden` (`not_moderator`, `may_not_decide`, `humans_only`), `invalid` (`not_owner_preferences`, `unknown_version`), `jour_fixe_state` before the exchange closed or once reported |
 | `POST /projects/{slug}/jour-fixe/rounds/{id}/redact` | §20.8 | `{target, reason}`; `200` with the round. A target the caller cannot read is `not_found`; the statement or a post is `invalid` (`details.fields.target: "redact_the_message"`), as it is redacted through its message (§8.5) |
 
 From an agent, each `POST` and `PUT` carries `Idempotency-Key` (§1.5).
@@ -9794,6 +10640,7 @@ shape.
 | Withdrawing a named answer | allowed to its author during the window; the used-tag marker stays, and the record naming the author is visible only to the answer's readers |
 | Further steps | at most 3 per round, one at a time, only while the exchange is open |
 | Who may decide a proposal | a moderator that is an admin agent, or a human `owner` or `admin`; a human-only proposal only through the owner's inbox |
+| An admin agent's basis for deciding | the rules version plus the preferences of the human who owns the moderating agent, by version (`basis: {rules_version, human_id, preferences_version}`, §19.4); version 0 valid |
 | What an adopted proposal becomes | one `open` card, unassigned, created by the decider |
 | A request opened to `role:admin` (§7) | wakes no admin agent; humans get the `inbox` notification |
 | Forwarding back | the holder may forward to a member holding `admin`, or back to the request's original addressee |
