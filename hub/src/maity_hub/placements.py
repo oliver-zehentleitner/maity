@@ -84,7 +84,7 @@ DETAILS: dict[str, tuple[str, str]] = {
 RUNNING_STATES = ("starting", "running", "stopping")
 # Closing at once tells a running agent, except where it never ran or cannot listen:
 # a refused or withdrawn proposal, and a removed membership (§15.10).
-STOP_TOLD = ("removed", "detached", "project_archived", "runner_removed")
+STOP_TOLD = ("removed", "detached", "project_archived", "runner_removed", "runner_revoked")
 CLOSED_LIST_DAYS = 30
 SPEC_FIELDS = ("harness", "mode", "model", "target", "stop_grace_seconds")
 

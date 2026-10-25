@@ -7111,7 +7111,10 @@ owner choose):
   revocation by the hub because the credential appeared in a payload
   (`leaked_in_payload`, §2.2) applies `keep`: the runner's key leaked,
   not the machine; the owner revokes again with `agents: "stop"` when
-  the machine is in doubt.
+  the machine is in doubt. Such a later revoke, on a key revoked already
+  (by a `keep` or for a leak), still applies `stop`: it revokes no runner
+  key, and what it stops is added to what that key's revocation applied
+  (the answer, its replay and `details.stop` below agree).
 - **The setting.** `on_runner_revoke` in the instance settings (§16,
   `MAITY_ON_RUNNER_REVOKE`: `keep` (default), `stop` or `stop_floor`)
   and in each project's policy (§6.1: `keep`, `stop` or `inherit`,
@@ -7143,8 +7146,11 @@ owner choose):
   those placements named are revoked `stop_grace_seconds` later
   (`revoked_reason: runner_revoked`, `revoked_by` the human), so an
   agent can park its work first; with `agents: "stop"` they are revoked
-  at once. After that the agent has lost the hub: every call answers
-  `credential_revoked`. The hub cannot end its process or its access to
+  at once, and so are those an earlier `stop` of this runner left to
+  their grace (never another agent's). Each revocation emits `credential_revoked` (§15.10, `reason:
+  runner_revoked`, to the agent and the owners), once, however many
+  calls find it due. After that the agent has lost the hub: every call
+  answers `credential_revoked`. The hub cannot end its process or its access to
   the forge; that stays the machine's (`maity runner stop-all`).
 - **What the runner learns.** A runner that is still honest learns it
   from the answer to its next call: `credential_revoked` — only after

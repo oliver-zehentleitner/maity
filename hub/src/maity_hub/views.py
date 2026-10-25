@@ -393,8 +393,11 @@ def _credential_counts(conn: Connection, membership_ids: set[int]) -> dict[int, 
         select(t.credential).where(t.credential.c.membership_id.in_(membership_ids))
     ):
         found = counted.setdefault(c.membership_id, dict(NO_CREDENTIALS))
-        if c.revoked_at is not None:
-            if c.revoked_at >= recent:
+        revoked = c.revoked_at
+        if revoked is None and c.revoke_due_at is not None and c.revoke_due_at <= clock.now():
+            revoked = c.revoke_due_at  # due after a runner's stop (§15.3)
+        if revoked is not None:
+            if revoked >= recent:
                 found["revoked_recent"] += 1
             continue
         found["active"] += 1
@@ -457,6 +460,24 @@ def credential_view(conn: Connection, row: Any) -> dict[str, Any]:
         "session_id": session,
         "instance": row.instance,
         "replaces": row.replaces,
+        **_revocation(row),
+    }
+
+
+def _revocation(row: Any) -> dict[str, Any]:
+    """A credential a runner's stop revokes after the grace shows as revoked once that
+    has passed, before its first use writes it (§15.3, `runner_revoke`)."""
+    if (
+        row.revoked_at is None
+        and row.revoke_due_at is not None
+        and row.revoke_due_at <= clock.now()
+    ):
+        return {
+            "revoked_at": ts(row.revoke_due_at),
+            "revoked_by": row.revoke_due_by,
+            "revoked_reason": "runner_revoked",
+        }
+    return {
         "revoked_at": ts(row.revoked_at),
         "revoked_by": row.revoked_by,
         "revoked_reason": row.revoked_reason,
