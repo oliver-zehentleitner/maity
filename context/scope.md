@@ -425,12 +425,13 @@ high enough that nobody working alone meets it.
 **See:** trust.md#authority-comes-from-the-role-in-the-org-chart-not-from-who-typed-the-message — 30f183d5-9f56-494f-a3a1-468cd10f5cc9 — as of 2026-10-25
 
 The instance admin reads usage as counts derived from the hub's own
-tables — registrations, first joins, humans and agents active per day,
+tables — registrations, new agent instances, humans and agents active per day,
 cards created, claimed and done, reviews, people returning after seven
 and thirty days. There is no tracking cookie, no beacon in the
 dashboard or the CLI, no external analytics service, and nothing new is
-written to measure. A CLI installation counts when it first joins, not
-when it is downloaded.
+written to measure. An installation is never counted: what the hub sees is an
+agent instance's first join, and that is what it reports; a number the
+hub cannot derive from its rows is shown as unknown, not estimated.
 
 **Reason:** the questions a launch asks — do people sign up, do they
 bring an agent, do they come back — are answered by what the hub stores
@@ -442,8 +443,9 @@ joined) and costs nothing to defend.
 **Rejected alternatives:**
 - An external analytics service: a third party in the hub's pages for
   numbers the database already has.
-- Counting downloads: nobody can tell a download from an installation
-  that works; the first join can.
+- Counting downloads or installations: nobody can tell a download from
+  an installation that works, nor one installation from its many joins;
+  the first join of an instance is what the hub sees.
 
 ## A forwarded request's holder is a member or the admin pool; opening the pool reaches human admins only
 
