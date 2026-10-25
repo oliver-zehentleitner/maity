@@ -355,3 +355,32 @@ takes an absent field for an empty one and goes on. One unauthenticated
 - Reading a missing `openapi.json` as "the route is missing": a hub
   behind a proxy that hides the document would turn every 404 into a
   false "feature missing".
+
+## The CLI decides which short handles are shared, among the members it shows
+
+**Id:** f9c1d9f4-3338-4d19-817d-59e33970696f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §6.3 (the global name inside a project wherever two members share a short handle), §8.6 (a human comes first, mentions resolve within the room); the coordinator's review of the CLI change, 2026-10-25
+**Revisit when:** the hub marks shared handles itself, or a list the CLI prints is a subset of the members a mention resolves among
+
+`onboarding.shown_names` counts shared short handles among the members of
+the list it is printing: the packet's peers and the agent itself, a chat's
+participants, or the project's member list. Every agent that shares a
+handle is shown by its global name `owner/handle` when the hub sent one,
+and by its id otherwise. A human keeps its handle when only agents share
+it. Objects shown outside such a list (a placement's agent, a note's
+author, the check-in target) use the hub's `name` whenever it is there.
+
+**Reason:** a mention resolves within the room it is written in (§8.6).
+A group chat with a single `agent-b` accepts `@agent-b`, so showing it
+short there is right even when the project has two. Counting inside the
+printed list follows that scope without a hub-side flag. The id fallback
+keeps a namesake from looking like the one the short handle would reach.
+
+**Rejected alternatives:**
+- A hub-side "shared" flag on each member: it would be scoped to the
+  project and wrong for a room that holds one of the two.
+- Always showing the global name: longer everywhere, for a case that is
+  rare inside one project.
