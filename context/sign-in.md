@@ -222,9 +222,12 @@ every method, `optional` as the default, the reset with proof by mail,
 the list of sensitive calls and the limits are this contract's
 proposal, marked as such in §2.8 for the maintainer to confirm. The go
 named password accounts; the contract arbiter's ruling (2026-10-25)
-lets accounts without a password enrol too, since the factor is second
-to whatever first factor the account uses, behind the 24-hour guard
-that already protects their verified address.
+lets every account enrol, since the factor is second to whatever first
+factor the account uses, opened by that first factor given in the last
+10 minutes. That for an account with a password the fresh first factor
+must be the password is this contract's proposal on top of the ruling:
+otherwise a session obtained through the mailbox could put its own
+factor on the account and lock out the human who holds the password.
 
 **Reason:** TOTP needs nothing from the browser or the operating
 system and nothing outside the hub — no relying-party binding to a host
