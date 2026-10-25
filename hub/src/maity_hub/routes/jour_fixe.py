@@ -80,9 +80,43 @@ def moderators_view(conn: Connection, project_id: str) -> dict[str, Any]:
     return {"order": project.jour_fixe_moderators, "moderators": _resolved(conn, project)}
 
 
-idempotency.LOADERS["jour_fixe_round"] = idempotency.plain(round_view)
-idempotency.LOADERS["jour_fixe_answer"] = idempotency.plain(answer_view)
-idempotency.LOADERS["jour_fixe_moderators"] = idempotency.plain(moderators_view)
+def _member_now(conn: Connection, project_id: str, request: Request) -> Any:
+    """A replay answers only a caller who may read the project now: a removed member
+    gets `not_found`, as on any read (as conversations' replays do)."""
+    slug = conn.execute(select(t.project.c.slug).where(t.project.c.id == project_id)).scalar_one()
+    mine = membership(conn, request.state.caller, str(slug))
+    mine.require("project:read")
+    return mine
+
+
+def _round_project(conn: Connection, round_id: str) -> str:
+    found: str = conn.execute(
+        select(t.jour_fixe_round.c.project_id).where(t.jour_fixe_round.c.id == round_id)
+    ).scalar_one()
+    return found
+
+
+def _replay_round(conn: Connection, round_id: str, request: Request) -> dict[str, Any]:
+    _member_now(conn, _round_project(conn, round_id), request)
+    return round_view(conn, round_id)
+
+
+def _replay_answer(conn: Connection, answer_id: str, request: Request) -> dict[str, Any]:
+    round_id = conn.execute(
+        select(t.jour_fixe_answer.c.round_id).where(t.jour_fixe_answer.c.id == answer_id)
+    ).scalar_one()
+    _member_now(conn, _round_project(conn, round_id), request)
+    return answer_view(conn, answer_id)
+
+
+def _replay_moderators(conn: Connection, project_id: str, request: Request) -> dict[str, Any]:
+    _member_now(conn, project_id, request)
+    return moderators_view(conn, project_id)
+
+
+idempotency.LOADERS["jour_fixe_round"] = _replay_round
+idempotency.LOADERS["jour_fixe_answer"] = _replay_answer
+idempotency.LOADERS["jour_fixe_moderators"] = _replay_moderators
 
 
 def _resolved(conn: Connection, project: Any) -> list[str]:

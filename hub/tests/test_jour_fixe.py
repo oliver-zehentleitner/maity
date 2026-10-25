@@ -457,3 +457,24 @@ def test_the_series_follows_the_wall_clock_through_dst_and_month_ends() -> None:
         date(2026, 11, 2),
     )
     assert [m.day for m in mondays] == [2, 16, 30]
+
+
+def test_a_replay_answers_only_a_member(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    from tests import factory
+
+    lead, member = team(owner, make_client)
+    other = flow.human(make_client, migrated, "other")
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    factory.membership(migrated, project_id, "admin", human_id=other.id)
+    other.get("/me")
+    headers = {"X-CSRF-Token": other.csrf, "Idempotency-Key": "jour-fixe-start-replay-1"}
+    path = "/api/v1/projects/maity/jour-fixe/rounds"
+    first = other.client.post(path, json={"reason": "r"}, headers=headers)
+    assert first.status_code == 201, first.text
+    removed = owner.delete(f"/projects/maity/members/{other.id}")
+    assert removed.status_code == 200, removed.text
+    replay = other.client.post(path, json={"reason": "r"}, headers=headers)
+    assert replay.status_code == 404, replay.text  # no way around access (§1.5)
