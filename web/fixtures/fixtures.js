@@ -821,6 +821,7 @@ window.MAITY_FIXTURES = {
             "role": "admin"
           }
         ],
+        "name": "maintainer/agent-a",
         "owner_id": "hum-maintainer"
       },
       {
@@ -835,6 +836,7 @@ window.MAITY_FIXTURES = {
             "role": "member"
           }
         ],
+        "name": "maintainer/agent-b",
         "owner_id": "hum-maintainer"
       },
       {
@@ -849,6 +851,7 @@ window.MAITY_FIXTURES = {
             "role": "member"
           }
         ],
+        "name": "maintainer/agent-c",
         "owner_id": "hum-maintainer"
       },
       {
@@ -863,6 +866,7 @@ window.MAITY_FIXTURES = {
             "role": "member"
           }
         ],
+        "name": "maintainer/agent-d",
         "owner_id": "hum-maintainer"
       },
       {
@@ -877,6 +881,7 @@ window.MAITY_FIXTURES = {
             "role": "reviewer"
           }
         ],
+        "name": "maintainer/reviewer",
         "owner_id": "hum-maintainer"
       },
       {
@@ -891,6 +896,7 @@ window.MAITY_FIXTURES = {
             "role": "member"
           }
         ],
+        "name": "maintainer/shop-dev",
         "owner_id": "hum-maintainer"
       },
       {
@@ -905,6 +911,7 @@ window.MAITY_FIXTURES = {
             "role": "member"
           }
         ],
+        "name": "maintainer/spare",
         "owner_id": "hum-maintainer"
       }
     ],
@@ -1705,6 +1712,7 @@ window.MAITY_FIXTURES = {
         "kind": "agent",
         "last_seen_at": "2026-10-21T13:41:10Z",
         "model": "claude-opus-5-5",
+        "name": "maintainer/agent-a",
         "owner_id": "hum-maintainer",
         "owner_preferences": false,
         "paused": null,
@@ -1741,6 +1749,7 @@ window.MAITY_FIXTURES = {
             "last_seen_at": "2026-10-21T11:20:00Z",
             "lead": false,
             "model": "claude-opus-5-5",
+            "name": "maintainer/agent-b#wle2",
             "paused": null,
             "presence": "offline",
             "replaces": null,
@@ -1751,6 +1760,7 @@ window.MAITY_FIXTURES = {
         "kind": "agent",
         "last_seen_at": "2026-10-21T13:39:30Z",
         "model": "claude-opus-5-5",
+        "name": "maintainer/agent-b",
         "owner_id": "hum-maintainer",
         "paused": null,
         "presence": "online",
@@ -1793,6 +1803,7 @@ window.MAITY_FIXTURES = {
             "last_seen_at": "2026-10-21T13:40:00Z",
             "lead": false,
             "model": null,
+            "name": "maintainer/agent-c#k3pa",
             "paused": null,
             "presence": "online",
             "replaces": null,
@@ -1803,6 +1814,7 @@ window.MAITY_FIXTURES = {
         "kind": "agent",
         "last_seen_at": "2026-10-21T12:05:00Z",
         "model": "claude-sonnet-5-5",
+        "name": "maintainer/agent-c",
         "owner_id": "hum-maintainer",
         "paused": {
           "by": "agt-c",
@@ -1835,6 +1847,7 @@ window.MAITY_FIXTURES = {
         "kind": "agent",
         "last_seen_at": "2026-10-21T13:42:00Z",
         "model": "claude-opus-5-5",
+        "name": "maintainer/agent-d",
         "owner_id": "hum-maintainer",
         "paused": null,
         "presence": "online",
@@ -1861,6 +1874,7 @@ window.MAITY_FIXTURES = {
         "kind": "agent",
         "last_seen_at": "2026-10-20T18:30:00Z",
         "model": "unknown",
+        "name": "maintainer/reviewer",
         "owner_id": "hum-maintainer",
         "paused": null,
         "presence": "offline",
@@ -4157,6 +4171,7 @@ window.MAITY_FIXTURES = {
         "kind": "agent",
         "last_seen_at": "2026-10-21T13:38:00Z",
         "model": "unknown",
+        "name": "maintainer/shop-dev",
         "owner_id": "hum-maintainer",
         "paused": null,
         "presence": "online",
@@ -4170,6 +4185,27 @@ window.MAITY_FIXTURES = {
           "model": "unknown",
           "started_at": "2026-10-21T08:30:00Z"
         }
+      },
+      {
+        "areas": [
+          "web/"
+        ],
+        "capabilities": [],
+        "display_name": "Anna's Shop Dev",
+        "handle": "shop-dev",
+        "harness": "Claude Code",
+        "id": "agt-s2",
+        "joined_at": "2026-10-21T11:00:00Z",
+        "kind": "agent",
+        "last_seen_at": "2026-10-21T12:00:00Z",
+        "model": "claude-sonnet-5-5",
+        "name": "anna/shop-dev",
+        "owner_id": "hum-anna",
+        "paused": null,
+        "presence": "offline",
+        "reports_to": null,
+        "role": "member",
+        "session": null
       }
     ],
     "next_cursor": null

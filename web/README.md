@@ -844,6 +844,18 @@ the header of every screen; owner and admin change it there with a
 reason (**Project settings**), and the owner sets and clears the absence
 shown under it.
 
+**Global names** (`docs/api.md` §6.3, §8.6). Inside a project a member
+goes by the short handle, as before. Where two members of the project
+share it — two owners' `agent-b` — the agents are shown by their global
+name, `owner/handle` (the hub's `name`), in Agents, Members, the board's
+assignee, chats, a message's mentions and every member link
+(`M.dom.handleOf`); a human has no long form and keeps the short one ("a
+human comes first"). Your own agents on the account page are always shown by their global name; the join panel names them as the project names its members. The @ picker offers and
+inserts `@owner/handle` for a shared short handle, and when the hub
+refuses a short one as `ambiguous_mention`, every form's status line says
+which long forms to write (`@agent-b is 2 agents here: write
+@anna/agent-b or @oliver/agent-b.`), with the text kept.
+
 **Avatars**: every member has a picture, generated from its member id —
 a mirrored 5×5 pattern and a hue (FNV-1a of the id), so every client draws
 the same one — as SVG nodes, decorative next to the name; the theme sets
@@ -870,12 +882,14 @@ mention cap and rate are said in words.
 hub scans — a request's summary, what it tried and the answer's text,
 a report's summary — each mention the hub stored for that field is a
 link to the member (`#/p/<slug>/members/<id>`), taken from the text at
-its offset (code points) only where it reads `@` and the stored handle;
-nothing typed becomes a link. The **@ picker** in the inbox's free text
-offers the project's members by handle (`GET …/members`, read on the
-first `@`), never the writer: arrow keys choose, Enter or Tab puts
-`@handle ` in, Escape closes; an `@` inside a word or in inline code
-offers nothing. The picker only helps to type; the hub resolves.
+its offset (code points) only where it reads `@` and the stored handle,
+or `@` and the stored global name for a long mention; nothing typed
+becomes a link. The **@ picker** in the inbox's free text offers the
+project's members by handle (`GET …/members`, read on the first `@`),
+by `owner/handle` where the short handle is shared, never the writer:
+typing either form narrows it (`@anna/` too), arrow keys choose, Enter or
+Tab puts `@handle ` or `@owner/handle ` in, Escape closes; an `@` inside a
+word or in inline code offers nothing. The picker only helps to type; the hub resolves.
 
 **Buttons** sit at the right edge of their form, panel or card. In a row
 the secondary ones come first and the primary one last (Cancel, Save;

@@ -73,7 +73,7 @@ window.Maity = window.Maity || {};
     const who = chat.kind === "group"
       ? (chat.access === "observer" ? "you read along · " : "") + (chat.closed ? "closed · " : "") + "group · " + chat.participants.map((m) => m.display_name).join(", ")
       : one
-      ? [one.kind === "human" ? "human" : "agent", one.handle ? "@" + one.handle : null, one.harness || null].filter(Boolean).join(" · ")
+      ? [one.kind === "human" ? "human" : "agent", one.handle ? "@" + M.dom.handleOf(ctx, one) : null, one.harness || null].filter(Boolean).join(" · ")
       : chat.participants.map((m) => m.display_name).join(", ");
     const presence = chat.kind !== "group" && one ? PRESENCE_LABELS[one.presence] || one.presence || null : null;
     const draft = current ? null : drafts.get(ctx.slug + "/" + chat.id);

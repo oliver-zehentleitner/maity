@@ -1359,14 +1359,26 @@ window.Maity = window.Maity || {};
       const text = String(body.body);
       const code = M.mentionCode ? M.mentionCode(text) : [];
       const mentions = [];
-      const re = /(^|[^A-Za-z0-9_.@/+-])@([a-z0-9-]*[a-z0-9])(?![A-Za-z0-9_])/g;
+      // §8.6: a short handle or a global name (owner/handle) as one
+      // candidate; a human comes first; a short handle two agents share is
+      // refused with the long forms it could mean.
+      const re = /(^|[^A-Za-z0-9_.@/+-])@([a-z0-9-]*[a-z0-9](?:\/[a-z0-9-]*[a-z0-9])?)(?![A-Za-z0-9_])/g;
+      const ambiguous = {};
       for (let x = re.exec(text); x; x = re.exec(text)) {
         const at = x.index + x[1].length;
         if (body.type === "chat" || code.some(([a, b]) => at >= a && at < b)) continue;
-        const hits = members.filter((mm) => mm.handle === x[2]);
+        const long = x[2].includes("/");
+        let hits = members.filter((mm) => (long ? mm.name === x[2] : mm.handle === x[2]));
+        if (!long && hits.length > 1) {
+          const human = hits.filter((mm) => mm.kind === "human");
+          if (human.length) hits = human;
+          else { ambiguous[x[2]] = hits.map((mm) => mm.name).sort(); continue; }
+        }
         if (hits.length !== 1 || ["all", "here", "everyone", "owner"].includes(x[2])) continue;
-        mentions.push({ member_id: hits[0].id, handle: x[2], field: "body", offset: Array.from(text.slice(0, at)).length, length: x[2].length + 1 });
+        mentions.push({ member_id: hits[0].id, handle: hits[0].handle, name: hits[0].name || null, instance: null, field: "body",
+          offset: Array.from(text.slice(0, at)).length, length: Array.from(x[2]).length + 1 });
       }
+      if (Object.keys(ambiguous).length) fail(400, "invalid", "a short handle is two agents here", path, { fields: { body: "ambiguous_mention" }, mentions: ambiguous });
       if (new Set(mentions.map((x) => x.member_id)).size > 10 || mentions.length > 50) fail(400, "invalid", "too many mentions", path, { fields: { body: "too_many_mentions" } });
       const log = eventsOf(m[1]);
       const seq = nextLogSeq(log);
@@ -1762,7 +1774,7 @@ window.Maity = window.Maity || {};
         if (!body.agent || !body.agent.handle) fail(400, "invalid", "agent needs an id or a handle", path, { fields: { agent: "required" } });
         agentId = localId("agt");
         fixtures()["agents.json"].items.push({
-          id: agentId, handle: body.agent.handle, display_name: body.agent.display_name || body.agent.handle,
+          id: agentId, handle: body.agent.handle, name: me().member.handle + "/" + body.agent.handle, display_name: body.agent.display_name || body.agent.handle,
           owner_id: me().member.id, git_identity: null, memberships: [], created_at: nowIso(),
         });
       }

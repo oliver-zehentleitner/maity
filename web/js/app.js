@@ -111,7 +111,8 @@ window.Maity = window.Maity || {};
       el,
       busy: (text) => { el.textContent = text; el.className = "send-status"; },
       done: () => { el.textContent = ""; el.className = "send-status"; },
-      fail: (prefix, err) => { el.textContent = prefix + err.message; el.className = "send-status failed"; },
+      // An ambiguous mention is said with the long forms to write (§8.6).
+      fail: (prefix, err) => { el.textContent = prefix + (M.dom.ambiguousMention(err) || err).message; el.className = "send-status failed"; },
     };
   }
 
@@ -273,7 +274,7 @@ window.Maity = window.Maity || {};
     const briefing = h("textarea", { id: "onboarding-briefing", rows: "6", "aria-describedby": "onboarding-hint" }, current.briefing || "");
     const choices = [{ value: "", label: "No check-in" }, { value: "coordinator", label: "Coordinator" }]
       .concat(["owner", "admin", "member", "reviewer", "proxy"].map((role) => ({ value: "role:" + role, label: "Role: " + role })))
-      .concat(ctx.members.filter((m) => !m.removed_at).map((m) => ({ value: m.id, label: "Member: @" + m.handle + " (" + m.kind + ")" })));
+      .concat(ctx.members.filter((m) => !m.removed_at).map((m) => ({ value: m.id, label: "Member: @" + M.dom.handleOf(ctx, m) + " (" + m.kind + ")" })));
     if (current.check_in_with && !choices.some((c) => c.value === current.check_in_with)) {
       choices.push({ value: current.check_in_with, label: "Unavailable member: " + current.check_in_with });
     }
