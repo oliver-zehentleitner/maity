@@ -76,6 +76,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_invitation_project_id_created_at", table_name="invitation")
-    op.drop_index(op.f("ix_invitation_address_normalized"), table_name="invitation")
+    # The table takes its indexes with it; dropping them first fails on MariaDB, where
+    # the foreign key on `project_id` uses the composite index.
     op.drop_table("invitation")
