@@ -165,6 +165,32 @@ def test_an_owner_who_is_no_member_acts_as_the_human(
     }
 
 
+def test_an_owner_who_is_no_member_resets_the_check_in_seat(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§6.2, §6.3: the onboarding seat falls back to `coordinator` with the deleting
+    owner as its writer, though they are no member of the project any more."""
+    agent = flow.agent(make_client, owner)
+    named = owner.patch(
+        "/projects/maity", {"settings": {"onboarding": {"check_in_with": agent.id}}}
+    )
+    assert named.status_code == 200, named.text
+    other = flow.human(make_client, migrated, "co-owner")
+    with migrated.begin() as conn:  # the owner left the project; a co-owner holds it
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+        conn.execute(
+            t.membership.update()
+            .where(t.membership.c.human_id == owner.id)
+            .values(active=None, removed_at=t.membership.c.joined_at)
+        )
+    factory.membership(migrated, project_id, "owner", human_id=other.id)
+    deleted = delete(owner, agent.id, cascade=True)
+    assert deleted.status_code == 200, deleted.text
+    onboarding = other.get("/projects/maity").json()["settings"]["onboarding"]
+    assert onboarding["check_in_with"] == "coordinator"
+    assert onboarding["by"] == {"id": owner.id, "handle": "maintainer", "kind": "human"}
+
+
 @pytest.mark.parametrize("with_admin", [False, True])
 def test_the_cascade_resets_the_seats_the_profile_held(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, with_admin: bool
