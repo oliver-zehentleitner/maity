@@ -930,3 +930,28 @@ place that answers requests, and its audit.
 humans too and has no room for the reported state. A modal confirmation
 for restart: one more click inline does the same at phone width. Asking
 the hub for each credential to decide on `rejoin`: the view has them.
+
+## Project settings are the project's last tab, not a panel from the gear menu
+
+**Id:** ecbeaecb-2dcf-45ff-ae44-d8b2b455e218
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's feedback of 2026-10-25 ("project settings da oben ist komisch, das muss eher runter auf die projekt ebene, z.B. nach Runners und Why ein Settings wäre logischer", tsk-r7qja01wwzvv) and bug report (a save in Project settings landed on the inbox, tsk-t407bnycxera); the dashboard's implementation, 2026-10-25
+**Revisit when:** the settings grow enough to need sub-pages, or the designer renames the tab
+
+The project's settings are a view, `#/p/<slug>/settings`, shown as the
+last tab of the project's row, after Runners and Why, for every member:
+what one may change is a form, the rest read only. The gear menu keeps
+what is not the project's (runners, instance administration). A save
+redraws the route it was made on, so it stays on Settings; the
+overview's Set the repository goes there at the repository field.
+
+**Reason:** the settings belong to one project, and every other thing of
+the project is a tab; a panel opened from a global menu read as the
+hub's. As a panel it lived under the header of whatever view was open,
+and a save, which redraws that view, closed it and left the human on
+the inbox.
+
+**Rejected alternative:** keeping the panel and reopening it after a
+save: it fixes the jump but not the place the maintainer found odd.

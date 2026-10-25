@@ -136,11 +136,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     || a.querySelectorAll(".project-mark").length && a.textContent.slice(a.querySelector(".project-mark").textContent.length).startsWith(label));
   const chipCount = (label) => { const c = chip(label) && chip(label).querySelector(".count"); return c ? c.textContent : ""; };
   const btn = (root, label) => root.querySelectorAll("button").find((b) => b.textContent === label);
-  // The gear menu in the header, and its "Project settings" item, which opens and closes the panel.
+  // The gear menu in the header: the hub's and one's own, not the project's.
   const gearButton = () => header.querySelectorAll("button").find((b) => b.getAttribute("aria-label") === "Settings");
+  // Project settings are the project's Settings tab (the maintainer's request): the helper opens it,
+  // drawn afresh; a test moves on by its next go().
+  const onSettings = () => /^#\/p\/[^/]+\/settings$/.test(win.location.hash);
   const projectSettings = async () => {
-    gearButton().click(); await tick();
-    header.querySelectorAll(".menu-item").find((el) => /^(Close project settings|Project settings)$/.test(el.textContent)).click(); await tick();
+    const slug = (/^#\/p\/([^/]+)/.exec(win.location.hash) || [])[1];
+    await go("#/p/" + slug + "/settings"); for (let k = 0; k < 6; k++) await tick();
   };
   const byId = (id) => main.all().find((e) => e.id === id) || header.all().find((e) => e.id === id);
   // A browser compiles `pattern` as ^(?:…)$ with the v flag and ignores one that does not compile.
@@ -647,8 +650,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "theme: applied before the first paint, by a script in <head> without defer");
   // Users of this hub (docs/api.md §16.1), for the instance admin only.
   gearButton().click(); await tick();
-  expect(JSON.stringify(gearButton().parentNode.querySelectorAll(".menu-item").map((el) => el.textContent)) === JSON.stringify(["Project settings", "Runners", "Instance administration"])
-    && gearButton().attrs["aria-haspopup"] === "menu", "header: the gear menu has this project's settings, the runners and, for the instance admin, the users");
+  expect(JSON.stringify(gearButton().parentNode.querySelectorAll(".menu-item").map((el) => el.textContent)) === JSON.stringify(["Runners", "Instance administration"])
+    && gearButton().attrs["aria-haspopup"] === "menu", "header: the gear menu has the hub's own: the runners and, for the instance admin, the users");
+  const tabNames = header.querySelectorAll("nav.views a").map((a) => a.textContent.replace(/\d+$/, ""));
+  expect(tabNames[tabNames.length - 1] === "Settings" && tabNames.indexOf("Runners") < tabNames.indexOf("Settings")
+    && tabNames.indexOf("Why") < tabNames.indexOf("Settings") && tabNames.indexOf("Why") > tabNames.indexOf("Runners"),
+    "header: the project's Settings are its last tab, after Runners and Why " + JSON.stringify(tabNames));
   const usersLink = header.querySelectorAll("a.menu-item").find((a) => a.textContent === "Instance administration");
   expect(usersLink && usersLink.getAttribute("href") === "#/admin", "users: in the settings menu for the instance admin");
   gearButton().click(); await tick();
@@ -1713,6 +1720,36 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.forgetRoutes();
   await go("#/p/maity/inbox");
 
+  // The board's column filter (the maintainer's request): one column or the closed ones, remembered per project.
+  const cfStore = {};
+  const cfLs = win.localStorage;
+  win.localStorage = { getItem: (k) => (k in cfStore ? cfStore[k] : null), setItem: (k, v) => { cfStore[k] = String(v); }, removeItem: (k) => { delete cfStore[k]; } };
+  await go("#/p/maity/inbox"); await go("#/p/maity/board"); for (let k = 0; k < 4; k++) await tick();
+  const cfCols = () => main.querySelectorAll("section.column").map((c) => c.getAttribute("aria-label"));
+  const cfCards = () => main.querySelectorAll("article.card").map((a) => a.attrs["data-card"]);
+  const cfAll = cfCols().length;
+  expect(byId("board-column") && byId("board-column").value === "" && cfAll >= 7, "board: the column filter shows every column by default " + JSON.stringify(cfCols()));
+  byId("board-column").value = "closed"; byId("board-column").dispatch("change"); await tick();
+  expect(JSON.stringify(cfCols()) === JSON.stringify(["Done", "Cancelled"]) && cfCards().includes("tsk-0003") && cfCards().includes("tsk-0002") && !cfCards().includes("tsk-0006")
+    && cfStore["maity.board.column.maity"] === "closed", "board: Closed shows the done and cancelled columns only, and is remembered " + JSON.stringify([cfCols(), cfCards()]));
+  await go("#/p/maity/inbox"); await go("#/p/maity/board"); for (let k = 0; k < 4; k++) await tick();
+  expect(byId("board-column").value === "closed" && JSON.stringify(cfCols()) === JSON.stringify(["Done", "Cancelled"]), "board: the column filter is there again on the next visit");
+  byId("board-column").value = "in_progress"; byId("board-column").dispatch("change"); await tick();
+  byId("board-member").value = "agt-a"; byId("board-member").dispatch("change"); await tick();
+  expect(JSON.stringify(cfCols()) === JSON.stringify(["In progress"]) && cfCards().includes("tsk-0001") && !cfCards().includes("tsk-0007"),
+    "board: the column filter works with the member filter " + JSON.stringify(cfCards()));
+  await go("#/p/maity/tasks/tsk-0003"); for (let k = 0; k < 4; k++) await tick();
+  expect(main.querySelectorAll("article.card.wanted").length === 1 && cfCols().length === cfAll, "board: a card asked for by its link is shown whatever the column filter says");
+  await go("#/p/maity/board"); for (let k = 0; k < 4; k++) await tick();
+  byId("board-column").value = ""; byId("board-column").dispatch("change"); await tick();
+  expect(cfCols().length === cfAll && !("maity.board.column.maity" in cfStore), "board: every column again, nothing remembered");
+  win.localStorage = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); }, removeItem: () => { throw new Error("blocked"); } };
+  await go("#/p/maity/inbox"); await go("#/p/maity/board"); for (let k = 0; k < 4; k++) await tick();
+  byId("board-column").value = "review"; byId("board-column").dispatch("change"); await tick();
+  expect(JSON.stringify(cfCols()) === JSON.stringify(["Review"]), "board: with storage blocked the filter still works");
+  win.localStorage = cfLs;
+  await go("#/p/maity/inbox");
+
   // Markdown in a chat (js/markdown.js): text nodes only, https links only.
   const MD = (src) => { const box = document.createElement("div"); win.Maity.dom.append(box, win.Maity.markdown(src)); return box; };
   const tagsOf = (box) => box.childNodes.filter((n) => n.tagName).map((n) => n.tagName.toLowerCase());
@@ -2106,8 +2143,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("state-reason").value = "typed, not sent";
   win.Maity.api.get = bump("maity");
   await fireIntervals(); await tick(); await tick(); await tick();
-  expect(byId("state-reason") && byId("state-reason").value === "typed, not sent" && text(main).includes("What waits for you changed"),
-    "with the Project settings panel open the empty list is not reloaded; the panel and its text stay");
+  expect(byId("state-reason") && byId("state-reason").value === "typed, not sent" && onSettings(),
+    "on the Settings tab a changed count reloads nothing: the page and its text stay");
   await projectSettings(); await tick();
   // An open entry on screen: the change is offered as a reload instead.
   win.Maity.api.get = realGet2;
@@ -2427,8 +2464,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(header.querySelector("nav.switcher") !== switcherBefore && header.querySelectorAll("nav.switcher").length === 1,
     "the count re-read replaces the switcher, once");
   byId("state-select").parentNode.dispatch("submit"); await tick(); await tick();
-  expect(text(header).includes("Freeze"), "state changed to freeze");
-  await projectSettings(); await tick();
+  expect(text(header).includes("Freeze") && onSettings() && text(main).includes("State saved.")
+    && header.querySelectorAll("nav.views a").find((a) => a.textContent === "Settings").getAttribute("aria-current") === "page",
+    "state changed to freeze; the save stays on the Settings tab, says so, the tab marked current");
   byId("absence-until").value = "2026-10-25T08:00"; byId("absence-scope").value = "fixes only";
   byId("absence-until").parentNode.dispatch("submit"); await tick(); await tick();
   expect(text(header.querySelector(".project-state")).includes("Away until") && text(header.querySelector(".absence")).includes("While away: fixes only"), "absence set");
@@ -2441,7 +2479,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const sigSel = byId("signing-select");
   expect(sigSel && sigSel.value === "optional", "signing: the switch shows the project's policy");
   sigSel.value = "required"; sigSel.dispatch("change"); await tick(); await tick(); await tick();
-  const impact = header.querySelector(".signing-impact");
+  const impact = main.querySelector(".signing-impact");
   expect(text(impact).includes("This agent calls with a bearer token and would be refused (signature_required) until it signs") && text(impact).includes("Agent B · crd-b-0003")
     && !text(impact).includes("crd-d-0001") && !text(impact).includes("crd-c-0002") && !text(impact).includes("Agent A ·"),
     "signing: the agents last using a bearer token are listed, revoked and signed ones are not");
@@ -2457,7 +2495,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await projectSettings(); await tick();
   expect(byId("signing-select").value === "required", "signing: the switch reads required after the change");
   byId("signing-select").value = "optional"; byId("signing-select").dispatch("change"); await tick();
-  expect(!text(header.querySelector(".signing-impact")).length, "signing: back to optional needs no check");
+  expect(!text(main.querySelector(".signing-impact")).length, "signing: back to optional needs no check");
   byId("signing-reason").value = "back to optional";
   byId("signing-select").parentNode.dispatch("submit"); await tick(); await tick();
   expect(JSON.stringify(sigPatches[1][1]) === JSON.stringify({ policy: { signing: "optional" }, reason: "back to optional" }), "signing: back to optional is sent");
@@ -2494,23 +2532,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const SVG = [0x3c, 0x73, 0x76, 0x67, 0x20, 0x78, 0x6d, 0x6c, 0x6e, 0x73, 0x3d, 0x22];
   const pick = async (id, file) => { const i = byId(id); i.files = [file]; i.dispatch("change"); for (let k = 0; k < 6; k++) await tick(); };
   await projectSettings(); await tick();
-  expect(header.querySelector(".images") && text(header.querySelector(".images")).includes("from the repository's forge")
-    && text(header.querySelector(".images")).includes("uploaded here") && byId("upload-logo"), "images: what shows now and where it comes from");
+  expect(main.querySelector(".images") && text(main.querySelector(".images")).includes("from the repository's forge")
+    && text(main.querySelector(".images")).includes("uploaded here") && byId("upload-logo"), "images: what shows now and where it comes from");
   await pick("upload-logo", fakeFile(SVG, 0, "image/svg+xml"));
-  expect(!imgPuts.length && text(header).includes("Logo not uploaded: not a PNG, JPEG or WebP image"), "images: an SVG is refused by its bytes, before sending");
+  expect(!imgPuts.length && text(main).includes("Logo not uploaded: not a PNG, JPEG or WebP image"), "images: an SVG is refused by its bytes, before sending");
   await pick("upload-logo", fakeFile(PNG, 1024 * 1024 + 1));
-  expect(!imgPuts.length && text(header).includes("Logo not uploaded: larger than 1 MiB"), "images: over 1 MiB is refused before sending");
+  expect(!imgPuts.length && text(main).includes("Logo not uploaded: larger than 1 MiB"), "images: over 1 MiB is refused before sending");
   await pick("upload-logo", fakeFile(WEBP, 2000, "image/png"));
   expect(JSON.stringify(imgPuts[0]) === JSON.stringify(["PUT", "/projects/maity/logo", "image/webp", 2000]),
     "images: the upload is a PUT of the raw file, typed by its bytes (WebP, whatever the file claims)");
   // The panel opens again by itself and says what happened.
-  const removeLogo = btn(header, "Remove the uploaded logo");
-  expect(removeLogo && text(header.querySelector(".images")).includes("Logo uploaded.") && text(header.querySelector(".images")).includes("uploaded here"),
+  const removeLogo = btn(main, "Remove the uploaded logo");
+  expect(removeLogo && text(main.querySelector(".images")).includes("Logo uploaded.") && text(main.querySelector(".images")).includes("uploaded here"),
     "images: after an upload the panel says so, and the logo can be removed");
   removeLogo.click(); await tick(); await tick(); await tick();
   expect(JSON.stringify(imgPuts[1]) === JSON.stringify(["DELETE", "/projects/maity/logo"]) && header.querySelector(".bar .project-mark").getAttribute("src") === "fixtures/maity/logo.png",
     "images: removed, the forge's logo applies again");
-  expect(text(header).includes("Uploaded logo removed; the forge's logo, or a monogram, shows again."), "images: the removal is said too");
+  expect(text(main).includes("Uploaded logo removed; the forge's logo, or a monogram, shows again."), "images: the removal is said too");
   await projectSettings(); await tick();
   // A hub before /me's logo: the switcher falls back to GET /projects.
   const realGet7 = win.Maity.api.get;
@@ -2527,7 +2565,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.patch = (p, b) => { if ("repository" in b) repoPatches.push(b); return repoRealPatch(p, b); };
   await go("#/p/maity/inbox"); await projectSettings();
   const repoIn = () => byId("repo-url");
-  const repoSave = async () => { header.querySelector("form.repository-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick(); };
+  const repoSave = async () => { main.querySelector("form.repository-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick(); };
   expect(repoIn() && repoIn().value === "https://github.com/oliver-zehentleitner/maity", "repository: Project settings shows the project's repository");
   repoIn().value = "http://github.com/a/b"; await repoSave();
   expect(!repoPatches.length && text(byId("repo-url-error")).startsWith("Must be https://") && repoIn().getAttribute("aria-invalid") === "true",
@@ -2802,25 +2840,27 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && setupCards.every((c) => text(c).includes("Setup") && text(c).includes("Unclaimed")),
     "create: the three setup cards on the new project's board, open, marked Setup");
   await projectSettings();
-  const memPanel = header.querySelector("section.memory-panel");
+  const memPanel = main.querySelector("section.memory-panel");
   expect(memPanel && text(memPanel).includes("Keep the Why: joining agents load the Keep the Why skill") && memPanel.querySelectorAll("a.id-ref").length === 3
     && memPanel.querySelectorAll("a.id-ref").every((a) => /^#\/p\/dogfood\/tasks\/tsk-/.test(a.getAttribute("href"))) && !memPanel.querySelector("select, input"),
     "settings: the memory provider read only, with links to its setup cards");
-  expect(byId("badge-select").value === "members" && text(header.querySelector("form.badge-form .paste-line")).endsWith("/badge/dogfood.svg)](" + (win.location.origin && win.location.origin !== "null" ? win.location.origin : "https://<hub>") + "/#/p/dogfood/overview)")
-    && text(header.querySelector("form.badge-form .paste-line")).startsWith("[![maity]("),
+  expect(byId("badge-select").value === "members" && text(main.querySelector("form.badge-form .paste-line")).endsWith("/badge/dogfood.svg)](" + (win.location.origin && win.location.origin !== "null" ? win.location.origin : "https://<hub>") + "/#/p/dogfood/overview)")
+    && text(main.querySelector("form.badge-form .paste-line")).startsWith("[![maity]("),
     "settings: the badge is on (members) after the Maity badge was chosen, its README snippet shown");
   const bgPatches = [];
   const bgPatch = win.Maity.api.patch;
   win.Maity.api.patch = (p, b) => { bgPatches.push([p, b]); return bgPatch(p, b); };
   byId("badge-select").value = "agents_online";
-  header.querySelector("form.badge-form").dispatch("submit"); await tick();
+  main.querySelector("form.badge-form").dispatch("submit"); await tick();
   expect(!bgPatches.length, "settings: a badge change without a reason is not sent");
   byId("badge-select").value = "agents_online"; byId("badge-reason").value = "Show who works";
-  header.querySelector("form.badge-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  main.querySelector("form.badge-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(bgPatches.length === 1 && JSON.stringify(bgPatches[0][1]) === JSON.stringify({ policy: { badge: "agents_online" }, reason: "Show who works" }),
     "settings: the badge changed as a policy change with its reason");
+  expect(onSettings() && main.querySelector("form.badge-form") && byId("badge-select").value === "agents_online",
+    "settings: after the save the page stays on Settings and shows the new badge (the maintainer's report)");
   win.Maity.api.patch = bgPatch;
-  if (header.querySelector("section.memory-panel")) await projectSettings();
+  if (main.querySelector("section.memory-panel")) await projectSettings();
   // None: only the Maity badge is offered; without a repository the cards wait for one.
   await go("#/new");
   byId("project-name").value = "Plain"; byId("project-name").dispatch("input");
@@ -2834,9 +2874,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "create: None sends the Keep the Why options false and the unticked Maity badge false " + JSON.stringify(posts[posts.length - 1]));
   win.onhashchange(); for (let k = 0; k < 4; k++) await tick();
   await projectSettings();
-  expect(text(header.querySelector("section.memory-panel")).includes("None: the project works without a memory provider.")
-    && text(header.querySelector("section.memory-panel")).includes("No setup option was chosen.") && byId("badge-select").value === "off"
-    && text(header.querySelector("form.badge-form")).includes("While the badge is off, its address answers not found."),
+  expect(text(main.querySelector("section.memory-panel")).includes("None: the project works without a memory provider.")
+    && text(main.querySelector("section.memory-panel")).includes("No setup option was chosen.") && byId("badge-select").value === "off"
+    && text(main.querySelector("form.badge-form")).includes("While the badge is off, its address answers not found."),
     "settings: None, nothing chosen, the badge off");
   await projectSettings();
   // Keep the Why without a repository: the options are kept, the cards wait for the repository.
@@ -2846,8 +2886,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   main.querySelector("form").dispatch("submit"); await tick(); await tick();
   win.onhashchange(); for (let k = 0; k < 4; k++) await tick();
   await projectSettings();
-  expect(text(header.querySelector("section.memory-panel")).includes("Chosen: Set up Keep the Why in the repository; Add the Maity badge to the README.")
-    && text(header.querySelector("section.memory-panel")).includes("The cards are made when the project gets a repository."),
+  expect(text(main.querySelector("section.memory-panel")).includes("Chosen: Set up Keep the Why in the repository; Add the Maity badge to the README.")
+    && text(main.querySelector("section.memory-panel")).includes("The cards are made when the project gets a repository."),
     "settings: options chosen without a repository wait for it");
   await projectSettings();
   // A hub before §6.21 names only keep_the_why: the dropdown sends that alias, no setup options.
@@ -2884,9 +2924,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.onhashchange(); for (let k = 0; k < 4; k++) await tick();
   // The settings view of a project with None, its setup processed with nothing chosen, and its badge on.
   await go("#/p/sample/inbox"); await projectSettings();
-  expect(text(header.querySelector("section.memory-panel")).includes("None") && text(header.querySelector("section.memory-panel")).includes("No setup option was chosen.")
-    && byId("badge-select").value === "members" && !header.querySelector("img.badge-preview")
-    && text(header.querySelector("form.badge-form .paste-line")).includes("/badge/sample.svg"),
+  expect(text(main.querySelector("section.memory-panel")).includes("None") && text(main.querySelector("section.memory-panel")).includes("No setup option was chosen.")
+    && byId("badge-select").value === "members" && !main.querySelector("img.badge-preview")
+    && text(main.querySelector("form.badge-form .paste-line")).includes("/badge/sample.svg"),
     "settings: a project with None and its badge on; no preview without a hub to serve it");
   await projectSettings();
   // A first-time human: the empty board and inbox say where their content comes from.
@@ -3113,19 +3153,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Blind removal (§8.5, #206): a closed group chat's message the admin was never in, by its number.
   await go("#/p/maity/inbox"); await projectSettings();
   byId("remove-seq").value = "x1";
-  header.querySelector("form.remove-reported").dispatch("submit"); await tick();
-  expect(text(header).includes("Not removed: the message number is a whole number") && gcRemoves.length === 1, "blind removal: the number is checked before sending");
+  main.querySelector("form.remove-reported").dispatch("submit"); await tick();
+  expect(text(main).includes("Not removed: the message number is a whole number") && gcRemoves.length === 1, "blind removal: the number is checked before sending");
   let gcAsked = "";
   win.confirm = (q) => { gcAsked = q; return true; };
   byId("remove-seq").value = "5020"; byId("remove-reason").value = "typo";
-  header.querySelector("form.remove-reported").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  main.querySelector("form.remove-reported").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   const gc5010 = (await win.Maity.api.get("/projects/maity/conversations/cnv-0007/messages?before=5021&limit=1")).items[0];
-  expect(gcRemoves[1][1].expect === "closed_chat_message" && text(header).includes("number 5020 is no message of a closed group chat in this project; nothing was removed")
+  expect(gcRemoves[1][1].expect === "closed_chat_message" && text(main).includes("number 5020 is no message of a closed group chat in this project; nothing was removed")
     && gc5010.body !== null, "blind removal: always sends expect, so a number that is no closed chat's message removes nothing");
   byId("remove-seq").value = "4990"; byId("remove-reason").value = "reported by a reviewer";
-  header.querySelector("form.remove-reported").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  main.querySelector("form.remove-reported").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(JSON.stringify(gcRemoves[2]) === JSON.stringify(["/projects/maity/events/4990/redact", { reason: "reported by a reviewer", expect: "closed_chat_message" }])
-    && text(header).includes("Message 4990 is removed.") && gcAsked.startsWith("Remove the closed group chat's message with number 4990"),
+    && text(main).includes("Message 4990 is removed.") && gcAsked.startsWith("Remove the closed group chat's message with number 4990"),
     "blind removal: an admin removes a closed chat's message it was never in, by its number, without reading it");
   win.confirm = gcConfirm;
   win.Maity.api.post = gcPost2;
@@ -3221,7 +3261,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/chat/new"); await hgSettle();
   expect(!main.querySelector("form.group-form") && text(main).includes("there is none to create"), "hub without group chats: nor the form");
   await go("#/p/maity/inbox"); await projectSettings(); await hgSettle();
-  expect(header.querySelector(".attach-admin") && !header.querySelector("form.remove-reported"), "hub without group chats: no removal of a closed group chat's message");
+  expect(main.querySelector(".attach-admin") && !main.querySelector("form.remove-reported"), "hub without group chats: no removal of a closed group chat's message");
   await projectSettings();
   await go("#/all"); await hgSettle();
   expect(!main.querySelector(".observe-note"), "hub without group chats: nothing to read along in is named");
@@ -3238,7 +3278,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/inbox"); await go("#/p/maity/chat"); await hgSettle();
   expect(main.querySelector("a.new-group") && !text(main).includes("This hub has no group chats yet."), "hub with group chats: New group chat is offered");
   await go("#/p/maity/inbox"); await projectSettings(); await hgSettle();
-  expect(header.querySelector("form.remove-reported"), "hub with group chats: the removal of a closed group chat's message is offered");
+  expect(main.querySelector("form.remove-reported"), "hub with group chats: the removal of a closed group chat's message is offered");
   await projectSettings();
   await go("#/p/maity/chat/agt-b"); await hgSettle();
   expect(hgChooser() && !hgChooser().hidden, "hub with attachments: Attach files is offered");
@@ -3363,7 +3403,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       name: null, type: null, kind: null, sha256: null, width: null, height: null, message_seq: null }]), next_cursor: null }))
     : atAll(p));
   await go("#/p/maity/inbox"); await projectSettings(); for (let k = 0; k < 4; k++) await tick();
-  const atAdmin = header.querySelector(".attach-admin");
+  const atAdmin = main.querySelector(".attach-admin");
   expect(atAdmin && text(atAdmin).includes("draft.png") && text(atAdmin).includes("4.0 KB · Agent B") && !text(atAdmin).includes("null"),
     "attachments: the admin sees everyone's pending uploads, another member's by size and uploader only");
   win.Maity.api.getAll = atAll;
@@ -3422,7 +3462,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   let atAskedAll = 0;
   win.Maity.api.getAll = (p) => (/\/attachments\?status=pending/.test(p) ? (atAskedAll++, atAll2(p)) : atAll2(p));
   await go("#/p/maity/inbox"); await projectSettings(); for (let k = 0; k < 4; k++) await tick();
-  expect(atAskedAll === 0 && text(header.querySelector(".attach-admin")).includes("This hub keeps no files yet."), "attachments: settings ask a hub without them no more");
+  expect(atAskedAll === 0 && text(main.querySelector(".attach-admin")).includes("This hub keeps no files yet."), "attachments: settings ask a hub without them no more");
   await projectSettings();
   win.Maity.api.getAll = atAll2;
   win.Maity.api.postRaw = atRaw; win.Maity.api.post = atPost; win.Maity.api.del = atDel; win.Maity.api.attachmentUrl = atUrl;
@@ -3856,11 +3896,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(ovPart("overview-board")).includes("No cards yet.") && text(ovPart("overview-requests")).includes("Nothing waits for an answer.")
     && text(ovPart("overview-links")).includes("No repository.") && text(ovPart("overview-links")).includes("No Keep the Why dashboard is published.")
     && text(ovPart("overview-links")).includes("dashboard-state line"), "overview: empty states, and for an owner where the Keep the Why link comes from");
-  btn(ovPart("overview-links"), "Set the repository").click(); await tick();
-  expect(header.all().some((e) => e.id === "project-panel"), "overview: Set the repository opens Project settings");
   const badPr = ovPart("overview-reports").querySelector("li");
   expect(!badPr.querySelectorAll("a").some((a) => (a.getAttribute("href") || "").startsWith("javascript")) && text(badPr).includes("PR #9 merged")
     && text(badPr).includes("does not match what was reported"), "overview: a pull request URL that is no https link stays text; a mismatch is said");
+  btn(ovPart("overview-links"), "Set the repository").click(); win.onhashchange(); for (let k = 0; k < 6; k++) await tick();
+  expect(onSettings() && main.all().some((e) => e.id === "project-panel") && byId("repo-url"), "overview: Set the repository opens the Settings tab at the repository");
   // A hub without the endpoint: links and members still, the counts said missing.
   win.Maity.api.get = (p) => (p.includes("/overview") ? Promise.reject(new win.Maity.api.ApiError("Not found", 404, p, "not_found", {})) : ovGet(p));
   await go("#/p/maity/overview");
@@ -4515,12 +4555,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/board"); await projectSettings();
   expect(!!byId("project-language"), "language: human owner can edit project language");
   byId("project-language").value = "de";
-  header.querySelector("form.project-language").dispatch("submit"); await tick(); await tick();
+  main.querySelector("form.project-language").dispatch("submit"); await tick(); await tick();
   expect(JSON.stringify(languageWrites[0]) === JSON.stringify(["/projects/maity", { settings: { language: "de" } }]), "language: project patch changes only language");
   win.Maity.api.get = (path) => languageGet(path).then((value) => path === "/me"
     ? Object.assign({}, value, { projects: value.projects.map((p) => Object.assign({}, p, { role: "member" })) }) : value);
   await go("#/p/maity/inbox"); await projectSettings();
-  expect(!byId("project-language") && text(header).includes("Project language: Deutsch") && !byId("state-select"), "language: member sees read-only language without admin controls");
+  expect(!byId("project-language") && text(main).includes("Project language: Deutsch") && !byId("state-select"), "language: member sees read-only language without admin controls");
+  expect(onSettings() && header.querySelectorAll("nav.views a").some((a) => a.textContent === "Settings") && main.querySelector("section.memory-panel")
+    && !main.querySelector("form.badge-form"), "settings: a member has the tab too, read only: the memory shown, no admin form");
   win.Maity.api.get = languageGet;
   const oldNotification = win.Notification;
   const oldAvailable = win.Maity.notify.state.available;
@@ -4559,14 +4601,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!!byId("onboarding-briefing") && byId("onboarding-target").querySelectorAll("option").some((o) => o.attrs.value === "coordinator" && "selected" in o.attrs), "onboarding: default coordinator is editable");
   byId("onboarding-briefing").value = "Report here: **welcome**";
   byId("onboarding-target").value = "role:reviewer";
-  header.querySelector("form.project-onboarding").dispatch("submit"); await tick(); await tick();
+  main.querySelector("form.project-onboarding").dispatch("submit"); await tick(); await tick();
   expect(JSON.stringify(onboardingWrites[0]) === JSON.stringify(["/projects/maity", { settings: { onboarding: { briefing: "Report here: **welcome**", check_in_with: "role:reviewer" } } }]), "onboarding: only briefing and target are written");
-  expect(text(header).includes("Version 1") && text(header).includes("Onboarding saved."), "onboarding: saved version and status appear");
+  expect(text(main).includes("Version 1") && text(main).includes("Onboarding saved."), "onboarding: saved version and status appear");
   byId("onboarding-briefing").value = "😀".repeat(16385);
-  header.querySelector("form.project-onboarding").dispatch("submit"); await tick();
-  expect(onboardingWrites.length === 1 && text(header).includes("16,384"), "onboarding: Unicode character cap prevents oversized write");
+  main.querySelector("form.project-onboarding").dispatch("submit"); await tick();
+  expect(onboardingWrites.length === 1 && text(main).includes("16,384"), "onboarding: Unicode character cap prevents oversized write");
   byId("onboarding-briefing").value = ""; byId("onboarding-target").value = "";
-  header.querySelector("form.project-onboarding").dispatch("submit"); await tick(); await tick();
+  main.querySelector("form.project-onboarding").dispatch("submit"); await tick(); await tick();
   expect(JSON.stringify(onboardingWrites[1][1]) === JSON.stringify({ settings: { onboarding: {} } }), "onboarding: empty object disables check-in and clears default text");
   win.Maity.api.get = (path) => onboardingGet(path).then((v) => path === "/projects/maity"
     ? { ...v, settings: Object.fromEntries(Object.entries(v.settings).filter(([k]) => k !== "onboarding")) } : v);
