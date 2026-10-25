@@ -22,6 +22,7 @@ from fastapi.responses import JSONResponse, Response
 from markdown_it import MarkdownIt
 from pydantic import Field
 from sqlalchemy import Connection, insert, select, update
+from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
 from maity_hub import briefings, clock, events, idempotency, instances
@@ -796,6 +797,16 @@ def _create_for_join(conn: Connection, row: Any) -> str:
     ).first()
     if taken is not None:
         raise not_found()
-    return create_profile(
-        conn, row.created_by, row.new_agent_handle, row.new_agent_display_name, None
-    )
+    # `POST /agents` does not take the project lock: a profile of that handle may land
+    # after the check above. Its `invalid`, or the unique constraint, is still a join
+    # that no longer works, never a 400 or a 500 that tells the holder of the link more.
+    try:
+        return create_profile(
+            conn, row.created_by, row.new_agent_handle, row.new_agent_display_name, None
+        )
+    except IntegrityError:
+        raise not_found() from None
+    except ApiError as error:
+        if error.code == "invalid":
+            raise not_found() from None
+        raise

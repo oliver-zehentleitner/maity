@@ -8,9 +8,11 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, select, update
+from sqlalchemy.exc import IntegrityError
 
 from maity_hub import clock, events
 from maity_hub import tables as t
+from maity_hub.routes import joins
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_placements import REPOSITORY, Setup, events_of, placed
@@ -97,6 +99,26 @@ def test_a_new_profile_is_created_at_the_exchange(setup: Setup, make_client: Cli
         ).scalar_one()
     assert owner == setup.owner.id and briefing == "You own the Runners view."
     assert placement_row(setup, placement["id"]).membership_id is not None
+
+
+@pytest.mark.parametrize("late", ["invalid", "unique"])
+def test_a_handle_taken_during_the_exchange_is_not_found(
+    setup: Setup, make_client: ClientFactory, monkeypatch: pytest.MonkeyPatch, late: str
+) -> None:
+    placement = placed(setup, agent={"handle": "agent-f", "display_name": "Agent F"})
+    picked = pick_up(setup, placement).json()
+    real = joins.create_profile
+
+    def racing(conn: Any, *args: Any) -> str:  # a POST /agents lands after the check
+        if late == "unique":
+            raise IntegrityError("INSERT", {}, Exception("duplicate handle"))
+        real(conn, *args)  # the competing profile
+        return real(conn, *args)
+
+    monkeypatch.setattr(joins, "create_profile", racing)
+    refused = exchange(make_client(), picked)
+    assert refused.status_code == 404, refused.text
+    assert placement_row(setup, placement["id"]).membership_id is None
 
 
 def test_a_lost_answer_is_recovered_and_three_pickups_is_all(
