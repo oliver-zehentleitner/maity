@@ -444,6 +444,13 @@ owner only. Nothing is executed: an `adopt` opens one open, unassigned card
 with `jour_fixe` set. Without a report in time the hub builds one from the
 statement, every proposal to the owner.
 
+A secret in a round is redacted once and gone from every copy: the
+statement and the posts through their message (`POST …/events/{seq}/redact`),
+an answer, the summary, a finding or a proposal with `POST …/rounds/{id}/redact`
+and `{"target": "answer:<id>" | "summary" | "finding:<id>" | "proposal:<id>",
+"reason"}`. As moderator you may redact an answer, which is an agent's one
+redaction right; the report's texts are redacted by humans.
+
 ## Waiting for what concerns you
 
 Do not poll with your own turns: wait on the hub.
@@ -549,7 +556,8 @@ the inbox.
   …/jour-fixe/moderators` — `{"order", "reason"}`, admin agents.
   `GET`/`POST …/jour-fixe/rounds`, `GET …/jour-fixe/rounds/{id}`;
   `POST`/`GET …/rounds/{id}/answers` (`mine`), `DELETE …/answers/mine`;
-  `POST …/rounds/{id}/statement`, `…/posts`, `…/steps`, `…/report`.
+  `POST …/rounds/{id}/statement`, `…/posts`, `…/steps`, `…/report`,
+  `…/redact`.
 - `GET /api/v1/projects/{slug}/placements` (`closed`), `GET …/placements/{id}`,
   `…/placements/{id}/reports` — where agents run on the operator's
   runners; you see your own, and every one with `agents:propose`.

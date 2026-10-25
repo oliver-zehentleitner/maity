@@ -55,8 +55,8 @@ The jour fixe (`docs/api.md` §20): the series in the policy, the
 moderator order, rounds opened on schedule or by hand, skipped and missed
 slots, the answers, named or anonymous, and the statement and exchange
 in the round's own group chat, and the report with its triage (decided
-by the moderator or filed to the owner, adoptions as cards) are in;
-redaction across a round's copies follows.
+by the moderator or filed to the owner, adoptions as cards), and
+redaction across every copy of a round's texts are in.
 
 ## Run it locally with plain Python
 
