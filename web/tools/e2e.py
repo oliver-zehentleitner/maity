@@ -385,6 +385,13 @@ def watch_page(run: Run, page: Page) -> None:
     page.on("requestfailed", request_failed)
 
 
+def expect_inbox_empty(page: Page) -> None:
+    """The empty inbox says "Nothing waits for you." while the hub has no
+    notifications route, and "No open requests." once it has one."""
+    empty = re.compile(r"^(Nothing waits for you\.|No open requests\.)$")
+    expect(page.get_by_text(empty)).to_be_visible()
+
+
 def project_settings(page: Page) -> None:
     """Opens the project's Settings tab (its last tab), drawn afresh."""
     page.locator("nav.views").get_by_role("link", name="Settings", exact=True).click()
@@ -623,7 +630,7 @@ def scenario(run: Run, page: Page) -> None:
 
     run.step("the agent asks, blocking its card; its maity wait runs")
     page.locator("nav.views").get_by_role("link", name="Inbox", exact=True).click()
-    expect(page.get_by_text("Nothing waits for you.")).to_be_visible()
+    expect_inbox_empty(page)
     out = run.maity(
         alpha,
         "ask",
@@ -679,7 +686,7 @@ def scenario(run: Run, page: Page) -> None:
         expect(picker).to_be_hidden()
         free.fill("")
         page.locator("li.entry.current").get_by_role("button", name="Ship it", exact=True).click()
-        expect(page.get_by_text("Nothing waits for you.")).to_be_visible()
+        expect_inbox_empty(page)
         expect(
             page.locator("nav.switcher a", has_text="E2E Alpha").locator(".count")
         ).to_have_count(0)
@@ -776,7 +783,7 @@ def scenario(run: Run, page: Page) -> None:
     current.get_by_role("button", name="Send", exact=True).click()
     expect(page.locator("li.entry.current")).to_contain_text("May the beta agent tag 0.1.0?")
     page.locator("li.entry.current").get_by_role("button", name="go", exact=True).click()
-    expect(page.get_by_text("Nothing waits for you.")).to_be_visible()
+    expect_inbox_empty(page)
     expect(switcher.locator(".count")).to_have_count(0)
     run.shot(page, "all-answered")
     replies = run.maity(beta, "resume", "--json")
@@ -886,7 +893,7 @@ def id_links_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
     current = page.locator("li.entry.current")
     current.locator("textarea").fill("After the release.")
     current.get_by_role("button", name="Send", exact=True).click()
-    expect(page.get_by_text("Nothing waits for you.")).to_be_visible()
+    expect_inbox_empty(page)
     no_problems(run, "id links")
 
 
