@@ -113,17 +113,20 @@ def run(engine: Engine, env: MailEnvironment, secret_key: bytes | None, public_u
                 )
             ).scalars()
         )
+    budget = int(resolved.value("max_per_hour"))
     queued = 0
     for human_id in humans:
         try:
             with engine.begin() as conn:
-                queued += for_human(conn, human_id, env.signing_key, public_url)
+                queued += for_human(conn, human_id, env.signing_key, public_url, budget)
         except Exception:  # one human's failure must not stop the others
             log.exception("notification mail for %s failed", human_id)
     return queued
 
 
-def for_human(conn: Connection, human_id: str, signing_key: bytes, public_url: str) -> int:
+def for_human(
+    conn: Connection, human_id: str, signing_key: bytes, public_url: str, budget: int = 500
+) -> int:
     row = conn.execute(
         select(t.notification_settings)
         .where(t.notification_settings.c.human_id == human_id)
@@ -159,6 +162,18 @@ def for_human(conn: Connection, human_id: str, signing_key: bytes, public_url: s
         return queued
     mailable = [i for i in pending if i.kind in MAILED_KINDS]
     state = _state(conn, human_id)
+    if _instance_full(conn, budget):
+        # Over the instance's budget nothing waits in a queue of its own: the human's
+        # items stay pending and go out merged into their next mail (§18.5).
+        if state.held_since is None and mailable:
+            _set_state(conn, human_id, held_since=now)
+        return queued
+    if state.held_since is not None:
+        due = [i for i in mailable if modes.get(i.kind) in ("immediate", "hourly", "daily")]
+        if due:
+            queued += _send(conn, row, due, prefs, signing_key, public_url, zone)
+        _set_state(conn, human_id, held_since=None, hourly_at=now, daily_at=now)
+        return queued
     immediate = [i for i in mailable if modes.get(i.kind) == "immediate"]
     capped = _immediate_this_hour(conn, human_id, now) >= IMMEDIATE_PER_HOUR
     if immediate and not capped and min(i.at for i in immediate) <= now - WINDOW:
@@ -197,6 +212,24 @@ def _quiet(hours: Any, local: datetime) -> bool:
     return start <= now < end if start <= end else now >= start or now < end
 
 
+def _instance_full(conn: Connection, budget: int) -> bool:
+    """The notification mail of the last hour, sent or waiting, has reached the
+    instance's `max_per_hour` (§16.2)."""
+    sent = conn.execute(
+        select(func.count()).where(
+            t.mail_delivery.c.kind == "notification",
+            t.mail_delivery.c.outcome == "sent",
+            t.mail_delivery.c.at >= clock.now() - timedelta(hours=1),
+        )
+    ).scalar_one()
+    waiting = conn.execute(
+        select(func.count()).where(
+            t.mail_outbox.c.kind == "notification", t.mail_outbox.c.status == "waiting"
+        )
+    ).scalar_one()
+    return int(sent) + int(waiting) >= budget
+
+
 def _immediate_this_hour(conn: Connection, human_id: str, now: datetime) -> int:
     return int(
         conn.execute(
@@ -223,7 +256,7 @@ def _state(conn: Connection, human_id: str) -> Any:
     return found
 
 
-def _set_state(conn: Connection, human_id: str, **values: datetime) -> None:
+def _set_state(conn: Connection, human_id: str, **values: datetime | None) -> None:
     conn.execute(
         update(t.notification_mail_state)
         .where(t.notification_mail_state.c.human_id == human_id)

@@ -265,3 +265,30 @@ def test_a_digest_lists_fifty_and_counts_the_rest(migrated: Engine) -> None:
     assert subject == "[Maity] 53 updates" and kinds == ["card"]
     assert body.count("\n- ") + body.startswith("- ") == 50
     assert "and 3 more: https://hub.example/#/" in body
+
+
+def test_over_the_instance_budget_mail_waits_and_merges_into_one(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    from maity_hub import instance_settings as store
+
+    owner, agent = setup(make_client, migrated)
+    run(migrated)  # starts the digest clocks
+    with migrated.begin() as conn:
+        store.put(conn, "mail.max_per_hour", 1, None)
+        conn.execute(
+            t.mail_delivery.insert().values(kind="notification", outcome="sent", at=clock.now())
+        )
+    ask(agent)  # immediate
+    agent.post(f"/projects/maity/conversations/{agent.id}/messages", {"body": "hourly"})
+    at(minutes=5)
+    run(migrated)
+    assert notifications(migrated) == []  # held: the instance is at its budget
+    at(minutes=75)  # the hour's sent mail has left the window
+    run(migrated)
+    [merged] = notifications(migrated)
+    assert merged.subject == "[Maity] 2 updates"
+    assert "asks: Which?" in merged.body and "/chat/" in merged.body
+    at(minutes=140)
+    run(migrated)
+    assert len(notifications(migrated)) == 1  # nothing twice

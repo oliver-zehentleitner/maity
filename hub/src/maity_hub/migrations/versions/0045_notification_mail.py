@@ -2,7 +2,7 @@
 
 `mail_item_sent` holds one row per human and item a notification mail carried, so an
 item goes out once. `notification_mail_state` holds when a human's last hourly and daily
-digest left.
+digest left, and since when their mail is held over the instance budget.
 
 Revision ID: 0045
 Revises: 0036
@@ -47,6 +47,7 @@ def upgrade() -> None:
         sa.Column("human_id", sa.String(length=40), nullable=False),
         sa.Column("hourly_at", TIMESTAMP, nullable=True),
         sa.Column("daily_at", TIMESTAMP, nullable=True),
+        sa.Column("held_since", TIMESTAMP, nullable=True),
         sa.ForeignKeyConstraint(
             ["human_id"], ["human.id"], name=op.f("fk_notification_mail_state_human_id_human")
         ),

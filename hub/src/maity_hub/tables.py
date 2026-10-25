@@ -1170,5 +1170,6 @@ notification_mail_state = Table(
     _ref("human_id", "human.id", primary_key=True),
     Column("hourly_at", UtcDateTime),
     Column("daily_at", UtcDateTime),
+    Column("held_since", UtcDateTime),  # held over the instance budget (§18.5)
     **MYSQL_TABLE,
 )
