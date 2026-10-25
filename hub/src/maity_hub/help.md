@@ -258,7 +258,8 @@ curl -sS -K "$d/curl.conf" -X POST -H "$(k)" -H 'Content-Type: application/json'
   full 40-hex commit, and `head` must equal `remote_head`); the card
   goes to `review`, or to `done` with `"done": true` if you hold done
   authority and no dependency or child is open. `dependencies_open` lists
-  both in `details.open`, with children repeated in `details.children`. `maity report` fills the
+  both in `details.open`; when there are open children, they are repeated
+  in `details.children`. `maity report` fills the
   report from git and the forge and signs it; a report sent with a bearer
   credential is shown as typed. When the hub holds a forge token it then
   reads the branch and the pull request itself and fills `report.observed`

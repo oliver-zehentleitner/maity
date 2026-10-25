@@ -136,7 +136,7 @@ def refuse_open_dependencies(conn: Connection, card_id: str) -> None:
             409,
             "dependencies_open",
             "dependencies or children are not done",
-            {"open": pending, "children": sorted(children)},
+            {"open": pending, **({"children": sorted(children)} if children else {})},
         )
 
 
