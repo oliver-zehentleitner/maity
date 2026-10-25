@@ -20,7 +20,7 @@ from sqlalchemy import Connection, Engine, delete, insert, select, update
 from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import clock, registration, registration_mail
+from maity_hub import clock, invitations, registration, registration_mail
 from maity_hub import tables as t
 from maity_hub.admin import instance_admin_id
 from maity_hub.auth import passwords
@@ -106,15 +106,17 @@ async def register(request: Request, background: BackgroundTasks) -> JSONRespons
     hub = settings_of(request)
     hub_env = _environment(request)
 
-    def mode_open() -> bool:
+    def mail_ready() -> bool:
         with engine.begin() as conn:
-            return _resolved(conn, hub).open
+            return _resolved(conn, hub).mail_ready
 
-    # Before the body is read: a closed instance says nothing more (§2.7.1 step 1).
-    if not await run_in_threadpool(mode_open):
+    # Before the body is read: without mail nobody registers (§2.7.1 step 1). With mail
+    # every mode reads it, `closed` included, and answers alike: whether an invitation
+    # admits the address is decided after the answer, so the mode never shows in it.
+    if not await run_in_threadpool(mail_ready):
         raise _closed()
-    # Every request to an open instance counts for the breaker, whatever is refused
-    # after it: an invalid body, the per-source limit (§2.7.3).
+    # Every request that reads a body counts for the breaker, whatever is refused after
+    # it: an invalid body, the per-source limit (§2.7.3).
     tripped = registration.BREAKER.hit(hub_env.breaker)
     if tripped:
         raise rate_limited(tripped)
@@ -159,7 +161,10 @@ def _store(
             delete(t.pending_registration).where(t.pending_registration.c.expires_at <= now)
         )
         resolved = _resolved(conn, hub)
-        if over or not resolved.allows(given):
+        admitted = resolved.allows(given) or (
+            resolved.mail_ready and invitations.admits_address(conn, normalized)
+        )
+        if over or not admitted:
             registration.DROPPED.add()
             return
         blocked = conn.execute(

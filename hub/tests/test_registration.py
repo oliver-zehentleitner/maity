@@ -202,7 +202,7 @@ def open_hub(make_client: ClientFactory, migrated: Engine, **env: str) -> Any:
     return client_for(make_client, settings)
 
 
-def test_closed_answers_before_the_body_is_read(
+def test_without_mail_it_answers_before_the_body_is_read(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
     client = client_for(make_client, hub())
@@ -211,6 +211,18 @@ def test_closed_answers_before_the_body_is_read(
     assert refused.json()["error"]["details"] == {"reason": "registration_closed"}
     no_mail = client_for(make_client, hub(MAITY_REGISTRATION="open"))  # open, but no mail
     assert register(no_mail).json()["error"]["details"]["reason"] == "registration_closed"
+
+
+def test_closed_with_mail_answers_as_every_mode_and_stores_nothing(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§2.7.1 step 1: the mode never shows in the answer; an uninvited address under
+    `closed` is dropped after it."""
+    client = client_for(make_client, hub(MAITY_MAIL_SIGNING_KEY=SIGNING, **MAIL))
+    assert field(register(client, "not an address")) == {"address": "invalid"}
+    answer = register(client)
+    assert (answer.status_code, answer.json()) == (202, {"expires_in": 86400})
+    assert pending(migrated) == [] and SENT == []
 
 
 def test_a_registration_answers_202_and_waits_as_pending(

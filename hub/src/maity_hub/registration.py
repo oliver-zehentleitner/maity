@@ -227,11 +227,6 @@ class Resolved:
             found.append("allowlist")
         return found
 
-    @property
-    def open(self) -> bool:
-        """Whether anyone may register at all now (§2.7.1 step 1)."""
-        return self.effective_mode != "closed"
-
     def allows(self, given: str) -> bool:
         """Whether this address may register under the mode in effect (§2.7)."""
         mode = self.effective_mode
