@@ -281,11 +281,7 @@ def post_message(
         # Against the chat's participants only; anyone else's handle stays text, and
         # each participant mentioned but the writer counts one ping (§8.6).
         inside = {group_chats.principal(s) for s in current}
-        mentioned = [
-            m
-            for m in mentions.resolve(conn, mine.project.id, body.body, "body")
-            if m["member_id"] in inside
-        ]
+        mentioned = mentions.resolve(conn, mine.project.id, body.body, "body", among=inside)
         mentions.charge(conn, mine.id, len([m for m in mentions.members(mentioned) if m != me]))
     elif body.type != "chat":  # a direct chat stays between its two parties (§8.6)
         mentioned = mentions.resolve(conn, mine.project.id, body.body, "body")
