@@ -38,6 +38,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     create.add_argument("--handle", required=True)
     create.add_argument("--display-name", required=True)
+    factor = commands.add_parser("second-factor", help="manage a human's second factor")
+    factor_commands = factor.add_subparsers(dest="factor_command", required=True)
+    reset = factor_commands.add_parser(
+        "reset",
+        help="reset a human's second factor at once and end their sessions (docs/api.md §2.8.3)",
+    )
+    reset.add_argument("--handle", required=True)
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -53,7 +60,33 @@ def main(argv: list[str] | None = None) -> int:
         return _migrate(settings)
     if args.command == "owner":
         return _owner_create(settings, args.handle, args.display_name)
+    if args.command == "second-factor":
+        return _second_factor_reset(settings, args.handle)
     return _serve(settings)
+
+
+def _second_factor_reset(settings: Settings, handle: str) -> int:
+    """The operator's last way in (§2.8.3): no mail, no instance key needed."""
+    from maity_hub.auth import second_factor_reset
+
+    try:
+        engine = make_engine(settings.database_url)
+        require_current_schema(engine)
+    except SchemaNotCurrentError as error:
+        return _fail(str(error), EXIT_FAILURE)
+    except (SQLAlchemyError, ImportError) as error:
+        return _database_error(settings, error)
+    try:
+        with engine.begin() as conn:
+            human_id = second_factor_reset.operator_reset(conn, handle)
+    except SQLAlchemyError as error:
+        return _database_error(settings, error)
+    finally:
+        engine.dispose()
+    if human_id is None:
+        return _fail(f"no human with the handle {handle!r}", EXIT_FAILURE)
+    print(f"maity-hub: reset the second factor of {handle} ({human_id}); their sessions ended")
+    return 0
 
 
 HANDLE = re.compile(r"[a-z0-9][a-z0-9-]{1,62}")

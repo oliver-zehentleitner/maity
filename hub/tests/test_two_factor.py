@@ -60,7 +60,7 @@ def enrol(human: flow.Human, moment: Clock) -> tuple[bytes, list[str]]:
     assert started.status_code == 200, started.text
     body = started.json()
     secret = base64.b32decode(body["secret"] + "=" * (-len(body["secret"]) % 8))
-    assert body["otpauth_uri"].startswith("otpauth://totp/hub.example:maintainer?")
+    assert body["otpauth_uri"].startswith("otpauth://totp/hub.example:")
     assert body["expires_in"] == 600
     code = code_now(secret, moment.at)
     confirmed = human.post("/auth/second-factor/totp/confirm", {"code": code})
@@ -412,3 +412,120 @@ def test_a_device_code_sign_in_owes_the_second_step_too(
     # The first factor's method and lineage are kept through the second step (§2.8.2).
     assert mine["method"] == "device_code" and mine["approved_by"] is not None
     assert mine["second_factor"] is True
+
+
+# --- reset ----------------------------------------------------------------------------------
+
+
+def admin_and_target(
+    make_client: ClientFactory, migrated: Engine, moment: Clock, *, verify: bool = True
+) -> tuple[flow.Human, flow.Human, bytes]:
+    from tests.test_notification_settings import link, mail_env, outbox_rows
+
+    mail = mail_env().mail
+    admin = signed_in(make_client, migrated, mail=mail)  # the first human: instance admin
+    moment.move(seconds=1)  # the earliest-created human is the admin: no tie
+    target_id = factory.human(migrated, "someone")
+    client = make_client(secret_key=KEY, mail=mail)
+    assert login(client, "someone").status_code == 200
+    target = flow.Human(client, client.get("/api/v1/auth/session").json()["csrf_token"], target_id)
+    if verify:
+        target.patch("/me/notification-settings", {"email": {"address": "someone@example.org"}})
+        target.client.post(f"/mail/verify/{link(outbox_rows(migrated)[-1], 'verify')}")
+    secret, _ = enrol(target, moment)
+    return admin, target, secret
+
+
+def reset_link(migrated: Engine) -> str:
+    from tests.test_notification_settings import link, outbox_rows
+
+    row = outbox_rows(migrated)[-1]
+    assert row.recipient == "someone@example.org"
+    return link(row, "second-factor-reset")
+
+
+def test_an_admin_reset_takes_effect_only_when_the_human_confirms(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    admin, target, _ = admin_and_target(make_client, migrated, moment)
+    asked = admin.post(f"/admin/users/{target.id}/second-factor/reset", {"reason": "lost phone"})
+    assert asked.status_code == 202, asked.text
+    token = reset_link(migrated)
+    assert target.get("/auth/second-factor").json()["enrolled"] is True  # nothing happened yet
+    page = target.client.get(f"/mail/second-factor-reset/{token}")
+    assert page.status_code == 200
+    assert "someone" in page.text and "maintainer" in page.text and "lost phone" in page.text
+    assert target.get("/auth/second-factor").json()["enrolled"] is True  # a GET changes nothing
+    done = target.client.post(f"/mail/second-factor-reset/{token}")
+    assert done.status_code == 200
+    assert target.get("/me").status_code == 401  # every session ended
+    assert records_of(migrated, "second_factor_changed")[-1].data == {
+        "change": "reset",
+        "by": "maintainer",
+    }
+    # The next sign-in enrols first, whatever the policy (§2.8.3).
+    again = make_client(secret_key=KEY)
+    assert login(again, "someone").json() == {"second_factor": "enrolment_required"}
+    assert target.client.post(f"/mail/second-factor-reset/{token}").status_code == 404
+
+
+def test_an_old_reset_link_never_removes_a_newer_factor(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    admin, target, secret = admin_and_target(make_client, migrated, moment)
+    asked = admin.post(f"/admin/users/{target.id}/second-factor/reset", {"reason": "lost phone"})
+    assert asked.status_code == 202, asked.text
+    stale = reset_link(migrated)
+    # The human found a recovery code meanwhile and enrolled anew: the link dies.
+    moment.move(seconds=30)
+    stepped = target.post("/auth/second-factor/verify", {"code": code_now(secret, moment.at)})
+    assert stepped.status_code == 200, stepped.text
+    assert target.post("/auth/reauthenticate", {"password": factory.PASSWORD}).status_code == 200
+    moment.move(seconds=30)
+    enrol(target, moment)
+    assert target.client.get(f"/mail/second-factor-reset/{stale}").status_code == 404
+    assert target.client.post(f"/mail/second-factor-reset/{stale}").status_code == 404
+    assert target.get("/auth/second-factor").json()["enrolled"] is True
+
+
+def test_a_reset_needs_mail_a_verified_address_and_another_human(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    admin, target, _ = admin_and_target(make_client, migrated, moment, verify=False)
+    unverified = admin.post(f"/admin/users/{target.id}/second-factor/reset", {"reason": "x"})
+    assert unverified.status_code == 409
+    assert unverified.json()["error"]["code"] == "address_unverified"
+    own = admin.post(f"/admin/users/{admin.id}/second-factor/reset", {"reason": "x"})
+    assert own.json()["error"]["details"]["reason"] == "own_account"
+    no_mail = flow.Human(make_client(secret_key=KEY), "", admin.id)
+    login(no_mail.client)
+    no_mail.csrf = no_mail.client.get("/api/v1/auth/session").json()["csrf_token"]
+    refused = no_mail.post(f"/admin/users/{target.id}/second-factor/reset", {"reason": "x"})
+    assert refused.json()["error"]["code"] == "mail_not_configured"
+    asked_by_target = target.post(f"/admin/users/{admin.id}/second-factor/reset", {"reason": "x"})
+    assert asked_by_target.status_code == 403
+
+
+def test_the_operator_resets_at_once(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    from maity_hub.auth import second_factor_reset
+
+    human = signed_in(make_client, migrated)
+    enrol(human, moment)
+    with migrated.begin() as conn:
+        assert second_factor_reset.operator_reset(conn, "nobody") is None
+        assert second_factor_reset.operator_reset(conn, "maintainer") == human.id
+    assert human.get("/me").status_code == 401
+    assert records_of(migrated, "second_factor_changed")[-1].data["by"] == "operator"
+
+
+def test_the_log_masks_the_reset_token(
+    make_client: ClientFactory, caplog: pytest.LogCaptureFixture
+) -> None:
+    import logging
+
+    with caplog.at_level(logging.INFO, logger="maity_hub.access"):
+        make_client().get("/mail/second-factor-reset/SECRET-TOKEN")
+    lines = [r.getMessage() for r in caplog.records if r.name == "maity_hub.access"]
+    assert lines == ["GET /mail/second-factor-reset/… 404"]

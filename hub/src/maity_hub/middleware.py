@@ -178,6 +178,7 @@ _TOKEN_PATHS = (
     re.compile(r"^(/api/v1/runners/pair/)[^/]+"),
     re.compile(r"^(/mail/verify/)[^/]+"),
     re.compile(r"^(/mail/unsubscribe/)[^/]+"),
+    re.compile(r"^(/mail/second-factor-reset/)[^/]+"),
 )
 
 

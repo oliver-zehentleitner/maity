@@ -177,3 +177,9 @@ def test_owner_create_needs_a_migrated_database(
     monkeypatch.setattr("sys.stdin", io.StringIO("a long enough password\n"))
     assert main(["owner", "create", "--handle", "ok", "--display-name", "X"]) == 1
     assert "maity-hub migrate" in capsys.readouterr().err
+
+
+def test_second_factor_reset_names_an_unknown_handle(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["migrate"]) == 0
+    assert main(["second-factor", "reset", "--handle", "nobody"]) == 1
+    assert "no human with the handle 'nobody'" in capsys.readouterr().err

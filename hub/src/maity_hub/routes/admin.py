@@ -6,12 +6,14 @@ from typing import Any
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 
 from maity_hub import avatars
 from maity_hub import tables as t
-from maity_hub.admin import instance_admin_id
-from maity_hub.deps import HumanCaller, engine_of
+from maity_hub.admin import instance_admin_id, require_instance_admin
+from maity_hub.auth import second_factor, second_factor_reset
+from maity_hub.deps import HumanCaller, engine_of, settings_of
 from maity_hub.errors import forbidden, invalid
 from maity_hub.views import ts
 
@@ -90,3 +92,24 @@ def list_users(
 
 def _counts(conn: Any, query: Any) -> dict[str, int]:
     return {key: int(count) for key, count in conn.execute(query).all()}
+
+
+class ResetRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(min_length=1, max_length=500)
+
+
+@router.post("/admin/users/{human_id}/second-factor/reset")
+def reset_second_factor(
+    human_id: str, body: ResetRequest, request: Request, caller: HumanCaller
+) -> JSONResponse:
+    """Mails the human a link; the reset takes effect only when they confirm it (§2.8.3)."""
+    hub = settings_of(request)
+    with engine_of(request).begin() as conn:
+        require_instance_admin(conn, caller.principal_id)
+        second_factor.require_step_up(conn, hub, caller)  # §2.8.4
+        expires = second_factor_reset.request_reset(
+            conn, hub, caller.principal_id, human_id, body.reason.strip() or body.reason
+        )
+    return JSONResponse({"expires_at": expires}, status_code=202)

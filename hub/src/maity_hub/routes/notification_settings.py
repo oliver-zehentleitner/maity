@@ -16,12 +16,13 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy import Connection, select
 
 from maity_hub import tables as t
-from maity_hub.auth import second_factor
+from maity_hub.auth import second_factor, second_factor_reset
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, engine_of, origin_of, settings_of
 from maity_hub.errors import forbidden, humans_only, invalid, not_found
 from maity_hub.mail import settings as mail_settings
 from maity_hub.notifications import preferences, tokens
+from maity_hub.notifications.mailer import quoted
 from maity_hub.routes.auth import LOGIN_BY_ADDRESS, LOGIN_BY_HANDLE
 
 router = APIRouter()
@@ -161,6 +162,14 @@ _WORDS = {
         "unsub_text": "Stop the {kind} mails from Maity.",
         "unsub_button": "Stop these mails",
         "unsub_done": "You will get no more {kind} mails. The settings can switch them on again.",
+        "reset_title": "Reset the two-factor sign-in of {handle}",
+        "reset_text": (
+            "{admin}, your Maity administrator, asked to reset it. Their reason: {reason}. "
+            "Resetting ends every session of your account; your next sign-in sets up the "
+            "second factor again."
+        ),
+        "reset_button": "Reset my two-factor sign-in",
+        "reset_done": "Your two-factor sign-in is reset, and every session has ended.",
         "dead": "This link no longer works.",
     },
     "de": {
@@ -175,6 +184,14 @@ _WORDS = {
             "Du bekommst keine {kind}-Mails mehr. "
             "In den Einstellungen lassen sie sich wieder einschalten."
         ),
+        "reset_title": "Zwei-Faktor-Anmeldung von {handle} zurücksetzen",
+        "reset_text": (
+            "{admin}, dein Maity-Administrator, möchte sie zurücksetzen. Begründung: "
+            "{reason}. Das beendet alle Sitzungen deines Kontos; bei der nächsten Anmeldung "
+            "richtest du den zweiten Faktor neu ein."
+        ),
+        "reset_button": "Meine Zwei-Faktor-Anmeldung zurücksetzen",
+        "reset_done": "Deine Zwei-Faktor-Anmeldung ist zurückgesetzt, alle Sitzungen sind beendet.",
         "dead": "Dieser Link funktioniert nicht mehr.",
     },
 }
@@ -266,3 +283,27 @@ def unsubscribe_confirm(token: str, request: Request) -> HTMLResponse:
         if kind is None:
             return _dead(words)
         return _page(words["unsub_title"], words["unsub_done"].format(kind=kind))
+
+
+@page_router.get("/mail/second-factor-reset/{token}")
+def reset_page(token: str, request: Request) -> HTMLResponse:
+    """Names the account and who asked, with the reason as quoted text; changes nothing."""
+    hub = settings_of(request)
+    with engine_of(request).begin() as conn:
+        words = _WORDS[_language(conn, request, token)]
+        shown = second_factor_reset.page(conn, hub.mail.signing_key, token)
+        if shown is None:
+            return _dead(words)
+        title = words["reset_title"].format(handle=shown["handle"])
+        text = words["reset_text"].format(admin=shown["admin"], reason=quoted(shown["reason"]))
+        return _page(title, text, button=words["reset_button"])
+
+
+@page_router.post("/mail/second-factor-reset/{token}")
+def reset_confirm(token: str, request: Request) -> HTMLResponse:
+    hub = settings_of(request)
+    with engine_of(request).begin() as conn:
+        words = _WORDS[_language(conn, request, token)]
+        if not second_factor_reset.confirm(conn, hub.mail.signing_key, token):
+            return _dead(words)
+        return _page(words["reset_done"], words["reset_done"])
