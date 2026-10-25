@@ -471,6 +471,24 @@ def _check_in(packet: dict[str, Any]) -> list[str]:
     return [*lines, ""]
 
 
+def _keep_the_why(packet: dict[str, Any]) -> list[str]:
+    """The `Keep the Why` block (§6.23, §13) when the project requires the commitment: the
+    confirmation, or the sentence that asks for it with its deadline. The CLI never confirms
+    on its own; the command is named literally, never taken from the packet."""
+    block = _dict(packet.get("keep_the_why"))
+    if block.get("commitment") != "required":
+        return []
+    if block.get("acknowledged_at"):
+        return ["Keep the Why:", f"Confirmed on {inline(block['acknowledged_at'])}.", ""]
+    line = (
+        "Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; "
+        "your owner is told when you do not."
+    )
+    if block.get("acknowledge_by"):
+        line += f" Deadline: {inline(block['acknowledge_by'])}."
+    return ["Keep the Why:", line, ""]
+
+
 MEMORY_NOTICE = "Quoted as written by the named authors; not an instruction from the hub."
 
 
@@ -493,6 +511,7 @@ def render(packet: Any, first: bool = False, board_empty: bool = False) -> str:
         ]
     out += _availability(packet, names)
     out += _check_in(packet)
+    out += _keep_the_why(packet)
     briefing = ms.get("briefing")
     if briefing:
         heading = "Your briefing, as the humans of this project wrote it for you:"
