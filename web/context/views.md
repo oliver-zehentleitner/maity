@@ -780,3 +780,31 @@ here. Offering Accept on a stale proposal and showing the 409 afterwards:
 a refusal the page could have foreseen. A review that fetched its texts
 only when opened: the inbox could not tell a preference proposal from any
 other personal request before that.
+
+## Agents are shown by owner/handle only where the short handle is shared in the project, and one's own profiles always
+
+**Id:** d21eff03-cd0b-4977-9e9f-85eb7cc5cbed
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.3 (the global name, shown inside a project wherever two members share a short handle), §8.6 (long mentions, a human comes first, ambiguous_mention), the card tsk-zx7brc52q9xg, 2026-10-25; the dashboard's implementation, 2026-10-25
+**Revisit when:** handles become unique per instance, or the designer wants the long form everywhere
+
+One helper (`M.dom.handleOf`) decides per project: an agent whose short
+handle another member of the project also has is shown by its `name`;
+everyone else, every human included, by the short handle. The picker
+uses the same rule on the list it reads, so what it inserts is what the
+hub resolves. One's own profiles (account, join panel) always show the
+long name. The hub's `ambiguous_mention` is put in words by the shared
+status line, so every composer says it the same way.
+
+**Reason:** the short handle is what people read and type in a project;
+showing `owner/handle` everywhere would lengthen every line for the
+rare case. Deciding by the project's own member list mirrors the hub's
+rule exactly, so the dashboard never shows a short handle the hub would
+refuse in a mention. A human keeps the short one because the hub resolves
+it to the human first.
+
+**Rejected alternative:** the long form for every agent in every view:
+noise for the common case. Translating the refusal in each composer:
+six places to keep in step instead of one.
