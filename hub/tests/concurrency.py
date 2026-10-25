@@ -1,9 +1,12 @@
 """Two real database connections in a fixed interleaving (shared by the race tests).
 
 SQLite has one writer and serialises everything, so a race between two transactions
-only shows on a server database: the helpers skip on SQLite, and CI runs them on
-PostgreSQL and MariaDB. A step that must wait for the other transaction runs in a
-thread; `waiting` says it started and is still blocked, `finished` takes its result.
+only shows on a server database: `race` skips on SQLite, and CI runs it on PostgreSQL
+and MariaDB. A step that must wait for the other transaction runs in a thread on the
+connection it names; `waiting` says it started and is still blocked, `finished` takes
+its result. On the way out, whatever happened, the transactions no running step uses
+roll back first, so that a step blocked on their locks is released before it is
+joined; a step that still runs then fails the test instead of hanging it.
 """
 
 from __future__ import annotations
@@ -11,8 +14,9 @@ from __future__ import annotations
 import threading
 from collections.abc import Callable, Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import wait as wait_for
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import pytest
@@ -22,28 +26,6 @@ BLOCKED_FOR = 0.5  # seconds a blocked step must stay blocked to count as waitin
 FINISH_WITHIN = 10.0  # seconds a released step may take
 
 
-def require_server(engine: Engine) -> None:
-    if engine.dialect.name == "sqlite":
-        pytest.skip("a race needs two writers: PostgreSQL or MariaDB (CI)")
-
-
-@contextmanager
-def two_transactions(engine: Engine) -> Iterator[tuple[Connection, Connection]]:
-    """Two connections, each in its own open transaction; both rolled back at the end
-    unless the test commits them."""
-    require_server(engine)
-    first, second = engine.connect(), engine.connect()
-    try:
-        first.begin()
-        second.begin()
-        yield first, second
-    finally:
-        for conn in (first, second):
-            if conn.in_transaction():
-                conn.rollback()
-            conn.close()
-
-
 @dataclass
 class Step:
     """A step running in its own thread. `started` is set right before its first
@@ -51,26 +33,61 @@ class Step:
 
     future: Future[Any]
     started: threading.Event
+    conn: Connection
 
 
-@contextmanager
-def background() -> Iterator[Callable[[Callable[[], Any]], Step]]:
-    """Run steps in a thread of their own, so that one may block on the other."""
-    pool = ThreadPoolExecutor(max_workers=2)
+@dataclass
+class Race:
+    first: Connection
+    second: Connection
+    _pool: ThreadPoolExecutor
+    steps: list[Step] = field(default_factory=list)
 
-    def run(fn: Callable[[], Any]) -> Step:
+    def run(self, conn: Connection, fn: Callable[[], Any]) -> Step:
+        """Run `fn` in a thread; it uses `conn` and no other connection."""
         started = threading.Event()
 
         def step() -> Any:
             started.set()
             return fn()
 
-        return Step(pool.submit(step), started)
+        found = Step(self._pool.submit(step), started, conn)
+        self.steps.append(found)
+        return found
 
+
+def _end(conn: Connection) -> None:
+    if conn.in_transaction():
+        conn.rollback()
+    conn.close()
+
+
+@contextmanager
+def race(engine: Engine) -> Iterator[Race]:
+    """Two connections, each in its own open transaction; rolled back at the end unless
+    the test committed them."""
+    if engine.dialect.name == "sqlite":
+        pytest.skip("a race needs two writers: PostgreSQL or MariaDB (CI)")
+    first, second = engine.connect(), engine.connect()
+    pool = ThreadPoolExecutor(max_workers=2)
+    found = Race(first, second, pool)
+    first.begin()
+    second.begin()
     try:
-        yield run
+        yield found
     finally:
-        pool.shutdown(wait=True, cancel_futures=True)
+        busy = {id(s.conn) for s in found.steps if not s.future.done()}
+        rest = [c for c in (first, second) if id(c) in busy]
+        for conn in (first, second):
+            if id(conn) not in busy:
+                _end(conn)  # releases the locks a running step may wait for
+        pool.shutdown(wait=False, cancel_futures=True)
+        _, running = wait_for([s.future for s in found.steps], timeout=FINISH_WITHIN)
+        for conn in rest:
+            if not running:
+                _end(conn)
+        if running:
+            raise AssertionError("a race step still runs after the other side rolled back")
 
 
 def waiting(step: Step) -> bool:

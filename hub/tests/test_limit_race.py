@@ -9,7 +9,7 @@ from sqlalchemy import Engine, select, update
 from maity_hub import availability, clock
 from maity_hub import tables as t
 from tests import factory
-from tests.concurrency import background, finished, two_transactions, waiting
+from tests.concurrency import finished, race, waiting
 
 
 def _agent_with_a_passed_limit(engine: Engine) -> tuple[str, int]:
@@ -39,7 +39,8 @@ def test_an_expiry_that_read_before_a_renewal_clears_nothing(migrated: Engine) -
     sweep's clearing then finds a different `until` and leaves the new limit alone."""
     project_id, membership_id = _agent_with_a_passed_limit(migrated)
     renewed = clock.now() + timedelta(hours=3)
-    with two_transactions(migrated) as (sweep, agent):
+    with race(migrated) as r:
+        sweep, agent = r.first, r.second
         [stale] = availability.due_limits(sweep, project_id)
         row = agent.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()
         availability.set_agent_limit(
@@ -68,7 +69,8 @@ def test_a_renewal_waits_for_a_running_expiry_and_then_stands(migrated: Engine) 
     the new one."""
     project_id, membership_id = _agent_with_a_passed_limit(migrated)
     renewed = clock.now() + timedelta(hours=3)
-    with two_transactions(migrated) as (sweep, agent), background() as run:
+    with race(migrated) as r:
+        sweep, agent = r.first, r.second
         availability.expire_limits(sweep, project_id)  # takes the lock, clears, announces
 
         def renew() -> None:
@@ -87,7 +89,7 @@ def test_a_renewal_waits_for_a_running_expiry_and_then_stands(migrated: Engine) 
             )
             agent.commit()
 
-        step = run(renew)
+        step = r.run(agent, renew)
         assert waiting(step)  # blocked on the project lock the expiry holds
         sweep.commit()
         finished(step)
