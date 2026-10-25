@@ -16,6 +16,7 @@ the seats) sits in the middle: the project everyone gathers around.
 | `maity-mark.svg`, `maity-mark-dark.svg` | 32 px and up, with the "m" |
 | `maity-mark-small.svg`, `maity-mark-small-dark.svg` | below 32 px: no "m", heavier seats |
 | `favicon.svg` | the small mark; switches with `prefers-color-scheme` |
+| `maity-lockup-large.svg`, `maity-lockup-large-dark.svg` | the lockup for 48 px and up (README top, docs hero), with the "m" |
 
 - Clear space around the mark: one seat.
 - Minimum size: 16 px.
@@ -76,3 +77,10 @@ with the app instead of loading them from Google Fonts.
 Both have a light/dark switch, and every colour comes from one light
 and one dark token set. Mock-ups for the landing page and the hub
 (decision inbox) in both themes are on the canvas.
+
+## Badge
+
+A README badge in the shields.io style: the small mark and "maity" on ink,
+then a value on the accent. `maity-badge.svg` is the static one; the hub
+serves a live one at `/badge/<slug>.svg` from `maity-badge-template.svg`,
+opt-in per project, counts only. Details in `BADGE.md`.
