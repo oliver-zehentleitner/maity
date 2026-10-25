@@ -367,6 +367,9 @@ NON_WAKING = frozenset(
 )
 
 
+ROUND_THREAD_KINDS = frozenset({"message", "conversation_created", "conversation_updated"})
+
+
 def runner_reads(row: Any, runner_id: str) -> bool:
     """§15.8: addressed to the runner by audience, and not caused by the runner itself;
     `all` never reaches a runner."""
@@ -417,6 +420,10 @@ def wakes(
         return False
     if row.kind == "ticker":
         return ticker_read.wakes(row, principal)
+    if row.kind in ROUND_THREAD_KINDS and (row.payload or {}).get("jour_fixe"):
+        # A round's thread, its statement and its posts wake nobody: each step wakes its
+        # eligible members once (§20.5).
+        return False
     if row.kind == "request_forwarded":
         # Only a forward to a member wakes, and only that member; an opening to the
         # admins wakes no agent, it would wake every admin agent at once (§7).

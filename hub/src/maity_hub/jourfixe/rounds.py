@@ -370,13 +370,17 @@ def open_round(
     now = clock.now()
     close_at = now + timedelta(minutes=config["answer_window_minutes"])
     round_id = new_id("jour_fixe")
+    from maity_hub.jourfixe import exchange
+
+    zone = ZoneInfo(config.get("timezone") or "UTC")
+    day = now.astimezone(zone).date()
     conn.execute(
         insert(t.jour_fixe_round).values(
             id=round_id,
             project_id=project.id,
             status="answering",
             trigger=trigger,
-            mode="message",  # a hub without group chats (§20.5)
+            mode="chat",
             reason=reason,
             scheduled_for=scheduled_for,
             opened_at=now,
@@ -392,11 +396,20 @@ def open_round(
             created_at=now,
         )
     )
+    # This hub runs group chats: every round runs in its own thread (§20.5), created once
+    # the round exists, so the thread's view names it.
+    thread = exchange.open_thread(
+        conn, project, f"Jour fixe {day.isoformat()}", [i["member_id"] for i in prepared["invited"]]
+    )
+    conn.execute(
+        update(t.jour_fixe_round)
+        .where(t.jour_fixe_round.c.id == round_id)
+        .values(conversation_id=thread)
+    )
     moderator_entry = next(
         i for i in prepared["invited"] if i["member_id"] == prepared["moderator"]["member_id"]
     )
-    zone = ZoneInfo(config.get("timezone") or "UTC")
-    text = questions(config, moderator_entry["handle"], close_at, now.astimezone(zone).date())
+    text = questions(config, moderator_entry["handle"], close_at, day)
     emit(
         conn,
         project.id,
@@ -433,7 +446,7 @@ def record_skip(
             project_id=project.id,
             status=status,
             trigger="schedule",
-            mode="message",
+            mode="chat",
             skip_reason=skip_reason,
             missed_slots=missed_slots,
             scheduled_for=slot,
@@ -612,3 +625,6 @@ def handle_deadlines(conn: Connection, project_id: str) -> None:
     ).all()
     for round_row in due:
         close_answers(conn, round_row)
+    from maity_hub.jourfixe import exchange
+
+    exchange.handle_deadlines(conn, project_id)
