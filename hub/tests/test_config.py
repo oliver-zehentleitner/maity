@@ -67,12 +67,13 @@ def test_an_explicit_public_url_is_never_a_guess() -> None:
     assert (settings.public_url, settings.public_url_guessed) == ("https://hub.example", False)
 
 
-def test_the_dashboard_default_depends_on_running_from_a_checkout() -> None:
+def test_the_dashboard_default_is_the_checkouts_or_the_packages() -> None:
     web_dir = Settings.from_env({}).web_dir
     if Path(config.__file__).resolve().parent.parent.name == "src":
         assert web_dir == Path(__file__).resolve().parents[2] / "web"
-    else:  # an installed wheel has no checkout beside it
-        assert web_dir is None
+    else:  # an installed wheel carries the dashboard itself
+        assert web_dir == Path(config.__file__).resolve().parent / "web"
+    assert web_dir is not None and (web_dir / "index.html").is_file()
 
 
 def test_redaction_masks_the_password() -> None:

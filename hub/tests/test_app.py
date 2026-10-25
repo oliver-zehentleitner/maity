@@ -111,3 +111,13 @@ def test_without_a_dashboard_the_api_still_serves(
     with TestClient(create_app(api_only, engine)) as client:
         assert client.get("/api/v1/health").status_code == 200
         assert client.get("/").status_code == 404
+
+
+def test_the_default_dashboard_is_served(database_url: str, migrated: Engine) -> None:
+    """Whatever this runs from, a checkout or the installed wheel (CI's hub-wheel job), the
+    hub serves a dashboard without MAITY_WEB_DIR."""
+    settings = Settings.from_env({"MAITY_DATABASE_URL": database_url})
+    with TestClient(create_app(settings, migrated)) as client:
+        root = client.get("/")
+        assert root.status_code == 200 and "<title>" in root.text
+        assert client.get("/js/app.js").status_code == 200
