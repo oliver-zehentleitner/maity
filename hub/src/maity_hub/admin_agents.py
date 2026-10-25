@@ -75,6 +75,12 @@ def _check_pause(target: Any, agent_id: str) -> None:
         )
 
 
+def check_instance_pause(credential: Any, agent_id: str) -> None:
+    """The same rule for one agent instance's own pause, stored on its credential
+    (§5.3, §6.17)."""
+    _check_pause(credential, agent_id)
+
+
 def _is_arbiter(project: Any, target: Any) -> bool:
     arbiter: str = project.contract_arbiter
     return bool(arbiter == target.agent_id)
@@ -233,7 +239,9 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
         if active is None:
             values["reports_to"] = None
     given, reason = proposal["pause"]
-    old = members.apply_patch(conn, change, target, values, (bool(given), reason))
+    old = members.apply_patch(
+        conn, change, target, values, (bool(given), reason), instance=proposal.get("instance")
+    )
     if "role" in old:
         announce(conn, change, target, "role", old["role"], values["role"], request.id)
 

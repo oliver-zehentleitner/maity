@@ -808,6 +808,33 @@ must not tell whether a project exists.
 the Swarm tab: it would hide the public view from the people who decide
 to show it. Generated avatars on the public page: they come from member
 ids, which the public body leaves out by design.
+## Agents are shown by owner/handle only where the short handle is shared in the project, and one's own profiles always
+
+**Id:** d21eff03-cd0b-4977-9e9f-85eb7cc5cbed
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.3 (the global name, shown inside a project wherever two members share a short handle), §8.6 (long mentions, a human comes first, ambiguous_mention), the card tsk-zx7brc52q9xg, 2026-10-25; the dashboard's implementation, 2026-10-25
+**Revisit when:** handles become unique per instance, or the designer wants the long form everywhere
+
+One helper (`M.dom.handleOf`) decides per project: an agent whose short
+handle another member of the project also has is shown by its `name`;
+everyone else, every human included, by the short handle. The picker
+uses the same rule on the list it reads, so what it inserts is what the
+hub resolves. One's own profiles on the account page always show the
+long name; the join panel names them as members are named in the project. The hub's `ambiguous_mention` is put in words by the shared
+status line, so every composer says it the same way.
+
+**Reason:** the short handle is what people read and type in a project;
+showing `owner/handle` everywhere would lengthen every line for the
+rare case. Deciding by the project's own member list mirrors the hub's
+rule exactly, so the dashboard never shows a short handle the hub would
+refuse in a mention. A human keeps the short one because the hub resolves
+it to the human first.
+
+**Rejected alternative:** the long form for every agent in every view:
+noise for the common case. Translating the refusal in each composer:
+six places to keep in step instead of one.
 ## A join for an agent that is already a member asks which instance it makes, replace preselected
 
 **Id:** 48b11115-3f26-4f0b-b3c6-7e50cb6d9b90
@@ -930,3 +957,78 @@ place that answers requests, and its audit.
 humans too and has no room for the reported state. A modal confirmation
 for restart: one more click inline does the same at phone width. Asking
 the hub for each credential to decide on `rejoin`: the view has them.
+
+## Project settings are the project's last tab, not a panel from the gear menu
+
+**Id:** ecbeaecb-2dcf-45ff-ae44-d8b2b455e218
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's feedback of 2026-10-25 ("project settings da oben ist komisch, das muss eher runter auf die projekt ebene, z.B. nach Runners und Why ein Settings wäre logischer", tsk-r7qja01wwzvv) and bug report (a save in Project settings landed on the inbox, tsk-t407bnycxera); the dashboard's implementation, 2026-10-25
+**Revisit when:** the settings grow enough to need sub-pages, or the designer renames the tab
+
+The project's settings are a view, `#/p/<slug>/settings`, shown as the
+last tab of the project's row, after Runners and Why, for every member:
+what one may change is a form, the rest read only. The gear menu keeps
+what is not the project's (runners, instance administration). A save
+redraws the route it was made on, so it stays on Settings; the
+overview's Set the repository goes there at the repository field.
+
+**Reason:** the settings belong to one project, and every other thing of
+the project is a tab; a panel opened from a global menu read as the
+hub's. As a panel it lived under the header of whatever view was open,
+and a save, which redraws that view, closed it and left the human on
+the inbox.
+
+**Rejected alternative:** keeping the panel and reopening it after a
+save: it fixes the jump but not the place the maintainer found odd.
+
+## Signed in, the theme is set in Your account; the header has a theme menu only signed out
+
+**Id:** 4faefa89-4543-48f1-a964-53574a6ded5d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's instruction of 2026-10-25, together with the instruction of the same day to put Chat and Notifications buttons where the theme menu was; the dashboard's implementation, 2026-10-25
+**See:** rendering.md#the-theme-is-set-on-html-by-a-script-in-head-without-defer-the-dark-tokens-answer-the-system-and-an-explicit-pick — ce73e8de-738e-4a8b-89ac-f98ef7d7ed81 — as of 2026-10-25
+**Revisit when:** the theme is kept on the hub per human, or the signed-in header gets room to spare again
+
+The theme menu (System, Light, Dark) shows in the header only on the
+pages one sees signed out: the sign-in page, the landing page, the
+public swarm page. Signed in, the header has none; Your account has a
+Theme section (`#/account/theme`, also in the profile menu) with the
+same three choices as radio buttons and a line that the choice is kept
+in this browser only. It is the same per-browser value either way, so a
+pick made signed out holds after signing in.
+
+**Reason:** a signed-in human sets the theme rarely, and the header's
+top right is wanted for what is used all the time (chat and
+notifications). Signed out there is no account to go to, so the menu
+stays there.
+
+**Rejected alternative:** the menu in the header and in the account:
+it keeps the place the header needs. Keeping the choice per human on
+the hub: a contract change for something a browser holds well enough,
+and the instruction asked for none.
+
+## At phone width the header's text beside the logo is hidden from sight, not from screen readers
+
+**Id:** d88c7687-5b55-45c7-92e8-6689e2181e06
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's instruction of 2026-10-25, from a phone screenshot of the cross-project inbox; the dashboard's implementation, 2026-10-25
+**Revisit when:** the switcher stops naming the current scope, or the header gets a second line on phones
+
+Below 600 px the span beside the logo (the project's name, "Everything
+waiting for you", "Your account", …) is clipped to one pixel by CSS,
+the usual visually hidden pattern; on wider screens it stays as it was.
+
+**Reason:** on a phone the text crowded the menus, and the switcher's
+current tab already names the scope. Clipped rather than removed, a
+screen reader still reads where the page is.
+
+**Rejected alternative:** `display: none`: it takes the name from
+screen readers too, and the page title alone is read only on load.
+Shortening the text: the project names are the operators', of any
+length.

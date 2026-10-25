@@ -237,7 +237,7 @@
           "agt-b",
           "agt-c",
           "agt-d"
-        ]
+        ], "path": "docs/api.md", "section": "8.2"
       },
       "created_at": "2026-10-21T09:00:00Z",
       "updated_at": "2026-10-21T13:00:00Z",

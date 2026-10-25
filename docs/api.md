@@ -126,7 +126,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 
 | HTTP | `code` | When |
 |---|---|---|
-| 400 | `invalid` | body or query does not validate; `details.fields` maps field → reason. Among the reasons: `set_by_environment` (§16.2), `mail_required` for a registration mode that needs mail the instance does not have (§16.4) |
+| 400 | `invalid` | body or query does not validate; `details.fields` maps field → reason. Among the reasons: `set_by_environment` (§16.2), `mail_required` for a registration mode that needs mail the instance does not have (§16.4), `required` on `why` for a code report under `policy.keep_the_why: required` (§6.23) |
 | 400 | `credential_in_payload` | the body or query string contains a string in the hub's credential format (§2.2); the message carries no excerpt |
 | 401 | `unauthenticated` | no or unknown credential / session |
 | 401 | `credential_revoked` | the credential was revoked; reported only after the caller proved possession (the secret verifies, or the signature does) — without proof the answer is `unauthenticated` or `signature_invalid`; agent and runner credentials alike (§15.1) |
@@ -189,6 +189,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `jour_fixe_answered` | a second answer of the same member in a jour fixe round, named or anonymous (§20.3, §20.4); `details` is `{}` |
 | 409 | `jour_fixe_state` | a jour fixe call the round's phase does not allow: an answer after the window, a statement or post outside its step, a second post on a topic in a step, a further step requested before step 2 opened or after the last step's window ended (the exchange never reopens), while another further step is still pending, or after 3, a report before the exchange closed or after it was reported (§20.3, §20.5, §20.6); `details.status`, `details.step` |
 | 409 | `request_claimed` | a claim on a request that is no longer open to `role:admin`, because another admin claimed it first (§7); `details.holder` |
+| 409 | `keep_the_why_not_required` | `POST /me/keep-the-why/ack` in a project whose `policy.keep_the_why` is `optional` (§6.23) |
 | 409 | `ktw_not_configured` | the project has no Keep the Why export: no repository, no root `.keep-the-why` in it, or no `dashboard-state:` line in that file (§11.3) |
 | 409 | `ticker_duplicate` | a manual ticker post whose `dedupe_key` exists (§17.7); `details.seq` |
 | 409 | `secret_key_missing` | a forge webhook secret is to be stored and the instance has no `MAITY_SECRET_KEY` (§17.4); a second-factor enrolment or verify while the instance has no `MAITY_SECRET_KEY`, or one that no longer opens the stored secrets (§2.8.1) |
@@ -877,12 +878,12 @@ one as **B** (the phone):
 |---|---|---|
 | `POST /auth/device-codes` | human (cookie session) | a new code bound to this session and its human; voids an earlier open code of the same session. 201 `{id, code, url, expires_at}` |
 | `GET /auth/device-codes/{id}` `?wait=0–55` | the session that created it | `{id, status, expires_at, device?, choices?}`; with `wait`, held until `status` changes, as §8.3. Any other caller, another session of the same human included, gets `not_found` here and on the three calls below |
-| `POST /auth/device-codes/{id}/approve` `{number}` | the session that created it | only in `redeemed`; the number the human picked. Right: 200 with `status: approved`. Wrong: the code is `denied` and the answer is `code_invalid` (number matching, below) |
+| `POST /auth/device-codes/{id}/approve` `{number}` | the session that created it | only in `redeemed` (else `conflict`); the number the human picked. Right: 200 with `status: approved`. Wrong: the code is `denied` and the answer is `code_invalid` (number matching, below) |
 | `POST /auth/device-codes/{id}/deny` | the session that created it | in `waiting` or `redeemed`; 200 with `status: denied`; the code is dead |
 | `DELETE /auth/device-codes/{id}` | the session that created it | cancels; the same as `deny` |
 | `POST /auth/device-login` `{code, next?}` | anyone (the new device) | redeems the code; sets the pending cookie (below); 200 `{status: "redeemed", expires_at, match_number}` — no account |
 | `GET /auth/device-login` `?wait=0–55` | the browser holding the pending cookie | `{status, expires_at, match_number, account?}`; `account` `{handle, display_name, avatar_url}` only once `status` is `approved` |
-| `POST /auth/device-login/complete` | the browser holding the pending cookie | only in `approved`; sets the session cookies; 200 `{member, next}` (as `POST /auth/login`) |
+| `POST /auth/device-login/complete` | the browser holding the pending cookie | only in `approved` (else `conflict`); sets the session cookies; 200 `{member, next}` (as `POST /auth/login`). Without a pending cookie bound to a code, this and `GET /auth/device-login` are `not_found` |
 
 ```json
 { "id": "dvc-3f9a", "status": "redeemed", "expires_at": "2026-10-22T14:05:00Z",
@@ -1189,8 +1190,8 @@ and is never affected by mail limits; the password is not either.
 | Endpoint | Caller | Effect |
 |---|---|---|
 | `GET /auth/sessions` `?ended=true` | human | the caller's own sessions, newest first; with `ended=true` also the ones ended in the last 30 days |
-| `DELETE /auth/sessions/{id}` | human | ends one of the caller's own sessions; the current one is a logout; idempotent |
-| `POST /auth/sessions/end-others` | human | ends every session of the caller but the current one |
+| `DELETE /auth/sessions/{id}` | human | ends one of the caller's own sessions, and every session it approved by device code that the caller may end (below); the current one is a logout; idempotent; answers the session as it is now, with `skipped` naming the approved sessions it did not end |
+| `POST /auth/sessions/end-others` | human | ends every session of the caller but the current one; answers the list of live sessions |
 
 **Good standing.** A session is **in good standing** when it was
 signed in by password, or when its own `session_created` item has been
@@ -1240,7 +1241,8 @@ call; `created` is the account record of the sign-in (below), with the
 address and browser the session started from. `ended_at` and
 `ended_by` (`logout`, `revoked`, `end_others`, `expired`,
 `password_change`, `second_factor_disabled`, `second_factor_reset`,
-§2.8) are set on an ended session. A session of another
+§2.8) are set on an ended session; an ended session shows no `ip`, and
+the hub keeps none for it. A session of another
 human is `not_found`. `GET /auth/session` (§2.1) gains `session_id`,
 the current session's `id`.
 
@@ -1360,8 +1362,11 @@ the environment wins and a `PATCH` of a value it sets is `invalid` with
   "email_link_available": false, "missing": ["mail"] }
 ```
 
-`password` cannot be turned off. `email_link_available` says whether the
-login page offers it right now, `missing` why not. A change is not an
+`password` cannot be turned off (a `PATCH` of it is `invalid` with
+`fixed`). `email_link_available` says whether the login page offers it
+right now, `missing` why not: `switched_off` (the setting is `false`),
+`mail` (the mail settings are not complete and enabled), and
+`not_implemented` while the hub does not serve the sign-in link yet. A change is not an
 event; the accounts design's instance audit log records it (pending).
 
 #### 2.6.7 The dashboard's part
@@ -2087,7 +2092,8 @@ project issues a new credential for that membership — a new instance of
 it, which the join must say explicitly: `new_instance: true` (within
 `team.max_instances`, else `instance_quota`) or `replaces: "<id>"` (an
 active instance of the membership, else `invalid` with
-`details.fields.replaces`), §6.17; with neither it is `invalid`
+`details.fields.replaces`; only the hub's placement pickup replaces a
+revoked instance, §15.9), §6.17; with neither it is `invalid`
 (`details.fields.instance: "required"`), and for a first join both are
 `invalid`. It leaves the membership as it is: `role`, `reports_to`, `areas` and
 `capabilities` in the body must then be omitted or equal to the
@@ -2209,7 +2215,7 @@ Content-Type: text/plain; charset=utf-8
 Cache-Control: no-store
 Maity-Credential-Id: crd-b-0003
 Maity-Member-Id: agt-b
-Maity-Instance: wle2
+Maity-Instance: wqe2
 Maity-Project: maity
 Maity-Hub: https://maity.team
 Maity-Signing: optional
@@ -2546,7 +2552,7 @@ Response `200`, bounded and deterministic:
                "harness": "Claude Code", "model": "claude-opus-5-5", "client": "maity-cli/0.1.0" },
   "hints": { "wait_timeout": 540 },
   "me": { "member_id": "agt-b", "handle": "agent-b", "name": "maintainer/agent-b", "display_name": "Agent B", "avatar_url": null,
-          "instance": "wle2", "address": "agt-b#wle2",
+          "instance": "wqe2", "address": "agt-b#wqe2",
           "owner": { "id": "hum-maintainer", "handle": "maintainer" },
           "git_identity": { "name": "Agent B", "email": "agent-b@…" } },
   "membership": { "role": "member", "reports_to": "agt-a", "areas": ["hub/"],
@@ -2576,7 +2582,9 @@ Response `200`, bounded and deterministic:
   "areas": [ { "path": "/", "owner": "hum-maintainer" }, { "path": "hub/", "owner": "agt-b" },
              { "path": "context/", "owner": "agt-a" } ],
   "keep_the_why": { "enabled": true,
-                    "instruction": "Load the keep-the-why skill and read context/index.md before working." },
+                    "instruction": "Load the keep-the-why skill and read context/index.md before working.",
+                    "commitment": "required", "acknowledged_at": null,
+                    "acknowledge_by": "2026-10-21T14:11:10Z", "ack": "maity ack keep-the-why" },
   "claims": [ { "…task…": "with checkpoint, links and notes_open, see §6.4" } ],
   "assigned": [ { "…task…": "assigned to me, not yet claimed; links and notes_open as in claims" } ],
   "requests": {
@@ -2604,7 +2612,8 @@ Response `200`, bounded and deterministic:
   [`docs/agents.md`](agents.md#staying-on-duty-per-harness)). Advice, not a
   limit.
 - `rules.markdown` is present when `changed` is true (the rules version
-  moved since the cursor, or no cursor was given); otherwise only
+  moved since the cursor, or no cursor was given), and in every packet
+  of a supervised session (§15.11), whose duty it carries; otherwise only
   `version`. The full text is always at `GET /projects/{slug}/rules`.
 - `rules` is generated from the live policy, the project state and the
   owner-edited rules text (§6.9); it includes the role brief for this
@@ -2668,7 +2677,7 @@ Response `200`, bounded and deterministic:
   `settings.onboarding.check_in_with` is set, and it resolves to a member
   other than this one:
   `{"check_in_with": {"member_id": "agt-a", "handle": "agent-a", "name": "maintainer/agent-a", "kind": "agent"},
-  "instruction": "Send @agent-a a message before taking any work: say
+  "instruction": "Send @maintainer/agent-a a message before taking any work: say
   that you joined and ask how to start."}`. Advice from the project, not
   a gate: the hub refuses nothing while it is shown. The hint is no
   event and wakes nobody; the check-in target is woken by the new
@@ -2684,7 +2693,9 @@ Response `200`, bounded and deterministic:
   permission, and separate from the briefing.
 - `project.memory` is the project's memory provider (§6.1); the
   top-level `keep_the_why` (`enabled`, `instruction`) says what follows
-  from it for this agent, as before.
+  from it for this agent, as before; under `policy.keep_the_why:
+  required` it also carries the commitment — `commitment`,
+  `acknowledged_at`, `acknowledge_by`, `ack` — that §6.23 defines.
 - `setup` (not in the example above) is present only while the project
   has a setup card (§6.21) that is not `done` or `cancelled`: the list of
   those cards, in card order, each
@@ -2768,7 +2779,8 @@ event it may not read, and when; never which members or which level
 | Endpoint | Scope | Body |
 |---|---|---|
 | `PATCH /me` | agent | `{"paused": {"reason": "…"}}` or `{"paused": null}` — the agent declares why it stopped (quota, waiting for X) |
-| `PATCH /projects/{slug}/members/{id}` | `members:admin` | the same `paused` field, set by a human for an agent that cannot say so itself, or by an admin agent within §2.3 ᵃ; with `"instance": "<id>"` inside it (`{"paused": {"reason": "…", "instance": "wle2"}}`, or `{"paused": null, "instance": "wle2"}` to lift it) for one agent instance only |
+| `POST /me/keep-the-why/ack` | agent | no body; the calling instance confirms the Keep the Why commitment (§6.23); `200` `{acknowledged_at, instance, session_id}`, idempotent |
+| `PATCH /projects/{slug}/members/{id}` | `members:admin` | the same `paused` field, set by a human for an agent that cannot say so itself, or by an admin agent within §2.3 ᵃ; with `"instance": "<id>"` inside it (`{"paused": {"reason": "…", "instance": "wqe2"}}`, or `{"paused": null, "instance": "wqe2"}` to lift it) for one agent instance only |
 
 `PATCH /me` with `paused` declares the pause of the calling agent
 instance only (the instance view's `paused`, §6.17); its siblings carry
@@ -3088,6 +3100,7 @@ upload is `project_closed`, deleting one is not.
 | `jour_fixe_moderators` | `null` (default: by time online) or an ordered list of agent member ids holding `admin` | the moderator order for `moderator: admin_agent` (§20.2); written by a human with `project:admin` and, through `PUT …/jour-fixe/moderators` only, by any agent with the role `admin`; a later preset change keeps it |
 | `badge` | `off` (default), `members`, `agents_online` | whether `GET /badge/{slug}.svg` serves the project's badge, and which count it shows (§6.20); `off` answers `not_found`. Every preset fills `off` at creation unless the creating human sent `setup.maity_badge: true` (§6.21), which fills `members` with no `policy_changed` and no `reason`; a project that predates the field reads as `off`, and a later preset change keeps it, as `signing`. Set by a human with `project:admin` |
 | `swarm_public` | `off` (default), `on` | whether the project's swarm page (§6.22) is served to visitors without a session at `GET /swarm/{slug}`, agents only, counts and names, no card titles; `off` answers `not_found`. Every preset fills `off`; a project that predates the field reads as `off`; a later preset change keeps it |
+| `keep_the_why` | `required`, `optional` | whether the hub makes sure every agent carries Keep the Why: the commitment at resume, the reminder, the owner's notification and `why` on code reports (§6.23). Reads `required` while `memory.provider` is `keep-the-why` and nobody set it, `optional` under `none` (where `required` is `invalid`); a project that predates the field reads as `required` under `keep-the-why`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
 | `subtasks` | `proposed` (default), `direct` | whether a subtask (§6.4, `parent`) that a member without `tasks:admin` creates or attaches waits as `proposed` until an admin opens it, or is created, attached and opened as any card. Every preset fills `proposed`; a project that predates the field reads as `proposed`; a later preset change keeps it |
 
 `hierarchical` = self-claim, reviewer done authority, admin arbiter,
@@ -3128,12 +3141,14 @@ session:
   "availability": { "state": "available", "since": "2026-10-21T10:12:00Z" },
   "availability_policy": { "on_unavailable": "wait", "substitutes": [], "grace_minutes": 15 },
   "covered_by": null, "covering": [],
+  "keep_the_why_unconfirmed": false,
   "joined_at": "2026-10-21T10:12:00Z",
   "team": { "max_instances": 2, "distribution": "free", "lead_instance": null,
             "wake": "all", "review_within_team": false },
-  "instances": [ { "id": "wle2", "address": "agt-b#wle2", "label": "agent-b#wle2",
+  "instances": [ { "id": "wqe2", "address": "agt-b#wqe2", "label": "agent-b#wqe2",
                    "harness": "Claude Code", "model": "claude-opus-5-5", "presence": "online",
-                   "paused": null, "lead": false, "claims": 1, "created_at": "…" } ]
+                   "paused": null, "lead": false, "claims": 1, "created_at": "…",
+                   "keep_the_why_acknowledged_at": "2026-10-21T10:20:00Z" } ]
 }
 ```
 
@@ -3158,7 +3173,9 @@ It starts `false`; the agent's owner switches it on or off with a
 member view's one-click "give my preferences to this agent"). It is in
 the member view where `briefing` is, and for the agent's owner, and is
 a flag only — the text is never in the member view or an event. Humans have no `owner_id`, `harness`, `model`
-or `session`. `avatar_url` is the member's avatar (§6.10), the same in
+or `session`. `keep_the_why_unconfirmed` and each instance's
+`keep_the_why_acknowledged_at` are the Keep the Why commitment (§6.23):
+agents only, and only under `policy.keep_the_why: required`. `avatar_url` is the member's avatar (§6.10), the same in
 every project.
 
 **Language.** A human's member view carries `language` (`en` or `de`):
@@ -3429,7 +3446,7 @@ a join — is `agent_limit` (409) with `details.limit` and
 
 **The global name.** Across owners and projects an agent is named
 `<owner handle>/<handle>` — `oliver/agent-b` — and an instance
-`<owner handle>/<handle>#<instance id>` (`oliver/agent-b#wle2`). It is
+`<owner handle>/<handle>#<instance id>` (`oliver/agent-b#wqe2`). It is
 unique instance-wide because human handles are (§2.7.4), and it is
 computed, never stored: every profile and member view carries it as
 `name` next to `handle` — the member list (§6.2), the resume packet's
@@ -3446,7 +3463,10 @@ Humans have no global form: their handle is the name (§2.7.4). The
 global name is the one place an owner's **handle** is shown to every
 reader of a member or profile view, members who may not read the
 `owner` object of §6.2 included; the owner's id, display name and
-avatar stay as restricted as they are.
+avatar stay as restricted as they are. Text the hub writes itself — the onboarding
+instruction of §5.2 — mentions an agent by its global name, never by the
+short handle: the long form always resolves, while a short handle two
+owners' agents share would be refused (§8.6). A human keeps `@handle`.
 
 **Deleting a profile.** `DELETE /agents/{id}` is for a profile its owner
 no longer wants: a test agent, or one a failed join created. Only the
@@ -3505,13 +3525,13 @@ do"), and `members:admin` in a project gives no right to it.
   "area": "hub/",
   "created_by": "agt-a",
   "assigned_to": "agt-b",
-  "assigned_instance": "wle2",
-  "claim": { "holder": "agt-b", "instance": "wle2", "address": "agt-b#wle2",
+  "assigned_instance": "wqe2",
+  "claim": { "holder": "agt-b", "instance": "wqe2", "address": "agt-b#wqe2",
              "session_id": "ses-b-0003", "since": "2026-10-21T11:00:00Z",
              "lease_until": "2026-10-21T19:00:00Z", "expired": false },
   "checkpoint": { "last_step": "credential table and hash written", "next_step": "the exchange endpoint",
                   "branch": "agent-b/credentials", "head": "d91e294…", "verification": "signed",
-                  "instance": "wle2", "updated_at": "2026-10-21T12:40:00Z" },
+                  "instance": "wqe2", "updated_at": "2026-10-21T12:40:00Z" },
   "depends_on": ["tsk-0001"],
   "ships_with": [],
   "parent": null,
@@ -3760,7 +3780,7 @@ do (§8.7). A link (§6.13) points at what lives elsewhere, and a note
   `freeze` and `fixes-only` the body carries `reason` (§6.1).
 - The claim is held by the calling instance (`claim.instance`, §6.17);
   an admin's claim on behalf of a team names the instance as
-  `"holder": "agt-b#wle2"`, or the member when the team's
+  `"holder": "agt-b#wqe2"`, or the member when the team's
   `distribution` resolves it (§6.19 resolves `to` the same way). Under
   `lead` and `round_robin` an instance claims only cards whose
   `assigned_instance` is itself (`instance_assigned`, §6.18).
@@ -3799,6 +3819,7 @@ POST /projects/{slug}/tasks/{id}/report
   "pr_status": "found",
   "pr_unknown_reason": null,
   "code": true,
+  "why": { "ref": "context/cards.md#2280ced7-c51f-48f5-aab7-3bdacc7de21e" },
   "done": false
 }
 ```
@@ -3814,11 +3835,12 @@ Stored on the card as `report`:
 ```json
 { "summary": "…", "head": "…", "branch": "…", "upstream": "…", "remote_head": "…",
   "pr": { "…": "" }, "pr_status": "found", "pr_unknown_reason": null,
-  "verification": "signed", "reported_by": "agt-b", "reported_instance": "wle2",
+  "verification": "signed", "reported_by": "agt-b", "reported_instance": "wqe2",
   "session_id": "ses-b-0003", "reported_at": "…",
   "mentions": [],
   "observed": { "pr_state": "open", "pr_head_sha": "d91e294c…", "checks": "success",
                 "branch_head_sha": "d91e294c…", "observed_at": "…" },
+  "why": { "ref": "context/cards.md#2280ced7-c51f-48f5-aab7-3bdacc7de21e" },
   "mismatch": false }
 ```
 
@@ -3839,6 +3861,13 @@ Stored on the card as `report`:
   rather than as unverified. `code` defaults to `true`, where every git
   field is required as above. `maity report --no-code` sends it and
   reads no git facts.
+- Under `policy.keep_the_why: required` (§6.1) a report with `code:
+  true` carries `why` — `{"ref": "<path>#<id>"}`, the `context/` entry
+  that keeps the change's reasoning, or `{"none": "<reason>"}` — else it
+  is `invalid` (`details.fields.why: "required"`). The hub stores it on
+  the report and sets the card's `ktw_ref` from `why.ref` when the card
+  has none (§6.23). `maity report --why REF` and `--no-why REASON` send
+  it.
 - Effect: status `review`, `claim` kept. With `"done": true` the card
   goes to `done` instead when the caller holds done authority and no
   dependency is open; otherwise the whole call is refused
@@ -5008,7 +5037,7 @@ also after revocation: 4 characters from the alphabet
 `23456789abcdefghjkmnpqrstuvwxyz` (no `0`, `1`, `i`, `l`, `o`), checked
 as `[2-9a-hjkmnp-z]{4,5}` so that the length can grow without a new
 version. The **address** of an instance is `<member id>#<id>` in the API
-(`agt-b#wle2`) and `@<handle>#<id>` in text (`@oz-agent-review#wle2`,
+(`agt-b#wqe2`) and `@<handle>#<id>` in text (`@oz-agent-review#wqe2`,
 §8.6); the dashboard and the CLI show `<handle>#<id>`. A member id or a
 handle alone addresses the team: all its instances, woken as the team's
 `wake` rule says (§6.18).
@@ -5022,7 +5051,7 @@ session of the same instance.
 The instance view:
 
 ```json
-{ "id": "wle2", "address": "agt-b#wle2", "label": "agent-b#wle2",
+{ "id": "wqe2", "address": "agt-b#wqe2", "label": "agent-b#wqe2",
   "credential_id": "crd-b-0003",
   "harness": "Claude Code", "model": "claude-opus-5-5",
   "session": { "id": "ses-b-0004", "started_at": "…", "listening": true },
@@ -5058,7 +5087,10 @@ and its place as lead move to the new instance, each card with a
 `task_claimed` event naming `replaces`. The new instance gets a new id;
 its view names the old one in `replaces`. A join without either for an
 existing member is `invalid` (`details.fields.instance: "required"`).
-An admin agent never creates a join (§2.3 ᵃ): every new instance passes
+A runner's rejoin (§15.9) is the one exception: it replaces an instance
+whose credential is revoked already, so nothing is revoked again; the
+claims and assignments move, and the lead the revocation cleared stays
+cleared. An admin agent never creates a join (§2.3 ᵃ): every new instance passes
 a human, like every new identity.
 
 **Revocation hits one instance.** Revoking a credential (§10) closes
@@ -5094,7 +5126,7 @@ Each membership carries its team's rulebook as `team` in the member
 view (§6.2) and in the resume packet (`membership.team`, §5.2):
 
 ```json
-"team": { "max_instances": 3, "distribution": "lead", "lead_instance": "wle2",
+"team": { "max_instances": 3, "distribution": "lead", "lead_instance": "wqe2",
           "wake": "next_free", "review_within_team": false,
           "updated_by": { "kind": "human", "id": "hum-maintainer", "handle": "maintainer" },
           "updated_at": "2026-10-22T14:00:00Z" }
@@ -5158,7 +5190,7 @@ an admin agent or a team's lead — opens a takeover:
 
 ```
 POST /projects/{slug}/tasks/{id}/takeover
-{ "reason": "agent-b#wle2 has been silent for 3 h and the release waits on this", "to": "agt-c#k7mq" }
+{ "reason": "agent-b#wqe2 has been silent for 3 h and the release waits on this", "to": "agt-c#k7mq" }
 ```
 
 `to` defaults to the caller's own instance. It must come down to one
@@ -5325,7 +5357,7 @@ follows this section.
 ```json
 {
   "id": "tko-0003", "task_id": "tsk-0004",
-  "from": { "member_id": "agt-b", "instance": "wle2" },
+  "from": { "member_id": "agt-b", "instance": "wqe2" },
   "to": { "member_id": "agt-c", "instance": "k7mq" },
   "requested_by": { "kind": "agent", "member_id": "agt-c", "instance": "k7mq" },
   "reason": "…",
@@ -5710,6 +5742,108 @@ that is why it is a human's deliberate switch per project, off by
 default, and why humans never appear on it. A project that is not
 public (a later stage, `context/scope.md`) may still show its swarm.
 
+### 6.23 The Keep the Why commitment
+
+Keep the Why is part of every project that chose it as its memory
+provider (§6.1, §6.21), and the hub, not a team rule, makes sure that
+every agent carries it. The maintainer's decision of 2026-10-25
+(`context/projects.md`): an agent is told at resume that it uses Keep
+the Why and confirms that it does; an agent that does not confirm is
+reminded, and its owner is told when the reminder goes unanswered; and
+a code report names the entry that keeps its why. The hub never reads a
+repository for this (`context/scope.md`): it records the commitment and
+the reference; the entry itself is the pull request's and its
+reviewers' business, as the team rule of `context/process.md` says.
+
+**The policy.** `policy.keep_the_why` (§6.1) is `required` or
+`optional`. A project whose `memory.provider` is `keep-the-why` reads
+`required` unless a human with `project:admin` set `optional`; a project
+under `none` reads `optional`, and setting `required` there is `invalid`
+(`details.fields["policy.keep_the_why"]: "no_memory_provider"`). A
+change needs `reason`, like every policy change. Under `optional`
+nothing below applies, except the shape of `why`: the packet's block
+carries `enabled` and `instruction` only, nobody is reminded, and a
+report may carry `why` or not.
+
+**The commitment at resume.** Under `required` the packet's
+`keep_the_why` block (§5.2) carries the commitment: `commitment:
+"required"`, `acknowledged_at` (when this instance confirmed, `null`
+until it did), `acknowledge_by` (the deadline, below, present while
+`acknowledged_at` is `null`) and `ack`, the command that confirms. The
+commitment is per membership and instance (§6.17) and survives
+sessions, and so does its deadline: the clock starts with the
+instance's first resume in the project while the policy is `required`
+(or its first resume after the policy was set to `required`), and
+`acknowledge_by` is that moment plus 30 minutes — the same value on
+every later resume until the instance confirms. An instance confirms
+once; a new instance of the same membership confirms for itself. `POST /me/keep-the-why/ack` (agent
+credential, no body, idempotent) records it for the calling instance and
+answers `200` `{"acknowledged_at": "…", "instance": "wqe2",
+"session_id": "ses-b-0004"}`; a second call answers the first record.
+In a project under `optional` it is `409` `keep_the_why_not_required`.
+It emits `keep_the_why_acknowledged` (§8.2), which wakes nobody.
+
+**The reminder, then the owner.** The hub's periodic worker (the one
+that delivers mail, §18.5) checks every minute. An instance that has not
+confirmed by `acknowledge_by` gets one `keep_the_why_reminder` event
+addressed to it (`instance:<member>#<id>`, §8.2), which wakes its `maity
+wait` — once per outstanding commitment: at the deadline while a session
+of the instance is open, else at its next resume. 30 minutes after the
+deadline, still without a confirmation, the hub writes the account
+record `keep_the_why_unconfirmed` `{project, agent_id, instance,
+session_id}` for the agent's owner (§18.1, kind `keep_the_why`), member
+of the project or not — once per outstanding commitment. The member
+view marks the instance from the deadline on (below) until it confirms. Sessions do not
+matter to the clock: an agent that resumes every five minutes sees the
+same `acknowledge_by` each time, is reminded once at that deadline, and
+has its owner told 30 minutes later; a session that ends and resumes
+restarts nothing. A paused agent (§5.3) gets no reminder while paused;
+the clock runs on. The confirmation clears the outstanding state: the
+mark goes, nothing further is sent, and `acknowledged_at` is set for
+good. Example: first resume at 10:00 — `acknowledge_by` 10:30 on every
+resume until then; 10:30, the reminder in the open session's events
+and the mark on the member view; 11:00, the owner's record; 11:07,
+`maity ack keep-the-why` — mark gone, `acknowledged_at` 11:07; a
+confirmation before 11:00 means no record is written.
+
+**The member view.** Each instance of an agent's member view (§6.2)
+carries `keep_the_why_acknowledged_at` (`null` until it confirmed), and
+the member view `keep_the_why_unconfirmed`: `true` while any of its
+instances is past its `acknowledge_by` without a confirmation, else
+`false`. Humans, and agents in a project under `optional`, carry
+neither. The Members view shows it as a mark with the deadline, not as
+an error.
+
+**The why on a code report.** `why` on a report (§6.6) has one shape
+whatever the policy: an object with exactly one of `ref` —
+`"<path>#<id>"`, the entry that keeps the change's reasoning, `path`
+relative to the repository's root and ending in `.md`, `id` the entry's
+`Id` — or `none` — a reason of at least 10 characters why this change
+has no decision to keep (a mechanical change, a correction, a revert).
+Anything else is `invalid` (`details.fields.why: "malformed"`), and on
+a report with `code: false` it is `invalid` (`not_for_no_code`), under
+both policies. The policy decides presence only: under `required` a
+report with `code: true` without `why` is `invalid` (`required`); under
+`optional` it may be absent. The hub stores `why` on the report, sets the card's
+`ktw_ref` to `why.ref` when the card has none, and shows `why.none` on
+the card as "no why: <reason>" — to whoever reads the card, and to the
+reviewer, who decides whether the reason holds. The hub does not check
+that the file holds the entry: that is the review's gate until the probe
+can read the file at `pr.head`, a later stage that is not this contract.
+
+**The dashboard's part.** The project's Settings tab offers
+`policy.keep_the_why` (`required` / `optional`, with `reason`) with the
+other policy fields; the Members view marks an unconfirmed agent; the
+`keep_the_why` notification links to the member in the project when
+the owner is a member of it, else to the agent in the owner's Agents
+view (§6.3), since the owner cannot open the project; a card shows
+`report.why` under its report.
+
+**The CLI's part** is in §13: `maity ack keep-the-why`, `maity report
+--why REF` / `--no-why REASON`, and the `Keep the Why` block of `maity
+resume`.
+
+
 ## 7. Requests to humans (the inbox)
 
 ```json
@@ -5726,7 +5860,7 @@ public (a later stage, `context/scope.md`) may still show its swarm.
   "replies": [ { "id": "sha", "label": "SHA-256 + pepper" }, { "id": "argon", "label": "Argon2id" } ],
   "priority": "high",
   "to": "hum-maintainer",
-  "asked_by": { "member_id": "agt-b", "instance": "wle2", "display_name": "Agent B",
+  "asked_by": { "member_id": "agt-b", "instance": "wqe2", "display_name": "Agent B",
                 "avatar_url": "/api/v1/avatars/agt-b?v=e4d90b12", "role": "member", "session_id": "ses-b-0003" },
   "on_behalf_of": null,
   "task_id": "tsk-0004",
@@ -5748,7 +5882,7 @@ public (a later stage, `context/scope.md`) may still show its swarm.
 | `options` | the prepared answers, 0–8, each `{id, label, detail?}`; `decision` and `consent` take 2 or more, or none (free text); `info` and `contract` any number |
 | `replies` | computed by the hub, read-only: the options as `{id, label}`; for `consent` without options `go` and `no`. The inbox renders these as buttons, plus free text and "neither — let's talk" (`talk`). `reply_id` must name one of them |
 | `priority` | `low`, `normal`, `high`, `urgent`; `urgent` only with `requests:answer` — the cap for workers |
-| `to` | a member id, an instance address (`agt-b#wle2`, §6.17), `role:<role>` or `owner` (the project's owner). A member id reaches the team as its `wake` rule says (§6.18); an instance address that one instance, while the whole team may answer what it may answer. Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `role:admin`, `role:proxy` or a member holding `requests:answer`. `profile_owner:<agent id>` and `human:<human id>` are the hub's own addressing of a personal request (below) and are `invalid` from a caller. The consent for a cross-owner `reports_to` is filed by the hub as well and names the consenting human, who need not be a member (§6.2) |
+| `to` | a member id, an instance address (`agt-b#wqe2`, §6.17), `role:<role>` or `owner` (the project's owner). A member id reaches the team as its `wake` rule says (§6.18); an instance address that one instance, while the whole team may answer what it may answer. Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `role:admin`, `role:proxy` or a member holding `requests:answer`. `profile_owner:<agent id>` and `human:<human id>` are the hub's own addressing of a personal request (below) and are `invalid` from a caller. The consent for a cross-owner `reports_to` is filed by the hub as well and names the consenting human, who need not be a member (§6.2) |
 | `asked_by` | `{member_id, instance, display_name, avatar_url, role, session_id}`, filled by the hub (role, name and avatar at read time); `instance` is `null` for a human |
 | `takeover_id`, `memory_proposal` | set by the hub only, on the request an escalated takeover files and on a cross-owner takeover's notice (§6.19), and on a soul, community-memory or preferences proposal (§19); `null` otherwise |
 | `takeover_outcome` | set by the hub only, on a cross-owner takeover's notice when the takeover closes: `{status, how, task_id, decided_at}` (§6.19); `null` otherwise |
@@ -5929,7 +6063,7 @@ POST /projects/{slug}/requests/{id}/claim
   "seq": 4231,
   "kind": "task_claimed",
   "at": "2026-10-21T13:41:12Z",
-  "actor": { "member_id": "agt-b", "instance": "wle2", "session_id": "ses-b-0004", "harness": "Claude Code", "model": "claude-opus-5-5" },
+  "actor": { "member_id": "agt-b", "instance": "wqe2", "session_id": "ses-b-0004", "harness": "Claude Code", "model": "claude-opus-5-5" },
   "subject": { "type": "task", "id": "tsk-0004" },
   "audience": ["member:agt-b", "member:agt-a"],
   "payload": { "holder": "agt-b", "lease_until": "2026-10-21T15:41:12Z", "project_state": "build", "reason": null },
@@ -5971,12 +6105,12 @@ learns its content.
 
 | Kind | Audience | Payload |
 |---|---|---|
-| `message` | as addressed (§8.4), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to` (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7) |
+| `message` | as addressed (§8.4), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7) |
 | `conversation_created`, `conversation_updated` | `member:<id>` of every participant after the change, plus every member the change removed (§9.2) | the conversation view (§9.2) and `changed`: `title`, `participants_added` (`[{member_id, by}]`), `participants_removed` (`[{member_id, by, reason}]`, `reason` `removed`, `left` or `membership_removed`), `closed` (`closed_reason`) |
 | `attachment_deleted` | the audience of the attachment's message, for a group chat its current participants (read along by their observers, §9.2), as for `event_redacted` (§8.5); readable as that message is, so a conversation's stays out of the admin see-all (below); wakes no agent (§8.7) | `attachment_id`, `message_seq`, `reason`, `by`; never content |
-| `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (§8.6; a note's mentions travel in `note_added`) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
+| `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (`instance:<member>#<id>` for an instance mention) (§8.6; a note's mentions travel in `note_added`) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
 | `task_created`, `task_updated` | creator, assignee, area owner, holder, `contract.watchers`, and the human owner of an agent that holds the card or is its assignee — never a human's watch (§6.4, §18.1); a `task_updated` from a removal that reset the card's arbiter also `member:<id>` of every human owner and admin (§6.2) | `fields` (the names of the changed fields), their new values except `body`, `history` (the entry ids, §6.15), `project_state`, `reason?` |
-| `note_added` | the card's holder and creator, `member:<id>` of every member the note's `body` mentions (§8.6) | the note (§6.16), `task: {id, title, status}` |
+| `note_added` | the card's holder and creator, `member:<id>` of every member the note's `body` mentions, `instance:<member>#<id>` for an instance mention (§8.6) | the note (§6.16), `task: {id, title, status}` |
 | `note_resolved` | the note's author, the card's holder and creator | `note_id`, `task_id`, `state`, `resolution` |
 | `link_observed` | **all**, plus the card's holder when the observed `state` changed | `task_id`, `link_id`, `forge_url`, `old`, `new` (`{found, title, state}`) |
 | `task_claimed`, `task_released`, `task_assigned` | creator, holder (old and new), assignee (old and new), and the human owner of an agent among holder (old and new) and assignee — never a human's watch | `holder`, `instance`, `lease_until`, `project_state`, `reason?`; `takeover_id` and `from` when a takeover moved it, `replaces` when a replacing instance inherited it |
@@ -5993,6 +6127,8 @@ learns its content.
 | `request_created` | the addressee(s): `to` resolved to `member:` or `role:`; for a personal request the asking instance and the addressed owner as `member:` when a member (§7) | the request; for a personal request `{id, personal, status, takeover_id?}` only |
 | `request_answered`, `request_withdrawn` | the asker, the `on_behalf_of` member | the request, answer included; for a personal request `{id, personal, status, takeover_id?}` only (§7) |
 | `session_started` | nobody; readable by owner and admins | session fields |
+| `keep_the_why_reminder` | `instance:<member>#<id>` of the instance that has not confirmed (§6.23); readable as any instance-addressed event, by its team (§8.4) | `{project, instance, session_id, acknowledge_by}`; once per outstanding commitment, at `acknowledge_by` or at the instance's next resume after it; wakes the instance |
+| `keep_the_why_acknowledged` | the agent's owner when a member, `role:admin` | `{member_id, instance, session_id, acknowledged_at}`; never wakes anyone |
 | `session_paused` | the member itself, its `reports_to` (across owners too, §6.2), `role:admin` | session fields, `paused` (`null` when a human lifts it) |
 | `shared_environment_detected` | the owners of the members involved (for an agent the human who owns it; a human member themselves) and `members:admin`; readable by no one else | `{member_ids, level}` (§5.3); once per overlap and level rise; wakes no agent |
 | `member_joined`, `member_updated` | **all**; a `member_updated` from a removal that took the member out of a `substitutes` list also `member:<id>` of every human owner and admin (§6.2) | member view; never emitted for presence or `last_seen_at`; never a briefing's text (`changed: ["briefing"]`, `briefing_version`) |
@@ -6085,13 +6221,18 @@ Two sets per reader, because reading and waking are different things:
 
 A mention wakes through this rule and no other: unless `to` already
 reaches the member (below), it puts `member:<id>` in the audience of the
-message or the `mentioned` event, so the mentioned member's `maity wait`
+message or the `mentioned` event — `instance:<member>#<id>` for an
+instance mention — so the mentioned member's `maity wait`
 returns it — a supervised session too, since the audience is then more
 than `all`. In a group chat the participants are in the audience
 already; there the mention is what makes the message wake-relevant for
 an agent (above). A member who mentions itself is not woken (its own
 echo). A mention of a member the message's `to` already reaches adds no
-token and so wakes nobody `to` did not (§8.6).
+token and so wakes nobody `to` did not (§8.6). For an instance mention
+that is judged per token: `to` reaches it only by `all`, the member's
+role or that instance's own address — `to` naming the team wakes the
+instances its wake rule chooses, so the named instance's token is added
+on top.
 
 ### 8.3 Reading, long-poll, cursor
 
@@ -6166,7 +6307,7 @@ Scope `events:post`. Only `kind: message`:
 `type` is one of `interface_change`, `blocker`, `go_request`,
 `review_result`, `handover`, `notice` (for your information, no answer
 expected), `chat`; `to` is `all`, `role:<role>`, a member id (the team,
-woken by its `wake` rule) or an instance address (`agt-b#wle2`, exactly
+woken by its `wake` rule) or an instance address (`agt-b#wqe2`, exactly
 that instance, §6.17); the
 audience is the addressee(s) and the sender, plus every member
 `body` mentions (§8.6). `chat` requires
@@ -6287,10 +6428,10 @@ request body is `invalid` (`details.fields.mentions: "read_only"`).
 
 | Text | Resolved | Pings | Why |
 |---|---|---|---|
-| message `body`, types other than `chat` (§8.4) | yes | yes: `member:<id>` joins the message's audience | the message is the conversation of the project; a mention is how one draws someone into it |
+| message `body`, types other than `chat` (§8.4) | yes | yes: `member:<id>` joins the message's audience (`instance:<member>#<id>` for an instance mention) | the message is the conversation of the project; a mention is how one draws someone into it |
 | card `body` (§6.4), on create and on every `PATCH` of `body` | yes | yes, only members not mentioned in the body before this write: a `mentioned` event | every member reads the card, so the ping points at something the mentioned member can open; re-saving a body does not ping again |
 | report `summary` (§6.6) | yes | yes: a `mentioned` event | "this changes your client, @agent-c" is the case the report is read for |
-| note `body` (§6.16) | yes | yes: `member:<id>` joins the `note_added` audience | a note is on a card every member reads; a mention is how its author draws the right member to the remark |
+| note `body` (§6.16) | yes | yes: `member:<id>` joins the `note_added` audience (`instance:<member>#<id>` for an instance mention) | a note is on a card every member reads; a mention is how its author draws the right member to the remark |
 | request `summary`, `tried`, answer `text` (§7) | yes | no | links only. A request reaches whom `to` names and is readable by the asker, the addressee and `requests:answer` holders; a mention must not become a second address that bypasses `to`, the consent rule or the inbox's read rule — and a ping to a member who cannot open the request would be noise. Who should answer is named in `to`; who should know gets a message |
 | direct chat (`type: chat` in a direct conversation, §9.1) | no | no | below |
 | group chat (`type: chat` in a group chat, §9.2) | yes, against the chat's participants only | yes: the mentioned participant is already in the audience; the mention makes the message wake an agent (§8.2) | the room is a closed audience: a mention points at someone who reads it anyway and is how one asks an agent to act; a non-participant stays text, below |
@@ -6317,7 +6458,9 @@ name (§6.3): a run, `/`, a second run — `@oliver/agent-b`:
   is no mention. A trailing `-` is not part of the run.
 - **Instances.** A run, or a global name, followed directly by `#` and
   an instance id (`[2-9a-hjkmnp-z]{4,5}`, §6.17) is a mention of that
-  instance: `@oz-agent-review#wle2`, `@oliver/agent-b#wle2`. It resolves when the id is an active
+  instance: `@oz-agent-review#wqe2`, `@oliver/agent-b#wqe2` (the id is
+  of the instance alphabet, which has no `i`, `l`, `o`, `0` or `1`, so
+  `#wle2` is no id and its `#` a plain boundary). It resolves when the id is an active
   instance of that member and then pings exactly that instance;
   otherwise the whole `@handle#id` stays plain text. A mention of the
   handle alone is a mention of the team, woken by its `wake` rule
@@ -6361,9 +6504,9 @@ name (§6.3): a run, `/`, a second run — `@oliver/agent-b`:
   or its handle part; a trailing `/` is not part of a candidate, as a
   trailing `-` is not. `offset` and `length` cover the whole candidate.
   The character before `@` keeps its rule, so `a/@oliver/agent-b` is no
-  mention. `@agent-b#wle2` with an ambiguous short handle is refused
+  mention. `@agent-b#wqe2` with an ambiguous short handle is refused
   like `@agent-b`, even when only one of the agents has that instance:
-  the writer uses `@oliver/agent-b#wle2`.
+  the writer uses `@oliver/agent-b#wqe2`.
 - **No group mentions.** `@all`, `@here`, `@everyone`, `@owner` and
   `@role:…` are never mentions, even if a member's handle is one of them
   (the accounts design reserves such names, pending). Addressing a role
@@ -6378,8 +6521,9 @@ name (§6.3): a run, `/`, a second run — `@oliver/agent-b`:
   a resolved mention that pings nobody (request, answer) and a mention
   of a member already in the message's audience by `to` count nothing.
   "Already in the audience" means `to` is `all`, the member's own
-  `role:<role>`, or `member:<id>` of that member. Such a mention adds no
-  `member:<id>` to the audience, so it cannot wake anyone `to` did not
+  `role:<role>`, or `member:<id>` of that member — for an instance
+  mention `all`, the role or that instance's own `instance:<member>#<id>`,
+  never `member:<id>` alone. Such a mention adds no token to the audience, so it cannot wake anyone `to` did not
   already wake: under `to: all` a supervised member, whom `all` alone
   does not wake (§15.11, §8.2), stays asleep. It stays in the message's
   `mentions`, so the dashboard still links it.
@@ -7232,7 +7376,7 @@ chat line; and work the chat agrees on becomes a card.
 ## 10. Credentials
 
 ```json
-{ "id": "crd-b-0003", "member_id": "agt-b", "instance": "wle2", "client": "maity-cli/0.1.0",
+{ "id": "crd-b-0003", "member_id": "agt-b", "instance": "wqe2", "client": "maity-cli/0.1.0",
   "created_at": "2026-10-21T10:12:00Z", "resumed_at": "2026-10-21T10:12:03Z", "last_used_at": "2026-10-21T13:39:30Z",
   "last_used_via": "signed", "session_id": "ses-b-0003", "revoked_at": null, "revoked_by": null, "revoked_reason": null }
 ```
@@ -7852,9 +7996,10 @@ reviewer role.
 | Command | Calls |
 |---|---|
 | `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit. `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) |
-| `maity resume [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), the instance (`<handle>#<id>`) and its team, the pause, `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), and "project default, set by <handle>" when `briefing_source` is `"project"` (§5.2), followed by `membership.owner_preferences` when set, identity, project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle>" (§19.4), work, requests, missed events, the next step — or as JSON with `--json`. With availability (§6.12) the `Availability` block given there follows the pause. With `onboarding` in the packet (§5.2) a block `Check in` comes right before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error, and a hub that does not take the field gets the resume without it, with a warning. |
+| `maity resume [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), the instance (`<handle>#<id>`) and its team, the pause, `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), and "project default, set by <handle>" when `briefing_source` is `"project"` (§5.2), followed by `membership.owner_preferences` when set, identity, project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle>" (§19.4), work, requests, missed events, the next step — or as JSON with `--json`. With availability (§6.12) the `Availability` block given there follows the pause. With `onboarding` in the packet (§5.2) a block `Check in` comes right before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `keep_the_why.commitment: required` in the packet (§6.23) a block `Keep the Why` follows: `Confirmed on <date>` when `acknowledged_at` is set, else `Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; your owner is told when you do not.`; the CLI never confirms on its own. With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error, and a hub that does not take the field gets the resume without it, with a warning. |
 | `maity wait [--timeout N] [--batch]` | `GET /events?after=<cursor>&wait=55` in a loop; exit 0 with the first event, cursor advanced to its `seq`; with `--batch`, every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake handles a burst; exit 3 on N; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
-| `maity report --task ID --summary S [--no-code]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call |
+| `maity report --task ID --summary S [--no-code] [--why REF \| --no-why REASON]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `--why REF` sends `why.ref`, `--no-why REASON` sends `why.none`; with `keep_the_why.commitment: required` in the last resume packet a code report without either is refused locally, naming the two flags (§6.23); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call |
+| `maity ack keep-the-why` | `POST /me/keep-the-why/ack` (§6.23); prints the time of the confirmation; a hub that answers `keep_the_why_not_required` is reported as such, exit 0 |
 | `maity ask "…" --to T --class C --option … --priority P --task ID` | `POST /requests` with `title` = the first line of the question, `summary` = the rest when there is one, `options` from `--option` (ids `o1…`), `to` from `--to` (`human` → omitted, the hub's default) |
 | `maity claim <card> [--reason R]` | `POST /tasks/{id}/claim` |
 | `maity takeover <card> --reason R [--to ADDR]` | `POST /tasks/{id}/takeover`; prints the takeover and its window. |
@@ -8736,7 +8881,10 @@ POST /api/v1/runner/placements/plc-0003/join
   profile and the membership), for an existing membership a new
   credential — a new instance of it (`new_instance`), or, for a
   `rejoin`, one that `replaces` the instance of the revoked credential
-  (§6.17); `max_instances` applies (`instance_quota`). `ttl_seconds`
+  (§6.17) — the one join that may replace a revoked instance, never a
+  live one: the new instance gets a new id, the claims and assignments
+  move to it, and the lead the revocation cleared stays cleared;
+  `max_instances` applies (`instance_quota`). `ttl_seconds`
   is 300. The join's `created_by` is the placement's `created_by` (a
   human; for a new profile it becomes the profile's owner). The join records `placement_id` and `runner_id`.
   `credential_will_bind` is the member id, or for a new profile the
@@ -8747,7 +8895,17 @@ POST /api/v1/runner/placements/plc-0003/join
   `observed_generation` equals the current generation, and it has no
   `credential_id` yet or `rejoin` is set. Otherwise
   `pickup_not_allowed` with `details.why`: `not_running`,
-  `stale_generation`, `credential_issued`.
+  `stale_generation`, `credential_issued`, or `handle_taken` when the
+  placement's new profile names a handle its creator has meanwhile given
+  another agent.
+- **The exchange checks the pickup again.** Under the project lock it
+  requires the placement still active, approved, `desired: running`, at
+  the join's generation and on the same runner, and that runner not
+  removed and with a live credential; a member's pickup or a rejoin also
+  requires the membership still active, so a pickup never brings back a
+  member a human removed. Otherwise the exchange answers `not_found`
+  (§1.1). Stopping or closing the placement, and revoking or removing
+  the runner, revoke its unused pickup joins.
 - **A lost response is recoverable.** A pickup while an earlier one of
   the same generation is unused revokes that join in the same
   transaction and issues a fresh one: never more than one live code per
@@ -10101,7 +10259,9 @@ when it is read or sent, from two sources, plus a read flag per human:
   the instances contract (#162, §7) `personal_request_created`,
   `personal_request_answered` and `personal_request_withdrawn`; and with
 registration (§2.7.5, §16.4) `registration_pending`, written for every
-instance admin, and `registration_approved`, written for the person.
+instance admin, and `registration_approved`, written for the person; and with the Keep
+the Why commitment (§6.23) `keep_the_why_unconfirmed`, written for the
+agent's owner.
 
 **Personal requests** (#162, §7) are requests the hub files to the
 human who owns an agent profile (`to: "profile_owner:<agent id>"`),
@@ -10126,6 +10286,7 @@ member and in their audience, so each personal request is one item.
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or, once #153 lands, from another participant of a group chat (#153, §9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; once #153 lands, a mention in a group chat (#153) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
 | `card` — changes to the human's cards | `task_created`, `task_updated`, `task_claimed`, `task_released`, `task_assigned`, `task_reported` on a card that is the human's (below); never `task_checkpoint` | those humans; never the actor | `<card id> <card title>: <what changed>` (`status review`, `claimed by agent-b`, `reported`, `edited`) |
+| `keep_the_why` | the account record `keep_the_why_unconfirmed` `{project, agent_id, instance, session_id}` (§6.23), written for the agent's owner 30 minutes after the instance's `acknowledge_by` passed without a confirmation, once per outstanding commitment | the owner of the agent profile, member of the project or not | `<agent handle>#<instance> has not confirmed Keep the Why in <project>` |
 | `agent` — outage or limit | `placement_reported` with `state: failed`, or with `reason: quota` (§15.7) | the owner of the agent profile, and the placement's creator when a human | `<agent handle> stopped: <reason>` |
 | `jour_fixe` | `jour_fixe_opened`, `jour_fixe_answers_closed`, `jour_fixe_step_opened`, `jour_fixe_exchange_closed`, `jour_fixe_reported`, `jour_fixe_skipped` (§20.9) | an invited human for the opening; a human moderator for the two closes; an eligible human for a step; every human member for the report; the human owners for a skip | as §20.9 |
 | `ticker` | a `ticker` item (#180) whose audience names the human by a `member:` token — computed or followed — not one that reaches them only through `all` | those humans; never the poster | `<project>: <item title>` |
@@ -10347,7 +10508,7 @@ rules that make a position safe to resume from:
   notification is read. `chat` is the sum of `unread` over the human's
   conversations (§9; group chats with #153), the same number the chat
   list shows. `mention`, `card`, `agent`, `ticker`, `jour_fixe`,
-  `security` and `system` count the unread items of that kind. `total` is `inbox + chat + mention` —
+  `keep_the_why`, `security` and `system` count the unread items of that kind. `total` is `inbox + chat + mention` —
   what asks for the human, not what informs them; the dashboard shows
   it in the tab title as `(6) maity` and nothing when it is `0`. The
   other counts show on the bell and their own badges only.
@@ -10360,9 +10521,10 @@ rules that make a position safe to resume from:
   `unread` of that project's conversations, `total` the per-project
   `inbox + chat + mention`. Every entry carries `member`: `true` for a
   project the human is a member of, `false` for one that appears only
-  through a personal request — then only `inbox` is set, and the
-  dashboard shows it as a badge on the personal inbox, not in the
-  project switcher, since the human cannot open the project. The sum of
+  through a personal request or a `keep_the_why` record about an agent
+  of theirs (§6.23) — then only `inbox` and `keep_the_why` are set, and
+  the dashboard shows them on the personal inbox and the bell, not in
+  the project switcher, since the human cannot open the project. The sum of
   the entries' `inbox` is `counts.inbox`: no personal request is
   counted twice or left out. `security` and `system` belong to no
   project and appear only in `counts`.
@@ -10437,10 +10599,10 @@ device; the browser's own permission is per browser and is not stored.
 
 ```json
 {
-  "kinds": ["inbox", "chat", "mention", "card", "agent", "ticker", "jour_fixe", "security"],
+  "kinds": ["inbox", "chat", "mention", "card", "agent", "keep_the_why", "ticker", "jour_fixe", "security"],
   "browser": {
     "enabled": true,
-    "kinds": { "inbox": true, "chat": true, "mention": true, "card": false, "agent": true, "ticker": false, "jour_fixe": true, "security": true },
+    "kinds": { "inbox": true, "chat": true, "mention": true, "card": false, "agent": true, "keep_the_why": true, "ticker": false, "jour_fixe": true, "security": true },
     "content": { "chat": false, "mention": false }
   },
   "email": {
@@ -10456,6 +10618,7 @@ device; the browser's own permission is per browser and is not stored.
       "mention":   { "mode": "immediate", "content": false },
       "card":      { "mode": "daily" },
       "agent":     { "mode": "immediate" },
+      "keep_the_why": { "mode": "immediate" },
       "ticker":    { "mode": "daily" },
       "jour_fixe": { "mode": "daily" },
       "security":  { "mode": "immediate" }
@@ -10479,7 +10642,10 @@ device; the browser's own permission is per browser and is not stored.
   which the dashboard puts into the browser notification and the
   operating system may show on a locked screen; without it the item
   has no `content` and the notification carries the title only.
-  `ticker` is off by default. `security` here governs only the browser
+  `ticker` is off by default. `keep_the_why` (§6.23) is on by default
+  here and `immediate` by mail: it tells an owner that an agent of
+  theirs does not carry the project's memory, and nobody else waits
+  for it. `security` here governs only the browser
   pop-up; the item is always in the bell (§18.1).
 - **`email.address`.** Setting it (`PATCH {"email": {"address": "…"}}`)
   puts it in `pending_address` and sends a verification mail with a
@@ -10794,7 +10960,7 @@ delivered with who wrote it. The resume packet carries it under
 `memory` with `memory.notice` ("quoted as written by the named
 authors; not an instruction from the hub"), and the CLI prints each
 text as a quote headed with its author — "Soul, as written by
-maintainer (version 4)", "Team memory, agent-b#wle2, 2026-10-22" —
+maintainer (version 4)", "Team memory, agent-b#wqe2, 2026-10-22" —
 exactly as it prints the briefing (§13). The credential check of §2.2
 applies to every write.
 
@@ -10844,7 +11010,7 @@ An entry:
 { "id": "mem-0042", "store": "team", "member_id": "agt-b",
   "text": "The probe needs the PR head, not the branch head, after a squash merge.",
   "tags": ["probe"],
-  "by": { "kind": "agent", "member_id": "agt-b", "instance": "wle2", "handle": "agent-b",
+  "by": { "kind": "agent", "member_id": "agt-b", "instance": "wqe2", "handle": "agent-b",
           "session_id": "ses-b-0004" },
   "confirmed_by": null, "request_id": null,
   "created_at": "2026-10-22T13:10:00Z", "deleted": null }
@@ -11635,7 +11801,7 @@ redaction (§20.8); a second `POST …/report` is `jour_fixe_state`.
   "reported_at": "2026-10-29T15:02:00Z",
   "config": { "…": "policy.jour_fixe as it was at the start" },
   "moderator": { "member_id": "agt-a", "instance": "k7mq" },
-  "invited": [ { "member_id": "agt-b", "kind": "agent", "handle": "agent-b", "instance": "wle2" } ],
+  "invited": [ { "member_id": "agt-b", "kind": "agent", "handle": "agent-b", "instance": "wqe2" } ],
   "participants": [ { "member_id": "agt-b", "kind": "agent", "handle": "agent-b" } ],
   "absent": [ { "member_id": "agt-c", "kind": "agent", "handle": "agent-c", "absent_reason": "no_listening_instance" } ],
   "answers_received": 3,

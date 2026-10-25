@@ -145,11 +145,16 @@ window.Maity = window.Maity || {};
     marks.forEach((x) => {
       if (x.offset < from || x.offset + x.length > chars.length) return;
       const said = chars.slice(x.offset, x.offset + x.length).join("");
-      if (said !== "@" + x.handle) return;
+      // The hub stores a long mention (§8.6) with the whole @owner/handle,
+      // and an instance mention with its #id after either form.
+      const suffix = x.instance ? "#" + x.instance : "";
+      if (said !== "@" + x.handle + suffix && !(x.name && said === "@" + x.name + suffix)) return;
       if (x.offset > from) out.push(...plain(chars.slice(from, x.offset).join("")));
-      // No href: a mention named where its member cannot be opened.
+      // No href: a mention named where its member cannot be opened. An
+      // instance mention links to the member; the instance is in the title.
       const href = hrefOf(x.member_id);
-      out.push(href ? h("a", { class: "mention", href }, said) : h("span", { class: "mention" }, said));
+      const title = x.instance ? "instance " + x.instance : null;
+      out.push(href ? h("a", { class: "mention", href, title }, said) : h("span", { class: "mention", title }, said));
       from = x.offset + x.length;
     });
     if (from < chars.length) out.push(...plain(chars.slice(from).join("")));
@@ -194,6 +199,38 @@ window.Maity = window.Maity || {};
   // What a view says where a feature of a newer hub would be: muted, not red.
   const notOnHub = (text) => h("p", { class: "muted not-on-hub" }, text);
 
+  // The handle a member goes by in a project (docs/api.md §6.3): the short
+  // one, or an agent's global name (owner/handle) where two members of the
+  // project share the short one. A human has no long form and keeps the
+  // short one ("a human comes first", §8.6). `members`: the project's list.
+  const sharedOf = new WeakMap();
+  function sharedHandles(members) {
+    const list = members || [];
+    if (!sharedOf.has(list)) {
+      const count = {};
+      list.forEach((m) => { if (m && m.handle) count[m.handle] = (count[m.handle] || 0) + 1; });
+      sharedOf.set(list, new Set(Object.keys(count).filter((k) => count[k] > 1)));
+    }
+    return sharedOf.get(list);
+  }
+  function handleIn(members, m) {
+    if (!m || !m.handle) return null;
+    return m.kind === "agent" && m.name && sharedHandles(members).has(m.handle) ? m.name : m.handle;
+  }
+  const handleOf = (ctx, m) => handleIn(ctx && ctx.members, m);
+
+  // The hub's refusal of a short handle two agents share (§8.6
+  // ambiguous_mention), in words with the long forms it names; null for
+  // any other error.
+  function ambiguousMention(err) {
+    const fields = err && err.code === "invalid" && err.details && err.details.fields;
+    if (!fields || !Object.values(fields).includes("ambiguous_mention")) return null;
+    const named = (err.details && err.details.mentions) || {};
+    const parts = Object.keys(named).map((handle) => "@" + handle + " is " + named[handle].length + " agents here: write "
+      + named[handle].map((n) => "@" + n).join(" or "));
+    return { message: (parts.length ? parts.join("; ") : "a handle here is two agents: write its long form, @owner/handle") + "." };
+  }
+
   // A member as every view names them: always a way to their view in the
   // project (the maintainer's rule: a member is always clickable), the full
   // name as tooltip. `who` is a member id or a reference carrying
@@ -206,7 +243,7 @@ window.Maity = window.Maity || {};
     const id = typeof who === "string" ? who : who && (who.member_id || who.id);
     const m = id && ctx.memberById ? ctx.memberById[id] : null;
     const name = (m && m.display_name) || (who && who.display_name) || (id && ctx.nameOf ? ctx.nameOf(id) : id) || "—";
-    const handle = (m && m.handle) || (who && who.handle);
+    const handle = (m && handleOf(ctx, m)) || (who && who.handle);
     const label = o.text === "handle" ? (handle ? "@" + handle : name) : (o.text || name);
     const pic = o.avatar && m && M.avatar ? M.avatar(m, o.avatar) : null;
     if (!m || ctx.outsider || typeof ctx.link !== "function") return h("span", { class: "member-ref plain", title: name }, pic, label);
@@ -226,5 +263,5 @@ window.Maity = window.Maity || {};
       title: known ? "Last hub call: " + formatTime(member.last_seen_at) : "No last hub call is available" }, text);
   }
 
-  M.dom = { isSilentAgent, silentSince, memberRef, notOnHub, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, withMentions, sniffImage, IMAGE_MAX, SEND_KEYS, sendOnCtrlEnter };
+  M.dom = { handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, memberRef, notOnHub, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, withMentions, sniffImage, IMAGE_MAX, SEND_KEYS, sendOnCtrlEnter };
 })(window.Maity);

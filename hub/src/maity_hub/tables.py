@@ -184,7 +184,61 @@ human_session = Table(
     Column("last_seen_at", UtcDateTime, nullable=False),
     Column("expires_at", UtcDateTime, nullable=False),
     Column("ended_at", UtcDateTime),
-    Column("source", String(64)),
+    Column("source", String(64)),  # the address the session started from
+    # The session list (docs/api.md §2.6.5): a public id that is never the cookie's
+    # value, how it was made, what the browser said about itself at the sign-in, the
+    # address of the latest call, the session that approved a device code, and why it
+    # ended (logout, revoked, end_others, password_change).
+    Column("public_id", String(ID), nullable=False, unique=True),
+    Column("method", String(16), nullable=False),
+    Column("browser", String(64)),
+    Column("os", String(64)),
+    Column("ip", String(64)),
+    Column("approved_by", String(ID)),
+    Column("ended_by", String(16)),
+    **MYSQL_TABLE,
+)
+
+# A device code (docs/api.md §2.6.2): made by one session of a human, redeemed by one
+# new browser (bound by the pending cookie), approved by number matching on the session
+# that made it, completed into one new session. The code and the pending cookie are kept
+# only as `sha256`; `user_agent` is what the new browser claimed, shown in the dialog
+# while the code lives.
+device_code = Table(
+    "device_code",
+    metadata,
+    _id(primary_key=True),
+    _ref("human_id", "human.id", nullable=False, index=True),
+    Column("session_hash", String(HEX_SHA256), nullable=False, index=True),
+    Column("code_hash", String(HEX_SHA256), nullable=False, unique=True),
+    Column("status", String(16), nullable=False),  # waiting redeemed approved used denied
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("expires_at", UtcDateTime, nullable=False),
+    Column("pending_hash", String(HEX_SHA256), unique=True),
+    Column("redeemed_at", UtcDateTime),
+    Column("ip", String(64)),
+    Column("user_agent", String(300)),
+    Column("browser", String(64)),
+    Column("os", String(64)),
+    Column("new_device", Boolean),
+    Column("match_number", Integer),
+    Column("choices", JSON_VALUE),
+    Column("next", String(512)),
+    Column("approved_at", UtcDateTime),
+    Column("session_public_id", String(ID)),  # the session it was completed into
+    **MYSQL_TABLE,
+)
+
+# The device cookie (docs/api.md §2.6.5): one random value per human and browser, kept as
+# `sha256`; it authenticates nothing and only tells the approval dialog whether this
+# browser signed in to the human's account before.
+human_device = Table(
+    "human_device",
+    metadata,
+    Column("value_hash", String(HEX_SHA256), nullable=False),
+    _ref("human_id", "human.id", nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("value_hash", "human_id"),
     **MYSQL_TABLE,
 )
 
@@ -234,6 +288,9 @@ project = Table(
     # The event seq at the last rules change, set under the project lock, so
     # that `rules.changed` compares with an agent's cursor (§5.2).
     Column("rules_changed_seq", BIG_ID),
+    # Whether one of its teams has a `wake` rule other than `all` (§6.18): only then
+    # does writing an event look for the instances it wakes.
+    Column("team_wake", Boolean, nullable=False, server_default=false()),
     Column("created_at", UtcDateTime, nullable=False),
     **MYSQL_TABLE,
 )
@@ -271,6 +328,7 @@ membership = Table(
     Column("distribution", String(16), nullable=False, server_default="free"),
     Column("lead_instance", String(INSTANCE)),
     Column("wake", String(16), nullable=False, server_default="all"),
+    Column("round_robin_last", String(INSTANCE)),  # the instance `round_robin` chose last
     Column("review_within_team", Boolean, nullable=False, server_default=false()),
     Column("team_updated_by", String(ID)),
     Column("team_updated_at", UtcDateTime),
@@ -382,6 +440,11 @@ join_link = Table(
     Column("failed_attempts", Integer, nullable=False),
     Column("burned_at", UtcDateTime),
     Column("revoked_at", UtcDateTime),
+    # A runner's pickup for a placement (§15.9): the placement, the runner and the
+    # generation it was picked up for; null on a human's join.
+    _ref("placement_id", "placement.id", index=True),
+    _ref("runner_id", "runner.id"),
+    Column("generation", Integer),
     CheckConstraint("agent_id IS NOT NULL OR new_agent_handle IS NOT NULL", name="names_an_agent"),
     **MYSQL_TABLE,
 )
@@ -410,6 +473,10 @@ credential = Table(
     # (§15.3): when, and on whose authority, until it is revoked.
     Column("revoke_due_at", UtcDateTime),
     Column("revoke_due_by", String(ID)),
+    # The instance's own pause (§5.3), as the membership's is stored.
+    Column("paused_reason", MARKDOWN_TEXT),
+    Column("paused_since", UtcDateTime),
+    Column("paused_by", String(ID)),
     UniqueConstraint("membership_id", "instance", name="uq_credential_instance"),
     **MYSQL_TABLE,
 )
@@ -438,6 +505,9 @@ agent_session = Table(
     # derived by the client per hub. Only ever compared, never shown or logged.
     Column("env_home", String(16)),
     Column("env_workspace", String(16)),
+    # `maity-runner/<version>` when a runner supervises the session (§15.11): its
+    # long-poll wakes on a narrower set, and its rules say so.
+    Column("supervisor", String(80)),
     UniqueConstraint("credential_id", "live", name="uq_agent_session_one_live"),
     CheckConstraint("live IS NOT FALSE", name="live_true_or_null"),
     **MYSQL_TABLE,
@@ -711,6 +781,9 @@ card = Table(
     # The holding instance of an agent holder (§6.17); null for a human holder and,
     # until an instance of the team calls, for a claim made on a team's behalf.
     Column("claim_instance", String(INSTANCE)),
+    # Every agent instance that reported the card (§6.18 `review_within_team`): a list of
+    # `{member_id, instance}`; the report itself names only the latest.
+    Column("reported_instances", JSON_VALUE),
     Column("claim_session_id", String(ID)),
     Column("claim_since", UtcDateTime),
     Column("lease_until", UtcDateTime),
@@ -923,6 +996,10 @@ event = Table(
     Column("conversation_id", String(ID)),
     Column("payload", JSON_VALUE, nullable=False),
     Column("redacted", Boolean, nullable=False),
+    # The instances a team's `wake` rule chose (§8.2): `{member id: [instance ids]}` for
+    # each team it narrowed, an empty list when none of that team listened; null when
+    # no team was narrowed, which is most events.
+    Column("wakes", JSON_VALUE),
     Index("ix_event_project_seq", "project_id", "seq"),
     Index("ix_event_conversation", "project_id", "conversation_id", "seq"),
     # A placement's reports, newest first (§15.6).

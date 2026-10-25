@@ -22,6 +22,7 @@ from fastapi.responses import JSONResponse, Response
 from markdown_it import MarkdownIt
 from pydantic import Field
 from sqlalchemy import Connection, insert, select, update
+from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
 from maity_hub import briefings, clock, events, idempotency, instances
@@ -362,7 +363,11 @@ def render_page(
     hub = settings.public_url
     link = join_link(settings, "join" if on_join_host else "public", token)
     project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
-    agent = conn.execute(select(t.agent_profile).where(t.agent_profile.c.id == row.agent_id)).one()
+    handle = row.new_agent_handle  # a profile the exchange creates (a runner's pickup)
+    if row.agent_id is not None:
+        handle = conn.execute(
+            select(t.agent_profile.c.handle).where(t.agent_profile.c.id == row.agent_id)
+        ).scalar_one()
     reports_to = principal_id(conn, row.reports_to)
     if reports_to is not None:
         boss = (
@@ -378,7 +383,7 @@ def render_page(
         "project_name": _md(project.name),
         "project_repository": _md(project.repository_url or "not configured"),
         "project": project.slug,
-        "handle": agent.handle,
+        "handle": handle,
         "role": row.role,
         "areas": ", ".join(f"`{a}`" for a in row.areas) or "none",
         "reports_to": reports_to_text,
@@ -501,7 +506,8 @@ async def exchange(token: str, body: Exchange, request: Request) -> Response:
         """The credential facts, or None for a wrong code (recorded and committed)."""
         with events.transaction(engine) as conn:
             row = _usable(conn, token)
-            live_profile(conn, row.agent_id)  # first, as the deletion takes it (§6.3)
+            if row.agent_id is not None:  # a pickup's new profile does not exist yet (§15.9)
+                live_profile(conn, row.agent_id)  # first, as the deletion takes it (§6.3)
             # Take an attempt slot before comparing: one conditional UPDATE, so
             # concurrent guesses cannot all read the same count (a lost update
             # would let more than three codes be tried, or unburn a join).
@@ -585,19 +591,26 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
     ).rowcount
     if consumed != 1:  # a concurrent exchange won
         raise not_found()
+    if row.placement_id is not None:
+        _require_pickup_holds(conn, row)
     project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
+    agent_id = row.agent_id or _create_for_join(conn, row)
     member = conn.execute(
         select(t.membership).where(
             t.membership.c.project_id == row.project_id,
-            t.membership.c.agent_id == row.agent_id,
+            t.membership.c.agent_id == agent_id,
             t.membership.c.active.is_(True),
         )
     ).first()
+    if member is None and (row.replaces is not None or (row.placement_id and row.agent_id)):
+        # A pickup for a member, or a rejoin, never brings back a member a human removed
+        # (§15.9): it answers as every join that no longer works (§1.1).
+        raise not_found()
     if member is None:
         result = conn.execute(
             insert(t.membership).values(
                 project_id=row.project_id,
-                agent_id=row.agent_id,
+                agent_id=agent_id,
                 role=row.role,
                 reports_to=_boss_still_here(conn, row.reports_to),
                 areas=row.areas,
@@ -631,20 +644,32 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
         )
     )
     conn.execute(update(t.join_link).where(t.join_link.c.id == row.id).values(instance=instance))
-    if row.replaces is not None:
-        assert member is not None
+    if row.replaces is not None and member is not None:
         # Moved before the revocation, so that the lead passes on and is never null.
         _move_to_replacement(conn, member, row.replaces, instance, credential_id)
-        old = instances.require_active(conn, member, row.replaces, "replaces")
-        revoke(conn, old.id, "replaced", by=row.created_by)
-        emit(
-            conn,
-            row.project_id,
-            "credential_revoked",
-            [f"member:{row.agent_id}", "role:owner"],
-            {"credential_id": old.id, "reason": "replaced", "instance": row.replaces},
-            actor=Actor(membership_id=membership_id, credential_id=credential_id),
-            subject=("credential", old.id),
+        if row.placement_id is None:  # a rejoin's instance is revoked already (§15.9),
+            # and `_recheck_instance` checked it: nothing to revoke, no second revocation
+            old = instances.require_active(conn, member, row.replaces, "replaces")
+            revoke(conn, old.id, "replaced", by=row.created_by)
+            emit(
+                conn,
+                row.project_id,
+                "credential_revoked",
+                [f"member:{row.agent_id}", "role:owner"],
+                {"credential_id": old.id, "reason": "replaced", "instance": row.replaces},
+                actor=Actor(membership_id=membership_id, credential_id=credential_id),
+                subject=("credential", old.id),
+            )
+    if row.placement_id is not None:  # a runner's pickup: the placement now runs on it
+        conn.execute(
+            update(t.placement)
+            .where(t.placement.c.id == row.placement_id)
+            .values(
+                credential_id=credential_id,
+                rejoin=False,
+                membership_id=membership_id,
+                updated_at=now,
+            )
         )
     if joined:
         new = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()
@@ -655,16 +680,54 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
             ["all"],
             member_view(conn, new),
             actor=Actor(membership_id=membership_id, credential_id=credential_id),
-            subject=("member", row.agent_id),
+            subject=("member", agent_id),
         )
-    return value, credential_id, row.agent_id, project.slug, project.signing, instance
+    return value, credential_id, agent_id, project.slug, project.signing, instance
+
+
+def _require_pickup_holds(conn: Connection, row: Any) -> None:
+    """A runner's pickup (§15.9) is exchanged only while what it was picked up for still
+    holds, read under the project lock: the placement active, approved, `desired: running`
+    and at the join's generation on the same runner, and that runner not removed and with
+    a live credential. Otherwise it answers as every join that no longer works (§1.1)."""
+    p = t.placement.c
+    placement = conn.execute(
+        select(p.runner_id, p.closed_at, p.desired, p.approval_status, p.generation).where(
+            p.id == row.placement_id
+        )
+    ).first()
+    runner = conn.execute(
+        select(t.runner.c.removed_at).where(t.runner.c.id == row.runner_id)
+    ).first()
+    live = conn.execute(
+        select(t.runner_credential.c.id).where(
+            t.runner_credential.c.runner_id == row.runner_id,
+            t.runner_credential.c.revoked_at.is_(None),
+        )
+    ).first()
+    if (
+        placement is None
+        or placement.runner_id != row.runner_id
+        or placement.closed_at is not None
+        or placement.desired != "running"
+        or placement.approval_status != "approved"
+        or placement.generation != row.generation
+        or runner is None
+        or runner.removed_at is not None
+        or live is None
+    ):
+        raise not_found()
 
 
 def _recheck_instance(conn: Connection, row: Any, member: Any) -> None:
     """The join's instance rules again under the project lock (§3.3): another
     exchange may have used the slot or revoked the instance to replace since. The
     code is then not consumed: the transaction rolls back."""
-    if row.replaces is not None:
+    if row.replaces is not None and row.placement_id is not None:
+        # A placement's rejoin: a revoked instance, and one more active instance (§15.9).
+        instances.require_replaceable(conn, member, row.replaces, "replaces", revoked=True)
+        instances.refuse_over_quota(conn, member)
+    elif row.replaces is not None:
         instances.require_active(conn, member, row.replaces, "replaces")
     elif row.new_instance:
         instances.refuse_over_quota(conn, member)
@@ -720,3 +783,31 @@ def _move_to_replacement(
             actor=actor,
             subject=("task", card.id),
         )
+
+
+def _create_for_join(conn: Connection, row: Any) -> str:
+    """The profile a pickup's join names by handle (§15.9): created at the exchange,
+    owned by the human who created the placement. A handle that human has meanwhile given
+    another agent ends the join here, answered as every join that no longer works (§1.1):
+    the placement cannot become that agent, and the runner's next pickup reports it."""
+    taken = conn.execute(
+        select(t.agent_profile.c.id).where(
+            t.agent_profile.c.owner_id == row.created_by,
+            t.agent_profile.c.handle == row.new_agent_handle,
+        )
+    ).first()
+    if taken is not None:
+        raise not_found()
+    # `POST /agents` does not take the project lock: a profile of that handle may land
+    # after the check above. Its `invalid`, or the unique constraint, is still a join
+    # that no longer works, never a 400 or a 500 that tells the holder of the link more.
+    try:
+        return create_profile(
+            conn, row.created_by, row.new_agent_handle, row.new_agent_display_name, None
+        )
+    except IntegrityError:
+        raise not_found() from None
+    except ApiError as error:
+        if error.code == "invalid":
+            raise not_found() from None
+        raise

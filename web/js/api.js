@@ -31,6 +31,21 @@ window.Maity = window.Maity || {};
   let store = null;
   // ?signed_out=1 starts fixture mode without a session, to show the login.
   let fixtureSignedIn = params.get("signed_out") !== "1";
+  // The device code of §2.6.2 this tab made, and a mailed code asked for (§2.6.3).
+  let deviceSim = null;
+  let deviceSerial = 0;
+  let mailPending = false;
+  function deviceOf(id, path) {
+    if (!deviceSim || deviceSim.id !== id) fail(404, "not_found", "Not found", path);
+    if (["waiting", "redeemed"].includes(deviceSim.status) && Date.parse(deviceSim.expires_at) <= Date.now()) deviceSim.status = "expired";
+    return deviceSim;
+  }
+  function deviceView(d) {
+    const view = { id: d.id, status: d.status, expires_at: d.expires_at };
+    if (d.device) view.device = d.device;
+    if (d.status === "redeemed") view.choices = [18, d.match, 83];
+    return view;
+  }
   let fixturePassword = null;
   // ?no_projects=1 starts it with no memberships, to show the empty state.
   const fixtureNoProjects = params.get("no_projects") === "1";
@@ -196,6 +211,14 @@ window.Maity = window.Maity || {};
       if (closed.includes(to)) card.claim = null;
     }
     ["title", "body", "label", "area"].forEach((f) => { if (f in body) card[f] = body[f]; });
+    // §6.8: a contract card's file and section, checked as the hub checks them.
+    if (body.contract) {
+      if (card.kind !== "contract") fail(400, "invalid", "contracts only", path, { fields: { contract: "contracts_only" } });
+      const c = body.contract;
+      if ("path" in c && (!c.path || /^\/|:|\\|(^|\/)\.{0,2}(\/|$)/.test(c.path))) fail(400, "invalid", "not a repository path", path, { fields: { "contract.path": "not_a_path" } });
+      if (c.section != null && !/^[^\s#]+$/.test(c.section)) fail(400, "invalid", "not a heading number", path, { fields: { "contract.section": "invalid" } });
+      card.contract = Object.assign({}, card.contract, "path" in c ? { path: c.path } : {}, "section" in c ? { section: c.section } : {});
+    }
     card.updated_at = nowIso();
     return card;
   }
@@ -572,6 +595,63 @@ window.Maity = window.Maity || {};
   // endpoint the views use; the patterns match the path below /api/v1
   // without the query string.
   const routes = [
+    // §2.6.1–2.6.3 in one tab: this tab makes the code, and a simulated
+    // phone has entered it by the second read, so the approval can be seen.
+    ["GET", /^\/auth\/methods$/, () => ({ password: true, device_code: true, email_link: true, registration: false, terms: null })],
+    ["POST", /^\/auth\/device-codes$/, (m, body, path) => {
+      if (!fixtureSignedIn) fail(401, "unauthenticated", "Not signed in", path);
+      const code = "K7QM4XPR";
+      deviceSim = { id: "dvc-" + (++deviceSerial), code, status: "waiting", reads: 0, match: 47,
+        expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString().replace(/\.\d{3}Z$/, "Z") };
+      return { id: deviceSim.id, code: "K7QM-4XPR", url: window.location.origin + window.location.pathname + "#/sign-in/code?c=" + code, expires_at: deviceSim.expires_at };
+    }],
+    ["GET", /^\/auth\/device-codes\/([^/]+)$/, (m, body, path) => {
+      const d = deviceOf(m[1], path);
+      if (d.status === "waiting" && ++d.reads >= 2) {
+        d.status = "redeemed";
+        d.device = { ip: "203.0.113.24", redeemed_at: nowIso(), user_agent: "Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) AppleWebKit/605.1.15 Safari/604.1",
+          browser: "Safari", os: "iOS", new_device: true };
+      }
+      return deviceView(d);
+    }],
+    ["POST", /^\/auth\/device-codes\/([^/]+)\/approve$/, (m, body, path) => {
+      const d = deviceOf(m[1], path);
+      if (d.status !== "redeemed") fail(409, "conflict", "the code is not waiting for an approval", path);
+      if (body.number !== d.match) { d.status = "denied"; fail(400, "code_invalid", "the code does not work", path); }
+      d.status = "approved";
+      return deviceView(d);
+    }],
+    ["POST", /^\/auth\/device-codes\/([^/]+)\/deny$/, (m, body, path) => { const d = deviceOf(m[1], path); d.status = "denied"; return deviceView(d); }],
+    ["DELETE", /^\/auth\/device-codes\/([^/]+)$/, (m, body, path) => { const d = deviceOf(m[1], path); d.status = "denied"; return deviceView(d); }],
+    // The new device's side: a code typed in, the wait, and the session.
+    ["POST", /^\/auth\/device-login$/, (m, body, path) => {
+      const typed = String(body.code || "").toUpperCase().replace(/[\s-]/g, "");
+      if (!deviceSim || typed !== deviceSim.code || !["waiting", "redeemed"].includes(deviceSim.status) || deviceSim.pending) fail(400, "code_invalid", "the code does not work", path);
+      deviceSim.pending = true;
+      deviceSim.status = "redeemed";
+      return { status: "redeemed", expires_at: deviceSim.expires_at, match_number: deviceSim.match };
+    }],
+    ["GET", /^\/auth\/device-login$/, (m, body, path) => {
+      if (!deviceSim || !deviceSim.pending) fail(404, "not_found", "Not found", path);
+      const view = { status: deviceSim.status, expires_at: deviceSim.expires_at, match_number: deviceSim.match };
+      if (deviceSim.status === "approved") view.account = { handle: me().member.handle, display_name: me().member.display_name, avatar_url: me().member.avatar_url || null };
+      return view;
+    }],
+    ["POST", /^\/auth\/device-login\/complete$/, (m, body, path) => {
+      if (!deviceSim || !deviceSim.pending) fail(404, "not_found", "Not found", path);
+      if (deviceSim.status !== "approved") fail(409, "conflict", "the code is not approved", path);
+      deviceSim.status = "used";
+      fixtureSignedIn = true;
+      return { member: me().member, next: "/" };
+    }],
+    // §2.6.3: always 202; the fixtures' mailed code is 482913.
+    ["POST", /^\/auth\/email-link$/, () => { mailPending = true; return { expires_in: 900 }; }],
+    ["POST", /^\/auth\/email-code$/, (m, body, path) => {
+      if (!mailPending || String(body.code || "").replace(/\s/g, "") !== "482913") fail(400, "code_invalid", "the code does not match", path);
+      mailPending = false;
+      fixtureSignedIn = true;
+      return { member: me().member, next: "/" };
+    }],
     ["GET", /^\/auth\/session$/, (m, body, path) => {
       if (!fixtureSignedIn) fail(401, "unauthenticated", "Not signed in", path);
       return Object.assign({ session_id: fixtures()["sessions.json"].current }, fixtures()["auth-session.json"]);
@@ -1264,11 +1344,14 @@ window.Maity = window.Maity || {};
       "/api/v1/projects/{slug}/conversations": { get: {}, post: {} },
       "/api/v1/projects/{slug}/attachments": { get: {}, post: {} },
       "/api/v1/requests/{request_id}/answer": { post: {} },
+      "/api/v1/auth/device-codes": { post: {} },
+      "/api/v1/auth/methods": { get: {} },
       "/api/v1/me/preferences": { get: {}, put: {} },
       "/api/v1/requests/{request_id}/withdraw": { post: {} },
       "/api/v1/projects/{slug}/swarm": { get: {} },
       "/api/v1/swarm/{slug}": { get: {} },
       "/api/v1/projects": { get: {}, post: { requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/ProjectCreate" } } } } } },
+      "/api/v1/projects/{slug}/tasks/{task_id}/contract": { get: {} },
       "/api/v1/projects/{slug}/placements": { get: {}, post: {} },
     },
     components: { schemas: { ProjectCreate: { properties: {
@@ -1381,14 +1464,26 @@ window.Maity = window.Maity || {};
       const text = String(body.body);
       const code = M.mentionCode ? M.mentionCode(text) : [];
       const mentions = [];
-      const re = /(^|[^A-Za-z0-9_.@/+-])@([a-z0-9-]*[a-z0-9])(?![A-Za-z0-9_])/g;
+      // §8.6: a short handle or a global name (owner/handle) as one
+      // candidate; a human comes first; a short handle two agents share is
+      // refused with the long forms it could mean.
+      const re = /(^|[^A-Za-z0-9_.@/+-])@([a-z0-9-]*[a-z0-9](?:\/[a-z0-9-]*[a-z0-9])?)(?![A-Za-z0-9_])/g;
+      const ambiguous = {};
       for (let x = re.exec(text); x; x = re.exec(text)) {
         const at = x.index + x[1].length;
         if (body.type === "chat" || code.some(([a, b]) => at >= a && at < b)) continue;
-        const hits = members.filter((mm) => mm.handle === x[2]);
+        const long = x[2].includes("/");
+        let hits = members.filter((mm) => (long ? mm.name === x[2] : mm.handle === x[2]));
+        if (!long && hits.length > 1) {
+          const human = hits.filter((mm) => mm.kind === "human");
+          if (human.length) hits = human;
+          else { ambiguous[x[2]] = hits.map((mm) => mm.name).sort(); continue; }
+        }
         if (hits.length !== 1 || ["all", "here", "everyone", "owner"].includes(x[2])) continue;
-        mentions.push({ member_id: hits[0].id, handle: x[2], field: "body", offset: Array.from(text.slice(0, at)).length, length: x[2].length + 1 });
+        mentions.push({ member_id: hits[0].id, handle: hits[0].handle, name: hits[0].name || null, instance: null, field: "body",
+          offset: Array.from(text.slice(0, at)).length, length: Array.from(x[2]).length + 1 });
       }
+      if (Object.keys(ambiguous).length) fail(400, "invalid", "a short handle is two agents here", path, { fields: { body: "ambiguous_mention" }, mentions: ambiguous });
       if (new Set(mentions.map((x) => x.member_id)).size > 10 || mentions.length > 50) fail(400, "invalid", "too many mentions", path, { fields: { body: "too_many_mentions" } });
       const log = eventsOf(m[1]);
       const seq = nextLogSeq(log);
@@ -1523,6 +1618,20 @@ window.Maity = window.Maity || {};
       }
       card.updated_at = nowIso();
       return card;
+    }],
+    // §6.8: the contract's section as the hub read it, from
+    // fixtures/<slug>/contracts.json keyed "path#section"; an entry with
+    // `error` answers that refusal, a place without an entry not_found_in_file.
+    ["GET", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/contract$/, (m, body, path) => {
+      const card = file(m[1], "tasks.json", path).items.find((x) => x.id === m[2]);
+      if (!card) fail(404, "not_found", "no such card", path);
+      if (card.kind !== "contract") fail(400, "invalid", "contracts only", path, { fields: { contract: "contracts_only" } });
+      const where = card.contract.path || "docs/api.md";
+      if (!card.contract.section) fail(404, "not_found", "the card names no section", path, { fields: { "contract.section": "unset" } });
+      const entry = (fixtures()[m[1] + "/contracts.json"] || {})[where + "#" + card.contract.section];
+      if (!entry) fail(404, "not_found", "no such heading", path, { fields: { "contract.section": "not_found_in_file" } });
+      if (entry.error) fail(entry.error.status, entry.error.code, entry.error.message, path, entry.error.fields ? { fields: entry.error.fields } : {});
+      return Object.assign({ path: where, section: card.contract.section, fetched_at: nowIso() }, entry);
     }],
     // §6.4: a new card. assigned_to needs tasks:admin; freeze and fixes-only need a reason.
     ["POST", /^\/projects\/([^/]+)\/tasks$/, (m, body, path) => {
@@ -1770,7 +1879,7 @@ window.Maity = window.Maity || {};
         if (!body.agent || !body.agent.handle) fail(400, "invalid", "agent needs an id or a handle", path, { fields: { agent: "required" } });
         agentId = localId("agt");
         fixtures()["agents.json"].items.push({
-          id: agentId, handle: body.agent.handle, display_name: body.agent.display_name || body.agent.handle,
+          id: agentId, handle: body.agent.handle, name: me().member.handle + "/" + body.agent.handle, display_name: body.agent.display_name || body.agent.handle,
           owner_id: me().member.id, git_identity: null, memberships: [], created_at: nowIso(),
         });
       }

@@ -821,6 +821,7 @@ window.MAITY_FIXTURES = {
             "role": "admin"
           }
         ],
+        "name": "maintainer/agent-a",
         "owner_id": "hum-maintainer"
       },
       {
@@ -835,6 +836,7 @@ window.MAITY_FIXTURES = {
             "role": "member"
           }
         ],
+        "name": "maintainer/agent-b",
         "owner_id": "hum-maintainer"
       },
       {
@@ -849,6 +851,7 @@ window.MAITY_FIXTURES = {
             "role": "member"
           }
         ],
+        "name": "maintainer/agent-c",
         "owner_id": "hum-maintainer"
       },
       {
@@ -863,6 +866,7 @@ window.MAITY_FIXTURES = {
             "role": "member"
           }
         ],
+        "name": "maintainer/agent-d",
         "owner_id": "hum-maintainer"
       },
       {
@@ -877,6 +881,7 @@ window.MAITY_FIXTURES = {
             "role": "reviewer"
           }
         ],
+        "name": "maintainer/reviewer",
         "owner_id": "hum-maintainer"
       },
       {
@@ -891,6 +896,7 @@ window.MAITY_FIXTURES = {
             "role": "member"
           }
         ],
+        "name": "maintainer/shop-dev",
         "owner_id": "hum-maintainer"
       },
       {
@@ -905,6 +911,7 @@ window.MAITY_FIXTURES = {
             "role": "member"
           }
         ],
+        "name": "maintainer/spare",
         "owner_id": "hum-maintainer"
       }
     ],
@@ -1034,6 +1041,39 @@ window.MAITY_FIXTURES = {
         "width": null
       }
     ]
+  },
+  "maity/contracts.json": {
+    "docs/api.md#4.1": {
+      "error": {
+        "code": "not_found",
+        "fields": {
+          "contract.section": "ambiguous_in_file"
+        },
+        "message": "two headings with this number",
+        "status": 404
+      }
+    },
+    "docs/api.md#8.2": {
+      "heading": "### 8.2 Event kinds",
+      "ref": "3f9c2a1e7b4d5c6a8e9f0a1b2c3d4e5f6a7b8c9d",
+      "text": "### 8.2 Event kinds\n\nEvery event has a `kind`. A chat message is `message` with `type: chat`; see [the events section](https://github.com/oliver-zehentleitner/maity/blob/main/docs/api.md#8-events).\n\n- `message` — a chat, a handover or a blocker\n- `task_updated` — a card changed\n\nAsk @agent-a about tsk-0123456789ab before changing it.",
+      "truncated": false,
+      "url": "https://github.com/oliver-zehentleitner/maity/blob/3f9c2a1e7b4d5c6a8e9f0a1b2c3d4e5f6a7b8c9d/docs/api.md"
+    },
+    "docs/api.md#9.1": {
+      "heading": "### 9.1 A long section",
+      "ref": "3f9c2a1e7b4d5c6a8e9f0a1b2c3d4e5f6a7b8c9d",
+      "text": "### 9.1 A long section\n\nThe first 64 KiB of it.",
+      "truncated": true,
+      "url": "https://github.com/oliver-zehentleitner/maity/blob/3f9c2a1e7b4d5c6a8e9f0a1b2c3d4e5f6a7b8c9d/docs/api.md"
+    },
+    "docs/runner.md#1": {
+      "error": {
+        "code": "probe_not_configured",
+        "message": "no forge token for the repository",
+        "status": 409
+      }
+    }
   },
   "maity/conversations.json": {
     "agt-a": {
@@ -1672,6 +1712,7 @@ window.MAITY_FIXTURES = {
         "kind": "agent",
         "last_seen_at": "2026-10-21T13:41:10Z",
         "model": "claude-opus-5-5",
+        "name": "maintainer/agent-a",
         "owner_id": "hum-maintainer",
         "owner_preferences": false,
         "paused": null,
@@ -1708,6 +1749,7 @@ window.MAITY_FIXTURES = {
             "last_seen_at": "2026-10-21T11:20:00Z",
             "lead": false,
             "model": "claude-opus-5-5",
+            "name": "maintainer/agent-b#wle2",
             "paused": null,
             "presence": "offline",
             "replaces": null,
@@ -1718,6 +1760,7 @@ window.MAITY_FIXTURES = {
         "kind": "agent",
         "last_seen_at": "2026-10-21T13:39:30Z",
         "model": "claude-opus-5-5",
+        "name": "maintainer/agent-b",
         "owner_id": "hum-maintainer",
         "paused": null,
         "presence": "online",
@@ -1760,6 +1803,7 @@ window.MAITY_FIXTURES = {
             "last_seen_at": "2026-10-21T13:40:00Z",
             "lead": false,
             "model": null,
+            "name": "maintainer/agent-c#k3pa",
             "paused": null,
             "presence": "online",
             "replaces": null,
@@ -1770,6 +1814,7 @@ window.MAITY_FIXTURES = {
         "kind": "agent",
         "last_seen_at": "2026-10-21T12:05:00Z",
         "model": "claude-sonnet-5-5",
+        "name": "maintainer/agent-c",
         "owner_id": "hum-maintainer",
         "paused": {
           "by": "agt-c",
@@ -1802,6 +1847,7 @@ window.MAITY_FIXTURES = {
         "kind": "agent",
         "last_seen_at": "2026-10-21T13:42:00Z",
         "model": "claude-opus-5-5",
+        "name": "maintainer/agent-d",
         "owner_id": "hum-maintainer",
         "paused": null,
         "presence": "online",
@@ -1828,6 +1874,7 @@ window.MAITY_FIXTURES = {
         "kind": "agent",
         "last_seen_at": "2026-10-20T18:30:00Z",
         "model": "unknown",
+        "name": "maintainer/reviewer",
         "owner_id": "hum-maintainer",
         "paused": null,
         "presence": "offline",
@@ -2954,6 +3001,8 @@ window.MAITY_FIXTURES = {
         "closed_at": null,
         "contract": {
           "arbiter": "agt-a",
+          "path": "docs/api.md",
+          "section": "8.2",
           "state": "proposed",
           "watchers": [
             "agt-b",
@@ -4373,6 +4422,7 @@ window.MAITY_FIXTURES = {
         "kind": "agent",
         "last_seen_at": "2026-10-21T13:38:00Z",
         "model": "unknown",
+        "name": "maintainer/shop-dev",
         "owner_id": "hum-maintainer",
         "paused": null,
         "presence": "online",
@@ -4386,6 +4436,27 @@ window.MAITY_FIXTURES = {
           "model": "unknown",
           "started_at": "2026-10-21T08:30:00Z"
         }
+      },
+      {
+        "areas": [
+          "web/"
+        ],
+        "capabilities": [],
+        "display_name": "Anna's Shop Dev",
+        "handle": "shop-dev",
+        "harness": "Claude Code",
+        "id": "agt-s2",
+        "joined_at": "2026-10-21T11:00:00Z",
+        "kind": "agent",
+        "last_seen_at": "2026-10-21T12:00:00Z",
+        "model": "claude-sonnet-5-5",
+        "name": "anna/shop-dev",
+        "owner_id": "hum-anna",
+        "paused": null,
+        "presence": "offline",
+        "reports_to": null,
+        "role": "member",
+        "session": null
       }
     ],
     "next_cursor": null

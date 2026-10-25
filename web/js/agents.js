@@ -224,18 +224,19 @@ window.Maity = window.Maity || {};
     // Where they run (js/placements.js), where the hub has placements: after
     // the grid, before the record of earlier joins — also with no agent
     // yet, when a placement that creates its profile is all there is.
-    const placements = async () => {
+    // Not awaited: the view shows at once and the section joins it when
+    // read, so neither the grid nor the join panel waits for the runners.
+    const placements = () => {
       if (!M.placements) return;
       const credsOf = Object.fromEntries(agents.map((m, i) => [m.id, (creds[i].list && creds[i].list.items) || []]));
-      const placed = await M.placements.section(ctx, credsOf);
-      if (placed) root.insertBefore(placed, earlierBox);
+      M.placements.section(ctx, credsOf).then((placed) => { if (placed && earlierBox.parentNode === root) root.insertBefore(placed, earlierBox); });
     };
     // No agents yet: the panel opens, and the way in is said.
     if (!agents.length) {
       append(root, h("p", { class: "muted" }, "No agents in this project yet.", J ? " Join one: its line is made here." : ""), grid, earlierBox);
       drawGrid();
-      await placements();
       if (J) J.open(joinButton);
+      placements();
       return;
     }
 
@@ -268,7 +269,7 @@ window.Maity = window.Maity || {};
             M.avatar(m, 28),
             p.dot,
             h("h3", null, M.dom.memberRef(ctx, m.id)),
-            h("span", { class: "handle" }, "@" + m.handle),
+            h("span", { class: "handle" }, "@" + M.dom.handleOf(ctx, m)),
             p.label),
           h("dl", { class: "facts" },
             h("dt", null, "Owner"), h("dd", null, M.dom.memberRef(ctx, m.owner_id)),
@@ -302,8 +303,8 @@ window.Maity = window.Maity || {};
       });
     append(root, presenceStatus.el, grid, earlierBox);
     drawGrid();
-    await placements();
     // #/p/<slug>/agents/join (and the old #/join): the panel open at once.
     if (J && args && args[0] === "join") J.open(joinButton);
+    placements();
   };
 })(window.Maity);

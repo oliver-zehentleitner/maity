@@ -272,6 +272,12 @@ def test_online_team_is_one_member(
             .where(t.membership.c.id == agent.membership_id)
             .values(last_seen_at=clock.now())
         )
+        # A call marks the instance too (§5.3: each instance has its own presence).
+        conn.execute(
+            update(t.credential)
+            .where(t.credential.c.id == agent.credential_id)
+            .values(last_used_at=clock.now())
+        )
         conn.execute(
             insert(t.credential).values(
                 id="crd-badge-sibling",
@@ -279,6 +285,7 @@ def test_online_team_is_one_member(
                 instance="abcd",
                 verifier="0" * 64,
                 created_at=clock.now(),
+                last_used_at=clock.now(),
             )
         )
         conn.execute(

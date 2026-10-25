@@ -385,7 +385,7 @@ def post_note(
         )
         shown = load_note(conn, note_id)
         audience = _members(conn, card.claim_holder, card.created_by)
-        audience += [f"member:{m}" for m in mentions.members(found)]
+        audience += mentions.tokens(found, mentions.members(found))
         seq = emit(
             conn,
             mine.project.id,

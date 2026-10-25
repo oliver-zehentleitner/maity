@@ -45,6 +45,9 @@ window.Maity = window.Maity || {};
     { route: "runners", view: "projectRunners", label: "Runners", admin: true, watch: /^runner_/, changed: "The runners changed." },
     // Where the hub knows the Keep the Why export (docs/api.md §6.1, §11.3).
     { route: "why", label: "Why", when: (ctx) => "keep_the_why_export" in ctx.project },
+    // The project's own settings, its last tab (the maintainer's request,
+    // 2026-10-25); a save stays here.
+    { route: "settings", label: "Settings" },
   ];
   const offered = (ctx, item) => (!item.admin || ctx.canAdmin) && (!item.when || item.when(ctx));
 
@@ -115,7 +118,8 @@ window.Maity = window.Maity || {};
       el,
       busy: (text) => { el.textContent = text; el.className = "send-status"; },
       done: () => { el.textContent = ""; el.className = "send-status"; },
-      fail: (prefix, err) => { el.textContent = prefix + err.message; el.className = "send-status failed"; },
+      // An ambiguous mention is said with the long forms to write (§8.6).
+      fail: (prefix, err) => { el.textContent = prefix + (M.dom.ambiguousMention(err) || err).message; el.className = "send-status failed"; },
     };
   }
 
@@ -128,6 +132,34 @@ window.Maity = window.Maity || {};
       h("img", { class: "brand-lockup brand-dark", src: "brand/maity-lockup-dark.svg", alt: "Maity", width: "94", height: "28" }));
   }
 
+  // Light, dark, or as the system has it; per browser (js/theme.js). The
+  // header's menu is for pages without a session (the maintainer's
+  // instruction): signed in, the theme is chosen in Your account.
+  const THEME_WORDS = { system: "System", light: "Light", dark: "Dark" };
+  function themeMenu() {
+    if (!M.theme) return null;
+    const theme = M.menuButton({
+      label: "Theme: " + THEME_WORDS[M.theme.get()],
+      listLabel: "Theme",
+      class: "theme-menu",
+      face: M.icons.theme(M.theme.get(), 18),
+      items: () => M.theme.THEMES.map((t) => ({
+        label: THEME_WORDS[t],
+        checked: t === M.theme.get(),
+        onSelect: () => {
+          M.theme.set(t);
+          clear(theme.button);
+          append(theme.button, M.icons.theme(t, 18));
+          theme.button.setAttribute("aria-label", "Theme: " + THEME_WORDS[t]);
+          theme.button.setAttribute("title", "Theme: " + THEME_WORDS[t]);
+        },
+      })),
+    });
+    return h("span", { class: "me" }, theme.el);
+  }
+  M.themeMenu = themeMenu;
+  M.THEME_WORDS = THEME_WORDS;
+
   function stateBadge(state, note) {
     return h("span", { class: "state state-" + state, title: note || "" }, STATE_LABELS[state] || state);
   }
@@ -139,7 +171,8 @@ window.Maity = window.Maity || {};
     document.title = "Sign in · Maity";
     append(clear(document.getElementById("header")), h("div", { class: "bar" },
       brandTitle(),
-      M.api.source === "fixtures" ? h("span", { class: "source" }, "Fixtures") : null));
+      M.api.source === "fixtures" ? h("span", { class: "source" }, "Fixtures") : null,
+      themeMenu()));
     const handle = h("input", { id: "login-handle", name: "handle", autocomplete: "username", required: true });
     const password = h("input", { id: "login-password", name: "password", type: "password", autocomplete: "current-password", required: true });
     const status = statusLine();
@@ -163,7 +196,10 @@ window.Maity = window.Maity || {};
     h("label", { for: "login-password" }, "Password"), password,
     h("button", { type: "submit" }, "Sign in"),
     status.el);
-    append(clear(main), form);
+    // A code from another device or a link by mail, as the hub offers them
+    // (js/device-sign-in.js), on this page's own timers.
+    append(clear(main), form,
+      M.deviceSignIn ? M.deviceSignIn.loginOptions((ms, fn) => { timers.push(window.setInterval(fn, ms)); }, () => render()) : null);
   }
 
   async function logout() {
@@ -277,7 +313,7 @@ window.Maity = window.Maity || {};
     const briefing = h("textarea", { id: "onboarding-briefing", rows: "6", "aria-describedby": "onboarding-hint" }, current.briefing || "");
     const choices = [{ value: "", label: "No check-in" }, { value: "coordinator", label: "Coordinator" }]
       .concat(["owner", "admin", "member", "reviewer", "proxy"].map((role) => ({ value: "role:" + role, label: "Role: " + role })))
-      .concat(ctx.members.filter((m) => !m.removed_at).map((m) => ({ value: m.id, label: "Member: @" + m.handle + " (" + m.kind + ")" })));
+      .concat(ctx.members.filter((m) => !m.removed_at).map((m) => ({ value: m.id, label: "Member: @" + M.dom.handleOf(ctx, m) + " (" + m.kind + ")" })));
     if (current.check_in_with && !choices.some((c) => c.value === current.check_in_with)) {
       choices.push({ value: current.check_in_with, label: "Unavailable member: " + current.check_in_with });
     }
@@ -323,6 +359,7 @@ window.Maity = window.Maity || {};
       status.busy("Saving…");
       try {
         await M.api.patch(ctx.base, body);
+        settingsSaved = label + " saved.";
         render();
       } catch (err) {
         status.fail(label + " not saved: ", err);
@@ -791,56 +828,26 @@ window.Maity = window.Maity || {};
   function renderHeader(ctx, current) {
     const header = clear(document.getElementById("header"));
     const absence = ctx.scope === "project" ? ctx.project.absence : null;
-    let panelOpen = false;
-    const panelSlot = h("div");
     const mayConfigure = ctx.scope === "project" && (ctx.canAdmin || ctx.isOwner);
-    // The project's settings panel opens under the header, from the gear menu.
-    function togglePanel() {
-      panelOpen = !panelOpen;
-      clear(panelSlot);
-      if (panelOpen) {
-        append(panelSlot, projectPanel(ctx));
-        const first = panelSlot.querySelector("select, input, button");
-        if (first) first.focus();
-      }
-    }
-    // Views open the panel too (the overview's Set the repository), at the
-    // repository field where the panel has one.
+    // Views lead to the project's Settings tab too (the overview's Set the
+    // repository), at the repository field.
     ctx.openSettings = mayConfigure ? () => {
-      if (!panelOpen) togglePanel();
-      const repo = document.getElementById("repo-url");
-      if (repo) repo.focus();
+      settingsFocus = "repo-url";
+      window.location.hash = projectLink(ctx.slug, "settings");
     } : null;
-    // Settings: this project's (with the rights for it) and the hub's.
+    // Settings: the hub's and one's own; the project's are its tab.
     const settings = M.menuButton({
       label: "Settings",
       class: "settings-menu",
       face: M.icons.gear(18),
       items: () => [
-        ctx.scope === "project" ? { label: panelOpen ? "Close project settings" : "Project settings", onSelect: togglePanel } : null,
         { label: "Runners", href: "#/runners" },
         ctx.me.instance_admin ? { label: "Instance administration", href: "#/admin" } : null,
       ].filter(Boolean),
     });
-    // Light, dark, or as the system has it; per browser (js/theme.js).
-    const THEME_WORDS = { system: "System", light: "Light", dark: "Dark" };
-    const theme = M.theme ? M.menuButton({
-      label: "Theme: " + THEME_WORDS[M.theme.get()],
-      listLabel: "Theme",
-      class: "theme-menu",
-      face: M.icons.theme(M.theme.get(), 18),
-      items: () => M.theme.THEMES.map((t) => ({
-        label: THEME_WORDS[t],
-        checked: t === M.theme.get(),
-        onSelect: () => {
-          M.theme.set(t);
-          clear(theme.button);
-          append(theme.button, M.icons.theme(t, 18));
-          theme.button.setAttribute("aria-label", "Theme: " + THEME_WORDS[t]);
-          theme.button.setAttribute("title", "Theme: " + THEME_WORDS[t]);
-        },
-      })),
-    }) : null;
+    // Sign in another device (§2.6.2) where the hub's machine form has it.
+    let deviceCodes = false;
+    M.api.hubHas("POST", "/auth/device-codes").then((yes) => { deviceCodes = yes; }, () => {});
     // The human: their picture, the account, signing out.
     const profile = M.menuButton({
       label: "Your profile: " + ctx.me.display_name,
@@ -850,11 +857,13 @@ window.Maity = window.Maity || {};
         { label: "Profile", href: "#/account" },
         { label: "Picture", href: "#/account/picture" },
         { label: "Preferences", href: "#/account/preferences" },
+        { label: "Theme", href: "#/account/theme" },
+        deviceCodes ? { label: "Sign in another device", href: "#/account/sign-in-device" } : null,
         { label: "Change password", href: "#/account" },
         { label: "Linked accounts", disabled: true, why: "later" },
         { separator: true },
         { label: "Sign out", onSelect: logout },
-      ],
+      ].filter(Boolean),
     });
     append(header,
       h("div", { class: "bar" },
@@ -865,7 +874,7 @@ window.Maity = window.Maity || {};
         M.api.source === "fixtures"
           ? h("span", { class: "source", title: "Data from web/fixtures/, not from the hub. Changes are kept in this tab only." }, "Fixtures")
           : null,
-        h("span", { class: "me" }, M.notify.bell(ctx, () => ctx.refreshCounts()), theme ? theme.el : null, settings.el, profile.el)),
+        h("span", { class: "me" }, M.notify.bell(ctx, () => ctx.refreshCounts()), settings.el, profile.el)),
       // The projects, and at their right, apart, this project's state and
       // the owner's absence with the settings that change them.
       h("div", { class: "switcher-row" },
@@ -880,7 +889,6 @@ window.Maity = window.Maity || {};
       absence
         ? h("p", { class: "flag absence" }, "While away: " + absence.scope)
         : null,
-      panelSlot,
       ctx.scope === "project" && M.leadChat ? M.leadChat.control(ctx) : null,
       ctx.scope === "project"
         ? h("nav", { class: "views", "aria-label": "Views" },
@@ -890,9 +898,23 @@ window.Maity = window.Maity || {};
           }, item.label, tabCount(ctx, item.route))))
         : null);
     header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
-    // After an image was uploaded or removed, the panel opens again to say so.
-    if (mayConfigure && imagesNote) togglePanel();
   }
+
+  // The field a link into Settings asked for (the overview's Set the
+  // repository); taken once the view is drawn.
+  let settingsFocus = null;
+  // What the last save on Settings did, said once on the redrawn tab.
+  let settingsSaved = null;
+  M.views.settings = async function (ctx, root) {
+    append(root, h("h2", null, "Settings"),
+      h("p", { class: "muted" }, "This project's settings. Yours and the hub's are in the gear menu."),
+      settingsSaved ? h("p", { class: "ok", role: "status" }, settingsSaved) : null,
+      projectPanel(ctx));
+    settingsSaved = null;
+    const wanted = settingsFocus ? Array.from(root.querySelectorAll("input")).find((el) => el.id === settingsFocus) : null;
+    settingsFocus = null;
+    if (wanted) window.setTimeout(() => wanted.focus(), 0);
+  };
 
   // ---- context ------------------------------------------------------------
 

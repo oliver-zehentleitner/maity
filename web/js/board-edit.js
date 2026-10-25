@@ -170,7 +170,7 @@ window.Maity = window.Maity || {};
       label: word + " " + c.id,
       face: [word, h("span", { "aria-hidden": "true" }, " ▾")],
       items: () => ctx.members.filter((m) => m.id !== c.assigned_to).map((m) => ({
-        label: [M.avatar(m, 16), " @" + m.handle],
+        label: [M.avatar(m, 16), " @" + M.dom.handleOf(ctx, m)],
         title: m.display_name,
         onSelect: () => assign(c, m.id, "assign:" + c.id),
       })),

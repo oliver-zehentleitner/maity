@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Request
@@ -20,15 +20,17 @@ from pydantic import AwareDatetime, Field, StringConstraints, model_validator
 from sqlalchemy import Connection, insert, select, update
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import availability, clock, events, idempotency, longpoll
+from maity_hub import availability, clock, events, idempotency, instances, longpoll
 from maity_hub import placements as pl
 from maity_hub import tables as t
 from maity_hub.auth.caller import Caller
-from maity_hub.deps import RunnerCaller, engine_of, wait_of
+from maity_hub.codes import digest, new_code, new_token, normalise_code
+from maity_hub.deps import RunnerCaller, engine_of, settings_of, wait_of
 from maity_hub.errors import ApiError, invalid, not_found
 from maity_hub.ids import new_id
 from maity_hub.models import Strict
 from maity_hub.routes.events import FALLBACK_SECONDS, answer, parse_after, parse_limit
+from maity_hub.routes.joins import join_link
 from maity_hub.runners import (
     event_project_ids,
     listening_key,
@@ -393,3 +395,164 @@ def report_status(
         except pl.Refusal as refusal:
             raise ApiError(refusal.status, refusal.code, refusal.message, refusal.details) from None
         return JSONResponse(_runner_answer(conn, after))
+
+
+# --- the join pickup (§15.9) -------------------------------------------------------------
+
+PICKUP_TTL = 300  # seconds
+PICKUPS_PER_GENERATION = 3
+
+
+class Pickup(Strict):
+    observed_generation: int = Field(ge=0)
+
+
+def _pickup_refused(why: str) -> ApiError:
+    return ApiError(409, "pickup_not_allowed", "this placement cannot be picked up now",
+                    {"why": why})  # fmt: skip
+
+
+@router.post("/runner/placements/{placement_id}/join")
+def pick_up(
+    placement_id: str, body: Pickup, request: Request, caller: RunnerCaller
+) -> JSONResponse:
+    """A join for the placement's agent, as §3.1 would create one (§15.9). The URL and
+    the code are in this answer only: no event, list or stored outcome carries them, so
+    the call takes no `Idempotency-Key` and a lost answer is recovered by picking up
+    again, which revokes the unused join of the same generation."""
+    runner_id = caller.runner_id
+    assert runner_id is not None
+    settings = settings_of(request)
+    with events.transaction(engine_of(request)) as conn:
+        placement = _own_placement(conn, runner_id, placement_id)
+        events.lock_project(conn, placement.project_id)
+        placement = pl.row(conn, placement.id)  # as it is under the lock
+        if placement.desired != "running" or placement.closed_at is not None:
+            raise _pickup_refused("not_running")
+        if body.observed_generation != placement.generation:
+            raise _pickup_refused("stale_generation")
+        if placement.credential_id is not None and not placement.rejoin:
+            raise _pickup_refused("credential_issued")
+        j = t.join_link.c
+        earlier = conn.execute(
+            select(j.id, j.used_at, j.revoked_at).where(
+                j.placement_id == placement.id, j.generation == placement.generation
+            )
+        ).all()
+        if len(earlier) >= PICKUPS_PER_GENERATION:
+            raise ApiError(409, "pickup_used", "this generation's pickups are used up")
+        now = clock.now()
+        conn.execute(  # never more than one live code per placement
+            update(t.join_link)
+            .where(
+                j.placement_id == placement.id,
+                j.used_at.is_(None),
+                j.revoked_at.is_(None),
+            )
+            .values(revoked_at=now)
+        )
+        values, binds = _join_fields(conn, placement)  # the instance rules refuse here
+        token, code = new_token(), new_code()
+        via = "join" if settings.join_url else "public"
+        join_id = new_id("join")
+        expires = now + timedelta(seconds=PICKUP_TTL)
+        conn.execute(
+            insert(t.join_link).values(
+                id=join_id,
+                project_id=placement.project_id,
+                token_hash=digest(token),
+                code_hash=digest(normalise_code(code)),
+                via=via,
+                created_by=placement.created_by,
+                created_at=now,
+                expires_at=expires,
+                failed_attempts=0,
+                placement_id=placement.id,
+                runner_id=runner_id,
+                generation=placement.generation,
+                **values,
+            )
+        )
+        pickup = len(earlier) + 1
+        events.emit(
+            conn,
+            placement.project_id,
+            "join_picked_up",
+            _owner_audience(conn, placement),
+            {"placement_id": placement.id, "runner_id": runner_id, "join_id": join_id,
+             "pickup": pickup},  # fmt: skip
+            actor=caller.runner_actor(),
+            subject=("placement", placement.id),
+        )
+        return JSONResponse(
+            {
+                "join_url": join_link(settings, via, token),
+                "code": code,
+                "expires_at": clock.rfc3339(expires),
+                "credential_will_bind": binds,
+                "pickup": pickup,
+            },
+            status_code=201,
+        )
+
+
+def _join_fields(conn: Connection, placement: Any) -> tuple[dict[str, Any], str]:
+    """The join's agent, assignment and instance: for a member, a new instance within
+    the team's `max_instances`, or for a rejoin one that replaces the instance of the
+    revoked credential (§6.17, §15.9); for a profile the exchange creates, its stored
+    fields (§3.1). Also what the credential will bind."""
+    if placement.membership_id is not None:
+        member = conn.execute(
+            select(t.membership).where(t.membership.c.id == placement.membership_id)
+        ).one()
+        replaces = None
+        if placement.rejoin and placement.credential_id is not None:
+            old = conn.execute(
+                select(t.credential).where(t.credential.c.id == placement.credential_id)
+            ).one()
+            if old.revoked_at is None:  # a live instance is never taken over
+                raise _pickup_refused("credential_issued")
+            replaces = instances.require_replaceable(
+                conn, member, old.instance, "replaces", revoked=True
+            ).instance
+        instances.refuse_over_quota(conn, member)  # either way one more active instance
+        return {
+            "agent_id": member.agent_id,
+            "role": member.role,
+            "reports_to": member.reports_to,
+            "areas": member.areas,
+            "capabilities": member.capabilities,
+            "new_instance": replaces is None,
+            "replaces": replaces,
+        }, str(member.agent_id)
+    taken = conn.execute(
+        select(t.agent_profile.c.id).where(
+            t.agent_profile.c.owner_id == placement.created_by,
+            t.agent_profile.c.handle == placement.new_handle,
+        )
+    ).first()
+    if taken is not None:  # the exchange would refuse it: no code that can never work
+        raise _pickup_refused("handle_taken")
+    profile = placement.new_profile or {}
+    return {
+        "new_agent_handle": placement.new_handle,
+        "new_agent_display_name": profile.get("display_name") or placement.new_handle,
+        "role": profile.get("role") or "member",
+        "reports_to": profile.get("reports_to"),
+        "areas": profile.get("areas") or [],
+        "capabilities": profile.get("capabilities") or [],
+        "briefing": profile.get("briefing"),
+    }, str(placement.new_handle)
+
+
+def _owner_audience(conn: Connection, placement: Any) -> list[str]:
+    """`join_picked_up` goes to the agent profile's owner and `role:owner` (§8.2). A
+    profile the exchange will create is the placement creator's."""
+    owner = placement.created_by
+    if placement.membership_id is not None:
+        owner = conn.execute(
+            select(t.agent_profile.c.owner_id)
+            .join(t.membership, t.membership.c.agent_id == t.agent_profile.c.id)
+            .where(t.membership.c.id == placement.membership_id)
+        ).scalar_one()
+    return [f"member:{owner}", "role:owner"]

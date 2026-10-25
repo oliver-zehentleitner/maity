@@ -905,9 +905,12 @@ def _conversation_kind(c: dict[str, Any]) -> Any:
 
 
 def _handles(conversation: dict[str, Any]) -> dict[str, str]:
-    people = (_obj(p) for p in conversation.get("participants") or [])
+    people = [_obj(p) for p in conversation.get("participants") or []]
+    shown = onboarding.shown_names(
+        (p.get("member_id"), p.get("kind"), p.get("handle"), p.get("name")) for p in people
+    )
     return {
-        p["member_id"]: str(p.get("handle") or p["member_id"])
+        p["member_id"]: shown.get(p["member_id"], p["member_id"])
         for p in people
         if isinstance(p.get("member_id"), str)
     }
@@ -1179,10 +1182,14 @@ MESSAGE_TYPES = SAY_TYPES  # §8.4 without `chat`, which §9 reads
 
 def _handle_map(session: Session) -> dict[str, str]:
     answer = session.client.call("GET", session.project_path("members"))
+    members = [m for m in (_field(answer, "items") or []) if isinstance(m, dict)]
+    shown = onboarding.shown_names(
+        (m.get("id"), m.get("kind"), m.get("handle"), m.get("name")) for m in members
+    )
     return {
-        m["id"]: str(m.get("handle") or m["id"])
-        for m in (_field(answer, "items") or [])
-        if isinstance(m, dict) and isinstance(m.get("id"), str)
+        str(m["id"]): shown.get(m["id"]) or str(m["id"])
+        for m in members
+        if isinstance(m.get("id"), str)
     }
 
 
@@ -1711,7 +1718,7 @@ def _placement_line(p: dict[str, Any]) -> str:
         state_ += f"/{reported['reason']}"
     pending = "" if p.get("reported_current", True) else " (pending)"
     return (
-        f"{show(p.get('id'))}  {show(agent.get('handle') or agent.get('id'))} on "
+        f"{show(p.get('id'))}  {onboarding.label(agent)} on "
         f"{show(runner.get('name') or runner.get('id'))}  {show(p.get('harness'))} "
         f"{show(p.get('mode'))}  desired {show(p.get('desired'))}, {show(state_)}{pending}"
     )
@@ -1946,7 +1953,7 @@ def cmd_note_list(args: argparse.Namespace) -> int:
         author = _obj(note.get("author"))
         print(
             f"{onboarding.inline(note.get('id'))}  {onboarding.inline(note.get('state'))}  "
-            f"{onboarding.inline(author.get('handle') or author.get('member_id'))}  "
+            f"{onboarding.label(author)}  "
             f"{onboarding.inline(note.get('created_at'))}"
         )
         for line in str(note.get("body") or "").splitlines():

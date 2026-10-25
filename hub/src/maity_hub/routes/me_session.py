@@ -22,6 +22,7 @@ from maity_hub import (
     idempotency,
     instances,
     memory,
+    mentions,
     onboarding,
     preferences,
     ranks,
@@ -137,6 +138,8 @@ class ResumeIn(Strict):
     client: str = Field(min_length=1, max_length=200)
     cursor: int | None = Field(default=None, ge=0)
     environment: EnvironmentIn | None = None
+    # A runner supervises this session (§15.11): `maity-runner/<version>`.
+    supervisor: str | None = Field(default=None, pattern=r"^maity-runner/[A-Za-z0-9.+_-]{1,64}$")
 
 
 class MePatch(Strict):
@@ -172,6 +175,15 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
                 last_used_at=now,
                 resumed_at=func.coalesce(t.credential.c.resumed_at, now),
             )
+        )
+        # The instance's own pause ends with its next session too (§5.3).
+        conn.execute(
+            update(t.credential)
+            .where(
+                t.credential.c.id == caller.credential_id,
+                t.credential.c.paused_by == caller.agent_id,
+            )
+            .values(paused_reason=None, paused_since=None, paused_by=None)
         )
         if mine.row.paused_since is not None and mine.row.paused_by == caller.agent_id:
             # The agent's own pause ends with its next session; a human's stays.
@@ -215,6 +227,7 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
                 live=True,
                 env_home=body.environment.home if body.environment else None,
                 env_workspace=body.environment.workspace if body.environment else None,
+                supervisor=body.supervisor,
             )
         )
         environment.refresh(conn, mine.project.id, mine.id)
@@ -293,8 +306,10 @@ def _packet(
     rules_seq = project.rules_changed_seq or 0
     changed = body.cursor is None or body.cursor < rules_seq
     rules_block: dict[str, Any] = {"version": project.rules_version, "changed": changed}
-    if changed:
-        rules_block["markdown"] = rules.generate(project, mine.role, arbiter_text(conn, project))
+    if changed or body.supervisor is not None:  # the supervised duty is in every packet
+        rules_block["markdown"] = rules.generate(
+            project, mine.role, arbiter_text(conn, project), supervised=body.supervisor is not None
+        )
     members = conn.execute(
         select(t.membership).where(
             t.membership.c.project_id == project.id, t.membership.c.active.is_(True)
@@ -310,6 +325,7 @@ def _packet(
                     "member_id": view["id"],
                     "kind": view["kind"],
                     "handle": view["handle"],
+                    **({"name": view["name"]} if "name" in view else {}),  # agents (§6.3)
                     "role": view["role"],
                     "areas": view["areas"],
                     "presence": view["presence"],
@@ -364,10 +380,16 @@ def _packet(
             else {}
         ),
         "session": session,
-        "hints": {"wait_timeout": wait_timeout(body.harness)},
+        # Supervised: the runner starts a run on each event, so no wait to time (§15.11).
+        "hints": (
+            {"duty": "supervised"}
+            if body.supervisor is not None
+            else {"duty": "self", "wait_timeout": wait_timeout(body.harness)}
+        ),
         "me": {
             "member_id": agent.id,
             "handle": agent.handle,
+            "name": mentions.global_name(owner.handle, agent.handle),  # §6.3
             "display_name": agent.display_name,
             "avatar_url": avatars.urls(conn, [agent.id])[agent.id],
             "instance": caller.instance,
@@ -381,12 +403,14 @@ def _packet(
             "areas": mine.row.areas,
             "capabilities": mine.row.capabilities,
             "scopes": scopes,
-            "paused": paused(mine.row),  # its own pause, so the agent knows it should rest
+            # Its own pause, the team's or this instance's, so the agent knows to rest.
+            "paused": paused(mine.row) or instances.paused_view(_credential(conn, caller)),
             **_briefing(project, mine.row, written),
             "team": instances.team(conn, mine.row),
             "owner_preferences": owner_preferences,
             "availability_policy": availability.policy_of(mine.row),  # §6.12
             "covering": [],  # cover by a substitute is not built yet (§6.12)
+            "placement": _placement_block(conn, mine.id),
         },
         "team": siblings,
         "project": {
@@ -436,6 +460,24 @@ def _briefing(project: Any, membership: Any, written: dict[str, Any]) -> dict[st
         )
         block["briefing_version"] = membership.briefing_version
     return block
+
+
+def _placement_block(conn: Connection, membership_id: int) -> dict[str, Any] | None:
+    """`membership.placement` (§15.11): the active placement running this membership."""
+    row = conn.execute(
+        select(t.placement, t.runner.c.name.label("runner_name"))
+        .join(t.runner, t.runner.c.id == t.placement.c.runner_id)
+        .where(t.placement.c.membership_id == membership_id, t.placement.c.active.is_(True))
+    ).first()
+    if row is None:
+        return None
+    return {
+        "id": row.id,
+        "runner_name": row.runner_name,
+        "harness": row.harness,
+        "mode": row.mode,
+        "stop_grace_seconds": row.stop_grace_seconds,
+    }
 
 
 def _requests_block(conn: Connection, mine: Membership, cursor: int) -> dict[str, Any]:
@@ -489,20 +531,35 @@ def operations(project: Any, role: str) -> list[str]:
     return allowed
 
 
+def _credential(conn: Connection, caller: Caller) -> Any:
+    return conn.execute(select(t.credential).where(t.credential.c.id == caller.credential_id)).one()
+
+
 @router.patch("/me")
 def patch_me(body: MePatch, request: Request, caller: AgentCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         mine = _own_membership(conn, caller)
-        if mine.row.paused_since is not None and mine.row.paused_by != caller.agent_id:
-            # A human's pause is lifted or replaced by members:admin only (§5.3).
+        credential = _credential(conn, caller)
+        for row in (mine.row, credential):
+            if row.paused_since is None or row.paused_by == caller.agent_id:
+                continue
+            # Someone else's pause is not the agent's to lift or replace (§5.3): a
+            # human's, or an admin agent's, which `by` names.
+            by_agent = str(row.paused_by).startswith("agt-")
             raise ApiError(
                 403,
                 "forbidden",
-                "a human paused you; only they or an admin can change it",
-                {"reason": "paused_by_human"},
+                f"{'an admin agent' if by_agent else 'a human'} paused you; "
+                "only they or an admin can change it",
+                {"reason": "paused_by_admin" if by_agent else "paused_by_human"},
             )
+        # The calling instance's own pause; its siblings carry on (§5.3).
         set_paused(
-            conn, change_of(mine, caller), mine.row, body.paused.reason if body.paused else None
+            conn,
+            change_of(mine, caller),
+            mine.row,
+            body.paused.reason if body.paused else None,
+            instance=caller.instance,
         )
         return idempotency.Outcome(200, "member", str(mine.id), load_member(conn, str(mine.id)))
 

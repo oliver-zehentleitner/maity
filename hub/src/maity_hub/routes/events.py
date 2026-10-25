@@ -13,7 +13,7 @@ from sqlalchemy import Connection, insert, select, update
 from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import clock, events, group_chats, idempotency, longpoll, mentions
+from maity_hub import clock, events, group_chats, idempotency, instances, longpoll, mentions
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
@@ -103,18 +103,27 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
     limit = parse_limit(request)
     engine = engine_of(request)
 
-    def start() -> tuple[Membership, int]:
+    def start() -> tuple[Membership, int, bool]:
         with engine.begin() as conn:
             mine = membership(conn, caller, slug)
             mine.require("project:read")
+            supervised = (
+                caller.kind == "agent"
+                and conn.execute(
+                    select(t.agent_session.c.supervisor).where(
+                        t.agent_session.c.id == caller.session_id
+                    )
+                ).scalar()
+                is not None
+            )
             if after_param == "latest":
                 after = events.highest_readable(conn, mine.project.id, mine.row, mine.principal_id)
             else:
                 after = after_param
                 _acknowledge(conn, caller, after)
-            return mine, after
+            return mine, after, supervised
 
-    mine, after = await run_in_threadpool(start)
+    mine, after, supervised = await run_in_threadpool(start)
     if after_param == "latest" and wait == 0:
         # From now on, without the history; acknowledges nothing (§8.3).
         return answer([], after, superseded=False)
@@ -123,7 +132,15 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
         with engine.begin() as conn:
             if waking:
                 rows, examined = events.read_waking(
-                    conn, mine.project.id, mine.row, mine.principal_id, since, limit
+                    conn,
+                    mine.project.id,
+                    mine.row,
+                    mine.principal_id,
+                    since,
+                    limit,
+                    instance=mine.instance,
+                    credential_id=caller.credential_id,
+                    supervised=supervised,
                 )
             else:
                 rows, examined, _ = events.read(
@@ -262,11 +279,15 @@ def post_message(
                 raise invalid({"to": "unknown_role"})
             target = to
         else:
+            principal, instance = instances.split_address(to)
             try:
-                member_row(conn, mine.project.id, to)
+                addressee = member_row(conn, mine.project.id, principal)
             except ApiError:
                 raise invalid({"to": "not_a_member"}) from None
-            target = f"member:{to}"
+            if instance is not None:
+                # One instance of a team: its token wakes only it, the team reads it (§8.2).
+                instances.require_active(conn, addressee, instance, "to")
+            target = instances.token(principal, instance)
         audience = list(dict.fromkeys([target, f"member:{me}"]))
     if body.task_id is not None:
         found = conn.execute(
@@ -285,19 +306,23 @@ def post_message(
         mentions.charge(conn, mine.id, len([m for m in mentions.members(mentioned) if m != me]))
     elif body.type != "chat":  # a direct chat stays between its two parties (§8.6)
         mentioned = mentions.resolve(conn, mine.project.id, body.body, "body")
-        named = mentions.members(mentioned)
-        roles = _roles(conn, mine.project.id, named)
-        pinged = [
-            m
-            for m in named
+        roles = _roles(conn, mine.project.id, mentions.members(mentioned))
+        # Only what `to` does not reach already, judged per token (§8.2): a team mention
+        # is reached by `all`, its role or its own `member:`; an instance mention only by
+        # `all`, its role or its own `instance:` token — `to` naming the team wakes the
+        # instances its wake rule chooses, not necessarily the one named (§8.6). The
+        # mention stays either way.
+        pinged: dict[str, str] = {}  # token -> member
+        for m in mentioned:
+            token = instances.token(m["member_id"], m["instance"])
             if not (
-                "all" in audience or f"member:{m}" in audience or f"role:{roles[m]}" in audience
-            )
-        ]
-        mentions.charge(conn, mine.id, len(pinged))
-        # Only those `to` does not reach already: a member that `all`, its role or its
-        # own `member:` covers is not woken a second way (§8.2); the mention stays.
-        audience = list(dict.fromkeys([*audience, *(f"member:{m}" for m in pinged)]))
+                "all" in audience
+                or token in audience
+                or f"role:{roles[m['member_id']]}" in audience
+            ):
+                pinged[token] = m["member_id"]
+        mentions.charge(conn, mine.id, len({m for m in pinged.values() if m != me}))
+        audience = list(dict.fromkeys([*audience, *pinged]))
     payload = {
         "type": body.type,
         "to": to,

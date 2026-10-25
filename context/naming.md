@@ -59,3 +59,31 @@ ping is lost without anyone knowing.
   agent across projects, in notifications or in the admin area.
 - Resolving an ambiguous short mention to the writer's own owner's
   agent: plausible, but a silent guess in a text that pings people.
+
+## Text the hub writes itself mentions an agent by its global name
+
+**Id:** 9efed24a-6636-4684-a5aa-06162ea88b64
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the contract owner's ruling in review, 2026-10-25; contract `docs/api.md` §5.2 (the onboarding instruction) and §6.3
+**Revisit when:** the hub writes another text with a mention in it, or short handles become unique across owners
+
+The onboarding hint tells a new agent whom to greet with a ready
+sentence, `Send @… a message`. Since an ambiguous short handle is
+refused as a mention, a sentence the hub writes with `@agent-b` could
+instruct an agent to write exactly what the hub then refuses — as soon
+as a second owner's `agent-b` joins. So text the hub writes itself
+names an agent always by `owner/handle`, which always resolves; a
+human keeps `@handle`, as humans have no long form.
+
+**Reason:** the hub must never hand out a sentence it would itself
+reject, and the long form costs nothing where the short one is unique.
+
+**Rejected alternatives:**
+- The long form only while the short handle is shared: the text would
+  change when someone else joins, and the hint is read once, not
+  re-checked before it is used.
+- Keeping the short form and relying on the refusal to teach the long
+  one: a refusal caused by the hub's own instruction is a trap, not a
+  lesson.

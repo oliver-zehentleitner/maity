@@ -386,9 +386,10 @@ def watch_page(run: Run, page: Page) -> None:
 
 
 def project_settings(page: Page) -> None:
-    """Opens or closes the Project settings panel, through the header's gear menu."""
-    page.locator("header").get_by_role("button", name="Settings", exact=True).click()
-    page.get_by_role("menuitem", name=re.compile(r"^(Close project settings|Project settings)$")).click()
+    """Opens the project's Settings tab (its last tab), drawn afresh."""
+    page.locator("nav.views").get_by_role("link", name="Settings", exact=True).click()
+    expect(page).to_have_url(re.compile(r"#/p/[^/]+/settings$"))
+    expect(page.locator("#project-panel")).to_be_visible()
 
 
 def no_problems(run: Run, where: str) -> None:
@@ -416,7 +417,11 @@ def join_line(
     """Create a join line in Agents' join panel; a new profile when handle is given."""
     page.locator("nav.views").get_by_role("link", name="Agents", exact=True).click()
     expect(page).to_have_url(re.compile(rf"#/p/{slug}/agents$"))
-    # A project without agents opens the panel itself; otherwise the title row's button does.
+    # A project without agents opens the panel itself; otherwise the title row's
+    # button does. Wait for the view to be drawn (its count line comes with the
+    # panel and the button) before looking: an instant is_visible() on a view
+    # still loading could see neither, and click a button about to be hidden.
+    expect(page.locator(".agents-count")).to_be_visible()
     panel = page.locator(".join-panel")
     if not panel.is_visible():
         page.get_by_role("button", name="+ Join an agent", exact=True).click()
@@ -798,6 +803,10 @@ def scenario(run: Run, page: Page) -> None:
     run.maity(alpha, "ask", "Phone check?", "--to", "human", "--class", "consent")
     page.set_viewport_size({"width": 390, "height": 844})
     page.goto(f"{run.base}/#/p/e2e-alpha/inbox")
+    # The text beside the logo is hidden from sight only: still in the page for a screen reader.
+    expect(page.locator("header .bar > .project")).to_have_count(1)
+    box = page.locator("header .bar > .project").bounding_box()
+    assert box and box["width"] <= 1 and box["height"] <= 1, f"the header's text beside the logo shows at 390 px: {box}"
     # Each view through its tab: the tab row scrolls sideways on its own, so
     # every tab has to stay reachable there.
     tabs = (
@@ -1099,8 +1108,12 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     expect(agents.get_by_role("button", name="Pause", exact=True)).to_be_visible()
 
     def own_pause() -> dict | None:
+        # The agent's own pause is its instance's (§6.17); the membership's stays clear.
         members = run.api(alpha, "GET", "/projects/e2e-alpha/members")["items"]
-        return next(m for m in members if m["id"] == agent_id).get("paused")
+        member = next(m for m in members if m["id"] == agent_id)
+        assert member.get("paused") is None, member
+        (instance,) = member["instances"]  # the one CLI agent of this run
+        return instance.get("paused")
 
     assert own_pause() is None, own_pause()
     run.api(alpha, "PATCH", "/me", {"paused": {"reason": "e2e: out of quota"}})
@@ -1239,7 +1252,7 @@ def images_step(run: Run, page: Page, alpha: Path) -> None:
     page.locator("#upload-logo").set_input_files(
         files=[{"name": "notes.txt", "mimeType": "image/png", "buffer": b"not an image at all"}]
     )
-    expect(page.locator("#header")).to_contain_text(
+    expect(page.locator("#project-panel")).to_contain_text(
         "Logo not uploaded: not a PNG, JPEG or WebP image"
     )
     page.locator("#upload-logo").set_input_files(
@@ -1922,17 +1935,21 @@ def signing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     expect(page.locator("#signing-confirm")).to_be_focused()  # not sent unconfirmed
     page.locator("#signing-confirm").check()
     page.get_by_role("button", name="Change signing", exact=True).click()
-    expect(page.locator("#project-panel")).to_have_count(0)  # saved: the page re-rendered
+    # Saved: the Settings tab is drawn afresh (its reason field empty) and stays.
+    expect(page.locator("#signing-reason")).to_have_value("")
+    expect(page).to_have_url(re.compile(r"#/p/e2e-alpha/settings$"))
+    expect(page.locator("#signing-select")).to_have_value("required")
     assert run.api(alpha, "GET", "/projects/e2e-alpha")["policy"]["signing"] == "required"
     status, body = bearer_get(run, alpha, "/me")
     assert status == 403 and body["error"]["code"] == "signature_required", (status, body)
     run.maity(alpha, "resume")  # the CLI signs, so it still works
-    run.a11y(page, "agents, signing required")
+    run.a11y(page, "settings, signing required")
     project_settings(page)
     page.locator("#signing-select").select_option("optional")
     page.locator("#signing-reason").fill("e2e: back to optional")
     page.get_by_role("button", name="Change signing", exact=True).click()
-    expect(page.locator("#project-panel")).to_have_count(0)
+    expect(page.locator("#signing-reason")).to_have_value("")
+    expect(page.locator("#signing-select")).to_have_value("optional")
     status, _ = bearer_get(run, alpha, "/me")
     assert status == 200, status
     no_problems(run, "signing")

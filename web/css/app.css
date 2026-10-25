@@ -1002,6 +1002,13 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .badge-form .paste-row { min-width: 0; }
 .badge-form .paste-line { overflow-wrap: anywhere; }
 
+/* A contract card's section from the repository (js/contract-panel.js, §6.8). */
+.contract-section { margin-top: 6px; border-top: 1px solid var(--border); padding-top: 6px; min-width: 0; }
+.contract-section summary { cursor: pointer; font-size: 0.85rem; }
+.contract-bar { display: flex; justify-content: flex-end; margin: 4px 0; }
+.contract-text { max-height: 24rem; overflow: auto; border-left: 3px solid var(--border); padding-left: 8px; overflow-wrap: anywhere; }
+.contract-unresolved code { overflow-wrap: anywhere; }
+.contract-place { margin-top: 6px; }
 /* Statistics in the admin area (js/statistics.js, §16.6): tiles, one row
    per series with a 2px line in the accent, the days as a table. */
 .statistics-window { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 8px; }
@@ -1050,3 +1057,33 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .landing-preview .inert-link { text-decoration: underline dotted; }
 .landing-preview .inert-link.button { cursor: default; }
 .landing-form textarea { font-family: var(--mono); }
+/* Sign-in without a password (js/device-sign-in.js, docs/api.md §2.6). */
+.sign-in-options { display: grid; gap: 12px; margin: 16px auto 0; max-width: 32rem; }
+.sign-in-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.sign-in-form button { justify-self: end; }
+.link-button { background: none; border: none; padding: 4px 0; color: var(--accent); text-decoration: underline; cursor: pointer; justify-self: start; min-height: 24px; }
+.match-number { font-size: 3rem; font-weight: 700; letter-spacing: 0.05em; margin: 4px 0; }
+.device-account { display: flex; align-items: center; gap: 8px; }
+.device-stage { max-width: 36rem; }
+.device-code-text { font-family: var(--mono); font-size: 2rem; font-weight: 700; letter-spacing: 0.08em; margin: 8px 0; }
+/* Dark on light in either theme: that is what scanners read. */
+.qr-box { display: inline-block; background: #ffffff; padding: 8px; border-radius: 8px; line-height: 0; }
+.qr .qr-light { fill: #ffffff; }
+.qr .qr-dark { fill: #000000; }
+.device-approval { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; display: grid; gap: 8px; }
+.device-approval h3 { margin: 0; }
+.match-choices { display: flex; gap: 12px; flex-wrap: wrap; }
+.match-choice { font-size: 1.5rem; font-weight: 700; min-width: 4.5rem; min-height: 3rem; }
+.device-approval .actions, .device-code .actions { display: flex; justify-content: flex-end; gap: 8px; }
+.user-agent { display: block; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.85rem; }
+
+/* The theme in Your account (js/account.js): three radios in a row. */
+.theme-choice { border: 0; padding: 0; margin: 4px 0 12px; display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.theme-choice label.check { display: inline-flex; align-items: center; gap: 6px; }
+
+/* At phone width the text beside the logo (the scope line, the project's
+   name) is hidden from sight only: the switcher's active tab names it, and
+   a screen reader still reads it. */
+@media (max-width: 600px) {
+  .bar > .project { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}

@@ -49,7 +49,7 @@ window.Maity = window.Maity || {};
   // A member as the board names them: @handle, the full name as tooltip.
   const handleOf = (ctx, id) => {
     const m = (ctx.memberById || {})[id];
-    return m && m.handle ? "@" + m.handle : ctx.nameOf(id);
+    return m && m.handle ? "@" + M.dom.handleOf(ctx, m) : ctx.nameOf(id);
   };
 
   // Who works on it, led by a dot: claimed (live), the lease run out, or
@@ -428,6 +428,8 @@ window.Maity = window.Maity || {};
           (c.contract.watchers || []).length
             ? [" · watched by ", c.contract.watchers.map((w, i) => [i ? ", " : null, M.dom.memberRef(ctx, w)])] : null)
         : null,
+      // Its section from the repository, where the hub knows path and section (§6.8).
+      c.contract && "path" in c.contract && M.contractPanel ? M.contractPanel.panel(ctx, c, redraw) : null,
       checkpoint(ctx, c),
       report(ctx, c),
       c.kind === "release" && c.release ? release(ctx, c, byId, frozen, redraw) : null,
@@ -459,7 +461,17 @@ window.Maity = window.Maity || {};
     const formBox = h("div", { class: "new-card-box" });
     const intro = h("div");
     const wantedNote = h("p", { class: "muted wanted-note", role: "status" });
-    const filter = { member: "", area: "", silent: false };
+    // The column filter (the maintainer's request): one column, or the
+    // closed ones together; remembered per viewer and project in this
+    // browser. A card asked for by the URL is shown whatever it says.
+    const COLUMN_GROUPS = [["", "every column"], ["proposed", "Proposed"], ["open", "Open"], ["in_progress", "In progress"],
+      ["blocked", "Blocked"], ["review", "Review"], ["closed", "Closed (done and cancelled)"]];
+    const inGroup = (group, status) => !group || (group === "closed" ? status === "done" || status === "cancelled" : status === group);
+    const columnKey = "maity.board.column." + ctx.slug;
+    let rememberedColumn = "";
+    try { rememberedColumn = window.localStorage.getItem(columnKey) || ""; } catch (err) { rememberedColumn = ""; }
+    if (!COLUMN_GROUPS.some(([v]) => v === rememberedColumn)) rememberedColumn = "";
+    const filter = { member: "", area: "", silent: false, column: wanted ? "" : rememberedColumn };
 
     // Focus survives a redraw by key (data-focus), as on the Members view.
     // A card that left the view (closed and moved out, or filtered away)
@@ -636,6 +648,7 @@ window.Maity = window.Maity || {};
 
     let byId = {};
     function shown(c) {
+      if (!inGroup(filter.column, c.status)) return false;
       if (filter.member && !(c.assigned_to === filter.member || (c.claim && c.claim.holder === filter.member))) return false;
       if (filter.area && c.area !== filter.area) return false;
       if (filter.silent && !(c.claim && M.dom.isSilentAgent(ctx.memberById[c.claim.holder]))) return false;
@@ -663,8 +676,8 @@ window.Maity = window.Maity || {};
         append(intro, h("p", { class: "muted" }, "No card matches the filter."));
       }
       append(clear(columnsBox),
-        COLUMNS.map(([s, label]) => column(s, label, columns[s])),
-        other.length
+        COLUMNS.filter(([s]) => inGroup(filter.column, s)).map(([s, label]) => column(s, label, columns[s])),
+        other.length && !filter.column
           ? h("section", { class: "column", "aria-label": "Other" },
             h("h3", { class: "column-head" }, "Unknown status"),
             other.map((c) => card(ctx, c, byId, manage)))
@@ -731,6 +744,13 @@ window.Maity = window.Maity || {};
       append(clear(areaSel), h("option", { value: "" }, "every area"), [...areas].sort().map((a) => h("option", { value: a }, a)));
       areaSel.value = filter.area;
     }
+    const columnSel = h("select", { id: "board-column" }, COLUMN_GROUPS.map(([v, l]) => h("option", { value: v, selected: v === filter.column }, l)));
+    columnSel.value = filter.column;
+    columnSel.addEventListener("change", () => {
+      filter.column = columnSel.value;
+      try { if (filter.column) window.localStorage.setItem(columnKey, filter.column); else window.localStorage.removeItem(columnKey); } catch (err) { /* this browser keeps nothing */ }
+      draw();
+    });
     memberSel.addEventListener("change", () => { filter.member = memberSel.value; draw(); });
     areaSel.addEventListener("change", () => { filter.area = areaSel.value; draw(); });
 
@@ -767,6 +787,7 @@ window.Maity = window.Maity || {};
       h("form", { class: "board-filter", role: "search", onsubmit: (e) => { e.preventDefault(); search(); } },
         h("label", { for: "board-search" }, "Search"), searchInput,
         h("button", { type: "submit" }, "Search all cards"), clearSearch,
+        h("label", { for: "board-column" }, "Column"), columnSel,
         h("label", { for: "board-member" }, "Member (assigned or holding)"), memberSel,
         h("label", { for: "board-area" }, "Area"), areaSel,
         silentOnly ? h("label", { class: "check", for: "board-silent" }, silentOnly, " Held by a silent agent") : null),

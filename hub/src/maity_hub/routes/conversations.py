@@ -240,7 +240,8 @@ def _read_mark(conn: Connection, reader: int, conversation_id: str) -> int:
 
 
 def _short(person: dict[str, Any]) -> dict[str, Any]:
-    return {k: person[k] for k in ("member_id", "kind", "handle")}
+    """A participant as the list shows it; an agent with its global name (§6.3)."""
+    return {k: person[k] for k in ("member_id", "kind", "handle", "name") if k in person}
 
 
 def _direct_item(

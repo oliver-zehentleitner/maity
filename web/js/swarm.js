@@ -148,7 +148,8 @@ window.Maity = window.Maity || {};
     append(clear(header), h("div", { class: "bar" }, M.brandTitle ? M.brandTitle() : null,
       M.api.source === "fixtures" ? h("span", { class: "source" }, "Fixtures") : null,
       h("a", { class: "swarm-onward", href: "#/p/" + encodeURIComponent(slug) + "/swarm" }, "Members' view"),
-      h("a", { class: "swarm-onward", href: "#/login" }, "Sign in")));
+      h("a", { class: "swarm-onward", href: "#/login" }, "Sign in"),
+      M.themeMenu()));
     const box = h("article", { class: "swarm-public" });
     append(clear(main), box);
     let days = 30;
