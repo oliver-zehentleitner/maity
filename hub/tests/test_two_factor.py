@@ -384,3 +384,31 @@ def test_required_admins_needs_the_key_and_holds_an_admin_at_enrolment(
 def test_required_admins_in_the_environment_without_a_key_stops_the_hub() -> None:
     with pytest.raises(ConfigError):
         Settings.from_env({"MAITY_SIGN_IN_SECOND_FACTOR": "required_admins"})
+
+
+def test_a_device_code_sign_in_owes_the_second_step_too(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    desk = signed_in(make_client, migrated)
+    secret, _ = enrol(desk, moment)  # the enrolment's code is a step-up for the approval
+    code = desk.post("/auth/device-codes").json()
+    new = make_client(secret_key=KEY, peer="198.51.100.24")
+    redeemed = new.post("/api/v1/auth/device-login", json={"code": code["code"]}).json()
+    approved = desk.post(
+        f"/auth/device-codes/{code['id']}/approve", {"number": redeemed["match_number"]}
+    )
+    assert approved.status_code == 200, approved.text
+    completed = new.post("/api/v1/auth/device-login/complete")
+    assert completed.json() == {"second_factor": "required", "expires_in": 300}
+    csrf = new.get("/api/v1/auth/session").json()["csrf_token"]
+    moment.move(seconds=30)
+    done = new.post(
+        "/api/v1/auth/second-factor/verify",
+        json={"code": code_now(secret, moment.at)},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert done.status_code == 200, done.text
+    mine = next(i for i in new.get("/api/v1/auth/sessions").json()["items"] if i["current"])
+    # The first factor's method and lineage are kept through the second step (§2.8.2).
+    assert mine["method"] == "device_code" and mine["approved_by"] is not None
+    assert mine["second_factor"] is True
