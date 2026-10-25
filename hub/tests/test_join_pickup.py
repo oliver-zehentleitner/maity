@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 
 from maity_hub import clock, events
 from maity_hub import tables as t
-from maity_hub.routes import joins
+from maity_hub.routes import agents, joins
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_placements import REPOSITORY, Setup, events_of, placed
@@ -107,7 +107,7 @@ def test_a_handle_taken_during_the_exchange_is_not_found(
 ) -> None:
     placement = placed(setup, agent={"handle": "agent-f", "display_name": "Agent F"})
     picked = pick_up(setup, placement).json()
-    real = joins.create_profile
+    real = agents.create_profile
 
     def racing(conn: Any, *args: Any) -> str:  # a POST /agents lands after the check
         if late == "unique":
