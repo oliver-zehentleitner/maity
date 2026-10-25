@@ -676,3 +676,24 @@ def test_a_state_never_stored_reads_the_same_since_on_every_read(
     now[0] += timedelta(minutes=1)
     second = member(owner, agent.id)["availability"]
     assert first == second == {"state": "offline", "since": z(joined)}
+
+
+def test_one_removal_resets_every_policy_seat_in_one_policy_changed(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The arbiter seat and the coordinator seat named the same agent: one event (§6.2)."""
+    flow.agent(make_client, owner, role="admin")  # an admin stays: the arbiter goes to role
+    worker = flow.agent(make_client, owner)
+    response = owner.patch(
+        "/projects/maity",
+        {"policy": {"coordinator": worker.id, "contract_arbiter": worker.id}, "reason": "t"},
+    )
+    assert response.status_code == 200, response.text
+    owner.delete(f"/projects/maity/members/{worker.id}")
+    reset = [
+        e for e in events(migrated, "policy_changed") if e.payload["reason"] == "member_removed"
+    ]
+    assert len(reset) == 1
+    new = reset[0].payload["new"]
+    assert (new["coordinator"], new["contract_arbiter"]) == ("role:admin", "role:admin")
+    assert f"member:{owner.id}" in reset[0].audience

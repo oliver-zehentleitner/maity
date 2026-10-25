@@ -161,7 +161,14 @@ agent_profile = Table(
     Column("git_name", String(TITLE)),
     Column("git_email", String(TITLE)),
     Column("created_at", UtcDateTime, nullable=False),
-    UniqueConstraint("owner_id", "handle"),
+    # A deleted profile stays as a tombstone (§6.3); `live` is true until then and NULL
+    # after, so that its handle is free for a new profile of the same owner at once.
+    Column("deleted_at", UtcDateTime),
+    Column(
+        "live", Boolean, server_default=true()
+    ),  # the database fills it: inserts on older schemas name no `live`
+    UniqueConstraint("owner_id", "handle", "live"),
+    CheckConstraint("live IS NOT FALSE", name="live_true_or_null"),
     **MYSQL_TABLE,
 )
 
@@ -905,6 +912,9 @@ event = Table(
     # The runner that caused the event (§15.10), with `actor_membership` null; like the
     # session and credential columns, no foreign key: the log outlives what it names.
     Column("actor_runner_id", String(ID)),
+    # A human who is no member of the project (§8.1: the owner deleting a profile with
+    # `cascade`, §6.3), with `actor_membership` null; no foreign key either.
+    Column("actor_human_id", String(ID)),
     Column("subject_type", String(32)),
     # An id, or a deploy's `<environment>@<sha>` (§17.1).
     Column("subject_id", String(255)),

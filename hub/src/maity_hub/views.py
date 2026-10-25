@@ -487,6 +487,7 @@ def agent_view(
         "git_identity": git_identity(row),
         "memberships": [{"project": m.slug, "role": m.role} for m in memberships],
         "created_at": ts(row.created_at),
+        "deleted_at": ts(row.deleted_at),  # a tombstone: handle and name kept (§6.3)
     }
 
 
@@ -683,6 +684,16 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
     instance_of = instances_of(
         conn, (r.actor_credential_id for r in rows if r.actor_membership is not None)
     )
+    human_ids = {r.actor_human_id for r in rows if r.actor_human_id is not None}
+    human_handles = (
+        dict(
+            conn.execute(
+                select(t.human.c.id, t.human.c.handle).where(t.human.c.id.in_(human_ids))
+            ).all()
+        )
+        if human_ids
+        else {}
+    )
     runner_ids = {r.actor_runner_id for r in rows if r.actor_runner_id is not None}
     runner_names = (
         dict(
@@ -716,6 +727,13 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
                 "session_id": row.actor_session_id,
                 "harness": row.actor_harness,
                 "model": row.actor_model,
+            }
+        elif row.actor_human_id is not None:  # §8.1
+            actor = {
+                "kind": "human",
+                "id": row.actor_human_id,
+                "handle": human_handles.get(row.actor_human_id),
+                "via": row.actor_via,
             }
         elif row.actor_runner_id is not None:  # §15.10
             actor = {
