@@ -73,9 +73,10 @@ def record(
     extra: Iterable[tuple[str, Any, Any]] = (),
 ) -> list[str]:
     """An entry per recorded column in `changed` (the card row as it was in `before`)
-    and per `(field, before, after)` in `extra` (edges, `contract.state`, links), all
-    with the same `at`. `shown` gives `(before, after)` as the history shows a column
-    whose stored value is not the shown one (a member id for `assigned_to`)."""
+    and per `(field, before, after)` in `extra` (edges, `contract.state`, `.path` and
+    `.section`, links), all with the same `at`. `shown` gives `(before, after)` as the
+    history shows a column whose stored value is not the shown one (a member id for
+    `assigned_to`)."""
     at = clock.now()
     shown = shown or {}
     ids = [
@@ -162,7 +163,11 @@ def view(row: Any, actors: dict[int, dict[str, Any]]) -> dict[str, Any]:
 # What a task event keeps whatever is redacted: which card, fields, entries, the state.
 _EVENT_KEEPS = frozenset({"id", "fields", "history", "project_state", "reason"})
 # A history field whose value travels in the event under another key.
-_EVENT_KEY = {"contract.state": "contract"}
+_EVENT_KEY = {
+    "contract.state": "contract",
+    "contract.path": "contract",
+    "contract.section": "contract",
+}
 
 
 def tombstone(reason: str, by: str) -> dict[str, Any]:
