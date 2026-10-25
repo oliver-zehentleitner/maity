@@ -380,12 +380,17 @@ def read_for_runner(
     return rows, examined
 
 
+# What still wakes a supervised session though addressed only to `all` (§15.11).
+SUPERVISED_ALL_WAKES = frozenset({"state_changed", "policy_changed", "rules_changed"})
+
+
 def wakes(
     row: Any,
     membership: Any,
     principal: str,
     instance: str | None = None,
     credential_id: str | None = None,
+    supervised: bool = False,
 ) -> bool:
     """§8.2 wake-relevant: addressed to the reader by audience (or a conversation naming
     it), and not caused by the reader's own membership. Seeing everything as an owner or
@@ -394,7 +399,11 @@ def wakes(
     For an agent instance: its own `instance:` token wakes it, also when a sibling of its
     team caused the event, never when it did itself. A team addressed by `member:` or
     `role:` whose wake rule narrowed the event (`row.wakes`) wakes only the chosen
-    instances; `all` and a conversation are never narrowed."""
+    instances; `all` and a conversation are never narrowed.
+
+    A session a runner supervises is not woken by `all`, but for SUPERVISED_ALL_WAKES:
+    each wake is a model run there (§15.11). `all` beside another member's term (a
+    sender's own) is still `all`."""
     if row.kind in NON_WAKING:
         return False
     if row.kind == "ticker":
@@ -417,7 +426,9 @@ def wakes(
     own = instance is not None and f"instance:{principal}#{instance}" in audience
     if row.actor_membership == membership.id:
         return own and row.actor_credential_id != credential_id
-    if own or "all" in audience or row.conversation_id == principal:
+    if own or row.conversation_id == principal:
+        return True
+    if "all" in audience and (not supervised or row.kind in SUPERVISED_ALL_WAKES):
         return True
     if f"member:{principal}" not in audience and f"role:{membership.role}" not in audience:
         return False
@@ -439,6 +450,7 @@ def read_waking(
     *,
     instance: str | None = None,
     credential_id: str | None = None,
+    supervised: bool = False,
 ) -> tuple[list[Any], int]:
     """Wake-relevant events after `after`: (rows, highest seq examined)."""
     rows, examined, truncated = read(conn, project_id, membership, principal, after, 10_000)
@@ -447,7 +459,7 @@ def read_waking(
     found = [
         r
         for r in rows
-        if wakes(r, membership, principal, instance, credential_id)
+        if wakes(r, membership, principal, instance, credential_id, supervised)
         and not (r.kind == "event_redacted" and f"notice:{r.subject_id}" in notices)
     ][:limit]
     if found and (len(found) == limit or truncated):

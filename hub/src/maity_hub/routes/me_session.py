@@ -138,6 +138,8 @@ class ResumeIn(Strict):
     client: str = Field(min_length=1, max_length=200)
     cursor: int | None = Field(default=None, ge=0)
     environment: EnvironmentIn | None = None
+    # A runner supervises this session (§15.11): `maity-runner/<version>`.
+    supervisor: str | None = Field(default=None, pattern=r"^maity-runner/[A-Za-z0-9.+_-]{1,64}$")
 
 
 class MePatch(Strict):
@@ -225,6 +227,7 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
                 live=True,
                 env_home=body.environment.home if body.environment else None,
                 env_workspace=body.environment.workspace if body.environment else None,
+                supervisor=body.supervisor,
             )
         )
         environment.refresh(conn, mine.project.id, mine.id)
@@ -303,8 +306,10 @@ def _packet(
     rules_seq = project.rules_changed_seq or 0
     changed = body.cursor is None or body.cursor < rules_seq
     rules_block: dict[str, Any] = {"version": project.rules_version, "changed": changed}
-    if changed:
-        rules_block["markdown"] = rules.generate(project, mine.role, arbiter_text(conn, project))
+    if changed or body.supervisor is not None:  # the supervised duty is in every packet
+        rules_block["markdown"] = rules.generate(
+            project, mine.role, arbiter_text(conn, project), supervised=body.supervisor is not None
+        )
     members = conn.execute(
         select(t.membership).where(
             t.membership.c.project_id == project.id, t.membership.c.active.is_(True)
@@ -375,7 +380,12 @@ def _packet(
             else {}
         ),
         "session": session,
-        "hints": {"wait_timeout": wait_timeout(body.harness)},
+        # Supervised: the runner starts a run on each event, so no wait to time (§15.11).
+        "hints": (
+            {"duty": "supervised"}
+            if body.supervisor is not None
+            else {"duty": "self", "wait_timeout": wait_timeout(body.harness)}
+        ),
         "me": {
             "member_id": agent.id,
             "handle": agent.handle,
@@ -400,6 +410,7 @@ def _packet(
             "owner_preferences": owner_preferences,
             "availability_policy": availability.policy_of(mine.row),  # §6.12
             "covering": [],  # cover by a substitute is not built yet (§6.12)
+            "placement": _placement_block(conn, mine.id),
         },
         "team": siblings,
         "project": {
@@ -449,6 +460,24 @@ def _briefing(project: Any, membership: Any, written: dict[str, Any]) -> dict[st
         )
         block["briefing_version"] = membership.briefing_version
     return block
+
+
+def _placement_block(conn: Connection, membership_id: int) -> dict[str, Any] | None:
+    """`membership.placement` (§15.11): the active placement running this membership."""
+    row = conn.execute(
+        select(t.placement, t.runner.c.name.label("runner_name"))
+        .join(t.runner, t.runner.c.id == t.placement.c.runner_id)
+        .where(t.placement.c.membership_id == membership_id, t.placement.c.active.is_(True))
+    ).first()
+    if row is None:
+        return None
+    return {
+        "id": row.id,
+        "runner_name": row.runner_name,
+        "harness": row.harness,
+        "mode": row.mode,
+        "stop_grace_seconds": row.stop_grace_seconds,
+    }
 
 
 def _requests_block(conn: Connection, mine: Membership, cursor: int) -> dict[str, Any]:
