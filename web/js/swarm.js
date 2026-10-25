@@ -32,7 +32,8 @@ window.Maity = window.Maity || {};
   // total stands beside it and the members' table says the rest.
   function sparkline(days) {
     const W = 160, H = 28, P = 2;
-    const values = days.slice().reverse().map((d) => d.count);
+    // Oldest left, whichever order the hub sends (§6.22 sends oldest first).
+    const values = days.slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)).map((d) => d.count || 0);
     const box = document.createElementNS(SVG, "svg");
     [["viewBox", "0 0 " + W + " " + H], ["width", W], ["height", H], ["aria-hidden", "true"], ["focusable", "false"], ["class", "sparkline"]]
       .forEach(([k, v]) => box.setAttribute(k, String(v)));
@@ -71,6 +72,25 @@ window.Maity = window.Maity || {};
       h("tfoot", null, h("tr", { class: "swarm-total" }, h("th", { scope: "row" }, "All"), cells(totals)))));
   }
 
+  // One read at a time per page, the newest winning: a slower answer to an
+  // earlier window never replaces a later one.
+  function loader(status, read, draw, failed) {
+    let seq = 0;
+    return async () => {
+      const mine = ++seq;
+      status.busy("Reading…");
+      try {
+        const s = await read();
+        if (mine !== seq) return;
+        status.done();
+        draw(s);
+      } catch (err) {
+        if (mine !== seq) return;
+        failed(err);
+      }
+    };
+  }
+
   function notes(s) {
     return [
       h("p", { class: "hint" }, "– where a median has fewer than three cards to go by. Counts are lower bounds where older evidence is gone."),
@@ -87,7 +107,7 @@ window.Maity = window.Maity || {};
     if (!served) { append(root, M.dom.notOnHub("This hub has no swarm page yet.")); return; }
     let days = 30;
     const status = M.statusLine();
-    const body = h("div", { class: "swarm-body", "aria-live": "polite" });
+    const body = h("div", { class: "swarm-body" });
     const memberLink = (id, fallback) => (ctx.memberById && ctx.memberById[id] ? M.dom.memberRef(ctx, id) : h("span", null, fallback));
 
     function draw(s) {
@@ -100,7 +120,7 @@ window.Maity = window.Maity || {};
           h("span", { class: "swarm-name" }, memberLink(m.member_id, m.display_name)),
           h("span", { class: "muted" }, m.online
             ? (m.kind === "agent" && m.instances_online > 1 ? " online, " + m.instances_online + " instances" : " online")
-            : " last seen " + formatAgo(m.last_seen_at, M.api.now())),
+            : m.last_seen_at ? " last seen " + formatAgo(m.last_seen_at, M.api.now()) : " not seen yet"),
           (m.holding || []).length
             ? h("ul", { class: "swarm-holding" }, m.holding.map((c) => h("li", null,
               h("a", { href: ctx.link("tasks", c.task_id) }, c.task_id), " " + c.title, h("span", { class: "muted" }, " · since " + formatAgo(c.since, M.api.now())))))
@@ -109,26 +129,13 @@ window.Maity = window.Maity || {};
         h("div", { class: "swarm-per-day" }, h("span", null, (t.cards_done == null ? "–" : t.cards_done) + " cards done"), sparkline(t.cards_done_per_day || [])),
         table(s.members || [], t, (r) => memberLink(r.member_id, "@" + (r.name || r.handle))),
         notes(s),
-        ctx.project && ctx.project.policy && ctx.project.policy.swarm_public === "on"
+        ctx.project && ctx.project.policy && ctx.project.policy.swarm_public === "on" && !["accepted", "archived"].includes(ctx.project.state)
           ? h("p", { class: "muted" }, "This project shows a public version of this page: ", h("a", { href: "#/s/" + encodeURIComponent(ctx.slug) }, "#/s/" + ctx.slug), ".")
           : null);
     }
 
-    let seq = 0;
-    async function load() {
-      const mine = ++seq;
-      status.busy("Reading…");
-      try {
-        const s = await M.api.get(ctx.base + "/swarm?days=" + days);
-        if (mine !== seq) return;
-        status.done();
-        draw(s);
-      } catch (err) {
-        if (mine !== seq) return;
-        clear(body);
-        status.fail("The swarm could not be read: ", err);
-      }
-    }
+    const load = loader(status, () => M.api.get(ctx.base + "/swarm?days=" + days), draw,
+      (err) => { clear(body); status.fail("The swarm could not be read: ", err); });
     append(root, h("p", { class: "muted" }, "Who is at work now, and what the project got done lately."),
       switcher(days, (n) => { days = n; load(); }), status.el, body);
     await load();
@@ -137,26 +144,18 @@ window.Maity = window.Maity || {};
   // ---- the public page (#/s/<slug>) -----------------------------------------
 
   async function publicPage(main, header, slug) {
-    append(clear(header), h("div", { class: "bar" }, M.brandTitle ? M.brandTitle() : null));
+    // The way on: a member to the project's own tab, anyone else to sign in.
+    append(clear(header), h("div", { class: "bar" }, M.brandTitle ? M.brandTitle() : null,
+      M.api.source === "fixtures" ? h("span", { class: "source" }, "Fixtures") : null,
+      h("a", { class: "swarm-onward", href: "#/p/" + encodeURIComponent(slug) + "/swarm" }, "Members' view"),
+      h("a", { class: "swarm-onward", href: "#/login" }, "Sign in")));
     const box = h("article", { class: "swarm-public" });
     append(clear(main), box);
     let days = 30;
-    const body = h("div", { "aria-live": "polite" });
+    const body = h("div");
     const status = M.statusLine();
-    async function load() {
-      status.busy("Reading…");
-      let s;
-      try {
-        s = await M.api.get("/swarm/" + encodeURIComponent(slug) + "?days=" + days);
-      } catch (err) {
-        status.done();
-        append(clear(box), h("h2", null, "No public swarm here"),
-          h("p", null, err.status === 404 ? "This project shows no public swarm page, or there is no such project." : "The page could not be read: " + (err.message || "an error") + "."),
-          h("p", null, h("a", { href: "#/login" }, "Sign in")));
-        return;
-      }
-      status.done();
-      document.title = "Swarm · " + slug;
+    document.title = "Swarm · " + slug + " · Maity";
+    const draw = (s) => {
       const t = s.totals || {};
       append(clear(body),
         h("p", { class: "muted" }, "As of " + formatTime(s.as_of) + " · the last " + s.window_days + " days."),
@@ -171,7 +170,13 @@ window.Maity = window.Maity || {};
         h("div", { class: "swarm-per-day" }, h("span", null, (t.cards_done == null ? "–" : t.cards_done) + " cards done"), sparkline(t.cards_done_per_day || [])),
         table(s.members || [], t, (r) => r.name || r.handle),
         notes(s));
-    }
+    };
+    const load = loader(status, () => M.api.get("/swarm/" + encodeURIComponent(slug) + "?days=" + days), draw, (err) => {
+      status.done();
+      append(clear(box), h("h2", null, "No public swarm here"),
+        h("p", null, err.status === 404 ? "This project shows no public swarm page, or there is no such project." : "The page could not be read: " + (err.message || "an error") + "."),
+        h("p", null, h("a", { href: "#/login" }, "Sign in")));
+    });
     append(box, h("h2", null, "The swarm of " + slug),
       h("p", { class: "muted" }, "The agents working on this project, and what they got done. Shown because the project's owner made it public."),
       switcher(days, (n) => { days = n; load(); }), status.el, body);

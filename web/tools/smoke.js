@@ -1498,15 +1498,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main).includes("36 cards done") && main.querySelector(".swarm-per-day").childNodes[1].tagName.toLowerCase() === "svg"
     && text(main).includes("Reviews are counted from 2026-10-20.") && text(main).includes("fewer than three cards")
     && main.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/s/maity"), "swarm: cards done per day, the coverage and samples notes, the public page linked");
+  const swPoints = () => main.querySelector(".swarm-per-day").childNodes[1].childNodes[0].getAttribute("points").split(" ");
+  expect(swPoints().length === 30 && swPoints()[29] === "158.0,6.8", "swarm: the per-day line runs oldest to newest, the newest day at the right " + swPoints().slice(-1));
   btn(main, "7 days").click(); for (let k = 0; k < 4; k++) await tick();
-  expect(swGets[swGets.length - 1] === "/projects/maity/swarm?days=7" && btn(main, "7 days").getAttribute("aria-pressed") === "true", "swarm: the switch reads 7 days");
+  expect(swGets[swGets.length - 1] === "/projects/maity/swarm?days=7" && btn(main, "7 days").getAttribute("aria-pressed") === "true" && swPoints().length === 7,
+    "swarm: the switch reads 7 days and draws them");
   // The public page: agents only, by their global names, no pictures, no card titles or links.
   await go("#/s/maity"); for (let k = 0; k < 4; k++) await tick();
   const swPub = main.querySelector("article.swarm-public");
   expect(swPub && swGets[swGets.length - 1] === "/swarm/maity?days=30" && swPub.querySelector("ul.swarm-live").childNodes.length === 3
     && !text(swPub).includes("Maintainer") && text(swPub).includes("maintainer/agent-b") && text(swPub).includes("holds 1 card")
     && !swPub.querySelector("img") && !swPub.querySelectorAll("a").some((a) => /tasks/.test(a.getAttribute("href") || "")) && !text(swPub).includes("credential exchange")
-    && swPub.querySelectorAll("table.swarm-table tbody tr").length === 3 && document.title === "Swarm · maity",
+    && swPub.querySelectorAll("table.swarm-table tbody tr").length === 3 && document.title === "Swarm · maity · Maity"
+    && header.querySelectorAll("a.swarm-onward").map((a) => a.getAttribute("href")).join() === "#/p/maity/swarm,#/login",
     "swarm: the public page shows agents only, by global name, counts and presence, no pictures or card titles");
   // The switch in Project settings, a policy change with its reason; off, the public page is not found.
   const swPatches = [];
@@ -1521,6 +1525,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   if (header.querySelector("form.swarm-public-form")) await projectSettings();
   await go("#/s/maity"); for (let k = 0; k < 4; k++) await tick();
   expect(text(main).includes("No public swarm here") && text(main).includes("This project shows no public swarm page"), "swarm: off, the public page is a friendly not found");
+  await go("#/s/no-such-project"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main).includes("No public swarm here"), "swarm: an unknown slug reads the same");
   win.Maity.api.patch = swPatch;
   await swPatch("/projects/maity", { policy: { swarm_public: "on" }, reason: "back on" });
   // A hub without the swarm says so in the tab.
@@ -2609,6 +2615,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/all"); await go(""); await tick(); await tick();
   expect(lpReads.length === lpBefore2 && byId("login-handle"), "landing: a hub without it is not asked; the login page");
   win.Maity.api.get = lpGet; win.Maity.api.forgetRoutes();
+  // The public swarm page without a session (§6.22): the fixture serves /swarm/ signed out, as the hub does.
+  await go("#/s/maity"); for (let k = 0; k < 4; k++) await tick();
+  expect(main.querySelector("article.swarm-public") && main.querySelector("article.swarm-public ul.swarm-live") && !byId("login-handle"),
+    "swarm: the public page opens without a session");
   await go(""); await tick(); await tick();
   byId("login-handle").value = "maintainer"; byId("login-password").value = "initial-generated";
   main.querySelector("form").dispatch("submit"); await tick(); await tick(); await tick();

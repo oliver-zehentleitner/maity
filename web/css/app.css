@@ -991,6 +991,7 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .swarm-table th[scope="row"], .swarm-table thead th:first-child { text-align: left; }
 .swarm-total th, .swarm-total td { font-weight: 600; }
 .swarm-public { max-width: 60rem; margin: 24px auto; display: grid; gap: 8px; }
+.bar .swarm-onward { margin-left: 12px; font-size: 0.9rem; }
 /* Project memory and its setup options (js/new-project.js, §6.21); the
    memory and the README badge in Project settings (js/app.js, §6.20). */
 .project-setup { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; display: grid; gap: 6px; min-width: 0; }

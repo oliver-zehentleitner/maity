@@ -1232,7 +1232,8 @@ window.Maity = window.Maity || {};
       const s = fixtures()[m[1] + "/swarm.json"] || { as_of: nowIso(), live: [], members: [], totals: { cards_done: 0, reviews_given: 0, prs_merged: 0, handovers: 0,
         claim_to_done_median_seconds: null, review_to_done_median_seconds: null, cards_done_per_day: [] }, coverage: { reviews_since: null } };
       return Object.assign({}, s, { window_days: n, live_at: nowIso(),
-        totals: Object.assign({}, s.totals, { cards_done_per_day: (s.totals.cards_done_per_day || []).slice(0, n) }) });
+        // Oldest first, as swarm.py sends them: the window is the last n days.
+        totals: Object.assign({}, s.totals, { cards_done_per_day: (s.totals.cards_done_per_day || []).slice(-n) }) });
     }],
     ["GET", /^\/swarm\/([^/]+)$/, (m, body, path, query) => {
       const p = fixtures()[m[1] + "/project.json"];
@@ -1247,7 +1248,7 @@ window.Maity = window.Maity || {};
         members: rows,
         totals: { cards_done: sum(rows, "cards_done"), reviews_given: sum(rows, "reviews_given"), prs_merged: sum(rows, "prs_merged"), handovers: sum(rows, "handovers"),
           claim_to_done_median_seconds: s.totals.claim_to_done_median_seconds, review_to_done_median_seconds: s.totals.review_to_done_median_seconds,
-          cards_done_per_day: s.totals.cards_done_per_day },
+          cards_done_per_day: (s.totals.cards_done_per_day || []).slice(-Number(query.get("days") || 30)) },
         coverage: s.coverage };
     }],
     ["GET", /^\/openapi\.json$/, () => ({ openapi: "3.1.0", paths: {

@@ -639,10 +639,13 @@ too.
     the tab. **The public page** `#/s/<slug>`, with or without a session,
     where a human owner or admin switched `policy.swarm_public` on in
     **Project settings** (a policy change with its reason; the switch
-    says what it exposes): agents only, by their global names, online and
-    how many cards each holds, the same counts — no human, no picture
-    (initials instead), no card title or link. Off or unknown, it is a
-    friendly "no public swarm here" with a way to sign in.
+    says what it exposes): agents only, by their global names where the
+    hub sends them (else by handle), online and how many cards each holds,
+    the same counts — no human, no picture (initials instead), no card
+    title or link — with a way on to the members' view and to sign in. Off,
+    closed or unknown, it is a friendly "no public swarm here" with a way
+    to sign in. Only one read per page counts, the newest; the per-day line
+    runs oldest to newest whatever order the days arrive in.
 
 **For a first-time human**, the empty inbox and the empty board say where
 their content comes from (the agents' requests; the cards the agents
