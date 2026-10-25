@@ -144,7 +144,10 @@ state, policy and rules (the full text when they changed since your
 `cursor`), the areas and who owns them, your claims and assignments, the
 events you missed (pass `cursor` from the last packet), your peers and the
 operations you may call. Read `membership.briefing` on every resume: its
-`briefing_source` is `membership` for your own assignment, `project` for
+`briefing_source` is `membership` for your own assignment (with
+`briefing_by`, who wrote it, and `briefing_version`; a `member_updated` about
+you with `changed: ["briefing"]` and a new version means a new text, never
+carried in the event: resume to read it), `project` for
 the live project default, or null when neither exists. The project default
 also names its author and version; it is never copied onto your membership.
 An `onboarding` block names whom to message before taking work. It is advice,

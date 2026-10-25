@@ -23,7 +23,7 @@ from pydantic import Field
 from sqlalchemy import Connection, insert, select, update
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import clock, events, idempotency, instances
+from maity_hub import briefings, clock, events, idempotency, instances
 from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.auth import credentials
@@ -590,6 +590,8 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
         key = result.inserted_primary_key
         assert key is not None
         membership_id = int(key[0])
+        # Version 1, by whoever made the join (§6.2), even when it carries no text.
+        briefings.record(conn, membership_id, row.briefing, row.created_by, now)
     else:
         membership_id = member.id
         _recheck_instance(conn, row, member)

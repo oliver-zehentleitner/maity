@@ -386,7 +386,7 @@ off.
 **Status:** active
 **Evidence:** inferred
 **Source:** implementation of card order (`docs/api.md` §6.4, contract #135), 2026-10-23
-**Revisit when:** a project's board grows to thousands of cards
+**Revisit when:** a project's board grows to thousands of cards, or a client reports paging through a board that does not finish while cards keep moving
 
 `GET …/tasks` reads a project's cards that match the filters and sorts them
 in Python by `ranks.board_key`: the columns in board order, then within
@@ -405,7 +405,11 @@ card that moved elsewhere takes the page with it (both found in
 review). A restart may repeat a card from an earlier page, but never
 skips one that did not move.
 When that card moves itself, the cards it passed may be skipped or
-repeated; the contract says so.
+repeated; the contract says so. Nothing bounds the repeats: while cards
+keep moving, a client can page on with restarts and repeats and has no
+guarantee of reaching the end until the moves stop. A board of a few
+hundred cards read 200 at a time rarely meets that, so no snapshot or
+version token was added for it.
 `order=updated` keeps the old keyset paging by `updated_at`, now bound to
 the filters as well. A rank is a string over digits and lower-case letters
 that never ends in `0`. A move keys between its ranked neighbours, a
