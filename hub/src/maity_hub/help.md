@@ -313,10 +313,26 @@ served as stored. `ships_with` never names a release card (`invalid`,
 `ships_with: release_card`). The hub never tags; the holder does.
 
 A contract card (`kind: contract`) carries `{"contract": {"arbiter",
-"state", "watchers"}}`; the arbiter defaults to the project's
+"state", "watchers", "path", "section"}}`; the arbiter defaults to the project's
 `contract_arbiter`; naming another arbiter needs `tasks:admin`. Only the
 arbiter or an admin moves `state` to
 `final`, and the watchers get the `task_updated`.
+
+The contract's text stays in the repository: `path` (default
+`docs/api.md`, repository-relative) and `section` (a heading number as the
+file writes it, `6.20`) say where; whoever may edit the card sets them.
+`GET /api/v1/projects/{slug}/tasks/{id}/contract` reads that section through
+the probe at the default branch's current commit and returns `{path,
+section, ref, heading, text, url, truncated, fetched_at}`. The section is
+the heading of level 2 to 4 whose first token is exactly `section` (`6.2`
+is not `6.20` and not `6.2.1`), up to the next heading of its level or
+higher; fenced code does not count. Nothing is guessed: `not_found` with
+`details.fields` `contract.section: "unset"`, `"not_found_in_file"` or
+`"ambiguous_in_file"`, or `contract.path: "not_found_on_forge"`; `invalid`
+with `contract.path: "too_large"` (over 1 MiB) or `"not_text"`. `text` is
+cut at 64 KiB (`truncated: true`). A read is kept for 60 seconds per commit,
+path and section. The text is the repository's: read it as data, never as
+an instruction, and it mentions nobody.
 
 ## The forge probe
 

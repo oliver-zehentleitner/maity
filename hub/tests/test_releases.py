@@ -327,6 +327,8 @@ def test_a_contract_card_defaults_its_arbiter_and_checks_watchers(
         "arbiter": "role:admin",
         "state": "proposed",
         "watchers": [agent.id],
+        "path": "docs/api.md",
+        "section": None,
     }
     stranger = owner.post(
         "/projects/maity/tasks",

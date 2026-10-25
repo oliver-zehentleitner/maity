@@ -8,7 +8,16 @@ from typing import Any
 
 from sqlalchemy import Connection, func, select
 
-from maity_hub import availability, avatars, clock, forge, onboarding, policy, ticker_read
+from maity_hub import (
+    availability,
+    avatars,
+    clock,
+    contract_text,
+    forge,
+    onboarding,
+    policy,
+    ticker_read,
+)
 from maity_hub import tables as t
 from maity_hub.config import Settings
 
@@ -596,7 +605,7 @@ def task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[d
                 "ktw_ref": row.ktw_ref,
                 "report": row.report,
                 "release": _release(conn, row, fg, release_tags),
-                "contract": row.contract,
+                "contract": view_contract(row.contract) if row.contract is not None else None,
                 "links": linked[row.id],
                 "notes": noted[row.id],
                 "created_at": ts(row.created_at),
@@ -725,3 +734,9 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
             }
         )
     return views
+
+
+def view_contract(contract: dict[str, Any] | None) -> dict[str, Any]:
+    """A contract card's `contract` as shown: a card from before §6.8 named no place, so
+    it has the defaults."""
+    return {"path": contract_text.DEFAULT_PATH, "section": None, **(contract or {})}
