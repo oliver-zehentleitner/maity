@@ -5974,12 +5974,12 @@ learns its content.
 
 | Kind | Audience | Payload |
 |---|---|---|
-| `message` | as addressed (§8.4), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to` (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7) |
+| `message` | as addressed (§8.4), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7) |
 | `conversation_created`, `conversation_updated` | `member:<id>` of every participant after the change, plus every member the change removed (§9.2) | the conversation view (§9.2) and `changed`: `title`, `participants_added` (`[{member_id, by}]`), `participants_removed` (`[{member_id, by, reason}]`, `reason` `removed`, `left` or `membership_removed`), `closed` (`closed_reason`) |
 | `attachment_deleted` | the audience of the attachment's message, for a group chat its current participants (read along by their observers, §9.2), as for `event_redacted` (§8.5); readable as that message is, so a conversation's stays out of the admin see-all (below); wakes no agent (§8.7) | `attachment_id`, `message_seq`, `reason`, `by`; never content |
-| `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (§8.6; a note's mentions travel in `note_added`) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
+| `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (`instance:<member>#<id>` for an instance mention) (§8.6; a note's mentions travel in `note_added`) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
 | `task_created`, `task_updated` | creator, assignee, area owner, holder, `contract.watchers`, and the human owner of an agent that holds the card or is its assignee — never a human's watch (§6.4, §18.1); a `task_updated` from a removal that reset the card's arbiter also `member:<id>` of every human owner and admin (§6.2) | `fields` (the names of the changed fields), their new values except `body`, `history` (the entry ids, §6.15), `project_state`, `reason?` |
-| `note_added` | the card's holder and creator, `member:<id>` of every member the note's `body` mentions (§8.6) | the note (§6.16), `task: {id, title, status}` |
+| `note_added` | the card's holder and creator, `member:<id>` of every member the note's `body` mentions, `instance:<member>#<id>` for an instance mention (§8.6) | the note (§6.16), `task: {id, title, status}` |
 | `note_resolved` | the note's author, the card's holder and creator | `note_id`, `task_id`, `state`, `resolution` |
 | `link_observed` | **all**, plus the card's holder when the observed `state` changed | `task_id`, `link_id`, `forge_url`, `old`, `new` (`{found, title, state}`) |
 | `task_claimed`, `task_released`, `task_assigned` | creator, holder (old and new), assignee (old and new), and the human owner of an agent among holder (old and new) and assignee — never a human's watch | `holder`, `instance`, `lease_until`, `project_state`, `reason?`; `takeover_id` and `from` when a takeover moved it, `replaces` when a replacing instance inherited it |
@@ -6088,13 +6088,18 @@ Two sets per reader, because reading and waking are different things:
 
 A mention wakes through this rule and no other: unless `to` already
 reaches the member (below), it puts `member:<id>` in the audience of the
-message or the `mentioned` event, so the mentioned member's `maity wait`
+message or the `mentioned` event — `instance:<member>#<id>` for an
+instance mention — so the mentioned member's `maity wait`
 returns it — a supervised session too, since the audience is then more
 than `all`. In a group chat the participants are in the audience
 already; there the mention is what makes the message wake-relevant for
 an agent (above). A member who mentions itself is not woken (its own
 echo). A mention of a member the message's `to` already reaches adds no
-token and so wakes nobody `to` did not (§8.6).
+token and so wakes nobody `to` did not (§8.6). For an instance mention
+that is judged per token: `to` reaches it only by `all`, the member's
+role or that instance's own address — `to` naming the team wakes the
+instances its wake rule chooses, so the named instance's token is added
+on top.
 
 ### 8.3 Reading, long-poll, cursor
 
@@ -6290,10 +6295,10 @@ request body is `invalid` (`details.fields.mentions: "read_only"`).
 
 | Text | Resolved | Pings | Why |
 |---|---|---|---|
-| message `body`, types other than `chat` (§8.4) | yes | yes: `member:<id>` joins the message's audience | the message is the conversation of the project; a mention is how one draws someone into it |
+| message `body`, types other than `chat` (§8.4) | yes | yes: `member:<id>` joins the message's audience (`instance:<member>#<id>` for an instance mention) | the message is the conversation of the project; a mention is how one draws someone into it |
 | card `body` (§6.4), on create and on every `PATCH` of `body` | yes | yes, only members not mentioned in the body before this write: a `mentioned` event | every member reads the card, so the ping points at something the mentioned member can open; re-saving a body does not ping again |
 | report `summary` (§6.6) | yes | yes: a `mentioned` event | "this changes your client, @agent-c" is the case the report is read for |
-| note `body` (§6.16) | yes | yes: `member:<id>` joins the `note_added` audience | a note is on a card every member reads; a mention is how its author draws the right member to the remark |
+| note `body` (§6.16) | yes | yes: `member:<id>` joins the `note_added` audience (`instance:<member>#<id>` for an instance mention) | a note is on a card every member reads; a mention is how its author draws the right member to the remark |
 | request `summary`, `tried`, answer `text` (§7) | yes | no | links only. A request reaches whom `to` names and is readable by the asker, the addressee and `requests:answer` holders; a mention must not become a second address that bypasses `to`, the consent rule or the inbox's read rule — and a ping to a member who cannot open the request would be noise. Who should answer is named in `to`; who should know gets a message |
 | direct chat (`type: chat` in a direct conversation, §9.1) | no | no | below |
 | group chat (`type: chat` in a group chat, §9.2) | yes, against the chat's participants only | yes: the mentioned participant is already in the audience; the mention makes the message wake an agent (§8.2) | the room is a closed audience: a mention points at someone who reads it anyway and is how one asks an agent to act; a non-participant stays text, below |
@@ -6383,8 +6388,9 @@ name (§6.3): a run, `/`, a second run — `@oliver/agent-b`:
   a resolved mention that pings nobody (request, answer) and a mention
   of a member already in the message's audience by `to` count nothing.
   "Already in the audience" means `to` is `all`, the member's own
-  `role:<role>`, or `member:<id>` of that member. Such a mention adds no
-  `member:<id>` to the audience, so it cannot wake anyone `to` did not
+  `role:<role>`, or `member:<id>` of that member — for an instance
+  mention `all`, the role or that instance's own `instance:<member>#<id>`,
+  never `member:<id>` alone. Such a mention adds no token to the audience, so it cannot wake anyone `to` did not
   already wake: under `to: all` a supervised member, whom `all` alone
   does not wake (§15.11, §8.2), stays asleep. It stays in the message's
   `mentions`, so the dashboard still links it.

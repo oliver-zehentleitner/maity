@@ -289,6 +289,28 @@ def test_an_instance_mention_pings_that_instance_only(
     assert f"member:{first.id}" in team["audience"]
 
 
+def test_to_the_team_still_wakes_the_mentioned_instance(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    """`to` naming the team wakes the instances its rule chooses; the named instance is
+    pinged on top (§8.6 "exactly that instance" over §8.2's coverage)."""
+    writer = agent_named(make_client, owner, "agent-a")
+    lead, other = team_of_two(make_client, owner)
+    team = {"wake": "lead", "lead_instance": lead.instance}
+    assert owner.patch(f"/projects/maity/members/{lead.id}", {"team": team}).status_code == 200
+    event = say(writer, to=lead.id, body=f"@agent-b#{other.instance} please").json()
+    assert f"instance:{lead.id}#{other.instance}" in event["audience"]
+    with migrated.connect() as conn:
+        row = conn.execute(select(t.event).where(t.event.c.seq == event["seq"])).one()
+        membership = conn.execute(
+            select(t.membership).where(t.membership.c.agent_id == lead.id)
+        ).one()
+    assert events.wakes(row, membership, lead.id, other.instance)
+    # A mention `to` reaches by its own token adds nothing and charges nothing.
+    direct = say(writer, to=f"{lead.id}#{other.instance}", body=f"@agent-b#{other.instance}").json()
+    assert direct["audience"].count(f"instance:{lead.id}#{other.instance}") == 1
+
+
 def test_an_unknown_or_revoked_instance_leaves_the_whole_text_plain(
     make_client: ClientFactory, owner: flow.Human, migrated: Engine
 ) -> None:
