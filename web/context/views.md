@@ -748,3 +748,35 @@ The record of old joins is rarely needed.
 the seat appears in, and the panel works the same at 390 px. Open joins in
 a section of their own below the cards, the first idea: it kept them
 apart from the team they join.
+
+## A preference proposal is reviewed as an inline line diff; one on an older version is merged by hand, never accepted as is
+
+**Id:** 8546c70b-d006-4913-9ae3-6aeac5a250d3
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's wish for a review with current text, proposed text, diff, edit before accepting, accept or reject (tsk-qwamrxnd8vc3); docs/api.md §19.4 (no silent overwrite, the hub does not rebase); the dashboard's implementation, 2026-10-25; the designer was not asked yet
+**Revisit when:** the designer answers on the review layout, or the hub lists proposals with their texts
+
+The review in the personal inbox shows the reason, then a line diff from
+the human's current text to the proposed one, one line per row with − and
++ (said in words for screen readers), and both texts in full folded below.
+Its own answers replace the plain Go and No: **Accept**, **Edit, then
+accept** (the edit goes with the current version) and **Decline** with an
+optional reason. A proposal written against an older version offers no
+plain Accept, only **Merge by hand** or Decline. Because a list shows no
+proposal, the inbox reads every open personal request on its own.
+
+**Reason:** an inline diff reads the same at 390 px as at 1280, where two
+columns of free text would wrap into each other. Withholding Accept on a
+stale base keeps to the contract's rule that applying it would drop the
+newer text unread: the hub would answer 409, so the page does not offer
+what it knows fails. Personal requests are few, so reading each one costs
+little and gives the review the human's current text at once.
+
+**Rejected alternative:** a side-by-side view of both texts, the other
+layout the card names; kept as the designer's choice to make, not decided
+here. Offering Accept on a stale proposal and showing the 409 afterwards:
+a refusal the page could have foreseen. A review that fetched its texts
+only when opened: the inbox could not tell a preference proposal from any
+other personal request before that.
