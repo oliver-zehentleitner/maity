@@ -2087,7 +2087,8 @@ project issues a new credential for that membership — a new instance of
 it, which the join must say explicitly: `new_instance: true` (within
 `team.max_instances`, else `instance_quota`) or `replaces: "<id>"` (an
 active instance of the membership, else `invalid` with
-`details.fields.replaces`), §6.17; with neither it is `invalid`
+`details.fields.replaces`; only the hub's placement pickup replaces a
+revoked instance, §15.9), §6.17; with neither it is `invalid`
 (`details.fields.instance: "required"`), and for a first join both are
 `invalid`. It leaves the membership as it is: `role`, `reports_to`, `areas` and
 `capabilities` in the body must then be omitted or equal to the
@@ -2604,7 +2605,8 @@ Response `200`, bounded and deterministic:
   [`docs/agents.md`](agents.md#staying-on-duty-per-harness)). Advice, not a
   limit.
 - `rules.markdown` is present when `changed` is true (the rules version
-  moved since the cursor, or no cursor was given); otherwise only
+  moved since the cursor, or no cursor was given), and in every packet
+  of a supervised session (§15.11), whose duty it carries; otherwise only
   `version`. The full text is always at `GET /projects/{slug}/rules`.
 - `rules` is generated from the live policy, the project state and the
   owner-edited rules text (§6.9); it includes the role brief for this
@@ -5061,7 +5063,10 @@ and its place as lead move to the new instance, each card with a
 `task_claimed` event naming `replaces`. The new instance gets a new id;
 its view names the old one in `replaces`. A join without either for an
 existing member is `invalid` (`details.fields.instance: "required"`).
-An admin agent never creates a join (§2.3 ᵃ): every new instance passes
+A runner's rejoin (§15.9) is the one exception: it replaces an instance
+whose credential is revoked already, so nothing is revoked again; the
+claims and assignments move, and the lead the revocation cleared stays
+cleared. An admin agent never creates a join (§2.3 ᵃ): every new instance passes
 a human, like every new identity.
 
 **Revocation hits one instance.** Revoking a credential (§10) closes
@@ -8739,7 +8744,10 @@ POST /api/v1/runner/placements/plc-0003/join
   profile and the membership), for an existing membership a new
   credential — a new instance of it (`new_instance`), or, for a
   `rejoin`, one that `replaces` the instance of the revoked credential
-  (§6.17); `max_instances` applies (`instance_quota`). `ttl_seconds`
+  (§6.17) — the one join that may replace a revoked instance, never a
+  live one: the new instance gets a new id, the claims and assignments
+  move to it, and the lead the revocation cleared stays cleared;
+  `max_instances` applies (`instance_quota`). `ttl_seconds`
   is 300. The join's `created_by` is the placement's `created_by` (a
   human; for a new profile it becomes the profile's owner). The join records `placement_id` and `runner_id`.
   `credential_will_bind` is the member id, or for a new profile the
@@ -8750,7 +8758,17 @@ POST /api/v1/runner/placements/plc-0003/join
   `observed_generation` equals the current generation, and it has no
   `credential_id` yet or `rejoin` is set. Otherwise
   `pickup_not_allowed` with `details.why`: `not_running`,
-  `stale_generation`, `credential_issued`.
+  `stale_generation`, `credential_issued`, or `handle_taken` when the
+  placement's new profile names a handle its creator has meanwhile given
+  another agent.
+- **The exchange checks the pickup again.** Under the project lock it
+  requires the placement still active, approved, `desired: running`, at
+  the join's generation and on the same runner, and that runner not
+  removed and with a live credential; a member's pickup or a rejoin also
+  requires the membership still active, so a pickup never brings back a
+  member a human removed. Otherwise the exchange answers `not_found`
+  (§1.1). Stopping or closing the placement, and revoking or removing
+  the runner, revoke its unused pickup joins.
 - **A lost response is recoverable.** A pickup while an earlier one of
   the same generation is unused revokes that join in the same
   transaction and issues a fresh one: never more than one live code per

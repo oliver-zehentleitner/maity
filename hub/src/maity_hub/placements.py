@@ -562,6 +562,8 @@ def set_desired(
     if placement.desired == desired:
         return placement
     changed = _write(conn, placement.id, by, desired=desired)
+    if desired == "stopped":
+        revoke_unused_joins(conn, t.join_link.c.placement_id == placement.id)
     if desired == "stopped" and tell_agent:
         _stop_requested(conn, changed, actor, by)
     announce(conn, placement.id, "placement_updated", actor)
@@ -633,6 +635,7 @@ def close_now(
         closed_reason=closed_reason,
         closing=None,
     )
+    revoke_unused_joins(conn, t.join_link.c.placement_id == placement.id)
     announce(conn, placement.id, "placement_updated", actor)
     availability.placement_closed(conn, closed, actor)
     return closed
@@ -719,6 +722,7 @@ def membership_removed(conn: Connection, membership_id: int, actor: Actor | None
 def runner_removed(conn: Connection, runner_id: str, by: str) -> list[str]:
     """Close every placement of a removed runner at once; returns those whose last report
     said they were still running (`still_running`, §15.3)."""
+    revoke_unused_joins(conn, t.join_link.c.runner_id == runner_id)
     still = []
     for placement in active_rows(conn, t.placement.c.runner_id == runner_id):
         if (placement.reported or {}).get("state") in RUNNING_STATES:
@@ -751,8 +755,22 @@ def project_archived(conn: Connection, project_id: str, actor: Actor | None, by:
         close_uniform(conn, row(conn, placement.id), "project_archived", actor, by)
 
 
+def revoke_unused_joins(conn: Connection, *where: Any) -> None:
+    """Revoke the runner pickups (§15.9) that `where` selects and nobody exchanged yet: a
+    stopped or closed placement, or a runner without its credential, mints no agent. The
+    exchange checks the placement and the runner again under the lock as well."""
+    j = t.join_link.c
+    conn.execute(
+        update(t.join_link)
+        .where(j.placement_id.is_not(None), j.used_at.is_(None), j.revoked_at.is_(None), *where)
+        .values(revoked_at=clock.now())
+    )
+
+
 def runner_credential_gone(conn: Connection, runner_id: str, by: str | None) -> None:
-    """A runner without a live credential reports nothing: what was closing closes now."""
+    """A runner without a live credential reports nothing: what was closing closes now.
+    Its unused pickups end with the credential that fetched them (§15.9)."""
+    revoke_unused_joins(conn, t.join_link.c.runner_id == runner_id)
     for placement in active_rows(
         conn, t.placement.c.runner_id == runner_id, t.placement.c.closing.isnot(None)
     ):
