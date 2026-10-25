@@ -7,6 +7,7 @@ import base64
 import threading
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
@@ -30,6 +31,29 @@ def hub(**env: str) -> Settings:
     return Settings.from_env({"MAITY_DATABASE_URL": "sqlite://", **env})
 
 
+@dataclass(frozen=True)
+class Sent:
+    kind: str
+    to: str
+    pending_id: str | None
+
+
+SENT: list[Sent] = []
+
+
+@pytest.fixture(autouse=True)
+def _capture(monkeypatch: pytest.MonkeyPatch) -> None:
+    """What registration would send, seen through a replaced `send`: production keeps
+    nothing."""
+    real = registration_mail.send
+
+    def capture(conn: Any, *, kind: str, to: str, pending_id: str | None = None) -> None:
+        real(conn, kind=kind, to=to, pending_id=pending_id)
+        SENT.append(Sent(kind, to, pending_id))
+
+    monkeypatch.setattr(registration_mail, "send", capture)
+
+
 @pytest.fixture(autouse=True)
 def _fresh() -> Iterator[None]:
     for limiter in (
@@ -41,7 +65,7 @@ def _fresh() -> Iterator[None]:
         limiter._hits.clear()
     registration.BREAKER._at.clear()
     registration.BREAKER._open_until = 0.0
-    registration_mail.SENT.clear()
+    SENT.clear()
     yield
 
 
@@ -202,7 +226,7 @@ def test_a_registration_answers_202_and_waits_as_pending(
         "/#/projects",
     )
     assert row.password_hash != PASSWORD and row.expires_at - row.created_at == timedelta(hours=24)
-    assert [(s.kind, s.pending_id) for s in registration_mail.SENT] == [("register_link", row.id)]
+    assert [(s.kind, s.pending_id) for s in SENT] == [("register_link", row.id)]
 
 
 def test_the_body_is_checked_after_the_mode(make_client: ClientFactory, migrated: Engine) -> None:
@@ -252,7 +276,7 @@ def test_an_allowlist_miss_and_a_block_answer_alike_and_store_nothing(
         )
     blocked = register(client, "Bob@example.com")
     assert (blocked.status_code, blocked.json()) == (202, {"expires_in": 86400})
-    assert pending(migrated) == [] and registration_mail.SENT == []
+    assert pending(migrated) == [] and SENT == []
     assert register(client, "ann@example.com").status_code == 202
     assert [r.address_normalized for r in pending(migrated)] == ["ann@example.com"]
 
@@ -283,10 +307,10 @@ def test_the_per_source_limit_answers_429_and_the_pair_limit_stays_silent(
         assert register(client, f"p{n}@example.com").status_code == 202
     assert register(client, "p10@example.com").status_code == 429
     routes.BY_SOURCE._hits.clear()
-    registration_mail.SENT.clear()
+    SENT.clear()
     for _ in range(4):
         assert register(client, "same@example.com").status_code == 202
-    assert len(registration_mail.SENT) == 3  # the fourth within 15 minutes sends nothing
+    assert len(SENT) == 3  # the fourth within 15 minutes sends nothing
 
 
 def test_the_breaker_stops_every_request_for_a_minute(
@@ -366,3 +390,10 @@ def test_an_addresses_pending_registrations_change_one_at_a_time(migrated: Engin
         first.close()
         pool.shutdown(wait=True, cancel_futures=True)
         second.close()
+
+
+def test_the_production_sender_keeps_nothing() -> None:
+    """No address outlives its pending registration in the process (§2.7.1)."""
+    from maity_hub import registration_mail as module
+
+    assert not hasattr(module, "SENT")
