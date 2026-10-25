@@ -1030,3 +1030,27 @@ nowhere; it is shown for the reader to find.
 **Rejected alternative:** linking the default branch: the entry may move
 or change after the merge. A fragment with the Id: no forge renders it as
 an anchor. Waiting for a hub-made URL: none is in the contract.
+
+## A Keep the Why notice about an agent leads to its project's Members, or to one's agents on the account
+
+**Id:** be999be7-325a-4fcf-954a-2bdadb6e6f84
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §6.23 and §18.2; the coordinator's ruling of 2026-10-25 on the item's target and the interim place (tsk-bq6q65910g13); the dashboard's implementation, 2026-10-26
+**Revisit when:** the dashboard gets a page of one's agents outside any project
+
+The `keep_the_why` item names the agent as `target: {type: "member"}`.
+Where the owner is a member of the project it opens
+`#/p/<slug>/members/<agent id>`; where not, `#/account/picture/<agent
+id>`, the list of one's agents on the account, with that agent marked
+and focused.
+
+**Reason:** the owner of an agent need not be a member of the project the
+agent works in, and cannot open that project; the account's list is the
+one place the dashboard shows all of one's agents.
+
+**Rejected alternative:** the cross-project inbox (`#/all`), where other
+items of a project one cannot open go: it says nothing about the agent.
+A new page of one's agents: the right place, but beyond this change; the
+link moves there once it exists.
