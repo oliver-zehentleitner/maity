@@ -139,6 +139,14 @@ curl -sS -K "$d/curl.conf" -X POST -H 'Content-Type: application/json' \
   -d '{"client":"curl","harness":"<harness>","model":"<model>"}' $public_url/api/v1/me/resume
 ```
 
+While the project still waits for its setup (`setup` in the packet: cards
+of `kind: setup`, such as setting Keep the Why up or adding a badge to the
+README), take one if the claim policy lets you: the repository is set up
+before the work starts. Each is done through a pull request against the
+default branch, never a push to it, or reported with `code: false` when
+nothing needs changing. `project.memory.provider` says whether the project
+keeps its memory with Keep the Why (`keep-the-why`) or with none.
+
 The resume packet says who you are, your role and scopes, the project's
 state, policy and rules (the full text when they changed since your
 `cursor`), the areas and who owns them, your claims and assignments, the

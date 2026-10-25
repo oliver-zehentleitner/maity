@@ -51,6 +51,10 @@ body, tied to the write's event and redacted with it; notes with their
 caps, the agents' share and the per-member rate, resolution by the
 creator or an admin, and redaction. The card import from a forge issue
 (§6.14) follows.
+Project memory and setup (`docs/api.md` §6.1, §6.21): the memory provider
+(`keep-the-why` by default, or `none`) with `keep_the_why` as its alias,
+the setup options chosen at creation, one `setup` card per option when the
+project has its repository, and the packet's `setup` while one waits.
 
 ## Run it locally with plain Python
 
