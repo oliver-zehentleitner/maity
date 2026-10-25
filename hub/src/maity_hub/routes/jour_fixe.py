@@ -42,19 +42,19 @@ class AnswerIn(Strict):
 
 
 class ItemIn(Strict):
-    text: str = Field(min_length=1, max_length=4096)
+    text: str = Field(min_length=1, max_length=exchange.ITEM_BYTES)
     from_: str = Field(alias="from", min_length=1, max_length=64)
 
 
 class ProposalIn(Strict):
     title: str = Field(min_length=1, max_length=200)
-    reason: str | None = Field(default=None, max_length=4096)
+    reason: str | None = Field(default=None, max_length=exchange.REASON_BYTES)
 
 
 class TopicIn(Strict):
     title: str = Field(min_length=1, max_length=200)
-    summary: str | None = Field(default=None, max_length=8192)
-    items: list[ItemIn] = Field(default_factory=list, max_length=50)
+    summary: str | None = Field(default=None, max_length=exchange.SUMMARY_BYTES)
+    items: list[ItemIn] = Field(default_factory=list, max_length=20)
     proposals: list[ProposalIn] = Field(default_factory=list, max_length=20)
 
 
@@ -65,7 +65,7 @@ class StatementIn(Strict):
 class PostIn(Strict):
     step: Literal["response", "reply", "rejoinder", "further"]
     topic_id: str = Field(min_length=1, max_length=16)
-    body: str = Field(min_length=1, max_length=8192)
+    body: str = Field(min_length=1, max_length=exchange.POST_BYTES)
     to: list[str] | None = Field(default=None, max_length=50)
     in_reply_to: list[str] | None = Field(default=None, max_length=50)
 

@@ -27,6 +27,18 @@ from maity_hub.jourfixe.answers import refused
 from maity_hub.views import principal_ids
 
 PROPOSALS_PER_TOPIC, PROPOSALS_MAX = 5, 20
+# §1.7, in bytes of UTF-8; the models cap the characters, these the bytes.
+SUMMARY_BYTES, ITEM_BYTES, REASON_BYTES, POST_BYTES = 2048, 1024, 2048, 4096
+MESSAGE_BYTES = 16384  # the statement's rendered message
+
+
+def too_long(caps: list[tuple[str, str | None, int]]) -> None:
+    """`invalid` with `too_long` for the first field over its byte cap."""
+    for field, text, cap in caps:
+        if text is not None and len(text.encode()) > cap:
+            raise invalid({field: "too_long"}, f"{field} is at most {cap // 1024} KiB")
+
+
 FURTHER_MAX = 3
 
 
@@ -192,6 +204,15 @@ def submit_statement(
     first = round_row.steps[0] if round_row.steps else None
     if round_row.status != "statement" or first is None or _ended(first, clock.now()):
         raise _state(round_row, "statement", "the statement step is not open")
+    too_long(
+        [("summary", topic.get("summary"), SUMMARY_BYTES) for topic in topics]
+        + [("items", i["text"], ITEM_BYTES) for topic in topics for i in topic.get("items", [])]
+        + [
+            ("proposals", p.get("reason"), REASON_BYTES)
+            for topic in topics
+            for p in topic.get("proposals", [])
+        ]
+    )
     proposals = [p for topic in topics for p in topic.get("proposals", [])]
     if len(proposals) > PROPOSALS_MAX or any(
         len(topic.get("proposals", [])) > PROPOSALS_PER_TOPIC for topic in topics
@@ -224,6 +245,7 @@ def submit_statement(
         for n, topic in enumerate(topics, 1)
     ]
     handles = {i["member_id"]: i["handle"] for i in round_row.invited}
+    too_long([("topics", _render(numbered, handles), MESSAGE_BYTES)])  # one message (§1.7)
     seq = _post_message(
         conn,
         round_row,
@@ -275,6 +297,7 @@ def submit_post(
     me = mine.principal_id
     if me not in step["eligible"] or me not in _participants(conn, round_row):
         raise refused("not_eligible", "you may not post in this step")
+    too_long([("body", body["body"], POST_BYTES)])
     topic_id = body["topic_id"]
     if topic_id not in step["topics"]:
         raise invalid({"topic_id": "unknown_topic"})
