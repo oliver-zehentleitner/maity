@@ -534,7 +534,10 @@ def cmd_ack(args: argparse.Namespace) -> int:
     except hub.HubError as exc:
         if exc.code != "keep_the_why_not_required":
             raise
-        print("this project does not require Keep the Why: nothing to confirm")
+        if args.json:  # the same keys as a confirmation, so a script reads one shape
+            _print_json({"required": False, "acknowledged_at": None})
+        else:
+            print("this project does not require Keep the Why: nothing to confirm")
         return EXIT_OK
     when = onboarding.inline(_field(answer, "acknowledged_at") or "?")
     instance = _field(answer, "instance")

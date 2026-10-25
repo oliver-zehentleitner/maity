@@ -3,6 +3,7 @@ keep-the-why`, `maity report --why/--no-why` and the `Keep the Why` block of the
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -163,6 +164,25 @@ def test_ack_where_it_is_not_required_is_no_error(
     )  # fmt: skip
     assert cli.main(["ack", "keep-the-why"]) == cli.EXIT_OK
     assert "does not require Keep the Why" in capsys.readouterr().out
+
+
+def test_ack_where_it_is_not_required_answers_json_with_json(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("POST", ACK)] = lambda s: (
+        409, {"error": {"code": "keep_the_why_not_required", "message": "optional", "details": {}}}
+    )  # fmt: skip
+    assert cli.main(["ack", "keep-the-why", "--json"]) == cli.EXIT_OK
+    assert json.loads(capsys.readouterr().out) == {"required": False, "acknowledged_at": None}
+
+
+def test_ack_with_json_prints_the_hubs_answer(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    answer = {"acknowledged_at": "2026-10-25T11:07:00Z", "instance": "wqe2"}
+    fake.routes[("POST", ACK)] = lambda s: (200, answer)
+    assert cli.main(["ack", "keep-the-why", "--json"]) == cli.EXIT_OK
+    assert json.loads(capsys.readouterr().out) == answer
 
 
 def test_ack_on_a_hub_without_the_route_fails_loud(
