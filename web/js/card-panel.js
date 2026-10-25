@@ -86,15 +86,24 @@ window.Maity = window.Maity || {};
       if (closed) return;
       const text = noteField = M.dom.sendOnCtrlEnter(h("textarea", { id: "card-note-body", rows: "3", maxlength: "4096", placeholder: "A finding, a missing case, a pointer (Markdown)" }));
       const status = M.statusLine();
+      const submit = h("button", { type: "submit" }, "Post the note");
+      // One post at a time: a second tap or Ctrl+Enter while the first is
+      // on its way sends nothing; a refusal makes the button usable again.
+      let posting = false;
       append(notesBox, h("form", {
         class: "card-note-form",
         onsubmit: async (e) => {
           e.preventDefault();
+          if (posting) return;
           if (!text.value.trim()) { text.focus(); return; }
+          posting = true;
+          submit.disabled = true;
           status.busy("Posting…");
           try {
             await M.api.post(base + "/notes", { body: text.value });
           } catch (err) {
+            posting = false;
+            submit.disabled = false;
             status.fail("Not posted: ", M.boardEdit ? M.boardEdit.said(err) : err);
             return;
           }
@@ -104,7 +113,7 @@ window.Maity = window.Maity || {};
       },
       h("label", { for: "card-note-body" }, "Add a note"), text,
       h("p", { class: "hint" }, "A note does not change the card; whoever may edit it works it in."),
-      h("button", { type: "submit" }, "Post the note"), status.el));
+      submit, status.el));
     }
 
     async function history() {

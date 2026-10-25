@@ -1857,6 +1857,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(cpPosts[0]) === JSON.stringify(["/projects/maity/tasks/tsk-0001/notes", { body: "Check §6.16 too." }])
     && cpNotes().length === 2 && cpNotes()[1].startsWith("@maintainer") && document.activeElement === byId("card-note-body") && byId("card-note-body").value === "",
     "card panel: a note is posted and listed, the form ready for the next");
+  // A second submit while the first post is on its way sends nothing; a refusal lets it be sent again.
+  let cpRelease = null;
+  win.Maity.api.post = (p, b) => {
+    if (!p.includes("/notes")) return cpPost(p, b);
+    cpPosts.push([p, b]);
+    return new Promise((resolve, reject) => { cpRelease = () => reject(new win.Maity.api.ApiError("busy", 503, p, "unavailable")); });
+  };
+  const cpBefore = cpPosts.length;
+  byId("card-note-body").value = "Twice?";
+  const cpForm = () => cpPanel().querySelector("form.card-note-form");
+  cpForm().dispatch("submit"); cpForm().dispatch("submit"); await tick();
+  expect(cpPosts.length === cpBefore + 1 && btn(cpForm(), "Post the note").disabled, "card panel: a note is posted once while the first post is pending, its button disabled");
+  cpRelease(); for (let k = 0; k < 3; k++) await tick();
+  expect(!btn(cpForm(), "Post the note").disabled && byId("card-note-body").value === "Twice?" && text(cpForm()).includes("Not posted"),
+    "card panel: a refused post keeps the text and the button usable again");
+  win.Maity.api.post = (p, b) => { if (p.includes("/notes")) cpPosts.push([p, b]); return cpPost(p, b); };
+  cpForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(cpPosts.length === cpBefore + 2 && cpNotes().length === 3, "card panel: the note is sent again after the refusal");
   // Escape closes, as Close does: the board again, the card marked, its title focused.
   cpPanel().dispatch("keydown", { key: "Escape" }); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
   expect(win.location.hash === "#/p/maity/board" && !cpPanel() && cpCard().classList.contains("wanted") && document.activeElement === cpCard().querySelector("a.card-open"),
