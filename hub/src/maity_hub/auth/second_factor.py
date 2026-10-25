@@ -55,6 +55,13 @@ SECOND_STEP_CALLS = {
     ("POST", "/auth/second-factor/verify"),
     ("POST", "/auth/logout"),
 }
+# A session that was full before it was held at enrolment keeps the decisions its
+# standing allows, "This was me" on a sign-in alert among them (§2.8.5): the list
+# that shows the alert and the call that marks it.
+MOVED_ENROLMENT_CALLS = {
+    ("GET", "/me/notifications"),
+    ("POST", "/me/notifications/read"),
+}
 ENROLMENT_CALLS = {
     ("GET", "/auth/session"),
     ("POST", "/auth/logout"),
@@ -166,6 +173,8 @@ def gate(conn: Connection, hub: Settings, caller: Caller, method: str, path: str
     call = (method, path.removeprefix("/api/v1"))
     if current == "second_factor" and call not in SECOND_STEP_CALLS:
         raise refused("second_factor_required", "this session owes the second factor")
+    if current == "enrolment" and row.sign_in_complete and call in MOVED_ENROLMENT_CALLS:
+        return  # a trusted session moved into enrolment keeps "This was me" (§2.8.5)
     if current == "enrolment" and call not in ENROLMENT_CALLS:
         raise refused("second_factor_enrolment_required", "set up the second factor first")
 
@@ -279,18 +288,22 @@ def recovery_codes_left(conn: Connection, human_id: str) -> int:
 
 
 def _consume_totp(conn: Connection, hub: Settings, factor: Any, code: str) -> bool:
-    """The code's step is consumed only if newer than the last one used, by a
-    conditional update: of two concurrent checks with one code, one wins (§2.8.2)."""
+    """The code's step is consumed only if newer than the last one used, and only
+    while the factor is still the one the code was checked against — same generation,
+    same sealed secret — by one conditional update: of two concurrent checks with one
+    code one wins, and a code of a factor replaced meanwhile wins nothing (§2.8.2)."""
     secret = _open(hub, factor.secret)
     step = totp.matching_step(secret, code, clock.now().timestamp(), factor.last_step)
     if step is None:
         return False
-    last = t.second_factor.c.last_step
+    row = t.second_factor.c
     done = conn.execute(
         update(t.second_factor)
         .where(
-            t.second_factor.c.human_id == factor.human_id,
-            last.is_(None) | (last < step),
+            row.human_id == factor.human_id,
+            row.generation == factor.generation,
+            row.secret == factor.secret,
+            row.last_step.is_(None) | (row.last_step < step),
         )
         .values(last_step=step, last_used_at=clock.now())
     )
@@ -330,7 +343,10 @@ def check(
     wait = WRONG_BY_HUMAN.blocked(human_id)
     if wait:
         raise rate_limited(wait)
-    factor = factor_of(conn, human_id)
+    # The factor's row first, locked to the end of the transaction: a confirmation, a
+    # reset or new recovery codes (which lock it first too) wait for this check, in one
+    # lock order with the recovery codes below.
+    factor = factor_of(conn, human_id, lock=True)
     if not enrolled(factor):
         return None
     if code is not None and _consume_totp(conn, hub, factor, code):

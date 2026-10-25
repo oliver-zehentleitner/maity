@@ -543,6 +543,61 @@ def test_logging_out_of_a_second_step_names_nobody(
     assert out.status_code == 200 and out.json() == {}
 
 
+# --- review round 2 --------------------------------------------------------------------------
+
+
+def test_a_code_of_a_replaced_factor_wins_nothing(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """The interleaving the conditional update has to survive on a server database: a
+    check reads the factor, a new enrolment replaces it, then the check consumes."""
+    from maity_hub import secretbox
+
+    human = signed_in(make_client, migrated)
+    old_secret, _ = enrol(human, moment)
+    hub: Any = SimpleNamespace(secret_key=KEY)
+    with migrated.begin() as conn:
+        snapshot = second_factor.factor_of(conn, human.id)  # what the check read
+        new_secret = totp.new_secret()
+        conn.execute(  # a confirmation of a new factor commits in between
+            t.second_factor.update()
+            .where(t.second_factor.c.human_id == human.id)
+            .values(
+                secret=secretbox.seal(KEY, second_factor.SECRET_FIELD, new_secret),
+                generation=snapshot.generation + 1,
+                last_step=totp.step_of(moment.at.timestamp()),
+            )
+        )
+        moment.move(seconds=30)
+        stale = totp.code_at(old_secret, totp.step_of(moment.at.timestamp()))
+        assert second_factor._consume_totp(conn, hub, snapshot, stale) is False
+        current = second_factor.factor_of(conn, human.id)
+        assert current.last_step == totp.step_of(moment.at.timestamp()) - 1  # untouched
+
+
+def test_a_trusted_session_held_at_enrolment_may_still_confirm_a_sign_in(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    admin = signed_in(make_client, migrated)
+    moment.move(seconds=1)  # the alert's sign-in comes after the session confirming it
+    later = make_client(secret_key=KEY)
+    assert login(later).status_code == 200  # a sign-in for the admin's session to confirm
+    switched = admin.patch("/admin/settings/sign-in", {"second_factor": "required_admins"})
+    assert switched.status_code == 200, switched.text
+    assert admin.get("/me").json()["error"]["details"]["reason"] == (
+        "second_factor_enrolment_required"
+    )
+    items = admin.get("/me/notifications").json()["items"]
+    alert = next(i for i in items if i["kind"] == "security")
+    assert admin.post("/me/notifications/read", {"ids": [alert["id"]]}).status_code == 200
+    after = admin.get("/me/notifications").json()["items"]
+    assert next(i for i in after if i["id"] == alert["id"])["read"] is True
+    # A fresh enrolment session (its sign-in not complete) gets neither.
+    fresh = make_client(secret_key=KEY)
+    login(fresh)
+    assert fresh.get("/api/v1/me/notifications").status_code == 403
+
+
 # --- reset ----------------------------------------------------------------------------------
 
 
