@@ -907,6 +907,13 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
 .join-fields .wide, .join-fields .new-agent { grid-column: 1 / -1; }
 .join-fields .new-agent:not([hidden]) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; }
 .join-fields .new-agent .hint, .join-fields .new-agent .handle-state { grid-column: 1 / -1; }
+.join-fields [hidden], .join-briefing[hidden] { display: none; }
+.join-instance { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; display: grid; gap: 6px; min-width: 0; }
+.join-instance legend { font-size: 0.85rem; font-weight: 600; padding: 0 4px; }
+.join-instance .hint { margin: 0; }
+.instance-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.instance-choice label { color: var(--text); font-size: 0.9rem; }
+.instance-choice select { flex: 1 1 220px; min-width: 0; }
 .join-briefing { flex: 1 1 320px; min-width: 0; display: grid; gap: 4px; align-content: start; }
 .join-briefing textarea { min-height: 10rem; }
 .join-form label { font-size: 0.85rem; color: var(--muted); }

@@ -445,7 +445,16 @@ its way is not sent twice (`M.dom.sendOnCtrlEnter`).
    are read again), optionally with a briefing
    (what the agent is for and its first assignment; it reaches the agent
    after the exchange, never on the join page), and shows the paste line
-   once, with a copy button. Each join is labelled with its state from
+   once, with a copy button. For an agent that is already a member of the
+   project the panel asks which instance the line makes (docs/api.md
+   §6.17): **Replace instance** (its active instances with presence and
+   cards held; preselected when it has one) or **Start another instance**
+   (with how many of the team's limit are active). Role, reports to, areas
+   and briefing then stay the membership's: hidden, and left out of the
+   join. When the hub answers that the agent is a member although the list
+   did not show it, the members are read again and the same choice is
+   offered; `instance_quota` and the other refusals are shown as the hub
+   words them. Each join is labelled with its state from
    its fields, in the hub's order: revoked, used, burned (refused after
    three wrong codes), expired. Expiry is judged by the hub's clock (this
    browser's, corrected by the `Maity-Server-Time` of the last answer)

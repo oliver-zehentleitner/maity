@@ -1589,6 +1589,27 @@ window.Maity = window.Maity || {};
       if (body.briefing && [...body.briefing].length > BRIEFING_CHARS) {
         fail(400, "invalid", "the briefing is longer than 16,384 characters", path, { fields: { briefing: "string_too_long" } });
       }
+      // §3.1, §6.17: a member's join says which instance it makes, as
+      // routes/joins.py checks it; a first join says neither.
+      const member = file(m[1], "members.json", path).items.find((x) => x.id === agentId);
+      if (!member && (body.new_instance != null || body.replaces != null)) {
+        fail(400, "invalid", "a first join creates the first instance", path, { fields: { [body.replaces != null ? "replaces" : "new_instance"]: "not_a_member" } });
+      }
+      if (member) {
+        // routes/joins.py: the membership's own fields first, then the instance.
+        const differ = ["role", "reports_to", "areas", "capabilities", "briefing"].filter((k) => k in body && body[k] != null
+          && JSON.stringify(body[k]) !== JSON.stringify(member[k] === undefined ? null : member[k]));
+        if (differ.length) fail(400, "invalid", "the agent is a member; change its membership instead", path, { fields: Object.fromEntries(differ.map((k) => [k, "differs_from_membership"])) });
+        const active = (member.instances || []).filter((i) => !i.revoked_at);
+        if (body.new_instance && body.replaces != null) fail(400, "invalid", "new_instance or replaces, not both", path, { fields: { instance: "one_of" } });
+        if (body.replaces != null) {
+          if (!active.some((i) => i.id === body.replaces)) fail(400, "invalid", "replaces names no active instance", path, { fields: { replaces: "not_an_instance" } });
+        } else if (!body.new_instance) {
+          fail(400, "invalid", "the agent is a member: new_instance or replaces", path, { fields: { instance: "required" } });
+        } else if (active.length >= ((member.team && member.team.max_instances) || 1)) {
+          fail(409, "instance_quota", "the team has as many instances as its rulebook allows", path, { max: (member.team && member.team.max_instances) || 1 });
+        }
+      }
       const id = localId("join");
       const ttl = Math.min(body.ttl_seconds || 900, 3600);
       const expires = new Date(Date.now() + ttl * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -1596,6 +1617,7 @@ window.Maity = window.Maity || {};
       file(m[1], "joins.json", path).items.unshift({
         id, agent_id: agentId, role: body.role || "member", created_by: me().member.id,
         created_at: nowIso(), expires_at: expires, used_at: null, burned: false, revoked_at: null,
+        new_instance: !!body.new_instance, replaces: body.replaces || null, instance: null,
       });
       return {
         id, join_url: url, code: "FIXT-URE0-0000", paste_line: "maity join " + url + " --code FIXT-URE0-0000",

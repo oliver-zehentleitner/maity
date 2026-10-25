@@ -780,3 +780,35 @@ here. Offering Accept on a stale proposal and showing the 409 afterwards:
 a refusal the page could have foreseen. A review that fetched its texts
 only when opened: the inbox could not tell a preference proposal from any
 other personal request before that.
+
+## A join for an agent that is already a member asks which instance it makes, replace preselected
+
+**Id:** 48b11115-3f26-4f0b-b3c6-7e50cb6d9b90
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's incident: after a lost first join, a new join for the same agent failed with "the agent is a member: new_instance or replaces" and the dialog had no way to say it (tsk-02251dpwm8kp), 2026-10-25; docs/api.md §3.1, §6.17; the dashboard's implementation, 2026-10-25
+**Revisit when:** the hub lets a member's join change the membership, or the designer reworks the join panel
+
+When the chosen agent is a member of the project, the join panel shows a
+choice instead of role, reports to, areas and briefing: **Replace
+instance** with the member's active instances (presence, cards held) or
+**Start another instance** with the team's count against its limit.
+Replace is preselected when there is an active instance. The join then
+carries only the agent, the expiry and `replaces` or `new_instance`. A
+refusal `instance.required`, or `differs_from_membership` on a field the
+form sent (the hub checks the membership's fields first; either way the
+list on screen was stale), reads the members again and offers the same
+choice; the human creates it again.
+
+**Reason:** the usual way here is the incident's: an instance whose
+credential got lost, which a replacement takes over with its cards;
+another instance beyond the default limit of one is refused anyway. The
+membership's fields must be omitted or equal for a member's join, so
+offering them would only invite an `invalid`; they change on the card.
+The hub's refusal is the final word, as the list may be older than it.
+
+**Rejected alternative:** creating the join right after the refusal with
+a guessed choice: replacing revokes a credential, which the human picks.
+Keeping role and areas in the form and sending the membership's values:
+the human would see fields that do nothing.
