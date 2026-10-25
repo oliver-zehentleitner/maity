@@ -1,5 +1,6 @@
 // The signed-in human's account (#/account): who they are, their picture
-// and their agents' pictures (#/account/picture, docs/api.md §6.10), and
+// and their agents' pictures (#/account/picture, docs/api.md §6.10), their
+// preferences (#/account/preferences, js/preferences.js), and
 // changing the password (§2.1, POST /auth/password). A password change
 // ends every other session of this human; this one stays signed in.
 "use strict";
@@ -162,6 +163,7 @@ window.Maity = window.Maity || {};
     const agents = await M.api.getAll("/agents").then((r) => r.items.filter((a) => a.owner_id === ctx.me.id)).catch(() => null);
     const notify = M.notifySettings ? await M.notifySettings(ctx) : null;
     const sessions = M.sessions ? await M.sessions.section(ctx) : null;
+    const preferences = M.preferences ? await M.preferences.section(ctx) : null;
     append(root, h("h2", null, "Your account"),
       h("dl", { class: "facts" },
         h("dt", null, "Name"), h("dd", null, ctx.me.display_name),
@@ -175,6 +177,7 @@ window.Maity = window.Maity || {};
         h("ul", { class: "picture-list" }, agents.map((a) => h("li", null,
           h("h4", { class: "picture-name" }, a.display_name, h("span", { class: "muted" }, " @" + a.handle)),
           pictureEditor(a, "/agents/" + encodeURIComponent(a.id) + "/avatar", false, changed))))] : null,
+      preferences ? preferences.el : null,
       notify ? notify.el : null,
       sessions ? sessions.el : null,
       h("h3", null, "Change password"),
@@ -184,6 +187,8 @@ window.Maity = window.Maity || {};
     if (args && args[0] === "picture") window.setTimeout(() => pictureHeading.focus(), 0);
     // #/account/notifications (the bell's settings link) starts there.
     if (notify && args && args[0] === "notifications") window.setTimeout(() => notify.heading.focus(), 0);
+    // #/account/preferences (the profile menu's Preferences) starts there.
+    if (preferences && args && args[0] === "preferences") window.setTimeout(() => preferences.heading.focus(), 0);
     // #/account/sessions (a sign-in alert's link) starts at the sessions.
     if (sessions && args && args[0] === "sessions") window.setTimeout(() => sessions.heading.focus(), 0);
   };

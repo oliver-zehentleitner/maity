@@ -33,8 +33,9 @@ real button (`aria-haspopup`, `aria-expanded`): a **gear** with this
 project's **Project settings** (for an owner or admin; it opens the panel
 under the header), **Runners** and, for the instance admin, **Users of
 this hub**; and the **profile**, the human's avatar and name, with
-**Profile**, **Picture** (`#/account/picture`), **Change password**, **Linked
-accounts** (later) and **Sign out**. Arrow keys, Home and End move in a
+**Profile**, **Picture** (`#/account/picture`), **Preferences**
+(`#/account/preferences`), **Change password**, **Linked accounts** (later) and
+**Sign out**. Arrow keys, Home and End move in a
 menu; Escape closes it and puts the focus back on its button; Tab or a
 click elsewhere closes it. On a phone the name is left out and the menus
 stay on screen.
@@ -105,7 +106,7 @@ stop the page. Mail settings come with the hub's mail (stage 3).
 | `#/observe/<slug>` | reading along in the group chats your agents are in, in a project you are not a member of (`docs/api.md` §9.2); named on `#/all` |
 | `#/admin` | instance administration: users, mail settings and health, for the instance admin only (`member.instance_admin` on `/me`); opened from **Settings → Instance administration** |
 | `#/admin/users` | compatibility route for the searchable user list |
-| `#/account` | the signed-in human's account: name, handle, their picture and their agents' pictures (`#/account/picture` starts there), browser notifications (`#/account/notifications` starts there; the bell links to it), the sessions (`#/account/sessions` starts there; a sign-in alert links to it), **Change password**; from the profile menu |
+| `#/account` | the signed-in human's account: name, handle, their picture and their agents' pictures (`#/account/picture` starts there), their preferences (`#/account/preferences` starts there), browser notifications (`#/account/notifications` starts there; the bell links to it), the sessions (`#/account/sessions` starts there; a sign-in alert links to it), **Change password**; from the profile menu |
 | `#/p/<slug>/<view>` | a view inside one project; `#/p/<slug>/inbox` is the landing page with exactly one |
 | `#/p/<slug>/chat/<agent-id>` | the chat with one agent |
 
@@ -154,7 +155,18 @@ its way is not sent twice (`M.dom.sendOnCtrlEnter`).
    is answered on `/requests/{id}/answer` and offers **Withdraw**
    (`/requests/{id}/withdraw`, the free text as its reason); grouped, the
    personal ones come first. Without any membership, `#/all` still lists
-   them, before the way to create a project.
+   them, before the way to create a project. A list shows no proposal, so
+   every open personal request is read on its own (`GET /requests/{id}`). A
+   **proposal to change your preferences** (`docs/api.md` §19.4) is then
+   answered in its review instead of the plain replies: the reason, a line
+   diff from your current text to the proposed one (both texts in full
+   below it), and **Accept**, **Edit, then accept** (your edit is sent with
+   the current version) or **Decline** with an optional reason the agent
+   reads. A proposal written against an older version offers no plain
+   Accept: it would drop the newer text, so the review says so and offers
+   **Merge by hand** or Decline. A conflict while you look shows the review
+   again against the newer version. Once answered, the entry says which
+   version it became and whether it was edited.
 2. **Board** (`#/p/<slug>/board`): cards by status (`proposed` to
    `cancelled`, closed ones of the last 14 days), with claim holder,
    lease and expiry, assignment, dependencies and ships-with, checkpoint
@@ -239,7 +251,12 @@ its way is not sent twice (`M.dom.sendOnCtrlEnter`).
    editor is offered only where the hub's member view has the field. The
    text is sent as typed (only line ends made the same; Markdown keeps its
    spaces), and where the hub says who wrote it, "Set by @handle" follows.
-   This is the one briefing editor; Members → Manage links here.
+   This is the one briefing editor; Members → Manage links here. On an
+   agent you own, where the hub's member view has `owner_preferences`, a
+   switch **Give my preferences to this agent** (`PATCH …/members/{id}`
+   `{owner_preferences}`, §19.4): its resume carries your current
+   preferences next to its briefing, whatever the project's setting, and
+   no other member sees them.
    Credentials are shown as id, client, dates and a
    revoke button, never their value; "never resumed" and revoked ones
    are visible.
@@ -615,6 +632,19 @@ words. After a change the page is drawn again from `/me`, so the header's
 picture follows at once. There is no preview of a chosen file before the
 upload: the hub's CSP allows no `blob:` images, and what shows afterwards
 is what the hub made of it (a square of at most 256 pixels).
+
+**Preferences** (`#/account/preferences`, `docs/api.md` §19.4,
+`js/preferences.js`): how you like to work and be treated, one Markdown text
+for all your projects, read by their agents in the resume, quoted as yours and
+ranked below the project's rules. The editor shows the version and who wrote,
+proposed or confirmed it, and the size against the 8 KiB cap (UTF-8 bytes).
+**Save** sends `PUT /me/preferences {markdown, base_version}`; when it changed
+meanwhile (another tab, an accepted proposal), your text stays in the editor,
+the newer version and a diff to yours are shown, and you **take** it or **save
+yours over it**. Below: the projects whose agents read them, one switch each
+(`PUT /me/preferences/projects/{slug}`, on by default), and **Earlier
+versions**, read when opened. A hub without preferences says so in a muted
+line.
 
 **Sessions** (`#/account/sessions`, `docs/api.md` §2.6.5, `js/sessions.js`):
 where the human is signed in, newest first, from `GET /auth/sessions?ended=true`.
@@ -1035,7 +1065,8 @@ web/
 ├── js/new-project.js create a project; the empty state
 ├── js/notify-settings.js  browser notifications on the account
 ├── js/sessions.js    the account's sessions, This was me, the mail sign-in banner
-├── js/account.js     the account: pictures and changing the password
+├── js/preferences.js the human's preferences, a proposal's review, the owner's switch on an agent
+├── js/account.js     the account: pictures, preferences and changing the password
 ├── js/admin-users.js the users of this hub, for the instance admin
 ├── js/runners.js     the runners: pair, list, rename, revoke, remove
 ├── js/project-runners.js  Project → Runners: allow and detach

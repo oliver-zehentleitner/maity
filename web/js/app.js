@@ -747,6 +747,7 @@ window.Maity = window.Maity || {};
       items: () => [
         { label: "Profile", href: "#/account" },
         { label: "Picture", href: "#/account/picture" },
+        { label: "Preferences", href: "#/account/preferences" },
         { label: "Change password", href: "#/account" },
         { label: "Linked accounts", disabled: true, why: "later" },
         { separator: true },

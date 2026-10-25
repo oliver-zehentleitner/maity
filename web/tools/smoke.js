@@ -165,12 +165,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(document.title.startsWith("(7) "), "the tab title starts with what asks for the human");
   const allChip = header.querySelectorAll("nav.switcher a").find((a) => a.textContent.startsWith("All projects")).querySelector(".count");
   expect(allChip.getAttribute("aria-label") === "5 open, 1 unread in chats, 1 mention", "the All projects count says what it is made of, as the pills do");
-  expect(main.querySelectorAll(".project-label").length === 5, "every entry labelled with its project, a personal request as Personal");
+  expect(main.querySelectorAll(".project-label").length === 6, "every entry labelled with its project, a personal request as Personal");
   const firstRow = main.querySelector("li.entry .entry-row");
   expect(firstRow && firstRow.childNodes[0].tagName === "A" && firstRow.childNodes[0].className === "project-label"
     && /^#\/p\/(maity|sample)\/inbox$/.test(firstRow.childNodes[0].getAttribute("href")) && firstRow.childNodes[1].className === "entry-head",
     "inbox: each entry's project badge is a link to the project, before the entry");
-  expect(main.querySelectorAll("li.entry .entry-head").every((b) => /^(Personal, Elsewhere|Maity|Sample shop): /.test(b.querySelector(".visually-hidden").textContent)),
+  expect(main.querySelectorAll("li.entry .entry-head").every((b) => /^(Personal, Elsewhere|Personal, Maity|Maity|Sample shop): /.test(b.querySelector(".visually-hidden").textContent)),
     "inbox: the project's name starts each entry's accessible name");
   // Logos (docs/api.md §11.2): Maity has an image, Sample shop a monogram.
   const markOf = (label) => chip(label).querySelector(".project-mark");
@@ -209,7 +209,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("inbox-project").value = ""; byId("inbox-project").dispatch("change"); await tick();
   const grp = byId("inbox-group"); grp.checked = true; grp.dispatch("change"); await tick();
   const groupHeads = main.querySelectorAll("section.entry-group").map((x) => x.childNodes[0].childNodes[0].textContent);
-  expect(JSON.stringify(groupHeads) === JSON.stringify(["Personal", "Maity", "Sample shop"]) && main.querySelectorAll("li.entry").length === 4
+  expect(JSON.stringify(groupHeads) === JSON.stringify(["Personal", "Maity", "Sample shop"]) && main.querySelectorAll("li.entry").length === 5
     && main.querySelectorAll("section.entry-group").every((sec) => sec.querySelector("ol.entries") && sec.querySelector("ol.entries").childNodes.every((li) => li.className.includes("entry"))),
     "inbox: grouped by project, in the switcher's order, each group its own list " + JSON.stringify(groupHeads));
   // The entry expanded is the first on screen, not the first of the ungrouped order.
@@ -2156,13 +2156,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   pb.click(); await tick();
   const pMenu = header.querySelector(".profile-menu").parentNode.querySelector("ul.menu");
   const pItems = pMenu.querySelectorAll(".menu-item").map((el) => text(el));
-  expect(!pMenu.hidden && pb.attrs["aria-expanded"] === "true" && JSON.stringify(pItems) === JSON.stringify(["Profile", "Picture", "Change password", "Linked accounts · later", "Sign out"])
+  expect(!pMenu.hidden && pb.attrs["aria-expanded"] === "true" && JSON.stringify(pItems) === JSON.stringify(["Profile", "Picture", "Preferences", "Change password", "Linked accounts · later", "Sign out"])
     && document.activeElement === pMenu.querySelectorAll(".menu-item")[0], "header: the profile menu opens with its items, the first focused");
   pMenu.dispatch("keydown", { key: "ArrowDown" });
   expect(document.activeElement === pMenu.querySelectorAll(".menu-item")[1] && pMenu.querySelectorAll(".menu-item")[1].getAttribute("href") === "#/account/picture",
     "header: arrows move through the items; Picture goes to the account's picture");
-  pMenu.dispatch("keydown", { key: "ArrowDown" }); pMenu.dispatch("keydown", { key: "ArrowDown" });
-  expect(pMenu.querySelectorAll(".menu-item")[3].attrs["aria-disabled"] === "true" && document.activeElement === pMenu.querySelectorAll(".menu-item")[3],
+  pMenu.dispatch("keydown", { key: "ArrowDown" }); pMenu.dispatch("keydown", { key: "ArrowDown" }); pMenu.dispatch("keydown", { key: "ArrowDown" });
+  expect(pMenu.querySelectorAll(".menu-item")[4].attrs["aria-disabled"] === "true" && document.activeElement === pMenu.querySelectorAll(".menu-item")[4],
     "header: one still to come is disabled and still reached");
   pMenu.dispatch("keydown", { key: "End" });
   expect(text(document.activeElement) === "Sign out", "header: End goes to the last item");
@@ -2283,7 +2283,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await tick();
   expect(text(main).includes("No projects yet") && !main.querySelector(".error"), "no project: empty state, no error");
   // A personal request reaches its human without a membership (§7): it comes first, the empty state after it.
-  expect(main.querySelectorAll(".project-label.personal").length === 1
+  expect(main.querySelectorAll(".project-label.personal").length === 2
     && text(main).indexOf("proposes a change to its soul") < text(main).indexOf("No projects yet"),
     "no project: a personal request is still shown, before the empty state");
   // A truly empty account: the empty state alone.
@@ -2702,7 +2702,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!text(main).includes("proposes a change to its soul"), "personal request: never in a project's inbox");
   await go("#/all"); await hgSettle();
   const psHead = () => main.querySelectorAll(".entry-head").find((b) => b.textContent.includes("proposes a change to its soul"));
-  expect(psHead() && main.querySelectorAll(".project-label.personal").length === 1
+  expect(psHead() && main.querySelectorAll(".project-label.personal").length === 2
     && !main.querySelectorAll("a.project-label").some((a) => a.getAttribute("href").includes("elsewhere")),
     "personal request: listed as Personal, with no link into its project");
   if (psHead().attrs["aria-expanded"] !== "true") { psHead().click(); await tick(); }
@@ -4067,6 +4067,100 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main).includes("Only the instance admin can open this area.") && !adminReads.some((p) => p.startsWith("/admin/") || p === "/health"), "admin: non-admin cannot read configuration even by direct route");
   win.Maity.api.get = adminGet; win.Maity.api.patch = adminPatch; win.Maity.api.post = adminPost;
   win.Maity.api.hubHas = adminHas; win.Maity.api.missingRoute = adminMissing; win.Maity.api.forgetRoutes();
+
+  // Preferences (§19.4): the human writes them; an agent only proposes, reviewed in the personal inbox.
+  const pfM = win.Maity.preferences;
+  expect(JSON.stringify(pfM.diffLines("a\nb\nc", "a\nc\nd").map((d) => d.op + d.text)) === JSON.stringify(["samea", "delb", "samec", "addd"]),
+    "preferences: the diff keeps the common lines and marks the removed and the added ones");
+  expect(pfM.utf8Length("aä€😀") === 1 + 2 + 3 + 4, "preferences: the 8 KiB cap counts UTF-8 bytes");
+  // On the version it was written against: Accept, or edit first.
+  const pfSettle = async () => { for (let k = 0; k < 8; k++) await tick(); };
+  await go("#/p/maity/inbox"); await go("#/all"); await pfSettle();
+  const pfHead0 = main.querySelectorAll(".entry-head").find((b) => b.textContent.includes("change to your preferences"));
+  if (pfHead0.attrs["aria-expanded"] !== "true") { pfHead0.click(); await pfSettle(); }
+  const pfFresh = main.querySelector(".current .pref-review");
+  expect(pfFresh && btn(pfFresh, "Accept") && btn(pfFresh, "Edit, then accept") && btn(pfFresh, "Decline") && !text(pfFresh).includes("changed since"),
+    "preferences review: on the current version it offers Accept, Edit then accept, and Decline");
+  const pfPuts = [];
+  const pfPut = win.Maity.api.put;
+  win.Maity.api.put = (p, b) => { pfPuts.push([p, b]); return pfPut(p, b); };
+  await go("#/p/maity/inbox"); await go("#/account/preferences"); await pfSettle();
+  const pfText = () => byId("preferences-text");
+  const pfSave = () => main.querySelector(".preferences-form").querySelectorAll("button").find((b) => b.textContent === "Save");
+  expect(pfText() && pfText().value.startsWith("Direct and short.") && text(main.querySelector(".preferences-version")).startsWith("Version 2 · written by @maintainer")
+    && pfSave().disabled, "preferences: the account shows the text, its version and author; Save waits for a change");
+  pfText().value += "\nShort commit messages."; pfText().dispatch("input");
+  expect(!pfSave().disabled && text(main.querySelector(".preferences-form")).includes(" of 8 KiB"), "preferences: an edit enables Save and shows the size");
+  main.querySelector(".preferences-form").dispatch("submit"); await pfSettle();
+  expect(JSON.stringify(pfPuts[0]) === JSON.stringify(["/me/preferences", { markdown: pfText().value, base_version: 2 }])
+    && text(main).includes("Saved as version 3.") && text(main.querySelector(".preferences-version")).startsWith("Version 3"),
+    "preferences: Save sends the text with the version it was written against");
+  // Saved meanwhile elsewhere: the edit stays, the newer version is shown, the human chooses.
+  await pfPut("/me/preferences", { markdown: "From another tab.", base_version: 3 });
+  pfText().value = "Mine, written on version 3."; pfText().dispatch("input");
+  main.querySelector(".preferences-form").dispatch("submit"); await pfSettle();
+  const pfConflict = main.querySelector(".preferences-conflict");
+  expect(text(pfConflict).includes("changed meanwhile, now Version 4") && pfText().value === "Mine, written on version 3."
+    && btn(pfConflict, "Take version 4") && btn(pfConflict, "Save mine over it") && pfConflict.querySelector(".pref-diff"),
+    "preferences: a conflict keeps the edit and offers the newer version or saving over it");
+  btn(pfConflict, "Save mine over it").click(); await pfSettle();
+  expect(pfPuts[pfPuts.length - 1][1].base_version === 4 && text(main).includes("Saved as version 5."), "preferences: saving over it names the version it overrides");
+  // The projects whose agents read them.
+  const pfSample = byId("preferences-in-sample");
+  expect(byId("preferences-in-maity").checked && pfSample && !pfSample.checked, "preferences: on per project, as the hub has it");
+  pfSample.checked = true; pfSample.dispatch("change"); await pfSettle();
+  expect(JSON.stringify(pfPuts[pfPuts.length - 1]) === JSON.stringify(["/me/preferences/projects/sample", { include: true }]), "preferences: a project switched on is saved at once");
+  // Earlier versions, read when opened.
+  const pfHistory = main.querySelector("details.preferences-history");
+  pfHistory.open = true; pfHistory.dispatch("toggle"); await pfSettle();
+  expect(pfHistory.querySelectorAll(".preferences-versions li").length === 5 && text(pfHistory).includes("Version 1 · written by @maintainer"),
+    "preferences: the earlier versions, newest first");
+  // A hub without preferences: said quietly.
+  const pfGet = win.Maity.api.get;
+  win.Maity.api.forgetRoutes();
+  win.Maity.api.get = (p) => (p === "/me/preferences" ? Promise.reject(new win.Maity.api.ApiError("x", 404, p, "not_found", {}))
+    : p === "/openapi.json" ? Promise.resolve({ openapi: "3.1.0", paths: {} }) : pfGet(p));
+  await go("#/p/maity/inbox"); await go("#/account/preferences"); await pfSettle();
+  expect(text(main).includes("This hub keeps no preferences yet.") && !main.querySelector(".preferences .error"), "preferences: a hub without them says so quietly");
+  win.Maity.api.get = pfGet; win.Maity.api.forgetRoutes();
+
+  // The review: the current text (version 5 now), the proposal on version 2: stale.
+  await go("#/p/maity/inbox"); await go("#/all"); await pfSettle();
+  const pfHead = () => main.querySelectorAll(".entry-head").find((b) => b.textContent.includes("change to your preferences"));
+  if (pfHead().attrs["aria-expanded"] !== "true") { pfHead().click(); await pfSettle(); }
+  let pfReview = main.querySelector(".current .pref-review");
+  expect(pfReview && text(pfReview).includes("Why: You asked twice this week") && text(pfReview).includes("written against version 2, yours is now version 5")
+    && !btn(pfReview, "Accept") && btn(pfReview, "Merge by hand") && btn(pfReview, "Decline"),
+    "preferences review: a proposal on an older version offers no plain Accept, only merging by hand or declining");
+  expect(!btn(main.querySelector(".current"), "Go") && !btn(main.querySelector(".current"), "No") && !byId("reply-maity-req-p002")
+    && btn(main.querySelector(".current"), "Later"), "preferences review: its own answers replace the plain replies; Later stays");
+  expect(pfReview.querySelectorAll(".pref-diff li.pref-add").some((li) => text(li).includes("German in chat")), "preferences review: the diff shows the added line");
+  // Merge by hand: the edit goes with the current version.
+  const pfPosts = [];
+  const pfPost = win.Maity.api.post;
+  win.Maity.api.post = (p, b) => { pfPosts.push([p, b]); return pfPost(p, b); };
+  btn(pfReview, "Merge by hand").click(); await tick();
+  const pfEdit = byId("pref-edit-req-p002");
+  expect(pfEdit && !pfReview.querySelector(".pref-edit").hidden && pfEdit.value.includes("German in chat"), "preferences review: the editor opens with the proposal");
+  pfEdit.value = "Mine, written on version 3.\nGerman in chat, English in code and docs.";
+  btn(pfReview, "Accept my edit").click(); await pfSettle();
+  expect(JSON.stringify(pfPosts[0]) === JSON.stringify(["/requests/req-p002/answer", { reply_id: "go", markdown: pfEdit.value, base_version: 5 }]),
+    "preferences review: an edited accept carries the text and the current version");
+  const pfNow = await pfGet("/me/preferences");
+  expect(pfNow.version === 6 && pfNow.by.kind === "human" && pfNow.proposed_by && pfNow.proposed_by.request_id === "req-p002", "preferences review: the edit is the next version, proposed by the agent");
+  win.Maity.api.post = pfPost; win.Maity.api.put = pfPut;
+
+  // An agent's card, for its owner: give it the owner's preferences.
+  const pfPatches = [];
+  const pfPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { pfPatches.push([p, b]); return pfPatch(p, b); };
+  await go("#/p/maity/inbox"); await go("#/p/maity/agents"); await pfSettle();
+  const pfToggle = byId("owner-preferences-agt-a");
+  expect(pfToggle && !pfToggle.checked && main.querySelectorAll(".owner-preferences").length === 1,
+    "preferences: the owner's switch on an agent card, where the hub knows it");
+  pfToggle.checked = true; pfToggle.dispatch("change"); await pfSettle();
+  expect(JSON.stringify(pfPatches[0]) === JSON.stringify(["/projects/maity/members/agt-a", { owner_preferences: true }]), "preferences: the switch is saved on the membership at once");
+  win.Maity.api.patch = pfPatch;
 
   // API mode against a fake hub: CSRF on writes, fail loud without a hub.
   win.location.protocol = "http:";
