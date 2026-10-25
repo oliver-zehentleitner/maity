@@ -223,3 +223,50 @@ there for.
 - Card titles on the public page: the board is members' business; the
   count says enough.
 - Measuring tokens or cost: the hub counts no tokens (`scope.md`).
+
+## Keep the Why is guaranteed by the hub: a commitment at resume, a reminder, the owner's notification, and a why on every code report
+
+**Id:** 7c1a4f0e-2b8d-4c6e-9a3f-5e2d8b7a1c90
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-10-25, in the project's chat, after the team rule of `process.md` was recorded the same day; contract in `docs/api.md` §6.23, §6.1, §5.2, §6.6, §8.2, §13, §18.1
+**Revisit when:** the probe can read a file at a pull request's head (then the hub can verify the referenced entry instead of trusting the reference), or a project needs a different reminder interval than 30 and 60 minutes, or a second memory provider needs a commitment of its own
+
+A project whose memory provider is Keep the Why makes every agent carry
+it, through the hub rather than through a rule the team remembers:
+`policy.keep_the_why` is `required` by default under that provider. At
+resume the agent is told so and confirms once per instance (`maity ack
+keep-the-why`); an instance that has not confirmed after 30 minutes of
+a session is reminded with an event that wakes it, and after 60 minutes
+its owner gets a notification and the member view marks the agent. A
+code report carries `why`: the reference to the entry that keeps the
+change's reasoning, or a stated reason why this change has none; a code
+report without it is refused. The hub reads no repository for any of
+this: it records the commitment and the reference; whether the entry is
+there and good remains the review's gate.
+
+**Reason:** Keep the Why is part of the project, so every agent must use
+it, and a rule written in `context/` only reaches the agents that read
+it and the reviewers who happen to ask. The maintainer wanted Maity to
+guarantee it as a system: tell the agent in its briefing, have it
+confirm, remind it, and tell the owner when the confirmation does not
+come. The reference on the report makes the commitment checkable per
+change without the hub reading repositories (`scope.md`), and puts the
+one fact the reviewer needs — which entry, or why none — where the
+review already looks.
+
+**Rejected alternatives:**
+- The team rule alone (`process.md`): it depends on who reviews and on
+  the agent having read it; it stays as the interim and as the reviewers'
+  gate.
+- Refusing work until the confirmation (no claim, no report before the
+  ack): an agent that cannot confirm would be shut out of all work with
+  nobody told; the reminder-then-owner path keeps the human in the loop
+  instead.
+- Verifying the referenced entry against the repository at report
+  time: the hub would read repository files, which `scope.md` keeps out
+  of V1; deferred to a probe read at the pull request's head.
+- A confirmation per session rather than per instance: a confirmation
+  every resume would be noise for the long-running agents of this
+  project; per instance keeps it one honest act per worker.
