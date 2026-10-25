@@ -130,3 +130,69 @@ def test_stale_read_cannot_bypass_the_fifth_guess(conn: Connection) -> None:
         assert not links.try_code(conn, stale, "wrong", KEY)
     assert not links.try_code(conn, stale, grant.code or "", KEY)
     assert links.live(conn, nonce_hash=links.digest(grant.nonce)) is not None
+
+
+def test_new_utc_day_restores_code_budget(conn: Connection) -> None:
+    start = clock.now()
+    issue(conn)
+    conn.execute(update(t.email_sign_in_day).values(wrong_codes=20))
+    assert issue(conn, "blocked").code is None
+    clock.set_source(lambda: start + timedelta(days=1))
+    assert issue(conn, "tomorrow").code is not None
+
+
+@pytest.mark.parametrize("language", ["en", "de"])
+@pytest.mark.parametrize("code", [None, "012345"])
+def test_mail_contains_only_the_signin_link_and_optional_code(
+    language: str, code: str | None
+) -> None:
+    link = "https://hub.example/mail/sign-in/signed-token"
+    body = links.mail_body(
+        language=language,
+        display_name="Human",
+        link=link,
+        code=code,
+        requested_at="2026-10-25T06:00:00Z",
+        browser="Firefox",
+        system="Linux",
+        address="192.0.2.1",
+    )
+    assert body.count("https://") == 1
+    assert link in body
+    assert "Firefox" in body and "Linux" in body and "192.0.2.1" in body
+    assert ("012 345" in body) == (code is not None)
+    assert "unsubscribe" not in body
+
+
+def test_parallel_link_and_code_make_only_one_grant(engine: Engine) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    db.migrate(engine)
+    with engine.begin() as connection:
+        connection.execute(
+            insert(t.human).values(
+                id=HUMAN,
+                handle="mail-race",
+                display_name="Mail race",
+                password_hash="not-used",
+                created_at=clock.now(),
+            )
+        )
+        grant = issue(connection)
+    start = Barrier(2)
+
+    def complete(method: str) -> bool:
+        start.wait(timeout=5)
+        with engine.begin() as connection:
+            links.lock_human(connection, HUMAN)
+            row = links.live(connection, nonce_hash=links.digest(grant.nonce))
+            if row is None:
+                return False
+            if method == "link":
+                return links.use(connection, row)
+            return links.try_code(connection, row, grant.code or "", KEY)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(complete, ["link", "code"]))
+    assert sum(results) == 1

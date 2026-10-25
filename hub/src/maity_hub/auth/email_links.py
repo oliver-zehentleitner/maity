@@ -182,3 +182,43 @@ def void_human(conn: Connection, human_id: str) -> None:
         .where(t.email_sign_in.c.human_id == human_id, t.email_sign_in.c.used_at.is_(None))
         .values(used_at=clock.now(), code_mac=None)
     )
+
+
+def mail_body(
+    *,
+    language: str,
+    display_name: str,
+    link: str,
+    code: str | None,
+    requested_at: str,
+    browser: str | None,
+    system: str | None,
+    address: str,
+) -> str:
+    """A requested sign-in mail, without notification/unsubscribe content (§2.6.3).
+    The only URL is the signed link; the saved dashboard destination stays in state."""
+    name = " ".join(display_name.split())
+    browser, system = browser or "?", system or "?"
+    spaced = f"{code[:3]} {code[3:]}" if code else None
+    if language == "de":
+        alternative = (
+            "Oder gib diesen Code in dem Browser ein, "
+            f"in dem du den Link angefordert hast: {spaced}\n\n"
+            if spaced
+            else ""
+        )
+        return (
+            f"Hallo {name},\n\nMit diesem Link meldest du dich bei Maity an (15 Minuten gültig):\n"
+            f"{link}\n\n{alternative}Angefordert am {requested_at}, mit {browser} auf {system}, "
+            f"von {address}.\n\nWenn du das nicht angefordert hast, ignoriere diese Mail. "
+            "Ohne den Link oder den Code passiert nichts.\n"
+        )
+    alternative = (
+        f"Or enter this code in the browser where you asked for it: {spaced}\n\n" if spaced else ""
+    )
+    return (
+        f"Hello {name},\n\nUse this link to sign in to Maity (valid for 15 minutes):\n"
+        f"{link}\n\n{alternative}Requested at {requested_at}, from {browser} on {system}, "
+        f"{address}.\n\nIf you did not ask for this, ignore this mail; nothing happens "
+        "without the link or the code.\n"
+    )
