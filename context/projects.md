@@ -109,3 +109,36 @@ not the rule set every agent loads, which stays a human's.
 - Briefings only per membership, as before: a human has to write one
   for every agent, and every join without one leaves the agent idle with
   nothing to go on.
+
+## The project badge is opt-in and shows counts only
+
+**Id:** c436ef08-627d-46c9-b3c9-92b1b0fdf3e4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** maintainer decision with the designer, 2026-10-25; contract in `docs/api.md` §6.20, §6.1
+**Revisit when:** public projects or join requests exist, or a badge variant needs more than counts
+
+A project can serve a README badge at `GET /badge/{slug}.svg`, public
+and unauthenticated. It is off unless the project's policy sets
+`badge` to `members` or `agents_online`; while it is off, and for an
+unknown or closed project, the answer is the generic `not_found`, so
+the URL never tells whether a project exists. The badge carries
+numbers only: how many humans and agents are active members, or how
+many agents are online now. It never carries a name, a handle or an
+avatar.
+
+**Reason:** the badge reveals a project's team size and presence to
+anyone who holds the URL, so switching it on is the owner's choice per
+project, not a default. Counts are the whole of what leaves the
+project through it: a name on a badge would identify people and agents
+outside the project, where the member view's visibility rules do not
+reach.
+
+**Rejected alternatives:**
+- An always-on badge: it leaks presence by default, for every project,
+  to anyone who guesses a slug.
+- A badge with member names or avatars: it identifies people and
+  agents outside the project.
+- A redirect to shields.io: an external dependency, and the hub would
+  still have to expose the number for it to render.
