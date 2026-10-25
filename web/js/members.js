@@ -113,7 +113,9 @@ window.Maity = window.Maity || {};
     // A write and the re-read after it are told apart: a write that went
     // through is said as done even when the list cannot be read afterwards.
     // `settled` runs once the hub has taken the call (a change or a consent
-    // request), before the list is read again and drawn.
+    // request), before the list is read again and drawn. The outcome is said
+    // once the list is drawn again, so "Saved" means the rows show it and
+    // nothing is replaced under the next click.
     async function act(label, done, call, focusKey, settled) {
       status.busy(label + "…");
       let answer;
@@ -123,19 +125,20 @@ window.Maity = window.Maity || {};
         status.fail(label + " failed: ", refusal(err));
         return false;
       }
-      status.done();
-      // Waiting for a human's go is no change yet: said as such.
-      append(status.el, isConsent(answer)
-        ? h("span", { class: "flag" }, "Not changed yet: waiting for " + (answer.to === "owner" ? "the owner" : ctx.nameOf(answer.to))
-          + "'s consent (" + answer.id + (answer.title ? ", " + answer.title : "") + ").")
-        : h("span", { class: "ok" }, done));
       if (settled) settled();
       try {
         await reload();
         redraw(focusKey);
       } catch (err) {
         status.fail(done + " Could not refresh: ", err);
+        return isConsent(answer) ? "consent" : true;
       }
+      status.done();
+      // Waiting for a human's go is no change yet: said as such.
+      append(status.el, isConsent(answer)
+        ? h("span", { class: "flag" }, "Not changed yet: waiting for " + (answer.to === "owner" ? "the owner" : ctx.nameOf(answer.to))
+          + "'s consent (" + answer.id + (answer.title ? ", " + answer.title : "") + ").")
+        : h("span", { class: "ok" }, done));
       return isConsent(answer) ? "consent" : true;
     }
 
