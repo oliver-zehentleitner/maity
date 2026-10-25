@@ -39,7 +39,9 @@ real button (`aria-haspopup`, `aria-expanded`): a **gear** with what is
 not the project's — **Runners** and, for the instance admin, **Users of
 this hub**; and the **profile**, the human's avatar and name, with
 **Profile**, **Picture** (`#/account/picture`), **Preferences**
-(`#/account/preferences`), **Change password**, **Linked accounts** (later) and
+(`#/account/preferences`), **Sign in another device** (`#/account/sign-in-device`,
+where the hub's machine form lists device codes), **Change password**, **Linked
+accounts** (later) and
 **Sign out**. Arrow keys, Home and End move in a
 menu; Escape closes it and puts the focus back on its button; Tab or a
 click elsewhere closes it. On a phone the name is left out and the menus
@@ -112,6 +114,8 @@ stop the page. Mail settings come with the hub's mail (stage 3).
 | `#/observe/<slug>` | reading along in the group chats your agents are in, in a project you are not a member of (`docs/api.md` §9.2); named on `#/all` |
 | `#/admin` | instance administration: statistics, users, mail settings and health, for the instance admin only (`member.instance_admin` on `/me`); opened from **Settings → Instance administration** |
 | `#/admin/users` | compatibility route for the searchable user list |
+| `#/sign-in/code?c=…` | the login page with a device code filled in: the URL in the QR of Sign in another device; sent only on the human's tap |
+| `#/account/sign-in-device` | Sign in another device (`docs/api.md` §2.6.2): the code, its QR, the time left, then the approval; from the profile menu |
 | `#/account` | the signed-in human's account: name, handle, their picture and their agents' pictures (`#/account/picture` starts there), their preferences (`#/account/preferences` starts there), browser notifications (`#/account/notifications` starts there; the bell links to it), the sessions (`#/account/sessions` starts there; a sign-in alert links to it), **Change password**; from the profile menu |
 | `#/p/<slug>/<view>` | a view inside one project; `#/p/<slug>/inbox` is the landing page with exactly one |
 | `#/p/<slug>/chat/<agent-id>` | the chat with one agent |
@@ -721,6 +725,35 @@ yours over it**. Below: the projects whose agents read them, one switch each
 versions**, read when opened. A hub without preferences says so in a muted
 line.
 
+**Signing in without a password** (`docs/api.md` §2.6, `js/device-sign-in.js`,
+`js/qr.js`). The login page reads `GET /auth/methods` and, below the password
+form, offers what the hub has on: **Have a code?** and **Email me a sign-in
+link**; a hub without the route offers the password alone.
+- *Sign in another device* (profile menu, `#/account/sign-in-device`) makes a
+  code (`POST /auth/device-codes`) and shows it in two groups (`K7QM-4XPR`), a
+  QR of its URL and the time left by the hub's clock, with **Cancel**. Once the
+  other device entered it, the approval leads with what the hub saw (the
+  address, when), then what the device *claims* ("Says it is Safari on iOS",
+  the raw `User-Agent` folded), "First sign-in from this browser" where it is,
+  and "Only approve a device you are holding now". The human picks the number
+  the device shows from three; **Deny** is the default and there is no plain
+  Approve. A wrong number denies the code, and **New code** starts over.
+- *Have a code?* on the new device takes the code (read as the hub reads it:
+  case ignored, hyphens and spaces dropped, I and L as 1, O as 0), shows the
+  two-digit number to pick on the other device and nothing of the account, and
+  after the approval the account and then the dashboard. The QR's URL
+  (`#/sign-in/code?c=…`) opens this form filled in; it is sent on the tap.
+- *Email me a sign-in link* asks for an address, answers "If this address
+  belongs to an account, a link is on its way" whatever the address, and takes
+  the six-digit code from the mail for when it is read elsewhere.
+- Both sides read their state with `wait=0` every 2 seconds on the page's
+  timers. The QR is made here, dark on light in either theme; a QR code made
+  here was checked bit for bit against an independent encoder, and a smoke check
+  keeps one symbol as a fixed hash.
+- In fixture mode one tab plays both devices: a code made on Sign in another
+  device has been entered by a simulated phone (`203.0.113.24`, number 47) by
+  the second read, and the mailed code is `482913`.
+
 **Sessions** (`#/account/sessions`, `docs/api.md` §2.6.5, `js/sessions.js`):
 where the human is signed in, newest first, from `GET /auth/sessions?ended=true`.
 - Each says the browser and system it claimed, how it signed in, where
@@ -1183,6 +1216,8 @@ web/
 ├── js/ticker.js      (12) the change ticker, follow and mute, a manual post
 ├── js/new-project.js create a project; the empty state
 ├── js/notify-settings.js  browser notifications on the account
+├── js/qr.js          QR codes in the dashboard's own code (byte mode, level M, versions 1–10)
+├── js/device-sign-in.js  a code from another device and a link by mail on the login page; Sign in another device
 ├── js/sessions.js    the account's sessions, This was me, the mail sign-in banner
 ├── js/preferences.js the human's preferences, a proposal's review, the owner's switch on an agent
 ├── js/account.js     the account: pictures, preferences and changing the password

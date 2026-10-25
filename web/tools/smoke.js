@@ -2597,13 +2597,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   pb.click(); await tick();
   const pMenu = header.querySelector(".profile-menu").parentNode.querySelector("ul.menu");
   const pItems = pMenu.querySelectorAll(".menu-item").map((el) => text(el));
-  expect(!pMenu.hidden && pb.attrs["aria-expanded"] === "true" && JSON.stringify(pItems) === JSON.stringify(["Profile", "Picture", "Preferences", "Change password", "Linked accounts · later", "Sign out"])
+  expect(!pMenu.hidden && pb.attrs["aria-expanded"] === "true" && JSON.stringify(pItems) === JSON.stringify(["Profile", "Picture", "Preferences", "Sign in another device", "Change password", "Linked accounts · later", "Sign out"])
     && document.activeElement === pMenu.querySelectorAll(".menu-item")[0], "header: the profile menu opens with its items, the first focused");
   pMenu.dispatch("keydown", { key: "ArrowDown" });
   expect(document.activeElement === pMenu.querySelectorAll(".menu-item")[1] && pMenu.querySelectorAll(".menu-item")[1].getAttribute("href") === "#/account/picture",
     "header: arrows move through the items; Picture goes to the account's picture");
-  pMenu.dispatch("keydown", { key: "ArrowDown" }); pMenu.dispatch("keydown", { key: "ArrowDown" }); pMenu.dispatch("keydown", { key: "ArrowDown" });
-  expect(pMenu.querySelectorAll(".menu-item")[4].attrs["aria-disabled"] === "true" && document.activeElement === pMenu.querySelectorAll(".menu-item")[4],
+  for (let k = 0; k < 4; k++) pMenu.dispatch("keydown", { key: "ArrowDown" });
+  expect(pMenu.querySelectorAll(".menu-item")[5].attrs["aria-disabled"] === "true" && document.activeElement === pMenu.querySelectorAll(".menu-item")[5],
     "header: one still to come is disabled and still reached");
   pMenu.dispatch("keydown", { key: "End" });
   expect(text(document.activeElement) === "Sign out", "header: End goes to the last item");
@@ -2754,6 +2754,63 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("login-password").value = "a long new password";
   main.querySelector("form").dispatch("submit"); await tick(); await tick(); await tick();
   expect(!byId("login-handle") && !main.querySelector(".error"), "sign in with the new password returns to the dashboard");
+
+  // Sign-in without a password (§2.6): the code, its QR, the approval by number; the code on the new device; a link by mail.
+  const ds = win.Maity.deviceSignIn;
+  expect(ds.normalCode("k7qm-4xpr") === "K7QM4XPR" && ds.normalCode("K7QM 4XPI") === "K7QM4XP1" && ds.normalCode("oooo-llll") === "00001111"
+    && ds.normalCode("K7QM-4XP") === null && ds.normalCode("K7QM-4XPU") === null, "device code: read as the hub reads it (I and L as 1, O as 0), else refused");
+  const qrRows = win.Maity.qr.matrix("https://hub.example.org/#/sign-in/code?c=K7QM4XPR").map((r) => r.map((b) => (b ? 1 : 0)).join("")).join("\n");
+  expect(qrRows.split("\n").length === 33 && require("crypto").createHash("sha256").update(qrRows).digest("hex") === "1b941096a98468ba07ea7d475e887cdb49a0aa655d2ec0e0e6cee3b208447dba",
+    "qr: the sign-in URL as a version 4 symbol, bit for bit the one checked against an independent encoder");
+  const dsSettle = async () => { for (let k = 0; k < 6; k++) await tick(); };
+  const dsFocus = Object.getPrototypeOf(main).focus;
+  Object.getPrototypeOf(main).focus = function () { document.activeElement = this; };
+  await go("#/p/maity/inbox"); await go("#/account/sign-in-device"); await dsSettle();
+  const dsCode = main.querySelector(".device-code");
+  expect(dsCode && text(dsCode).includes("K7QM-4XPR") && dsCode.querySelectorAll("svg").some((sv) => sv.attrs.class === "qr") && text(dsCode).includes("Expires in ") && btn(dsCode, "Cancel"),
+    "device code: Sign in another device shows the code in two groups, its QR and the time left");
+  await fireIntervals(); await dsSettle(); await fireIntervals(); await dsSettle();
+  let dsDialog = main.querySelector(".device-approval");
+  expect(dsDialog && text(dsDialog).includes("Approve this device?") && text(dsDialog).includes("203.0.113.24") && text(dsDialog).includes("Says it is Safari on iOS")
+    && text(dsDialog).includes("First sign-in from this browser.") && text(dsDialog).includes("Only approve a device you are holding now.")
+    && JSON.stringify(dsDialog.querySelectorAll(".match-choice").map((b) => text(b))) === JSON.stringify(["18", "47", "83"]) && !btn(dsDialog, "Approve"),
+    "device code: the approval leads with what the hub saw, labels the claim, and offers three numbers and no plain Approve");
+  expect(document.activeElement === btn(dsDialog, "Deny"), "device code: Deny is the default");
+  btn(dsDialog, "18").click(); await dsSettle();
+  expect(text(main.querySelector(".device-stage")).includes("That was not the number it shows, so the code is denied.") && btn(main.querySelector(".device-stage"), "New code"),
+    "device code: a wrong number denies the code; a new one is offered");
+  btn(main.querySelector(".device-stage"), "New code").click(); await dsSettle();
+  await fireIntervals(); await dsSettle(); await fireIntervals(); await dsSettle();
+  btn(main.querySelector(".device-approval"), "47").click(); await dsSettle();
+  expect(text(main.querySelector(".device-stage")).includes("Approved: the other device is signing in."), "device code: the right number approves it");
+  // The new device: the QR's URL fills the code in, a tap sends it, the number shows, and after the approval the account.
+  const dsMade = await win.Maity.api.post("/auth/device-codes", {});
+  profileButton().click(); await tick();
+  header.querySelectorAll("button.menu-item").find((b) => b.textContent === "Sign out").click(); await dsSettle();
+  win.location.hash = "#/sign-in/code?c=k7qm4xpr"; win.onhashchange(); await dsSettle();
+  expect(byId("device-code") && byId("device-code").value === "K7QM-4XPR" && byId("login-handle"), "device code: the QR's URL opens the login with the code filled in, not sent");
+  main.querySelector(".sign-in-code form").dispatch("submit"); await dsSettle();
+  const dsWait = main.querySelector(".device-waiting");
+  expect(dsWait && text(dsWait).includes("Waiting for approval on your other device") && text(dsWait.querySelector(".match-number")) === "47" && !text(dsWait).includes("Maintainer"),
+    "device code: the new device shows the number to pick and nothing of the account");
+  await win.Maity.api.post("/auth/device-codes/" + dsMade.id + "/approve", { number: 47 });
+  await fireIntervals(); await dsSettle(); await dsSettle();
+  expect(!byId("login-handle") && !main.querySelector(".error") && win.location.hash !== "#/sign-in/code?c=k7qm4xpr", "device code: approved, the new device is signed in and leaves the code's URL");
+  // A link by mail, and its six-digit code.
+  profileButton().click(); await tick();
+  header.querySelectorAll("button.menu-item").find((b) => b.textContent === "Sign out").click(); await dsSettle();
+  btn(main.querySelector(".sign-in-mail"), "Email me a sign-in link").click(); await tick();
+  byId("sign-in-address").value = "maintainer@example.org";
+  main.querySelector(".sign-in-mail form").dispatch("submit"); await dsSettle();
+  expect(text(main.querySelector(".sign-in-mail")).includes("If this address belongs to an account, a link is on its way.") && byId("sign-in-mail-code"),
+    "sign-in link: the same answer for any address, with a field for the code");
+  byId("sign-in-mail-code").value = "000 000";
+  main.querySelector(".sign-in-mail form").dispatch("submit"); await dsSettle();
+  expect(text(main.querySelector(".sign-in-mail")).includes("that code does not match") && byId("login-handle"), "sign-in link: a wrong code is said and signs nobody in");
+  byId("sign-in-mail-code").value = "482 913";
+  main.querySelector(".sign-in-mail form").dispatch("submit"); await dsSettle();
+  expect(!byId("login-handle") && !main.querySelector(".error"), "sign-in link: the code signs this browser in");
+  Object.getPrototypeOf(main).focus = dsFocus; document.activeElement = undefined;
 
   // No memberships: the empty state, then creating a project.
   let noProjects = true;

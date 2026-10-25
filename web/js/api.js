@@ -31,6 +31,21 @@ window.Maity = window.Maity || {};
   let store = null;
   // ?signed_out=1 starts fixture mode without a session, to show the login.
   let fixtureSignedIn = params.get("signed_out") !== "1";
+  // The device code of §2.6.2 this tab made, and a mailed code asked for (§2.6.3).
+  let deviceSim = null;
+  let deviceSerial = 0;
+  let mailPending = false;
+  function deviceOf(id, path) {
+    if (!deviceSim || deviceSim.id !== id) fail(404, "not_found", "Not found", path);
+    if (["waiting", "redeemed"].includes(deviceSim.status) && Date.parse(deviceSim.expires_at) <= Date.now()) deviceSim.status = "expired";
+    return deviceSim;
+  }
+  function deviceView(d) {
+    const view = { id: d.id, status: d.status, expires_at: d.expires_at };
+    if (d.device) view.device = d.device;
+    if (d.status === "redeemed") view.choices = [18, d.match, 83];
+    return view;
+  }
   let fixturePassword = null;
   // ?no_projects=1 starts it with no memberships, to show the empty state.
   const fixtureNoProjects = params.get("no_projects") === "1";
@@ -580,6 +595,63 @@ window.Maity = window.Maity || {};
   // endpoint the views use; the patterns match the path below /api/v1
   // without the query string.
   const routes = [
+    // §2.6.1–2.6.3 in one tab: this tab makes the code, and a simulated
+    // phone has entered it by the second read, so the approval can be seen.
+    ["GET", /^\/auth\/methods$/, () => ({ password: true, device_code: true, email_link: true, registration: false, terms: null })],
+    ["POST", /^\/auth\/device-codes$/, (m, body, path) => {
+      if (!fixtureSignedIn) fail(401, "unauthenticated", "Not signed in", path);
+      const code = "K7QM4XPR";
+      deviceSim = { id: "dvc-" + (++deviceSerial), code, status: "waiting", reads: 0, match: 47,
+        expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString().replace(/\.\d{3}Z$/, "Z") };
+      return { id: deviceSim.id, code: "K7QM-4XPR", url: window.location.origin + window.location.pathname + "#/sign-in/code?c=" + code, expires_at: deviceSim.expires_at };
+    }],
+    ["GET", /^\/auth\/device-codes\/([^/]+)$/, (m, body, path) => {
+      const d = deviceOf(m[1], path);
+      if (d.status === "waiting" && ++d.reads >= 2) {
+        d.status = "redeemed";
+        d.device = { ip: "203.0.113.24", redeemed_at: nowIso(), user_agent: "Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) AppleWebKit/605.1.15 Safari/604.1",
+          browser: "Safari", os: "iOS", new_device: true };
+      }
+      return deviceView(d);
+    }],
+    ["POST", /^\/auth\/device-codes\/([^/]+)\/approve$/, (m, body, path) => {
+      const d = deviceOf(m[1], path);
+      if (d.status !== "redeemed") fail(409, "conflict", "the code is not waiting for an approval", path);
+      if (body.number !== d.match) { d.status = "denied"; fail(400, "code_invalid", "the code does not work", path); }
+      d.status = "approved";
+      return deviceView(d);
+    }],
+    ["POST", /^\/auth\/device-codes\/([^/]+)\/deny$/, (m, body, path) => { const d = deviceOf(m[1], path); d.status = "denied"; return deviceView(d); }],
+    ["DELETE", /^\/auth\/device-codes\/([^/]+)$/, (m, body, path) => { const d = deviceOf(m[1], path); d.status = "denied"; return deviceView(d); }],
+    // The new device's side: a code typed in, the wait, and the session.
+    ["POST", /^\/auth\/device-login$/, (m, body, path) => {
+      const typed = String(body.code || "").toUpperCase().replace(/[\s-]/g, "");
+      if (!deviceSim || typed !== deviceSim.code || !["waiting", "redeemed"].includes(deviceSim.status) || deviceSim.pending) fail(400, "code_invalid", "the code does not work", path);
+      deviceSim.pending = true;
+      deviceSim.status = "redeemed";
+      return { status: "redeemed", expires_at: deviceSim.expires_at, match_number: deviceSim.match };
+    }],
+    ["GET", /^\/auth\/device-login$/, (m, body, path) => {
+      if (!deviceSim || !deviceSim.pending) fail(404, "not_found", "Not found", path);
+      const view = { status: deviceSim.status, expires_at: deviceSim.expires_at, match_number: deviceSim.match };
+      if (deviceSim.status === "approved") view.account = { handle: me().member.handle, display_name: me().member.display_name, avatar_url: me().member.avatar_url || null };
+      return view;
+    }],
+    ["POST", /^\/auth\/device-login\/complete$/, (m, body, path) => {
+      if (!deviceSim || !deviceSim.pending) fail(404, "not_found", "Not found", path);
+      if (deviceSim.status !== "approved") fail(409, "conflict", "the code is not approved", path);
+      deviceSim.status = "used";
+      fixtureSignedIn = true;
+      return { member: me().member, next: "/" };
+    }],
+    // §2.6.3: always 202; the fixtures' mailed code is 482913.
+    ["POST", /^\/auth\/email-link$/, () => { mailPending = true; return { expires_in: 900 }; }],
+    ["POST", /^\/auth\/email-code$/, (m, body, path) => {
+      if (!mailPending || String(body.code || "").replace(/\s/g, "") !== "482913") fail(400, "code_invalid", "the code does not match", path);
+      mailPending = false;
+      fixtureSignedIn = true;
+      return { member: me().member, next: "/" };
+    }],
     ["GET", /^\/auth\/session$/, (m, body, path) => {
       if (!fixtureSignedIn) fail(401, "unauthenticated", "Not signed in", path);
       return Object.assign({ session_id: fixtures()["sessions.json"].current }, fixtures()["auth-session.json"]);
@@ -1243,6 +1315,7 @@ window.Maity = window.Maity || {};
       "/api/v1/projects/{slug}/conversations": { get: {}, post: {} },
       "/api/v1/projects/{slug}/attachments": { get: {}, post: {} },
       "/api/v1/requests/{request_id}/answer": { post: {} },
+      "/api/v1/auth/device-codes": { post: {} },
       "/api/v1/me/preferences": { get: {}, put: {} },
       "/api/v1/requests/{request_id}/withdraw": { post: {} },
       "/api/v1/projects": { get: {}, post: { requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/ProjectCreate" } } } } } },
