@@ -124,6 +124,11 @@ def _fresh_process_state() -> Iterator[None]:
     from maity_hub.jourfixe import worker as jour_fixe_worker
 
     jour_fixe_worker.INTERVAL = 24 * 3600.0
+    from maity_hub.auth import second_factor
+
+    second_factor.WRONG_BY_HUMAN.reset()
+    second_factor.ENROLMENTS_BY_HUMAN.reset()
+    second_factor._wrong_in_session.clear()
     caller.NONCES = NonceWindow()
     forge._visible.clear()
     images.reset()
