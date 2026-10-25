@@ -44,6 +44,7 @@ VALUE_FIELDS = (
     "max_per_hour",
     "security_max_per_hour",
     "sign_in_max_per_hour",
+    "registration_max_per_hour",
 )
 DEFAULTS: dict[str, object] = {
     "enabled": True,
@@ -56,6 +57,7 @@ DEFAULTS: dict[str, object] = {
     "max_per_hour": 500,
     "security_max_per_hour": 100,
     "sign_in_max_per_hour": 60,
+    "registration_max_per_hour": 30,
 }
 WRITABLE = (*DEFAULTS, "password")
 ENVIRONMENT_ONLY = ("signing_key", "secret_key")
@@ -198,6 +200,8 @@ def counters(conn: Connection) -> dict[str, int]:
         "security_queued": int(queued),
         "sign_in_sent_last_hour": recent.get(("sign_in", "sent"), 0),
         "sign_in_dropped_last_hour": recent.get(("sign_in", "dropped"), 0),
+        "registration_sent_last_hour": recent.get(("registration", "sent"), 0),
+        "registration_dropped_last_hour": recent.get(("registration", "dropped"), 0),
         "failed_last_hour": sum(n for (_, outcome), n in recent.items() if outcome == "failed"),
     }
 
@@ -317,6 +321,11 @@ store.register(
     ),
     store.Setting(
         "mail.sign_in_max_per_hour", _whole(1, MAX_PER_HOUR), DEFAULTS["sign_in_max_per_hour"]
+    ),
+    store.Setting(
+        "mail.registration_max_per_hour",
+        _whole(1, MAX_PER_HOUR),
+        DEFAULTS["registration_max_per_hour"],
     ),
     # Written by the test send only, never by a PATCH (§16.3).
     store.Setting(LAST_TEST, _when(lambda v: isinstance(v, dict))),
