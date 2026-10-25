@@ -11,6 +11,7 @@ from sqlalchemy import Engine
 
 from tests import flow
 from tests.conftest import ClientFactory
+from tests.test_mentions import second_owners_agent
 
 BASE = "/projects/maity/conversations"
 
@@ -31,24 +32,28 @@ def by_id(people: list[dict[str, Any]], member_id: str) -> dict[str, Any]:
 
 
 def test_the_packet_names_me_and_my_agent_peers(
-    owner: flow.Human, make_client: ClientFactory
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
     agent = named(make_client, owner, "agent-b")
     peer = named(make_client, owner, "agent-c")
+    # Another owner's agent: its name takes its own owner's handle, not the caller's.
+    theirs = second_owners_agent(migrated, "anna", "agent-c")
     packet = agent.resume().json()
     assert packet["me"]["name"] == "maintainer/agent-b"
     assert by_id(packet["peers"], peer.id)["name"] == "maintainer/agent-c"
+    assert by_id(packet["peers"], theirs)["name"] == "anna/agent-c"
     assert "name" not in by_id(packet["peers"], owner.id)  # a human's handle is the name
 
 
 def test_conversation_participants_carry_the_name(
-    owner: flow.Human, make_client: ClientFactory
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
     agent = named(make_client, owner, "agent-b")
     other = named(make_client, owner, "agent-c")
+    theirs = second_owners_agent(migrated, "anna", "agent-x")
     sent = owner.post(f"{BASE}/{agent.id}/messages", {"body": "hello"})
     assert sent.status_code == 201, sent.text
-    group = owner.post(BASE, {"title": "Go/no-go", "participants": [agent.id, other.id]})
+    group = owner.post(BASE, {"title": "Go/no-go", "participants": [agent.id, other.id, theirs]})
     assert group.status_code == 201, group.text
     items = {i["id"]: i for i in owner.get(BASE).json()["items"]}
     direct = next(i for i in items.values() if i["id"] != group.json()["id"])
@@ -56,9 +61,11 @@ def test_conversation_participants_carry_the_name(
     assert "name" not in by_id(direct["participants"], owner.id)
     listed = items[group.json()["id"]]["participants"]
     assert by_id(listed, other.id)["name"] == "maintainer/agent-c"
+    assert by_id(listed, theirs)["name"] == "anna/agent-x"
     # The group chat's own view names its people the same way.
     view = owner.get(f"{BASE}/{group.json()['id']}").json()
     assert by_id(view["participants"], agent.id)["name"] == "maintainer/agent-b"
+    assert by_id(view["participants"], theirs)["name"] == "anna/agent-x"
     assert "name" not in by_id(view["participants"], owner.id)
 
 
@@ -76,3 +83,14 @@ def test_check_in_with_names_an_agent_and_the_instruction_uses_the_long_form(
     hint = newcomer.resume().json()["onboarding"]
     assert "name" not in hint["check_in_with"]
     assert "@maintainer " in hint["instruction"]
+
+
+def test_the_stored_by_carries_no_name(owner: flow.Human, make_client: ClientFactory) -> None:
+    """`settings.onboarding.by` is stored (§6.1): a computed name never goes into it."""
+    admin = flow.agent(
+        make_client, owner, role="admin", agent={"handle": "agent-a", "display_name": "A"}
+    )
+    written = admin.patch("/projects/maity", {"settings": {"onboarding": {"briefing": "hi"}}})
+    assert written.status_code == 200, written.text
+    by = owner.get("/projects/maity").json()["settings"]["onboarding"]["by"]
+    assert by == {"id": admin.id, "handle": "agent-a", "kind": "agent"}

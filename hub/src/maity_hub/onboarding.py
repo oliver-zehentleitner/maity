@@ -61,10 +61,11 @@ def name(row: Any) -> dict[str, str]:
 
 
 def identity(row: Any) -> dict[str, Any]:
+    """`{id, handle, kind}`: stored as the setting's `by` (§6.1), so never the computed
+    global name (§6.3)."""
     return {
         "id": principal(row),
         "handle": row.handle,
-        **name(row),
         "kind": "agent" if row.agent_id else "human",
     }
 
