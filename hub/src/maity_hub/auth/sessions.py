@@ -65,8 +65,11 @@ def describe(user_agent: str | None) -> tuple[str | None, str | None]:
 
 
 def good_standing(row: Any, confirmed: frozenset[str] = frozenset()) -> bool:
-    """§2.6.5: signed in by password, or its sign-in confirmed from another session."""
-    return bool(row.method == "password" or row.public_id in confirmed)
+    """§2.6.5: signed in by password, or its sign-in confirmed from another session; and
+    since §2.8.2 a sign-in that included the second factor, whatever its first."""
+    return bool(
+        row.method == "password" or row.public_id in confirmed or row.second_factor is not None
+    )
 
 
 def confirmed_sessions(conn: Connection, human_id: str) -> frozenset[str]:
@@ -109,6 +112,7 @@ def view(
         "ip": None if finished else row.ip,
         "approved_by": row.approved_by,
         "good_standing": good_standing(row, confirmed),
+        "second_factor": row.second_factor is not None,
         "created": (
             {
                 "record": f"acr-{record.n}",
@@ -130,7 +134,11 @@ def listing(conn: Connection, human_id: str, current: str, *, with_ended: bool) 
     now = clock.now()
     rows = conn.execute(
         select(t.human_session)
-        .where(t.human_session.c.human_id == human_id)
+        .where(
+            t.human_session.c.human_id == human_id,
+            # A session that still owes the second step is no sign-in yet (§2.8.2).
+            t.human_session.c.sign_in_complete.is_(True),
+        )
         .order_by(t.human_session.c.created_at.desc(), t.human_session.c.public_id.desc())
     ).all()
     forget_expired_addresses(conn)
@@ -257,13 +265,18 @@ def create(
     address: str,
     user_agent: str | None,
     approved_by: str | None = None,
+    state: str = "full",
+    next_route: str | None = None,
 ) -> tuple[str, str, str]:
     """A new session of `human_id`: (cookie value, CSRF token, public id). Only the
-    cookie value's hash is stored."""
+    cookie value's hash is stored. A session that still owes the second step of a
+    two-factor sign-in (`state` other than `full`, §2.8.2) is not a sign-in yet: no
+    record, no `last_login_at`; `complete_sign_in` makes it one."""
     now = clock.now()
     session_id, csrf = secrets.token_urlsafe(32), secrets.token_hex(32)
     browser, system = describe(user_agent)
     public_id = ids.new_id("human_session")
+    complete = state == "full"
     conn.execute(
         insert(t.human_session).values(
             id_hash=session_id_hash(session_id),
@@ -279,25 +292,83 @@ def create(
             os=system,
             ip=address[:64],
             approved_by=approved_by,
+            state=state,
+            sign_in_complete=complete,
+            password_at=now if method == "password" else None,
+            next=next_route,
         )
     )
-    conn.execute(
-        update(t.human).where(t.human.c.id == human_id).values(last_seen_at=now, last_login_at=now)
-    )
-    # Every new session tells its human, whichever the method (§2.6.5).
-    records.session_created(
-        conn,
-        human_id,
-        {
-            "session_id": public_id,
-            "method": method,
-            "browser": browser,
-            "os": system,
-            "ip": address[:64],
-            "approved_by": approved_by,
-        },
-    )
+    if complete:
+        _signed_in(conn, human_id, public_id, now)
+    else:
+        conn.execute(update(t.human).where(t.human.c.id == human_id).values(last_seen_at=now))
     return session_id, csrf, public_id
+
+
+def _signed_in(conn: Connection, human_id: str, public_id: str, now: datetime) -> None:
+    """A sign-in counts: `last_login_at` moves and the human is told (§2.6.5)."""
+    row = conn.execute(
+        select(t.human_session).where(t.human_session.c.public_id == public_id)
+    ).one()
+    conn.execute(update(t.human).where(t.human.c.id == human_id).values(last_login_at=now))
+    # Every new session tells its human, whichever the method (§2.6.5).
+    data: dict[str, Any] = {
+        "session_id": public_id,
+        "method": row.method,
+        "browser": row.browser,
+        "os": row.os,
+        "ip": row.ip,
+        "approved_by": row.approved_by,
+    }
+    if row.second_factor is not None:
+        data["second_factor"] = row.second_factor
+    records.session_created(conn, human_id, data)
+
+
+def complete_in_place(conn: Connection, row: Any) -> None:
+    """A session held at enrolment whose reason went away completes its sign-in as it
+    is, without a new cookie: it never gave a second factor to rotate for."""
+    done = conn.execute(
+        update(t.human_session)
+        .where(
+            t.human_session.c.id_hash == row.id_hash, t.human_session.c.sign_in_complete.is_(False)
+        )
+        .values(state="full", sign_in_complete=True)
+    )
+    if done.rowcount == 1:
+        _signed_in(conn, row.human_id, row.public_id, clock.now())
+
+
+def complete_sign_in(conn: Connection, row: Any, second_factor: str | None) -> tuple[str, str]:
+    """The second step of a two-factor sign-in is done (§2.8.2): the session gets a fresh
+    cookie value and CSRF token (the fixation rule applies now, not at the first
+    factor), becomes `full`, and only now counts as a sign-in. Conditional on the row
+    still owing that step, so of two concurrent completions one wins; the other raises
+    `LookupError`."""
+    now = clock.now()
+    session_id, csrf = secrets.token_urlsafe(32), secrets.token_hex(32)
+    values: dict[str, Any] = {
+        "id_hash": session_id_hash(session_id),
+        "csrf_token": csrf,
+        "state": "full",
+        "sign_in_complete": True,
+        "last_seen_at": now,
+    }
+    if second_factor is not None:
+        values.update(second_factor=second_factor, second_factor_at=now)
+    done = conn.execute(
+        update(t.human_session)
+        .where(
+            t.human_session.c.id_hash == row.id_hash,
+            t.human_session.c.sign_in_complete.is_(False),
+            t.human_session.c.ended_at.is_(None),
+        )
+        .values(**values)
+    )
+    if done.rowcount != 1:
+        raise LookupError("the sign-in was completed or ended meanwhile")
+    _signed_in(conn, row.human_id, row.public_id, now)
+    return session_id, csrf
 
 
 # --- the device cookie (§2.6.5) ------------------------------------------------------

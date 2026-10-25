@@ -476,7 +476,10 @@ def test_only_a_session_in_good_standing_decides_or_replaces_a_held_change(
     hub = mail_env()
     human = SimpleNamespace(id=owner.id, handle="maintainer", password_hash=None)
     weak = SimpleNamespace(
-        public_id="hss-weak", method="device_code", created_at=clock.now() - timedelta(days=3)
+        public_id="hss-weak",
+        method="device_code",
+        created_at=clock.now() - timedelta(days=3),
+        second_factor=None,
     )
     with migrated.begin() as conn:
         strong = conn.execute(select(t.human_session)).first()

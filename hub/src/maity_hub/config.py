@@ -64,6 +64,9 @@ class Settings:
     # environment switches them (§2.6.6); None leaves them to the instance admin.
     sign_in_device_code: bool | None = None
     sign_in_email_link: bool | None = None
+    # MAITY_SIGN_IN_SECOND_FACTOR: off, optional or required_admins (§2.8.5); None
+    # leaves it to the instance admin.
+    sign_in_second_factor: str | None = None
 
     @property
     def join_host(self) -> str | None:
@@ -107,6 +110,7 @@ class Settings:
             mail=parse_mail(env),
             sign_in_device_code=parse_switch(env, "MAITY_SIGN_IN_DEVICE_CODE"),
             sign_in_email_link=parse_switch(env, "MAITY_SIGN_IN_EMAIL_LINK"),
+            sign_in_second_factor=parse_second_factor(env),
         )
 
 
@@ -196,6 +200,25 @@ def parse_networks(value: str) -> tuple[IPNetwork, ...]:
                 f"MAITY_TRUSTED_PROXIES: {part!r} is not an address or CIDR"
             ) from None
     return tuple(networks)
+
+
+SECOND_FACTOR_POLICIES = ("off", "optional", "required_admins")
+
+
+def parse_second_factor(env: dict[str, str]) -> str | None:
+    """Unset is None. `required_admins` without a usable instance key would hold every
+    admin at an enrolment session that can do nothing, so the hub refuses to start
+    (§2.8.1)."""
+    value = env.get("MAITY_SIGN_IN_SECOND_FACTOR", "").strip()
+    if not value:
+        return None
+    if value not in SECOND_FACTOR_POLICIES:
+        raise ConfigError(
+            f"MAITY_SIGN_IN_SECOND_FACTOR must be off, optional or required_admins, got {value!r}"
+        )
+    if value == "required_admins" and parse_secret_key(env.get("MAITY_SECRET_KEY", "")) is None:
+        raise ConfigError("MAITY_SIGN_IN_SECOND_FACTOR=required_admins needs MAITY_SECRET_KEY")
+    return value
 
 
 def parse_switch(env: dict[str, str], name: str) -> bool | None:

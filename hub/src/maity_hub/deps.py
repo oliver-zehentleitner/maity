@@ -9,6 +9,7 @@ from sqlalchemy import Connection, Engine, select
 from starlette.concurrency import run_in_threadpool
 
 from maity_hub import tables as t
+from maity_hub.auth import second_factor
 from maity_hub.auth.caller import Caller, RequestFacts, authenticate
 from maity_hub.config import Settings
 from maity_hub.db import retrying
@@ -57,10 +58,14 @@ async def _resolve(request: Request, renew_leases: bool) -> Caller:
 
     slug = request.path_params.get("slug")
     path = request.url.path
+    settings = settings_of(request)
 
     def run() -> Caller:
         with engine.begin() as conn:
             caller = authenticate(conn, facts, renew_leases=renew_leases)
+            # A session that owes the second factor or an enrolment reaches only its
+            # few calls (§2.8.2, §2.8.5), decided before any route runs.
+            second_factor.gate(conn, settings, caller, request.method, path)
             if caller.kind == "runner":
                 _confine_runner(path)
             if caller.kind == "agent" and slug is not None:

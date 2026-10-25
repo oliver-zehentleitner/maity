@@ -67,6 +67,7 @@ from maity_hub.routes import auth as auth_routes
 from maity_hub.routes import events as events_routes
 from maity_hub.routes import me as me_routes
 from maity_hub.routes import probe as probe_routes
+from maity_hub.routes import second_factor as second_factor_routes
 
 log = logging.getLogger(__name__)
 
@@ -133,6 +134,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(_api_router(), prefix=prefix)
     app.include_router(auth_routes.router, prefix=prefix)
     app.include_router(device_codes.router, prefix=prefix)
+    app.include_router(second_factor_routes.router, prefix=prefix)
     app.include_router(me_routes.router, prefix=prefix)
     app.include_router(notifications.router, prefix=prefix)
     app.include_router(notification_settings.router, prefix=prefix)
