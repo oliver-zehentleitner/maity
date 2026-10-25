@@ -12,6 +12,7 @@ from typing import Any
 
 from sqlalchemy import Connection, update
 
+from maity_hub import project_setup
 from maity_hub import tables as t
 from maity_hub.events import Actor, emit, lock_project
 
@@ -101,7 +102,7 @@ def generate(project: Any, role: str, arbiter: str) -> str:
         "",
         GROUP_CHATS,
     ]
-    if project.keep_the_why:
+    if project_setup.uses_keep_the_why(project):
         lines += ["", "## Keep the Why", "", KEEP_THE_WHY]
     if project.rules_markdown:
         lines += ["", "## From the owner", "", project.rules_markdown]

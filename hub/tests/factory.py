@@ -41,7 +41,7 @@ def project(engine: Engine, slug: str | None = None, **values: Any) -> str:
         "name": f"Project {slug or project_id}",
         "state": "build",
         "state_changed_at": clock.now(),
-        "keep_the_why": False,
+        "memory_provider": "none",
         "policy_preset": "hierarchical",
         "claim_policy": "self-claim",
         "done_authority": "reviewer",

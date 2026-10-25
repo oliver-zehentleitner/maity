@@ -144,7 +144,12 @@ project = Table(
     Column("state_changed_at", UtcDateTime, nullable=False),
     Column("repository_url", String(255)),
     Column("repository_default_branch", String(255)),
-    Column("keep_the_why", Boolean, nullable=False),
+    # Where the project's memory lives (§6.1, §6.21): `keep-the-why` or `none`. The
+    # `keep_the_why` of the API is derived from it.
+    Column("memory_provider", String(32), nullable=False, server_default="none"),
+    # The setup options chosen at creation and the setup cards made for them (§6.21);
+    # null for a project that predates them.
+    Column("setup", JSON_VALUE),
     # The policy (docs/api.md §6.1); its history is in the events.
     Column("policy_preset", String(32), nullable=False),
     Column("claim_policy", String(32), nullable=False),

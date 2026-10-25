@@ -24,6 +24,7 @@ from maity_hub import (
     memory,
     onboarding,
     preferences,
+    project_setup,
     ranks,
     rules,
     ticker,
@@ -399,15 +400,18 @@ def _packet(
             "repository": repository(project, settings),
             "policy": policy_of(project),
             "absence": absence(project),
-            "keep_the_why": project.keep_the_why,
+            "memory": project_setup.memory_view(project),
+            "keep_the_why": project_setup.uses_keep_the_why(project),
             "rules_version": project.rules_version,
         },
         "rules": rules_block,
         "preferences": preferences_block,
         "areas": areas,
         "keep_the_why": {
-            "enabled": project.keep_the_why,
-            "instruction": KEEP_THE_WHY_INSTRUCTION if project.keep_the_why else None,
+            "enabled": project_setup.uses_keep_the_why(project),
+            "instruction": (
+                KEEP_THE_WHY_INSTRUCTION if project_setup.uses_keep_the_why(project) else None
+            ),
         },
         "claims": task_views(conn, held, fg),
         "assigned": task_views(conn, assigned, fg),
@@ -420,6 +424,8 @@ def _packet(
             "truncated": truncated,
         },
         "conversations": conversation_packet(conn, mine, caller),
+        # Only while a setup card waits (§5.2, §6.21): a hint, never a gate.
+        **({"setup": waiting} if (waiting := project_setup.waiting(conn, project)) else {}),
         "peers": peers,
         "operations": operations(project, mine.role),
     }

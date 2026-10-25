@@ -22,6 +22,7 @@ from maity_hub import (
     onboarding,
     placements,
     policy,
+    project_setup,
     releases,
     rules,
     ticker,
@@ -117,14 +118,18 @@ class ProjectCreate(Strict):
     slug: str = Field(pattern=SLUG_PATTERN)
     name: str = title()
     repository: RepositoryIn | None = None
-    keep_the_why: bool = False
+    memory: Any = None  # {"provider"}, checked by project_setup for §6.21's codes
+    setup: Any = None  # the three options, checked by project_setup likewise
+    keep_the_why: bool | None = None  # the alias of memory.provider
     policy: PolicyIn | None = None
 
 
 class ProjectPatch(Strict):
     name: str | None = title(default=None)
     repository: RepositoryIn | None = None
+    memory: Any = None
     keep_the_why: bool | None = None
+    setup: Any = None  # never accepted here: read_only (§6.21)
     state: str | None = None
     state_note: str | None = markdown(default=None)
     policy: PolicyIn | None = None
@@ -271,6 +276,10 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
     def action(conn: Connection) -> idempotency.Outcome:
         if conn.execute(select(t.project.c.id).where(t.project.c.slug == body.slug)).first():
             raise invalid({"slug": "taken"}, "a project with this slug exists")
+        provider = (
+            project_setup.provider_of(body.memory, body.keep_the_why) or project_setup.KEEP_THE_WHY
+        )
+        chosen = project_setup.options(body.setup, provider)
         now = clock.now()
         project_id = new_id("project")
         filled = policy.filled("hierarchical", caller.principal_id)
@@ -281,7 +290,8 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
                 name=body.name,
                 state="build",
                 state_changed_at=now,
-                keep_the_why=body.keep_the_why,
+                memory_provider=provider,
+                setup=chosen,
                 **_repository_columns(body.repository),
                 **policy.columns(filled),
                 settings={"release_checklist": []},
@@ -328,6 +338,15 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
             actor=caller.actor(owner),
             subject=("member", caller.principal_id),
         )
+        # The setup cards, in this transaction, when the project has a repository (§6.21).
+        project_setup.make_cards(
+            conn,
+            _load(conn, project_id),
+            owner,
+            settings_of(request).public_url,
+            caller.actor(owner),
+            reader_of(request),
+        )
         project = _load(conn, project_id)
         return idempotency.Outcome(201, "project", project_id, _view(conn, project, request))
 
@@ -355,6 +374,8 @@ def patch_project(
         mine = replace(mine, project=lock_project(conn, mine.project.id))
         _refuse_for_agents(mine, body, given)
         _authorise_patch(mine, body, given)
+        if "setup" in given:
+            raise invalid({"setup": "read_only"}, "the setup is chosen when a project is created")
         project = mine.project
         actor = caller.actor(mine.id)
         owner_id = _owner_id(conn, project.id)
@@ -366,6 +387,14 @@ def patch_project(
             rules_inputs_changed = True
         if "repository" in given:
             values.update(_repository_columns(body.repository))
+        provider = project_setup.provider_of(
+            body.memory if "memory" in given else None,
+            body.keep_the_why if "keep_the_why" in given else None,
+        )
+        if provider is not None and provider != project.memory_provider:
+            # A rules input like the Keep the Why line it decides; no setup card (§6.21).
+            values["memory_provider"] = provider
+            rules_inputs_changed = True
         if "settings" in given and body.settings is not None:
             # §6.1: merged by top-level key. A key named replaces its whole value (nested
             # objects are not merged), `null` removes it so it reads as its default, and a
@@ -448,6 +477,16 @@ def patch_project(
                 ktw.CACHE.forget(project.id)
             # whether the probe can observe it changed
             releases.recheck(conn, project.id, reader_of(request))
+            if project.repository_url is None and values.get("repository_url"):
+                # The repository is first set: the setup cards chosen at creation (§6.21).
+                project_setup.make_cards(
+                    conn,
+                    _load(conn, project.id),
+                    mine.id,
+                    settings_of(request).public_url,
+                    actor,
+                    reader_of(request),
+                )
         if state_changes:
             now = clock.now()
             conn.execute(
@@ -519,15 +558,15 @@ def patch_project(
                     body.absence.until if body.absence else None,
                     actor,
                 )
-        for name in ("rules_markdown", "keep_the_why"):
+        for name in ("rules_markdown",):
             new_value = getattr(body, name)
             if name in given and new_value is not None and new_value != getattr(project, name):
                 conn.execute(
                     update(t.project).where(t.project.c.id == project.id).values({name: new_value})
                 )
                 rules_inputs_changed = True
-        # The name, a note without a state change, the owner's text and the Keep the
-        # Why line are rules inputs without an event of their own: one rules_changed.
+        # The name, a note without a state change, the owner's text and the memory
+        # provider are rules inputs without an event of their own: one rules_changed.
         if rules_inputs_changed:
             payload = {"reason": body.reason} if body.reason else {}
             rules.bump(conn, project, "rules_changed", BROADCAST, payload, actor=actor)

@@ -8,7 +8,16 @@ from typing import Any
 
 from sqlalchemy import Connection, func, select
 
-from maity_hub import availability, avatars, clock, forge, onboarding, policy, ticker_read
+from maity_hub import (
+    availability,
+    avatars,
+    clock,
+    forge,
+    onboarding,
+    policy,
+    project_setup,
+    ticker_read,
+)
 from maity_hub import tables as t
 from maity_hub.config import Settings
 
@@ -97,7 +106,9 @@ def project_view(
         "repository": repository(project, settings),
         "logo": shown.get("logo", NO_IMAGE),
         "banner": shown.get("banner", NO_IMAGE),
-        "keep_the_why": project.keep_the_why,
+        "memory": project_setup.memory_view(project),
+        "keep_the_why": project_setup.uses_keep_the_why(project),  # the alias (§6.1)
+        "setup": project.setup,
         "keep_the_why_export": export,
         "policy": policy.of(project),
         "absence": absence(project),
