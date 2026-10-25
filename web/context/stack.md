@@ -152,10 +152,11 @@ the stack entries exclude.
 **Status:** active
 **Evidence:** confirmed
 **Source:** docs/api.md §2.6.7 ("made in the dashboard's own code, no third-party script", §1.1); the maintainer's wish for mobile sign-in by QR, 2026-10-23 (tsk-4nce5jy2axzp); the dashboard's implementation and its check against segno 1.6.6, 2026-10-25
-**Revisit when:** the dashboard needs QR codes for anything longer than about 200 bytes, or another mode than bytes
+**Revisit when:** the dashboard needs QR codes in another mode than bytes, or at another error correction level
 
-`js/qr.js` encodes byte mode at error correction level M, versions 1
-to 10, with the eight masks scored by the four penalty rules of ISO/IEC
+`js/qr.js` encodes byte mode at error correction level M, every version
+from 1 to 40 (up to 2331 bytes, so any public URL a hub may have fits),
+with the eight masks scored by the four penalty rules of ISO/IEC
 18004, and draws one SVG path of dark modules on a white ground in a
 four-module quiet zone, dark on light in either theme. It was checked
 module for module against segno, an independent encoder, for 117
@@ -163,12 +164,16 @@ symbols: five texts, versions picked and forced (7 and 10 carry version
 information), each mask, and the mask chosen automatically. segno pads
 an already byte-aligned stream with eight more zero bits, which the
 standard does not ask for; with that one step set to the standard, every
-symbol matched. A smoke check keeps one symbol as a fixed hash, so a
-change to the encoder shows.
+symbol matched. A second run covered every version from 1 to 40, forced
+with two masks each, and long texts up to the 2331-byte limit with the
+mask chosen: 85 symbols, all equal. A smoke check keeps one symbol as a
+fixed hash, so a change to the encoder shows. A URL no QR can hold leaves
+the code and Cancel on the page without the QR.
 
 **Reason:** the contract rules out a third-party script, and a sign-in
-URL needs only the smallest part of QR: bytes, one error correction
-level, small versions. The bit-exact comparison is what makes a
+URL needs only a small part of QR: bytes and one error correction
+level. All forty versions cost two tables, and a public host may have a
+long name. The bit-exact comparison is what makes a
 hand-written encoder trustworthy without a scanner in CI.
 
 **Rejected alternative:** a QR library vendored into `web/`: third-party
