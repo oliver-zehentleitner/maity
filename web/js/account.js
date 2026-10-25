@@ -96,6 +96,8 @@ window.Maity = window.Maity || {};
   let pictureNote = null;
 
   M.views.account = async function (ctx, root, args) {
+    // #/account/sign-in-device (the profile menu's Sign in another device).
+    if (args && args[0] === "sign-in-device" && M.deviceSignIn) { await M.deviceSignIn.anotherDevice(ctx, root); return; }
     const field = (id, label, autocomplete, hint) => {
       const input = h("input", { id, type: "password", autocomplete, required: true, "aria-describedby": id + "-error" });
       const error = h("p", { class: "field-error", id: id + "-error", role: "alert" });

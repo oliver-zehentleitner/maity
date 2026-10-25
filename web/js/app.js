@@ -163,7 +163,10 @@ window.Maity = window.Maity || {};
     h("label", { for: "login-password" }, "Password"), password,
     h("button", { type: "submit" }, "Sign in"),
     status.el);
-    append(clear(main), form);
+    // A code from another device or a link by mail, as the hub offers them
+    // (js/device-sign-in.js), on this page's own timers.
+    append(clear(main), form,
+      M.deviceSignIn ? M.deviceSignIn.loginOptions((ms, fn) => { timers.push(window.setInterval(fn, ms)); }, () => render()) : null);
   }
 
   async function logout() {
@@ -826,6 +829,9 @@ window.Maity = window.Maity || {};
         },
       })),
     }) : null;
+    // Sign in another device (§2.6.2) where the hub's machine form has it.
+    let deviceCodes = false;
+    M.api.hubHas("POST", "/auth/device-codes").then((yes) => { deviceCodes = yes; }, () => {});
     // The human: their picture, the account, signing out.
     const profile = M.menuButton({
       label: "Your profile: " + ctx.me.display_name,
@@ -835,11 +841,12 @@ window.Maity = window.Maity || {};
         { label: "Profile", href: "#/account" },
         { label: "Picture", href: "#/account/picture" },
         { label: "Preferences", href: "#/account/preferences" },
+        deviceCodes ? { label: "Sign in another device", href: "#/account/sign-in-device" } : null,
         { label: "Change password", href: "#/account" },
         { label: "Linked accounts", disabled: true, why: "later" },
         { separator: true },
         { label: "Sign out", onSelect: logout },
-      ],
+      ].filter(Boolean),
     });
     append(header,
       h("div", { class: "bar" },

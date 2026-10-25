@@ -144,3 +144,40 @@ the stack entries exclude.
   relaxing the CSP for the test would test a different page.
 - `bypass_csp` in the browser context, to inject a script tag: the same
   objection, a page the hub does not serve.
+
+## The QR code of a device-code URL is made by the dashboard's own encoder, checked against an independent one
+
+**Id:** 0cbdffd3-1a72-4c65-af3a-cf3cbc2ddb0e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §2.6.7 ("made in the dashboard's own code, no third-party script", §1.1); the maintainer's wish for mobile sign-in by QR, 2026-10-23 (tsk-4nce5jy2axzp); the dashboard's implementation and its check against segno 1.6.6, 2026-10-25
+**Revisit when:** the dashboard needs QR codes in another mode than bytes, or at another error correction level
+
+`js/qr.js` encodes byte mode at error correction level M, every version
+from 1 to 40 (up to 2331 bytes, so any public URL a hub may have fits),
+with the eight masks scored by the four penalty rules of ISO/IEC
+18004, and draws one SVG path of dark modules on a white ground in a
+four-module quiet zone, dark on light in either theme. It was checked
+module for module against segno, an independent encoder, for 117
+symbols: five texts, versions picked and forced (7 and 10 carry version
+information), each mask, and the mask chosen automatically. segno pads
+an already byte-aligned stream with eight more zero bits, which the
+standard does not ask for; with that one step set to the standard, every
+symbol matched. A second run covered every version from 1 to 40, forced
+with two masks each, and long texts up to the 2331-byte limit with the
+mask chosen: 85 symbols, all equal. A smoke check keeps one symbol as a
+fixed hash, so a change to the encoder shows. A URL no QR can hold leaves
+the code and Cancel on the page without the QR.
+
+**Reason:** the contract rules out a third-party script, and a sign-in
+URL needs only a small part of QR: bytes and one error correction
+level. All forty versions cost two tables, and a public host may have a
+long name. The bit-exact comparison is what makes a
+hand-written encoder trustworthy without a scanner in CI.
+
+**Rejected alternative:** a QR library vendored into `web/`: third-party
+code in the page the contract keeps it out of. A QR image made by the
+hub: a server-side dependency and a second request for what the page can
+draw. Only the code, no QR: the maintainer asked for sign-in on the phone
+by scanning.
