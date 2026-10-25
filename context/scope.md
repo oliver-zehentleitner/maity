@@ -278,9 +278,6 @@ party to the agent's provider.
 ## Maity is not a project memory: persistent project knowledge lives with an external provider, Keep the Why being the first
 
 **Id:** e22af31b-98cc-43f9-95bb-70a66067bdf3
-## The hosted offering runs no agent workloads: runners stay on the members' machines
-
-**Id:** df759e0f-d23b-4ff6-82c8-540406c3f409
 **Type:** constraint
 **Status:** active
 **Evidence:** confirmed
@@ -308,6 +305,14 @@ system; naming the provider as a choice keeps the hub a switchboard.
   shape it; the maintainer chose to wait for one.
 - Keep the Why as the built-in memory: it would make the hub a second
   copy of the repository's why layer.
+
+## The hosted offering runs no agent workloads: runners stay on the members' machines
+
+**Id:** df759e0f-d23b-4ff6-82c8-540406c3f409
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision in the inbox, 2026-10-25
 **Revisit when:** the per-member cost model of the hosted offering changes, or a customer asks for hub-side execution and is willing to carry its cost as a separate plan
 **See:** scope.md#a-runner-the-operator-runs-may-start-agents-the-hub-still-never-does — 6f8d6d1b-31fa-408c-be43-f0da404084bb — as of 2026-10-25
 **See:** scope.md#one-codebase-three-ways-to-run-it-alone-at-home-a-teams-own-instance-and-an-open-hosted-instance-with-paid-plans — 930cc491-24f2-4dbe-94b6-b5b49e7e2fb2 — as of 2026-10-25
