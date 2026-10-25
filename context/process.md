@@ -200,9 +200,9 @@ run names.
 **Id:** e534e9f3-a419-4a09-8054-117150592490
 **Type:** decision
 **Status:** active
-**Evidence:** inferred
-**Source:** the maintainer's rule, 2026-10-25, relayed by the coordinator
-**Revisit when:** the gate keeps blocking pull requests whose decisions are already recorded elsewhere, or an agent role appears that neither implements nor reviews nor relays rulings
+**Evidence:** confirmed
+**Source:** the maintainer's rule and reason, 2026-10-25, relayed by the coordinator
+**Revisit when:** the hub enforces the why reference on code reports — then this team rule gives way to the hub's policy
 
 Every agent building Maity works with Keep the Why. An implementer
 writes a `context/` entry for each decision a pull request makes, in
@@ -213,11 +213,12 @@ neither code nor reviews — one that rules on a question, for instance —
 has its rulings recorded by the implementer of the change they decide,
 not in a pull request of its own.
 
-**Reason:** the rule itself is the maintainer's (confirmed); why it is
-needed now is inferred. Decisions settled in review rulings and chat
-were reaching `context/` only when a reviewer happened to ask for the
-entry, so whether the why survived depended on who reviewed. Making the
-entry part of the change and the gate part of every review takes that
-chance out.
+**Reason:** Keep the Why is part of the project, so every agent building
+it uses it. The team rule is the interim: it holds until the hub
+guarantees the same as a system.
 
-**Rejected alternatives:** unknown — none were named with the rule.
+**Alternatives:**
+- The hub enforces it — a why reference required on code reports, set
+  by policy per project. Chosen as the follow-up, not instead: its
+  contract is still a proposal with the maintainer, and until it is
+  built the rule and the review gate carry it.
