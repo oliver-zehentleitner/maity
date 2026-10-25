@@ -161,6 +161,17 @@ button.small { padding: 2px 8px; font-size: 0.82rem; }
 .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 /* The page's one h1: the product name, at the size of the header line. */
 .brand { font-weight: 700; font-size: inherit; margin: 0; }
+/* The lockup, 28 px tall; the dark file where the page is dark (as the tokens above decide). */
+.brand-lockup { display: block; height: 28px; width: auto; }
+.brand-lockup.brand-dark { display: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .brand-lockup.brand-light { display: none; }
+  :root:not([data-theme="light"]) .brand-lockup.brand-dark { display: block; }
+}
+:root[data-theme="dark"] .brand-lockup.brand-light { display: none; }
+:root[data-theme="dark"] .brand-lockup.brand-dark { display: block; }
+/* Before the first view: the loader (web/brand/loader.css) and its word. */
+.page-loading { display: flex; align-items: center; gap: 8px; color: var(--muted); margin: 24px 0; }
 .me { margin-inline-start: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 0.88rem; }
 .project { color: var(--muted); }
 
