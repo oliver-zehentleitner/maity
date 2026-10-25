@@ -239,7 +239,7 @@ def test_done_gate_unions_children_and_dependencies_and_deduplicates(owner: flow
 
 
 def test_migration_preserves_existing_projects_with_proposed_policy(engine: Engine) -> None:
-    db.migrate(engine, "0046")
+    db.migrate(engine, "0027")
     project_id = factory.project(engine)
     human_id = factory.human(engine)
     membership_id = factory.membership(engine, project_id, human_id=human_id)

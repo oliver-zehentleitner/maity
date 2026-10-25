@@ -1,7 +1,7 @@
 """Subtasks, related cards and the subtask proposal policy (§6.4).
 
 Revision ID: 0048
-Revises: 0046
+Revises: 0027
 Create Date: 2026-10-25
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0048"
-down_revision: str | None = "0046"
+down_revision: str | None = "0027"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
