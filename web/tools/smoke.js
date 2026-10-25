@@ -1822,9 +1822,55 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/tasks/tsk-0004"); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
   const idCard = main.querySelectorAll("article.card").find((a) => a.attrs["data-card"] === "tsk-0004");
   const boardTab = () => header.querySelectorAll("nav.views a").find((a) => a.textContent.startsWith("Board"));
-  expect(idCard && idCard.classList.contains("wanted") && main.querySelectorAll("article.card.wanted").length === 1 && document.activeElement === idCard
+  const cpPanel = () => main.querySelector("aside.card-panel");
+  expect(idCard && idCard.classList.contains("wanted") && main.querySelectorAll("article.card.wanted").length === 1
+    && cpPanel() && document.activeElement === byId("card-panel-title") && text(byId("card-panel-title")) === "tsk-0004"
     && boardTab().getAttribute("aria-current") === "page" && main.querySelector("section.view-board"),
-    "ids: a card's link opens the board with that card marked and focused, the Board tab current");
+    "ids: a card's link opens the card's panel on the board, the card marked there, the Board tab current");
+  // The opened card (js/card-panel.js): the card with its controls, the body, the open notes with a form, the history.
+  await go("#/p/maity/board"); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  const cpCard = () => main.querySelector(".columns").querySelectorAll("article.card").find((a) => a.attrs["data-card"] === "tsk-0001");
+  expect(!cpPanel() && main.querySelectorAll("article.card.wanted").length === 1 && document.activeElement === main.querySelectorAll("article.card.wanted")[0].querySelector("a.card-open"),
+    "card panel: back on the board, the card that was open is marked and its title focused");
+  const cpLink = cpCard().querySelector("a.card-open");
+  expect(cpLink && cpLink.getAttribute("href") === "#/p/maity/tasks/tsk-0001" && text(cpLink) === "API contract: docs/api.md", "card panel: a card's title is the link that opens it");
+  const cpGets = [], cpPosts = [];
+  const cpGet = win.Maity.api.get, cpGetAll = win.Maity.api.getAll, cpPost = win.Maity.api.post;
+  win.Maity.api.get = (p) => { if (p.includes("/tasks/tsk-0001/")) cpGets.push(p); return cpGet(p); };
+  win.Maity.api.getAll = (p) => { if (p.includes("/tasks/tsk-0001/")) cpGets.push(p); return cpGetAll(p); };
+  win.Maity.api.post = (p, b) => { if (p.includes("/notes")) cpPosts.push([p, b]); return cpPost(p, b); };
+  await go(cpLink.getAttribute("href")); for (let k = 0; k < 6; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  const cpNotes = () => cpPanel().querySelectorAll(".card-note-list li").map((li) => text(li));
+  expect(cpPanel() && cpPanel().querySelector(".card-panel-card article.card") && cpPanel().querySelector(".card-panel-card article.card .card-actions")
+    && !cpPanel().querySelector(".card-panel-card a.card-open") && !cpPanel().querySelector(".card-panel-card article.card").getAttribute("draggable")
+    && text(cpPanel().querySelector(".card-body")) === "The REST contract hub, CLI and dashboard build against."
+    && JSON.stringify(cpNotes()) === JSON.stringify(["@agent-c · " + win.Maity.dom.formatTime("2026-10-21T10:30:00Z") + "The CLI needs --no-code here too."])
+    && cpGets.includes("/projects/maity/tasks/tsk-0001/notes?state=open"),
+    "card panel: the card with its controls (no link to itself, not dragged), the body as Markdown, the open notes only " + JSON.stringify(cpNotes()));
+  const cpHist = cpPanel().querySelectorAll(".card-history-list li").map((li) => text(li));
+  expect(cpHist.length === 3 && cpHist[0].startsWith("@maintainer changed the description") && cpPanel().querySelector("pre.history-diff").textContent.includes("+The REST contract hub")
+    && cpHist[1].startsWith("@maintainer changed the label: fix → feature") && cpHist[2].startsWith("@agent-a created the card"),
+    "card panel: the history, newest first, a description's change as its diff " + JSON.stringify(cpHist));
+  byId("card-note-body").value = "  "; cpPanel().querySelector("form.card-note-form").dispatch("submit"); await tick();
+  expect(!cpPosts.length, "card panel: an empty note is not sent");
+  byId("card-note-body").value = "Check §6.16 too."; cpPanel().querySelector("form.card-note-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(cpPosts[0]) === JSON.stringify(["/projects/maity/tasks/tsk-0001/notes", { body: "Check §6.16 too." }])
+    && cpNotes().length === 2 && cpNotes()[1].startsWith("@maintainer") && document.activeElement === byId("card-note-body") && byId("card-note-body").value === "",
+    "card panel: a note is posted and listed, the form ready for the next");
+  // Escape closes, as Close does: the board again, the card marked, its title focused.
+  cpPanel().dispatch("keydown", { key: "Escape" }); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  expect(win.location.hash === "#/p/maity/board" && !cpPanel() && cpCard().classList.contains("wanted") && document.activeElement === cpCard().querySelector("a.card-open"),
+    "card panel: Escape goes back to the board, the card marked and its title focused");
+  await go("#/p/maity/tasks/tsk-0001"); for (let k = 0; k < 6; k++) await tick();
+  btn(cpPanel(), "Close").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(win.location.hash === "#/p/maity/board" && !cpPanel(), "card panel: Close goes back to the board");
+  // A hub without notes or history says so in the panel, nothing asked.
+  win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.resolve({ paths: {} }) : cpGet(p));
+  win.Maity.api.forgetRoutes(); cpGets.length = 0;
+  await go("#/p/maity/tasks/tsk-0001"); for (let k = 0; k < 6; k++) await tick();
+  expect(cpPanel() && text(cpPanel()).includes("This hub has no notes yet.") && text(cpPanel()).includes("This hub has no card history yet.") && !cpGets.length,
+    "card panel: a hub without notes or history says so and is not asked");
+  win.Maity.api.get = cpGet; win.Maity.api.getAll = cpGetAll; win.Maity.api.post = cpPost; win.Maity.api.forgetRoutes();
   await go("#/p/maity/tasks/tsk-zzzzzzzzzzzz"); for (let k = 0; k < 4; k++) await tick();
   expect(!main.querySelector("article.card.wanted") && text(main.querySelector(".wanted-note")).startsWith("No card tsk-zzzzzzzzzzzz on the board"),
     "ids: a card the board does not hold is said");

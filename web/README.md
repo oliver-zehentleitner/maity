@@ -205,11 +205,20 @@ too.
    **Merge by hand** or Decline. A conflict while you look shows the review
    again against the newer version. Once answered, the entry says which
    version it became and whether it was edited.
-2. **Board** (`#/p/<slug>/board`; `#/p/<slug>/tasks/<id>` is the board
-   with that card marked and focused): cards by status (`proposed` to
+2. **Board** (`#/p/<slug>/board`; `#/p/<slug>/tasks/<id>` opens that
+   card, below): cards by status (`proposed` to
    `cancelled`, closed ones of the last 14 days), with claim holder,
    lease and expiry, assignment, dependencies and ships-with, checkpoint
-   and report; context rounds are marked, contract cards show their
+   and report. A card's title opens it (`js/card-panel.js`): a panel beside
+   the columns, on a phone full width above them, with the card and its
+   controls, the description as Markdown, its links, the open notes
+   (`GET …/tasks/{id}/notes?state=open`) with **Post the note** (`POST
+   …/notes`) and the history (`GET …/tasks/{id}/history`, newest first,
+   a title's or description's change as its diff); a hub without notes or
+   history says so there. **Close**, Escape and Back go to the board with
+   the card marked and its title focused. A card the board does not hold
+   (closed earlier) is read by itself (`GET …/tasks/{id}`) and opened;
+   one there is not is said. Context rounds are marked, contract cards show their
    state, arbiter and watchers, and **Contract section** (`js/contract-panel.js`,
    `docs/api.md` §6.8): folded until opened, then the section the card
    names, read by the hub from the repository (`GET …/tasks/{id}/contract`)
@@ -1209,6 +1218,7 @@ web/
 ├── js/inbox.js       (1) inbox, per project and across all
 ├── js/board-edit.js  managing cards: new card, the allowed moves, assign
 ├── js/board.js       (2) board
+├── js/card-panel.js  an opened card: body, links, notes, history
 ├── js/agents.js      (3) agents and presence
 ├── js/members.js     (4) members: humans and agents, managed by an admin
 ├── js/org.js         (5) organisation tree

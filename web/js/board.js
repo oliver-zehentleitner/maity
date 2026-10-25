@@ -378,14 +378,16 @@ window.Maity = window.Maity || {};
     return shown.length ? h("div", { class: "card-actions" }, shown) : null;
   }
 
-  function card(ctx, c, byId, manage) {
+  // inPanel: drawn in the opened card's panel (js/card-panel.js): the
+  // title is no link to itself and the card is not dragged from there.
+  function card(ctx, c, byId, manage, inPanel) {
     const frozen = c.kind === "release" && (c.status === "done" || c.status === "cancelled");
     // The hub's answer to an edit replaces this card in place.
     // focusId names the control to focus in the new card (the box just
     // ticked, the button that opened an editor), so the focus is not lost.
     const redraw = (updated, focusId) => {
       byId[updated.id] = updated;
-      const fresh = card(ctx, updated, byId, manage);
+      const fresh = card(ctx, updated, byId, manage, inPanel);
       el.parentNode.insertBefore(fresh, el);
       el.remove();
       const target = focusId && document.getElementById(focusId);
@@ -394,15 +396,16 @@ window.Maity = window.Maity || {};
     const E = M.boardEdit;
     // Movable to another column, or within its own by tasks:admin.
     const movable = manage && (E.targets(ctx, c).length > 0 || E.orderable(ctx, c));
+    const draggable = movable && !inPanel;
     const el = h("article", {
-      class: "card card-" + c.kind + (movable ? " movable" : ""),
+      class: "card card-" + c.kind + (draggable ? " movable" : ""),
       "aria-label": c.title,
       "data-card": c.id,
       // A pointer may drag it to a column it may move to; the Move menu
       // below does the same for the keyboard and on a phone.
-      draggable: movable ? "true" : null,
-      ondragstart: movable ? (e) => manage.drag.start(e, c) : null,
-      ondragend: movable ? () => manage.drag.end() : null,
+      draggable: draggable ? "true" : null,
+      ondragstart: draggable ? (e) => manage.drag.start(e, c) : null,
+      ondragend: draggable ? () => manage.drag.end() : null,
     },
       h("header", null,
         h("span", { class: "card-id" }, c.id),
@@ -415,7 +418,8 @@ window.Maity = window.Maity || {};
         c.label ? h("span", { class: "label-tag" }, c.label) : null,
         c.area ? h("span", { class: "area" }, c.area) : null,
         assignee(ctx, c)),
-      h("h3", null, M.ids.link(c.title, M.ids.where(ctx))),
+      // The title opens the card; ids in it are links in the panel's text.
+      h("h3", null, inPanel ? M.ids.link(c.title, M.ids.where(ctx)) : h("a", { class: "card-open", href: ctx.link("tasks", c.id) }, c.title)),
       claimLine(ctx, c),
       edges(c.kind === "release" ? "Ships" : "Depends on", c.depends_on, byId, frozen),
       edges("Ships with", c.ships_with, byId),
@@ -439,11 +443,18 @@ window.Maity = window.Maity || {};
     return el;
   }
 
-  // args[0]: a card to show (#/p/<slug>/tasks/<id>, an id's link,
-  // js/ids.js): marked on the board and focused; one the board does not
-  // hold is said, nothing is looked up.
+  // The card whose panel was open last, so that the board it goes back to
+  // (Close, Escape, Back) marks it and focuses its title.
+  let lastOpened = null;
+
+  // args[0]: a card to open (#/p/<slug>/tasks/<id>, a title's or an id's
+  // link, js/ids.js): its panel, and the card marked on the board; one the
+  // board does not hold is read by itself, and said when there is none.
   M.views.board = async function (ctx, root, args) {
     const wanted = (args && args[0]) || null;
+    const returning = !wanted && lastOpened && lastOpened.slug === ctx.slug ? lastOpened.id : null;
+    lastOpened = null;
+    const marked = wanted || returning;
     ctx.canRelease = RELEASERS.has(ctx.role);
     const E = M.boardEdit;
     const since = new Date(Date.now() - CLOSED_WINDOW_DAYS * 86400000).toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -471,7 +482,7 @@ window.Maity = window.Maity || {};
     let rememberedColumn = "";
     try { rememberedColumn = window.localStorage.getItem(columnKey) || ""; } catch (err) { rememberedColumn = ""; }
     if (!COLUMN_GROUPS.some(([v]) => v === rememberedColumn)) rememberedColumn = "";
-    const filter = { member: "", area: "", silent: false, column: wanted ? "" : rememberedColumn };
+    const filter = { member: "", area: "", silent: false, column: marked ? "" : rememberedColumn };
 
     // Focus survives a redraw by key (data-focus), as on the Members view.
     // A card that left the view (closed and moved out, or filtered away)
@@ -647,6 +658,17 @@ window.Maity = window.Maity || {};
     }
 
     let byId = {};
+    // The opened card's panel (js/card-panel.js), beside or above the columns.
+    let panel = null;
+    const boardBody = h("div", { class: "board-body" }, columnsBox);
+    function openPanel(c) {
+      lastOpened = { slug: ctx.slug, id: c.id };
+      panel = M.cardPanel.render(ctx, c, card(ctx, c, byId, manage, true), () => window.location.replace(ctx.link("board")));
+      boardBody.className = "board-body has-panel";
+      append(boardBody, panel.el);
+      window.setTimeout(() => panel.focus(), 0);
+    }
+
     function shown(c) {
       if (!inGroup(filter.column, c.status)) return false;
       if (filter.member && !(c.assigned_to === filter.member || (c.claim && c.claim.holder === filter.member))) return false;
@@ -682,8 +704,9 @@ window.Maity = window.Maity || {};
             h("h3", { class: "column-head" }, "Unknown status"),
             other.map((c) => card(ctx, c, byId, manage)))
           : null);
-      if (wanted) {
-        const el = Array.from(columnsBox.querySelectorAll("article.card")).find((a) => a.getAttribute("data-card") === wanted);
+      if (panel && byId[panel.id]) panel.update(card(ctx, byId[panel.id], byId, manage, true));
+      if (marked) {
+        const el = Array.from(columnsBox.querySelectorAll("article.card")).find((a) => a.getAttribute("data-card") === marked);
         if (el) { el.className += " wanted"; el.setAttribute("tabindex", "-1"); }
         return el || null;
       }
@@ -791,9 +814,14 @@ window.Maity = window.Maity || {};
         h("label", { for: "board-member" }, "Member (assigned or holding)"), memberSel,
         h("label", { for: "board-area" }, "Area"), areaSel,
         silentOnly ? h("label", { class: "check", for: "board-silent" }, silentOnly, " Held by a silent agent") : null),
-      searchStatus, formBox, status.el, intro, wantedNote, columnsBox);
-    const wantedCard = draw();
-    if (wantedCard) window.setTimeout(() => wantedCard.focus(), 0);
+      searchStatus, formBox, status.el, intro, wantedNote, boardBody);
+    const markedCard = draw();
+    const opened = wanted ? byId[wanted] || await M.api.get(cardPath({ id: wanted })).catch(() => null) : null;
+    if (opened) openPanel(opened);
+    else if (markedCard && returning) {
+      const title = markedCard.querySelector("a.card-open");
+      window.setTimeout(() => (title || markedCard).focus(), 0);
+    } else if (markedCard) window.setTimeout(() => markedCard.focus(), 0);
     else if (wanted) {
       wantedNote.textContent = "No card " + wanted + " on the board: it is neither open nor closed within the last "
         + CLOSED_WINDOW_DAYS + " days, or there is no such card. Search all cards finds a closed one.";

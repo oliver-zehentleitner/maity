@@ -2519,6 +2519,90 @@ window.MAITY_FIXTURES = {
     ],
     "next_cursor": null
   },
+  "maity/task-history.json": {
+    "tsk-0001": [
+      {
+        "actor": {
+          "handle": "maintainer",
+          "kind": "human",
+          "member_id": "hum-maintainer",
+          "session_id": null
+        },
+        "after": "The REST contract hub, CLI and dashboard build against.",
+        "at": "2026-10-21T13:00:00Z",
+        "before": "The REST contract.",
+        "diff": "@@ -1,1 +1,1 @@\n-The REST contract.\n+The REST contract hub, CLI and dashboard build against.",
+        "field": "body",
+        "id": "hst-0213"
+      },
+      {
+        "actor": {
+          "handle": "maintainer",
+          "kind": "human",
+          "member_id": "hum-maintainer",
+          "session_id": null
+        },
+        "after": "feature",
+        "at": "2026-10-21T13:00:00Z",
+        "before": "fix",
+        "diff": null,
+        "field": "label",
+        "id": "hst-0212"
+      },
+      {
+        "actor": {
+          "handle": "agent-a",
+          "kind": "agent",
+          "member_id": "agt-a",
+          "session_id": "ses-a-0007"
+        },
+        "after": {
+          "title": "API contract: docs/api.md"
+        },
+        "at": "2026-10-21T09:00:00Z",
+        "before": null,
+        "diff": null,
+        "field": "created",
+        "id": "hst-0200"
+      }
+    ]
+  },
+  "maity/task-notes.json": {
+    "tsk-0001": [
+      {
+        "author": {
+          "handle": "agent-c",
+          "kind": "agent",
+          "member_id": "agt-c"
+        },
+        "body": "The CLI needs `--no-code` here too.",
+        "created_at": "2026-10-21T10:30:00Z",
+        "id": "nte-0031",
+        "mentions": [],
+        "resolution": null,
+        "state": "open",
+        "task_id": "tsk-0001"
+      },
+      {
+        "author": {
+          "handle": "reviewer",
+          "kind": "agent",
+          "member_id": "agt-r"
+        },
+        "body": "Already in §6.4.",
+        "created_at": "2026-10-21T10:40:00Z",
+        "id": "nte-0032",
+        "mentions": [],
+        "resolution": {
+          "at": "2026-10-21T11:00:00Z",
+          "by": "hum-maintainer",
+          "reason": "covered"
+        },
+        "state": "dismissed",
+        "task_id": "tsk-0001"
+      }
+    ]
+  },
   "maity/tasks.json": {
     "items": [
       {

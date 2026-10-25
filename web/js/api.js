@@ -1321,6 +1321,8 @@ window.Maity = window.Maity || {};
       "/api/v1/requests/{request_id}/withdraw": { post: {} },
       "/api/v1/projects": { get: {}, post: { requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/ProjectCreate" } } } } } },
       "/api/v1/projects/{slug}/tasks/{task_id}/contract": { get: {} },
+      "/api/v1/projects/{slug}/tasks/{task_id}/notes": { get: {}, post: {} },
+      "/api/v1/projects/{slug}/tasks/{task_id}/history": { get: {} },
       "/api/v1/projects/{slug}/placements": { get: {}, post: {} },
     },
     components: { schemas: { ProjectCreate: { properties: {
@@ -1547,6 +1549,41 @@ window.Maity = window.Maity || {};
         }).filter((card) => card.match.length);
       }
       return { items, next_cursor: null };
+    }],
+    // One card (§6), its notes (§6.16, fixtures/<slug>/task-notes.json) and
+    // its history (§6.15, fixtures/<slug>/task-history.json), newest first.
+    ["GET", /^\/projects\/([^/]+)\/tasks\/([^/]+)$/, (m, body, path) => {
+      const card = file(m[1], "tasks.json", path).items.find((c) => c.id === m[2]);
+      if (!card) fail(404, "not_found", "Not found", path);
+      return card;
+    }],
+    ["GET", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/notes$/, (m, body, path, query) => {
+      if (!file(m[1], "tasks.json", path).items.some((c) => c.id === m[2])) fail(404, "not_found", "Not found", path);
+      const all = (fixtures()[m[1] + "/task-notes.json"] || {})[m[2]] || [];
+      const states = (query.get("state") || "open").split(",");
+      return { items: states.includes("all") ? all : all.filter((n) => states.includes(n.state)), next_cursor: null };
+    }],
+    ["POST", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/notes$/, (m, body, path) => {
+      const card = file(m[1], "tasks.json", path).items.find((c) => c.id === m[2]);
+      if (!card) fail(404, "not_found", "Not found", path);
+      if (["accepted", "archived"].includes(project(m[1], path).state)) fail(409, "project_closed", "the project is closed", path);
+      const text = String(body.body || "");
+      if (!text.trim()) fail(400, "invalid", "body: missing", path, { fields: { body: "missing" } });
+      if (utf8Bytes(text) > 4096) fail(400, "invalid", "body: too_long", path, { fields: { body: "too_long" } });
+      const data = fixtures();
+      const key = m[1] + "/task-notes.json";
+      if (!data[key]) data[key] = {};
+      const list = data[key][m[2]] || (data[key][m[2]] = []);
+      const who = me().member;
+      const note = { id: "nte-f" + String(list.length + 1).padStart(3, "0"), task_id: m[2],
+        author: { member_id: who.id, handle: who.handle, kind: who.kind }, body: text, mentions: [], state: "open", resolution: null, created_at: nowIso() };
+      list.push(note);
+      card.notes = { open: list.filter((n) => n.state === "open").length, total: list.length };
+      return note;
+    }],
+    ["GET", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/history$/, (m, body, path) => {
+      if (!file(m[1], "tasks.json", path).items.some((c) => c.id === m[2])) fail(404, "not_found", "Not found", path);
+      return { items: (fixtures()[m[1] + "/task-history.json"] || {})[m[2]] || [], next_cursor: null };
     }],
     // Release edits (docs/api.md §6.7). Readiness stays as the fixture has
     // it: computing it is the hub's, never the page's.
