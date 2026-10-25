@@ -1272,8 +1272,12 @@ window.MAITY_FIXTURES = {
       "etag": "\"f-logo-1\"",
       "source": "forge"
     },
+    "memory": {
+      "provider": "keep-the-why"
+    },
     "name": "Maity",
     "policy": {
+      "badge": "off",
       "claim_policy": "self-claim",
       "contract_arbiter": "agt-a",
       "done_authority": "reviewer",
@@ -1299,6 +1303,7 @@ window.MAITY_FIXTURES = {
         "live version equals the tag"
       ]
     },
+    "setup": null,
     "slug": "maity",
     "state": "build",
     "state_changed_at": "2026-10-21T09:00:00Z",
@@ -3216,8 +3221,12 @@ window.MAITY_FIXTURES = {
       "available": false,
       "source": null
     },
+    "memory": {
+      "provider": "none"
+    },
     "name": "Sample shop",
     "policy": {
+      "badge": "members",
       "claim_policy": "self-claim",
       "contract_arbiter": "hum-maintainer",
       "done_authority": "holder",
@@ -3238,6 +3247,12 @@ window.MAITY_FIXTURES = {
         "CHANGELOG has a section for this version",
         "live version equals the tag"
       ]
+    },
+    "setup": {
+      "cards": [],
+      "keep_the_why_badge": false,
+      "keep_the_why_init": false,
+      "maity_badge": false
     },
     "slug": "sample",
     "state": "freeze",

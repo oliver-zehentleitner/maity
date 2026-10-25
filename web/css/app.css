@@ -372,6 +372,7 @@ a.id-ref { font-family: var(--mono); font-size: 0.92em; white-space: nowrap; }
 .card-release { border-left: 3px solid var(--accent); }
 .badge.release { color: var(--accent); }
 .badge.contract { color: var(--warn); }
+.badge.setup { color: var(--muted); }
 .badge.maintenance_round { color: var(--muted); }
 .expired { color: var(--bad); }
 .checkpoint, .report { margin-top: 6px; font-size: 0.88rem; }
@@ -973,3 +974,13 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .pref-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .owner-preferences { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 8px; }
 .owner-preferences .hint { flex-basis: 100%; margin: 0; }
+
+/* Project memory and its setup options (js/new-project.js, §6.21); the
+   memory and the README badge in Project settings (js/app.js, §6.20). */
+.project-setup { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; display: grid; gap: 6px; min-width: 0; }
+.project-setup legend { font-size: 0.85rem; font-weight: 600; padding: 0 4px; }
+.project-setup .check[hidden] { display: none; }
+.project-setup .hint { margin: 0; }
+.badge-preview { display: block; height: 20px; max-width: 100%; }
+.badge-form .paste-row { min-width: 0; }
+.badge-form .paste-line { overflow-wrap: anywhere; }

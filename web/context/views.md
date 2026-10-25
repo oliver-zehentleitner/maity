@@ -812,3 +812,35 @@ The hub's refusal is the final word, as the list may be older than it.
 a guessed choice: replacing revokes a credential, which the human picks.
 Keeping role and areas in the form and sending the membership's values:
 the human would see fields that do nothing.
+
+## Project memory is chosen on #/new and only shown afterwards; its fields are offered where the hub's machine form names them
+
+**Id:** a8e479be-cb07-49cc-b7bd-b48500903ee1
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision on project memory and setup cards (docs/api.md §6.1, §6.21, contract #339), 2026-10-25; the card tsk-c8jt63tnztqj (provider read only after creation, the badge policy editable with its snippet in Project settings); hub/src/maity_hub/models.py (`extra="forbid"`: a hub refuses a body field it does not know); the dashboard's implementation, 2026-10-25
+**Revisit when:** a second provider arrives, the hub sets something up on a provider change, or the overview gets its badge section (§6.20 names the overview for the snippet)
+
+The create form has **Project memory** (Keep the Why preselected, None)
+and the three setup options beneath it, all ticked, each sent as `true`
+or `false`. Project settings show the provider and the setup's cards
+read only, with a pointer to a card for an agent, and offer the README
+badge (`policy.badge`) with its snippet. The form asks the hub's
+`/openapi.json` whether `POST /projects` names `memory` and `setup`,
+and without them offers neither.
+
+**Reason:** the hub would accept a provider change by `PATCH`, but it
+creates and cancels no setup card on it, so a switch in the panel would
+change what agents are told while the repository stays as it was; the
+change is work in the repository, which is what a card is for. Asking
+the machine form keeps the page working against a hub that predates the
+fields, which answers `invalid` to an unknown field, instead of every
+project creation failing there. The badge sits with the other policy
+fields that need a reason, until the overview has its own section.
+
+**Rejected alternative:** a provider dropdown in Project settings: it
+would invite a change whose consequences the hub does not carry out.
+Sending `memory` and `setup` always: a creation on an older hub would
+fail. Inferring support from a project's view having `memory`: a human
+without projects has no view to look at.

@@ -4068,8 +4068,9 @@ web owner's:
 - A count links to where its items are: a column count to the board
   column, the request counts to the inbox, a report to its card, a merge
   to `pr.url`.
-- The page also offers the project badge's Markdown snippet with a
-  preview and the variant picker (§6.20).
+- The project badge's Markdown snippet, its preview and the variant
+  picker are in Project settings for now, not on this page (§6.20); a
+  section of the overview for them is a later step.
 
 ### 6.12 Availability and cover
 
@@ -5158,12 +5159,13 @@ cache is what keeps it cheap: a proxy or a browser that honours
 `max-age` asks at most once a minute per project, whatever the number
 of readers.
 
-**Dashboard (web/).** The overview page (§6.11) offers the Markdown
-snippet
+**Dashboard (web/).** Project settings offer, to the humans who may set
+the policy (`project:admin`, §2.3 ʰ), the Markdown snippet
 `[![maity](https://<hub>/badge/<slug>.svg)](https://<hub>/#/p/<slug>/overview)`
-(the overview route of §6.11) with a preview of the badge and a picker for the variant; the picker
-writes `policy.badge`, so it is offered where the caller may set the
-policy.
+(the overview route of §6.11) with a preview of the badge while it is on
+and a picker for the variant, which writes `policy.badge` with a reason
+like every policy field. A section of the overview page (§6.11) for the
+badge is a later step.
 
 **Not in this contract.** A third variant, "join the team", linking to
 a join-request page, waits for the decision on public projects.
