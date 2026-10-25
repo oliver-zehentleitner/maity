@@ -512,6 +512,29 @@ window.Maity = window.Maity || {};
 
   // The policy fields each preset fills (docs/api.md §6.1); a missing
   // contract_arbiter is the owner.
+  // §6.21: the setup options in their cards' order, with the titles the hub
+  // gives the cards, verbatim.
+  const SETUP_CARDS = [
+    ["keep_the_why_init", "Set up Keep the Why in the repository"],
+    ["keep_the_why_badge", "Add the Keep the Why badge to the README"],
+    ["maity_badge", "Add the Maity badge to the README"],
+  ];
+  // One open setup card per chosen option, made when the project has a
+  // repository (routes/projects.py, project_setup.make_cards).
+  function makeSetupCards(slug, setup, by, url) {
+    const list = fixtures()[slug + "/tasks.json"];
+    setup.cards = SETUP_CARDS.filter(([key]) => setup[key]).map(([key, title]) => {
+      const id = localId("tsk");
+      list.items.push({
+        id, kind: "setup", title, body: "In " + url + ": " + title.toLowerCase() + ", as a pull request against its default branch.",
+        label: "chore", status: "open", area: "/", created_by: by, assigned_to: null, claim: null, checkpoint: null,
+        depends_on: [], ships_with: [], blocked_by_request: null, ktw_ref: null, report: null, release: null, contract: null,
+        created_at: nowIso(), updated_at: nowIso(), closed_at: null,
+      });
+      return id;
+    });
+  }
+
   const PRESETS = {
     hierarchical: {
       claim_policy: "self-claim", done_authority: "reviewer", contract_arbiter: "role:admin",
@@ -915,16 +938,29 @@ window.Maity = window.Maity || {};
       }
       const preset = body.policy && body.policy.preset ? body.policy.preset : "hierarchical";
       if (!PRESETS[preset]) fields["policy.preset"] = "unknown";
+      // §6.1, §6.21: the provider (keep_the_why its alias) and the options.
+      const provider = body.memory ? body.memory.provider : body.keep_the_why === false ? "none" : "keep-the-why";
+      if (!["keep-the-why", "none"].includes(provider)) fields["memory.provider"] = "unknown_provider";
+      const given = body.setup || {};
+      Object.keys(given).forEach((k) => {
+        if (!SETUP_CARDS.some(([key]) => key === k)) fields["setup." + k] = "unknown_field";
+        else if (typeof given[k] !== "boolean") fields["setup." + k] = "not_a_boolean";
+      });
       if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
+      const ktw = provider === "keep-the-why";
+      const setup = { keep_the_why_init: ktw && given.keep_the_why_init !== false, keep_the_why_badge: ktw && given.keep_the_why_badge !== false,
+        maity_badge: given.maity_badge === true, cards: null };
       const owner = me().member;
       const created = {
         slug: body.slug, name: body.name, state: "build", state_note: null, state_changed_at: nowIso(),
         repository: url === null ? null : {
           url, default_branch: body.repository.default_branch || "main", forge: "github", probe_configured: false,
         },
-        keep_the_why: Boolean(body.keep_the_why),
+        memory: { provider }, keep_the_why: ktw, setup,
         policy: Object.assign({}, PRESETS[preset], {
           preset, contract_arbiter: PRESETS[preset].contract_arbiter || owner.id,
+          // The creator's Maity badge switches the badge on at creation (§6.20).
+          badge: setup.maity_badge ? "members" : "off",
         }),
         absence: null, settings: { release_checklist: [] }, rules_version: 1, created_at: nowIso(),
       };
@@ -938,6 +974,7 @@ window.Maity = window.Maity || {};
       ["requests", "tasks", "joins"].forEach((name) => { data[body.slug + "/" + name + ".json"] = Object.assign({}, empty); });
       data[body.slug + "/credentials.json"] = {};
       data[body.slug + "/conversations.json"] = {};
+      if (url !== null) makeSetupCards(body.slug, setup, owner.id, url);
       me().projects.push({ slug: body.slug, name: body.name, state: "build", role: "owner", open_requests: 0 });
       return created;
     }],
@@ -1007,12 +1044,17 @@ window.Maity = window.Maity || {};
         p.repository = back ? back.repository
           : url ? { url, default_branch: same ? p.repository.default_branch : "main", forge: "github", probe_configured: same ? p.repository.probe_configured : false } : null;
         if (!same && "keep_the_why_export" in p) p.keep_the_why_export = back ? back.export : null;
+        // The repository first set: the setup cards chosen at creation (§6.21).
+        if (url && p.setup && p.setup.cards === null && !["accepted", "archived"].includes(p.state)) makeSetupCards(m[1], p.setup, me().member.id, url);
       }
       if ("policy" in body) {
         // A policy change needs a reason; fields merge into the policy (docs/api.md §6.1).
         if (!body.reason) fail(400, "invalid", "A policy change needs a reason", path, { fields: { reason: "required" } });
         if ("signing" in body.policy && !["optional", "required"].includes(body.policy.signing)) {
           fail(400, "invalid", "unknown signing value", path, { fields: { "policy.signing": "unknown" } });
+        }
+        if ("badge" in body.policy && !["off", "members", "agents_online"].includes(body.policy.badge)) {
+          fail(400, "invalid", "unknown badge value", path, { fields: { "policy.badge": "unknown" } });
         }
         p.policy = Object.assign({}, p.policy, body.policy);
       }
@@ -1085,7 +1127,11 @@ window.Maity = window.Maity || {};
       "/api/v1/requests/{request_id}/answer": { post: {} },
       "/api/v1/me/preferences": { get: {}, put: {} },
       "/api/v1/requests/{request_id}/withdraw": { post: {} },
-    } })],
+      "/api/v1/projects": { get: {}, post: { requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/ProjectCreate" } } } } } },
+    },
+    components: { schemas: { ProjectCreate: { properties: {
+      slug: {}, name: {}, repository: {}, memory: {}, setup: {}, keep_the_why: {}, policy: {},
+    } } } } })],
     // §17.6: a manual post by an owner or admin.
     ["POST", /^\/projects\/([^/]+)\/ticker$/, (m, body, path) => {
       project(m[1], path);
@@ -2058,12 +2104,20 @@ window.Maity = window.Maity || {};
   // The hub lists its paths under its prefix (/api/v1/…); either form
   // counts, as in the CLI, and parameter names are not compared. A failed
   // read is not kept: the next ask reads again.
+  let hubDoc = null;
   let hubPaths = null;
   const routeKey = (method, path) => method.toUpperCase() + " "
     + path.replace(/^\/api\/v1(?=\/)/, "").replace(/\{[^}]*\}/g, "{}");
+  function machineForm() {
+    if (!hubDoc) {
+      hubDoc = M.api.get("/openapi.json");
+      hubDoc.catch(() => { hubDoc = null; });
+    }
+    return hubDoc;
+  }
   function hubRoutes() {
     if (!hubPaths) {
-      hubPaths = M.api.get("/openapi.json").then((doc) => {
+      hubPaths = machineForm().then((doc) => {
         const found = new Set();
         Object.entries((doc && doc.paths) || {}).forEach(([path, ops]) =>
           Object.keys(ops || {}).forEach((method) => found.add(routeKey(method, path))));
@@ -2072,6 +2126,20 @@ window.Maity = window.Maity || {};
       hubPaths.catch(() => { hubPaths = null; });
     }
     return hubPaths;
+  }
+
+  // The fields the hub's machine form names for the JSON body of `method
+  // path` (path as in docs/api.md), one $ref followed: what a form may
+  // send to this hub. Rejects when the machine form cannot be read.
+  function bodyFields(method, path) {
+    return machineForm().then((doc) => {
+      const paths = (doc && doc.paths) || {};
+      const op = (paths["/api/v1" + path] || paths[path] || {})[method.toLowerCase()];
+      const json = op && op.requestBody && op.requestBody.content && op.requestBody.content["application/json"];
+      let schema = json && json.schema;
+      if (schema && schema.$ref) schema = schema.$ref.split("/").slice(1).reduce((o, k) => (o ? o[k] : null), doc);
+      return new Set(Object.keys((schema && schema.properties) || {}));
+    });
   }
 
   // Whether the hub's machine form lists a route for this method and this
@@ -2112,8 +2180,9 @@ window.Maity = window.Maity || {};
     // Whether the hub serves `method path` (path as in docs/api.md, without
     // the prefix); rejects when its machine form cannot be read.
     hubHas: (method, path) => hubRoutes().then((found) => found.has(routeKey(method, path))),
+    hubBody: bodyFields,
     // Reads the machine form again at the next ask (the smoke test's hubs).
-    forgetRoutes: () => { hubPaths = null; absentRoutes.clear(); },
+    forgetRoutes: () => { hubDoc = null; hubPaths = null; absentRoutes.clear(); },
     // The hub's time as best known: this clock corrected by the last answer's.
     now: () => Date.now() + skew,
     source,

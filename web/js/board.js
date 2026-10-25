@@ -22,7 +22,7 @@ window.Maity = window.Maity || {};
   // The roles holding releases:write (docs/api.md §2.3).
   const RELEASERS = new Set(["owner", "admin", "reviewer"]);
 
-  const KIND_LABELS = { release: "Release", contract: "Contract", maintenance_round: "Context round" };
+  const KIND_LABELS = { release: "Release", contract: "Contract", maintenance_round: "Context round", setup: "Setup" };
 
   const status = (s) => s.replace("_", " ");
 

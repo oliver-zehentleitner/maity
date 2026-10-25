@@ -2411,12 +2411,28 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(fieldError("project-slug").includes("exists") && fieldError("project-repository").includes("forge"),
     "the hub's invalid fields shown next to slug and repository");
   byId("project-slug").value = "dogfood"; byId("project-repository").value = "https://github.com/example/dogfood";
-  byId("project-ktw").checked = true; byId("project-preset").value = "solo";
+  // Project memory (§6.1, §6.21): Keep the Why preselected, its three setup options ticked beneath it.
+  const setupRow = (key) => byId("setup-" + key).parentNode;
+  const setupKeys = ["keep_the_why_init", "keep_the_why_badge", "maity_badge"];
+  expect(byId("project-memory").value === "keep-the-why" && byId("project-memory").querySelectorAll("option").map((o) => text(o)).join() === "Keep the Why,None"
+    && setupKeys.every((k) => byId("setup-" + k).checked && !setupRow(k).hidden)
+    && setupKeys.map((k) => text(setupRow(k)).trim()).join("|") === "Set up Keep the Why in the repository|Add the Keep the Why badge to the README|Add the Maity badge to the README"
+    && text(main).includes("an agent sets it up in the repository, through the setup cards below"),
+    "create: Project memory with Keep the Why preselected, the three setup options ticked, the setup's agent said");
+  // The hub's refusal of an option is said at the options.
+  const spPost = win.Maity.api.post;
+  win.Maity.api.post = (p, b) => (p === "/projects" ? Promise.reject(new win.Maity.api.ApiError("does not validate", 400, p, "invalid", { fields: { "setup.maity_badge": "not_a_boolean" } })) : spPost(p, b));
+  byId("project-slug").value = "dogfood"; byId("project-repository").value = "https://github.com/example/dogfood";
+  main.querySelector("form").dispatch("submit"); await tick(); await tick();
+  expect(text(byId("project-setup-error")) === "Add the Maity badge to the README: Must be ticked or not.", "create: the hub's refusal of a setup option is said at the options");
+  win.Maity.api.post = spPost;
+  byId("project-preset").value = "solo";
   main.querySelector("form").dispatch("submit"); await tick(); await tick();
   const sent = posts[posts.length - 1];
   expect(sent[0] === "/projects" && JSON.stringify(sent[1]) === JSON.stringify({
-    slug: "dogfood", name: "Dogfood Hub", repository: { url: "https://github.com/example/dogfood" }, keep_the_why: true, policy: { preset: "solo" },
-  }), "POST /projects with the contract's body");
+    slug: "dogfood", name: "Dogfood Hub", repository: { url: "https://github.com/example/dogfood" },
+    memory: { provider: "keep-the-why" }, setup: { keep_the_why_init: true, keep_the_why_badge: true, maity_badge: true }, policy: { preset: "solo" },
+  }) && !("keep_the_why" in sent[1]), "POST /projects with memory and every setup option sent explicitly " + JSON.stringify(sent[1]));
   expect(!fieldError("project-slug") && !byId("project-slug").getAttribute("aria-invalid"), "errors cleared on resubmit");
   noProjects = false;
   win.onhashchange(); await tick(); await tick();
@@ -2426,11 +2442,85 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main).includes("No agents in this project yet") && main.querySelector(".join-panel") && !main.querySelector(".join-panel").hidden && byId("join-agent"),
     "the new project opens Join an agent at once");
   expect(chip("Dogfood Hub") && chip("Dogfood Hub").getAttribute("aria-current") === "page", "the new project is in the switcher");
+  // With a repository the hub makes the setup cards at once; the Maity badge is on from the start.
+  await go("#/p/dogfood/board"); for (let k = 0; k < 4; k++) await tick();
+  const setupCards = main.querySelectorAll("article.card.card-setup");
+  expect(setupCards.map((c) => c.attrs["aria-label"]).join("|") === "Set up Keep the Why in the repository|Add the Keep the Why badge to the README|Add the Maity badge to the README"
+    && setupCards.every((c) => text(c).includes("Setup") && text(c).includes("Unclaimed")),
+    "create: the three setup cards on the new project's board, open, marked Setup");
+  await projectSettings();
+  const memPanel = header.querySelector("section.memory-panel");
+  expect(memPanel && text(memPanel).includes("Keep the Why: joining agents load the Keep the Why skill") && memPanel.querySelectorAll("a.id-ref").length === 3
+    && memPanel.querySelectorAll("a.id-ref").every((a) => /^#\/p\/dogfood\/tasks\/tsk-/.test(a.getAttribute("href"))) && !memPanel.querySelector("select, input"),
+    "settings: the memory provider read only, with links to its setup cards");
+  expect(byId("badge-select").value === "members" && text(header.querySelector("form.badge-form .paste-line")).endsWith("/badge/dogfood.svg)](" + (win.location.origin || "") + "/#/p/dogfood/overview)")
+    && text(header.querySelector("form.badge-form .paste-line")).startsWith("[![maity]("),
+    "settings: the badge is on (members) after the Maity badge was chosen, its README snippet shown");
+  const bgPatches = [];
+  const bgPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { bgPatches.push([p, b]); return bgPatch(p, b); };
+  byId("badge-select").value = "agents_online";
+  header.querySelector("form.badge-form").dispatch("submit"); await tick();
+  expect(!bgPatches.length, "settings: a badge change without a reason is not sent");
+  byId("badge-select").value = "agents_online"; byId("badge-reason").value = "Show who works";
+  header.querySelector("form.badge-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(bgPatches.length === 1 && JSON.stringify(bgPatches[0][1]) === JSON.stringify({ policy: { badge: "agents_online" }, reason: "Show who works" }),
+    "settings: the badge changed as a policy change with its reason");
+  win.Maity.api.patch = bgPatch;
+  if (header.querySelector("section.memory-panel")) await projectSettings();
+  // None: only the Maity badge is offered; without a repository the cards wait for one.
+  await go("#/new");
+  byId("project-name").value = "Plain"; byId("project-name").dispatch("input");
+  byId("project-memory").value = "none"; byId("project-memory").dispatch("change");
+  expect(setupRow("keep_the_why_init").hidden && setupRow("keep_the_why_badge").hidden && !setupRow("maity_badge").hidden,
+    "create: under None only the Maity badge is offered");
+  byId("setup-maity_badge").checked = false; byId("project-preset").value = "hierarchical";
+  main.querySelector("form").dispatch("submit"); await tick(); await tick();
+  expect(JSON.stringify(posts[posts.length - 1][1]) === JSON.stringify({ slug: "plain", name: "Plain", memory: { provider: "none" },
+    setup: { keep_the_why_init: false, keep_the_why_badge: false, maity_badge: false }, policy: { preset: "hierarchical" } }),
+    "create: None sends the Keep the Why options false and the unticked Maity badge false " + JSON.stringify(posts[posts.length - 1]));
+  win.onhashchange(); for (let k = 0; k < 4; k++) await tick();
+  await projectSettings();
+  expect(text(header.querySelector("section.memory-panel")).includes("None: the project works without a memory provider.")
+    && text(header.querySelector("section.memory-panel")).includes("No setup option was chosen.") && byId("badge-select").value === "off"
+    && text(header.querySelector("form.badge-form")).includes("While the badge is off, its address answers not found."),
+    "settings: None, nothing chosen, the badge off");
+  await projectSettings();
+  // Keep the Why without a repository: the options are kept, the cards wait for the repository.
+  await go("#/new");
+  byId("project-name").value = "Later"; byId("project-name").dispatch("input");
+  byId("setup-keep_the_why_badge").checked = false; byId("project-preset").value = "hierarchical";
+  main.querySelector("form").dispatch("submit"); await tick(); await tick();
+  win.onhashchange(); for (let k = 0; k < 4; k++) await tick();
+  await projectSettings();
+  expect(text(header.querySelector("section.memory-panel")).includes("Chosen: Set up Keep the Why in the repository; Add the Maity badge to the README.")
+    && text(header.querySelector("section.memory-panel")).includes("The cards are made when the project gets a repository."),
+    "settings: options chosen without a repository wait for it");
+  await projectSettings();
+  // A hub whose machine form does not name memory and setup refuses them: they are not offered nor sent.
+  const omGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.resolve({ paths: { "/api/v1/projects": { post: {} } } }) : omGet(p));
+  win.Maity.api.forgetRoutes();
+  await go("#/new"); await tick();
+  byId("project-name").value = "Old Hub"; byId("project-name").dispatch("input"); byId("project-preset").value = "hierarchical";
+  expect(!byId("project-memory") && !main.querySelector("fieldset.project-setup"), "create: a hub without memory and setup offers neither");
+  main.querySelector("form").dispatch("submit"); await tick(); await tick();
+  expect(JSON.stringify(posts[posts.length - 1][1]) === JSON.stringify({ slug: "old-hub", name: "Old Hub", policy: { preset: "hierarchical" } }),
+    "create: and sends neither");
+  win.Maity.api.get = omGet; win.Maity.api.forgetRoutes();
+  win.onhashchange(); for (let k = 0; k < 4; k++) await tick();
+  // The settings view of a project with None, its setup processed with nothing chosen, and its badge on.
+  await go("#/p/sample/inbox"); await projectSettings();
+  expect(text(header.querySelector("section.memory-panel")).includes("None") && text(header.querySelector("section.memory-panel")).includes("No setup option was chosen.")
+    && byId("badge-select").value === "members" && !header.querySelector("img.badge-preview")
+    && text(header.querySelector("form.badge-form .paste-line")).includes("/badge/sample.svg"),
+    "settings: a project with None and its badge on; no preview without a hub to serve it");
+  await projectSettings();
   // A first-time human: the empty board and inbox say where their content comes from.
-  await go("#/p/dogfood/board");
+  await go("#/p/plain/board");
   expect(text(main).includes("Every open card, and the done and cancelled ones of the last 14 days.")
     && main.querySelector(".first-hint") && text(main).includes("No cards yet. Your agents put the work here"), "empty board: subtitle and first hint");
-  await go("#/p/dogfood/inbox");
+  await go("#/p/plain/inbox");
   expect(text(main).includes("No open requests.") && text(main).includes("Your agents ask here when they need you"), "empty inbox: first hint");
   win.Maity.api.get = (p) => { gets.push(p); return realGet(p); };
   win.Maity.api.post = realPost;

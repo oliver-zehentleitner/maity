@@ -719,11 +719,19 @@ its rule said under the field and checked before sending), an optional repositor
 memory (a dropdown `none` / `Keep the Why`, Keep the Why preselected; with it the three prefilled
 setup options of §6.21 — set up Keep the Why in the repository, add its badge, add the Maity
 badge — the last one also offered with `none`), and
-the policy preset (`hierarchical` or `solo`). The creator becomes the
+the policy preset (`hierarchical` or `solo`). The memory goes as
+`memory: {provider}` and every option as `true` or `false` in `setup`
+(under `none` the Keep the Why ones are `false`); the hint says that an
+agent sets the memory up in the repository through setup cards, made
+once the project has a repository, and that the Maity badge also
+switches the project's public badge on. A hub whose machine form does
+not name `memory` and `setup` for `POST /projects` would refuse them, so
+there they are neither shown nor sent. The creator becomes the
 owner. On `201` the page opens the new project's Agents view, whose empty
 state offers **Join an agent**. The hub's `invalid` answer is shown under
 each field it names in `details.fields` (`slug: taken`,
-`repository.url: not_a_configured_forge`, …).
+`repository.url: not_a_configured_forge`, …); a refused setup option is
+said under the options.
 
 **Logo and banner** (`docs/api.md` §11.2). Each project shows its own
 logo next to its name: in its switcher chip, in the header, on its
@@ -760,6 +768,21 @@ bearer token (`last_used_via`, §10): they would be refused with
 `signature_required` until they sign, and the switch then needs an
 explicit confirmation. The Agents view shows on each credential how it
 was last used, signed or as a bearer token.
+
+**Project memory** (`docs/api.md` §6.1, §6.21) is shown in the same
+panel, read only: the provider and what it means, and the setup chosen
+at creation — its cards as links once the hub made them, the options
+still waiting for a repository, or that none was chosen (a project that
+predates the field says so). A change is work in the repository, so the
+panel points to a card for an agent rather than offering a switch.
+
+**README badge** (`policy.badge`, `docs/api.md` §6.20), in the same panel
+for a human owner or admin where the hub's policy has the field: off,
+members or agents online, changed with a reason like every policy field.
+It shows the Markdown snippet for the README (the badge's address on this
+hub, linking to the project's overview) with **Copy**, and while the
+badge is on, the badge itself as the hub serves it; while it is off, that
+its address answers not found.
 
 The project state (build, freeze, fixes-only, accepted, archived) is in
 the header of every screen; owner and admin change it there with a
