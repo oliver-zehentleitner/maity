@@ -5138,10 +5138,11 @@ Scope `project:read`; `days` 1–90, default 30.
     attributed to the card's last holder (closing keeps
     `claim.holder`); a card closed without a holder, or whose holder is
     no longer a member, counts in `totals` and in no member row.
-  - `reviews_given` counts the events by which the member took a card
-    from `review` to `done` or `in_progress`: a history entry (§6.15)
-    for a `PATCH`, the `task_updated` of a report-driven close; a
-    redacted entry is not counted.
+  - `reviews_given` counts, as §16.6 does, the history entries (§6.15)
+    by which the member took a card's `status` from `review` to `done`
+    or `in_progress` — history only, so a report, a report refresh or
+    a self-done close is never a review; a redacted entry is not
+    counted.
   - `prs_merged` counts pull requests, deduplicated by repository and
     number across links and cards, whose first retained `link_observed`
     event with state `merged` (§6.13) falls in the window — never a
@@ -5157,11 +5158,15 @@ Scope `project:read`; `days` 1–90, default 30.
     a move is none.
   - The medians are over pooled durations, not over member medians: for
     each card closed `done` in the window, claim (its last
-    `task_claimed`) to `closed_at`, and the last entry into `review`
-    (the last retained `task_reported` or history entry that put the
-    card into `review`) to `closed_at`; a card whose entry event is
-    missing or redacted gives no sample; `null` with fewer than three
-    samples, for a member and for the totals alike.
+    `task_claimed`) to `closed_at`, and the last entry into `review` to
+    `closed_at`, where the entry into `review` is the last retained
+    `task_reported` whose resulting status is `review` (§6.6) or
+    history entry whose `after` is `review`, and it must precede
+    `closed_at` — a `task_reported` of a refresh on a card already
+    `done`, or any report that did not put the card into `review`, is
+    no entry; a card without such a retained entry gives no sample;
+    `null` with fewer than three samples, for a member and for the
+    totals alike.
   - `cards_done_per_day` has one row per day, zero rows included. The
     coverage rule of §16.6 applies to `reviews_given` and the review
     median: `null` for days before the hub kept history,
