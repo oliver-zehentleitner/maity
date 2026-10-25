@@ -665,6 +665,8 @@ card = Table(
     Column("checkpoint", JSON_VALUE),
     # No foreign key: request.task_id points back here.
     Column("blocked_by_request", String(ID)),
+    # The hub opened it for an adopted jour fixe proposal: `{round_id, proposal_id}` (§20.6).
+    Column("jour_fixe", JSON_VALUE),
     Column("ktw_ref", String(255)),
     Column("report", JSON_VALUE),
     Column("contract", JSON_VALUE),
@@ -799,6 +801,8 @@ request = Table(
     # What a `consent` request applies on its go: `{"kind": …}`, settled by the kind
     # registered in `proposals` (§2.3 ᵃ); null for every other request.
     Column("proposal", JSON_VALUE),
+    # A decision the hub filed for a jour fixe proposal: `{round_id, proposal_id}` (§20.6).
+    Column("jour_fixe", JSON_VALUE),
     Column("while_open", String(32), nullable=False),
     Column("needs_in_session", JSON_VALUE),
     Column("ktw_ref", String(255)),

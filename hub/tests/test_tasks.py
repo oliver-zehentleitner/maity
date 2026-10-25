@@ -29,6 +29,7 @@ TASK_KEYS = {
     "ships_with",
     "blocked_by_request",
     "ktw_ref",
+    "jour_fixe",
     "report",
     "release",
     "contract",

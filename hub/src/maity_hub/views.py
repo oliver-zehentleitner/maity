@@ -594,6 +594,7 @@ def task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[d
                 "ships_with": sorted(edges[row.id]["ships_with"]),
                 "blocked_by_request": row.blocked_by_request,
                 "ktw_ref": row.ktw_ref,
+                "jour_fixe": row.jour_fixe,
                 "report": row.report,
                 "release": _release(conn, row, fg, release_tags),
                 "contract": row.contract,

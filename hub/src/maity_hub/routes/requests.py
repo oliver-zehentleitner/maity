@@ -16,10 +16,11 @@ from maity_hub import avatars, clock, idempotency, inbox, mentions, placements, 
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
-from maity_hub.deps import AnyCaller, HumanCaller, engine_of
+from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.events import Actor, emit, lock_project
 from maity_hub.ids import new_id
+from maity_hub.jourfixe import triage as jour_fixe_triage
 from maity_hub.models import Strict, Written, markdown, title
 from maity_hub.replies import replies
 from maity_hub.views import principal_id, ts
@@ -150,6 +151,7 @@ def request_view(conn: Connection, row: Any, *, with_proposal: bool = False) -> 
         "while_open": row.while_open,
         "needs_in_session": _with_avatar(conn, row.needs_in_session),
         "ktw_ref": row.ktw_ref,
+        "jour_fixe": row.jour_fixe,
         "status": row.status,
         "answer": row.answer,
         "created_at": ts(row.created_at),
@@ -807,6 +809,10 @@ def answer(
         outcome = "go" if body.reply_id == "go" else "no"
         placements.settle(conn, row, outcome, caller.actor(mine.id), mine.principal_id)
         proposals.settle(conn, row, outcome, mine.principal_id, caller.actor(mine.id))
+        # An `adopt` of a jour fixe proposal opens its card (§20.6).
+        jour_fixe_triage.settle(
+            conn, row, body.reply_id, mine, caller.actor(mine.id), reader_of(request)
+        )
         view = request_view(conn, _row(conn, row.id))
         emit(
             conn,

@@ -625,6 +625,7 @@ def handle_deadlines(conn: Connection, project_id: str) -> None:
     ).all()
     for round_row in due:
         close_answers(conn, round_row)
-    from maity_hub.jourfixe import exchange
+    from maity_hub.jourfixe import exchange, triage
 
     exchange.handle_deadlines(conn, project_id)
+    triage.handle_deadlines(conn, project_id)
