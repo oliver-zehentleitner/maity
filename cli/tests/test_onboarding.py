@@ -454,17 +454,30 @@ def test_checkin_is_display_only_and_json_remains_the_packet(
     ]
 
 
-def test_a_shared_short_handle_is_shown_as_the_global_name() -> None:
+def test_on_the_hub_as_merged_a_shared_handle_shows_my_long_form_and_their_id() -> None:
+    """The packet's peers carry no `name` yet (§5.2): my own long form comes from
+    `me.owner`, a namesake peer falls back to its id rather than a misleading handle."""
     peers = [
-        {"member_id": "agt-a", "handle": "agent-a", "role": "admin", "presence": "online",
-         "name": "maintainer/agent-a"},
-        {"member_id": "agt-x", "handle": "agent-b", "role": "member", "presence": "away",
-         "name": "eve/agent-b"},
+        {"member_id": "agt-a", "kind": "agent", "handle": "agent-a", "role": "admin",
+         "presence": "online"},
+        {"member_id": "agt-x", "kind": "agent", "handle": "agent-b", "role": "member",
+         "presence": "away"},
     ]  # fmt: skip
-    me = {"member_id": "agt-b", "handle": "agent-b", "name": "maintainer/agent-b",
-          "owner": {"id": "hum-1", "handle": "maintainer"}}  # fmt: skip
-    text = onboarding.render(packet(peers=peers, me=me))
-    assert "You are maintainer/agent-b" in text
+    text = onboarding.render(packet(peers=peers))
+    assert "You are maintainer/agent-b (Agent B), member id agt-b." in text
+    assert "agt-x [agt-x]" in text and "agent-a [agt-a]" in text
+    unique = onboarding.render(packet())
+    assert "You are agent-b (Agent B)" in unique  # nobody shares it: the short form
+
+
+def test_peers_with_a_global_name_show_it_when_shared() -> None:
+    peers = [
+        {"member_id": "agt-x", "kind": "agent", "handle": "agent-b", "role": "member",
+         "presence": "away", "name": "eve/agent-b"},
+        {"member_id": "agt-a", "kind": "agent", "handle": "agent-a", "role": "admin",
+         "presence": "online", "name": "maintainer/agent-a"},
+    ]  # fmt: skip
+    text = onboarding.render(packet(peers=peers))
     assert "eve/agent-b [agt-x]" in text
     assert "agent-a [agt-a]" in text and "maintainer/agent-a" not in text  # unique: short
 
@@ -472,13 +485,33 @@ def test_a_shared_short_handle_is_shown_as_the_global_name() -> None:
 def test_shown_names_falls_back_to_the_id() -> None:
     shown = onboarding.shown_names(
         [
-            ("agt-1", "agent-b", "eve/agent-b"),
-            ("agt-2", "agent-b", None),  # shared, no global name sent: the id stays
-            ("agt-3", "agt-9", "x/agt-9"),  # id-shaped
-            ("agt-4", "agent-c", "x/agent-c\x1b]52"),  # unique: the handle, name unused
+            ("agt-1", "agent", "agent-b", "eve/agent-b"),
+            ("agt-2", "agent", "agent-b", None),  # shared, no global name sent: the id
+            ("agt-3", "agent", "agt-9", "x/agt-9"),  # id-shaped
+            ("agt-4", "agent", "agent-c", "x/agent-c\x1b]52"),  # unique: the handle
+            ("agt-5", "agent", "agent-d", "eve/agent-d#wle2"),  # unique anyway
         ]
     )
-    assert shown == {"agt-1": "eve/agent-b", "agt-4": "agent-c"}
+    assert shown == {"agt-1": "eve/agent-b", "agt-4": "agent-c", "agt-5": "agent-d"}
+
+
+def test_a_human_keeps_a_handle_only_agents_share() -> None:
+    shown = onboarding.shown_names(
+        [("hum-1", "human", "oliver", None), ("agt-9", "agent", "oliver", "eve/oliver")]
+    )
+    assert shown == {"hum-1": "oliver", "agt-9": "eve/oliver"}  # §8.6: a human comes first
+
+
+def test_a_member_outside_a_list_is_named_by_its_global_name() -> None:
+    assert onboarding.label({"handle": "agent-b", "name": "eve/agent-b"}) == "eve/agent-b"
+    assert onboarding.label({"handle": "agent-b", "member_id": "agt-b"}) == "agent-b"
+    assert onboarding.label({"member_id": "agt-b", "name": "no global"}) == "agt-b"
+
+
+def test_the_check_in_names_the_long_form_when_the_hub_sends_it() -> None:
+    block = {"check_in_with": {"member_id": "agt-a", "handle": "agent-a", "kind": "agent",
+                               "name": "maintainer/agent-a"}}  # fmt: skip
+    assert "Report to @maintainer/agent-a (agent)" in onboarding.render(packet(onboarding=block))
 
 
 def test_the_first_session_explains_the_long_form() -> None:

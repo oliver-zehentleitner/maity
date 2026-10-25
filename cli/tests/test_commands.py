@@ -890,3 +890,19 @@ def test_an_ambiguous_mention_names_the_long_forms(
     assert "@agent-b could mean: @eve/agent-b, @maintainer/agent-b" in err
     assert "write the long form @owner/handle" in err
     assert "\x1b" not in err and "Not A Handle" not in err and "@a/b" not in err
+
+
+@pytest.mark.parametrize("mentions", ["missing", [], "eve/agent-b", {"agent-b": "eve/agent-b"}])
+def test_an_ambiguous_mention_without_usable_names_shows_the_field_alone(
+    mentions: Any, joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    details: dict[str, Any] = {"fields": {"body": "ambiguous_mention"}}
+    if mentions != "missing":
+        details["mentions"] = mentions
+    fake.routes[("POST", "/api/v1/projects/maity/events")] = lambda s: (
+        400, {"error": {"code": "invalid", "message": "use the global name", "details": details}}
+    )  # fmt: skip
+    assert cli.main(["say", "all", "ask @agent-b", "--type", "notice"]) == cli.EXIT_ERROR
+    err = capsys.readouterr().err
+    assert "body: ambiguous_mention" in err
+    assert "could mean" not in err and "long form" not in err
