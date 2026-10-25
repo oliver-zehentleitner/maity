@@ -1408,7 +1408,7 @@ operator's default plan once part two defines one.
 
 | Mode | Who may register |
 |---|---|
-| `closed` (default) | nobody. Accounts come only from the operator — the first admin, `maity-hub owner create` (§2.1, §16) — and, once they exist, from invitations (§3.4) and joins (§3, agents). Every registration endpoint answers `forbidden` with `details.reason: registration_closed`, before it reads the body |
+| `closed` (default) | nobody, except an address that an open address-bound invitation admits (§3.4). Accounts come only from the operator — the first admin, `maity-hub owner create` (§2.1, §16) — and, once they exist, from invitations (§3.4) and joins (§3, agents). With mail available the endpoints answer `202` like the other modes and drop every non-admitted address in the background (§2.7.1); without mail they answer `forbidden` with `details.reason: registration_closed` before reading the body |
 | `allowlist` | a person whose address matches a listed domain or a listed exact address (below) |
 | `open` | anyone with an address that can be verified |
 
@@ -1444,12 +1444,16 @@ POST /auth/register   {"address": "ada@example.com", "password": "…", "next"?:
 Unauthenticated, on the public host only, with the rules of §2.6.5 for
 transport, `Sec-Fetch-Site` and `next`.
 
-1. **Synchronous checks, none of which looks at an account.** The mode
-   is `closed`, or mail is incomplete or disabled: `forbidden` with
-   `details.reason: registration_closed` (the same reason for both: the
-   page needs no more). The body: `address` follows §18.4, `password`
-   §2.1 (at least 12 characters) — `invalid` otherwise, with
-   `details.fields`. Then the per-source limit (§2.7.3).
+1. **Synchronous checks, none of which looks at an account.** Mail is
+   incomplete or disabled: `forbidden` with `details.reason:
+   registration_closed`, before the body is read. With mail, every
+   mode — `closed` included — reads the body: `address` follows §18.4,
+   `password` §2.1 (at least 12 characters) — `invalid` otherwise, with
+   `details.fields`. Then the per-source limit (§2.7.3). Under `closed`
+   the hub answers the same `202` as under the other modes and drops
+   the request in the background unless an invitation admits the
+   address (§3.4): the mode never shows in the synchronous answer, so
+   an invited address is not told apart from any other.
 2. **The answer.** `202 {"expires_in": 86400}`, always, from here on. The
    hub hashes the password (scrypt, §2.1) for every request before it
    answers, so every accepted request costs the same; the lookup, the
@@ -1458,8 +1462,11 @@ transport, `Sec-Fetch-Site` and `next`.
    has an account from one that has none, nor a listed address from an
    unlisted one.
 3. **In the background**, at the time of the lookup:
-   - The address is not allowed by the mode (an `allowlist` miss): no
-     mail, and the request is dropped.
+   - The address is not admitted: under `allowlist` not listed, under
+     `closed` always — unless an open, address-bound invitation admits
+     it (§3.4: the invitation is open, its project is not closed and
+     its issuer still holds the authority it needs, the same predicate
+     accept uses). Not admitted: no mail, and the request is dropped.
    - The address is the verified address of an account (§18.4), or of a
      rejected registration that is still blocked (§16.4): one mail,
      "Someone asked to create a Maity account with this address on
@@ -1494,10 +1501,12 @@ transport, `Sec-Fetch-Site` and `next`.
    hub signs together with the registration token (HMAC under
    `MAITY_MAIL_SIGNING_KEY` over `{token nonce, terms version}`), so the
    `POST` says exactly which version the person saw (§2.7.2).
-6. **Completion** (`POST` of that page). In this order: the mode is
-   checked again (now `closed`, or the address no longer allowed: the
-   page says registration is closed, nothing is created and the pending
-   registration is void); the password must match the stored hash (a
+6. **Completion** (`POST` of that page). In this order: the admission is
+   checked again, atomically with the completion (the mode changed, the
+   address no longer listed, or the admitting invitation no longer
+   admits — revoked, expired, used, voided, its project closed or its
+   issuer without authority: the page says registration is closed,
+   nothing is created and the pending registration is void); the password must match the stored hash (a
    wrong one is the page's error; the fifth voids the pending
    registration); the handle and the display name follow §2.7.4; the
    terms box must be checked when terms are set, and the signed version
@@ -2023,8 +2032,8 @@ say who invites to what and which ways lead in. `registration` is
 computed from the instance and the invitation alone, never from who
 reads or whether an account exists: `sign_in_or_register` under
 registration `open`, and under `closed` or `allowlist` when the
-invitation is address-bound (the address is admitted, below);
-`sign_in_only` otherwise — a visitor without an account then sees that
+invitation is address-bound and admits (its project open, its issuer
+with authority — the predicate of accept); `sign_in_only` otherwise — a visitor without an account then sees that
 the instance does not register, and the inviter sees the invitation
 stay open. It carries no token in the body and no handle of anyone. It
 is rate limited per source address as the join exchange is (§3.3, 10
@@ -2058,17 +2067,17 @@ accepts nothing.
 
 **Registration and invitations.** Under registration `closed` or
 `allowlist` (§2.7, §16.4), an address with an open address-bound
-invitation is **admitted** as if it were on the allowlist, at every
-gate of §2.7 alike: the mode check before the body is read admits it
-(so the instance is not `registration_closed` for that address),
-`GET /auth/methods` keeps saying `registration: false` for the
-instance (it describes the instance, not one address), the admission
-check of the background step treats it as listed, and the completion
-step checks again, atomically with the completion, that the
-invitation is still open — one revoked, expired or used in between
-admits no longer, and the completion ends as a non-admitted address
-does. Every answer on the way stays the uniform `202` of §2.7.1, so an
-invitation is no oracle for an address's existence. Mail must be
+invitation is **admitted** as if it were on the allowlist — provided
+the invitation admits: it is open, its project is not closed and its
+issuer still holds the authority the invitation needs, the predicate
+accept uses. The admission is decided where §2.7.1 decides admission,
+in the background and again atomically at completion, never in the
+synchronous answer: with mail available every mode answers the same
+`202` to every well-formed address, so an invitation is no oracle for
+an address's existence or its admission. `GET /auth/methods` keeps its
+§2.6.1 meaning — the instance's mode, unchanged by any invitation. An
+invitation that stops admitting between the two checks ends the
+registration as a non-admitted address does. Mail must be
 complete and enabled as for every registration, a rejection block
 (§16.4) still blocks, the `approval` mode (§2.7.5) still applies, and
 the registration counts against the completion limit. An invitation
