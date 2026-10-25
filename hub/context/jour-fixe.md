@@ -30,3 +30,31 @@ small: at most 1500 rows per agent.
   out of the window.
 - Online intervals (start, end) per membership: the same answer with
   overlap and clipping logic instead of a count.
+
+## A round's thread opens with the round, and a pending further step waits in the steps list
+
+**Id:** 9215f9e8-e417-43df-a815-6d8bd702808d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session, 2026-10-25 (jour fixe, part 2)
+**Revisit when:** a round needs a thread it did not have from the start, or a second pending further step is allowed
+
+This hub runs group chats, so every round runs in chat mode (`docs/api.md`
+§20.5). The hub creates the round's thread when the round opens, with the
+invited members, right after the round row so that the thread's view names
+the round. A further step the moderator asks for is an entry in the round's
+`steps` with `opened_at` null until it opens; when the exchange closes
+first, the entry is dropped.
+
+**Reason:** §20.7 defines the current participants as invited, active and
+still in the thread. With the thread there from the start, that holds in
+every phase: a member who leaves it during the answers is no participant of
+the exchange either. The contract allows one pending further step at a time,
+so one marked entry in the list the round already stores is enough.
+
+**Rejected alternatives:**
+- Create the thread with the statement: before it, participation would need
+  a second definition, and a round without a statement would never get one.
+- A column or table for the pending step: a migration for at most one value
+  per round, which the steps list carries already.
