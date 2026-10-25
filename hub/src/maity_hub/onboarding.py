@@ -10,6 +10,7 @@ from sqlalchemy import Connection, func, select, update
 from maity_hub import clock, policy
 from maity_hub import tables as t
 from maity_hub.errors import invalid
+from maity_hub.mentions import global_name
 from maity_hub.models import Strict, markdown
 from maity_hub.scopes import ROLES
 
@@ -32,14 +33,17 @@ def settings(project: Any) -> dict[str, Any]:
 
 
 def members(conn: Connection, project_id: str) -> list[Any]:
+    owner = t.human.alias("owner")
     return list(
         conn.execute(
             select(
                 t.membership,
                 func.coalesce(t.agent_profile.c.handle, t.human.c.handle).label("handle"),
+                owner.c.handle.label("owner_handle"),
             )
             .select_from(t.membership)
             .outerjoin(t.agent_profile, t.membership.c.agent_id == t.agent_profile.c.id)
+            .outerjoin(owner, owner.c.id == t.agent_profile.c.owner_id)
             .outerjoin(t.human, t.membership.c.human_id == t.human.c.id)
             .where(t.membership.c.project_id == project_id, t.membership.c.active.is_(True))
         ).all()
@@ -51,10 +55,16 @@ def principal(row: Any) -> str:
     return value
 
 
+def name(row: Any) -> dict[str, str]:
+    """An agent's global name (§6.3) as a field; a human has none."""
+    return {"name": global_name(row.owner_handle, row.handle)} if row.agent_id else {}
+
+
 def identity(row: Any) -> dict[str, Any]:
     return {
         "id": principal(row),
         "handle": row.handle,
+        **name(row),
         "kind": "agent" if row.agent_id else "human",
     }
 
@@ -159,10 +169,14 @@ def hint(conn: Connection, project: Any, membership: Any) -> dict[str, Any] | No
         "check_in_with": {
             "member_id": principal(resolved),
             "handle": resolved.handle,
+            **name(resolved),
             "kind": "agent" if resolved.agent_id else "human",
         },
         "instruction": (
-            f"Send @{resolved.handle} a message before taking any work: "
+            # The long form for an agent: a short handle two owners' agents share is
+            # refused as a mention (§8.6), and the instruction must never be.
+            f"Send @{name(resolved).get('name', resolved.handle)} a message before "
+            "taking any work: "
             "say that you joined and ask how to start."
         ),
     }

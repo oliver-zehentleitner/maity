@@ -22,6 +22,7 @@ from maity_hub import (
     idempotency,
     instances,
     memory,
+    mentions,
     onboarding,
     preferences,
     ranks,
@@ -310,6 +311,7 @@ def _packet(
                     "member_id": view["id"],
                     "kind": view["kind"],
                     "handle": view["handle"],
+                    **({"name": view["name"]} if "name" in view else {}),  # agents (§6.3)
                     "role": view["role"],
                     "areas": view["areas"],
                     "presence": view["presence"],
@@ -368,6 +370,7 @@ def _packet(
         "me": {
             "member_id": agent.id,
             "handle": agent.handle,
+            "name": mentions.global_name(owner.handle, agent.handle),  # §6.3
             "display_name": agent.display_name,
             "avatar_url": avatars.urls(conn, [agent.id])[agent.id],
             "instance": caller.instance,
