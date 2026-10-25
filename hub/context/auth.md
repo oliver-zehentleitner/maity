@@ -258,6 +258,11 @@ Three choices of the implementation that the contract leaves open:
   until one of them is used, which moves the generation and kills the
   rest. §2.8.3 voids links on a change of the factor, not on a new
   request, and the admin's 3-per-day limit bounds how many can be out.
+- **A link also names the address it went to** (the notification
+  settings' epoch, §18.6): changing or removing the verified address
+  kills every outstanding reset link, so a mailbox the human has left
+  behind keeps no power over the factor. The confirmation locks the
+  address row before the factor's, the order an address change takes.
 - **The page's `GET` reads only.** It resolves the token, the request and
   the human's language and writes nothing — no "opened" mark — so a mail
   scanner opening the link changes nothing; the `POST` does the reset in
