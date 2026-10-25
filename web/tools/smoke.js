@@ -136,16 +136,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     || a.querySelectorAll(".project-mark").length && a.textContent.slice(a.querySelector(".project-mark").textContent.length).startsWith(label));
   const chipCount = (label) => { const c = chip(label) && chip(label).querySelector(".count"); return c ? c.textContent : ""; };
   const btn = (root, label) => root.querySelectorAll("button").find((b) => b.textContent === label);
-  // The gear menu in the header, and its "Project settings" item, which opens and closes the panel.
+  // The gear menu in the header: the hub's and one's own, not the project's.
   const gearButton = () => header.querySelectorAll("button").find((b) => b.getAttribute("aria-label") === "Settings");
-  // Project settings are the project's Settings tab (the maintainer's request): the helper goes there,
-  // and called again, back to where it came from.
-  let settingsFrom = null;
+  // Project settings are the project's Settings tab (the maintainer's request): the helper opens it,
+  // drawn afresh; a test moves on by its next go().
   const onSettings = () => /^#\/p\/[^/]+\/settings$/.test(win.location.hash);
-  // Opens it, drawn afresh (where the panel used to be closed again after a look, the test moves on
-  // by its next go()).
   const projectSettings = async () => {
-    settingsFrom = win.location.hash;
     const slug = (/^#\/p\/([^/]+)/.exec(win.location.hash) || [])[1];
     await go("#/p/" + slug + "/settings"); for (let k = 0; k < 6; k++) await tick();
   };
@@ -2468,7 +2464,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(header.querySelector("nav.switcher") !== switcherBefore && header.querySelectorAll("nav.switcher").length === 1,
     "the count re-read replaces the switcher, once");
   byId("state-select").parentNode.dispatch("submit"); await tick(); await tick();
-  expect(text(header).includes("Freeze") && onSettings(), "state changed to freeze; the save stays on the Settings tab");
+  expect(text(header).includes("Freeze") && onSettings() && text(main).includes("State saved.")
+    && header.querySelectorAll("nav.views a").find((a) => a.textContent === "Settings").getAttribute("aria-current") === "page",
+    "state changed to freeze; the save stays on the Settings tab, says so, the tab marked current");
   byId("absence-until").value = "2026-10-25T08:00"; byId("absence-scope").value = "fixes only";
   byId("absence-until").parentNode.dispatch("submit"); await tick(); await tick();
   expect(text(header.querySelector(".project-state")).includes("Away until") && text(header.querySelector(".absence")).includes("While away: fixes only"), "absence set");
@@ -4563,6 +4561,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     ? Object.assign({}, value, { projects: value.projects.map((p) => Object.assign({}, p, { role: "member" })) }) : value);
   await go("#/p/maity/inbox"); await projectSettings();
   expect(!byId("project-language") && text(main).includes("Project language: Deutsch") && !byId("state-select"), "language: member sees read-only language without admin controls");
+  expect(onSettings() && header.querySelectorAll("nav.views a").some((a) => a.textContent === "Settings") && main.querySelector("section.memory-panel")
+    && !main.querySelector("form.badge-form"), "settings: a member has the tab too, read only: the memory shown, no admin form");
   win.Maity.api.get = languageGet;
   const oldNotification = win.Notification;
   const oldAvailable = win.Maity.notify.state.available;

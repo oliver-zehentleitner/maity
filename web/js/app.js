@@ -323,6 +323,7 @@ window.Maity = window.Maity || {};
       status.busy("Saving…");
       try {
         await M.api.patch(ctx.base, body);
+        settingsSaved = label + " saved.";
         render();
       } catch (err) {
         status.fail(label + " not saved: ", err);
@@ -878,11 +879,15 @@ window.Maity = window.Maity || {};
   // The field a link into Settings asked for (the overview's Set the
   // repository); taken once the view is drawn.
   let settingsFocus = null;
+  // What the last save on Settings did, said once on the redrawn tab.
+  let settingsSaved = null;
   M.views.settings = async function (ctx, root) {
     append(root, h("h2", null, "Settings"),
       h("p", { class: "muted" }, "This project's settings. Yours and the hub's are in the gear menu."),
+      settingsSaved ? h("p", { class: "ok", role: "status" }, settingsSaved) : null,
       projectPanel(ctx));
-    const wanted = settingsFocus && root.querySelector ? Array.from(root.querySelectorAll("input")).find((el) => el.id === settingsFocus) : null;
+    settingsSaved = null;
+    const wanted = settingsFocus ? Array.from(root.querySelectorAll("input")).find((el) => el.id === settingsFocus) : null;
     settingsFocus = null;
     if (wanted) window.setTimeout(() => wanted.focus(), 0);
   };
