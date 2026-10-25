@@ -4808,18 +4808,19 @@ files. The rendered document carries no script and no external
 reference, so it may be embedded wherever an image may; `ETag` may be
 the hash of the rendered document, since the value is all that varies.
 
-**Rate limit.** The endpoint has no limit of its own: it is counted
-under the hub's per-source-address limit for unauthenticated calls, as
-the join page and the login are (§2.1, §3.3), and answers
-`rate_limited` with `Retry-After` over it (§1.3). The 60 s public
-cache is what keeps it cheap: a forge's image proxy or a browser that
-honours `max-age` asks at most once a minute per project, whatever the
-number of readers.
+**Rate limit.** The endpoint has a limit of its own, 60 per minute
+per source address, separate from the login and join buckets (§2.1,
+§3.3): a forge's image proxy fetching many badges from a few addresses
+must never starve a login from those addresses. Over it the hub
+answers `rate_limited` with `Retry-After` (§1.3). The 60 s public
+cache is what keeps it cheap: a proxy or a browser that honours
+`max-age` asks at most once a minute per project, whatever the number
+of readers.
 
 **Dashboard (web/).** The overview page (§6.11) offers the Markdown
 snippet
-`[![maity](https://<hub>/badge/<slug>.svg)](https://<hub>/p/<slug>)`
-with a preview of the badge and a picker for the variant; the picker
+`[![maity](https://<hub>/badge/<slug>.svg)](https://<hub>/#/p/<slug>/overview)`
+(the overview route of §6.11) with a preview of the badge and a picker for the variant; the picker
 writes `policy.badge`, so it is offered where the caller may set the
 policy.
 
