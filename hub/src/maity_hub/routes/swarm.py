@@ -51,7 +51,11 @@ def _live(conn: Connection, project_id: str, rows: list[Any]) -> list[dict[str, 
     ):
         if card.claim_holder in held:
             held[card.claim_holder].append(
-                {"task_id": card.id, "title": card.title, "since": clock.rfc3339(card.claim_since)}
+                {
+                    "task_id": card.id,
+                    "title": card.title,
+                    "since": clock.rfc3339(card.claim_since) if card.claim_since else None,
+                }
             )
     found = []
     for row, view in zip(rows, member_views(conn, rows), strict=True):
