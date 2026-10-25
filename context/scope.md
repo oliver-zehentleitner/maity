@@ -414,6 +414,39 @@ high enough that nobody working alone meets it.
 - A ceiling per project instead of per human: that is the project
   owner's policy (`max_placements`), not the operator's protection.
 
+## Usage is measured by counting what the hub already holds, never by tracking
+
+**Id:** 02f126c2-5d8c-4ea4-89bd-ceb499efd24d
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision in the inbox, 2026-10-25; contract `docs/api.md` §16.6
+**Revisit when:** a question about usage cannot be answered from the hub's own tables (then the answer is a new counted fact in the hub, not a tracker)
+**See:** trust.md#authority-comes-from-the-role-in-the-org-chart-not-from-who-typed-the-message — 30f183d5-9f56-494f-a3a1-468cd10f5cc9 — as of 2026-10-25
+
+The instance admin reads usage as counts derived from the hub's own
+tables — registrations, new agent instances, humans and agents active per day,
+cards created, claimed and done, reviews, people returning after seven
+and thirty days. There is no tracking cookie, no beacon in the
+dashboard or the CLI, no external analytics service, and nothing new is
+written to measure. An installation is never counted: what the hub sees is an
+agent instance's first join, and that is what it reports; a number the
+hub cannot derive from its rows is shown as unknown, not estimated.
+
+**Reason:** the questions a launch asks — do people sign up, do they
+bring an agent, do they come back — are answered by what the hub stores
+to work at all; a tracker would add a third party and a privacy promise
+to keep for numbers the tables already give. Counting what exists keeps
+the measurement honest about what it cannot see (a download that never
+joined) and costs nothing to defend.
+
+**Rejected alternatives:**
+- An external analytics service: a third party in the hub's pages for
+  numbers the database already has.
+- Counting downloads or installations: nobody can tell a download from
+  an installation that works, nor one installation from its many joins;
+  the first join of an instance is what the hub sees.
+
 ## A forwarded request's holder is a member or the admin pool; opening the pool reaches human admins only
 
 **Id:** 787ae7aa-e107-4a09-b8a5-6e44ac59a865

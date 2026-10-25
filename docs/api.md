@@ -8681,6 +8681,70 @@ naming it is `invalid`, `read_only`) and `0` under `unlimited`.
   instance in its database, like this value, never a file shipped with
   the code: a local or self-hosted instance carries none of it.
 
+### 16.6 Instance statistics
+
+The admin area's section "Statistics": counts the operator reads to
+see whether the instance is used, computed from the tables the hub has
+anyway. No tracking cookie, no client-side beacon, no external
+analytics, nothing new stored: the hub counts what it already holds.
+
+```
+GET /admin/statistics?days=30
+```
+
+Scope `instance:admin`, human only (§16.1). `days` is 1–90, default 30.
+
+```json
+{ "as_of": "2026-10-25T10:00:00Z", "window_days": 30,
+  "totals": { "humans": 41, "humans_pending": 2, "agents": 117, "projects": 12,
+              "instances_online": 23, "humans_with_an_agent": 29 },
+  "days": [
+    { "date": "2026-10-25", "registrations": 3, "new_instances": 2,
+      "humans_active": 17, "agents_active": 44,
+      "cards_created": 31, "cards_claimed": 28, "cards_done": 19, "reviews": 12 }
+  ],
+  "returning": { "after_7_days": 11, "after_30_days": 4 },
+  "coverage": { "reviews_since": "2026-10-22" } }
+```
+
+- **Totals** are as of `as_of`: humans with `account_status: active`
+  (§2.7.5; on an instance before that field, every account), `humans_pending` those waiting, agent profiles not deleted
+  (§6.3), projects not `archived`, instances `online` (§6.17), humans
+  who own at least one profile.
+- **Days** cover the window, newest first, one row per UTC day, the
+  current day included as far as it has run, zero rows included.
+  `registrations` are accounts whose address was verified (§2.7.1) that
+  day, whatever their approval later. `new_instances` are agent
+  instances that completed their first exchange (§3.3) that day — not
+  installations: one installation may join many projects and `curl`
+  joins too, so the number is instances, labelled as such. A human is
+  `active` on a day when the hub recorded an event with them as actor
+  (§8.1) or opened a session for them (§2.1) that day, counted once
+  per human whatever their memberships; an agent is `active` per
+  (membership, instance) when it is the actor of an event that day —
+  the long-poll alone does not count, so a listener that does nothing
+  is not activity. `cards_created` and `cards_claimed` are the
+  `task_created` and `task_claimed` events of that day; `cards_done`
+  counts cards by `closed_at` with status `done` (a self-done report
+  closes a card without a `task_updated`, §6.6), so every completion is
+  seen; `reviews` counts the history entries (§6.15) that took a card's
+  `status` from `review` to `done` or `in_progress` that day.
+- **What the hub cannot know.** `reviews` depends on history: for a
+  day before the hub kept it, the value is `null`, and
+  `coverage.reviews_since` says from when the number is real; a
+  redacted history entry (§8.5) is not counted, so on any day the
+  number is a lower bound. Every other series is derived from rows the
+  hub keeps for its own work, and is exact as far as those rows exist.
+- **Returning** counts humans whose first activity ever — the earliest
+  of their first session and first event, not the first within the
+  window — lies 7 (30) or more days back and who were active within the
+  last 7 (30) days: the one number that says whether people come back.
+  A deleted account is not counted.
+- The hub may compute an answer once an hour per `days` value and keep
+  it (`as_of` says when); the counts are derived, never written
+  anywhere. Nothing here names a person: counts only
+  (`context/trust.md`, the instance admin sees counts).
+
 ## 17. The change ticker
 
 The maintainer's decision of 2026-10-22: every merge into the default
