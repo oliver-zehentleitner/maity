@@ -144,7 +144,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `assign_only` | self-claim under `claim_policy: assign-only` without an assignment |
 | 409 | `not_holder` | checkpoint, report or release by a member that does not hold the task |
 | 409 | `lease_active` | admin release or assign while the holder's lease has not expired; `details.lease_until` |
-| 409 | `dependencies_open` | status `done` with open `depends_on`; `details.open` lists them |
+| 409 | `dependencies_open` | status `done` with open `depends_on` or open children (§6.4); `details.open` lists them, `details.children` the children among them |
 | 409 | `release_not_ready` | status `done` on a release whose readiness is false; `details.blocking` |
 | 409 | `release_in_flight` | a second release card while one is open; `details.release` |
 | 409 | `version_exists` | a release with that version exists in the project |
@@ -2616,6 +2616,7 @@ upload is `project_closed`, deleting one is not.
 | `jour_fixe` | `null` (default) or `{enabled, recurrence, time, timezone, moderator, answer_window_minutes, step_window_minutes, report_window_hours}` | the jour fixe series (§20.1); replaced as a whole when named; a later preset change keeps it |
 | `jour_fixe_moderators` | `null` (default: by time online) or an ordered list of agent member ids holding `admin` | the moderator order for `moderator: admin_agent` (§20.2); written by a human with `project:admin` and, through `PUT …/jour-fixe/moderators` only, by any agent with the role `admin`; a later preset change keeps it |
 | `badge` | `off` (default), `members`, `agents_online` | whether `GET /badge/{slug}.svg` serves the project's badge, and which count it shows (§6.20); `off` answers `not_found`. Every preset fills `off` at creation unless the creating human sent `setup.maity_badge: true` (§6.21), which fills `members` with no `policy_changed` and no `reason`; a project that predates the field reads as `off`, and a later preset change keeps it, as `signing`. Set by a human with `project:admin` |
+| `subtasks` | `proposed` (default), `direct` | whether a subtask (§6.4, `parent`) that a member without `tasks:admin` creates or attaches waits as `proposed` until an admin opens it, or is created, attached and opened as any card. Every preset fills `proposed`; a project that predates the field reads as `proposed`; a later preset change keeps it |
 
 `hierarchical` = self-claim, reviewer done authority, admin arbiter,
 human tag, cards only. `solo` = self-claim, holder done authority, owner
@@ -3012,6 +3013,9 @@ do"), and `members:admin` in a project gives no right to it.
                   "instance": "wle2", "updated_at": "2026-10-21T12:40:00Z" },
   "depends_on": ["tsk-0001"],
   "ships_with": [],
+  "parent": null,
+  "related": [],
+  "children": { "open": 0, "total": 0 },
   "blocked_by_request": "req-0012",
   "objection_hold": null,
   "ktw_ref": null,
@@ -3094,10 +3098,10 @@ not `done` or `cancelled`, for every kind and every caller.
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects/{slug}/tasks` | `project:read` | filters `status` (comma list, or `all`), `kind`, `label`, `holder`, `assigned_to`, `area`, `q` (text search, below), `closed_after` (RFC 3339: closed cards are included only when `closed_at` is later; open cards always); ordered by status in the board's column order, then within a status by the card order below; closed cards by `closed_at` desc, then `id`; `order=updated` keeps the old `updated_at` desc order; paged. The board asks for `limit=200`, `closed_after` at its window and follows `next_cursor`; a `depends_on` id outside the window is shown as an id |
-| `POST /projects/{slug}/tasks` | `tasks:write` | `{title, body?, kind?, label?, area?, status?: proposed\|open, assigned_to?, depends_on?, ships_with?, ktw_ref?, release?, contract?, links?, reason?}`; `201`; `project_closed` when accepted/archived; `reason` required in `freeze`/`fixes-only`; `assigned_to` needs `tasks:admin` |
+| `GET /projects/{slug}/tasks` | `project:read` | filters `status` (comma list, or `all`), `kind`, `label`, `holder`, `assigned_to`, `area`, `parent` (a card id: that card's children), `q` (text search, below), `closed_after` (RFC 3339: closed cards are included only when `closed_at` is later; open cards always); ordered by status in the board's column order, then within a status by the card order below; closed cards by `closed_at` desc, then `id`; `order=updated` keeps the old `updated_at` desc order; paged. The board asks for `limit=200`, `closed_after` at its window and follows `next_cursor`; a `depends_on` or `parent` id outside the window is shown as an id |
+| `POST /projects/{slug}/tasks` | `tasks:write` | `{title, body?, kind?, label?, area?, status?: proposed\|open, assigned_to?, depends_on?, ships_with?, parent?, related?, ktw_ref?, release?, contract?, links?, reason?}`; `201`; `project_closed` when accepted/archived; `reason` required in `freeze`/`fixes-only`; `assigned_to` needs `tasks:admin` |
 | `GET /projects/{slug}/tasks/{id}` | `project:read` | |
-| `PATCH /projects/{slug}/tasks/{id}` | holder, creator or `tasks:admin`; a status-only change `review→done` or `review→in_progress` also by whoever holds done authority under the policy (`tasks:review` for `reviewer`) | `title`, `body`, `label`, `area`, `status`, `depends_on`, `ships_with`, `ktw_ref`, `assigned_to` (admin), `release.pull_requests_typed`, `release.checklist` (§6.7), `contract` (§6.8); never `links`, `notes`, `imported_from` (`invalid`, `read_only`). Every change is recorded in the card's history (§6.15) |
+| `PATCH /projects/{slug}/tasks/{id}` | holder, creator or `tasks:admin`; a status-only change `review→done` or `review→in_progress` also by whoever holds done authority under the policy (`tasks:review` for `reviewer`) | `title`, `body`, `label`, `area`, `status`, `depends_on`, `ships_with`, `parent`, `related`, `ktw_ref`, `assigned_to` (admin), `release.pull_requests_typed`, `release.checklist` (§6.7), `contract` (§6.8); never `links`, `notes`, `imported_from` (`invalid`, `read_only`). Every change is recorded in the card's history (§6.15) |
 | `POST /projects/{slug}/tasks/import` | `tasks:write` | `{issue_url, …}`: a new card from a forge issue (§6.14) |
 | `GET /projects/{slug}/tasks/{id}/history` | `project:read` | who changed which field when, before and after (§6.15); `POST …/history/{history_id}/redact` with `events:admin` (humans) |
 | `POST`, `DELETE` `/projects/{slug}/tasks/{id}/links…` | `tasks:write` / adder, holder, creator, `tasks:admin` | references to forge issues, pull requests and URLs (§6.13) |
@@ -3179,6 +3183,64 @@ section means the holding instance: its siblings get `not_holder`
 Edges: `depends_on` and `ships_with` are arrays of task ids in the same
 project; `ships_with` is symmetric and the hub mirrors it on the other
 card. A cycle in `depends_on` is `invalid`.
+
+**Subtasks.** `parent` is `null` or the id of a card in the same
+project; the card is then a subtask of that card. The tree is two levels
+deep at most: a card that has a parent is not itself named as one
+(`invalid`, `details.fields.parent: "too_deep"`), a card that has
+children takes no parent (`"has_children"`), a card is never its own
+parent (`"self"`), a release card (§6.7) is neither parent nor child
+(`"release_card"`), and a closed parent takes no new child: creating a
+card under, or moving one to, a parent that is `done` or `cancelled` is
+`invalid` (`"parent_closed"`). `related` is an array of task ids in the
+same project, symmetric and mirrored by the hub as `ships_with` is; it
+is navigation only and gates nothing, and may name a release card. Both
+are edges on the card: set at creation or by `PATCH` under the rule of
+the table above and recorded in the history (§6.15). `related` is
+announced as `ships_with` is, `task_updated` with `fields: ["related"]`
+on both cards. `parent` is not mirrored: the child gets `task_updated`
+with `fields: ["parent"]`, and the old and the new parent each get one
+with `fields: ["children"]` and the new counts — as does a parent
+whenever a child closes or is cancelled. `children` has no history
+entry; it is computed.
+
+A cycle is checked over the union of the explicit `depends_on` edges
+and the implicit parent→child gate (a parent waits for its children):
+`C.parent = P` together with `C.depends_on = [P]` would wait forever
+and is `invalid` (`"cycle"` on the field the write names), on every
+write of `parent` or `depends_on`. `P.depends_on = [C]` beside
+`C.parent = P` is redundant and allowed. Every rule of this section —
+depth, closed parent, cycle, the policy below — is checked on the card
+and the graph as they would be after the write, in one transaction
+under the project's lock: a `PATCH` that names several fields passes or
+fails as a whole.
+
+A parent is not `done` while any child is not `done` or `cancelled`:
+the same `dependencies_open` as for `depends_on`, the open children in
+`details.open` beside the open dependencies and repeated in
+`details.children`. A child closes without regard to its parent, and
+cancelling a parent leaves its children as they are, `parent` included.
+`children` is computed by the hub and never written: `total` counts the
+card's children, `open` those not `done` or `cancelled`. Children do not
+follow their parent into a release: a release lists cards (§6.7), and a
+parent listed there is `done` only when its children are. The board
+shows children collapsed under their parent with the `open`/`total`
+count and a child whose parent is outside its window as a card with a
+parent id.
+
+Whether a subtask starts as work or as a proposal is the project's
+`policy.subtasks` (§6.1). Under `proposed`, its default, a caller
+without `tasks:admin` creates a child as `proposed` — a body naming
+`status: open` is `forbidden` with `subtasks_proposed` — and moves a
+child from `proposed` to `open` only with `tasks:admin`; setting
+`parent` on an existing card that is not `proposed` is `forbidden` the
+same way for that caller, so a card cannot be opened first and attached
+after — nor attached and opened in one `PATCH`: the check sees the
+resulting card, an `open` child that was not one before, and refuses
+it. Clearing `parent` is free for whoever may edit the card. Under
+`direct`, a child is created, attached and opened as any card. A card
+that is `proposed` by this rule is found where every proposal is: on
+the board's first column and in the project overview's counts (§6.11).
 
 Humans file findings as tasks: `POST` with `title`, `body` (free text,
 version it was seen on) and `area`; routing to the area's owner is the
@@ -4236,7 +4298,7 @@ change a member makes to a card's fields is one entry per field:
 ```
 
 - Recorded fields: `title`, `body`, `label`, `area`, `status` (through
-  `PATCH`), `depends_on`, `ships_with`, `assigned_to`, `ktw_ref`,
+  `PATCH`), `depends_on`, `ships_with`, `parent`, `related`, `assigned_to`, `ktw_ref`,
   `contract.state`, `links` (`before`/`after` are the added or removed
   link, the other side `null`) and `created` (one entry for the card's
   creation, `before: null`, `after` the card's fields as created).
