@@ -476,3 +476,26 @@ def test_withdrawing_an_escalated_takeover_withdraws_its_request(
     assert asker.post(f"{path}/withdraw", {}).json()["status"] == "withdrawn"
     asked = owner.get(f"/projects/maity/requests/{request_id}").json()
     assert asked["status"] == "withdrawn"
+
+
+def test_an_escalation_is_neither_forwarded_nor_claimed_by_a_party(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    holder = flow.agent(make_client, owner)
+    asker = flow.agent(make_client, owner, role="admin")
+    receiver = flow.agent(make_client, owner, role="admin")
+    card_id = _held(owner, holder)
+    takeover_id = _open(asker, card_id, to=receiver.id).json()["id"]
+    path = f"/projects/maity/takeovers/{takeover_id}"
+    holder.post(f"{path}/respond", {"object": {"reasons": "nearly done"}})
+    request_id = holder.post(f"{path}/escalate", {}).json()["request_id"]
+    requests = f"/projects/maity/requests/{request_id}"
+    judge = flow.agent(make_client, owner, role="admin")  # holds it as an admin
+    forwarded = judge.post(f"{requests}/forward", {"to": receiver.id})
+    assert forwarded.status_code == 403, forwarded.text
+    assert forwarded.json()["error"]["details"]["reason"] == "party_to_takeover"
+    pooled = judge.post(f"{requests}/forward", {"to": "role:admin"})
+    assert pooled.status_code == 200, pooled.text
+    claimed = receiver.post(f"{requests}/claim", {})
+    assert claimed.status_code == 403, claimed.text
+    assert claimed.json()["error"]["details"]["reason"] == "party_to_takeover"

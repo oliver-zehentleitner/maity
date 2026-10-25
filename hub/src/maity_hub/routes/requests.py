@@ -431,10 +431,14 @@ def _locked_member(conn: Connection, caller: Caller, slug: str) -> Membership:
 
 def _addressee_audience(conn: Connection, mine: Membership, to: inbox.Addressee) -> list[str]:
     """`to` resolved to `member:` or `role:` (§8.2); `owner` is the owner's member id."""
+    return _audience_of(conn, mine.project.id, to)
+
+
+def _audience_of(conn: Connection, project_id: str, to: inbox.Addressee) -> list[str]:
     if to.kind == "role":
         return [f"role:{to.role}"]
     if to.kind == "owner":
-        owner = inbox.owner_membership(conn, mine.project.id)
+        owner = inbox.owner_membership(conn, project_id)
         return [f"member:{owner.human_id}"] if owner else ["role:owner"]
     return [f"member:{principal_id(conn, to.member)}"]
 
@@ -736,6 +740,14 @@ def _check_answer(row: Any, body: AnswerIn) -> None:
         raise invalid({"markdown": "go_with_markdown_and_base_version"})
 
 
+def _refuse_by_kind(conn: Connection, row: Any, who: Any) -> None:
+    """The proposal kind's own rule on who answers (`proposals.refusal`), for the one who
+    answers, claims or is forwarded the request: `forbidden` with its reason."""
+    reason = proposals.refusal(conn, row, who)
+    if reason is not None:
+        raise ApiError(403, "forbidden", "this request is not theirs to answer", {"reason": reason})
+
+
 def _refuse_unless_open(row: Any) -> None:
     if row.status != "open":
         raise ApiError(
@@ -763,11 +775,7 @@ def answer(
             raise humans_only(refusal)
         if inbox.forwarded(row) and row.holder_member != mine.id:
             raise _not_holder()  # once forwarded, only its holder answers (§7)
-        kind_refusal = proposals.refusal(conn, row, mine)
-        if kind_refusal is not None:
-            raise ApiError(
-                403, "forbidden", "this request is not yours to answer", {"reason": kind_refusal}
-            )
+        _refuse_by_kind(conn, row, mine)
         if not inbox.may_answer(conn, row, mine):
             raise forbidden(inbox.answer_scope(row))
         if inbox.is_asker(row, mine):
@@ -967,6 +975,8 @@ def forward(
                 raise invalid({"to": "not_admin"}, "a member holding admin, or the addressee")
             if target.agent_id is not None and inbox.humans_only(row):
                 raise humans_only("a humans_only request goes to a human or to the admins")
+            # Nor to someone the proposal's kind would not let answer it (§6.19).
+            _refuse_by_kind(conn, row, target)
             target_id = target.id
             values = {"holder_member": target.id, "holder_pool": None}
         action_name = "opened" if target_id is None else "forwarded"
@@ -1008,6 +1018,7 @@ def claim(slug: str, request_id: str, request: Request, caller: AnyCaller) -> JS
             )
         if mine.kind == "agent" and inbox.humans_only(row):
             raise humans_only("only a human admin claims a humans_only request")
+        _refuse_by_kind(conn, row, mine)  # a holder that may not answer would strand it
         if inbox.is_asker(row, mine):
             raise invalid({"to": "self"}, "nobody holds a request it asked")
         won = conn.execute(
@@ -1176,7 +1187,7 @@ def close_request(
             outcome,
             None if outcome == "withdrawn" else by,
             actor,
-            reply_id=None if outcome == "withdrawn" else outcome,
+            reply_id=outcome if outcome in ("go", "no") else None,
         )
     closed = _row(conn, row.id)
     records.personal_request(conn, closed)
@@ -1298,14 +1309,11 @@ def file_proposal(
             }
         )
     )
-    audience = [f"role:{to.role}"] if to.kind == "role" else []
-    if to.kind == "member":
-        audience = [f"member:{principal_id(conn, to.member)}"]
     emit(
         conn,
         project_id,
         "request_created",
-        audience or ["role:owner"],
+        _audience_of(conn, project_id, to),
         request_view(conn, _row(conn, request_id)),
         actor=actor,
         subject=("request", request_id),
