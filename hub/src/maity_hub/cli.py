@@ -78,13 +78,15 @@ def _second_factor_reset(settings: Settings, handle: str) -> int:
         return _database_error(settings, error)
     try:
         with engine.begin() as conn:
-            human_id = second_factor_reset.operator_reset(conn, handle)
+            human_id, reset = second_factor_reset.operator_reset(conn, handle)
     except SQLAlchemyError as error:
         return _database_error(settings, error)
     finally:
         engine.dispose()
     if human_id is None:
         return _fail(f"no human with the handle {handle!r}", EXIT_FAILURE)
+    if not reset:
+        return _fail(f"no second factor is enrolled for {handle}; nothing changed", EXIT_FAILURE)
     print(f"maity-hub: reset the second factor of {handle} ({human_id}); their sessions ended")
     return 0
 

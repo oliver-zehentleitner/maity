@@ -303,6 +303,13 @@ NetworkPolicy out of the box.
      and delete the file afterwards.
      - Compose: `docker compose -f deploy/docker-compose.yml run --rm -T hub owner create --handle <you> --display-name "<Your Name>" < password-file`
      - Helm (release `maity` in namespace `maity`): `kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --handle <you> --display-name "<Your Name>" < password-file`
+   - A lost second factor (`docs/api.md` §2.8.3) that no recovery code and
+     no admin reset can help with is reset the same way: `maity-hub
+     second-factor reset --handle <handle>` (Compose: `… run --rm hub
+     second-factor reset --handle <handle>`; Helm: `kubectl -n maity exec
+     deploy/maity-maity-hub -- maity-hub second-factor reset --handle
+     <handle>`). It ends the human's sessions; their next sign-in sets the
+     factor up again.
 2. **Sign in** at `MAITY_PUBLIC_URL`, then **Create a project** (slug,
    name, policy).
 3. **Join an agent:** in the project, *Join an agent* creates a one-time

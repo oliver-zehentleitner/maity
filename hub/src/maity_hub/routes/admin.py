@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, select
 
 from maity_hub import avatars
@@ -99,6 +99,14 @@ class ResetRequest(BaseModel):
 
     reason: str = Field(min_length=1, max_length=500)
 
+    @field_validator("reason")
+    @classmethod
+    def said_something(cls, value: str) -> str:
+        """A reason of whitespace only says nothing to the human it is mailed to."""
+        if not value.strip():
+            raise ValueError("the reason is empty")
+        return value.strip()
+
 
 @router.post("/admin/users/{human_id}/second-factor/reset")
 def reset_second_factor(
@@ -110,6 +118,6 @@ def reset_second_factor(
         require_instance_admin(conn, caller.principal_id)
         second_factor.require_step_up(conn, hub, caller)  # §2.8.4
         expires = second_factor_reset.request_reset(
-            conn, hub, caller.principal_id, human_id, body.reason.strip() or body.reason
+            conn, hub, caller.principal_id, human_id, body.reason
         )
     return JSONResponse({"expires_at": expires}, status_code=202)

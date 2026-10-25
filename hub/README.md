@@ -66,6 +66,12 @@ admin (`docs/api.md` §16): it sees `GET /admin/users` and the mail
 settings (`/admin/settings/mail`), and nothing of a project it is not a
 member of.
 
+`maity-hub second-factor reset --handle <handle>` is the operator's last way
+back into an account whose two-factor sign-in is lost and cannot be reset
+through the dashboard (no recovery code, no mail, or the admin's own): it
+removes the factor at once and ends the human's sessions, and the next
+sign-in sets it up again (`docs/api.md` §2.8.3).
+
 ```sh
 curl http://127.0.0.1:8080/api/v1/health
 curl http://127.0.0.1:8080/api/v1/help

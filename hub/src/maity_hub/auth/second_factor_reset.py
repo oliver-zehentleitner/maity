@@ -200,11 +200,14 @@ def apply(conn: Connection, human_id: str, *, by: str) -> None:
     second_factor.changed(conn, human_id, "reset", by)
 
 
-def operator_reset(conn: Connection, handle: str) -> str | None:
-    """`maity-hub second-factor reset --handle`: at once, no mail, no key needed."""
+def operator_reset(conn: Connection, handle: str) -> tuple[str | None, bool]:
+    """`maity-hub second-factor reset --handle`: at once, no mail, no key needed.
+    Returns (human id or None for an unknown handle, whether a factor was reset); a
+    human without a factor is left alone, as the admin's request answers 409."""
     human_id = conn.execute(select(t.human.c.id).where(t.human.c.handle == handle)).scalar()
     if human_id is None:
-        return None
-    second_factor.factor_of(conn, human_id, lock=True)
+        return None, False
+    if not second_factor.enrolled(second_factor.factor_of(conn, human_id, lock=True)):
+        return str(human_id), False
     apply(conn, human_id, by="operator")
-    return str(human_id)
+    return str(human_id), True

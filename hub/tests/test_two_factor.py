@@ -70,9 +70,9 @@ def enrol(human: flow.Human, moment: Clock) -> tuple[bytes, list[str]]:
     return secret, codes
 
 
-def second_step(client: TestClient) -> str:
+def second_step(client: TestClient, handle: str = "maintainer") -> str:
     """Log in again: the answer owes the second step; returns its CSRF token."""
-    answer = login(client)
+    answer = login(client, handle)
     assert answer.status_code == 200, answer.text
     assert answer.json() == {"second_factor": "required", "expires_in": 300}
     session = client.get("/api/v1/auth/session").json()
@@ -642,9 +642,12 @@ def test_the_operator_resets_at_once(
 
     human = signed_in(make_client, migrated)
     enrol(human, moment)
+    factory.human(migrated, "plain")
     with migrated.begin() as conn:
-        assert second_factor_reset.operator_reset(conn, "nobody") is None
-        assert second_factor_reset.operator_reset(conn, "maintainer") == human.id
+        assert second_factor_reset.operator_reset(conn, "nobody") == (None, False)
+        # A human without a factor is left alone, sessions included.
+        assert second_factor_reset.operator_reset(conn, "plain")[1] is False
+        assert second_factor_reset.operator_reset(conn, "maintainer") == (human.id, True)
     assert human.get("/me").status_code == 401
     assert records_of(migrated, "second_factor_changed")[-1].data["by"] == "operator"
 
@@ -658,3 +661,55 @@ def test_the_log_masks_the_reset_token(
         make_client().get("/mail/second-factor-reset/SECRET-TOKEN")
     lines = [r.getMessage() for r in caplog.records if r.name == "maity_hub.access"]
     assert lines == ["GET /mail/second-factor-reset/… 404"]
+
+
+def test_a_reset_link_expires_and_the_requests_are_limited(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    admin, target, _ = admin_and_target(make_client, migrated, moment)
+    path = f"/admin/users/{target.id}/second-factor/reset"
+    assert admin.post(path, {"reason": "lost phone"}).status_code == 202
+    token = reset_link(migrated)
+    assert admin.post(path, {"reason": "again"}).status_code == 202
+    assert admin.post(path, {"reason": "again"}).status_code == 202
+    assert admin.post(path, {"reason": "again"}).status_code == 429  # 3 per day per human
+    assert admin.post(path, {"reason": "   "}).status_code == 400  # says nothing
+    moment.move(hours=24)
+    assert target.client.get(f"/mail/second-factor-reset/{token}").status_code == 404
+    assert target.client.post(f"/mail/second-factor-reset/{token}").status_code == 404
+
+
+def test_a_reset_quotes_the_reason_and_ends_every_session(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    from tests.test_notification_settings import outbox_rows
+
+    admin, target, secret = admin_and_target(make_client, migrated, moment)
+    second = make_client(secret_key=KEY)
+    csrf = second_step(second, "someone")
+    moment.move(seconds=30)
+    assert (
+        second.post(
+            "/api/v1/auth/second-factor/verify",
+            json={"code": code_now(secret, moment.at)},
+            headers={"X-CSRF-Token": csrf},
+        ).status_code
+        == 200
+    )
+    reason = "<b>lost</b> see https://evil.example/x"
+    admin.post(f"/admin/users/{target.id}/second-factor/reset", {"reason": reason})
+    mail = outbox_rows(migrated)[-1]
+    assert "https://evil.example" not in mail.body and "https[:]//evil[.]example" in mail.body
+    token = reset_link(migrated)
+    page = target.client.get(f"/mail/second-factor-reset/{token}").text
+    assert "<b>" not in page and "&lt;b&gt;" in page and "https://evil.example" not in page
+    assert target.client.post(f"/mail/second-factor-reset/{token}").status_code == 200
+    with migrated.connect() as conn:
+        ended = (
+            conn.execute(
+                select(t.human_session.c.ended_by).where(t.human_session.c.human_id == target.id)
+            )
+            .scalars()
+            .all()
+        )
+    assert len(ended) >= 2 and set(ended) == {"second_factor_reset"}
