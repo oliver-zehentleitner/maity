@@ -3,7 +3,7 @@ order, the rounds, the manual start, and the answers."""
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
@@ -16,7 +16,7 @@ from maity_hub.access import membership
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import ApiError, forbidden, invalid, not_found, rate_limited
-from maity_hub.jourfixe import answers, rounds, schedule, views
+from maity_hub.jourfixe import answers, exchange, rounds, schedule, views
 from maity_hub.models import Strict
 from maity_hub.models import markdown as text_field
 
@@ -41,13 +41,44 @@ class AnswerIn(Strict):
     anonymous: bool = False
 
 
-def _active(conn: Connection, project_id: str) -> set[str]:
-    rows = conn.execute(
-        select(t.membership.c.agent_id, t.membership.c.human_id).where(
-            t.membership.c.project_id == project_id, t.membership.c.active.is_(True)
-        )
-    ).all()
-    return {r.agent_id or r.human_id for r in rows}
+class ItemIn(Strict):
+    text: str = Field(min_length=1, max_length=4096)
+    from_: str = Field(alias="from", min_length=1, max_length=64)
+
+
+class ProposalIn(Strict):
+    title: str = Field(min_length=1, max_length=200)
+    reason: str | None = Field(default=None, max_length=4096)
+
+
+class TopicIn(Strict):
+    title: str = Field(min_length=1, max_length=200)
+    summary: str | None = Field(default=None, max_length=8192)
+    items: list[ItemIn] = Field(default_factory=list, max_length=50)
+    proposals: list[ProposalIn] = Field(default_factory=list, max_length=20)
+
+
+class StatementIn(Strict):
+    topics: list[TopicIn] = Field(min_length=1, max_length=20)
+
+
+class PostIn(Strict):
+    step: Literal["response", "reply", "rejoinder", "further"]
+    topic_id: str = Field(min_length=1, max_length=16)
+    body: str = Field(min_length=1, max_length=8192)
+    to: list[str] | None = Field(default=None, max_length=50)
+    in_reply_to: list[str] | None = Field(default=None, max_length=50)
+
+
+class StepIn(Strict):
+    reason: str = text_field(min_length=1)
+    members: list[str] | None = Field(default=None, min_length=1, max_length=50)
+    topics: list[str] | None = Field(default=None, min_length=1, max_length=20)
+
+
+def _now(conn: Connection, rows: list[Any]) -> dict[str, set[str]]:
+    """Per round its current participants (§20.7)."""
+    return exchange.participants_now(conn, rows)
 
 
 def _round(conn: Connection, project_id: str, round_id: str) -> Any:
@@ -66,7 +97,7 @@ def round_view(conn: Connection, round_id: str) -> dict[str, Any]:
     slug = conn.execute(
         select(t.project.c.slug).where(t.project.c.id == row.project_id)
     ).scalar_one()
-    return views.full(row, slug, _active(conn, row.project_id))
+    return views.full(row, slug, _now(conn, [row])[row.id])
 
 
 def answer_view(conn: Connection, answer_id: str) -> dict[str, Any]:
@@ -144,14 +175,14 @@ def overview(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
             )
             .order_by(t.jour_fixe_round.c.scheduled_for.desc())
         ).first()
-        active = _active(conn, project.id)
+        now = _now(conn, [r for r in (running, last) if r is not None])
         return JSONResponse(
             {
                 "policy": project.jour_fixe,
                 "moderators": _resolved(conn, project),
                 "next_at": clock.rfc3339(slot) if slot is not None else None,
-                "current_round": views.full(running, slug, active) if running else None,
-                "last_round": views.full(last, slug, active) if last else None,
+                "current_round": views.full(running, slug, now[running.id]) if running else None,
+                "last_round": views.full(last, slug, now[last.id]) if last else None,
             }
         )
 
@@ -222,12 +253,12 @@ def list_rounds(
             query.order_by(c.scheduled_for.desc(), c.id.desc()).limit(limit + 1)
         ).all()
         page = rows[:limit]
-        active = _active(conn, mine.project.id)
+        now = _now(conn, list(page))
         next_cursor = (
             paging.cursor(page[-1].scheduled_for, page[-1].id, bound) if len(rows) > limit else None
         )
         return JSONResponse(
-            {"items": [views.full(r, slug, active) for r in page], "next_cursor": next_cursor}
+            {"items": [views.full(r, slug, now[r.id]) for r in page], "next_cursor": next_cursor}
         )
 
 
@@ -244,7 +275,7 @@ def _observer_round(conn: Connection, caller: Caller, slug: str, round_id: str) 
     ).first()
     if row is None:
         raise not_found()
-    active = _active(conn, project.id)
+    active = _now(conn, [row])[row.id]
     agents = [
         i["member_id"] for i in row.invited if i["kind"] == "agent" and i["member_id"] in active
     ]
@@ -270,7 +301,7 @@ def get_round(slug: str, round_id: str, request: Request, caller: AnyCaller) -> 
             return JSONResponse(_observer_round(conn, caller, slug, round_id))
         mine.require("project:read")
         row = _round(conn, mine.project.id, round_id)
-        return JSONResponse(views.full(row, slug, _active(conn, mine.project.id)))
+        return JSONResponse(views.full(row, slug, _now(conn, [row])[row.id]))
 
 
 @router.post("/projects/{slug}/jour-fixe/rounds")
@@ -346,3 +377,59 @@ def withdraw_answer(slug: str, round_id: str, request: Request, caller: AnyCalle
         events.lock_project(conn, mine.project.id)
         row = _round(conn, mine.project.id, round_id)
         return JSONResponse(answers.withdraw(conn, row, mine))
+
+
+# --- the statement and the exchange (§20.5) -----------------------------------------------------
+
+
+@router.post("/projects/{slug}/jour-fixe/rounds/{round_id}/statement")
+def statement(
+    slug: str, round_id: str, body: StatementIn, request: Request, caller: AnyCaller
+) -> JSONResponse:
+    def action(conn: Connection) -> idempotency.Outcome:
+        mine = membership(conn, caller, slug)
+        row = _round(conn, mine.project.id, round_id)
+        topics = [topic.model_dump(by_alias=True) for topic in body.topics]
+        exchange.submit_statement(conn, row, mine, topics, caller.actor(mine.id))
+        return idempotency.Outcome(201, "jour_fixe_round", row.id, round_view(conn, row.id))
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
+def post_view(conn: Connection, ref: str) -> dict[str, Any]:
+    """A post's replay: `<round id>/<post id>`."""
+    round_id, post_id = ref.split("/", 1)
+    row = conn.execute(select(t.jour_fixe_round).where(t.jour_fixe_round.c.id == round_id)).one()
+    found: dict[str, Any] = next(p for p in row.posts if p["id"] == post_id)
+    return views.post(found)
+
+
+idempotency.LOADERS["jour_fixe_post"] = idempotency.plain(post_view)
+
+
+@router.post("/projects/{slug}/jour-fixe/rounds/{round_id}/posts")
+def post(
+    slug: str, round_id: str, body: PostIn, request: Request, caller: AnyCaller
+) -> JSONResponse:
+    def action(conn: Connection) -> idempotency.Outcome:
+        mine = membership(conn, caller, slug)
+        row = _round(conn, mine.project.id, round_id)
+        made = exchange.submit_post(conn, row, mine, body.model_dump(), caller.actor(mine.id))
+        return idempotency.Outcome(
+            201, "jour_fixe_post", f"{row.id}/{made['id']}", views.post(made)
+        )
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
+@router.post("/projects/{slug}/jour-fixe/rounds/{round_id}/steps")
+def further_step(
+    slug: str, round_id: str, body: StepIn, request: Request, caller: AnyCaller
+) -> JSONResponse:
+    def action(conn: Connection) -> idempotency.Outcome:
+        mine = membership(conn, caller, slug)
+        row = _round(conn, mine.project.id, round_id)
+        exchange.add_step(conn, row, mine, body.reason, body.members, body.topics)
+        return idempotency.Outcome(201, "jour_fixe_round", row.id, round_view(conn, row.id))
+
+    return idempotency.run(engine_of(request), request, caller, action)

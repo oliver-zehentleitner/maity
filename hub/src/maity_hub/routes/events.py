@@ -346,6 +346,8 @@ def _group_for_posting(conn: Connection, mine: Membership, conversation_id: str)
         raise ApiError(
             403, "forbidden", "an owner reads along and does not post", {"reason": "observer"}
         )
+    if group.hub_thread:
+        raise group_chats.round_thread()
     group_chats.refuse_closed(group)
     return group
 

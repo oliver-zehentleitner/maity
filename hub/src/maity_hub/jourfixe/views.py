@@ -21,6 +21,11 @@ def participants(round_row: Any, active: set[str]) -> list[dict[str, Any]]:
     ]
 
 
+def post(found: dict[str, Any]) -> dict[str, Any]:
+    """A post as §20.7 shows it; `step_n` is the hub's own bookkeeping."""
+    return {k: v for k, v in found.items() if k != "step_n"}
+
+
 def full(round_row: Any, slug: str, active: set[str]) -> dict[str, Any]:
     return {
         "id": round_row.id,
@@ -46,7 +51,7 @@ def full(round_row: Any, slug: str, active: set[str]) -> dict[str, Any]:
         "answers_received": round_row.answers_received,
         "conversation_id": round_row.conversation_id,
         "statement": round_row.statement,
-        "posts": round_row.posts,
+        "posts": [post(p) for p in round_row.posts],
         "report": round_row.report,
     }
 
@@ -70,6 +75,6 @@ def minimal(round_row: Any, slug: str, active: set[str]) -> dict[str, Any]:
         "reported_at": _ts(round_row.reported_at),
         "participants": participants(round_row, active),
         "statement": round_row.statement,
-        "posts": round_row.posts,
+        "posts": [post(p) for p in round_row.posts],
         "report": report,
     }
