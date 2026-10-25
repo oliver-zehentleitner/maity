@@ -983,3 +983,25 @@ stays there.
 it keeps the place the header needs. Keeping the choice per human on
 the hub: a contract change for something a browser holds well enough,
 and the instruction asked for none.
+
+## At phone width the header's text beside the logo is hidden from sight, not from screen readers
+
+**Id:** d88c7687-5b55-45c7-92e8-6689e2181e06
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's instruction of 2026-10-25, from a phone screenshot of the cross-project inbox; the dashboard's implementation, 2026-10-25
+**Revisit when:** the switcher stops naming the current scope, or the header gets a second line on phones
+
+Below 600 px the span beside the logo (the project's name, "Everything
+waiting for you", "Your account", …) is clipped to one pixel by CSS,
+the usual visually hidden pattern; on wider screens it stays as it was.
+
+**Reason:** on a phone the text crowded the menus, and the switcher's
+current tab already names the scope. Clipped rather than removed, a
+screen reader still reads where the page is.
+
+**Rejected alternative:** `display: none`: it takes the name from
+screen readers too, and the page title alone is read only on load.
+Shortening the text: the project names are the operators', of any
+length.
