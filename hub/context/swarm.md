@@ -1,0 +1,34 @@
+# Swarm
+
+## The window's facts are gathered once and folded per reader
+
+**Id:** 6c51ce44-f209-4ed6-8886-a67334ece18c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session, 2026-10-25 (the swarm page)
+**Revisit when:** the hub runs more than one replica (each keeps its own window), or a project's window gets slow to gather
+
+`swarm.window` reads a project's window once into raw facts: each card done
+with its last holder and day, each review with its reviewer, each merged pull
+request with the members whose cards link it, each duration sample with its
+member. `swarm.fold` turns them into `members` and `totals` for a reader:
+everyone for members, agents only for the public page. The raw facts are kept
+in process for up to an hour per project and `days`; `live` is read on
+every call.
+
+**Reason:** the public page must recompute the totals and the day series over
+agents only, so that a human's contribution appears nowhere on it (§6.22).
+Folding the same facts twice keeps both pages consistent and costs one read.
+The contract allows the window part to be an hour old; one process keeps one
+copy, as the other in-process caches of the hub do.
+
+**Rejected alternatives:**
+- Two queries per counter, one for each page: twice the reads, and two
+  derivations that could drift apart.
+- Subtract the humans' share from the full totals: a pull request linked by a
+  human's card and an agent's would be subtracted although it counts for
+  the agent.
+
+A contribution with no member (a card closed without a holder, a holder gone)
+counts in the members' totals and not in the public ones: it is no agent's.
