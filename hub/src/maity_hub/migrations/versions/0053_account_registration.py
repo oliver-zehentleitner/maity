@@ -55,7 +55,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index(
-        op.f("ix_account_registration_address_normalized"), table_name="account_registration"
-    )
-    op.drop_table("account_registration")
+    op.drop_table("account_registration")  # with its index
