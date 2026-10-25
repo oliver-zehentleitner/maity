@@ -471,6 +471,19 @@ def _check_in(packet: dict[str, Any]) -> list[str]:
     return [*lines, ""]
 
 
+def _setup(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
+    """`Setup waits` (§6.21, §13): one line per setup card that is not done, in card order,
+    `<title> (<id>, <status>)` and `held by <holder>` while claimed. A hint, not a gate."""
+    lines = []
+    for card in _items(packet.get("setup")):
+        title, card_id, status = (inline(card.get(k)) for k in ("title", "id", "status"))
+        line = f"  {title} ({card_id}, {status})"
+        if card.get("holder"):
+            line += f", held by {_name(card['holder'], names)}"
+        lines.append(line)
+    return ["Setup waits:", *lines, ""] if lines else []
+
+
 def _keep_the_why(packet: dict[str, Any]) -> list[str]:
     """The `Keep the Why` block (§6.23, §13) when the project requires the commitment: the
     confirmation, or the sentence that asks for it with its deadline. The CLI never confirms
@@ -511,6 +524,7 @@ def render(packet: Any, first: bool = False, board_empty: bool = False) -> str:
         ]
     out += _availability(packet, names)
     out += _check_in(packet)
+    out += _setup(packet, names)
     out += _keep_the_why(packet)
     briefing = ms.get("briefing")
     if briefing:
