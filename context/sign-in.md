@@ -220,7 +220,11 @@ three policy values, step-up as such, agents being unaffected and
 passkeys later are the maintainer's go. The reasons below, asking after
 every method, `optional` as the default, the reset with proof by mail,
 the list of sensitive calls and the limits are this contract's
-proposal, marked as such in §2.8 for the maintainer to confirm.
+proposal, marked as such in §2.8 for the maintainer to confirm. The go
+named password accounts; the contract arbiter's ruling (2026-10-25)
+lets accounts without a password enrol too, since the factor is second
+to whatever first factor the account uses, behind the 24-hour guard
+that already protects their verified address.
 
 **Reason:** TOTP needs nothing from the browser or the operating
 system and nothing outside the hub — no relying-party binding to a host
