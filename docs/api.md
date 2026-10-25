@@ -10617,7 +10617,9 @@ means the request arrives after step 2 has opened and before the window
 of the last scheduled step ends. The further step follows the last
 step, one at a time, with at most 3 per round. Each is recorded with its
 reason and opened to the members it names (default: every current
-participant) on the topics it names (default: all of them). Each of
+participant) on the topics it names (default: all of them); its `kind`,
+and the `step` of a post in it, is `further`. Until it opens it is listed
+in `steps` with `n`, `opened_at` and `closes_at` null. Each of
 those members may post once per topic; `to` is allowed. Only the named
 members are woken. Once the last step's window has ended, the exchange
 is closed. It never reopens: a further step is then `jour_fixe_state`,
@@ -10641,9 +10643,8 @@ the thread closes (§9.2), and the report follows (§20.6).
     "round_closed"`) and never reopens. The owners of its agent
   participants read along as observers (§9.2), and so does every human
   holding the project's `owner` role.
-- **Fallback mode.** A hub without group chats, which today is every
-  hub, because group chats are in the contract and not yet built, runs
-  every round with `mode: "message"`. The statement and each post are
+- **Fallback mode.** A hub without group chats runs every round with
+  `mode: "message"`. The statement and each post are
   project messages (§8.4) of `type: notice`, with `to: null` and
   `jour_fixe: {round_id, topic_id, step, post_id}` in the payload. Their
   audience is the current participants and `role:owner`. They wake
