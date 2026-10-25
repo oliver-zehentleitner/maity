@@ -252,6 +252,14 @@ Three choices of the implementation that the contract leaves open:
   `approved_by` lineage and `created_at` stay, which the session list,
   "End this session" and the age rules of §2.6.5 read. The conditional
   update is also what makes one of two concurrent verifies win.
+- **A code counts only for the factor it was checked against.** The
+  check locks the factor's row first (as a confirmation, a reset and new
+  recovery codes do, so they wait for one another in one order: factor,
+  then recovery codes), and the step is consumed by an update that also
+  names the factor's generation and sealed secret. The lock alone would
+  serialize on a server database; the condition keeps a code of a factor
+  replaced between read and consume from counting even where no lock is
+  taken.
 - **Wrong codes are counted in the process**, per second-factor session
   (five end it) and per human (ten in 15 minutes lock the checks), like
   every other limit of the hub in V1 (`ratelimit.Limiter`). A restart
