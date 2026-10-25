@@ -26,7 +26,8 @@ from maity_hub.jourfixe.answers import refused
 from maity_hub.policy import CLOSED_STATES, REASON_STATES
 
 FINDINGS_MAX, PROPOSALS_MAX = 50, 20  # §1.7
-FINDING_BYTES = 1024  # a finding the hub builds (§20.6)
+# §1.7, in bytes of UTF-8: a finding (also one the hub builds), the summary, a reason.
+FINDING_BYTES, SUMMARY_BYTES, REASON_BYTES = 1024, 8192, 2048
 CARD_REASON = "jour fixe proposal"  # the reason §6.1 asks for in freeze and fixes-only
 OPTIONS = [{"id": "adopt", "label": "Adopt"}, {"id": "reject", "label": "Reject"}]
 
@@ -104,6 +105,13 @@ def submit_report(
         raise refused("not_moderator", "only the round's moderator writes the report")
     if round_row.status != "reporting":
         raise _state(round_row, "the report is due once the exchange has closed, and only once")
+    from maity_hub.jourfixe.exchange import too_long
+
+    too_long(
+        [("summary", body.get("summary"), SUMMARY_BYTES)]
+        + [("findings", f["text"], FINDING_BYTES) for f in body["findings"]]
+        + [("proposals", p.get("reason"), REASON_BYTES) for p in body["proposals"]]
+    )
     topic_ids = {topic["id"] for topic in (round_row.statement or {}).get("topics", [])}
     from_statement = _statement_proposals(round_row)
     if any(f.get("topic_id") not in (None, *topic_ids) for f in body["findings"]):

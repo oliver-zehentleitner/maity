@@ -90,12 +90,12 @@ class DecisionIn(Strict):
 
 class FindingIn(Strict):
     topic_id: str | None = Field(default=None, max_length=16)
-    text: str = Field(min_length=1, max_length=4096)
+    text: str = Field(min_length=1, max_length=triage.FINDING_BYTES)
 
 
 class ReportProposalIn(Strict):
     title: str = Field(min_length=1, max_length=200)
-    reason: str | None = text_field(default=None)
+    reason: str | None = Field(default=None, max_length=triage.REASON_BYTES)
     topic_id: str | None = Field(default=None, max_length=16)
     statement_proposal_id: str | None = Field(default=None, max_length=16)
     triage: Literal["decided", "to_owner"]
@@ -104,7 +104,7 @@ class ReportProposalIn(Strict):
 
 
 class ReportIn(Strict):
-    summary: str | None = text_field(default=None)
+    summary: str | None = Field(default=None, max_length=triage.SUMMARY_BYTES)
     findings: list[FindingIn] = Field(default_factory=list, max_length=triage.FINDINGS_MAX)
     proposals: list[ReportProposalIn] = Field(default_factory=list, max_length=triage.PROPOSALS_MAX)
 
@@ -495,7 +495,12 @@ def report_view(conn: Connection, round_id: str) -> dict[str, Any]:
     }
 
 
-idempotency.LOADERS["jour_fixe_report"] = idempotency.plain(report_view)
+def _replay_report(conn: Connection, round_id: str, request: Request) -> dict[str, Any]:
+    _member_now(conn, _round_project(conn, round_id), request)
+    return report_view(conn, round_id)
+
+
+idempotency.LOADERS["jour_fixe_report"] = _replay_report
 
 
 @router.post("/projects/{slug}/jour-fixe/rounds/{round_id}/report")
@@ -505,6 +510,9 @@ def report(
     fg = reader_of(request)
 
     def action(conn: Connection) -> idempotency.Outcome:
+        events.lock_project(conn, membership(conn, caller, slug).project.id)
+        # The caller's membership and role as of the lock: a demotion or a removal that
+        # commits first decides whether it may still decide (§20.6).
         mine = membership(conn, caller, slug)
         row = _round(conn, mine.project.id, round_id)
         triage.submit_report(conn, row, mine, body.model_dump(), caller.actor(mine.id), fg)
