@@ -28,7 +28,6 @@ from maity_hub.views import principal_ids
 
 PROPOSALS_PER_TOPIC, PROPOSALS_MAX = 5, 20
 FURTHER_MAX = 3
-POSTING = ("response", "reply", "rejoinder", "further")
 
 
 def _state(round_row: Any, step: str | None, message: str) -> ApiError:
