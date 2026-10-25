@@ -96,8 +96,8 @@ def project_swarm(slug: str, request: Request, caller: AnyCaller, days: int = DA
         mine.require("project:read")
         rows = _active(conn, mine.project.id)
         live = _live(conn, mine.project.id, rows)
-        found = swarm.CACHE.get(conn, mine.project.id, days)
-        folded = swarm.fold(found, _who(rows, live), include=lambda _m: True)
+        found = swarm.CACHE.get(conn, mine.project.id)
+        folded = swarm.fold(found, _who(rows, live), days=days, include=lambda _m: True)
         return JSONResponse(
             {
                 "as_of": folded["as_of"],
@@ -129,8 +129,8 @@ def public_swarm(slug: str, request: Request, days: int = DAYS) -> Response:
         rows = [r for r in _active(conn, project.id) if r.agent_id is not None]
         live = _live(conn, project.id, rows)
         agents = {r.id for r in rows}
-        found = swarm.CACHE.get(conn, project.id, days)
-        folded = swarm.fold(found, _who(rows, live), include=lambda m: m in agents)
+        found = swarm.CACHE.get(conn, project.id)
+        folded = swarm.fold(found, _who(rows, live), days=days, include=lambda m: m in agents)
     # No `live_at`, and `as_of` to the minute: the ETag holds for the 60 s the page may
     # be cached, and presence there may be up to a minute old (§6.22).
     body = {

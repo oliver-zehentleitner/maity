@@ -328,3 +328,83 @@ def test_the_badge_and_the_swarm_share_one_budget(
     assert visitor.get("/badge/nope.svg").status_code == 404  # takes the shared unknown budget
     assert public(visitor, "other").status_code == 429  # the same budget, another slug
     assert public(visitor).status_code == 429  # the source's two are spent
+
+
+def test_a_history_entry_into_review_is_a_review_sample(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, project_id: str
+) -> None:
+    agent = flow.agent(make_client, owner)
+    creator, mine = membership_of(migrated, owner.id), membership_of(migrated, agent.id)
+    for hours in (1, 2, 3):
+        closed = NOW - timedelta(minutes=10)
+        task = done(migrated, project_id, creator, mine, closed)
+        history(migrated, task, mine, "in_progress", "review", closed - timedelta(hours=hours))
+    assert row(page(owner), agent.id)["review_to_done_median_seconds"] == 7200
+
+
+def test_every_page_is_cut_from_one_window(
+    owner: flow.Human, migrated: Engine, project_id: str
+) -> None:
+    creator = membership_of(migrated, owner.id)
+    done(migrated, project_id, creator, None, NOW)
+    done(migrated, project_id, creator, None, NOW - timedelta(days=10))
+    one, thirty = page(owner, 1), page(owner, 30)
+    assert (one["window_days"], one["totals"]["cards_done"]) == (1, 1)
+    assert len(one["totals"]["cards_done_per_day"]) == 1
+    assert (thirty["window_days"], thirty["totals"]["cards_done"]) == (30, 2)
+    assert one["as_of"] == thirty["as_of"]  # the same gathering, cut twice
+
+
+def test_a_new_day_starts_a_new_window(
+    owner: flow.Human, migrated: Engine, project_id: str
+) -> None:
+    late = NOW.replace(hour=23, minute=30)
+    clock.set_source(lambda: late)
+    page(owner)
+    after_midnight = late + timedelta(minutes=50)
+    clock.set_source(lambda: after_midnight)
+    days = page(owner)["totals"]["cards_done_per_day"]
+    assert days[-1]["date"] == after_midnight.date().isoformat()
+
+
+def test_one_pull_request_is_one_key_however_its_url_is_written() -> None:
+    a = swarm.pull_key("https://github.com/Oliver-Zehentleitner/Maity/pull/12")
+    b = swarm.pull_key("https://github.com/oliver-zehentleitner/maity/pulls/12")
+    assert a == b == "github.com/oliver-zehentleitner/maity#12"
+
+
+def test_the_three_not_served_answers_are_one(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    visitor = make_client()
+    unknown = public(visitor, "nope")
+    off = public(visitor)
+    owner.post("/projects", {"slug": "closed", "name": "Closed"})
+    owner.patch("/projects/closed", {"policy": {"swarm_public": "on"}, "reason": "r"})
+    owner.patch("/projects/closed", {"state": "accepted", "reason": "done"})
+    closed = public(visitor, "closed")
+    assert unknown.status_code == off.status_code == closed.status_code == 404
+    assert unknown.content == off.content == closed.content
+    assert set(unknown.headers) == set(off.headers) == set(closed.headers)
+
+
+def test_nothing_of_a_human_or_a_card_reaches_the_public_page(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, project_id: str
+) -> None:
+    agent = flow.agent(make_client, owner)
+    listening.opened(agent.resume().json()["session"]["id"])
+    creator = membership_of(migrated, owner.id)
+    secret = card(
+        migrated, project_id, creator, title="SECRET TITLE 7731", status="in_progress",
+        claim_holder=membership_of(migrated, agent.id), claim_since=NOW,
+    )  # fmt: skip
+    done(migrated, project_id, creator, creator, NOW)
+    human = owner.get(f"/projects/maity/members/{owner.id}").json()
+    owner.patch("/projects/maity", {"policy": {"swarm_public": "on"}, "reason": "show"})
+    text = public(make_client()).text
+    for leaked in (
+        secret, "SECRET TITLE 7731", owner.id, agent.id, human["handle"], human["display_name"],
+        '"avatar_url"', '"last_seen_at"', '"since"', '"task_id"', '"member_id"', '"live_at"',
+        '"holding"', '"title"',
+    ):  # fmt: skip
+        assert leaked not in text, leaked
