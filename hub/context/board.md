@@ -131,3 +131,28 @@ are inferred from the contract's final-graph and transaction requirements.
 **Rejected alternatives:** independent dependency and tree checks, or
 validating each field against the old graph. Neither sees the same graph
 that will commit.
+
+## Child counts are read from children and announced as derived state
+
+**Id:** 0512b30c-f847-454d-ad05-242d3381fbbf
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.4 and §6.15, with the subtask implementation design, 2026-10-25
+**Revisit when:** child counts are stored or their read cost requires a cache
+
+A card stores its parent; the parent does not store a second child list or
+counters. Reads compute total children and those not done or cancelled.
+Attachment, movement and closing emit the affected parents' new counts as
+`task_updated` with `fields: ["children"]` and no history entries.
+
+**Reason:** parent and status are sufficient to derive the counts. A second
+stored representation would need every write path to keep it in step.
+History records authored edits, while the parent count is a consequence of
+a child's edit or report. This rationale follows from the contract's
+computed-count and authored-history distinction.
+
+**Rejected alternative:** writable or persisted child counts. They would
+add another state to synchronise and could imply that a member directly
+edited the parent's computed field. The contract requires computed counts;
+no other historical alternatives are known.
