@@ -21,7 +21,7 @@ from typing import Any
 from sqlalchemy import Connection, func, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import availability, avatars, clock, events
+from maity_hub import availability, avatars, clock, events, mentions
 from maity_hub import tables as t
 from maity_hub.errors import ApiError
 from maity_hub.events import Actor
@@ -143,15 +143,26 @@ def _agent(conn: Connection, placement: Any) -> dict[str, Any]:
         return {
             "id": found.id,
             "handle": found.handle,
+            "name": _name(conn, placement, found.handle),
             "display_name": found.display_name,
             "avatar_url": avatars.urls(conn, [found.id])[found.id],
         }
     return {  # a profile still to be created has no picture yet (§6.10)
         "id": None,
         "handle": placement.new_handle,
+        "name": _name(conn, placement, placement.new_handle),
         "display_name": (placement.new_profile or {}).get("display_name"),
         "avatar_url": None,
     }
+
+
+def _name(conn: Connection, placement: Any, handle: str) -> str:
+    """The agent's global name (§6.3): the runner view shows it outside one project."""
+    owner = profile_owner(conn, placement)
+    owner_handle: str = conn.execute(
+        select(t.human.c.handle).where(t.human.c.id == owner)
+    ).scalar_one()
+    return mentions.global_name(owner_handle, handle)
 
 
 def profile_owner_of(conn: Connection, values: dict[str, Any]) -> str:

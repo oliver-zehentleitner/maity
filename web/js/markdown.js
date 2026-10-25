@@ -3,7 +3,9 @@
 // headings, lists, quotes, fenced code (with a Copy button), inline code,
 // emphasis, and links that are plain https. Every piece of text becomes a
 // text node: raw HTML stays visible as text, and no markup is parsed
-// (context/rendering.md). What is not understood is shown as written.
+// (context/rendering.md). What is not understood is shown as written. Ids
+// in the text outside code become links (js/ids.js) where the caller says
+// which project the text belongs to.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -13,57 +15,67 @@ window.Maity = window.Maity || {};
 
   // Inline: code spans first (a run of n backticks to the next run of
   // exactly n), then links, autolinks and emphasis in the text between.
-  function inline(text) {
+  function inline(text, at) {
     const out = [];
-    let at = 0;
+    let from = 0;
     const runs = [...text.matchAll(/`+/g)];
     for (let k = 0; k < runs.length; k += 1) {
       const open = runs[k];
       const close = runs.findIndex((r, j) => j > k && r[0].length === open[0].length);
       if (close < 0) continue;
-      out.push(...spans(text.slice(at, open.index)));
+      out.push(...spans(text.slice(from, open.index), at));
       const inner = text.slice(open.index + open[0].length, runs[close].index);
       out.push(h("code", null, inner.length > 2 && inner.startsWith(" ") && inner.endsWith(" ") ? inner.slice(1, -1) : inner));
-      at = runs[close].index + runs[close][0].length;
+      from = runs[close].index + runs[close][0].length;
       k = close;
     }
-    out.push(...spans(text.slice(at)));
+    out.push(...spans(text.slice(from), at));
     return out;
   }
 
+  // A dashboard route as a link target (/#/…), for the landing page only
+  // (docs/api.md §16.7: the card-body renderer extended by that alone);
+  // set while M.markdown.withRoutes renders.
+  let routes = false;
+  const ROUTE = /^\/#\/[A-Za-z0-9._~%\/?=&-]*$/;
+  const routeHref = (target) => (routes && ROUTE.test(target) ? target.slice(1) : null);
+
   // [text](https://…), a bare https://… and **strong**, *em* or _em_.
-  const TOKEN = /\[([^\[\]\n]+)\]\((https:\/\/[^\s)]+)\)|(https:\/\/[^\s<>()]+[^\s<>().,;:!?'"])|\*\*([^*\n]+)\*\*|(?:^|(?<=[\s(]))[*_]([^*_\n]+)[*_](?=$|[\s).,;:!?])/g;
-  function spans(text) {
+  const TOKEN = /\[([^\[\]\n]+)\]\((https:\/\/[^\s)]+|\/#\/[^\s)]*)\)|(https:\/\/[^\s<>()]+[^\s<>().,;:!?'"])|\*\*([^*\n]+)\*\*|(?:^|(?<=[\s(]))[*_]([^*_\n]+)[*_](?=$|[\s).,;:!?])/g;
+  function spans(text, where) {
     const out = [];
+    const plain = (s) => (where ? M.ids.link(s, where) : [s]);
     let at = 0;
     for (const m of text.matchAll(TOKEN)) {
-      if (m.index > at) out.push(text.slice(at, m.index));
+      if (m.index > at) out.push(...plain(text.slice(at, m.index)));
       if (m[1] !== undefined) {
-        const url = safeUrl(m[2]);
+        const url = safeUrl(m[2]) || routeHref(m[2]);
         // A text that looks like another address says where the link goes.
         const looks = /^\s*(https?:\/\/|www\.)/i.test(m[1]) && hostOf(m[1]) !== hostOf(m[2]);
-        out.push(url ? h("a", { href: url, rel: "noopener noreferrer", target: "_blank" }, m[1]) : m[0]);
+        // A route stays in the page; an https link opens apart, without an opener.
+        out.push(!url ? m[0] : url.startsWith("#") ? h("a", { href: url }, m[1])
+          : h("a", { href: url, rel: "noopener noreferrer", target: "_blank" }, m[1]));
         if (url && looks) out.push(h("span", { class: "md-real-href" }, " (goes to " + hostOf(m[2]) + ")"));
       } else if (m[3] !== undefined) {
         const url = safeUrl(m[3]);
         out.push(url ? h("a", { href: url, rel: "noopener noreferrer", target: "_blank" }, m[3]) : m[0]);
       } else if (m[4] !== undefined) {
-        out.push(h("strong", null, m[4]));
+        out.push(h("strong", null, plain(m[4])));
       } else {
-        out.push(h("em", null, m[5]));
+        out.push(h("em", null, plain(m[5])));
       }
       at = m.index + m[0].length;
     }
-    if (at < text.length) out.push(text.slice(at));
+    if (at < text.length) out.push(...plain(text.slice(at)));
     return out;
   }
 
   const hostOf = (u) => (/^\s*(?:https?:\/\/)?([^/?#\s]+)/i.exec(u) || [null, ""])[1].toLowerCase();
 
   // A paragraph's lines, each break kept.
-  function lines(list) {
+  function lines(list, at) {
     const out = [];
-    list.forEach((l, i) => { if (i) out.push(h("br")); out.push(...inline(l)); });
+    list.forEach((l, i) => { if (i) out.push(h("br")); out.push(...inline(l, at)); });
     return out;
   }
 
@@ -97,14 +109,15 @@ window.Maity = window.Maity || {};
   // Quotes nest at most this deep; deeper is shown as written.
   const MAX_DEPTH = 8;
 
-  // Blocks, line by line.
-  M.markdown = function (source, depth) {
+  // Blocks, line by line. `at`: the project the text belongs to
+  // ({slug, repository}, M.ids.where), for its ids as links; none, none.
+  M.markdown = function (source, at, depth) {
     const level = depth || 0;
     const all = String(source || "").replace(/\r\n?/g, "\n").split("\n");
     const out = [];
     let i = 0;
     let para = [];
-    const flush = () => { if (para.length) out.push(h("p", null, lines(para))); para = []; };
+    const flush = () => { if (para.length) out.push(h("p", null, lines(para, at))); para = []; };
     while (i < all.length) {
       const line = all[i];
       // A fence (§8.6: three or more backticks or tildes, up to three spaces
@@ -126,7 +139,7 @@ window.Maity = window.Maity || {};
       if (heading) {
         flush();
         // A heading inside a message is a line of strong text, not a page heading.
-        out.push(h("p", { class: "md-h md-h" + heading[1].length }, h("strong", null, inline(heading[2]))));
+        out.push(h("p", { class: "md-h md-h" + heading[1].length }, h("strong", null, inline(heading[2], at))));
         i += 1;
         continue;
       }
@@ -135,8 +148,8 @@ window.Maity = window.Maity || {};
         const quoted = [];
         while (i < all.length && /^>\s?/.test(all[i])) { quoted.push(all[i].replace(/^>\s?/, "")); i += 1; }
         out.push(level < MAX_DEPTH
-          ? h("blockquote", null, M.markdown(quoted.join("\n"), level + 1))
-          : h("p", { class: "md-deep" }, lines(quoted)));
+          ? h("blockquote", null, M.markdown(quoted.join("\n"), at, level + 1))
+          : h("p", { class: "md-deep" }, lines(quoted, at)));
         continue;
       }
       const item = /^(\s*)([-*+]|\d{1,9}[.)])\s+(.*)$/.exec(line);
@@ -147,7 +160,7 @@ window.Maity = window.Maity || {};
         while (i < all.length) {
           const m = /^(\s*)([-*+]|\d{1,9}[.)])\s+(.*)$/.exec(all[i]);
           if (!m || /\d/.test(m[2]) !== ordered) break;
-          items.push(h("li", null, inline(m[3])));
+          items.push(h("li", null, inline(m[3], at)));
           i += 1;
         }
         // A numbered list starts where its first item does.
@@ -161,5 +174,18 @@ window.Maity = window.Maity || {};
     }
     flush();
     return out;
+  };
+
+  // The same, with dashboard routes as links: the landing page's renderer.
+  // The one rule for a dashboard route as a link target, for the landing
+  // page's button too (js/landing.js).
+  M.markdown.ROUTE = ROUTE;
+  M.markdown.withRoutes = function (source) {
+    routes = true;
+    try {
+      return M.markdown(source);
+    } finally {
+      routes = false;
+    }
   };
 })(window.Maity);

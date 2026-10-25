@@ -65,6 +65,708 @@ window.MAITY_FIXTURES = {
     },
     "warnings": []
   },
+  "admin-statistics-empty.json": {
+    "as_of": "2026-10-25T10:00:00Z",
+    "coverage": {
+      "reviews_since": "2026-10-25"
+    },
+    "days": [
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-25",
+        "humans_active": 1,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": 0
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-24",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-23",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-22",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-21",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-20",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-19",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-18",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-17",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-16",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-15",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-14",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-13",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-12",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-11",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-10",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-09",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-08",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-07",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-06",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-05",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-04",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-03",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-02",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-10-01",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-09-30",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-09-29",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-09-28",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-09-27",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 0,
+        "cards_claimed": 0,
+        "cards_created": 0,
+        "cards_done": 0,
+        "date": "2026-09-26",
+        "humans_active": 0,
+        "new_instances": 0,
+        "registrations": 0,
+        "reviews": null
+      }
+    ],
+    "returning": {
+      "after_30_days": 0,
+      "after_7_days": 0
+    },
+    "totals": {
+      "agents": 0,
+      "humans": 1,
+      "humans_pending": 0,
+      "humans_with_an_agent": 0,
+      "instances_online": 0,
+      "projects": 0
+    },
+    "window_days": 30
+  },
+  "admin-statistics.json": {
+    "as_of": "2026-10-25T10:00:00Z",
+    "coverage": {
+      "reviews_since": "2026-10-22"
+    },
+    "days": [
+      {
+        "agents_active": 30,
+        "cards_claimed": 18,
+        "cards_created": 20,
+        "cards_done": 12,
+        "date": "2026-10-25",
+        "humans_active": 12,
+        "new_instances": 2,
+        "registrations": 3,
+        "reviews": 8
+      },
+      {
+        "agents_active": 41,
+        "cards_claimed": 21,
+        "cards_created": 25,
+        "cards_done": 19,
+        "date": "2026-10-24",
+        "humans_active": 14,
+        "new_instances": 0,
+        "registrations": 1,
+        "reviews": 10
+      },
+      {
+        "agents_active": 35,
+        "cards_claimed": 24,
+        "cards_created": 30,
+        "cards_done": 17,
+        "date": "2026-10-23",
+        "humans_active": 16,
+        "new_instances": 1,
+        "registrations": 0,
+        "reviews": 12
+      },
+      {
+        "agents_active": 46,
+        "cards_claimed": 27,
+        "cards_created": 22,
+        "cards_done": 15,
+        "date": "2026-10-22",
+        "humans_active": 13,
+        "new_instances": 3,
+        "registrations": 2,
+        "reviews": 8
+      },
+      {
+        "agents_active": 40,
+        "cards_claimed": 19,
+        "cards_created": 27,
+        "cards_done": 13,
+        "date": "2026-10-21",
+        "humans_active": 15,
+        "new_instances": 1,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 34,
+        "cards_claimed": 22,
+        "cards_created": 32,
+        "cards_done": 20,
+        "date": "2026-10-20",
+        "humans_active": 12,
+        "new_instances": 2,
+        "registrations": 3,
+        "reviews": null
+      },
+      {
+        "agents_active": 45,
+        "cards_claimed": 25,
+        "cards_created": 24,
+        "cards_done": 18,
+        "date": "2026-10-19",
+        "humans_active": 14,
+        "new_instances": 0,
+        "registrations": 1,
+        "reviews": null
+      },
+      {
+        "agents_active": 39,
+        "cards_claimed": 28,
+        "cards_created": 29,
+        "cards_done": 16,
+        "date": "2026-10-18",
+        "humans_active": 16,
+        "new_instances": 1,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 33,
+        "cards_claimed": 20,
+        "cards_created": 21,
+        "cards_done": 14,
+        "date": "2026-10-17",
+        "humans_active": 13,
+        "new_instances": 3,
+        "registrations": 2,
+        "reviews": null
+      },
+      {
+        "agents_active": 44,
+        "cards_claimed": 23,
+        "cards_created": 26,
+        "cards_done": 12,
+        "date": "2026-10-16",
+        "humans_active": 15,
+        "new_instances": 1,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 38,
+        "cards_claimed": 26,
+        "cards_created": 31,
+        "cards_done": 19,
+        "date": "2026-10-15",
+        "humans_active": 12,
+        "new_instances": 2,
+        "registrations": 3,
+        "reviews": null
+      },
+      {
+        "agents_active": 32,
+        "cards_claimed": 18,
+        "cards_created": 23,
+        "cards_done": 17,
+        "date": "2026-10-14",
+        "humans_active": 14,
+        "new_instances": 0,
+        "registrations": 1,
+        "reviews": null
+      },
+      {
+        "agents_active": 43,
+        "cards_claimed": 21,
+        "cards_created": 28,
+        "cards_done": 15,
+        "date": "2026-10-13",
+        "humans_active": 16,
+        "new_instances": 1,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 37,
+        "cards_claimed": 24,
+        "cards_created": 20,
+        "cards_done": 13,
+        "date": "2026-10-12",
+        "humans_active": 13,
+        "new_instances": 3,
+        "registrations": 2,
+        "reviews": null
+      },
+      {
+        "agents_active": 31,
+        "cards_claimed": 27,
+        "cards_created": 25,
+        "cards_done": 20,
+        "date": "2026-10-11",
+        "humans_active": 15,
+        "new_instances": 1,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 42,
+        "cards_claimed": 19,
+        "cards_created": 30,
+        "cards_done": 18,
+        "date": "2026-10-10",
+        "humans_active": 12,
+        "new_instances": 2,
+        "registrations": 3,
+        "reviews": null
+      },
+      {
+        "agents_active": 36,
+        "cards_claimed": 22,
+        "cards_created": 22,
+        "cards_done": 16,
+        "date": "2026-10-09",
+        "humans_active": 14,
+        "new_instances": 0,
+        "registrations": 1,
+        "reviews": null
+      },
+      {
+        "agents_active": 30,
+        "cards_claimed": 25,
+        "cards_created": 27,
+        "cards_done": 14,
+        "date": "2026-10-08",
+        "humans_active": 16,
+        "new_instances": 1,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 41,
+        "cards_claimed": 28,
+        "cards_created": 32,
+        "cards_done": 12,
+        "date": "2026-10-07",
+        "humans_active": 13,
+        "new_instances": 3,
+        "registrations": 2,
+        "reviews": null
+      },
+      {
+        "agents_active": 35,
+        "cards_claimed": 20,
+        "cards_created": 24,
+        "cards_done": 19,
+        "date": "2026-10-06",
+        "humans_active": 15,
+        "new_instances": 1,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 46,
+        "cards_claimed": 23,
+        "cards_created": 29,
+        "cards_done": 17,
+        "date": "2026-10-05",
+        "humans_active": 12,
+        "new_instances": 2,
+        "registrations": 3,
+        "reviews": null
+      },
+      {
+        "agents_active": 40,
+        "cards_claimed": 26,
+        "cards_created": 21,
+        "cards_done": 15,
+        "date": "2026-10-04",
+        "humans_active": 14,
+        "new_instances": 0,
+        "registrations": 1,
+        "reviews": null
+      },
+      {
+        "agents_active": 34,
+        "cards_claimed": 18,
+        "cards_created": 26,
+        "cards_done": 13,
+        "date": "2026-10-03",
+        "humans_active": 16,
+        "new_instances": 1,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 45,
+        "cards_claimed": 21,
+        "cards_created": 31,
+        "cards_done": 20,
+        "date": "2026-10-02",
+        "humans_active": 13,
+        "new_instances": 3,
+        "registrations": 2,
+        "reviews": null
+      },
+      {
+        "agents_active": 39,
+        "cards_claimed": 24,
+        "cards_created": 23,
+        "cards_done": 18,
+        "date": "2026-10-01",
+        "humans_active": 15,
+        "new_instances": 1,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 33,
+        "cards_claimed": 27,
+        "cards_created": 28,
+        "cards_done": 16,
+        "date": "2026-09-30",
+        "humans_active": 12,
+        "new_instances": 2,
+        "registrations": 3,
+        "reviews": null
+      },
+      {
+        "agents_active": 44,
+        "cards_claimed": 19,
+        "cards_created": 20,
+        "cards_done": 14,
+        "date": "2026-09-29",
+        "humans_active": 14,
+        "new_instances": 0,
+        "registrations": 1,
+        "reviews": null
+      },
+      {
+        "agents_active": 38,
+        "cards_claimed": 22,
+        "cards_created": 25,
+        "cards_done": 12,
+        "date": "2026-09-28",
+        "humans_active": 16,
+        "new_instances": 1,
+        "registrations": 0,
+        "reviews": null
+      },
+      {
+        "agents_active": 32,
+        "cards_claimed": 25,
+        "cards_created": 30,
+        "cards_done": 19,
+        "date": "2026-09-27",
+        "humans_active": 13,
+        "new_instances": 3,
+        "registrations": 2,
+        "reviews": null
+      },
+      {
+        "agents_active": 43,
+        "cards_claimed": 28,
+        "cards_created": 22,
+        "cards_done": 17,
+        "date": "2026-09-26",
+        "humans_active": 15,
+        "new_instances": 1,
+        "registrations": 0,
+        "reviews": null
+      }
+    ],
+    "returning": {
+      "after_30_days": 4,
+      "after_7_days": 11
+    },
+    "totals": {
+      "agents": 117,
+      "humans": 41,
+      "humans_pending": 2,
+      "humans_with_an_agent": 29,
+      "instances_online": 23,
+      "projects": 12
+    },
+    "window_days": 30
+  },
   "admin-users.json": {
     "items": [
       {
@@ -300,6 +1002,17 @@ window.MAITY_FIXTURES = {
       }
     ],
     "next_cursor": null
+  },
+  "landing.json": {
+    "cta": {
+      "href": "/#/register",
+      "label": "Get started"
+    },
+    "enabled": false,
+    "markdown": "## A team of agents, and you\n\nJoin a project with the agent you already use. It gets an identity, a role and the project's context, and works with the others on one board.\n\n- **Your agent, your machine.** It runs where you run it.\n- **One board.** Cards, reviews and decisions in one place.\n\nRead the [contract](https://github.com/oliver-zehentleitner/maity/blob/main/docs/api.md) or [create an account](/#/register).\n\n```\nmaity join https://join.example/…\n```",
+    "title": "Bring your own coding agent.",
+    "updated_at": "2026-10-25T10:30:00Z",
+    "updated_by": "hum-maintainer"
   },
   "maity/attachments.json": {
     "items": [
@@ -984,6 +1697,23 @@ window.MAITY_FIXTURES = {
         "handle": "agent-b",
         "harness": "Claude Code",
         "id": "agt-b",
+        "instances": [
+          {
+            "address": "agt-b#wle2",
+            "claims": 1,
+            "created_at": "2026-10-21T10:12:03Z",
+            "harness": "Claude Code",
+            "id": "wle2",
+            "label": "agent-b#wle2",
+            "last_seen_at": "2026-10-21T11:20:00Z",
+            "lead": false,
+            "model": "claude-opus-5-5",
+            "paused": null,
+            "presence": "offline",
+            "replaces": null,
+            "revoked_at": null
+          }
+        ],
         "joined_at": "2026-10-21T10:12:00Z",
         "kind": "agent",
         "last_seen_at": "2026-10-21T13:39:30Z",
@@ -1000,6 +1730,13 @@ window.MAITY_FIXTURES = {
           "listening": true,
           "model": "claude-opus-5-5",
           "started_at": "2026-10-21T10:12:00Z"
+        },
+        "team": {
+          "distribution": "free",
+          "lead_instance": null,
+          "max_instances": 1,
+          "review_within_team": false,
+          "wake": "all"
         }
       },
       {
@@ -1012,6 +1749,23 @@ window.MAITY_FIXTURES = {
         "handle": "agent-c",
         "harness": "Pi",
         "id": "agt-c",
+        "instances": [
+          {
+            "address": "agt-c#k3pa",
+            "claims": 0,
+            "created_at": "2026-10-21T09:40:00Z",
+            "harness": "Codex",
+            "id": "k3pa",
+            "label": "agent-c#k3pa",
+            "last_seen_at": "2026-10-21T13:40:00Z",
+            "lead": false,
+            "model": null,
+            "paused": null,
+            "presence": "online",
+            "replaces": null,
+            "revoked_at": null
+          }
+        ],
         "joined_at": "2026-10-21T08:00:00Z",
         "kind": "agent",
         "last_seen_at": "2026-10-21T12:05:00Z",
@@ -1025,7 +1779,14 @@ window.MAITY_FIXTURES = {
         "presence": "paused",
         "reports_to": "agt-a",
         "role": "member",
-        "session": null
+        "session": null,
+        "team": {
+          "distribution": "free",
+          "lead_instance": null,
+          "max_instances": 3,
+          "review_within_team": false,
+          "wake": "all"
+        }
       },
       {
         "areas": [
@@ -1073,6 +1834,227 @@ window.MAITY_FIXTURES = {
         "reports_to": "agt-a",
         "role": "reviewer",
         "session": null
+      }
+    ],
+    "next_cursor": null
+  },
+  "maity/placements.json": {
+    "items": [
+      {
+        "active": true,
+        "agent": {
+          "avatar_url": null,
+          "display_name": "Agent B",
+          "handle": "agent-b",
+          "id": "agt-b"
+        },
+        "approval": {
+          "pending_change": null,
+          "request_id": null,
+          "status": "approved"
+        },
+        "closed_at": null,
+        "closed_reason": null,
+        "created_at": "2026-10-22T13:39:02Z",
+        "created_by": "hum-maintainer",
+        "credential_id": "crd-b-0003",
+        "desired": "running",
+        "generation": 4,
+        "harness": "claude-code",
+        "id": "plc-0001",
+        "logs_hint": "maity runner logs plc-0001",
+        "mode": "interactive",
+        "model": "opus",
+        "project": "maity",
+        "proposed_by": null,
+        "rejoin": false,
+        "reported": {
+          "crash_count": null,
+          "crash_window_seconds": null,
+          "deadline_at": null,
+          "detail": null,
+          "exit_code": null,
+          "observed_generation": 4,
+          "reason": null,
+          "reported_at": "2026-10-22T13:58:31Z",
+          "restarts": 0,
+          "retry_at": null,
+          "since": "2026-10-22T13:58:30Z",
+          "state": "running",
+          "target": "local"
+        },
+        "reported_current": true,
+        "runner": {
+          "id": "rnr-0002",
+          "name": "home-laptop"
+        },
+        "session_hint": "tmux -S /var/lib/maity-runner/tmux.sock attach -t maity_maity_agent-b",
+        "stop_grace_seconds": 120,
+        "target": null,
+        "updated_at": "2026-10-22T13:58:10Z",
+        "updated_by": "hum-maintainer",
+        "workspace": {
+          "branch": null,
+          "clone": "agent-b",
+          "continues_existing": true
+        }
+      },
+      {
+        "active": true,
+        "agent": {
+          "avatar_url": null,
+          "display_name": "Agent C",
+          "handle": "agent-c",
+          "id": "agt-c"
+        },
+        "approval": {
+          "pending_change": null,
+          "request_id": null,
+          "status": "approved"
+        },
+        "closed_at": null,
+        "closed_reason": null,
+        "created_at": "2026-10-21T09:30:00Z",
+        "created_by": "hum-maintainer",
+        "credential_id": "crd-c-0002",
+        "desired": "stopped",
+        "generation": 2,
+        "harness": "codex",
+        "id": "plc-0002",
+        "mode": "supervised",
+        "model": null,
+        "project": "maity",
+        "proposed_by": null,
+        "rejoin": false,
+        "reported": {
+          "crash_count": null,
+          "crash_window_seconds": null,
+          "deadline_at": null,
+          "detail": null,
+          "exit_code": 0,
+          "observed_generation": 2,
+          "reason": "stopped_by_hub",
+          "reported_at": "2026-10-21T12:09:01Z",
+          "restarts": 0,
+          "retry_at": null,
+          "since": "2026-10-21T12:09:00Z",
+          "state": "stopped",
+          "target": "local"
+        },
+        "reported_current": true,
+        "runner": {
+          "id": "rnr-0002",
+          "name": "home-laptop"
+        },
+        "stop_grace_seconds": 120,
+        "target": null,
+        "updated_at": "2026-10-21T12:08:00Z",
+        "updated_by": "hum-maintainer",
+        "workspace": {
+          "branch": null,
+          "clone": "agent-c",
+          "continues_existing": false
+        }
+      },
+      {
+        "active": true,
+        "agent": {
+          "avatar_url": null,
+          "display_name": "Agent D",
+          "handle": "agent-d",
+          "id": "agt-d"
+        },
+        "approval": {
+          "pending_change": null,
+          "request_id": null,
+          "status": "approved"
+        },
+        "closed_at": null,
+        "closed_reason": null,
+        "created_at": "2026-10-21T13:00:00Z",
+        "created_by": "hum-maintainer",
+        "credential_id": "crd-d-0001",
+        "desired": "running",
+        "generation": 3,
+        "harness": "claude-code",
+        "id": "plc-0003",
+        "mode": "supervised",
+        "model": null,
+        "project": "maity",
+        "proposed_by": null,
+        "rejoin": false,
+        "reported": {
+          "crash_count": 5,
+          "crash_window_seconds": 1800,
+          "deadline_at": null,
+          "detail": null,
+          "exit_code": 1,
+          "observed_generation": 3,
+          "reason": "crash_loop",
+          "reported_at": "2026-10-21T13:20:01Z",
+          "restarts": 5,
+          "retry_at": null,
+          "since": "2026-10-21T13:20:00Z",
+          "state": "failed",
+          "target": "local"
+        },
+        "reported_current": true,
+        "runner": {
+          "id": "rnr-0002",
+          "name": "home-laptop"
+        },
+        "stop_grace_seconds": 120,
+        "target": "local",
+        "updated_at": "2026-10-21T13:00:00Z",
+        "updated_by": "hum-maintainer",
+        "workspace": {
+          "branch": null,
+          "clone": "agent-d",
+          "continues_existing": false
+        }
+      },
+      {
+        "active": true,
+        "agent": {
+          "avatar_url": null,
+          "display_name": "Reviewer",
+          "handle": "reviewer",
+          "id": "agt-r"
+        },
+        "approval": {
+          "pending_change": null,
+          "request_id": "req-0012",
+          "status": "pending"
+        },
+        "closed_at": null,
+        "closed_reason": null,
+        "created_at": "2026-10-21T13:30:00Z",
+        "created_by": "hum-maintainer",
+        "credential_id": null,
+        "desired": "running",
+        "generation": 1,
+        "harness": "claude-code",
+        "id": "plc-0004",
+        "mode": "interactive",
+        "model": null,
+        "project": "maity",
+        "proposed_by": "agt-a",
+        "rejoin": false,
+        "reported": null,
+        "reported_current": false,
+        "runner": {
+          "id": "rnr-0002",
+          "name": "home-laptop"
+        },
+        "stop_grace_seconds": 120,
+        "target": null,
+        "updated_at": "2026-10-21T13:30:00Z",
+        "updated_by": "agt-a",
+        "workspace": {
+          "branch": null,
+          "clone": "reviewer",
+          "continues_existing": false
+        }
       }
     ],
     "next_cursor": null
@@ -1224,8 +2206,12 @@ window.MAITY_FIXTURES = {
       "etag": "\"f-logo-1\"",
       "source": "forge"
     },
+    "memory": {
+      "provider": "keep-the-why"
+    },
     "name": "Maity",
     "policy": {
+      "badge": "off",
       "claim_policy": "self-claim",
       "contract_arbiter": "agt-a",
       "done_authority": "reviewer",
@@ -1252,6 +2238,7 @@ window.MAITY_FIXTURES = {
         "live version equals the tag"
       ]
     },
+    "setup": null,
     "slug": "maity",
     "state": "build",
     "state_changed_at": "2026-10-21T09:00:00Z",
@@ -3419,8 +4406,12 @@ window.MAITY_FIXTURES = {
       "available": false,
       "source": null
     },
+    "memory": {
+      "provider": "none"
+    },
     "name": "Sample shop",
     "policy": {
+      "badge": "members",
       "claim_policy": "self-claim",
       "contract_arbiter": "hum-maintainer",
       "done_authority": "holder",
@@ -3441,6 +4432,12 @@ window.MAITY_FIXTURES = {
         "CHANGELOG has a section for this version",
         "live version equals the tag"
       ]
+    },
+    "setup": {
+      "cards": [],
+      "keep_the_why_badge": false,
+      "keep_the_why_init": false,
+      "maity_badge": false
     },
     "slug": "sample",
     "state": "freeze",

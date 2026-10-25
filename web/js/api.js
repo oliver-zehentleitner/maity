@@ -83,6 +83,24 @@ window.Maity = window.Maity || {};
     throw new ApiError(message, status, path, code, details);
   }
 
+  // A project's placements (fixtures/<slug>/placements.json, §15.5), none
+  // where the fixture has none; one of them, if the caller may steer it.
+  function placementsOf(slug) {
+    const data = fixtures();
+    if (!data[slug + "/placements.json"]) data[slug + "/placements.json"] = { items: [], next_cursor: null };
+    return data[slug + "/placements.json"].items;
+  }
+  function placementFor(slug, id, path) {
+    project(slug, path);
+    const p = placementsOf(slug).find((x) => x.id === id && x.active);
+    if (!p) fail(404, "not_found", "Not found", path);
+    const runner = runnersFile().items.find((r) => r.id === p.runner.id);
+    const admin = me().member.kind === "human" && ["owner", "admin"].includes(roleIn(slug)) && runner && runner.owner_id === me().member.id;
+    const profile = (fixtures()[slug + "/members.json"] || { items: [] }).items.find((x) => x.id === p.agent.id);
+    if (!admin && !(profile && profile.owner_id === me().member.id)) fail(403, "forbidden", "members:admin and the runner, or the agent's owner", path);
+    return p;
+  }
+
   // The fixture of one project: fixtures/<slug>/<name>.json.
   function file(slug, name, path) {
     const data = fixtures()[slug + "/" + name];
@@ -512,6 +530,29 @@ window.Maity = window.Maity || {};
 
   // The policy fields each preset fills (docs/api.md §6.1); a missing
   // contract_arbiter is the owner.
+  // §6.21: the setup options in their cards' order, with the titles the hub
+  // gives the cards, verbatim.
+  const SETUP_CARDS = [
+    ["keep_the_why_init", "Set up Keep the Why in the repository"],
+    ["keep_the_why_badge", "Add the Keep the Why badge to the README"],
+    ["maity_badge", "Add the Maity badge to the README"],
+  ];
+  // One open setup card per chosen option, made when the project has a
+  // repository (routes/projects.py, project_setup.make_cards).
+  function makeSetupCards(slug, setup, by, url) {
+    const list = fixtures()[slug + "/tasks.json"];
+    setup.cards = SETUP_CARDS.filter(([key]) => setup[key]).map(([key, title]) => {
+      const id = localId("tsk");
+      list.items.push({
+        id, kind: "setup", title, body: "In " + url + ": " + title.toLowerCase() + ", as a pull request against its default branch.",
+        label: "chore", status: "open", area: "/", created_by: by, assigned_to: null, claim: null, checkpoint: null,
+        depends_on: [], ships_with: [], blocked_by_request: null, ktw_ref: null, report: null, release: null, contract: null,
+        created_at: nowIso(), updated_at: nowIso(), closed_at: null,
+      });
+      return id;
+    });
+  }
+
   const PRESETS = {
     hierarchical: {
       claim_policy: "self-claim", done_authority: "reviewer", contract_arbiter: "role:admin",
@@ -760,6 +801,32 @@ window.Maity = window.Maity || {};
     }],
     // Runners (docs/api.md §15.2–§15.3), instance level.
     ["GET", /^\/runners$/, () => ({ items: runnersFile().items.filter((r) => !r.removed_at), next_cursor: null })],
+    // §15.6 placements: the list, desired, restart; who may as the hub
+    // checks it (a human with members:admin who owns the runner, or the
+    // agent profile's owner).
+    ["GET", /^\/projects\/([^/]+)\/placements$/, (m, body, path) => {
+      project(m[1], path);
+      return { items: placementsOf(m[1]).filter((p) => p.active), next_cursor: null };
+    }],
+    ["PATCH", /^\/projects\/([^/]+)\/placements\/([^/]+)$/, (m, body, path) => {
+      const p = placementFor(m[1], m[2], path);
+      if (!["running", "stopped"].includes(body.desired)) fail(400, "invalid", "desired is running or stopped", path, { fields: { desired: "unknown" } });
+      if (body.desired === "running" && ["accepted", "archived"].includes(project(m[1], path).state)) fail(409, "project_closed", "the project is closed", path);
+      p.desired = body.desired;
+      p.updated_by = me().member.id; p.updated_at = nowIso();
+      return p;
+    }],
+    ["POST", /^\/projects\/([^/]+)\/placements\/([^/]+)\/restart$/, (m, body, path) => {
+      const p = placementFor(m[1], m[2], path);
+      const creds = (fixtures()[m[1] + "/credentials.json"] || {})[p.agent.id];
+      const cred = creds && creds.items.find((c) => c.id === p.credential_id);
+      if (body.rejoin && !(cred && cred.revoked_at)) {
+        fail(400, "invalid", "the placement's credential is not revoked", path, { fields: { rejoin: "credential_not_revoked" } });
+      }
+      p.generation += 1; p.desired = "running"; p.rejoin = !!body.rejoin; p.reported_current = false;
+      p.updated_by = me().member.id; p.updated_at = nowIso();
+      return p;
+    }],
     ["GET", /^\/runners\/enrollments$/, () => ({ items: fixtures()["runner-enrollments.json"].items.slice().reverse(), next_cursor: null })],
     ["POST", /^\/runners\/enrollments$/, (m, body, path) => {
       const ttl = body.ttl_seconds === undefined ? 900 : body.ttl_seconds;
@@ -915,16 +982,29 @@ window.Maity = window.Maity || {};
       }
       const preset = body.policy && body.policy.preset ? body.policy.preset : "hierarchical";
       if (!PRESETS[preset]) fields["policy.preset"] = "unknown";
+      // §6.1, §6.21: the provider (keep_the_why its alias) and the options.
+      const provider = body.memory ? body.memory.provider : body.keep_the_why === false ? "none" : "keep-the-why";
+      if (!["keep-the-why", "none"].includes(provider)) fields["memory.provider"] = "unknown_provider";
+      const given = body.setup || {};
+      Object.keys(given).forEach((k) => {
+        if (!SETUP_CARDS.some(([key]) => key === k)) fields["setup." + k] = "unknown_field";
+        else if (typeof given[k] !== "boolean") fields["setup." + k] = "not_a_boolean";
+      });
       if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
+      const ktw = provider === "keep-the-why";
+      const setup = { keep_the_why_init: ktw && given.keep_the_why_init !== false, keep_the_why_badge: ktw && given.keep_the_why_badge !== false,
+        maity_badge: given.maity_badge === true, cards: null };
       const owner = me().member;
       const created = {
         slug: body.slug, name: body.name, state: "build", state_note: null, state_changed_at: nowIso(),
         repository: url === null ? null : {
           url, default_branch: body.repository.default_branch || "main", forge: "github", probe_configured: false,
         },
-        keep_the_why: Boolean(body.keep_the_why),
+        memory: { provider }, keep_the_why: ktw, setup,
         policy: Object.assign({}, PRESETS[preset], {
           preset, contract_arbiter: PRESETS[preset].contract_arbiter || owner.id,
+          // The creator's Maity badge switches the badge on at creation (§6.20).
+          badge: setup.maity_badge ? "members" : "off",
         }),
         absence: null, settings: { release_checklist: [] }, rules_version: 1, created_at: nowIso(),
       };
@@ -938,6 +1018,7 @@ window.Maity = window.Maity || {};
       ["requests", "tasks", "joins"].forEach((name) => { data[body.slug + "/" + name + ".json"] = Object.assign({}, empty); });
       data[body.slug + "/credentials.json"] = {};
       data[body.slug + "/conversations.json"] = {};
+      if (url !== null) makeSetupCards(body.slug, setup, owner.id, url);
       me().projects.push({ slug: body.slug, name: body.name, state: "build", role: "owner", open_requests: 0 });
       return created;
     }],
@@ -1007,12 +1088,17 @@ window.Maity = window.Maity || {};
         p.repository = back ? back.repository
           : url ? { url, default_branch: same ? p.repository.default_branch : "main", forge: "github", probe_configured: same ? p.repository.probe_configured : false } : null;
         if (!same && "keep_the_why_export" in p) p.keep_the_why_export = back ? back.export : null;
+        // The repository first set: the setup cards chosen at creation (§6.21).
+        if (url && p.setup && p.setup.cards === null && !["accepted", "archived"].includes(p.state)) makeSetupCards(m[1], p.setup, me().member.id, url);
       }
       if ("policy" in body) {
         // A policy change needs a reason; fields merge into the policy (docs/api.md §6.1).
         if (!body.reason) fail(400, "invalid", "A policy change needs a reason", path, { fields: { reason: "required" } });
         if ("signing" in body.policy && !["optional", "required"].includes(body.policy.signing)) {
           fail(400, "invalid", "unknown signing value", path, { fields: { "policy.signing": "unknown" } });
+        }
+        if ("badge" in body.policy && !["off", "members", "agents_online"].includes(body.policy.badge)) {
+          fail(400, "invalid", "unknown badge value", path, { fields: { "policy.badge": "unknown" } });
         }
         p.policy = Object.assign({}, p.policy, body.policy);
       }
@@ -1073,6 +1159,69 @@ window.Maity = window.Maity || {};
       return { items: page.map(clean), next_cursor: next };
     }],
     // The hub's machine form (§4): here only what the views ask of it.
+    // §16.6: the instance's counts — a seeded month, or ?stats=empty a fresh
+    // instance; a window beyond the fixture's days reads zero days, with
+    // reviews unknown before the hub kept history, as the hub answers.
+    ["GET", /^\/admin\/statistics$/, (m, body, path, query) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      const n = Number(query.get("days") || 30);
+      if (!Number.isInteger(n) || n < 1 || n > 90) fail(400, "invalid", "days is 1–90", path, { fields: { days: "out_of_range" } });
+      const base = fixtures()[params.get("stats") === "empty" ? "admin-statistics-empty.json" : "admin-statistics.json"];
+      const since = base.coverage.reviews_since;
+      const days = [];
+      for (let i = 0; i < n; i += 1) {
+        const date = new Date(Date.parse(base.days[0].date + "T00:00:00Z") - i * 86400000).toISOString().slice(0, 10);
+        days.push(base.days[i] || { date, registrations: 0, new_instances: 0, humans_active: 0, agents_active: 0,
+          cards_created: 0, cards_claimed: 0, cards_done: 0, reviews: since && date < since ? null : 0 });
+      }
+      return Object.assign({}, base, { window_days: n, days });
+    }],
+    // §16.7: the public landing page — fixtures/landing.json, off as on
+    // every fresh instance; ?landing=on shows it, ?landing=fail fails; the admin's settings
+    // checked as the hub checks them (hub/src/maity_hub/landing.py).
+    ["GET", /^\/landing$/, (m, body, path) => {
+      if (params.get("landing") === "fail") fail(503, "unavailable", "the hub is unavailable", path);
+      const v = fixtures()["landing.json"];
+      if (!(v.enabled || params.get("landing") === "on")) return { enabled: false };
+      return { enabled: true, title: v.title, markdown: v.markdown, cta: v.cta, updated_at: v.updated_at };
+    }],
+    ["GET", /^\/admin\/settings\/landing$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      return fixtures()["landing.json"];
+    }],
+    ["PATCH", /^\/admin\/settings\/landing$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      const v = Object.assign({}, fixtures()["landing.json"]);
+      const errors = {};
+      const target = (t) => /^\/#\/[A-Za-z0-9._~%\/?=&-]*$/.test(t) || /^https:\/\/[^\s/@]+(\/[^\s]*)?$/.test(t);
+      Object.entries(body).forEach(([k, x]) => {
+        if (!["enabled", "title", "markdown", "cta"].includes(k)) errors[k] = "extra_forbidden";
+        else if (k === "enabled") { if (typeof x === "boolean") v.enabled = x; else errors.enabled = "invalid"; }
+        else if (x === null) v[k] = null;
+        else if (k === "title") { if (typeof x === "string" && x.trim() && x.length <= 120) v.title = x.trim(); else errors.title = "invalid"; }
+        else if (k === "markdown") {
+          let fence = null, bad = null;
+          String(x).replace(/\r\n?/g, "\n").split("\n").some((line, i) => {
+            if (fence) { if (line.trim().startsWith(fence)) fence = null; return false; }
+            const f = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+            if (f) { fence = f[1]; return false; }
+            const links = [...line.matchAll(/\]\(([^)\s]*)\)/g)].map((y) => y[1]);
+            if (/<\/?[A-Za-z][^>]*>/.test(line) || /!\[/.test(line) || links.some((t) => !target(t))) { bad = "line " + (i + 1); return true; }
+            return false;
+          });
+          if (bad) errors.markdown = bad; else v.markdown = x;
+        } else if (k === "cta") {
+          if (!x.label || !String(x.label).trim()) errors.cta = "invalid";
+          else if (!target(x.href || "")) errors["cta.href"] = "invalid";
+          else v.cta = { label: String(x.label).trim(), href: x.href };
+        }
+      });
+      if (!Object.keys(errors).length && v.enabled && !v.markdown) errors.markdown = "required";
+      if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
+      v.updated_at = nowIso(); v.updated_by = me().member.id;
+      fixtures()["landing.json"] = v;
+      return v;
+    }],
     // §6.22: the members' swarm (fixtures/<slug>/swarm.json) and its public
     // reduction where policy.swarm_public is on: agents only, no ids, no
     // pictures, no card titles, no live_at, as_of to the minute.
@@ -1103,6 +1252,9 @@ window.Maity = window.Maity || {};
     }],
     ["GET", /^\/openapi\.json$/, () => ({ openapi: "3.1.0", paths: {
       "/api/v1/admin/users": { get: {} },
+      "/api/v1/admin/statistics": { get: {} },
+      "/api/v1/admin/settings/landing": { get: {}, patch: {} },
+      "/api/v1/landing": { get: {} },
       "/api/v1/admin/settings/mail": { get: {}, patch: {} },
       "/api/v1/admin/settings/mail/test": { post: {} },
       "/api/v1/health": { get: {} },
@@ -1115,7 +1267,12 @@ window.Maity = window.Maity || {};
       "/api/v1/requests/{request_id}/withdraw": { post: {} },
       "/api/v1/projects/{slug}/swarm": { get: {} },
       "/api/v1/swarm/{slug}": { get: {} },
-    } })],
+      "/api/v1/projects": { get: {}, post: { requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/ProjectCreate" } } } } } },
+      "/api/v1/projects/{slug}/placements": { get: {}, post: {} },
+    },
+    components: { schemas: { ProjectCreate: { properties: {
+      slug: {}, name: {}, repository: {}, memory: {}, setup: {}, keep_the_why: {}, policy: {},
+    } } } } })],
     // §17.6: a manual post by an owner or admin.
     ["POST", /^\/projects\/([^/]+)\/ticker$/, (m, body, path) => {
       project(m[1], path);
@@ -1619,6 +1776,27 @@ window.Maity = window.Maity || {};
       if (body.briefing && [...body.briefing].length > BRIEFING_CHARS) {
         fail(400, "invalid", "the briefing is longer than 16,384 characters", path, { fields: { briefing: "string_too_long" } });
       }
+      // §3.1, §6.17: a member's join says which instance it makes, as
+      // routes/joins.py checks it; a first join says neither.
+      const member = file(m[1], "members.json", path).items.find((x) => x.id === agentId);
+      if (!member && (body.new_instance != null || body.replaces != null)) {
+        fail(400, "invalid", "a first join creates the first instance", path, { fields: { [body.replaces != null ? "replaces" : "new_instance"]: "not_a_member" } });
+      }
+      if (member) {
+        // routes/joins.py: the membership's own fields first, then the instance.
+        const differ = ["role", "reports_to", "areas", "capabilities", "briefing"].filter((k) => k in body && body[k] != null
+          && JSON.stringify(body[k]) !== JSON.stringify(member[k] === undefined ? null : member[k]));
+        if (differ.length) fail(400, "invalid", "the agent is a member; change its membership instead", path, { fields: Object.fromEntries(differ.map((k) => [k, "differs_from_membership"])) });
+        const active = (member.instances || []).filter((i) => !i.revoked_at);
+        if (body.new_instance && body.replaces != null) fail(400, "invalid", "new_instance or replaces, not both", path, { fields: { instance: "one_of" } });
+        if (body.replaces != null) {
+          if (!active.some((i) => i.id === body.replaces)) fail(400, "invalid", "replaces names no active instance", path, { fields: { replaces: "not_an_instance" } });
+        } else if (!body.new_instance) {
+          fail(400, "invalid", "the agent is a member: new_instance or replaces", path, { fields: { instance: "required" } });
+        } else if (active.length >= ((member.team && member.team.max_instances) || 1)) {
+          fail(409, "instance_quota", "the team has as many instances as its rulebook allows", path, { max: (member.team && member.team.max_instances) || 1 });
+        }
+      }
       const id = localId("join");
       const ttl = Math.min(body.ttl_seconds || 900, 3600);
       const expires = new Date(Date.now() + ttl * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -1626,6 +1804,7 @@ window.Maity = window.Maity || {};
       file(m[1], "joins.json", path).items.unshift({
         id, agent_id: agentId, role: body.role || "member", created_by: me().member.id,
         created_at: nowIso(), expires_at: expires, used_at: null, burned: false, revoked_at: null,
+        new_instance: !!body.new_instance, replaces: body.replaces || null, instance: null,
       });
       return {
         id, join_url: url, code: "FIXT-URE0-0000", paste_line: "maity join " + url + " --code FIXT-URE0-0000",
@@ -1957,7 +2136,8 @@ window.Maity = window.Maity || {};
     const path = q < 0 ? fullPath : fullPath.slice(0, q);
     const query = new URLSearchParams(q < 0 ? "" : fullPath.slice(q + 1));
     return loadFixtures().then(() => {
-      if (!fixtureSignedIn && !path.startsWith("/auth/") && !path.startsWith("/swarm/")) {
+      // The hub serves its machine form and the landing page without a session.
+      if (!fixtureSignedIn && !path.startsWith("/auth/") && path !== "/landing" && path !== "/openapi.json" && !path.startsWith("/swarm/")) {
         fail(401, "unauthenticated", "Not signed in", fullPath);
       }
       for (const [verb, pattern, handler] of routes) {
@@ -2066,12 +2246,20 @@ window.Maity = window.Maity || {};
   // The hub lists its paths under its prefix (/api/v1/…); either form
   // counts, as in the CLI, and parameter names are not compared. A failed
   // read is not kept: the next ask reads again.
+  let hubDoc = null;
   let hubPaths = null;
   const routeKey = (method, path) => method.toUpperCase() + " "
     + path.replace(/^\/api\/v1(?=\/)/, "").replace(/\{[^}]*\}/g, "{}");
+  function machineForm() {
+    if (!hubDoc) {
+      hubDoc = M.api.get("/openapi.json");
+      hubDoc.catch(() => { hubDoc = null; });
+    }
+    return hubDoc;
+  }
   function hubRoutes() {
     if (!hubPaths) {
-      hubPaths = M.api.get("/openapi.json").then((doc) => {
+      hubPaths = machineForm().then((doc) => {
         const found = new Set();
         Object.entries((doc && doc.paths) || {}).forEach(([path, ops]) =>
           Object.keys(ops || {}).forEach((method) => found.add(routeKey(method, path))));
@@ -2080,6 +2268,20 @@ window.Maity = window.Maity || {};
       hubPaths.catch(() => { hubPaths = null; });
     }
     return hubPaths;
+  }
+
+  // The fields the hub's machine form names for the JSON body of `method
+  // path` (path as in docs/api.md), one $ref followed: what a form may
+  // send to this hub. Rejects when the machine form cannot be read.
+  function bodyFields(method, path) {
+    return machineForm().then((doc) => {
+      const paths = (doc && doc.paths) || {};
+      const op = (paths["/api/v1" + path] || paths[path] || {})[method.toLowerCase()];
+      const json = op && op.requestBody && op.requestBody.content && op.requestBody.content["application/json"];
+      let schema = json && json.schema;
+      if (schema && schema.$ref) schema = schema.$ref.split("/").slice(1).reduce((o, k) => (o ? o[k] : null), doc);
+      return new Set(Object.keys((schema && schema.properties) || {}));
+    });
   }
 
   // Whether the hub's machine form lists a route for this method and this
@@ -2120,8 +2322,9 @@ window.Maity = window.Maity || {};
     // Whether the hub serves `method path` (path as in docs/api.md, without
     // the prefix); rejects when its machine form cannot be read.
     hubHas: (method, path) => hubRoutes().then((found) => found.has(routeKey(method, path))),
+    hubBody: bodyFields,
     // Reads the machine form again at the next ask (the smoke test's hubs).
-    forgetRoutes: () => { hubPaths = null; absentRoutes.clear(); },
+    forgetRoutes: () => { hubDoc = null; hubPaths = null; absentRoutes.clear(); },
     // The hub's time as best known: this clock corrected by the last answer's.
     now: () => Date.now() + skew,
     source,

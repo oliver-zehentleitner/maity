@@ -364,11 +364,15 @@ a.mention:hover, a.mention:focus-visible { text-decoration: underline; }
 .card header, .profile header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .card header { font-size: 0.8rem; }
 .card-id, .handle { font-family: var(--mono); font-size: 0.8rem; color: var(--muted); }
+.card.wanted { box-shadow: 0 0 0 2px var(--accent); }
+/* An id in text as a link (js/ids.js): the id as written, in the code face. */
+a.id-ref { font-family: var(--mono); font-size: 0.92em; white-space: nowrap; }
 .request-id { white-space: nowrap; }
 .area, .label-tag { font-family: var(--mono); font-size: 0.8rem; background: var(--surface-2); border-radius: 4px; padding: 0 6px; }
 .card-release { border-left: 3px solid var(--accent); }
 .badge.release { color: var(--accent); }
 .badge.contract { color: var(--warn); }
+.badge.setup { color: var(--muted); }
 .badge.maintenance_round { color: var(--muted); }
 .expired { color: var(--bad); }
 .checkpoint, .report { margin-top: 6px; font-size: 0.88rem; }
@@ -907,6 +911,13 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
 .join-fields .wide, .join-fields .new-agent { grid-column: 1 / -1; }
 .join-fields .new-agent:not([hidden]) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; }
 .join-fields .new-agent .hint, .join-fields .new-agent .handle-state { grid-column: 1 / -1; }
+.join-fields [hidden], .join-briefing[hidden] { display: none; }
+.join-instance { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; display: grid; gap: 6px; min-width: 0; }
+.join-instance legend { font-size: 0.85rem; font-weight: 600; padding: 0 4px; }
+.join-instance .hint { margin: 0; }
+.instance-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.instance-choice label { color: var(--text); font-size: 0.9rem; }
+.instance-choice select { flex: 1 1 220px; min-width: 0; }
 .join-briefing { flex: 1 1 320px; min-width: 0; display: grid; gap: 4px; align-content: start; }
 .join-briefing textarea { min-height: 10rem; }
 .join-form label { font-size: 0.85rem; color: var(--muted); }
@@ -980,3 +991,61 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .swarm-table th[scope="row"], .swarm-table thead th:first-child { text-align: left; }
 .swarm-total th, .swarm-total td { font-weight: 600; }
 .swarm-public { max-width: 60rem; margin: 24px auto; display: grid; gap: 8px; }
+/* Project memory and its setup options (js/new-project.js, §6.21); the
+   memory and the README badge in Project settings (js/app.js, §6.20). */
+.project-setup { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; display: grid; gap: 6px; min-width: 0; }
+.project-setup legend { font-size: 0.85rem; font-weight: 600; padding: 0 4px; }
+.project-setup .check[hidden] { display: none; }
+.project-setup .hint { margin: 0; }
+.badge-preview { display: block; height: 20px; max-width: 100%; }
+.badge-form .paste-row { min-width: 0; }
+.badge-form .paste-line { overflow-wrap: anywhere; }
+
+/* Statistics in the admin area (js/statistics.js, §16.6): tiles, one row
+   per series with a 2px line in the accent, the days as a table. */
+.statistics-window { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 8px; }
+.statistics-window button[aria-pressed="true"] { background: var(--surface-2); border-color: var(--accent); }
+.stat-tiles { list-style: none; margin: 8px 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 8px; }
+.stat-tile { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; display: grid; gap: 2px; }
+.stat-value { font-size: 1.5rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stat-label { font-size: 0.85rem; color: var(--muted); }
+.stat-note { font-size: 0.8rem; }
+.stat-series { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.stat-series th, .stat-series td { text-align: left; padding: 4px 8px 4px 0; border-bottom: 1px solid var(--border); }
+.sparkline { display: block; color: var(--accent); }
+.sparkline .spark-line { stroke: currentColor; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.sparkline .spark-dot { fill: currentColor; }
+.stat-days .table-scroll { overflow-x: auto; }
+.stat-days table { border-collapse: collapse; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+.stat-days th, .stat-days td { padding: 2px 8px 2px 0; text-align: right; white-space: nowrap; }
+.stat-days th[scope="row"], .stat-days thead th:first-child { text-align: left; }
+
+/* Where the agents run (js/placements.js, §15.5–§15.7): one row per
+   placement under the agents' grid; stacked on a phone. */
+.placements { margin-top: 24px; display: grid; gap: 8px; }
+.placement-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.placement { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; display: grid; gap: 6px; min-width: 0; }
+.placement-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.placement .facts { margin: 0; }
+.placement-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.placement-consent, .placement-waiting { color: var(--muted); }
+/* The instance's landing page (js/landing.js, §16.7): the face of the
+   instance, with room; the large lockup in the theme's pair. */
+.landing { max-width: 44rem; margin: 32px auto 48px; display: grid; gap: 16px; }
+.landing-lockup img { display: block; width: min(320px, 80vw); height: auto; }
+.landing-lockup .brand-dark { display: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .landing-lockup .brand-light { display: none; }
+  :root:not([data-theme="light"]) .landing-lockup .brand-dark { display: block; }
+}
+:root[data-theme="dark"] .landing-lockup .brand-light { display: none; }
+:root[data-theme="dark"] .landing-lockup .brand-dark { display: block; }
+.landing-title { font-size: clamp(1.6rem, 5vw, 2.4rem); line-height: 1.15; margin: 0; }
+.landing-body { font-size: 1.05rem; line-height: 1.6; }
+.landing-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; margin: 8px 0 0; }
+.landing-cta { font-size: 1.05rem; padding: 10px 20px; }
+.landing-preview { border: 1px dashed var(--border); border-radius: 6px; padding: 0 16px; }
+.landing-preview .landing { margin: 16px auto; }
+.landing-preview .inert-link { text-decoration: underline dotted; }
+.landing-preview .inert-link.button { cursor: default; }
+.landing-form textarea { font-family: var(--mono); }

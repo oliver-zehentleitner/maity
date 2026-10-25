@@ -1,5 +1,6 @@
 // Create a project (docs/api.md §6.1, POST /projects): slug, name, an
-// optional repository, Keep the Why, and the policy preset. The creator
+// optional repository, the project memory with its setup options (§6.21),
+// and the policy preset. The creator
 // becomes its owner; on 201 the page switches to the new project's Agents
 // view. The hub's `invalid` answer is shown next to the fields it names.
 // Also the empty state of a human without memberships.
@@ -21,6 +22,16 @@ window.Maity = window.Maity || {};
     ["solo", "Solo: the holder moves its own card to done, the owner arbitrates"],
   ];
 
+  // §6.21: the providers, Keep the Why preselected, and the setup options
+  // with their cards' titles verbatim; the Keep the Why ones only under
+  // Keep the Why. All three come ticked; each is sent as true or false.
+  const PROVIDERS = [["keep-the-why", "Keep the Why"], ["none", "None"]];
+  const OPTIONS = [
+    ["keep_the_why_init", "Set up Keep the Why in the repository", true],
+    ["keep_the_why_badge", "Add the Keep the Why badge to the README", true],
+    ["maity_badge", "Add the Maity badge to the README", false],
+  ];
+
   // The hub's reasons, in words; any other reason is shown as it comes.
   const REASONS = {
     taken: "A project with this slug exists.",
@@ -30,6 +41,8 @@ window.Maity = window.Maity || {};
     missing: "Required.",
     not_a_configured_forge: M.FORGE_RULE,
     unknown: "Not a known value.",
+    unknown_provider: "Not a memory provider this hub knows.",
+    not_a_boolean: "Must be ticked or not.",
   };
 
   // A slug proposed from the name until the slug field is typed in.
@@ -38,7 +51,18 @@ window.Maity = window.Maity || {};
       .replace(/[^a-z0-9]+/g, "-").replace(/^-+/, "").replace(/-+$/, "").slice(0, 63).replace(/-+$/, "");
   }
 
+  // Project settings name them the same way (js/app.js).
+  M.projectSetup = { PROVIDERS, OPTIONS };
+
   M.views.newProject = async function (ctx, root) {
+    // Memory and setup where the hub takes them (§6.21); an older hub
+    // refuses a field it does not know, so then they are not offered.
+    // A hub before §6.21 knows the provider only as keep_the_why: the
+    // dropdown then sends that alias, without setup options.
+    let fieldsRead = true;
+    const fields = await M.api.hubBody("POST", "/projects").catch(() => { fieldsRead = false; return new Set(); });
+    const knowsMemory = fields.has("memory") && fields.has("setup");
+    const knowsAlias = !knowsMemory && fields.has("keep_the_why");
     const field = (id, label, input, hint) => {
       const error = h("p", { class: "field-error", id: id + "-error", role: "alert" });
       input.setAttribute("aria-describedby", (hint ? id + "-hint " : "") + id + "-error");
@@ -51,7 +75,30 @@ window.Maity = window.Maity || {};
       M.dom.NAME_RULES.slug.text + " Used in links and by the CLI; it cannot be changed later.");
     const repository = field("project-repository", "Repository (optional)",
       h("input", { id: "project-repository", type: "url", placeholder: "https://github.com/owner/name", autocomplete: "off" }));
-    const ktw = h("input", { id: "project-ktw", type: "checkbox" });
+    const memory = field("project-memory", "Project memory",
+      h("select", { id: "project-memory" }, PROVIDERS.map(([value, label]) => h("option", { value, selected: value === "keep-the-why" }, label))),
+      "Where the project keeps its decisions and their reasons. Maity stores none of it: an agent sets it up in the repository, "
+      + "through the setup cards below, each a pull request.");
+    memory.input.value = "keep-the-why";
+    // The options, each a checkbox ticked to begin with.
+    const options = OPTIONS.map(([key, label, ktwOnly]) => {
+      const box = h("input", { id: "setup-" + key, type: "checkbox", checked: true });
+      box.checked = true;
+      return { key, ktwOnly, box, row: h("label", { class: "check", for: "setup-" + key }, box, " " + label) };
+    });
+    const setupError = h("p", { class: "field-error", id: "project-setup-error", role: "alert" });
+    const setupBox = h("fieldset", { class: "project-setup", "aria-describedby": "project-setup-hint project-setup-error" },
+      h("legend", null, "Setup cards"),
+      options.map((o) => o.row),
+      h("p", { class: "hint", id: "project-setup-hint" }, "Each ticked option becomes a card for an agent once the project has a repository "
+        + "(now, or when it is set later). The Maity badge also switches the project's badge on from the start: "
+        + "it shows anyone how many humans and agents the project has; Project settings switch it off."),
+      setupError);
+    const showOptions = () => {
+      const ktwChosen = memory.input.value === "keep-the-why";
+      options.forEach((o) => { if (o.ktwOnly) o.row.hidden = !ktwChosen; });
+    };
+    memory.input.addEventListener("change", showOptions);
     const preset = field("project-preset", "Policy preset",
       h("select", { id: "project-preset" }, PRESETS.map(([value, label]) => h("option", { value }, label))));
 
@@ -62,16 +109,23 @@ window.Maity = window.Maity || {};
     });
 
     // The hub's field names (details.fields) to the inputs they belong to.
-    const byField = { name, slug, repository, "repository.url": repository, policy: preset, "policy.preset": preset };
-    const all = [name, slug, repository, preset];
+    const byField = { name, slug, repository, "repository.url": repository, policy: preset, "policy.preset": preset,
+      memory, "memory.provider": memory, keep_the_why: memory };
+    const all = [name, slug, repository, memory, preset];
     const status = M.statusLine();
 
     const showErrors = (fields) => {
       all.forEach((f) => { f.error.textContent = ""; f.input.removeAttribute("aria-invalid"); });
+      setupError.textContent = "";
       const rest = [];
       Object.keys(fields).forEach((key) => {
         const reason = String(fields[key]);
         const text = REASONS[reason] || reason;
+        const option = options.find((o) => key === "setup." + o.key);
+        if (option || key === "setup") {
+          setupError.textContent += (setupError.textContent ? " " : "") + (option ? OPTIONS.find(([k]) => k === option.key)[1] + ": " : "") + text;
+          return;
+        }
         const target = byField[key];
         if (!target) { rest.push(key + ": " + text); return; }
         target.error.textContent = text;
@@ -95,7 +149,13 @@ window.Maity = window.Maity || {};
         showErrors({});
         const url = repository.input.value.trim();
         if (url) body.repository = { url };
-        body.keep_the_why = ktw.checked;
+        if (knowsAlias) body.keep_the_why = memory.input.value === "keep-the-why";
+        if (knowsMemory) {
+          body.memory = { provider: memory.input.value };
+          // §6.21: every option sent as it stands; under None the Keep the
+          // Why ones are false, as the hub would take them.
+          body.setup = Object.fromEntries(options.map((o) => [o.key, o.box.checked && !(o.ktwOnly && body.memory.provider !== "keep-the-why")]));
+        }
         body.policy = { preset: preset.input.value };
         status.busy("Creating…");
         submit.disabled = true;
@@ -119,7 +179,10 @@ window.Maity = window.Maity || {};
       },
     },
     name.nodes, slug.nodes, repository.nodes,
-    h("label", { class: "check", for: "project-ktw" }, ktw, " Keep the Why: the project keeps its reasoning in context/"),
+    knowsMemory || knowsAlias ? memory.nodes : null,
+    knowsMemory ? setupBox : null,
+    // What the hub chooses is said where its machine form could not be read.
+    fieldsRead ? null : h("p", { class: "hint" }, "Project memory: this hub's machine form could not be read, so its defaults apply."),
     preset.nodes);
     const submit = h("button", { type: "submit" }, "Create project");
     append(form, submit, status.el);

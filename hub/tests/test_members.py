@@ -34,10 +34,15 @@ def test_the_member_view_has_the_contract_shape(
     agent = flow.agent(make_client, owner, role="member", areas=["hub/"], reports_to=owner.id)
     agent.resume(harness="Claude Code", model="claude-opus-5-5")
     view = owner.get(f"/projects/maity/members/{agent.id}").json()
+    assert view["name"] == f"maintainer/{view['handle']}"  # the global name (§6.3)
+    [instance] = view["instances"]
+    assert instance["name"] == f"{view['name']}#{instance['id']}"
+    assert agent.get("/me").json()["member"]["name"] == view["name"]
     assert set(view) == {
         "id",
         "kind",
         "handle",
+        "name",
         "display_name",
         "avatar_url",  # null: no picture uploaded (§6.10)
         "owner_id",
@@ -226,9 +231,11 @@ def test_profiles_belong_to_their_human(
     )
     assert created.status_code == 201
     body = created.json()
+    assert body["name"] == "maintainer/agent-b"  # the global name (§6.3)
     assert set(body) == {
         "id",
         "handle",
+        "name",
         "display_name",
         "avatar_url",
         "avatar_source",  # the profile's owner reads it (§6.10)
@@ -236,6 +243,7 @@ def test_profiles_belong_to_their_human(
         "git_identity",
         "memberships",
         "created_at",
+        "deleted_at",  # null until its owner deletes it (§6.3)
     }
     assert body["git_identity"] == {"name": "B", "email": "b@x.y"}
     taken = owner.post("/agents", {"handle": "agent-b", "display_name": "Again"})

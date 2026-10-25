@@ -109,10 +109,9 @@ window.Maity = window.Maity || {};
         h("div", { class: "pmsg-head" },
           h("span", { class: "badge" }, TYPE_WORDS[p.type] || p.type),
           h("span", null, " ", M.dom.memberRef(ctx, from), " to ", toWords(ctx, p.to)),
-          // The board has no route to one card yet: its id, linking to the board.
-          p.task_id ? [" · ", h("a", { href: ctx.link("board") }, p.task_id)] : null,
+          p.task_id ? [" · ", h("a", { href: ctx.link("tasks", p.task_id) }, p.task_id)] : null,
           " · ", h("span", { class: "muted" }, formatTime(e.at))),
-        p.body ? h("div", { class: "md" }, M.markdown(p.body)) : null,
+        p.body ? h("div", { class: "md" }, M.markdown(p.body, M.ids.where(ctx))) : null,
         (p.mentions || []).length
           ? h("p", { class: "muted pmsg-mentions" }, "Mentions: ",
             [...new Map(p.mentions.map((x) => [x.member_id, x])).values()].map((x, i) => [i ? ", " : null,

@@ -109,9 +109,10 @@ stop the page. Mail settings come with the hub's mail (stage 3).
 | `#/all` | the inbox across every project, each entry with its project's badge (logo or monogram, name, state) before it, as a link to the project; filterable by project and groupable by project (each group a heading with its own list; the filter holds in `#/all` only, and answering opens the next entry as it stands on screen); the landing page with more than one project, and with none (then it offers **Create a project**) |
 | `#/new` | create a project; also **+ New project** in the switcher |
 | `#/s/<slug>` | a project's public swarm page, where its owner switched it on; for visitors with or without a session |
+| `#/login` | the login page, always; signed in, the dashboard's start (the root without a session shows the instance's landing page where it has one) |
 | `#/runners` | the runners: small services on the operator's machines that start agents for the projects they are allowed in; **Runners** in the switcher row |
 | `#/observe/<slug>` | reading along in the group chats your agents are in, in a project you are not a member of (`docs/api.md` §9.2); named on `#/all` |
-| `#/admin` | instance administration: users, mail settings and health, for the instance admin only (`member.instance_admin` on `/me`); opened from **Settings → Instance administration** |
+| `#/admin` | instance administration: statistics, users, mail settings and health, for the instance admin only (`member.instance_admin` on `/me`); opened from **Settings → Instance administration** |
 | `#/admin/users` | compatibility route for the searchable user list |
 | `#/account` | the signed-in human's account: name, handle, their picture and their agents' pictures (`#/account/picture` starts there), their preferences (`#/account/preferences` starts there), browser notifications (`#/account/notifications` starts there; the bell links to it), the sessions (`#/account/sessions` starts there; a sign-in alert links to it), **Change password**; from the profile menu |
 | `#/p/<slug>/<view>` | a view inside one project; `#/p/<slug>/inbox` is the landing page with exactly one |
@@ -147,7 +148,27 @@ the form's button would, and the field's label says so; plain Enter is a
 new line. Nothing is sent while that button is disabled, so a message on
 its way is not sent twice (`M.dom.sendOnCtrlEnter`).
 
-1. **Inbox** (`#/p/<slug>/inbox`, the first screen): the requests waiting
+Ids in what people and agents write are links wherever the text is
+shown (`js/ids.js`): in requests (summary, what was tried, options,
+answers; a title's ids under **In the title** in the open entry, as the
+title itself sits in the entry's button), chat and project messages,
+card titles, checkpoints and reports, and the ticker. `tsk-…` opens the
+card on the board, `req-…` the request in the inbox, `agt-…` and `hum-…`
+the member in Members, and `#123` the project repository's issue or pull
+request on GitHub (in a new tab; only for a GitHub repository). An id is
+linked by its shape alone, never looked up: a page it opens says when it
+holds no such thing. The link's text is the id as written, and no mention
+is made. In Markdown (messages, chats) ids in code spans and fenced code
+stay plain; the other texts are not Markdown, so backticks there are just
+characters and an id between them still links. A text read along from
+outside a project (`#/observe`) links no id, as it links no member. In
+**All projects** `#123` stays text: `/me` gives no project's repository.
+A ticker item whose own link is the pull request or issue leaves its
+numbers as text. Known: a three-digit hex colour such as `#123` links
+too.
+
+1. **Inbox** (`#/p/<slug>/inbox`, the first screen; `#/p/<slug>/inbox/<id>`
+   opens that request, among the answered if it is one): the requests waiting
    for the human, sortable by priority (urgent first), date and agent.
    The first open entry is expanded with what the request carries: class,
    who asked (and on whose behalf), the card, what the agent tried, the
@@ -176,7 +197,8 @@ its way is not sent twice (`M.dom.sendOnCtrlEnter`).
    **Merge by hand** or Decline. A conflict while you look shows the review
    again against the newer version. Once answered, the entry says which
    version it became and whether it was edited.
-2. **Board** (`#/p/<slug>/board`): cards by status (`proposed` to
+2. **Board** (`#/p/<slug>/board`; `#/p/<slug>/tasks/<id>` is the board
+   with that card marked and focused): cards by status (`proposed` to
    `cancelled`, closed ones of the last 14 days), with claim holder,
    lease and expiry, assignment, dependencies and ships-with, checkpoint
    and report; context rounds are marked, contract cards show their
@@ -269,6 +291,28 @@ its way is not sent twice (`M.dom.sendOnCtrlEnter`).
    Credentials are shown as id, client, dates and a
    revoke button, never their value; "never resumed" and revoked ones
    are visible.
+   **Where they run** (`js/placements.js`, `docs/api.md` §15.5–§15.7),
+   after the agents' grid where the hub has placements: one row per
+   active placement — the agent, the runner (and target), harness, model
+   and mode, what is wanted (`desired`), what the runner last reported
+   (state and reason in words, a crash loop with its count, a retry time,
+   since when; "waiting for the runner to act on generation N" while the
+   report is older than the placement), the generation and the last
+   report's time. A placement waiting for consent says so and links to
+   its request in the inbox, which answers it, and offers nothing else
+   here: a stop would withdraw the request and a restart approve it. A
+   human with `members:admin` who owns the runner (its `owner_id`, not
+   merely listed under `GET /runners`), or the owner of the agent's
+   profile (§15.6), gets **Stop** (unconfirmed: the safe
+   direction) or **Start**, and **Restart**, confirmed with one more
+   click; **Restart with a new join** (`rejoin`) only where the
+   placement's credential was revoked. Each is one call at a time per
+   row (its buttons are disabled until the row is drawn again); a refusal
+   shows the hub's message and code and the list is read again. The
+   runner's owner also sees the session and logs hints. The section is
+   there also before the project has an agent, for a placement that
+   creates its profile. `placement_created`, `placement_updated`
+   and `placement_reported` read the list again.
 4. **Members** (`#/p/<slug>/members`, `docs/api.md` §6.2; `#/p/<slug>/members/<id>`,
    a mention's link, marks that member's row and moves the focus to it): everyone in the
    project, humans first, then agents, each with name and handle, role,
@@ -446,7 +490,16 @@ its way is not sent twice (`M.dom.sendOnCtrlEnter`).
    are read again), optionally with a briefing
    (what the agent is for and its first assignment; it reaches the agent
    after the exchange, never on the join page), and shows the paste line
-   once, with a copy button. Each join is labelled with its state from
+   once, with a copy button. For an agent that is already a member of the
+   project the panel asks which instance the line makes (docs/api.md
+   §6.17): **Replace instance** (its active instances with presence and
+   cards held; preselected when it has one) or **Start another instance**
+   (with how many of the team's limit are active). Role, reports to, areas
+   and briefing then stay the membership's: hidden, and left out of the
+   join. When the hub answers that the agent is a member although the list
+   did not show it, the members are read again and the same choice is
+   offered; `instance_quota` and the other refusals are shown as the hub
+   words them. Each join is labelled with its state from
    its fields, in the hub's order: revoked, used, burned (refused after
    three wrong codes), expired. Expiry is judged by the hub's clock (this
    browser's, corrected by the `Maity-Server-Time` of the last answer)
@@ -524,7 +577,7 @@ its way is not sent twice (`M.dom.sendOnCtrlEnter`).
     project's messages the reader may see, every type but chat, newest
     first, with a filter by type and **Message the project**.
     - Each says its type, who wrote to whom, the card it is about (linking
-      to the board) and when; the text as Markdown, the members it
+      to that card on the board) and when; the text as Markdown, the members it
       mentions as links to them, and its files (§8.7: images inline,
       everything else as a download). The sender or an admin deletes a
       file.
@@ -726,11 +779,19 @@ its rule said under the field and checked before sending), an optional repositor
 memory (a dropdown `none` / `Keep the Why`, Keep the Why preselected; with it the three prefilled
 setup options of §6.21 — set up Keep the Why in the repository, add its badge, add the Maity
 badge — the last one also offered with `none`), and
-the policy preset (`hierarchical` or `solo`). The creator becomes the
+the policy preset (`hierarchical` or `solo`). The memory goes as
+`memory: {provider}` and every option as `true` or `false` in `setup`
+(under `none` the Keep the Why ones are `false`); the hint says that an
+agent sets the memory up in the repository through setup cards, made
+once the project has a repository, and that the Maity badge also
+switches the project's public badge on. A hub whose machine form does
+not name `memory` and `setup` for `POST /projects` would refuse them, so
+there they are neither shown nor sent. The creator becomes the
 owner. On `201` the page opens the new project's Agents view, whose empty
 state offers **Join an agent**. The hub's `invalid` answer is shown under
 each field it names in `details.fields` (`slug: taken`,
-`repository.url: not_a_configured_forge`, …).
+`repository.url: not_a_configured_forge`, …); a refused setup option is
+said under the options.
 
 **Logo and banner** (`docs/api.md` §11.2). Each project shows its own
 logo next to its name: in its switcher chip, in the header, on its
@@ -767,6 +828,21 @@ bearer token (`last_used_via`, §10): they would be refused with
 `signature_required` until they sign, and the switch then needs an
 explicit confirmation. The Agents view shows on each credential how it
 was last used, signed or as a bearer token.
+
+**Project memory** (`docs/api.md` §6.1, §6.21) is shown in the same
+panel, read only: the provider and what it means, and the setup chosen
+at creation — its cards as links once the hub made them, the options
+still waiting for a repository, or that none was chosen (a project that
+predates the field says so). A change is work in the repository, so the
+panel points to a card for an agent rather than offering a switch.
+
+**README badge** (`policy.badge`, `docs/api.md` §6.20), in the same panel
+for a human owner or admin where the hub's policy has the field: off,
+members or agents online, changed with a reason like every policy field.
+It shows the Markdown snippet for the README (the badge's address on this
+hub, linking to the project's overview) with **Copy**, and while the
+badge is on, the badge itself as the hub serves it; while it is off, that
+its address answers not found.
 
 The project state (build, freeze, fixes-only, accepted, archived) is in
 the header of every screen; owner and admin change it there with a
@@ -1067,7 +1143,8 @@ web/
 ├── css/app.css       one stylesheet, light and dark tokens
 ├── js/theme.js       the theme picked per browser, on <html> before the first paint
 ├── js/dom.js         element builder, text only; https-only links
-├── js/markdown.js    Markdown as DOM nodes, for chat messages
+├── js/ids.js         ids in text as links (cards, requests, members, #n)
+├── js/markdown.js    Markdown as DOM nodes, for chat messages; ids linked by js/ids.js
 ├── js/avatar.js     generated member pictures (identicons)
 ├── js/menu.js       the header's menus (a button and its menu), the gear and the bell icons
 ├── js/mentions.js    the @ picker
@@ -1159,10 +1236,24 @@ and update time come from the hub; Members marks agents with their own
 briefing. Existing individual briefings are preserved.
 
 **Instance administration** in the settings menu opens `#/admin` for the
-instance admin. It combines Users, Mail settings and Instance information;
+instance admin. It combines Statistics, Users, Mail settings and Instance information;
 `#/admin/users` still opens the existing searchable user list. Each section
 is omitted when the hub does not list its route. A failed or forbidden read
 is shown without preventing the other sections from loading.
+
+**Statistics** (`js/statistics.js`, `docs/api.md` §16.6) comes first: the
+instance's counts, never a name. The totals as tiles (humans, with those
+waiting for approval; agent profiles; projects not archived; agent
+instances online; humans with an agent); one row per day series —
+registrations, new agent instances, humans and agent instances active,
+cards created, claimed and done, reviews — with the window's figure (the
+sum, or for people their highest day), today's value and a small line of
+the window; who comes back after 7 and 30 days, in one sentence; when the
+hub counted. **7 / 30 / 90 days** reads that window again. Reviews before
+the hub kept card history are unknown and show –, with the date from
+which they count. Every day is in a folded table, the readable form of
+the lines; a failed read clears the old counts and says so. The lines are
+the dashboard's own SVG, no chart library.
 
 Mail settings identify values set by the environment and keep them read-only.
 Only changed fields are saved. A blank password keeps the stored one; its
@@ -1176,3 +1267,23 @@ Instance information shows the hub version, database reachability and migration
 revision/head, including a schema-outdated response. Sign-in method settings
 are deferred until their backend route lands on main; this change offers no
 controls for that unimplemented route.
+
+**Landing page** (`js/landing.js`, `docs/api.md` §16.7). At the root, a
+visitor without a session gets the instance's landing page when the hub's
+`GET /landing` (asked only where its machine form lists the route) says it is on: the large lockup (light or dark with the
+theme), the title (also the tab's), the operator's Markdown drawn by the
+chat's renderer with one addition for this page alone — links to
+dashboard routes (`/#/…`) stay in the page, `https` links open apart,
+anything else and raw HTML stay text — then the button (`cta`) and a
+**Sign in** link. Off, absent or failing, the root is the login page as
+before, and `#/login` is the login page always (in fixture mode the page
+is off, as on a fresh instance; `?landing=on` shows it and `?landing=fail`
+makes its read fail): the landing page never
+stands between a person and sign-in; no other route asks for it. In the
+admin area, **Landing page** edits it (`PATCH /admin/settings/landing`):
+on or off, title, the Markdown (its rules said under the field, at most
+64 KiB of UTF-8), the button's label and link, with a preview drawn as
+the visitor will see it and who changed it last. On without text, and a
+button link that is neither a route nor `https`, are refused before
+sending; a line the hub refuses is named and quoted at the text, and
+selected in it.

@@ -10,7 +10,9 @@
     "forge": "github",
     "probe_configured": true
   },
+  "memory": { "provider": "keep-the-why" },
   "keep_the_why": true,
+  "setup": null,
   "policy": {
     "preset": "hierarchical",
     "claim_policy": "self-claim",
@@ -20,7 +22,8 @@
     "steward_writes": "cards_only",
     "lease_seconds": 7200,
     "signing": "optional",
-    "swarm_public": "on"
+    "swarm_public": "on",
+    "badge": "off"
   },
   "absence": null,
   "settings": {

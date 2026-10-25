@@ -235,3 +235,66 @@ dark in plain CSS, without a script to copy values.
 **Rejected alternative:** setting the theme in app.js after load: a flash
 of the other theme on every page load. A toggle of two states: no way
 back to following the system once a choice was made.
+
+## Ids in text are linked by their shape alone, and a title's ids are offered beside its button
+
+**Id:** 3274d199-32a5-4dad-8926-ca8bfae7022b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's ask that an id in a request's text, or anywhere text is shown, be a link (tsk-dcj6qwjxc9cq), 2026-10-25; hub/src/maity_hub/ids.py (a prefix and 12 Crockford base32 characters); docs/api.md §6.13 (GitHub the one forge, the project repository's host); the dashboard's implementation, 2026-10-25
+**Revisit when:** the hub gives another forge, another id shape, a page of its own to one card, or the designer reworks the inbox entry
+
+`js/ids.js` turns `tsk-`, `req-`, `agt-` and `hum-` ids of the hub's
+exact shape, and `#n`, into links in every text the dashboard renders
+outside code: the card on the board (`#/p/<slug>/tasks/<id>`, a route
+that is the board with the card marked), the request in the inbox
+(`#/p/<slug>/inbox/<id>`), the member in Members, and the repository's
+`/issues/<n>` on GitHub. Nothing is looked up; the page an id opens says
+when it holds no such thing. An inbox entry's title sits inside its
+button, so its ids are repeated as links under **In the title** in the
+open entry. A text with no project of its own (a personal request from a
+project the human is not in, a chat read along from outside, `#/observe`)
+links none. Known false positive, accepted: a three-digit hex colour
+(`#123`) links as a number.
+
+**Reason:** one request per id to know whether it exists would cost a
+read for every id in every text, and the page behind the link has to say
+"not found" anyway. The exact shape (12 characters, no i, l, o, u) keeps
+words like "tsk-1" or a path plain. A link nested in the entry's button
+would be one control inside another, which keyboards and screen readers
+cannot use. GitHub answers `/issues/<n>` for a pull request too, so one
+URL fits both without knowing which it is.
+
+**Rejected alternative:** fetching each id to show its title next to it:
+the card asks for the id as the text, and the reads would multiply with
+the text. Linking any `prefix-something`: fixture-like and typed ids
+such as tsk-1 would become dead links. Moving the title out of the
+button: it is the entry's name for the keyboard and for the list.
+
+## The landing page asks only at the root, falls back to sign-in silently, and is the one surface where Markdown links to routes
+
+**Id:** b70e4ab6-5c55-47ba-96d7-d1b941157f63
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §16.7 (the landing page can never stand between a person and sign-in; the card-body renderer extended by the dashboard-route link alone; title and cta label as text), the card tsk-gqcq7kwkxpgx; the dashboard's implementation, 2026-10-25; the designer was not asked yet
+**Revisit when:** the hub serves images to visitors, or the designer reworks the page
+
+Only the root without a session asks `GET /landing`; every other route
+without a session, and `#/login` always, is the login page. An answer
+that is off, absent or a failure shows the login page and no error. The
+Markdown goes through the chat's renderer, in which a module flag set by
+`M.markdown.withRoutes` lets `[text](/#/…)` become an in-page link for
+this one call; the chat itself still shows such a link as written.
+
+**Reason:** a visitor who came to sign in must never meet an error or a
+wait on a page that is content; asking only at the root keeps every
+deep link exactly as fast as before. A route link written into a chat
+message would point a reader at a page of the dashboard in someone
+else's words, which the chat has never allowed; the operator's page is
+the one place the contract allows it.
+
+**Rejected alternative:** a separate renderer for the landing page: two
+renderers would drift from the list the hub validates. Showing an error
+on a failed landing read: it would stand between the person and sign-in.

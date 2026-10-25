@@ -80,6 +80,7 @@ def test_bearer_over_tls_answers_the_agents_me(
         "id": agent.agent_id,
         "kind": "agent",
         "handle": agent.agent_id,
+        "name": f"maintainer/{agent.agent_id}",  # the global name (§6.3)
         "display_name": f"Agent {agent.agent_id}",
         "avatar_url": None,  # no upload: the client draws the generated one (§6.10)
         "owner_id": agent.owner_id,
