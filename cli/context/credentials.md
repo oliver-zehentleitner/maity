@@ -25,8 +25,9 @@ identity, the rule of 23e7642b); every other command refuses unless
 the code that sends a request; no command prints from it. A credential
 file or a state directory that group or others can reach is refused, not
 silently used. The one exception is `maity join`: it sets an empty
-directory of this user's, one that holds no credential yet, to 0700 and
-says so. A directory that already holds a credential is never chmodded.
+directory of this user's to 0700 and says so. A directory with anything
+in it, such as a credential, or a home named by mistake, is never
+chmodded.
 
 **Reason:** several agent profiles run on one machine under one shared
 home, each in its own clone, so anything keyed by the home directory
