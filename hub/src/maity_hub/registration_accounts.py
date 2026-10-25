@@ -129,6 +129,7 @@ def complete(
     terms_seen: str | None,
     terms_accepted: bool,
     source: str,
+    user_agent: str | None = None,
 ) -> Completion:
     """§2.7.1 step 6, in its order. The caller has checked the link's signature and
     nonce (§18.6) and holds the transaction; this commits nothing itself. `resolve`
@@ -234,7 +235,7 @@ def complete(
         )
         .values(voided_at=now)
     )
-    session_id, csrf = start_session(conn, human_id, source)
+    session_id, csrf = start_session(conn, human_id, source, user_agent)
     return Completion(
         "created",
         human_id=human_id,

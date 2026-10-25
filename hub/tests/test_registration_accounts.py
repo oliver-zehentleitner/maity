@@ -21,6 +21,7 @@ from tests.conftest import ClientFactory
 from tests.test_registration import MAIL, PASSWORD, SIGNING, hub, pending
 
 ADMIN = "/admin/registrations"
+FIREFOX = "Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0"
 
 
 @pytest.fixture(autouse=True)
@@ -464,7 +465,7 @@ def pending_account(
 ) -> tuple[Any, flow.Human]:
     settings = settings_for()  # approval: operator, the default
     row = requested(make_client, engine, settings, address)
-    done = complete(engine, settings, row.id, handle=handle)
+    done = complete(engine, settings, row.id, handle=handle, user_agent=FIREFOX)
     assert (done.kind, done.account_status, done.next) == ("created", "pending", "/#/pending")
     return done, signed_in(make_client, done)
 
@@ -479,7 +480,9 @@ def test_a_pending_account_reaches_only_its_own_account(
     assert person.get("/auth/session").status_code == 200
     listed = person.get("/auth/sessions")  # its own sessions, as §2.7.5 allows (#268)
     assert listed.status_code == 200, listed.text
-    assert [s["method"] for s in listed.json()["items"]] == ["register"]
+    assert [(s["method"], s["browser"], s["os"]) for s in listed.json()["items"]] == [
+        ("register", "Firefox", "Linux")  # the browser that completed (§2.6.5)
+    ]
     for refused in (
         person.get("/projects"),
         person.get("/agents"),
