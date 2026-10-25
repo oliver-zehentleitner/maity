@@ -42,7 +42,8 @@ and `GET /auth/methods` are in; the sign-in link follows. Notifications
 sealed positions and its long-poll, `POST /me/notifications/read`, and
 watches on cards (§6.4) are in, and so are the notification settings with
 verified addresses, held address changes and the mail link pages (§18.4,
-§18.6), sent through the mail outbox; notification mail itself follows.
+§18.6), sent through the mail outbox, and the notification mail itself
+(§18.5): immediate, hourly and daily, quiet hours, sign-in alerts.
 
 ## Run it locally with plain Python
 
