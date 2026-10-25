@@ -487,3 +487,31 @@ reader.
   of settings could serve it by mistake.
 - The SMTP password from the environment or a file only: contradicts
   §16.2, which lets the admin of a single local install set it.
+
+## The memory provider replaces the Keep the Why flag; the setup is one JSON column
+
+**Id:** 1d4bfd77-1ff5-4beb-a09d-183c67cdbcd8
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session, 2026-10-25 (project memory and setup cards)
+**Revisit when:** a third provider brings settings of its own, or the setup options become editable
+
+`project.memory_provider` (`keep-the-why`, `none`) took the place of the
+boolean `keep_the_why`: the migration fills it from the flag and drops the
+flag, and the API's `keep_the_why` is derived from it. The options chosen at
+creation and the ids of the cards made for them live in one JSON column,
+`project.setup`, null for a project that predates them.
+
+**Reason:** the contract makes the provider the choice and `keep_the_why`
+its alias (`docs/api.md` §6.1); two stored columns for one fact could
+disagree. The setup is written once at creation, completed once when the
+cards are made, read back as a whole and never patched: one value with no
+column of its own to query.
+
+**Rejected alternatives:**
+- Keep the boolean and derive the provider from it: it holds two values,
+  and the contract already names providers to come.
+- A provider column beside the flag: two sources of one fact.
+- A column per option and a table for the cards: three booleans and a short
+  list written once, never filtered on.
