@@ -12,7 +12,7 @@ from types import FrameType
 from typing import Any
 
 import uvicorn
-from sqlalchemy import insert, select
+from sqlalchemy import exists, insert, inspect, literal, select
 from sqlalchemy.exc import SQLAlchemyError
 
 from maity_hub import __version__, clock, longpoll
@@ -41,10 +41,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     create.add_argument("--handle", required=True)
     create.add_argument("--display-name", required=True)
+    quick = commands.add_parser(
+        "quickstart",
+        help="a personal hub on SQLite: set up a new database, the first account, then serve",
+    )
+    quick.add_argument("--handle", help="the first account's handle (default: your login name)")
+    quick.add_argument("--display-name", help="its display name (default: the handle)")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-    if args.command == "serve":
+    if args.command in ("serve", "quickstart"):
         # Alembic logs its context on every revision lookup, i.e. on every health call.
         logging.getLogger("alembic").setLevel(logging.WARNING)
     try:
@@ -56,6 +62,8 @@ def main(argv: list[str] | None = None) -> int:
         return _migrate(settings)
     if args.command == "owner":
         return _owner_create(settings, args.handle, args.display_name)
+    if args.command == "quickstart":
+        return _quickstart(settings, args.handle, args.display_name)
     return _serve(settings)
 
 
@@ -72,7 +80,9 @@ def _read_password() -> str | None:
     return sys.stdin.readline().rstrip("\n")
 
 
-def _owner_create(settings: Settings, handle: str, display_name: str) -> int:
+def _owner_create(
+    settings: Settings, handle: str, display_name: str, *, first: bool = False
+) -> int:
     if not HANDLE.fullmatch(handle):
         return _fail(
             "--handle: lower-case letters, digits and '-', 2 to 63 characters", EXIT_CONFIG
@@ -93,18 +103,32 @@ def _owner_create(settings: Settings, handle: str, display_name: str) -> int:
         return _database_error(settings, error)
     try:
         with engine.begin() as conn:
-            if conn.execute(select(t.human.c.id).where(t.human.c.handle == handle)).first():
-                return _fail(f"a human with the handle {handle!r} exists", EXIT_FAILURE)
             human_id = new_id("human")
-            conn.execute(
-                insert(t.human).values(
-                    id=human_id,
-                    handle=handle,
-                    display_name=display_name,
-                    password_hash=hash_password(password),
-                    created_at=clock.now(),
+            values = {
+                "id": human_id,
+                "handle": handle,
+                "display_name": display_name,
+                "password_hash": hash_password(password),
+                "created_at": clock.now(),
+            }
+            if first:
+                # quickstart's first account: the check that no human exists and the
+                # insert are one statement, so an account another process created while
+                # the password was asked for is never joined by a second admin.
+                columns = [t.human.c[name] for name in values]
+                rows = select(*(literal(values[c.name], type_=c.type) for c in columns)).where(
+                    ~exists(select(t.human.c.id))
                 )
-            )
+                if conn.execute(insert(t.human).from_select(columns, rows)).rowcount != 1:
+                    return _fail(
+                        "an account was created meanwhile; sign in with it, "
+                        "or run quickstart again",
+                        EXIT_FAILURE,
+                    )
+            else:
+                if conn.execute(select(t.human.c.id).where(t.human.c.handle == handle)).first():
+                    return _fail(f"a human with the handle {handle!r} exists", EXIT_FAILURE)
+                conn.execute(insert(t.human).values(**values))
     except SQLAlchemyError as error:
         return _database_error(settings, error)
     finally:
@@ -142,7 +166,67 @@ def _migrate(settings: Settings) -> int:
     return 0
 
 
-def _serve(settings: Settings) -> int:
+def _default_handle() -> str:
+    """The login name when it is a valid handle, else `owner`."""
+    try:
+        login = getpass.getuser().lower()
+    except (KeyError, OSError):  # no passwd entry, no LOGNAME
+        return "owner"
+    return login if HANDLE.fullmatch(login) else "owner"
+
+
+def _quickstart(settings: Settings, handle: str | None, display_name: str | None) -> int:
+    """`migrate` on a new SQLite database, `owner create` while there is no human, then
+    `serve`. New means no tables at all: a file with tables but no schema version, or a
+    database behind the current schema, is refused, because migrations never run
+    implicitly on a database that already holds something."""
+    if not settings.database_url.startswith("sqlite"):
+        return _fail(
+            "quickstart is the local path on SQLite; for "
+            f"{redact_database_url(settings.database_url)} run migrate, owner create and serve",
+            EXIT_CONFIG,
+        )
+    try:
+        engine = make_engine(settings.database_url)
+        unversioned = current_revision(engine) is None
+        tables = inspect(engine).get_table_names()
+    except (SQLAlchemyError, ImportError) as error:
+        return _database_error(settings, error)
+    if unversioned and tables:
+        engine.dispose()  # not a new file: whatever it holds, only `migrate` touches it
+        return _fail(
+            f"{redact_database_url(settings.database_url)} holds tables but no Maity schema "
+            "version; start in an empty directory, or run `maity-hub migrate` if it is a hub",
+            EXIT_FAILURE,
+        )
+    new = unversioned
+    try:
+        if new:
+            migrate(engine)
+            print(f"maity-hub: schema empty -> {head_revision(engine)}")
+        else:
+            require_current_schema(engine)
+        with engine.connect() as conn:
+            someone = conn.execute(select(t.human.c.id).limit(1)).first() is not None
+    except SchemaNotCurrentError as error:
+        return _fail(str(error), EXIT_FAILURE)
+    except SQLAlchemyError as error:
+        return _database_error(settings, error)
+    finally:
+        engine.dispose()
+    banner = []
+    if someone:
+        print("maity-hub: this hub has accounts; sign in with yours")
+    else:
+        handle = handle or _default_handle()
+        created = _owner_create(settings, handle, display_name or handle, first=True)
+        if created != 0:
+            return created
+        banner.append(f"maity-hub: sign in as {handle}")
+    return _serve(settings, banner)
+
+
+def _serve(settings: Settings, banner: list[str] | None = None) -> int:
     try:
         engine = make_engine(settings.database_url)
         require_current_schema(engine)
@@ -161,12 +245,15 @@ def _serve(settings: Settings) -> int:
         access_log=False,
         timeout_graceful_shutdown=GRACEFUL_SECONDS,
     )
-    if settings.web_dir is not None and settings.web_dir.is_dir():
-        print(f"maity-hub: dashboard at {settings.public_url}/", flush=True)
-    else:
-        print(f"maity-hub: API only at {settings.public_url}/api/v1, no dashboard", flush=True)
-    _Server(config).run()
+    _Server(config, banner=[*(banner or []), _where(settings)]).run()
     return 0
+
+
+def _where(settings: Settings) -> str:
+    """The line printed once the hub listens, last, so it is what the eye lands on."""
+    if settings.web_dir is not None and settings.web_dir.is_dir():
+        return f"maity-hub: dashboard at {settings.public_url}/"
+    return f"maity-hub: API only at {settings.public_url}/api/v1, no dashboard"
 
 
 # A request still running this long after the stop signal is cut off; the long-polls
@@ -184,9 +271,16 @@ class _Server(uvicorn.Server):
 
     _loop: asyncio.AbstractEventLoop | None = None
 
+    def __init__(self, config: uvicorn.Config, banner: list[str] | None = None) -> None:
+        super().__init__(config)
+        self.banner = banner or []
+
     async def startup(self, sockets: Any = None) -> None:
         self._loop = asyncio.get_running_loop()
         await super().startup(sockets=sockets)
+        if self.started:  # after uvicorn's own lines; nothing when the bind failed
+            for line in self.banner:
+                print(line, flush=True)
 
     def handle_exit(self, sig: int, frame: FrameType | None) -> None:
         if self._loop is not None:
