@@ -190,7 +190,10 @@ def counters(conn: Connection) -> dict[str, int]:
     queued = conn.execute(
         select(func.count())
         .select_from(t.mail_outbox)
-        .where(t.mail_outbox.c.kind == "security", t.mail_outbox.c.status == "waiting")
+        .where(
+            t.mail_outbox.c.kind == "security",
+            t.mail_outbox.c.status.in_(("waiting", "sending")),
+        )
     ).scalar_one()
     return {
         "sent_last_hour": recent.get(("notification", "sent"), 0),

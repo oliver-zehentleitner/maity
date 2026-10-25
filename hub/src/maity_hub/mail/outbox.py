@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import Connection, Engine, delete, func, insert, select, update
@@ -84,14 +84,15 @@ def _count(conn: Connection, kind: str, outcome: str) -> None:
 
 
 def send_due(engine: Engine, env: MailEnvironment, secret_key: bytes | None) -> int:
-    """Send what is due now; returns how many left the hub."""
+    """Send what is due now; returns how many left the hub. Each row is claimed first,
+    so of two processes passing over the outbox only one sends it."""
     with engine.begin() as conn:
         resolved = settings.resolve(conn, env, secret_key)
         if not (resolved.complete and resolved.enabled):
             return 0
         due = conn.execute(
             select(t.mail_outbox)
-            .where(t.mail_outbox.c.status == "waiting", t.mail_outbox.c.not_before <= clock.now())
+            .where(_claimable(clock.now()))
             .order_by(t.mail_outbox.c.id)
             .limit(50)
         ).all()
@@ -101,25 +102,49 @@ def send_due(engine: Engine, env: MailEnvironment, secret_key: bytes | None) -> 
             budget = resolved.value(BUDGETS[row.kind])
             if _sent_last_hour(conn, row.kind) >= budget and row.kind == "sign_in":
                 # A stale sign-in link is useless: over its budget it is not sent (§16.2).
-                conn.execute(
-                    update(t.mail_outbox)
-                    .where(t.mail_outbox.c.id == row.id)
-                    .values(status="dropped")
-                )
-                _count(conn, row.kind, "dropped")
+                if _claim(conn, row.id):
+                    _finish(conn, row.id, "dropped")
+                    _count(conn, row.kind, "dropped")
                 continue
             if _sent_last_hour(conn, row.kind) >= budget:
                 # Over the budget: security mail waits for the next hour (§16.2).
                 conn.execute(
                     update(t.mail_outbox)
-                    .where(t.mail_outbox.c.id == row.id)
+                    .where(t.mail_outbox.c.id == row.id, t.mail_outbox.c.status == "waiting")
                     .values(not_before=clock.now() + timedelta(minutes=5))
                 )
                 continue
+            if not _claim(conn, row.id):
+                continue  # another process took it
         outcome = smtp.send(resolved, _message(resolved, row))
         with engine.begin() as conn:
             sent += _settle(conn, row, outcome)
     return sent
+
+
+# A claim holds a row while it is sent; one that outlives this (the process died
+# mid-send) is taken again, so a mail is sent at least once, and by one process at a time.
+CLAIM_FOR = timedelta(minutes=2)
+
+
+def _claimable(now: datetime) -> Any:
+    """Waiting and due, or claimed by a process that did not finish in time."""
+    return t.mail_outbox.c.status.in_(("waiting", "sending")) & (t.mail_outbox.c.not_before <= now)
+
+
+def _claim(conn: Connection, row_id: int) -> bool:
+    """Take the row with one conditional UPDATE: True for the one process that did."""
+    now = clock.now()
+    taken = conn.execute(
+        update(t.mail_outbox)
+        .where(t.mail_outbox.c.id == row_id, _claimable(now))
+        .values(status="sending", not_before=now + CLAIM_FOR)
+    ).rowcount
+    return bool(taken == 1)
+
+
+def _finish(conn: Connection, row_id: int, status: str) -> None:
+    conn.execute(update(t.mail_outbox).where(t.mail_outbox.c.id == row_id).values(status=status))
 
 
 def _message(resolved: settings.Resolved, row: Any) -> Any:
@@ -164,7 +189,7 @@ def _settle(conn: Connection, row: Any, outcome: smtp.Outcome) -> int:
     conn.execute(
         update(t.mail_outbox)
         .where(t.mail_outbox.c.id == row.id)
-        .values(attempts=attempts, not_before=clock.now() + backoff)
+        .values(status="waiting", attempts=attempts, not_before=clock.now() + backoff)
     )
     if outcome.stage in SETTING_STAGES:
         log.warning("mail: sending failed at stage %s; retrying", outcome.stage)
@@ -222,7 +247,7 @@ def forget_old(conn: Connection) -> None:
     """Rows that left the queue keep their recipient and body a week, no longer."""
     conn.execute(
         delete(t.mail_outbox).where(
-            t.mail_outbox.c.status != "waiting",
+            t.mail_outbox.c.status.in_(("sent", "failed", "dropped")),
             t.mail_outbox.c.created_at < clock.now() - KEPT,
         )
     )

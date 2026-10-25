@@ -572,3 +572,48 @@ def test_one_account_per_address(make_client: ClientFactory, migrated: Engine) -
         second.client.post(f"/mail/verify/{link(outbox_rows(migrated)[-1], 'verify')}").status_code
         == 200
     )
+
+
+# --- two processes (one sender per row) ------------------------------------------------
+
+
+def test_of_two_passes_that_both_see_a_row_only_one_claims_it(migrated: Engine) -> None:
+    with migrated.begin() as conn:
+        row = outbox.enqueue(conn, kind="security", to="me@example.org", subject="s", body="b")
+    with migrated.begin() as conn:  # both passes selected the row; the first claims it
+        seen = conn.execute(select(t.mail_outbox).where(t.mail_outbox.c.id == row)).one()
+        assert seen.status == "waiting"
+        assert outbox._claim(conn, row) is True
+    with migrated.begin() as conn:  # the second, with the same stale view, does not
+        assert outbox._claim(conn, row) is False
+        assert conn.execute(select(t.mail_outbox.c.status)).scalar() == "sending"
+
+
+def test_a_claim_that_outlived_its_process_is_taken_again(migrated: Engine) -> None:
+    server = FakeSmtp(Script())
+    try:
+        with migrated.begin() as conn:
+            row = outbox.enqueue(conn, kind="security", to="me@example.org", subject="s", body="b")
+            conn.execute(  # a process claimed it and died
+                update(t.mail_outbox)
+                .where(t.mail_outbox.c.id == row)
+                .values(status="sending", not_before=clock.now() + timedelta(minutes=2))
+            )
+        assert outbox.send_due(migrated, mail_env(server.port).mail, None) == 0
+        later = clock.now() + timedelta(minutes=3)
+        clock.set_source(lambda: later)
+        assert outbox.send_due(migrated, mail_env(server.port).mail, None) == 1
+    finally:
+        server.close()
+
+
+def test_forgetting_old_rows_keeps_claimed_ones(migrated: Engine) -> None:
+    with migrated.begin() as conn:
+        row = outbox.enqueue(conn, kind="security", to="me@example.org", subject="s", body="b")
+        conn.execute(
+            update(t.mail_outbox)
+            .where(t.mail_outbox.c.id == row)
+            .values(status="sending", created_at=clock.now() - timedelta(days=8))
+        )
+        outbox.forget_old(conn)
+        assert conn.execute(select(t.mail_outbox.c.status)).scalar() == "sending"

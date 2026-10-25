@@ -23,6 +23,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import Connection, Engine, func, insert, select, update
+from sqlalchemy.exc import IntegrityError
 
 from maity_hub import clock
 from maity_hub import tables as t
@@ -127,6 +128,9 @@ def run(engine: Engine, env: MailEnvironment, secret_key: bytes | None, public_u
 def for_human(
     conn: Connection, human_id: str, signing_key: bytes, public_url: str, budget: int = 500
 ) -> int:
+    """One human's pass. It holds the human's settings row (`FOR UPDATE`) to its end, so
+    a second process passing over the same human waits, then finds what the first one
+    mailed in `mail_item_sent` and the digest clocks moved: nothing goes twice."""
     row = conn.execute(
         select(t.notification_settings)
         .where(t.notification_settings.c.human_id == human_id)
@@ -226,7 +230,8 @@ def _instance_full(conn: Connection, budget: int) -> bool:
     ).scalar_one()
     waiting = conn.execute(
         select(func.count()).where(
-            t.mail_outbox.c.kind == "notification", t.mail_outbox.c.status == "waiting"
+            t.mail_outbox.c.kind == "notification",
+            t.mail_outbox.c.status.in_(("waiting", "sending")),
         )
     ).scalar_one()
     return int(sent) + int(waiting) >= budget
@@ -249,7 +254,11 @@ def _state(conn: Connection, human_id: str) -> Any:
         select(t.notification_mail_state).where(t.notification_mail_state.c.human_id == human_id)
     ).first()
     if found is None:
-        conn.execute(insert(t.notification_mail_state).values(human_id=human_id))
+        try:
+            with conn.begin_nested():  # another process may make it at the same moment
+                conn.execute(insert(t.notification_mail_state).values(human_id=human_id))
+        except IntegrityError:
+            pass
         found = conn.execute(
             select(t.notification_mail_state).where(
                 t.notification_mail_state.c.human_id == human_id

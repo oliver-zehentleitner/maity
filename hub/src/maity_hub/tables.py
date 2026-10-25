@@ -1145,7 +1145,7 @@ mail_outbox = Table(
     Column("created_at", UtcDateTime, nullable=False),
     Column("not_before", UtcDateTime, nullable=False),
     Column("attempts", Integer, nullable=False),
-    Column("status", String(16), nullable=False),  # waiting sent failed dropped
+    Column("status", String(16), nullable=False),  # waiting sending sent failed dropped
     Index("ix_mail_outbox_due", "status", "not_before"),
     sqlite_autoincrement=True,
     **MYSQL_TABLE,

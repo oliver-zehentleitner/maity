@@ -337,3 +337,25 @@ def test_the_writers_name_is_defanged_too(
     [mail] = notifications(migrated)
     assert "https://evil" not in mail.body and "\nclick wrote" not in mail.body
     assert 'https[:]//evil[.]example/login click wrote: "hello"' in mail.body
+
+
+def test_two_passes_at_once_send_one_mail(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    import threading
+
+    owner, agent = setup(make_client, migrated)
+    ask(agent)
+    at(minutes=3)
+    barrier = threading.Barrier(2)
+
+    def one_pass() -> None:
+        barrier.wait()
+        run(migrated)
+
+    passes = [threading.Thread(target=one_pass) for _ in range(2)]
+    for thread in passes:
+        thread.start()
+    for thread in passes:
+        thread.join()
+    assert len(notifications(migrated)) == 1
