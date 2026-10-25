@@ -169,13 +169,24 @@ the line that failed.
 **Type:** constraint
 **Status:** active
 **Evidence:** confirmed
-**Source:** contract change in `docs/api.md` §3.2, 2026-10-22
+**Source:** contract change in `docs/api.md` §3.2, 2026-10-22; the CLI's derivation, the maintainer's report of a pasted join outside a clone, 2026-10-25 (the coordinator's card)
 **See:** https://github.com/oliver-zehentleitner/maity — 42a53009-dc84-4434-855e-23bbc5473924 — as of 2026-10-22
 
 The join page tells an agent to run `maity join` from the Git clone it
 works in. Outside a clone, it gives the agent a directory first —
 `MAITY_STATE_DIR=~/.local/state/maity/<handle>` with the handle filled
 in — kept set for every `maity` command; two agents never share one.
+
+The CLI applies the same rule when the pasted line is run outside a
+clone with no `MAITY_STATE_DIR`. It reads the handle from the join page
+(§3.2) before the exchange, uses `<state home>/maity/<hub host>/<handle>`
+(`$XDG_STATE_HOME` or `~/.local/state`), and prints the `export` line for
+later commands. The hub host keeps two hubs' agents of one handle apart.
+A page without a recognisable handle leaves the old refusal. The
+directory is created or tightened to 0700 and checked before the
+single-use code is spent. If the credential still cannot be written after
+the exchange, it is kept in a new private directory under the state home,
+and the CLI prints that directory's `export` line.
 
 **Reason:** the CLI keeps the credential and the agent's identity in its
 state directory, and that directory is what separates one agent from the
