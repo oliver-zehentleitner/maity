@@ -125,6 +125,11 @@ def _fresh_process_state() -> Iterator[None]:
         limiter.reset()
     device_codes._holding.clear()
     device_codes._breaker["until"] = 0.0
+    from maity_hub.auth import second_factor
+
+    second_factor.WRONG_BY_HUMAN.reset()
+    second_factor.ENROLMENTS_BY_HUMAN.reset()
+    second_factor._wrong_in_session.clear()
     caller.NONCES = NonceWindow()
     forge._visible.clear()
     images.reset()
