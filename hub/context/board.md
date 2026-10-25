@@ -82,3 +82,28 @@ which the contract lists as events, not history.
 
 **Rejected alternative:** an entry on both cards: two entries for one
 decision, and the partner's would name an actor who never edited it.
+
+## Subtask approval checks the resulting card, including an attachment
+
+**Id:** 8a0dcd0b-7d35-41af-9d27-bce877e7bb44
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §6.1 and §6.4, the maintainer-approved subtask contract and its bypass rulings, 2026-10-25
+**Revisit when:** subtasks can be opened by another path or the proposal policy changes
+**See:** https://github.com/oliver-zehentleitner/maity — 60ddc489-48d5-4ac1-b93b-d3cb89581625 — as of 2026-10-25
+
+Under `proposed`, a member without `tasks:admin` cannot create an open
+child, open their own child proposal, or attach a non-proposed card. The
+check sees the resulting parent and status together. Under `direct`, the
+ordinary editing rules apply; clearing a parent stays free to the editor.
+
+**Reason:** the proposal is the admin's oversight of new work on the board.
+Checking creation alone would let a member open an ordinary card and then
+attach it. Checking only the status transition would allow attachment and
+opening in the same PATCH. The resulting state is the boundary in both cases.
+
+**Rejected alternatives:** a creation-only check, or separate checks of the
+old parent and old status. Both admit bypasses explicitly excluded by the
+contract. Making every project require approval was also rejected by the
+product decision: `direct` is the trusted-team option.
