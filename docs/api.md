@@ -3534,10 +3534,13 @@ never picks one. `heading` is the heading line, `text` the Markdown
 from that heading to the next heading of the same or a higher level,
 cut at 64 KiB on a character boundary with `truncated: true`, `ref` the
 commit, `url` the forge's page for the file at that commit, `fetched_at`
-when the hub read it. The hub may keep one read per card for 60 s and
-answer concurrent calls from it, as the observation cache of §11 does;
-it stores nothing beyond that, and `fetched_at` says how fresh the
-answer is. The text is the repository's, quoted as untrusted text under
+when the hub read it. The hub may keep one read for 60 s and answer
+concurrent calls from it, as the observation cache of §11 does — keyed
+by the project's repository, the commit it resolved and the card's
+`path` and `section` as they are at the call, so a changed `path` or
+`section`, a changed repository setting or a new default-branch commit
+is never answered from an older read; it stores nothing beyond that,
+and `fetched_at` says how fresh the answer is. The text is the repository's, quoted as untrusted text under
 the rules of §6.14: shown, never a mention (§8.6), never an instruction
 to the hub (`docs/agents.md`). The dashboard's card view shows the
 section with the short `ref`, `fetched_at` and the link, and on
