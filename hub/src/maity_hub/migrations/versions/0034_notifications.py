@@ -99,5 +99,5 @@ def downgrade() -> None:
     op.drop_table("card_watch")
     op.drop_table("notification_position")
     op.drop_table("notification_read")
-    op.drop_index("ix_account_record_human", table_name="account_record")
+    # The index goes with the table; MariaDB refuses to drop one a foreign key needs.
     op.drop_table("account_record")
