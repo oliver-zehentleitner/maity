@@ -15,7 +15,8 @@ import re
 from typing import Any
 from urllib.parse import urlsplit
 
-from sqlalchemy import Connection, delete, insert, select
+from sqlalchemy import Connection, insert, select, update
+from sqlalchemy.exc import IntegrityError
 
 from maity_hub import clock
 from maity_hub import tables as t
@@ -27,7 +28,10 @@ MAX_TITLE, MAX_LABEL = 120, 40
 MAX_MARKDOWN = 64 * 1024
 FIELDS = ("enabled", "title", "markdown", "cta")
 
-FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+# A fence as `web/js/markdown.js` reads one: three or more backticks or tildes, up to
+# three spaces in; a backtick fence's info string holds no backtick. It closes on the
+# same character, at least as many, and nothing but whitespace after.
+FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 # An HTML tag, a comment or a declaration: `<a`, `</p>`, `<!--`, `<!DOCTYPE`, `<br/>`.
 TAG = re.compile(r"<(?:[A-Za-z][A-Za-z0-9-]*(?:\s|/?>|$)|/[A-Za-z]|!)")
 IMAGE = re.compile(r"!\[")
@@ -46,25 +50,33 @@ def safe_target(value: str) -> bool:
         return True
     if not value.startswith("https://"):  # no http, javascript:, data:, //, lookalikes
         return False
-    parts = urlsplit(value)
-    if parts.scheme != "https" or "@" in parts.netloc or not parts.hostname:
+    try:
+        parts = urlsplit(value)
+        port = parts.port  # a port that is no number, or out of range, raises
+        host = parts.hostname
+    except ValueError:
         return False
-    host = parts.hostname
+    if parts.scheme != "https" or "@" in parts.netloc or not host:
+        return False
+    if port is not None and not 1 <= port <= 65535:
+        return False
     labels = host.split(".")
     return len(labels) >= 2 and all(HOST_LABEL.fullmatch(label) for label in labels)
 
 
 def markdown_problem(text: str) -> str | None:
     """`line N` of the first line that breaks the rules, or None when the text is fine."""
-    fence: str | None = None
-    for number, line in enumerate(text.splitlines(), start=1):
+    close: re.Pattern[str] | None = None
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    for number, line in enumerate(lines, start=1):
+        if close is not None:
+            if close.match(line):
+                close = None
+            continue  # inside fenced code everything is text, to the end if never closed
         opened = FENCE.match(line)
-        if fence is not None:
-            if opened and opened.group(1)[0] == fence[0] and len(opened.group(1)) >= len(fence):
-                fence = None
-            continue  # inside fenced code everything is text
-        if opened:
-            fence = opened.group(1)
+        if opened and not (opened.group(1)[0] == "`" and "`" in opened.group(2)):
+            mark = re.escape(opened.group(1)[0])
+            close = re.compile(rf"^ {{0,3}}{mark}{{{len(opened.group(1))},}}\s*$")
             continue
         if TAG.search(line) or IMAGE.search(line):
             return f"line {number}"
@@ -146,11 +158,31 @@ def stored(conn: Connection) -> dict[str, Any]:
     }
 
 
-def save(conn: Connection, value: dict[str, Any], by: str) -> None:
-    conn.execute(delete(t.instance_landing).where(t.instance_landing.c.id == ROW))
+def lock(conn: Connection) -> None:
+    """Take the setting's row for this transaction, made first if it is not there yet,
+    before it is read: two edits at once run one after the other, so neither loses the
+    other's fields and the first creation cannot race into a duplicate key. An edit
+    that is refused rolls the made row back with it."""
+    try:
+        with conn.begin_nested():
+            conn.execute(
+                insert(t.instance_landing).values(
+                    id=ROW, enabled=False, updated_at=clock.now(), updated_by=None
+                )
+            )
+    except IntegrityError:
+        pass  # it exists; lock it below
     conn.execute(
-        insert(t.instance_landing).values(
-            id=ROW,
+        select(t.instance_landing.c.id).where(t.instance_landing.c.id == ROW).with_for_update()
+    )
+
+
+def save(conn: Connection, value: dict[str, Any], by: str) -> None:
+    """Write the edit into the locked row (`lock` first)."""
+    conn.execute(
+        update(t.instance_landing)
+        .where(t.instance_landing.c.id == ROW)
+        .values(
             enabled=value["enabled"],
             title=value["title"],
             markdown=value["markdown"],

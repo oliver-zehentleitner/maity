@@ -40,6 +40,7 @@ def patch_landing_settings(
 ) -> JSONResponse:
     with engine_of(request).begin() as conn:
         _require_admin(conn, caller)
+        landing.lock(conn)  # before the read: the edit decides on the setting as locked
         after = landing.check(body, landing.stored(conn))
         landing.save(conn, after, caller.principal_id)
         return JSONResponse(_admin_view(landing.stored(conn)))

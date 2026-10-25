@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine
+from sqlalchemy import Engine, delete
 
+from maity_hub import landing
+from maity_hub import tables as t
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_join_host import join_client
@@ -94,6 +98,18 @@ def test_the_admin_publishes_it_and_the_etag_follows(
         "[x](/#evil)",
         "[x](/admin)",
         "see https://user@evil.example/",
+        "[x](https://[example.com)",  # no parse: invalid, never a 500
+        "[x](https://example.com:bad/)",
+        "[x](https://example.com:99999/)",
+        "see https://[example.com/",
+        # Fences as the dashboard reads them (`web/js/markdown.js`): a backtick opener
+        # whose info string holds a backtick is no fence, so the next line is checked;
+        # a closer with more than whitespace after it does not close.
+        "```bad`info\n<script>x</script>",
+        "````\ncode\n```\n<b>still code</b>\n````\n<b>",
+        "```\ncode\n``` not a close\n```\n<b>",
+        "~~~\ncode\n```\n~~~\n<b>",
+        "    ```\n<b>",  # four spaces in: indented, no fence
     ],
 )
 def test_what_the_markdown_may_not_hold(owner: flow.Human, markdown: str) -> None:
@@ -109,6 +125,21 @@ def test_html_in_fenced_code_is_text(owner: flow.Human) -> None:
     assert field(second) == {"markdown": "line 3"}
 
 
+@pytest.mark.parametrize(
+    "markdown",
+    [
+        "```\n<b>never closed: code to the end</b>",
+        "~~~ html\n<script></script>\n~~~   \nafter",
+        "````\n```\n<b></b>\n`````\nafter",
+        "a\r\n```\r\n<b></b>\r\n```\r\nafter",
+        "[ok](https://example.com:8443/docs)",
+    ],
+)
+def test_what_the_markdown_may_hold(owner: flow.Human, markdown: str) -> None:
+    saved = owner.patch(ADMIN_PATH, {"markdown": markdown})
+    assert saved.status_code == 200, (markdown, saved.text)
+
+
 def test_the_other_fields_and_enabled_without_markdown(owner: flow.Human) -> None:
     assert field(owner.patch(ADMIN_PATH, {"enabled": True})) == {"markdown": "required"}
     assert field(owner.patch(ADMIN_PATH, {"title": ""})) == {"title": "invalid"}
@@ -119,6 +150,9 @@ def test_the_other_fields_and_enabled_without_markdown(owner: flow.Human) -> Non
     assert field(owner.patch(ADMIN_PATH, {"cta": {"label": "x" * 41, "href": "/#/login"}})) == {
         "cta": "invalid"
     }
+    for href in ("https://[example.com", "https://example.com:bad/", "https://example.com:0/"):
+        cta = {"label": "Go", "href": href}
+        assert field(owner.patch(ADMIN_PATH, {"cta": cta})) == {"cta.href": "invalid"}, href
     assert field(owner.patch(ADMIN_PATH, {"colour": "red"})) == {"colour": "extra_forbidden"}
     assert (
         owner.patch(
@@ -141,3 +175,50 @@ def test_the_join_host_never_serves_it(owner: flow.Human, make_client: ClientFac
     answer = join_client(make_client).get("/api/v1/landing", follow_redirects=False)
     assert answer.status_code in (302, 404)
     assert "markdown" not in answer.text
+
+
+def _race(migrated: Engine, owner: flow.Human, title: str, cta: dict[str, str]) -> None:
+    """The first edit holds the lock while the second, on its own connection, waits."""
+    first, second = migrated.connect(), migrated.connect()
+    started, saved = threading.Event(), threading.Event()
+
+    def edit() -> None:
+        with second.begin():
+            started.set()
+            landing.lock(second)
+            landing.save(second, landing.check({"cta": cta}, landing.stored(second)), owner.id)
+            saved.set()
+
+    pool = ThreadPoolExecutor(max_workers=1)
+    first_tx = first.begin()
+    try:
+        landing.lock(first)
+        landing.save(first, landing.check({"title": title}, landing.stored(first)), owner.id)
+        waiting = pool.submit(edit)
+        assert started.wait(timeout=10)
+        assert not saved.wait(timeout=0.5)  # held by the first edit
+        first_tx.commit()
+        waiting.result(timeout=10)
+    finally:
+        if first_tx.is_active:
+            first_tx.rollback()
+        first.close()
+        pool.shutdown(wait=True, cancel_futures=True)
+        second.close()
+
+
+def test_two_edits_at_once_keep_both_fields(owner: flow.Human, migrated: Engine) -> None:
+    """Two admins edit different fields at the same moment: the second waits for the
+    first's row lock, reads what it wrote and keeps it, both when the row is first made
+    and once it exists. SQLite serialises every writer anyway, so this runs on PostgreSQL
+    and MariaDB. The first transaction is released on every exit before the worker is
+    joined, so a failing assertion cannot leave CI waiting on a blocked thread."""
+    if migrated.dialect.name == "sqlite":
+        pytest.skip("SQLite serialises writers; the row lock is for the server databases")
+    with migrated.begin() as conn:
+        conn.execute(delete(t.instance_landing))
+    for title, label in (("First", "Made"), ("Second", "Existing")):
+        cta = {"label": label, "href": "/#/login"}
+        _race(migrated, owner, title, cta)
+        got = owner.get(ADMIN_PATH).json()
+        assert (got["title"], got["cta"]) == (title, cta)
