@@ -115,7 +115,7 @@ lock.
 **Status:** active
 **Evidence:** inferred
 **Source:** docs/api.md §18.4, §18.5, §2.6.5; the implementation of tsk-32jx98jzne6z, part N3, 2026-10-25
-**Revisit when:** many humans make one pass longer than a minute, or the instance budget's "merged into each human's next mail" needs to hold exactly
+**Revisit when:** many humans make one pass longer than a minute
 
 `maity_hub.notifications.mailer` runs once a minute. For each human with
 a verified address it derives the unread items, as the bell does, and
@@ -126,9 +126,11 @@ is two minutes old, unless ten notification mails left in the past hour;
 then they join the hour's digest. `hourly` and `daily` digests go out
 when the full hour or `daily_at` (in the human's time zone) has passed
 since the last one, recorded in `notification_mail_state`. A human's
-first pass only starts those two clocks. Every mail is a row in the
-outbox; the instance's `max_per_hour` holds rows back there rather than
-merging them into the next mail.
+first pass only starts those two clocks. When the notification mail of
+the past hour, sent or waiting, reaches the instance's `max_per_hour`,
+nothing is queued for the human; their items stay pending, and the first
+pass with room again sends everything due in one mail (§18.5, "merged
+into each human's next mail").
 
 **Reason:** deriving from the same items as the bell keeps a mail from
 ever saying more than the human may read at the moment it is built
@@ -140,6 +142,6 @@ keeps a newly confirmed address from receiving a month of backlog.
 - Mailing from event hooks at write time: the readability check would be
   the event's, not the mail's, and quiet hours and digests would need a
   queue anyway.
-- Merging every held mail into one at the instance budget: kept simple
-  for one replica; the outbox delays them instead, which can mean two
-  mails where §18.5 asks for one.
+- Letting mails over the instance budget wait in the outbox: simpler,
+  but it can mean two mails where §18.5 asks for one (the first version,
+  changed before review).
