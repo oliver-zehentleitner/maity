@@ -1671,7 +1671,7 @@ not read them, the instance admin aside.
 
 ### 2.8 Human: two-factor sign-in
 
-A human with a password may add a **second factor**: a time-based code
+A human may add a **second factor**: a time-based code
 from an authenticator app (TOTP, RFC 6238), with ten **recovery codes**
 for when the app is lost. Once enrolled, every new session of the human
 asks for it, whichever first factor started the session, and a few
@@ -1689,7 +1689,7 @@ another answer changes a value, not the shape.
 #### 2.8.1 Enrolment
 
 Profile → Security → "Two-factor sign-in". Enrolment needs a session in
-good standing (§2.6.5), the account password, and the instance key
+good standing (§2.6.5), the proof below, and the instance key
 `MAITY_SECRET_KEY` (§16.2), which seals the secret at rest; without the
 key the feature is unavailable (`GET /admin/settings/sign-in` names it
 in `missing`, §2.6.6) and the calls below answer `409
@@ -1698,14 +1698,22 @@ secret_key_missing`.
 | Endpoint | Caller | Effect |
 |---|---|---|
 | `GET /auth/second-factor` | human | `{enrolled, enrolled_at, recovery_codes_left, last_used_at, required}`; `required` is `true` when the instance policy makes this human enrol (§2.8.5) |
-| `POST /auth/second-factor/totp` `{current_password}` | human, in good standing | starts an enrolment: 200 `{secret, otpauth_uri, expires_in: 600}`. `secret` is 20 random bytes in base32, `otpauth_uri` is `otpauth://totp/Maity:<handle>?secret=…&issuer=Maity&digits=6&period=30` (the issuer is the instance's public host when one is set). Shown this once; a new call replaces an unconfirmed one |
+| `POST /auth/second-factor/totp` `{current_password?}` | human, in good standing, with the proof below | starts an enrolment: 200 `{secret, otpauth_uri, expires_in: 600}`. `secret` is 20 random bytes in base32, `otpauth_uri` is `otpauth://totp/Maity:<handle>?secret=…&issuer=Maity&digits=6&period=30` (the issuer is the instance's public host when one is set). Shown this once; a new call replaces an unconfirmed one |
 | `POST /auth/second-factor/totp/confirm` `{code}` | human, the same session | a current code from the app turns the enrolment on: 200 `{recovery_codes: [10 × "xxxxx-xxxxx"]}`, shown this once. A wrong code is `code_invalid` (§2.8.6) and the enrolment stays unconfirmed until it expires |
 | `POST /auth/second-factor/recovery-codes` | human, step-up | ten new recovery codes, the old ones void at once; 200 `{recovery_codes}` |
-| `DELETE /auth/second-factor` `{current_password}` | human, step-up | turns the second factor off for this human; `forbidden` with `details.reason: second_factor_required` while the policy requires it of this human (§2.8.5) |
+| `DELETE /auth/second-factor` `{current_password?}` | human, step-up, with the proof below | turns the second factor off for this human; `forbidden` with `details.reason: second_factor_required` while the policy requires it of this human (§2.8.5) |
 
-- **Password accounts only.** A human without a password (§2.6.3)
-  cannot enrol: `POST …/totp` is `invalid` with
-  `details.fields.current_password: "no_password"`.
+- **The proof.** The factor is second to whatever first factor the
+  account uses, so an account without a password enrols as well. A
+  human with a password gives it in the same request (`current_password`;
+  missing `required`, wrong `mismatch`, counted against the login limit
+  as in §2.6.3). A human without one needs a session in good standing
+  that is at least 24 hours old, the guard §2.6.3 sets for changing the
+  verified address (younger: `forbidden`, `details.reason:
+  session_too_new`), so a session just obtained through a mailbox can
+  neither put its own factor on the account nor take the human's off.
+  Setting a first password on an account without one is the accounts
+  design's item (pending), not this section's.
 - **The code.** RFC 6238 with SHA-1, 6 digits, a 30-second step; the
   current step and one step either side are accepted, and every step is
   accepted once per human (the hub stores the last step used), so a
@@ -1846,11 +1854,13 @@ environment winning as there:
   second_factor_enrolment_required`; the confirm completes the sign-in
   as the verify does. Full sessions such a human already holds when
   the setting is turned on, or when they become an owner, are moved to
-  that state at their next call, not ended. A human without a password
-  cannot enrol (§2.8.1), so under this setting an owner without one is
-  held at the enrolment session until a password is set (open: the way
-  a passwordless account sets its first password is not in this
-  contract yet).
+  that state at their next call, not ended. An account without a
+  password satisfies the setting like any other (§2.8.1). An enrolment
+  session lives as long as any session (§2.1) and keeps its age and
+  good standing, so such a human enrols from one that meets the
+  24-hour guard of §2.8.1 — one moved into this state, or a new one
+  once it is old enough and in good standing — and is held at the
+  enrolment session until then.
 
 #### 2.8.6 Rate limits
 
