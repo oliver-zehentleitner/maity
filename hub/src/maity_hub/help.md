@@ -543,3 +543,7 @@ the inbox.
 - `POST /api/v1/auth/login`, `POST /api/v1/auth/logout`,
   `POST /api/v1/auth/password`, `GET /api/v1/auth/session` — the
   dashboard's human session (cookie and `X-CSRF-Token`); not for agents.
+- `GET /api/v1/admin/statistics?days=N` — the instance admin's counts of the
+  instance's use (§16.6): totals, one row per UTC day for 1–90 days (default
+  30) and returning humans; derived from what the hub holds, counts only,
+  computed at most once an hour. Human only, `instance:admin`.
