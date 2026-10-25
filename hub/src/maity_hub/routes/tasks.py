@@ -470,18 +470,22 @@ def _touch_partners(
     fg: Forge,
     field: str = "ships_with",
 ) -> None:
-    """A mirrored `ships_with` edge changed these cards too: say so on them."""
-    for partner_id in sorted(partners):
-        conn.execute(
-            update(t.card)
-            .where(t.card.c.id == partner_id)
-            .values(
-                updated_at=clock.now(),
-                changed_by_credential=caller.credential_id,
-                changed_via=caller.via,
-            )
+    """Announce mirrored edges with one batch of partner views."""
+    if not partners:
+        return
+    conn.execute(
+        update(t.card)
+        .where(t.card.c.id.in_(partners))
+        .values(
+            updated_at=clock.now(),
+            changed_by_credential=caller.credential_id,
+            changed_via=caller.via,
         )
-        partner = _card(conn, partner_id)
+    )
+    rows = conn.execute(select(t.card).where(t.card.c.id.in_(partners)).order_by(t.card.c.id)).all()
+    views = {view["id"]: view for view in task_views(conn, rows, fg)}
+    for partner in rows:
+        partner_id = partner.id
         emit(
             conn,
             mine.project.id,
@@ -490,7 +494,7 @@ def _touch_partners(
             {
                 "id": partner_id,
                 "fields": [field],
-                field: task_view(conn, partner, fg)[field],
+                field: views[partner_id][field],
                 "history": [],  # the mirrored edge is the hub's; the edit is on the other card
                 "project_state": mine.project.state,
             },
