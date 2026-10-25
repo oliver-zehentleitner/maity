@@ -3148,7 +3148,7 @@ session:
   "instances": [ { "id": "wqe2", "address": "agt-b#wqe2", "label": "agent-b#wqe2",
                    "harness": "Claude Code", "model": "claude-opus-5-5", "presence": "online",
                    "paused": null, "lead": false, "claims": 1, "created_at": "…",
-                   "keep_the_why_acknowledged_at": "2026-10-21T10:20:00Z" } ]
+                   "keep_the_why_acknowledged_at": "2026-10-21T10:20:00Z", "keep_the_why_acknowledge_by": null } ]
 }
 ```
 
@@ -3174,7 +3174,8 @@ member view's one-click "give my preferences to this agent"). It is in
 the member view where `briefing` is, and for the agent's owner, and is
 a flag only — the text is never in the member view or an event. Humans have no `owner_id`, `harness`, `model`
 or `session`. `keep_the_why_unconfirmed` and each instance's
-`keep_the_why_acknowledged_at` are the Keep the Why commitment (§6.23):
+`keep_the_why_acknowledged_at` and `keep_the_why_acknowledge_by` are the
+Keep the Why commitment (§6.23):
 agents only, and only under `policy.keep_the_why: required`. `avatar_url` is the member's avatar (§6.10), the same in
 every project.
 
@@ -5807,7 +5808,9 @@ and the mark on the member view; 11:00, the owner's record; 11:07,
 confirmation before 11:00 means no record is written.
 
 **The member view.** Each instance of an agent's member view (§6.2)
-carries `keep_the_why_acknowledged_at` (`null` until it confirmed), and
+carries `keep_the_why_acknowledged_at` (`null` until it confirmed) and
+`keep_the_why_acknowledge_by` (the deadline while the confirmation is
+outstanding, `null` once confirmed), and
 the member view `keep_the_why_unconfirmed`: `true` while any of its
 instances is past its `acknowledge_by` without a confirmation, else
 `false`. Humans, and agents in a project under `optional`, carry
@@ -5834,10 +5837,12 @@ can read the file at `pr.head`, a later stage that is not this contract.
 **The dashboard's part.** The project's Settings tab offers
 `policy.keep_the_why` (`required` / `optional`, with `reason`) with the
 other policy fields; the Members view marks an unconfirmed agent; the
-`keep_the_why` notification links to the member in the project when
-the owner is a member of it, else to the agent in the owner's Agents
-view (§6.3), since the owner cannot open the project; a card shows
-`report.why` under its report.
+`keep_the_why` notification (`target {type: "member", id: <agent
+member id>}`, `project` set, §18.2) links to the member in the project
+when the owner is a member of it, else to the agent on the owner's
+account page (the owner's Agents page once there is one), since the
+owner cannot open the project; a card shows `report.why` under its
+report.
 
 **The CLI's part** is in §13: `maity ack keep-the-why`, `maity report
 --why REF` / `--no-why REASON`, and the `Keep the Why` block of `maity
@@ -10550,9 +10555,11 @@ rules that make a position safe to resume from:
   `true` (§18.4), else absent. `reason` (on `card`) says which relation qualified:
   `creator`, `assignee`, `holder`, `agent_holder`, `agent_assignee`,
   `watcher` — the first that applies in this order. `target` is the object the
-  item links to — `request`, `task`, `conversation`, `placement`, and
-  for account records `session` or `settings`, `project` `null` on
-  those (a personal request's record targets its `request`, above) — and
+  item links to — `request`, `task`, `conversation`, `placement`,
+  `member` (a `keep_the_why` record: the agent's member id, with
+  `project` set, member of it or not, §6.23), and for the other account
+  records `session` or `settings`, `project` `null` on those (a
+  personal request's record targets its `request`, above) — and
   `url` the dashboard's address for it under `MAITY_PUBLIC_URL`; the
   dashboard owns its routes, the hub builds the URL from the target.
 - **Read.** An item is read when it was marked (§18.3) or, for `chat`

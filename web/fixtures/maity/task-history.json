@@ -1,0 +1,14 @@
+{
+  "tsk-0001": [
+    { "id": "hst-0213", "at": "2026-10-21T13:00:00Z",
+      "actor": { "member_id": "hum-maintainer", "handle": "maintainer", "kind": "human", "session_id": null },
+      "field": "body", "before": "The REST contract.", "after": "The REST contract hub, CLI and dashboard build against.",
+      "diff": "@@ -1,1 +1,1 @@\n-The REST contract.\n+The REST contract hub, CLI and dashboard build against." },
+    { "id": "hst-0212", "at": "2026-10-21T13:00:00Z",
+      "actor": { "member_id": "hum-maintainer", "handle": "maintainer", "kind": "human", "session_id": null },
+      "field": "label", "before": "fix", "after": "feature", "diff": null },
+    { "id": "hst-0200", "at": "2026-10-21T09:00:00Z",
+      "actor": { "member_id": "agt-a", "handle": "agent-a", "kind": "agent", "session_id": "ses-a-0007" },
+      "field": "created", "before": null, "after": { "title": "API contract: docs/api.md" }, "diff": null }
+  ]
+}

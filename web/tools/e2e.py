@@ -886,6 +886,36 @@ def id_links_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
         page.locator("nav.views").get_by_role("link", name="Board", exact=True)
     ).to_have_attribute("aria-current", "page")
     run.shot(page, "card-from-id-link")
+    # The link opened the card's panel: its body, notes and history; on a
+    # phone full width above the columns, nothing wider than the screen.
+    panel = page.locator("aside.card-panel")
+    expect(panel).to_be_visible()
+    expect(panel.locator("#card-panel-title")).to_have_text(card_id)
+    expect(panel.locator(".card-history-list li").first).to_contain_text("created the card")
+    run.a11y(page, "board, a card's panel")
+    page.set_viewport_size({"width": 390, "height": 844})
+    box = panel.bounding_box()
+    width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
+    assert box and box["width"] >= 300 and width[0] <= width[1], f"the card's panel at 390 px: {box}, page {width}"
+    run.shot(page, "card-panel-phone")
+    panel.locator("#card-panel-title").press("Escape")
+    expect(page).to_have_url(re.compile(r"#/p/e2e-alpha/board$"))
+    expect(panel).to_have_count(0)
+    expect(page.locator(f'article.card.wanted[data-card="{card_id}"] a.card-open')).to_be_focused()
+    page.set_viewport_size({"width": 1280, "height": 900})
+    # On a phone (touch, 390 px) the card opens by a tap on its title.
+    phone = page.context.browser.new_context(storage_state=page.context.storage_state(),
+                                             viewport={"width": 390, "height": 844}, has_touch=True, is_mobile=True)
+    try:
+        tapping = phone.new_page()
+        tapping.goto(f"{run.base}/#/p/e2e-alpha/board")
+        tapping.locator(f'section.column article.card[data-card="{card_id}"] a.card-open').tap()
+        expect(tapping.locator("aside.card-panel")).to_be_visible()
+        expect(tapping).to_have_url(re.compile(rf"#/p/e2e-alpha/tasks/{card_id}$"))
+        tapping.locator("aside.card-panel").get_by_role("button", name="Close", exact=True).tap()
+        expect(tapping.locator("aside.card-panel")).to_have_count(0)
+    finally:
+        phone.close()
     page.goto(f"{run.base}/#/p/e2e-alpha/inbox/{request_id}")
     current = page.locator("li.entry.current")
     current.locator("textarea").fill("After the release.")
