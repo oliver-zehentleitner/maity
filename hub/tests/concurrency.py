@@ -65,9 +65,16 @@ class Race:
 
 
 def _end(conn: Connection) -> None:
-    if conn.in_transaction():
-        conn.rollback()
-    conn.close()
+    """Roll back what is open and give the connection back to the pool clean: `info`
+    belongs to the pooled connection and outlives `close`, so the event lists go, as
+    `events.transaction` drops them."""
+    try:
+        if conn.in_transaction():
+            conn.rollback()
+    finally:
+        conn.info.pop(events._PENDING, None)
+        conn.info.pop(events._UNDO, None)
+        conn.close()
 
 
 @contextmanager
