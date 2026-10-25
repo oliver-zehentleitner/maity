@@ -11,6 +11,7 @@ rephrased by hand is not a derived copy; it is a target of its own.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 
 from sqlalchemy import Connection, select, update
@@ -148,14 +149,26 @@ def _redact_card(
         )
     ).all()
     for entry in entries:
-        values = repr((entry.before, entry.after))
-        if title in values or (reason and reason in values):
+        texts = list(_strings((entry.before, entry.after)))
+        if any(title in text or (reason and reason in text) for text in texts):
             history.redact(conn, entry, tombstone)
     for event in _events_of(conn, ("task", card.id), ("mentioned", "note_added")):
         task = (event.payload or {}).get("task") or {}
         if not event.redacted and task.get("title") == title:
             payload = {**event.payload, "task": {**task, "title": tombstone}}
             conn.execute(update(t.event).where(t.event.c.seq == event.seq).values(payload=payload))
+
+
+def _strings(value: Any) -> Iterator[str]:
+    """Every string a stored value holds, however deep, as it is stored."""
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for item in value.values():
+            yield from _strings(item)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            yield from _strings(item)
 
 
 def redact_proposal(

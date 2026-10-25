@@ -454,16 +454,15 @@ def settle(
     round_row = _reload(conn, marker["round_id"])
     proposal = next(p for p in round_row.report["proposals"] if p["id"] == marker["proposal_id"])
     project = conn.execute(select(t.project).where(t.project.c.id == request.project_id)).one()
-    open_card(
-        conn,
-        project,
-        dict(marker),
-        proposal["title"],
-        _card_body(round_row, proposal),
-        mine.id,
-        actor,
-        fg,
-    )
+    if proposal["redaction"] is not None:
+        # Redacted before its adoption: the card opens with the placeholders a redaction
+        # leaves on a card, so no text of the proposal comes back (§20.8).
+        from maity_hub.jourfixe.redaction import REDACTED_TEXT, REDACTED_TITLE
+
+        title, body = REDACTED_TITLE, _card_body(round_row, {"reason": REDACTED_TEXT})
+    else:
+        title, body = proposal["title"], _card_body(round_row, proposal)
+    open_card(conn, project, dict(marker), title, body, mine.id, actor, fg)
 
 
 def handle_deadlines(conn: Connection, project_id: str) -> None:

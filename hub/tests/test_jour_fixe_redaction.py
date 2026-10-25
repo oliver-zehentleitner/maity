@@ -136,3 +136,35 @@ def test_a_redacted_statement_reaches_the_report_the_hub_built(round_: Round) ->
     assert after["proposals"][0]["title"] is None
     asked = round_.owner.get(f"/projects/maity/requests/{request_id}").json()
     assert asked["title"] == "[redacted jour fixe proposal]"
+
+
+def test_a_multiline_reason_is_found_in_every_history_entry(round_: Round) -> None:
+    reason = "SECRET-LINE-ONE\nSECRET-LINE-TWO \\ and a backslash"
+    proposal = {**decided(round_.owner), "reason": reason}
+    [task_id] = report(round_, proposals=[proposal]).json()["tasks"]
+    path = f"/projects/maity/tasks/{task_id}"
+    edited = round_.owner.patch(path, {"title": "Pinned by hand", "body": "rewritten"})
+    assert edited.status_code == 200, edited.text
+    assert redact(round_.owner, round_, "proposal:r1").status_code == 200
+    with round_.engine.connect() as conn:
+        entries = conn.execute(
+            select(t.card_history).where(t.card_history.c.card_id == task_id)
+        ).all()
+    holding = [e for e in entries if e.field in ("created", "body")]
+    assert holding and all(e.redacted for e in holding)
+    assert "SECRET-LINE" not in " ".join(str((e.before, e.after)) for e in entries)
+    card = round_.owner.get(path).json()
+    assert card["title"] == "Pinned by hand"  # edited by a person: left as it is
+
+
+def test_adopting_a_proposal_redacted_before_opens_a_placeholder_card(round_: Round) -> None:
+    [request_id] = report(round_, proposals=[TO_OWNER]).json()["requests"]
+    assert redact(round_.owner, round_, "proposal:r1").status_code == 200
+    adopted = round_.owner.post(
+        f"/projects/maity/requests/{request_id}/answer", {"reply_id": "adopt"}
+    )
+    assert adopted.status_code == 200, adopted.text
+    with round_.engine.connect() as conn:
+        [card] = conn.execute(select(t.card).where(t.card.c.jour_fixe.isnot(None))).all()
+    assert card.title == "[redacted jour fixe proposal]"
+    assert card.body.startswith("[redacted]") and "minutes per run" not in card.body

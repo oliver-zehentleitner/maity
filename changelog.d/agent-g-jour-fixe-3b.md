@@ -13,3 +13,6 @@
 - hub: a redaction's reason in a round is shown by §8.5's rules: the
   thread's humans for the statement and posts, the human owners and admins
   for answers and the report, and the redactor.
+- hub: a proposal redacted before the owner adopts it opens its card with
+  the placeholders a redaction leaves (`[redacted jour fixe proposal]`,
+  `[redacted]`).
