@@ -59,7 +59,7 @@ Why the Maity dashboard (`web/`) is built the way it is. Family-wide decisions a
 ## Q
 
 ## R
-- [refresh.md](refresh.md) — the project's events read with wait=0 every 5 s from after=latest, not the long-poll; presence re-read in place; notification counts on the /me read, sign-in alerts never marked read by a click
+- [refresh.md](refresh.md) — the project's events read with wait=0 every 5 s from after=latest, not the long-poll; presence re-read in place; notification counts on the /me read, sign-in alerts never marked read by a click; a device code followed with wait=0 every 2 s
 - [rendering.md](rendering.md) — agent-written text is rendered as text only, enforced by make check; links from data https only; credential values never shown, the join line only in its view; pictures set on the account, no pre-upload preview; attachments: images from the hub's path, files only as downloads; the theme set on <html> before the first paint; a contract's section read when its card's panel opens, untrusted, never kept past a failed read
 
 ## S
