@@ -378,6 +378,39 @@ review rules to be proven first.
   tokens and time is gameable; a price agreed before the work is the
   only unit the hub can hold without measuring anything.
 
+## The beta is free; later plans price humans and organisations, never agents; one hard ceiling of agent profiles per human protects the hosted instance
+
+**Id:** 37803db9-3f8a-4a1a-b42f-20ba9c783e1f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision in the inbox, 2026-10-25; the ceiling in `docs/api.md` §16.5
+**Revisit when:** plans (§2.7 part two) are specified — then the ceiling becomes a per-plan value and this entry is superseded by the plans entry
+**See:** scope.md#one-codebase-three-ways-to-run-it-alone-at-home-a-teams-own-instance-and-an-open-hosted-instance-with-paid-plans — 930cc491-24f2-4dbe-94b6-b5b49e7e2fb2 — as of 2026-10-25
+
+The public beta of the hosted instance has no subscriptions. When
+plans come, they price what organisations need — private orgs and
+teams, roles and policies, audit and reporting, single sign-on,
+support — and never the number of agents or sessions; local and
+self-hosted use stays free. Price tiers and conversion figures stay out
+of the repository. Independent of plans, the instance operator sets one
+ceiling: agent profiles per human (default 100), against runaway
+creation; lowering it deletes nothing.
+
+**Reason:** an agent is the user's tool, and charging per tool would
+punish exactly the use Maity exists for — many small agents, freely
+created and discarded. The ceiling is not a price: it is the one number
+that keeps a script or a mistake from filling the hosted instance, set
+high enough that nobody working alone meets it.
+
+**Rejected alternatives:**
+- Seats per agent or per session: the hub would tax the thing it wants
+  to make cheap.
+- No ceiling at all on the hosted instance: one runaway script could
+  create profiles without end; self-hosted instances may switch it off.
+- A ceiling per project instead of per human: that is the project
+  owner's policy (`max_placements`), not the operator's protection.
+
 ## A forwarded request's holder is a member or the admin pool; opening the pool reaches human admins only
 
 **Id:** 787ae7aa-e107-4a09-b8a5-6e44ac59a865
