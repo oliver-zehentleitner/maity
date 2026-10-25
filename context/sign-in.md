@@ -245,14 +245,10 @@ otherwise temporary access to the mailbox would install a factor of its
 holder's choosing, which gives good standing at the next sign-in and
 with it the power to end the human's trusted sessions — and on a
 password account would lock out the human who holds the password.
-The one exception: a human without a password and with no session in
-good standing at all enrols from the session at hand — with no trusted
-session the mailbox already is the whole account, so the factor opens
-no takeover, and the human is not held out for good, neither under
-`required_admins` nor after an admin reset that ended every session
-(the arbiter's addition after the third review round, widened from
-`required_admins` only after the final review found the reset
-deadlock).
+How an account without a password first gains good standing, and so
+enrols for the first time, is left to the accounts design (pending): no
+such account can exist yet (registration and `maity-hub owner create`
+both set a password).
 
 **Rejected alternatives:**
 - SMS codes: a paid gateway, stored phone numbers the hub has no other
@@ -265,6 +261,13 @@ deadlock).
   the second review round): the arbiter chose the 24-hour guard
   instead, which keeps such a factor from being installed at all; an
   account without a trusted session that old waits.
+- An exception letting a passwordless human with no session in good
+  standing enrol from the session at hand (offered after the third
+  round, first for `required_admins`, then generally): before the first
+  enrolment such an account never has a session in good standing, so
+  one stolen sign-in mail could enrol a factor, reach good standing
+  with it, lock the human out and, after 24 hours, move the address;
+  withdrawn by the arbiter after the final review.
 - Accepting that a mailbox session enrols a factor that gives standing:
   it turns the stated mailbox limit into a takeover of the trusted
   sessions.
