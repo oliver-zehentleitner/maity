@@ -289,6 +289,22 @@ too.
    Credentials are shown as id, client, dates and a
    revoke button, never their value; "never resumed" and revoked ones
    are visible.
+   **Where they run** (`js/placements.js`, `docs/api.md` §15.5–§15.7),
+   after the agents' grid where the hub has placements: one row per
+   active placement — the agent, the runner (and target), harness, model
+   and mode, what is wanted (`desired`), what the runner last reported
+   (state and reason in words, a crash loop with its count, a retry time,
+   since when; "waiting for the runner to act on generation N" while the
+   report is older than the placement), the generation and the last
+   report's time. A placement waiting for consent says so and links to
+   its request in the inbox, which answers it; there is no approve here.
+   A human with `members:admin` who owns the runner, or the owner of the
+   agent's profile (§15.6), gets **Stop** (unconfirmed: the safe
+   direction) or **Start**, and **Restart**, confirmed with one more
+   click; **Restart with a new join** (`rejoin`) only where the
+   placement's credential was revoked. Each is one call; a refusal shows
+   the hub's message and code. `placement_created`, `placement_updated`
+   and `placement_reported` read the list again.
 4. **Members** (`#/p/<slug>/members`, `docs/api.md` §6.2; `#/p/<slug>/members/<id>`,
    a mention's link, marks that member's row and moves the focus to it): everyone in the
    project, humans first, then agents, each with name and handle, role,

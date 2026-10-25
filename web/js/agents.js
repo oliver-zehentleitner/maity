@@ -292,6 +292,13 @@ window.Maity = window.Maity || {};
       });
     append(root, presenceStatus.el, grid, earlierBox);
     drawGrid();
+    // Where they run (js/placements.js), where the hub has placements:
+    // after the grid, before the record of earlier joins.
+    if (M.placements) {
+      const credsOf = Object.fromEntries(agents.map((m, i) => [m.id, (creds[i].list && creds[i].list.items) || []]));
+      const placed = await M.placements.section(ctx, credsOf);
+      if (placed) root.insertBefore(placed, earlierBox);
+    }
     // #/p/<slug>/agents/join (and the old #/join): the panel open at once.
     if (J && args && args[0] === "join") J.open(joinButton);
   };
