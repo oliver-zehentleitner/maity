@@ -410,12 +410,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!linkOf(wm("hi @agent-c", [{ member_id: "agt-b", handle: "agent-b", field: "body", offset: 3, length: 8 }])).length,
     "mentions: a stored mention whose text does not match stays text");
   // An instance mention (§8.6, §6.17): @handle#id or @owner/handle#id links to the member, the instance in the title.
-  const instShort = linkOf(wm("ping @agent-b#wle2 now", [{ member_id: "agt-b", handle: "agent-b", name: "maintainer/agent-b", instance: "wle2", field: "body", offset: 5, length: 13 }]));
-  const instLong = linkOf(wm("ping @maintainer/agent-b#wle2", [{ member_id: "agt-b", handle: "agent-b", name: "maintainer/agent-b", instance: "wle2", field: "body", offset: 5, length: 24 }]));
-  expect(instShort.length === 1 && instShort[0].textContent === "@agent-b#wle2" && instShort[0].getAttribute("href") === "#/m/agt-b" && instShort[0].getAttribute("title") === "instance wle2"
-    && instLong.length === 1 && instLong[0].textContent === "@maintainer/agent-b#wle2",
+  const instShort = linkOf(wm("ping @agent-b#wqe2 now", [{ member_id: "agt-b", handle: "agent-b", name: "maintainer/agent-b", instance: "wqe2", field: "body", offset: 5, length: 13 }]));
+  const instLong = linkOf(wm("ping @maintainer/agent-b#wqe2", [{ member_id: "agt-b", handle: "agent-b", name: "maintainer/agent-b", instance: "wqe2", field: "body", offset: 5, length: 24 }]));
+  expect(instShort.length === 1 && instShort[0].textContent === "@agent-b#wqe2" && instShort[0].getAttribute("href") === "#/m/agt-b" && instShort[0].getAttribute("title") === "instance wqe2"
+    && instLong.length === 1 && instLong[0].textContent === "@maintainer/agent-b#wqe2",
     "mentions: a stored instance mention, short or long, links to its member with the instance in the title");
-  expect(!linkOf(wm("ping @agent-b#k3pa", [{ member_id: "agt-b", handle: "agent-b", instance: "wle2", field: "body", offset: 5, length: 13 }])).length,
+  const teamSuffix = wm("ping @agent-b#wqe2", [{ member_id: "agt-b", handle: "agent-b", instance: null, field: "body", offset: 5, length: 8 }]);
+  expect(linkOf(teamSuffix).length === 1 && linkOf(teamSuffix)[0].textContent === "@agent-b" && !linkOf(teamSuffix)[0].getAttribute("title")
+    && teamSuffix[teamSuffix.length - 1] === "#wqe2", "mentions: a team mention followed by a #-looking suffix links the handle, the suffix stays text");
+  expect(!linkOf(wm("ping @agent-b#k3pa", [{ member_id: "agt-b", handle: "agent-b", instance: "wqe2", field: "body", offset: 5, length: 13 }])).length,
     "mentions: a stored instance mention whose #id does not match stays text");
   expect(!linkOf(wm("hi @agent-b", [{ member_id: "agt-b", handle: "agent-b", field: "summary", offset: 3, length: 8 }])).length
     && !linkOf(wm("hi @agent-b", [])).length, "mentions: only this field's stored mentions, never a typed @");
@@ -1685,6 +1688,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/inbox"); await go("#/p/maity/agents"); for (let k = 0; k < 8; k++) await tick();
   expect(text(main).includes("No agents in this project yet") && plBox() && plBox().querySelectorAll("li.placement").length === 4,
     "placements: with no agent yet, where they run is still shown");
+  // While the placements are read the join panel is open already: the button never shows to vanish.
+  let plRelease = null;
+  const plGetAll2 = win.Maity.api.getAll;
+  const plGet2 = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/projects/maity/members" ? plGet2(p).then((r) => Object.assign({}, r, { items: r.items.filter((x) => x.kind !== "agent") })) : plGet2(p));
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/placements" ? new Promise((r) => { plRelease = () => r(plGetAll2(p)); })
+    : p === "/projects/maity/members" ? plGetAll2(p).then((r) => ({ items: r.items.filter((x) => x.kind !== "agent"), next_cursor: null })) : plGetAll2(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/agents"); for (let k = 0; k < 8; k++) await tick();
+  expect(main.querySelector(".join-panel") && !main.querySelector(".join-panel").hidden && main.querySelector("button.join-open").hidden,
+    "placements: while they are read, the view is there and a project without agents shows its join panel");
+  if (plRelease) plRelease();
+  for (let k = 0; k < 4; k++) await tick();
+  win.Maity.api.getAll = plGetAll2; win.Maity.api.get = plGet2;
   // Neither the runner's owner nor the agents' owner: the rows without actions.
   const othersOwn = (r) => Object.assign({}, r, { items: r.items.map((x) => Object.assign({}, x, x.kind === "agent" ? { owner_id: "hum-other" } : {})) });
   win.Maity.api.get = (p) => (p === "/projects/maity/members" ? plGet(p).then(othersOwn) : plGet(p));
