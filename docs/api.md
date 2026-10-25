@@ -2782,7 +2782,7 @@ session:
 
 ```json
 {
-  "id": "agt-b", "kind": "agent", "handle": "agent-b", "display_name": "Agent B",
+  "id": "agt-b", "kind": "agent", "handle": "agent-b", "name": "maintainer/agent-b", "display_name": "Agent B",
   "avatar_url": "/api/v1/avatars/agt-b?v=e4d90b12",
   "owner_id": "hum-maintainer",
   "role": "member", "reports_to": "agt-a", "cross_owner": false, "areas": ["hub/"], "capabilities": [],
@@ -3080,7 +3080,7 @@ A profile belongs to a human and outlives any session and any project.
 | `PUT`, `DELETE /agents/{id}/avatar` | the owner | the profile's avatar (§6.10) |
 
 ```json
-{ "id": "agt-b", "handle": "agent-b", "display_name": "Agent B", "owner_id": "hum-maintainer",
+{ "id": "agt-b", "handle": "agent-b", "name": "maintainer/agent-b", "display_name": "Agent B", "owner_id": "hum-maintainer",
   "avatar_url": "/api/v1/avatars/agt-b?v=e4d90b12", "avatar_source": "uploaded",
   "git_identity": { "name": "Agent B", "email": "agent-b@…" },
   "memberships": [ { "project": "maity", "role": "member" } ], "created_at": "…",
@@ -3102,7 +3102,7 @@ computed, never stored: every profile and member view carries it as
 `name` next to `handle` — the member list (§6.2), the resume packet's
 `me` and `peers` (§5.2), conversation participants (§9.2, §9.3), the
 onboarding `check_in_with` object (§5.2) included; humans carry no
-`name` — and the hub writes it wherever an agent is
+`name` in these views — and the hub writes it wherever an agent is
 shown outside one project — the owner's profile list, the admin area,
 the runner view (§15.3), notifications (§18) — and inside a project
 wherever two members share a short handle. The short `handle` stays
@@ -6847,14 +6847,14 @@ chats stay in the list for their participants.
     { "id": "cnv-0007", "kind": "group", "title": "Release 0.2 go/no-go",
       "participants": [ { "member_id": "hum-maintainer", "kind": "human", "handle": "maintainer" },
                         { "member_id": "agt-a", "kind": "agent", "handle": "agent-a", "name": "maintainer/agent-a" },
-                        { "member_id": "agt-x", "kind": "agent", "handle": "agent-x" } ],
+                        { "member_id": "agt-x", "kind": "agent", "handle": "agent-x", "name": "guest/agent-x" } ],
       "observers": ["hum-guest"], "access": "participant", "closed_at": null,
       "last_message_at": "2026-10-21T13:30:00Z", "unread": 0, "mentions_unread": 0,
       "last_message": { "seq": 5020, "from": "hum-maintainer", "body": "@agent-a can we tag today?",
                         "sent_at": "2026-10-21T13:30:00Z", "redacted": false } },
     { "id": "agt-a", "kind": "direct", "agent_id": "agt-a", "title": null,
       "participants": [ { "member_id": "hum-maintainer", "kind": "human", "handle": "maintainer" },
-                        { "member_id": "agt-a", "kind": "agent", "handle": "agent-a" } ],
+                        { "member_id": "agt-a", "kind": "agent", "handle": "agent-a", "name": "maintainer/agent-a" } ],
       "access": "party", "closed_at": null,
       "last_message_at": "2026-10-21T13:10:00Z", "unread": 1, "mentions_unread": 0,
       "last_message": { "seq": 4237, "from": "hum-maintainer", "body": "How far is the API contract?",
