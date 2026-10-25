@@ -12,11 +12,11 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import clock, registration, registration_accounts, registration_mail
+from maity_hub import clock, events, registration, registration_accounts, registration_mail
 from maity_hub import tables as t
 from maity_hub.config import Settings
 from maity_hub.routes import registration as routes
-from tests import flow
+from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_registration import MAIL, PASSWORD, SIGNING, hub, pending
 
@@ -354,6 +354,103 @@ def test_a_revocation_racing_the_completion_waits_for_it(
             first_tx.rollback()
         first.close()
         pool.shutdown(wait=True, cancel_futures=True)
+
+
+def _held(migrated: Engine, change: Any, call: Any) -> Any:
+    """`change` runs in a transaction that is held while `call` starts and must wait;
+    then it commits and `call`'s answer is returned. Released before the join."""
+    first = migrated.connect()
+    started, answered = threading.Event(), threading.Event()
+
+    def other() -> Any:
+        started.set()
+        found = call()
+        answered.set()
+        return found
+
+    pool = ThreadPoolExecutor(max_workers=1)
+    first_tx = first.begin()
+    try:
+        change(first)
+        waiting = pool.submit(other)
+        assert started.wait(timeout=10)
+        assert not answered.wait(timeout=0.5)  # held by the first
+        first_tx.commit()
+        return waiting.result(timeout=10)
+    finally:
+        if first_tx.is_active:
+            first_tx.rollback()
+        first.close()
+        pool.shutdown(wait=True, cancel_futures=True)
+
+
+def _server_only(migrated: Engine) -> None:
+    if migrated.dialect.name == "sqlite":
+        pytest.skip("SQLite serialises writers; the locks are for the server databases")
+
+
+def test_two_addresses_never_both_take_the_last_place_of_the_hour(
+    admin: flow.Human, make_client: ClientFactory, migrated: Engine, claims: dict[str, str]
+) -> None:
+    _server_only(migrated)
+    settings = settings_for(MAITY_REGISTRATION_MAX_NEW_PER_HOUR="1")
+    ada = requested(make_client, migrated, settings)
+    bob = requested(make_client, migrated, settings, "bob@example.com", peer="198.51.100.4")
+
+    def first(conn: Any) -> None:
+        assert registration_accounts.complete(
+            conn, resolver(settings), ada.id, password=PASSWORD, handle="ada",
+            display_name="Ada", terms_seen=None, terms_accepted=False, source="203.0.113.7",
+        ).kind == "created"  # fmt: skip
+
+    answer = _held(migrated, first, lambda: complete(migrated, settings, bob.id, handle="bob"))
+    assert answer.kind == "later"
+    assert [r.voided_at for r in pending(migrated) if r.id == bob.id] == [None]  # kept
+
+
+def _invited_by_admin(
+    admin: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> tuple[Settings, Any, flow.Human]:
+    flow.project(admin)
+    issuer = flow.human(make_client, migrated, "an-admin")
+    with migrated.connect() as conn:
+        project = str(conn.execute(select(t.project.c.id)).scalar_one())
+    factory.membership(migrated, project, "admin", human_id=issuer.id)
+    made = issuer.post("/projects/maity/invitations", {"address": "ada@example.com"})
+    assert made.status_code == 201, made.text
+    closed = hub(MAITY_MAIL_SIGNING_KEY=SIGNING, **MAIL)
+    return closed, requested(make_client, migrated, closed), issuer
+
+
+def test_a_project_closing_during_completion_ends_the_registration(
+    admin: flow.Human, make_client: ClientFactory, migrated: Engine, claims: dict[str, str]
+) -> None:
+    """§2.7.1 step 6: the invitation's project is read under its lock."""
+    _server_only(migrated)
+    closed, row, _ = _invited_by_admin(admin, make_client, migrated)
+
+    def archive(conn: Any) -> None:
+        events.lock_project(conn, project_id(migrated))  # as a state change takes it
+        conn.execute(update(t.project).values(state="archived"))
+
+    assert _held(migrated, archive, lambda: complete(migrated, closed, row.id).kind) == "closed"
+    assert claims == {}
+
+
+def test_an_issuer_demoted_during_completion_ends_the_registration(
+    admin: flow.Human, make_client: ClientFactory, migrated: Engine, claims: dict[str, str]
+) -> None:
+    _server_only(migrated)
+    closed, row, issuer = _invited_by_admin(admin, make_client, migrated)
+
+    def demote(conn: Any) -> None:
+        events.lock_project(conn, project_id(migrated))  # as a member change takes it
+        conn.execute(
+            update(t.membership).where(t.membership.c.human_id == issuer.id).values(role="member")
+        )
+
+    assert _held(migrated, demote, lambda: complete(migrated, closed, row.id).kind) == "closed"
+    assert claims == {}
 
 
 # --- the pending account (§2.7.5) -------------------------------------------------------

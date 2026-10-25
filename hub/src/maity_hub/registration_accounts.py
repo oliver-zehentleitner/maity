@@ -38,6 +38,8 @@ BLOCK_FOR = timedelta(days=30)  # after a rejection or an expiry (§16.4)
 DISPLAY_NAME_MAX = 64
 REASON_MAX = 1024
 PENDING_PAGE = "/#/pending"
+# A `registration_lock` key no address can be (it has no `@`): the instance-wide budget.
+BUDGET_LOCK = "*new-accounts-per-hour*"
 _HANDLE = re.compile(HANDLE_PATTERN)
 log = logging.getLogger(__name__)
 
@@ -178,6 +180,9 @@ def complete(
         return Completion("invalid", fields=errors)
     if terms is not None and terms_seen != terms["version"]:
         return Completion("terms_changed")  # nothing created, no acceptance (§2.7.2)
+    # The instance's hourly budget: one lock every completion takes, after its address's
+    # and held until the account exists, so two addresses never both take the last place.
+    lock_address(conn, BUDGET_LOCK)
     if _registered_last_hour(conn, now) >= resolved.value("max_new_accounts_per_hour"):
         return Completion("later")
     human_id = new_id("human")

@@ -16,7 +16,7 @@ from sqlalchemy import Connection, select, update
 
 from maity_hub import clock
 from maity_hub import tables as t
-from maity_hub.events import Actor, emit
+from maity_hub.events import Actor, emit, lock_project
 from maity_hub.policy import CLOSED_STATES
 from maity_hub.ratelimit import Limiter
 from maity_hub.scopes import has_scope
@@ -97,9 +97,14 @@ def admits(conn: Connection, row: Any, project: Any, now: datetime | None = None
 def admits_address(conn: Connection, normalized: str, *, lock: bool = False) -> bool:
     """Whether an open, address-bound invitation admits this address to register under
     `closed` or `allowlist` (§2.7.1, §3.4). An invitation without an address admits
-    nobody to register. With `lock`, the invitations are read `FOR UPDATE`: completion
-    decides on them as they stay until it commits, so a revocation racing it waits or
-    wins, never slips between the check and the account."""
+    nobody to register.
+
+    With `lock` (completion), the projects of the candidates are locked first, in id
+    order, and the invitations read again `FOR UPDATE` under them: a revocation, an
+    accept, a project's closing and an issuer's demotion all take the project's lock, so
+    each either commits before this read or waits until the account exists. The lock
+    order — address, then projects, then invitation rows — is the one every other path
+    keeps (none takes an address lock after a project's)."""
     now = clock.now()
     query = select(t.invitation).where(
         t.invitation.c.address_normalized == normalized,
@@ -108,7 +113,11 @@ def admits_address(conn: Connection, normalized: str, *, lock: bool = False) -> 
         t.invitation.c.voided_at.is_(None),
         t.invitation.c.expires_at > now,
     )
-    rows = conn.execute(query.with_for_update() if lock else query).all()
+    if lock:
+        for project_id in sorted({row.project_id for row in conn.execute(query)}):
+            lock_project(conn, project_id)
+        query = query.with_for_update()
+    rows = conn.execute(query).all()
     for row in rows:
         state = conn.execute(
             select(t.project.c.state).where(t.project.c.id == row.project_id)
