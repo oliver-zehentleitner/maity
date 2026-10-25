@@ -35,9 +35,8 @@ requests waiting for the human, and **All projects** with the total. In a
 project, the project's state and the owner's absence ("Away until …")
 sit at the switcher's right, behind a separator, in the same row; on a
 narrow screen they go under it. At the top right are two menus, each a
-real button (`aria-haspopup`, `aria-expanded`): a **gear** with this
-project's **Project settings** (for an owner or admin; it opens the panel
-under the header), **Runners** and, for the instance admin, **Users of
+real button (`aria-haspopup`, `aria-expanded`): a **gear** with what is
+not the project's — **Runners** and, for the instance admin, **Users of
 this hub**; and the **profile**, the human's avatar and name, with
 **Profile**, **Picture** (`#/account/picture`), **Preferences**
 (`#/account/preferences`), **Change password**, **Linked accounts** (later) and
@@ -116,6 +115,7 @@ stop the page. Mail settings come with the hub's mail (stage 3).
 | `#/account` | the signed-in human's account: name, handle, their picture and their agents' pictures (`#/account/picture` starts there), their preferences (`#/account/preferences` starts there), browser notifications (`#/account/notifications` starts there; the bell links to it), the sessions (`#/account/sessions` starts there; a sign-in alert links to it), **Change password**; from the profile menu |
 | `#/p/<slug>/<view>` | a view inside one project; `#/p/<slug>/inbox` is the landing page with exactly one |
 | `#/p/<slug>/chat/<agent-id>` | the chat with one agent |
+| `#/p/<slug>/settings` | the project's **Settings**, its last tab (after Runners and Why): language, state and absence, onboarding, repository, memory, badge, signing, public swarm, logo and banner, uploads, blind removal — each for whom it is; a save stays on the tab |
 
 ## Views
 

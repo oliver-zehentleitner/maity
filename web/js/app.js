@@ -43,6 +43,9 @@ window.Maity = window.Maity || {};
     { route: "runners", view: "projectRunners", label: "Runners", admin: true, watch: /^runner_/, changed: "The runners changed." },
     // Where the hub knows the Keep the Why export (docs/api.md §6.1, §11.3).
     { route: "why", label: "Why", when: (ctx) => "keep_the_why_export" in ctx.project },
+    // The project's own settings, its last tab (the maintainer's request,
+    // 2026-10-25); a save stays here.
+    { route: "settings", label: "Settings" },
   ];
   const offered = (ctx, item) => (!item.admin || ctx.canAdmin) && (!item.when || item.when(ctx));
 
@@ -786,33 +789,19 @@ window.Maity = window.Maity || {};
   function renderHeader(ctx, current) {
     const header = clear(document.getElementById("header"));
     const absence = ctx.scope === "project" ? ctx.project.absence : null;
-    let panelOpen = false;
-    const panelSlot = h("div");
     const mayConfigure = ctx.scope === "project" && (ctx.canAdmin || ctx.isOwner);
-    // The project's settings panel opens under the header, from the gear menu.
-    function togglePanel() {
-      panelOpen = !panelOpen;
-      clear(panelSlot);
-      if (panelOpen) {
-        append(panelSlot, projectPanel(ctx));
-        const first = panelSlot.querySelector("select, input, button");
-        if (first) first.focus();
-      }
-    }
-    // Views open the panel too (the overview's Set the repository), at the
-    // repository field where the panel has one.
+    // Views lead to the project's Settings tab too (the overview's Set the
+    // repository), at the repository field.
     ctx.openSettings = mayConfigure ? () => {
-      if (!panelOpen) togglePanel();
-      const repo = document.getElementById("repo-url");
-      if (repo) repo.focus();
+      settingsFocus = "repo-url";
+      window.location.hash = projectLink(ctx.slug, "settings");
     } : null;
-    // Settings: this project's (with the rights for it) and the hub's.
+    // Settings: the hub's and one's own; the project's are its tab.
     const settings = M.menuButton({
       label: "Settings",
       class: "settings-menu",
       face: M.icons.gear(18),
       items: () => [
-        ctx.scope === "project" ? { label: panelOpen ? "Close project settings" : "Project settings", onSelect: togglePanel } : null,
         { label: "Runners", href: "#/runners" },
         ctx.me.instance_admin ? { label: "Instance administration", href: "#/admin" } : null,
       ].filter(Boolean),
@@ -875,7 +864,6 @@ window.Maity = window.Maity || {};
       absence
         ? h("p", { class: "flag absence" }, "While away: " + absence.scope)
         : null,
-      panelSlot,
       ctx.scope === "project" && M.leadChat ? M.leadChat.control(ctx) : null,
       ctx.scope === "project"
         ? h("nav", { class: "views", "aria-label": "Views" },
@@ -885,9 +873,19 @@ window.Maity = window.Maity || {};
           }, item.label, tabCount(ctx, item.route))))
         : null);
     header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
-    // After an image was uploaded or removed, the panel opens again to say so.
-    if (mayConfigure && imagesNote) togglePanel();
   }
+
+  // The field a link into Settings asked for (the overview's Set the
+  // repository); taken once the view is drawn.
+  let settingsFocus = null;
+  M.views.settings = async function (ctx, root) {
+    append(root, h("h2", null, "Settings"),
+      h("p", { class: "muted" }, "This project's settings. Yours and the hub's are in the gear menu."),
+      projectPanel(ctx));
+    const wanted = settingsFocus && root.querySelector ? Array.from(root.querySelectorAll("input")).find((el) => el.id === settingsFocus) : null;
+    settingsFocus = null;
+    if (wanted) window.setTimeout(() => wanted.focus(), 0);
+  };
 
   // ---- context ------------------------------------------------------------
 

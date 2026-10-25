@@ -386,9 +386,10 @@ def watch_page(run: Run, page: Page) -> None:
 
 
 def project_settings(page: Page) -> None:
-    """Opens or closes the Project settings panel, through the header's gear menu."""
-    page.locator("header").get_by_role("button", name="Settings", exact=True).click()
-    page.get_by_role("menuitem", name=re.compile(r"^(Close project settings|Project settings)$")).click()
+    """Opens the project's Settings tab (its last tab), drawn afresh."""
+    page.locator("nav.views").get_by_role("link", name="Settings", exact=True).click()
+    expect(page).to_have_url(re.compile(r"#/p/[^/]+/settings$"))
+    expect(page.locator("#project-panel")).to_be_visible()
 
 
 def no_problems(run: Run, where: str) -> None:
