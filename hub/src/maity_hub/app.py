@@ -36,6 +36,7 @@ from maity_hub.mail import outbox
 from maity_hub.mail import settings as mail
 from maity_hub.mail.environment import MailConfigError
 from maity_hub.middleware import HubMiddleware
+from maity_hub.notifications import mailer
 from maity_hub.routes import (
     admin,
     agents,
@@ -103,7 +104,12 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         image_worker.start()
         mail_worker = outbox.Worker(engine, settings.mail, settings.secret_key)
         mail_worker.start()
+        notify_worker = mailer.Worker(
+            engine, settings.mail, settings.secret_key, settings.public_url
+        )
+        notify_worker.start()
         yield
+        notify_worker.stop()
         mail_worker.stop()
         image_worker.stop()
         if worker is not None:

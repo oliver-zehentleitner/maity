@@ -1138,3 +1138,25 @@ mail_outbox = Table(
     sqlite_autoincrement=True,
     **MYSQL_TABLE,
 )
+
+# What notification mail already carried (docs/api.md §18.5): one row per human and item
+# (`e:<seq>` or `r:<n>`), so an item goes out once, and when each human's last hourly and
+# daily digest left.
+mail_item_sent = Table(
+    "mail_item_sent",
+    metadata,
+    _ref("human_id", "human.id", nullable=False),
+    Column("item", String(40), nullable=False),
+    Column("mailed_at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("human_id", "item"),
+    **MYSQL_TABLE,
+)
+
+notification_mail_state = Table(
+    "notification_mail_state",
+    metadata,
+    _ref("human_id", "human.id", primary_key=True),
+    Column("hourly_at", UtcDateTime),
+    Column("daily_at", UtcDateTime),
+    **MYSQL_TABLE,
+)
