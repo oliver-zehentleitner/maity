@@ -8,6 +8,7 @@ import pytest
 from maity_hub.cli import main
 
 PASSWORD = "s3cret-pw"
+ACCOUNT_PASSWORD = "correct-horse-battery-staple"
 
 
 @pytest.fixture(autouse=True)
@@ -179,6 +180,15 @@ def test_owner_create_needs_a_migrated_database(
     assert "maity-hub migrate" in capsys.readouterr().err
 
 
+def _banner_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`run` replaced by what the started server prints: its banner, nothing served."""
+    from maity_hub import cli
+
+    monkeypatch.setattr(
+        cli._Server, "run", lambda self, sockets=None: print("\n".join(self.banner))
+    )
+
+
 @pytest.mark.parametrize("dashboard", [True, False])
 def test_serve_says_where_the_dashboard_is(
     dashboard: bool,
@@ -186,7 +196,7 @@ def test_serve_says_where_the_dashboard_is(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from maity_hub import cli, config
+    from maity_hub import config
 
     assert main(["migrate"]) == 0
     capsys.readouterr()
@@ -195,10 +205,77 @@ def test_serve_says_where_the_dashboard_is(
         web.mkdir()
         (web / "index.html").write_text("<!doctype html>")
     monkeypatch.setattr(config, "checkout_web_dir", lambda: web if dashboard else None)
-    monkeypatch.setattr(cli._Server, "run", lambda self, sockets=None: None)
+    _banner_only(monkeypatch)
     assert main(["serve"]) == 0
-    out = capsys.readouterr().out
+    out = capsys.readouterr().out.strip().splitlines()
     if dashboard:
-        assert "maity-hub: dashboard at http://127.0.0.1:8080/" in out
+        assert out[-1] == "maity-hub: dashboard at http://127.0.0.1:8080/"
     else:
-        assert "API only at http://127.0.0.1:8080/api/v1" in out
+        assert out[-1] == "maity-hub: API only at http://127.0.0.1:8080/api/v1, no dashboard"
+
+
+def _stdin(monkeypatch: pytest.MonkeyPatch, text: str) -> None:
+    import io
+
+    monkeypatch.setattr("sys.stdin", io.StringIO(text))
+
+
+def test_quickstart_sets_up_a_new_hub_and_ends_on_the_dashboard(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _banner_only(monkeypatch)
+    _stdin(monkeypatch, ACCOUNT_PASSWORD + "\n")
+    assert main(["quickstart", "--handle", "me"]) == 0
+    captured = capsys.readouterr()
+    out = captured.out.strip().splitlines()
+    assert re.fullmatch(r"maity-hub: schema empty -> \d{4}", out[0])
+    assert out[1].startswith("maity-hub: created me (hum-")
+    assert out[-2:] == ["maity-hub: sign in as me", out[-1]]
+    assert out[-1].startswith("maity-hub: dashboard at http://127.0.0.1:8080/") or (
+        "API only" in out[-1]
+    )
+    assert ACCOUNT_PASSWORD not in captured.out + captured.err
+
+    _stdin(monkeypatch, "")  # a second start creates nothing and asks for nothing
+    assert main(["quickstart"]) == 0
+    again = capsys.readouterr().out.strip().splitlines()
+    assert again[0] == "maity-hub: this hub has accounts; sign in with yours"
+    assert not any("schema" in line or "created" in line for line in again)
+
+
+def test_quickstart_never_migrates_a_hub_behind_the_schema(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from maity_hub.db import current_revision, downgrade, make_engine
+
+    assert main(["migrate"]) == 0
+    engine = make_engine("sqlite:///maity-hub.db")
+    downgrade(engine, "0001")
+    capsys.readouterr()
+    assert main(["quickstart", "--handle", "me"]) == 1
+    assert "run `maity-hub migrate` first" in capsys.readouterr().err
+    assert current_revision(engine) == "0001"
+    engine.dispose()
+
+
+def test_quickstart_is_for_sqlite_only(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("MAITY_DATABASE_URL", f"postgresql://maity:{PASSWORD}@db/maity")
+    assert main(["quickstart"]) == 2
+    err = capsys.readouterr().err
+    assert "migrate, owner create and serve" in err and PASSWORD not in err
+
+
+@pytest.mark.parametrize(("login", "handle"), [("alice", "alice"), ("Bob Smith", "owner")])
+def test_quickstart_names_the_account_after_the_login(
+    login: str,
+    handle: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr("getpass.getuser", lambda: login)
+    _banner_only(monkeypatch)
+    _stdin(monkeypatch, ACCOUNT_PASSWORD + "\n")
+    assert main(["quickstart"]) == 0
+    assert f"maity-hub: sign in as {handle}" in capsys.readouterr().out

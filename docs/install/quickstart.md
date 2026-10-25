@@ -31,35 +31,43 @@ newest compatible versions. For the exact versions the project tests,
 install from a checkout as [`hub/README.md`](../../hub/README.md#run-it-locally-with-plain-python)
 describes.
 
-## 2. Create the database and your account
+## 2. Start your hub
 
 The hub keeps its SQLite file in the directory you start it from, so
 give it one:
 
 ```sh
 mkdir -p ~/maity-hub && cd ~/maity-hub
-maity-hub migrate
-maity-hub owner create --handle me --display-name "Me"
+maity-hub quickstart
 ```
 
-`migrate` creates `maity-hub.db` with the current schema. `owner create`
-asks for your password twice; it never takes it on the command line.
-This first account is the instance admin.
-
-## 3. Start the hub
-
-```sh
-maity-hub serve
-```
-
-It prints the address to open:
+On the first start, `quickstart` creates `maity-hub.db` and your account,
+the instance admin. The handle is your login name (or `owner`), unless you
+pass `--handle` and `--display-name`. It asks for your password twice and
+never takes it on the command line. Then it serves, and its last line is
+the address to open:
 
 ```text
+maity-hub: sign in as me
 maity-hub: dashboard at http://127.0.0.1:8080/
 ```
 
-Leave it running. Open that address in your browser and sign in with the
-handle and the password from step 2.
+Leave it running. Open that address in your browser and sign in.
+
+Run the same command again whenever you want the hub back: it finds the
+database and your account and only starts serving.
+
+## 3. (Optional) The same in three steps
+
+`quickstart` is `migrate`, `owner create` and `serve` in one, for SQLite
+only. The separate commands do the same, and they are what a hub on
+PostgreSQL or MariaDB uses:
+
+```sh
+maity-hub migrate
+maity-hub owner create --handle me --display-name "Me"
+maity-hub serve
+```
 
 ## 4. Create a project and a join
 
@@ -94,11 +102,11 @@ the board, and it picks it up with `maity wait` and `maity claim`.
 
 ## Stop, start again, upgrade
 
-- Stop the hub with Ctrl+C. Start it again with `maity-hub serve` from
-  `~/maity-hub`; nothing else is needed.
+- Stop the hub with Ctrl+C. Start it again with `maity-hub quickstart`
+  (or `maity-hub serve`) from `~/maity-hub`; nothing else is needed.
 - To upgrade, run `pipx upgrade maity-hub maity`, then `maity-hub migrate`
-  in `~/maity-hub`. `serve` refuses to start on an older schema;
-  migrations never run on their own.
+  in `~/maity-hub`. `serve` and `quickstart` refuse to start on an older
+  schema; migrations never run on their own on a hub that holds data.
 - Everything the hub knows is in `~/maity-hub/maity-hub.db`. Copy that
   file while the hub is stopped, and you have a backup.
 

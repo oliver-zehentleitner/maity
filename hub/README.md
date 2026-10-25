@@ -82,6 +82,14 @@ curl http://127.0.0.1:8080/api/v1/help
 version; run `maity-hub migrate` after every upgrade. Migrations never run
 implicitly.
 
+On SQLite, `maity-hub quickstart` does the three steps in one: it migrates
+only a new, empty database, creates the first account only while there is
+no human (`--handle` defaults to the login name, the password is read as
+`owner create` reads it), and then serves. A database behind the current
+schema is refused as `serve` refuses it. Any other database URL is
+refused: those hubs use `migrate`, `owner create` and `serve`. The steps
+for a personal hub are in [`docs/install/quickstart.md`](../docs/install/quickstart.md).
+
 ## Run it with Docker Compose
 
 The hub with PostgreSQL. From the repository root:
