@@ -355,11 +355,15 @@ a read before it.
 **Revisit when:** quickstart is asked to upgrade an existing personal hub, or to run on a server database
 
 `maity-hub quickstart` is `migrate`, `owner create` and `serve` in one, for
-a personal hub. It runs `migrate` only when the database has no revision
-yet, which means a new file. A database behind the current schema is
-refused with the same message as `serve`. It creates the first account
-only while there is no human, and it refuses any database URL other than
-SQLite. This narrows ce7a3627, the rule that migrations run only on
+a personal hub. It runs `migrate` only on a database with no tables at
+all. Having no schema version is not enough: a file that holds tables but
+no version is refused and left as it is, because only `migrate` may decide
+what to do with it. A database behind the current schema is refused with
+the same message as `serve`. The first account is created only while there
+is no human. The check and the insert are one statement, so an account that
+another process creates while the password is being typed stops
+quickstart instead of producing a second admin. Any database URL other
+than SQLite is refused. This narrows ce7a3627, the rule that migrations run only on
 `maity-hub migrate`. It does not replace it: an upgrade of a hub that
 holds data is still a deliberate `maity-hub migrate`.
 
