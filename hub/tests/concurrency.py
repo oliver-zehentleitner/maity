@@ -6,14 +6,15 @@ and MariaDB. A step that must wait for the other transaction runs in a thread on
 connection it names; `waiting` says it started and is still blocked, `finished` takes
 its result. On the way out, whatever happened, the transactions no running step uses
 roll back first, so that a step blocked on their locks is released before it is
-joined; a step that still runs then fails the test instead of hanging it.
+joined; a step that still runs then fails the test, and its daemon thread never holds
+the process open.
 """
 
 from __future__ import annotations
 
 import threading
 from collections.abc import Callable, Iterator
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future
 from concurrent.futures import wait as wait_for
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -40,18 +41,23 @@ class Step:
 class Race:
     first: Connection
     second: Connection
-    _pool: ThreadPoolExecutor
     steps: list[Step] = field(default_factory=list)
 
     def run(self, conn: Connection, fn: Callable[[], Any]) -> Step:
-        """Run `fn` in a thread; it uses `conn` and no other connection."""
+        """Run `fn` in a daemon thread; it uses `conn` and no other connection. A daemon,
+        so that a step stuck on a lock never keeps the test process from exiting."""
         started = threading.Event()
+        future: Future[Any] = Future()
 
-        def step() -> Any:
+        def step() -> None:
             started.set()
-            return fn()
+            try:
+                future.set_result(fn())
+            except BaseException as error:  # handed to whoever takes the result
+                future.set_exception(error)
 
-        found = Step(self._pool.submit(step), started, conn)
+        threading.Thread(target=step, name="maity-race-step", daemon=True).start()
+        found = Step(future, started, conn)
         self.steps.append(found)
         return found
 
@@ -69,8 +75,7 @@ def race(engine: Engine) -> Iterator[Race]:
     if engine.dialect.name == "sqlite":
         pytest.skip("a race needs two writers: PostgreSQL or MariaDB (CI)")
     first, second = engine.connect(), engine.connect()
-    pool = ThreadPoolExecutor(max_workers=2)
-    found = Race(first, second, pool)
+    found = Race(first, second)
     first.begin()
     second.begin()
     try:
@@ -81,7 +86,6 @@ def race(engine: Engine) -> Iterator[Race]:
         for conn in (first, second):
             if id(conn) not in busy:
                 _end(conn)  # releases the locks a running step may wait for
-        pool.shutdown(wait=False, cancel_futures=True)
         _, running = wait_for([s.future for s in found.steps], timeout=FINISH_WITHIN)
         for conn in rest:
             if not running:
