@@ -75,3 +75,35 @@ form invisible to the client.
   project ids and numbers, which the contract keeps from the holder.
 - The random key in a new table of its own: `instance_secret` already
   is the place for values no setting may serve.
+
+## One account per address: a unique normalized column, claimed under a row of `address_lock`
+
+**Id:** ea46fd15-c3f9-49a6-bece-44f472471aed
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §18.4 and §2.7.1 as on main after #277; the implementation in PR #280, 2026-10-25
+**Revisit when:** registration (§2.7) is built and keeps its accounts' addresses elsewhere, or the hub runs more than one replica
+
+`notification_settings.address_normalized` holds the verified address
+trimmed and lower-cased, under a unique constraint. Verifying an address
+first locks the address's row in `address_lock` (inserted if absent,
+then `SELECT … FOR UPDATE`), checks that no other account holds it, and
+writes it. A link for an address another account claimed meanwhile is
+the dead-link page and changes nothing. Removing the address clears the
+column, which frees the address. Setting a pending address claims
+nothing. Registration completes under `maity_hub.mail.address.lock` as
+well.
+
+**Reason:** the contract asks for a unique constraint as the guard and a
+lock that verification, address change and registration share. A lock
+row per address serializes exactly the contenders for one address on all
+three engines, and the constraint still catches anything that skips the
+lock.
+
+**Rejected alternatives:**
+- The unique constraint alone, catching the violation: it works, but
+  the contract names the shared lock, and registration needs it to void
+  the other pending registrations in the same transaction.
+- A lock on the human's row: it would not serialize two accounts racing
+  for one address.
