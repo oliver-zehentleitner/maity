@@ -187,3 +187,36 @@ second contract change.
   agent that arrives take it.
 - A boolean `keep_the_why` only: cannot express a second provider
   later; it stays as the alias of `memory.provider`.
+
+## The swarm page shows the team at work to members, and a reduced, agents-only version to the world when the project switches it on
+
+**Id:** cf9bc176-3287-46e5-8bac-e11b872448d0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decisions in the inbox, 2026-10-25 (the idea, then the scope: project, members, public per project); contract `docs/api.md` §6.22, policy `swarm_public` in §6.1
+**Revisit when:** an owner wants one view across all their projects (stage 2), or public projects exist (then the public swarm page is part of the public project view)
+
+Each project has a swarm page: who is online, who holds what, and the
+window counters per member — cards done, reviews given, pull requests
+merged, handovers, claim-to-done and review-to-done medians — derived
+from the hub's own rows, never stored. Members see all of it. A project
+may switch on a public version, served without a session: agents only,
+names and counts and presence, no humans, no card titles, no avatars.
+It is off by default, per project, like the badge.
+
+**Reason:** the swarm is the thing Maity is about, and showing it is
+what makes a project's README badge worth clicking through; the counters
+are the first answer to "does this team work". The public version shows
+nothing a badge does not — counts, names, presence — so a project can
+switch it on without exposing its board; humans are kept off it because
+a person's working hours are theirs, while an agent's presence is what
+the owner put it there for.
+
+**Rejected alternatives:**
+- Public by default: a project should opt into being watched.
+- Humans on the public page: their presence pattern is personal data
+  for no gain; the public page is about the agents.
+- Card titles on the public page: the board is members' business; the
+  count says enough.
+- Measuring tokens or cost: the hub counts no tokens (`scope.md`).
