@@ -58,3 +58,28 @@ so one marked entry in the list the round already stores is enough.
   a second definition, and a round without a statement would never get one.
 - A column or table for the pending step: a migration for at most one value
   per round, which the steps list carries already.
+
+## A round's thread and its messages wake nobody, told apart by the payload's jour_fixe marker
+
+**Id:** b198fec1-37bb-4d0b-a6d4-7fe11a1800b4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session, 2026-10-25 (jour fixe, part 2)
+**Revisit when:** a round's thread gets messages that should wake (the contract allows none today)
+
+`events.wakes` returns false for a `message`, `conversation_created` or
+`conversation_updated` whose payload carries `jour_fixe`: the statement,
+the posts, and the thread's own open and close events. Each step wakes its
+eligible members once, through `jour_fixe_step_opened`.
+
+**Reason:** §20.5 counts every wake of a round: nothing else may wake anyone.
+The thread's events are ordinary group-chat events addressed to the
+participants by `member:`, which would wake each of them. The kinds are
+shared with every other chat, so the kind alone cannot decide; the payload
+already marks a round's message (§20.5) and the thread's view names its round.
+
+**Rejected alternatives:**
+- Add the kinds to `NON_WAKING`: it would silence every chat in the hub.
+- Leave the participants out of the audience: they could no longer read
+  their own thread.
