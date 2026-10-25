@@ -29,6 +29,12 @@ sections from the diff), and the forge webhook: its secret sealed with
 automatic deploys. The
 instance's mail settings and the admin's test send (`docs/api.md` §16.2,
 §16.3) are in; the notifications and sign-in mails that use them follow.
+A human's preferences (`docs/api.md` §19.4): one
+versioned text per human, written by the human, read by the agents of
+the projects they share (switch per project), proposed by an admin agent
+or the human's proxy as a personal request reviewed with conflict
+detection, quoted in the resume packet (8 texts, the agent's owner first)
+and given to one agent on its membership by its owner.
 
 ## Run it locally with plain Python
 

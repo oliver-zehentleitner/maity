@@ -2180,7 +2180,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const pwPosts = [];
   const realPost5 = win.Maity.api.post;
   win.Maity.api.post = (p, b) => { pwPosts.push([p, b]); return realPost5(p, b); };
-  const pwSubmit = () => main.querySelector("form").dispatch("submit");
+  const pwSubmit = () => main.querySelector("form.project-form").dispatch("submit");
   byId("password-current").value = "initial-generated"; byId("password-new").value = "short"; byId("password-repeat").value = "short";
   pwSubmit(); await tick();
   expect(!pwPosts.length && text(byId("password-new-error")) === "At least 12 characters.", "password: under 12 characters is refused locally");
@@ -3947,6 +3947,77 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   if (waitRelease) waitRelease({ items: [], next_after: "waiting-head" });
   await tick();
   win.Maity.api.get = waitGet; win.Maity.api.post = waitPost;
+
+  // Languages: project writes are human-admin only; personal language is not mail-gated.
+  const languageGet = win.Maity.api.get;
+  const languagePatch = win.Maity.api.patch;
+  const languageWrites = [];
+  win.Maity.api.patch = (path, body) => { languageWrites.push([path, body]); return languagePatch(path, body); };
+  await go("#/p/maity/board"); await projectSettings();
+  expect(!!byId("project-language"), "language: human owner can edit project language");
+  byId("project-language").value = "de";
+  header.querySelector("form.project-language").dispatch("submit"); await tick(); await tick();
+  expect(JSON.stringify(languageWrites[0]) === JSON.stringify(["/projects/maity", { settings: { language: "de" } }]), "language: project patch changes only language");
+  win.Maity.api.get = (path) => languageGet(path).then((value) => path === "/me"
+    ? Object.assign({}, value, { projects: value.projects.map((p) => Object.assign({}, p, { role: "member" })) }) : value);
+  await go("#/p/maity/inbox"); await projectSettings();
+  expect(!byId("project-language") && text(header).includes("Project language: Deutsch") && !byId("state-select"), "language: member sees read-only language without admin controls");
+  win.Maity.api.get = languageGet;
+  const oldNotification = win.Notification;
+  const oldAvailable = win.Maity.notify.state.available;
+  delete win.Notification;
+  win.Maity.notify.state.available = true;
+  for (const mail of [false, true]) {
+    let setting = { email: { language: "en", address: null }, mail_available: mail };
+    const writes = [];
+    win.Maity.api.get = async () => setting;
+    win.Maity.api.patch = async (path, body) => { writes.push([path, body]); setting = { ...setting, email: { ...setting.email, ...body.email } }; return setting; };
+    const part = await win.Maity.notifySettings({ me: { id: "hum-maintainer" } });
+    const select = part.el.querySelector("select");
+    expect(select && select.id === "personal-language", "language: control without address/browser, mail=" + mail);
+    select.value = "de";
+    part.el.querySelector("form.personal-language").dispatch("submit"); await tick();
+    expect(JSON.stringify(writes) === JSON.stringify([["/me/notification-settings", { email: { language: "de" } }]])
+      && text(part.el).includes("Personal language saved."), "language: saves independently of mail=" + mail);
+  }
+  if (oldNotification) win.Notification = oldNotification;
+  win.Maity.notify.state.available = oldAvailable;
+  win.Maity.api.patch = languagePatch;
+  win.Maity.api.get = (path) => languageGet(path).then((value) => path === "/projects/maity/members"
+    ? { ...value, items: value.items.map((m) => ({ ...m, language: "de" })).concat([
+      { ...value.items.find((m) => m.kind === "human"), id: "hum-removed-language", handle: "removed", language: "de", removed_at: "2026-10-23T00:00:00Z" }
+    ]) } : value);
+  await go("#/p/maity/members");
+  const languages = main.querySelectorAll(".member-language");
+  expect(languages.length === 1 && text(languages[0]) === "Language: Deutsch", "language: only active human profile shows language");
+  win.Maity.api.get = languageGet;
+
+  // Onboarding settings preserve the full editable object and hide on older hubs.
+  const onboardingGet = win.Maity.api.get, onboardingPatch = win.Maity.api.patch;
+  const onboardingWrites = [];
+  win.Maity.api.patch = (path, body) => { onboardingWrites.push([path, body]); return onboardingPatch(path, body); };
+  await go("#/p/maity/board"); await projectSettings();
+  expect(!!byId("onboarding-briefing") && byId("onboarding-target").querySelectorAll("option").some((o) => o.attrs.value === "coordinator" && "selected" in o.attrs), "onboarding: default coordinator is editable");
+  byId("onboarding-briefing").value = "Report here: **welcome**";
+  byId("onboarding-target").value = "role:reviewer";
+  header.querySelector("form.project-onboarding").dispatch("submit"); await tick(); await tick();
+  expect(JSON.stringify(onboardingWrites[0]) === JSON.stringify(["/projects/maity", { settings: { onboarding: { briefing: "Report here: **welcome**", check_in_with: "role:reviewer" } } }]), "onboarding: only briefing and target are written");
+  expect(text(header).includes("Version 1") && text(header).includes("Onboarding saved."), "onboarding: saved version and status appear");
+  byId("onboarding-briefing").value = "😀".repeat(16385);
+  header.querySelector("form.project-onboarding").dispatch("submit"); await tick();
+  expect(onboardingWrites.length === 1 && text(header).includes("16,384"), "onboarding: Unicode character cap prevents oversized write");
+  byId("onboarding-briefing").value = ""; byId("onboarding-target").value = "";
+  header.querySelector("form.project-onboarding").dispatch("submit"); await tick(); await tick();
+  expect(JSON.stringify(onboardingWrites[1][1]) === JSON.stringify({ settings: { onboarding: {} } }), "onboarding: empty object disables check-in and clears default text");
+  win.Maity.api.get = (path) => onboardingGet(path).then((v) => path === "/projects/maity"
+    ? { ...v, settings: Object.fromEntries(Object.entries(v.settings).filter(([k]) => k !== "onboarding")) } : v);
+  await go("#/p/maity/inbox"); await projectSettings();
+  expect(!byId("onboarding-briefing"), "onboarding: absent setting hides section on older hub");
+  win.Maity.api.get = (path) => onboardingGet(path).then((v) => path === "/projects/maity/members"
+    ? { ...v, items: v.items.map((m) => ({ ...m, briefing: m.kind === "agent" ? "Own instructions" : null })) } : v);
+  await go("#/p/maity/members");
+  expect(main.querySelectorAll(".briefing-override").length > 0, "onboarding: own agent briefings are marked in members");
+  win.Maity.api.get = onboardingGet; win.Maity.api.patch = onboardingPatch;
 
   // API mode against a fake hub: CSRF on writes, fail loud without a hub.
   win.location.protocol = "http:";

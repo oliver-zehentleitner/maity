@@ -128,3 +128,21 @@ def test_admin_briefing_and_json_need_no_board_read(
         import json
 
         assert json.loads(capsys.readouterr().out) == p
+
+
+@pytest.mark.parametrize("state", ["accepted", "archived"])
+def test_closed_empty_board_asks_about_reopening(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    capsys: pytest.CaptureFixture[str],
+    state: str,
+) -> None:
+    p = _packet("admin")
+    p["project"]["state"] = state
+    fake.routes[("POST", "/api/v1/me/resume")] = lambda _: (200, p)
+    fake.routes[("GET", "/api/v1/projects/maity/tasks")] = lambda _: (200, {"items": []})
+    assert cli.main(["resume"]) == 0
+    text = capsys.readouterr().out
+    assert f"project is {state}" in text
+    assert "Ask your human whether to reopen" in text
+    assert "create cards" not in text

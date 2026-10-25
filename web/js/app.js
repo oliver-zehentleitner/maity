@@ -250,6 +250,52 @@ window.Maity = window.Maity || {};
     status.el);
   }
 
+  function onboardingForm(ctx) {
+    const current = ctx.project.settings.onboarding || { check_in_with: "coordinator" };
+    const status = statusLine();
+    const briefing = h("textarea", { id: "onboarding-briefing", rows: "6", "aria-describedby": "onboarding-hint" }, current.briefing || "");
+    const choices = [{ value: "", label: "No check-in" }, { value: "coordinator", label: "Coordinator" }]
+      .concat(["owner", "admin", "member", "reviewer", "proxy"].map((role) => ({ value: "role:" + role, label: "Role: " + role })))
+      .concat(ctx.members.filter((m) => !m.removed_at).map((m) => ({ value: m.id, label: "Member: @" + m.handle + " (" + m.kind + ")" })));
+    if (current.check_in_with && !choices.some((c) => c.value === current.check_in_with)) {
+      choices.push({ value: current.check_in_with, label: "Unavailable member: " + current.check_in_with });
+    }
+    const target = h("select", { id: "onboarding-target" }, choices.map((c) => h("option", {
+      value: c.value, selected: c.value === (current.check_in_with || ""),
+    }, c.label)));
+    const button = h("button", { type: "submit" }, "Save onboarding");
+    const metadata = h("p", { class: "muted onboarding-metadata" },
+      current.version != null ? "Version " + current.version : "Project default",
+      current.by ? [" · set by ", M.dom.memberRef(ctx, current.by, { text: "handle" })] : null,
+      current.updated_at ? " · updated " + formatTime(current.updated_at) : null);
+    return h("form", { class: "inline-form project-onboarding", onsubmit: async (e) => {
+      e.preventDefault();
+      if ([...briefing.value].length > 16 * 1024) {
+        status.fail("Not saved: ", { message: "The briefing may contain at most 16,384 characters." }); briefing.focus(); return;
+      }
+      const onboarding = {};
+      if (briefing.value) onboarding.briefing = briefing.value;
+      if (target.value) onboarding.check_in_with = target.value;
+      button.disabled = true; status.busy("Saving…");
+      try {
+        const saved = await M.api.patch(ctx.base, { settings: { onboarding } });
+        ctx.project = saved;
+        const value = saved.settings && saved.settings.onboarding;
+        clear(metadata);
+        append(metadata, value && value.version != null ? "Version " + value.version : "Project default",
+          value && value.by ? [" · set by ", M.dom.memberRef(ctx, value.by, { text: "handle" })] : null,
+          value && value.updated_at ? " · updated " + formatTime(value.updated_at) : null);
+        status.done(); append(status.el, h("span", { class: "ok" }, "Onboarding saved."));
+      } catch (err) { status.fail("Onboarding not saved: ", err); }
+      finally { button.disabled = false; }
+    } },
+    h("h2", { class: "panel-title" }, "Onboarding"), metadata,
+    h("label", { for: "onboarding-briefing" }, "Default briefing (Markdown)"), briefing,
+    h("p", { class: "hint", id: "onboarding-hint" }, "Up to 16,384 characters. Agents with their own briefing keep it; others receive this text on their next resume. Leave empty to remove the default text."),
+    h("label", { for: "onboarding-target" }, "Check in with"), target,
+    h("p", { class: "hint" }, "The coordinator or role is resolved when the agent resumes. No check-in disables the hint."), button, status.el);
+  }
+
   function projectPanel(ctx) {
     const status = statusLine();
     const save = async (body, label) => {
@@ -263,6 +309,21 @@ window.Maity = window.Maity || {};
     };
 
     const panel = h("div", { class: "panel", id: "project-panel" });
+    const language = (ctx.project.settings || {}).language || "en";
+    const humanAdmin = ctx.me.kind === "human" && ctx.canAdmin;
+    if (humanAdmin) {
+      const select = h("select", { id: "project-language" },
+        h("option", { value: "en" }, "English"), h("option", { value: "de" }, "Deutsch"));
+      select.value = language;
+      append(panel, h("form", { class: "inline-form project-language", onsubmit: (e) => {
+        e.preventDefault(); save({ settings: { language: select.value } }, "Language");
+      } }, h("h2", { class: "panel-title" }, "Project language"),
+      h("label", { for: "project-language" }, "Language"), select,
+      h("button", { type: "submit" }, "Save language")));
+    } else {
+      append(panel, h("p", { class: "project-language" }, "Project language: " + (language === "de" ? "Deutsch" : "English")));
+    }
+
     if (ctx.canAdmin) {
       const state = h("select", { id: "state-select" },
         STATES.map((s) => h("option", { value: s, selected: s === ctx.project.state }, STATE_LABELS[s])));
@@ -282,6 +343,7 @@ window.Maity = window.Maity || {};
       h("label", { for: "state-reason" }, "Reason"), reason,
       h("button", { type: "submit" }, "Change state")));
     }
+    if (ctx.canAdmin && ctx.project.settings && "onboarding" in ctx.project.settings) append(panel, onboardingForm(ctx));
     if (ctx.canAdmin && "repository" in ctx.project) append(panel, repositoryForm(ctx));
     // Only on a hub with group chats: without them there is no closed one.
     if (ctx.canAdmin && M.groupChat) {
@@ -652,7 +714,7 @@ window.Maity = window.Maity || {};
       class: "settings-menu",
       face: M.icons.gear(18),
       items: () => [
-        mayConfigure ? { label: panelOpen ? "Close project settings" : "Project settings", onSelect: togglePanel } : null,
+        ctx.scope === "project" ? { label: panelOpen ? "Close project settings" : "Project settings", onSelect: togglePanel } : null,
         { label: "Runners", href: "#/runners" },
         ctx.me.instance_admin ? { label: "Users of this hub", href: "#/admin/users" } : null,
       ].filter(Boolean),

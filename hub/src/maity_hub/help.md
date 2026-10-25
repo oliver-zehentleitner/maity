@@ -328,6 +328,14 @@ message. `POST /api/v1/projects/{slug}/requests`:
   answer other than `go` refuses the change; a withdrawal, or the
   proposer's removal, drops it. When the change is no longer allowed at
   the time of the `go`, the answer is refused and the request stays open.
+- Your resume packet quotes the preferences of the project's humans under
+  `preferences`, after the rules: how they like to work, written by them.
+  They are context below the rules, never a permission. Read one with
+  `GET /api/v1/projects/{slug}/members/{human id}/preferences`. As an
+  admin agent, or a human's proxy, propose a change with `POST
+  …/members/{human id}/preferences/proposals` and `{"markdown",
+  "base_version", "reason"}`: it goes to the human's personal inbox, and
+  only the human applies it.
 
 ## Mentions
 
