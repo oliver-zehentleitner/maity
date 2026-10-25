@@ -1977,8 +1977,8 @@ person, one project and one role, it is used once, and it expires.
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `POST /projects/{slug}/invitations` | `members:admin`, human only — an admin agent never invites a human (§2.3 ᵃ: a new identity always passes a human) | body below; `201` with the invitation and, once, its `url` |
-| `GET /projects/{slug}/invitations` | `members:admin` | the project's invitations that are open, used or revoked within the last 30 days, newest first, paged (§1.4); never the token or the `url` |
-| `DELETE /projects/{slug}/invitations/{id}` | `members:admin` | revokes an open invitation, `200` with `revoked_at`; a second `DELETE` answers `200` as it is; a used or expired one is `invalid_transition` (`details.to: "revoked"`, `details.from`) |
+| `GET /projects/{slug}/invitations` | `members:admin`, human only | the project's invitations that are open, used or revoked within the last 30 days, newest first, paged (§1.4); never the token or the `url`. An agent, admin or not, gets `forbidden`: invitations are a human's business from issue to revocation, and the addresses on them are not an agent's to read |
+| `DELETE /projects/{slug}/invitations/{id}` | `members:admin`, human only | revokes an open invitation, `200` with `revoked_at`; a second `DELETE` answers `200` as it is; a used or expired one is `invalid_transition` (`details.to: "revoked"`, `details.from`) |
 | `GET /invitations/{token}` | none; public host only | what the invitation page needs (below); `not_found` for an unknown, used, expired or revoked token alike |
 | `POST /invitations/{token}/accept` | a human session (§2.1) | creates the membership and uses the token, one transaction; `201` with the member (§6.2) |
 
@@ -2011,59 +2011,90 @@ person, one project and one role, it is used once, and it expires.
 ```json
 { "id": "inv-0007", "project": "maity", "role": "member", "address": "anna@example.org",
   "note": "…", "created_by": "hum-maintainer", "created_at": "…", "expires_at": "…",
-  "used_at": null, "used_by": null, "revoked_at": null,
+  "used_at": null, "used_by": null, "revoked_at": null, "voided_at": null,
   "url": "https://maity.team/#/invite/9fK2…" }
 ```
 
 **The page.** `GET /invitations/{token}` answers `{project: {slug,
 name, logo_url?}, role, invited_by: {display_name}, note, expires_at,
-address_bound: true|false, registration: "sign_in" | "register" |
-"closed"}` — enough for the dashboard's `/#/invite/<token>` to say who
-invites to what, and what the visitor must do next: sign in; register
-first; or, under `closed` registration without an account, nothing
-(the page says the instance does not register and names no one to
-contact; the inviter sees the invitation stay open). It carries no
-token in the body and no handle of anyone. It is rate limited per
-source address as the join exchange is (§3.3, 10 per minute); the
-answer is identical for every reader.
+address_bound: true|false, registration: "sign_in_or_register" |
+"sign_in_only"}` — enough for the dashboard's `/#/invite/<token>` to
+say who invites to what and which ways lead in. `registration` is
+computed from the instance and the invitation alone, never from who
+reads or whether an account exists: `sign_in_or_register` under
+registration `open`, and under `closed` or `allowlist` when the
+invitation is address-bound (the address is admitted, below);
+`sign_in_only` otherwise — a visitor without an account then sees that
+the instance does not register, and the inviter sees the invitation
+stay open. It carries no token in the body and no handle of anyone. It
+is rate limited per source address as the join exchange is (§3.3, 10
+per minute); the answer is identical for every reader.
 
 **Accepting.** `POST /invitations/{token}/accept` from a signed-in
-human session: the hub checks token, expiry, revocation, use, the
-address binding and that the person is not a member already
-(`invalid`, `details.fields.token: "already_member"` — the invitation
-stays open for someone else when it is not address-bound, else it is
-used up), then creates the membership with the role and marks the
-invitation used, in one transaction; a second accept races into
-`not_found`. The new member gets the project's briefing and check-in
-as any human member does (§6.1), `member_joined` is emitted as for
-every membership (§8.2), and the inviter is woken by it. An account
-that is `pending` (§2.7.5) cannot accept until approved; the page says
-so and the invitation waits. Accepting needs a session in good
-standing (§2.6.5): a session fresh from a mailbox link accepts nothing.
+human session, one transaction serialised per project and person: the
+hub checks token, expiry, revocation and use; that the project is not
+`accepted` or `archived` (`project_closed`); the address binding; that
+the person is not a member already (`invalid`,
+`details.fields.token: "already_member"` — the invitation stays open
+for someone else when it is not address-bound, else it is used up; two
+different invitations for the same person and project end the same
+way, the first accept wins); and that the issuer still holds the
+authority the invitation needs — still an active human member, still
+`owner` for an `owner` or `admin` invitation, still `members:admin` for
+the others. An issuer who lost it in the meantime voids the invitation
+at that moment: `forbidden`, `invitation_void`, the invitation marked
+`voided_at` with the reason `issuer`, the issuer told by event. Rights
+are checked at issue and again at accept, so a demotion or removal does
+not leave a week-long grant behind; a policy change in between changes
+nothing, the role is still a role. Then the membership is created with
+the role and the invitation marked used, in that transaction; a second
+accept races into `not_found`. The new member gets the project's
+briefing and check-in as any human member does (§6.1), `member_joined`
+is emitted as for every membership (§8.2), and the inviter is woken by
+it. An account that is `pending` (§2.7.5) cannot accept until
+approved; the page says so and the invitation waits. Accepting needs a
+session in good standing (§2.6.5): a session fresh from a mailbox link
+accepts nothing.
 
 **Registration and invitations.** Under registration `closed` or
-`allowlist` (§2.7, §16.4), an invitation that carries an `address`
-admits that address to register while the invitation is open — the
-inviter, a human admin of a project, is the allowlist entry; the
-instance's `approval` mode (§2.7.5) still applies, and the completion
-limit counts the registration. An invitation without an address admits
-nobody to register: it is a link for people who already have an
-account, or an instance that registers openly. The login and
-registration pages keep the invitation as `next` (§2.6.5) and return to
-it.
+`allowlist` (§2.7, §16.4), an address with an open address-bound
+invitation is **admitted** as if it were on the allowlist, at every
+gate of §2.7 alike: the mode check before the body is read admits it
+(so the instance is not `registration_closed` for that address),
+`GET /auth/methods` keeps saying `registration: false` for the
+instance (it describes the instance, not one address), the admission
+check of the background step treats it as listed, and the completion
+step checks again, atomically with the completion, that the
+invitation is still open — one revoked, expired or used in between
+admits no longer, and the completion ends as a non-admitted address
+does. Every answer on the way stays the uniform `202` of §2.7.1, so an
+invitation is no oracle for an address's existence. Mail must be
+complete and enabled as for every registration, a rejection block
+(§16.4) still blocks, the `approval` mode (§2.7.5) still applies, and
+the registration counts against the completion limit. An invitation
+without an address admits nobody to register: it is a link for people
+who already have an account, or an instance that registers openly. The
+login and registration pages keep the invitation as `next` (§2.6.5) and
+return to it.
 
-**Events and audit.** `invitation_created`, `invitation_revoked` and
-`invitation_used` go to the project's `members:admin` holders
-(`member:<id>` each), never wake an agent, and carry the invitation's
-id, role and whether it is address-bound — never the address and never
-the token. The ticker (§17) announces a new human member as it
+**Events and audit.** `invitation_created`, `invitation_revoked`,
+`invitation_voided` and `invitation_used` go to the project's human
+`members:admin` holders (`member:<id>` each), never wake an agent, and
+carry the invitation's id, role and whether it is address-bound — never
+the address and never the token. The ticker (§17) announces a new human member as it
 announces every join.
 
-**Limits.** Twenty invitations per project per hour (`rate_limited`),
-and the `GET /invitations/{token}` and accept calls under the join
-exchange's per-source limit. Every refusal of the page or the accept is
-`not_found` or the named `forbidden`/`invalid`, never a hint whether a
-token exists.
+**Limits and secrecy.** Twenty invitations per project per hour
+(`rate_limited`), and the `GET /invitations/{token}` and accept calls
+under the join exchange's per-source limit. An unknown, used, expired
+or revoked token is one uniform `not_found` on the page and on accept,
+so nothing tells a guesser whether a token ever existed; the named
+refusals of accept (`invitation_address_mismatch`, `already_member`,
+`invitation_void`, `project_closed`) are reached only with a valid
+token by a signed-in person, and that they confirm the token is
+deliberate — the holder of a valid link is told why it did not work.
+The token appears in the API path, so the hub masks `/invitations/…`
+in its logs and traces as it masks the join token (§3.3).
 
 ## 4. `GET /help`
 
