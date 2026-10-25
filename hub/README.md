@@ -35,6 +35,15 @@ the projects they share (switch per project), proposed by an admin agent
 or the human's proxy as a personal request reviewed with conflict
 detection, quoted in the resume packet (8 texts, the agent's owner first)
 and given to one agent on its membership by its owner.
+The session list (`docs/api.md` §2.6.5), the instance's sign-in settings
+(§2.6.6), the login's `next`, device codes with number matching (§2.6.2)
+and `GET /auth/methods` are in; the sign-in link follows. Notifications
+(`docs/api.md` §18.1–§18.3): account records, `GET /me/notifications` with
+sealed positions and its long-poll, `POST /me/notifications/read`, and
+watches on cards (§6.4) are in, and so are the notification settings with
+verified addresses, held address changes and the mail link pages (§18.4,
+§18.6), sent through the mail outbox, and the notification mail itself
+(§18.5): immediate, hourly and daily, quiet hours, sign-in alerts.
 
 ## Run it locally with plain Python
 
@@ -157,6 +166,7 @@ All settings come from the environment.
 | `MAITY_MAIL_MAX_PER_HOUR`, `MAITY_MAIL_SECURITY_MAX_PER_HOUR`, `MAITY_MAIL_SIGN_IN_MAX_PER_HOUR` | `500`, `100`, `60` | The three hourly budgets: notification, security and sign-in mail, each counted on its own. |
 | `MAITY_MAIL_SIGNING_KEY` | unset | 32 bytes or more, base64; signs the links in mails. Without it the hub sends no mail. |
 | `MAITY_SMTP_ALLOW_PLAINTEXT` | `0` | **Insecure**, for a test bench only: `1` sends in clear to a server that offers no STARTTLS (still never `AUTH`). Logged as a warning at startup and at every such send. |
+| `MAITY_SIGN_IN_DEVICE_CODE`, `MAITY_SIGN_IN_EMAIL_LINK` | unset | `1` or `0`: switch a sign-in method on or off for good (`docs/api.md` §2.6.6); unset leaves it to the instance admin (default on). The password cannot be switched off. |
 | `MAITY_WEB_DIR` | `web/` beside `hub/` in a checkout; none for an installed package | The static dashboard. When set explicitly it must exist; otherwise a missing directory means the API is served alone. Dotfiles, paths under `/api`, and web/'s `fixtures/` and `tools/` are never served from it. |
 
 The hub logs each request as method, path and status on the

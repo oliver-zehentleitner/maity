@@ -30,6 +30,9 @@ PREFIXES = {
     "placement": "plc",
     "memory": "mem",
     "conversation": "cnv",
+    "human_session": "hss",
+    "device_code": "dvc",
+    "notification_position": "npos",
 }
 
 

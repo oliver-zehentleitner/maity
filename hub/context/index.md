@@ -23,7 +23,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 ## 9
 
 ## A
-- [auth.md](auth.md) — a call's presence and lease side effects commit before the endpoint runs; a runner caller is confined before any route runs; an admin agent's members:admin as two endpoints, not the scope
+- [auth.md](auth.md) — a call's presence and lease side effects commit before the endpoint runs; a runner caller is confined before any route runs; an admin agent's members:admin as two endpoints, not the scope; a session's public id, named browser and system, no address kept once it ends; good standing by password only and `not_implemented` for the mail link until the other methods exist; device-code long-polls read the row, the device cookie holds one value per human
 
 ## B
 
@@ -54,10 +54,11 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 ## L
 
 ## M
-- [mail.md](mail.md) — mail counters from a delivery table, the SMTP conversation on smtplib stage by stage, `tls: none` checked on the resolved pair; the test send counts against no budget, needs `to` until addresses exist, keeps `last_test` unless a connection value really changes
+- [mail.md](mail.md) — mail counters from a delivery table, the SMTP conversation on smtplib stage by stage, `tls: none` checked on the resolved pair; the test send counts against no budget, needs `to` until addresses exist, keeps `last_test` unless a connection value really changes; mail goes through an outbox written in the deciding transaction and sent by a worker thread
 - [memory.md](memory.md) — memory caps count UTF-8 bytes under the project lock; `q` filters in Python; an agent's community entry is a proposal through the shared mechanism, only a `project:admin` human answers it, soul proposals wait for personal requests; `changed_since_cursor` reads the memory events after the cursor; another team's agent gets `not_found` on delete
 
 ## N
+- [notifications.md](notifications.md) — items derived on every read from 30 days of the human's projects with the relations as they are now; positions sealed under a key derived from the instance key, else a stored random key
 
 ## O
 - [outbound.md](outbound.md) — reads whose host comes from data resolve once and connect to the checked address; `routable()` beyond `is_global`; seams instead of a TLS server in tests

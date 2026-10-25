@@ -122,7 +122,61 @@ human_session = Table(
     Column("last_seen_at", UtcDateTime, nullable=False),
     Column("expires_at", UtcDateTime, nullable=False),
     Column("ended_at", UtcDateTime),
-    Column("source", String(64)),
+    Column("source", String(64)),  # the address the session started from
+    # The session list (docs/api.md §2.6.5): a public id that is never the cookie's
+    # value, how it was made, what the browser said about itself at the sign-in, the
+    # address of the latest call, the session that approved a device code, and why it
+    # ended (logout, revoked, end_others, password_change).
+    Column("public_id", String(ID), nullable=False, unique=True),
+    Column("method", String(16), nullable=False),
+    Column("browser", String(64)),
+    Column("os", String(64)),
+    Column("ip", String(64)),
+    Column("approved_by", String(ID)),
+    Column("ended_by", String(16)),
+    **MYSQL_TABLE,
+)
+
+# A device code (docs/api.md §2.6.2): made by one session of a human, redeemed by one
+# new browser (bound by the pending cookie), approved by number matching on the session
+# that made it, completed into one new session. The code and the pending cookie are kept
+# only as `sha256`; `user_agent` is what the new browser claimed, shown in the dialog
+# while the code lives.
+device_code = Table(
+    "device_code",
+    metadata,
+    _id(primary_key=True),
+    _ref("human_id", "human.id", nullable=False, index=True),
+    Column("session_hash", String(HEX_SHA256), nullable=False, index=True),
+    Column("code_hash", String(HEX_SHA256), nullable=False, unique=True),
+    Column("status", String(16), nullable=False),  # waiting redeemed approved used denied
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("expires_at", UtcDateTime, nullable=False),
+    Column("pending_hash", String(HEX_SHA256), unique=True),
+    Column("redeemed_at", UtcDateTime),
+    Column("ip", String(64)),
+    Column("user_agent", String(300)),
+    Column("browser", String(64)),
+    Column("os", String(64)),
+    Column("new_device", Boolean),
+    Column("match_number", Integer),
+    Column("choices", JSON_VALUE),
+    Column("next", String(512)),
+    Column("approved_at", UtcDateTime),
+    Column("session_public_id", String(ID)),  # the session it was completed into
+    **MYSQL_TABLE,
+)
+
+# The device cookie (docs/api.md §2.6.5): one random value per human and browser, kept as
+# `sha256`; it authenticates nothing and only tells the approval dialog whether this
+# browser signed in to the human's account before.
+human_device = Table(
+    "human_device",
+    metadata,
+    Column("value_hash", String(HEX_SHA256), nullable=False),
+    _ref("human_id", "human.id", nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("value_hash", "human_id"),
     **MYSQL_TABLE,
 )
 
@@ -980,5 +1034,144 @@ mail_delivery = Table(
     Column("at", UtcDateTime, nullable=False),
     Index("ix_mail_delivery_at", "at"),
     sqlite_autoincrement=True,
+    **MYSQL_TABLE,
+)
+
+# --- notifications (docs/api.md §18, §6.4) -------------------------------------------
+#
+# Account records: audit records about one human's own account (sign-ins, ended
+# sessions, address changes, personal requests), never events (§18.1). `n` is their own
+# sequence, numbered under a lock on the human's row, so one account never shows a
+# number before every lower one; `read_at`/`read_by` mark the item read. Kept 90 days.
+account_record = Table(
+    "account_record",
+    metadata,
+    Column("n", BIG_ID, primary_key=True, autoincrement=True),
+    _ref("human_id", "human.id", nullable=False),
+    Column("type", String(40), nullable=False),
+    Column("data", JSON_VALUE, nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    Column("read_at", UtcDateTime),
+    Column("read_by", String(ID)),  # the public id of the session that marked it
+    Index("ix_account_record_human", "human_id", "n"),
+    sqlite_autoincrement=True,
+    **MYSQL_TABLE,
+)
+
+# A human's read marks on items from events; a chat's items read through the chat's own
+# mark (`conversation_read`) instead (§18.2).
+notification_read = Table(
+    "notification_read",
+    metadata,
+    _ref("human_id", "human.id", nullable=False),
+    Column("seq", BIG_ID, nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("human_id", "seq"),
+    **MYSQL_TABLE,
+)
+
+# The stored vector behind a position handle, when the inline form would not fit
+# (§18.2): immutable, kept at least 30 days after its last use.
+notification_position = Table(
+    "notification_position",
+    metadata,
+    Column("id", String(ID), primary_key=True),
+    _ref("human_id", "human.id", nullable=False),
+    Column("vector", JSON_VALUE, nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("last_used_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# A human's own watch on a card (§6.4), by membership, so it ends with the membership;
+# never written into an event's audience.
+card_watch = Table(
+    "card_watch",
+    metadata,
+    _ref("card_id", "card.id", nullable=False),
+    _membership_ref("membership_id", nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("card_id", "membership_id"),
+    **MYSQL_TABLE,
+)
+
+# A human's notification settings (docs/api.md §18.4): the browser and mail preferences
+# as one JSON value, beside the address and its verification. `pending_nonce` makes the
+# newest verification link the only valid one; `epoch` moves when the address changes or
+# is removed, which voids every unsubscribe link (§18.6). `address_change` is a change
+# held for approval (§18.4).
+notification_settings = Table(
+    "notification_settings",
+    metadata,
+    _ref("human_id", "human.id", primary_key=True),
+    Column("preferences", JSON_VALUE, nullable=False),
+    Column("address", String(254)),
+    # The verified address trimmed and lower-cased: one account per address (§18.4).
+    Column("address_normalized", String(254), unique=True),
+    Column("address_status", String(16), nullable=False),  # none pending verified disabled
+    Column("verified_at", UtcDateTime),
+    Column("pending_address", String(254)),
+    Column("pending_nonce", String(32)),
+    Column("pending_expires_at", UtcDateTime),
+    Column("epoch", Integer, nullable=False),
+    Column("hard_failures", Integer, nullable=False),
+    Column("disabled_at", UtcDateTime),
+    Column("address_change", JSON_VALUE),
+    Column("updated_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# The per-address lock (docs/api.md §18.4, §2.7.1): verifying an address, changing it and
+# completing a registration lock the address's row here first, so of any number racing
+# for one address exactly one claims it.
+address_lock = Table(
+    "address_lock",
+    metadata,
+    Column("address", String(254), primary_key=True),
+    **MYSQL_TABLE,
+)
+
+# Mail waiting for the sender (docs/api.md §16.2, §18.5): written in the transaction that
+# decides it, sent by the mail worker, counted in `mail_delivery` by its budget kind. The
+# body is the hub's own text; nothing a member wrote is in it unquoted.
+mail_outbox = Table(
+    "mail_outbox",
+    metadata,
+    Column("id", BIG_ID, primary_key=True, autoincrement=True),
+    Column("kind", String(16), nullable=False),  # notification security sign_in
+    _ref("human_id", "human.id"),
+    Column("recipient", String(254), nullable=False),
+    Column("subject", String(255), nullable=False),
+    Column("body", Text, nullable=False),
+    Column("headers", JSON_VALUE, nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("not_before", UtcDateTime, nullable=False),
+    Column("attempts", Integer, nullable=False),
+    Column("status", String(16), nullable=False),  # waiting sent failed dropped
+    Index("ix_mail_outbox_due", "status", "not_before"),
+    sqlite_autoincrement=True,
+    **MYSQL_TABLE,
+)
+
+# What notification mail already carried (docs/api.md §18.5): one row per human and item
+# (`e:<seq>` or `r:<n>`), so an item goes out once, and when each human's last hourly and
+# daily digest left.
+mail_item_sent = Table(
+    "mail_item_sent",
+    metadata,
+    _ref("human_id", "human.id", nullable=False),
+    Column("item", String(40), nullable=False),
+    Column("mailed_at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("human_id", "item"),
+    **MYSQL_TABLE,
+)
+
+notification_mail_state = Table(
+    "notification_mail_state",
+    metadata,
+    _ref("human_id", "human.id", primary_key=True),
+    Column("hourly_at", UtcDateTime),
+    Column("daily_at", UtcDateTime),
+    Column("held_since", UtcDateTime),  # held over the instance budget (§18.5)
     **MYSQL_TABLE,
 )

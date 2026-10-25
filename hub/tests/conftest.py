@@ -92,13 +92,24 @@ def _no_background_ktw_reads(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _no_background_mail(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The app's mail worker would send the outbox behind a test's back; tests drive
+    `outbox.send_due` themselves."""
+    from maity_hub.mail import outbox
+    from maity_hub.notifications import mailer
+
+    monkeypatch.setattr(outbox.Worker, "start", lambda self: None)
+    monkeypatch.setattr(mailer.Worker, "start", lambda self: None)
+
+
+@pytest.fixture(autouse=True)
 def _fresh_process_state() -> Iterator[None]:
     """In-process state (limits, nonces, clock, the forge's repository visibility)
     must not leak between tests."""
     from maity_hub import clock, forge, images, ktw, mentions
     from maity_hub.auth import caller
     from maity_hub.auth.credentials import NonceWindow
-    from maity_hub.routes import auth, joins, mail_settings, runners
+    from maity_hub.routes import auth, device_codes, joins, mail_settings, runners
 
     auth.LOGIN_BY_ADDRESS.reset()
     joins.EXCHANGE_BY_ADDRESS.reset()
@@ -106,6 +117,14 @@ def _fresh_process_state() -> Iterator[None]:
     auth.LOGIN_BY_HANDLE.reset()
     mentions.PINGS.reset()
     mail_settings.test_limiter.reset()
+    for limiter in (
+        device_codes.CODES_BY_HUMAN,
+        device_codes.REDEEM_BY_ADDRESS,
+        device_codes.WRONG_CODES,
+    ):
+        limiter.reset()
+    device_codes._holding.clear()
+    device_codes._breaker["until"] = 0.0
     caller.NONCES = NonceWindow()
     forge._visible.clear()
     images.reset()
