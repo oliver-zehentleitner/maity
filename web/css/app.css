@@ -19,6 +19,9 @@
   --bad: #b42318;
   --flag-bg: #fff6dd;
   --error-bg: #fde8e7;
+  /* A preferences diff (js/preferences.js): lines removed and added. */
+  --diff-del-bg: #fde8e7;
+  --diff-add-bg: #e3f4e8;
   --out-bg: #dbe9ff;
   /* The generated avatar: its hue comes from the member, the lightness from the theme. */
   --avatar-bg: #e6e9ed;
@@ -51,6 +54,8 @@
     --bad: #ff7b72;
     --flag-bg: #2d2610;
     --error-bg: #3a1716;
+    --diff-del-bg: #3a1716;
+    --diff-add-bg: #14301d;
     --out-bg: #1b3050;
     --avatar-bg: #2a3138;
     --avatar-l: 66%;
@@ -74,6 +79,8 @@
   --bad: #ff7b72;
   --flag-bg: #2d2610;
   --error-bg: #3a1716;
+  --diff-del-bg: #3a1716;
+  --diff-add-bg: #14301d;
   --out-bg: #1b3050;
   --avatar-bg: #2a3138;
   --avatar-l: 66%;
@@ -918,3 +925,30 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
 .waiting-item { display: flex; flex-wrap: wrap; gap: .4rem .7rem; padding: .7rem 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
 .waiting-item a { flex: 1 1 18rem; }
 .waiting-item .muted { font-size: .85rem; }
+
+/* Preferences (js/preferences.js): the editor in the account, a proposal's review in the inbox. */
+.preferences-form { display: grid; gap: 6px; max-width: 48rem; }
+.preferences-form textarea, .pref-edit textarea { width: 100%; font-family: var(--mono); }
+.preferences-form .actions, .pref-edit .actions, .preferences-conflict .actions { display: flex; justify-content: flex-end; gap: 8px; }
+.preferences-form .hint.over { color: var(--bad); }
+.preferences-projects { border: 1px solid var(--border); border-radius: var(--radius); margin: 12px 0; max-width: 48rem; }
+.preferences-projects ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.preferences-projects li { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+.preferences-history { margin: 8px 0; max-width: 48rem; }
+.preferences-history summary { cursor: pointer; }
+.preferences-versions { padding-inline-start: 1.2rem; }
+pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-2); border-radius: 6px; padding: 8px; margin: 4px 0 12px; max-height: 20rem; overflow: auto; }
+.pref-review { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; margin: 12px 0; display: grid; gap: 8px; }
+.pref-review .sub { margin: 4px 0 0; }
+.pref-diff { list-style: none; margin: 0; padding: 0; font-family: var(--mono); font-size: 0.9rem; border: 1px solid var(--border); border-radius: 6px; overflow: auto; max-height: 24rem; }
+.pref-diff li { display: grid; grid-template-columns: 1.5em minmax(0, 1fr); white-space: pre-wrap; overflow-wrap: anywhere; padding: 1px 8px 1px 0; }
+.pref-diff .pref-sign { text-align: center; }
+.pref-diff .pref-del { background: var(--diff-del-bg); }
+.pref-diff .pref-del .pref-sign { color: var(--bad); }
+.pref-diff .pref-add { background: var(--diff-add-bg); }
+.pref-diff .pref-add .pref-sign { color: var(--ok); }
+.pref-edit:not([hidden]) { display: grid; gap: 6px; }
+.pref-edit[hidden] { display: none; }
+.pref-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.owner-preferences { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 8px; }
+.owner-preferences .hint { flex-basis: 100%; margin: 0; }
