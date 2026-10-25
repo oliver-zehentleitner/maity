@@ -105,3 +105,36 @@ like the images worker needs no new process for one replica.
   then fails to commit.
 - An in-memory queue: a restart would lose queued security mail, which
   §16.2 says is never dropped.
+
+## An outbox row is claimed before it is sent; the claim lapses after two minutes
+
+**Id:** 92cf47a5-5206-4552-a493-2255cb3a1e48
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the coordinator's agreement on making the mail workers safe for a second process (`maity say`, seq 3405), 2026-10-25; the implementation of tsk-s7rktpfc3ejh
+**Revisit when:** a second hub replica runs for good (then the instance budget needs a reservation across processes), or a mail is found sent twice after a crash mid-send
+**See:** https://github.com/oliver-zehentleitner/maity — 5e42eb26-9883-49e2-89c0-9fe4e6517c62 — as of 2026-10-25
+
+A process takes a row with one conditional UPDATE, from `waiting` (or a
+lapsed `sending`) to `sending`, with `not_before` set to now plus
+`CLAIM_FOR` (two minutes). Only the process whose UPDATE changed the row
+sends it; a process that dies mid-send leaves a claim that lapses, and
+the row is taken again. A retry puts the row back to `waiting`. The
+notification mailer needs no claim of its own: a human's pass holds the
+human's settings row `FOR UPDATE` until it commits, and what it mailed
+is in `mail_item_sent` before a second pass can look.
+
+**Reason:** the chart keeps one pod with Recreate, but an overlap, a
+manual second process or a future replica must not send mail twice. A
+conditional UPDATE is the claim every engine does the same way, and
+reusing `not_before` as the deadline needs no migration. Two minutes
+outlasts the 20-second SMTP conversation by a wide margin.
+
+**Rejected alternatives:**
+- `SELECT … FOR UPDATE SKIP LOCKED`: not on every engine the hub
+  supports in the same form, and the lock would be held across the SMTP
+  conversation.
+- Exactly-once delivery: not possible across a crash between the
+  server's `250` and the commit; the claim makes it at-least-once and
+  one-at-a-time.
