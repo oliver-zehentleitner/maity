@@ -2822,6 +2822,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("sign-in-mail-code").value = "482 913";
   main.querySelector(".sign-in-mail form").dispatch("submit"); await dsSettle();
   expect(!byId("login-handle") && !main.querySelector(".error"), "sign-in link: the code signs this browser in");
+  // A hub whose machine form has no /auth/methods is not asked: the password alone.
+  profileButton().click(); await tick();
+  header.querySelectorAll("button.menu-item").find((b) => b.textContent === "Sign out").click(); await dsSettle();
+  const dsGet = win.Maity.api.get;
+  const dsAsked = [];
+  win.Maity.api.forgetRoutes();
+  win.Maity.api.get = (p) => { dsAsked.push(p); return p === "/openapi.json" ? Promise.resolve({ openapi: "3.1.0", paths: {} }) : dsGet(p); };
+  await go("#/"); await dsSettle();
+  expect(byId("login-handle") && !dsAsked.includes("/auth/methods") && !main.querySelector(".sign-in-code") && !main.querySelector(".sign-in-mail"),
+    "sign-in: a hub without the methods is not asked for them and offers the password alone");
+  win.Maity.api.get = dsGet; win.Maity.api.forgetRoutes();
+  byId("login-handle").value = "maintainer"; byId("login-password").value = "a long new password";
+  main.querySelector("form").dispatch("submit"); await dsSettle();
+  expect(!byId("login-handle"), "sign-in: and the password signs in as before");
   Object.getPrototypeOf(main).focus = dsFocus; document.activeElement = undefined;
 
   // No memberships: the empty state, then creating a project.

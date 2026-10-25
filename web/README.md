@@ -726,9 +726,10 @@ versions**, read when opened. A hub without preferences says so in a muted
 line.
 
 **Signing in without a password** (`docs/api.md` §2.6, `js/device-sign-in.js`,
-`js/qr.js`). The login page reads `GET /auth/methods` and, below the password
-form, offers what the hub has on: **Have a code?** and **Email me a sign-in
-link**; a hub without the route offers the password alone.
+`js/qr.js`). Where the hub's machine form lists `GET /auth/methods`, the login
+page reads it and, below the password form, offers what the hub has on: **Have
+a code?** and **Email me a sign-in link**; a hub without the route is not asked
+and offers the password alone.
 - *Sign in another device* (profile menu, `#/account/sign-in-device`) makes a
   code (`POST /auth/device-codes`) and shows it in two groups (`K7QM-4XPR`), a
   QR of its URL and the time left by the hub's clock, with **Cancel**. Once the

@@ -63,12 +63,17 @@ window.Maity = window.Maity || {};
   // `signedIn` draws the dashboard once a session exists.
   function loginOptions(every, signedIn) {
     const box = h("div", { class: "sign-in-options" });
-    M.api.get("/auth/methods").then((methods) => {
-      const prefilled = codeFromHash();
-      append(box,
-        methods.device_code ? codeEntry(every, signedIn, prefilled) : null,
-        methods.email_link ? mailLink(signedIn) : null);
-    }, () => {}); // a hub without the methods offers the password alone
+    // Asked only of a hub whose machine form lists it; one without the
+    // methods offers the password alone.
+    M.api.hubHas("GET", "/auth/methods")
+      .then((has) => (has ? M.api.get("/auth/methods") : null))
+      .then((methods) => {
+        if (!methods) return;
+        const prefilled = codeFromHash();
+        append(box,
+          methods.device_code ? codeEntry(every, signedIn, prefilled) : null,
+          methods.email_link ? mailLink(signedIn) : null);
+      }, () => {});
     return box;
   }
 

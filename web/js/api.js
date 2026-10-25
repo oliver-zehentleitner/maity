@@ -1316,6 +1316,7 @@ window.Maity = window.Maity || {};
       "/api/v1/projects/{slug}/attachments": { get: {}, post: {} },
       "/api/v1/requests/{request_id}/answer": { post: {} },
       "/api/v1/auth/device-codes": { post: {} },
+      "/api/v1/auth/methods": { get: {} },
       "/api/v1/me/preferences": { get: {}, put: {} },
       "/api/v1/requests/{request_id}/withdraw": { post: {} },
       "/api/v1/projects": { get: {}, post: { requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/ProjectCreate" } } } } } },
