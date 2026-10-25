@@ -221,7 +221,8 @@ _TOKEN = re.compile(r"^[A-Za-z0-9_.:\-]{1,64}$")
 
 
 _HANDLE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
-# Team names only: §8.6 lists global names, never an instance's `…#id`.
+# Team names only: `details.mentions` of an ambiguous_mention lists global names, never
+# an instance's `…#id` (§8.6), although a mention itself may carry one.
 _GLOBAL = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}/[a-z0-9][a-z0-9-]{0,62}$")
 
 
