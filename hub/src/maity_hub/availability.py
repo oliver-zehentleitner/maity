@@ -116,9 +116,11 @@ def in_outage(row: Any, state: str) -> bool:
     return state != "available"
 
 
-def _since(row: Any, found: dict[str, Any], now: datetime) -> datetime:
+def _since(row: Any, found: dict[str, Any], unknown: datetime) -> datetime:
     """When the state was entered: the announced moment once `reconcile` has stored it,
-    until then the best the row says."""
+    until then the best the row says, else `unknown`: the moment of the change for
+    `reconcile`, which records it; the member's joining for a read, so that two reads
+    of a state never stored answer the same `since`."""
     if row.availability_state == found["state"] and row.availability_since is not None:
         since: datetime = row.availability_since
         return since
@@ -129,7 +131,7 @@ def _since(row: Any, found: dict[str, Any], now: datetime) -> datetime:
         limit_since: datetime | None = row.limit_since if row.agent_id else None
         if limit_since is not None:
             return limit_since
-    return now
+    return unknown
 
 
 def view(
@@ -141,7 +143,7 @@ def view(
     found = computed(row, presence, human, project, now)
     shown: dict[str, Any] = {
         "state": found["state"],
-        "since": clock.rfc3339(_since(row, found, now)),
+        "since": clock.rfc3339(_since(row, found, min(row.joined_at, now))),
     }
     if found["state"] != "limited":
         return shown

@@ -660,3 +660,19 @@ def test_seat_resets_name_the_humans_who_decide(
     owner.delete(f"/projects/maity/members/{cover.id}")
     reset = [e for e in events(migrated, "member_updated") if e.payload.get("changed")][-1]
     assert reset.audience == ["all", f"member:{owner.id}"]
+
+
+def test_a_state_never_stored_reads_the_same_since_on_every_read(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    """An agent that never resumed has no announced state; its `since` is its joining,
+    never the time of the read, so two reads (and a repeated removal) agree."""
+    agent = flow.agent(make_client, owner)
+    with migrated.connect() as conn:
+        joined = conn.execute(
+            select(t.membership.c.joined_at).where(t.membership.c.agent_id == agent.id)
+        ).scalar_one()
+    first = member(owner, agent.id)["availability"]
+    now[0] += timedelta(minutes=1)
+    second = member(owner, agent.id)["availability"]
+    assert first == second == {"state": "offline", "since": z(joined)}
