@@ -8,7 +8,7 @@ holds a request whose address is not yet proven, for at most 24 hours;
 is a row per address that serialises changes to its pending registrations.
 
 Revision ID: 0047
-Revises: 0031
+Revises: 0025
 Create Date: 2026-10-25
 """
 
@@ -20,7 +20,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql
 
 revision: str = "0047"
-down_revision: str | None = "0031"
+down_revision: str | None = "0025"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
