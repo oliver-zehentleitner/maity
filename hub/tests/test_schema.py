@@ -55,7 +55,7 @@ def _project(conn: Connection) -> str:
             name="Maity",
             state="build",
             state_changed_at=NOW,
-            keep_the_why=True,
+            memory_provider="keep-the-why",
             policy_preset="hierarchical",
             claim_policy="self-claim",
             done_authority="reviewer",

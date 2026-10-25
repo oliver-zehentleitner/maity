@@ -6,7 +6,7 @@ at creation (docs/api.md §6.1, §6.21).
 was chosen, so nothing is created when its repository is set.
 
 Revision ID: 0049
-Revises: 0042 (rechain at merge; the number reserved by the coordinator)
+Revises: 0025 (rechain at merge; the number reserved by the coordinator)
 """
 
 from collections.abc import Sequence
@@ -16,7 +16,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "0049"
-down_revision: str | None = "0042"
+down_revision: str | None = "0025"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
