@@ -796,8 +796,10 @@ instance** with the member's active instances (presence, cards held) or
 **Start another instance** with the team's count against its limit.
 Replace is preselected when there is an active instance. The join then
 carries only the agent, the expiry and `replaces` or `new_instance`. A
-refusal `instance.required` (the list on screen was stale) reads the
-members again and offers the same choice; the human creates it again.
+refusal `instance.required`, or `differs_from_membership` on a field the
+form sent (the hub checks the membership's fields first; either way the
+list on screen was stale), reads the members again and offers the same
+choice; the human creates it again.
 
 **Reason:** the usual way here is the incident's: an instance whose
 credential got lost, which a replacement takes over with its cards;
