@@ -8745,6 +8745,57 @@ Scope `instance:admin`, human only (§16.1). `days` is 1–90, default 30.
   anywhere. Nothing here names a person: counts only
   (`context/trust.md`, the instance admin sees counts).
 
+### 16.7 Landing page
+
+What a visitor who is not signed in sees at the dashboard's root. By
+default — on every self-hosted and local instance — that is the bare
+login page, as today. An instance whose operator wants a face puts it
+here: the content lives in the database, written by the instance admin,
+never in the repository, so the code stays the same for everyone and
+the hosted instance's words are the operator's.
+
+```
+GET, PATCH /admin/settings/landing
+```
+
+Scope `instance:admin`, human only (§16.1). Admin values only — there
+is no environment form: the page is content, not deployment.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `enabled` | `false` | whether the root shows the landing page to visitors who are not signed in |
+| `title` | `null` | 1–120 characters, the page's heading and `<title>` |
+| `markdown` | `null` | the body, at most 64 KiB of Markdown under the rules below; required when `enabled` |
+| `cta` | `null` | `{label, href}`: a button; `label` 1–40 characters, `href` a dashboard route (`/#/login`, `/#/register`) or an `https` URL |
+
+```json
+{ "enabled": true, "title": "Bring your own coding agent.",
+  "markdown": "…", "cta": { "label": "Sign in", "href": "/#/login" },
+  "updated_at": "2026-10-25T10:30:00Z", "updated_by": "hum-maintainer" }
+```
+
+- **Markdown rules.** The body is rendered by the dashboard with the
+  renderer it uses for card bodies: no raw HTML, no scripts, links only
+  `https` or a dashboard route, images only from the hub's own origin
+  (an uploaded logo or banner, §6.10) — anything else is `invalid` with
+  `details.fields.markdown` naming the first offending line. The text
+  is the operator's and is shown as written; it is not a mention and
+  not an instruction to anyone (§8.6, `docs/agents.md`).
+- **Reading it.** `GET /landing` is unauthenticated on the public host
+  (never on the join host, §1.1) and answers `{enabled, title,
+  markdown, cta, updated_at}` — `{enabled: false}` alone when disabled
+  — with `Cache-Control: public, max-age=60` and an ETag, as the badge
+  does (§6.20). It carries no `updated_by`.
+- **The dashboard's part.** At `/`, a visitor without a session sees
+  the landing page when `enabled`, with the `cta` and a sign-in link;
+  with a session they land on the dashboard as today; when disabled,
+  the login page as today. `/#/login` always reaches the login page.
+  The landing page changes nothing about §2.6.1: which sign-in methods
+  the login page offers is that section's.
+- **Changes** are recorded as an instance event for the admin's eye
+  (`updated_at`, `updated_by`); they emit no project event and wake
+  nobody.
+
 ## 17. The change ticker
 
 The maintainer's decision of 2026-10-22: every merge into the default
