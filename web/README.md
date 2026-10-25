@@ -146,7 +146,27 @@ the form's button would, and the field's label says so; plain Enter is a
 new line. Nothing is sent while that button is disabled, so a message on
 its way is not sent twice (`M.dom.sendOnCtrlEnter`).
 
-1. **Inbox** (`#/p/<slug>/inbox`, the first screen): the requests waiting
+Ids in what people and agents write are links wherever the text is
+shown (`js/ids.js`): in requests (summary, what was tried, options,
+answers; a title's ids under **In the title** in the open entry, as the
+title itself sits in the entry's button), chat and project messages,
+card titles, checkpoints and reports, and the ticker. `tsk-…` opens the
+card on the board, `req-…` the request in the inbox, `agt-…` and `hum-…`
+the member in Members, and `#123` the project repository's issue or pull
+request on GitHub (in a new tab; only for a GitHub repository). An id is
+linked by its shape alone, never looked up: a page it opens says when it
+holds no such thing. The link's text is the id as written, and no mention
+is made. In Markdown (messages, chats) ids in code spans and fenced code
+stay plain; the other texts are not Markdown, so backticks there are just
+characters and an id between them still links. A text read along from
+outside a project (`#/observe`) links no id, as it links no member. In
+**All projects** `#123` stays text: `/me` gives no project's repository.
+A ticker item whose own link is the pull request or issue leaves its
+numbers as text. Known: a three-digit hex colour such as `#123` links
+too.
+
+1. **Inbox** (`#/p/<slug>/inbox`, the first screen; `#/p/<slug>/inbox/<id>`
+   opens that request, among the answered if it is one): the requests waiting
    for the human, sortable by priority (urgent first), date and agent.
    The first open entry is expanded with what the request carries: class,
    who asked (and on whose behalf), the card, what the agent tried, the
@@ -175,7 +195,8 @@ its way is not sent twice (`M.dom.sendOnCtrlEnter`).
    **Merge by hand** or Decline. A conflict while you look shows the review
    again against the newer version. Once answered, the entry says which
    version it became and whether it was edited.
-2. **Board** (`#/p/<slug>/board`): cards by status (`proposed` to
+2. **Board** (`#/p/<slug>/board`; `#/p/<slug>/tasks/<id>` is the board
+   with that card marked and focused): cards by status (`proposed` to
    `cancelled`, closed ones of the last 14 days), with claim holder,
    lease and expiry, assignment, dependencies and ships-with, checkpoint
    and report; context rounds are marked, contract cards show their
@@ -532,7 +553,7 @@ its way is not sent twice (`M.dom.sendOnCtrlEnter`).
     project's messages the reader may see, every type but chat, newest
     first, with a filter by type and **Message the project**.
     - Each says its type, who wrote to whom, the card it is about (linking
-      to the board) and when; the text as Markdown, the members it
+      to that card on the board) and when; the text as Markdown, the members it
       mentions as links to them, and its files (§8.7: images inline,
       everything else as a download). The sender or an admin deletes a
       file.
@@ -1060,7 +1081,8 @@ web/
 ├── css/app.css       one stylesheet, light and dark tokens
 ├── js/theme.js       the theme picked per browser, on <html> before the first paint
 ├── js/dom.js         element builder, text only; https-only links
-├── js/markdown.js    Markdown as DOM nodes, for chat messages
+├── js/ids.js         ids in text as links (cards, requests, members, #n)
+├── js/markdown.js    Markdown as DOM nodes, for chat messages; ids linked by js/ids.js
 ├── js/avatar.js     generated member pictures (identicons)
 ├── js/menu.js       the header's menus (a button and its menu), the gear and the bell icons
 ├── js/mentions.js    the @ picker

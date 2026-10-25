@@ -779,6 +779,7 @@ def scenario(run: Run, page: Page) -> None:
     assert [r.get("answer", {}).get("reply_id") for r in got] == ["go"], got
     no_problems(run, "all projects")
 
+    id_links_step(run, page, alpha, task["id"])
     chat_pause_state(run, page, alpha, agent_id)
     group_chat_form_step(run, page)
     direct_removal_step(run, page, agent_id)
@@ -851,6 +852,37 @@ def scenario(run: Run, page: Page) -> None:
     join_expiry_step(run, page)
     change_password(run, page)
     picture_step(run, page)
+
+
+def id_links_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
+    """A card id in a request's text is a link to that card on the board."""
+    run.step("an id in a request's text links to the card")
+    out = run.maity(
+        alpha, "ask", f"Which order after {card_id}?\nIt follows {card_id}.", "--to", "human",
+        "--class", "info",
+    )
+    request_id = re.search(r"req-[0-9a-z]+", out).group(0)
+    page.goto(f"{run.base}/#/p/e2e-alpha/inbox/{request_id}")
+    entry = page.locator("li.entry.current")
+    expect(entry).to_contain_text(f"Which order after {card_id}?")
+    link = entry.locator(".summary a.id-ref")
+    expect(link).to_have_text(card_id)
+    expect(link).to_have_attribute("href", f"#/p/e2e-alpha/tasks/{card_id}")
+    expect(entry.locator(".title-refs a.id-ref")).to_have_text(card_id)
+    run.a11y(page, "inbox, an id in the text as a link")
+    link.click()
+    expect(page).to_have_url(re.compile(rf"#/p/e2e-alpha/tasks/{card_id}$"))
+    expect(page.locator(f'article.card.wanted[data-card="{card_id}"]')).to_be_visible()
+    expect(
+        page.locator("nav.views").get_by_role("link", name="Board", exact=True)
+    ).to_have_attribute("aria-current", "page")
+    run.shot(page, "card-from-id-link")
+    page.goto(f"{run.base}/#/p/e2e-alpha/inbox/{request_id}")
+    current = page.locator("li.entry.current")
+    current.locator("textarea").fill("After the release.")
+    current.get_by_role("button", name="Send", exact=True).click()
+    expect(page.get_by_text("Nothing waits for you.")).to_be_visible()
+    no_problems(run, "id links")
 
 
 def hub_serves(run: Run, page: Page, method: str, path: str) -> bool:

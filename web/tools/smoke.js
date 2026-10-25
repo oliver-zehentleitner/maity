@@ -1498,6 +1498,77 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(mdPre.getAttribute("role") === "region" && /^Code \(js\), block \d+$/.test(mdPre.getAttribute("aria-label"))
     && btn(mdBlock, "Copied").getAttribute("aria-label") === "Copy " + mdPre.getAttribute("aria-label")
     && mdBlock.querySelector(".md-code-bar .md-lang"), "markdown: a code block is a named region, its Copy names it, the bar sits above the code");
+
+  // Ids in text become links (js/ids.js, tsk-dcj6qwjxc9cq): by shape only, the id as the link's text.
+  const IDS = win.Maity.ids;
+  const idAt = { slug: "maity", repository: "https://github.com/oliver-zehentleitner/maity" };
+  const idBox = (nodes) => { const box = document.createElement("div"); win.Maity.dom.append(box, nodes); return box; };
+  const idHrefs = (box) => box.querySelectorAll("a.id-ref").map((a) => text(a) + "=" + a.getAttribute("href")).join(" ");
+  const idAll = idBox(IDS.link("See tsk-0123456789ab, req-abcdefghjkmn; ask agt-mbf0gthrsash or hum-mebxvnc20qeg about #340.", idAt));
+  expect(idHrefs(idAll) === "tsk-0123456789ab=#/p/maity/tasks/tsk-0123456789ab req-abcdefghjkmn=#/p/maity/inbox/req-abcdefghjkmn "
+    + "agt-mbf0gthrsash=#/p/maity/members/agt-mbf0gthrsash hum-mebxvnc20qeg=#/p/maity/members/hum-mebxvnc20qeg #340=https://github.com/oliver-zehentleitner/maity/issues/340"
+    && text(idAll) === "See tsk-0123456789ab, req-abcdefghjkmn; ask agt-mbf0gthrsash or hum-mebxvnc20qeg about #340.",
+    "ids: card, request, agent, human and #n become links, the text unchanged " + idHrefs(idAll));
+  const idForge = idAll.querySelectorAll("a.id-ref").find((a) => text(a) === "#340");
+  expect(idForge.getAttribute("target") === "_blank" && idForge.getAttribute("rel") === "noopener noreferrer"
+    && !idAll.querySelectorAll("a.id-ref").find((a) => text(a) === "tsk-0123456789ab").getAttribute("target"),
+    "ids: a forge number opens the forge in a new tab, an id stays in the dashboard");
+  const idNone = idBox(IDS.link("tsk-0001 tsk-0123456789abc xtsk-0123456789ab tsk-0123456789ab_x tsk-0123456789aI prj-0123456789ab "
+    + "https://x.example/tsk-0123456789ab page#12 #0 #12345678 a.tsk-0123456789ab", idAt));
+  expect(!idNone.querySelector("a"), "ids: not well-formed, part of a word, a URL or a path, or another prefix: plain text");
+  expect(!idBox(IDS.link("tsk-0123456789ab #12", { slug: null, repository: null })).querySelector("a")
+    && idHrefs(idBox(IDS.link("tsk-0123456789ab #12", { slug: "maity", repository: "https://gitlab.com/o/r" }))) === "tsk-0123456789ab=#/p/maity/tasks/tsk-0123456789ab"
+    && idHrefs(idBox(IDS.link("tsk-0123456789ab #12", { slug: null, repository: "https://github.com/o/r.git" }))) === "#12=https://github.com/o/r/issues/12",
+    "ids: without a project no id links, without a GitHub repository no number does");
+  const mdIds = idBox(win.Maity.markdown("Do tsk-0123456789ab **after #12**, not `tsk-0123456789ab`; [tsk-0123456789ab](https://example.org/x)\n\n```\nreq-abcdefghjkmn\n```", idAt));
+  expect(idHrefs(mdIds) === "tsk-0123456789ab=#/p/maity/tasks/tsk-0123456789ab #12=https://github.com/oliver-zehentleitner/maity/issues/12"
+    && mdIds.querySelector("strong a.id-ref") && mdIds.querySelector("code").textContent === "tsk-0123456789ab" && !mdIds.querySelector("pre a"),
+    "ids: in Markdown linked in text and emphasis, plain in code spans, fenced code and a link's own text " + idHrefs(mdIds));
+  expect(!MD("tsk-0123456789ab").querySelector("a"), "ids: Markdown without the text's project links no id");
+  const idOut = IDS.where({ slug: "maity", outsider: true, project: { repository: { url: "https://github.com/o/r" } } });
+  expect(idOut.slug === null && idOut.repository === null && !idBox(win.Maity.markdown("See tsk-0123456789ab and #4", idOut)).querySelector("a.id-ref"),
+    "ids: read along from outside a project, nothing links");
+  expect(IDS.forgeBase("https://github.com/o/r/tree/main") === "https://github.com/o/r" && IDS.forgeBase("https://GitHub.com/o/r") === "https://github.com/o/r"
+    && IDS.forgeBase("https://github.com/o/r.git") === "https://github.com/o/r" && IDS.forgeBase("https://gitlab.com/o/r") === null && IDS.forgeBase("https://github.com/o") === null,
+    "ids: the repository read as the hub reads it — any case of github.com, owner and name the first two segments");
+  const wmIds = idBox(win.Maity.dom.withMentions("@agent-b see tsk-0123456789ab", [{ field: "body", offset: 0, length: 8, handle: "agent-b", member_id: "agt-b" }],
+    "body", (id) => "#/m/" + id, idAt));
+  expect(wmIds.querySelector("a.mention").getAttribute("href") === "#/m/agt-b" && idHrefs(wmIds) === "tsk-0123456789ab=#/p/maity/tasks/tsk-0123456789ab",
+    "ids: between mentions the text's ids are links, the mention stays the hub's");
+  // An id's pages: #/p/<slug>/tasks/<id> is the board with the card marked and focused, its tab the
+  // board's; #/p/<slug>/inbox/<id> opens the request. An id neither holds is said.
+  const idProto = Object.getPrototypeOf(main);
+  const idFocus = idProto.focus;
+  idProto.focus = function () { document.activeElement = this; };
+  await go("#/p/maity/tasks/tsk-0004"); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  const idCard = main.querySelectorAll("article.card").find((a) => a.attrs["data-card"] === "tsk-0004");
+  const boardTab = () => header.querySelectorAll("nav.views a").find((a) => a.textContent.startsWith("Board"));
+  expect(idCard && idCard.classList.contains("wanted") && main.querySelectorAll("article.card.wanted").length === 1 && document.activeElement === idCard
+    && boardTab().getAttribute("aria-current") === "page" && main.querySelector("section.view-board"),
+    "ids: a card's link opens the board with that card marked and focused, the Board tab current");
+  await go("#/p/maity/tasks/tsk-zzzzzzzzzzzz"); for (let k = 0; k < 4; k++) await tick();
+  expect(!main.querySelector("article.card.wanted") && text(main.querySelector(".wanted-note")).startsWith("No card tsk-zzzzzzzzzzzz on the board"),
+    "ids: a card the board does not hold is said");
+  const idShown = () => (byId("inbox-show").querySelectorAll("option").find((o) => "selected" in o.attrs || o.selected) || { attrs: {} }).attrs.value;
+  await go("#/p/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+  const idShowBefore = idShown();
+  byId("inbox-show").value = "open"; byId("inbox-show").dispatch("change"); await tick();
+  await go("#/p/maity/inbox/req-0009"); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  const idEntry = main.querySelector("li.entry.current");
+  expect(idEntry && idEntry.attrs["data-request"] === "req-0009" && idEntry.classList.contains("done") && document.activeElement === idEntry.querySelector("button.entry-head"),
+    "ids: a request's link opens it, an answered one among the answered, its head focused");
+  await go("#/p/maity/inbox/req-0011"); for (let k = 0; k < 4; k++) await tick();
+  const idTitle = main.querySelector("li.entry.current .title-refs");
+  expect(idTitle && idHrefs(idTitle) === "#2=https://github.com/oliver-zehentleitner/maity/issues/2" && !main.querySelector("li.entry.current button.entry-head a"),
+    "ids: the ids of a request's title are links in its body, never inside its button");
+  await go("#/p/maity/inbox/req-zzzzzzzzzzzz"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main.querySelector(".wanted-note")) === "No request req-zzzzzzzzzzzz in this project's inbox.", "ids: a request the inbox does not hold is said");
+  await go("#/p/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+  expect(idShown() === "open" && !main.querySelectorAll("li.entry").some((li) => li.attrs["data-request"] === "req-0009"),
+    "ids: after a deep link to an answered request the inbox's own choice (open) stands");
+  if (idShowBefore === "all") { byId("inbox-show").value = "all"; byId("inbox-show").dispatch("change"); await tick(); }
+  idProto.focus = idFocus; document.activeElement = undefined;
+  await go("#/p/maity/inbox");
   // A deep quote stops nesting instead of overflowing the stack.
   const mdDeep = MD(">".repeat(5000) + " deep");
   let quoteDepth = 0;
@@ -2979,7 +3050,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // While the view reads /events a removed message is never shown: a removed chat message looks the same there (§8.5, §8.8).
   expect(!pmSeq(6003) && !pmSeq(6012) && !text(main).includes("a token"), "messages: no removed message, a chat's or a project's");
   const pmHand = pmSeq(6005);
-  expect(text(pmHand).includes("Handover") && text(pmHand).includes("Agent B to Maintainer") && pmHand.querySelectorAll("a").find((a) => !a.classList.contains("member-ref")).getAttribute("href") === "#/p/maity/board"
+  expect(text(pmHand).includes("Handover") && text(pmHand).includes("Agent B to Maintainer") && pmHand.querySelectorAll("a").find((a) => !a.classList.contains("member-ref")).getAttribute("href") === "#/p/maity/tasks/tsk-0004"
     && pmHand.querySelector("li.attach-item") && text(pmHand.querySelector(".attach-meta")).includes("exchange.log · 4.1 KB · text/plain") && btn(pmHand, "Delete"),
     "messages: type, sender, addressee, card and its file; an admin deletes the file");
   expect(pmSeq(6001).querySelector(".pmsg-mentions a").getAttribute("href") === "#/p/maity/members/hum-maintainer", "messages: the members it mentions, as links");
@@ -3038,7 +3109,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(tkTab && tkTab.getAttribute("aria-current") === "page" && tkSeqs() === "4330,4310",
     "ticker: a tab; For me lists the items with a reason for the viewer, newest first");
   expect(text(tkSeq(4310)).includes("For you: you own the whole repository, you follow web/.") && text(tkSeq(4310)).includes("Contract change")
-    && tkSeq(4310).querySelector("a").getAttribute("href") === "https://github.com/oliver-zehentleitner/maity/pull/214",
+    && tkSeq(4310).querySelectorAll("a").find((a) => !a.classList.contains("id-ref")).getAttribute("href") === "https://github.com/oliver-zehentleitner/maity/pull/214"
+    && !tkSeq(4310).querySelector("a.id-ref") && tkSeq(4310).querySelectorAll("a").length === 1,
     "ticker: why in words, a contract change marked, its link");
   expect(text(tkSeq(4330)).includes("(muted: it woke no one here)"), "ticker: a muted one says so");
   btn(main.querySelector(".ticker-tabs"), "Everything").click(); for (let k = 0; k < 4; k++) await tick();
