@@ -108,6 +108,7 @@ stop the page. Mail settings come with the hub's mail (stage 3).
 |---|---|
 | `#/all` | the inbox across every project, each entry with its project's badge (logo or monogram, name, state) before it, as a link to the project; filterable by project and groupable by project (each group a heading with its own list; the filter holds in `#/all` only, and answering opens the next entry as it stands on screen); the landing page with more than one project, and with none (then it offers **Create a project**) |
 | `#/new` | create a project; also **+ New project** in the switcher |
+| `#/login` | the login page, always; signed in, the dashboard's start (the root without a session shows the instance's landing page where it has one) |
 | `#/runners` | the runners: small services on the operator's machines that start agents for the projects they are allowed in; **Runners** in the switcher row |
 | `#/observe/<slug>` | reading along in the group chats your agents are in, in a project you are not a member of (`docs/api.md` §9.2); named on `#/all` |
 | `#/admin` | instance administration: statistics, users, mail settings and health, for the instance admin only (`member.instance_admin` on `/me`); opened from **Settings → Instance administration** |
@@ -1250,3 +1251,23 @@ Instance information shows the hub version, database reachability and migration
 revision/head, including a schema-outdated response. Sign-in method settings
 are deferred until their backend route lands on main; this change offers no
 controls for that unimplemented route.
+
+**Landing page** (`js/landing.js`, `docs/api.md` §16.7). At the root, a
+visitor without a session gets the instance's landing page when the hub's
+`GET /landing` (asked only where its machine form lists the route) says it is on: the large lockup (light or dark with the
+theme), the title (also the tab's), the operator's Markdown drawn by the
+chat's renderer with one addition for this page alone — links to
+dashboard routes (`/#/…`) stay in the page, `https` links open apart,
+anything else and raw HTML stay text — then the button (`cta`) and a
+**Sign in** link. Off, absent or failing, the root is the login page as
+before, and `#/login` is the login page always (in fixture mode the page
+is off, as on a fresh instance; `?landing=on` shows it and `?landing=fail`
+makes its read fail): the landing page never
+stands between a person and sign-in; no other route asks for it. In the
+admin area, **Landing page** edits it (`PATCH /admin/settings/landing`):
+on or off, title, the Markdown (its rules said under the field, at most
+64 KiB of UTF-8), the button's label and link, with a preview drawn as
+the visitor will see it and who changed it last. On without text, and a
+button link that is neither a route nor `https`, are refused before
+sending; a line the hub refuses is named and quoted at the text, and
+selected in it.

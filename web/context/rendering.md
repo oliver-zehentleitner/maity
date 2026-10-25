@@ -271,3 +271,30 @@ the card asks for the id as the text, and the reads would multiply with
 the text. Linking any `prefix-something`: fixture-like and typed ids
 such as tsk-1 would become dead links. Moving the title out of the
 button: it is the entry's name for the keyboard and for the list.
+
+## The landing page asks only at the root, falls back to sign-in silently, and is the one surface where Markdown links to routes
+
+**Id:** b70e4ab6-5c55-47ba-96d7-d1b941157f63
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §16.7 (the landing page can never stand between a person and sign-in; the card-body renderer extended by the dashboard-route link alone; title and cta label as text), the card tsk-gqcq7kwkxpgx; the dashboard's implementation, 2026-10-25; the designer was not asked yet
+**Revisit when:** the hub serves images to visitors, or the designer reworks the page
+
+Only the root without a session asks `GET /landing`; every other route
+without a session, and `#/login` always, is the login page. An answer
+that is off, absent or a failure shows the login page and no error. The
+Markdown goes through the chat's renderer, in which a module flag set by
+`M.markdown.withRoutes` lets `[text](/#/…)` become an in-page link for
+this one call; the chat itself still shows such a link as written.
+
+**Reason:** a visitor who came to sign in must never meet an error or a
+wait on a page that is content; asking only at the root keeps every
+deep link exactly as fast as before. A route link written into a chat
+message would point a reader at a page of the dashboard in someone
+else's words, which the chat has never allowed; the operator's page is
+the one place the contract allows it.
+
+**Rejected alternative:** a separate renderer for the landing page: two
+renderers would drift from the list the hub validates. Showing an error
+on a failed landing read: it would stand between the person and sign-in.
