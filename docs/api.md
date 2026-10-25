@@ -2458,7 +2458,7 @@ choice are §6.21.
 |---|---|---|
 | `memory.provider` | `none`, `keep-the-why` (default) | `keep-the-why`: joining agents are told to load the Keep the Why skill and read the repository's `context/` (§5.2 `keep_the_why`), the rules text carries the Keep the Why line (§6.9), and the project may use `ktw_ref` on cards and `steward_writes`; `none`: nothing of that, the project works completely without a memory provider. Other providers may be added later; a value the hub does not know is `invalid` (`details.fields["memory.provider"]: "unknown_provider"`) |
 | `keep_the_why` | boolean, read and written | the alias of `memory.provider`: `true` iff the provider is `keep-the-why`. In a `POST` or `PATCH` body it is accepted as before and means `{"provider": "keep-the-why"}` or `{"provider": "none"}`; a body that carries both with values that disagree is `invalid` (`details.fields.keep_the_why: "conflicts_with_memory"`). Every project view keeps the field, so no client breaks |
-| `setup` | `{keep_the_why_init, keep_the_why_badge, maity_badge, cards}` or `null` | the setup options chosen at creation, each a boolean, and `cards`: the ids of the setup cards the hub created for them (§6.21), `null` while the project has no repository yet. `null` for a project that predates the field (nothing was chosen, nothing is created when its repository is set). Set on `POST /projects` only |
+| `setup` | `{keep_the_why_init, keep_the_why_badge, maity_badge, cards}` or `null` | the setup options chosen at creation, each a boolean, and `cards`: the ids of the setup cards the hub created for them (§6.21). Three shapes: a new project without a repository reads `{"keep_the_why_init": true, "keep_the_why_badge": true, "maity_badge": false, "cards": null}` (chosen, nothing created yet); once the cards exist, `cards` lists their ids, `[]` when every option was `false` (processed, nothing to create); a project that predates the field reads `setup: null` (nothing was chosen, nothing is created when its repository is set). Set on `POST /projects` only |
 
 A change of `memory.provider` by `PATCH` bumps `rules_version` and emits
 `rules_changed` (§6.9, §8.2), as a change of `keep_the_why` did; it
@@ -2613,7 +2613,7 @@ upload is `project_closed`, deleting one is not.
 | `coordinator_substitute` | agent member id holding `admin`, or `null` (default) | stands in for the coordinator role alone while the coordinator is out (§6.12); it takes over no cards |
 | `jour_fixe` | `null` (default) or `{enabled, recurrence, time, timezone, moderator, answer_window_minutes, step_window_minutes, report_window_hours}` | the jour fixe series (§20.1); replaced as a whole when named; a later preset change keeps it |
 | `jour_fixe_moderators` | `null` (default: by time online) or an ordered list of agent member ids holding `admin` | the moderator order for `moderator: admin_agent` (§20.2); written by a human with `project:admin` and, through `PUT …/jour-fixe/moderators` only, by any agent with the role `admin`; a later preset change keeps it |
-| `badge` | `off` (default), `members`, `agents_online` | whether `GET /badge/{slug}.svg` serves the project's badge, and which count it shows (§6.20); `off` answers `not_found`. Every preset fills `off` at creation, a project that predates the field reads as `off`, and a later preset change keeps it, as `signing`. Set by a human with `project:admin` |
+| `badge` | `off` (default), `members`, `agents_online` | whether `GET /badge/{slug}.svg` serves the project's badge, and which count it shows (§6.20); `off` answers `not_found`. Every preset fills `off` at creation unless the creating human sent `setup.maity_badge: true` (§6.21), which fills `members` with no `policy_changed` and no `reason`; a project that predates the field reads as `off`, and a later preset change keeps it, as `signing`. Set by a human with `project:admin` |
 
 `hierarchical` = self-claim, reviewer done authority, admin arbiter,
 human tag, cards only. `solo` = self-claim, holder done authority, owner
@@ -4813,8 +4813,11 @@ set like every other policy field: `PATCH /projects/{slug}` with
 `policy` by a human with `project:admin` (§2.3 ʰ), with a `reason`;
 the change emits `policy_changed` with `old`, `new` and `reason` to
 everyone and bumps `rules_version`. Every preset fills `off` at
-creation, a project that predates the field reads as `off`, and a later
-preset change keeps the value, as it keeps `signing`.
+creation — the one exception is a creating human who sent
+`setup.maity_badge: true` (§6.21): that fills `members` at creation
+itself, with no `policy_changed` and no `reason`, since the creation is
+the human's choice — a project that predates the field reads as `off`,
+and a later preset change keeps the value, as it keeps `signing`.
 
 **When nothing is served.** While `badge` is `off`, for a slug the hub
 does not know, and for a project that is closed (`accepted` or
@@ -4885,9 +4888,12 @@ coordination data only — and reimplements no provider: with
 the published export (§11.3), nothing more. Other providers may come
 later; the export semantics of §11 are unchanged by this section.
 
-**The options.** `setup` on `POST /projects` holds three booleans, each
-`true` unless the creator unticks it; an absent `setup`, or an absent
-key in it, is `true`. Anything but a boolean is `invalid`
+**The options.** `setup` on `POST /projects` holds three booleans. The
+two Keep the Why options are `true` unless the creator unticks them: an
+absent `setup`, or an absent key, means `true` for them. `maity_badge`
+is `false` when absent: a bare API call never makes a project's counts
+public (§6.20); the dashboard pre-ticks all three, so a human's form
+sends `maity_badge: true` explicitly. Anything but a boolean is `invalid`
 (`details.fields["setup.<key>"]: "not_a_boolean"`), an unknown key
 `invalid` (`unknown_field`). `setup` is read back with the project
 (§6.1) and is not accepted on `PATCH` (`invalid`, `read_only`).
@@ -4896,7 +4902,7 @@ key in it, is `true`. Anything but a boolean is `invalid`
 |---|---|---|
 | `keep_the_why_init` | with `memory.provider: keep-the-why` only; under `none` it is taken as `false` whatever was sent | if the repository has no root `.keep-the-why`, set Keep the Why up with its default settings (the skill's project init; `context/`, `.keep-the-why`, the `AGENTS.md` pointer); if it already has one, nothing to change — the card is reported with `code: false` (§6.6) saying so |
 | `keep_the_why_badge` | with `memory.provider: keep-the-why` only; `false` under `none` | add the Keep the Why badge to the repository's `README.md` |
-| `maity_badge` | with every provider | add the Maity badge snippet of §6.20 to the repository's `README.md`. Ticking it also sets the project's `policy.badge` to `members` at creation — the hub's own setting, filled with the policy preset as `off` would be, no `policy_changed`, no `reason` — so the badge serves from the moment the snippet lands |
+| `maity_badge` | with every provider | add the Maity badge snippet of §6.20 to the repository's `README.md`. Sending it as `true` also sets the project's `policy.badge` to `members` at creation itself (also without a repository): the creating human's choice, written with the policy preset as `off` would be, no `policy_changed`, no `reason`; the badge serves from that moment, the card only puts the snippet into the README |
 
 **The cards.** For every option that is `true` the hub creates one card
 (§6.4) when the project is created, or — when the project is created
@@ -4908,7 +4914,7 @@ setup card, and `setup.cards` stays `null`). Each card:
 |---|---|
 | `kind` | `setup` |
 | `title` | verbatim, so that the web and the hub agree: `Set up Keep the Why in the repository` (`keep_the_why_init`); `Add the Keep the Why badge to the README` (`keep_the_why_badge`); `Add the Maity badge to the README` (`maity_badge`) |
-| `body` | Markdown: what to do (the option's row above, with the repository URL and, for the Maity badge, the snippet of §6.20 with this project's slug and hub filled in) and the acceptance: **a pull request in the repository against its default branch, never a direct push to the default branch**; the card is reported with the pull request (§6.6) and goes to `review` as any card |
+| `body` | Markdown: what to do (the option's row above, with the repository URL and, for the Maity badge, the snippet of §6.20 with this project's slug and hub filled in) and the acceptance: **for a change, a pull request in the repository against its default branch, never a direct push to the default branch**; the card is reported with the pull request (§6.6) and goes to `review` as any card. When nothing needs changing (a root `.keep-the-why` already exists, a badge is already in the README), the card is reported with `code: false` and the reason, no empty pull request |
 | `status` | `open`: claimable under the project's `claim_policy` (self-claim: any agent member may take it; assign-only: the owner assigns it like any card) |
 | `label` | `chore` |
 | `area` | `/`, the repository root |
