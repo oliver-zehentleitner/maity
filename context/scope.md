@@ -241,6 +241,71 @@ and prices are the operator's) and hand parts of it to members of their
 project — sponsoring, say, three more agents for someone on the free
 plan; whether a project allows this is a per-project setting.
 
+## Maity is a control plane for humans and their independent coding agents; an agent is a durable identity, the runtime is interchangeable
+
+**Id:** 70482b44-b087-4c9f-80f3-2aec43a5eda9
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision in the inbox, 2026-10-25, on the contract owner's proposal; the README's opening says the same in fewer words
+**Revisit when:** a feature is proposed that only works when the hub owns the agent's process, or counts tokens, or needs a project for a single developer to be useful
+**See:** scope.md#agents-are-brought-not-run-the-hub-organises-the-sessions-do-the-work — 517defc6-720e-4a17-90fb-a061279c8fee — as of 2026-10-25
+
+Maity is a control plane for humans and their independently running
+coding agents. An agent is a durable identity with an owner — not a
+pod, a worktree or a session — and the same identity is a member of
+several projects at once; rights hang on the membership, not on the
+process that currently carries it. A single developer has the full use
+of it alone; collaboration is optional. Maity runs no inference and
+counts no tokens.
+
+**Reason:** the identity is what the team addresses, trusts and gives
+rights to, and it has to survive the harness, the model and the machine
+changing underneath it; a process-bound identity would lose its cards,
+its history and its reputation at every restart. Binding rights to the
+membership keeps the hub out of the agent's runtime, which is the
+boundary the first entry of this file draws. Inference and token counts
+belong to whoever runs the agent; a hub that counted them would be a
+party to the agent's provider.
+
+**Rejected alternatives:**
+- An orchestration runtime that owns the agents' processes: the hub
+  would become the thing it coordinates, and every supported harness a
+  feature of the hub.
+- Identity per project or per session: the same agent would be a
+  stranger in its second project, and its history would not travel.
+
+## Maity is not a project memory: persistent project knowledge lives with an external provider, Keep the Why being the first
+
+**Id:** e22af31b-98cc-43f9-95bb-70a66067bdf3
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision in the inbox, 2026-10-25
+**Revisit when:** a second memory provider is asked for (then a provider interface is specified), or a hub feature needs to store project knowledge rather than coordination state
+**See:** scope.md#keep-the-why-stays-external-and-optional-the-hub-never-reimplements-it — a498e8a8-092d-44e1-9c4a-50c6aa3d1105 — as of 2026-10-25
+**See:** projects.md — the memory provider chosen at creation — as of 2026-10-25
+
+The hub stores operative coordination data only: cards, messages,
+events, decisions, memberships. Persistent project knowledge — the
+reasoning, the decisions, the constraints of the code — lives with an
+external provider in the repository. Keep the Why is the first such
+provider, not the provider: the existing integration keeps its place,
+and a provider interface for other memory systems comes when a second
+one is wanted. This generalises the entry above, which drew the same
+boundary for Keep the Why alone.
+
+**Reason:** the one given above — project memory belongs in the
+repository, versioned and travelling with the clone — and one more: a
+hub that stored project knowledge would bind its users to one memory
+system; naming the provider as a choice keeps the hub a switchboard.
+
+**Rejected alternatives:**
+- Specifying the provider interface now: no second provider exists to
+  shape it; the maintainer chose to wait for one.
+- Keep the Why as the built-in memory: it would make the hub a second
+  copy of the repository's why layer.
+
 ## A forwarded request's holder is a member or the admin pool; opening the pool reaches human admins only
 
 **Id:** 787ae7aa-e107-4a09-b8a5-6e44ac59a865
