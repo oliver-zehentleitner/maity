@@ -257,8 +257,15 @@ def readable_by(
     if row.conversation_id is not None:
         # A conversation is its two parties' or participants' alone, admins included;
         # the owner of an agent a group chat's event names reads along (§9.2).
-        return f"member:{principal}" in audience or any(
-            f"owns:{token.removeprefix('member:')}" in hidden for token in audience
+        return (
+            f"member:{principal}" in audience
+            or any(f"owns:{token.removeprefix('member:')}" in hidden for token in audience)
+            # A round's thread names `role:owner`: every human owner reads along (§20.5).
+            or (
+                "role:owner" in audience
+                and membership.agent_id is None
+                and membership.role == "owner"
+            )
         )
     if membership.role in SEE_ALL_ROLES:
         return True

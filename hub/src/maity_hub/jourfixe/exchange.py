@@ -117,7 +117,8 @@ def _post_message(
 ) -> int:
     """One message in the round's thread, to its participants; it wakes nobody."""
     conversation = group_chats.find(conn, round_row.project_id, round_row.conversation_id)
-    audience = group_chats.audience(group_chats.stays(conn, conversation.id))
+    # The participants, and every human owner, who reads along (§20.5).
+    audience = [*group_chats.audience(group_chats.stays(conn, conversation.id)), "role:owner"]
     payload = {
         "type": "chat",
         "to": conversation.id,
