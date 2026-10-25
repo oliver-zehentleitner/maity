@@ -114,9 +114,12 @@ def admits_address(conn: Connection, normalized: str, *, lock: bool = False) -> 
         t.invitation.c.expires_at > now,
     )
     if lock:
-        for project_id in sorted({row.project_id for row in conn.execute(query)}):
+        locked = sorted({row.project_id for row in conn.execute(query)})
+        for project_id in locked:
             lock_project(conn, project_id)
-        query = query.with_for_update()
+        # Only the projects locked above decide: an invitation of another project that
+        # appears in between was never locked, and admits nothing in this completion.
+        query = query.where(t.invitation.c.project_id.in_(locked)).with_for_update()
     rows = conn.execute(query).all()
     for row in rows:
         state = conn.execute(
