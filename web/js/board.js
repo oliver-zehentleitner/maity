@@ -22,7 +22,7 @@ window.Maity = window.Maity || {};
   // The roles holding releases:write (docs/api.md §2.3).
   const RELEASERS = new Set(["owner", "admin", "reviewer"]);
 
-  const KIND_LABELS = { release: "Release", contract: "Contract", maintenance_round: "Context round" };
+  const KIND_LABELS = { release: "Release", contract: "Contract", maintenance_round: "Context round", setup: "Setup" };
 
   const status = (s) => s.replace("_", " ");
 
@@ -100,14 +100,14 @@ window.Maity = window.Maity || {};
       })));
   }
 
-  function checkpoint(c) {
+  function checkpoint(ctx, c) {
     const cp = c.checkpoint;
     if (!cp) return null;
     // Two lines at most on the card; the whole text as its tooltip.
     const said = "Done: " + cp.last_step + "\nNext: " + cp.next_step;
     return h("div", { class: "checkpoint" },
       h("span", { class: "label" }, "Checkpoint " + formatAgo(cp.updated_at) + " (" + cp.verification + ")"),
-      h("p", { class: "pre clamp", title: said }, said),
+      h("p", { class: "pre clamp", title: said }, M.ids.link(said, M.ids.where(ctx))),
       cp.branch ? h("p", { class: "muted" }, cp.branch + (cp.head ? " @ " + cp.head : "")) : null);
   }
 
@@ -120,7 +120,7 @@ window.Maity = window.Maity || {};
       : "not observed by the hub";
     return h("div", { class: "report" + (r.mismatch ? " mismatch" : "") },
       h("span", { class: "label" }, "Report " + formatAgo(r.reported_at) + " (" + r.verification + ")"),
-      h("p", { class: "pre" }, M.dom.withMentions(r.summary, r.mentions, "summary", (id) => ctx.link("members", id))),
+      h("p", { class: "pre" }, M.dom.withMentions(r.summary, r.mentions, "summary", (id) => ctx.link("members", id), M.ids.where(ctx))),
       h("p", { class: "muted" }, pr + " · " + observed),
       r.mismatch ? h("p", { class: "flag" }, "The observed head differs from the reported one.") : null);
   }
@@ -415,7 +415,7 @@ window.Maity = window.Maity || {};
         c.label ? h("span", { class: "label-tag" }, c.label) : null,
         c.area ? h("span", { class: "area" }, c.area) : null,
         assignee(ctx, c)),
-      h("h3", null, c.title),
+      h("h3", null, M.ids.link(c.title, M.ids.where(ctx))),
       claimLine(ctx, c),
       edges(c.kind === "release" ? "Ships" : "Depends on", c.depends_on, byId, frozen),
       edges("Ships with", c.ships_with, byId),
@@ -428,7 +428,7 @@ window.Maity = window.Maity || {};
           (c.contract.watchers || []).length
             ? [" · watched by ", c.contract.watchers.map((w, i) => [i ? ", " : null, M.dom.memberRef(ctx, w)])] : null)
         : null,
-      checkpoint(c),
+      checkpoint(ctx, c),
       report(ctx, c),
       c.kind === "release" && c.release ? release(ctx, c, byId, frozen, redraw) : null,
       // One row of controls: the column, the assignee, the place in the column.
@@ -437,7 +437,11 @@ window.Maity = window.Maity || {};
     return el;
   }
 
-  M.views.board = async function (ctx, root) {
+  // args[0]: a card to show (#/p/<slug>/tasks/<id>, an id's link,
+  // js/ids.js): marked on the board and focused; one the board does not
+  // hold is said, nothing is looked up.
+  M.views.board = async function (ctx, root, args) {
+    const wanted = (args && args[0]) || null;
     ctx.canRelease = RELEASERS.has(ctx.role);
     const E = M.boardEdit;
     const since = new Date(Date.now() - CLOSED_WINDOW_DAYS * 86400000).toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -454,6 +458,7 @@ window.Maity = window.Maity || {};
     const columnsBox = h("div", { class: "columns" });
     const formBox = h("div", { class: "new-card-box" });
     const intro = h("div");
+    const wantedNote = h("p", { class: "muted wanted-note", role: "status" });
     const filter = { member: "", area: "", silent: false };
 
     // Focus survives a redraw by key (data-focus), as on the Members view.
@@ -664,6 +669,12 @@ window.Maity = window.Maity || {};
             h("h3", { class: "column-head" }, "Unknown status"),
             other.map((c) => card(ctx, c, byId, manage)))
           : null);
+      if (wanted) {
+        const el = Array.from(columnsBox.querySelectorAll("article.card")).find((a) => a.getAttribute("data-card") === wanted);
+        if (el) { el.className += " wanted"; el.setAttribute("tabindex", "-1"); }
+        return el || null;
+      }
+      return null;
     }
 
     function localSearch() {
@@ -759,8 +770,13 @@ window.Maity = window.Maity || {};
         h("label", { for: "board-member" }, "Member (assigned or holding)"), memberSel,
         h("label", { for: "board-area" }, "Area"), areaSel,
         silentOnly ? h("label", { class: "check", for: "board-silent" }, silentOnly, " Held by a silent agent") : null),
-      searchStatus, formBox, status.el, intro, columnsBox);
-    draw();
+      searchStatus, formBox, status.el, intro, wantedNote, columnsBox);
+    const wantedCard = draw();
+    if (wantedCard) window.setTimeout(() => wantedCard.focus(), 0);
+    else if (wanted) {
+      wantedNote.textContent = "No card " + wanted + " on the board: it is neither open nor closed within the last "
+        + CLOSED_WINDOW_DAYS + " days, or there is no such card. Search all cards finds a closed one.";
+    }
     ctx.every(30000, async () => {
       try {
         const fresh = (await M.api.getAll(ctx.base + "/members")).items;

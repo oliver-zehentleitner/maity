@@ -105,9 +105,11 @@ def replace_setting(
     conn: Connection,
     project: Any,
     body: OnboardingIn | None,
-    actor_member: int,
+    actor_member: int | None,
+    by: dict[str, Any] | None = None,
 ) -> tuple[bool, dict[str, Any] | None, dict[str, Any] | None]:
-    """Return changed, stored value and text-free event value; caller holds project lock."""
+    """Return changed, stored value and text-free event value; caller holds project lock.
+    The writer is the acting member, or `by` for a human who is none (§6.3's cascade)."""
     old = (project.settings or {}).get("onboarding")
     content = body.content() if body is not None else None
     old_content = (
@@ -119,14 +121,15 @@ def replace_setting(
         return False, old, None
     if body is not None:
         validate(conn, project, body)
-    writer = next(row for row in members(conn, project.id) if row.id == actor_member)
+    if by is None:
+        by = identity(next(row for row in members(conn, project.id) if row.id == actor_member))
     version = project.onboarding_version + 1
     conn.execute(
         update(t.project).where(t.project.c.id == project.id).values(onboarding_version=version)
     )
     metadata = {
         "version": version,
-        "by": identity(writer),
+        "by": by,
         "updated_at": clock.rfc3339(clock.now()),
     }
     if content is None:
@@ -220,7 +223,13 @@ def member_removed(conn: Connection, project_id: str, removed: str, actor: Any) 
     if not isinstance(current, dict) or current.get("check_in_with") != removed:
         return
     body = OnboardingIn(briefing=current.get("briefing"), check_in_with="coordinator")
-    _, stored, announcement = replace_setting(conn, project, body, actor.membership_id)
+    by = None
+    if actor.membership_id is None:  # an owner deleting a profile, no member here (§6.3)
+        handle = conn.execute(
+            select(t.human.c.handle).where(t.human.c.id == actor.human_id)
+        ).scalar_one()
+        by = {"id": actor.human_id, "handle": handle, "kind": "human"}
+    _, stored, announcement = replace_setting(conn, project, body, actor.membership_id, by)
     merged = {**project.settings, "onboarding": stored}
     conn.execute(update(t.project).where(t.project.c.id == project_id).values(settings=merged))
     emit(

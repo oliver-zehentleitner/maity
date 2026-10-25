@@ -65,6 +65,8 @@ window.Maity = window.Maity || {};
     if (typeof value !== "string") return false;
     if (/^\/api\/v1\/projects\/[a-z0-9][a-z0-9-]{1,62}\/(logo|banner)\?v=[A-Za-z0-9%._-]*$/.test(value)) return true;
     if (/^\/api\/v1\/avatars\/[A-Za-z0-9_-]{1,64}\?v=[A-Za-z0-9%._-]*$/.test(value)) return true;
+    // A project's README badge, served by the hub at its root (§6.20).
+    if (/^\/badge\/[a-z0-9][a-z0-9-]{1,62}\.svg(\?v=[A-Za-z0-9%._-]*)?$/.test(value)) return true;
     // Object URLs exist only for an upload in fixture mode, a page opened from file://.
     return window.location.protocol === "file:" && /^blob:null\/[0-9a-f-]+$/.test(value);
   }
@@ -129,25 +131,28 @@ window.Maity = window.Maity || {};
   // A scanned text with its stored mentions (docs/api.md §8.6) as text
   // nodes and member links. Offsets and lengths count code points; only the
   // stored ones for this field are links, and only where the text there is
-  // "@" + the stored handle; nothing the writer typed becomes a link.
-  function withMentions(text, mentions, field, hrefOf) {
+  // "@" + the stored handle; nothing the writer typed becomes a member link.
+  // `at` (M.ids.where): the project the text belongs to, for the ids in
+  // the text between mentions as links (js/ids.js).
+  function withMentions(text, mentions, field, hrefOf, at) {
     const chars = Array.from(String(text || ""));
     const marks = (mentions || [])
       .filter((x) => x && x.field === field && Number.isInteger(x.offset) && Number.isInteger(x.length) && x.length > 1)
       .sort((a, b) => a.offset - b.offset);
     const out = [];
-    let at = 0;
+    const plain = (s) => (at && M.ids ? M.ids.link(s, at) : [s]);
+    let from = 0;
     marks.forEach((x) => {
-      if (x.offset < at || x.offset + x.length > chars.length) return;
+      if (x.offset < from || x.offset + x.length > chars.length) return;
       const said = chars.slice(x.offset, x.offset + x.length).join("");
       if (said !== "@" + x.handle) return;
-      if (x.offset > at) out.push(chars.slice(at, x.offset).join(""));
+      if (x.offset > from) out.push(...plain(chars.slice(from, x.offset).join("")));
       // No href: a mention named where its member cannot be opened.
       const href = hrefOf(x.member_id);
       out.push(href ? h("a", { class: "mention", href }, said) : h("span", { class: "mention" }, said));
-      at = x.offset + x.length;
+      from = x.offset + x.length;
     });
-    if (at < chars.length) out.push(chars.slice(at).join(""));
+    if (from < chars.length) out.push(...plain(chars.slice(from).join("")));
     return out;
   }
 
