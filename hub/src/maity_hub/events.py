@@ -183,8 +183,11 @@ def hidden_redactions(
     - `notice:<seq>` for each `event_redacted` whose subject is a ticker item: it is
       shaped like the item and never wakes;
     - with `membership`, `ticker:<seq>` for each decision item, and for the notice of
-      one, whose request it may not read now: no item, no placeholder, no notice."""
+      one, whose request it may not read now: no item, no placeholder, no notice;
+    - with a human's `membership`, `owns:<agent id>` for each agent it owns that a group
+      chat's event in the batch names: the owner reads along (§9.2)."""
     hidden = {f"ticker:{seq}" for seq in ticker_read.withheld(conn, rows, membership)}
+    hidden |= _owned_in_chats(conn, rows, membership)
     seqs = {int(r.subject_id) for r in rows if r.kind == "event_redacted" and r.subject_id}
     if not seqs:
         return frozenset(hidden)
@@ -196,6 +199,26 @@ def hidden_redactions(
             hidden.add(f"notice:{subject.seq}")
     hidden |= {f"ticker:{seq}" for seq in ticker_read.withheld(conn, subjects, membership)}
     return frozenset(hidden)
+
+
+def _owned_in_chats(conn: Connection, rows: Sequence[Any], membership: Any) -> set[str]:
+    if membership is None or membership.human_id is None:
+        return set()
+    named = {
+        token.removeprefix("member:")
+        for r in rows
+        if r.conversation_id is not None and r.conversation_id.startswith("cnv-")
+        for token in (r.audience or [])
+        if token.startswith("member:agt-")
+    }
+    if not named:
+        return set()
+    owned = conn.execute(
+        select(t.agent_profile.c.id).where(
+            t.agent_profile.c.id.in_(named), t.agent_profile.c.owner_id == membership.human_id
+        )
+    ).scalars()
+    return {f"owns:{agent_id}" for agent_id in owned}
 
 
 def readable_by(
@@ -221,8 +244,11 @@ def readable_by(
     if row.actor_membership == membership.id:
         return True
     if row.conversation_id is not None:
-        # A conversation is its two parties' alone, admins included (§9).
-        return f"member:{principal}" in audience
+        # A conversation is its two parties' or participants' alone, admins included;
+        # the owner of an agent a group chat's event names reads along (§9.2).
+        return f"member:{principal}" in audience or any(
+            f"owns:{token.removeprefix('member:')}" in hidden for token in audience
+        )
     if membership.role in SEE_ALL_ROLES:
         return True
     return (
@@ -277,7 +303,14 @@ def _scan(
 # Readable by everyone they name, but never a reason to wake (§8.2): what a project
 # shows changed, nothing anybody has to act on. Memory is read on the next resume (§19.3).
 NON_WAKING = frozenset(
-    {"project_updated", "avatar_changed", "memory_added", "memory_deleted", "soul_changed"}
+    {
+        "project_updated",
+        "avatar_changed",
+        "memory_added",
+        "memory_deleted",
+        "soul_changed",
+        "request_claimed",  # a claim wakes nobody (§7)
+    }
 )
 
 
@@ -311,6 +344,20 @@ def wakes(row: Any, membership: Any, principal: str) -> bool:
         return False
     if row.kind == "ticker":
         return ticker_read.wakes(row, principal)
+    if row.kind == "request_forwarded":
+        # Only a forward to a member wakes, and only that member; an opening to the
+        # admins wakes no agent, it would wake every admin agent at once (§7).
+        payload = row.payload or {}
+        return (
+            payload.get("holder") == principal
+            and payload.get("step", {}).get("action") == "forwarded"
+        )
+    if membership.agent_id is not None and _group_chat(row):
+        # An agent in a group chat is woken by a message that mentions it, by nothing
+        # else there: being added is not work, and every message waking every agent
+        # would loop two agents answering each other (§9.2).
+        mentioned = (row.payload or {}).get("mentions") or []
+        return row.kind == "message" and any(m.get("member_id") == principal for m in mentioned)
     audience = row.audience or []
     return (
         "all" in audience
@@ -318,6 +365,10 @@ def wakes(row: Any, membership: Any, principal: str) -> bool:
         or f"role:{membership.role}" in audience
         or row.conversation_id == principal
     )
+
+
+def _group_chat(row: Any) -> bool:
+    return row.conversation_id is not None and row.conversation_id.startswith("cnv-")
 
 
 def read_waking(

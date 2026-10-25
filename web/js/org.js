@@ -63,18 +63,18 @@ window.Maity = window.Maity || {};
     return { roots, children, parentOf };
   }
 
-  function node(m, tree) {
+  function node(ctx, m, tree) {
     const kids = tree.children[m.id] || [];
     const link = tree.parentOf[m.id];
     return h("li", null,
       h("div", { class: "org-node" },
         h("span", { class: "dot " + (m.kind === "human" ? "human" : m.presence), "aria-hidden": "true" }),
         M.avatar(m, 20),
-        h("strong", null, m.display_name),
+        h("strong", null, M.dom.memberRef(ctx, m.id)),
         h("span", { class: "role" }, m.role),
         m.areas.length ? h("span", { class: "area" }, m.areas.join(", ")) : null,
         link && link.via === "area" ? h("span", { class: "muted" }, "(by area)") : null),
-      kids.length ? h("ul", null, kids.map((k) => node(k, tree))) : null);
+      kids.length ? h("ul", null, kids.map((k) => node(ctx, k, tree))) : null);
   }
 
   M.views.org = async function (ctx, root) {
@@ -82,7 +82,7 @@ window.Maity = window.Maity || {};
     append(root, h("h2", null, "Organisation"),
       h("p", { class: "muted" }, "Policy: " + ctx.project.policy.preset
         + ". Computed from who reports to whom and who owns which area."),
-      h("ul", { class: "org-tree" }, tree.roots.map((m) => node(m, tree))));
+      h("ul", { class: "org-tree" }, tree.roots.map((m) => node(ctx, m, tree))));
   };
 
   M.org = { buildTree, contains };

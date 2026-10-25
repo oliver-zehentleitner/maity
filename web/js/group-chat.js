@@ -117,7 +117,7 @@ window.Maity = window.Maity || {};
     const titleOf = () => view.title || view.participants.filter((p) => p.member_id !== ctx.me.id).map((p) => nameOf(ctx, p.member_id)).join(", ") || "Group chat";
     // An observer outside the project is not in the member list: said so, not by id.
     const observerName = (o) => (o === ctx.me.id ? "you" : ctx.outsider ? "another agent's owner"
-      : ctx.memberById && ctx.memberById[o] ? nameOf(ctx, o) : "an owner outside the project");
+      : ctx.memberById && ctx.memberById[o] ? M.dom.memberRef(ctx, o) : "an owner outside the project");
 
     const pane = h("section", { class: "chat-pane group-chat", "aria-label": "Group chat " + titleOf() });
     append(layout, pane);
@@ -169,6 +169,9 @@ window.Maity = window.Maity || {};
     // A human in the chat deletes a file of it, as it removes a message (§8.7).
     const opts = { group: true, onRedact: mayRedact ? redact : null, canDeleteFile: () => mayRedact && !closed };
     const messages = h("ol", { class: "messages", "aria-live": "polite" });
+    // At the newest unless the reader scrolled up; then a pill counts what came (js/chat.js).
+    // Newest leaves the focus in the composer, or on the title where there is none.
+    const follow = parts.follower(messages, () => (text || heading).focus());
     let draw = null;
     // Drawn as one timeline (days, groups, the unread line); the earlier part
     // put before it means drawing it again.
@@ -216,11 +219,10 @@ window.Maity = window.Maity || {};
 
     function add(msg) {
       if (all.some((m) => m.seq === msg.seq)) return;
-      const follow = msg.from === ctx.me.id || parts.atBottom(messages);
       all.push(msg);
       const empty = messages.querySelector(".empty");
       if (empty) { redraw(); } else { append(messages, draw(msg)); }
-      if (follow) messages.scrollTop = messages.scrollHeight;
+      follow.added(msg.from === ctx.me.id);
       if (msg.seq > cursor) cursor = msg.seq;
     }
 
@@ -254,11 +256,11 @@ window.Maity = window.Maity || {};
 
     // Who is in it, and who else reads it (§9.2: shown in the chat itself).
     const people = () => h("p", { class: "muted group-people-line" }, "In it: ",
-      view.participants.map((p, i) => [i ? ", " : null, nameOf(ctx, p.member_id), p.kind === "agent" ? " (agent)" : null]));
+      view.participants.map((p, i) => [i ? ", " : null, M.dom.memberRef(ctx, p.member_id), p.kind === "agent" ? " (agent)" : null]));
     const observers = () => ((view.observers || []).length
       ? h("p", { class: "muted group-observers" }, "Also read by: ",
         view.observers.map((o, i) => [i ? ", " : null, observerName(o),
-          " (owner of " + view.participants.filter((p) => p.owner_id === o).map((p) => nameOf(ctx, p.member_id)).join(", ") + ")"]),
+          " (owner of ", view.participants.filter((p) => p.owner_id === o).map((p, i) => [i ? ", " : null, M.dom.memberRef(ctx, p.member_id)]), ")"]),
         ". They read every message and write nothing.")
       : null);
 
@@ -311,7 +313,7 @@ window.Maity = window.Maity || {};
             + "Write here as for everyone who is or will be in the chat."));
         }
         append(box, h("ul", { class: "group-members" }, view.participants.filter((p) => p.member_id !== ctx.me.id).map((p) =>
-          h("li", null, nameOf(ctx, p.member_id), " ", h("button", { type: "button", class: "small", "aria-label": "Remove " + nameOf(ctx, p.member_id) + " from the chat", onclick: () => {
+          h("li", null, M.dom.memberRef(ctx, p.member_id), " ", h("button", { type: "button", class: "small", "aria-label": "Remove " + nameOf(ctx, p.member_id) + " from the chat", onclick: () => {
             if (!window.confirm("Remove " + nameOf(ctx, p.member_id) + " from this chat? They no longer read it.")) return;
             act("Removing", nameOf(ctx, p.member_id) + " is no longer in the chat.", () => M.api.del(base + "/participants/" + encodeURIComponent(p.member_id)));
           } }, "Remove")))));
@@ -419,12 +421,13 @@ window.Maity = window.Maity || {};
       head,
       earlierBox,
       messages,
+      follow.pill,
       pollStatus.el,
       compose,
       status.el);
     window.setTimeout(() => {
       parts.fitToScreen(layout);
-      messages.scrollTop = messages.scrollHeight;
+      follow.open(messages.querySelector(".new-line"));
       if (window.matchMedia && window.matchMedia("(max-width: 720px)").matches) heading.focus();
     }, 0);
     // An observer is in no audience (§9.2): its view re-reads what is new.

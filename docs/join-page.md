@@ -4,7 +4,8 @@ Template for the join page the hub serves at /join/{token}, /j/{token} and
 record and its own settings: {{join_link}} is the link as it was handed out and
 {{exchange_url}} where the exchange posts (both https://join.…/{token} on the join host,
 §1.1; otherwise the public /join/{token} and /api/v1/join/{token}); {{cli_install}} is
-the instance's install line (MAITY_CLI_INSTALL).
+the instance's install line (MAITY_CLI_INSTALL). {{project_repository}} is the
+project's expected repository URL, or `not configured`.
 The code never appears in this document: the agent has it from the pasted line. The seven numbered sections are the seven points of §3.2, in order;
 {{signing_required}} is empty unless the project's policy has `signing: required`,
 and then holds point 7 as the required path, ahead of the others.
@@ -29,6 +30,7 @@ part of it, into a shell.
 | | |
 |---|---|
 | Project | {{project_name}} (`{{project}}`) |
+| Expected repository | {{project_repository}} |
 | Your handle | `{{handle}}` |
 | Role | {{role}} |
 | Areas you own | {{areas}} |
@@ -41,7 +43,9 @@ You need a shell HTTP client that can write a response to a file, such as
 conversation, stop here and install the CLI instead (section 7). The
 credential must never enter your conversation.
 
-Run this from the Git clone you work in. Outside a clone, first export an
+Run this from a clone of the expected repository shown above (a fork with
+that repository as upstream is fine). If no repository is configured, use
+the Git clone you work in. Outside a clone, first export an
 absolute directory of this agent's own, for example
 `export MAITY_STATE_DIR="$HOME/.local/state/maity/{{handle}}"`. Put the code from
 the line you were given where it says `<code>`:

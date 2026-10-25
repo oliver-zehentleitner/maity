@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
-from pydantic import Field
+from pydantic import Field, field_validator
+from pydantic_core import PydanticCustomError
 from sqlalchemy import Connection, delete, insert, select, update
 
 from maity_hub import clock, idempotency, images, ktw, placements, policy, releases, rules, ticker
@@ -16,10 +18,10 @@ from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid
-from maity_hub.events import emit
+from maity_hub.events import emit, lock_project
 from maity_hub.ids import new_id
 from maity_hub.models import SLUG_PATTERN, Strict, markdown, title
-from maity_hub.views import forge_of, member_view, principal_id, project_view
+from maity_hub.views import forge_of, member_view, principal_id, project_language, project_view
 
 router = APIRouter()
 
@@ -83,6 +85,14 @@ class SettingsIn(Strict):
 
     release_checklist: list[str] | None = Field(default=None, max_length=50)
     ticker: TickerSettingsIn | None = None
+    language: str | None = None
+
+    @field_validator("language", mode="before")
+    @classmethod
+    def known_language(cls, value: Any) -> Any:
+        if value is not None and value not in ("en", "de"):
+            raise PydanticCustomError("unknown_language", "choose en or de")
+        return value
 
 
 class ProjectCreate(Strict):
@@ -283,6 +293,9 @@ def patch_project(
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
+        # Membership's project snapshot may precede another writer's commit. Merge settings
+        # and make policy/event decisions from the current row under the shared project lock.
+        mine = replace(mine, project=lock_project(conn, mine.project.id))
         _refuse_for_agents(mine, body, given)
         _authorise_patch(mine, given)
         project = mine.project
@@ -290,6 +303,7 @@ def patch_project(
         owner_id = _owner_id(conn, project.id)
         values: dict[str, Any] = {}
         rules_inputs_changed = False
+        language_changed: str | None = None
         if "name" in given and body.name is not None and body.name != project.name:
             values["name"] = body.name
             rules_inputs_changed = True
@@ -311,6 +325,9 @@ def patch_project(
                     merged[key] = dumped[key]
             if merged != (project.settings or {}):
                 values["settings"] = merged
+            language = merged.get("language") or "en"
+            if language != project_language(project):
+                language_changed = language
             was_on = ticker.settings(project)["enabled"]
             now_on = bool((merged.get("ticker") or {}).get("enabled"))
             # Switched on now, or on from before the merges were announced (an install
@@ -329,6 +346,16 @@ def patch_project(
             raise invalid({"reason": "required"}, "a change of state or policy needs a reason")
         if values:
             conn.execute(update(t.project).where(t.project.c.id == project.id).values(**values))
+        if language_changed is not None:
+            emit(
+                conn,
+                project.id,
+                "project_updated",
+                BROADCAST,
+                {"fields": {"settings.language": language_changed}},
+                actor=actor,
+                subject=("project", project.slug),
+            )
         if "repository" in given:
             if values.get("repository_url") != project.repository_url:
                 # Observations are of the old repository: none of them answers for the new one.
@@ -439,6 +466,8 @@ def _refuse_for_agents(mine: Membership, body: Any, given: set[str]) -> None:
     """`humans_only` for what §2.3 lists as no agent's, before any other check."""
     if mine.kind != "agent":
         return
+    if body.settings is not None and "language" in body.settings.model_fields_set:
+        raise humans_only("the project's language is set by a human")
     policy = body.policy.model_fields_set if "policy" in given and body.policy else set()
     if policy & HUMANS_ONLY_POLICY or "rules_markdown" in given or body.state == "archived":
         raise humans_only("no agent changes this, whatever its role")

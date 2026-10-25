@@ -64,11 +64,12 @@ window.Maity = window.Maity || {};
   }
 
   // A presence the page knows gets its dot; anything else is said as it comes.
-  function presenceNodes(m) {
+  function presenceNodes(m, warn) {
     const known = Object.prototype.hasOwnProperty.call(PRESENCE_LABELS, m.presence);
     return [known ? h("span", { class: "dot " + m.presence, "aria-hidden": "true" }) : null, known ? " " : null,
       known ? PRESENCE_LABELS[m.presence] : String(m.presence || "unknown"),
-      m.last_seen_at && m.presence !== "online" ? h("span", { class: "muted" }, " · seen " + formatAgo(m.last_seen_at)) : null];
+      M.dom.isSilentAgent(m) ? [" · ", M.dom.silentSince(m, warn)]
+        : m.last_seen_at && m.presence !== "online" ? h("span", { class: "muted" }, " · seen " + formatAgo(m.last_seen_at)) : null];
   }
 
   // args[0]: a member to show (#/p/<slug>/members/<id>, a mention's link):
@@ -88,11 +89,12 @@ window.Maity = window.Maity || {};
     const byId = () => Object.fromEntries(items.map((m) => [m.id, m]));
     const nameOf = (id) => { const m = byId()[id]; return m ? m.display_name : ctx.nameOf(id); };
 
+    // Who paused it is a member like any other: a link to them.
     function pausedText(m) {
       const p = m.paused;
       if (!p) return "";
-      const by = p.by === m.id ? "paused itself" : "paused by " + nameOf(p.by);
-      return by + " " + formatAgo(p.since) + (p.reason ? ": " + p.reason : "");
+      const by = p.by === m.id ? "paused itself" : ["paused by ", M.dom.memberRef(ctx, p.by)];
+      return [by, " " + formatAgo(p.since) + (p.reason ? ": " + p.reason : "")];
     }
 
     // Focus survives a redraw by key: the element drawn for the same key.
@@ -111,7 +113,9 @@ window.Maity = window.Maity || {};
     // A write and the re-read after it are told apart: a write that went
     // through is said as done even when the list cannot be read afterwards.
     // `settled` runs once the hub has taken the call (a change or a consent
-    // request), before the list is read again and drawn.
+    // request), before the list is read again and drawn. The outcome is said
+    // once the list is drawn again, so "Saved" means the rows show it and
+    // nothing is replaced under the next click.
     async function act(label, done, call, focusKey, settled) {
       status.busy(label + "…");
       let answer;
@@ -121,19 +125,20 @@ window.Maity = window.Maity || {};
         status.fail(label + " failed: ", refusal(err));
         return false;
       }
-      status.done();
-      // Waiting for a human's go is no change yet: said as such.
-      append(status.el, isConsent(answer)
-        ? h("span", { class: "flag" }, "Not changed yet: waiting for " + (answer.to === "owner" ? "the owner" : ctx.nameOf(answer.to))
-          + "'s consent (" + answer.id + (answer.title ? ", " + answer.title : "") + ").")
-        : h("span", { class: "ok" }, done));
       if (settled) settled();
       try {
         await reload();
         redraw(focusKey);
       } catch (err) {
         status.fail(done + " Could not refresh: ", err);
+        return isConsent(answer) ? "consent" : true;
       }
+      status.done();
+      // Waiting for a human's go is no change yet: said as such.
+      append(status.el, isConsent(answer)
+        ? h("span", { class: "flag" }, "Not changed yet: waiting for " + (answer.to === "owner" ? "the owner" : ctx.nameOf(answer.to))
+          + "'s consent (" + answer.id + (answer.title ? ", " + answer.title : "") + ").")
+        : h("span", { class: "ok" }, done));
       return isConsent(answer) ? "consent" : true;
     }
 
@@ -292,7 +297,12 @@ window.Maity = window.Maity || {};
       // An agent's card is on the Agents view; one's own agent also has a chat.
       const mine = m.kind === "agent" && m.owner_id === ctx.me.id;
       return h("th", { scope: "row", role: "rowheader", "data-label": "Name", tabindex: m.id === wanted ? "-1" : null },
-        h("span", { class: "member-name" }, m.display_name), h("span", { class: "muted" }, " @" + m.handle),
+        h("span", { class: "member-name" }, M.dom.memberRef(ctx, m.id)), h("span", { class: "muted" }, " @" + m.handle),
+        m.kind === "human" && !m.removed_at && m.language
+          ? h("p", { class: "muted member-language" }, "Language: " + (m.language === "de" ? "Deutsch" : "English")) : null,
+
+        m.kind === "agent" && m.briefing != null && ctx.project.settings && "onboarding" in ctx.project.settings
+          ? h("span", { class: "badge briefing-override", title: "This member uses its own briefing instead of the project default." }, "Own briefing") : null,
         mine ? h("span", { class: "member-links" }, " · ", h("a", { href: ctx.link("chat", m.id) }, "Chat")) : null);
     }
 
@@ -339,9 +349,9 @@ window.Maity = window.Maity || {};
       // Owner and credentials only where the hub sends them.
       const hasCreds = agents.some((m) => "credentials" in m);
       const role = { title: "Role", cell: (m) => m.role };
-      const presence = { title: "Presence", presence: true, cell: presenceNodes };
+      const presence = { title: "Presence", presence: true, cell: (m) => presenceNodes(m, ctx.canAdmin) };
       const joined = { title: "Joined", cell: (m) => formatTime(m.joined_at) };
-      const owner = { title: "Owner", cell: (m) => (m.owner ? m.owner.display_name : nameOf(m.owner_id)) };
+      const owner = { title: "Owner", cell: (m) => M.dom.memberRef(ctx, m.owner ? Object.assign({ member_id: m.owner_id }, m.owner) : m.owner_id) };
       const paused = { title: "Paused", cell: (m) => pausedText(m) || "—" };
       const creds = { title: "Credentials", cell: (m) => credentialsText(m.credentials) };
       append(clear(box),
@@ -372,7 +382,7 @@ window.Maity = window.Maity || {};
         items = fresh;
         // Someone joined or left: redraw (focus kept); else presence in place.
         if (!same) { redraw(); return; }
-        fresh.forEach((m) => { const td = presenceCells.get(m.id); if (td) append(clear(td), presenceNodes(m)); });
+        fresh.forEach((m) => { const td = presenceCells.get(m.id); if (td) append(clear(td), presenceNodes(m, ctx.canAdmin)); });
         status.done();
       } catch (err) {
         status.fail("Could not refresh: ", err);

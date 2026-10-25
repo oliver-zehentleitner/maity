@@ -360,6 +360,7 @@ def render_page(
         reports_to_text = "nobody"
     values = {
         "project_name": _md(project.name),
+        "project_repository": _md(project.repository_url or "not configured"),
         "project": project.slug,
         "handle": agent.handle,
         "role": row.role,

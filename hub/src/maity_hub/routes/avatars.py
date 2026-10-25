@@ -54,8 +54,13 @@ def _change(
     owner_id: str,
     check: Callable[[Connection], None] | None = None,
 ) -> JSONResponse:
-    """A `PUT` (with a body) or `DELETE` of `owner_id`'s upload."""
+    """A `PUT` (with a body) or `DELETE` of `owner_id`'s upload. `check` runs first,
+    before the replay too: a stored answer is never a way around losing the right to
+    change the picture."""
     engine = engine_of(request)
+    if check is not None:
+        with engine.begin() as conn:
+            check(conn)
     replayed = idempotency.replay_first(engine, request, caller)
     if replayed is not None:  # a repeat is the stored answer: no decode, no count (§6.10)
         return replayed
@@ -111,8 +116,7 @@ def _owners_agent(agent_id: str, caller: Caller) -> Callable[[Connection], None]
 
 @router.put("/agents/{agent_id}/avatar")
 def put_agent_avatar(agent_id: str, request: Request, caller: HumanCaller) -> JSONResponse:
-    with engine_of(request).begin() as conn:
-        owned(conn, agent_id, caller.principal_id)  # before anything is decoded
+    # The owner's check runs in `_change` before the replay and before anything is decoded.
     return _change(request, caller, agent_id, _owners_agent(agent_id, caller))
 
 

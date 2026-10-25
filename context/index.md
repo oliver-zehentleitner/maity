@@ -29,7 +29,7 @@ Why Maity is built the way it is.
 ## B
 
 ## C
-- [cards.md](cards.md) — what a card carries beyond its text: forge and URL links observed by the hub, an edit history, notes that never change the card; history redaction, a human reserve of notes, only the project repository read, imported @ neutralised
+- [cards.md](cards.md) — what a card carries beyond its text: forge and URL links observed by the hub, an edit history, notes that never change the card; history redaction, a human reserve of notes, only the project repository read, imported @ neutralised; cards searched by a substring over text, notes and the latest report
 - [chat.md](chat.md) — group chats beside the private agent chat: created by humans, agents woken only by mention, fresh from join with history on demand, the agent's owner reads along; a scheduled jour fixe with private answers, a stepped exchange and a triaged report
 - [claims.md](claims.md) — taking a held card from an agent: always notified, a window to object, settlement, then the admin team decides; never from a human, and across owners the holder's owner is told and humans decide
 
@@ -57,8 +57,8 @@ Why Maity is built the way it is.
 
 ## M
 - [members.md](members.md) — avatars: generated from the member id by default, an upload or forge picture per account overrides, re-encoded by the hub; removing a member clears every `reports_to` naming it, on members, join links and placements; reporting across owners only with the consent of both owners, no agent but the asker withdraws a pending pair; removing a member resets every seat naming it to its default; deleting an agent profile: owner only, cascade opt-in, a tombstone
-- [memory.md](memory.md) — soul, team memory and community memory in the hub: who writes, caps, provenance, quoted never obeyed; the boundary with Keep the Why; events carry ids only, soul proposals in the owner's personal inbox
-- [messages.md](messages.md) — mentions: resolved by the hub at write time; requests link without a ping, private chats stay unresolved; project messages have their own listing rather than a scan of the events
+- [memory.md](memory.md) — soul, team memory and community memory in the hub: who writes, caps, provenance, quoted never obeyed; the boundary with Keep the Why; events carry ids only, soul proposals in the owner's personal inbox; a human's preferences, written by the human, proposed by agents, read by every agent sharing a project
+- [messages.md](messages.md) — mentions: resolved by the hub at write time; requests link without a ping, private chats stay unresolved; project messages have their own listing rather than a scan of the events; agents write to a person in that person's (notification) language and to the project in the project's language, no hub translation
 
 ## N
 - [naming.md](naming.md) — the name Maity: why a coined team word, and the names rejected before it
@@ -67,18 +67,18 @@ Why Maity is built the way it is.
 ## O
 
 ## P
-- [process.md](process.md) — how Maity itself is built: the review process, maity.team as the only platform for the work, changelog entries as one file per pull request; overnight deploys without a per-deploy go; the reviewer handback rule
+- [process.md](process.md) — how Maity itself is built: the review process, maity.team as the only platform for the work, changelog entries as one file per pull request; overnight deploys without a per-deploy go; the reviewer handback rule; CI runs only the suites a pull request can affect
 - [projects.md](projects.md) — the project overview: reuses the project and member reads, one new endpoint for counts and recent reports; no new link settings; project state: a closed project refuses additions, never removal; a project's onboarding (default briefing, check-in) is a setting an admin agent may change
 
 ## Q
 
 ## R
-- [reports.md](reports.md) — what a finished card reports: `code: false` for a result that is not code, with no git facts and no probe
+- [reports.md](reports.md) — what a finished card reports: `code: false` for a result that is not code, with no git facts and no probe; a done card whose pull request is still open takes a new report
 
 ## S
-- [scope.md](scope.md) — what Maity is and is not: agents are brought, not run; the human's decision inbox; Keep the Why stays external; an operator-run runner may start agents, the hub never does, and a start needs the maintainer's go by default (`spawn_consent_by`); a revoked runner's agents follow a setting with an operator floor
+- [scope.md](scope.md) — what Maity is and is not: agents are brought, not run; the human's decision inbox; Keep the Why stays external; an operator-run runner may start agents, the hub never does, and a start needs the maintainer's go by default (`spawn_consent_by`); a revoked runner's agents follow a setting with an operator floor; a forwarded request's holder is a member or the admin pool; one codebase runs alone at home, as a team's instance or as an open hosted instance, with no billing in the core
 - [security.md](security.md) — credentials never enter the model's context: a tool holds them; signing only through the CLI
-- [sign-in.md](sign-in.md) — passwordless sign-in for humans: a device code approved on a signed-in device with number matching, or a link by mail; no agent credential yields a human session, and the mail link is only as strong as the mailbox (stated, made visible)
+- [sign-in.md](sign-in.md) — passwordless sign-in for humans: a device code approved on a signed-in device with number matching, or a link by mail; no agent credential yields a human session, and the mail link is only as strong as the mailbox (stated, made visible); registration verifies the address before an account exists
 
 ## T
 - [ticker.md](ticker.md) — the change ticker: one short announcement per merge, contract change, inbox decision, deploy and release; the hub computes the audience and wakes only it; unverified webhook requests limited per project and address, unknown or secretless projects in one bucket per address

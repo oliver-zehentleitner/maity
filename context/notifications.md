@@ -189,3 +189,26 @@ cap would skip items too, hence the stored overflow form.
   anyone who holds it.
 - Sealing only under `MAITY_SECRET_KEY` itself: the key is optional,
   and the bell would not work on an instance without it.
+
+## "Waiting for you" gathers everything that waits for the human, not only the inbox
+
+**Id:** b59cf365-78a6-4a31-be85-b586d8e19695
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request, 2026-10-23, looking at the all-projects start page; contract in `docs/api.md` §18.8
+
+The all-projects start page used to list open requests only, so a
+human had to visit chats, threads and boards separately to see what
+else waited. It now shows everything in one place: open requests
+first, because they need an answer, then the unread items of the
+notifications feed grouped for reading — one row per conversation or
+thread, then mentions, the human's cards, agent outages and ticker
+items. It reuses the feed the bell already reads, so it costs no new
+endpoint and never shows more than the human may read.
+
+Rejected: a separate aggregation endpoint for the page (a second source
+of truth next to the notifications feed); keeping the inbox-only page
+and pointing to the bell (the start page is where the human looks
+first). The per-kind switches of §18.4 govern browser notifications and
+mail, not this page, so nothing waiting is hidden from it.

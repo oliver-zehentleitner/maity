@@ -138,6 +138,36 @@ read-only because they never were part of the conversation.
   conversation, so they stay read-only here as everywhere else in the
   chat.
 
+## A participant's window starts at an event seq, and every stay in a chat is its own row
+
+**Id:** 7c3796af-aa65-4818-94aa-e10b2ccc67c1
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the hub's group chats (`hub/src/maity_hub/group_chats.py`, migration `0035_group_chats`), 2026-10-23
+**Revisit when:** messages stop being events in the project log, or a chat needs a window that is not "from the latest join on"
+
+The hub keeps one `conversation_participant` row per stay of a member in a
+group chat: leaving ends the row, being added again starts a new one, and
+an at-most-one marker (`here`) keeps a single open stay per member. Each
+row stores `window_after`, the project's highest event seq at that join;
+the participant's window, `unread` and the default page of `…/messages`
+count only messages after it.
+
+**Reason:** the window is "the chat from the latest join on" (§9.2), and
+messages are events ordered by seq, so a seq bound needs no clock and
+cannot drift against the order of messages. Rows per stay keep each
+departure's `by`, `reason` and `left_at` for the participation answer and
+for redaction in a closed chat, which asks who was a human participant
+at any time. Inferred from the contract and the code, not stated by the
+maintainer.
+
+**Rejected alternatives:**
+- A `joined_at` timestamp as the window's start: two writes in the same
+  instant, or a clock step, would put a message on the wrong side.
+- One row per member, overwritten on a rejoin: the earlier stay's
+  departure is lost, and with it who was a former human participant.
+
 ## A scheduled jour fixe with private answers, not a shared round, ad-hoc retros or an open feedback channel
 
 **Id:** 7f6e97cc-b996-4121-a25f-18e0bbfb8d99
@@ -147,6 +177,7 @@ read-only because they never were part of the conversation.
 **Source:** the maintainer's approval of 2026-10-22, card tsk-1h94qh8497p1, and the maintainer's redesign of 2026-10-23; contract in `docs/api.md` §20, forwarding in §7
 **Revisit when:** the cost of a round (wakes, steps) turns out higher than its proposals are worth, rounds keep being skipped for want of a moderator or members, or members stop answering
 **See:** chat.md#group-chats-beside-the-private-agent-chat-created-by-humans-waking-agents-only-by-mention — c1af6c8f-9d69-4afe-b233-fa8f437faaa6 — as of 2026-10-23
+**See:** memory.md#a-humans-preferences-are-a-fourth-store-written-by-the-human-proposed-by-agents-read-by-every-agent-sharing-a-project — 57ac7e94-ec04-4dd5-bae8-59f0b95dbdaf — as of 2026-10-23
 
 The team looks at how it works in a jour fixe. A human sets the series
 in the project policy, and the hub triggers it. Owners and admins,
@@ -158,8 +189,10 @@ bundles the answers into a statement of topics, citing who said what,
 anonymous items marked as such. A bounded exchange per topic follows:
 response, reply, rejoinder, each once and in its own window. The
 moderator's report triages every proposal. The moderating admin agent
-decides a proposal itself within the rules and its owner's memory, or
-sends it to the owner's inbox as a decision request. Nothing is executed
+decides a proposal itself within the rules and its owner's
+preferences, cited by version (the maintainer's decision of
+2026-10-23, which replaced the owner's memory entries as that basis),
+or sends it to the owner's inbox as a decision request. Nothing is executed
 directly: an adopted proposal becomes an ordinary card.
 
 **Reason:** answers given privately to the moderator are more honest

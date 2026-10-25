@@ -194,8 +194,8 @@ window.Maity = window.Maity || {};
     return reason === null ? null : reason.trim();
   }
   function tombstone(ctx, r) {
-    const by = r && r.by ? " by " + ctx.nameOf(r.by) : "";
-    return h("p", { class: "muted msg-redacted" }, "This message was removed" + by + (r && r.reason ? ": " + r.reason : "") + ".");
+    return h("p", { class: "muted msg-redacted" }, "This message was removed",
+      r && r.by ? [" by ", M.dom.memberRef(ctx, r.by)] : null, (r && r.reason ? ": " + r.reason : "") + ".");
   }
 
   // opts.group: a group chat's message (no delivery: several recipients,
@@ -205,10 +205,11 @@ window.Maity = window.Maity || {};
     const own = msg.from === ctx.me.id;
     // A grouped message says when, not again who.
     const delivery = (m) => (own && !o.group ? (m.delivered_at ? " · reached a session" : " · not picked up yet") : "");
-    const said = (m) => (grouped ? formatTime(m.sent_at) + delivery(m)
-      : (own ? "" : ctx.nameOf(m.from) + " · ") + formatTime(m.sent_at) + delivery(m));
-    const meta = h("span", { class: "meta" }, said(msg));
-    if (own && !o.group && !msg.delivered_at) pending.set(msg.seq, (fresh) => { meta.textContent = said(fresh); });
+    // Who (a link to them), then when; a delivery update rewrites the when alone.
+    const said = (m) => formatTime(m.sent_at) + delivery(m);
+    const when = h("span", { class: "when" }, said(msg));
+    const meta = h("span", { class: "meta" }, grouped || own ? null : [M.dom.memberRef(ctx, msg.from), " · "], when);
+    if (own && !o.group && !msg.delivered_at) pending.set(msg.seq, (fresh) => { when.textContent = said(fresh); });
     const sender = ctx.memberById ? ctx.memberById[msg.from] : null;
     // A removed message reads body null (§9); who and why only where known
     // (this page's own removal, or the event_redacted that said so).
@@ -301,9 +302,46 @@ window.Maity = window.Maity || {};
   // Stays at the newest message unless the human scrolled up to read.
   const atBottom = (el) => el.scrollHeight - el.scrollTop - el.clientHeight < 48;
 
+  // Keeping a reader at the newest message (an open chat that had not
+  // scrolled read as an agent that had gone quiet). Whether the reader is at
+  // the end comes from their own scrolling, not from a measure when a
+  // message arrives: content that grows after it was drawn (an image that
+  // loads, the pane resized) no longer leaves them behind. Scrolled up to
+  // read, a new message is counted on the pill, which goes to the end.
+  // Jumps, never smooth scrolling, so reduced motion is respected as it is.
+  function follower(messages, onEnd) {
+    let stuck = true;
+    let unseen = 0;
+    const end = () => { messages.scrollTop = messages.scrollHeight; };
+    const pill = h("button", { type: "button", class: "small jump-latest", hidden: true }, "Newest");
+    const draw = () => {
+      pill.hidden = stuck;
+      pill.textContent = unseen ? unseen + " new · Newest" : "Newest";
+    };
+    messages.addEventListener("scroll", () => { stuck = atBottom(messages); if (stuck) unseen = 0; draw(); });
+    messages.addEventListener("load", () => { if (stuck) end(); }, true);
+    if (window.ResizeObserver) new window.ResizeObserver(() => { if (stuck) end(); }).observe(messages);
+    pill.addEventListener("click", () => { stuck = true; unseen = 0; end(); draw(); if (onEnd) onEnd(); });
+    return {
+      pill,
+      // A message drawn at the end: followed when the reader is there or wrote it.
+      added(own) {
+        if (own || stuck) { stuck = true; end(); } else { unseen += 1; draw(); }
+      },
+      // On opening: at the first unread message where there is one, else at the end.
+      open(marker) {
+        if (marker && typeof marker.offsetTop === "number" && marker.offsetTop > 0) {
+          messages.scrollTop = marker.offsetTop;
+          stuck = atBottom(messages);
+        } else { stuck = true; end(); }
+        draw();
+      },
+    };
+  }
+
   // What js/group-chat.js draws with: the same history, Markdown, quotes,
   // drafts, sizing and the same reading of mentions.
-  M.chatParts = { timeline, quoteOf, withoutCode, atBottom, fitToScreen, drafts, isRemoved, askReason, HISTORY_PAGE };
+  M.chatParts = { timeline, quoteOf, withoutCode, atBottom, follower, fitToScreen, drafts, isRemoved, askReason, HISTORY_PAGE };
 
   // One focus handler for the page; it serves the chat view on screen.
   let onFocus = null;
@@ -332,7 +370,9 @@ window.Maity = window.Maity || {};
       if (group) { await M.groupChat.open(ctx, root, layout, list, group, M.chatParts); return; }
     }
     if (!agent) {
-      if (args[0]) append(layout, h("p", { class: "error", role: "alert" }, "No conversation of yours with the id " + args[0] + "."));
+      // A group chat's link on a hub without group chats is no error of the reader's.
+      if (args[0] && !groupsServed && /^cnv-/.test(args[0])) append(layout, M.dom.notOnHub("This hub has no group chats yet, so this link cannot open here."));
+      else if (args[0]) append(layout, h("p", { class: "error", role: "alert" }, "No conversation of yours with the id " + args[0] + "."));
       else if (mine.length || ctx.outsider) append(layout, h("p", { class: "chat-none muted" }, "Pick a conversation."));
       await list.refresh(false);
       return;
@@ -370,24 +410,11 @@ window.Maity = window.Maity || {};
     const messages = h("ol", { class: "messages", "aria-live": "polite" },
       conv.items.length ? conv.items.map(draw)
         : h("li", { class: "empty" }, h("p", null, "No messages yet."),
-          h("p", { class: "muted" }, agent.display_name + " reads what you write here at its next wait or resume.")));
-    // Back to the newest, when the human has scrolled up; with what came meanwhile.
-    let unseen = 0;
-    const jump = h("button", { type: "button", class: "small jump-latest", hidden: true, onclick: () => {
-      messages.scrollTop = messages.scrollHeight;
-      unseen = 0;
-      // The button goes away: the focus goes to the composer, not to the page's start.
-      text.focus();
-      jump.hidden = true;
-    } }, "Newest");
-    jump.hidden = true;
-    const showJump = () => {
-      const away = !atBottom(messages);
-      jump.hidden = !away;
-      jump.textContent = unseen ? unseen + " new · Newest" : "Newest";
-      if (!away) unseen = 0;
-    };
-    messages.addEventListener("scroll", showJump);
+          h("p", { class: "muted" }, M.dom.memberRef(ctx, agent.id), " reads what you write here at its next wait or resume.")));
+    // Back to the newest, when the human has scrolled up; with what came
+    // meanwhile. The pill goes away: the focus goes to the composer.
+    const follow = follower(messages, () => text.focus());
+    const jump = follow.pill;
     const pollStatus = M.statusLine();
     if (unreadFailed) pollStatus.fail("Which messages are new could not be read: ", unreadFailed);
 
@@ -422,12 +449,10 @@ window.Maity = window.Maity || {};
     function add(msg, own) {
       if (shown.has(msg.seq)) return;
       shown.add(msg.seq);
-      const follow = own || atBottom(messages);
       const empty = messages.querySelector(".empty");
       if (empty) empty.remove();
       append(messages, draw(msg));
-      if (follow) messages.scrollTop = messages.scrollHeight;
-      else { unseen += 1; showJump(); }
+      follow.added(own);
       if (msg.seq > cursor) cursor = msg.seq;
     }
 
@@ -539,7 +564,7 @@ window.Maity = window.Maity || {};
 
     M.dom.sendOnCtrlEnter(text, send, button);
 
-    const heading = h("h2", { tabindex: "-1" }, "Chat with " + agent.display_name);
+    const heading = h("h2", { tabindex: "-1" }, "Chat with ", M.dom.memberRef(ctx, agent.id));
     append(pane,
       h("a", { class: "chat-back", href: ctx.link("chat") }, "← Conversations"),
       h("div", { class: "toolbar" },
@@ -557,7 +582,7 @@ window.Maity = window.Maity || {};
     // router does once this function has returned.
     window.setTimeout(() => {
       fitToScreen(layout);
-      messages.scrollTop = messages.scrollHeight;
+      follow.open(messages.querySelector(".new-line"));
       // On a phone the chat replaced the list: take the focus to its heading.
       if (window.matchMedia && window.matchMedia("(max-width: 720px)").matches) heading.focus();
     }, 0);

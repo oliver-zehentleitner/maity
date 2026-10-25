@@ -34,7 +34,7 @@ window.Maity = window.Maity || {};
   function toWords(ctx, to) {
     if (to === "all") return "everyone";
     if (/^role:/.test(to || "")) return "every " + to.slice(5);
-    return ctx.nameOf(to);
+    return M.dom.memberRef(ctx, to);
   }
 
   // The latest WINDOW events from the head, oldest first; stops when the
@@ -108,7 +108,7 @@ window.Maity = window.Maity || {};
       return h("li", { class: "pmsg type-" + p.type, "data-seq": String(e.seq) },
         h("div", { class: "pmsg-head" },
           h("span", { class: "badge" }, TYPE_WORDS[p.type] || p.type),
-          h("span", null, " " + ctx.nameOf(from) + " to " + toWords(ctx, p.to)),
+          h("span", null, " ", M.dom.memberRef(ctx, from), " to ", toWords(ctx, p.to)),
           // The board has no route to one card yet: its id, linking to the board.
           p.task_id ? [" · ", h("a", { href: ctx.link("board") }, p.task_id)] : null,
           " · ", h("span", { class: "muted" }, formatTime(e.at))),

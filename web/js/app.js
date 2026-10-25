@@ -34,7 +34,8 @@ window.Maity = window.Maity || {};
     { route: "ticker", label: "Ticker" },
     // No tab: opened from the inbox and from a chat (js/project-message.js).
     { route: "message", label: "Message the project", tab: false },
-    { route: "join", label: "Join an agent", admin: true },
+    // Joining is in Agents now; the old route opens it there (js/join.js).
+    { route: "join", label: "Join an agent", admin: true, tab: false },
     // The account-level view is views.runners; this one is the project's.
     { route: "runners", view: "projectRunners", label: "Runners", admin: true, watch: /^runner_/, changed: "The runners changed." },
     // Where the hub knows the Keep the Why export (docs/api.md §6.1, §11.3).
@@ -76,6 +77,7 @@ window.Maity = window.Maity || {};
   function parseHash() {
     const parts = window.location.hash.replace(/^#\/?/, "").split("/").filter(Boolean).map(decodeURIComponent);
     if (!parts.length) return { scope: null };
+    if (parts[0] === "notifications") return { scope: "notifications" };
     if (parts[0] === "all") return { scope: "all" };
     if (parts[0] === "new") return { scope: "new" };
     if (parts[0] === "account") return { scope: "account", args: parts.slice(1) };
@@ -248,6 +250,52 @@ window.Maity = window.Maity || {};
     status.el);
   }
 
+  function onboardingForm(ctx) {
+    const current = ctx.project.settings.onboarding || { check_in_with: "coordinator" };
+    const status = statusLine();
+    const briefing = h("textarea", { id: "onboarding-briefing", rows: "6", "aria-describedby": "onboarding-hint" }, current.briefing || "");
+    const choices = [{ value: "", label: "No check-in" }, { value: "coordinator", label: "Coordinator" }]
+      .concat(["owner", "admin", "member", "reviewer", "proxy"].map((role) => ({ value: "role:" + role, label: "Role: " + role })))
+      .concat(ctx.members.filter((m) => !m.removed_at).map((m) => ({ value: m.id, label: "Member: @" + m.handle + " (" + m.kind + ")" })));
+    if (current.check_in_with && !choices.some((c) => c.value === current.check_in_with)) {
+      choices.push({ value: current.check_in_with, label: "Unavailable member: " + current.check_in_with });
+    }
+    const target = h("select", { id: "onboarding-target" }, choices.map((c) => h("option", {
+      value: c.value, selected: c.value === (current.check_in_with || ""),
+    }, c.label)));
+    const button = h("button", { type: "submit" }, "Save onboarding");
+    const metadata = h("p", { class: "muted onboarding-metadata" },
+      current.version != null ? "Version " + current.version : "Project default",
+      current.by ? [" · set by ", M.dom.memberRef(ctx, current.by, { text: "handle" })] : null,
+      current.updated_at ? " · updated " + formatTime(current.updated_at) : null);
+    return h("form", { class: "inline-form project-onboarding", onsubmit: async (e) => {
+      e.preventDefault();
+      if ([...briefing.value].length > 16 * 1024) {
+        status.fail("Not saved: ", { message: "The briefing may contain at most 16,384 characters." }); briefing.focus(); return;
+      }
+      const onboarding = {};
+      if (briefing.value) onboarding.briefing = briefing.value;
+      if (target.value) onboarding.check_in_with = target.value;
+      button.disabled = true; status.busy("Saving…");
+      try {
+        const saved = await M.api.patch(ctx.base, { settings: { onboarding } });
+        ctx.project = saved;
+        const value = saved.settings && saved.settings.onboarding;
+        clear(metadata);
+        append(metadata, value && value.version != null ? "Version " + value.version : "Project default",
+          value && value.by ? [" · set by ", M.dom.memberRef(ctx, value.by, { text: "handle" })] : null,
+          value && value.updated_at ? " · updated " + formatTime(value.updated_at) : null);
+        status.done(); append(status.el, h("span", { class: "ok" }, "Onboarding saved."));
+      } catch (err) { status.fail("Onboarding not saved: ", err); }
+      finally { button.disabled = false; }
+    } },
+    h("h2", { class: "panel-title" }, "Onboarding"), metadata,
+    h("label", { for: "onboarding-briefing" }, "Default briefing (Markdown)"), briefing,
+    h("p", { class: "hint", id: "onboarding-hint" }, "Up to 16,384 characters. Agents with their own briefing keep it; others receive this text on their next resume. Leave empty to remove the default text."),
+    h("label", { for: "onboarding-target" }, "Check in with"), target,
+    h("p", { class: "hint" }, "The coordinator or role is resolved when the agent resumes. No check-in disables the hint."), button, status.el);
+  }
+
   function projectPanel(ctx) {
     const status = statusLine();
     const save = async (body, label) => {
@@ -261,6 +309,21 @@ window.Maity = window.Maity || {};
     };
 
     const panel = h("div", { class: "panel", id: "project-panel" });
+    const language = (ctx.project.settings || {}).language || "en";
+    const humanAdmin = ctx.me.kind === "human" && ctx.canAdmin;
+    if (humanAdmin) {
+      const select = h("select", { id: "project-language" },
+        h("option", { value: "en" }, "English"), h("option", { value: "de" }, "Deutsch"));
+      select.value = language;
+      append(panel, h("form", { class: "inline-form project-language", onsubmit: (e) => {
+        e.preventDefault(); save({ settings: { language: select.value } }, "Language");
+      } }, h("h2", { class: "panel-title" }, "Project language"),
+      h("label", { for: "project-language" }, "Language"), select,
+      h("button", { type: "submit" }, "Save language")));
+    } else {
+      append(panel, h("p", { class: "project-language" }, "Project language: " + (language === "de" ? "Deutsch" : "English")));
+    }
+
     if (ctx.canAdmin) {
       const state = h("select", { id: "state-select" },
         STATES.map((s) => h("option", { value: s, selected: s === ctx.project.state }, STATE_LABELS[s])));
@@ -280,6 +343,7 @@ window.Maity = window.Maity || {};
       h("label", { for: "state-reason" }, "Reason"), reason,
       h("button", { type: "submit" }, "Change state")));
     }
+    if (ctx.canAdmin && ctx.project.settings && "onboarding" in ctx.project.settings) append(panel, onboardingForm(ctx));
     if (ctx.canAdmin && "repository" in ctx.project) append(panel, repositoryForm(ctx));
     // Only on a hub with group chats: without them there is no closed one.
     if (ctx.canAdmin && M.groupChat) {
@@ -442,7 +506,7 @@ window.Maity = window.Maity || {};
         append(impact, h("div", { class: "flag" },
           h("p", null, bearer.length === 1 ? "This agent calls with a bearer token and would be refused (signature_required) until it signs:"
             : "These agents call with a bearer token and would be refused (signature_required) until they sign:"),
-          h("ul", null, bearer.map(({ m, c }) => h("li", null, m.display_name + " · ",
+          h("ul", null, bearer.map(({ m, c }) => h("li", null, M.dom.memberRef(ctx, m.id), " · ",
             h("code", null, c.id), " · last used " + formatAgo(c.last_used_at) + " as a bearer token"))),
           h("p", null, "Signing is what the maity CLI does; an agent without it installs it and runs maity resume."),
           h("label", { class: "check", for: "signing-confirm" }, confirmBox, " Cut them off until they sign")));
@@ -650,11 +714,30 @@ window.Maity = window.Maity || {};
       class: "settings-menu",
       face: M.icons.gear(18),
       items: () => [
-        mayConfigure ? { label: panelOpen ? "Close project settings" : "Project settings", onSelect: togglePanel } : null,
+        ctx.scope === "project" ? { label: panelOpen ? "Close project settings" : "Project settings", onSelect: togglePanel } : null,
         { label: "Runners", href: "#/runners" },
         ctx.me.instance_admin ? { label: "Users of this hub", href: "#/admin/users" } : null,
       ].filter(Boolean),
     });
+    // Light, dark, or as the system has it; per browser (js/theme.js).
+    const THEME_WORDS = { system: "System", light: "Light", dark: "Dark" };
+    const theme = M.theme ? M.menuButton({
+      label: "Theme: " + THEME_WORDS[M.theme.get()],
+      listLabel: "Theme",
+      class: "theme-menu",
+      face: M.icons.theme(M.theme.get(), 18),
+      items: () => M.theme.THEMES.map((t) => ({
+        label: THEME_WORDS[t],
+        checked: t === M.theme.get(),
+        onSelect: () => {
+          M.theme.set(t);
+          clear(theme.button);
+          append(theme.button, M.icons.theme(t, 18));
+          theme.button.setAttribute("aria-label", "Theme: " + THEME_WORDS[t]);
+          theme.button.setAttribute("title", "Theme: " + THEME_WORDS[t]);
+        },
+      })),
+    }) : null;
     // The human: their picture, the account, signing out.
     const profile = M.menuButton({
       label: "Your profile: " + ctx.me.display_name,
@@ -678,7 +761,7 @@ window.Maity = window.Maity || {};
         M.api.source === "fixtures"
           ? h("span", { class: "source", title: "Data from web/fixtures/, not from the hub. Changes are kept in this tab only." }, "Fixtures")
           : null,
-        h("span", { class: "me" }, M.notify.bell(ctx, () => ctx.refreshCounts()), settings.el, profile.el)),
+        h("span", { class: "me" }, M.notify.bell(ctx, () => ctx.refreshCounts()), theme ? theme.el : null, settings.el, profile.el)),
       // The projects, and at their right, apart, this project's state and
       // the owner's absence with the settings that change them.
       h("div", { class: "switcher-row" },
@@ -694,6 +777,7 @@ window.Maity = window.Maity || {};
         ? h("p", { class: "flag absence" }, "While away: " + absence.scope)
         : null,
       panelSlot,
+      ctx.scope === "project" && M.leadChat ? M.leadChat.control(ctx) : null,
       ctx.scope === "project"
         ? h("nav", { class: "views", "aria-label": "Views" },
           NAV.filter((item) => offered(ctx, item) && item.tab !== false).map((item) => h("a", {
@@ -747,6 +831,7 @@ window.Maity = window.Maity || {};
       refresh: render,
       markSeen: () => {},
       every: (ms, fn) => { timers.push(window.setInterval(fn, ms)); },
+      onDispose: (fn) => { disposers.push(fn); },
       listeners: [],
       onEvents: (fn) => { ctx.listeners.push(fn); },
       // Re-reads /me for the switcher's counts. What counts as seen stays;
@@ -793,7 +878,10 @@ window.Maity = window.Maity || {};
 
   // Timers belong to one render; the next render stops them.
   let timers = [];
+  let disposers = [];
   function stopTimers() {
+    disposers.forEach((fn) => fn());
+    disposers = [];
     timers.forEach((t) => window.clearInterval(t));
     timers = [];
   }
@@ -926,6 +1014,9 @@ window.Maity = window.Maity || {};
   async function render() {
     const seq = ++renderSeq;
     stopTimers();
+    // A route noted as not on this hub holds within one view only: after a
+    // deploy, the next navigation asks it again.
+    M.api.absent.clear();
     const main = document.getElementById("main");
     let where = { scope: "unknown" };
     let ctx;
@@ -963,10 +1054,10 @@ window.Maity = window.Maity || {};
     renderHeader(ctx, where.route);
     const item = where.scope === "project" ? NAV.find((n) => n.route === where.route) : null;
     const empty = where.scope === "all" && !ctx.projects.length;
-    const known = ["all", "new", "account", "runners", "admin-users", "observe"].includes(where.scope)
+    const known = ["all", "new", "account", "runners", "admin-users", "observe", "notifications"].includes(where.scope)
       || (item && own(M.views, item.view || item.route) && offered(ctx, item));
     let viewName = "unknown";
-    if (["all", "new", "account", "runners", "admin-users", "observe"].includes(where.scope)) viewName = where.scope;
+    if (["all", "new", "account", "runners", "admin-users", "observe", "notifications"].includes(where.scope)) viewName = where.scope;
     else if (known) viewName = where.route;
     const root = h("section", { class: "view view-" + viewName });
     try {
@@ -975,7 +1066,7 @@ window.Maity = window.Maity || {};
         // what waits comes first, the way to a project of one's own after it.
         const waiting = (await M.api.getAll("/requests")).items;
         if (seq !== renderSeq) return;
-        if (waiting.length) await M.views.inbox(ctx, root, []);
+        if (waiting.length || M.notify.state.available) await M.views.inbox(ctx, root, []);
         const start = h("div", { class: "no-projects" });
         M.views.noProjects(ctx, start);
         append(root, start);
@@ -983,10 +1074,19 @@ window.Maity = window.Maity || {};
         const elsewhere0 = M.observe ? await M.observe.note(ctx) : null;
         if (elsewhere0) append(root, elsewhere0);
       } else if (where.scope === "all") {
+        if (M.leadChat) {
+          const leadSlot = h("div");
+          append(root, leadSlot);
+          // The inbox stays usable while each project's agents are being read.
+          M.leadChat.all(ctx).then((el) => { if (seq === renderSeq) append(leadSlot, el); })
+            .catch(() => { if (seq === renderSeq) append(leadSlot, h("p", { class: "muted" }, "Could not read project leads.")); });
+        }
         await M.views.inbox(ctx, root, []);
         // Where one's agents are in projects one is not: read along there.
         const elsewhere = M.observe ? await M.observe.note(ctx) : null;
         if (elsewhere) append(root, elsewhere);
+      } else if (where.scope === "notifications") {
+        await M.waiting.full(ctx, root);
       } else if (where.scope === "observe") {
         await M.views.observe(ctx, root, where);
       } else if (where.scope === "new") {
@@ -1013,6 +1113,7 @@ window.Maity = window.Maity || {};
     let label = "No such view";
     if (empty) label = "No projects yet";
     else if (where.scope === "all") label = "All projects";
+    else if (where.scope === "notifications") label = "Notifications";
     else if (where.scope === "new") label = "New project";
     else if (where.scope === "account") label = "Your account";
     else if (where.scope === "runners") label = "Runners";

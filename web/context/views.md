@@ -664,3 +664,87 @@ whose card it is.
 steps per action and still three labels per card. A single overflow menu
 for all actions: Place is used repeatedly while ordering a column, and a
 menu per press would make that slow.
+
+## A member is named through one helper, as a link to their row in Members
+
+**Id:** 801bc195-cbbf-497a-82d0-7c40bc7567b1
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's rule that agents and humans are always clickable, relayed by the coordinator (tsk-f7w3w35bq0r3), 2026-10-23; the dashboard's implementation, 2026-10-23
+**Revisit when:** a member gets a view of their own apart from the Members row, or names appear inside a control that cannot hold a link
+
+`M.dom.memberRef(ctx, who, opts)` is the one way a view names a member:
+a link to `#/p/<slug>/members/<id>` (Members marks that row and focuses
+it), the full name as tooltip, `data-member` for tests. A member the
+project does not list (removed, outside), a personal request's people,
+whose project the human may not be in, and every member in a view read
+from outside the project are plain text. A name inside a button (an
+inbox entry's head) stays text, since a link cannot sit in a button.
+
+**Reason:** the maintainer wants to reach any member's actions from
+wherever they appear, and one helper keeps the link, the tooltip and the
+plain-text rule the same on every page.
+
+**Rejected alternative:** a link built in each view: the rules for who
+is linkable (listed, inside the project) would drift between pages.
+
+## A route the hub does not serve is said quietly, and the page does not ask it again
+
+**Id:** aa3669b7-71e6-4e87-9376-5759824653d3
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's card from H's audit of every route the web calls against the hub on main (tsk-yht5tzadgv83, tsk-056gjh5jpfq7), 2026-10-23: 19 of 83 not served, some red, the notifications read every 15 s regardless; the dashboard's implementation, 2026-10-23
+**Revisit when:** the hub answers a capability list, or every route the web calls is served on every supported hub
+
+A 404 or 405 means "not on this hub" only when the hub's machine form
+does not list that method for that path (`M.api.missingRoute`); a 404 on
+a listed route is the resource's (a project left, a card gone) and stays
+an error, as does one while the machine form cannot be read. A view that
+needs a missing route shows a muted line in its place (`M.dom.notOnHub`)
+and notes the route (`M.api.absent`, method and path without the query,
+until the next navigation, so a deploy meanwhile is found): the notifications' 15-second count read, the browser
+notifications' long-poll, the overview's re-reads and the sessions list
+ask no more. A 5xx, a network failure, 401 or 403 is still shown as an
+error.
+
+**Reason:** an older hub without a feature is the normal case while the
+hub grows, not a failure of the reader's; a red line for it reads as
+something broken, and a timer that keeps asking costs a request every
+15 seconds for nothing.
+
+**Rejected alternative:** a check of the machine form before every call,
+as for the controls (views.md: controls only for routes the hub lists):
+the answer of the call itself already says it, and these reads happen
+whether or not a control is drawn. Caching every 404 by its full path: a
+card or a request that is gone answers 404 too, and must not be taken for
+a missing feature.
+
+## Joining an agent happens in Agents: a panel under the title, open joins as seats in the grid
+
+**Id:** d80f865d-5b59-4ad1-8cc2-c1079d13869c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish that Join an agent be part of Agents, not a page of its own (tsk-rf6qynscm6px), 2026-10-23; the designer's layout for it, 2026-10-23; the dashboard's implementation, 2026-10-23
+**Revisit when:** joins get a lifecycle of their own beyond open, used, expired, burned and revoked, or the Agents view is split
+
+Join an agent is no longer a tab. Agents' title row has **+ Join an agent**
+(owner and admin), which opens an inline panel under it, closed by
+default and open at once in a project without agents or at
+`#/p/<slug>/agents/join`; the old `#/p/<slug>/join` opens the same. The
+form keeps its logic (js/join.js) in two columns; a made join's line
+takes the form's place, with Join another and Done. An open join is a
+dashed **open seat** at the front of the agents' grid; the rest of the
+joins are folded at the view's end as Earlier joins.
+
+**Reason:** joining is how an agent gets into that view, so the action
+sits where its result appears; an open join is a member that has not
+arrived yet, so it stands among the members, not in a list of its own.
+The record of old joins is rarely needed.
+
+**Rejected alternative:** a modal dialog for the form: it hides the grid
+the seat appears in, and the panel works the same at 390 px. Open joins in
+a section of their own below the cards, the first idea: it kept them
+apart from the team they join.

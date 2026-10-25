@@ -303,7 +303,7 @@ def test_a_failed_rendering_does_not_move_the_cursor(
 ) -> None:
     from maity import state
 
-    def broken(packet: Any, first: bool = False) -> str:
+    def broken(packet: Any, first: bool = False, board_empty: bool = False) -> str:
         raise ValueError("renderer bug")
 
     monkeypatch.setattr(onboarding, "render", broken)
@@ -371,3 +371,84 @@ def test_a_peer_without_a_member_id_has_no_empty_brackets() -> None:
     peers = [{"handle": "ghost", "role": "member", "presence": "away"}]
     text = onboarding.render(packet(peers=peers))
     assert "None" not in text and "Members: ghost (member, away)" in text
+
+
+@pytest.mark.parametrize("kind", ["agent", "human"])
+@pytest.mark.parametrize("first", [False, True])
+def test_checkin_is_immediately_before_the_project_briefing(kind: str, first: bool) -> None:
+    ms = packet()["membership"] | {
+        "briefing": "How this project starts",
+        "briefing_source": "project",
+        "briefing_by": {"id": "agt-admin", "kind": "agent", "handle": "coordinator"},
+    }
+    p = packet(
+        membership=ms,
+        onboarding={
+            "check_in_with": {"member_id": "agt-admin", "handle": "coordinator", "kind": kind},
+            "instruction": "Say that you joined and ask how to start.",
+        },
+    )
+    text = onboarding.render(p, first=first)
+    assert text.startswith(
+        "Check in:\nReport to @coordinator ("
+        + kind
+        + ") with a message before you take any work.\n"
+        "> Say that you joined and ask how to start.\n\n"
+        "Your briefing (project default, set by coordinator):\n> How this project starts"
+    )
+
+
+@pytest.mark.parametrize("block", [None, {}, [], "wrong", {"check_in_with": {}}])
+def test_missing_or_partial_checkin_is_backward_compatible(block: Any) -> None:
+    assert onboarding.render(packet(onboarding=block)) == onboarding.render(packet())
+
+
+def test_checkin_does_not_require_a_briefing() -> None:
+    p = packet(
+        membership={"briefing": None},
+        onboarding={
+            "check_in_with": {"handle": "lead", "kind": "agent"},
+            "instruction": "Hello",
+        },
+    )
+    text = onboarding.render(p, first=True)
+    assert text.index("Check in:") < text.index("No briefing was given")
+
+
+def test_checkin_and_project_author_are_terminal_safe() -> None:
+    ms = packet()["membership"] | {
+        "briefing_source": "project",
+        "briefing_by": {"handle": HOSTILE},
+    }
+    text = onboarding.render(
+        packet(
+            membership=ms,
+            onboarding={
+                "check_in_with": {"handle": HOSTILE, "kind": HOSTILE},
+                "instruction": HOSTILE,
+            },
+        )
+    )
+    assert "\x1b" not in text and "\x9b" not in text and "\u202e" not in text
+    assert not any(line.startswith("Next: `curl") for line in text.splitlines())
+    assert any(line.startswith("> Next:") for line in text.splitlines())
+
+
+def test_checkin_is_display_only_and_json_remains_the_packet(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    p = packet(
+        onboarding={
+            "check_in_with": {"handle": "lead", "kind": "agent"},
+            "instruction": "Check in now",
+        }
+    )
+    fake.routes[("POST", "/api/v1/me/resume")] = lambda _: (200, p)
+    assert cli.main(["resume"]) == cli.EXIT_OK
+    assert "Check in:" in capsys.readouterr().out
+    assert cli.main(["resume", "--json"]) == cli.EXIT_OK
+    assert json.loads(capsys.readouterr().out) == p
+    assert [(r.method, r.path) for r in fake.signed()] == [
+        ("POST", "/api/v1/me/resume"),
+        ("POST", "/api/v1/me/resume"),
+    ]
