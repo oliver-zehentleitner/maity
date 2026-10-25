@@ -4296,6 +4296,48 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(main.querySelectorAll(".briefing-override").length > 0, "onboarding: own agent briefings are marked in members");
   win.Maity.api.get = onboardingGet; win.Maity.api.patch = onboardingPatch;
 
+  // Statistics (js/statistics.js, docs/api.md §16.6): the instance's counts, never a name; a 7/30/90 switch.
+  const stGets = [];
+  const stGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => { if (p.startsWith("/admin/statistics")) stGets.push(p); return stGet(p); };
+  win.Maity.api.forgetRoutes();
+  await go("#/all"); await go("#/admin"); for (let k = 0; k < 6; k++) await tick();
+  const stBox = () => main.querySelectorAll(".admin-section").find((x) => x.getAttribute("aria-label") === "Statistics");
+  const stRow = (key) => stBox().querySelectorAll("tr").find((tr) => tr.attrs["data-series"] === key);
+  const stCells = (key) => stRow(key).childNodes.map((c) => text(c));
+  const stTiles = () => stBox().querySelectorAll("li.stat-tile").map((li) => text(li));
+  expect(stBox() && main.querySelectorAll(".admin-section")[0] === stBox() && stGets[0] === "/admin/statistics?days=30",
+    "statistics: the admin area's first section, read for 30 days");
+  expect(JSON.stringify(stTiles()) === JSON.stringify(["41Humans2 waiting for approval", "117Agent profiles", "12Projectsnot archived", "23Agent instances online", "29Humans with an agent"]),
+    "statistics: the totals as tiles " + JSON.stringify(stTiles()));
+  expect(stCells("registrations")[0] === "Registrations" && stCells("registrations")[1] === "36" && stCells("registrations")[2] === "3"
+    && stCells("humans_active")[1] === "up to 16 a day" && (() => { const sv = stRow("cards_done").childNodes[3].childNodes[0]; return sv && String(sv.tagName).toLowerCase() === "svg" && sv.getAttribute("aria-hidden") === "true"
+      && sv.childNodes.some((n) => String(n.tagName).toLowerCase() === "polyline"); })(),
+    "statistics: a series sums its days, people show their highest day, today beside it " + JSON.stringify([stCells("registrations"), stCells("humans_active")]));
+  expect(stCells("reviews")[1] !== "–" && text(stBox()).includes("Reviews are counted from 2026-10-22") && text(stBox()).includes("11 after 7 days · 4 after 30 days")
+    && text(stBox()).includes("Humans whose first visit lies at least 7 (or 30) days back") && text(stBox()).includes("Counted ")
+    && stBox().querySelectorAll("details.stat-days tbody tr").length === 30,
+    "statistics: reviews from when they are known, who comes back explained, when counted, every day in a table");
+  btn(stBox(), "90 days").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(stGets[stGets.length - 1] === "/admin/statistics?days=90" && btn(stBox(), "90 days").getAttribute("aria-pressed") === "true"
+    && btn(stBox(), "30 days").getAttribute("aria-pressed") === "false" && stBox().querySelectorAll("details.stat-days tbody tr").length === 90
+    && text(stBox().querySelectorAll("details.stat-days tbody tr")[89]).endsWith("–"),
+    "statistics: the switch reads 90 days; days before history show reviews as –");
+  // A fresh instance: zeros, nothing broken.
+  win.Maity.api.get = (p) => (p.startsWith("/admin/statistics")
+    ? Promise.resolve({ as_of: "2026-10-25T10:00:00Z", window_days: 7, totals: { humans: 1, humans_pending: 0, agents: 0, projects: 0, instances_online: 0, humans_with_an_agent: 0 },
+      days: Array.from({ length: 7 }, (_, i) => ({ date: "2026-10-" + (25 - i), registrations: 0, new_instances: 0, humans_active: i ? 0 : 1, agents_active: 0,
+        cards_created: 0, cards_claimed: 0, cards_done: 0, reviews: 0 })), returning: { after_7_days: 0, after_30_days: 0 }, coverage: { reviews_since: null } })
+    : stGet(p));
+  btn(stBox(), "7 days").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(stCells("cards_done")[1] === "0" && stCells("humans_active")[1] === "up to 1 a day" && !text(stBox()).includes("Reviews are counted from")
+    && stTiles()[0] === "1Humans", "statistics: an empty instance reads zeros");
+  win.Maity.api.get = (p) => (p.startsWith("/admin/statistics") ? Promise.reject(new win.Maity.api.ApiError("boom", 500, p, "internal")) : stGet(p));
+  btn(stBox(), "30 days").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(!stBox().querySelector("li.stat-tile") && text(stBox()).includes("The statistics could not be read: boom"), "statistics: a failed read clears the old counts and says so");
+  win.Maity.api.get = stGet; win.Maity.api.forgetRoutes();
+  await go("#/all");
+
   // Unified instance administration: source-aware mail editing and isolated capabilities.
   const adminGet = win.Maity.api.get, adminPatch = win.Maity.api.patch, adminPost = win.Maity.api.post;
   const adminHas = win.Maity.api.hubHas, adminMissing = win.Maity.api.missingRoute;
