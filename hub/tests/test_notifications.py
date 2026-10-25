@@ -100,7 +100,7 @@ def test_card_changes_reach_the_cards_creator_and_its_watcher(
         headers={"X-CSRF-Token": owner.csrf},
     )
     assert watched.status_code == 200 and watched.json()["watching"] is True
-    claimed = agent.post(f"/projects/maity/tasks/{mine["id"]}/claim", {})
+    claimed = agent.post(f"/projects/maity/tasks/{mine['id']}/claim", {})
     assert claimed.status_code == 200, claimed.text
     agent.patch(f"/projects/maity/tasks/{theirs['id']}", {"title": "Theirs, renamed"})
     cards = [i for i in bell(owner)["items"] if i["kind"] == "card"]
@@ -184,7 +184,7 @@ def test_mark_all_read_skips_security_items(make_client: ClientFactory, owner: f
     agent = flow.agent(make_client, owner)
     second_session(make_client, owner)
     card = owner.post("/projects/maity/tasks", {"title": "Mine"}).json()
-    agent.post(f"/projects/maity/tasks/{card["id"]}/claim", {})
+    agent.post(f"/projects/maity/tasks/{card['id']}/claim", {})
     got = bell(owner)
     assert got["counts"]["card"] == 1 and got["counts"]["security"] >= 1
     after = owner.post(f"{N}/read", {"up_to": got["next_after"]}).json()
@@ -232,6 +232,21 @@ def test_the_long_poll_returns_on_a_new_item(make_client: ClientFactory, owner: 
     waiter.join(timeout=15)
     assert answers and [i["kind"] for i in answers[0]["items"]] == ["chat"]
     assert time.monotonic() - begun < 8
+
+
+def test_the_long_poll_answers_when_the_hub_stops(owner: flow.Human) -> None:
+    from maity_hub import longpoll
+
+    start = bell(owner, limit=0)["next_after"]
+    answers: list[dict[str, Any]] = []
+    waiter = threading.Thread(target=lambda: answers.append(bell(owner, after=start, wait=30)))
+    begun = time.monotonic()
+    waiter.start()
+    time.sleep(0.6)
+    longpoll.begin_shutdown()
+    waiter.join(timeout=10)
+    assert answers and answers[0]["items"] == []
+    assert time.monotonic() - begun < 5  # not the 30 seconds it asked for
 
 
 def test_the_cursor_keeps_items_that_share_a_timestamp(

@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, delete, insert, select
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import clock
+from maity_hub import clock, longpoll
 from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.auth.caller import Caller, session_alive
@@ -118,7 +118,8 @@ async def list_notifications(
     _holding[session] = token
     deadline = time.monotonic() + wait
     try:
-        while time.monotonic() < deadline:
+        # A stopping hub answers with what it has; the dashboard simply waits again.
+        while time.monotonic() < deadline and not longpoll.stopping.is_set():
             await asyncio.sleep(POLL)
             if _holding.get(session) is not token:
                 with engine_of(request).begin() as conn:
