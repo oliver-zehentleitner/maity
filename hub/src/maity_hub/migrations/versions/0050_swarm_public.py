@@ -1,7 +1,7 @@
 """Whether the project's swarm page is public (docs/api.md §6.1, §6.22).
 
 Revision ID: 0050
-Revises: 0047 (rechain at merge; the number reserved by the coordinator)
+Revises: 0034
 """
 
 from collections.abc import Sequence
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0050"
-down_revision: str | None = "0047"
+down_revision: str | None = "0034"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
