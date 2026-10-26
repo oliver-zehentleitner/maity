@@ -12,8 +12,9 @@ window.Maity = window.Maity || {};
   const { h, append, clear, formatAgo } = M.dom;
 
   const KIND_WORDS = {
-    inbox: "Requests", chat: "Chats", mention: "Mentions", card: "Your cards", agent: "Agents stopped",
-    keep_the_why: "Keep the Why", ticker: "Changes", jour_fixe: "Jour fixe", security: "Sign-ins and address", system: "Mail delivery",
+    // Only what the human has to react to (docs/api.md §18.1, 2026-10-26): what
+    // only informs is on the board, the ticker and the project's feed.
+    inbox: "Requests", chat: "Chats", mention: "Mentions", security: "Sign-ins and address",
   };
   // How long a browser long-poll may hold, and how long to stay away after
   // another tab took the long-poll over (§18.2: one per session).
@@ -33,24 +34,26 @@ window.Maity = window.Maity || {};
   // member of, to everything waiting, until the page has the personal
   // inbox (§18.2 names #/requests/<id>). A security item of another target
   // goes to the sessions too, where it is confirmed.
+  // Of the kinds since 2026-10-26 (§18.1): an older hub's other items are no notification here.
+  const known = (x) => Object.prototype.hasOwnProperty.call(KIND_WORDS, x.kind);
+  // Read only on purpose: a sign-in alert by This was me (§2.6.5), and an
+  // item that asks for an action (a registration to decide, an address to
+  // set again) closes with the matter, not by opening it (§18.1).
+  const keepsUnread = (x) => x.kind === "security" || ["registration", "settings"].includes((x.target || {}).type);
+
   function linkOf(item) {
     const t0 = item.target || {};
     if (t0.type === "session" || item.kind === "security") return "#/account/sessions";
     if (t0.type === "settings") return "#/account/notifications";
+    // A registration waiting for the instance admin (§16.4): Admin.
+    if (t0.type === "registration") return "#/admin";
     const slug = item.project && item.project.slug;
-    // An agent of one's own that has not confirmed Keep the Why (§6.23):
-    // in the project's Members where one is a member, else among one's
-    // agents on the account.
-    if (t0.type === "member" && item.kind === "keep_the_why") {
-      return slug && item.project.member !== false ? "#/p/" + encodeURIComponent(slug) + "/members/" + encodeURIComponent(t0.id)
-        : "#/account/picture/" + encodeURIComponent(t0.id);
-    }
     if (!slug || item.project.member === false) return "#/all";
     const base = "#/p/" + encodeURIComponent(slug) + "/";
     const t = item.target || {};
     if (t.type === "conversation") return base + "chat/" + encodeURIComponent(t.id);
-    if (t.type === "task") return base + "board";
-    if (t.type === "placement") return base + "agents";
+    if (t.type === "task") return base + "tasks/" + encodeURIComponent(t.id);
+    if (t.type === "request") return base + "inbox/" + encodeURIComponent(t.id);
     return base + "inbox";
   }
 
@@ -159,7 +162,7 @@ window.Maity = window.Maity || {};
                 close(false);
                 // A sign-in or address alert is confirmed only explicitly (§2.6.5,
                 // §18.3): opening it to look must not give that session good standing.
-                if (!x.read && x.kind !== "security") M.api.post("/me/notifications/read", { ids: [x.id] }).then(onChange, () => {});
+                if (!x.read && !keepsUnread(x)) M.api.post("/me/notifications/read", { ids: [x.id] }).then(onChange, () => {});
               },
             }, x.redacted ? "Removed" : x.title),
             h("span", { class: "muted" }, " · " + (x.project ? x.project.name + " · " : "") + formatAgo(x.at)),
@@ -175,7 +178,7 @@ window.Maity = window.Maity || {};
       if (!list.hidden) { close(true); return; }
       try {
         const answer = await M.api.get("/me/notifications?limit=20");
-        items = answer.items || [];
+        items = (answer.items || []).filter(known);
         top = answer.next_after || null;
       } catch (err) {
         items = [];
@@ -275,7 +278,7 @@ window.Maity = window.Maity || {};
         const config = browserConfig;
         if (config && !loop.reset) items.forEach((x) => {
           const b = config.settings.browser;
-          if (x.read || shown.has(x.id) || !b.kinds[x.kind]) return;
+          if (x.read || shown.has(x.id) || !known(x) || !b.kinds[x.kind]) return;
           if (x.actor && x.actor.member_id === config.ctx.me.id) return;
           shown.add(x.id);
           const withText = b.content && b.content[x.kind] && typeof x.content === "string";
@@ -341,5 +344,5 @@ window.Maity = window.Maity || {};
     return () => { watchers.delete(fn); wakeLoop(); };
   }
 
-  M.notify = { state, read, projectCount, title, bell, chatButton, linkOf, startBrowser, stopBrowser, halt, resume, running: () => !!browserConfig && !!browserLoop, subscribe, changed, KIND_WORDS };
+  M.notify = { known, keepsUnread, state, read, projectCount, title, bell, chatButton, linkOf, startBrowser, stopBrowser, halt, resume, running: () => !!browserConfig && !!browserLoop, subscribe, changed, KIND_WORDS };
 })(window.Maity);

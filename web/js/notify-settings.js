@@ -14,11 +14,6 @@ window.Maity = window.Maity || {};
     ["inbox", "Requests for you"],
     ["chat", "Chat messages"],
     ["mention", "Mentions of you"],
-    ["card", "Changes on your cards"],
-    ["agent", "An agent of yours stopped"],
-    ["keep_the_why", "An agent of yours has not confirmed Keep the Why"],
-    ["ticker", "Every change in your projects (the change ticker)"],
-    ["jour_fixe", "Jour fixe (none yet)"],
     ["security", "A new sign-in, a changed address"],
   ];
   const PERMISSION = {
