@@ -100,6 +100,135 @@ window.Maity = window.Maity || {};
       })));
   }
 
+  // Subtasks (docs/api.md §6.4). A child stands under its parent, folded,
+  // the hub's open/total beside the toggle; one whose parent is not on the
+  // board shows on its own with the parent's id. Which parents are unfolded
+  // is kept per project while the page lives.
+  const unfolded = new Set();
+  const cardLink = (ctx, id, words) => h("a", { class: "card-ref", href: ctx.link("tasks", id) }, words || id);
+  function childRow(ctx, t) {
+    return h("li", { class: "subtask" + (t.status === "done" || t.status === "cancelled" ? " met" : ""), "data-card": t.id },
+      h("span", { class: "subtask-status" }, status(t.status)), " ", cardLink(ctx, t.id), " ", cardLink(ctx, t.id, t.title));
+  }
+  function subtasks(ctx, c, byId, inPanel) {
+    const counts = c.children || { open: 0, total: 0 };
+    if (!counts.total) return null;
+    const kids = Object.values(byId).filter((t) => t.parent === c.id).sort(M.boardEdit.byOrder);
+    const away = counts.total - kids.length;
+    const list = h("ul", { class: "subtask-list" }, kids.map((t) => childRow(ctx, t)),
+      away > 0 ? h("li", { class: "muted" }, away + " more not loaded on the board") : null);
+    const words = "Subtasks " + counts.open + " open of " + counts.total;
+    if (inPanel) return h("div", { class: "subtasks" }, h("span", { class: "label" }, words), list);
+    const key = ctx.slug + "/" + c.id;
+    const listId = "subtasks-" + c.id;
+    list.id = listId;
+    list.hidden = !unfolded.has(key);
+    const toggle = h("button", { type: "button", class: "small subtask-toggle", "aria-expanded": String(!list.hidden), "aria-controls": listId,
+      onclick: () => {
+        list.hidden = !list.hidden;
+        if (list.hidden) unfolded.delete(key); else unfolded.add(key);
+        toggle.setAttribute("aria-expanded", String(!list.hidden));
+      } }, words);
+    return h("div", { class: "subtasks" }, toggle, list);
+  }
+  // The parent and the related cards, as links (navigation only).
+  function family(ctx, c, inPanel) {
+    return [
+      c.parent ? h("p", { class: "card-parent muted" }, "Subtask of ", cardLink(ctx, c.parent)) : null,
+      inPanel && (c.related || []).length
+        ? h("div", { class: "deps related" }, h("span", { class: "label" }, "Related"), h("ul", null, c.related.map((id) => h("li", null, cardLink(ctx, id)))))
+        : null,
+    ];
+  }
+
+  // A refused subtask edit in the hub's own words with every reason it
+  // names (subtasks_proposed, too_deep, has_children, parent_closed, cycle,
+  // …); null for any other refusal, which the form says as it says every
+  // other (an ambiguous mention with its long forms, a closed project).
+  function hubWords(err) {
+    const fields = (err.details && err.details.fields) || {};
+    const edge = Object.keys(fields).filter((f) => f === "parent" || f === "related");
+    if (edge.length) return { message: err.message + " (" + edge.map((f) => f + ": " + fields[f]).join("; ") + ")" };
+    if (err.details && err.details.reason === "subtasks_proposed") return { message: err.message + " (subtasks_proposed)" };
+    if (err.code === "unknown_task") return { message: err.message + " (unknown_task)" };
+    return null;
+  }
+
+  // In the opened card: its parent and related cards for whoever may edit
+  // it, and a subtask to start under it for every member.
+  function familyEditor(ctx, c, byId, manage) {
+    // A hub without subtasks (§6.4) sends no parent on its cards.
+    if (!manage || !manage.reload || !("parent" in c)) return null;
+    const closed = (t) => t.status === "done" || t.status === "cancelled";
+    const others = Object.values(byId).filter((t) => t.id !== c.id && !t._searchClosed);
+    const parts = [];
+    if (M.boardEdit.editable(ctx, c)) {
+      const path = ctx.base + "/tasks/" + encodeURIComponent(c.id);
+      const said = M.statusLine();
+      const hasKids = !!(c.children && c.children.total);
+      // A parent: no release, not a subtask itself, not closed (unless it is the current one).
+      const parentSel = c.kind === "release" || hasKids ? null
+        : h("select", { id: "card-parent-" + c.id, "data-focus": "parent:" + c.id }, h("option", { value: "" }, "none"),
+          others.filter((t) => t.kind !== "release" && !t.parent && (t.id === c.parent || !closed(t))).map((t) => h("option", { value: t.id }, t.id + " · " + t.title)));
+      // A parent or related card the board did not load (closed before its
+      // window) stays chosen as it is: a save never drops what it cannot show.
+      const notLoaded = (id) => h("option", { value: id }, id + " (not on the board)");
+      if (parentSel && c.parent && !others.some((t) => t.id === c.parent)) parentSel.appendChild(notLoaded(c.parent));
+      if (parentSel) parentSel.value = c.parent || "";
+      const relatedSel = h("select", { id: "card-related-" + c.id, multiple: true, size: "4" },
+        others.map((t) => { const o = h("option", { value: t.id }, t.id + " · " + t.title); o.selected = (c.related || []).includes(t.id); return o; }),
+        (c.related || []).filter((id) => !others.some((t) => t.id === id)).map((id) => { const o = notLoaded(id); o.selected = true; return o; }));
+      const save = h("button", { type: "submit", "data-focus": "family:" + c.id }, "Save");
+      parts.push(h("form", {
+        class: "card-family-form",
+        onsubmit: async (e) => {
+          e.preventDefault();
+          const body = {};
+          if (parentSel && parentSel.value !== (c.parent || "")) body.parent = parentSel.value || null;
+          const chosen = Array.from(relatedSel.querySelectorAll("option")).filter((o) => o.selected).map((o) => o.getAttribute("value"));
+          if (chosen.slice().sort().join() !== (c.related || []).slice().sort().join()) body.related = chosen;
+          if (!Object.keys(body).length) return;
+          save.disabled = true;
+          said.busy("Saving…");
+          try {
+            await M.api.patch(path, body);
+          } catch (err) {
+            save.disabled = false;
+            said.fail("Not saved: ", hubWords(err) || M.boardEdit.said(err));
+            return;
+          }
+          await manage.reload("family:" + c.id);
+        },
+      },
+      h("h4", null, "Parent and related cards"),
+      parentSel ? [h("label", { for: parentSel.id }, "Subtask of"), parentSel]
+        : h("p", { class: "hint" }, hasKids ? "It has subtasks of its own, so it is no subtask." : "A release is no subtask."),
+      h("label", { for: relatedSel.id }, "Related (Ctrl or Shift to choose several)"), relatedSel,
+      save, said.el));
+    }
+    // A subtask under it: not under a subtask, a release or a closed card (§6.4).
+    if (!c.parent && c.kind !== "release" && !closed(c)) {
+      const box = h("div", { class: "new-subtask-box" });
+      const start = h("button", { type: "button", class: "small", "aria-expanded": "false", "data-focus": "subtask:" + c.id,
+        onclick: () => {
+          if (start.getAttribute("aria-expanded") === "true") { clear(box); start.setAttribute("aria-expanded", "false"); return; }
+          const f = M.boardEdit.newCardForm(ctx, others, async (body) => {
+            try {
+              await M.api.post(ctx.base + "/tasks", body);
+            } catch (err) {
+              throw hubWords(err) || err;
+            }
+            await manage.reload("subtask:" + c.id);
+          }, () => { clear(box); start.setAttribute("aria-expanded", "false"); start.focus(); }, c);
+          append(clear(box), f.form);
+          start.setAttribute("aria-expanded", "true");
+          f.focus();
+        } }, "New subtask");
+      parts.push(h("div", { class: "card-new-subtask" }, start, box));
+    }
+    return parts.length ? h("div", { class: "card-family" }, parts) : null;
+  }
+
   function checkpoint(ctx, c) {
     const cp = c.checkpoint;
     if (!cp) return null;
@@ -445,6 +574,7 @@ window.Maity = window.Maity || {};
       h("h3", null, inPanel ? M.ids.link(c.title, M.ids.where(ctx))
         : h("a", { class: "card-open", href: ctx.link("tasks", c.id), onclick: manage && manage.remember ? () => manage.remember(c.id) : null }, c.title)),
       claimLine(ctx, c),
+      family(ctx, c, inPanel),
       edges(c.kind === "release" ? "Ships" : "Depends on", c.depends_on, byId, frozen),
       edges("Ships with", c.ships_with, byId),
       c.blocked_by_request
@@ -459,6 +589,8 @@ window.Maity = window.Maity || {};
       // Its section from the repository, where the hub knows path and section (§6.8).
       c.contract && "path" in c.contract && M.contractPanel ? M.contractPanel.panel(ctx, c, redraw) : null,
       checkpoint(ctx, c),
+      subtasks(ctx, c, byId, inPanel),
+      inPanel ? familyEditor(ctx, c, byId, manage) : null,
       report(ctx, c),
       c.kind === "release" && c.release ? release(ctx, c, byId, frozen, redraw, inPanel ? "panel-" : "") : null,
       // One row of controls: the column, the assignee, the place in the column.
@@ -662,7 +794,7 @@ window.Maity = window.Maity || {};
     const snapshot = () => ({ column: filter.column, member: filter.member, area: filter.area, silent: filter.silent,
       search: searchInput.value, hub: hubResults, scroll: window.scrollY || 0 });
     const remember = (id) => { lastBoard = { slug: ctx.slug, id, fromTitle: true, snapshot }; };
-    const manage = { move, assign, place, columnOf, drag, remember };
+    const manage = { move, assign, place, columnOf, drag, remember, reload: (key) => reload(key, true) };
 
     function column(s, label, cards) {
       const may = () => dragging && E.targets(ctx, dragging).includes(s);
@@ -730,9 +862,12 @@ window.Maity = window.Maity || {};
       items.forEach((t) => { byId[t.id] = t; });
       const known = new Set(COLUMNS.map(([s]) => s));
       const visible = items.filter(shown);
-      const other = visible.filter((t) => !known.has(t.status));
+      // A child whose parent is shown stands folded under it, not in a column.
+      const shownIds = new Set(visible.map((t) => t.id));
+      const standing = visible.filter((t) => !(t.parent && shownIds.has(t.parent)));
+      const other = standing.filter((t) => !known.has(t.status));
       columns = {};
-      COLUMNS.forEach(([s]) => { columns[s] = visible.filter((t) => t.status === s).sort(E.byOrder); });
+      COLUMNS.forEach(([s]) => { columns[s] = standing.filter((t) => t.status === s).sort(E.byOrder); });
       clear(intro);
       if (!items.length && !searchInput.value) {
         append(intro, h("p", { class: "first-hint" }, "No cards yet. Your agents put the work here: they propose cards in their "
@@ -749,7 +884,18 @@ window.Maity = window.Maity || {};
           : null);
       if (panel && byId[panel.id]) panel.update(card(ctx, byId[panel.id], byId, manage, true));
       if (marked) {
-        const el = Array.from(columnsBox.querySelectorAll("article.card")).find((a) => a.getAttribute("data-card") === marked);
+        let el = Array.from(columnsBox.querySelectorAll("article.card")).find((a) => a.getAttribute("data-card") === marked);
+        // A folded child: its parent unfolds, and the child's row is marked.
+        if (!el) {
+          el = Array.from(columnsBox.querySelectorAll("li.subtask")).find((li) => li.getAttribute("data-card") === marked) || null;
+          const list = el && el.parentNode;
+          if (list) {
+            list.hidden = false;
+            unfolded.add(ctx.slug + "/" + byId[marked].parent);
+            const toggle = Array.from(columnsBox.querySelectorAll("button.subtask-toggle")).find((b) => b.getAttribute("aria-controls") === list.id);
+            if (toggle) toggle.setAttribute("aria-expanded", "true");
+          }
+        }
         if (el) { el.className += " wanted"; el.setAttribute("tabindex", "-1"); }
         return el || null;
       }

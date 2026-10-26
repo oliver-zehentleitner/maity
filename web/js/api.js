@@ -172,6 +172,52 @@ window.Maity = window.Maity || {};
   const tasksReview = (slug) => ["owner", "admin", "reviewer"].includes(roleIn(slug));
 
   // A card's PATCH as the hub checks it (hub cards.check_transition).
+  // Subtasks and related cards (§6.4), checked on the card as it would be
+  // after the write: two levels, no closed parent, no release, no cycle with
+  // depends_on, and under policy.subtasks "proposed" a child that is not
+  // proposed only for tasks:admin. Mutates the card and the counts.
+  const CLOSED_TASK = ["done", "cancelled"];
+  function childrenOf(list, id) {
+    const kids = list.filter((t) => t.parent === id);
+    return { open: kids.filter((t) => !CLOSED_TASK.includes(t.status)).length, total: kids.length };
+  }
+  function subtaskEdges(slug, list, card, body, path, before) {
+    const after = Object.assign({}, card, "parent" in body ? { parent: body.parent } : {}, "status" in body ? { status: body.status } : {},
+      "depends_on" in body ? { depends_on: body.depends_on } : {});
+    if ("parent" in body && body.parent !== null) {
+      const p = list.find((t) => t.id === body.parent);
+      if (!p) fail(404, "unknown_task", "no such card: " + body.parent, path, { fields: { parent: "unknown_task" } });
+      const why = p.id === card.id ? "self" : p.kind === "release" || card.kind === "release" ? "release_card"
+        : p.parent ? "too_deep" : list.some((t) => t.parent === card.id) ? "has_children"
+        : CLOSED_TASK.includes(p.status) && before.parent !== p.id ? "parent_closed"
+        : (after.depends_on || []).includes(p.id) ? "cycle" : null;
+      if (why) fail(400, "invalid", "the request does not validate", path, { fields: { parent: why } });
+    }
+    if ("related" in body) {
+      const bad = (body.related || []).find((x) => x === card.id || !list.some((t) => t.id === x));
+      if (bad) fail(400, "invalid", "the request does not validate", path, { fields: { related: bad === card.id ? "self" : "unknown_task" } });
+    }
+    const policy = (project(slug, path).policy || {}).subtasks || "proposed";
+    const newlyOpenChild = after.parent && after.status !== "proposed" && !(before.parent && before.status !== "proposed");
+    if (policy === "proposed" && newlyOpenChild && !tasksAdmin(slug)) {
+      fail(403, "forbidden", "under the project's subtask policy a subtask starts as proposed; an admin opens it", path, { reason: "subtasks_proposed" });
+    }
+    const oldParent = before.parent;
+    if ("parent" in body) card.parent = body.parent;
+    if ("related" in body) {
+      const was = card.related || [];
+      card.related = [...new Set(body.related || [])];
+      // related is symmetric: the hub mirrors it on the other card.
+      list.forEach((t) => {
+        if (t.id === card.id) return;
+        const has = card.related.includes(t.id);
+        t.related = (t.related || []).filter((x) => x !== card.id).concat(has ? [card.id] : []);
+        if (!has && was.includes(t.id)) t.related = t.related.filter((x) => x !== card.id);
+      });
+    }
+    [oldParent, card.parent].filter(Boolean).forEach((pid) => { const p = list.find((t) => t.id === pid); if (p) p.children = childrenOf(list, pid); });
+  }
+
   function patchCard(slug, id, body, path) {
     const list = file(slug, "tasks.json", path).items;
     const card = list.find((x) => x.id === id);
@@ -184,6 +230,9 @@ window.Maity = window.Maity || {};
     const hasAuthority = authority === "holder" ? holds : authority === "reviewer" ? tasksReview(slug) : tasksAdmin(slug);
     const editor = holds || card.created_by === meId || tasksAdmin(slug);
     if (!editor && !(reviewMove && hasAuthority)) fail(403, "forbidden", "only the holder, the creator or an admin edits a card", path, { scope: "tasks:admin" });
+    if ("parent" in body || "related" in body || ("status" in body && card.parent)) {
+      subtaskEdges(slug, list, card, body, path, { parent: card.parent || null, status: card.status });
+    }
     if ("status" in body && body.status !== card.status) {
       const from = card.status;
       const to = body.status;
@@ -199,7 +248,9 @@ window.Maity = window.Maity || {};
       }
       if (to === "done") {
         const open = (card.depends_on || []).filter((d) => { const o = list.find((t) => t.id === d); return o && !closed.includes(o.status); });
-        if (open.length) fail(409, "dependencies_open", "a dependency is open", path, { open });
+        // A parent waits for its children (§6.4).
+        const kids = list.filter((t) => t.parent === card.id && !closed.includes(t.status)).map((t) => t.id);
+        if (open.length || kids.length) fail(409, "dependencies_open", "dependencies or children are not done", path, Object.assign({ open: open.concat(kids) }, kids.length ? { children: kids } : {}));
         // A release is done only when the hub judges it ready (§6.7).
         if (card.kind === "release" && !(card.release && card.release.readiness && card.release.readiness.ready)) {
           fail(409, "release_not_ready", "the release is not ready", path, { blocking: (card.release.readiness || {}).blocking || [] });
@@ -210,6 +261,8 @@ window.Maity = window.Maity || {};
       // A closed card holds no claim.
       if (closed.includes(to)) card.claim = null;
     }
+    // A child's closing changes its parent's counts.
+    if (card.parent) { const p = list.find((t) => t.id === card.parent); if (p) p.children = childrenOf(list, p.id); }
     ["title", "body", "label", "area"].forEach((f) => { if (f in body) card[f] = body[f]; });
     // §6.8: a contract card's file and section, checked as the hub checks them.
     if (body.contract) {
@@ -1694,15 +1747,21 @@ window.Maity = window.Maity || {};
       // A release is never one of the cards shipped together (§6.7).
       if ((body.ships_with || []).length && (body.kind === "release" || body.ships_with.some((id) => (list.find((t) => t.id === id) || {}).kind === "release"))) errors.ships_with = "release_card";
       if (Object.keys(errors).length) fail(400, "invalid", "invalid fields", path, { fields: errors });
+      // Under policy.subtasks "proposed" a member's subtask without a status starts as proposed; an explicit open is refused.
+      if (body.parent && !body.status && ((proj.policy || {}).subtasks || "proposed") === "proposed" && !tasksAdmin(m[1])) body = Object.assign({}, body, { status: "proposed" });
+      if (body.parent) subtaskEdges(m[1], list, { id: "(new)", kind: body.kind || "task", status: body.status || "open" },
+        { parent: body.parent, status: body.status || "open", depends_on: body.depends_on || [] }, path, { parent: null, status: "proposed" });
       taskSerial += 1;
       const at = nowIso();
       const card = { id: "tsk-f" + String(taskSerial).padStart(3, "0"), kind: body.kind || "task", title: body.title.trim(), body: body.body || "",
         label: body.label || null, status: body.status || "open", area: body.area || null, created_by: me().member.id,
         assigned_to: body.assigned_to || null, claim: null, checkpoint: null, depends_on: body.depends_on || [], ships_with: body.ships_with || [],
-        blocked_by_request: null, ktw_ref: null, report: null, release: null, contract: null, mentions: [], created_at: at, updated_at: at, closed_at: null };
+        blocked_by_request: null, ktw_ref: null, report: null, release: null, contract: null, mentions: [], created_at: at, updated_at: at, closed_at: null,
+        parent: body.parent || null, related: [], children: { open: 0, total: 0 } };
       // ships_with is symmetric: the hub mirrors it on the other card.
       card.ships_with.forEach((id) => { const o = list.find((t) => t.id === id); o.ships_with = [...new Set([...(o.ships_with || []), card.id])]; });
       list.unshift(card);
+      if (card.parent) { const p = list.find((t) => t.id === card.parent); p.children = childrenOf(list, p.id); }
       return card;
     }],
     ["POST", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/assign$/, (m, body, path) => {

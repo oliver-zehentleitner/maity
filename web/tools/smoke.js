@@ -4345,6 +4345,149 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "keep the why: the account marks the agent the notice is about and starts there");
   ktProto.focus = ktFocus; document.activeElement = undefined;
 
+  // Subtasks (docs/api.md §6.4): children folded under their parent with the hub's counts, a child whose parent
+  // is not shown standing on its own, parent and related in the opened card, a new subtask, the hub's refusals.
+  const stProto = Object.getPrototypeOf(main), stFocus = stProto.focus;
+  stProto.focus = function () { document.activeElement = this; };
+  try { win.localStorage && win.localStorage.removeItem && win.localStorage.removeItem("maity.board.column.maity"); } catch (err) { /* none */ }
+  await go("#/p/maity/inbox"); await go("#/p/maity/board"); for (let k = 0; k < 6; k++) await tick();
+  const stCard = (id) => main.querySelector(".columns").querySelectorAll("article.card").find((a) => a.attrs["data-card"] === id);
+  const stToggle = (id) => stCard(id).querySelector("button.subtask-toggle");
+  const stRows = (id) => stCard(id).querySelectorAll("li.subtask").map((li) => li.getAttribute("data-card"));
+  expect(!stCard("tsk-0011") && !stCard("tsk-0012") && !stCard("tsk-0014") && stToggle("tsk-0010") && text(stToggle("tsk-0010")) === "Subtasks 1 open of 2"
+    && stToggle("tsk-0010").getAttribute("aria-expanded") === "false" && stCard("tsk-0010").querySelector("ul.subtask-list").hidden,
+    "subtasks: children stand folded under their parent, the hub's open and total on the toggle");
+  stToggle("tsk-0010").click(); await tick();
+  expect(stToggle("tsk-0010").getAttribute("aria-expanded") === "true" && !stCard("tsk-0010").querySelector("ul.subtask-list").hidden
+    && JSON.stringify(stRows("tsk-0010").sort()) === JSON.stringify(["tsk-0011", "tsk-0012"])
+    && stCard("tsk-0010").querySelectorAll("li.subtask a").some((a) => a.getAttribute("href") === "#/p/maity/tasks/tsk-0011"),
+    "subtasks: unfolded, each child with its status, linked to open it");
+  expect(stToggle("tsk-0013") && text(stToggle("tsk-0013")) === "Subtasks 1 open of 1" && (stToggle("tsk-0013").click(), JSON.stringify(stRows("tsk-0013"))) === JSON.stringify(["tsk-0014"]),
+    "subtasks: a cancelled parent keeps its open child under it");
+  // Only open cards: the parent (in review) is not shown, so its open child stands with the parent's id.
+  byId("board-column").value = "open"; byId("board-column").dispatch("change"); await tick();
+  expect(stCard("tsk-0011") && text(stCard("tsk-0011").querySelector(".card-parent")) === "Subtask of tsk-0010"
+    && stCard("tsk-0011").querySelector(".card-parent a").getAttribute("href") === "#/p/maity/tasks/tsk-0010",
+    "subtasks: a child whose parent is not shown stands on its own with the parent's id");
+  byId("board-column").value = ""; byId("board-column").dispatch("change"); await tick();
+  // A folded child opened by its link: its parent unfolds, the child's row is marked, the panel shows the parent.
+  await go("#/p/maity/inbox"); await go("#/p/maity/tasks/tsk-0011"); for (let k = 0; k < 6; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  const stPanel = () => main.querySelector("aside.card-panel");
+  const stMarked = main.querySelector(".columns").querySelectorAll("li.subtask").find((li) => li.getAttribute("data-card") === "tsk-0011");
+  expect(stPanel() && stMarked && stMarked.className.includes("wanted") && !stMarked.parentNode.hidden
+    && stPanel().querySelector(".card-parent a").getAttribute("href") === "#/p/maity/tasks/tsk-0010" && byId("card-parent-tsk-0011").value === "tsk-0010",
+    "subtasks: a folded child's link unfolds its parent and marks it; its card names the parent");
+  // The parent's card: its children and its related card, as links.
+  await go("#/p/maity/tasks/tsk-0010"); for (let k = 0; k < 6; k++) await tick();
+  expect(stPanel().querySelectorAll(".card-panel-card li.subtask").length === 2 && stPanel().querySelector(".related a").getAttribute("href") === "#/p/maity/tasks/tsk-0006"
+    && !byId("card-parent-tsk-0010") && text(stPanel()).includes("It has subtasks of its own, so it is no subtask."),
+    "subtasks: the parent's card lists its children and related cards; a parent takes no parent");
+  // Editing: a parent and related cards are one PATCH; the hub's refusal is said in its own words.
+  const stPatches = [];
+  const stPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { if (b && ("parent" in b || "related" in b)) stPatches.push([p, b]); return stPatch(p, b); };
+  await go("#/p/maity/tasks/tsk-0006"); for (let k = 0; k < 6; k++) await tick();
+  const stOptions = byId("card-parent-tsk-0006").querySelectorAll("option").map((o) => o.getAttribute("value"));
+  expect(!stOptions.includes("tsk-0013") && !stOptions.includes("tsk-0011") && !stOptions.some((v) => v.startsWith("rel-")) && stOptions.includes("tsk-0001"),
+    "subtasks: a parent is chosen among open cards that are no subtask and no release");
+  // tsk-0006 depends on tsk-0001: as its parent that would wait forever, and the hub says so.
+  byId("card-parent-tsk-0006").value = "tsk-0001";
+  stPanel().querySelector("form.card-family-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(stPatches[0]) === JSON.stringify(["/projects/maity/tasks/tsk-0006", { parent: "tsk-0001" }]) && stCard("tsk-0006")
+    && text(stPanel().querySelector("form.card-family-form .send-status")) === "Not saved: the request does not validate (parent: cycle)",
+    "subtasks: a parent that would make a cycle is refused in the hub's words");
+  byId("card-parent-tsk-0006").value = "tsk-0007";
+  stPanel().querySelector("form.card-family-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(stPatches[1]) === JSON.stringify(["/projects/maity/tasks/tsk-0006", { parent: "tsk-0007" }]) && !stCard("tsk-0006")
+    && stRows("tsk-0007").includes("tsk-0006") && document.activeElement && document.activeElement.getAttribute("data-focus") === "family:tsk-0006",
+    "subtasks: a parent set, the card folds under it and the focus stays on Save");
+  win.Maity.api.patch = (p, b) => (b && "parent" in b ? Promise.reject(new win.Maity.api.ApiError("the request does not validate", 400, p, "invalid", { fields: { parent: "too_deep", related: "unknown_task" } })) : stPatch(p, b));
+  byId("card-parent-tsk-0006").value = "";
+  stPanel().querySelector("form.card-family-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(stPanel().querySelector("form.card-family-form .send-status")) === "Not saved: the request does not validate (parent: too_deep; related: unknown_task)",
+    "subtasks: a refusal is said as the hub words it, with its reason");
+  // Every reason of §6.4 in the hub's words; anything else as the board says it elsewhere.
+  const stRefuse = async (err) => {
+    win.Maity.api.patch = (p, b) => (b && ("parent" in b || "related" in b) ? Promise.reject(err) : stPatch(p, b));
+    byId("card-related-tsk-0006").querySelectorAll("option")[0].selected = true;
+    stPanel().querySelector("form.card-family-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    const said = text(stPanel().querySelector("form.card-family-form .send-status"));
+    byId("card-related-tsk-0006").querySelectorAll("option")[0].selected = false;
+    return said;
+  };
+  const stApiErr = (status, code, details, message) => new win.Maity.api.ApiError(message || "the request does not validate", status, "/x", code, details);
+  const stSaid = [];
+  for (const why of ["has_children", "parent_closed", "self", "release_card"]) stSaid.push(await stRefuse(stApiErr(400, "invalid", { fields: { parent: why } })));
+  stSaid.push(await stRefuse(stApiErr(403, "forbidden", { reason: "subtasks_proposed" }, "under this project's subtask policy a subtask starts as proposed")));
+  stSaid.push(await stRefuse(stApiErr(404, "unknown_task", { fields: { parent: "unknown_task" } }, "no such card")));
+  stSaid.push(await stRefuse(stApiErr(503, "unavailable", {}, "the hub is busy")));
+  expect(JSON.stringify(stSaid) === JSON.stringify([
+    "Not saved: the request does not validate (parent: has_children)", "Not saved: the request does not validate (parent: parent_closed)",
+    "Not saved: the request does not validate (parent: self)", "Not saved: the request does not validate (parent: release_card)",
+    "Not saved: under this project's subtask policy a subtask starts as proposed (subtasks_proposed)",
+    "Not saved: no such card (parent: unknown_task)", "Not saved: the hub is busy"]),
+    "subtasks: each refusal said in the hub's words with its reason, another one as elsewhere " + JSON.stringify(stSaid));
+  win.Maity.api.patch = stPatch;
+  await stPatch("/projects/maity/tasks/tsk-0006", { parent: null });
+  // A parent waiting for its subtasks says which.
+  expect(win.Maity.boardEdit.said(stApiErr(409, "dependencies_open", { open: ["tsk-0001", "tsk-0011"], children: ["tsk-0011"] }, "dependencies or children are not done")).message
+    === "Not done yet: its subtask tsk-0011 still open, and tsk-0001 it depends on.", "subtasks: a parent not done for its open subtask names it");
+  // Edges the board did not load stay as they are: a parent and a related card outside the window are shown and kept.
+  const stGetAll = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => (p.includes("/tasks?") ? stGetAll(p).then((r) => ({ ...r, items: r.items.filter((t) => t.id !== "tsk-0010")
+    .map((t) => (t.id === "tsk-0011" ? { ...t, related: ["tsk-0099"] } : t)) })) : stGetAll(p));
+  stPatches.length = 0;
+  win.Maity.api.patch = (p, b) => { if (b && ("parent" in b || "related" in b)) stPatches.push([p, b]); return Promise.resolve({}); };
+  await go("#/p/maity/inbox"); await go("#/p/maity/tasks/tsk-0011"); for (let k = 0; k < 6; k++) await tick();
+  const stRel = byId("card-related-tsk-0011").querySelectorAll("option");
+  expect(byId("card-parent-tsk-0011").value === "tsk-0010" && text(byId("card-parent-tsk-0011").querySelectorAll("option").find((o) => o.getAttribute("value") === "tsk-0010")) === "tsk-0010 (not on the board)"
+    && stRel.find((o) => o.getAttribute("value") === "tsk-0099").selected, "subtasks: a parent and a related card the board did not load are shown, chosen");
+  stRel.find((o) => o.getAttribute("value") === "tsk-0006").selected = true;
+  stPanel().querySelector("form.card-family-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(stPatches.length === 1 && !("parent" in stPatches[0][1]) && JSON.stringify(stPatches[0][1].related.slice().sort()) === JSON.stringify(["tsk-0006", "tsk-0099"]),
+    "subtasks: changing only the related cards sends them alone, keeping the one not loaded " + JSON.stringify(stPatches));
+  win.Maity.api.getAll = stGetAll; win.Maity.api.patch = stPatch;
+  // Folding is no redraw: the column filter, the search and the scroll stay.
+  await go("#/p/maity/board"); for (let k = 0; k < 6; k++) await tick();
+  byId("board-search").value = "subtasks"; byId("board-search").dispatch("input"); await tick();
+  win.scrollY = 240;
+  stToggle("tsk-0010").click(); await tick();
+  expect(byId("board-search").value === "subtasks" && win.scrollY === 240 && stToggle("tsk-0010").getAttribute("aria-expanded") === "false",
+    "subtasks: folding and unfolding keep the search and the scroll");
+  byId("board-search").value = ""; byId("board-search").dispatch("input"); await tick(); win.scrollY = 0;
+  // A hub without subtasks (no parent on its cards): no editor and no New subtask.
+  await go("#/p/sample/tasks/tsk-0021"); for (let k = 0; k < 6; k++) await tick();
+  expect(stPanel() && !stPanel().querySelector("form.card-family-form") && !btn(stPanel(), "New subtask"), "subtasks: a hub without them offers no editor and no New subtask");
+  // A new subtask from the opened card: the parent preset; under the proposed policy a member's starts as proposed.
+  const stPosts = [];
+  const stPost = win.Maity.api.post;
+  win.Maity.api.post = (p, b) => { if (p === "/projects/maity/tasks") stPosts.push(b); return stPost(p, b); };
+  await go("#/p/maity/inbox"); await go("#/p/maity/tasks/tsk-0010"); for (let k = 0; k < 6; k++) await tick();
+  btn(stPanel(), "New subtask").click(); await tick();
+  expect(stPanel().querySelector("form.new-subtask") && text(stPanel().querySelector(".new-card-parent")) === "A subtask of tsk-0010 · Board: subtasks"
+    && !byId("new-subtask-status").disabled, "subtasks: New subtask opens the form with its parent; an admin may open it at once");
+  byId("new-subtask-title").value = "Subtasks: the designer's pass";
+  stPanel().querySelector("form.new-subtask").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(stPosts.length === 1 && stPosts[0].parent === "tsk-0010" && stPosts[0].status === "proposed"
+    && text(stPanel().querySelector(".card-panel-card .subtasks")).includes("Subtasks 2 open of 3"),
+    "subtasks: the subtask is created under its parent and the parent's counts follow");
+  win.Maity.api.post = stPost;
+  expect(win.Maity.boardEdit.childProposed({ role: "member", project: { policy: {} } }) && !win.Maity.boardEdit.childProposed({ role: "member", project: { policy: { subtasks: "direct" } } })
+    && !win.Maity.boardEdit.childProposed({ role: "owner", project: { policy: {} } }), "subtasks: a member's subtask starts as proposed unless the policy is direct");
+  const stMemberBodies = [];
+  const stMemberForm = win.Maity.boardEdit.newCardForm({ role: "member", me: { id: "agt-x" }, members: [], project: { policy: {}, state: "build" } }, [],
+    async (body) => { stMemberBodies.push(body); }, () => {}, { id: "tsk-0010", title: "Board: subtasks" });
+  const stMemberStatus = stMemberForm.form.all().find((e) => e.id === "new-subtask-status");
+  expect(stMemberStatus.disabled && stMemberStatus.value === "proposed" && text(stMemberForm.form).includes("Starts as proposed"),
+    "subtasks: for such a member the status is fixed to proposed and says why");
+  stMemberForm.form.all().find((e) => e.id === "new-subtask-title").value = "As a member";
+  stMemberStatus.value = "open"; // a disabled select a script changed still sends what it may
+  stMemberForm.form.dispatch("submit"); await tick();
+  expect(JSON.stringify(stMemberBodies) === JSON.stringify([{ title: "As a member", kind: "task", status: "proposed", parent: "tsk-0010" }]),
+    "subtasks: such a member's subtask is sent as proposed under its parent, whatever the select says");
+  stProto.focus = stFocus; document.activeElement = undefined;
+  await go("#/p/maity/inbox");
+
   // Notifications (docs/api.md §18): the bell, the counts, browser notifications.
   await go("#/p/maity/inbox");
   const bellBtn = () => header.querySelector("button.bell");

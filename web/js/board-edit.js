@@ -34,6 +34,13 @@ window.Maity = window.Maity || {};
   };
 
   function said(err) {
+    // A parent waits for its subtasks (§6.4): the open ones by id.
+    const kids = err.code === "dependencies_open" && err.details && err.details.children;
+    if (kids && kids.length) {
+      const deps = (err.details.open || []).filter((id) => !kids.includes(id));
+      return { message: "Not done yet: " + (kids.length === 1 ? "its subtask " : "its subtasks ") + kids.join(", ") + " still open"
+        + (deps.length ? ", and " + deps.join(", ") + " it depends on" : "") + "." };
+    }
     if (REFUSALS[err.code]) return { message: REFUSALS[err.code] };
     const fields = err.code === "invalid" && err.details && err.details.fields;
     if (fields) {
@@ -45,6 +52,11 @@ window.Maity = window.Maity || {};
 
   const holds = (ctx, c) => !!(c.claim && c.claim.holder === ctx.me.id);
   const isAdmin = (ctx) => TASKS_ADMIN.has(ctx.role);
+  // Who may edit a card's fields and edges (§6.4): its holder, its creator, tasks:admin.
+  const editable = (ctx, c) => holds(ctx, c) || c.created_by === ctx.me.id || isAdmin(ctx);
+  // Under policy.subtasks "proposed" (the default) a subtask of a member
+  // without tasks:admin starts as proposed (§6.4).
+  const childProposed = (ctx) => ((ctx.project.policy || {}).subtasks || "proposed") === "proposed" && !isAdmin(ctx);
 
   function doneAuthority(ctx, c) {
     const a = (ctx.project.policy || {}).done_authority;
@@ -182,8 +194,9 @@ window.Maity = window.Maity || {};
 
   // The new card (POST /tasks). assigned_to needs tasks:admin; a frozen or
   // fixes-only project needs a reason (docs/api.md §6.1).
-  function newCardForm(ctx, cards, create, onCancel) {
-    const id = (f) => "new-card-" + f;
+  // parent: the card a new subtask goes under, or none.
+  function newCardForm(ctx, cards, create, onCancel, parent) {
+    const id = (f) => (parent ? "new-subtask-" : "new-card-") + f;
     const title = h("input", { id: id("title"), required: true, maxlength: "200", autocomplete: "off" });
     const body = M.dom.sendOnCtrlEnter(h("textarea", { id: id("body"), rows: "4", placeholder: "What, acceptance, pointers (Markdown)" }));
     const label = h("select", { id: id("label") }, LABELS.map(([v, l]) => h("option", { value: v }, l)));
@@ -196,6 +209,8 @@ window.Maity = window.Maity || {};
     const status = h("select", { id: id("status") }, h("option", { value: "proposed" }, "Proposed: to talk about first"),
       h("option", { value: "open" }, "Open: ready to be claimed"));
     status.value = "proposed";
+    const locked = parent && childProposed(ctx);
+    if (locked) status.disabled = true;
     const assignee = isAdmin(ctx)
       ? h("select", { id: id("assigned") }, h("option", { value: "" }, "by area (the hub routes it)"),
         ctx.members.map((m) => h("option", { value: m.id }, m.display_name)))
@@ -211,9 +226,9 @@ window.Maity = window.Maity || {};
     const reason = closedState ? h("input", { id: id("reason"), required: true, autocomplete: "off" }) : null;
     const status_ = M.statusLine();
     const chosen = (sel) => Array.from(sel.querySelectorAll("option")).filter((o) => o.selected).map((o) => o.getAttribute("value"));
-    const submit = h("button", { type: "submit" }, "Create card");
+    const submit = h("button", { type: "submit" }, parent ? "Create subtask" : "Create card");
     const form = h("form", {
-      class: "project-form new-card",
+      class: "project-form " + (parent ? "new-subtask" : "new-card"),
       novalidate: true,
       onsubmit: async (e) => {
         e.preventDefault();
@@ -223,7 +238,7 @@ window.Maity = window.Maity || {};
           reason.focus();
           return;
         }
-        const card = { title: title.value.trim(), kind: kind.value, status: status.value };
+        const card = { title: title.value.trim(), kind: kind.value, status: locked ? "proposed" : status.value };
         if (body.value.trim()) card.body = body.value;
         if (label.value) card.label = label.value;
         if (area.value.trim()) card.area = area.value.trim();
@@ -233,6 +248,7 @@ window.Maity = window.Maity || {};
         if (d.length) card.depends_on = d;
         if (sw.length) card.ships_with = sw;
         if (reason) card.reason = reason.value.trim();
+        if (parent) card.parent = parent.id;
         submit.disabled = true;
         status_.busy("Creating…");
         try {
@@ -244,13 +260,15 @@ window.Maity = window.Maity || {};
         }
       },
     },
-    h("h3", null, "New card"),
+    h("h3", null, parent ? "New subtask" : "New card"),
+    parent ? h("p", { class: "muted new-card-parent" }, "A subtask of " + parent.id + " · " + parent.title) : null,
     h("label", { for: id("title") }, "Title"), title,
     h("label", { for: id("body") }, "Body (" + M.dom.SEND_KEYS + " creates the card)"), body,
     h("label", { for: id("kind") }, "Kind"), kind,
     h("label", { for: id("label") }, "Label"), label,
     h("label", { for: id("area") }, "Area"), area, areaList,
     h("label", { for: id("status") }, "Status"), status,
+    locked ? h("p", { class: "hint" }, "Starts as proposed: under this project's subtask policy an admin opens it.") : null,
     assignee ? [h("label", { for: id("assigned") }, "Assigned to"), assignee] : null,
     h("label", { for: id("depends") }, "Depends on (Ctrl or Shift to choose several)"), deps,
     h("label", { for: id("ships") }, "Ships with"), ships,
@@ -260,5 +278,5 @@ window.Maity = window.Maity || {};
     return { form, focus: () => title.focus(), body };
   }
 
-  M.boardEdit = { targets, moveControl, assignControl, orderControl, orderable, byOrder, newCardForm, said, COLUMNS, columnName };
+  M.boardEdit = { editable, childProposed, targets, moveControl, assignControl, orderControl, orderable, byOrder, newCardForm, said, COLUMNS, columnName };
 })(window.Maity);

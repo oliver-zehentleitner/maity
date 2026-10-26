@@ -1141,3 +1141,30 @@ one place the dashboard shows all of one's agents.
 items of a project one cannot open go: it says nothing about the agent.
 A new page of one's agents: the right place, but beyond this change; the
 link moves there once it exists.
+
+## A subtask stands folded under its parent, whatever its column
+
+**Id:** 23a3cfe8-e3ca-461b-b1a5-58ec070f4366
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §6.4 ("the board shows children collapsed under their parent with the open/total count and a child whose parent is outside its window as a card with a parent id") and the card for the web side of subtasks (tsk-cgsrvvk0qx9p), 2026-10-25; the dashboard's implementation, 2026-10-26
+**Revisit when:** the tree gets deeper than two levels, or columns need to count children (the designer's pass on the folded row)
+
+A child whose parent is on the board in the current view is drawn only
+under its parent, behind a toggle with the hub's `children` counts,
+and not in the column of its own status; it is not counted in that
+column's number nor placed in its order. A child whose parent is not
+shown (outside the board's window, or filtered away by column, member,
+area or search) stands in its column with "Subtask of <id>". A link to a
+folded child unfolds its parent and marks the child's row.
+
+**Reason:** the contract asks for children collapsed under their parent;
+a child also shown in its own column would be on the board twice, and
+the column order (Place, dragging) is about cards that stand there. The
+counts are the hub's, so a child closed outside the window still counts.
+
+**Rejected alternative:** children in their own columns with a parent
+badge: no folding, and a parent's open work spread over four columns.
+Folding only children of the same column as the parent: a parent in
+review with an open child would hide nothing, the common case.
