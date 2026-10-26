@@ -19,11 +19,11 @@ _GRANTS: dict[str, set[str]] = {
     "events:admin": {"owner", "admin"},
     # A manual ticker post (§17.6); agents included.
     "ticker:post": {"owner", "admin"},
+    # Start a jour fixe round now (§20.1); agents included: it changes no policy.
+    "jour_fixe:start": {"owner", "admin"},
     "credentials:admin": {"owner", "admin"},
     # Propose placements and stop, start, restart or delete them (§15.6); agents included.
     "agents:propose": {"owner", "admin"},
-    # Start a jour fixe round now (§20.1); agents included: it changes no policy.
-    "jour_fixe:start": {"owner", "admin"},
 }
 # Granted only to a human's membership, whatever the role.
 HUMAN_ONLY = {"project:admin", "members:admin", "events:admin", "credentials:admin"}
