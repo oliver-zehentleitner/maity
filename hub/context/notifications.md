@@ -15,18 +15,19 @@ stages is in the root `context/notifications.md`.
 
 `maity_hub.notifications.items.derive` reads, for each project the human
 is an active member of, the events of the last 30 days since the
-membership began, of the kinds that can make an item. It classifies
-them (`inbox` over `mention` over `card` and `chat`), checks each
+membership began, of the kinds that can make an item. Since the
+maintainer's narrowing of 2026-10-26 (root context, notifications.md)
+those are only messages, `mentioned` and the request events. It
+classifies them (`inbox` over `mention` over `chat`), checks each
 against what the human may read now, and adds the human's account
 records. Counts, filters, the cursor and positions all work on that
-list in Python. A card's relation to the human (creator, holder,
-watcher, …) is the card's as it is when the bell is read: an item from
-a watch drops out once the watch ends. The only stored state is the
-read marks (`notification_read`, the chats' own marks, `read_at` on
-records). The long-poll answers again every 0.5 seconds until an item
-lies past `after`, one per session, and checks the session again
-at every look; which long-poll is current is kept in the process, so a
-second replica would need it shared.
+list in Python. A request's relation to the human (addressee, holder,
+asker) is the request's as it is when the bell is read. The only stored
+state is the read marks (`notification_read`, the chats' own marks,
+`read_at` on records). A held long-poll looks every 0.5 seconds, one per
+session, and checks the session again at every look; which long-poll is
+current is kept in the process, so a second replica would need it
+shared.
 
 **Reason:** §18.1 asks that an item never shows more than the human may
 read at the moment it is read or mailed. A view computed when read
@@ -38,11 +39,9 @@ one place to optimise later.
 **Rejected alternatives:**
 - A notification row written per human and event at emit time: faster
   reads, but every later change of what the human may read would have to
-  chase the rows, and a watch would sit in a table readers of events
-  could join.
-- Relations frozen at the time of the event: an ended watch or a lost
-  holder would keep producing items for a card that is no longer the
-  human's.
+  chase the rows.
+- Relations frozen at the time of the event: a request forwarded away
+  would keep producing items for a human who no longer holds it.
 
 ## Positions are sealed under a key derived from the instance key, else a random key the hub stores
 
@@ -81,7 +80,7 @@ form invisible to the client.
 **Id:** 06563fc8-cd5c-4820-b089-9d233f3d44b8
 **Type:** decision
 **Type:** incident
-**Status:** needs-review
+**Status:** active
 **Evidence:** inferred
 **Source:** production incident 2026-10-26 (hub not ready, connection pool timeouts), analysis from the code and the incident log
 **See:** notifications.md#items-are-derived-on-every-read-from-30-days-of-the-humans-projects-with-the-relations-as-they-are-now — e29065f2-c5d3-43dd-9209-f7f30b67269a — as of 2026-10-26
@@ -95,8 +94,11 @@ of them took the pool from every other call, the health probe included.
 
 **Decision:** between two looks, a held long-poll reads `listing.stamp`. That is a few
 aggregates: the memberships, each project's highest event, the account records and their
-reads, the event items' read marks, the chat marks and the watched cards (a watch
-writes no event). The full answer runs only when the
+reads, the event items' read marks and the chat marks; the project heads count only
+the event kinds that can make an item, so a card's churn wakes no held long-poll. That
+filter needs its own index, `(project_id, kind, seq)`: with only `(project_id, seq)`
+the head reads every event row of the project on every look. The
+full answer runs only when the
 stamp differs; a read mark counts as movement. Full answers and marks pass a semaphore of
 four per process. The marks are
 written at READ COMMITTED in one statement that skips existing rows. A REPEATABLE READ
@@ -134,9 +136,9 @@ derives often. The cost was the per-event lookups in `_classify`: the card, the 
 twice the owner of an agent membership, and the names. That is about three queries for
 every foreign event of thirty days.
 
-**Decision:** `items.Lookup` loads per project batch, each in one query: the cards and
-requests the rows name, the human's watches among those cards, the memberships behind
-actors, holders and assignees, and the profiles and humans behind them. Its answers equal
+**Decision:** `items.Lookup` loads per project batch, each in one query: the requests
+the rows name, the memberships behind the actors, and the profiles and humans behind
+them (with the narrowing of 2026-10-26 the cards and watches left it). Its answers equal
 the single lookups. An id the batch did not name falls back to the single lookup, so a
 missed case costs a query instead of giving a different answer. The read marks are read by
 the batch's seq range instead of a list of every seq. Measured on a local fixture of 450

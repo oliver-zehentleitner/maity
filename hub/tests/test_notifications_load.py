@@ -47,19 +47,21 @@ def answers(monkeypatch: pytest.MonkeyPatch) -> list[float]:
     return started
 
 
-def card_item(make_client: ClientFactory, owner: flow.Human) -> dict[str, Any]:
-    """One unread card item of the owner's: an agent claims the owner's card."""
+def inbox_item(make_client: ClientFactory, owner: flow.Human) -> dict[str, Any]:
+    """One unread `inbox` item of the owner's: an agent asks the owner something."""
     agent = flow.agent(make_client, owner)
-    card = owner.post("/projects/maity/tasks", {"title": "Mine"}).json()
-    assert agent.post(f"/projects/maity/tasks/{card['id']}/claim", {}).status_code == 200
-    [item] = [i for i in bell(owner)["items"] if i["kind"] == "card" and not i["read"]]
+    asked = agent.post(
+        "/projects/maity/requests", {"class": "decision", "title": "Which?", "to": "owner"}
+    )
+    assert asked.status_code == 201, asked.text
+    [item] = [i for i in bell(owner)["items"] if i["kind"] == "inbox" and not i["read"]]
     return dict(item)
 
 
 def test_a_held_long_poll_derives_again_only_when_something_moved(
     make_client: ClientFactory, owner: flow.Human, answers: list[float]
 ) -> None:
-    item = card_item(make_client, owner)
+    item = inbox_item(make_client, owner)
     start = bell(owner, limit=0)["next_after"]
     answers.clear()
     quiet = bell(owner, after=start, wait=2)
@@ -84,13 +86,16 @@ def test_the_stamp_moves_with_events_and_read_marks(
         with migrated.connect() as conn:
             return listing.stamp(conn, owner.id)
 
-    item = card_item(make_client, owner)
+    item = inbox_item(make_client, owner)
     before = stamp()
     assert stamp() == before  # nothing moved, nothing differs
     owner.post(f"{N}/read", {"ids": [item["id"]]})
     marked = stamp()
     assert marked != before
     owner.post("/projects/maity/tasks", {"title": "Another"})
+    assert stamp() == marked  # a card makes no notification: it moves nothing (§18.1)
+    agent = flow.agent(make_client, owner)
+    agent.post(f"/projects/maity/conversations/{agent.id}/messages", {"body": "hi"})
     assert stamp() != marked
 
 
@@ -102,7 +107,7 @@ def test_two_marks_of_the_same_item_at_once_both_succeed(
     first transaction is released before the worker is joined."""
     if migrated.dialect.name == "sqlite":
         pytest.skip("SQLite serialises writers; the race is the server databases'")
-    item = card_item(make_client, owner)
+    item = inbox_item(make_client, owner)
     first = migrated.connect()
     started, answered = threading.Event(), threading.Event()
 
@@ -134,7 +139,7 @@ def test_two_marks_of_the_same_item_at_once_both_succeed(
 def test_marking_what_is_read_already_is_a_no_op(
     make_client: ClientFactory, owner: flow.Human
 ) -> None:
-    item = card_item(make_client, owner)
+    item = inbox_item(make_client, owner)
     for _ in range(2):
         assert owner.post(f"{N}/read", {"ids": [item["id"]]}).status_code == 200
 
@@ -204,32 +209,11 @@ def test_no_database_read_runs_on_the_event_loop(
         real(*args, **kwargs)
 
     monkeypatch.setattr(positions, "prepare", prepare)
-    item = card_item(make_client, owner)
+    item = inbox_item(make_client, owner)
     start = bell(owner, limit=0)["next_after"]
     bell(owner, after=start, wait=1)
     assert owner.post(f"{N}/read", {"ids": [item["id"]]}).status_code == 200
     assert on_loop and not any(on_loop)
-
-
-def test_a_watch_during_the_hold_wakes_it(make_client: ClientFactory, owner: flow.Human) -> None:
-    """A watch writes no event, yet makes the card's items the human's (§18.1): the
-    stamp holds the watched cards, so the held long-poll answers at once, not at its end."""
-    agent = flow.agent(make_client, owner)
-    start = bell(owner, limit=0)["next_after"]
-    theirs = agent.post("/projects/maity/tasks", {"title": "Theirs"}).json()
-    assert not [i for i in bell(owner, after=start)["items"] if i["kind"] == "card"]
-    held: list[dict[str, Any]] = []
-    waiter = threading.Thread(target=lambda: held.append(bell(owner, after=start, wait=6)))
-    begun = time.monotonic()
-    waiter.start()
-    time.sleep(0.8)
-    watched = owner.client.put(
-        f"/api/v1/projects/maity/tasks/{theirs['id']}/watch", headers={"X-CSRF-Token": owner.csrf}
-    )
-    assert watched.status_code == 200
-    waiter.join(timeout=10)
-    assert held and [i["target"]["id"] for i in held[0]["items"]] == [theirs["id"]]
-    assert time.monotonic() - begun < 4  # woken by the watch, not the 6 s deadline
 
 
 def test_the_derive_reads_a_fixed_number_of_queries_however_many_events(
@@ -240,12 +224,13 @@ def test_the_derive_reads_a_fixed_number_of_queries_however_many_events(
     from maity_hub.notifications import items
 
     agent = flow.agent(make_client, owner)
-    cards = [owner.post("/projects/maity/tasks", {"title": f"Card {n}"}).json() for n in range(12)]
 
-    def act(batch: list[dict[str, Any]]) -> None:
-        for card in batch:
-            agent.post(f"/projects/maity/tasks/{card['id']}/claim", {})
-            agent.patch(f"/projects/maity/tasks/{card['id']}", {"title": card["title"] + "!"})
+    def act(times: int) -> None:
+        for n in range(times):
+            agent.post(
+                "/projects/maity/requests",
+                {"class": "decision", "title": f"Which {n}?", "to": "owner"},
+            )
             agent.post(f"/projects/maity/conversations/{agent.id}/messages", {"body": "hi"})
 
     def queries() -> tuple[int, int]:
@@ -256,9 +241,9 @@ def test_the_derive_reads_a_fixed_number_of_queries_however_many_events(
             found = items.derive(conn, where)
         return len(counted), len(found)
 
-    act(cards[:4])
+    act(4)
     few, few_items = queries()
-    act(cards[4:])
+    act(8)
     many, many_items = queries()
     assert many_items > few_items * 2  # three times the events, and their items
     assert many == few

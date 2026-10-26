@@ -31,6 +31,7 @@ from maity_hub.auth import passwords, sessions
 from maity_hub.auth.caller import SESSION_ABSOLUTE, session_id_hash
 from maity_hub.ids import new_id
 from maity_hub.models import HANDLE_PATTERN
+from maity_hub.notifications import records
 
 WRONG_PASSWORDS_BEFORE_VOID = 5  # §2.7.3
 PENDING_ACCOUNT_FOR = timedelta(days=30)  # undecided, then deleted (§2.7.5)
@@ -225,8 +226,13 @@ def complete(
                 status="pending",
             )
         )
-        # TODO(#280): the `registration_pending` account record for every instance
-        # admin (§16.4, §18.1), through the notification store.
+        # The instance admin's `inbox` item, open until the registration is decided
+        # (§16.4, §18.1); never mailed.
+        admin = instance_admin_id(conn)
+        if admin is not None:
+            records.write(
+                conn, admin, "registration_pending", {"human": human_id, "handle": handle}
+            )
     conn.execute(  # this one used, every other of the address unusable (§2.7.1)
         update(t.pending_registration)
         .where(
@@ -329,7 +335,9 @@ def approve(conn: Connection, row: Any, by: str) -> None:
         .values(status="active", decided_at=now, decided_by=by)
     )
     # TODO(#280): the mail "Your Maity account is approved" with the login page's link
-    # (security budget, §16.2) and the `registration_approved` account record (§18.1).
+    # (security budget, §16.2), and the `registration_approved` account record, an audit
+    # record that is no notification (§18.1). The admin's `registration_pending` item
+    # reads as closed from this decision; nothing to write for it.
 
 
 def remove(conn: Connection, row: Any, status: str, by: str | None, reason: str | None) -> None:

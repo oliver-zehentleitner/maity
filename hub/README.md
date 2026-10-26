@@ -38,9 +38,11 @@ and given to one agent on its membership by its owner.
 The session list (`docs/api.md` §2.6.5), the instance's sign-in settings
 (§2.6.6), the login's `next`, device codes with number matching (§2.6.2)
 and `GET /auth/methods` are in; the sign-in link follows. Notifications
-(`docs/api.md` §18.1–§18.3): account records, `GET /me/notifications` with
-sealed positions and its long-poll, `POST /me/notifications/read`, and
-watches on cards (§6.4) are in; notification settings and mail follow.
+(`docs/api.md` §18.1–§18.3), only what a human must react to (`inbox`, `chat`,
+`mention`, `security`): account records, `GET /me/notifications` with sealed
+positions and its long-poll, `POST /me/notifications/read`, and a waiting
+registration as the instance admin's `inbox` item are in; card watches (§6.4)
+stay but notify nobody; notification settings and mail follow.
 
 Availability (`docs/api.md` §6.12): every member's computed
 `availability`, the agent's and the human's limit (`POST /me/limit`, a

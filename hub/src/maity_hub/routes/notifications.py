@@ -23,7 +23,7 @@ from maity_hub.auth.caller import Caller, session_alive
 from maity_hub.deps import AnyCaller, engine_of, reader_of, settings_of, wait_of
 from maity_hub.errors import forbidden, humans_only, invalid, not_found, unauthenticated
 from maity_hub.notifications import items, listing, positions
-from maity_hub.notifications.items import KINDS, Item, Scope
+from maity_hub.notifications.items import KINDS, REMOVED_KINDS, Item, Scope
 from maity_hub.notifications.positions import Position
 from maity_hub.views import task_view
 
@@ -81,6 +81,18 @@ def _require_live(conn: Connection, session_hash: str) -> None:
         raise unauthenticated("the session has ended or expired")
 
 
+def _kinds(values: set[str] | None) -> set[str] | None:
+    """§18.2: a kind removed on 2026-10-26 is `removed_kind`, any other unknown one
+    `unknown`."""
+    if values is None:
+        return None
+    if values & set(REMOVED_KINDS):
+        raise invalid({"kind": "removed_kind"})
+    if not values <= set(KINDS):
+        raise invalid({"kind": "unknown"})
+    return values
+
+
 def _filters(raw: str | None, allowed: tuple[str, ...] | None, name: str) -> set[str] | None:
     if raw is None:
         return None
@@ -112,7 +124,7 @@ async def list_notifications(
     wait = wait_of(request)
     if wait and after is None:
         raise invalid({"wait": "needs_after"})
-    kinds = _filters(kind, KINDS, "kind")
+    kinds = _kinds(_filters(kind, None, "kind"))
     slugs = _filters(project, None, "project")
     older = None
     if cursor is not None:
@@ -275,8 +287,7 @@ def _chosen(
         raise invalid({"up_to": "position"})
     position = _open(conn, request, human_id, up_to, "up_to")
     kinds = {body["kind"]} if body.get("kind") is not None else None
-    if kinds is not None and not kinds <= set(KINDS):
-        raise invalid({"kind": "invalid"})
+    kinds = _kinds(kinds)
     project_ids = _project_ids(conn, {body["project"]}) if body.get("project") else None
     chosen = listing.select_items(found, kinds=kinds, projects=project_ids, unread=True)
     # "Mark all read" never confirms a sign-in or an address change (§18.3).
@@ -299,7 +310,8 @@ def unwatch(slug: str, task_id: str, request: Request, caller: AnyCaller) -> JSO
 
 
 def _watch(request: Request, caller: Caller, slug: str, task_id: str, *, on: bool) -> JSONResponse:
-    """Idempotent; no event: whom a card notifies is the watcher's business (§6.4)."""
+    """Idempotent; no event. A watch is the human's own mark on the card, shown as
+    `watching`, and notifies nothing since cards make no notification (§6.4, §18.1)."""
     if caller.kind == "agent":
         raise humans_only("watching is for the notifications of humans")
     with engine_of(request).begin() as conn:
