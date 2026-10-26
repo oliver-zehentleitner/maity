@@ -228,9 +228,32 @@ window.Maity = window.Maity || {};
 
     // A message of this chat fetches what is new; a change of the chat
     // (people, title) is drawn in place; a removal takes the text out.
+    let resyncBefore = null;
     ctx.onEvents(async (events) => {
       if (events.some((e) => /^conversation_/.test(e.kind) && ((e.subject && e.subject.id === id) || (e.payload && e.payload.id === id)))) {
         refreshView();
+      }
+      // The global chat (js/chats.js) holds no feed: the chat itself and its
+      // newest page are read again, its removals and deleted files taken over.
+      if (events.some((e) => e.kind === parts.RESYNC)) {
+        await refreshView();
+        try {
+          // One page per nudge, walking back over what is shown (js/chat.js).
+          const before = resyncBefore || cursor + 1;
+          const page = await M.api.get(path + "?before=" + encodeURIComponent(before) + "&limit=" + parts.HISTORY_PAGE);
+          const oldestShown = all.length ? all[0].seq : 0;
+          const lowest = page.items.length ? Math.min(...page.items.map((m) => m.seq)) : null;
+          resyncBefore = lowest !== null && page.items.length === parts.HISTORY_PAGE && lowest > oldestShown ? lowest : null;
+          let changed = false;
+          page.items.forEach((m) => {
+            const at = all.findIndex((x) => x.seq === m.seq);
+            if (at >= 0 && parts.isRemoved(m) && !parts.isRemoved(all[at])) { all[at] = Object.assign({}, all[at], m); changed = true; }
+            (m.attachments || []).filter((a) => a.deleted_at).forEach((a) => M.attachments && M.attachments.markDeleted(messages, a.id));
+          });
+          if (changed) { const top = messages.scrollTop; redraw(); messages.scrollTop = top; }
+        } catch (err) {
+          pollStatus.fail("The chat could not be read again: ", err);
+        }
       }
       events.filter((e) => e.kind === "attachment_deleted" && e.payload).forEach((e) => M.attachments.markDeleted(messages, e.payload.attachment_id));
       const removedHere = events.filter((e) => e.kind === "event_redacted" && e.payload && all.some((m) => m.seq === e.payload.seq));

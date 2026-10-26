@@ -1124,6 +1124,38 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     page.set_viewport_size({"width": 1280, "height": 900})
     no_problems(run, "chat")
 
+    run.step("global chat: #/chats has every project's chats and opens one in place")
+    page.locator("header a.chat-button").click()
+    expect(page).to_have_url(re.compile(r"#/chats$"))
+    # The hash changes before the view: wait for the global list, not the project's that is still there.
+    expect(page.locator(".chat-list-pane h2")).to_have_text("Chats")
+    g_entry = page.locator(".chat-list a.conv.with-project", has_text="E2E Agent").first
+    expect(g_entry).to_have_attribute("href", re.compile(rf"^#/chats/e2e-alpha/{agent_id}$"))
+    expect(g_entry).to_contain_text("in ")
+    g_entry.click()
+    expect(page).to_have_url(re.compile(rf"#/chats/e2e-alpha/{agent_id}$"))
+    expect(page.get_by_role("heading", name="Chat with E2E Agent", exact=True)).to_be_visible()
+    expect(page.locator(".chat-list a.conv[aria-current=page]")).to_have_count(1)
+    page.locator("#chat-text").fill("Hello from the global chat.")
+    page.locator("form.compose").get_by_role("button", name="Send", exact=True).click()
+    expect(page.locator("ol.messages li.msg.out").last).to_contain_text("Hello from the global chat.")
+    if not run.no_notifications:
+        # No project feed here: the notifications stream brings the agent's answer in.
+        run.maity(alpha, "say", "human", "A reply seen in the global chat.")
+        expect(page.locator("ol.messages li.msg.in").last).to_contain_text("A reply seen in the global chat.", timeout=20000)
+    run.a11y(page, "global chat")
+    page.set_viewport_size({"width": 390, "height": 780})
+    expect(page.locator(".chat-list-pane")).to_be_hidden()
+    page.get_by_role("link", name="← Conversations", exact=True).click()
+    expect(page).to_have_url(re.compile(r"#/chats$"))
+    expect(page.locator(".chat-list-pane")).to_be_visible()
+    fits("the global chat list at 390 px")
+    page.set_viewport_size({"width": 1280, "height": 900})
+    no_problems(run, "global chat")
+    # Back where the chat step left the page: the project's chat with the agent.
+    page.goto(f"{run.base}/#/p/e2e-alpha/chat/{agent_id}")
+    expect(page.get_by_role("heading", name="Chat with E2E Agent", exact=True)).to_be_visible()
+
     run.step("pause: the owner pauses the agent; the agent cannot lift it itself")
     view_tab(page, "Agents").click()
     agents = page.locator("main section.view-agents")

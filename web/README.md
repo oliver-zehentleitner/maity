@@ -121,7 +121,8 @@ stop the page. Mail settings come with the hub's mail (stage 3).
 
 | Route | What |
 |---|---|
-| `#/chats` | every chat across one's projects (`js/chats.js`): one §9.3 list per project, read when the view opens, unread first, then the newest; each with its project, last message time and unread count, opening in its project's Chat tab; from the header's **Chat** |
+| `#/chats` | every chat across one's projects (`js/chats.js`), laid out as a project's Chat tab: the list beside the open conversation (on a phone the list its own screen), merging each project's direct and group chats (one §9.3 read per project, then every 30 s and after the notifications stream says something changed, never a project's events feed), unread first, then the newest, each with its project; from the header's **Chat** |
+| `#/chats/<slug>/<id>` | one of those chats opened in place, with the Chat tab's messages, drafts and composer in its project's context; **← Conversations** goes back to `#/chats` |
 | `#/all` | the inbox across every project, each entry with its project's badge (logo or monogram, name, state) before it, as a link to the project; filterable by project and groupable by project (each group a heading with its own list; the filter holds in `#/all` only, and answering opens the next entry as it stands on screen); the landing page with more than one project, and with none (then it offers **Create a project**) |
 | `#/new` | create a project; also **+ New project** in the switcher |
 | `#/s/<slug>` | a project's public swarm page, where its owner switched it on; for visitors with or without a session |

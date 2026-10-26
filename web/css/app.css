@@ -642,6 +642,8 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .conv .count { color: var(--accent); }
 /* As specific as the rule above, after it: the @ is light on its accent background. */
 .conv .mention-count { color: var(--accent-text); }
+.conv-project { grid-area: proj; font-size: 0.8rem; color: var(--muted); overflow-wrap: anywhere; }
+.conv.with-project { grid-template-areas: "av title time" "av sub count" "av prev prev" "av proj proj"; }
 .conv-sub { grid-area: sub; min-width: 0; font-size: 0.82rem; color: var(--muted); overflow-wrap: anywhere; }
 .conv .preview { grid-area: prev; font-size: 0.85rem; color: var(--muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .conv .preview.draft { font-style: italic; }

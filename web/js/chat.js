@@ -17,6 +17,9 @@ window.Maity = window.Maity || {};
 
   // Presence emits no event (docs/api.md §5.3): the list re-reads it.
   const LIST_MS = 30000;
+  // The global chat's "read what is shown again" (js/chats.js), in place of
+  // the project feed's events it does not hold.
+  const RESYNC = "chat_resync";
   const PRESENCE_LABELS = { online: "online", away: "away", offline: "offline", paused: "paused" };
 
   // Unsent text per conversation ("<slug>/<agent id>"), kept while the
@@ -341,22 +344,27 @@ window.Maity = window.Maity || {};
 
   // What js/group-chat.js draws with: the same history, Markdown, quotes,
   // drafts, sizing and the same reading of mentions.
-  M.chatParts = { timeline, quoteOf, withoutCode, atBottom, follower, fitToScreen, drafts, isRemoved, askReason, HISTORY_PAGE };
+  M.chatParts = { timeline, quoteOf, withoutCode, atBottom, follower, fitToScreen, drafts, isRemoved, askReason, HISTORY_PAGE,
+    chatsOf, ordered, listItem, LIST_MS, RESYNC };
 
   // One focus handler for the page; it serves the chat view on screen.
   let onFocus = null;
   window.addEventListener("focus", () => { if (onFocus) onFocus(); });
 
-  M.views.chat = async function (ctx, root, args) {
+  // given.list: a conversation list of the caller's (the global chat's,
+  // js/chats.js), which refreshes itself; the project's own otherwise.
+  M.views.chat = async function (ctx, root, args, given) {
     const mine = ctx.members.filter((m) => m.kind === "agent" && m.owner_id === ctx.me.id);
     const agent = args[0] ? mine.find((m) => m.id === args[0]) : null;
     const groupsServed = await M.groupChat.served();
-    const list = conversations(ctx, args[0] || null, groupsServed);
+    const list = (given && given.list) || conversations(ctx, args[0] || null, groupsServed);
     const layout = h("div", { class: "chat-layout" + (args[0] ? " open" : "") }, list.el);
     append(root, layout);
     const isChat = (e) => e.kind === "message" && e.payload && e.payload.type === "chat";
-    ctx.onEvents((events) => { if (events.some((e) => isChat(e) || /^conversation_|^event_redacted$/.test(e.kind))) list.refresh(false); });
-    ctx.every(LIST_MS, () => list.refresh(true));
+    if (!given) {
+      ctx.onEvents((events) => { if (events.some((e) => isChat(e) || /^conversation_|^event_redacted$/.test(e.kind))) list.refresh(false); });
+      ctx.every(LIST_MS, () => list.refresh(true));
+    }
     // A new group chat, or a group chat the hub lists (§9.2, js/group-chat.js).
     if (args[0] === "new") {
       if (groupsServed) M.groupChat.create(ctx, layout, list);
@@ -419,22 +427,22 @@ window.Maity = window.Maity || {};
     if (unreadFailed) pollStatus.fail("Which messages are new could not be read: ", unreadFailed);
 
     let checking = false;
+    // Where the last check stopped: one page per check, the next one goes on
+    // from there, so a long tail is never read in one go.
+    let deliveryFrom = null;
     async function checkDelivery() {
       if (!pending.size || checking) return;
       checking = true;
       try {
         // From just before the oldest pending message on (after=<seq>,
-        // oldest first, docs/api.md §9), page by page.
-        let after = Math.min(...pending.keys()) - 1;
-        for (;;) {
-          const page = await M.api.get(path + "?after=" + encodeURIComponent(after) + "&limit=200");
-          page.items.forEach((m) => {
-            const update = pending.get(m.seq);
-            if (update && m.delivered_at) { update(m); pending.delete(m.seq); }
-          });
-          if (page.items.length < 200 || !pending.size) break;
-          after = page.items[page.items.length - 1].seq;
-        }
+        // oldest first, docs/api.md §9), one page.
+        const after = Math.max(Math.min(...pending.keys()) - 1, deliveryFrom || 0);
+        const page = await M.api.get(path + "?after=" + encodeURIComponent(after) + "&limit=200");
+        page.items.forEach((m) => {
+          const update = pending.get(m.seq);
+          if (update && m.delivered_at) { update(m); pending.delete(m.seq); }
+        });
+        deliveryFrom = page.items.length === 200 && pending.size ? page.items[page.items.length - 1].seq : null;
       } catch (err) {
         pollStatus.fail("Whether your messages were picked up could not be read: ", err);
       } finally {
@@ -458,12 +466,16 @@ window.Maity = window.Maity || {};
 
     const mentions = (e) => isChat(e) && e.payload.conversation_id === agent.id && !shown.has(e.seq);
     ctx.onEvents(async (events) => {
+      // The global chat has no feed to say what changed in what is shown: it
+      // asks for the newest page again (before=, which marks nothing read)
+      // and takes its removals and deleted files over.
+      if (events.some((e) => e.kind === RESYNC)) await resync();
       // A message of this chat removed (§8.5): its text goes at once.
       events.filter((e) => e.kind === "event_redacted" && e.payload)
         .forEach((e) => markRemoved(e.payload.seq, e.actor && e.actor.member_id, e.payload.reason));
       events.filter((e) => e.kind === "attachment_deleted" && e.payload)
         .forEach((e) => M.attachments.markDeleted(messages, e.payload.attachment_id));
-      if (events.some((e) => e.actor && e.actor.member_id === agent.id)) checkDelivery();
+      if (events.some((e) => e.actor && e.actor.member_id === agent.id)) await checkDelivery();
       if (!events.some(mentions)) return;
       try {
         const fresh = await M.api.get(path + "?after=" + encodeURIComponent(cursor));
@@ -477,6 +489,24 @@ window.Maity = window.Maity || {};
         pollStatus.fail("New messages could not be fetched: ", err);
       }
     });
+    // One page per nudge, newest first, walking back over what is shown and
+    // starting at the newest again once it reached the oldest.
+    let resyncBefore = null;
+    async function resync() {
+      try {
+        const before = resyncBefore || cursor + 1;
+        const page = await M.api.get(path + "?before=" + encodeURIComponent(before) + "&limit=" + HISTORY_PAGE);
+        const oldestShown = Math.min(...shown);
+        const lowest = page.items.length ? Math.min(...page.items.map((m) => m.seq)) : null;
+        resyncBefore = lowest !== null && page.items.length === HISTORY_PAGE && lowest > oldestShown ? lowest : null;
+        page.items.filter((m) => shown.has(m.seq)).forEach((m) => {
+          if (isRemoved(m)) markRemoved(m.seq, m.redaction && m.redaction.by, m.redaction && m.redaction.reason);
+          (m.attachments || []).filter((a) => a.deleted_at).forEach((a) => M.attachments && M.attachments.markDeleted(messages, a.id));
+        });
+      } catch (err) {
+        pollStatus.fail("The conversation could not be read again: ", err);
+      }
+    }
     // A message's text replaced by its tombstone, in place; its buttons go.
     function markRemoved(seq, by, reason) {
       const li = Array.from(messages.querySelectorAll("li.msg")).find((x) => x.getAttribute("data-seq") === String(seq));
