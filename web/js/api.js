@@ -809,6 +809,7 @@ window.Maity = window.Maity || {};
       const view = (x) => {
         const out = Object.assign({}, x);
         delete out._text;
+        delete out.open_matter;
         if (x._text && allowed[x.kind]) out.content = x._text.replace(/\s+/g, " ").slice(0, 120);
         return out;
       };

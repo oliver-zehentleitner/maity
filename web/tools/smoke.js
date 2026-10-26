@@ -5171,6 +5171,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(Object.keys(waitNarrow)) === JSON.stringify(["inbox", "chat", "mention", "account"]) && waitNarrow.inbox.length === 1
     && waitNarrow.inbox[0].item.id === "ntf-reg" && waitNarrow.account.length === 0 && win.Maity.notify.linkOf(waitNarrow.inbox[0].item) === "#/admin",
     "waiting: four groups; a pending registration among the requests, leading to Admin; removed kinds left out");
+  // What asks for an action stays unread when opened; an older hub's removed kinds are no notification here.
+  expect(win.Maity.notify.keepsUnread({ kind: "inbox", target: { type: "registration", id: "x" } }) && win.Maity.notify.keepsUnread({ kind: "inbox", target: { type: "settings", id: "mail" } })
+    && win.Maity.notify.keepsUnread({ kind: "security", target: { type: "session" } }) && !win.Maity.notify.keepsUnread({ kind: "inbox", target: { type: "request", id: "r" } })
+    && !win.Maity.notify.known({ kind: "card" }) && !win.Maity.notify.known({ kind: "keep_the_why" }) && win.Maity.notify.known({ kind: "mention" }),
+    "notifications: a registration, a disabled address and a sign-in alert stay unread when opened; removed kinds are not shown");
+  const openMatterLeak = (await win.Maity.api.get("/me/notifications?limit=20")).items.some((x) => "open_matter" in x);
+  expect(!openMatterLeak, "notifications: the mock answers no fixture-only field");
   const narrowRefused = await win.Maity.api.get("/me/notifications?kind=card").catch((err) => err);
   expect(narrowRefused.code === "invalid" && narrowRefused.details.fields.kind === "removed_kind", "notifications: the mock refuses a removed kind as the hub does");
   const waitCalls = [], waitWrites = [], waitDisposers = [];
@@ -5206,6 +5213,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(waitChat).includes("2+ unread"), "waiting: past the 200 a conversation's count is a lower bound, said with a plus");
   waitChat.querySelector("a").click(); await tick();
   expect(JSON.stringify(waitWrites[0]) === JSON.stringify(["/me/notifications/read", { ids: ["ntf-w2"] }]), "waiting: opening a conversation marks its newest item read");
+  // A pending registration's row stays until the registration is decided: opening it marks nothing.
+  const waitRegHost = document.createElement("div");
+  const waitRegGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p.startsWith("/me/notifications?unread=true")
+    ? Promise.resolve({ items: [{ id: "ntf-reg-1", kind: "inbox", at: "2026-10-24T02:00:00Z", title: "newcomer waits for approval", project: null,
+      target: { type: "registration", id: "hum-n" }, read: false }, { id: "ntf-old-1", kind: "card", at: "2026-10-24T02:00:00Z", title: "old card", project: { slug: "maity" }, target: { type: "task", id: "tsk-1" }, read: false }], next_cursor: null })
+    : waitRegGet(p));
+  const waitRegDispose = [];
+  const waitRegView = win.Maity.waiting.mount(Object.assign({}, waitCtx, { onDispose: (fn) => waitRegDispose.push(fn) }), waitRegHost, [], () => "");
+  await waitRegView.ready;
+  const waitRegRow = waitRegHost.querySelectorAll(".waiting-item").find((el) => el.getAttribute("data-notification") === "ntf-reg-1");
+  const waitWritesBefore = waitWrites.length;
+  waitRegRow.querySelector("a").click(); await tick();
+  expect(waitWrites.length === waitWritesBefore && waitRegRow.querySelector("a").getAttribute("href") === "#/admin" && !text(waitRegHost).includes("old card"),
+    "waiting: a pending registration's row leads to Admin and is not marked read by opening it; an old hub's card is not listed");
+  waitRegDispose.forEach((fn) => fn());
+  win.Maity.api.get = waitRegGet;
   // A busy stream: five events in a row are one refresh once they settle.
   const waitBefore = waitCalls.length;
   waitVersion = 1; for (let i = 0; i < 5; i++) win.Maity.notify.changed();
