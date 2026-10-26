@@ -98,8 +98,7 @@ aggregates: the memberships, each project's highest event, the account records a
 reads, the event items' read marks, the chat marks and the watched cards (a watch
 writes no event). The full answer runs only when the
 stamp differs; a read mark counts as movement. Full answers and marks pass a semaphore of
-four per process. Request threads are capped at pool size plus overflow, so a full pool
-queues requests in the hub instead of failing them after the pool timeout. The marks are
+four per process. The marks are
 written at READ COMMITTED in one statement that skips existing rows. A REPEATABLE READ
 snapshot's insert failed on the key when a second mark of the same items raced it, and
 would raise a serialization failure even with an on-conflict clause.
@@ -107,6 +106,11 @@ would raise a serialization failure even with an on-conflict clause.
 **Rejected alternatives:**
 - A larger pool by default only moves the load to the database. It is now configurable
   instead.
+- Capping the request threads at pool size plus overflow, so a full pool would queue
+  requests in the hub. Tried in the same change and dropped: with 15 threads instead of
+  40, waiters blocked on a slow read take every thread and starve unrelated requests.
+  The guarding test is `test_waiters_on_a_slow_family_do_not_starve_the_request_threadpool`.
+  How threads and pool should be sized is left to a separate decision.
 - Waking on commits like the events long-poll, and removing the per-row queries in
   `derive`, are the full fix. They are larger and follow separately; the stamp and the
   semaphore stop the overload on their own.
