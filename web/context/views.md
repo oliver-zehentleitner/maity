@@ -1185,8 +1185,11 @@ no events long-poll: the notifications stream (js/notify.js), which every
 signed-in page reads anyway, says that something changed; the global view
 then reads each project's conversation list once a burst has settled
 (0.4 s), and the open conversation fetches what came after its last
-message, as its project's feed would have made it. The lists are also
-read every 30 seconds, as a project's Chat tab does.
+message, as its project's feed would have made it, and reads its newest
+page and (for a group chat) itself again, to take over what the stream
+cannot name: a removal, a deleted file, a rename, a change of who is in it
+or of closed. The lists and the members are also read every 30 seconds, as
+a project's Chat tab does.
 
 **Reason:** a feed per project, or even one for the open conversation's
 project, multiplies with every open tab; that multiplication was the
