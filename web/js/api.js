@@ -2381,12 +2381,15 @@ window.Maity = window.Maity || {};
     return sessionCsrf;
   }
 
-  async function fromApi(method, path, body, raw) {
+  // signal: an AbortSignal that cancels the request (a held long-poll the
+  // page no longer wants, js/notify.js).
+  async function fromApi(method, path, body, raw, signal) {
     const init = {
       method,
       credentials: "same-origin",
       headers: { Accept: "application/json" },
     };
+    if (signal) init.signal = signal;
     // Every POST, PATCH and DELETE of a cookie session carries the token;
     // without one the hub answers 403 csrf_mismatch.
     if (method !== "GET" && method !== "HEAD") {
@@ -2405,6 +2408,7 @@ window.Maity = window.Maity || {};
     try {
       res = await fetch(API_BASE + path, init);
     } catch (err) {
+      if (err && err.name === "AbortError") throw new ApiError("Cancelled", 0, path, "aborted");
       throw new ApiError("The hub did not answer: " + err.message, 0, path);
     }
     // Maity-Server-Time on every answer (docs/api.md §1.2): how far this
@@ -2433,11 +2437,11 @@ window.Maity = window.Maity || {};
 
   let skew = 0;
 
-  function request(method, path, body, raw) {
+  function request(method, path, body, raw, signal) {
     // In fixture mode an image travels with the Content-Type the page sniffed.
     const p = source === "fixtures"
       ? fromFixtures(method, path, raw ? { blob: body, type: raw, size: body.size } : body)
-      : fromApi(method, path, body, raw);
+      : fromApi(method, path, body, raw, signal);
     if (path === "/auth/session") {
       return p.then((s) => { sessionCsrf = s.csrf_token || null; return s; });
     }
@@ -2544,7 +2548,7 @@ window.Maity = window.Maity || {};
     now: () => Date.now() + skew,
     source,
     ApiError,
-    get: (path) => request("GET", path),
+    get: (path, opts) => request("GET", path, undefined, undefined, opts && opts.signal),
     getAll,
     post: (path, body) => request("POST", path, body || {}),
     put: (path, body) => request("PUT", path, body || {}),

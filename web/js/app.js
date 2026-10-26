@@ -204,6 +204,8 @@ window.Maity = window.Maity || {};
   }
 
   async function logout() {
+    // The held long-poll goes before the session does (§18.2).
+    M.notify.halt();
     try {
       await M.api.post("/auth/logout");
     } finally {
@@ -1215,6 +1217,8 @@ window.Maity = window.Maity || {};
       }
       const me = await M.api.get("/me");
       if (seq !== renderSeq) return;
+      // Signed in again after signing out here: the stream may run again.
+      M.notify.resume();
       if (where.scope === null || where.scope === "login") {
         window.location.replace(me.projects.length === 1 ? projectLink(me.projects[0].slug, "inbox") : "#/all");
         return;
