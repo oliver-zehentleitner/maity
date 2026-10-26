@@ -75,3 +75,41 @@ form invisible to the client.
   project ids and numbers, which the contract keeps from the holder.
 - The random key in a new table of its own: `instance_secret` already
   is the place for values no setting may serve.
+
+## A held long-poll compares a stamp before it derives again, and full answers run a few at a time
+
+**Id:** 06563fc8-cd5c-4820-b089-9d233f3d44b8
+**Type:** decision
+**Type:** incident
+**Status:** active
+**Evidence:** inferred
+**Source:** production incident 2026-10-26 (hub not ready, connection pool timeouts), analysis from the code and the incident log
+**See:** notifications.md#items-are-derived-on-every-read-from-30-days-of-the-humans-projects-with-the-relations-as-they-are-now — e29065f2-c5d3-43dd-9209-f7f30b67269a — as of 2026-10-26
+**Revisit when:** derive no longer runs per-row queries, or the long-poll waits on commits instead of looking
+
+The hub was not ready for about a quarter of an hour. The pool ran out at a low request
+rate. The likely cause was that every held notifications long-poll ran the full answer every
+half second. The full answer derives every item of 30 days with several queries per event,
+so each open long-poll occupied a connection and a share of the one Python core, and enough
+of them took the pool from every other call, the health probe included.
+
+**Decision:** between two looks, a held long-poll reads `listing.stamp`. That is a few
+aggregates: the memberships, each project's highest event, the account records and their
+reads, the event items' read marks and the chat marks. The full answer runs only when the
+stamp differs; a read mark counts as movement. Full answers and marks pass a semaphore of
+four per process. Request threads are capped at pool size plus overflow, so a full pool
+queues requests in the hub instead of failing them after the pool timeout. The marks are
+written at READ COMMITTED in one statement that skips existing rows. A REPEATABLE READ
+snapshot's insert failed on the key when a second mark of the same items raced it, and
+would raise a serialization failure even with an on-conflict clause.
+
+**Rejected alternatives:**
+- A larger pool by default only moves the load to the database. It is now configurable
+  instead.
+- Waking on commits like the events long-poll, and removing the per-row queries in
+  `derive`, are the full fix. They are larger and follow separately; the stamp and the
+  semaphore stop the overload on their own.
+
+**Reason:** the smallest change that makes an idle long-poll cheap and bounds what a busy
+one can take. Evidence is inferred: the cost per event was measured locally; the incident
+log showed pool timeouts at a low request rate, with no lock wait found on these paths.
