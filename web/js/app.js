@@ -191,7 +191,22 @@ window.Maity = window.Maity || {};
   // A page's link to sign in or register and come back to it.
   M.withNext = (route, back) => route + "?next=" + encodeURIComponent("/" + back);
 
-  function renderLogin(main) {
+  // The session ended while the page was signed in (a 401 on a call that
+  // needs it, js/api.js): everything in the background stops, and the
+  // sign-in page comes with a note; nothing more is asked until a sign-in.
+  // Signing in again returns to the same route.
+  let sessionEnded = false;
+  M.onSessionEnded = () => {
+    if (sessionEnded) return;
+    sessionEnded = true;
+    renderSeq++;
+    M.notify.halt();
+    stopTimers();
+    if (M.clearChatDrafts) M.clearChatDrafts();
+    renderLogin(document.getElementById("main"), "Your session has ended. Sign in again to go on where you were.");
+  };
+
+  function renderLogin(main, note) {
     // A landing page may have set the tab's title (§16.7).
     document.title = "Sign in · Maity";
     append(clear(document.getElementById("header")), h("div", { class: "bar" },
@@ -224,7 +239,7 @@ window.Maity = window.Maity || {};
     status.el);
     // A code from another device or a link by mail, as the hub offers them
     // (js/device-sign-in.js), on this page's own timers.
-    append(clear(main), form,
+    append(clear(main), note ? h("p", { class: "flag session-ended", role: "status" }, note) : null, form,
       M.deviceSignIn ? M.deviceSignIn.loginOptions((ms, fn) => { timers.push(window.setInterval(fn, ms)); }, () => render()) : null);
   }
 
@@ -241,6 +256,8 @@ window.Maity = window.Maity || {};
   async function logout() {
     // The held long-poll goes before the session does (§18.2).
     M.notify.halt();
+    // Signing out on purpose is no session that ended under the page.
+    sessionEnded = true;
     try {
       await M.api.post("/auth/logout");
     } finally {
@@ -1275,6 +1292,7 @@ window.Maity = window.Maity || {};
       if (seq !== renderSeq) return;
       // Signed in again after signing out here: the stream may run again.
       M.notify.resume();
+      sessionEnded = false;
       // An account that waits for approval (§2.7.5) sees that, and nothing else.
       if (me.member && me.member.account_status === "pending") {
         renderPending(main);

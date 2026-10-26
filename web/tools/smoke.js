@@ -4619,6 +4619,27 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = ivGet;
   await go("#/p/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
 
+  // A session that ends under the page (expired, revoked, ended elsewhere): the first 401 on a call that
+  // needs it stops the background and shows sign-in with a note; nothing is asked after that; signing in returns.
+  await go("#/p/maity/board"); for (let k = 0; k < 4; k++) await tick();
+  const seGet = win.Maity.api.get, seGetAll = win.Maity.api.getAll;
+  const seCalls = [];
+  // The fixture hub forgets the session, as an expiry or a revocation elsewhere would.
+  await win.Maity.api.post("/auth/logout");
+  win.Maity.api.get = (p) => { seCalls.push(p); return seGet(p); };
+  win.Maity.api.getAll = (p) => { seCalls.push(p); return seGetAll(p); };
+  await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
+  expect(byId("login-handle") && main.querySelector(".session-ended") && text(main.querySelector(".session-ended")).includes("Your session has ended")
+    && win.location.hash === "#/p/maity/board", "session: the first 401 under the page shows sign-in with a note, the route kept");
+  const seAfter = seCalls.length;
+  await fireIntervals(); await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
+  expect(seCalls.length === seAfter, "session: after it ended nothing more is asked " + JSON.stringify(seCalls.slice(seAfter)));
+  byId("login-handle").value = "maintainer"; byId("login-password").value = "a long new password";
+  main.querySelector("form").dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+  expect(!byId("login-handle") && main.querySelector("section.view-board") && win.location.hash === "#/p/maity/board" && !main.querySelector(".session-ended"),
+    "session: signing in again returns to the same route");
+  win.Maity.api.get = seGet; win.Maity.api.getAll = seGetAll;
+
   // Notifications (docs/api.md §18): the bell, the counts, browser notifications.
   await go("#/p/maity/inbox");
   const bellBtn = () => header.querySelector("button.bell");

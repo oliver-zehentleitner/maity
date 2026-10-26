@@ -2525,8 +2525,18 @@ window.Maity = window.Maity || {};
     if (path === "/auth/session") {
       return p.then((s) => { sessionCsrf = s.csrf_token || null; return s; });
     }
+    // A 401 on a call that needs the session: it ended (expired, revoked,
+    // ended elsewhere). The page is told once, in one place (js/app.js).
+    if (!PUBLIC_PATH.test(path)) {
+      return p.catch((err) => {
+        if (err && err.status === 401 && M.onSessionEnded) M.onSessionEnded(path);
+        throw err;
+      });
+    }
     return p;
   }
+  // The calls a visitor without a session makes, where a 401 says nothing ended.
+  const PUBLIC_PATH = /^\/(auth\/|landing$|openapi\.json$|swarm\/|invitations\/[^/]+$)/;
 
   // Every page of a list, following next_cursor (docs/api.md §1.4).
   async function getAll(path) {
