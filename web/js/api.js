@@ -2432,7 +2432,9 @@ window.Maity = window.Maity || {};
     const query = new URLSearchParams(q < 0 ? "" : fullPath.slice(q + 1));
     return loadFixtures().then(() => {
       // The hub serves its machine form and the landing page without a session.
-      if (!fixtureSignedIn && !path.startsWith("/auth/") && path !== "/landing" && path !== "/openapi.json" && !path.startsWith("/swarm/") && !path.startsWith("/invitations/")) {
+      // Signed out, the fixture hub still answers what a visitor calls, and the
+      // device codes, whose other side this one tab plays too.
+      if (!fixtureSignedIn && !/^\/auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code|device-codes(\/.*)?)$/.test(path) && path !== "/landing" && path !== "/openapi.json" && !path.startsWith("/swarm/") && !path.startsWith("/invitations/")) {
         fail(401, "unauthenticated", "Not signed in", fullPath);
       }
       for (const [verb, pattern, handler] of routes) {
@@ -2525,8 +2527,22 @@ window.Maity = window.Maity || {};
     if (path === "/auth/session") {
       return p.then((s) => { sessionCsrf = s.csrf_token || null; return s; });
     }
+    // A 401 on a call that needs the session: it ended (expired, revoked,
+    // ended elsewhere). The page is told once, in one place (js/app.js).
+    if (!PUBLIC_PATH.test(path)) {
+      // Which session asked: a late 401 of an earlier one ends no later one.
+      const epoch = M.sessionEpoch || 0;
+      return p.catch((err) => {
+        if (err && err.status === 401 && M.onSessionEnded) M.onSessionEnded(path, epoch);
+        throw err;
+      });
+    }
     return p;
   }
+  // The calls a visitor without a session makes, where a 401 says nothing ended.
+  // Signing in and out, registering and the session check answer 401 to a
+  // visitor by design; every other /auth/* call is the session's own.
+  const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code)$|landing$|openapi\.json$|swarm\/|invitations\/[^/]+$)/;
 
   // Every page of a list, following next_cursor (docs/api.md §1.4).
   async function getAll(path) {

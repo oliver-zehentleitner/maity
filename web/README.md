@@ -117,6 +117,11 @@ After that:
   agent's outage and an unconfirmed Keep the Why commitment reach the
   owner as requests in the inbox. The settings offer a switch for each
   kind the hub lists and no other.
+- **A session that ends elsewhere** (expired, revoked, a password changed
+  in another tab): the first 401 on a call that needs the session stops
+  everything in the background — the stream, the refresh timers, the
+  counts — and shows the sign-in page with "Your session has ended";
+  nothing more is asked until a sign-in, which returns to the same route.
 - **Ending the session here.** Before a password change or signing out,
   the page cancels its held long-poll and sends none until the change is
   done (a password change keeps this session, and the stream goes on); a
