@@ -164,7 +164,16 @@ class ReportIn(Written):
 
 
 def load_task(conn: Connection, card_id: str, request: Request) -> dict[str, Any]:
-    return task_view(conn, _card(conn, card_id), reader_of(request))
+    """The card for a replayed write, with the replaying caller's own `watching`."""
+    card = _card(conn, card_id)
+    caller = getattr(request.state, "caller", None)
+    viewer = None
+    if caller is not None:
+        slug = conn.execute(
+            select(t.project.c.slug).where(t.project.c.id == card.project_id)
+        ).scalar_one()
+        viewer = membership(conn, caller, slug)
+    return task_view(conn, card, reader_of(request), viewer)
 
 
 idempotency.LOADERS["task"] = load_task
@@ -566,7 +575,7 @@ def list_tasks(
             return result
 
         def views(rows: Sequence[Any]) -> list[dict[str, Any]]:
-            shown = task_views(conn, rows, fg)
+            shown = task_views(conn, rows, fg, mine)
             if q is not None:
                 for item in shown:
                     item["match"] = matched[item["id"]]
@@ -645,7 +654,7 @@ def get_task(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JS
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
-        return JSONResponse(task_view(conn, _project_card(conn, mine, card_id), fg))
+        return JSONResponse(task_view(conn, _project_card(conn, mine, card_id), fg, mine))
 
 
 # A card's fields as its creation records them (§6.15).
@@ -757,7 +766,7 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
         history.stamp(conn, [entry], seq)
         _ping(conn, mine, caller, card, found, "body", before=[])
         releases.recheck(conn, mine.project.id, fg)  # a release may be ready from the start
-        return idempotency.Outcome(201, "task", card_id, view)
+        return idempotency.Outcome(201, "task", card_id, {**view, "watching": False})
 
     response = idempotency.run(engine_of(request), request, caller, action)
     if body.links:
@@ -868,7 +877,7 @@ def patch_task(
         changed = {k: v for k, v in values.items() if getattr(card, k) != v}
         edges_changed = depends_changed or bool(partners)
         if not changed and not edges_changed:
-            return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg))
+            return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg, mine))
         conn.execute(
             update(t.card)
             .where(t.card.c.id == card.id)
@@ -939,7 +948,9 @@ def patch_task(
                 conn, mine.project, _card(conn, card.id), caller.actor(mine.id), mine.principal_id
             )
         releases.recheck(conn, mine.project.id, fg)
-        return idempotency.Outcome(200, "task", card.id, task_view(conn, _card(conn, card.id), fg))
+        return idempotency.Outcome(
+            200, "task", card.id, task_view(conn, _card(conn, card.id), fg, mine)
+        )
 
     return idempotency.run(engine_of(request), request, caller, action)
 
@@ -1053,7 +1064,7 @@ def claim(
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )
-        return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg))
+        return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg, mine))
 
     return idempotency.run(engine_of(request), request, caller, action)
 
@@ -1194,7 +1205,7 @@ def release(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSO
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )
-        return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg))
+        return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg, mine))
 
     return idempotency.run(engine_of(request), request, caller, action)
 
@@ -1261,7 +1272,9 @@ def move(
                 actor=caller.actor(mine.id),
                 subject=("task", changed_id),
             )
-        return idempotency.Outcome(200, "task", card.id, task_view(conn, _card(conn, card.id), fg))
+        return idempotency.Outcome(
+            200, "task", card.id, task_view(conn, _card(conn, card.id), fg, mine)
+        )
 
     return idempotency.run(engine_of(request), request, caller, action)
 
@@ -1386,7 +1399,7 @@ def assign(
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )
-        return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg))
+        return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg, mine))
 
     return idempotency.run(engine_of(request), request, caller, action)
 
@@ -1484,7 +1497,7 @@ def checkpoint(
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )
-        return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg))
+        return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg, mine))
 
     return idempotency.run(engine_of(request), request, caller, action)
 
@@ -1597,7 +1610,9 @@ def report(
                 conn, mine.project, card, caller.actor(mine.id), mine.principal_id
             )
         releases.recheck(conn, mine.project.id, fg)
-        return idempotency.Outcome(200, "task", card.id, task_view(conn, _card(conn, card.id), fg))
+        return idempotency.Outcome(
+            200, "task", card.id, task_view(conn, _card(conn, card.id), fg, mine)
+        )
 
     response = idempotency.run(engine_of(request), request, caller, action)
     if response.status_code == 200 and request.app.state.probe is not None:
@@ -1681,7 +1696,7 @@ def tick_checklist(
         if item is None:
             raise not_found()
         if item["done"] == body.done:
-            return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg))
+            return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg, mine))
         now = clock.now()
         item.update(
             done=body.done,
@@ -1711,6 +1726,8 @@ def tick_checklist(
             subject=("task", card.id),
         )
         releases.recheck(conn, mine.project.id, fg)
-        return idempotency.Outcome(200, "task", card.id, task_view(conn, _card(conn, card.id), fg))
+        return idempotency.Outcome(
+            200, "task", card.id, task_view(conn, _card(conn, card.id), fg, mine)
+        )
 
     return idempotency.run(engine_of(request), request, caller, action)

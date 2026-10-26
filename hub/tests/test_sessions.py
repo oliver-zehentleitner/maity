@@ -255,7 +255,10 @@ def test_login_answers_a_safe_next(
 
 def row(name: str, method: str, minutes_old: float) -> Any:
     return SimpleNamespace(
-        id_hash=name, method=method, created_at=clock.now() - timedelta(minutes=minutes_old)
+        id_hash=name,
+        public_id=f"hss-{name}",
+        method=method,
+        created_at=clock.now() - timedelta(minutes=minutes_old),
     )
 
 
@@ -273,6 +276,10 @@ def test_who_may_end_which_session() -> None:
     assert sessions.refusal(weak_young, newer_weak, now) is None
     assert sessions.refusal(weak_old, weak_young, now) is None
     assert sessions.refusal(weak_young, weak_young, now) is None  # a logout
+    # A confirmed sign-in is in good standing, whatever its method.
+    confirmed = frozenset({"hss-weak-young"})
+    assert sessions.refusal(weak_young, strong, now, confirmed) is None
+    assert sessions.refusal(weak_old, weak_young, now, confirmed) == "not_in_good_standing"
 
 
 def test_ending_a_session_ends_what_it_approved(

@@ -33,6 +33,7 @@ from maity_hub.errors import (
     rate_limited,
     unauthenticated,
 )
+from maity_hub.notifications import records
 from maity_hub.ratelimit import Limiter
 from maity_hub.views import human_member
 
@@ -234,6 +235,7 @@ def end_session(public_id: str, request: Request, caller: AnyCaller) -> JSONResp
     now = clock.now()
     with engine_of(request).begin() as conn:
         mine = _session(conn, current)
+        confirmed = sessions.confirmed_sessions(conn, caller.principal_id)
         target = conn.execute(
             select(t.human_session).where(
                 t.human_session.c.public_id == public_id,
@@ -244,7 +246,7 @@ def end_session(public_id: str, request: Request, caller: AnyCaller) -> JSONResp
             raise not_found()  # another human's session is not found either
         skipped: list[str] = []
         if sessions.ended(target, now) is None:
-            reason = sessions.refusal(mine, target, now)
+            reason = sessions.refusal(mine, target, now, confirmed)
             if reason is not None:
                 raise sessions.forbidden_to_end(reason)
             by = "logout" if target.id_hash == current else "revoked"
@@ -252,12 +254,16 @@ def end_session(public_id: str, request: Request, caller: AnyCaller) -> JSONResp
             live = [s for s in chain if sessions.ended(s, now) is None]
             # The same refusal per session of the chain: what the caller may not end is
             # skipped and named, never ended (§2.6.5).
-            allowed = [s for s in live if sessions.refusal(mine, s, now) is None]
+            allowed = [s for s in live if sessions.refusal(mine, s, now, confirmed) is None]
             skipped = [s.public_id for s in live if s not in allowed]
             sessions.end(conn, [target], by)
             sessions.end(conn, allowed, "revoked")
         row = _session(conn, target.id_hash)
-        answer = {**sessions.view(row, current, clock.now()), "skipped": skipped}
+        sign_ins = records.sign_in_records(conn, caller.principal_id)
+        answer = {
+            **sessions.view(row, current, clock.now(), sign_ins, confirmed),
+            "skipped": skipped,
+        }
     response = JSONResponse(answer)
     if target.id_hash == current:
         _clear_cookies(response, request)
@@ -274,7 +280,8 @@ def end_others(request: Request, caller: AnyCaller) -> JSONResponse:
         mine = _session(conn, current)
         live = sessions.listing(conn, caller.principal_id, current, with_ended=False)
         others = [row for row in live if row.id_hash != current]
-        allowed = [row for row in others if sessions.refusal(mine, row, now) is None]
+        confirmed = sessions.confirmed_sessions(conn, caller.principal_id)
+        allowed = [row for row in others if sessions.refusal(mine, row, now, confirmed) is None]
         sessions.end(conn, allowed, "end_others")
         return JSONResponse(_listing(conn, caller.principal_id, current, with_ended=False))
 
@@ -294,7 +301,9 @@ def _session(conn: Connection, id_hash: str) -> Any:
 def _listing(conn: Connection, human_id: str, current: str, *, with_ended: bool) -> dict[str, Any]:
     now = clock.now()
     rows = sessions.listing(conn, human_id, current, with_ended=with_ended)
-    return {"items": [sessions.view(row, current, now) for row in rows]}
+    sign_ins = records.sign_in_records(conn, human_id)
+    confirmed = sessions.confirmed_sessions(conn, human_id)
+    return {"items": [sessions.view(row, current, now, sign_ins, confirmed) for row in rows]}
 
 
 def _require_cookie(caller: Caller) -> str:
