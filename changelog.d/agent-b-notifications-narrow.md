@@ -9,3 +9,6 @@
   A waiting registration is the instance admin's `inbox` item (`registration_pending`): it
   counts and stays listed until it is decided, and is never mailed. `mail_disabled` is an
   `inbox` item.
+  A request is one `inbox` item, for whoever holds it now: an earlier holder, or the other
+  admins once one claimed it, keep none. A new event index `(project_id, kind, seq)`
+  (migration 0054) serves the long-poll's change check.
