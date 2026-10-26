@@ -10700,7 +10700,13 @@ session that existed before that sign-in and is itself in good
 standing (signed in by password, or its own `session_created` item
 already marked read by an allowed session — never read by age, §18.2)
 — never from the session it reports on and never from a
-session created after it. `email_address_changed` follows the same rule, with the change in place of the sign-in. Security items (`session_created` and every
+session created after it. `email_address_changed` follows the same rule, with the change in place of the sign-in. The two `inbox` items of an open matter, `registration_pending` and
+`mail_disabled` (§18.1), are never marked read by a caller: `up_to`
+skips them and `ids` ignores them (the answer counts them as not
+marked); each reads as read on its own once its matter is closed — the
+registration decided or expired, the address working again. So "mark
+all read" never hides an open matter from "Waiting for you" while it
+still counts in `counts.inbox`. Security items (`session_created` and every
 other `security` kind) are marked read only through `ids`, never through
 `up_to`: "mark all read" skips them, so tidying the bell never confirms
 a sign-in or grants good standing. From a session that may not mark
