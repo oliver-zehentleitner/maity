@@ -20,6 +20,7 @@ TABLE = {
     "events:post": "✓✓✓✓✓",
     "events:admin": "✓h   ",
     "ticker:post": "✓✓   ",
+    "jour_fixe:start": "✓✓   ",
     "credentials:admin": "✓h   ",
     "agents:propose": "✓✓   ",
 }

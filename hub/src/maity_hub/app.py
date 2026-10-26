@@ -48,6 +48,7 @@ from maity_hub.routes import (
     device_codes,
     forge_webhook,
     joins,
+    jour_fixe,
     keep_the_why,
     limit,
     mail_settings,
@@ -113,7 +114,12 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         availability_worker.start()
         registrations_worker = registration_accounts.Worker(engine)
         registrations_worker.start()
+        from maity_hub.jourfixe import worker as jour_fixe_worker
+
+        jour_fixe_clock = jour_fixe_worker.Worker(engine)  # the schedule acts on its own
+        jour_fixe_clock.start()
         yield
+        jour_fixe_clock.stop()
         registrations_worker.stop()
         availability_worker.stop()
         image_worker.stop()
@@ -167,6 +173,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(ticker.router, prefix=prefix)
     app.include_router(memory.router, prefix=prefix)
     app.include_router(preferences.router, prefix=prefix)
+    app.include_router(jour_fixe.router, prefix=prefix)
     app.include_router(forge_webhook.router, prefix=prefix)
     app.include_router(joins.page_router)  # /j/{token}, before the dashboard mount
     app.include_router(runners.page_router)  # /r/{token}, likewise

@@ -38,6 +38,8 @@ PREFIXES = {
     "note": "nte",
     "pending_registration": "preg",
     "invitation": "inv",
+    "jour_fixe": "jfx",
+    "jour_fixe_answer": "jfa",
 }
 
 
