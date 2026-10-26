@@ -1,0 +1,27 @@
+{
+  "pages": {
+    "open-xxxxxxxxxxxxxxxx1": { "project": { "slug": "maity", "name": "Maity" }, "role": "member", "invited_by": { "display_name": "Maintainer" },
+      "note": "You review the web side; D will brief you.", "expires_at": "2030-01-01T12:00:00Z", "address_bound": false, "registration": "sign_in_or_register" },
+    "only-xxxxxxxxxxxxxxxx2": { "project": { "slug": "maity", "name": "Maity" }, "role": "reviewer", "invited_by": { "display_name": "Maintainer" },
+      "note": null, "expires_at": "2030-01-01T12:00:00Z", "address_bound": false, "registration": "sign_in_only" },
+    "bound-xxxxxxxxxxxxxxx3": { "project": { "slug": "sample", "name": "Sample shop" }, "role": "member", "invited_by": { "display_name": "Maintainer" },
+      "note": null, "expires_at": "2030-01-01T12:00:00Z", "address_bound": true, "registration": "sign_in_or_register" },
+    "mismatch-xxxxxxxxxxxx4": { "project": { "slug": "maity", "name": "Maity" }, "role": "member", "invited_by": { "display_name": "Maintainer" },
+      "note": null, "expires_at": "2030-01-01T12:00:00Z", "address_bound": true, "registration": "sign_in_or_register" },
+    "member-xxxxxxxxxxxxxx5": { "project": { "slug": "maity", "name": "Maity" }, "role": "member", "invited_by": { "display_name": "Maintainer" },
+      "note": null, "expires_at": "2030-01-01T12:00:00Z", "address_bound": false, "registration": "sign_in_or_register" },
+    "void-xxxxxxxxxxxxxxxx6": { "project": { "slug": "maity", "name": "Maity" }, "role": "admin", "invited_by": { "display_name": "Maintainer" },
+      "note": null, "expires_at": "2030-01-01T12:00:00Z", "address_bound": false, "registration": "sign_in_only" },
+    "closed-xxxxxxxxxxxxxx7": { "project": { "slug": "maity", "name": "Maity" }, "role": "member", "invited_by": { "display_name": "Maintainer" },
+      "note": null, "expires_at": "2030-01-01T12:00:00Z", "address_bound": false, "registration": "sign_in_only" },
+    "pending-xxxxxxxxxxxxx8": { "project": { "slug": "maity", "name": "Maity" }, "role": "member", "invited_by": { "display_name": "Maintainer" },
+      "note": null, "expires_at": "2030-01-01T12:00:00Z", "address_bound": false, "registration": "sign_in_or_register" }
+  },
+  "refusals": {
+    "mismatch-xxxxxxxxxxxx4": { "status": 403, "code": "forbidden", "message": "this invitation is for another address", "details": { "reason": "invitation_address_mismatch" } },
+    "member-xxxxxxxxxxxxxx5": { "status": 400, "code": "invalid", "message": "the request does not validate", "details": { "fields": { "token": "already_member" } } },
+    "void-xxxxxxxxxxxxxxxx6": { "status": 403, "code": "forbidden", "message": "the person who invited you can no longer give this role", "details": { "reason": "invitation_void" } },
+    "closed-xxxxxxxxxxxxxx7": { "status": 409, "code": "project_closed", "message": "the project is closed", "details": {} },
+    "pending-xxxxxxxxxxxxx8": { "status": 403, "code": "forbidden", "message": "your account waits for approval", "details": { "reason": "account_pending" } }
+  }
+}

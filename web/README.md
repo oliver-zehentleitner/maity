@@ -135,7 +135,9 @@ stop the page. Mail settings come with the hub's mail (stage 3).
 | `#/all` | the inbox across every project, each entry with its project's badge (logo or monogram, name, state) before it, as a link to the project; filterable by project and groupable by project (each group a heading with its own list; the filter holds in `#/all` only, and answering opens the next entry as it stands on screen); the landing page with more than one project, and with none (then it offers **Create a project**) |
 | `#/new` | create a project; also **+ New project** in the switcher |
 | `#/s/<slug>` | a project's public swarm page, where its owner switched it on; for visitors with or without a session |
-| `#/login` | the login page, always; signed in, the dashboard's start (the root without a session shows the instance's landing page where it has one) |
+| `#/login` | the login page, always; signed in, the dashboard's start (the root without a session shows the instance's landing page where it has one). `#/login?next=<route>` signs in and goes on to that dashboard route (`/#/…` only, §2.6.5), passed to the password, mail-link and device sign-in calls; the page offers **Create an account** where `GET /auth/methods` says the instance registers |
+| `#/invite/<token>` | an invitation (`js/invite.js`, §3.4), with or without a session: who invites to which project as what, the note, until when, whether it is for one address; signed out **Sign in to accept** and, where the hub registers or the invitation admits, **Create one**, both returning here; signed in **Join <project> as <you>** (`POST …/accept`), then the way into the project; a refusal (address mismatch, already a member, void, project closed, account pending) said in the hub's words with its reason; an unknown, used, expired or revoked link one answer |
+| `#/register?next=<route>` | registration (`js/register.js`, §2.7.1): the address and a password (at least 12 characters, asked twice), `POST /auth/register` with the `next`, then "check your mail" — the same for every address; offered where the instance registers, or where the invitation in `next` admits (§3.4, `registration: sign_in_or_register`), else it says the hub does not create accounts on request. The account is made from the mailed link, which returns to `next`. An account that waits for approval (§2.7.5) sees one page, "Your account waits for the operator's approval", and Sign out |
 | `#/runners` | the runners: small services on the operator's machines that start agents for the projects they are allowed in; **Runners** in the switcher row |
 | `#/observe/<slug>` | reading along in the group chats your agents are in, in a project you are not a member of (`docs/api.md` §9.2); named on `#/all` |
 | `#/admin` | instance administration: statistics, users, mail settings and health, for the instance admin only (`member.instance_admin` on `/me`); opened from **Settings → Instance administration** |
@@ -392,7 +394,13 @@ too.
    a mention's link, marks that member's row and moves the focus to it): everyone in the
    project, humans first, then agents, each with name and handle, role,
    presence (with when last seen), when they joined; agents also with their
-   owner and whether they are paused (by whom, why). Under
+   owner and whether they are paused (by whom, why). For a human with
+   `members:admin`, **Invite a person** below (§3.4): the role (owner and
+   admin only for an owner), an optional address (then only it may
+   accept, and the hub mails the link), how long it is valid (an hour to
+   a week), a note; the link shown once with **Copy**, never again; the
+   invitations of the last 30 days with their state (open, used, revoked,
+   voided, expired), for whom, by whom, and **Revoke** on an open one. Under
    `policy.keep_the_why: required` (`docs/api.md` §6.23) a **Keep the Why**
    column says per instance when it confirmed or by when it is to; an agent
    past that deadline unconfirmed is marked, not shown as an error. Where the hub sends

@@ -83,8 +83,12 @@ window.Maity = window.Maity || {};
 
   // Throws URIError on a malformed escape; called inside render's try.
   function parseHash() {
-    const parts = window.location.hash.replace(/^#\/?/, "").split("/").filter(Boolean).map(decodeURIComponent);
+    // A route's own query (#/login?next=…, #/sign-in/code?c=…) is the page's to read.
+    const parts = window.location.hash.replace(/^#\/?/, "").split("?")[0].split("/").filter(Boolean).map(decodeURIComponent);
     if (!parts.length) return { scope: null };
+    // Signed out as much as signed in: an invitation (§3.4) and registration (§2.7).
+    if (parts[0] === "invite" && parts[1]) return { scope: "invite", token: parts[1] };
+    if (parts[0] === "register") return { scope: "register" };
     if (parts[0] === "notifications") return { scope: "notifications" };
     // A project's public swarm page (§6.22), with or without a session.
     if (parts[0] === "s" && parts[1]) return { scope: "public-swarm", slug: parts[1] };
@@ -167,6 +171,26 @@ window.Maity = window.Maity || {};
 
   // ---- sign-in ------------------------------------------------------------
 
+  // Where a sign-in goes on (#/login?next=…, docs/api.md §2.6.5): a
+  // dashboard route only, as the hub checks it; anything else is no next.
+  function safeNext(v) {
+    return typeof v === "string" && v.length <= 512 && /^\/#\/[^\s\\#]*$/.test(v) && !v.slice(1).includes("//") && !/[\u0000-\u001f]/.test(v) ? v : null;
+  }
+  function hashNext() {
+    const q = window.location.hash.split("?")[1];
+    return q ? safeNext(new URLSearchParams(q).get("next")) : null;
+  }
+  function goNext(next) {
+    const n = safeNext(next);
+    // Replacing the login page's entry: Back does not lead to it again.
+    if (n && window.location.hash !== n.slice(1)) window.location.replace(n.slice(1));
+    else render();
+  }
+  // The sign-in calls of js/device-sign-in.js send it too.
+  M.signInNext = hashNext;
+  // A page's link to sign in or register and come back to it.
+  M.withNext = (route, back) => route + "?next=" + encodeURIComponent("/" + back);
+
   function renderLogin(main) {
     // A landing page may have set the tab's title (§16.7).
     document.title = "Sign in · Maity";
@@ -183,9 +207,10 @@ window.Maity = window.Maity || {};
         e.preventDefault();
         status.busy("Signing in…");
         try {
-          await M.api.post("/auth/login", { handle: handle.value.trim(), password: password.value });
+          const next = hashNext();
+          const answer = await M.api.post("/auth/login", Object.assign({ handle: handle.value.trim(), password: password.value }, next ? { next } : {}));
           password.value = "";
-          render();
+          goNext(answer && answer.next);
         } catch (err) {
           password.value = "";
           status.fail("Not signed in: ", err);
@@ -201,6 +226,16 @@ window.Maity = window.Maity || {};
     // (js/device-sign-in.js), on this page's own timers.
     append(clear(main), form,
       M.deviceSignIn ? M.deviceSignIn.loginOptions((ms, fn) => { timers.push(window.setInterval(fn, ms)); }, () => render()) : null);
+  }
+
+  // The one page of a pending account (§2.7.5): it may sign out, nothing else.
+  function renderPending(main) {
+    document.title = "Waiting for approval · Maity";
+    append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle(), themeMenu()));
+    append(clear(main), h("section", { class: "pending-account" },
+      h("h2", null, "Your account waits for the operator's approval"),
+      h("p", null, "Once it is approved you get a mail, and this page becomes your dashboard. An invitation you followed waits for you meanwhile."),
+      h("button", { type: "button", onclick: logout }, "Sign out")));
   }
 
   async function logout() {
@@ -1216,6 +1251,8 @@ window.Maity = window.Maity || {};
     let ctx;
     try {
       where = parseHash();
+      if (where.scope === "invite" && M.invite) { await M.invite.page(main, document.getElementById("header"), where.token); return; }
+      if (where.scope === "register" && M.register) { await M.register.page(main, document.getElementById("header"), hashNext()); return; }
       if (where.scope === "public-swarm" && M.swarm) {
         await M.swarm.publicPage(main, document.getElementById("header"), where.slug);
         return;
@@ -1238,8 +1275,14 @@ window.Maity = window.Maity || {};
       if (seq !== renderSeq) return;
       // Signed in again after signing out here: the stream may run again.
       M.notify.resume();
+      // An account that waits for approval (§2.7.5) sees that, and nothing else.
+      if (me.member && me.member.account_status === "pending") {
+        renderPending(main);
+        return;
+      }
       if (where.scope === null || where.scope === "login") {
-        window.location.replace(me.projects.length === 1 ? projectLink(me.projects[0].slug, "inbox") : "#/all");
+        const next = where.scope === "login" ? hashNext() : null;
+        window.location.replace(next ? next.slice(1) : me.projects.length === 1 ? projectLink(me.projects[0].slug, "inbox") : "#/all");
         return;
       }
       // Notifications never stop the page: a failed read is said in the
