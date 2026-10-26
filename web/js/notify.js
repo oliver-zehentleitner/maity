@@ -87,10 +87,25 @@ window.Maity = window.Maity || {};
     return (n ? "(" + n + ") " : "") + base;
   }
 
+  // The Chat button: every chat across the projects (#/chats), with the
+  // unread chat messages the hub counts (counts.chat, §18.2) on it.
+  function chatButton(ctx) {
+    const n = state.available && state.counts ? state.counts.chat || 0 : 0;
+    const label = n ? n + (n === 1 ? " unread chat message" : " unread chat messages") : "Chats";
+    return h("a", { class: "bell chat-button", href: "#/chats", "aria-label": label, title: label, "aria-current": ctx && ctx.scope === "chats" ? "page" : null },
+      M.icons.chat(18), n ? h("span", { class: "count", "aria-hidden": "true" }, String(n)) : null);
+  }
+
   // The bell: the unread count on it, the latest items under it, each a
   // link to where it happened, unread ones marked, and Mark all read.
   function bell(ctx, onChange) {
-    if (!state.available) return null;
+    // A hub without notifications: the bell still stands, a link to
+    // everything waiting, without a count; in the same box as the full
+    // bell, so that a refresh replaces it in place.
+    if (!state.available) {
+      return h("div", { class: "bell-box" },
+        h("a", { class: "bell", href: "#/all", "aria-label": "Notifications", title: "Notifications" }, M.icons.bell(18)));
+    }
     // What is unread on the bell: every kind but the open requests, which
     // the inbox and the switcher show. Sign-in and address alerts count,
     // but "mark all read" never reaches them (§18.3).
@@ -100,7 +115,7 @@ window.Maity = window.Maity || {};
     const box = h("div", { class: "bell-box" });
     const list = h("div", { class: "bell-panel", id: "bell-panel", role: "region", "aria-label": "Notifications" });
     list.hidden = true;
-    const label = "Notifications" + (unread ? ", " + unread + " unread" : "");
+    const label = unread ? unread + (unread === 1 ? " new notification" : " new notifications") : "Notifications";
     const button = h("button", {
       type: "button", class: "bell", "aria-expanded": "false", "aria-controls": "bell-panel", "aria-label": label, title: label,
     }, M.icons.bell(18), unread ? h("span", { class: "count", "aria-hidden": "true" }, String(unread)) : null);
@@ -286,5 +301,5 @@ window.Maity = window.Maity || {};
     return () => { watchers.delete(fn); wakeLoop(); };
   }
 
-  M.notify = { state, read, projectCount, title, bell, linkOf, startBrowser, stopBrowser, running: () => !!browserConfig && !!browserLoop, subscribe, changed, KIND_WORDS };
+  M.notify = { state, read, projectCount, title, bell, chatButton, linkOf, startBrowser, stopBrowser, running: () => !!browserConfig && !!browserLoop, subscribe, changed, KIND_WORDS };
 })(window.Maity);
