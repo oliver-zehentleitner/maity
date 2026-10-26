@@ -126,8 +126,9 @@ def _slugs(conn: Connection, by_project: dict[str, Any]) -> dict[str, str]:
 def stamp(conn: Connection, human_id: str) -> tuple[Any, ...]:
     """A few aggregate reads that change whenever a notifications answer could: the
     human's memberships, each project's highest `seq`, the account records and their
-    read marks, the event items' read marks and the chats' marks. A held long-poll
-    compares it before it derives everything again (§18.2)."""
+    read marks, the event items' read marks, the chats' marks and the cards the human
+    watches (a watch writes no event, yet makes a card's items the human's). A held
+    long-poll compares it before it derives everything again (§18.2)."""
     members = sorted(
         conn.execute(
             select(t.membership.c.id, t.membership.c.project_id).where(
@@ -166,12 +167,26 @@ def stamp(conn: Connection, human_id: str) -> tuple[Any, ...]:
         if members
         else (0, None)
     )
+    # The watched cards themselves, not their number: swapping one watch for another
+    # keeps the count and still changes whose items an event gives.
+    watches = (
+        sorted(
+            conn.execute(
+                select(t.card_watch.c.membership_id, t.card_watch.c.card_id).where(
+                    t.card_watch.c.membership_id.in_([member_id for member_id, _ in members])
+                )
+            ).all()
+        )
+        if members
+        else []
+    )
     return (
         tuple(members),
         tuple(heads),
         tuple(records),
         tuple(reads),
         tuple(chats),
+        tuple(watches),
     )
 
 

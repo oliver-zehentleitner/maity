@@ -209,3 +209,24 @@ def test_no_database_read_runs_on_the_event_loop(
     bell(owner, after=start, wait=1)
     assert owner.post(f"{N}/read", {"ids": [item["id"]]}).status_code == 200
     assert on_loop and not any(on_loop)
+
+
+def test_a_watch_during_the_hold_wakes_it(make_client: ClientFactory, owner: flow.Human) -> None:
+    """A watch writes no event, yet makes the card's items the human's (§18.1): the
+    stamp holds the watched cards, so the held long-poll answers at once, not at its end."""
+    agent = flow.agent(make_client, owner)
+    start = bell(owner, limit=0)["next_after"]
+    theirs = agent.post("/projects/maity/tasks", {"title": "Theirs"}).json()
+    assert not [i for i in bell(owner, after=start)["items"] if i["kind"] == "card"]
+    held: list[dict[str, Any]] = []
+    waiter = threading.Thread(target=lambda: held.append(bell(owner, after=start, wait=6)))
+    begun = time.monotonic()
+    waiter.start()
+    time.sleep(0.8)
+    watched = owner.client.put(
+        f"/api/v1/projects/maity/tasks/{theirs['id']}/watch", headers={"X-CSRF-Token": owner.csrf}
+    )
+    assert watched.status_code == 200
+    waiter.join(timeout=10)
+    assert held and [i["target"]["id"] for i in held[0]["items"]] == [theirs["id"]]
+    assert time.monotonic() - begun < 4  # woken by the watch, not the 6 s deadline
