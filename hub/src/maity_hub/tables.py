@@ -1239,6 +1239,22 @@ conversation_read = Table(
     **MYSQL_TABLE,
 )
 
+# The instance's landing page (docs/api.md §16.7): one row, written by the instance
+# admin; no row means the default, disabled. `updated_at` and `updated_by` are the record
+# of its changes in this version.
+instance_landing = Table(
+    "instance_landing",
+    metadata,
+    Column("id", String(16), primary_key=True),
+    Column("enabled", Boolean, nullable=False),
+    Column("title", String(120)),
+    Column("markdown", MARKDOWN_TEXT),
+    Column("cta", JSON_VALUE),
+    Column("updated_at", UtcDateTime, nullable=False),
+    Column("updated_by", String(ID)),
+    **MYSQL_TABLE,
+)
+
 # --- probe --------------------------------------------------------------------------------
 
 # A member's picture (§6.10): keyed by the account or profile id (`hum-`/`agt-`), the
