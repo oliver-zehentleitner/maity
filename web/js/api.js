@@ -181,12 +181,15 @@ window.Maity = window.Maity || {};
     const kids = list.filter((t) => t.parent === id);
     return { open: kids.filter((t) => !CLOSED_TASK.includes(t.status)).length, total: kids.length };
   }
+  // tasks:admin for the subtask policy: the signed-in human, or ?as= in
+  // fixture mode, so that a member's subtask can be tried end to end.
+  const subtaskAdmin = (slug, path) => (fixtureAs ? caller(slug, path).admin : tasksAdmin(slug));
   function subtaskEdges(slug, list, card, body, path, before) {
     const after = Object.assign({}, card, "parent" in body ? { parent: body.parent } : {}, "status" in body ? { status: body.status } : {},
       "depends_on" in body ? { depends_on: body.depends_on } : {});
     if ("parent" in body && body.parent !== null) {
       const p = list.find((t) => t.id === body.parent);
-      if (!p) fail(404, "unknown_task", "no such card: " + body.parent, path, { fields: { parent: "unknown_task" } });
+      if (!p) fail(400, "invalid", "the request does not validate", path, { fields: { parent: "unknown_task" } });
       const why = p.id === card.id ? "self" : p.kind === "release" || card.kind === "release" ? "release_card"
         : p.parent ? "too_deep" : list.some((t) => t.parent === card.id) ? "has_children"
         : CLOSED_TASK.includes(p.status) && before.parent !== p.id ? "parent_closed"
@@ -199,7 +202,7 @@ window.Maity = window.Maity || {};
     }
     const policy = (project(slug, path).policy || {}).subtasks || "proposed";
     const newlyOpenChild = after.parent && after.status !== "proposed" && !(before.parent && before.status !== "proposed");
-    if (policy === "proposed" && newlyOpenChild && !tasksAdmin(slug)) {
+    if (policy === "proposed" && newlyOpenChild && !subtaskAdmin(slug, path)) {
       fail(403, "forbidden", "under the project's subtask policy a subtask starts as proposed; an admin opens it", path, { reason: "subtasks_proposed" });
     }
     const oldParent = before.parent;
@@ -1748,7 +1751,7 @@ window.Maity = window.Maity || {};
       if ((body.ships_with || []).length && (body.kind === "release" || body.ships_with.some((id) => (list.find((t) => t.id === id) || {}).kind === "release"))) errors.ships_with = "release_card";
       if (Object.keys(errors).length) fail(400, "invalid", "invalid fields", path, { fields: errors });
       // Under policy.subtasks "proposed" a member's subtask without a status starts as proposed; an explicit open is refused.
-      if (body.parent && !body.status && ((proj.policy || {}).subtasks || "proposed") === "proposed" && !tasksAdmin(m[1])) body = Object.assign({}, body, { status: "proposed" });
+      if (body.parent && !body.status && ((proj.policy || {}).subtasks || "proposed") === "proposed" && !subtaskAdmin(m[1], path)) body = Object.assign({}, body, { status: "proposed" });
       if (body.parent) subtaskEdges(m[1], list, { id: "(new)", kind: body.kind || "task", status: body.status || "open" },
         { parent: body.parent, status: body.status || "open", depends_on: body.depends_on || [] }, path, { parent: null, status: "proposed" });
       taskSerial += 1;

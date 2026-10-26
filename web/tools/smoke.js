@@ -4449,11 +4449,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.getAll = stGetAll; win.Maity.api.patch = stPatch;
   // Folding is no redraw: the column filter, the search and the scroll stay.
   await go("#/p/maity/board"); for (let k = 0; k < 6; k++) await tick();
+  byId("board-column").value = "review"; byId("board-column").dispatch("change"); await tick();
   byId("board-search").value = "subtasks"; byId("board-search").dispatch("input"); await tick();
   win.scrollY = 240;
+  const stWasOpen = stToggle("tsk-0010").getAttribute("aria-expanded");
   stToggle("tsk-0010").click(); await tick();
-  expect(byId("board-search").value === "subtasks" && win.scrollY === 240 && stToggle("tsk-0010").getAttribute("aria-expanded") === "false",
-    "subtasks: folding and unfolding keep the search and the scroll");
+  stToggle("tsk-0010").click(); await tick();
+  expect(byId("board-column").value === "review" && byId("board-search").value === "subtasks" && win.scrollY === 240
+    && stToggle("tsk-0010").getAttribute("aria-expanded") === stWasOpen && main.querySelector(".columns").querySelectorAll("article.card").length === 1,
+    "subtasks: folding and unfolding keep the column filter, the search and the scroll");
+  byId("board-column").value = ""; byId("board-column").dispatch("change"); await tick();
   byId("board-search").value = ""; byId("board-search").dispatch("input"); await tick(); win.scrollY = 0;
   // A hub without subtasks (no parent on its cards): no editor and no New subtask.
   await go("#/p/sample/tasks/tsk-0021"); for (let k = 0; k < 6; k++) await tick();
@@ -4485,6 +4490,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   stMemberForm.form.dispatch("submit"); await tick();
   expect(JSON.stringify(stMemberBodies) === JSON.stringify([{ title: "As a member", kind: "task", status: "proposed", parent: "tsk-0010" }]),
     "subtasks: such a member's subtask is sent as proposed under its parent, whatever the select says");
+  // And the mock answers such a member (?as=agt-c, no tasks:admin) as the hub does: an explicit open is refused, the form's body is taken.
+  const stSearch = win.location.search;
+  win.location.search = "?as=agt-c";
+  vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);
+  const stOpenTry = await win.Maity.api.post("/projects/maity/tasks", { title: "As a member, open", parent: "tsk-0010", status: "open" }).catch((err) => err);
+  const stAsForm = await win.Maity.api.post("/projects/maity/tasks", stMemberBodies[0]).catch((err) => err);
+  const stNoStatus = await win.Maity.api.post("/projects/maity/tasks", { title: "As a member, no status", parent: "tsk-0010" }).catch((err) => err);
+  const stUnknown = await win.Maity.api.post("/projects/maity/tasks", { title: "Under nothing", parent: "tsk-zzzz", status: "proposed" }).catch((err) => err);
+  win.location.search = stSearch;
+  vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);
+  expect(stOpenTry.code === "forbidden" && stOpenTry.details.reason === "subtasks_proposed" && stAsForm.status === "proposed" && stAsForm.parent === "tsk-0010"
+    && stNoStatus.status === "proposed" && stUnknown.status === 400 && stUnknown.code === "invalid" && stUnknown.details.fields.parent === "unknown_task",
+    "subtasks: the mock refuses a member's open subtask, takes the form's proposed one, starts one without a status as proposed, and refuses an unknown parent as the hub does");
   stProto.focus = stFocus; document.activeElement = undefined;
   await go("#/p/maity/inbox");
 
