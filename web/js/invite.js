@@ -18,6 +18,14 @@ window.Maity = window.Maity || {};
       M.themeMenu ? M.themeMenu() : null));
   }
 
+  // The project's logo only from this hub's own path (the hub names it with its public URL).
+  function ownLogo(url) {
+    if (typeof url !== "string") return false;
+    const origin = window.location && window.location.origin && window.location.origin !== "null" ? window.location.origin : "";
+    const path = origin && url.startsWith(origin + "/") ? url.slice(origin.length) : url;
+    return /^\/api\/v1\/projects\/[^/?#]+\/logo(\?[^#]*)?$/.test(path);
+  }
+
   async function signedIn() {
     try { await M.api.get("/auth/session"); } catch (err) { if (err.status === 401) return null; throw err; }
     return (await M.api.get("/me")).member;
@@ -46,7 +54,7 @@ window.Maity = window.Maity || {};
     document.title = "Join " + inv.project.name + " · Maity";
     append(box,
       h("div", { class: "invite-project" },
-        inv.project.logo_url && /^\/api\/v1\//.test(inv.project.logo_url) ? h("img", { class: "invite-logo", src: inv.project.logo_url, alt: "", width: "48", height: "48" }) : null,
+        ownLogo(inv.project.logo_url) ? h("img", { class: "invite-logo", src: inv.project.logo_url, alt: "", width: "48", height: "48" }) : null,
         h("h2", null, "Join ", h("span", { class: "invite-name" }, inv.project.name))),
       h("p", { class: "invite-lead" }, inv.invited_by.display_name + " invites you to join " + inv.project.name + " as " + role + "."),
       inv.note ? h("blockquote", { class: "invite-note" }, h("p", null, inv.note)) : null,
