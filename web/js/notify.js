@@ -203,6 +203,9 @@ window.Maity = window.Maity || {};
   // change, signing out): no request of the stream goes out, the held one
   // is cancelled, and a 401 that still comes back is that end, not a fault.
   let halted = false;
+  // A resume() while the cancelled loop has not ended yet: that loop starts
+  // the next one when it ends. A 401 the hub sends on its own sets nothing.
+  let restartWanted = false;
   const watchers = new Set();
   const shown = new Set();
   const changed = () => watchers.forEach((fn) => fn());
@@ -221,6 +224,8 @@ window.Maity = window.Maity || {};
     });
     (async () => {
       while (!halted && wanted() && state.available !== false) {
+        // A resume() that came while this loop was only pausing: it serves it.
+        restartWanted = false;
         const asked = Date.now();
         let answer;
         try {
@@ -282,7 +287,10 @@ window.Maity = window.Maity || {};
         });
         if (!items.length && Date.now() - asked < QUICK_MS && wanted()) await pause(PAUSE_MS);
       }
-    })().finally(() => { if (browserLoop === loop) browserLoop = null; });
+    })().finally(() => {
+      if (browserLoop === loop) browserLoop = null;
+      if (restartWanted && !halted) { restartWanted = false; ensureLoop(); }
+    });
   }
 
   function wakeLoop() {
@@ -306,6 +314,7 @@ window.Maity = window.Maity || {};
   // still has one (a password change keeps this session, js/account.js).
   function halt() {
     halted = true;
+    restartWanted = false;
     const loop = browserLoop;
     if (loop) {
       loop.reset = true;
@@ -315,7 +324,8 @@ window.Maity = window.Maity || {};
   }
   function resume() {
     halted = false;
-    ensureLoop();
+    if (browserLoop) restartWanted = true;
+    else ensureLoop();
   }
 
   function stopBrowser() {
