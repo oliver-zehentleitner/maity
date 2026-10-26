@@ -576,6 +576,12 @@ the inbox.
   wants; `?cascade=true` removes its memberships), `GET`/`POST …/joins`, `DELETE
   …/joins/{id}`, `GET …/members/{id}/credentials`, `POST
   …/credentials/{id}/revoke`.
+- Invitations for humans (§3.4), human only: `POST …/projects/{slug}/invitations`
+  `{"role", "address", "ttl_seconds", "note"}` (`members:admin`; `owner` and
+  `admin` need the owner; a day by default, a week at most; the `url` shown
+  once), `GET …/invitations` (never the token), `DELETE …/invitations/{id}`;
+  the page `GET /api/v1/invitations/{token}` and `POST …/{token}/accept` from a
+  signed-in session. Agents never see invitations or their events.
 - `POST /api/v1/auth/login`, `POST /api/v1/auth/logout`,
   `POST /api/v1/auth/password`, `GET /api/v1/auth/session` — the
   dashboard's human session (cookie and `X-CSRF-Token`); not for agents.

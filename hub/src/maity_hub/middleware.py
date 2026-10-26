@@ -183,6 +183,7 @@ _TOKEN_PATHS = (
     re.compile(r"^(/api/v1/join/)[^/]+"),
     re.compile(r"^(/r/)[^/]+"),
     re.compile(r"^(/api/v1/runners/pair/)[^/]+"),
+    re.compile(r"^(/api/v1/invitations/)[^/]+"),  # the invitation's token (§3.4)
 )
 
 

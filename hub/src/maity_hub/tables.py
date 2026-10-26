@@ -131,6 +131,30 @@ pending_registration = Table(
     **MYSQL_TABLE,
 )
 
+# An invitation brings a person into a project (§3.4): for one role, used once, until it
+# expires. The token is kept only as its hash; `address`, when given, binds who accepts.
+invitation = Table(
+    "invitation",
+    metadata,
+    _id(primary_key=True),
+    _ref("project_id", "project.id", nullable=False),
+    Column("role", String(16), nullable=False),
+    Column("address", String(254)),
+    Column("address_normalized", String(254), index=True),
+    Column("note", String(1024)),
+    Column("token_hash", String(HEX_SHA256), nullable=False, unique=True),
+    _ref("created_by", "human.id", nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("expires_at", UtcDateTime, nullable=False),
+    Column("used_at", UtcDateTime),
+    _ref("used_by", "human.id"),
+    Column("revoked_at", UtcDateTime),
+    Column("voided_at", UtcDateTime),
+    Column("void_reason", String(16)),
+    Index("ix_invitation_project_id_created_at", "project_id", "created_at"),
+    **MYSQL_TABLE,
+)
+
 # One row per address that registration ever changed pending registrations for, locked
 # (`SELECT … FOR UPDATE`) to serialise those changes (§2.7.1). Only a lock, no data.
 registration_lock = Table(

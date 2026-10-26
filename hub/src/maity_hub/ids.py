@@ -37,6 +37,7 @@ PREFIXES = {
     "history": "hst",
     "note": "nte",
     "pending_registration": "preg",
+    "invitation": "inv",
 }
 
 

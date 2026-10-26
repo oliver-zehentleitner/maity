@@ -136,3 +136,46 @@ exchange at READ COMMITTED.
   would fail for something it cannot fix; the admin who removed the boss
   is the one acting.
 - Revoke the link — the join itself is still wanted, only its boss is gone.
+
+## Invitations are voided when they are used, listed by their own end, and the page reads registration from the effective mode
+
+**Id:** 59c15f35-08fc-4bb9-abf6-ae0dc4ac8ea9
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation of contract #360 (docs/api.md §3.4, §2.7.1), 2026-10-25; review of #378, 2026-10-25
+
+Three choices in the invitation code (`routes/invitations.py`,
+`invitations.py`).
+
+**Voided lazily.** Nothing watches an issuer's role. Whether the issuer
+still holds the authority an invitation needs is computed by one
+predicate (`invitations.admits`), which the page, accept and
+registration all read. Only an accept writes `voided_at`, under the
+project's lock, and commits it before it refuses. The contract says the
+invitation is voided "at that moment" of accepting. Rejected: voiding
+every open invitation of a member whose role changes, in the member
+PATCH and the removal. That means more write paths to keep complete,
+and a promotion back would not restore what was voided. The reads give
+the same answer either way.
+
+**Listed by their own end.** The list shows open invitations, and ended
+ones (used, revoked, voided, expired) for 30 days after the timestamp of
+the way they ended. The contract row was widened to name voided and
+expired as well. Rejected: one window on `expires_at` for all of them.
+It kept a long-revoked invitation listed until its expiry ran out, and
+the timestamp of an ended one is the time an admin looks for.
+
+**Registration on the page.** It is `sign_in_only` without complete,
+enabled mail, whatever the mode. Under the effective `open` it is
+`sign_in_or_register`. Otherwise it is `sign_in_or_register` only for
+an address-bound invitation that admits. Rejected: the stored mode
+alone. Without mail no registration can complete, so the page would
+promise a way in that the hub refuses.
+
+**Reason:** each choice keeps the three readers of an invitation (page,
+accept, registration) on one predicate and one view of the instance.
+The voiding moment and the widened list row are written in the contract
+(confirmed). The mail condition on the page is derived from §3.4's "Mail
+must be complete and enabled as for every registration" and is not
+stated for the page itself (inferred).
