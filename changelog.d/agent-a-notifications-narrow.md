@@ -5,8 +5,9 @@
   `agent`, `system` and `registration` are no longer notifications, and the events behind them
   are unchanged. An agent's outage (§15.7) and an unconfirmed Keep the Why commitment (§6.23)
   become personal requests of class `info` to the agent's owner, filed once and withdrawn by the
-  hub on recovery or confirmation; a pending registration (§16.4) and a disabled mail address
-  (§18.7) are `inbox` items counted until decided or fixed; `registration_approved` notifies
+  hub when what they report ends; such requests carry `filed_by: "hub"` and reach the owner
+  only (§7); a pending registration (§16.4) and a disabled mail address
+  (§18.7) are `inbox` items counted and listed until decided or fixed, never mailed; `registration_approved` notifies
   nobody; a jour fixe reaches humans through its requests and the round itself (§20.9). The
   derive reads only chat and mention messages, request events and account records. `counts`,
   `by_project`, the `kind` filter and the settings carry the four kinds only; old stored kinds

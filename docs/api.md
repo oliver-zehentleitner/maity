@@ -126,7 +126,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 
 | HTTP | `code` | When |
 |---|---|---|
-| 400 | `invalid` | body or query does not validate; `details.fields` maps field → reason. Among the reasons: `set_by_environment` (§16.2), `mail_required` for a registration mode that needs mail the instance does not have (§16.4), `required` on `why` for a code report under `policy.keep_the_why: required` (§6.23), `removed_kind` for a notification kind removed on 2026-10-26 (§18.2, §18.4) |
+| 400 | `invalid` | body or query does not validate; `details.fields` maps field → reason. Among the reasons: `set_by_environment` (§16.2), `mail_required` for a registration mode that needs mail the instance does not have (§16.4), `required` on `why` for a code report under `policy.keep_the_why: required` (§6.23), `removed_kind` for a notification kind removed on 2026-10-26 (§18.2, §18.3, §18.4) |
 | 400 | `credential_in_payload` | the body or query string contains a string in the hub's credential format (§2.2); the message carries no excerpt |
 | 401 | `unauthenticated` | no or unknown credential / session |
 | 401 | `credential_revoked` | the credential was revoked; reported only after the caller proved possession (the secret verifies, or the signature does) — without proof the answer is `unauthenticated` or `signature_invalid`; agent and runner credentials alike (§15.1) |
@@ -5801,11 +5801,15 @@ request (§7) to the agent's owner (`to: "profile_owner:<agent id>"`),
 member of the project or not — once per outstanding commitment, which
 reaches the owner as an `inbox` item (§18.1). It is class `info` with
 one option `seen`, `asked_by` the agent's member with `instance`
-`null` (the hub files it, no instance asks), no `task_id`; `title`
+`null`, no `task_id`; `title`
 `<agent handle>#<instance> has not confirmed Keep the Why in
 <project>`, `summary` `The commitment was due at <acknowledge_by>
-(UTC); session <session_id>.` The hub withdraws it when the instance
-confirms; the owner may answer `seen` or withdraw it, which closes the
+(UTC); session <session_id>.` It carries `filed_by: "hub"` (§7): its
+events reach the owner only and wake nobody. The hub withdraws it when
+what it reports ends: the instance confirms, is removed or replaced,
+the membership ends, the agent profile is deleted,
+`policy.keep_the_why` becomes `optional`, or `memory.provider` becomes
+`none`. The owner may answer `seen` or withdraw it, which closes the
 request and changes nothing else — the instance stays marked until it
 confirms, and no second request is filed for the same commitment. The member
 view marks the instance from the deadline on (below) until it confirms. Sessions do not
@@ -5903,7 +5907,8 @@ resume`.
 | `replies` | computed by the hub, read-only: the options as `{id, label}`; for `consent` without options `go` and `no`. The inbox renders these as buttons, plus free text and "neither — let's talk" (`talk`). `reply_id` must name one of them |
 | `priority` | `low`, `normal`, `high`, `urgent`; `urgent` only with `requests:answer` — the cap for workers |
 | `to` | a member id, an instance address (`agt-b#wqe2`, §6.17), `role:<role>` or `owner` (the project's owner). A member id reaches the team as its `wake` rule says (§6.18); an instance address that one instance, while the whole team may answer what it may answer. Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `role:admin`, `role:proxy` or a member holding `requests:answer`. `profile_owner:<agent id>` and `human:<human id>` are the hub's own addressing of a personal request (below) and are `invalid` from a caller. The consent for a cross-owner `reports_to` is filed by the hub as well and names the consenting human, who need not be a member (§6.2) |
-| `asked_by` | `{member_id, instance, display_name, avatar_url, role, session_id}`, filled by the hub (role, name and avatar at read time); `instance` is `null` for a human |
+| `asked_by` | `{member_id, instance, display_name, avatar_url, role, session_id}`, filled by the hub (role, name and avatar at read time); `instance` is `null` for a human, and for a request the hub files on an agent's behalf (`filed_by`) |
+| `filed_by` | set by the hub only: `"hub"` on a request the hub files on an agent's behalf — the notice of an agent's outage (§15.7) and of an unconfirmed Keep the Why commitment (§6.23) — whose `asked_by` is that agent's member with `instance: null`; absent (`null`) on every other request |
 | `takeover_id`, `memory_proposal` | set by the hub only, on the request an escalated takeover files and on a cross-owner takeover's notice (§6.19), and on a soul, community-memory or preferences proposal (§19); `null` otherwise |
 | `takeover_outcome` | set by the hub only, on a cross-owner takeover's notice when the takeover closes: `{status, how, task_id, decided_at}` (§6.19); `null` otherwise |
 | `personal` | set by the hub only: `true` on a personal request (below), else `false` |
@@ -5984,14 +5989,24 @@ project's request list:
   `POST /requests/{id}/answer` (the body of the project route) —
   membership in the project not required. Nobody else answers it.
 - **Withdrawing.** Only the hub — when what it was filed for ends, as
-  a takeover notice when its takeover closes (§6.19), an outage notice
-  when the placement recovers (§15.7), a Keep the Why notice when the
-  instance confirms (§6.23) — and the human it
+  a takeover notice when its takeover closes (§6.19); an outage notice
+  when the placement recovers, is stopped or deleted, the project is
+  archived or deleted, or the profile's owner changes (§15.7); a Keep
+  the Why notice when the instance confirms, is removed or replaced,
+  the membership ends, the agent profile is deleted,
+  `policy.keep_the_why` becomes `optional` or `memory.provider` becomes
+  `none` (§6.23) — and the human it
   is addressed to (`POST /requests/{id}/withdraw` `{"reason"?}`)
   withdraw a personal request. Nobody else does: the asking agent, any
   other agent, a holder of `requests:answer` and the project owner get
   `not_found` on `POST /projects/{slug}/requests/{id}/withdraw`, as on
   every project route for it.
+- **Filed by the hub** (`filed_by: "hub"`, above). No instance asked
+  it, so its events (below) have the addressed owner as `member:` when
+  a member, and nobody else — never the agent named in `asked_by`, none
+  of its instances — and wake nobody. `GET …/requests/{id}` on the
+  project route is `not_found` for every caller, the agent included,
+  since it has no asker who reads it.
 - Its events carry ids and status only: `request_created`,
   `request_answered` and `request_withdrawn` name `{id, personal: true,
   status}` and, on a takeover notice, `takeover_id` — no title, no
@@ -8809,24 +8824,32 @@ placements' last reported state, and the runner advertises
 `offline` changes nothing stored either; its placements keep their last
 report.
 
-**The owner is asked when an agent stops.** A report that stops the
-agent without the runner starting it again — `state: failed` with any
+**The owner is asked when an agent stops.** A report that moves
+`reported` (§15.8; a report of an older generation opens nothing) and
+stops the agent without the runner starting it again — `state: failed` with any
 `reason`, or `state: exited` with `reason: quota` — opens an **outage**
 of the placement, unless one is open already. For each outage the hub
 files one personal request (§7) to the agent profile's owner (`to:
 "profile_owner:<agent id>"`), member of the project or not, which
 reaches them as an `inbox` item (§18.1): class `info`, one option
-`seen`, `asked_by` the agent's member with `instance` `null` (the hub
-files it), no `task_id`; `title` `<agent handle> stopped: <reason>`,
+`seen`, `asked_by` the agent's member with `instance` `null` and
+`filed_by: "hub"` (§7: its events reach the owner only and wake
+nobody), no `task_id`; `title` `<agent handle> on <runner name or
+placement id> stopped: <reason>`, the runner's name when the placement
+has one, else the placement's id, so the requests of two placements of
+one agent are told apart;
 `summary` `Placement <placement id> on runner <runner name> reported
 <state> (<reason>[, <detail>]) at <reported_at> (UTC); restarts
 <restarts>.` Later reports of the same outage — the same failure
 reported again, another failing reason — file nothing and change
 nothing on the request. The outage ends, and the hub withdraws the
 request when it is still open, with the placement's next report of
-`state: running`, or when the placement is stopped (`desired:
-stopped` carried out) or deleted; the next failing report after that
-opens a new outage and a new request. The owner may answer `seen` or
+`state: running`, when the placement is stopped (`desired:
+stopped` carried out) or deleted, or when the project is archived or
+deleted; the next failing report after that opens a new outage and a
+new request. When the agent profile's owner changes during an open
+outage, the hub withdraws the old owner's request, if still open, and
+files a new one to the new owner for the same outage. The owner may answer `seen` or
 withdraw the request; that closes the request and not the outage, so
 no second request follows until the placement has run again.
 `rate_limited` opens no outage: the runner starts the agent again at
@@ -10363,9 +10386,14 @@ class `info` that the hub files and withdraws itself.
 The `registration_pending` and `mail_disabled` items ask for an action
 as a request does — approve or reject the registration (§16.4), set
 the address again (§18.7) — and count in `inbox` until it is taken,
-whatever their read flag (§18.2). Each is marked read on its own once
+whatever their read flag (§18.2), and are listed while it is open,
+however old (§18.2). Each is marked read on its own once
 the matter is closed: the registration decided (approved, rejected or
-expired), the address set again and verified, or removed.
+expired), the address set again and verified, or removed. Neither is
+ever mailed, whatever the `inbox` mail mode says (§18.4, §18.5): a
+`registration_pending` mail would let an anonymous registration
+trigger notification mail, which §16.2 rules out, and a
+`mail_disabled` item has no working address to go to.
 
 **No longer notifications (2026-10-26).** The kinds `card`, `ticker`,
 `jour_fixe`, `keep_the_why`, `agent`, `system` and `registration` are
@@ -10599,7 +10627,10 @@ rules that make a position safe to resume from:
 - **Items.** Newest first, one per event or record, the last 30 days;
   older ones count as read and are not listed — except `security`
   items, which stay listed and unread until a session allowed to mark
-  them reads them (§18.3) or their record expires after 90 days. That
+  them reads them (§18.3) or their record expires after 90 days, and
+  `registration_pending` and `mail_disabled` items, which stay listed
+  while their matter is open (§18.1), however old, and are read once it
+  is closed. That
   age-based reading never counts as a marking: it grants no session the
   good standing of §18.3. `id` is `ntf-<seq>` for an item from an event
   and `ntf-acr-<n>` for one from an account record; account-record
@@ -10815,7 +10846,9 @@ device; the browser's own permission is per browser and is not stored.
   `hourly` (one mail at the full hour with every unread item of the
   kinds set to `hourly`), `daily` (one mail at `daily_at` in
   `timezone`), or `off`. Default for a new address: `inbox`, `mention`
-  `immediate`; `chat` `hourly`. `security` takes only `immediate` (the default) or `off` —
+  `immediate`; `chat` `hourly`. The `inbox` mode never covers a
+  `registration_pending` or `mail_disabled` item: neither is mailed
+  (§18.1). `security` takes only `immediate` (the default) or `off` —
   no digest, since a delayed alert is no alert — and quiet hours do not
   hold it.
 - **`sign_in_link`** (default `true`): whether the human may be sent a
@@ -10898,6 +10931,8 @@ Plain text only, UTF-8, no HTML, no images, no tracking.
   (§16.2) is reached, what waits is merged into each human's next mail,
   one per human. Security mail has its own budget and is never batched
   (§16.2).
+- **Never mailed:** a `registration_pending` or `mail_disabled` item,
+  whatever the `inbox` mode (§18.1); the dashboard shows them.
 - **Freshness.** Every item is checked against the readable set and its
   read flag when the mail is built, not when the event happened (§18.1).
   A digest with nothing left is not sent.
