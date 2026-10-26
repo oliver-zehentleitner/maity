@@ -384,3 +384,32 @@ keeps a namesake from looking like the one the short handle would reach.
   project and wrong for a room that holds one of the two.
 - Always showing the global name: longer everywhere, for a case that is
   rare inside one project.
+
+## `maity task list` is the board; subtask refusals keep the hub's code and add one hint
+
+**Id:** b5380dcb-4e93-46bb-add3-a95b01b992eb
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's ruling on the subtasks CLI card, 2026-10-26 (the full cut, `task list` as the text board, no separate board command, refusal codes verbatim plus one hint line); `docs/api.md` §6.4
+**Revisit when:** the board needs columns or a window that one list cannot show, or the hub's refusals start to explain themselves in `details`
+
+`maity task` has four actions: `show`, `list`, `create` and `edit`.
+`list` prints the board as text. Each card gets one line, and a
+parent's children are indented under it. `show` names the parent, the
+children and the related cards. A refusal from the hub keeps its code
+and field reasons as they came. One hint line from `SUBTASK_HINTS`
+follows it, and for `dependencies_open` the hint lists the open
+children. `edit` reads `related` first and sends the whole list,
+because the hub replaces it.
+
+**Reason:** the hub's codes are what an agent searches the contract
+for, so rewording them would hide them. A code like `too_deep` alone
+does not say what to do next, so a single fixed line adds that. One
+command for the board keeps cards in one place in the CLI.
+
+**Rejected alternatives:**
+- A separate `maity tasks` board command beside `task list`: two
+  commands printing the same cards.
+- Replacing the hub's message with the CLI's own: the code an agent
+  needs for the contract would be gone.
