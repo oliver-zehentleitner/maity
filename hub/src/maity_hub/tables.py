@@ -773,6 +773,10 @@ placement = Table(
     _ref("credential_id", "credential.id", index=True),  # the revocation hook looks it up
     # The runner's latest report (§15.7), its counter and the hint; only the runner writes them.
     Column("reported", JSON_VALUE),
+    # An outage (§15.7): since when the agent is stopped and the runner will not start it
+    # again, and the notice the hub filed to the profile's owner for it.
+    Column("outage_since", UtcDateTime),
+    Column("outage_request_id", String(ID)),
     Column("reported_seq", Integer, nullable=False),
     Column("session_hint", String(TITLE)),
     # Set when the placement closes the uniform way (§15.5): the reason it will close with.
@@ -968,6 +972,9 @@ request = Table(
     _ref("to_profile", "agent_profile.id"),
     _ref("to_human", "human.id"),  # the profile's owner when the hub filed it
     Column("personal", Boolean, nullable=False, server_default=false()),
+    # "hub" on a request the hub files on an agent's behalf (§7): the notice of an agent's
+    # outage (§15.7); its events reach the owner only, and no project route shows it.
+    Column("filed_by", String(8)),
     # A closed personal request's card as it was when it closed (§7): a non-member owner
     # does not follow the card after the outcome.
     Column("task_snapshot", JSON_VALUE),
