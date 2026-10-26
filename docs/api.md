@@ -10691,8 +10691,9 @@ Human only, CSRF as every cookie `POST`. Exactly one of:
 
 Marking a `chat` item read moves that conversation's read mark to the
 item's `seq`, never backwards — the same as reading the conversation
-(§9); an observer has no chat items and moves no mark. Other `inbox`
-items are marked read, and the open requests stay open (§18.2). A `kind`
+(§9); an observer has no chat items and moves no mark. `inbox` items
+other than the two open matters below are marked read, and the open
+requests stay open (§18.2). A `kind`
 removed on 2026-10-26 is `invalid` as in §18.2. A `security` item about a
 new session (`session_created`, #169 §2.6.5) is marked read only from a
 session that existed before that sign-in and is itself in good
@@ -10711,8 +10712,8 @@ The two `inbox` items of an open matter, `registration_pending` and
 `mail_disabled` (§18.1), are never marked read by a caller: `up_to`
 skips them and an `ids` entry naming one is ignored, as an id the
 human has no item for; each reads as read on its own once its matter
-is closed — the registration decided or expired, the address working
-again. So "mark all read" never hides an open matter from "Waiting
+is closed — the registration decided or expired, the address set
+again and verified, or removed (§18.7). So "mark all read" never hides an open matter from "Waiting
 for you" while it still counts in `counts.inbox`.
 
 ### 18.4 `GET`, `PATCH /me/notification-settings`
