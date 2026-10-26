@@ -199,6 +199,7 @@ window.Maity = window.Maity || {};
   M.onSessionEnded = (path, epoch) => {
     if (sessionEnded || (epoch !== undefined && epoch !== (M.sessionEpoch || 0))) return;
     sessionEnded = true;
+    M.api.endSession();
     renderSeq++;
     M.notify.halt();
     stopTimers();
@@ -261,6 +262,7 @@ window.Maity = window.Maity || {};
     M.notify.halt();
     // Signing out on purpose is no session that ended under the page.
     sessionEnded = true;
+    M.api.endSession();
     try {
       await M.api.post("/auth/logout");
     } finally {

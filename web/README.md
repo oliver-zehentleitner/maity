@@ -122,6 +122,9 @@ After that:
   everything in the background — the stream, the refresh timers, the
   counts — and shows the sign-in page with "Your session has ended";
   nothing more is asked until a sign-in, which returns to the same route.
+  Authenticated calls stay local while signed out. Replies from the ended
+  session are ignored even when successful, so a late list page cannot
+  fetch another page or supply data after a new sign-in.
 - **Ending the session here.** Before a password change or signing out,
   the page cancels its held long-poll and sends none until the change is
   done (a password change keeps this session, and the stream goes on); a
