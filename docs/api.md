@@ -5809,7 +5809,9 @@ events reach the owner only and wake nobody. The hub withdraws it when
 what it reports ends: the instance confirms, is removed or replaced,
 the membership ends, the agent profile is deleted,
 `policy.keep_the_why` becomes `optional`, or `memory.provider` becomes
-`none`. The owner may answer `seen` or withdraw it, which closes the
+`none`. When the agent profile's owner changes while the request is
+open, the hub withdraws it and, while the commitment is still
+outstanding, files a new one to the new owner. The owner may answer `seen` or withdraw it, which closes the
 request and changes nothing else — the instance stays marked until it
 confirms, and no second request is filed for the same commitment. The member
 view marks the instance from the deadline on (below) until it confirms. Sessions do not
@@ -5982,7 +5984,9 @@ project's request list:
   asker and `not_found` to everyone else in the project, owner, admins
   and proxies included. `POST …/requests/{id}/answer` on the project
   route is the same: `not_found` for everyone but the asker, and for
-  the asker `self_answer` (409), so the project route never
+  the asker `self_answer` (409) — except a hub-filed request (below),
+  which is `not_found` there for every caller, the agent named in
+  `asked_by` included — so the project route never
   tells anyone else that a personal request exists.
 - The owner reads it in `GET /requests` (the cross-project inbox, with
   `personal: true`) and by `GET /requests/{id}`, and answers it with
@@ -5994,8 +5998,10 @@ project's request list:
   archived or deleted, or the profile's owner changes (§15.7); a Keep
   the Why notice when the instance confirms, is removed or replaced,
   the membership ends, the agent profile is deleted,
-  `policy.keep_the_why` becomes `optional` or `memory.provider` becomes
-  `none` (§6.23) — and the human it
+  `policy.keep_the_why` becomes `optional`, `memory.provider` becomes
+  `none`, or the profile's owner changes (§6.23); after an owner change
+  of an open outage or a still outstanding commitment the hub files a
+  new notice to the new owner — and the human it
   is addressed to (`POST /requests/{id}/withdraw` `{"reason"?}`)
   withdraw a personal request. Nobody else does: the asking agent, any
   other agent, a holder of `requests:answer` and the project owner get
@@ -6006,15 +6012,19 @@ project's request list:
   a member, and nobody else — never the agent named in `asked_by`, none
   of its instances — and wake nobody. `GET …/requests/{id}` on the
   project route is `not_found` for every caller, the agent included,
-  since it has no asker who reads it.
+  and so are `POST …/requests/{id}/answer` and `…/withdraw` there, since
+  it has no asker who reads it; nobody can tell from the project routes
+  that it exists.
 - Its events carry ids and status only: `request_created`,
   `request_answered` and `request_withdrawn` name `{id, personal: true,
   status}` and, on a takeover notice, `takeover_id` — no title, no
   summary, no answer and no reason — with the asking instance as
-  audience and the owner as `member:` only when a member. Owners and
+  audience (except a hub-filed request, above: the owner only) and the
+  owner as `member:` only when a member. Owners and
   admins, who read every event (§8.2), learn that a personal request
   exists and how far it is, not what it says; the asker reads it in
-  full through `GET`, answer included.
+  full through `GET`, answer included — except a hub-filed request,
+  which has no asker who reads it (above).
 - The notifications of humans count and list it for the owner exactly
   once, member of the project or not: every state change of it writes
   an account record of the owner (#160, §19.1), and the record — never
