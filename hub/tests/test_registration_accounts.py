@@ -595,8 +595,9 @@ def test_an_undecided_account_goes_after_thirty_days(
 def test_a_waiting_registration_is_the_admins_inbox_item_until_decided(
     admin: flow.Human, make_client: ClientFactory, migrated: Engine, claims: dict[str, str]
 ) -> None:
-    """§18.1: `registration_pending` counts in `inbox` and stays listed until the
-    registration is decided, whatever its read flag; then it reads as read."""
+    """§18.1, §18.3: `registration_pending` counts in `inbox` and stays unread until the
+    registration is decided — neither `ids` nor "mark all read" marks it — then it reads
+    as read."""
     done, _ = pending_account(make_client, migrated)
     bell = admin.get("/me/notifications").json()
     [item] = [i for i in bell["items"] if i["kind"] == "inbox"]
@@ -605,8 +606,10 @@ def test_a_waiting_registration_is_the_admins_inbox_item_until_decided(
     assert (item["read"], item["project"]) == (False, None)
     assert bell["counts"]["inbox"] == 1 and bell["by_project"] == {}
     admin.post("/me/notifications/read", {"ids": [item["id"]]})
+    admin.post("/me/notifications/read", {"up_to": bell["next_after"]})  # mark all read
     marked = admin.get("/me/notifications").json()
-    assert marked["counts"]["inbox"] == 1  # read, but the matter is open
+    assert marked["counts"]["inbox"] == 1
+    assert [i["read"] for i in marked["items"] if i["id"] == item["id"]] == [False]
     assert admin.post(f"{ADMIN}/{done.human_id}/approve").status_code == 200
     decided = admin.get("/me/notifications").json()
     assert decided["counts"]["inbox"] == 0

@@ -16,6 +16,7 @@ from sqlalchemy.dialects import postgresql, sqlite
 from maity_hub import clock
 from maity_hub import tables as t
 from maity_hub.auth import sessions
+from maity_hub.notifications import records
 from maity_hub.notifications.items import EVENT_KINDS, Item, Scope
 from maity_hub.notifications.positions import Position
 from maity_hub.routes.me import open_requests
@@ -291,8 +292,8 @@ def mark(
     confirmed = sessions.confirmed_sessions(conn, where.human_id)
     seqs: list[int] = []
     for item in chosen:
-        if item.read:
-            continue
+        if item.read or item.record_type in records.INBOX:
+            continue  # an open matter reads as read only once it is closed (§18.3)
         if item.kind == "security" and not _may_mark(conn, item, session, confirmed):
             continue
         if item.record is not None:

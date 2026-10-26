@@ -12,3 +12,6 @@
   A request is one `inbox` item, for whoever holds it now: an earlier holder, or the other
   admins once one claimed it, keep none. A new event index `(project_id, kind, seq)`
   (migration 0054) serves the long-poll's change check.
+  The two open matters, `registration_pending` and `mail_disabled`, are never marked read by
+  a caller (`up_to` skips them, `ids` ignores them) and read as read once closed (contract
+  #413).
