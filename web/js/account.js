@@ -129,6 +129,9 @@ window.Maity = window.Maity || {};
         if (errors.length) { status.done(); return; }
         submit.disabled = true;
         status.busy("Changing…");
+        // The change ends every session but this one; the held long-poll goes
+        // first, so that it never meets the change (§2.1, §18.2).
+        M.notify.halt();
         try {
           await M.api.post("/auth/password", { current: current.input.value, new: fresh.input.value });
           all.forEach((f) => { f.input.value = ""; });
@@ -149,6 +152,8 @@ window.Maity = window.Maity || {};
             status.fail("Not changed: ", err);
           }
         } finally {
+          // This session stays (or the change was refused): the stream goes on.
+          M.notify.resume();
           submit.disabled = false;
         }
       },

@@ -112,6 +112,10 @@ After that:
   has not confirmed Keep the Why (`keep_the_why`, `docs/api.md` §6.23): its
   item leads to the agent in the project's Members where one is a member,
   else to the agent marked among one's agents (`#/account/picture/<id>`).
+- **Ending the session here.** Before a password change or signing out,
+  the page cancels its held long-poll and sends none until the change is
+  done (a password change keeps this session, and the stream goes on); a
+  401 on the stream ends it instead of retrying, since the session is gone.
 - **Two tabs.** When another tab took over the long-poll (`superseded`),
   this tab waits five minutes.
 

@@ -199,6 +199,13 @@ window.Maity = window.Maity || {};
 
   let browserLoop = null;
   let browserConfig = null;
+  // Held while the page ends its own session on purpose (a password
+  // change, signing out): no request of the stream goes out, the held one
+  // is cancelled, and a 401 that still comes back is that end, not a fault.
+  let halted = false;
+  // A resume() while the cancelled loop has not ended yet: that loop starts
+  // the next one when it ends. A 401 the hub sends on its own sets nothing.
+  let restartWanted = false;
   const watchers = new Set();
   const shown = new Set();
   const changed = () => watchers.forEach((fn) => fn());
@@ -207,8 +214,8 @@ window.Maity = window.Maity || {};
   // The waiting view and browser pop-ups share one request, even while a
   // navigation or a settings change happens during an outstanding long-poll.
   function ensureLoop() {
-    if (browserLoop || !wanted() || state.available === false) return;
-    const loop = { timer: null, wake: null, reset: false };
+    if (halted || browserLoop || !wanted() || state.available === false) return;
+    const loop = { timer: null, wake: null, reset: false, abort: null };
     browserLoop = loop;
     let after = null;
     const pause = (ms) => new Promise((done) => {
@@ -216,7 +223,9 @@ window.Maity = window.Maity || {};
       loop.timer = window.setTimeout(() => { loop.wake = null; done(); }, ms);
     });
     (async () => {
-      while (wanted() && state.available !== false) {
+      while (!halted && wanted() && state.available !== false) {
+        // A resume() that came while this loop was only pausing: it serves it.
+        restartWanted = false;
         const asked = Date.now();
         let answer;
         try {
@@ -227,9 +236,19 @@ window.Maity = window.Maity || {};
             state.counts = head.counts || state.counts;
             state.byProject = head.by_project || state.byProject;
           }
-          if (!wanted()) break;
-          answer = await M.api.get("/me/notifications?after=" + encodeURIComponent(after) + "&wait=" + WAIT_S + "&limit=50");
+          if (!wanted() || halted) break;
+          const cancel = typeof AbortController === "function" ? new AbortController() : null;
+          loop.abort = cancel ? () => cancel.abort() : null;
+          answer = await M.api.get("/me/notifications?after=" + encodeURIComponent(after) + "&wait=" + WAIT_S + "&limit=50",
+            cancel ? { signal: cancel.signal } : undefined);
+          loop.abort = null;
         } catch (err) {
+          loop.abort = null;
+          // Cancelled on purpose, or the session this page ended itself: the stream stops.
+          if (halted || err.code === "aborted") break;
+          // The session is gone (signed out elsewhere, revoked): the next render
+          // shows sign-in; knocking on would only collect more 401s.
+          if (err.status === 401) break;
           if (await M.api.missingRoute(err, "GET", "/me/notifications")) {
             M.api.absent.note("GET", "/me/notifications");
             state.available = false;
@@ -268,7 +287,10 @@ window.Maity = window.Maity || {};
         });
         if (!items.length && Date.now() - asked < QUICK_MS && wanted()) await pause(PAUSE_MS);
       }
-    })().finally(() => { if (browserLoop === loop) browserLoop = null; });
+    })().finally(() => {
+      if (browserLoop === loop) browserLoop = null;
+      if (restartWanted && !halted) { restartWanted = false; ensureLoop(); }
+    });
   }
 
   function wakeLoop() {
@@ -288,6 +310,24 @@ window.Maity = window.Maity || {};
     ensureLoop();
   }
 
+  // Before the page ends its session on purpose; resume() after, when it
+  // still has one (a password change keeps this session, js/account.js).
+  function halt() {
+    halted = true;
+    restartWanted = false;
+    const loop = browserLoop;
+    if (loop) {
+      loop.reset = true;
+      if (loop.abort) loop.abort();
+    }
+    wakeLoop();
+  }
+  function resume() {
+    halted = false;
+    if (browserLoop) restartWanted = true;
+    else ensureLoop();
+  }
+
   function stopBrowser() {
     browserConfig = null;
     wakeLoop();
@@ -301,5 +341,5 @@ window.Maity = window.Maity || {};
     return () => { watchers.delete(fn); wakeLoop(); };
   }
 
-  M.notify = { state, read, projectCount, title, bell, chatButton, linkOf, startBrowser, stopBrowser, running: () => !!browserConfig && !!browserLoop, subscribe, changed, KIND_WORDS };
+  M.notify = { state, read, projectCount, title, bell, chatButton, linkOf, startBrowser, stopBrowser, halt, resume, running: () => !!browserConfig && !!browserLoop, subscribe, changed, KIND_WORDS };
 })(window.Maity);
