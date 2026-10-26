@@ -1204,3 +1204,30 @@ incident's pattern, N long-polls per tab. Only the open conversation's
 project's feed (the card allowed it): still one more long-poll per tab,
 and the list of the other projects would still need the stream. Polling
 the lists every few seconds: more reads than the stream for slower news.
+
+## Registration is offered where the hub registers or the invitation one comes from admits
+
+**Id:** f1e41ebd-42a8-484b-b260-f69ee036a00c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §2.7, §2.7.1 and §3.4; the coordinator's ruling of 2026-10-26 that the registration page is built with the invitation card (tsk-55xeem2xbht5); the dashboard's implementation, 2026-10-26
+**Revisit when:** `GET /auth/methods` starts to say something per invitation, or registration gains a way in that is not an address and a password (OAuth, §2.7.1)
+
+`#/register` shows its form where `GET /auth/methods` says
+`registration: true`, or where its `next` is an invitation whose page
+says `registration: sign_in_or_register`. Otherwise it says the hub does
+not create accounts on request and leads to sign in. After the request it
+always says "check your mail", for every address alike.
+
+**Reason:** under `closed` or `allowlist` an address-bound invitation
+admits its address (§3.4), but `GET /auth/methods` keeps the instance's
+mode and so says `false`; the invitation's own answer is the only place
+the page learns that this person may register. The hub answers every
+well-formed request the same, so the page must not suggest it knows
+whether an account will be made.
+
+**Rejected alternative:** the form for everyone, the hub sorting it out:
+on a closed hub every visitor would fill it in for a mail that never
+comes. Only `GET /auth/methods`: an invited person on a closed hub could
+not register at all, which §3.4 allows.
