@@ -1124,6 +1124,48 @@ window.MAITY_FIXTURES = {
         "registration": "sign_in_only",
         "role": "admin"
       }
+    },
+    "refusals": {
+      "inv-closed-token-0000007": {
+        "code": "project_closed",
+        "details": {},
+        "message": "the project is closed",
+        "status": 409
+      },
+      "inv-member-token-0000005": {
+        "code": "invalid",
+        "details": {
+          "fields": {
+            "token": "already_member"
+          }
+        },
+        "message": "the request does not validate",
+        "status": 400
+      },
+      "inv-mismatch-token-00004": {
+        "code": "forbidden",
+        "details": {
+          "reason": "invitation_address_mismatch"
+        },
+        "message": "this invitation is for another address",
+        "status": 403
+      },
+      "inv-pending-token-000008": {
+        "code": "forbidden",
+        "details": {
+          "reason": "account_pending"
+        },
+        "message": "your account waits for approval",
+        "status": 403
+      },
+      "inv-void-token-000000006": {
+        "code": "forbidden",
+        "details": {
+          "reason": "invitation_void"
+        },
+        "message": "the person who invited you can no longer give this role",
+        "status": 403
+      }
     }
   },
   "landing.json": {
@@ -1581,6 +1623,66 @@ window.MAITY_FIXTURES = {
         "title": "Closed after the handover"
       }
     }
+  },
+  "maity/invitations.json": {
+    "items": [
+      {
+        "address": "anna@example.org",
+        "created_at": "2026-10-24T09:00:00Z",
+        "created_by": "hum-maintainer",
+        "expires_at": "2030-01-01T09:00:00Z",
+        "id": "inv-0003",
+        "note": "Web reviews.",
+        "project": "maity",
+        "revoked_at": null,
+        "role": "reviewer",
+        "used_at": null,
+        "used_by": null,
+        "voided_at": null
+      },
+      {
+        "address": null,
+        "created_at": "2026-10-23T09:00:00Z",
+        "created_by": "hum-maintainer",
+        "expires_at": "2026-10-24T09:00:00Z",
+        "id": "inv-0002",
+        "note": null,
+        "project": "maity",
+        "revoked_at": null,
+        "role": "member",
+        "used_at": "2026-10-23T10:00:00Z",
+        "used_by": "hum-guest",
+        "voided_at": null
+      },
+      {
+        "address": null,
+        "created_at": "2026-10-24T08:00:00Z",
+        "created_by": "hum-maintainer",
+        "expires_at": "2030-01-01T08:00:00Z",
+        "id": "inv-0004",
+        "note": null,
+        "project": "maity",
+        "revoked_at": null,
+        "role": "admin",
+        "used_at": null,
+        "used_by": null,
+        "voided_at": "2026-10-24T08:30:00Z"
+      },
+      {
+        "address": null,
+        "created_at": "2026-10-22T09:00:00Z",
+        "created_by": "hum-maintainer",
+        "expires_at": "2026-10-23T09:00:00Z",
+        "id": "inv-0001",
+        "note": null,
+        "project": "maity",
+        "revoked_at": "2026-10-22T11:00:00Z",
+        "role": "admin",
+        "used_at": null,
+        "used_by": null,
+        "voided_at": null
+      }
+    ]
   },
   "maity/joins.json": {
     "items": [

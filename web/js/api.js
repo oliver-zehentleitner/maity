@@ -222,6 +222,12 @@ window.Maity = window.Maity || {};
     [oldParent, card.parent].filter(Boolean).forEach((pid) => { const p = list.find((t) => t.id === pid); if (p) p.children = childrenOf(list, pid); });
   }
 
+  function invitationsOf(slug) {
+    const data = fixtures();
+    if (!data[slug + "/invitations.json"]) data[slug + "/invitations.json"] = { items: [] };
+    return data[slug + "/invitations.json"].items;
+  }
+
   function patchCard(slug, id, body, path) {
     const list = file(slug, "tasks.json", path).items;
     const card = list.find((x) => x.id === id);
@@ -655,12 +661,57 @@ window.Maity = window.Maity || {};
     // §2.6.1–2.6.3 in one tab: this tab makes the code, and a simulated
     // phone has entered it by the second read, so the approval can be seen.
     ["GET", /^\/auth\/methods$/, () => ({ password: true, device_code: true, email_link: true, registration: false, terms: null })],
-    // §3.4: what an invitation page shows, signed out too (registration reads
-    // whether it admits); fixtures/invitations.json per token.
+    // §3.4: the invitation page and accepting, signed out and in; per token
+    // fixtures/invitations.json says what the page shows or how accept refuses.
     ["GET", /^\/invitations\/([^/]+)$/, (m, body, path) => {
       const view = (fixtures()["invitations.json"].pages || {})[m[1]];
       if (!view) fail(404, "not_found", "Not found", path);
       return view;
+    }],
+    ["POST", /^\/invitations\/([^/]+)\/accept$/, (m, body, path) => {
+      if (!fixtureSignedIn) fail(401, "unauthenticated", "Not signed in", path);
+      const data = fixtures()["invitations.json"];
+      const view = (data.pages || {})[m[1]];
+      if (!view) fail(404, "not_found", "Not found", path);
+      const no = (data.refusals || {})[m[1]];
+      if (no) fail(no.status, no.code, no.message, path, no.details || {});
+      delete data.pages[m[1]];
+      return { id: me().member.id, kind: "human", handle: me().member.handle, display_name: me().member.display_name, role: view.role };
+    }],
+    // §3.4: a project's invitations, for a human with members:admin.
+    ["GET", /^\/projects\/([^/]+)\/invitations$/, (m, body, path) => {
+      if (!["owner", "admin"].includes(roleIn(m[1]))) fail(403, "forbidden", "members:admin", path, { scope: "members:admin" });
+      return { items: invitationsOf(m[1]).slice().sort((a, b) => (a.created_at < b.created_at ? 1 : -1)).map((x) => Object.assign({}, x, { url: undefined })), next_cursor: null };
+    }],
+    ["POST", /^\/projects\/([^/]+)\/invitations$/, (m, body, path) => {
+      const role = roleIn(m[1]);
+      if (!["owner", "admin"].includes(role)) fail(403, "forbidden", "members:admin", path, { scope: "members:admin" });
+      const fields = {};
+      const want = body.role || "member";
+      if (!["member", "reviewer", "proxy", "admin", "owner"].includes(want)) fields.role = "unknown";
+      else if (["admin", "owner"].includes(want) && role !== "owner") fail(403, "forbidden", "only an owner invites an owner or an admin", path, { scope: "owner" });
+      const ttl = body.ttl_seconds === undefined ? 86400 : body.ttl_seconds;
+      if (!(ttl >= 60 && ttl <= 604800)) fields.ttl_seconds = "out_of_range";
+      if (body.address !== undefined && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(body.address))) fields.address = "invalid";
+      if (body.note !== undefined && utf8Bytes(String(body.note)) > 1024) fields.note = "too_long";
+      if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
+      const list = invitationsOf(m[1]);
+      const token = "fx" + String(list.length + 1).padStart(20, "0");
+      const at = nowIso();
+      const made = { id: "inv-f" + String(list.length + 1).padStart(3, "0"), project: m[1], role: want, address: body.address || null, note: body.note || null,
+        created_by: me().member.id, created_at: at, expires_at: new Date(Date.now() + ttl * 1000).toISOString().replace(/\.\d{3}Z$/, "Z"),
+        used_at: null, used_by: null, revoked_at: null, voided_at: null };
+      list.push(made);
+      return Object.assign({}, made, { url: window.location.origin + window.location.pathname + "#/invite/" + token });
+    }],
+    ["DELETE", /^\/projects\/([^/]+)\/invitations\/([^/]+)$/, (m, body, path) => {
+      if (!["owner", "admin"].includes(roleIn(m[1]))) fail(403, "forbidden", "members:admin", path, { scope: "members:admin" });
+      const x = invitationsOf(m[1]).find((i) => i.id === m[2]);
+      if (!x) fail(404, "not_found", "Not found", path);
+      if (x.revoked_at) return x;
+      if (x.used_at || Date.parse(x.expires_at) <= Date.now()) fail(409, "invalid_transition", "not open", path, { to: "revoked", from: x.used_at ? "used" : "expired" });
+      x.revoked_at = nowIso();
+      return x;
     }],
     ["POST", /^\/auth\/device-codes$/, (m, body, path) => {
       if (!fixtureSignedIn) fail(401, "unauthenticated", "Not signed in", path);
@@ -1428,6 +1479,7 @@ window.Maity = window.Maity || {};
       "/api/v1/requests/{request_id}/withdraw": { post: {} },
       "/api/v1/projects/{slug}/swarm": { get: {} },
       "/api/v1/swarm/{slug}": { get: {} },
+      "/api/v1/projects/{slug}/invitations": { get: {}, post: {} },
       "/api/v1/invitations/{token}": { get: {} },
       "/api/v1/auth/register": { post: {} },
       "/api/v1/projects": { get: {}, post: { requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/ProjectCreate" } } } } } },

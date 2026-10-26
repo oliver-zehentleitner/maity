@@ -86,7 +86,8 @@ window.Maity = window.Maity || {};
     // A route's own query (#/login?next=…, #/sign-in/code?c=…) is the page's to read.
     const parts = window.location.hash.replace(/^#\/?/, "").split("?")[0].split("/").filter(Boolean).map(decodeURIComponent);
     if (!parts.length) return { scope: null };
-    // Signed out as much as signed in: registration (§2.7).
+    // Signed out as much as signed in: an invitation (§3.4) and registration (§2.7).
+    if (parts[0] === "invite" && parts[1]) return { scope: "invite", token: parts[1] };
     if (parts[0] === "register") return { scope: "register" };
     if (parts[0] === "notifications") return { scope: "notifications" };
     // A project's public swarm page (§6.22), with or without a session.
@@ -187,6 +188,8 @@ window.Maity = window.Maity || {};
   }
   // The sign-in calls of js/device-sign-in.js send it too.
   M.signInNext = hashNext;
+  // A page's link to sign in or register and come back to it.
+  M.withNext = (route, back) => route + "?next=" + encodeURIComponent("/" + back);
 
   function renderLogin(main) {
     // A landing page may have set the tab's title (§16.7).
@@ -231,7 +234,7 @@ window.Maity = window.Maity || {};
     append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle(), themeMenu()));
     append(clear(main), h("section", { class: "pending-account" },
       h("h2", null, "Your account waits for the operator's approval"),
-      h("p", null, "Once it is approved you get a mail, and this page becomes your dashboard."),
+      h("p", null, "Once it is approved you get a mail, and this page becomes your dashboard. An invitation you followed waits for you meanwhile."),
       h("button", { type: "button", onclick: logout }, "Sign out")));
   }
 
@@ -1248,6 +1251,7 @@ window.Maity = window.Maity || {};
     let ctx;
     try {
       where = parseHash();
+      if (where.scope === "invite" && M.invite) { await M.invite.page(main, document.getElementById("header"), where.token); return; }
       if (where.scope === "register" && M.register) { await M.register.page(main, document.getElementById("header"), hashNext()); return; }
       if (where.scope === "public-swarm" && M.swarm) {
         await M.swarm.publicPage(main, document.getElementById("header"), where.slug);

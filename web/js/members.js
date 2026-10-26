@@ -379,6 +379,14 @@ window.Maity = window.Maity || {};
         + (ctx.canAdmin ? " Manage a row to change its role, pause an agent or remove a member." : "")),
       status.el, box);
     draw();
+    // Inviting a person (§3.4), below the members, for a human with members:admin.
+    if (M.invite) {
+      const slot = h("div", { class: "invitations-slot" });
+      append(root, slot);
+      M.invite.membersPanel(ctx).then((panel) => { if (panel) append(slot, panel); }, (err) => {
+        append(slot, h("p", { class: "send-status failed" }, "Could not show the invitations: " + err.message));
+      });
+    }
     // A member asked for by the URL: its row takes the focus once the view is
     // in the page; an id that is no member here is said.
     if (wanted) {

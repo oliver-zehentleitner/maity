@@ -16,5 +16,12 @@
       "note": null, "expires_at": "2030-01-01T12:00:00Z", "address_bound": false, "registration": "sign_in_only" },
     "inv-pending-token-000008": { "project": { "slug": "maity", "name": "Maity" }, "role": "member", "invited_by": { "display_name": "Maintainer" },
       "note": null, "expires_at": "2030-01-01T12:00:00Z", "address_bound": false, "registration": "sign_in_or_register" }
+  },
+  "refusals": {
+    "inv-mismatch-token-00004": { "status": 403, "code": "forbidden", "message": "this invitation is for another address", "details": { "reason": "invitation_address_mismatch" } },
+    "inv-member-token-0000005": { "status": 400, "code": "invalid", "message": "the request does not validate", "details": { "fields": { "token": "already_member" } } },
+    "inv-void-token-000000006": { "status": 403, "code": "forbidden", "message": "the person who invited you can no longer give this role", "details": { "reason": "invitation_void" } },
+    "inv-closed-token-0000007": { "status": 409, "code": "project_closed", "message": "the project is closed", "details": {} },
+    "inv-pending-token-000008": { "status": 403, "code": "forbidden", "message": "your account waits for approval", "details": { "reason": "account_pending" } }
   }
 }
