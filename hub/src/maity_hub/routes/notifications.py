@@ -120,10 +120,14 @@ async def list_notifications(
         if older is None:
             raise invalid({"cursor": "invalid"})
     human_id = caller.principal_id
-
-    positions.prepare(engine_of(request), settings_of(request).secret_key)
+    prepared = [False]
 
     def answer() -> tuple[dict[str, Any], tuple[Any, ...]]:
+        # Every database read runs here, in the worker, never on the event loop: the key's
+        # first use in a transaction of its own, before the snapshot.
+        if not prepared[0]:
+            positions.prepare(engine_of(request), settings_of(request).secret_key)
+            prepared[0] = True
         with _snapshot(request) as conn:
             # Every snapshot, a held one included, checks the session again: one ended
             # while the request waited receives nothing more (§18.2).
@@ -138,6 +142,10 @@ async def list_notifications(
             _require_live(conn, session)
             return listing.stamp(conn, human_id) == seen
 
+    def still_live() -> None:
+        with engine_of(request).begin() as conn:
+            _require_live(conn, session)
+
     first, seen = await _limited(request, answer)
     if not wait or first["items"]:
         return JSONResponse(first)
@@ -149,8 +157,7 @@ async def list_notifications(
         while time.monotonic() < deadline and not longpoll.stopping.is_set():
             await asyncio.sleep(POLL)
             if _holding.get(session) is not token:
-                with engine_of(request).begin() as conn:
-                    _require_live(conn, session)
+                await run_in_threadpool(still_live)
                 return JSONResponse({**first, "superseded": True})
             if await run_in_threadpool(unchanged, seen):
                 continue
@@ -225,12 +232,13 @@ async def read_notifications(
     extra = set(body) - {"ids", "up_to", "kind", "project"}
     if len(given) != 1 or extra or ("ids" in body and ({"kind", "project"} & set(body))):
         raise invalid({name: "extra_forbidden" for name in extra} or {"body": "ids_or_up_to"})
-    positions.prepare(engine_of(request), settings_of(request).secret_key)
 
     def mark() -> dict[str, Any]:
         """Choose in a snapshot, write the marks at READ COMMITTED, count in a fresh
         snapshot: a mark racing another of the same items waits for it and skips what
-        it wrote, where a snapshot's insert would fail on the key (§18.3)."""
+        it wrote, where a snapshot's insert would fail on the key (§18.3). All of it in
+        the worker; the key's first use in a transaction of its own, before them."""
+        positions.prepare(engine_of(request), settings_of(request).secret_key)
         with _snapshot(request) as conn:
             session = conn.execute(
                 select(t.human_session).where(t.human_session.c.id_hash == session_hash)

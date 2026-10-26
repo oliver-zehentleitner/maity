@@ -4,6 +4,7 @@ marks of the same items at once never fail on the key."""
 
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -182,3 +183,29 @@ def test_the_pool_size_comes_from_the_environment() -> None:
     engine = make_engine("postgresql+psycopg://hub@db.invalid/maity", 8, 2)
     assert engine.pool.size() == 8  # type: ignore[attr-defined]
     engine.dispose()
+
+
+def test_no_database_read_runs_on_the_event_loop(
+    make_client: ClientFactory, owner: flow.Human, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The position key's first use reads the database: in a worker thread, never in the
+    event loop's, where a slow read would hold every async route and timer."""
+    from maity_hub.notifications import positions
+
+    on_loop: list[bool] = []
+    real = positions.prepare
+
+    def prepare(*args: Any, **kwargs: Any) -> None:
+        try:
+            asyncio.get_running_loop()
+            on_loop.append(True)
+        except RuntimeError:
+            on_loop.append(False)
+        real(*args, **kwargs)
+
+    monkeypatch.setattr(positions, "prepare", prepare)
+    item = card_item(make_client, owner)
+    start = bell(owner, limit=0)["next_after"]
+    bell(owner, after=start, wait=1)
+    assert owner.post(f"{N}/read", {"ids": [item["id"]]}).status_code == 200
+    assert on_loop and not any(on_loop)
