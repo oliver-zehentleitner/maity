@@ -326,7 +326,7 @@ def test_public_cache_exception_is_narrow(allow: bool, status: int, expected: by
         sent.append(message)
 
     async def check() -> None:
-        await _with_headers(send, public_badge=allow)(
+        await _with_headers(send, public=allow)(
             {
                 "type": "http.response.start",
                 "status": status,

@@ -219,7 +219,8 @@ failure would lose both.
 **Revisit when:** the theme is kept on the hub per human, or the CSP stops allowing the page's own scripts
 
 Three choices, System (default), Light and Dark, in a header menu beside
-the gear; the pick is kept per browser in `localStorage` (every access
+the gear (signed in, since 2026-10-25, in Your account instead: views.md,
+4faefa89-4543-48f1-a964-53574a6ded5d); the pick is kept per browser in `localStorage` (every access
 in try/catch: without storage it holds for the page). `js/theme.js`
 loads without `defer` from `<head>` and sets `data-theme` on `<html>`
 before the first paint. The dark tokens are written twice, the same:

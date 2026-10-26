@@ -218,6 +218,10 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
     wait_timeout = field(packet, "hints", "wait_timeout")
     if isinstance(wait_timeout, int) and wait_timeout > 0:
         session.data["wait_timeout"] = wait_timeout
+    # §6.23: what `maity report` checks locally until the next resume says otherwise.
+    session.data["keep_the_why_required"] = (
+        field(packet, "keep_the_why", "commitment") == "required"
+    )
     session.save()
     if text is None:
         _print_json(packet)
@@ -451,10 +455,45 @@ def _report_body(facts: gitfacts.Facts, summary: str, done: bool) -> dict[str, A
     }
 
 
+# §6.23: `why.ref` is `<path>#<id>` with a `.md` path; `why.none` a reason of 10 or more.
+_WHY_REF = re.compile(r"^[^#\s][^#]*\.md#[^#\s]+$")
+WHY_NONE_MIN = 10
+
+
+def _why(args: argparse.Namespace) -> dict[str, str] | None:
+    """`why` for a report from --why / --no-why, checked as the hub checks it (§6.23)."""
+    if args.why is not None:
+        ref = args.why.strip()
+        if not _WHY_REF.match(ref) or ref.startswith("/"):
+            raise UsageError(
+                "--why takes <path>#<id>: the context/ file relative to the repository root, "
+                "ending in .md, and the entry's Id, e.g. hub/context/joins.md#4351c5fc-…"
+            )
+        return {"ref": ref}
+    if args.no_why is not None:
+        reason = args.no_why.strip()
+        if len(reason) < WHY_NONE_MIN:
+            raise UsageError(
+                f"--no-why takes a reason of at least {WHY_NONE_MIN} characters: why this change "
+                "has no decision to keep (a mechanical change, a correction, a revert)"
+            )
+        return {"none": reason}
+    return None
+
+
 def cmd_report(args: argparse.Namespace) -> int:
     if not args.summary.strip():
         raise UsageError("the summary is empty")
+    why = _why(args)
+    if args.no_code and why is not None:
+        raise UsageError("--why and --no-why go with a code report, not with --no-code")
     session = Session()  # the cheap check first: ls-remote and gh only for a joined clone
+    if not args.no_code and why is None and session.data.get("keep_the_why_required"):
+        raise LocalRefusal(
+            "this project requires Keep the Why (§6.23): a code report names the entry that "
+            "keeps its why with --why <path>#<id>, or says why there is none with "
+            "--no-why <reason>"
+        )
     if args.no_code:
         # A result that is not code (a review, a draft): no git facts, read or sent (§6.6).
         body = {
@@ -474,6 +513,8 @@ def cmd_report(args: argparse.Namespace) -> int:
             print(f"  - {problem}", file=sys.stderr)
         return EXIT_REFUSED
     body = _report_body(facts, args.summary.strip(), args.done)
+    if why is not None:
+        body["why"] = why
     path = session.project_path("tasks", args.task, "report")
     task = session.client.call("POST", path, body=body)
     pr = body["pr"]
@@ -482,6 +523,26 @@ def cmd_report(args: argparse.Namespace) -> int:
     return _done(
         args, task, f"reported {args.task} at {facts.head[:12]} ({pr_line}); task is now {status}"
     )
+
+
+def cmd_ack(args: argparse.Namespace) -> int:
+    """`POST /me/keep-the-why/ack` (§6.23): idempotent; a project that does not require it
+    is said as such, not as an error."""
+    session = Session()
+    try:
+        answer = session.client.call("POST", "/me/keep-the-why/ack")
+    except hub.HubError as exc:
+        if exc.code != "keep_the_why_not_required":
+            raise
+        if args.json:  # the same keys as a confirmation, so a script reads one shape
+            _print_json({"required": False, "acknowledged_at": None})
+        else:
+            print("this project does not require Keep the Why: nothing to confirm")
+        return EXIT_OK
+    when = onboarding.inline(_field(answer, "acknowledged_at") or "?")
+    instance = _field(answer, "instance")
+    of = f" for instance {onboarding.inline(instance)}" if instance else ""
+    return _done(args, answer, f"confirmed Keep the Why{of} at {when}")
 
 
 def _ask_body(args: argparse.Namespace) -> dict[str, Any]:
@@ -2358,8 +2419,30 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--done", action="store_true", help="close the task, when your role holds done authority"
     )
+    why = p.add_mutually_exclusive_group()
+    why.add_argument(
+        "--why",
+        metavar="REF",
+        help="the Keep the Why entry that keeps this change's reasoning: <path>#<id> (§6.23)",
+    )
+    why.add_argument(
+        "--no-why",
+        metavar="REASON",
+        help="why this change has no decision to keep, 10 characters or more (§6.23)",
+    )
     _json_flag(p)
     p.set_defaults(handler=cmd_report)
+
+    p = add(
+        "ack",
+        "confirm a commitment the hub asks for",
+        "`maity ack keep-the-why` confirms that this agent instance uses Keep the Why in a "
+        "project that requires it (§6.23): `POST /me/keep-the-why/ack`. The resume packet says "
+        "when it is required and by when; the CLI never confirms on its own.",
+    )
+    p.add_argument("what", choices=("keep-the-why",), help="what to confirm")
+    _json_flag(p)
+    p.set_defaults(handler=cmd_ack)
 
     p = add(
         "ask",

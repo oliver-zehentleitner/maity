@@ -20,6 +20,7 @@ TASK_KEYS = {
     "label",
     "status",
     "rank",
+    "watching",
     "area",
     "created_by",
     "assigned_to",

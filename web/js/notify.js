@@ -13,7 +13,7 @@ window.Maity = window.Maity || {};
 
   const KIND_WORDS = {
     inbox: "Requests", chat: "Chats", mention: "Mentions", card: "Your cards", agent: "Agents stopped",
-    ticker: "Changes", jour_fixe: "Jour fixe", security: "Sign-ins and address", system: "Mail delivery",
+    keep_the_why: "Keep the Why", ticker: "Changes", jour_fixe: "Jour fixe", security: "Sign-ins and address", system: "Mail delivery",
   };
   // How long a browser long-poll may hold, and how long to stay away after
   // another tab took the long-poll over (§18.2: one per session).
@@ -38,6 +38,13 @@ window.Maity = window.Maity || {};
     if (t0.type === "session" || item.kind === "security") return "#/account/sessions";
     if (t0.type === "settings") return "#/account/notifications";
     const slug = item.project && item.project.slug;
+    // An agent of one's own that has not confirmed Keep the Why (§6.23):
+    // in the project's Members where one is a member, else among one's
+    // agents on the account.
+    if (t0.type === "member" && item.kind === "keep_the_why") {
+      return slug && item.project.member !== false ? "#/p/" + encodeURIComponent(slug) + "/members/" + encodeURIComponent(t0.id)
+        : "#/account/picture/" + encodeURIComponent(t0.id);
+    }
     if (!slug || item.project.member === false) return "#/all";
     const base = "#/p/" + encodeURIComponent(slug) + "/";
     const t = item.target || {};
@@ -80,10 +87,25 @@ window.Maity = window.Maity || {};
     return (n ? "(" + n + ") " : "") + base;
   }
 
+  // The Chat button: every chat across the projects (#/chats), with the
+  // unread chat messages the hub counts (counts.chat, §18.2) on it.
+  function chatButton(ctx) {
+    const n = state.available && state.counts ? state.counts.chat || 0 : 0;
+    const label = n ? n + (n === 1 ? " unread chat message" : " unread chat messages") : "Chats";
+    return h("a", { class: "bell chat-button", href: "#/chats", "aria-label": label, title: label, "aria-current": ctx && ctx.scope === "chats" ? "page" : null },
+      M.icons.chat(18), n ? h("span", { class: "count", "aria-hidden": "true" }, String(n)) : null);
+  }
+
   // The bell: the unread count on it, the latest items under it, each a
   // link to where it happened, unread ones marked, and Mark all read.
   function bell(ctx, onChange) {
-    if (!state.available) return null;
+    // A hub without notifications: the bell still stands, a link to
+    // everything waiting, without a count; in the same box as the full
+    // bell, so that a refresh replaces it in place.
+    if (!state.available) {
+      return h("div", { class: "bell-box" },
+        h("a", { class: "bell", href: "#/all", "aria-label": "Notifications", title: "Notifications" }, M.icons.bell(18)));
+    }
     // What is unread on the bell: every kind but the open requests, which
     // the inbox and the switcher show. Sign-in and address alerts count,
     // but "mark all read" never reaches them (§18.3).
@@ -93,7 +115,7 @@ window.Maity = window.Maity || {};
     const box = h("div", { class: "bell-box" });
     const list = h("div", { class: "bell-panel", id: "bell-panel", role: "region", "aria-label": "Notifications" });
     list.hidden = true;
-    const label = "Notifications" + (unread ? ", " + unread + " unread" : "");
+    const label = unread ? unread + (unread === 1 ? " new notification" : " new notifications") : "Notifications";
     const button = h("button", {
       type: "button", class: "bell", "aria-expanded": "false", "aria-controls": "bell-panel", "aria-label": label, title: label,
     }, M.icons.bell(18), unread ? h("span", { class: "count", "aria-hidden": "true" }, String(unread)) : null);
@@ -279,5 +301,5 @@ window.Maity = window.Maity || {};
     return () => { watchers.delete(fn); wakeLoop(); };
   }
 
-  M.notify = { state, read, projectCount, title, bell, linkOf, startBrowser, stopBrowser, running: () => !!browserConfig && !!browserLoop, subscribe, changed, KIND_WORDS };
+  M.notify = { state, read, projectCount, title, bell, chatButton, linkOf, startBrowser, stopBrowser, running: () => !!browserConfig && !!browserLoop, subscribe, changed, KIND_WORDS };
 })(window.Maity);

@@ -15,18 +15,39 @@ from maity_hub.policy import CLOSED_STATES
 from maity_hub.ratelimit import Limiter
 
 router = APIRouter()
+# One budget per source address for the badge and the public swarm page together, and one
+# shared budget for every slug not served, so that varying the slug, the page or `days`
+# multiplies nothing (§6.20, §6.22).
 BY_ADDRESS = Limiter(60, 60)
+NOT_SERVED = Limiter(60, 60)
 CACHE = "public, max-age=60"
+
+
+def limit_source(request: Request) -> None:
+    """The caller's budget, taken before anything is read."""
+    wait = BY_ADDRESS.hit(origin_of(request).address)
+    if wait:
+        raise rate_limited(wait)
+
+
+def limit_not_served() -> None:
+    """The shared budget of the slugs not served: an unknown, private or closed project
+    alike, so that none is told from the others."""
+    wait = NOT_SERVED.hit("*")
+    if wait:
+        raise rate_limited(wait)
 
 
 @router.get("/badge/{slug}.svg")
 def badge(slug: str, request: Request) -> Response:
-    wait = BY_ADDRESS.hit(origin_of(request).address)
-    if wait:
-        raise rate_limited(wait)
+    limit_source(request)
     with engine_of(request).begin() as conn:
         project = conn.execute(select(t.project).where(t.project.c.slug == slug)).first()
-        if project is None or project.state in CLOSED_STATES or project.badge == "off":
+        served = (
+            project is not None and project.state not in CLOSED_STATES and project.badge != "off"
+        )
+        if project is None or not served:
+            limit_not_served()
             raise not_found()
         animated = False
         if project.badge == "members":

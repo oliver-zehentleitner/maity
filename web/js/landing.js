@@ -53,7 +53,7 @@ window.Maity = window.Maity || {};
 
   function show(main, p, header) {
     if (p.title) document.title = p.title;
-    append(clear(header), h("div", { class: "bar" }, M.brandTitle()));
+    append(clear(header), h("div", { class: "bar" }, M.brandTitle(), M.themeMenu ? M.themeMenu() : null));
     append(clear(main), page(p));
   }
 

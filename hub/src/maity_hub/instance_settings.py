@@ -125,3 +125,18 @@ def put_sealed(conn: Connection, name: str, value: bytes | None, by: str | None)
                 updated_by=by,
             )
         )
+
+
+def add_sealed(conn: Connection, name: str, value: bytes) -> None:
+    """Store a secret only if none is stored; a concurrent first one raises
+    `IntegrityError` and wins (the caller re-reads in a fresh transaction)."""
+    if name not in SECRETS:
+        raise KeyError(name)
+    conn.execute(
+        insert(t.instance_secret).values(
+            name=name,
+            sealed=base64.b64encode(value).decode(),
+            updated_at=clock.now(),
+            updated_by=None,
+        )
+    )
