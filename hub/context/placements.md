@@ -237,3 +237,40 @@ supervised agent of the project for nothing the agent has to do.
 sets it (`MAITY_SUPERVISOR`, §15.11), so it proves nothing about who
 started the session. It shapes the wake set, `hints.duty` and the rules
 text. It never grants a right, changes a scope or skips a check.
+
+## An outage is stored on the placement, apart from the notice it files
+
+**Id:** 76af29b9-5de5-414d-bdb5-f33219e393cc
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §15.7 ("The owner is asked when an agent stops", contract #409); implementation session, 2026-10-26
+**Revisit when:** a placement can have more than one outage at a time, or the hub gains a transfer of a profile's owner (the refiling to the new owner needs a trigger then)
+
+The placement row keeps `outage_since` and `outage_request_id`. A
+current report of `failed`, or of `exited` with `quota`, opens an
+outage when none is open, files the hub notice and stores its id. The
+outage ends on a current `running`, on a stop carried out, and when the
+placement closes. A uniform close (delete, project archived) ends it
+when the close starts, not when the runner reports. Ending withdraws the
+notice only while it is still open.
+
+Two readings of the contract are this implementation's own:
+- A failing report while `desired` is `stopped` opens nothing. The stop
+  asked for the agent to end; how it ended is the stop carried out.
+- A stop of a placement whose current report is already terminal ends the
+  outage at once. Nothing is left running, so no later report would.
+
+**Reason:** the owner may answer `seen` or withdraw the notice, which
+closes the request and not the outage (§15.7). The request's status
+therefore cannot tell whether an outage is open, and a second request must
+not follow until the agent has run again.
+
+**Rejected alternatives:**
+- Deriving the open outage from the latest open hub notice of the
+  placement: wrong as soon as the owner answers `seen`.
+- A table of outages: a placement has at most one open outage, and the
+  contract asks for no history of them beyond the requests.
+
+The refiling to a new owner during an outage has no trigger: the hub has
+no transfer of a profile's owner yet.
