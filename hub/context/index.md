@@ -85,6 +85,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 - [swarm.md](swarm.md) — the swarm page's window gathered once into raw facts and folded per reader (members, or agents only for the public page), kept an hour in process; an unattributed contribution only in the members' totals
 
 ## T
+- [takeovers.md](takeovers.md) — the window settled lazily and by a worker, alike under the project lock; a takeover from a replaced or removed instance is cancelled
 - [testing.md](testing.md) — CI matrix: full check on SQLite, tests on PostgreSQL 17 and MariaDB 11.4; MariaDB stands in for MySQL; races on two real connections, PostgreSQL and MariaDB only
 - [ticker.md](ticker.md) — a ticker item is an event with its dedupe key in a table of its own; shaped per reader where every event view is made; settings replaced key by key; merges read by the probe from the switch-on moment, sections from the diff; the forge webhook answered in the middleware before its body, only ever a trigger
 

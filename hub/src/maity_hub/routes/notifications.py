@@ -310,7 +310,8 @@ def unwatch(slug: str, task_id: str, request: Request, caller: AnyCaller) -> JSO
 
 
 def _watch(request: Request, caller: Caller, slug: str, task_id: str, *, on: bool) -> JSONResponse:
-    """Idempotent; no event: whom a card notifies is the watcher's business (§6.4)."""
+    """Idempotent; no event. A watch is the human's own mark on the card, shown as
+    `watching`, and notifies nothing since cards make no notification (§6.4, §18.1)."""
     if caller.kind == "agent":
         raise humans_only("watching is for the notifications of humans")
     with engine_of(request).begin() as conn:

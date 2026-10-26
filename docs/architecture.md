@@ -229,7 +229,8 @@ may answer is in section 5.
 Two further intakes exist for the human: a **finding** (free text,
 version, optional attachment) that becomes a card on the owner of the
 touched area in one step, and one **"release ready to test"**
-notification when a release card reaches `ready`.
+request in their inbox when a release card reaches `ready` (a
+notification only through that request, docs/api.md §18.1).
 
 ### 3.5 Events, messages, conversations
 

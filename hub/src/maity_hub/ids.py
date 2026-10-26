@@ -40,6 +40,7 @@ PREFIXES = {
     "invitation": "inv",
     "jour_fixe": "jfx",
     "jour_fixe_answer": "jfa",
+    "takeover": "tko",
 }
 
 

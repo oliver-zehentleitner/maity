@@ -25,6 +25,7 @@ REMOVED_KINDS = ("card", "ticker", "jour_fixe", "keep_the_why", "agent", "system
 REQUEST_EVENTS = ("request_created", "request_forwarded", "request_answered", "request_withdrawn")
 # The only event kinds that can make a notification; the derive reads no other row.
 EVENT_KINDS = (*REQUEST_EVENTS, "message", "mentioned")
+ADDRESSED = ("request_created", "request_forwarded")  # one item per request, the latest
 TITLE_MAX = 200
 
 
@@ -130,13 +131,19 @@ def _from_events(conn: Connection, where: Scope, mine: Membership, now: datetime
     )
     chats = _chat_marks(conn, mine)
     look = Lookup(conn, mine, [r for r in rows if r.actor_membership != mine.id])
-    items = []
+    items: list[Item] = []
+    held: dict[str, Item] = {}  # request id → its addressed item
     for row in rows:
         if row.actor_membership == mine.id:
             continue  # a human's own actions never notify them
         item = _classify(look, where, mine, row, hidden)
         if item is None:
             continue
+        if row.kind in ADDRESSED and item.target is not None:
+            earlier = held.get(item.target["id"])
+            if earlier is not None:  # a forward replaces what the request said before
+                items.remove(earlier)
+            held[item.target["id"]] = item
         if item.kind == "chat" or (item.kind == "mention" and row.conversation_id is not None):
             item.read = row.seq <= chats.get(row.conversation_id, 0) or row.seq in marks
         else:
@@ -217,16 +224,11 @@ def _classify(
 
 
 def _request_concerns(look: Lookup, request: Any, mine: Membership, row: Any) -> bool:
-    """§18.1: a new request addressed to the human; a forward that makes them the holder,
-    or opens the request to the admins while they hold `admin`; an answer or a withdrawal
-    of a request they asked."""
-    if row.kind == "request_created":
+    """§18.1: a new or forwarded request the human holds now — an earlier holder, or an
+    admin after another admin claimed it, no longer; an answer or a withdrawal of a
+    request they asked."""
+    if row.kind in ADDRESSED:
         return inbox.addressed_to(look.conn, request, mine)
-    if row.kind == "request_forwarded":
-        step = (row.payload or {}).get("step") or {}
-        if step.get("action") == "opened":
-            return mine.role == "admin"
-        return step.get("action") == "forwarded" and step.get("to") == mine.principal_id
     return inbox.is_asker(request, mine)
 
 

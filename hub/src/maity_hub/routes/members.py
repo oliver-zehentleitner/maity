@@ -23,6 +23,7 @@ from maity_hub import (
     placements,
     rules,
     seats,
+    takeovers,
 )
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, member_row_or_removed, membership
@@ -568,6 +569,7 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
     for credential_id in credentials:
         revoke(conn, credential_id, "member_removed", by=change.approver)
     placements.membership_removed(conn, target.id, change.actor, change.approver)
+    takeovers.membership_removed(conn, target.id, change.actor)
     conn.execute(
         update(t.card)
         .where(t.card.c.claim_holder == target.id, t.card.c.status.notin_(("done", "cancelled")))
