@@ -51,6 +51,7 @@ window.Maity = window.Maity || {};
         const pctx = pctxs[x.slug];
         const li = P.listItem(pctx, x.chat, x.key === currentKey ? x.chat.id : null);
         const a = li.querySelector("a.conv");
+        if (a) a.className += " with-project";
         if (a) append(a, h("span", { class: "conv-project" }, h("span", { class: "visually-hidden" }, ", in "), pctx.project.name || x.slug));
         append(ul, li);
       });
@@ -120,13 +121,21 @@ window.Maity = window.Maity || {};
       settle = window.setTimeout(() => {
         list.refresh();
         if (!pctx) return;
-        const changed = [{ kind: "message", seq: Number.MAX_SAFE_INTEGER, actor: { member_id: open.id }, payload: { type: "chat", conversation_id: open.id } }];
+        const changed = [{ kind: "message", seq: Number.MAX_SAFE_INTEGER, actor: { member_id: open.id }, payload: { type: "chat", conversation_id: open.id } },
+          { kind: M.chatParts.RESYNC }];
         pctx.listeners.forEach((fn) => fn(changed));
       }, SETTLE_MS);
     };
     const unsubscribe = M.notify.state.available ? M.notify.subscribe(nudge) : () => {};
     ctx.onDispose(() => { window.clearTimeout(settle); unsubscribe(); });
-    ctx.every(M.chatParts.LIST_MS, () => list.refresh());
+    // Every 30 seconds the members too (names, presence, a newly joined agent
+    // of one's own), as a project's Chat tab reads them; the open pane keeps
+    // its draft and focus, and draws with them from then on.
+    ctx.every(M.chatParts.LIST_MS, async () => {
+      await Promise.all(Object.values(pctxs).map((x) => M.api.getAll(x.base + "/members")
+        .then((r) => { M.withMembers(x, r.items); }, () => null)));
+      list.refresh();
+    });
 
     if (!open || !pctx) {
       append(root, h("div", { class: "chat-layout" + (open ? " open" : "") }, list.el,

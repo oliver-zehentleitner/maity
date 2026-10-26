@@ -1053,6 +1053,7 @@ window.Maity = window.Maity || {};
   // global chat, js/chats.js): its project, members and role, its own
   // listeners and no events feed of its own. chatLink builds the links of
   // its chats, so that they stay in that view.
+  M.withMembers = (ctx, members) => withMembers(ctx, members);
   M.projectContext = async (ctx, slug, chatLink) => {
     const mine = ctx.projects.find((p) => p.slug === slug);
     if (!mine) throw new M.api.ApiError("You are not a member of the project " + slug, 404, "/me", "not_found");
