@@ -68,13 +68,14 @@ holds everything about what it had.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** implementation session, 2026-10-23 (the edit history)
-**Revisit when:** members ask why a partner card's history does not show the edge, or ships_with stops being mirrored
+**Source:** implementation session, 2026-10-23 (the edit history); related follows the same rule in docs/api.md §6.4 and §6.15, 2026-10-25
+**Revisit when:** members ask why a partner card's history does not show the edge, or either edge stops being mirrored
 
 When a member sets `ships_with` on one card, the hub mirrors the edge on
 the partner card. The member's card gets the history entry; the
 partner's `task_updated` names `fields: ["ships_with"]` with
-`history: []`.
+`history: []`. The same distinction applies to `related`: the authored
+card gets the history and the hub announces the mirror on its partner.
 
 **Reason:** the history records what a member changed; the mirror is the
 hub keeping both cards consistent, like a rank or a request's block,
@@ -82,3 +83,100 @@ which the contract lists as events, not history.
 
 **Rejected alternative:** an entry on both cards: two entries for one
 decision, and the partner's would name an actor who never edited it.
+
+## Subtask approval checks the resulting card, including an attachment
+
+**Id:** 8a0dcd0b-7d35-41af-9d27-bce877e7bb44
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §6.1 and §6.4, the maintainer-approved subtask contract and its bypass rulings, 2026-10-25
+**Revisit when:** subtasks can be opened by another path or the proposal policy changes
+**See:** https://github.com/oliver-zehentleitner/maity — 60ddc489-48d5-4ac1-b93b-d3cb89581625 — as of 2026-10-25
+
+Under `proposed`, a member without `tasks:admin` cannot create an open
+child, open their own child proposal, or attach a non-proposed card. The
+check sees the resulting parent and status together. Under `direct`, the
+ordinary editing rules apply; clearing a parent stays free to the editor.
+
+**Reason:** the proposal is the admin's oversight of new work on the board.
+Checking creation alone would let a member open an ordinary card and then
+attach it. Checking only the status transition would allow attachment and
+opening in the same PATCH. The resulting state is the boundary in both cases.
+
+**Rejected alternatives:** a creation-only check, or separate checks of the
+old parent and old status. Both admit bypasses explicitly excluded by the
+contract. Making every project require approval was also rejected by the
+product decision: `direct` is the trusted-team option.
+
+## Parent and dependency gates are checked together under the project lock
+
+**Id:** bd484999-a651-42cd-88cd-a819a3ab5d8e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.4 and the subtask implementation design, 2026-10-25
+**Revisit when:** cards move across projects or graph writes no longer share the project lock
+
+Validation uses the resulting parent and dependency edges in one graph,
+under the project's existing lock. A parent waits for its children, so its
+implicit gate points from parent to child. Explicit dependencies point from
+the waiting card to the card it needs. Depth and cycle checks use both.
+
+**Reason:** checking only explicit dependencies misses a child waiting on
+its own parent. Checking fields in sequence against old edges can reject a
+valid combined detach-and-depend edit. Without the shared lock, two writes
+could each pass against a graph that predates the other. These consequences
+are inferred from the contract's final-graph and transaction requirements.
+
+**Rejected alternatives:** independent dependency and tree checks, or
+validating each field against the old graph. Neither sees the same graph
+that will commit.
+
+## Child counts are read from children and announced as derived state
+
+**Id:** 0512b30c-f847-454d-ad05-242d3381fbbf
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.4 and §6.15, with the subtask implementation design, 2026-10-25
+**Revisit when:** child counts are stored or their read cost requires a cache
+
+A card stores its parent; the parent does not store a second child list or
+counters. Reads compute total children and those not done or cancelled.
+Attachment, movement and closing emit the affected parents' new counts as
+`task_updated` with `fields: ["children"]` and no history entries.
+
+**Reason:** parent and status are sufficient to derive the counts. A second
+stored representation would need every write path to keep it in step.
+History records authored edits, while the parent count is a consequence of
+a child's edit or report. This rationale follows from the contract's
+computed-count and authored-history distinction.
+
+**Rejected alternative:** writable or persisted child counts. They would
+add another state to synchronise and could imply that a member directly
+edited the parent's computed field. The contract requires computed counts;
+no other historical alternatives are known.
+
+## The completion error adds children only when open children participate
+
+**Id:** 504e69dd-4a07-4618-9fce-e0cd54da6a20
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the contract owner's completion-error shape ruling, 2026-10-25; docs/api.md §6.4
+**Revisit when:** the completion error is versioned or clients need a fixed set of detail keys
+
+`dependencies_open.details.open` is the deduplicated union of open explicit
+dependencies and open children. `details.children` repeats the children
+only when that subset is non-empty. A dependency-only refusal retains its
+existing `{open: [...]}` detail shape.
+
+**Reason:** adding subtasks should not change the error seen by clients
+whose cards have no children. Including an empty `children` key was a real
+alternative, exposed by the existing completion-report regression test;
+the contract owner accepted the conditional shape for compatibility.
+
+**Rejected alternative:** always include `children: []`, then revise the
+old clients and contract sample. It changes a previously valid response
+without giving dependency-only callers any new information.

@@ -259,6 +259,7 @@ project = Table(
     # The policy (docs/api.md §6.1); its history is in the events.
     Column("policy_preset", String(32), nullable=False),
     Column("badge", String(20), nullable=False, server_default="off"),
+    Column("subtasks", String(16), nullable=False, server_default="proposed"),
     # Whether visitors without a session see the swarm page, agents only (§6.22).
     Column("swarm_public", String(8), nullable=False, server_default="off"),
     Column("claim_policy", String(32), nullable=False),
@@ -769,6 +770,7 @@ card = Table(
     Column("mentions", JSON_VALUE),  # resolved from `body` at write time (§8.6)
     Column("label", String(16)),
     Column("status", String(16), nullable=False),
+    _ref("parent", "card.id", index=True),
     # The card's place in its status column (§6.4): set by the hub only, compared
     # bytewise in Python (`ranks`), null until the card is first placed.
     Column("rank", String(64)),

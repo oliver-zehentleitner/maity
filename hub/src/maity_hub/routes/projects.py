@@ -63,6 +63,7 @@ class PolicyIn(Strict):
     coordinator_substitute: str | None = None
     on_runner_revoke: str | None = None
     badge: str | None = None
+    subtasks: str | None = None
     swarm_public: str | None = None
 
 
