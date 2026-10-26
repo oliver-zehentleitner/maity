@@ -4626,11 +4626,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const seCalls = [];
   // The fixture hub forgets the session, as an expiry or a revocation elsewhere would.
   await win.Maity.api.post("/auth/logout");
+  const sePost = win.Maity.api.post, seDel = win.Maity.api.del;
+  const seEpoch = win.Maity.sessionEpoch || 0;
+  win.Maity.notify.state.settings = { browser: { enabled: true, kinds: { chat: true }, content: { chat: true } } };
   win.Maity.api.get = (p) => { seCalls.push(p); return seGet(p); };
   win.Maity.api.getAll = (p) => { seCalls.push(p); return seGetAll(p); };
+  win.Maity.api.post = (p, b) => { seCalls.push("POST " + p); return sePost(p, b); };
+  win.Maity.api.del = (p) => { seCalls.push("DELETE " + p); return seDel(p); };
   await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
   expect(byId("login-handle") && main.querySelector(".session-ended") && text(main.querySelector(".session-ended")).includes("Your session has ended")
-    && win.location.hash === "#/p/maity/board", "session: the first 401 under the page shows sign-in with a note, the route kept");
+    && win.location.hash === "#/p/maity/board" && win.Maity.notify.state.settings === null && !win.Maity.notify.running(),
+    "session: the first 401 under the page shows sign-in with a note, the route kept; the browser notifications' settings go with it");
   const seAfter = seCalls.length;
   await fireIntervals(); await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
   expect(seCalls.length === seAfter, "session: after it ended nothing more is asked " + JSON.stringify(seCalls.slice(seAfter)));
@@ -4638,6 +4644,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   main.querySelector("form").dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
   expect(!byId("login-handle") && main.querySelector("section.view-board") && win.location.hash === "#/p/maity/board" && !main.querySelector(".session-ended"),
     "session: signing in again returns to the same route");
+  // A late 401 of the old session ends the new one not; a 401 on a session's own /auth/ call ends it.
+  win.Maity.onSessionEnded("/me", seEpoch); for (let k = 0; k < 4; k++) await tick();
+  expect(!byId("login-handle") && main.querySelector("section.view-board"), "session: a late 401 from the session before ends nothing");
+  win.Maity.api.post = sePost; win.Maity.api.del = seDel;
+  await win.Maity.api.post("/auth/logout");
+  await win.Maity.api.get("/auth/sessions").catch(() => null); for (let k = 0; k < 4; k++) await tick();
+  expect(byId("login-handle") && main.querySelector(".session-ended"), "session: a 401 on the session's own /auth/sessions ends it too");
+  byId("login-handle").value = "maintainer"; byId("login-password").value = "a long new password";
+  main.querySelector("form").dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
   win.Maity.api.get = seGet; win.Maity.api.getAll = seGetAll;
 
   // Notifications (docs/api.md §18): the bell, the counts, browser notifications.

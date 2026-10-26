@@ -196,13 +196,16 @@ window.Maity = window.Maity || {};
   // sign-in page comes with a note; nothing more is asked until a sign-in.
   // Signing in again returns to the same route.
   let sessionEnded = false;
-  M.onSessionEnded = () => {
-    if (sessionEnded) return;
+  M.onSessionEnded = (path, epoch) => {
+    if (sessionEnded || (epoch !== undefined && epoch !== (M.sessionEpoch || 0))) return;
     sessionEnded = true;
     renderSeq++;
     M.notify.halt();
     stopTimers();
     if (M.clearChatDrafts) M.clearChatDrafts();
+    // As a sign-out does: the next human in this tab starts with their own settings.
+    M.notify.stopBrowser();
+    M.notify.state.settings = null;
     renderLogin(document.getElementById("main"), "Your session has ended. Sign in again to go on where you were.");
   };
 
@@ -1056,7 +1059,8 @@ window.Maity = window.Maity || {};
       stateLabel: (state) => STATE_LABELS[state] || state,
       refresh: render,
       markSeen: () => {},
-      every: (ms, fn) => { timers.push(window.setInterval(fn, ms)); },
+      // Once the session ended, a view still drawing starts nothing more.
+      every: (ms, fn) => { if (!sessionEnded) timers.push(window.setInterval(fn, ms)); },
       onDispose: (fn) => { disposers.push(fn); },
       listeners: [],
       onEvents: (fn) => { ctx.listeners.push(fn); },
@@ -1292,7 +1296,8 @@ window.Maity = window.Maity || {};
       if (seq !== renderSeq) return;
       // Signed in again after signing out here: the stream may run again.
       M.notify.resume();
-      sessionEnded = false;
+      // A new session: what the old one still gets back (a late 401) ends nothing.
+      if (sessionEnded) { sessionEnded = false; M.sessionEpoch = (M.sessionEpoch || 0) + 1; }
       // An account that waits for approval (§2.7.5) sees that, and nothing else.
       if (me.member && me.member.account_status === "pending") {
         renderPending(main);
