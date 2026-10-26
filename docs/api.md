@@ -10671,7 +10671,7 @@ rules that make a position safe to resume from:
 - **Read.** An item is read when it was marked (§18.3) or, for `chat`
   and a `mention` in a chat, when the conversation has been read past its
   `seq` (§9) — one read mark, the chat's own; a `registration_pending`
-  or `mail_disabled` item also when its matter is closed (§18.1).
+  or `mail_disabled` item only when its matter is closed (§18.1, §18.3).
 
 ### 18.3 `POST /me/notifications/read`
 
@@ -10691,9 +10691,9 @@ Human only, CSRF as every cookie `POST`. Exactly one of:
 
 Marking a `chat` item read moves that conversation's read mark to the
 item's `seq`, never backwards — the same as reading the conversation
-(§9); an observer has no chat items and moves no mark. `inbox` items are
-marked read, the open requests stay open, and a pending registration or
-a disabled address stays counted until it is closed (§18.2). A `kind`
+(§9); an observer has no chat items and moves no mark. `inbox` items
+other than the two open matters below are marked read, and the open
+requests stay open (§18.2). A `kind`
 removed on 2026-10-26 is `invalid` as in §18.2. A `security` item about a
 new session (`session_created`, #169 §2.6.5) is marked read only from a
 session that existed before that sign-in and is itself in good
@@ -10707,6 +10707,14 @@ a sign-in or grants good standing. From a session that may not mark
 such an item it is skipped through `ids` too (ignored as an unknown
 id), and the rest of the call applies. Answers `200` with the counts
 of §18.2. No event: reading is not news to anyone.
+
+The two `inbox` items of an open matter, `registration_pending` and
+`mail_disabled` (§18.1), are never marked read by a caller: `up_to`
+skips them and an `ids` entry naming one is ignored, as an id the
+human has no item for; each reads as read on its own once its matter
+is closed — the registration decided or expired, the address set
+again and verified, or removed (§18.7). So "mark all read" never hides an open matter from "Waiting
+for you" while it still counts in `counts.inbox`.
 
 ### 18.4 `GET`, `PATCH /me/notification-settings`
 

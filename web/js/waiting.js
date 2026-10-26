@@ -3,8 +3,9 @@
 window.Maity = window.Maity || {};
 (function (M) {
   const { h, append, clear, formatAgo } = M.dom;
-  const GROUPS = [["inbox", "Request updates"], ["chat", "Conversations"], ["mention", "Mentions"],
-    ["card", "Cards"], ["agent", "Agents"], ["jour_fixe", "Jour fixe"], ["ticker", "Changes"], ["account", "Account"]];
+  // §18.8: requests (and what asks like one), conversations, mentions, the
+  // account's alerts. Cards, the ticker and jour fixe steps are not here.
+  const GROUPS = [["inbox", "Request updates"], ["chat", "Conversations"], ["mention", "Mentions"], ["account", "Account"]];
   const projectOf = (x) => x.project && x.project.slug || "";
   // The view shows 200 rows: 4 pages of the hub's most (50, §18.2) are all it
   // reads; the rest is behind More notifications. Stream events within a
@@ -20,7 +21,7 @@ window.Maity = window.Maity || {};
       seen.add(x.id);
       const target = x.target || {};
       if (x.kind === "inbox" && target.type === "request" && open.has(requestKey(projectOf(x), target.id))) return;
-      const kind = ["security", "system"].includes(x.kind) ? "account" : x.kind;
+      const kind = x.kind === "security" ? "account" : x.kind;
       if (!groups[kind]) return;
       if (kind === "chat" && target.type === "conversation") {
         const key = projectOf(x) + "/" + target.id;
@@ -44,7 +45,7 @@ window.Maity = window.Maity || {};
     const x = row.item;
     return h("li", { class: "waiting-item", "data-notification": x.id },
       h("a", { href: M.notify.linkOf(x), onclick: () => {
-        if (x.kind === "security") return; // Only This was me grants good standing.
+        if (M.notify.keepsUnread(x)) return; // Read with This was me, or once the matter is closed.
         M.api.post("/me/notifications/read", { ids: [x.id] }).then(() => {
           if (afterRead) afterRead(x);
           M.notify.changed();
@@ -137,7 +138,7 @@ window.Maity = window.Maity || {};
       try {
         const answer = await M.api.get("/me/notifications?limit=50" + (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""));
         if (disposed) return;
-        (answer.items || []).forEach((x) => append(list, rowLink(ctx, { item: x, count: 1 }, null, status)));
+        (answer.items || []).filter(M.notify.known).forEach((x) => append(list, rowLink(ctx, { item: x, count: 1 }, null, status)));
         cursor = answer.next_cursor; older.hidden = !cursor; status.done();
         if (!list.children.length) append(list, h("li", { class: "empty" }, "No notifications."));
       } catch (err) {

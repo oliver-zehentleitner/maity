@@ -4332,11 +4332,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !ktCard("tsk-0007").querySelector(".report-why a") && text(ktCard("tsk-0007").querySelector(".report-why")).includes("../secret.md"),
     "keep the why: no why says the reason; a path out of the repository stays text");
   win.Maity.api.getAll = ktGetAll;
-  // The notification: to the member in the project, or to the agent on one's account when not a member.
-  const ktItem = (member) => ({ kind: "keep_the_why", project: { slug: "maity", name: "Maity", member }, target: { type: "member", id: "agt-b" } });
-  expect(win.Maity.notify.linkOf(ktItem(true)) === "#/p/maity/members/agt-b" && win.Maity.notify.linkOf(ktItem(false)) === "#/account/picture/agt-b"
-    && win.Maity.notify.KIND_WORDS.keep_the_why === "Keep the Why",
-    "keep the why: its notification leads to the agent in the project's Members, or among one's agents when one is no member");
+  // Since 2026-10-26 the owner's notice is a personal request in the inbox (§6.23, §18.1): no kind of its own.
+  expect(!("keep_the_why" in win.Maity.notify.KIND_WORDS), "keep the why: the owner's notice is a request in the inbox, no notification kind of its own");
   const ktProto = Object.getPrototypeOf(main), ktFocus = ktProto.focus;
   ktProto.focus = function () { document.activeElement = this; };
   await go("#/account/picture/agt-b"); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
@@ -4511,7 +4508,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const bellBtn = () => header.querySelector("button.bell");
   const tabCountOf = (name) => { const a = header.querySelectorAll("nav.views a").find((x) => x.textContent.startsWith(name)); const c = a && a.querySelector(".count"); return c ? c.textContent : null; };
   // Unread on the bell: every kind but the open requests (the inbox shows those); a sign-in alert counts.
-  expect(bellBtn() && bellBtn().getAttribute("aria-label") === "4 new notifications" && text(bellBtn()).includes("4")
+  expect(bellBtn() && bellBtn().getAttribute("aria-label") === "3 new notifications" && text(bellBtn()).includes("3")
     && tabCountOf("Chat") === "1", "notifications: the bell says how many are new; the chat tab its unread chats");
   // The header's right block: Chat, Notifications, the gear, the profile; the Chat badge is the hub's unread chat messages.
   const chatBtn = () => header.querySelector("a.chat-button");
@@ -4651,8 +4648,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const bellItem = (title) => bellPanel().querySelectorAll(".bell-items li").find((li) => text(li).includes(title));
   const bellLinks = bellPanel().querySelectorAll(".bell-items a").map((a) => a.getAttribute("href"));
   expect(!bellPanel().hidden && bellBtn().getAttribute("aria-expanded") === "true"
-    && JSON.stringify(bellLinks) === JSON.stringify(["#/p/maity/agents", "#/account/sessions", "#/p/maity/board", "#/p/maity/chat/agt-a", "#/all", "#/p/sample/inbox", "#/p/maity/board"])
-    && bellPanel().querySelectorAll(".bell-items li.unread").length === 6 && text(bellPanel()).includes("Mentions 1"),
+    && JSON.stringify(bellLinks) === JSON.stringify(["#/admin", "#/account/sessions", "#/p/maity/tasks/tsk-0004", "#/p/maity/chat/agt-a", "#/all", "#/p/sample/inbox/req-s001"])
+    && bellPanel().querySelectorAll(".bell-items li.unread").length === 5 && text(bellPanel()).includes("Mentions 1"),
     "notifications: the bell lists the latest, each linking to where it happened by its target, unread ones marked");
   // Escape closes it with the focus still on the bell.
   bellBtn().dispatch("keydown", { key: "Escape" });
@@ -4660,18 +4657,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   bellBtn().click(); await tick(); await tick();
   const maityBefore = Number(chipCount("Maity"));
   bellItem("Agent A in agent-a").querySelector("a").click(); for (let k = 0; k < 4; k++) await tick();
-  expect(JSON.stringify(nPosts[0]) === JSON.stringify(["/me/notifications/read", { ids: ["ntf-4237"] }]) && bellBtn().getAttribute("aria-label") === "3 new notifications"
+  expect(JSON.stringify(nPosts[0]) === JSON.stringify(["/me/notifications/read", { ids: ["ntf-4237"] }]) && bellBtn().getAttribute("aria-label") === "2 new notifications"
     && Number(chipCount("Maity")) === maityBefore - 1, "notifications: opening an item marks it read, and the counts follow");
   // A sign-in alert is never confirmed by opening it (§2.6.5, §18.3).
   bellBtn().click(); await tick(); await tick();
   expect(text(bellPanel()).includes("stays unread: opening it here does not confirm it") && text(bellPanel()).includes("This was me under Sessions"),
     "notifications: the panel says a sign-in alert stays unread until This was me under Sessions");
   bellItem("New sign-in").querySelector("a").click(); for (let k = 0; k < 4; k++) await tick();
-  expect(nPosts.length === 1 && bellBtn().getAttribute("aria-label") === "3 new notifications", "notifications: opening a sign-in alert marks nothing");
+  expect(nPosts.length === 1 && bellBtn().getAttribute("aria-label") === "2 new notifications", "notifications: opening a sign-in alert marks nothing");
   bellBtn().click(); await tick(); await tick();
   btn(bellPanel(), "Mark all read").click(); for (let k = 0; k < 4; k++) await tick();
   const maityOpen = (await win.Maity.api.get("/me")).projects.find((x) => x.slug === "maity").open_requests;
-  expect(JSON.stringify(nPosts[1]) === JSON.stringify(["/me/notifications/read", { up_to: "4241.7" }]) && bellBtn().getAttribute("aria-label") === "1 new notification"
+  expect(JSON.stringify(nPosts[1]) === JSON.stringify(["/me/notifications/read", { up_to: "4239.8" }]) && bellBtn().getAttribute("aria-label") === "1 new notification"
     && Number(chipCount("Maity")) === maityOpen,
     "notifications: Mark all read marks up to the bell's position, never the sign-in alert; the project's count is its open requests again");
   bellBtn().click(); await tick(); await tick();
@@ -4715,14 +4712,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Notification.requestPermission = async () => { asked += 1; win.Notification.permission = "granted"; return "granted"; };
   await go("#/account/notifications");
   expect(byId("notify-browser") && !byId("notify-browser").checked && asked === 0 && text(main).includes("has not been asked yet")
-    && byId("notify-kind-card").attrs.disabled !== undefined, "notifications: the settings, off, the browser not asked on opening them");
-  expect(!byId("notify-kind-keep_the_why"), "notifications: a hub whose settings do not list Keep the Why shows no switch for it");
+    && byId("notify-kind-chat").attrs.disabled !== undefined, "notifications: the settings, off, the browser not asked on opening them");
+  const ksKinds = () => main.querySelectorAll("input").filter((i) => (i.getAttribute("id") || "").startsWith("notify-kind-")).map((i) => i.getAttribute("id").slice(12));
+  expect(JSON.stringify(ksKinds()) === JSON.stringify(["inbox", "chat", "mention", "security"]),
+    "notifications: the switches are the four kinds a human reacts to " + JSON.stringify(ksKinds()));
+  // Settings stored before 2026-10-26 may still name removed kinds (§18.4): no switch for them; a kind the hub does not list, none either.
   const ksGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/me/notification-settings"
-    ? ksGet(p).then((x) => ({ ...x, kinds: x.kinds.concat(["keep_the_why"]), browser: { ...x.browser, kinds: { ...x.browser.kinds, keep_the_why: true } } })) : ksGet(p));
+    ? ksGet(p).then((x) => ({ ...x, kinds: ["inbox", "chat", "mention", "card", "ticker"], browser: { ...x.browser, kinds: { ...x.browser.kinds, card: true, ticker: false } } })) : ksGet(p));
   win.Maity.notify.state.settings = null;
   await go("#/all"); await go("#/account/notifications");
-  expect(byId("notify-kind-keep_the_why") && byId("notify-kind-keep_the_why").checked, "notifications: a hub that lists Keep the Why has its switch, on by default");
+  expect(JSON.stringify(ksKinds()) === JSON.stringify(["inbox", "chat", "mention"]), "notifications: old kinds in stored settings get no switch, an unlisted kind none " + JSON.stringify(ksKinds()));
   win.Maity.api.get = ksGet; win.Maity.notify.state.settings = null;
   await go("#/all"); await go("#/account/notifications");
   const fresh = [
@@ -4738,9 +4738,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("notify-browser").checked = true; byId("notify-browser").dispatch("change"); for (let k = 0; k < 8; k++) await tick();
   expect(asked === 1 && byId("notify-browser").checked && text(main).includes("Browser notifications are on.") && text(main).includes("This browser shows them."),
     "notifications: turning them on asks the browser once, and saves the wish");
-  expect(polls.length >= 1 && /after=4241\.7&wait=55/.test(polls[0]) && shownNotes.length === 1 && shownNotes[0][0] === "Agent A in agent-a"
+  expect(polls.length >= 1 && /after=4239\.8&wait=55/.test(polls[0]) && shownNotes.length === 1 && shownNotes[0][0] === "Agent A in agent-a"
     && shownNotes[0][1].tag === "ntf-5001" && !shownNotes[0][1].body.includes("secret text"),
-    "notifications: a new chat is shown with its id as tag, without its text; a card (off) and one's own are not");
+    "notifications: a new chat is shown with its id as tag, without its text; a removed kind (card) and one's own are not");
   shownNotes.length = 0;
   // Something arrives on the hub before the next start: a restart begins at the hub's head then, not at the page's first one.
   const headNow = "4300.7";
@@ -5154,7 +5154,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     { id: "ntf-open", kind: "inbox", title: "Duplicate request", project: { slug: "maity", name: "Maity" }, target: { type: "request", id: "req-open" } },
     { id: "ntf-answer", kind: "inbox", title: "Answered request", project: { slug: "maity", name: "Maity" }, target: { type: "request", id: "req-done" } },
     { id: "ntf-security", kind: "security", title: "Security alert", target: { type: "session", id: "ses-1" } },
-    ...Array.from({ length: 201 }, (_, i) => ({ id: "ntf-card-" + i, kind: "card", at: "2026-10-24T01:00:00Z", title: "Card " + i, project: { slug: "sample", name: "Sample" }, target: { type: "task", id: "tsk-" + i } }))
+    ...Array.from({ length: 201 }, (_, i) => ({ id: "ntf-men-" + i, kind: "mention", at: "2026-10-24T01:00:00Z", title: "Mention " + i, project: { slug: "sample", name: "Sample" }, target: { type: "task", id: "tsk-" + i } }))
   ];
   const waitRequests = [{ slug: "maity", id: "req-open", status: "open" }];
   const waitingGroups = win.Maity.waiting.rows(waitRows, waitRequests, "");
@@ -5162,6 +5162,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "waiting: one conversation row with unread count and newest title");
   expect(waitingGroups.inbox.length === 1 && waitingGroups.inbox[0].item.id === "ntf-answer" && waitingGroups.account.length === 1,
     "waiting: open requests fold once; answers and account alerts remain");
+  // Only what asks for a reaction (§18.8, 2026-10-26): a pending registration is a row among the requests; cards, the ticker and jour fixe are not here.
+  const waitNarrow = win.Maity.waiting.rows([
+    { id: "ntf-reg", kind: "inbox", at: "2026-10-24T02:00:00Z", title: "newcomer waits for approval", project: null, target: { type: "registration", id: "hum-n" } },
+    { id: "ntf-c", kind: "card", at: "2026-10-24T02:00:00Z", title: "old card", project: { slug: "maity" }, target: { type: "task", id: "tsk-1" } },
+    { id: "ntf-t", kind: "ticker", at: "2026-10-24T02:00:00Z", title: "old ticker", project: { slug: "maity" }, target: { type: "project", id: "maity" } },
+    { id: "ntf-s", kind: "system", at: "2026-10-24T02:00:00Z", title: "old system", project: null, target: { type: "settings", id: "x" } }], [], "");
+  expect(JSON.stringify(Object.keys(waitNarrow)) === JSON.stringify(["inbox", "chat", "mention", "account"]) && waitNarrow.inbox.length === 1
+    && waitNarrow.inbox[0].item.id === "ntf-reg" && waitNarrow.account.length === 0 && win.Maity.notify.linkOf(waitNarrow.inbox[0].item) === "#/admin",
+    "waiting: four groups; a pending registration among the requests, leading to Admin; removed kinds left out");
+  // What asks for an action stays unread when opened; an older hub's removed kinds are no notification here.
+  expect(win.Maity.notify.keepsUnread({ kind: "inbox", target: { type: "registration", id: "x" } }) && win.Maity.notify.keepsUnread({ kind: "inbox", target: { type: "settings", id: "mail" } })
+    && win.Maity.notify.keepsUnread({ kind: "security", target: { type: "session" } }) && !win.Maity.notify.keepsUnread({ kind: "inbox", target: { type: "request", id: "r" } })
+    && !win.Maity.notify.known({ kind: "card" }) && !win.Maity.notify.known({ kind: "keep_the_why" }) && win.Maity.notify.known({ kind: "mention" }),
+    "notifications: a registration, a disabled address and a sign-in alert stay unread when opened; removed kinds are not shown");
+  const openMatterLeak = (await win.Maity.api.get("/me/notifications?limit=20")).items.some((x) => "open_matter" in x);
+  expect(!openMatterLeak, "notifications: the mock answers no fixture-only field");
+  const narrowRefused = await win.Maity.api.get("/me/notifications?kind=card").catch((err) => err);
+  expect(narrowRefused.code === "invalid" && narrowRefused.details.fields.kind === "removed_kind", "notifications: the mock refuses a removed kind as the hub does");
   const waitCalls = [], waitWrites = [], waitDisposers = [];
   let waitFilter = "", waitVersion = 0, waitRelease = null, waitPolls = 0;
   win.Maity.notify.state.available = true;
@@ -5195,6 +5213,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(waitChat).includes("2+ unread"), "waiting: past the 200 a conversation's count is a lower bound, said with a plus");
   waitChat.querySelector("a").click(); await tick();
   expect(JSON.stringify(waitWrites[0]) === JSON.stringify(["/me/notifications/read", { ids: ["ntf-w2"] }]), "waiting: opening a conversation marks its newest item read");
+  // A pending registration's row stays until the registration is decided: opening it marks nothing.
+  const waitRegHost = document.createElement("div");
+  const waitRegGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p.startsWith("/me/notifications?unread=true")
+    ? Promise.resolve({ items: [{ id: "ntf-reg-1", kind: "inbox", at: "2026-10-24T02:00:00Z", title: "newcomer waits for approval", project: null,
+      target: { type: "registration", id: "hum-n" }, read: false }, { id: "ntf-old-1", kind: "card", at: "2026-10-24T02:00:00Z", title: "old card", project: { slug: "maity" }, target: { type: "task", id: "tsk-1" }, read: false }], next_cursor: null })
+    : waitRegGet(p));
+  const waitRegDispose = [];
+  const waitRegView = win.Maity.waiting.mount(Object.assign({}, waitCtx, { onDispose: (fn) => waitRegDispose.push(fn) }), waitRegHost, [], () => "");
+  await waitRegView.ready;
+  const waitRegRow = waitRegHost.querySelectorAll(".waiting-item").find((el) => el.getAttribute("data-notification") === "ntf-reg-1");
+  const waitWritesBefore = waitWrites.length;
+  waitRegRow.querySelector("a").click(); await tick();
+  expect(waitWrites.length === waitWritesBefore && waitRegRow.querySelector("a").getAttribute("href") === "#/admin" && !text(waitRegHost).includes("old card"),
+    "waiting: a pending registration's row leads to Admin and is not marked read by opening it; an old hub's card is not listed");
+  waitRegDispose.forEach((fn) => fn());
+  win.Maity.api.get = waitRegGet;
   // A busy stream: five events in a row are one refresh once they settle.
   const waitBefore = waitCalls.length;
   waitVersion = 1; for (let i = 0; i < 5; i++) win.Maity.notify.changed();
@@ -5205,7 +5240,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!text(waitHost).includes("Newest chat"), "waiting: a read update removes the conversation without replacing requests");
   expect(waitPolls <= 1, "waiting: one shared long-poll while browser notifications are off");
   // A backlog of 1226 unread: the list mounts at once, says it is reading, and stops at 200 rows with the way to the rest.
-  const bigRows = Array.from({ length: 1226 }, (_, i) => ({ id: "ntf-big-" + i, kind: "card", at: "2026-10-24T01:00:00Z", title: "Big " + i,
+  const bigRows = Array.from({ length: 1226 }, (_, i) => ({ id: "ntf-big-" + i, kind: "mention", at: "2026-10-24T01:00:00Z", title: "Big " + i,
     project: { slug: "maity", name: "Maity" }, target: { type: "task", id: "tsk-b" + i } }));
   const bigCalls = [];
   let bigHold = null;
