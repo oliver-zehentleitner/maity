@@ -805,6 +805,7 @@ def scenario(run: Run, page: Page) -> None:
     direct_removal_step(run, page, agent_id)
     attachments_step(run, page, agent_id)
     members_step(run, page)
+    invitations_step(run, page)
     message_step(run, page, alpha, agent_id)
     release_contract(run, page, alpha, agent_id, task["id"])
     signing_step(run, page, alpha, agent_id)
@@ -2105,6 +2106,62 @@ def join_expiry_step(run: Run, page: Page) -> None:
     run.shot(second, "join-expired")
     other.close()
     no_problems(run, "joins")
+
+
+def invitations_step(run: Run, page: Page) -> None:
+    """Invitations (docs/api.md §3.4) on the real hub: the owner invites from Members; a browser
+    without a session opens the link, signs in with it as next and comes back; joining is refused
+    in the hub's words (the only human there is a member already: without mail the e2e hub makes
+    no second account); revoked, the link is one uniform answer."""
+    paths = page.request.get(f"{run.base}/api/v1/openapi.json").json().get("paths", {})
+    if "/api/v1/projects/{slug}/invitations" not in paths:
+        run.step("invitations: this hub has none yet")
+        return
+    run.step("invitations: the owner invites a person from Members; the link is shown once")
+    page.goto(f"{run.base}/#/p/e2e-alpha/members")
+    box = page.locator("section.invitations")
+    expect(box).to_be_visible()
+    page.locator("#invite-role").select_option("reviewer")
+    page.locator("#invite-note").fill("Welcome to the e2e project.")
+    box.get_by_role("button", name="Create the invitation", exact=True).click()
+    shown = page.locator("#invite-url")
+    expect(shown).to_have_value(re.compile(r"#/invite/[A-Za-z0-9_-]{22}$"))
+    token = shown.input_value().rsplit("/", 1)[1]
+    expect(box.locator("li.invite-item.invite-open")).to_have_count(1)
+    run.a11y(page, "members, an invitation created")
+
+    run.step("invitations: a browser without a session opens the link, signs in and comes back to it")
+    other = page.context.browser.new_context()
+    try:
+        guest = other.new_page()
+        watch_page(run, guest)
+        guest.goto(f"{run.base}/#/invite/{token}")
+        card = guest.locator("article.invite")
+        expect(card).to_contain_text("Owner invites you to join E2E Alpha as reviewer.")
+        expect(card.locator(".invite-note")).to_have_text("Welcome to the e2e project.")
+        # A closed hub and no address: signing in is the one way in.
+        expect(card.get_by_role("link", name="Create one", exact=True)).to_have_count(0)
+        run.a11y(guest, "invitation page, signed out")
+        card.get_by_role("link", name="Sign in to accept", exact=True).click()
+        guest.locator("#login-handle").fill(OWNER)
+        guest.locator("#login-password").fill(OWNER_PASSWORD)
+        guest.locator("form.login").get_by_role("button", name="Sign in", exact=True).click()
+        expect(guest).to_have_url(re.compile(rf"#/invite/{token}$"))
+        join = guest.locator("article.invite").get_by_role("button", name=re.compile(r"^Join E2E Alpha as "))
+        expect(join).to_be_visible()
+        join.click()
+        expect(guest.locator("article.invite .send-status")).to_contain_text("(already_member)")
+        run.problems = [p for p in run.problems if p != f"POST /api/v1/invitations/{token}/accept answered 400"]
+
+        run.step("invitations: revoked by the owner, the link answers as an unknown one")
+        box.locator("li.invite-item.invite-open").get_by_role("button", name="Revoke", exact=True).click()
+        expect(box).to_contain_text("Revoked; the link no longer works.")
+        guest.reload()
+        expect(guest.locator("article.invite")).to_contain_text("This invitation cannot be used")
+        run.problems = [p for p in run.problems if p != f"GET /api/v1/invitations/{token} answered 404"]
+    finally:
+        other.close()
+    no_problems(run, "invitations")
 
 
 def members_step(run: Run, page: Page) -> None:
