@@ -231,7 +231,7 @@ def full_packet() -> dict[str, Any]:
 def test_no_string_in_the_packet_can_forge_a_line_or_reach_the_terminal(first: bool) -> None:
     text = onboarding.render(hostile(full_packet()), first=first)
     lines = text.splitlines()
-    assert [line for line in lines if line.startswith("Next:")] == [lines[-1 - 3 * first]]
+    assert [line for line in lines if line.startswith("Next:")] == [lines[-1 - 4 * first]]
     for bad in ("\x1b", "\x07", "\x9b", "\u202e", "\r"):
         assert bad not in text
     assert "\\x1b[1A" in text and "\\u202e" in text and "\\x9b" in text

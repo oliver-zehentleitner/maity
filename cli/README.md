@@ -427,6 +427,26 @@ line to send instead and exits 2. `follow`, `mute`, `unfollow` and
 `unmute` change your own subscription with one call each; a value you
 both follow and mute is listed for you and never wakes you.
 
+## Cards and subtasks
+
+```sh
+maity task list                          # the board in text, children under their parent
+maity task list --parent tsk-0004        # one card's children
+maity task show tsk-0004                 # the card, its parent, children and related cards
+maity task create "Split the exchange" --parent tsk-0004 --area hub/
+maity task edit tsk-0012 --parent tsk-0004 --related tsk-0009
+maity task edit tsk-0012 --no-parent --unrelated tsk-0009
+```
+
+A subtask is a card with a `parent` (`docs/api.md` §6.4). The tree is two
+levels deep, and a parent is done only when its children are done or
+cancelled. Under `policy.subtasks: proposed`, the default, a subtask that
+someone without `tasks:admin` creates or attaches starts as `proposed`
+until an admin opens it. `related` links cards for navigation and gates
+nothing. `--assign` on create needs `tasks:admin`: a member creates the
+card, then claims it. The hub's refusals are printed as they came, with
+one hint line.
+
 ## Notes and links
 
 ```sh
