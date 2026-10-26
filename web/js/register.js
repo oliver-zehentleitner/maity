@@ -17,6 +17,9 @@ window.Maity = window.Maity || {};
   }
 
   async function register(main, header, next) {
+    // Signed in, there is nothing to register: on to next, or the start.
+    const session = await M.api.get("/auth/session").then(() => true, () => false);
+    if (session) { window.location.replace(next ? next.slice(1) : "#/all"); return; }
     bar(header);
     document.title = "Create an account · Maity";
     const box = h("article", { class: "register" });
@@ -28,8 +31,9 @@ window.Maity = window.Maity || {};
     let invitation = null;
     try {
       if (await M.api.hubHas("GET", "/auth/methods")) methods = await M.api.get("/auth/methods");
-      const invited = next && /^\/#\/invite\/([^/?]+)$/.exec(next);
-      if (invited) invitation = await M.api.get("/invitations/" + invited[1]).catch(() => null);
+      // Only a token of the hub's form (§3.4) is asked about.
+      const invited = next && /^\/#\/invite\/([A-Za-z0-9_-]{22})$/.exec(next);
+      if (invited) invitation = await M.api.get("/invitations/" + encodeURIComponent(invited[1])).catch(() => null);
     } catch (err) {
       append(box, h("p", { class: "send-status failed" }, "Could not read how this hub registers: " + err.message));
       return;
@@ -88,7 +92,8 @@ window.Maity = window.Maity || {};
   function registerWords(err) {
     const d = err.details || {};
     if (d.reason === "registration_closed") return { message: "this hub does not create accounts right now" };
-    if (err.code === "rate_limited") return { message: "too many requests from here; try again in an hour" };
+    // Per source an hour, the instance's breaker a minute (§2.7.3): no promise of either.
+    if (err.code === "rate_limited") return { message: "too many requests just now; try again later" };
     if (d.fields) return { message: Object.entries(d.fields).map(([f, r]) => f + ": " + r).join("; ") };
     return err;
   }

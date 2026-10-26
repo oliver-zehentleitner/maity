@@ -1,27 +1,27 @@
 {
   "pages": {
-    "inv-open-token-000000001": { "project": { "slug": "maity", "name": "Maity" }, "role": "member", "invited_by": { "display_name": "Maintainer" },
+    "open-xxxxxxxxxxxxxxxx1": { "project": { "slug": "maity", "name": "Maity" }, "role": "member", "invited_by": { "display_name": "Maintainer" },
       "note": "You review the web side; D will brief you.", "expires_at": "2030-01-01T12:00:00Z", "address_bound": false, "registration": "sign_in_or_register" },
-    "inv-only-token-000000002": { "project": { "slug": "maity", "name": "Maity" }, "role": "reviewer", "invited_by": { "display_name": "Maintainer" },
+    "only-xxxxxxxxxxxxxxxx2": { "project": { "slug": "maity", "name": "Maity" }, "role": "reviewer", "invited_by": { "display_name": "Maintainer" },
       "note": null, "expires_at": "2030-01-01T12:00:00Z", "address_bound": false, "registration": "sign_in_only" },
-    "inv-bound-token-00000003": { "project": { "slug": "sample", "name": "Sample shop" }, "role": "member", "invited_by": { "display_name": "Maintainer" },
+    "bound-xxxxxxxxxxxxxxx3": { "project": { "slug": "sample", "name": "Sample shop" }, "role": "member", "invited_by": { "display_name": "Maintainer" },
       "note": null, "expires_at": "2030-01-01T12:00:00Z", "address_bound": true, "registration": "sign_in_or_register" },
-    "inv-mismatch-token-00004": { "project": { "slug": "maity", "name": "Maity" }, "role": "member", "invited_by": { "display_name": "Maintainer" },
+    "mismatch-xxxxxxxxxxxx4": { "project": { "slug": "maity", "name": "Maity" }, "role": "member", "invited_by": { "display_name": "Maintainer" },
       "note": null, "expires_at": "2030-01-01T12:00:00Z", "address_bound": true, "registration": "sign_in_or_register" },
-    "inv-member-token-0000005": { "project": { "slug": "maity", "name": "Maity" }, "role": "member", "invited_by": { "display_name": "Maintainer" },
+    "member-xxxxxxxxxxxxxx5": { "project": { "slug": "maity", "name": "Maity" }, "role": "member", "invited_by": { "display_name": "Maintainer" },
       "note": null, "expires_at": "2030-01-01T12:00:00Z", "address_bound": false, "registration": "sign_in_or_register" },
-    "inv-void-token-000000006": { "project": { "slug": "maity", "name": "Maity" }, "role": "admin", "invited_by": { "display_name": "Maintainer" },
+    "void-xxxxxxxxxxxxxxxx6": { "project": { "slug": "maity", "name": "Maity" }, "role": "admin", "invited_by": { "display_name": "Maintainer" },
       "note": null, "expires_at": "2030-01-01T12:00:00Z", "address_bound": false, "registration": "sign_in_only" },
-    "inv-closed-token-0000007": { "project": { "slug": "maity", "name": "Maity" }, "role": "member", "invited_by": { "display_name": "Maintainer" },
+    "closed-xxxxxxxxxxxxxx7": { "project": { "slug": "maity", "name": "Maity" }, "role": "member", "invited_by": { "display_name": "Maintainer" },
       "note": null, "expires_at": "2030-01-01T12:00:00Z", "address_bound": false, "registration": "sign_in_only" },
-    "inv-pending-token-000008": { "project": { "slug": "maity", "name": "Maity" }, "role": "member", "invited_by": { "display_name": "Maintainer" },
+    "pending-xxxxxxxxxxxxx8": { "project": { "slug": "maity", "name": "Maity" }, "role": "member", "invited_by": { "display_name": "Maintainer" },
       "note": null, "expires_at": "2030-01-01T12:00:00Z", "address_bound": false, "registration": "sign_in_or_register" }
   },
   "refusals": {
-    "inv-mismatch-token-00004": { "status": 403, "code": "forbidden", "message": "this invitation is for another address", "details": { "reason": "invitation_address_mismatch" } },
-    "inv-member-token-0000005": { "status": 400, "code": "invalid", "message": "the request does not validate", "details": { "fields": { "token": "already_member" } } },
-    "inv-void-token-000000006": { "status": 403, "code": "forbidden", "message": "the person who invited you can no longer give this role", "details": { "reason": "invitation_void" } },
-    "inv-closed-token-0000007": { "status": 409, "code": "project_closed", "message": "the project is closed", "details": {} },
-    "inv-pending-token-000008": { "status": 403, "code": "forbidden", "message": "your account waits for approval", "details": { "reason": "account_pending" } }
+    "mismatch-xxxxxxxxxxxx4": { "status": 403, "code": "forbidden", "message": "this invitation is for another address", "details": { "reason": "invitation_address_mismatch" } },
+    "member-xxxxxxxxxxxxxx5": { "status": 400, "code": "invalid", "message": "the request does not validate", "details": { "fields": { "token": "already_member" } } },
+    "void-xxxxxxxxxxxxxxxx6": { "status": 403, "code": "forbidden", "message": "the person who invited you can no longer give this role", "details": { "reason": "invitation_void" } },
+    "closed-xxxxxxxxxxxxxx7": { "status": 409, "code": "project_closed", "message": "the project is closed", "details": {} },
+    "pending-xxxxxxxxxxxxx8": { "status": 403, "code": "forbidden", "message": "your account waits for approval", "details": { "reason": "account_pending" } }
   }
 }

@@ -72,6 +72,11 @@ window.Maity = window.Maity || {};
           : h("p", { class: "muted" }, "This hub does not create new accounts: sign in with an account you have, or ask " + inv.invited_by.display_name + " for another way in."));
       return;
     }
+    // An account that waits for approval accepts nothing yet (§2.7.5, §3.4).
+    if (me.account_status === "pending") {
+      append(ways, h("p", null, "Your account waits for the operator's approval. The invitation waits for you: open this link again once you are approved."));
+      return;
+    }
     // Signed in: one button, the hub's refusal in its own words (§3.4).
     const status = M.statusLine();
     status.el.setAttribute("tabindex", "-1");
@@ -129,7 +134,7 @@ window.Maity = window.Maity || {};
     const address = h("input", { id: "invite-address", type: "email", autocomplete: "off", placeholder: "Optional: only this address may accept" });
     const ttl = h("select", { id: "invite-ttl" }, TTLS.map(([v, l]) => h("option", { value: String(v) }, l)));
     ttl.value = "86400";
-    const note = h("textarea", { id: "invite-note", rows: "2", maxlength: "1024", placeholder: "Optional: shown on the invitation page" });
+    const note = h("textarea", { id: "invite-note", rows: "2", maxlength: "1024", placeholder: "Optional: shown on the invitation page (at most 1 KiB)" });
     const submit = h("button", { type: "submit" }, "Create the invitation");
     const form = h("form", {
       class: "invite-form inline-form",
@@ -138,6 +143,12 @@ window.Maity = window.Maity || {};
         const body = { role: role.value, ttl_seconds: Number(ttl.value) };
         if (address.value.trim()) body.address = address.value.trim();
         if (note.value.trim()) body.note = note.value.trim();
+        // The hub counts the note in UTF-8 bytes (§3.4, 1 KiB), not characters.
+        if (body.note && encodeURIComponent(body.note).replace(/%[0-9A-F]{2}/g, "x").length > 1024) {
+          status.fail("Not created: ", { message: "the note is longer than 1 KiB" });
+          note.focus();
+          return;
+        }
         submit.disabled = true;
         status.busy("Creating…");
         let made;

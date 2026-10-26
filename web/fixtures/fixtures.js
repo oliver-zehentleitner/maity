@@ -1012,7 +1012,7 @@ window.MAITY_FIXTURES = {
   },
   "invitations.json": {
     "pages": {
-      "inv-bound-token-00000003": {
+      "bound-xxxxxxxxxxxxxxx3": {
         "address_bound": true,
         "expires_at": "2030-01-01T12:00:00Z",
         "invited_by": {
@@ -1026,7 +1026,7 @@ window.MAITY_FIXTURES = {
         "registration": "sign_in_or_register",
         "role": "member"
       },
-      "inv-closed-token-0000007": {
+      "closed-xxxxxxxxxxxxxx7": {
         "address_bound": false,
         "expires_at": "2030-01-01T12:00:00Z",
         "invited_by": {
@@ -1040,7 +1040,7 @@ window.MAITY_FIXTURES = {
         "registration": "sign_in_only",
         "role": "member"
       },
-      "inv-member-token-0000005": {
+      "member-xxxxxxxxxxxxxx5": {
         "address_bound": false,
         "expires_at": "2030-01-01T12:00:00Z",
         "invited_by": {
@@ -1054,7 +1054,7 @@ window.MAITY_FIXTURES = {
         "registration": "sign_in_or_register",
         "role": "member"
       },
-      "inv-mismatch-token-00004": {
+      "mismatch-xxxxxxxxxxxx4": {
         "address_bound": true,
         "expires_at": "2030-01-01T12:00:00Z",
         "invited_by": {
@@ -1068,7 +1068,7 @@ window.MAITY_FIXTURES = {
         "registration": "sign_in_or_register",
         "role": "member"
       },
-      "inv-only-token-000000002": {
+      "only-xxxxxxxxxxxxxxxx2": {
         "address_bound": false,
         "expires_at": "2030-01-01T12:00:00Z",
         "invited_by": {
@@ -1082,7 +1082,7 @@ window.MAITY_FIXTURES = {
         "registration": "sign_in_only",
         "role": "reviewer"
       },
-      "inv-open-token-000000001": {
+      "open-xxxxxxxxxxxxxxxx1": {
         "address_bound": false,
         "expires_at": "2030-01-01T12:00:00Z",
         "invited_by": {
@@ -1096,7 +1096,7 @@ window.MAITY_FIXTURES = {
         "registration": "sign_in_or_register",
         "role": "member"
       },
-      "inv-pending-token-000008": {
+      "pending-xxxxxxxxxxxxx8": {
         "address_bound": false,
         "expires_at": "2030-01-01T12:00:00Z",
         "invited_by": {
@@ -1110,7 +1110,7 @@ window.MAITY_FIXTURES = {
         "registration": "sign_in_or_register",
         "role": "member"
       },
-      "inv-void-token-000000006": {
+      "void-xxxxxxxxxxxxxxxx6": {
         "address_bound": false,
         "expires_at": "2030-01-01T12:00:00Z",
         "invited_by": {
@@ -1126,13 +1126,13 @@ window.MAITY_FIXTURES = {
       }
     },
     "refusals": {
-      "inv-closed-token-0000007": {
+      "closed-xxxxxxxxxxxxxx7": {
         "code": "project_closed",
         "details": {},
         "message": "the project is closed",
         "status": 409
       },
-      "inv-member-token-0000005": {
+      "member-xxxxxxxxxxxxxx5": {
         "code": "invalid",
         "details": {
           "fields": {
@@ -1142,7 +1142,7 @@ window.MAITY_FIXTURES = {
         "message": "the request does not validate",
         "status": 400
       },
-      "inv-mismatch-token-00004": {
+      "mismatch-xxxxxxxxxxxx4": {
         "code": "forbidden",
         "details": {
           "reason": "invitation_address_mismatch"
@@ -1150,7 +1150,7 @@ window.MAITY_FIXTURES = {
         "message": "this invitation is for another address",
         "status": 403
       },
-      "inv-pending-token-000008": {
+      "pending-xxxxxxxxxxxxx8": {
         "code": "forbidden",
         "details": {
           "reason": "account_pending"
@@ -1158,7 +1158,7 @@ window.MAITY_FIXTURES = {
         "message": "your account waits for approval",
         "status": 403
       },
-      "inv-void-token-000000006": {
+      "void-xxxxxxxxxxxxxxxx6": {
         "code": "forbidden",
         "details": {
           "reason": "invitation_void"
