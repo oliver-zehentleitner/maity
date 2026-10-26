@@ -133,20 +133,21 @@ def _from_events(conn: Connection, where: Scope, mine: Membership, now: datetime
     if not rows:
         return []
     hidden = events.hidden_redactions(conn, rows, mine.row)
-    marks = set(
+    marks = set(  # by range, not a list of every seq: the rows bound it
         conn.execute(
             select(t.notification_read.c.seq).where(
                 t.notification_read.c.human_id == where.human_id,
-                t.notification_read.c.seq.in_([r.seq for r in rows]),
+                t.notification_read.c.seq.between(rows[0].seq, rows[-1].seq),
             )
         ).scalars()
     )
     chats = _chat_marks(conn, mine)
+    look = Lookup(conn, mine, [r for r in rows if r.actor_membership != mine.id])
     items = []
     for row in rows:
         if row.actor_membership == mine.id:
             continue  # a human's own actions never notify them
-        item = _classify(conn, where, mine, row, hidden)
+        item = _classify(look, where, mine, row, hidden)
         if item is None:
             continue
         if item.kind == "chat" or (item.kind == "mention" and row.conversation_id is not None):
@@ -158,7 +159,7 @@ def _from_events(conn: Connection, where: Scope, mine: Membership, now: datetime
 
 
 def _classify(
-    conn: Connection, where: Scope, mine: Membership, row: Any, hidden: frozenset[str]
+    look: Lookup, where: Scope, mine: Membership, row: Any, hidden: frozenset[str]
 ) -> Item | None:
     """The one item an event gives this human, or None: `inbox` wins over everything,
     `mention` over `card` and `chat` (§18.1)."""
@@ -174,11 +175,11 @@ def _classify(
         "redacted": bool(row.redacted),
     }
     if row.kind.startswith("request_") and readable:
-        request = _request(conn, row.subject_id)
+        request = look.request(row.subject_id)
         if request is None or request.personal:
             return None  # a personal request is one item, from its record
         mine_too = (
-            inbox.addressed_to(conn, request, mine)
+            inbox.addressed_to(look.conn, request, mine)
             if row.kind == "request_created"
             else inbox.is_asker(request, mine)
         )
@@ -187,7 +188,7 @@ def _classify(
         verb = "asks" if row.kind == "request_created" else "answered"
         if row.kind == "request_withdrawn":
             verb = "withdrew"
-        who = _name(conn, row.actor_membership) if row.actor_membership else "Maity"
+        who = look.name(row.actor_membership) if row.actor_membership else "Maity"
         return Item(
             kind="inbox",
             title=_cut(f"{who} {verb}: {request.title}"),
@@ -197,11 +198,11 @@ def _classify(
         )
     if row.kind == "message" and readable:
         mentioned = principal in [m.get("member_id") for m in payload.get("mentions") or []]
-        writer = _name(conn, row.actor_membership)
+        writer = look.name(row.actor_membership)
         if row.conversation_id is not None and f"member:{principal}" in (row.audience or []):
-            title = f"{writer} in {_handle(conn, row.conversation_id)}"
+            title = f"{writer} in {look.handle(row.conversation_id)}"
             if mentioned:
-                title = f"{writer} mentioned you in {_handle(conn, row.conversation_id)}"
+                title = f"{writer} mentioned you in {look.handle(row.conversation_id)}"
             return Item(
                 kind="mention" if mentioned else "chat",
                 title=None if row.redacted else _cut(title),
@@ -223,7 +224,7 @@ def _classify(
         return Item(
             kind="mention",
             title=_cut(
-                f"{_name(conn, row.actor_membership)} mentioned you in "
+                f"{look.name(row.actor_membership)} mentioned you in "
                 f"{task.get('id')} {task.get('title')}"
             ),
             target={"type": "task", "id": str(task.get("id"))},
@@ -231,16 +232,16 @@ def _classify(
             **base,
         )
     if row.kind in CARD_EVENTS:
-        card = _card(conn, row.subject_id)
+        card = look.card(row.subject_id)
         if card is None:
             return None
-        reason = _card_reason(conn, card, mine)
+        reason = _card_reason(look, card, mine)
         # A watch is no audience token: the watcher's check is reading the card (§18.1).
         if reason is None or not (readable or reason == "watcher"):
             return None
         return Item(
             kind="card",
-            title=_cut(f"{card.id} {card.title}: {_change(conn, row, card)}"),
+            title=_cut(f"{card.id} {card.title}: {_change(look, row, card)}"),
             target={"type": "task", "id": card.id},
             url=_url(where, f"/#/p/{project.slug}/board?task={card.id}"),
             reason=reason,
@@ -249,12 +250,12 @@ def _classify(
     if row.kind == "placement_reported" and readable:
         if payload.get("state") != "failed" and payload.get("reason") != "quota":
             return None
-        placement = conn.execute(
+        placement = look.conn.execute(
             select(t.placement).where(t.placement.c.id == row.subject_id)
         ).first()
-        if placement is None or not _concerns_placement(conn, placement, principal):
+        if placement is None or not _concerns_placement(look.conn, placement, principal):
             return None
-        agent = _placement_handle(conn, placement)
+        agent = _placement_handle(look.conn, placement)
         why = payload.get("reason") or payload.get("state")
         return Item(
             kind="agent",
@@ -274,7 +275,7 @@ def _classify(
     return None
 
 
-def _card_reason(conn: Connection, card: Any, mine: Membership) -> str | None:
+def _card_reason(look: Lookup, card: Any, mine: Membership) -> str | None:
     """Which relation makes the card the human's, the first in §18.2's order."""
     if card.created_by == mine.id:
         return "creator"
@@ -282,21 +283,16 @@ def _card_reason(conn: Connection, card: Any, mine: Membership) -> str | None:
         return "assignee"
     if card.claim_holder == mine.id:
         return "holder"
-    if _owned_agent(conn, card.claim_holder, mine.row.human_id):
+    if look.owned_agent(card.claim_holder, mine.row.human_id):
         return "agent_holder"
-    if _owned_agent(conn, card.assigned_to, mine.row.human_id):
+    if look.owned_agent(card.assigned_to, mine.row.human_id):
         return "agent_assignee"
-    watching = conn.execute(
-        select(t.card_watch.c.card_id).where(
-            t.card_watch.c.card_id == card.id, t.card_watch.c.membership_id == mine.id
-        )
-    ).first()
-    if watching is not None or mine.row.human_id in ((card.contract or {}).get("watchers") or []):
+    if look.watching(card.id) or mine.row.human_id in ((card.contract or {}).get("watchers") or []):
         return "watcher"
     return None
 
 
-def _change(conn: Connection, row: Any, card: Any) -> str:
+def _change(look: Lookup, row: Any, card: Any) -> str:
     payload = row.payload or {}
     if row.kind == "task_created":
         return "created"
@@ -306,7 +302,7 @@ def _change(conn: Connection, row: Any, card: Any) -> str:
     if row.kind in ("task_claimed", "task_assigned"):
         verb = "claimed" if row.kind == "task_claimed" else "assigned"
         holder = payload.get("holder")
-        return f"{verb} by {_principal_name(conn, holder)}" if holder else verb
+        return f"{verb} by {look.principal_name(holder)}" if holder else verb
     return "released" if row.kind == "task_released" else "reported"
 
 
@@ -436,6 +432,141 @@ def _actor(conn: Connection, membership_id: int | None) -> dict[str, Any] | None
         "display_name": _name(conn, membership_id),
         "avatar_url": avatars.urls(conn, [principal])[principal],
     }
+
+
+class Lookup:
+    """What classifying a batch of one project's event rows reads, each kind in one query
+    for the whole batch instead of one per row: the cards and requests the rows name, the
+    human's watches among those cards, the memberships behind actors and holders, and
+    the profiles and humans behind them. Every answer equals the single lookup's below;
+    an id the batch did not name falls back to it."""
+
+    def __init__(self, conn: Connection, mine: Membership, rows: list[Any]) -> None:
+        self.conn = conn
+        self.mine_id = mine.id
+        self.card_ids = {r.subject_id for r in rows if r.kind in CARD_EVENTS and r.subject_id}
+        self.request_ids = {
+            r.subject_id for r in rows if r.kind.startswith("request_") and r.subject_id
+        }
+        self.cards = _by_id(conn, t.card, self.card_ids)
+        self.requests = _by_id(conn, t.request, self.request_ids)
+        self.watched = (
+            set(
+                conn.execute(
+                    select(t.card_watch.c.card_id).where(
+                        t.card_watch.c.membership_id == mine.id,
+                        t.card_watch.c.card_id.in_(self.card_ids),
+                    )
+                ).scalars()
+            )
+            if self.card_ids
+            else set()
+        )
+        self.member_ids = {r.actor_membership for r in rows if r.actor_membership is not None}
+        for card in self.cards.values():
+            self.member_ids |= {m for m in (card.claim_holder, card.assigned_to) if m is not None}
+        self.members = {
+            row.id: (row.human_id, row.agent_id)
+            for row in (
+                conn.execute(
+                    select(
+                        t.membership.c.id, t.membership.c.human_id, t.membership.c.agent_id
+                    ).where(t.membership.c.id.in_(self.member_ids))
+                ).all()
+                if self.member_ids
+                else []
+            )
+        }
+        holders = {
+            str((r.payload or {}).get("holder"))
+            for r in rows
+            if r.kind in ("task_claimed", "task_assigned") and (r.payload or {}).get("holder")
+        }
+        principals = holders | {h or a for h, a in self.members.values() if h or a}
+        principals |= {r.conversation_id for r in rows if r.conversation_id is not None}
+        self.human_ids = {p for p in principals if p.startswith("hum-")}
+        self.agent_ids = principals - self.human_ids
+        self.humans = dict(
+            conn.execute(
+                select(t.human.c.id, t.human.c.display_name).where(t.human.c.id.in_(self.human_ids))
+            ).all()
+            if self.human_ids
+            else []
+        )
+        self.agents = {
+            row.id: (row.handle, row.owner_id)
+            for row in (
+                conn.execute(
+                    select(
+                        t.agent_profile.c.id, t.agent_profile.c.handle, t.agent_profile.c.owner_id
+                    ).where(t.agent_profile.c.id.in_(self.agent_ids))
+                ).all()
+                if self.agent_ids
+                else []
+            )
+        }
+
+    def card(self, card_id: str | None) -> Any:
+        if card_id is None or card_id not in self.card_ids:
+            return _card(self.conn, card_id)
+        return self.cards.get(card_id)
+
+    def request(self, request_id: str | None) -> Any:
+        if request_id is None or request_id not in self.request_ids:
+            return _request(self.conn, request_id)
+        return self.requests.get(request_id)
+
+    def watching(self, card_id: str) -> bool:
+        if card_id not in self.card_ids:
+            watch = self.conn.execute(
+                select(t.card_watch.c.card_id).where(
+                    t.card_watch.c.card_id == card_id, t.card_watch.c.membership_id == self.mine_id
+                )
+            ).first()
+            return watch is not None
+        return card_id in self.watched
+
+    def name(self, membership_id: int | None) -> str:
+        if membership_id not in self.member_ids:
+            return _name(self.conn, membership_id)
+        found = self.members.get(membership_id)
+        if found is None:
+            return "someone"
+        human_id, agent_id = found
+        return self.principal_name(human_id or agent_id)
+
+    def principal_name(self, principal: str | None) -> str:
+        if principal is None:
+            return "someone"
+        if principal.startswith("hum-"):
+            if principal not in self.human_ids:
+                return _principal_name(self.conn, principal)
+            return str(self.humans.get(principal) or principal)
+        if principal not in self.agent_ids:
+            return _principal_name(self.conn, principal)
+        handle = self.agents.get(principal, (None, None))[0]
+        return f"{handle or principal} (agent)"
+
+    def handle(self, agent_id: str) -> str:
+        if agent_id not in self.agent_ids:
+            return _handle(self.conn, agent_id)
+        return str(self.agents.get(agent_id, (None, None))[0] or agent_id)
+
+    def owned_agent(self, membership_id: int | None, human_id: str) -> bool:
+        if membership_id is None:
+            return False
+        if membership_id not in self.member_ids:
+            return _owned_agent(self.conn, membership_id, human_id)
+        agent_id = (self.members.get(membership_id) or (None, None))[1]
+        if agent_id is None:
+            return False
+        return bool(self.agents.get(agent_id, (None, None))[1] == human_id)
+
+
+def _by_id(conn: Connection, table: Any, ids: set[str]) -> dict[str, Any]:
+    if not ids:
+        return {}
+    return {row.id: row for row in conn.execute(select(table).where(table.c.id.in_(ids))).all()}
 
 
 # --- small lookups -------------------------------------------------------------------
