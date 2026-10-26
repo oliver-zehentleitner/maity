@@ -228,6 +228,7 @@ window.Maity = window.Maity || {};
 
     // A message of this chat fetches what is new; a change of the chat
     // (people, title) is drawn in place; a removal takes the text out.
+    let resyncBefore = null;
     ctx.onEvents(async (events) => {
       if (events.some((e) => /^conversation_/.test(e.kind) && ((e.subject && e.subject.id === id) || (e.payload && e.payload.id === id)))) {
         refreshView();
@@ -235,9 +236,14 @@ window.Maity = window.Maity || {};
       // The global chat (js/chats.js) holds no feed: the chat itself and its
       // newest page are read again, its removals and deleted files taken over.
       if (events.some((e) => e.kind === parts.RESYNC)) {
-        refreshView();
+        await refreshView();
         try {
-          const page = await M.api.get(path + "?before=" + encodeURIComponent(cursor + 1) + "&limit=" + parts.HISTORY_PAGE);
+          // One page per nudge, walking back over what is shown (js/chat.js).
+          const before = resyncBefore || cursor + 1;
+          const page = await M.api.get(path + "?before=" + encodeURIComponent(before) + "&limit=" + parts.HISTORY_PAGE);
+          const oldestShown = all.length ? all[0].seq : 0;
+          const lowest = page.items.length ? Math.min(...page.items.map((m) => m.seq)) : null;
+          resyncBefore = lowest !== null && page.items.length === parts.HISTORY_PAGE && lowest > oldestShown ? lowest : null;
           let changed = false;
           page.items.forEach((m) => {
             const at = all.findIndex((x) => x.seq === m.seq);

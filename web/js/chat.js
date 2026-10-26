@@ -427,22 +427,22 @@ window.Maity = window.Maity || {};
     if (unreadFailed) pollStatus.fail("Which messages are new could not be read: ", unreadFailed);
 
     let checking = false;
+    // Where the last check stopped: one page per check, the next one goes on
+    // from there, so a long tail is never read in one go.
+    let deliveryFrom = null;
     async function checkDelivery() {
       if (!pending.size || checking) return;
       checking = true;
       try {
         // From just before the oldest pending message on (after=<seq>,
-        // oldest first, docs/api.md §9), page by page.
-        let after = Math.min(...pending.keys()) - 1;
-        for (;;) {
-          const page = await M.api.get(path + "?after=" + encodeURIComponent(after) + "&limit=200");
-          page.items.forEach((m) => {
-            const update = pending.get(m.seq);
-            if (update && m.delivered_at) { update(m); pending.delete(m.seq); }
-          });
-          if (page.items.length < 200 || !pending.size) break;
-          after = page.items[page.items.length - 1].seq;
-        }
+        // oldest first, docs/api.md §9), one page.
+        const after = Math.max(Math.min(...pending.keys()) - 1, deliveryFrom || 0);
+        const page = await M.api.get(path + "?after=" + encodeURIComponent(after) + "&limit=200");
+        page.items.forEach((m) => {
+          const update = pending.get(m.seq);
+          if (update && m.delivered_at) { update(m); pending.delete(m.seq); }
+        });
+        deliveryFrom = page.items.length === 200 && pending.size ? page.items[page.items.length - 1].seq : null;
       } catch (err) {
         pollStatus.fail("Whether your messages were picked up could not be read: ", err);
       } finally {
@@ -469,13 +469,13 @@ window.Maity = window.Maity || {};
       // The global chat has no feed to say what changed in what is shown: it
       // asks for the newest page again (before=, which marks nothing read)
       // and takes its removals and deleted files over.
-      if (events.some((e) => e.kind === RESYNC)) resync();
+      if (events.some((e) => e.kind === RESYNC)) await resync();
       // A message of this chat removed (§8.5): its text goes at once.
       events.filter((e) => e.kind === "event_redacted" && e.payload)
         .forEach((e) => markRemoved(e.payload.seq, e.actor && e.actor.member_id, e.payload.reason));
       events.filter((e) => e.kind === "attachment_deleted" && e.payload)
         .forEach((e) => M.attachments.markDeleted(messages, e.payload.attachment_id));
-      if (events.some((e) => e.actor && e.actor.member_id === agent.id)) checkDelivery();
+      if (events.some((e) => e.actor && e.actor.member_id === agent.id)) await checkDelivery();
       if (!events.some(mentions)) return;
       try {
         const fresh = await M.api.get(path + "?after=" + encodeURIComponent(cursor));
@@ -489,9 +489,16 @@ window.Maity = window.Maity || {};
         pollStatus.fail("New messages could not be fetched: ", err);
       }
     });
+    // One page per nudge, newest first, walking back over what is shown and
+    // starting at the newest again once it reached the oldest.
+    let resyncBefore = null;
     async function resync() {
       try {
-        const page = await M.api.get(path + "?before=" + encodeURIComponent(cursor + 1) + "&limit=" + HISTORY_PAGE);
+        const before = resyncBefore || cursor + 1;
+        const page = await M.api.get(path + "?before=" + encodeURIComponent(before) + "&limit=" + HISTORY_PAGE);
+        const oldestShown = Math.min(...shown);
+        const lowest = page.items.length ? Math.min(...page.items.map((m) => m.seq)) : null;
+        resyncBefore = lowest !== null && page.items.length === HISTORY_PAGE && lowest > oldestShown ? lowest : null;
         page.items.filter((m) => shown.has(m.seq)).forEach((m) => {
           if (isRemoved(m)) markRemoved(m.seq, m.redaction && m.redaction.by, m.redaction && m.redaction.reason);
           (m.attachments || []).filter((a) => a.deleted_at).forEach((a) => M.attachments && M.attachments.markDeleted(messages, a.id));

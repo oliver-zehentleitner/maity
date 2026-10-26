@@ -4576,6 +4576,45 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const gxRemoved = main.querySelectorAll("ol.messages li.msg").find((li) => li.getAttribute("data-seq") === String(gxLastSeq));
   expect(gxRemoved && gxRemoved.querySelector(".msg-redacted") && !gxRemoved.querySelector(".md"),
     "chats: a message removed elsewhere shows as removed in the open chat after the stream's nudge");
+  // Bounded: each nudge reads one page of what is shown, walking back page by page, one delivery page at most,
+  // and never a second update alongside a slow one.
+  const gxCalls = [];
+  let gxInflight = 0, gxMaxInflight = 0;
+  const gxHold = [];
+  win.Maity.api.get = (p) => {
+    gxCalls.push(p);
+    if (/\/conversations\/agt-a\/messages\?before=/.test(p) && !p.includes("before=5000")) {
+      return Promise.resolve({ items: Array.from({ length: 200 }, (_, i) => ({ seq: 5000 + i, from: "agt-a", body: "x", sent_at: "2026-10-21T13:00:00Z", attachments: [] })), cursor: 5199 });
+    }
+    if (/\/conversations\/agt-a\/messages\?after=\d+$/.test(p)) {
+      gxInflight++; gxMaxInflight = Math.max(gxMaxInflight, gxInflight);
+      return new Promise((resolve) => gxHold.push(() => { gxInflight--; resolve(gxGet(p)); }));
+    }
+    return gxGet(p);
+  };
+  win.Maity.api.getAll = (p) => {
+    gxCalls.push(p);
+    if (!p.endsWith("/conversations?observed=true")) return gxGetAll(p);
+    gxInflight++; gxMaxInflight = Math.max(gxMaxInflight, gxInflight);
+    return new Promise((resolve) => gxHold.push(() => { gxInflight--; resolve(gxGetAll(p)); }));
+  };
+  const gxStart = gxCalls.length;
+  win.Maity.notify.changed(); await new Promise((r) => setTimeout(r, 450)); for (let k = 0; k < 4; k++) await tick();
+  win.Maity.notify.changed(); await new Promise((r) => setTimeout(r, 450)); for (let k = 0; k < 4; k++) await tick();
+  win.Maity.notify.changed(); await new Promise((r) => setTimeout(r, 450)); for (let k = 0; k < 4; k++) await tick();
+  const gxTick = fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+  expect(gxMaxInflight <= 1, "chats: slow reads never overlap: one update in flight, the rest waits for it (" + gxMaxInflight + " held reads at once)");
+  for (let round = 0; round < 12 && gxHold.length; round++) { gxHold.splice(0).forEach((f) => f()); for (let k = 0; k < 6; k++) await tick(); }
+  win.Maity.api.getAll = (p) => { gxCalls.push(p); return gxGetAll(p); };
+  gxHold.splice(0).forEach((f) => f());
+  await gxTick;
+  const gxBefores = gxCalls.slice(gxStart).filter((p) => p.includes("/conversations/agt-a/messages?before=")).map((p) => /before=(\d+)/.exec(p)[1]);
+  const gxDelivery = gxCalls.slice(gxStart).filter((p) => /\/conversations\/agt-a\/messages\?after=\d+&limit=200$/.test(p));
+  expect(gxBefores.length >= 2 && gxBefores[1] === "5000" && gxBefores.length <= 3,
+    "chats: the open chat's re-read walks back one page per pass, from where it stopped " + JSON.stringify(gxBefores));
+  expect(gxDelivery.length <= gxBefores.length, "chats: at most one delivery page per pass " + gxDelivery.length);
+  win.Maity.api.get = (p) => { gxGets.push(p); return gxGet(p); };
+  win.Maity.api.getAll = (p) => { gxGets.push(p); return gxGetAll(p); };
   // Every 30 seconds the members are read too: a new name shows in the list.
   const gxMembers = gxGetAll;
   win.Maity.api.getAll = (p) => (p === "/projects/maity/members"

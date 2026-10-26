@@ -115,27 +115,43 @@ window.Maity = window.Maity || {};
 
     // The stream says something changed: the list once it settles, and the
     // open conversation what came after it, as its project's feed would.
-    let settle = null;
-    const nudge = () => {
-      window.clearTimeout(settle);
-      settle = window.setTimeout(() => {
-        list.refresh();
-        if (!pctx) return;
+    // One update at a time: the pane's reads, the lists and (every 30
+    // seconds) the members; whatever is asked for meanwhile is one pass
+    // after it, never a second one alongside.
+    let running = null;
+    let next = null;
+    let disposed = false;
+    async function update(withMembers) {
+      if (withMembers) {
+        // Names, presence, a newly joined agent of one's own; the open pane
+        // keeps its draft and focus, and draws with them from then on.
+        await Promise.all(Object.values(pctxs).map((x) => M.api.getAll(x.base + "/members")
+          .then((r) => { M.withMembers(x, r.items); }, () => null)));
+      }
+      if (pctx) {
         const changed = [{ kind: "message", seq: Number.MAX_SAFE_INTEGER, actor: { member_id: open.id }, payload: { type: "chat", conversation_id: open.id } },
           { kind: M.chatParts.RESYNC }];
-        pctx.listeners.forEach((fn) => fn(changed));
-      }, SETTLE_MS);
-    };
+        await Promise.all(pctx.listeners.map((fn) => Promise.resolve(fn(changed)).catch(() => null)));
+      }
+      await list.refresh();
+    }
+    function run(withMembers) {
+      if (disposed) return null;
+      if (running) { next = { withMembers: (next && next.withMembers) || withMembers }; return running; }
+      running = update(withMembers).finally(() => {
+        running = null;
+        if (!next || disposed) return;
+        const again = next;
+        next = null;
+        run(again.withMembers);
+      });
+      return running;
+    }
+    let settle = null;
+    const nudge = () => { window.clearTimeout(settle); settle = window.setTimeout(() => run(false), SETTLE_MS); };
     const unsubscribe = M.notify.state.available ? M.notify.subscribe(nudge) : () => {};
-    ctx.onDispose(() => { window.clearTimeout(settle); unsubscribe(); });
-    // Every 30 seconds the members too (names, presence, a newly joined agent
-    // of one's own), as a project's Chat tab reads them; the open pane keeps
-    // its draft and focus, and draws with them from then on.
-    ctx.every(M.chatParts.LIST_MS, async () => {
-      await Promise.all(Object.values(pctxs).map((x) => M.api.getAll(x.base + "/members")
-        .then((r) => { M.withMembers(x, r.items); }, () => null)));
-      list.refresh();
-    });
+    ctx.onDispose(() => { disposed = true; window.clearTimeout(settle); unsubscribe(); });
+    ctx.every(M.chatParts.LIST_MS, () => run(true));
 
     if (!open || !pctx) {
       append(root, h("div", { class: "chat-layout" + (open ? " open" : "") }, list.el,
