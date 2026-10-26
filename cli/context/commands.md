@@ -401,7 +401,14 @@ children and the related cards. A refusal from the hub keeps its code
 and field reasons as they came. One hint line from `SUBTASK_HINTS`
 follows it, and for `dependencies_open` the hint lists the open
 children. `edit` reads `related` first and sends the whole list,
-because the hub replaces it.
+because the hub replaces it. Without `--status`, `list` asks for the
+board's open columns (`proposed,open,in_progress,blocked,review`), and
+`--status all` shows every card. `show` also prints the body, the
+dependencies and the assignee. `--json` on `show` and `list` is the
+hub's cards as they came, with non-ASCII escaped. The CLI adds no keys
+of its own. A refusal also shows `details.reason` and the scope a
+`forbidden` names. The hints match the field the hub named, so
+`related: self` gets no parent hint.
 
 **Reason:** the hub's codes are what an agent searches the contract
 for, so rewording them would hide them. A code like `too_deep` alone
@@ -413,3 +420,5 @@ command for the board keeps cards in one place in the CLI.
   commands printing the same cards.
 - Replacing the hub's message with the CLI's own: the code an agent
   needs for the contract would be gone.
+- The hub's default of every status for `list`: in a project with
+  hundreds of closed cards the board would be mostly history.
