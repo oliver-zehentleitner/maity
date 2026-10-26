@@ -95,7 +95,8 @@ of them took the pool from every other call, the health probe included.
 
 **Decision:** between two looks, a held long-poll reads `listing.stamp`. That is a few
 aggregates: the memberships, each project's highest event, the account records and their
-reads, the event items' read marks and the chat marks. The full answer runs only when the
+reads, the event items' read marks, the chat marks and the watched cards (a watch
+writes no event). The full answer runs only when the
 stamp differs; a read mark counts as movement. Full answers and marks pass a semaphore of
 four per process. Request threads are capped at pool size plus overflow, so a full pool
 queues requests in the hub instead of failing them after the pool timeout. The marks are
