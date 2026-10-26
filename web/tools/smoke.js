@@ -4534,14 +4534,49 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = rcGet;
   await fireIntervals(); for (let k = 0; k < 3; k++) await tick();
   await go("#/chats"); for (let k = 0; k < 4; k++) await tick();
-  const chLinks = main.querySelectorAll(".chats-all a");
-  expect(plainTitle() === "Chats · Maity" && chLinks.length === 7 && chLinks.slice(0, 2).every((a) => a.className === "conv unread")
-    && !chLinks.slice(2).some((a) => a.className.includes("unread"))
-    && chLinks[0].getAttribute("href") === "#/p/maity/chat/cnv-0007" && text(chLinks[0]).startsWith("Release 0.2 go/no-go, Maity")
-    && chLinks[1].getAttribute("href") === "#/p/maity/chat/agt-a" && text(chLinks[1]).includes("1 unread")
-    && chLinks[6].getAttribute("href") === "#/p/sample/chat/agt-s1" && text(chLinks[6]).includes("Sample shop")
-    && header.querySelector("a.chat-button").getAttribute("aria-current") === "page",
-    "chats: every project's chats in one list, unread first, then the newest, each with its project and opening in it");
+  const chLinks = main.querySelectorAll(".chat-list a.conv");
+  expect(plainTitle() === "Chats · Maity" && main.querySelector(".chat-layout") && !main.querySelector(".chat-layout.open")
+    && chLinks.length === 7 && chLinks.slice(0, 2).every((a) => a.className === "conv unread") && !chLinks.slice(2).some((a) => a.className.includes("unread"))
+    && chLinks[0].getAttribute("href") === "#/chats/maity/cnv-0007" && text(chLinks[0]).endsWith("in Maity")
+    && chLinks[1].getAttribute("href") === "#/chats/maity/agt-a" && text(chLinks[1]).includes("1 unread")
+    && chLinks[6].getAttribute("href") === "#/chats/sample/agt-s1" && text(chLinks[6]).endsWith("in Sample shop")
+    && text(main).includes("Pick a conversation.") && header.querySelector("a.chat-button").getAttribute("aria-current") === "page",
+    "chats: the Chat tab's layout with every project's chats, unread first, then the newest, each with its project");
+  // Opening one keeps the global view: its messages and composer in place, the list beside it, its unread gone.
+  const gxGets = [], gxPosts = [];
+  const gxGet = win.Maity.api.get, gxGetAll = win.Maity.api.getAll, gxPost = win.Maity.api.post;
+  win.Maity.api.get = (p) => { gxGets.push(p); return gxGet(p); };
+  win.Maity.api.getAll = (p) => { gxGets.push(p); return gxGetAll(p); };
+  win.Maity.api.post = (p, b) => { if (p.includes("/conversations/")) gxPosts.push([p, b]); return gxPost(p, b); };
+  await go(chLinks[1].getAttribute("href")); for (let k = 0; k < 8; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  const gxConv = (href) => main.querySelectorAll(".chat-list a.conv").find((a) => a.getAttribute("href") === href);
+  expect(win.location.hash === "#/chats/maity/agt-a" && main.querySelector(".chat-layout.open") && main.querySelector("section.chat-pane")
+    && byId("chat-text") && main.querySelectorAll(".chat-list a.conv").length === 7 && gxConv("#/chats/maity/agt-a").getAttribute("aria-current") === "page"
+    && !gxConv("#/chats/maity/agt-a").className.includes("unread") && main.querySelector(".chat-back").getAttribute("href") === "#/chats"
+    && !gxGets.some((p) => p.includes("/events")), "chats: a conversation opens in the global view, the list beside it, read, and no project feed is opened");
+  byId("chat-text").value = "Across projects"; main.querySelector("form.compose").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(gxPosts[0]) === JSON.stringify(["/projects/maity/conversations/agt-a/messages", { body: "Across projects" }])
+    && text(main.querySelector("ol.messages")).includes("Across projects"), "chats: sending from the global view posts to the conversation's project");
+  // The notifications stream drives it: a burst is one re-read of the lists and one fetch of the open conversation.
+  const gxBefore = gxGets.length;
+  for (let k = 0; k < 4; k++) win.Maity.notify.changed();
+  await tick();
+  expect(gxGets.length === gxBefore, "chats: stream events wait to settle");
+  await new Promise((r) => setTimeout(r, 450)); for (let k = 0; k < 6; k++) await tick();
+  const gxAfter = gxGets.slice(gxBefore);
+  // (The open chat reads the list once more after its fetch, as in a project; a message still being delivered is checked.)
+  const gxLists = gxAfter.filter((p) => p.endsWith("/conversations?observed=true"));
+  expect(gxLists.length <= 4 && ["maity", "sample"].every((sl) => gxLists.filter((p) => p.includes("/projects/" + sl + "/")).length <= 2)
+    && gxAfter.filter((p) => /\/conversations\/agt-a\/messages\?after=\d+$/.test(p)).length === 1
+    && !gxAfter.some((p) => p.includes("/events")), "chats: a burst of stream events is one round of list reads and one fetch of the open chat " + JSON.stringify(gxAfter));
+  // A group chat of another project opens the same way, in its project's context.
+  await go("#/chats/maity/cnv-0007"); for (let k = 0; k < 8; k++) await tick();
+  expect(main.querySelector(".chat-layout.open") && main.querySelectorAll(".chat-list a.conv").length === 7 && text(main).includes("Release 0.2 go/no-go")
+    && main.querySelector(".chat-back") && main.querySelector(".chat-back").getAttribute("href") === "#/chats", "chats: a group chat opens in the global view too");
+  await go("#/chats/nowhere/agt-a"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main).includes("No project of yours with the slug nowhere."), "chats: an unknown project is said");
+  win.Maity.api.get = gxGet; win.Maity.api.getAll = gxGetAll; win.Maity.api.post = gxPost;
+
   await go("#/p/maity/inbox"); for (let k = 0; k < 2; k++) await tick();
   const nPosts = [];
   const nPost = win.Maity.api.post;

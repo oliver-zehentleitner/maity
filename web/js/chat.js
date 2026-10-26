@@ -341,22 +341,27 @@ window.Maity = window.Maity || {};
 
   // What js/group-chat.js draws with: the same history, Markdown, quotes,
   // drafts, sizing and the same reading of mentions.
-  M.chatParts = { timeline, quoteOf, withoutCode, atBottom, follower, fitToScreen, drafts, isRemoved, askReason, HISTORY_PAGE };
+  M.chatParts = { timeline, quoteOf, withoutCode, atBottom, follower, fitToScreen, drafts, isRemoved, askReason, HISTORY_PAGE,
+    chatsOf, ordered, listItem, LIST_MS };
 
   // One focus handler for the page; it serves the chat view on screen.
   let onFocus = null;
   window.addEventListener("focus", () => { if (onFocus) onFocus(); });
 
-  M.views.chat = async function (ctx, root, args) {
+  // given.list: a conversation list of the caller's (the global chat's,
+  // js/chats.js), which refreshes itself; the project's own otherwise.
+  M.views.chat = async function (ctx, root, args, given) {
     const mine = ctx.members.filter((m) => m.kind === "agent" && m.owner_id === ctx.me.id);
     const agent = args[0] ? mine.find((m) => m.id === args[0]) : null;
     const groupsServed = await M.groupChat.served();
-    const list = conversations(ctx, args[0] || null, groupsServed);
+    const list = (given && given.list) || conversations(ctx, args[0] || null, groupsServed);
     const layout = h("div", { class: "chat-layout" + (args[0] ? " open" : "") }, list.el);
     append(root, layout);
     const isChat = (e) => e.kind === "message" && e.payload && e.payload.type === "chat";
-    ctx.onEvents((events) => { if (events.some((e) => isChat(e) || /^conversation_|^event_redacted$/.test(e.kind))) list.refresh(false); });
-    ctx.every(LIST_MS, () => list.refresh(true));
+    if (!given) {
+      ctx.onEvents((events) => { if (events.some((e) => isChat(e) || /^conversation_|^event_redacted$/.test(e.kind))) list.refresh(false); });
+      ctx.every(LIST_MS, () => list.refresh(true));
+    }
     // A new group chat, or a group chat the hub lists (§9.2, js/group-chat.js).
     if (args[0] === "new") {
       if (groupsServed) M.groupChat.create(ctx, layout, list);

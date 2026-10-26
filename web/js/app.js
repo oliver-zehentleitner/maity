@@ -88,7 +88,7 @@ window.Maity = window.Maity || {};
     if (parts[0] === "notifications") return { scope: "notifications" };
     // A project's public swarm page (§6.22), with or without a session.
     if (parts[0] === "s" && parts[1]) return { scope: "public-swarm", slug: parts[1] };
-    if (parts[0] === "chats") return { scope: "chats" };
+    if (parts[0] === "chats") return { scope: "chats", args: parts.slice(1) };
     // The login page, always reachable (docs/api.md §16.7); signed in, the root.
     if (parts[0] === "login") return { scope: "login" };
     if (parts[0] === "all") return { scope: "all" };
@@ -1049,6 +1049,24 @@ window.Maity = window.Maity || {};
     return withMembers(ctx, members.items);
   }
 
+  // One project's context inside a view that is not the project's (the
+  // global chat, js/chats.js): its project, members and role, its own
+  // listeners and no events feed of its own. chatLink builds the links of
+  // its chats, so that they stay in that view.
+  M.projectContext = async (ctx, slug, chatLink) => {
+    const mine = ctx.projects.find((p) => p.slug === slug);
+    if (!mine) throw new M.api.ApiError("You are not a member of the project " + slug, 404, "/me", "not_found");
+    const pctx = Object.assign({}, ctx, {
+      slug, role: mine.role, canAdmin: mine.role === "owner" || mine.role === "admin", isOwner: mine.role === "owner",
+      base: "/projects/" + encodeURIComponent(slug), listeners: [], outsider: false,
+    });
+    pctx.onEvents = (fn) => { pctx.listeners.push(fn); };
+    pctx.link = (view, ...rest) => (view === "chat" ? chatLink(slug, rest[0]) : projectLink(slug, view, ...rest));
+    const [project, members] = await Promise.all([M.api.get(pctx.base), M.api.getAll(pctx.base + "/members")]);
+    pctx.project = project;
+    return withMembers(pctx, members.items);
+  };
+
   // Timers belong to one render; the next render stops them.
   let timers = [];
   let disposers = [];
@@ -1270,7 +1288,7 @@ window.Maity = window.Maity || {};
       } else if (where.scope === "notifications") {
         await M.waiting.full(ctx, root);
       } else if (where.scope === "chats") {
-        await M.views.chats(ctx, root);
+        await M.views.chats(ctx, root, where.args || []);
       } else if (where.scope === "observe") {
         await M.views.observe(ctx, root, where);
       } else if (where.scope === "new") {
