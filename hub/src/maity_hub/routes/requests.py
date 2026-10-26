@@ -157,6 +157,7 @@ def request_view(conn: Connection, row: Any, *, with_proposal: bool = False) -> 
         "answered_at": ts(row.answered_at),
         "placement": placements.request_summary(conn, row.placement_id),
         "personal": bool(row.personal),
+        "filed_by": row.filed_by,
         "holder": _holder(conn, row),
         "forwarding": row.forwarding or [],
         "humans_only": inbox.humans_only(row),
@@ -439,7 +440,12 @@ def _addressee_audience(conn: Connection, mine: Membership, to: inbox.Addressee)
 
 
 def _asker_audience(conn: Connection, row: Any) -> list[str]:
-    members = [principal_id(conn, row.asked_by), principal_id(conn, row.on_behalf_of)]
+    # A notice the hub files has no asker who reads it: never the agent it names (§7).
+    members = (
+        []
+        if row.filed_by == "hub"
+        else [principal_id(conn, row.asked_by), principal_id(conn, row.on_behalf_of)]
+    )
     audience = list(dict.fromkeys(f"member:{m}" for m in members if m))
     if row.personal and _member_of(conn, row.project_id, row.to_human) is not None:
         audience.append(f"member:{row.to_human}")  # the owner, when a member (§7)
@@ -664,7 +670,7 @@ def get_request(slug: str, request_id: str, request: Request, caller: AnyCaller)
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
         row = _project_request(conn, mine, request_id)
-        if row.personal and not inbox.is_asker(row, mine):
+        if row.personal and (row.filed_by == "hub" or not inbox.is_asker(row, mine)):
             raise not_found()  # the project route never tells anyone else it exists (§7)
         if not inbox.may_read(conn, row, mine):
             raise forbidden(
@@ -746,6 +752,8 @@ def answer(
     def action(conn: Connection) -> idempotency.Outcome:
         mine = _locked(conn, membership(conn, caller, slug))
         row = _project_request(conn, mine, request_id)
+        if row.filed_by == "hub":
+            raise not_found()  # no asker reads a hub notice through the project (§7)
         if row.personal:  # answered by its human through POST /requests/{id}/answer (§7)
             # TODO(§6.17): the asking instance, once instances exist; same-team instances
             # share the member id until then.
@@ -1533,6 +1541,86 @@ def withdraw_personal(
         return idempotency.Outcome(200, "request", row.id, view)
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+SEEN = [{"id": "seen", "label": "Seen", "detail": None}]
+
+
+def file_hub_notice(
+    conn: Connection, project_id: str, member_id: int, agent_id: str, title_text: str, summary: str
+) -> str:
+    """A notice the hub files to the owner of agent profile `agent_id` on the agent's
+    behalf (`filed_by: hub`, §7): class `info`, one option `seen`, `asked_by` the agent's
+    member with no instance. Its events reach the owner only, and only when a member."""
+    owner = conn.execute(
+        select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == agent_id)
+    ).scalar_one()
+    request_id = new_id("request")
+    conn.execute(
+        insert(t.request).values(
+            {
+                "id": request_id,
+                "project_id": project_id,
+                "class": "info",
+                "title": title_text[: t.TITLE],
+                "summary": summary,
+                "options": SEEN,
+                "priority": "normal",
+                "to_kind": "profile_owner",
+                "to_profile": agent_id,
+                "to_human": owner,
+                "personal": True,
+                "filed_by": "hub",
+                "asked_by": member_id,
+                "asked_session_id": None,
+                "while_open": "wait",
+                "status": "open",
+                "created_at": clock.now(),
+            }
+        )
+    )
+    row = _row(conn, request_id)
+    records.personal_request(conn, row)
+    emit(
+        conn,
+        project_id,
+        "request_created",
+        _asker_audience(conn, row),
+        _payload(row, request_view(conn, row)),
+        subject=("request", request_id),
+    )
+    return request_id
+
+
+def withdraw_hub_notice(conn: Connection, request_id: str | None, reason: str) -> None:
+    """Withdraw a hub notice that is still open; one already answered or withdrawn by its
+    owner stays as it is."""
+    if request_id is None:
+        return
+    row = _row(conn, request_id)
+    done = conn.execute(
+        update(t.request)
+        .where(t.request.c.id == request_id, t.request.c.status == "open")
+        .values(
+            status="withdrawn",
+            withdrawn_at=clock.now(),
+            withdraw_reason=reason,
+            changed_by_credential=None,
+            **_snapshot(conn, row),
+        )
+    ).rowcount
+    if done != 1:
+        return
+    closed = _row(conn, request_id)
+    records.personal_request(conn, closed)
+    emit(
+        conn,
+        row.project_id,
+        "request_withdrawn",
+        _asker_audience(conn, row),
+        _payload(row, request_view(conn, closed)),
+        subject=("request", request_id),
+    )
 
 
 def _personal_inbox(

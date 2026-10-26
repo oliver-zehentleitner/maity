@@ -564,6 +564,8 @@ def set_desired(
     changed = _write(conn, placement.id, by, desired=desired)
     if desired == "stopped":
         revoke_unused_joins(conn, t.join_link.c.placement_id == placement.id)
+        if terminal(placement.reported) and is_current(placement):
+            end_outage(conn, changed, "the agent was stopped")  # nothing left to stop
     if desired == "stopped" and tell_agent:
         _stop_requested(conn, changed, actor, by)
     announce(conn, placement.id, "placement_updated", actor)
@@ -622,6 +624,7 @@ def close_now(
 ) -> Any:
     if placement.active is None:
         return placement
+    end_outage(conn, placement, "the placement was closed")
     if placement.desired == "running" and closed_reason in STOP_TOLD:
         # Every change to `desired: stopped` tells the agent (§15.10), a close at once too.
         _stop_requested(conn, placement, actor, by)
@@ -657,6 +660,8 @@ def close_uniform(
     )
     if nobody_reports:
         return close_now(conn, placement, closed_reason, actor, by)
+    # Deleted, or its project archived (§15.7): over now, not when the runner reports.
+    end_outage(conn, placement, "the placement is closing")
     stopping = placement.desired != "stopped"
     changed = _write(conn, placement.id, by, desired="stopped", closing=closed_reason)
     if stopping:
@@ -933,9 +938,83 @@ def report(conn: Connection, placement: Any, body: dict[str, Any], actor: Actor)
         # A rate limit is the agent's limit (§6.12, §15.7); the next other report ends it.
         availability.runner_reported(conn, placement, body["state"], body.get("retry_at"), actor)
     after = row(conn, placement.id)
+    if current:
+        outage_reported(conn, after, fields)
+        after = row(conn, after.id)
     if current and after.closing is not None and terminal(fields):
         return close_now(conn, after, after.closing, actor, None)
     return after
+
+
+# --- outages (§15.7) -------------------------------------------------------------------------
+
+
+def stops_the_agent(report: dict[str, Any]) -> bool:
+    """`failed` with any reason, or `exited` with `quota`: the runner will not start the
+    agent again by itself. `rate_limited` restarts at `retry_at` and opens nothing."""
+    return report["state"] == "failed" or (
+        report["state"] == "exited" and report.get("reason") == "quota"
+    )
+
+
+def outage_reported(conn: Connection, placement: Any, report: dict[str, Any]) -> None:
+    """A current report opens an outage, or ends one (§15.7). The same outage reported
+    again files nothing; a report the stop asked for is no outage."""
+    if report["state"] == "running":
+        end_outage(conn, placement, "the agent runs again")
+    elif placement.desired == "stopped" and terminal(report):
+        end_outage(conn, placement, "the agent was stopped")
+    elif (
+        stops_the_agent(report)
+        and placement.desired == "running"
+        and placement.outage_since is None
+        and placement.membership_id is not None  # a profile still to be made has no owner
+    ):
+        _open_outage(conn, placement, report)
+
+
+def _open_outage(conn: Connection, placement: Any, report: dict[str, Any]) -> None:
+    from maity_hub.routes.requests import file_hub_notice
+
+    agent = conn.execute(
+        select(t.agent_profile.c.id, t.agent_profile.c.handle)
+        .join(t.membership, t.membership.c.agent_id == t.agent_profile.c.id)
+        .where(t.membership.c.id == placement.membership_id)
+    ).one()
+    runner_name = conn.execute(
+        select(t.runner.c.name).where(t.runner.c.id == placement.runner_id)
+    ).scalar()
+    reason = _one_line(report.get("reason"))
+    why = reason if report.get("detail") is None else f"{reason}, {_one_line(report['detail'])}"
+    request_id = file_hub_notice(
+        conn,
+        placement.project_id,
+        placement.membership_id,
+        agent.id,
+        f"{agent.handle} on {runner_name or placement.id} stopped: {reason}",
+        f"Placement {placement.id} on runner {runner_name or '-'} reported {report['state']}"
+        f" ({why}) at {report['reported_at']} (UTC); restarts {report['restarts']}.",
+    )
+    conn.execute(
+        update(t.placement)
+        .where(t.placement.c.id == placement.id)
+        .values(outage_since=clock.now(), outage_request_id=request_id)
+    )
+
+
+def end_outage(conn: Connection, placement: Any, reason: str) -> None:
+    """End the placement's open outage and withdraw its notice when still open; the next
+    failing report opens a new one."""
+    if placement.outage_since is None:
+        return
+    from maity_hub.routes.requests import withdraw_hub_notice
+
+    withdraw_hub_notice(conn, placement.outage_request_id, reason)
+    conn.execute(
+        update(t.placement)
+        .where(t.placement.c.id == placement.id)
+        .values(outage_since=None, outage_request_id=None)
+    )
 
 
 def _stamp(value: datetime | None) -> str | None:
