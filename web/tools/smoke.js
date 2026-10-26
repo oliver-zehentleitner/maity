@@ -3032,7 +3032,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const dsWait = main.querySelector(".device-waiting");
   expect(dsWait && text(dsWait).includes("Waiting for approval on your other device") && text(dsWait.querySelector(".match-number")) === "47" && !text(dsWait).includes("Maintainer"),
     "device code: the new device shows the number to pick and nothing of the account");
+  // Simulate the signed-in approving device in this single-session fixture.
+  await win.Maity.api.post("/auth/login", { handle: "maintainer", password: "a long new password" });
+  await win.Maity.api.get("/auth/session");
   await win.Maity.api.post("/auth/device-codes/" + dsMade.id + "/approve", { number: 47 });
+  await win.Maity.api.post("/auth/logout");
   await fireIntervals(); await dsSettle(); await dsSettle();
   expect(!byId("login-handle") && !main.querySelector(".error") && win.location.hash !== "#/sign-in/code?c=k7qm4xpr", "device code: approved, the new device is signed in and leaves the code's URL");
   // A link by mail, and its six-digit code.
@@ -5795,6 +5799,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const [p, q] = url.replace("/api/v1", "").split("?");
     const json = (status, data) => ({ ok: status < 400, status, statusText: "x",
       headers: { get: (k) => (k === "Maity-Error" && data.error ? data.error.code : k === "Maity-Server-Time" ? HUB_TIME : null) }, json: async () => data });
+    if (mode === "expired" && p !== "/openapi.json" && p !== "/auth/methods") return json(401, { error: { code: "unauthenticated", message: "Session ended" } });
     if (init.method === "POST") {
       if (mode === "reject") return json(403, { error: { code: "csrf_mismatch", message: "CSRF token mismatch", details: {} } });
       const r = F["maity/requests.json"].items.find((x) => p.includes(x.id));
@@ -5830,6 +5835,61 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const post2 = calls.find((c) => c.method === "POST");
   expect(post2 && post2.headers["X-CSRF-Token"] === "fixture-csrf-token", "no cookie: token from /auth/session");
   expect(text(main).includes("Not sent: CSRF token mismatch (reload the page"), "csrf_mismatch shown on the entry");
+  mode = "ok";
+  await go("#/p/maity/inbox");
+  const staleFetch = ctx.fetch;
+  const held = new Map();
+  let oldPageReads = 0;
+  ctx.fetch = (url, init) => {
+    if (url.includes("/held-page")) oldPageReads++;
+    if (url.includes("/held-") || url.endsWith("/auth/session")) return new Promise((resolve) => held.set(url, resolve));
+    return staleFetch(url, init);
+  };
+  const oldPage = win.Maity.api.getAll("/held-page").catch((err) => err);
+  const oldSuccess = win.Maity.api.get("/held-success").catch((err) => err);
+  const old401 = win.Maity.api.get("/held-401").catch((err) => err);
+  const oldSession = win.Maity.api.get("/auth/session").catch((err) => err);
+  const finish = (url, status, data) => held.get("/api/v1" + url)({ ok: status < 400, status, headers: { get: () => null }, json: async () => data });
+  mode = "expired";
+  await win.Maity.api.get("/me").catch(() => {}); await tick(); await tick();
+  expect(main.querySelector(".session-ended"), "stale session: expiry shows sign-in");
+  const stoppedAt = calls.length;
+  finish("/auth/session", 200, F["auth-session.json"]);
+  expect((await oldSession).code === "aborted", "stale session: an old successful session check cannot reopen the gate");
+  await win.Maity.api.get("/me").catch(() => {});
+  expect(calls.length === stoppedAt, "stale session: authenticated calls stay local while signed out");
+  finish("/held-page?limit=200", 200, { items: [], next_cursor: "more" });
+  expect((await oldPage).code === "aborted" && oldPageReads === 1, "stale session: a late successful page sends no next-page request");
+  ctx.fetch = staleFetch; mode = "ok";
+  byId("login-handle").value = "maintainer"; byId("login-password").value = "correct";
+  main.querySelector(".login").dispatch("submit"); await tick(); await tick();
+  expect(!main.querySelector(".login") && header.querySelector(".switcher"), "stale session: sign-in reopens authenticated reads");
+  finish("/held-success", 200, { old: true });
+  expect((await oldSuccess).code === "aborted", "stale session: old successful replies stay obsolete after another sign-in");
+  finish("/held-401", 401, { error: { code: "unauthenticated", message: "Old session ended" } });
+  await old401;
+  expect(!main.querySelector(".login"), "stale session: a late401 still cannot end the new session");
+  // The readable CSRF cookie is optional: logout must send the token supplied
+  // by /auth/session before invalidating it along with the old replies.
+  document.cookie = "";
+  let logoutToken, serverSignedOut = false;
+  ctx.fetch = (url, init) => {
+    const reply = (status, data) => Promise.resolve({ ok: status < 400, status, headers: { get: () => null }, json: async () => data });
+    if (url === "/api/v1/auth/logout") {
+      logoutToken = init.headers["X-CSRF-Token"];
+      if (logoutToken !== F["auth-session.json"].csrf_token) return reply(403, { error: { code: "csrf_mismatch", message: "CSRF token mismatch" } });
+      serverSignedOut = true;
+      return reply(200, {});
+    }
+    if (serverSignedOut && url === "/api/v1/auth/session") return reply(401, { error: { code: "unauthenticated", message: "Signed out" } });
+    return staleFetch(url, init);
+  };
+  header.querySelectorAll("button").find((b) => (b.getAttribute("aria-label") || "").startsWith("Your profile: ")).click();
+  header.querySelectorAll("button.menu-item").find((b) => b.textContent === "Sign out").click();
+  await tick(); await tick();
+  expect(serverSignedOut && logoutToken === F["auth-session.json"].csrf_token && main.querySelector(".login"),
+    "stale session: logout with no readable cookie sends the fallback CSRF token and stays signed out");
+  ctx.fetch = staleFetch;
   mode = "down";
   await go("#/p/maity/inbox");
   expect(main.querySelector(".error") && text(main).includes("did not answer"), "API mode without hub fails loud");

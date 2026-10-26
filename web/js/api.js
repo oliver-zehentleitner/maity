@@ -2518,21 +2518,33 @@ window.Maity = window.Maity || {};
   }
 
   let skew = 0;
+  let sessionBlocked = false;
+  const obsoleteSession = (path) => new ApiError("The session ended", 0, path, "aborted");
 
   function request(method, path, body, raw, signal) {
+    const publicCall = PUBLIC_PATH.test(path);
+    const epoch = M.sessionEpoch || 0;
+    if (sessionBlocked && !publicCall) return Promise.reject(obsoleteSession(path));
     // In fixture mode an image travels with the Content-Type the page sniffed.
     const p = source === "fixtures"
       ? fromFixtures(method, path, raw ? { blob: body, type: raw, size: body.size } : body)
       : fromApi(method, path, body, raw, signal);
     if (path === "/auth/session") {
-      return p.then((s) => { sessionCsrf = s.csrf_token || null; return s; });
+      return p.then((s) => {
+        if (epoch !== (M.sessionEpoch || 0)) throw obsoleteSession(path);
+        sessionCsrf = s.csrf_token || null;
+        sessionBlocked = false;
+        return s;
+      });
     }
     // A 401 on a call that needs the session: it ended (expired, revoked,
     // ended elsewhere). The page is told once, in one place (js/app.js).
-    if (!PUBLIC_PATH.test(path)) {
+    if (!publicCall) {
       // Which session asked: a late 401 of an earlier one ends no later one.
-      const epoch = M.sessionEpoch || 0;
-      return p.catch((err) => {
+      return p.then((answer) => {
+        if (sessionBlocked || epoch !== (M.sessionEpoch || 0)) throw obsoleteSession(path);
+        return answer;
+      }, (err) => {
         if (err && err.status === 401 && M.onSessionEnded) M.onSessionEnded(path, epoch);
         throw err;
       });
@@ -2626,6 +2638,11 @@ window.Maity = window.Maity || {};
   const routeOf = (method, path) => method.toUpperCase() + " " + String(path).split("?")[0];
 
   M.api = {
+    endSession: () => {
+      sessionBlocked = true;
+      sessionCsrf = null;
+      M.sessionEpoch = (M.sessionEpoch || 0) + 1;
+    },
     // Whether a 401 on this path says nothing about a session (above).
     isPublicPath: (path) => PUBLIC_PATH.test(path),
     notOnHub: (err) => !!err && (err.status === 404 || err.status === 405),

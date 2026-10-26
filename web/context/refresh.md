@@ -145,3 +145,24 @@ while looking from one device to the other, and a code lives 5 minutes.
 answer and fewer reads: it needs cancelling held requests on navigation,
 which the dashboard does nowhere else. The 5-second interval of the event
 feed: noticeably slow while someone holds a phone waiting.
+
+## Successful replies of an ended session are obsolete too
+
+**Id:** 81f718f0-eab0-4ec1-8a26-80ac142c2e06
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Revisit when:** the client gains a shared request lifecycle or session renewal
+
+Ending the session invalidates its outstanding authenticated replies and
+blocks further authenticated calls locally. A successful session check
+after sign-in opens the gate again; public sign-in and invitation routes
+remain available throughout.
+
+**Reason:** stopping timers and ignoring late 401s does not stop a held
+successful list page from asking for its next page after sign-out. The
+coordinator confirmed this follow-up after the held-page reproduction.
+
+**Rejected alternative:** relying on timer disposal and the late-401
+guard alone: neither prevents a successful old reply from continuing
+work, including after another session has signed in.
