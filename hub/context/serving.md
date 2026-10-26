@@ -126,8 +126,8 @@ request time, or enabling public caching for every route that asks for it.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the #359 review ruling, 2026-10-26 (card "landing page body cap matches its Markdown limit"); implementation session, 2026-10-26
-**Revisit when:** another field's limit reaches the 64 KiB body cap, or a landing page with many control characters or non-ASCII text is refused with 413
+**Source:** the #359 review ruling and the ruling on control characters, 2026-10-26 (card "landing page body cap matches its Markdown limit"); docs/api.md §16.7; implementation session, 2026-10-26
+**Revisit when:** another field's limit reaches the 64 KiB body cap, or a landing page within its limits is refused with 413
 
 The landing Markdown may be 64 KiB of decoded UTF-8 (§16.7). On the wire,
 JSON escaping makes that larger: a quote or a newline takes two bytes, and
@@ -144,7 +144,10 @@ keeps a request from buffering without bound. The rest of the API keeps 64 KiB.
   one admin-only field.
 - Lowering the Markdown limit to fit the body: the page would lose a quarter
   or more, depending on how much of its text needs escaping.
+- Raising the cap to 384 KiB for control characters' sixfold escaping: no
+  page needs them, and accepting them would only grow the cap.
 
-256 KiB is not the worst case: a control character escapes to six bytes
-(`\u0001`), so a page of them can still be refused with 413 within its own
-limit.
+The fields refuse C0 control characters other than tab, newline and carriage
+return (`control_character`). Without them a valid page escapes to at most
+three times its size (`\u00e9` for a two-byte character, two `\uXXXX` for a
+four-byte one), and 256 KiB holds every valid page.
