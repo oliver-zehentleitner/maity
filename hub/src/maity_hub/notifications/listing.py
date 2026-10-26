@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import Connection, func, insert, select, update
+from sqlalchemy.dialects import postgresql, sqlite
 
 from maity_hub import clock
 from maity_hub import tables as t
@@ -122,6 +123,73 @@ def _slugs(conn: Connection, by_project: dict[str, Any]) -> dict[str, str]:
 # --- positions -----------------------------------------------------------------------
 
 
+def stamp(conn: Connection, human_id: str) -> tuple[Any, ...]:
+    """A few aggregate reads that change whenever a notifications answer could: the
+    human's memberships, each project's highest `seq`, the account records and their
+    read marks, the event items' read marks, the chats' marks and the cards the human
+    watches (a watch writes no event, yet makes a card's items the human's). A held
+    long-poll compares it before it derives everything again (§18.2)."""
+    members = sorted(
+        conn.execute(
+            select(t.membership.c.id, t.membership.c.project_id).where(
+                t.membership.c.human_id == human_id, t.membership.c.active.is_(True)
+            )
+        ).all()
+    )
+    project_ids = [project_id for _, project_id in members]
+    heads = (
+        sorted(
+            conn.execute(
+                select(t.event.c.project_id, func.max(t.event.c.seq))
+                .where(t.event.c.project_id.in_(project_ids))
+                .group_by(t.event.c.project_id)
+            ).all()
+        )
+        if project_ids
+        else []
+    )
+    records = conn.execute(
+        select(func.max(t.account_record.c.n), func.count(t.account_record.c.read_at)).where(
+            t.account_record.c.human_id == human_id
+        )
+    ).one()
+    reads = conn.execute(
+        select(func.count(), func.max(t.notification_read.c.seq)).where(
+            t.notification_read.c.human_id == human_id
+        )
+    ).one()
+    chats = (
+        conn.execute(
+            select(func.count(), func.sum(t.conversation_read.c.last_seq)).where(
+                t.conversation_read.c.reader.in_([member_id for member_id, _ in members])
+            )
+        ).one()
+        if members
+        else (0, None)
+    )
+    # The watched cards themselves, not their number: swapping one watch for another
+    # keeps the count and still changes whose items an event gives.
+    watches = (
+        sorted(
+            conn.execute(
+                select(t.card_watch.c.membership_id, t.card_watch.c.card_id).where(
+                    t.card_watch.c.membership_id.in_([member_id for member_id, _ in members])
+                )
+            ).all()
+        )
+        if members
+        else []
+    )
+    return (
+        tuple(members),
+        tuple(heads),
+        tuple(records),
+        tuple(reads),
+        tuple(chats),
+        tuple(watches),
+    )
+
+
 def head(conn: Connection, where: Scope) -> Position:
     """Per project its highest visible `seq`, for the account its highest record."""
     projects = {}
@@ -225,6 +293,7 @@ def mark(
     mark, never backwards; a security item only from a session allowed to."""
     now = clock.now()
     confirmed = sessions.confirmed_sessions(conn, where.human_id)
+    seqs: list[int] = []
     for item in chosen:
         if item.read:
             continue
@@ -238,19 +307,23 @@ def mark(
             )
         elif item.target and item.target["type"] == "conversation":
             _move_chat_mark(conn, where, item)
-        else:
-            exists = conn.execute(
-                select(t.notification_read.c.seq).where(
-                    t.notification_read.c.human_id == where.human_id,
-                    t.notification_read.c.seq == item.seq,
-                )
-            ).first()
-            if exists is None:
-                conn.execute(
-                    insert(t.notification_read).values(
-                        human_id=where.human_id, seq=item.seq, at=now
-                    )
-                )
+        elif item.seq is not None:
+            seqs.append(item.seq)
+    if seqs:  # one statement; a mark that another wrote meanwhile is skipped, not an error
+        conn.execute(
+            ignoring_duplicates(conn, t.notification_read),
+            [{"human_id": where.human_id, "seq": seq, "at": now} for seq in seqs],
+        )
+
+
+def ignoring_duplicates(conn: Connection, table: Any) -> Any:
+    """`INSERT` that skips a row whose key exists, waiting for a concurrent writer of it
+    first, on every database the hub runs on."""
+    if conn.dialect.name == "postgresql":
+        return postgresql.insert(table).on_conflict_do_nothing()
+    if conn.dialect.name == "sqlite":
+        return sqlite.insert(table).on_conflict_do_nothing()
+    return insert(table).prefix_with("IGNORE")  # MariaDB / MySQL
 
 
 def _may_mark(conn: Connection, item: Item, session: Any, confirmed: frozenset[str]) -> bool:
@@ -276,24 +349,19 @@ def _move_chat_mark(conn: Connection, where: Scope, item: Item) -> None:
     if mine is None or item.seq is None or item.target is None:
         return
     conversation = item.target["id"]
-    current = conn.execute(
-        select(t.conversation_read.c.last_seq).where(
+    # Made if absent, then only ever moved forward: two marks at once never collide on
+    # the key and never move it back.
+    conn.execute(
+        ignoring_duplicates(conn, t.conversation_read).values(
+            reader=mine.id, conversation_id=conversation, last_seq=item.seq
+        )
+    )
+    conn.execute(
+        update(t.conversation_read)
+        .where(
             t.conversation_read.c.reader == mine.id,
             t.conversation_read.c.conversation_id == conversation,
+            t.conversation_read.c.last_seq < item.seq,
         )
-    ).scalar()
-    if current is None:
-        conn.execute(
-            insert(t.conversation_read).values(
-                reader=mine.id, conversation_id=conversation, last_seq=item.seq
-            )
-        )
-    elif current < item.seq:
-        conn.execute(
-            update(t.conversation_read)
-            .where(
-                t.conversation_read.c.reader == mine.id,
-                t.conversation_read.c.conversation_id == conversation,
-            )
-            .values(last_seq=item.seq)
-        )
+        .values(last_seq=item.seq)
+    )

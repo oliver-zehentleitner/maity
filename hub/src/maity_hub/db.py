@@ -32,7 +32,7 @@ metadata = MetaData(
 CONNECT_TIMEOUT_SECONDS = 5
 
 
-def make_engine(url: str) -> Engine:
+def make_engine(url: str, pool_size: int = 5, max_overflow: int = 10) -> Engine:
     # hide_parameters: a failing statement's error never carries the values.
     kwargs: dict[str, Any] = {"pool_pre_ping": True, "hide_parameters": True}
     if url.startswith("sqlite"):
@@ -45,6 +45,7 @@ def make_engine(url: str) -> Engine:
         kwargs["isolation_level"] = "READ COMMITTED"
         # Fail fast on an unreachable server instead of waiting for TCP's own timeout.
         kwargs["connect_args"] = {"connect_timeout": CONNECT_TIMEOUT_SECONDS}
+        kwargs["pool_size"], kwargs["max_overflow"] = pool_size, max_overflow
     engine = create_engine(url, **kwargs)
     if engine.dialect.name == "sqlite":
         event.listen(engine, "connect", _sqlite_pragmas)
