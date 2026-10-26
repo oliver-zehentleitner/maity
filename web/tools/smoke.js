@@ -2933,6 +2933,47 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/s/maity"); for (let k = 0; k < 4; k++) await tick();
   expect(main.querySelector("article.swarm-public") && main.querySelector("article.swarm-public ul.swarm-live") && !byId("login-handle"),
     "swarm: the public page opens without a session");
+  // An invitation (docs/api.md §3.4) without a session: who invites to what, and the ways in this hub offers.
+  const ivPage = () => main.querySelector("article.invite");
+  await go("#/invite/open-xxxxxxxxxxxxxxxx1"); for (let k = 0; k < 4; k++) await tick();
+  const ivSignIn = ivPage() && ivPage().querySelectorAll("a").find((a) => text(a) === "Sign in to accept");
+  const ivRegister = ivPage() && ivPage().querySelectorAll("a").find((a) => text(a) === "Create one");
+  expect(ivPage() && text(ivPage()).includes("Maintainer invites you to join Maity as member.") && text(ivPage().querySelector(".invite-note")) === "You review the web side; D will brief you."
+    && ivSignIn && ivSignIn.getAttribute("href") === "#/login?next=%2F%23%2Finvite%2Fopen-xxxxxxxxxxxxxxxx1"
+    && ivRegister && ivRegister.getAttribute("href") === "#/register?next=%2F%23%2Finvite%2Fopen-xxxxxxxxxxxxxxxx1"
+    && header.querySelector(".theme-menu") && plainTitle() === "Join Maity · Maity",
+    "invite: signed out, the invitation and both ways in, each returning to it");
+  await go("#/invite/only-xxxxxxxxxxxxxxxx2"); for (let k = 0; k < 4; k++) await tick();
+  expect(!ivPage().querySelectorAll("a").some((a) => text(a) === "Create one") && text(ivPage()).includes("This hub does not create new accounts")
+    && ivPage().querySelectorAll("a").some((a) => text(a) === "Sign in to accept"), "invite: where the hub does not register, only signing in");
+  await go("#/invite/nothing-here-at-all-000"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(ivPage()).includes("This invitation cannot be used") && text(ivPage()).includes("expired, been used or been withdrawn"),
+    "invite: an unknown, used, expired or revoked link is one answer");
+  // Registration (§2.7.1): from an invitation that admits, though the hub does not register on request.
+  const rgPosts = [];
+  const rgPost = win.Maity.api.post;
+  win.Maity.api.post = (p, b) => { if (p === "/auth/register") rgPosts.push(b); return rgPost(p, b); };
+  await go("#/register?next=%2F%23%2Finvite%2Fbound-xxxxxxxxxxxxxxx3"); for (let k = 0; k < 6; k++) await tick();
+  const rgForm = () => main.querySelector("form.register-form");
+  expect(rgForm() && text(rgForm()).includes("Use the address the invitation was sent to"), "register: from an invitation that admits, the form, bound to its address");
+  byId("register-address").value = "anna@example.org"; byId("register-password").value = "short"; byId("register-repeat").value = "short";
+  rgForm().dispatch("submit"); await tick();
+  expect(!rgPosts.length && text(rgForm()).includes("at least 12 characters"), "register: a short password is said before anything is sent");
+  byId("register-password").value = "a long enough password"; byId("register-repeat").value = "a long enough password";
+  rgForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(rgPosts[0]) === JSON.stringify({ address: "anna@example.org", password: "a long enough password", next: "/#/invite/bound-xxxxxxxxxxxxxxx3" })
+    && text(main).includes("Check your mail") && text(main).includes("works for 24 hours") && text(main).includes("come back to where you were"),
+    "register: sent with the invitation as next, then 'check your mail' for every address alike");
+  win.Maity.api.post = rgPost;
+  await go("#/register"); for (let k = 0; k < 6; k++) await tick();
+  expect(!rgForm() && text(main).includes("This hub does not create new accounts on request."), "register: a hub that does not register says so, with the way to sign in");
+  // Signing in from the invitation returns to it, now with the button to join.
+  await go("#/login?next=%2F%23%2Finvite%2Fonly-xxxxxxxxxxxxxxxx2"); for (let k = 0; k < 4; k++) await tick();
+  byId("login-handle").value = "maintainer"; byId("login-password").value = "a long new password";
+  main.querySelector("form").dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+  expect(win.location.hash === "#/invite/only-xxxxxxxxxxxxxxxx2" && ivPage() && btn(ivPage(), "Join Maity as Maintainer"),
+    "invite: signing in with the invitation as next comes back to it, signed in");
+  await win.Maity.api.post("/auth/logout");
   await go(""); await tick(); await tick();
   byId("login-handle").value = "maintainer"; byId("login-password").value = "initial-generated";
   main.querySelector("form").dispatch("submit"); await tick(); await tick(); await tick();
@@ -4502,6 +4543,81 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "subtasks: the mock refuses a member's open subtask, takes the form's proposed one, starts one without a status as proposed, and refuses an unknown parent as the hub does");
   stProto.focus = stFocus; document.activeElement = undefined;
   await go("#/p/maity/inbox");
+
+  // Inviting a person (docs/api.md §3.4): on Members for a human with members:admin; the link once; the list; revoking.
+  const ivPosts = [], ivDels = [];
+  const ivPost = win.Maity.api.post, ivDel = win.Maity.api.del;
+  win.Maity.api.post = (p, b) => { if (p.includes("invitation")) ivPosts.push([p, b]); return ivPost(p, b); };
+  win.Maity.api.del = (p) => { if (p.includes("/invitations/")) ivDels.push(p); return ivDel(p); };
+  await go("#/p/maity/inbox"); await go("#/p/maity/members"); for (let k = 0; k < 6; k++) await tick();
+  const ivBox = () => main.querySelector("section.invitations");
+  const ivItems = () => ivBox().querySelectorAll("li.invite-item").map((li) => li.getAttribute("data-invitation") + ":" + text(li.querySelector(".invite-state")));
+  expect(ivBox() && JSON.stringify(byId("invite-role").querySelectorAll("option").map((o) => o.getAttribute("value"))) === JSON.stringify(["member", "reviewer", "proxy", "admin", "owner"])
+    && JSON.stringify(ivItems()) === JSON.stringify(["inv-0003:open", "inv-0004:voided", "inv-0002:used", "inv-0001:revoked"])
+    && !text(ivBox()).includes("#/invite/"), "invite: Members offers inviting, every role for an owner; the list with each state, never a link");
+  byId("invite-role").value = "reviewer"; byId("invite-address").value = "ben@example.org"; byId("invite-ttl").value = "604800"; byId("invite-note").value = "Welcome.";
+  ivBox().querySelector("form.invite-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(ivPosts[0]) === JSON.stringify(["/projects/maity/invitations", { role: "reviewer", ttl_seconds: 604800, address: "ben@example.org", note: "Welcome." }])
+    && /#\/invite\/fx\d{20}$/.test(byId("invite-url").value) && text(ivBox().querySelector(".invite-issued")).includes("This link is shown only now")
+    && btn(ivBox(), "Copy") && ivItems().length === 5 && ivItems()[0].endsWith(":open"),
+    "invite: created, the link shown once with Copy, the list grows");
+  // The note's limit is 1 KiB of UTF-8, not 1024 characters: 400 three-byte characters are too long.
+  byId("invite-note").value = "€".repeat(400);
+  const ivBefore = ivPosts.length;
+  ivBox().querySelector("form.invite-form").dispatch("submit"); await tick();
+  expect(ivPosts.length === ivBefore && text(ivBox()).includes("the note is longer than 1 KiB"), "invite: a note over 1 KiB in bytes is said before sending");
+  byId("invite-note").value = "";
+  btn(ivBox().querySelectorAll("li.invite-item").find((li) => li.getAttribute("data-invitation") === "inv-0003"), "Revoke").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(ivDels[0] === "/projects/maity/invitations/inv-0003" && ivItems().includes("inv-0003:revoked") && text(ivBox()).includes("Revoked; the link no longer works."),
+    "invite: an open invitation revoked, said so");
+  // A member without members:admin sees no inviting.
+  const ivGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => ivGet(p).then((v) => (p === "/me" ? Object.assign({}, v, { projects: v.projects.map((x) => Object.assign({}, x, { role: "member" })) }) : v));
+  await go("#/p/maity/inbox"); await go("#/p/maity/members"); for (let k = 0; k < 6; k++) await tick();
+  expect(!ivBox(), "invite: no inviting for a member without members:admin");
+  win.Maity.api.get = ivGet;
+  // The invitation page signed in: one button; accepted, the way into the project; the hub's refusals in its words.
+  await go("#/invite/open-xxxxxxxxxxxxxxxx1"); for (let k = 0; k < 6; k++) await tick();
+  const ivArticle = () => main.querySelector("article.invite");
+  btn(ivArticle(), "Join Maity as Maintainer").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(ivPosts.some(([p]) => p === "/invitations/open-xxxxxxxxxxxxxxxx1/accept") && text(ivArticle()).includes("You are a member of Maity now.")
+    && ivArticle().querySelectorAll("a").some((a) => a.getAttribute("href") === "#/p/maity/inbox"), "invite: accepted, the project opens from here");
+  const ivSaid = [];
+  for (const tok of ["mismatch-xxxxxxxxxxxx4", "member-xxxxxxxxxxxxxx5", "void-xxxxxxxxxxxxxxxx6", "closed-xxxxxxxxxxxxxx7", "pending-xxxxxxxxxxxxx8"]) {
+    await go("#/invite/" + tok); for (let k = 0; k < 6; k++) await tick();
+    ivArticle().querySelectorAll("button").find((b) => text(b).startsWith("Join ")).click(); for (let k = 0; k < 4; k++) await tick();
+    ivSaid.push(text(ivArticle().querySelector(".send-status")));
+  }
+  expect(JSON.stringify(ivSaid) === JSON.stringify([
+    "Not joined: this invitation is for another address (invitation_address_mismatch)", "Not joined: the request does not validate (already_member)",
+    "Not joined: the person who invited you can no longer give this role (invitation_void)", "Not joined: the project is closed (project_closed)",
+    "Not joined: your account waits for approval (account_pending)"]), "invite: each refusal said in the hub's words with its reason " + JSON.stringify(ivSaid));
+  win.Maity.api.post = ivPost; win.Maity.api.del = ivDel;
+  // A next that is no dashboard route of this page is no next (§2.6.5): signed in, #/login goes to the start instead.
+  const nxStart = (await win.Maity.api.get("/me")).projects.length === 1 ? "#/p/maity/inbox" : "#/all";
+  const nxLanded = [];
+  for (const bad of ["//evil.example/x", "javascript:alert(1)", "/#/..//x", "/#//evil", "/#/a#b", "https://evil.example/#/x", "/#/ space"]) {
+    await go("#/login?next=" + encodeURIComponent(bad)); for (let k = 0; k < 4; k++) await tick();
+    nxLanded.push(win.location.hash);
+  }
+  await go("#/login?next=" + encodeURIComponent("/#/p/maity/board")); for (let k = 0; k < 4; k++) await tick();
+  expect(nxLanded.every((x) => x === nxStart) && win.location.hash === "#/p/maity/board",
+    "sign-in: a next that is not a dashboard route of this page is ignored, a good one is followed " + JSON.stringify(nxLanded));
+  // Signed in, #/register goes on to its next: there is nothing to register.
+  await go("#/register?next=" + encodeURIComponent("/#/p/maity/members")); for (let k = 0; k < 4; k++) await tick();
+  expect(win.location.hash === "#/p/maity/members", "register: signed in, it goes on to its next");
+  // An account waiting for approval (§2.7.5) sees that page and nothing else.
+  win.Maity.api.get = (p) => ivGet(p).then((v) => (p === "/me" ? Object.assign({}, v, { member: Object.assign({}, v.member, { account_status: "pending" }), projects: [] }) : v));
+  await go("#/all"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main).includes("Your account waits for the operator's approval") && btn(main, "Sign out") && !header.querySelector("nav.switcher"),
+    "pending: an account waiting for approval sees that, and can sign out");
+  // The invitation page for such an account: no Join, the invitation waits.
+  await go("#/invite/only-xxxxxxxxxxxxxxxx2"); for (let k = 0; k < 6; k++) await tick();
+  expect(main.querySelector("article.invite") && !main.querySelector("article.invite").querySelectorAll("button").some((b) => text(b).startsWith("Join "))
+    && text(main.querySelector("article.invite")).includes("Your account waits for the operator's approval. The invitation waits for you"),
+    "invite: an account waiting for approval sees the invitation wait, no Join");
+  win.Maity.api.get = ivGet;
+  await go("#/p/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
 
   // Notifications (docs/api.md §18): the bell, the counts, browser notifications.
   await go("#/p/maity/inbox");

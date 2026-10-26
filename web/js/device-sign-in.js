@@ -70,9 +70,13 @@ window.Maity = window.Maity || {};
       .then((methods) => {
         if (!methods) return;
         const prefilled = codeFromHash();
+        const next = M.signInNext ? M.signInNext() : null;
         append(box,
           methods.device_code ? codeEntry(every, signedIn, prefilled) : null,
-          methods.email_link ? mailLink(signedIn) : null);
+          methods.email_link ? mailLink(signedIn) : null,
+          // §2.7: offered only where the instance registers.
+          methods.registration ? h("p", { class: "register-link" }, "No account yet? ",
+            h("a", { href: "#/register" + (next ? "?next=" + encodeURIComponent(next) : "") }, "Create an account")) : null);
       }, () => {});
     return box;
   }
@@ -116,7 +120,8 @@ window.Maity = window.Maity || {};
       status.busy("Sending…");
       let answer;
       try {
-        answer = await M.api.post("/auth/device-login", { code });
+        const next = M.signInNext ? M.signInNext() : null;
+        answer = await M.api.post("/auth/device-login", next ? { code, next } : { code });
       } catch (err) {
         submit.disabled = false;
         status.fail("Not signed in: ", said(err));
@@ -186,7 +191,8 @@ window.Maity = window.Maity || {};
         if (!address.value.trim()) { address.focus(); return; }
         status.busy("Sending…");
         try {
-          await M.api.post("/auth/email-link", { address: address.value.trim() });
+          const next = M.signInNext ? M.signInNext() : null;
+          await M.api.post("/auth/email-link", next ? { address: address.value.trim(), next } : { address: address.value.trim() });
           status.done();
           codeForm();
         } catch (err) {
