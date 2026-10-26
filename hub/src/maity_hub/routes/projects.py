@@ -67,6 +67,7 @@ class PolicyIn(Strict):
     swarm_public: str | None = None
     jour_fixe: dict[str, Any] | None = None  # replaced as a whole (§20.1)
     jour_fixe_moderators: list[str] | None = None
+    takeover_window_minutes: int | None = None
 
 
 class AbsenceIn(Strict):
@@ -188,6 +189,11 @@ def _apply_policy(
     if change.on_runner_revoke == "keep" and instance_rule == "stop_floor":
         # The operator made stop a floor (§15.3, §16): no project keeps its agents.
         errors["policy.on_runner_revoke"] = "stop_floor"
+    window = change.takeover_window_minutes
+    if window is not None:
+        if not policy.WINDOW_MIN <= window <= policy.WINDOW_MAX:
+            errors["policy.takeover_window_minutes"] = "out_of_range"
+        proposed["takeover_window_minutes"] = window
     if change.contract_arbiter is not None:
         arbiter = change.contract_arbiter
         if arbiter != "role:admin" and not _is_member(conn, project_id, arbiter):

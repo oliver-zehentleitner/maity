@@ -27,6 +27,7 @@ from maity_hub import (
     longpoll,  # noqa: F401  (subscribes the long-poll to new events)
     probe,
     registration_accounts,
+    takeovers,
 )
 from maity_hub.auth import device_codes as codes
 from maity_hub.auth import sign_in_settings as sign_in
@@ -74,6 +75,7 @@ from maity_hub.routes import invitations as invitation_routes
 from maity_hub.routes import me as me_routes
 from maity_hub.routes import probe as probe_routes
 from maity_hub.routes import registration as registration_routes
+from maity_hub.routes import takeovers as takeover_routes
 
 log = logging.getLogger(__name__)
 
@@ -122,7 +124,11 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
 
         jour_fixe_clock = jour_fixe_worker.Worker(engine)  # the schedule acts on its own
         jour_fixe_clock.start()
+        # A takeover's window ends without anybody calling (docs/api.md §6.19).
+        takeover_worker = takeovers.Worker(engine)
+        takeover_worker.start()
         yield
+        takeover_worker.stop()
         jour_fixe_clock.stop()
         registrations_worker.stop()
         availability_worker.stop()
@@ -167,6 +173,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(tasks.router, prefix=prefix)
     app.include_router(board.router, prefix=prefix)
     app.include_router(contract_text.router, prefix=prefix)
+    app.include_router(takeover_routes.router, prefix=prefix)
     app.include_router(requests.router, prefix=prefix)
     app.include_router(events_routes.router, prefix=prefix)
     app.include_router(conversations.router, prefix=prefix)

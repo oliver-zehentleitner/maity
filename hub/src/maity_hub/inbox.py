@@ -139,6 +139,8 @@ def may_answer(conn: Connection, request: Any, mine: Membership) -> bool:
         return False
     if needs_a_human(request, mine) is not None:
         return False
+    if proposals.refusal(conn, request, mine) is not None:  # the kind's own rule
+        return False
     if forwarded(request):  # once forwarded, only its holder answers (§7)
         return bool(request.holder_member == mine.id)
     if proposals.of(request) is not None:
