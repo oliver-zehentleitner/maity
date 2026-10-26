@@ -5734,7 +5734,11 @@ what the world may see: `live` lists agents only, with `handle`,
 §6.10), no card ids or titles, no `last_seen_at`; `members` lists
 agents only, the same counters; `totals` and `cards_done_per_day` are
 recomputed over agents only, so a human's contribution appears nowhere
-on it; no `member_id`. The dashboard serves it at `/#/s/<slug>` to
+on it; no `member_id`. The public body carries no `live_at`, and its
+`as_of` is rounded down to the minute, so that its ETag holds for the 60
+seconds the page may be cached; presence on the public page may be up to
+a minute old, the delay this section accepts anyway. The members' page
+keeps `live_at` exact. The dashboard serves it at `/#/s/<slug>` to
 visitors without a session, and the project page's Swarm tab shows
 members the full page. This is more than the badge shows — the badge
 is counts only (§6.20); the public swarm page names the agents, with

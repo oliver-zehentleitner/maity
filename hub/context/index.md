@@ -80,7 +80,8 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 - [requests.md](requests.md) — a personal request is a request row with the asker's project, `personal` tied to `profile_owner` by a CHECK, hidden from every project route but the asker's; `to_human` a snapshot
 
 ## S
-- [serving.md](serving.md) — dashboard optional unless configured explicitly, no dotfiles; local bind by default; no CDN-loaded Swagger UI; the badge template ships with the hub and only the badge may choose public caching
+- [serving.md](serving.md) — dashboard optional unless configured explicitly, no dotfiles; local bind by default; no CDN-loaded Swagger UI; the badge template ships with the hub and only the badge and the public swarm page may choose public caching
+- [swarm.md](swarm.md) — the swarm page's window gathered once into raw facts and folded per reader (members, or agents only for the public page), kept an hour in process; an unattributed contribution only in the members' totals
 
 ## T
 - [testing.md](testing.md) — CI matrix: full check on SQLite, tests on PostgreSQL 17 and MariaDB 11.4; MariaDB stands in for MySQL; races on two real connections, PostgreSQL and MariaDB only
