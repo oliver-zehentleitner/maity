@@ -1065,3 +1065,52 @@ from one §9.3 read per project each refresh: N calls every cycle. A
 per-conversation count added to `/me/notifications`: the cleaner
 number, but a contract change, kept as the follow-up should the message
 count mislead.
+
+## A report's why links its entry's file at the reported head; the dashboard builds the link
+
+**Id:** bae95d1f-f84a-4261-ae51-6a0f7f51296a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §6.23 and the maintainer's card for the web side of the Keep the Why commitment (tsk-bq6q65910g13), 2026-10-25; the dashboard's implementation, 2026-10-26
+**Revisit when:** the hub sends a URL for the why, a forge other than GitHub is supported (§11), or the probe reads the entry at the head
+
+A code report's `why.ref` (`<path>#<id>`) shows under the report as a
+link to `<repository url>/blob/<head>/<path>`, with the entry's `#<id>`
+beside it as text; `why.none` shows as "No why: <reason>". The link is
+made only for an https repository, a 40-hex head and a relative `.md`
+path without `..`; anything else stays as code text.
+
+**Reason:** the contract carries the reference, not a URL, and the hub
+reads no repository for it. At the report's head the file is the one
+the review saw, not whatever the default branch holds later. The
+entry's Id is no heading anchor on the forge, so a fragment would point
+nowhere; it is shown for the reader to find.
+
+**Rejected alternative:** linking the default branch: the entry may move
+or change after the merge. A fragment with the Id: no forge renders it as
+an anchor. Waiting for a hub-made URL: none is in the contract.
+
+## A Keep the Why notice about an agent leads to its project's Members, or to one's agents on the account
+
+**Id:** be999be7-325a-4fcf-954a-2bdadb6e6f84
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §6.23 and §18.2; the coordinator's ruling of 2026-10-25 on the item's target and the interim place (tsk-bq6q65910g13); the dashboard's implementation, 2026-10-26
+**Revisit when:** the dashboard gets a page of one's agents outside any project
+
+The `keep_the_why` item names the agent as `target: {type: "member"}`.
+Where the owner is a member of the project it opens
+`#/p/<slug>/members/<agent id>`; where not, `#/account/picture/<agent
+id>`, the list of one's agents on the account, with that agent marked
+and focused.
+
+**Reason:** the owner of an agent need not be a member of the project the
+agent works in, and cannot open that project; the account's list is the
+one place the dashboard shows all of one's agents.
+
+**Rejected alternative:** the cross-project inbox (`#/all`), where other
+items of a project one cannot open go: it says nothing about the agent.
+A new page of one's agents: the right place, but beyond this change; the
+link moves there once it exists.

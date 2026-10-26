@@ -1292,7 +1292,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && tables[1].querySelectorAll("tr.member").length === 5 && text(main).includes("Humans (1)") && text(main).includes("Agents (5)"),
     "members: humans first, then agents");
   const ths = tables[1].querySelector("thead").querySelectorAll("th").map((t) => t.textContent);
-  expect(JSON.stringify(ths) === JSON.stringify(["Name", "Role", "Owner", "Presence", "Joined", "Paused", "Credentials", "Actions"]),
+  expect(JSON.stringify(ths) === JSON.stringify(["Name", "Role", "Owner", "Presence", "Joined", "Paused", "Keep the Why", "Credentials", "Actions"]),
     "members: an admin's agent columns, with owner and credentials " + JSON.stringify(ths));
   expect(text(mRow("Agent C")).includes("paused itself") && text(mRow("Agent C")).includes("Waiting for the API contract")
     && mRow("Agent C").classList.contains("paused"), "members: a paused agent says by whom and why");
@@ -4213,6 +4213,74 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "mock as an admin agent: capabilities, proxy, a human's and its own membership are a human's");
   win.location.search = "";
 
+  // The Keep the Why commitment (docs/api.md §6.23): the policy in Settings, the Members mark, the why on a report,
+  // the notification's way to the agent. Quiet on a hub without the fields.
+  await go("#/p/maity/members"); for (let k = 0; k < 4; k++) await tick();
+  const ktRow = (name) => main.querySelectorAll("tr.member").find((tr) => tr.querySelector(".member-name").textContent === name);
+  expect(ktRow("Agent B").querySelector(".ktw-unconfirmed") && text(ktRow("Agent B")).includes("agent-b#wle2: to confirm by " + win.Maity.dom.formatTime("2026-10-21T10:42:00Z"))
+    && !ktRow("Agent C").querySelector(".ktw-unconfirmed") && text(ktRow("Agent C")).includes("agent-c#k3pa: confirmed")
+    && !main.querySelector(".error"), "keep the why: an agent past its deadline is marked with it, a confirmed one says when, per instance");
+  const ktGetAll = win.Maity.api.getAll;
+  const ktStrip = (m) => { const x = Object.assign({}, m); delete x.keep_the_why_unconfirmed; return x; };
+  const ktGet0 = win.Maity.api.get;
+  win.Maity.api.getAll = (p) => (p.endsWith("/members") ? ktGetAll(p).then((r) => ({ ...r, items: r.items.map(ktStrip) })) : ktGetAll(p));
+  win.Maity.api.get = (p) => (p.endsWith("/members") ? ktGet0(p).then((r) => ({ ...r, items: r.items.map(ktStrip) })) : ktGet0(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/members"); for (let k = 0; k < 4; k++) await tick();
+  expect(!main.querySelectorAll("th").some((t) => t.textContent === "Keep the Why") && !main.querySelector(".ktw-unconfirmed"),
+    "keep the why: without the hub's fields (optional, or an older hub) no column and no mark");
+  win.Maity.api.getAll = ktGetAll; win.Maity.api.get = ktGet0;
+  // Settings: required or optional, with a reason; disabled under no memory provider; absent where the hub has no such policy.
+  const ktPatches = [];
+  const ktPatch = win.Maity.api.patch, ktGet = win.Maity.api.get;
+  win.Maity.api.patch = (p, b) => { if (b && b.policy && "keep_the_why" in b.policy) ktPatches.push(b); return ktPatch(p, b); };
+  await go("#/p/maity/settings"); for (let k = 0; k < 6; k++) await tick();
+  const ktForm = () => main.querySelector("form.ktw-policy-form");
+  expect(ktForm() && byId("ktw-policy-select").value === "required" && !byId("ktw-policy-select").disabled, "keep the why: Settings offer the commitment, required here");
+  byId("ktw-policy-select").value = "optional"; ktForm().dispatch("submit"); await tick();
+  expect(!ktPatches.length, "keep the why: a change needs a reason");
+  byId("ktw-policy-select").value = "optional"; byId("ktw-policy-reason").value = "A trial project";
+  ktForm().dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(ktPatches[0]) === JSON.stringify({ policy: { keep_the_why: "optional" }, reason: "A trial project" }) && byId("ktw-policy-select").value === "optional",
+    "keep the why: switched to optional as a policy change with its reason");
+  await ktPatch("/projects/maity", { policy: { keep_the_why: "required" }, reason: "back" });
+  win.Maity.api.get = (p) => (p === "/projects/maity" ? ktGet(p).then((x) => ({ ...x, memory: { provider: "none" }, policy: { ...x.policy, keep_the_why: "optional" } })) : ktGet(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/settings"); for (let k = 0; k < 6; k++) await tick();
+  expect(ktForm() && byId("ktw-policy-select").getAttribute("disabled") !== null && byId("ktw-policy-reason").getAttribute("disabled") !== null
+    && btn(ktForm(), "Change").getAttribute("disabled") !== null && text(ktForm()).includes("no memory provider"),
+    "keep the why: under no memory provider the choice is disabled and says why");
+  win.Maity.api.get = (p) => (p === "/projects/maity" ? ktGet(p).then((x) => { const pol = { ...x.policy }; delete pol.keep_the_why; return { ...x, policy: pol }; }) : ktGet(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/settings"); for (let k = 0; k < 6; k++) await tick();
+  expect(!ktForm() && !main.querySelector(".error"), "keep the why: a hub without the policy shows no form");
+  win.Maity.api.get = ktGet; win.Maity.api.patch = ktPatch;
+  // The why on a code report: a link to the entry's file at the report's head; a reason when there is none; a bad path stays text.
+  const ktHead = "d91e294c" + "0".repeat(32);
+  const ktReport = (why) => ({ summary: "Done.", mentions: [], reported_at: "2026-10-22T13:10:00Z", verification: "signed", code: true, head: ktHead,
+    pr: null, pr_status: "none", observed: null, mismatch: false, why });
+  const ktWhys = { "tsk-0005": { ref: "context/cards.md#2280ced7-c51f-48f5-aab7-3bdacc7de21e" }, "tsk-0006": { none: "a mechanical rename" }, "tsk-0007": { ref: "../secret.md#x" } };
+  win.Maity.api.getAll = (p) => (p.includes("/tasks?") ? ktGetAll(p).then((r) => ({ ...r, items: r.items.map((c) => (ktWhys[c.id] ? { ...c, report: ktReport(ktWhys[c.id]) } : c)) })) : ktGetAll(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/board"); for (let k = 0; k < 6; k++) await tick();
+  const ktCard = (id) => main.querySelectorAll("article.card").find((a) => a.attrs["data-card"] === id);
+  const ktLink = ktCard("tsk-0005").querySelector(".report-why a");
+  expect(ktLink && ktLink.getAttribute("href") === "https://github.com/oliver-zehentleitner/maity/blob/" + ktHead + "/context/cards.md"
+    && ktLink.getAttribute("rel") === "noopener noreferrer" && text(ktCard("tsk-0005").querySelector(".report-why")).endsWith("#2280ced7-c51f-48f5-aab7-3bdacc7de21e"),
+    "keep the why: a report's why links its entry's file at the reported head, the entry's id beside it");
+  expect(text(ktCard("tsk-0006").querySelector(".report-why")) === "No why: a mechanical rename"
+    && !ktCard("tsk-0007").querySelector(".report-why a") && text(ktCard("tsk-0007").querySelector(".report-why")).includes("../secret.md"),
+    "keep the why: no why says the reason; a path out of the repository stays text");
+  win.Maity.api.getAll = ktGetAll;
+  // The notification: to the member in the project, or to the agent on one's account when not a member.
+  const ktItem = (member) => ({ kind: "keep_the_why", project: { slug: "maity", name: "Maity", member }, target: { type: "member", id: "agt-b" } });
+  expect(win.Maity.notify.linkOf(ktItem(true)) === "#/p/maity/members/agt-b" && win.Maity.notify.linkOf(ktItem(false)) === "#/account/picture/agt-b"
+    && win.Maity.notify.KIND_WORDS.keep_the_why === "Keep the Why",
+    "keep the why: its notification leads to the agent in the project's Members, or among one's agents when one is no member");
+  const ktProto = Object.getPrototypeOf(main), ktFocus = ktProto.focus;
+  ktProto.focus = function () { document.activeElement = this; };
+  await go("#/account/picture/agt-b"); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  const ktAgent = main.querySelectorAll("li.wanted").find((li) => li.getAttribute("data-agent") === "agt-b");
+  expect(ktAgent && main.querySelectorAll("li.wanted").length === 1 && document.activeElement === ktAgent.querySelector(".picture-name"),
+    "keep the why: the account marks the agent the notice is about and starts there");
+  ktProto.focus = ktFocus; document.activeElement = undefined;
+
   // Notifications (docs/api.md §18): the bell, the counts, browser notifications.
   await go("#/p/maity/inbox");
   const bellBtn = () => header.querySelector("button.bell");
@@ -4328,6 +4396,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/account/notifications");
   expect(byId("notify-browser") && !byId("notify-browser").checked && asked === 0 && text(main).includes("has not been asked yet")
     && byId("notify-kind-card").attrs.disabled !== undefined, "notifications: the settings, off, the browser not asked on opening them");
+  expect(!byId("notify-kind-keep_the_why"), "notifications: a hub whose settings do not list Keep the Why shows no switch for it");
+  const ksGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/me/notification-settings"
+    ? ksGet(p).then((x) => ({ ...x, kinds: x.kinds.concat(["keep_the_why"]), browser: { ...x.browser, kinds: { ...x.browser.kinds, keep_the_why: true } } })) : ksGet(p));
+  win.Maity.notify.state.settings = null;
+  await go("#/all"); await go("#/account/notifications");
+  expect(byId("notify-kind-keep_the_why") && byId("notify-kind-keep_the_why").checked, "notifications: a hub that lists Keep the Why has its switch, on by default");
+  win.Maity.api.get = ksGet; win.Maity.notify.state.settings = null;
+  await go("#/all"); await go("#/account/notifications");
   const fresh = [
     { id: "ntf-5001", seq: 5001, kind: "chat", at: "2026-10-22T15:00:00Z", project: { slug: "maity", name: "Maity" }, actor: { member_id: "agt-a" }, title: "Agent A in agent-a", target: { type: "conversation", id: "agt-a" }, read: false, redacted: false, content: "secret text" },
     { id: "ntf-5002", seq: 5002, kind: "card", at: "2026-10-22T15:01:00Z", project: { slug: "maity", name: "Maity" }, actor: { member_id: "agt-b" }, title: "tsk-0004 …: reported", target: { type: "task", id: "tsk-0004" }, read: false, redacted: false },

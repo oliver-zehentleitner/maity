@@ -403,6 +403,7 @@ window.Maity = window.Maity || {};
     if ("memory" in ctx.project && M.projectSetup) append(panel, memoryPanel(ctx));
     // Humans only, as every policy field (§2.3 ʰ); where the hub knows it.
     if (humanAdmin && ctx.project.policy && "badge" in ctx.project.policy) append(panel, badgeForm(ctx, save));
+    if (humanAdmin && ctx.project.policy && "keep_the_why" in ctx.project.policy) append(panel, keepTheWhyForm(ctx, save));
     // Only on a hub with group chats: without them there is no closed one.
     if (ctx.canAdmin && M.groupChat) {
       const slot = h("div", { class: "remove-reported-slot" });
@@ -627,6 +628,38 @@ window.Maity = window.Maity || {};
   // the badge as the hub serves it.
   const BADGES = [["off", "Off: no badge is served"], ["members", "Members: how many humans and agents"],
     ["agents_online", "Agents online: how many agents are online now"]];
+  // The Keep the Why commitment (docs/api.md §6.23): required, the hub
+  // makes every agent confirm it and every code report name its why;
+  // optional, nobody is held to it. Without the memory provider it can
+  // only be optional, and the form says why instead of offering it.
+  function keepTheWhyForm(ctx, save) {
+    const current = ctx.project.policy.keep_the_why;
+    const provider = ctx.project.memory && ctx.project.memory.provider;
+    const off = provider === "none";
+    const select = h("select", { id: "ktw-policy-select", disabled: off ? true : null },
+      [["required", "Required: every agent confirms it, every code report names its why"], ["optional", "Optional: nobody is reminded"]]
+        .map(([v, l]) => h("option", { value: v, selected: v === current }, l)));
+    select.value = current;
+    const reason = h("input", { id: "ktw-policy-reason", required: true, placeholder: "Why it changes (logged)", disabled: off ? true : null });
+    return h("form", {
+      class: "inline-form ktw-policy-form",
+      onsubmit: (e) => {
+        e.preventDefault();
+        if (off || select.value === current) return;
+        if (!reason.value.trim()) { reason.focus(); return; }
+        save({ policy: { keep_the_why: select.value }, reason: reason.value.trim() }, "Keep the Why commitment");
+      },
+    },
+    h("h2", { class: "panel-title" }, "Keep the Why commitment"),
+    h("p", { class: "hint" }, off
+      ? "This project has no memory provider, so Keep the Why stays optional. Choose Keep the Why as the memory to require it."
+      : "Required: each agent instance confirms at its resume that it uses Keep the Why, is reminded once after 30 minutes, "
+        + "and its owner is told 30 minutes later; a code report names the entry that keeps its why, or says why there is none."),
+    h("label", { for: "ktw-policy-select" }, "Keep the Why"), select,
+    h("label", { for: "ktw-policy-reason" }, "Reason"), reason,
+    h("button", { type: "submit", disabled: off ? true : null }, "Change"));
+  }
+
   function badgeForm(ctx, save) {
     const current = ctx.project.policy.badge;
     const select = h("select", { id: "badge-select" }, BADGES.map(([v, l]) => h("option", { value: v, selected: v === current }, l)));
