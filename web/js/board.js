@@ -116,7 +116,7 @@ window.Maity = window.Maity || {};
     const kids = Object.values(byId).filter((t) => t.parent === c.id).sort(M.boardEdit.byOrder);
     const away = counts.total - kids.length;
     const list = h("ul", { class: "subtask-list" }, kids.map((t) => childRow(ctx, t)),
-      away > 0 ? h("li", { class: "muted" }, away + (away === 1 ? " more, closed outside the board's window" : " more, closed outside the board's window")) : null);
+      away > 0 ? h("li", { class: "muted" }, away + " more not loaded on the board") : null);
     const words = "Subtasks " + counts.open + " open of " + counts.total;
     if (inPanel) return h("div", { class: "subtasks" }, h("span", { class: "label" }, words), list);
     const key = ctx.slug + "/" + c.id;
@@ -141,18 +141,24 @@ window.Maity = window.Maity || {};
     ];
   }
 
-  // The hub's own words for a refused subtask edit, with its reason code
-  // (subtasks_proposed, too_deep, has_children, parent_closed, cycle, …).
+  // A refused subtask edit in the hub's own words with every reason it
+  // names (subtasks_proposed, too_deep, has_children, parent_closed, cycle,
+  // …); null for any other refusal, which the form says as it says every
+  // other (an ambiguous mention with its long forms, a closed project).
   function hubWords(err) {
-    const fields = err.details && err.details.fields;
-    const why = (fields && Object.values(fields)[0]) || (err.details && err.details.reason) || err.code;
-    return { message: (err.message || "refused") + (why ? " (" + why + ")" : "") };
+    const fields = (err.details && err.details.fields) || {};
+    const edge = Object.keys(fields).filter((f) => f === "parent" || f === "related");
+    if (edge.length) return { message: err.message + " (" + edge.map((f) => f + ": " + fields[f]).join("; ") + ")" };
+    if (err.details && err.details.reason === "subtasks_proposed") return { message: err.message + " (subtasks_proposed)" };
+    if (err.code === "unknown_task") return { message: err.message + " (unknown_task)" };
+    return null;
   }
 
   // In the opened card: its parent and related cards for whoever may edit
   // it, and a subtask to start under it for every member.
   function familyEditor(ctx, c, byId, manage) {
-    if (!manage || !manage.reload) return null;
+    // A hub without subtasks (§6.4) sends no parent on its cards.
+    if (!manage || !manage.reload || !("parent" in c)) return null;
     const closed = (t) => t.status === "done" || t.status === "cancelled";
     const others = Object.values(byId).filter((t) => t.id !== c.id && !t._searchClosed);
     const parts = [];
@@ -164,9 +170,14 @@ window.Maity = window.Maity || {};
       const parentSel = c.kind === "release" || hasKids ? null
         : h("select", { id: "card-parent-" + c.id, "data-focus": "parent:" + c.id }, h("option", { value: "" }, "none"),
           others.filter((t) => t.kind !== "release" && !t.parent && (t.id === c.parent || !closed(t))).map((t) => h("option", { value: t.id }, t.id + " · " + t.title)));
+      // A parent or related card the board did not load (closed before its
+      // window) stays chosen as it is: a save never drops what it cannot show.
+      const notLoaded = (id) => h("option", { value: id }, id + " (not on the board)");
+      if (parentSel && c.parent && !others.some((t) => t.id === c.parent)) parentSel.appendChild(notLoaded(c.parent));
       if (parentSel) parentSel.value = c.parent || "";
       const relatedSel = h("select", { id: "card-related-" + c.id, multiple: true, size: "4" },
-        others.map((t) => { const o = h("option", { value: t.id }, t.id + " · " + t.title); o.selected = (c.related || []).includes(t.id); return o; }));
+        others.map((t) => { const o = h("option", { value: t.id }, t.id + " · " + t.title); o.selected = (c.related || []).includes(t.id); return o; }),
+        (c.related || []).filter((id) => !others.some((t) => t.id === id)).map((id) => { const o = notLoaded(id); o.selected = true; return o; }));
       const save = h("button", { type: "submit", "data-focus": "family:" + c.id }, "Save");
       parts.push(h("form", {
         class: "card-family-form",
@@ -183,7 +194,7 @@ window.Maity = window.Maity || {};
             await M.api.patch(path, body);
           } catch (err) {
             save.disabled = false;
-            said.fail("Not saved: ", hubWords(err));
+            said.fail("Not saved: ", hubWords(err) || M.boardEdit.said(err));
             return;
           }
           await manage.reload("family:" + c.id);
@@ -205,7 +216,7 @@ window.Maity = window.Maity || {};
             try {
               await M.api.post(ctx.base + "/tasks", body);
             } catch (err) {
-              throw hubWords(err);
+              throw hubWords(err) || err;
             }
             await manage.reload("subtask:" + c.id);
           }, () => { clear(box); start.setAttribute("aria-expanded", "false"); start.focus(); }, c);

@@ -34,6 +34,13 @@ window.Maity = window.Maity || {};
   };
 
   function said(err) {
+    // A parent waits for its subtasks (§6.4): the open ones by id.
+    const kids = err.code === "dependencies_open" && err.details && err.details.children;
+    if (kids && kids.length) {
+      const deps = (err.details.open || []).filter((id) => !kids.includes(id));
+      return { message: "Not done yet: " + (kids.length === 1 ? "its subtask " : "its subtasks ") + kids.join(", ") + " still open"
+        + (deps.length ? ", and " + deps.join(", ") + " it depends on" : "") + "." };
+    }
     if (REFUSALS[err.code]) return { message: REFUSALS[err.code] };
     const fields = err.code === "invalid" && err.details && err.details.fields;
     if (fields) {
@@ -231,7 +238,7 @@ window.Maity = window.Maity || {};
           reason.focus();
           return;
         }
-        const card = { title: title.value.trim(), kind: kind.value, status: status.value };
+        const card = { title: title.value.trim(), kind: kind.value, status: locked ? "proposed" : status.value };
         if (body.value.trim()) card.body = body.value;
         if (label.value) card.label = label.value;
         if (area.value.trim()) card.area = area.value.trim();

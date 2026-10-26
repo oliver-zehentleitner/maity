@@ -186,15 +186,16 @@ window.Maity = window.Maity || {};
       "depends_on" in body ? { depends_on: body.depends_on } : {});
     if ("parent" in body && body.parent !== null) {
       const p = list.find((t) => t.id === body.parent);
-      const why = !p ? "unknown" : p.id === card.id ? "self" : p.kind === "release" || card.kind === "release" ? "release_card"
+      if (!p) fail(404, "unknown_task", "no such card: " + body.parent, path, { fields: { parent: "unknown_task" } });
+      const why = p.id === card.id ? "self" : p.kind === "release" || card.kind === "release" ? "release_card"
         : p.parent ? "too_deep" : list.some((t) => t.parent === card.id) ? "has_children"
         : CLOSED_TASK.includes(p.status) && before.parent !== p.id ? "parent_closed"
         : (after.depends_on || []).includes(p.id) ? "cycle" : null;
-      if (why) fail(400, "invalid", "parent: " + why, path, { fields: { parent: why } });
+      if (why) fail(400, "invalid", "the request does not validate", path, { fields: { parent: why } });
     }
     if ("related" in body) {
       const bad = (body.related || []).find((x) => x === card.id || !list.some((t) => t.id === x));
-      if (bad) fail(400, "invalid", "related: unknown", path, { fields: { related: "unknown" } });
+      if (bad) fail(400, "invalid", "the request does not validate", path, { fields: { related: bad === card.id ? "self" : "unknown_task" } });
     }
     const policy = (project(slug, path).policy || {}).subtasks || "proposed";
     const newlyOpenChild = after.parent && after.status !== "proposed" && !(before.parent && before.status !== "proposed");
@@ -249,7 +250,7 @@ window.Maity = window.Maity || {};
         const open = (card.depends_on || []).filter((d) => { const o = list.find((t) => t.id === d); return o && !closed.includes(o.status); });
         // A parent waits for its children (§6.4).
         const kids = list.filter((t) => t.parent === card.id && !closed.includes(t.status)).map((t) => t.id);
-        if (open.length || kids.length) fail(409, "dependencies_open", "a dependency or a subtask is open", path, { open: open.concat(kids), children: kids });
+        if (open.length || kids.length) fail(409, "dependencies_open", "dependencies or children are not done", path, Object.assign({ open: open.concat(kids) }, kids.length ? { children: kids } : {}));
         // A release is done only when the hub judges it ready (§6.7).
         if (card.kind === "release" && !(card.release && card.release.readiness && card.release.readiness.ready)) {
           fail(409, "release_not_ready", "the release is not ready", path, { blocking: (card.release.readiness || {}).blocking || [] });
@@ -1746,6 +1747,8 @@ window.Maity = window.Maity || {};
       // A release is never one of the cards shipped together (§6.7).
       if ((body.ships_with || []).length && (body.kind === "release" || body.ships_with.some((id) => (list.find((t) => t.id === id) || {}).kind === "release"))) errors.ships_with = "release_card";
       if (Object.keys(errors).length) fail(400, "invalid", "invalid fields", path, { fields: errors });
+      // Under policy.subtasks "proposed" a member's subtask without a status starts as proposed; an explicit open is refused.
+      if (body.parent && !body.status && ((proj.policy || {}).subtasks || "proposed") === "proposed" && !tasksAdmin(m[1])) body = Object.assign({}, body, { status: "proposed" });
       if (body.parent) subtaskEdges(m[1], list, { id: "(new)", kind: body.kind || "task", status: body.status || "open" },
         { parent: body.parent, status: body.status || "open", depends_on: body.depends_on || [] }, path, { parent: null, status: "proposed" });
       taskSerial += 1;
