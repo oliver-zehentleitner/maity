@@ -5,7 +5,7 @@ answer, and how it ended. The project policy gains `takeover_window_minutes`, an
 request may name the takeover it was filed for (the escalation's decision).
 
 Revision ID: 0044
-Revises: 0022
+Revises: 0038
 Create Date: 2026-10-23
 """
 
@@ -17,7 +17,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql, postgresql
 
 revision: str = "0044"
-down_revision: str | None = "0022"
+down_revision: str | None = "0038"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
