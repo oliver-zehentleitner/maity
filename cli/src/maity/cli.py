@@ -1657,39 +1657,51 @@ def _next_cursor(page: Any, seen: set[str]) -> str | None:
 
 # --- cards and subtasks (§6.4) ------------------------------------------------------------------
 
-# One hint line per subtask refusal of the hub (§6.4); the code itself is printed as it came.
-SUBTASK_HINTS = {
-    "too_deep": "the tree is two levels deep: that card is a subtask already",
-    "has_children": "a card with children takes no parent",
-    "parent_closed": "the parent is done or cancelled: it takes no new child",
-    "self": "a card is never its own parent",
-    "release_card": "a release card is neither parent nor child",
-    "cycle": "the parent and the dependencies would wait for each other",
+# One hint line per subtask refusal of the hub (§6.4), keyed by the field it names or, for a
+# refusal of the whole write, by its code or `details.reason`; the code is printed as it came.
+FIELD_HINTS = {
+    ("parent", "too_deep"): "the tree is two levels deep: that card is a subtask already",
+    ("parent", "has_children"): "a card with children takes no parent",
+    ("parent", "parent_closed"): "the parent is done or cancelled: it takes no new child",
+    ("parent", "self"): "a card is never its own parent",
+    ("parent", "release_card"): "a release card is neither parent nor child",
+    ("parent", "cycle"): "the parent and the dependencies would wait for each other",
+    ("depends_on", "cycle"): "the parent and the dependencies would wait for each other",
+}
+CODE_HINTS = {
     "subtasks_proposed": "a subtask waits as proposed until someone with tasks:admin opens it "
     "(policy.subtasks): create it without --status open, and attach only a proposed card",
     "dependencies_open": "a parent is done only when its children are done or cancelled",
 }
+SUBTASK_HINTS = {**{f"{f}: {r}": h for (f, r), h in FIELD_HINTS.items()}, **CODE_HINTS}
 
 
-def _subtask_hint(exc: hub.HubError) -> hub.HubError:
+def _subtask_hint(exc: hub.HubError, assign: bool = False) -> hub.HubError:
     """The hub's refusal as it is, with the one hint line its code has (§6.4)."""
-    fields = exc.details.get("fields") if isinstance(exc.details, dict) else None
-    codes = [
-        *(fields.values() if isinstance(fields, dict) else []),
-        exc.details.get("reason"),
-        exc.code,
-    ]
-    hint = next(
-        (SUBTASK_HINTS[c] for c in codes if isinstance(c, str) and c in SUBTASK_HINTS), None
-    )
+    details = exc.details if isinstance(exc.details, dict) else {}
+    raw = details.get("fields")
+    fields: dict[Any, Any] = raw if isinstance(raw, dict) else {}
+    hint = next((FIELD_HINTS[(f, r)] for f, r in fields.items() if (f, r) in FIELD_HINTS), None)
+    hint = hint or CODE_HINTS.get(str(details.get("reason"))) or CODE_HINTS.get(str(exc.code))
+    if (
+        hint is None
+        and assign
+        and exc.code == "forbidden"
+        and details.get("scope") == "tasks:admin"
+    ):
+        hint = "--assign needs tasks:admin: create the card, then claim it"
     if hint is None:
         return exc
-    children = exc.details.get("children")
+    children = details.get("children")
     if exc.code == "dependencies_open" and isinstance(children, list):
         hint += ": " + ", ".join(onboarding.inline(c) for c in children if isinstance(c, str))
     wrapped = hub.HubError(f"{exc}\n  {hint}", code=exc.code, status=exc.status)
     wrapped.details, wrapped.request = exc.details, exc.request
     return wrapped
+
+
+# The board's columns (§6.4): every status but the closed ones, unless --status says otherwise.
+BOARD_STATUSES = "proposed,open,in_progress,blocked,review"
 
 
 def _cards(session: Session, query: list[tuple[str, str]]) -> list[dict[str, Any]]:
@@ -1719,14 +1731,15 @@ def _card_line(card: dict[str, Any]) -> str:
 def cmd_task_list(args: argparse.Namespace) -> int:
     """`GET …/tasks`, every page, as the board in text: children under their parent."""
     session = Session()
-    query = [(k, v) for k, v in (("parent", args.parent), ("status", args.status)) if v]
-    cards = _cards(session, query)
+    status = args.status or BOARD_STATUSES
+    query = [(k, v) for k, v in (("parent", args.parent), ("status", status)) if v]
+    cards = [c for c in _cards(session, query) if isinstance(c.get("id"), str)]
     if args.json:
-        _print_json(cards)
+        _print_ascii_json(cards)  # titles are other members' text
         return EXIT_OK
     if not cards:
         print("no cards")
-    listed = {c.get("id") for c in cards}
+    listed = {c["id"] for c in cards}
     children: dict[Any, list[dict[str, Any]]] = {}
     for card in cards:
         if card.get("parent") in listed and card.get("parent") != card.get("id"):
@@ -1742,18 +1755,20 @@ def cmd_task_list(args: argparse.Namespace) -> int:
 
 
 def cmd_task_show(args: argparse.Namespace) -> int:
-    """`GET …/tasks/{id}`, then its children (`?parent=`, every status)."""
+    """`GET …/tasks/{id}`, then its children (`?parent=`, every status). `--json` is the
+    hub's card as it came."""
     session = Session()
     card = _obj(session.client.call("GET", session.project_path("tasks", args.card)))
-    kids = _cards(session, [("parent", args.card), ("status", "all")])
     if args.json:
-        _print_json({**card, "children_cards": kids})
+        _print_ascii_json(card)
         return EXIT_OK
+    kids = [k for k in _cards(session, [("parent", args.card), ("status", "all")])
+            if isinstance(k.get("id"), str)]  # fmt: skip
     show = onboarding.inline
     print(_card_line(card))
-    for key in ("kind", "label", "area"):
+    for key in ("kind", "label", "area", "assigned_to"):
         if card.get(key):
-            print(f"  {key}: {show(card[key])}")
+            print(f"  {key.replace('_', ' ')}: {show(card[key])}")
     holder = _obj(card.get("claim")).get("holder")
     if holder:
         print(f"  held by: {show(holder)}")
@@ -1763,9 +1778,13 @@ def cmd_task_show(args: argparse.Namespace) -> int:
         print(f"  children: {show(counts.get('open'))}/{show(counts.get('total'))} open")
         for kid in kids:
             print("    " + _card_line(kid))
-    related = [show(r) for r in card.get("related") or [] if isinstance(r, str)]
-    if related:
-        print(f"  related: {', '.join(related)}")
+    for key in ("depends_on", "related"):
+        ids = [show(r) for r in card.get(key) or [] if isinstance(r, str)]
+        if ids:
+            print(f"  {key.replace('_', ' ')}: {', '.join(ids)}")
+    if isinstance(card.get("body"), str) and card["body"].strip():
+        print("  body:")
+        print("\n".join("  " + line for line in onboarding.quote(card["body"])))
     return EXIT_OK
 
 
@@ -1786,7 +1805,7 @@ def cmd_task_create(args: argparse.Namespace) -> int:
     try:
         card = session.client.call("POST", session.project_path("tasks"), body=body)
     except hub.HubError as exc:
-        raise _subtask_hint(exc) from None
+        raise _subtask_hint(exc, assign=bool(args.assign)) from None
     status, card_id = _field(card, "status"), _field(card, "id")
     under = f" under {onboarding.inline(args.parent)}" if args.parent else ""
     return _done(
@@ -1814,23 +1833,12 @@ def cmd_task_edit(args: argparse.Namespace) -> int:
         card = session.client.call("PATCH", session.project_path("tasks", args.card), body=patch)
     except hub.HubError as exc:
         raise _subtask_hint(exc) from None
-    return _done(args, card, f"updated {args.card}: {', '.join(sorted(patch))}")
+    return _done(args, card, f"updated {args.card}: {', '.join(sorted(patch))}", ascii_json=True)
 
 
 def _releases(session: Session) -> list[dict[str, Any]]:
     """Every release card of the project, following the pages."""
-    items: list[dict[str, Any]] = []
-    cursor: str | None = None
-    seen: set[str] = set()
-    while True:
-        query = [("kind", "release"), ("status", "all"), ("limit", "200")]
-        if cursor:
-            query.append(("cursor", cursor))
-        page = session.client.call("GET", session.project_path("tasks"), query=query)
-        items.extend(i for i in _field(page, "items") or [] if isinstance(i, dict))
-        cursor = _next_cursor(page, seen)
-        if not cursor:
-            return items
+    return _cards(session, [("kind", "release"), ("status", "all")])
 
 
 def _release_card(session: Session, card: str | None) -> dict[str, Any]:
@@ -3020,7 +3028,10 @@ def build_parser() -> argparse.ArgumentParser:
         "list", help="the board in text, children under their parent", formatter_class=fmt
     )
     r.add_argument("--parent", type=_id, help="only this card's children")
-    r.add_argument("--status", help="a status, a comma list, or all (default: the hub's)")
+    r.add_argument(
+        "--status",
+        help="a status, a comma list, or all (default: the open columns, " + BOARD_STATUSES + ")",
+    )
     _json_flag(r)
     r.set_defaults(handler=cmd_task_list)
     r = tsub.add_parser(

@@ -605,9 +605,9 @@ def render(packet: Any, first: bool = False, board_empty: bool = False) -> str:
             "refuses it and you write the long form @owner/handle."
         )
         out.append(
-            'Split a card with `maity task create "<title>" --parent <card>`: a subtask starts '
-            "as proposed until someone with tasks:admin opens it, and a parent is done only "
-            "when its children are."
+            'Split a card with `maity task create "<title>" --parent <card>`: under the default '
+            "policy a subtask starts as proposed until someone with tasks:admin opens it, and a "
+            "parent is done only when its children are."
         )
     # Every piece above is cleaned already; this pass guarantees that nothing missed reaches
     # the terminal as a control sequence.
