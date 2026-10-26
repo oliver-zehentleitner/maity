@@ -1,7 +1,8 @@
 ### Added
 
 - cli: `maity task show`, `list`, `create` and `edit` (§6.4, §13).
-  - `list` is the board in text, with children under their parent and the open/total count.
+  - `list` is the board in text, with children under their parent and the open/total count;
+    it shows the open columns unless `--status` says otherwise (`--status all`).
   - `show` names the card's parent, its children and its related cards.
   - `create` and `edit` set `--parent` / `--no-parent` and `--related` / `--unrelated`.
     `--assign` needs `tasks:admin`.

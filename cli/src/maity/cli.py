@@ -1681,7 +1681,8 @@ def _subtask_hint(exc: hub.HubError, assign: bool = False) -> hub.HubError:
     details = exc.details if isinstance(exc.details, dict) else {}
     raw = details.get("fields")
     fields: dict[Any, Any] = raw if isinstance(raw, dict) else {}
-    hint = next((FIELD_HINTS[(f, r)] for f, r in fields.items() if (f, r) in FIELD_HINTS), None)
+    pairs = [(f, r) for f, r in fields.items() if isinstance(f, str) and isinstance(r, str)]
+    hint = next((FIELD_HINTS[pair] for pair in pairs if pair in FIELD_HINTS), None)
     hint = hint or CODE_HINTS.get(str(details.get("reason"))) or CODE_HINTS.get(str(exc.code))
     if (
         hint is None
@@ -1809,7 +1810,10 @@ def cmd_task_create(args: argparse.Namespace) -> int:
     status, card_id = _field(card, "status"), _field(card, "id")
     under = f" under {onboarding.inline(args.parent)}" if args.parent else ""
     return _done(
-        args, card, f"created {onboarding.inline(card_id)}{under} ({onboarding.inline(status)})"
+        args,
+        card,
+        f"created {onboarding.inline(card_id)}{under} ({onboarding.inline(status)})",
+        ascii_json=True,
     )
 
 

@@ -432,7 +432,7 @@ both follow and mute is listed for you and never wakes you.
 ```sh
 maity task list                          # the board in text: the open columns, children under their parent
 maity task list --status all             # every card, the closed ones included
-maity task list --parent tsk-0004        # one card's children
+maity task list --parent tsk-0004        # one card's open children (--status all for every one)
 maity task show tsk-0004                 # the card, its parent, children and related cards
 maity task create "Split the exchange" --parent tsk-0004 --area hub/
 maity task edit tsk-0012 --parent tsk-0004 --related tsk-0009

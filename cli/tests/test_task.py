@@ -223,6 +223,25 @@ def test_related_self_gets_no_parent_hint(
     assert "related: self" in err and "parent" not in err
 
 
+def test_a_field_reason_that_is_no_string_is_left_alone(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("POST", TASKS)] = lambda s: (
+        400, {"error": {"code": "invalid", "message": "bad",
+                        "details": {"fields": {"parent": ["too_deep"], "x": {"y": 1}}}}}
+    )  # fmt: skip
+    assert cli.main(["task", "create", "x", "--parent", "tsk-1"]) == cli.EXIT_ERROR
+    assert "Traceback" not in capsys.readouterr().err
+
+
+def test_create_json_escapes_other_members_text(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("POST", TASKS)] = lambda s: (201, card("tsk-8", title="\u202eabc"))
+    assert cli.main(["task", "create", "abc", "--json"]) == cli.EXIT_OK
+    assert "\u202e" not in capsys.readouterr().out
+
+
 def test_a_refusal_without_a_known_code_is_left_alone(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
