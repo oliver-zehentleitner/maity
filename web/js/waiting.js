@@ -6,6 +6,10 @@ window.Maity = window.Maity || {};
   const GROUPS = [["inbox", "Request updates"], ["chat", "Conversations"], ["mention", "Mentions"],
     ["card", "Cards"], ["agent", "Agents"], ["jour_fixe", "Jour fixe"], ["ticker", "Changes"], ["account", "Account"]];
   const projectOf = (x) => x.project && x.project.slug || "";
+  // The view shows 200 rows: 4 pages of the hub's most (50, §18.2) are all it
+  // reads; the rest is behind More notifications. Stream events within a
+  // short while are one refresh.
+  const SHOWN = 200, PAGES = SHOWN / 50, SETTLE_MS = 400;
   const requestKey = (slug, id) => slug + "/" + id;
   function rows(items, requests, project) {
     const open = new Set(requests.filter((r) => r.status === "open").map((r) => requestKey(r.slug, r.id)));
@@ -49,27 +53,29 @@ window.Maity = window.Maity || {};
       h("span", { class: "muted" }, (x.project ? x.project.name + " · " : "") + formatAgo(x.at)));
   }
 
-  async function mount(ctx, root, requests, project) {
+  // Mounted without being awaited: the inbox is drawn at once, this list
+  // reads in its own time and says so meanwhile.
+  function mount(ctx, root, requests, project) {
     const box = h("div", { class: "waiting-activity" }), status = M.statusLine();
     append(root, box, status.el);
-    let items = [], disposed = false, loading = false, again = false, last = null;
+    let items = [], more = false, disposed = false, loading = false, again = false, last = null, settle = null;
     const draw = () => {
       if (!M.notify.state.available) { clear(box); last = null; return; }
       const groups = rows(items, requests, project());
-      const signature = JSON.stringify(groups);
+      const signature = JSON.stringify(groups) + more;
       if (signature === last) return;
       last = signature;
       const focused = Array.from(box.querySelectorAll(".waiting-item")).find((el) => el.contains(document.activeElement));
       const focusId = focused && focused.getAttribute("data-notification");
       clear(box);
-      let left = 200, total = 0;
+      let left = SHOWN, total = 0;
       GROUPS.forEach(([key, title]) => {
         const all = groups[key]; total += all.length;
         const visible = all.slice(0, left); left -= visible.length;
         if (visible.length) append(box, h("section", { class: "waiting-group", "aria-label": title },
           h("h3", null, title), h("ul", { class: "waiting-items" }, visible.map((row) => rowLink(ctx, row, () => refresh(), status)))));
       });
-      if (total > 200) append(box, h("p", { class: "hint" }, "Showing 200 activity rows. ", h("a", { href: "#/notifications" }, "More notifications")));
+      if (total > SHOWN || more) append(box, h("p", { class: "hint" }, "Showing " + Math.min(total, SHOWN) + " activity rows. ", h("a", { href: "#/notifications" }, "More notifications")));
       if (focusId) {
         const replacement = Array.from(box.querySelectorAll(".waiting-item")).find((el) => el.getAttribute("data-notification") === focusId);
         if (replacement) replacement.querySelector("a").focus();
@@ -82,16 +88,17 @@ window.Maity = window.Maity || {};
       try {
         const path = "/me/notifications?unread=true&limit=50" + (ctx.scope === "project" ? "&project=" + encodeURIComponent(ctx.slug) : "");
         const all = [], cursors = new Set();
-        let cursor = null;
+        let cursor = null, pages = 0;
         do {
           const answer = await M.api.get(path + (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""));
           if (disposed) return;
           all.push(...(answer.items || []));
           cursor = answer.next_cursor;
+          pages++;
           if (cursor && cursors.has(cursor)) throw new Error("The hub repeated a notification page.");
           cursors.add(cursor);
-        } while (cursor);
-        items = all; status.done(); draw();
+        } while (cursor && pages < PAGES);
+        items = all; more = !!cursor; status.done(); draw();
       } catch (err) {
         if (disposed) return;
         if (await M.api.missingRoute(err, "GET", "/me/notifications")) {
@@ -102,10 +109,13 @@ window.Maity = window.Maity || {};
         if (again && !disposed) { again = false; refresh(); }
       }
     }
-    const unsubscribe = M.notify.state.available ? M.notify.subscribe(refresh) : () => {};
-    ctx.onDispose(() => { disposed = true; unsubscribe(); });
-    await refresh();
-    return { draw };
+    // A busy stream is one refresh once it settles, never a new read per event.
+    const soon = () => { window.clearTimeout(settle); settle = window.setTimeout(refresh, SETTLE_MS); };
+    const unsubscribe = M.notify.state.available ? M.notify.subscribe(soon) : () => {};
+    ctx.onDispose(() => { disposed = true; window.clearTimeout(settle); unsubscribe(); });
+    if (M.notify.state.available) status.busy("Reading what else is new…");
+    const ready = refresh();
+    return { draw, ready };
   }
 
   // The overflow destination is paginated, so the 200-row landing page

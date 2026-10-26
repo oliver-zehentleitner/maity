@@ -479,6 +479,6 @@ window.Maity = window.Maity || {};
         .map((li) => li.querySelector("button.entry-head"))[0];
       if (head) window.setTimeout(() => head.focus(), 0);
     }
-    activity = await M.waiting.mount(ctx, root, items, () => ctx.scope === "project" ? ctx.slug : projectFilter());
+    activity = M.waiting.mount(ctx, root, items, () => ctx.scope === "project" ? ctx.slug : projectFilter());
   };
 })(window.Maity);
