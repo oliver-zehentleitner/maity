@@ -1127,7 +1127,10 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     run.step("global chat: #/chats has every project's chats and opens one in place")
     page.locator("header a.chat-button").click()
     expect(page).to_have_url(re.compile(r"#/chats$"))
-    g_entry = page.locator(".chat-list a.conv", has_text="E2E Agent").first
+    # The hash changes before the view: wait for the global list, not the project's that is still there.
+    expect(page.locator(".chat-list-pane h2")).to_have_text("Chats")
+    g_entry = page.locator(".chat-list a.conv.with-project", has_text="E2E Agent").first
+    expect(g_entry).to_have_attribute("href", re.compile(rf"^#/chats/e2e-alpha/{agent_id}$"))
     expect(g_entry).to_contain_text("in ")
     g_entry.click()
     expect(page).to_have_url(re.compile(rf"#/chats/e2e-alpha/{agent_id}$"))
