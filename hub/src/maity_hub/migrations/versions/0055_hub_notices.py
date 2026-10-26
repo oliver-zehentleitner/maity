@@ -4,8 +4,8 @@
 the notice of an agent's outage. A placement keeps its open outage — since when, and the
 notice filed for it — so that later reports of the same outage file nothing.
 
-Revision ID: 0054
-Revises: 0038
+Revision ID: 0055
+Revises: 0054
 Create Date: 2026-10-26
 """
 
@@ -15,8 +15,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import mysql
 
-revision: str = "0054"
-down_revision: str | None = "0038"
+revision: str = "0055"
+down_revision: str | None = "0054"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
