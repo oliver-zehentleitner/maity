@@ -84,6 +84,7 @@ window.Maity = window.Maity || {};
     const parts = window.location.hash.replace(/^#\/?/, "").split("/").filter(Boolean).map(decodeURIComponent);
     if (!parts.length) return { scope: null };
     if (parts[0] === "notifications") return { scope: "notifications" };
+    if (parts[0] === "chats") return { scope: "chats" };
     // The login page, always reachable (docs/api.md §16.7); signed in, the root.
     if (parts[0] === "login") return { scope: "login" };
     if (parts[0] === "all") return { scope: "all" };
@@ -806,6 +807,17 @@ window.Maity = window.Maity || {};
     else if (fresh) { const me = header.querySelector(".me"); if (me) me.insertBefore(fresh, me.firstChild); }
   }
 
+  // The Chat button follows the counts too, keeping the focus if it had it.
+  function renderChat(ctx) {
+    const old = document.getElementById("header").querySelector("a.chat-button");
+    if (!old) return;
+    const focused = document.activeElement === old;
+    const fresh = M.notify.chatButton(ctx);
+    old.parentNode.insertBefore(fresh, old);
+    old.remove();
+    if (focused) fresh.focus();
+  }
+
   // The counts changed: only the switcher is replaced, so an open State &
   // absence panel and the tab row's scroll position stay as they are.
   function renderSwitcher(ctx) {
@@ -864,11 +876,12 @@ window.Maity = window.Maity || {};
         brandTitle(),
         ctx.scope === "project"
           ? [projectMark(ctx.slug, ctx.project.name, ctx.project), h("span", { class: "project" }, ctx.project.name)]
-          : h("span", { class: "project" }, { new: "New project", account: "Your account", runners: "Runners", "admin-users": "Users of this hub", "instance-admin": "Instance administration", observe: "Read along" }[ctx.scope] || "Everything waiting for you"),
+          : h("span", { class: "project" }, { new: "New project", account: "Your account", runners: "Runners", "admin-users": "Users of this hub", "instance-admin": "Instance administration", observe: "Read along", chats: "Chats" }[ctx.scope] || "Everything waiting for you"),
         M.api.source === "fixtures"
           ? h("span", { class: "source", title: "Data from web/fixtures/, not from the hub. Changes are kept in this tab only." }, "Fixtures")
           : null,
-        h("span", { class: "me" }, M.notify.bell(ctx, () => ctx.refreshCounts()), settings.el, profile.el)),
+        // Chat, Notifications, the gear, the profile: in one row on a phone too.
+        h("span", { class: "me" }, M.notify.chatButton(ctx), M.notify.bell(ctx, () => ctx.refreshCounts()), settings.el, profile.el)),
       // The projects, and at their right, apart, this project's state and
       // the owner's absence with the settings that change them.
       h("div", { class: "switcher-row" },
@@ -962,6 +975,7 @@ window.Maity = window.Maity || {};
         const [fresh] = await Promise.all([M.api.get("/me"), M.notify.read().catch(() => null)]);
         ctx.projects = fresh.projects;
         renderSwitcher(ctx);
+        renderChat(ctx);
         renderBell(ctx);
         renderTabCounts(ctx);
         document.title = M.notify.title(baseTitle);
@@ -1179,10 +1193,10 @@ window.Maity = window.Maity || {};
     const item = where.scope === "project" ? NAV.find((n) => n.route === where.route) : null;
     renderHeader(ctx, (item && item.current) || where.route);
     const empty = where.scope === "all" && !ctx.projects.length;
-    const known = ["all", "new", "account", "runners", "admin-users", "instance-admin", "observe", "notifications"].includes(where.scope)
+    const known = ["all", "new", "account", "runners", "admin-users", "instance-admin", "observe", "notifications", "chats"].includes(where.scope)
       || (item && own(M.views, item.view || item.route) && offered(ctx, item));
     let viewName = "unknown";
-    if (["all", "new", "account", "runners", "admin-users", "instance-admin", "observe", "notifications"].includes(where.scope)) viewName = where.scope;
+    if (["all", "new", "account", "runners", "admin-users", "instance-admin", "observe", "notifications", "chats"].includes(where.scope)) viewName = where.scope;
     else if (known) viewName = (item && item.current) || where.route;
     const root = h("section", { class: "view view-" + viewName });
     try {
@@ -1212,6 +1226,8 @@ window.Maity = window.Maity || {};
         if (elsewhere) append(root, elsewhere);
       } else if (where.scope === "notifications") {
         await M.waiting.full(ctx, root);
+      } else if (where.scope === "chats") {
+        await M.views.chats(ctx, root);
       } else if (where.scope === "observe") {
         await M.views.observe(ctx, root, where);
       } else if (where.scope === "new") {
@@ -1241,6 +1257,7 @@ window.Maity = window.Maity || {};
     if (empty) label = "No projects yet";
     else if (where.scope === "all") label = "All projects";
     else if (where.scope === "notifications") label = "Notifications";
+    else if (where.scope === "chats") label = "Chats";
     else if (where.scope === "new") label = "New project";
     else if (where.scope === "account") label = "Your account";
     else if (where.scope === "runners") label = "Runners";

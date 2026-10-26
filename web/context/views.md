@@ -1036,3 +1036,32 @@ lose the board's filter and scroll. Expanding the card inside its
 column: a column is too narrow for a description and a history, and
 every board reload would close it again. A modal dialog: on a phone the
 same as the panel, on a desktop it hides the board the card belongs to.
+
+## The header's Chat badge counts unread chat messages from the notifications, not chats
+
+**Id:** 3ad5cf20-0240-4536-aaef-3bd8b411288f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's instruction of 2026-10-25 for Chat and Notifications buttons in the signed-in header (tsk-wnk7wv6p4se7), and the coordinator's ruling the same day on the badge; docs/api.md §9.3, §18.2; the dashboard's implementation, 2026-10-26
+**Revisit when:** the hub counts conversations with unread messages (a per-conversation count on /me/notifications), or the message count proves misleading in practice
+
+Where the theme menu was, the signed-in header has Chat, then the bell,
+then the gear and the profile. Chat leads to `#/chats` and carries
+`counts.chat` from `/me/notifications`, which the header already reads,
+worded "N unread chat messages". `#/chats` reads each project's
+conversation list (§9.3) once when it opens, unread first. On a hub
+without notifications both buttons stand without a count, the bell as a
+link to everything waiting.
+
+**Reason:** the hub has no list of conversations across projects; the
+instruction asked for unread chats, but counting them would mean one
+§9.3 call per project on every count refresh. `counts.chat` costs
+nothing extra and needs no hub change; the view itself may read every
+project because it is opened rarely.
+
+**Rejected alternative:** counting conversations with unread messages
+from one §9.3 read per project each refresh: N calls every cycle. A
+per-conversation count added to `/me/notifications`: the cleaner
+number, but a contract change, kept as the follow-up should the message
+count mislead.
