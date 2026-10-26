@@ -6,6 +6,7 @@ against what the human may read now.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
@@ -18,26 +19,12 @@ from maity_hub.access import Membership
 from maity_hub.notifications import records
 
 WINDOW = timedelta(days=30)
-KINDS = ("inbox", "chat", "mention", "card", "agent", "ticker", "jour_fixe", "security", "system")
-CARD_EVENTS = (
-    "task_created",
-    "task_updated",
-    "task_claimed",
-    "task_released",
-    "task_assigned",
-    "task_reported",
-)
-EVENT_KINDS = (
-    "request_created",
-    "request_answered",
-    "request_withdrawn",
-    "message",
-    "mentioned",
-    "placement_reported",
-    "ticker",
-    *CARD_EVENTS,
-)
-CARD_REASONS = ("creator", "assignee", "holder", "agent_holder", "agent_assignee", "watcher")
+KINDS = ("inbox", "chat", "mention", "security")
+# The kinds the maintainer's decision of 2026-10-26 removed (§18.1): asked for, `invalid`.
+REMOVED_KINDS = ("card", "ticker", "jour_fixe", "keep_the_why", "agent", "system", "registration")
+REQUEST_EVENTS = ("request_created", "request_forwarded", "request_answered", "request_withdrawn")
+# The only event kinds that can make a notification; the derive reads no other row.
+EVENT_KINDS = (*REQUEST_EVENTS, "message", "mentioned")
 TITLE_MAX = 200
 
 
@@ -52,12 +39,12 @@ class Item:
     record: int | None = None  # an item from an account record
     project_id: str | None = None
     actor_membership: int | None = None
-    reason: str | None = None
     redacted: bool = False
     read: bool = False
     member: bool = True  # False for a personal request of a project the human is not in
     record_type: str | None = None
     session_id: str | None = None  # a security item's session
+    open: bool = False  # an inbox item from a record whose matter is not yet closed
 
     @property
     def id(self) -> str:
@@ -161,8 +148,8 @@ def _from_events(conn: Connection, where: Scope, mine: Membership, now: datetime
 def _classify(
     look: Lookup, where: Scope, mine: Membership, row: Any, hidden: frozenset[str]
 ) -> Item | None:
-    """The one item an event gives this human, or None: `inbox` wins over everything,
-    `mention` over `card` and `chat` (§18.1)."""
+    """The one item an event gives this human, or None: `inbox` wins over `mention`,
+    `mention` over `chat` (§18.1)."""
     principal = where.human_id
     readable = events.readable_by(row, mine.row, principal, hidden)
     payload = row.payload or {}
@@ -174,20 +161,15 @@ def _classify(
         "actor_membership": row.actor_membership,
         "redacted": bool(row.redacted),
     }
-    if row.kind.startswith("request_") and readable:
+    if row.kind in REQUEST_EVENTS and readable:
         request = look.request(row.subject_id)
         if request is None or request.personal:
             return None  # a personal request is one item, from its record
-        mine_too = (
-            inbox.addressed_to(look.conn, request, mine)
-            if row.kind == "request_created"
-            else inbox.is_asker(request, mine)
-        )
-        if not mine_too:
+        if not _request_concerns(look, request, mine, row):
             return None
-        verb = "asks" if row.kind == "request_created" else "answered"
-        if row.kind == "request_withdrawn":
-            verb = "withdrew"
+        verb = {"request_answered": "answered", "request_withdrawn": "withdrew"}.get(
+            row.kind, "asks"
+        )
         who = look.name(row.actor_membership) if row.actor_membership else "Maity"
         return Item(
             kind="inbox",
@@ -231,79 +213,21 @@ def _classify(
             url=_url(where, f"/#/p/{project.slug}/board?task={task.get('id')}"),
             **base,
         )
-    if row.kind in CARD_EVENTS:
-        card = look.card(row.subject_id)
-        if card is None:
-            return None
-        reason = _card_reason(look, card, mine)
-        # A watch is no audience token: the watcher's check is reading the card (§18.1).
-        if reason is None or not (readable or reason == "watcher"):
-            return None
-        return Item(
-            kind="card",
-            title=_cut(f"{card.id} {card.title}: {_change(look, row, card)}"),
-            target={"type": "task", "id": card.id},
-            url=_url(where, f"/#/p/{project.slug}/board?task={card.id}"),
-            reason=reason,
-            **base,
-        )
-    if row.kind == "placement_reported" and readable:
-        if payload.get("state") != "failed" and payload.get("reason") != "quota":
-            return None
-        placement = look.conn.execute(
-            select(t.placement).where(t.placement.c.id == row.subject_id)
-        ).first()
-        if placement is None or not _concerns_placement(look.conn, placement, principal):
-            return None
-        agent = _placement_handle(look.conn, placement)
-        why = payload.get("reason") or payload.get("state")
-        return Item(
-            kind="agent",
-            title=_cut(f"{agent} stopped: {why}"),
-            target={"type": "placement", "id": placement.id},
-            url=_url(where, f"/#/p/{project.slug}/agents"),
-            **base,
-        )
-    if row.kind == "ticker" and readable and f"member:{principal}" in (row.audience or []):
-        return Item(
-            kind="ticker",
-            title=None if row.redacted else _cut(f"{project.name}: {payload.get('text', '')}"),
-            target={"type": "ticker", "id": str(row.seq)},
-            url=_url(where, f"/#/p/{project.slug}/ticker"),
-            **base,
-        )
     return None
 
 
-def _card_reason(look: Lookup, card: Any, mine: Membership) -> str | None:
-    """Which relation makes the card the human's, the first in §18.2's order."""
-    if card.created_by == mine.id:
-        return "creator"
-    if card.assigned_to == mine.id:
-        return "assignee"
-    if card.claim_holder == mine.id:
-        return "holder"
-    if look.owned_agent(card.claim_holder, mine.row.human_id):
-        return "agent_holder"
-    if look.owned_agent(card.assigned_to, mine.row.human_id):
-        return "agent_assignee"
-    if look.watching(card.id) or mine.row.human_id in ((card.contract or {}).get("watchers") or []):
-        return "watcher"
-    return None
-
-
-def _change(look: Lookup, row: Any, card: Any) -> str:
-    payload = row.payload or {}
-    if row.kind == "task_created":
-        return "created"
-    if row.kind == "task_updated":
-        changed = payload.get("fields") or []
-        return f"status {card.status}" if "status" in changed else "edited"
-    if row.kind in ("task_claimed", "task_assigned"):
-        verb = "claimed" if row.kind == "task_claimed" else "assigned"
-        holder = payload.get("holder")
-        return f"{verb} by {look.principal_name(holder)}" if holder else verb
-    return "released" if row.kind == "task_released" else "reported"
+def _request_concerns(look: Lookup, request: Any, mine: Membership, row: Any) -> bool:
+    """§18.1: a new request addressed to the human; a forward that makes them the holder,
+    or opens the request to the admins while they hold `admin`; an answer or a withdrawal
+    of a request they asked."""
+    if row.kind == "request_created":
+        return inbox.addressed_to(look.conn, request, mine)
+    if row.kind == "request_forwarded":
+        step = (row.payload or {}).get("step") or {}
+        if step.get("action") == "opened":
+            return mine.role == "admin"
+        return step.get("action") == "forwarded" and step.get("to") == mine.principal_id
+    return inbox.is_asker(request, mine)
 
 
 # --- account records -----------------------------------------------------------------
@@ -315,10 +239,11 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
             t.account_record.c.human_id == where.human_id,
             t.account_record.c.at >= now - records.KEPT,
             t.account_record.c.type.in_(
-                (*records.SECURITY, *records.SYSTEM, "personal_request_created")
+                (*records.SECURITY, *records.INBOX, "personal_request_created")
             ),
         )
     ).all()
+    waiting = _waiting_registrations(conn, rows)
     items = []
     for row in rows:
         data = row.data or {}
@@ -374,10 +299,32 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
                     record_type=row.type,
                 )
             )
-        elif row.type == "mail_disabled" and row.at >= now - WINDOW:
+        elif row.type == "registration_pending":
+            # Listed while the registration waits, however old, and read once decided
+            # (§18.1); the human's own read mark does not close it.
+            pending = data.get("human") in waiting
+            if not pending and row.at < now - WINDOW:
+                continue
             items.append(
                 Item(
-                    kind="system",
+                    kind="inbox",
+                    at=row.at,
+                    record=row.n,
+                    title=_cut(f"{data.get('handle')} waits for approval"),
+                    target={"type": "registration", "id": str(data.get("human"))},
+                    url=_url(where, "/#/admin/registration"),
+                    read=row.read_at is not None or not pending,
+                    record_type=row.type,
+                    open=pending,
+                )
+            )
+        elif row.type == "mail_disabled" and row.at >= now - WINDOW:
+            # TODO(#280): listed and counted while the address stays disabled, however old,
+            # and read once it is set again (§18.1, §18.7); the address state comes with
+            # the notification settings. Until then: the 30-day window and the read mark.
+            items.append(
+                Item(
+                    kind="inbox",
                     at=row.at,
                     record=row.n,
                     title=_cut(f"Mail to {data.get('address')} disabled after 3 failures"),
@@ -385,9 +332,28 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
                     url=_url(where, "/#/account/notifications"),
                     read=row.read_at is not None,
                     record_type=row.type,
+                    open=row.read_at is None,
                 )
             )
     return items
+
+
+def _waiting_registrations(conn: Connection, rows: Sequence[Any]) -> set[str]:
+    """The humans of these `registration_pending` records whose registration still
+    waits for the instance admin's decision (§16.4)."""
+    humans = {
+        str((row.data or {}).get("human")) for row in rows if row.type == "registration_pending"
+    }
+    if not humans:
+        return set()
+    return set(
+        conn.execute(
+            select(t.account_registration.c.human_id).where(
+                t.account_registration.c.human_id.in_(humans),
+                t.account_registration.c.status == "pending",
+            )
+        ).scalars()
+    )
 
 
 # --- views ---------------------------------------------------------------------------
@@ -415,8 +381,6 @@ def view(conn: Connection, where: Scope, item: Item) -> dict[str, Any]:
         "read": item.read,
         "redacted": item.redacted,
     }
-    if item.reason is not None:
-        answer["reason"] = item.reason
     return answer
 
 
@@ -436,35 +400,15 @@ def _actor(conn: Connection, membership_id: int | None) -> dict[str, Any] | None
 
 class Lookup:
     """What classifying a batch of one project's event rows reads, each kind in one query
-    for the whole batch instead of one per row: the cards and requests the rows name, the
-    human's watches among those cards, the memberships behind actors and holders, and
-    the profiles and humans behind them. Every answer equals the single lookup's below;
-    an id the batch did not name falls back to it."""
+    for the whole batch instead of one per row: the requests the rows name, the
+    memberships behind the actors, and the profiles and humans behind them. Every answer
+    equals the single lookup's below; an id the batch did not name falls back to it."""
 
     def __init__(self, conn: Connection, mine: Membership, rows: list[Any]) -> None:
         self.conn = conn
-        self.mine_id = mine.id
-        self.card_ids = {r.subject_id for r in rows if r.kind in CARD_EVENTS and r.subject_id}
-        self.request_ids = {
-            r.subject_id for r in rows if r.kind.startswith("request_") and r.subject_id
-        }
-        self.cards = _by_id(conn, t.card, self.card_ids)
+        self.request_ids = {r.subject_id for r in rows if r.kind in REQUEST_EVENTS and r.subject_id}
         self.requests = _by_id(conn, t.request, self.request_ids)
-        self.watched = (
-            set(
-                conn.execute(
-                    select(t.card_watch.c.card_id).where(
-                        t.card_watch.c.membership_id == mine.id,
-                        t.card_watch.c.card_id.in_(self.card_ids),
-                    )
-                ).scalars()
-            )
-            if self.card_ids
-            else set()
-        )
         self.member_ids = {r.actor_membership for r in rows if r.actor_membership is not None}
-        for card in self.cards.values():
-            self.member_ids |= {m for m in (card.claim_holder, card.assigned_to) if m is not None}
         self.members = {
             row.id: (row.human_id, row.agent_id)
             for row in (
@@ -477,12 +421,7 @@ class Lookup:
                 else []
             )
         }
-        holders = {
-            str((r.payload or {}).get("holder"))
-            for r in rows
-            if r.kind in ("task_claimed", "task_assigned") and (r.payload or {}).get("holder")
-        }
-        principals = holders | {h or a for h, a in self.members.values() if h or a}
+        principals = {h or a for h, a in self.members.values() if h or a}
         principals |= {r.conversation_id for r in rows if r.conversation_id is not None}
         self.human_ids = {p for p in principals if p.startswith("hum-")}
         self.agent_ids = principals - self.human_ids
@@ -493,38 +432,20 @@ class Lookup:
             if self.human_ids
             else []
         )
-        self.agents = {
-            row.id: (row.handle, row.owner_id)
-            for row in (
-                conn.execute(
-                    select(
-                        t.agent_profile.c.id, t.agent_profile.c.handle, t.agent_profile.c.owner_id
-                    ).where(t.agent_profile.c.id.in_(self.agent_ids))
-                ).all()
-                if self.agent_ids
-                else []
-            )
-        }
-
-    def card(self, card_id: str | None) -> Any:
-        if card_id is None or card_id not in self.card_ids:
-            return _card(self.conn, card_id)
-        return self.cards.get(card_id)
+        self.handles = dict(
+            conn.execute(
+                select(t.agent_profile.c.id, t.agent_profile.c.handle).where(
+                    t.agent_profile.c.id.in_(self.agent_ids)
+                )
+            ).all()
+            if self.agent_ids
+            else []
+        )
 
     def request(self, request_id: str | None) -> Any:
         if request_id is None or request_id not in self.request_ids:
             return _request(self.conn, request_id)
         return self.requests.get(request_id)
-
-    def watching(self, card_id: str) -> bool:
-        if card_id not in self.card_ids:
-            watch = self.conn.execute(
-                select(t.card_watch.c.card_id).where(
-                    t.card_watch.c.card_id == card_id, t.card_watch.c.membership_id == self.mine_id
-                )
-            ).first()
-            return watch is not None
-        return card_id in self.watched
 
     def name(self, membership_id: int | None) -> str:
         if membership_id not in self.member_ids:
@@ -544,23 +465,12 @@ class Lookup:
             return str(self.humans.get(principal) or principal)
         if principal not in self.agent_ids:
             return _principal_name(self.conn, principal)
-        handle = self.agents.get(principal, (None, None))[0]
-        return f"{handle or principal} (agent)"
+        return f"{self.handles.get(principal) or principal} (agent)"
 
     def handle(self, agent_id: str) -> str:
         if agent_id not in self.agent_ids:
             return _handle(self.conn, agent_id)
-        return str(self.agents.get(agent_id, (None, None))[0] or agent_id)
-
-    def owned_agent(self, membership_id: int | None, human_id: str) -> bool:
-        if membership_id is None:
-            return False
-        if membership_id not in self.member_ids:
-            return _owned_agent(self.conn, membership_id, human_id)
-        agent_id = (self.members.get(membership_id) or (None, None))[1]
-        if agent_id is None:
-            return False
-        return bool(self.agents.get(agent_id, (None, None))[1] == human_id)
+        return str(self.handles.get(agent_id) or agent_id)
 
 
 def _by_id(conn: Connection, table: Any, ids: set[str]) -> dict[str, Any]:
@@ -576,12 +486,6 @@ def _request(conn: Connection, request_id: str | None) -> Any:
     if request_id is None:
         return None
     return conn.execute(select(t.request).where(t.request.c.id == request_id)).first()
-
-
-def _card(conn: Connection, card_id: str | None) -> Any:
-    if card_id is None:
-        return None
-    return conn.execute(select(t.card).where(t.card.c.id == card_id)).first()
 
 
 def _name(conn: Connection, membership_id: int | None) -> str:
@@ -610,32 +514,6 @@ def _handle(conn: Connection, agent_id: str) -> str:
         select(t.agent_profile.c.handle).where(t.agent_profile.c.id == agent_id)
     ).scalar()
     return str(handle or agent_id)
-
-
-def _owned_agent(conn: Connection, membership_id: int | None, human_id: str) -> bool:
-    if membership_id is None:
-        return False
-    owner = conn.execute(
-        select(t.agent_profile.c.owner_id)
-        .join(t.membership, t.membership.c.agent_id == t.agent_profile.c.id)
-        .where(t.membership.c.id == membership_id)
-    ).scalar()
-    return bool(owner == human_id)
-
-
-def _concerns_placement(conn: Connection, placement: Any, human_id: str) -> bool:
-    """The owner of the placement's agent profile, and its creator (§18.1)."""
-    return placement.created_by == human_id or _owned_agent(conn, placement.membership_id, human_id)
-
-
-def _placement_handle(conn: Connection, placement: Any) -> str:
-    if placement.membership_id is not None:
-        agent = conn.execute(
-            select(t.membership.c.agent_id).where(t.membership.c.id == placement.membership_id)
-        ).scalar()
-        if agent is not None:
-            return _handle(conn, agent)
-    return str(placement.new_handle or placement.id)
 
 
 def _chat_marks(conn: Connection, mine: Membership) -> dict[str, int]:

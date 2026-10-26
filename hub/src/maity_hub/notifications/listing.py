@@ -16,19 +16,20 @@ from sqlalchemy.dialects import postgresql, sqlite
 from maity_hub import clock
 from maity_hub import tables as t
 from maity_hub.auth import sessions
-from maity_hub.notifications.items import Item, Scope
+from maity_hub.notifications.items import EVENT_KINDS, Item, Scope
 from maity_hub.notifications.positions import Position
 from maity_hub.routes.me import open_requests
 
-COUNTED = ("inbox", "chat", "mention", "card", "agent", "ticker", "jour_fixe")
+COUNTED = ("inbox", "chat", "mention")
 
 
 # --- counts --------------------------------------------------------------------------
 
 
 def counts(conn: Connection, where: Scope, found: list[Item]) -> dict[str, Any]:
-    """§18.2: `inbox` from open requests, `chat` from the chats' own unread, the rest
-    from unread items; `total` is what asks for the human."""
+    """§18.2: `inbox` from open requests and the open inbox records, `chat` from the
+    chats' own unread, `mention` and `security` from unread items; `total` is what asks
+    for the human. The keys are exactly these five."""
     by_project: dict[str, dict[str, Any]] = {}
     for mine in where.memberships:
         entry = dict.fromkeys(COUNTED, 0)
@@ -41,11 +42,11 @@ def counts(conn: Connection, where: Scope, found: list[Item]) -> dict[str, Any]:
         )
         entry["inbox"] += 1
     for item in found:
-        if item.read or item.kind in ("inbox", "chat") or item.project_id is None:
+        if item.read or item.kind != "mention" or item.project_id is None:
             continue
         if item.project_id in by_project:
             by_project[item.project_id][item.kind] += 1
-    total = dict.fromkeys((*COUNTED, "security", "system"), 0)
+    total = dict.fromkeys((*COUNTED, "security"), 0)
     shown: dict[str, Any] = {}
     slugs = _slugs(conn, by_project)
     for project_id, entry in by_project.items():
@@ -57,8 +58,12 @@ def counts(conn: Connection, where: Scope, found: list[Item]) -> dict[str, Any]:
         if any(entry.get(kind) for kind in COUNTED):
             shown[slugs[project_id]] = entry
     for item in found:
-        if not item.read and item.kind in ("security", "system"):
-            total[item.kind] += 1
+        if not item.read and item.kind == "security":
+            total["security"] += 1
+        # A pending registration or a disabled address: belongs to no project, counts
+        # until its matter is closed, not until it is read (§18.1).
+        if item.kind == "inbox" and item.open:
+            total["inbox"] += 1
     total["total"] = total["inbox"] + total["chat"] + total["mention"]
     return {"counts": total, "by_project": shown}
 
@@ -125,10 +130,12 @@ def _slugs(conn: Connection, by_project: dict[str, Any]) -> dict[str, str]:
 
 def stamp(conn: Connection, human_id: str) -> tuple[Any, ...]:
     """A few aggregate reads that change whenever a notifications answer could: the
-    human's memberships, each project's highest `seq`, the account records and their
-    read marks, the event items' read marks, the chats' marks and the cards the human
-    watches (a watch writes no event, yet makes a card's items the human's). A held
-    long-poll compares it before it derives everything again (§18.2)."""
+    human's memberships, each project's highest `seq` among the kinds that make items,
+    the account records and their read marks, the event items' read marks and the
+    chats' marks. A held long-poll compares it before it derives everything again
+    (§18.2). A pending registration's
+    decision moves no record and no event, and is not a new item: the counts take it at
+    the next answer."""
     members = sorted(
         conn.execute(
             select(t.membership.c.id, t.membership.c.project_id).where(
@@ -141,8 +148,11 @@ def stamp(conn: Connection, human_id: str) -> tuple[Any, ...]:
         sorted(
             conn.execute(
                 select(t.event.c.project_id, func.max(t.event.c.seq))
-                .where(t.event.c.project_id.in_(project_ids))
-                .group_by(t.event.c.project_id)
+                # Only the kinds that can make an item (§18.1): a card's or a placement's
+                # churn moves no notification, so it wakes no held long-poll either.
+                .where(
+                    t.event.c.project_id.in_(project_ids), t.event.c.kind.in_(EVENT_KINDS)
+                ).group_by(t.event.c.project_id)
             ).all()
         )
         if project_ids
@@ -167,26 +177,12 @@ def stamp(conn: Connection, human_id: str) -> tuple[Any, ...]:
         if members
         else (0, None)
     )
-    # The watched cards themselves, not their number: swapping one watch for another
-    # keeps the count and still changes whose items an event gives.
-    watches = (
-        sorted(
-            conn.execute(
-                select(t.card_watch.c.membership_id, t.card_watch.c.card_id).where(
-                    t.card_watch.c.membership_id.in_([member_id for member_id, _ in members])
-                )
-            ).all()
-        )
-        if members
-        else []
-    )
     return (
         tuple(members),
         tuple(heads),
         tuple(records),
         tuple(reads),
         tuple(chats),
-        tuple(watches),
     )
 
 

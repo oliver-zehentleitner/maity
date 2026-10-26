@@ -8,9 +8,10 @@ import time
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine
+from sqlalchemy import Engine, select
 
 from maity_hub import clock
+from maity_hub import tables as t
 from maity_hub.notifications import positions
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -89,9 +90,11 @@ def test_a_chat_message_counts_and_reads_through_the_chat(
     assert chats["items"][-1]["seq"] == item["seq"]
 
 
-def test_card_changes_reach_the_cards_creator_and_its_watcher(
+def test_cards_and_watches_notify_nobody(
     make_client: ClientFactory, owner: flow.Human, migrated: Engine
 ) -> None:
+    """§18.1 (2026-10-26): a card's changes, and a watch on it, show on the board, not
+    as notifications; only four kinds remain, and items carry no `reason`."""
     agent = flow.agent(make_client, owner)
     mine = owner.post("/projects/maity/tasks", {"title": "Mine"}).json()
     theirs = agent.post("/projects/maity/tasks", {"title": "Theirs"}).json()
@@ -99,29 +102,56 @@ def test_card_changes_reach_the_cards_creator_and_its_watcher(
         f"/api/v1/projects/maity/tasks/{theirs['id']}/watch",
         headers={"X-CSRF-Token": owner.csrf},
     )
-    assert watched.status_code == 200 and watched.json()["watching"] is True
-    claimed = agent.post(f"/projects/maity/tasks/{mine['id']}/claim", {})
-    assert claimed.status_code == 200, claimed.text
+    assert watched.status_code == 200
+    assert agent.post(f"/projects/maity/tasks/{mine['id']}/claim", {}).status_code == 200
     agent.patch(f"/projects/maity/tasks/{theirs['id']}", {"title": "Theirs, renamed"})
-    cards = [i for i in bell(owner)["items"] if i["kind"] == "card"]
-    reasons = {i["target"]["id"]: i["reason"] for i in cards}
-    assert reasons == {mine["id"]: "creator", theirs["id"]: "watcher"}
-    # The watch is in nobody's event audience.
-    events = owner.get("/projects/maity/events").json()["items"]
-    assert all(
-        f"member:{owner.id}" not in (e.get("audience") or [])
-        for e in events
-        if e.get("subject", {}).get("id") == theirs["id"] and e["kind"] == "task_updated"
+    got = bell(owner)
+    assert got["items"] == [
+        i for i in got["items"] if i["kind"] in ("inbox", "chat", "mention", "security")
+    ]
+    assert not [i for i in got["items"] if i["kind"] != "security"]
+    assert set(got["counts"]) == {"inbox", "chat", "mention", "security", "total"}
+    assert all("reason" not in i for i in got["items"])
+
+
+def test_a_removed_kind_is_invalid(owner: flow.Human) -> None:
+    for asked, reason in (
+        ("card", "removed_kind"),
+        ("agent,chat", "removed_kind"),
+        ("bogus", "unknown"),
+    ):
+        refused = owner.get(N, params={"kind": asked})
+        assert refused.status_code == 400, asked
+        assert refused.json()["error"]["details"]["fields"] == {"kind": reason}
+    head = bell(owner, limit=0)["next_after"]
+    marked = owner.post(f"{N}/read", {"up_to": head, "kind": "ticker"})
+    assert marked.json()["error"]["details"]["fields"] == {"kind": "removed_kind"}
+
+
+def test_a_request_opened_to_the_admins_reaches_an_admin(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    """§18.1: `request_forwarded` that opens the request to `role:admin` is an `inbox`
+    item for a human holding `admin`, though the request was not addressed to them."""
+    agent = flow.agent(make_client, owner)
+    admin = flow.human(make_client, migrated, "an-admin")
+    with migrated.connect() as conn:
+        project_id = str(conn.execute(select(t.project.c.id)).scalar_one())
+    factory.membership(migrated, project_id, "admin", human_id=admin.id)
+    asked = agent.post(
+        "/projects/maity/requests", {"class": "decision", "title": "Which?", "to": "owner"}
+    ).json()
+    assert not [i for i in bell(admin)["items"] if i["kind"] == "inbox"]
+    opened = owner.post(
+        f"/projects/maity/requests/{asked['id']}/forward", {"to": "role:admin", "reason": "yours"}
     )
-    unwatched = owner.delete(f"/projects/maity/tasks/{theirs['id']}/watch")
-    assert unwatched.json()["watching"] is False
-    agent.patch(f"/projects/maity/tasks/{theirs['id']}", {"title": "Again"})
-    # Derived when read: without the watch, the card is not the human's any more.
-    later = [i for i in bell(owner)["items"] if i["kind"] == "card"]
-    assert all(i["target"]["id"] == mine["id"] for i in later)
-    assert agent.client.put(
-        f"/api/v1/projects/maity/tasks/{theirs['id']}/watch", headers=agent.auth | agent.key()
-    ).json()["error"]["details"] == {"reason": "humans_only"}
+    assert opened.status_code == 200, opened.text
+    found = [i for i in bell(admin)["items"] if i["kind"] == "inbox"]
+    assert found and all(i["target"] == {"type": "request", "id": asked["id"]} for i in found)
+    events = admin.get("/projects/maity/events").json()["items"]
+    forwarded = max(e["seq"] for e in events if e["kind"] == "request_forwarded")
+    assert forwarded in [i["seq"] for i in found]  # the forward itself is an item
+    assert all(i["title"].endswith("asks: Which?") for i in found)
 
 
 def test_own_actions_never_notify(owner: flow.Human) -> None:
@@ -183,12 +213,15 @@ def test_a_big_vector_becomes_a_handle(
 def test_mark_all_read_skips_security_items(make_client: ClientFactory, owner: flow.Human) -> None:
     agent = flow.agent(make_client, owner)
     second_session(make_client, owner)
-    card = owner.post("/projects/maity/tasks", {"title": "Mine"}).json()
-    agent.post(f"/projects/maity/tasks/{card['id']}/claim", {})
+    said = agent.post(
+        "/projects/maity/events",
+        {"kind": "message", "type": "notice", "to": "all", "body": "@maintainer look"},
+    )
+    assert said.status_code in (200, 201), said.text
     got = bell(owner)
-    assert got["counts"]["card"] == 1 and got["counts"]["security"] >= 1
+    assert got["counts"]["mention"] == 1 and got["counts"]["security"] >= 1
     after = owner.post(f"{N}/read", {"up_to": got["next_after"]}).json()
-    assert after["counts"]["card"] == 0
+    assert after["counts"]["mention"] == 0
     assert after["counts"]["security"] == got["counts"]["security"]
 
 

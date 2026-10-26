@@ -18,7 +18,8 @@ from maity_hub import tables as t
 
 KEPT = timedelta(days=90)
 SECURITY = ("session_created", "email_address_changed")
-SYSTEM = ("mail_disabled",)
+# Records that are `inbox` items, open until their matter is closed (§18.1).
+INBOX = ("registration_pending", "mail_disabled")
 PERSONAL = (
     "personal_request_created",
     "personal_request_answered",
