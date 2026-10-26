@@ -6,10 +6,11 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import Annotated, Any
 
+import anyio
 from fastapi import APIRouter, Body, Query, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, delete, insert, select
@@ -31,9 +32,27 @@ router = APIRouter()
 LIMIT_DEFAULT, LIMIT_MAX = 20, 50
 IDS_MAX = 200
 POLL = 0.5  # seconds between looks while a long-poll holds
+# Full answers (and marks) at once per hub process. Each derives every item of 30 days
+# and holds a pooled connection while it does; more of them would take the pool from
+# every other call. A held long-poll looks at `listing.stamp` between them instead.
+AT_ONCE = 4
 
 # One notifications long-poll per cookie session; a newer one supersedes it (§18.2).
 _holding: dict[str, object] = {}
+
+
+def _limit(request: Request) -> anyio.Semaphore:
+    """The app's semaphore for full answers, made in its event loop at first use."""
+    found: anyio.Semaphore | None = getattr(request.app.state, "notifications_at_once", None)
+    if found is None:
+        found = anyio.Semaphore(AT_ONCE)
+        request.app.state.notifications_at_once = found
+    return found
+
+
+async def _limited[T](request: Request, work: Callable[[], T]) -> T:
+    async with _limit(request):
+        return await run_in_threadpool(work)
 
 
 def _human(caller: Caller) -> str:
@@ -104,14 +123,22 @@ async def list_notifications(
 
     positions.prepare(engine_of(request), settings_of(request).secret_key)
 
-    def answer() -> dict[str, Any]:
+    def answer() -> tuple[dict[str, Any], tuple[Any, ...]]:
         with _snapshot(request) as conn:
             # Every snapshot, a held one included, checks the session again: one ended
             # while the request waited receives nothing more (§18.2).
             _require_live(conn, session)
-            return _answer(conn, request, human_id, limit, older, unread, kinds, slugs, after)
+            found = _answer(conn, request, human_id, limit, older, unread, kinds, slugs, after)
+            return found, listing.stamp(conn, human_id)
 
-    first = await run_in_threadpool(answer)
+    def unchanged(seen: tuple[Any, ...]) -> bool:
+        """Whether nothing an answer reads moved since `seen`: a few aggregates, not
+        the derivation of every item."""
+        with engine_of(request).begin() as conn:
+            _require_live(conn, session)
+            return listing.stamp(conn, human_id) == seen
+
+    first, seen = await _limited(request, answer)
     if not wait or first["items"]:
         return JSONResponse(first)
     token = object()
@@ -125,10 +152,13 @@ async def list_notifications(
                 with engine_of(request).begin() as conn:
                     _require_live(conn, session)
                 return JSONResponse({**first, "superseded": True})
-            again = await run_in_threadpool(answer)
+            if await run_in_threadpool(unchanged, seen):
+                continue
+            again, seen = await _limited(request, answer)
             if again["items"]:
                 return JSONResponse(again)
-        return JSONResponse(await run_in_threadpool(answer))
+        last, _ = await _limited(request, answer)
+        return JSONResponse(last)
     finally:
         if _holding.get(session) is token:
             del _holding[session]
@@ -186,7 +216,7 @@ def _project_ids(conn: Connection, slugs: set[str] | None) -> set[str] | None:
 
 
 @router.post("/me/notifications/read")
-def read_notifications(
+async def read_notifications(
     request: Request, caller: AnyCaller, body: Annotated[dict[str, Any], Body()]
 ) -> JSONResponse:
     session_hash = _human(caller)
@@ -196,15 +226,25 @@ def read_notifications(
     if len(given) != 1 or extra or ("ids" in body and ({"kind", "project"} & set(body))):
         raise invalid({name: "extra_forbidden" for name in extra} or {"body": "ids_or_up_to"})
     positions.prepare(engine_of(request), settings_of(request).secret_key)
-    with _snapshot(request) as conn:
-        session = conn.execute(
-            select(t.human_session).where(t.human_session.c.id_hash == session_hash)
-        ).one()
-        where = items.scope(conn, human_id, settings_of(request).public_url)
-        found = items.derive(conn, where)
-        chosen = _chosen(conn, request, human_id, where, found, body)
-        listing.mark(conn, where, found, chosen, session)
-        return JSONResponse(listing.counts(conn, where, items.derive(conn, where)))
+
+    def mark() -> dict[str, Any]:
+        """Choose in a snapshot, write the marks at READ COMMITTED, count in a fresh
+        snapshot: a mark racing another of the same items waits for it and skips what
+        it wrote, where a snapshot's insert would fail on the key (§18.3)."""
+        with _snapshot(request) as conn:
+            session = conn.execute(
+                select(t.human_session).where(t.human_session.c.id_hash == session_hash)
+            ).one()
+            where = items.scope(conn, human_id, settings_of(request).public_url)
+            found = items.derive(conn, where)
+            chosen = _chosen(conn, request, human_id, where, found, body)
+        with engine_of(request).begin() as conn:
+            listing.mark(conn, where, found, chosen, session)
+        with _snapshot(request) as conn:
+            where = items.scope(conn, human_id, settings_of(request).public_url)
+            return listing.counts(conn, where, items.derive(conn, where))
+
+    return JSONResponse(await _limited(request, mark))
 
 
 def _chosen(

@@ -8,11 +8,13 @@ from contextlib import asynccontextmanager
 from importlib.resources import files
 from string import Template
 
+import anyio.to_thread
 from fastapi import APIRouter, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import Engine
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.pool import QueuePool
 from starlette.exceptions import HTTPException
 from starlette.routing import Match, Mount
 from starlette.types import Scope
@@ -84,11 +86,20 @@ class SchemaNotCurrentError(RuntimeError):
 
 
 def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
-    engine = engine if engine is not None else make_engine(settings.database_url)
+    engine = (
+        engine
+        if engine is not None
+        else make_engine(settings.database_url, settings.db_pool_size, settings.db_max_overflow)
+    )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         require_current_schema(engine)
+        if isinstance(engine.pool, QueuePool):
+            # No more request threads than pooled connections: a thread beyond them would
+            # wait for one up to the pool timeout and fail, instead of queueing here.
+            limiter = anyio.to_thread.current_default_thread_limiter()
+            limiter.total_tokens = settings.db_pool_size + settings.db_max_overflow
         with engine.connect() as conn:
             try:
                 mail.check_at_startup(conn, settings.mail, settings.secret_key)

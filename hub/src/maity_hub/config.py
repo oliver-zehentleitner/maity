@@ -55,6 +55,10 @@ class Settings:
     avatar_decode_seconds: float = 5.0
     avatar_decode_memory_mb: int = 512
     avatar_decodes: int = 2
+    # MAITY_DB_POOL_SIZE, MAITY_DB_MAX_OVERFLOW: the server database's connection pool
+    # (SQLAlchemy's defaults, 5 + 10); the request threads are capped at their sum.
+    db_pool_size: int = 5
+    db_max_overflow: int = 10
     # MAITY_SECRET_KEY: the instance key for secrets stored at rest (§16.2, §17.4);
     # never logged, never in a response, never in the database.
     secret_key: bytes | None = field(default=None, repr=False)
@@ -111,6 +115,10 @@ class Settings:
                 parse_number(env, "MAITY_AVATAR_DECODE_MEMORY_MB", 512, minimum=128, maximum=8192)
             ),
             avatar_decodes=int(parse_number(env, "MAITY_AVATAR_DECODES", 2, minimum=1, maximum=64)),
+            db_pool_size=int(parse_number(env, "MAITY_DB_POOL_SIZE", 5, minimum=1, maximum=500)),
+            db_max_overflow=int(
+                parse_number(env, "MAITY_DB_MAX_OVERFLOW", 10, minimum=0, maximum=500)
+            ),
             secret_key=parse_secret_key(env.get("MAITY_SECRET_KEY", "")),
             mail=parse_mail(env),
             sign_in_device_code=parse_switch(env, "MAITY_SIGN_IN_DEVICE_CODE"),
