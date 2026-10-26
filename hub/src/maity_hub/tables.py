@@ -1097,6 +1097,9 @@ presence_minute = Table(
     _membership_ref("membership_id", nullable=False),
     Column("minute", UtcDateTime, nullable=False),
     PrimaryKeyConstraint("membership_id", "minute"),
+    **MYSQL_TABLE,
+)
+
 # A takeover of a held card (§6.19): who takes it from whom, the window the holder has
 # to answer, and how it ended. `request_id` names the escalation's decision request; no
 # foreign key, as the request names the takeover back.
