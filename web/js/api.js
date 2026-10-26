@@ -520,14 +520,19 @@ window.Maity = window.Maity || {};
   }
   // §18.2 counts, overall and per project. Items from events carry seq,
   // those from account records record "acr-<n>"; a position is "a.b".
-  const KINDS = ["inbox", "chat", "mention", "card", "agent", "ticker", "jour_fixe", "security", "system"];
+  // §18.1 since 2026-10-26: only what the human must react to.
+  const KINDS = ["inbox", "chat", "mention", "security"];
+  const REMOVED_KINDS = ["card", "agent", "ticker", "jour_fixe", "keep_the_why", "system", "registration"];
   function notificationCounts() {
     const counts = {};
     KINDS.forEach((k) => { counts[k] = 0; });
     const byProject = {};
-    const of = (slug) => byProject[slug] || (byProject[slug] = Object.assign({ member: true }, ...KINDS.filter((k) => k !== "security" && k !== "system").map((k) => ({ [k]: 0 }))));
+    const of = (slug) => byProject[slug] || (byProject[slug] = Object.assign({ member: true }, ...KINDS.filter((k) => k !== "security").map((k) => ({ [k]: 0 }))));
     me().projects.forEach((p) => { const n = openFor(p.slug).length; counts.inbox += n; if (n) of(p.slug).inbox += n; });
     fixtures()["notifications.json"].items.forEach((x) => {
+      // A pending registration or a disabled address counts until the matter
+      // is closed, read or not (§18.2).
+      if (x.kind === "inbox" && x.open_matter) { counts.inbox += 1; return; }
       if (x.read) return;
       // A personal request of a project one is no member of (§7): counted
       // in inbox, on an entry with member false; the rest come from /me.
@@ -536,7 +541,7 @@ window.Maity = window.Maity || {};
         return;
       }
       counts[x.kind] += 1;
-      if (x.project && x.kind !== "security" && x.kind !== "system") of(x.project.slug)[x.kind] += 1;
+      if (x.project && x.kind !== "security") of(x.project.slug)[x.kind] += 1;
     });
     counts.total = counts.inbox + counts.chat + counts.mention;
     Object.values(byProject).forEach((c) => { c.total = c.inbox + c.chat + c.mention; });
@@ -794,6 +799,10 @@ window.Maity = window.Maity || {};
       if (!Number.isInteger(limit) || limit < 0 || limit > 50) fail(400, "invalid", "limit is 0 to 50", path, { fields: { limit: "invalid" } });
       const { counts, by_project: byProject } = notificationCounts();
       const kinds = query.get("kind") ? query.get("kind").split(",") : null;
+      (kinds || []).forEach((k) => {
+        if (REMOVED_KINDS.includes(k)) fail(400, "invalid", "the request does not validate", path, { fields: { kind: "removed_kind" } });
+        if (!KINDS.includes(k)) fail(400, "invalid", "the request does not validate", path, { fields: { kind: "unknown" } });
+      });
       const projects = query.get("project") ? query.get("project").split(",") : null;
       const allowed = n.settings.browser.content || {};
       // content only on chat and mention, and only when the settings allow it (§18.2).

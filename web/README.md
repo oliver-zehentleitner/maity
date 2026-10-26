@@ -107,11 +107,16 @@ After that:
   Clicking one opens its place.
 - **What is shown.** Nothing for one's own actions. A chat's or a
   mention's text (the hub's `content`, cut at 120 characters) only where
-  the human allowed it. The kinds include the change ticker (off by
-  default), sign-ins and address changes, and an agent of one's own that
-  has not confirmed Keep the Why (`keep_the_why`, `docs/api.md` §6.23): its
-  item leads to the agent in the project's Members where one is a member,
-  else to the agent marked among one's agents (`#/account/picture/<id>`).
+  the human allowed it. There are four kinds, only what the human has to
+  react to (`docs/api.md` §18.1, since 2026-10-26): requests (`inbox`,
+  among them a registration waiting for an instance admin, leading to
+  Admin, and a disabled mail address, leading to the notification
+  settings), chat messages, mentions (in a card's thread leading to the
+  card) and sign-ins and address changes. Changes on cards, the ticker and
+  jour fixe are read on the board, the ticker and the project's feed; an
+  agent's outage and an unconfirmed Keep the Why commitment reach the
+  owner as requests in the inbox. The settings offer a switch for each
+  kind the hub lists and no other.
 - **Ending the session here.** Before a password change or signing out,
   the page cancels its held long-poll and sends none until the change is
   done (a password change keeps this session, and the stream goes on); a
@@ -1341,8 +1346,9 @@ assumed to be the assigner.
 **Waiting for you** combines open requests with unread activity, across
 projects and in each project inbox. Request-created notifications fold into
 an existing open request. Conversations occupy one row with their unread
-count and newest title; request updates, mentions, cards, agent outages,
-jour fixe, changes and account alerts have separate groups. Message content
+count and newest title; request updates (a pending registration and a
+disabled address among them), mentions and account alerts have separate
+groups, and nothing else is here. Message content
 is not shown. The project filter applies to every group.
 
 Unread items are fetched in pages of 50, at most four (the 200 rows the

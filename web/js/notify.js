@@ -12,8 +12,9 @@ window.Maity = window.Maity || {};
   const { h, append, clear, formatAgo } = M.dom;
 
   const KIND_WORDS = {
-    inbox: "Requests", chat: "Chats", mention: "Mentions", card: "Your cards", agent: "Agents stopped",
-    keep_the_why: "Keep the Why", ticker: "Changes", jour_fixe: "Jour fixe", security: "Sign-ins and address", system: "Mail delivery",
+    // Only what the human has to react to (docs/api.md §18.1, 2026-10-26): what
+    // only informs is on the board, the ticker and the project's feed.
+    inbox: "Requests", chat: "Chats", mention: "Mentions", security: "Sign-ins and address",
   };
   // How long a browser long-poll may hold, and how long to stay away after
   // another tab took the long-poll over (§18.2: one per session).
@@ -37,20 +38,15 @@ window.Maity = window.Maity || {};
     const t0 = item.target || {};
     if (t0.type === "session" || item.kind === "security") return "#/account/sessions";
     if (t0.type === "settings") return "#/account/notifications";
+    // A registration waiting for the instance admin (§16.4): Admin.
+    if (t0.type === "registration") return "#/admin";
     const slug = item.project && item.project.slug;
-    // An agent of one's own that has not confirmed Keep the Why (§6.23):
-    // in the project's Members where one is a member, else among one's
-    // agents on the account.
-    if (t0.type === "member" && item.kind === "keep_the_why") {
-      return slug && item.project.member !== false ? "#/p/" + encodeURIComponent(slug) + "/members/" + encodeURIComponent(t0.id)
-        : "#/account/picture/" + encodeURIComponent(t0.id);
-    }
     if (!slug || item.project.member === false) return "#/all";
     const base = "#/p/" + encodeURIComponent(slug) + "/";
     const t = item.target || {};
     if (t.type === "conversation") return base + "chat/" + encodeURIComponent(t.id);
-    if (t.type === "task") return base + "board";
-    if (t.type === "placement") return base + "agents";
+    if (t.type === "task") return base + "tasks/" + encodeURIComponent(t.id);
+    if (t.type === "request") return base + "inbox/" + encodeURIComponent(t.id);
     return base + "inbox";
   }
 
