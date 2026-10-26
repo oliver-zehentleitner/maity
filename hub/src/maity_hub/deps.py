@@ -67,6 +67,8 @@ async def _resolve(request: Request, renew_leases: bool) -> Caller:
                     _confine_runner(path)
                 if caller.kind == "agent" and slug is not None:
                     _refuse_other_project(conn, caller, slug)
+                if caller.kind == "human":
+                    _confine_pending(conn, caller, request.method, path)
                 return caller
         except runner_revoke.RevocationDue as due:
             # Written in its own transaction: the refusal rolls the call's back (§15.3);
@@ -93,6 +95,36 @@ def _refuse_other_project(conn: Connection, caller: Caller, slug: str) -> None:
     project_id = conn.execute(select(t.project.c.id).where(t.project.c.slug == slug)).scalar()
     if project_id != caller.project_id:
         raise not_found()
+
+
+# What an account that waits for approval may call (§2.7.5): its own account and
+# sessions. `/auth/methods` needs no caller and is everyone's.
+PENDING_MAY = {
+    ("GET", "/api/v1/me"),
+    ("GET", "/api/v1/auth/session"),
+    ("POST", "/api/v1/auth/logout"),
+    ("GET", "/api/v1/auth/sessions"),
+    ("POST", "/api/v1/auth/sessions/end-others"),
+    ("POST", "/api/v1/auth/password"),
+}
+
+
+def _confine_pending(conn: Connection, caller: Caller, method: str, path: str) -> None:
+    """A pending account holds no scope (§2.3, §2.7.5): everything outside `PENDING_MAY`
+    is `account_pending`. Raised inside the transaction, before any route runs, so the
+    call's presence side effects are undone with it."""
+    status = conn.execute(
+        select(t.human.c.account_status).where(t.human.c.id == caller.human_id)
+    ).scalar()
+    if status != "pending":
+        return
+    if (method, path) in PENDING_MAY:
+        return
+    if method == "DELETE" and path.startswith("/api/v1/auth/sessions/"):
+        return  # its own session by id
+    raise ApiError(
+        403, "forbidden", "the account waits for approval", {"reason": "account_pending"}
+    )
 
 
 RUNNER_PATH = "/api/v1/runner"

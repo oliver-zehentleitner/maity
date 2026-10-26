@@ -26,6 +26,7 @@ from maity_hub import (
     images,
     longpoll,  # noqa: F401  (subscribes the long-poll to new events)
     probe,
+    registration_accounts,
 )
 from maity_hub.auth import device_codes as codes
 from maity_hub.auth import sign_in_settings as sign_in
@@ -110,7 +111,10 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         # Limits end and sessions go away without a request to notice it (§6.12).
         availability_worker = availability.Worker(engine)
         availability_worker.start()
+        registrations_worker = registration_accounts.Worker(engine)
+        registrations_worker.start()
         yield
+        registrations_worker.stop()
         availability_worker.stop()
         image_worker.stop()
         if worker is not None:

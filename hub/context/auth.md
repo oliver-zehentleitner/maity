@@ -186,3 +186,35 @@ make every second human's browser look new.
   no events and belong to no project.
 - One cookie per human (`maity_device_<id>`): it would put the human's
   id in a cookie name that every request to the hub carries.
+
+## A pending account is confined in one place, and registration waits for the operator's account
+
+**Id:** 3018018e-1537-40d7-afef-661e68fdad90
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation of §2.7.5 and §16.4 (docs/api.md), 2026-10-25; review of #381, 2026-10-25
+
+An account that waits for approval is confined in `deps._resolve`, in
+the same transaction as authentication and before any route runs, the
+way a runner caller is. Only the calls §2.7.5 lists pass (`PENDING_MAY`);
+everything else is `account_pending`. The refusal also rolls back the
+call's presence side effects.
+
+**Rejected alternative:** a check in each route, or in `human_caller`
+alone. Every route added later would need to remember it, and a route
+that takes `AnyCaller` would let a pending account through. One place
+that sees every human call cannot be forgotten.
+
+Completion refuses with `closed` while no human exists. The instance
+admin is still the earliest human (§16), so the first registered account
+would otherwise become the instance admin, with `approval: automatic`
+at once. With `approval: operator` it would wait for a decision nobody
+can make.
+
+**Reason:** the confinement follows the runner's precedent in the same
+module. Refusing before the operator exists follows from how
+`instance_admin_id` is defined today; it was required in review and is
+not stated in the contract itself (inferred). The `account_registration`
+row of a deleted account keeps the decision and a rejection's reason,
+not the address or the source.

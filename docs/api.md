@@ -9385,8 +9385,8 @@ value it sets is `invalid` with `details.fields.<field>:
 
 Scope `instance:admin`, human only, for all four. An `id` that is not a
 pending account is `not_found`; one decided meanwhile by another
-instance admin is `invalid_transition` (`details.from`: `active` or
-`rejected`). The address is shown here — to the instance admin, for
+instance admin is `invalid_transition` (`details.from`: `active`,
+`rejected`, or `expired` for one deleted after 30 days, §2.7.5). The address is shown here — to the instance admin, for
 pending accounts only — because deciding needs it; §16.1 still carries
 none. `reason` follows the rules of a mail body (§18.5): plain text, no
 link is made from it.
