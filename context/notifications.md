@@ -212,3 +212,48 @@ of truth next to the notifications feed); keeping the inbox-only page
 and pointing to the bell (the start page is where the human looks
 first). The per-kind switches of §18.4 govern browser notifications and
 mail, not this page, so nothing waiting is hidden from it.
+
+## A notification is something the human must react to, not an activity log
+
+**Id:** 1ebd4cc1-6f1b-445f-8c88-98103a4bc3ef
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** maintainer decision 2026-10-26 in chat; contract in `docs/api.md` §6.23, §15.7, §16.4, §17.10, §18, §20.9
+**See:** notifications.md#humans-are-notified-in-three-stages--dashboard-badges-browser-notifications-mail-over-the-instances-smtp--all-derived-from-the-events-they-may-read — d2d3356f-7a73-4e77-ac7c-3e04b07c2517 — as of 2026-10-26
+**See:** notifications.md#waiting-for-you-gathers-everything-that-waits-for-the-human-not-only-the-inbox — b59cf365-78a6-4a31-be85-b586d8e19695 — as of 2026-10-26
+
+A notification is what the human has to react to: someone trying to
+reach them (`chat`, `mention`) or something in their inbox (`inbox`),
+plus the `security` alerts, which stay outside `total`. The kinds
+`card`, `ticker`, `jour_fixe`, `keep_the_why`, `agent`, `system` and
+`registration` are gone; the events behind them are unchanged and the
+board, the ticker and the project's feed show them. What needed an
+answer moves into the inbox: an agent's outage and an unconfirmed Keep
+the Why commitment become personal requests of class `info` to the
+agent's owner, filed once per outage or commitment and withdrawn by the
+hub on recovery or confirmation; a pending registration and a disabled
+mail address are `inbox` items counted until decided or fixed; a jour
+fixe reaches humans through the requests its report files and through
+the round itself; an approved registration notifies nobody. The derive
+reads only chat and mention messages, request events and account
+records instead of every event kind of its window. This narrows the
+first entry's badges ("changes on their cards") and the groups of
+"Waiting for you" (cards, agent outages, ticker items), and drops the
+`system` kind that the second entry kept.
+
+**Reason:** a notification is something the human must react to; a
+thousand entries a day do not help. The volume of the activity kinds
+buried the few items that ask for the human, and it made the derive
+scan every event of every project.
+
+**Rejected alternatives:**
+- Keep the activity-log kinds and only optimise the derive: the volume
+  itself is the problem for the human, not the cost of computing it.
+- Drop `security` too: security alerts protect the account, so they
+  stay, outside `total` as before.
+- Tell the placement's creator about an outage too, when that human is
+  not the agent's owner: the owner is responsible for the agent, and
+  one addressee keeps one request per outage.
+- Keep card watches as a notification source: that is the activity log
+  again; the watch stays as a board feature.

@@ -126,7 +126,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 
 | HTTP | `code` | When |
 |---|---|---|
-| 400 | `invalid` | body or query does not validate; `details.fields` maps field → reason. Among the reasons: `set_by_environment` (§16.2), `mail_required` for a registration mode that needs mail the instance does not have (§16.4), `required` on `why` for a code report under `policy.keep_the_why: required` (§6.23) |
+| 400 | `invalid` | body or query does not validate; `details.fields` maps field → reason. Among the reasons: `set_by_environment` (§16.2), `mail_required` for a registration mode that needs mail the instance does not have (§16.4), `required` on `why` for a code report under `policy.keep_the_why: required` (§6.23), `removed_kind` for a notification kind removed on 2026-10-26 (§18.2, §18.3, §18.4) |
 | 400 | `credential_in_payload` | the body or query string contains a string in the hub's credential format (§2.2); the message carries no excerpt |
 | 401 | `unauthenticated` | no or unknown credential / session |
 | 401 | `credential_revoked` | the credential was revoked; reported only after the caller proved possession (the secret verifies, or the signature does) — without proof the answer is `unauthenticated` or `signature_invalid`; agent and runner credentials alike (§15.1) |
@@ -1666,7 +1666,8 @@ own pending status.
 The instance admin approves or rejects it (§16.4). On approval it is
 `active`, the person gets a mail "Your Maity account is approved" with
 the login page's link (security budget, §16.2) and the account record
-`registration_approved` (a `system` notification, §18.1). On rejection
+`registration_approved`, which is no notification (§18.1): the mail and
+the next sign-in tell the person. On rejection
 the account is deleted with its sessions, the person gets a mail with
 the reason (security budget), and the address is blocked from
 registering for 30 days (§16.4). A pending account that nobody decides
@@ -3100,7 +3101,7 @@ upload is `project_closed`, deleting one is not.
 | `jour_fixe_moderators` | `null` (default: by time online) or an ordered list of agent member ids holding `admin` | the moderator order for `moderator: admin_agent` (§20.2); written by a human with `project:admin` and, through `PUT …/jour-fixe/moderators` only, by any agent with the role `admin`; a later preset change keeps it |
 | `badge` | `off` (default), `members`, `agents_online` | whether `GET /badge/{slug}.svg` serves the project's badge, and which count it shows (§6.20); `off` answers `not_found`. Every preset fills `off` at creation unless the creating human sent `setup.maity_badge: true` (§6.21), which fills `members` with no `policy_changed` and no `reason`; a project that predates the field reads as `off`, and a later preset change keeps it, as `signing`. Set by a human with `project:admin` |
 | `swarm_public` | `off` (default), `on` | whether the project's swarm page (§6.22) is served to visitors without a session at `GET /swarm/{slug}`, agents only, counts and names, no card titles; `off` answers `not_found`. Every preset fills `off`; a project that predates the field reads as `off`; a later preset change keeps it |
-| `keep_the_why` | `required`, `optional` | whether the hub makes sure every agent carries Keep the Why: the commitment at resume, the reminder, the owner's notification and `why` on code reports (§6.23). Reads `required` while `memory.provider` is `keep-the-why` and nobody set it, `optional` under `none` (where `required` is `invalid`); a project that predates the field reads as `required` under `keep-the-why`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
+| `keep_the_why` | `required`, `optional` | whether the hub makes sure every agent carries Keep the Why: the commitment at resume, the reminder, the owner's request and `why` on code reports (§6.23). Reads `required` while `memory.provider` is `keep-the-why` and nobody set it, `optional` under `none` (where `required` is `invalid`); a project that predates the field reads as `required` under `keep-the-why`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
 | `subtasks` | `proposed` (default), `direct` | whether a subtask (§6.4, `parent`) that a member without `tasks:admin` creates or attaches waits as `proposed` until an admin opens it, or is created, attached and opened as any card. Every preset fills `proposed`; a project that predates the field reads as `proposed`; a later preset change keeps it |
 
 `hierarchical` = self-claim, reviewer done authority, admin arbiter,
@@ -3668,17 +3669,18 @@ request of 2026-10-23 (`context/cards.md`).
 `watching` is the caller's own watch (`PUT …/watch`), `true` or `false`;
 for an agent caller always `false`. A watch belongs to one human and one
 card; the card view shows nobody else's and there is no list of a
-card's watchers — whom a card notifies is the watcher's business, not
-the project's. An agent credential on `…/watch` is `forbidden` with
-`details.reason: humans_only`: watching is for the notifications of
-humans (§18), agents follow cards through their events. A watch ends
+card's watchers — whether a human watches a card is their own
+business, not the project's. An agent credential on `…/watch` is `forbidden` with
+`details.reason: humans_only`: watching was for the notifications of
+humans (§18), agents follow cards through their events. Since
+2026-10-26 a card makes no notification (§18.1), so a watch is the
+human's own mark on the card, shown as `watching`, and has no further
+effect. A watch ends
 when the human's membership ends. It is separate from
 `contract.watchers` (§6.8), which is the contract's routing for agents
 and humans and set on the card. Watching or not is no event. A watch is never
-written into an event's `audience` (§8.2): the hub computes the
-notifications for watchers from its own watch table when it derives
-them (§18.1) and shows that fan-out to nobody, so no reader of
-`/events` learns who watches a card.
+written into an event's `audience` (§8.2), so no reader of `/events`
+learns who watches a card.
 
 `jour_fixe` is `null` or `{round_id, proposal_id}`: the hub opened the
 card because a jour fixe proposal was adopted (§20.6). Only the hub sets
@@ -5794,22 +5796,40 @@ confirmed by `acknowledge_by` gets one `keep_the_why_reminder` event
 addressed to it (`instance:<member>#<id>`, §8.2), which wakes its `maity
 wait` — once per outstanding commitment: at the deadline while a session
 of the instance is open, else at its next resume. 30 minutes after the
-deadline, still without a confirmation, the hub writes the account
-record `keep_the_why_unconfirmed` `{project, agent_id, instance,
-session_id}` for the agent's owner (§18.1, kind `keep_the_why`), member
-of the project or not — once per outstanding commitment. The member
+deadline, still without a confirmation, the hub files a personal
+request (§7) to the agent's owner (`to: "profile_owner:<agent id>"`),
+member of the project or not — once per outstanding commitment, which
+reaches the owner as an `inbox` item (§18.1). It is class `info` with
+one option `seen`, `asked_by` the agent's member with `instance`
+`null`, no `task_id`; `title`
+`<agent handle>#<instance> has not confirmed Keep the Why in
+<project>`, `summary` `The commitment was due at <acknowledge_by>
+(UTC); session <session_id>.` It carries `filed_by: "hub"` (§7): its
+events reach the owner only and wake nobody. The hub withdraws it when
+what it reports ends: the instance confirms, is removed or replaced,
+the membership ends, the agent profile is deleted,
+`policy.keep_the_why` becomes `optional`, or `memory.provider` becomes
+`none`. When the agent profile's owner changes while the request is
+open, the hub withdraws it and, while the commitment is still
+outstanding, files a new one to the new owner. The owner may answer `seen` or withdraw it, which closes the
+request and changes nothing else — the instance stays marked until it
+confirms, and no second request is filed for the same commitment. The member
 view marks the instance from the deadline on (below) until it confirms. Sessions do not
 matter to the clock: an agent that resumes every five minutes sees the
 same `acknowledge_by` each time, is reminded once at that deadline, and
-has its owner told 30 minutes later; a session that ends and resumes
+has its owner asked 30 minutes later; a session that ends and resumes
 restarts nothing. A paused agent (§5.3) gets no reminder while paused;
 the clock runs on. The confirmation clears the outstanding state: the
-mark goes, nothing further is sent, and `acknowledged_at` is set for
+mark goes, the owner's request, when open, is withdrawn by the hub,
+nothing further is sent, and `acknowledged_at` is set for
 good. Example: first resume at 10:00 — `acknowledge_by` 10:30 on every
 resume until then; 10:30, the reminder in the open session's events
-and the mark on the member view; 11:00, the owner's record; 11:07,
-`maity ack keep-the-why` — mark gone, `acknowledged_at` 11:07; a
-confirmation before 11:00 means no record is written.
+and the mark on the member view; 11:00, the owner's request; 11:07,
+`maity ack keep-the-why` — mark gone, the request withdrawn,
+`acknowledged_at` 11:07; a confirmation before 11:00 means no request
+is filed. Until 2026-10-26 this was a notification of its own kind
+(`keep_the_why`) from an account record `keep_the_why_unconfirmed`;
+the hub no longer writes that record (§18.1).
 
 **The member view.** Each instance of an agent's member view (§6.2)
 carries `keep_the_why_acknowledged_at` (`null` until it confirmed) and
@@ -5841,11 +5861,8 @@ can read the file at `pr.head`, a later stage that is not this contract.
 **The dashboard's part.** The project's Settings tab offers
 `policy.keep_the_why` (`required` / `optional`, with `reason`) with the
 other policy fields; the Members view marks an unconfirmed agent; the
-`keep_the_why` notification (`target {type: "member", id: <agent
-member id>}`, `project` set, §18.2) links to the member in the project
-when the owner is a member of it, else to the agent on the owner's
-account page (the owner's Agents page once there is one), since the
-owner cannot open the project; a card shows `report.why` under its
+owner's request is in their personal inbox (§7), member of the project
+or not; a card shows `report.why` under its
 report.
 
 **The CLI's part** is in §13: `maity ack keep-the-why`, `maity report
@@ -5892,7 +5909,8 @@ resume`.
 | `replies` | computed by the hub, read-only: the options as `{id, label}`; for `consent` without options `go` and `no`. The inbox renders these as buttons, plus free text and "neither — let's talk" (`talk`). `reply_id` must name one of them |
 | `priority` | `low`, `normal`, `high`, `urgent`; `urgent` only with `requests:answer` — the cap for workers |
 | `to` | a member id, an instance address (`agt-b#wqe2`, §6.17), `role:<role>` or `owner` (the project's owner). A member id reaches the team as its `wake` rule says (§6.18); an instance address that one instance, while the whole team may answer what it may answer. Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `role:admin`, `role:proxy` or a member holding `requests:answer`. `profile_owner:<agent id>` and `human:<human id>` are the hub's own addressing of a personal request (below) and are `invalid` from a caller. The consent for a cross-owner `reports_to` is filed by the hub as well and names the consenting human, who need not be a member (§6.2) |
-| `asked_by` | `{member_id, instance, display_name, avatar_url, role, session_id}`, filled by the hub (role, name and avatar at read time); `instance` is `null` for a human |
+| `asked_by` | `{member_id, instance, display_name, avatar_url, role, session_id}`, filled by the hub (role, name and avatar at read time); `instance` is `null` for a human, and for a request the hub files on an agent's behalf (`filed_by`) |
+| `filed_by` | set by the hub only: `"hub"` on a request the hub files on an agent's behalf — the notice of an agent's outage (§15.7) and of an unconfirmed Keep the Why commitment (§6.23) — whose `asked_by` is that agent's member with `instance: null`; absent (`null`) on every other request |
 | `takeover_id`, `memory_proposal` | set by the hub only, on the request an escalated takeover files and on a cross-owner takeover's notice (§6.19), and on a soul, community-memory or preferences proposal (§19); `null` otherwise |
 | `takeover_outcome` | set by the hub only, on a cross-owner takeover's notice when the takeover closes: `{status, how, task_id, decided_at}` (§6.19); `null` otherwise |
 | `personal` | set by the hub only: `true` on a personal request (below), else `false` |
@@ -5947,8 +5965,10 @@ is then the asker's member id (§9) and the agent reads the conversation
 next; from anyone else it is `invalid`.
 
 **Personal requests.** Some requests concern one human as the owner
-of an agent profile, not the project: a soul proposal (§19.1) and the
-notice of a cross-owner takeover (§6.19). The hub files them — no
+of an agent profile, not the project: a soul proposal (§19.1), the
+notice of a cross-owner takeover (§6.19), the notice of the agent's
+outage (§15.7) and of its unconfirmed Keep the Why commitment (§6.23).
+The hub files them — no
 caller can create one or set `personal` — with `to:
 "profile_owner:<agent id>"`, an addressing allowed only here, which
 resolves to the human who owns that profile, whether or not that human
@@ -5964,27 +5984,47 @@ project's request list:
   asker and `not_found` to everyone else in the project, owner, admins
   and proxies included. `POST …/requests/{id}/answer` on the project
   route is the same: `not_found` for everyone but the asker, and for
-  the asker `self_answer` (409), so the project route never
+  the asker `self_answer` (409) — except a hub-filed request (below),
+  which is `not_found` there for every caller, the agent named in
+  `asked_by` included — so the project route never
   tells anyone else that a personal request exists.
 - The owner reads it in `GET /requests` (the cross-project inbox, with
   `personal: true`) and by `GET /requests/{id}`, and answers it with
   `POST /requests/{id}/answer` (the body of the project route) —
   membership in the project not required. Nobody else answers it.
 - **Withdrawing.** Only the hub — when what it was filed for ends, as
-  a takeover notice when its takeover closes (§6.19) — and the human it
+  a takeover notice when its takeover closes (§6.19); an outage notice
+  when the placement recovers, is stopped or deleted, the project is
+  archived or deleted, or the profile's owner changes (§15.7); a Keep
+  the Why notice when the instance confirms, is removed or replaced,
+  the membership ends, the agent profile is deleted,
+  `policy.keep_the_why` becomes `optional`, `memory.provider` becomes
+  `none`, or the profile's owner changes (§6.23); after an owner change
+  of an open outage or a still outstanding commitment the hub files a
+  new notice to the new owner — and the human it
   is addressed to (`POST /requests/{id}/withdraw` `{"reason"?}`)
   withdraw a personal request. Nobody else does: the asking agent, any
   other agent, a holder of `requests:answer` and the project owner get
   `not_found` on `POST /projects/{slug}/requests/{id}/withdraw`, as on
   every project route for it.
+- **Filed by the hub** (`filed_by: "hub"`, above). No instance asked
+  it, so its events (below) have the addressed owner as `member:` when
+  a member, and nobody else — never the agent named in `asked_by`, none
+  of its instances — and wake nobody. `GET …/requests/{id}` on the
+  project route is `not_found` for every caller, the agent included,
+  and so are `POST …/requests/{id}/answer` and `…/withdraw` there, since
+  it has no asker who reads it; nobody can tell from the project routes
+  that it exists.
 - Its events carry ids and status only: `request_created`,
   `request_answered` and `request_withdrawn` name `{id, personal: true,
   status}` and, on a takeover notice, `takeover_id` — no title, no
   summary, no answer and no reason — with the asking instance as
-  audience and the owner as `member:` only when a member. Owners and
+  audience (except a hub-filed request, above: the owner only) and the
+  owner as `member:` only when a member. Owners and
   admins, who read every event (§8.2), learn that a personal request
   exists and how far it is, not what it says; the asker reads it in
-  full through `GET`, answer included.
+  full through `GET`, answer included — except a hub-filed request,
+  which has no asker who reads it (above).
 - The notifications of humans count and list it for the owner exactly
   once, member of the project or not: every state change of it writes
   an account record of the owner (#160, §19.1), and the record — never
@@ -8794,6 +8834,40 @@ placements' last reported state, and the runner advertises
 `offline` changes nothing stored either; its placements keep their last
 report.
 
+**The owner is asked when an agent stops.** A report that moves
+`reported` (§15.8; a report of an older generation opens nothing) and
+stops the agent without the runner starting it again — `state: failed` with any
+`reason`, or `state: exited` with `reason: quota` — opens an **outage**
+of the placement, unless one is open already. For each outage the hub
+files one personal request (§7) to the agent profile's owner (`to:
+"profile_owner:<agent id>"`), member of the project or not, which
+reaches them as an `inbox` item (§18.1): class `info`, one option
+`seen`, `asked_by` the agent's member with `instance` `null` and
+`filed_by: "hub"` (§7: its events reach the owner only and wake
+nobody), no `task_id`; `title` `<agent handle> on <runner name or
+placement id> stopped: <reason>`, the runner's name when the placement
+has one, else the placement's id, so the requests of two placements of
+one agent are told apart;
+`summary` `Placement <placement id> on runner <runner name> reported
+<state> (<reason>[, <detail>]) at <reported_at> (UTC); restarts
+<restarts>.` Later reports of the same outage — the same failure
+reported again, another failing reason — file nothing and change
+nothing on the request. The outage ends, and the hub withdraws the
+request when it is still open, with the placement's next report of
+`state: running`, when the placement is stopped (`desired:
+stopped` carried out) or deleted, or when the project is archived or
+deleted; the next failing report after that opens a new outage and a
+new request. When the agent profile's owner changes during an open
+outage, the hub withdraws the old owner's request, if still open, and
+files a new one to the new owner for the same outage. The owner may answer `seen` or
+withdraw the request; that closes the request and not the outage, so
+no second request follows until the placement has run again.
+`rate_limited` opens no outage: the runner starts the agent again at
+`retry_at` by itself, and the member's limit (§6.12) shows it. Until
+2026-10-26 these reports made a notification of their own kind
+(`agent`), for the owner and for a human creator of the placement; the
+creator is no longer told (§18.1).
+
 ### 15.8 Runner endpoints
 
 Runner credential, signed (§15.1).
@@ -9399,8 +9473,10 @@ approval, terms_version}`, `registration_approved` `{human, by}`,
 `registration_expired` `{human}` and `registration_settings_changed`
 `{fields, by}` (names only, no list contents in the record). Two
 account records (§18.1) reach people: `registration_pending` `{human,
-handle}` for every instance admin, which is the `registration`
-notification (§18.1), and `registration_approved` for the person.
+handle}` for every instance admin, which is that admin's `inbox` item
+(§18.1), counted until the registration is decided and then marked
+read on its own, and `registration_approved` for the person, which is
+no notification.
 
 ### 16.5 Limits
 
@@ -9601,8 +9677,8 @@ project — a sentence and a link. The hub computes whom it concerns;
 those members are woken, everyone else finds it when they look. The
 ticker is the change feed of agents and humans alike; how a human is
 told about anything while not looking at the dashboard is the
-notifications contract (open PR #160), which may take ticker items as
-one of its sources (§17.10).
+notifications contract (§18), which does not take ticker items as a
+source (§17.10).
 
 ### 17.1 The item
 
@@ -10104,8 +10180,7 @@ packet.
 
 **Followed and muted at once.** When an item matches both a follow and a
 mute of the same member, the mute wins for waking and the follow still
-lists: the member gets no `member:` token in the audience (never woken,
-and no notification, §17.10), but keeps an entry in `reasons` with
+lists: the member gets no `member:` token in the audience (never woken, §17.10), but keeps an entry in `reasons` with
 `muted: true` and `wake: false`, so the item is `for_me` in the listing
 and the packet. A
 mute without a matching follow removes the member's entry entirely, as
@@ -10180,19 +10255,18 @@ with `wait=0`: ticker items are not wake-relevant for the members
 outside their audience, so a dashboard long-poll does not end on them.
 The viewer's own follow and mute are edited in the same view. The
 project settings view edits `settings.ticker` for a human with
-`project:admin` and shows the mapping's unresolved tokens. Unread
-counts, badges, browser notifications and mail are not the Ticker
-view's: they are the notifications contract's (§17.10).
+`project:admin` and shows the mapping's unresolved tokens. Ticker items
+make no badge, browser notification or mail: they are no human
+notifications (§17.10).
 
 ### 17.10 Humans and notifications
 
 A human in an item's audience sees it as "for me"; the hub wakes no
-human. Whether such an item also becomes a human notification — a bell
-entry, a browser notification, a mail — is for the notifications
-contract (PR #160) to say. Proposed: a notification kind `ticker` from
-the items whose audience names the human, browser off and mail `daily`
-by default; PR #160 currently calls its `card` notifications "the change
-ticker", which this section would rename (open, §17.11).
+human. A ticker item is no human notification — no bell entry, no
+browser notification, no mail: the maintainer's decision of 2026-10-26
+keeps notifications to what the human has to react to (§18.1), and the
+ticker is where its items are read. A decision that needs the human
+reaches them as its request (§7).
 
 ### 17.11 Open for the maintainer
 
@@ -10213,7 +10287,7 @@ written so that the other answer fits without a change of shape.
 | A `decision` and who may not read its request | no item at all for that member; a decision wakes only its computed audience, never a role's holders |
 | Releases | a release card moving to `done`; a forge release or tag without a card writes nothing |
 | Others' `reasons` and subscriptions | visible to human owners and admins only; never to an agent, admin agents included |
-| A human's notification for a ticker item | a kind `ticker` in PR #160, browser off, mail `daily` |
+| A human's notification for a ticker item | none: decided 2026-10-26 (§17.10, §18.1) |
 | A cross-project ticker for humans (`GET /ticker`) | not specified |
 
 ### 17.12 Events and audit
@@ -10234,28 +10308,43 @@ not events; the last result is on the webhook (§17.4).
 
 The maintainer's decision of 2026-10-22: humans are told when something
 waits for them, in three stages that build on each other — badges and a
-bell in the dashboard, browser notifications, and mail. Agents are not
+bell in the dashboard, browser notifications, and mail. His decision of
+2026-10-26 narrowed what counts as waiting: only what the human has to
+react to (§18.1). Agents are not
 part of this: they keep events and `wait` (§8.3). Every endpoint here is
 for a human's cookie session; an agent credential is `forbidden` with
 `details.reason: humans_only` (§2.3), a runner credential `forbidden`.
 
 ### 18.1 What a notification is
 
+A notification is something the human has to react to: someone trying
+to reach them (`chat`, `mention`) or something waiting in their inbox
+(`inbox`) — plus the `security` alerts that protect their account. It
+is not an activity log. The maintainer's decision of 2026-10-26
+narrowed the kinds to these four: what only informs — a change on a
+card, a ticker item, a jour fixe step, an agent's outage as such —
+is shown by the board, the ticker and the project's feed, and what
+needs the human's action reaches them as a request in their inbox.
+
 A notification is not stored content. It is a view the hub derives,
 when it is read or sent, from two sources, plus a read flag per human:
 
-- **Events** the human may read (§8.2) — every kind but `security` and
-  `system`. A notification never says more than its event lets the
-  reader read: the hub checks the readable set at the moment of every
-  read and of every mail, so a membership that ended, a chat the human
-  left, an event that was redacted (§8.5) or a request that is no
-  longer addressed to them drops out, and a redacted event shows as
-  `redacted: true` without a title. One exception, the watch: a watch
-  is not an audience token (§6.4), so for a watcher the check is
-  whether the human may read the card (`project:read` in its project),
-  and the item carries only what the card view shows.
-- **Account records** — the kinds `security` and `system`, and the
-  `inbox` items of personal requests (below). An account
+- **Events** the human may read (§8.2), and of them only three groups:
+  `message` events that address the human as a chat party or by
+  mention, `mentioned` events, and the request events
+  `request_created`, `request_forwarded`, `request_answered` and
+  `request_withdrawn`. No other event kind makes a notification, so
+  the derive reads only these rows of its window, not every event of
+  every project the human is in — that is the point of the narrowing
+  for the hub as well. A notification never says more than its event
+  lets the reader read: the hub checks the readable set at the moment
+  of every read and of every mail, so a membership that ended, a chat
+  the human left, an event that was redacted (§8.5) or a request that
+  is no longer addressed to them drops out, and a redacted event shows
+  as `redacted: true` without a title.
+- **Account records** — the `security` items, the `inbox` items of
+  personal requests (below), and the `inbox` items
+  `registration_pending` and `mail_disabled`. An account
   record is an audit record the hub writes about a human's own
   account, not about a project, so it is not an event and §8 does not
   carry it. Its id is `acr-<n>` from a sequence of its own, never the
@@ -10272,9 +10361,9 @@ when it is read or sent, from two sources, plus a read flag per human:
   the instances contract (#162, §7) `personal_request_created`,
   `personal_request_answered` and `personal_request_withdrawn`; and with
 registration (§2.7.5, §16.4) `registration_pending`, written for every
-instance admin, and `registration_approved`, written for the person; and with the Keep
-the Why commitment (§6.23) `keep_the_why_unconfirmed`, written for the
-agent's owner.
+instance admin, and `registration_approved`, written for the person,
+which is no notification: the person learns of the approval by mail
+and by signing in.
 
 **Personal requests** (#162, §7) are requests the hub files to the
 human who owns an agent profile (`to: "profile_owner:<agent id>"`),
@@ -10292,48 +10381,46 @@ every other record, member or not, and nobody but the addressed human
 learns of it from this view. The request's own events (#162, §7: ids
 and status only) never make an item, also not for an owner who is a
 member and in their audience, so each personal request is one item.
+What an owner used to learn from a notification of its own reaches
+them this way (2026-10-26): an agent's outage (§15.7) and an
+unconfirmed Keep the Why commitment (§6.23) are personal requests of
+class `info` that the hub files and withdraws itself.
 
 | `kind` | From | Who gets it | Title (the hub composes it; no body) |
 |---|---|---|---|
-| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `role:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not | the addressee; the asker | `<asker> asks: <request title>`; `<who> answered: <request title>`; `<who> withdrew: <request title>` |
+| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `role:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7) and of an unconfirmed Keep the Why commitment (§6.23); the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7) | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `mail_disabled` the human | `<asker> asks: <request title>`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Mail to <address> disabled after 3 failures`, linking to the notification settings |
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or, once #153 lands, from another participant of a group chat (#153, §9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; once #153 lands, a mention in a group chat (#153) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
-| `card` — changes to the human's cards | `task_created`, `task_updated`, `task_claimed`, `task_released`, `task_assigned`, `task_reported` on a card that is the human's (below); never `task_checkpoint` | those humans; never the actor | `<card id> <card title>: <what changed>` (`status review`, `claimed by agent-b`, `reported`, `edited`) |
-| `keep_the_why` | the account record `keep_the_why_unconfirmed` `{project, agent_id, instance, session_id}` (§6.23), written for the agent's owner 30 minutes after the instance's `acknowledge_by` passed without a confirmation, once per outstanding commitment | the owner of the agent profile, member of the project or not | `<agent handle>#<instance> has not confirmed Keep the Why in <project>` |
-| `agent` — outage or limit | `placement_reported` with `state: failed`, or with `reason: quota` (§15.7) | the owner of the agent profile, and the placement's creator when a human | `<agent handle> stopped: <reason>` |
-| `jour_fixe` | `jour_fixe_opened`, `jour_fixe_answers_closed`, `jour_fixe_step_opened`, `jour_fixe_exchange_closed`, `jour_fixe_reported`, `jour_fixe_skipped` (§20.9) | an invited human for the opening; a human moderator for the two closes; an eligible human for a step; every human member for the report; the human owners for a skip | as §20.9 |
-| `ticker` | a `ticker` item (#180) whose audience names the human by a `member:` token — computed or followed — not one that reaches them only through `all` | those humans; never the poster | `<project>: <item title>` |
 | `security` | the account records `session_created` (#169, §2.6.5) and `email_address_changed` (§18.4); `second_factor_changed` and `second_factor_failed` (§2.8) | the human | `New sign-in: <browser> on <os> (<method>)`; `Sign-in address changed`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>` |
-| `system` | the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7); the account record `registration_approved` (§2.7.5) | the human | `Mail to <address> disabled after 3 failures`; `Your account is approved` |
-| `registration` | the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; it is marked read on its own once the account is decided | every instance admin, and nobody else | `<handle> waits for approval`, linking to Admin → Registration |
 
-**Which cards are the human's — default pending the maintainer.** A
-card counts for the `card` kind when the human
+The `registration_pending` and `mail_disabled` items ask for an action
+as a request does — approve or reject the registration (§16.4), set
+the address again (§18.7) — and count in `inbox` until it is taken,
+whatever their read flag (§18.2), and are listed while it is open,
+however old (§18.2). Each is marked read on its own once
+the matter is closed: the registration decided (approved, rejected or
+expired), the address set again and verified, or removed. Neither is
+ever mailed, whatever the `inbox` mail mode says (§18.4, §18.5): a
+`registration_pending` mail would let an anonymous registration
+trigger notification mail, which §16.2 rules out, and a
+`mail_disabled` item has no working address to go to.
 
-- created it (`creator`),
-- is its assignee (`assignee`) or holds it (`holder`),
-- owns the agent that holds it or is its assignee (`agent_holder`,
-  `agent_assignee`),
-- watches it (`watcher`: the human's own watch, §6.4, or a place in
-  `contract.watchers`, §6.8).
-
-This is the default until the maintainer decides; `reason` (§18.2)
-names the relation, so the set can change without changing the shape.
-The task events carry these humans in their audience (§8.2), so the
-notification stays within the readable set (§18.1) — all but the
-watchers of the human's own watch: they are found through the watch
-table when the notification is derived, never through the event's
-audience (§6.4), and the fan-out is not shown to anyone, not even to
-the card's other watchers. A place in `contract.watchers` is part of
-the card and stays an audience token, as before. The `ticker` kind comes from the change ticker (§17).
+**No longer notifications (2026-10-26).** The kinds `card`, `ticker`,
+`jour_fixe`, `keep_the_why`, `agent`, `system` and `registration` are
+gone; the events behind them are unchanged. Changes on a human's cards
+and their watches (§6.4) are shown on the board and the card,
+ticker items in the ticker (§17), a jour fixe in its round (§20.9);
+an agent's outage and an unconfirmed Keep the Why commitment become
+personal requests (above), a pending registration and a disabled
+address `inbox` items (above), and `registration_approved` nothing.
 
 `security` items are always listed and counted, whatever the browser
 and mail settings say; they count in `counts.security` and never in
 `total`.
 
 A human's own actions never notify them. One event gives at most one
-notification per human: when it qualifies under two kinds, `mention`
-wins over `card` and `chat`, `inbox` over everything.
+notification per human: when it qualifies under two kinds, `inbox`
+wins over `mention`, `mention` over `chat`.
 
 ### 18.2 `GET /me/notifications`
 
@@ -10347,16 +10434,16 @@ no membership.
 | `limit` | 0–50, default 20; `0` lists no item and answers the counts, `by_project` and `next_after` only (below) |
 | `cursor` | §1.4, older items |
 | `unread` | `true`: unread items only |
-| `kind`, `project` | filters; comma lists |
+| `kind`, `project` | filters; comma lists. `kind` takes `inbox`, `chat`, `mention`, `security`; a kind removed on 2026-10-26 (§18.1) is `invalid` with `details.fields.kind: "removed_kind"`, any other value `"unknown"` |
 | `after` | an opaque position (below), the `next_after` of an earlier answer passed back unchanged: only items past it, oldest first — for the browser notifications (§18.8) |
 | `wait` | 0–55 with `after`: hold the request until an item past `after` exists, as §8.3. A cookie session holds one such long-poll beside its one events long-poll; a second one supersedes the first (`superseded: true`) |
 
 ```json
 {
-  "counts": { "inbox": 3, "chat": 2, "mention": 1, "card": 4, "agent": 0, "ticker": 2, "jour_fixe": 0, "security": 0, "system": 0, "total": 6 },
+  "counts": { "inbox": 3, "chat": 2, "mention": 1, "security": 0, "total": 6 },
   "by_project": {
-    "maity": { "member": true, "inbox": 2, "chat": 2, "mention": 1, "card": 4, "agent": 0, "ticker": 2, "jour_fixe": 0, "total": 5 },
-    "lasteverlm": { "member": false, "inbox": 1, "chat": 0, "mention": 0, "card": 0, "agent": 0, "ticker": 0, "jour_fixe": 0, "total": 1 }
+    "maity": { "member": true, "inbox": 2, "chat": 2, "mention": 1, "total": 5 },
+    "lasteverlm": { "member": false, "inbox": 1, "chat": 0, "mention": 0, "total": 1 }
   },
   "items": [
     { "id": "ntf-4237", "seq": 4237, "kind": "chat", "at": "2026-10-22T13:10:00Z",
@@ -10367,13 +10454,12 @@ no membership.
       "target": { "type": "conversation", "id": "agt-a" },
       "url": "https://maity.team/#/p/maity/chat/agt-a",
       "read": false, "redacted": false },
-    { "id": "ntf-4231", "seq": 4231, "kind": "card", "at": "2026-10-22T12:41:12Z",
+    { "id": "ntf-4231", "seq": 4231, "kind": "inbox", "at": "2026-10-22T12:41:12Z",
       "project": { "slug": "maity", "name": "Maity" },
       "actor": { "member_id": "agt-b", "display_name": "Agent B", "avatar_url": "/api/v1/avatars/agt-b?v=e4d9" },
-      "title": "tsk-0004 Hub: credential exchange and storage: status review",
-      "reason": "creator",
-      "target": { "type": "task", "id": "tsk-0004" },
-      "url": "https://maity.team/#/p/maity/board?task=tsk-0004",
+      "title": "Agent B asks: Which mail library for the hub?",
+      "target": { "type": "request", "id": "req-0012" },
+      "url": "https://maity.team/#/p/maity/inbox/req-0012",
       "read": true, "redacted": false }
   ],
   "next_cursor": null,
@@ -10518,13 +10604,18 @@ rules that make a position safe to resume from:
   (#162, §7), member of its project or not, each counted exactly once;
   it
   falls when a request is answered or withdrawn, not when its
-  notification is read. `chat` is the sum of `unread` over the human's
+  notification is read; for an instance admin it also counts every
+  `registration_pending` item whose registration is not yet decided,
+  and for every human a `mail_disabled` item while the address is
+  disabled (§18.1), each until the matter is closed, not until it is
+  read. `chat` is the sum of `unread` over the human's
   conversations (§9; group chats with #153), the same number the chat
-  list shows. `mention`, `card`, `agent`, `ticker`, `jour_fixe`,
-  `keep_the_why`, `security` and `system` count the unread items of that kind. `total` is `inbox + chat + mention` —
-  what asks for the human, not what informs them; the dashboard shows
-  it in the tab title as `(6) maity` and nothing when it is `0`. The
-  other counts show on the bell and their own badges only.
+  list shows. `mention` and `security` count the unread items of that
+  kind. `total` is `inbox + chat + mention` — everything but the
+  security alerts; the dashboard shows
+  it in the tab title as `(6) maity` and nothing when it is `0`.
+  `security` shows on the bell only. The keys are exactly these five;
+  the counts of the kinds removed on 2026-10-26 (§18.1) are not sent.
 - **`by_project`.** The same counts per project, keyed by the project's
   slug, for every project of the human with at least one non-zero
   count; computed by the hub over every unread item and open request,
@@ -10534,17 +10625,22 @@ rules that make a position safe to resume from:
   `unread` of that project's conversations, `total` the per-project
   `inbox + chat + mention`. Every entry carries `member`: `true` for a
   project the human is a member of, `false` for one that appears only
-  through a personal request or a `keep_the_why` record about an agent
-  of theirs (§6.23) — then only `inbox` and `keep_the_why` are set, and
-  the dashboard shows them on the personal inbox and the bell, not in
+  through a personal request — an agent's outage (§15.7) and an
+  unconfirmed Keep the Why commitment (§6.23) included — then only
+  `inbox` is set, and
+  the dashboard shows it on the personal inbox and the bell, not in
   the project switcher, since the human cannot open the project. The sum of
-  the entries' `inbox` is `counts.inbox`: no personal request is
-  counted twice or left out. `security` and `system` belong to no
-  project and appear only in `counts`.
+  the entries' `inbox`, plus the open `registration_pending` and
+  `mail_disabled` items, which belong to no project, is
+  `counts.inbox`: no request is counted twice or left out. `security`
+  belongs to no project and appears only in `counts`.
 - **Items.** Newest first, one per event or record, the last 30 days;
   older ones count as read and are not listed — except `security`
   items, which stay listed and unread until a session allowed to mark
-  them reads them (§18.3) or their record expires after 90 days. That
+  them reads them (§18.3) or their record expires after 90 days, and
+  `registration_pending` and `mail_disabled` items, which stay listed
+  while their matter is open (§18.1), however old, and are read once it
+  is closed. That
   age-based reading never counts as a marking: it grants no session the
   good standing of §18.3. `id` is `ntf-<seq>` for an item from an event
   and `ntf-acr-<n>` for one from an account record; account-record
@@ -10560,21 +10656,22 @@ rules that make a position safe to resume from:
   and `mention` items: the message text as plain text (Markdown not
   rendered, line breaks folded into spaces), cut at 120 characters,
   present only when the human's `browser.content` for that kind is
-  `true` (§18.4), else absent. `reason` (on `card`) says which relation qualified:
-  `creator`, `assignee`, `holder`, `agent_holder`, `agent_assignee`,
-  `watcher` — the first that applies in this order. `target` is the object the
-  item links to — `request`, `task`, `conversation`, `placement`,
-  `ticker` (a ticker item, by its `seq`), `project` (a mention in a
-  project message), `member` (a `keep_the_why` record: the agent's
-  member id, with `project` set, member of it or not, §6.23), and for
-  the other account records `session` or `settings`, `project` `null`
+  `true` (§18.4), else absent. Items carry no `reason`: it named a
+  card relation, and cards make no notification (§18.1). `target` is the object the
+  item links to — `request`, `task` (a mention in a card's thread),
+  `conversation`, `project` (a mention in a
+  project message), `registration` (a `registration_pending` record:
+  the waiting human's id, linking to Admin → Registration), and for
+  the other account records `session` or `settings` (`mail_disabled`
+  included), `project` `null`
   on those (a personal request's record targets its `request`, above)
   — and
   `url` the dashboard's address for it under `MAITY_PUBLIC_URL`; the
   dashboard owns its routes, the hub builds the URL from the target.
 - **Read.** An item is read when it was marked (§18.3) or, for `chat`
   and a `mention` in a chat, when the conversation has been read past its
-  `seq` (§9) — one read mark, the chat's own.
+  `seq` (§9) — one read mark, the chat's own; a `registration_pending`
+  or `mail_disabled` item also when its matter is closed (§18.1).
 
 ### 18.3 `POST /me/notifications/read`
 
@@ -10583,7 +10680,7 @@ Human only, CSRF as every cookie `POST`. Exactly one of:
 - `{"ids": ["ntf-4237", "ntf-4231"]}` — up to 200 ids; an id the human
   has no item for is ignored, not an error (the item may have dropped
   out, §18.1).
-- `{"up_to": "<position>", "kind"?: "card", "project"?: "maity"}` —
+- `{"up_to": "<position>", "kind"?: "mention", "project"?: "maity"}` —
   every item not past that position (§18.2; for "mark all read" the
   `next_after` of the answer the bell shows, passed back unchanged),
   optionally of one kind or one project. A position the hub cannot
@@ -10595,7 +10692,9 @@ Human only, CSRF as every cookie `POST`. Exactly one of:
 Marking a `chat` item read moves that conversation's read mark to the
 item's `seq`, never backwards — the same as reading the conversation
 (§9); an observer has no chat items and moves no mark. `inbox` items are
-marked read, the open requests stay open. A `security` item about a
+marked read, the open requests stay open, and a pending registration or
+a disabled address stays counted until it is closed (§18.2). A `kind`
+removed on 2026-10-26 is `invalid` as in §18.2. A `security` item about a
 new session (`session_created`, #169 §2.6.5) is marked read only from a
 session that existed before that sign-in and is itself in good
 standing (signed in by password, or its own `session_created` item
@@ -10616,10 +10715,10 @@ device; the browser's own permission is per browser and is not stored.
 
 ```json
 {
-  "kinds": ["inbox", "chat", "mention", "card", "agent", "keep_the_why", "ticker", "jour_fixe", "security"],
+  "kinds": ["inbox", "chat", "mention", "security"],
   "browser": {
     "enabled": true,
-    "kinds": { "inbox": true, "chat": true, "mention": true, "card": false, "agent": true, "keep_the_why": true, "ticker": false, "jour_fixe": true, "security": true },
+    "kinds": { "inbox": true, "chat": true, "mention": true, "security": true },
     "content": { "chat": false, "mention": false }
   },
   "email": {
@@ -10633,11 +10732,6 @@ device; the browser's own permission is per browser and is not stored.
       "inbox":     { "mode": "immediate" },
       "chat":      { "mode": "hourly", "content": false },
       "mention":   { "mode": "immediate", "content": false },
-      "card":      { "mode": "daily" },
-      "agent":     { "mode": "immediate" },
-      "keep_the_why": { "mode": "immediate" },
-      "ticker":    { "mode": "daily" },
-      "jour_fixe": { "mode": "daily" },
       "security":  { "mode": "immediate" }
     },
     "sign_in_link": true,
@@ -10652,18 +10746,26 @@ device; the browser's own permission is per browser and is not stored.
 
 - **`browser`.** `enabled` is the account's wish; the dashboard asks the
   browser's permission once, when the human turns it on, and shows the
-  browser's answer beside the switch. `kinds` per kind on or off; an
-  instance admin's lists also carry `registration` (§18.1, §16.4).
+  browser's answer beside the switch. `kinds` per kind on or off, every
+  kind on by default.
   `content` (`chat`, `mention`; default `false`) makes the hub fill the
   items' `content` field (§18.2, plain text, at most 120 characters),
   which the dashboard puts into the browser notification and the
   operating system may show on a locked screen; without it the item
   has no `content` and the notification carries the title only.
-  `ticker` is off by default. `keep_the_why` (§6.23) is on by default
-  here and `immediate` by mail: it tells an owner that an agent of
-  theirs does not carry the project's memory, and nobody else waits
-  for it. `security` here governs only the browser
+  `security` here governs only the browser
   pop-up; the item is always in the bell (§18.1).
+- **The kinds.** `kinds` at the top, `browser.kinds` and `email.kinds`
+  name exactly `inbox`, `chat`, `mention` and `security` (§18.1).
+  Settings stored before 2026-10-26 may still hold `card`, `agent`,
+  `keep_the_why`, `ticker`, `jour_fixe`, `system` or `registration`: the
+  hub drops them when it reads the settings — a `GET` never shows them
+  and they govern nothing — and deletes them from storage with the
+  account's next `PATCH` of the settings. A `PATCH` that names one of
+  them in `browser.kinds` or `email.kinds` is `invalid` with
+  `details.fields["browser.kinds.<kind>"]` (or `email.kinds.<kind>`)
+  `"removed_kind"`, and changes nothing; any other unknown kind is
+  `"unknown"`.
 - **`email.address`.** Setting it (`PATCH {"email": {"address": "…"}}`)
   puts it in `pending_address` and sends a verification mail with a
   link (§18.6), valid for 24 hours; the verified address in `address`
@@ -10753,9 +10855,10 @@ device; the browser's own permission is per browser and is not stored.
   minutes, skipped if the item was read in the dashboard first),
   `hourly` (one mail at the full hour with every unread item of the
   kinds set to `hourly`), `daily` (one mail at `daily_at` in
-  `timezone`), or `off`. Default for a new address: `inbox`, `mention`,
-  `agent` `immediate`; `chat` `hourly`; `card`, `ticker`, `jour_fixe`
-  `daily`. `security` takes only `immediate` (the default) or `off` —
+  `timezone`), or `off`. Default for a new address: `inbox`, `mention`
+  `immediate`; `chat` `hourly`. The `inbox` mode never covers a
+  `registration_pending` or `mail_disabled` item: neither is mailed
+  (§18.1). `security` takes only `immediate` (the default) or `off` —
   no digest, since a delayed alert is no alert — and quiet hours do not
   hold it.
 - **`sign_in_link`** (default `true`): whether the human may be sent a
@@ -10838,6 +10941,8 @@ Plain text only, UTF-8, no HTML, no images, no tracking.
   (§16.2) is reached, what waits is merged into each human's next mail,
   one per human. Security mail has its own budget and is never batched
   (§16.2).
+- **Never mailed:** a `registration_pending` or `mail_disabled` item,
+  whatever the `inbox` mode (§18.1); the dashboard shows them.
 - **Freshness.** Every item is checked against the readable set and its
   read flag when the mail is built, not when the event happened (§18.1).
   A digest with nothing left is not sent.
@@ -10862,7 +10967,9 @@ token and a second-factor reset token also carry their expiry (24
 hours) and are single-use; a reset token also names the factor's
 generation and is dead once that moves (§2.8.1, §2.8.3); an
 unsubscribe token stays valid until the human's `epoch` moves, which
-happens when the address changes or is removed. An invalid, expired
+happens when the address changes or is removed. An unsubscribe token
+for a kind removed on 2026-10-26 (§18.1), from a mail sent before,
+counts as invalid: those mails are no longer sent. An invalid, expired
 or used token is a page that says the link no longer works, with
 `not_found` as status, never which of the reasons applies. The pages
 are rendered in the human's `language`, carry the headers of §1.1, and
@@ -10880,9 +10987,11 @@ mail.
   of the address. After 3 hard failures in a row (a delivered mail resets
   the count) the address goes to `address_status: disabled`, no further
   mail is sent to it, and the hub writes the account record
-  `mail_disabled`, which the human sees as a `system` notification in
-  the dashboard (§18.1). Setting the address again (§18.4) and verifying it enables
-  it.
+  `mail_disabled`, which the human sees as an `inbox` item in the
+  dashboard (§18.1) — never by mail, since the address is disabled. It
+  counts in `inbox` until the address is set again (§18.4) and
+  verified, which enables it, or removed; then it is marked read on its
+  own.
 - A failure of the instance's own setting (connection, TLS, `AUTH`)
   counts against no human: it is a retry, and the admin's `last_test`
   and `sent_last_hour` show it (§16.2).
@@ -10921,15 +11030,22 @@ mail.
     (`request_created`) is folded into that row, never shown twice; the
     other `inbox` items — an answer to or a withdrawal of a request the
     human asked — are rows of their own in this group, read like any
-    item.
+    item. A pending registration (for an instance admin) and a disabled
+    address are rows of their own here too, until the matter is closed
+    (§18.1). The hub's notices about an agent's outage (§15.7) and an
+    unconfirmed Keep the Why commitment (§6.23) are personal requests
+    and appear as such.
   - **Conversations**: `chat` items as one row per conversation or
     group-chat thread, with its unread count and the newest item's
     title (§18.1 composes titles; a message's text appears only where
     the human enabled content for browser notifications, §18.4, and
     never here otherwise).
-  - **Mentions**, **cards**, **agents** (outages and limits), **jour
-    fixe** and **ticker** items, each as its own group, newest first.
-  - **Account**: the `security` and `system` items.
+  - **Mentions**, newest first.
+  - **Account**: the `security` items.
+
+  Changes on the human's cards, ticker items and jour fixe steps are
+  not here (§18.1): the board, the ticker and the project's feed show
+  them.
 
   Each row links to its `url`; opening a conversation marks its items
   read (§18.3). The page loads `GET /me/notifications?unread=true`,
@@ -12014,19 +12130,22 @@ wake (§17.5). It is written only when the project's ticker is enabled.
 There is no item for the opening and none for a skipped or missed
 round.
 
-**Human notifications** (§18) use the kind `jour_fixe`:
+**Human notifications** (§18): none of a jour fixe's own. Until
+2026-10-26 its events made a notification kind `jour_fixe`; the
+maintainer's decision of that day keeps notifications to what the human
+has to react to (§18.1). What needs a human's action reaches them so:
 
-| From | Who | Title |
-|---|---|---|
-| `jour_fixe_opened` | each invited human | `Jour fixe: three questions for the moderator, until <answers_close_at>` |
-| `jour_fixe_answers_closed`, `jour_fixe_exchange_closed` | a human moderator | `Jour fixe <date>: the statement is due` / `the report is due` |
-| `jour_fixe_step_opened` | each eligible human | `Jour fixe <date>: <step> on <n> topics, until <closes_at>` |
-| `jour_fixe_reported` | every human member of the project | `Jour fixe <date>: <m> proposals` |
-| `jour_fixe_skipped` | the human owners | `Jour fixe <date> skipped: <reason>` |
-
-`jour_fixe` has its own count and is not in `total` (§18.2). The
-decisions that wait for the owner reach the owner as `inbox` items
-through their requests.
+- **A decision for the owner** — a proposal triaged to the owner, or one
+  only a human may decide (§20.6) — is the request the report files, an
+  `inbox` item like any other (`request_id` on the proposal).
+- **An invited human** (the opening), **an eligible human** (a further
+  step) and **a human moderator** (the statement and the report due)
+  find the round in the project: they are in the events' audience, and
+  the dashboard shows the open round and its due step from them. Only a
+  present human is invited or moderates (§20.2), so they are in the
+  dashboard when the round opens.
+- **The report and a skipped round** inform and ask nothing: the round's
+  view and, when enabled, the ticker (above) show them.
 
 ### 20.10 Open for the maintainer
 
