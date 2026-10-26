@@ -5,7 +5,7 @@ shows it to visitors who are not signed in, its title, Markdown and button, and 
 changed it when. No row is the default: disabled.
 
 Revision ID: 0040
-Revises: 0025
+Revises: 0044
 Create Date: 2026-10-25
 """
 
@@ -17,7 +17,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql, postgresql
 
 revision: str = "0040"
-down_revision: str | None = "0025"
+down_revision: str | None = "0044"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
