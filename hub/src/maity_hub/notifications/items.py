@@ -303,7 +303,7 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
             )
         elif row.type == "registration_pending":
             # Listed while the registration waits, however old, and read once decided
-            # (§18.1); the human's own read mark does not close it.
+            # (§18.1, §18.3); no read mark closes it.
             pending = data.get("human") in waiting
             if not pending and row.at < now - WINDOW:
                 continue
@@ -315,7 +315,7 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
                     title=_cut(f"{data.get('handle')} waits for approval"),
                     target={"type": "registration", "id": str(data.get("human"))},
                     url=_url(where, "/#/admin/registration"),
-                    read=row.read_at is not None or not pending,
+                    read=not pending,
                     record_type=row.type,
                     open=pending,
                 )
@@ -323,7 +323,8 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
         elif row.type == "mail_disabled" and row.at >= now - WINDOW:
             # TODO(#280): listed and counted while the address stays disabled, however old,
             # and read once it is set again (§18.1, §18.7); the address state comes with
-            # the notification settings. Until then: the 30-day window and the read mark.
+            # the notification settings. Until then it is open for the 30-day window: no
+            # read mark closes it (§18.3).
             items.append(
                 Item(
                     kind="inbox",
@@ -332,9 +333,9 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
                     title=_cut(f"Mail to {data.get('address')} disabled after 3 failures"),
                     target={"type": "settings", "id": "notifications"},
                     url=_url(where, "/#/account/notifications"),
-                    read=row.read_at is not None,
+                    read=False,
                     record_type=row.type,
-                    open=row.read_at is None,
+                    open=True,
                 )
             )
     return items
