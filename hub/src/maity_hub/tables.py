@@ -259,6 +259,8 @@ project = Table(
     # The policy (docs/api.md §6.1); its history is in the events.
     Column("policy_preset", String(32), nullable=False),
     Column("badge", String(20), nullable=False, server_default="off"),
+    # Whether visitors without a session see the swarm page, agents only (§6.22).
+    Column("swarm_public", String(8), nullable=False, server_default="off"),
     Column("claim_policy", String(32), nullable=False),
     Column("done_authority", String(32), nullable=False),
     Column("contract_arbiter", String(ID + 8), nullable=False),  # member id or role:admin
@@ -1235,5 +1237,63 @@ mail_delivery = Table(
     Column("at", UtcDateTime, nullable=False),
     Index("ix_mail_delivery_at", "at"),
     sqlite_autoincrement=True,
+    **MYSQL_TABLE,
+)
+
+# --- notifications (docs/api.md §18, §6.4) -------------------------------------------
+#
+# Account records: audit records about one human's own account (sign-ins, ended
+# sessions, address changes, personal requests), never events (§18.1). `n` is their own
+# sequence, numbered under a lock on the human's row, so one account never shows a
+# number before every lower one; `read_at`/`read_by` mark the item read. Kept 90 days.
+account_record = Table(
+    "account_record",
+    metadata,
+    Column("n", BIG_ID, primary_key=True, autoincrement=True),
+    _ref("human_id", "human.id", nullable=False),
+    Column("type", String(40), nullable=False),
+    Column("data", JSON_VALUE, nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    Column("read_at", UtcDateTime),
+    Column("read_by", String(ID)),  # the public id of the session that marked it
+    Index("ix_account_record_human", "human_id", "n"),
+    sqlite_autoincrement=True,
+    **MYSQL_TABLE,
+)
+
+# A human's read marks on items from events; a chat's items read through the chat's own
+# mark (`conversation_read`) instead (§18.2).
+notification_read = Table(
+    "notification_read",
+    metadata,
+    _ref("human_id", "human.id", nullable=False),
+    Column("seq", BIG_ID, nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("human_id", "seq"),
+    **MYSQL_TABLE,
+)
+
+# The stored vector behind a position handle, when the inline form would not fit
+# (§18.2): immutable, kept at least 30 days after its last use.
+notification_position = Table(
+    "notification_position",
+    metadata,
+    Column("id", String(ID), primary_key=True),
+    _ref("human_id", "human.id", nullable=False),
+    Column("vector", JSON_VALUE, nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("last_used_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# A human's own watch on a card (§6.4), by membership, so it ends with the membership;
+# never written into an event's audience.
+card_watch = Table(
+    "card_watch",
+    metadata,
+    _ref("card_id", "card.id", nullable=False),
+    _membership_ref("membership_id", nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("card_id", "membership_id"),
     **MYSQL_TABLE,
 )

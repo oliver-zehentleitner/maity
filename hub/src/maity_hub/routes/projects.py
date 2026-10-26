@@ -63,6 +63,7 @@ class PolicyIn(Strict):
     coordinator_substitute: str | None = None
     on_runner_revoke: str | None = None
     badge: str | None = None
+    swarm_public: str | None = None
 
 
 class AbsenceIn(Strict):
@@ -541,6 +542,7 @@ def patch_project(
 
 # Fields that govern what humans decide: no agent changes them, whatever its role (§2.3).
 HUMANS_ONLY_POLICY = {
+    "swarm_public",  # it shows the agents and their owners to the world (§6.22)
     "spawn_consent_by",
     "signing",
     "tag_authority",

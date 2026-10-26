@@ -102,6 +102,7 @@ def _fresh_process_state() -> Iterator[None]:
     from maity_hub.routes import auth, badges, device_codes, joins, mail_settings, runners
 
     badges.BY_ADDRESS.reset()
+    badges.NOT_SERVED.reset()
     auth.LOGIN_BY_ADDRESS.reset()
     joins.EXCHANGE_BY_ADDRESS.reset()
     runners.PAIR_BY_ADDRESS.reset()

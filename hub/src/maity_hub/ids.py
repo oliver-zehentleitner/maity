@@ -32,6 +32,7 @@ PREFIXES = {
     "conversation": "cnv",
     "human_session": "hss",
     "device_code": "dvc",
+    "notification_position": "npos",
     "link": "lnk",
     "history": "hst",
     "note": "nte",

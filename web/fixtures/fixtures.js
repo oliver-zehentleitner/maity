@@ -1745,6 +1745,8 @@ window.MAITY_FIXTURES = {
             "created_at": "2026-10-21T10:12:03Z",
             "harness": "Claude Code",
             "id": "wle2",
+            "keep_the_why_acknowledge_by": "2026-10-21T10:42:00Z",
+            "keep_the_why_acknowledged_at": null,
             "label": "agent-b#wle2",
             "last_seen_at": "2026-10-21T11:20:00Z",
             "lead": false,
@@ -1757,6 +1759,7 @@ window.MAITY_FIXTURES = {
           }
         ],
         "joined_at": "2026-10-21T10:12:00Z",
+        "keep_the_why_unconfirmed": true,
         "kind": "agent",
         "last_seen_at": "2026-10-21T13:39:30Z",
         "model": "claude-opus-5-5",
@@ -1799,6 +1802,8 @@ window.MAITY_FIXTURES = {
             "created_at": "2026-10-21T09:40:00Z",
             "harness": "Codex",
             "id": "k3pa",
+            "keep_the_why_acknowledge_by": null,
+            "keep_the_why_acknowledged_at": "2026-10-21T10:20:00Z",
             "label": "agent-c#k3pa",
             "last_seen_at": "2026-10-21T13:40:00Z",
             "lead": false,
@@ -1811,6 +1816,7 @@ window.MAITY_FIXTURES = {
           }
         ],
         "joined_at": "2026-10-21T08:00:00Z",
+        "keep_the_why_unconfirmed": false,
         "kind": "agent",
         "last_seen_at": "2026-10-21T12:05:00Z",
         "model": "claude-sonnet-5-5",
@@ -2262,6 +2268,7 @@ window.MAITY_FIXTURES = {
       "claim_policy": "self-claim",
       "contract_arbiter": "agt-a",
       "done_authority": "reviewer",
+      "keep_the_why": "required",
       "lease_seconds": 7200,
       "preset": "hierarchical",
       "signing": "optional",
@@ -2769,6 +2776,90 @@ window.MAITY_FIXTURES = {
       "reviews_given": 13
     },
     "window_days": 30
+  },
+  "maity/task-history.json": {
+    "tsk-0001": [
+      {
+        "actor": {
+          "handle": "maintainer",
+          "kind": "human",
+          "member_id": "hum-maintainer",
+          "session_id": null
+        },
+        "after": "The REST contract hub, CLI and dashboard build against.",
+        "at": "2026-10-21T13:00:00Z",
+        "before": "The REST contract.",
+        "diff": "@@ -1,1 +1,1 @@\n-The REST contract.\n+The REST contract hub, CLI and dashboard build against.",
+        "field": "body",
+        "id": "hst-0213"
+      },
+      {
+        "actor": {
+          "handle": "maintainer",
+          "kind": "human",
+          "member_id": "hum-maintainer",
+          "session_id": null
+        },
+        "after": "feature",
+        "at": "2026-10-21T13:00:00Z",
+        "before": "fix",
+        "diff": null,
+        "field": "label",
+        "id": "hst-0212"
+      },
+      {
+        "actor": {
+          "handle": "agent-a",
+          "kind": "agent",
+          "member_id": "agt-a",
+          "session_id": "ses-a-0007"
+        },
+        "after": {
+          "title": "API contract: docs/api.md"
+        },
+        "at": "2026-10-21T09:00:00Z",
+        "before": null,
+        "diff": null,
+        "field": "created",
+        "id": "hst-0200"
+      }
+    ]
+  },
+  "maity/task-notes.json": {
+    "tsk-0001": [
+      {
+        "author": {
+          "handle": "agent-c",
+          "kind": "agent",
+          "member_id": "agt-c"
+        },
+        "body": "The CLI needs `--no-code` here too.",
+        "created_at": "2026-10-21T10:30:00Z",
+        "id": "nte-0031",
+        "mentions": [],
+        "resolution": null,
+        "state": "open",
+        "task_id": "tsk-0001"
+      },
+      {
+        "author": {
+          "handle": "reviewer",
+          "kind": "agent",
+          "member_id": "agt-r"
+        },
+        "body": "Already in §6.4.",
+        "created_at": "2026-10-21T10:40:00Z",
+        "id": "nte-0032",
+        "mentions": [],
+        "resolution": {
+          "at": "2026-10-21T11:00:00Z",
+          "by": "hum-maintainer",
+          "reason": "covered"
+        },
+        "state": "dismissed",
+        "task_id": "tsk-0001"
+      }
+    ]
   },
   "maity/tasks.json": {
     "items": [

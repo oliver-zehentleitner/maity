@@ -1292,7 +1292,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && tables[1].querySelectorAll("tr.member").length === 5 && text(main).includes("Humans (1)") && text(main).includes("Agents (5)"),
     "members: humans first, then agents");
   const ths = tables[1].querySelector("thead").querySelectorAll("th").map((t) => t.textContent);
-  expect(JSON.stringify(ths) === JSON.stringify(["Name", "Role", "Owner", "Presence", "Joined", "Paused", "Credentials", "Actions"]),
+  expect(JSON.stringify(ths) === JSON.stringify(["Name", "Role", "Owner", "Presence", "Joined", "Paused", "Keep the Why", "Credentials", "Actions"]),
     "members: an admin's agent columns, with owner and credentials " + JSON.stringify(ths));
   expect(text(mRow("Agent C")).includes("paused itself") && text(mRow("Agent C")).includes("Waiting for the API contract")
     && mRow("Agent C").classList.contains("paused"), "members: a paused agent says by whom and why");
@@ -1882,9 +1882,108 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/tasks/tsk-0004"); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
   const idCard = main.querySelectorAll("article.card").find((a) => a.attrs["data-card"] === "tsk-0004");
   const boardTab = () => header.querySelectorAll("nav.views a").find((a) => a.textContent.startsWith("Board"));
-  expect(idCard && idCard.classList.contains("wanted") && main.querySelectorAll("article.card.wanted").length === 1 && document.activeElement === idCard
+  const cpPanel = () => main.querySelector("aside.card-panel");
+  expect(idCard && idCard.classList.contains("wanted") && main.querySelectorAll("article.card.wanted").length === 1
+    && cpPanel() && document.activeElement === byId("card-panel-title") && text(byId("card-panel-title")) === "tsk-0004"
     && boardTab().getAttribute("aria-current") === "page" && main.querySelector("section.view-board"),
-    "ids: a card's link opens the board with that card marked and focused, the Board tab current");
+    "ids: a card's link opens the card's panel on the board, the card marked there, the Board tab current");
+  // The opened card (js/card-panel.js): the card with its controls, the body, the open notes with a form, the history.
+  await go("#/p/maity/board"); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  const cpCard = () => main.querySelector(".columns").querySelectorAll("article.card").find((a) => a.attrs["data-card"] === "tsk-0001");
+  expect(!cpPanel() && main.querySelectorAll("article.card.wanted").length === 1 && document.activeElement === main.querySelectorAll("article.card.wanted")[0].querySelector("a.card-open"),
+    "card panel: back on the board, the card that was open is marked and its title focused");
+  const cpLink = cpCard().querySelector("a.card-open");
+  expect(cpLink && cpLink.getAttribute("href") === "#/p/maity/tasks/tsk-0001" && text(cpLink) === "API contract: docs/api.md", "card panel: a card's title is the link that opens it");
+  const cpGets = [], cpPosts = [];
+  const cpGet = win.Maity.api.get, cpGetAll = win.Maity.api.getAll, cpPost = win.Maity.api.post;
+  win.Maity.api.get = (p) => { if (p.includes("/tasks/tsk-0001/")) cpGets.push(p); return cpGet(p); };
+  win.Maity.api.getAll = (p) => { if (p.includes("/tasks/tsk-0001/")) cpGets.push(p); return cpGetAll(p); };
+  win.Maity.api.post = (p, b) => { if (p.includes("/notes")) cpPosts.push([p, b]); return cpPost(p, b); };
+  await go(cpLink.getAttribute("href")); for (let k = 0; k < 6; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  const cpNotes = () => cpPanel().querySelectorAll(".card-note-list li").map((li) => text(li));
+  expect(cpPanel() && cpPanel().querySelector(".card-panel-card article.card") && cpPanel().querySelector(".card-panel-card article.card .card-actions")
+    && !cpPanel().querySelector(".card-panel-card a.card-open") && !cpPanel().querySelector(".card-panel-card article.card").getAttribute("draggable")
+    && text(cpPanel().querySelector(".card-body")) === "The REST contract hub, CLI and dashboard build against."
+    && JSON.stringify(cpNotes()) === JSON.stringify(["@agent-c · " + win.Maity.dom.formatTime("2026-10-21T10:30:00Z") + "The CLI needs --no-code here too."])
+    && cpGets.includes("/projects/maity/tasks/tsk-0001/notes?state=open"),
+    "card panel: the card with its controls (no link to itself, not dragged), the body as Markdown, the open notes only " + JSON.stringify(cpNotes()));
+  const cpHist = cpPanel().querySelectorAll(".card-history-list li").map((li) => text(li));
+  expect(cpHist.length === 3 && cpHist[0].startsWith("@maintainer changed the description") && cpPanel().querySelector("pre.history-diff").textContent.includes("+The REST contract hub")
+    && cpHist[1].startsWith("@maintainer changed the label: fix → feature") && cpHist[2].startsWith("@agent-a created the card"),
+    "card panel: the history, newest first, a description's change as its diff " + JSON.stringify(cpHist));
+  byId("card-note-body").value = "  "; cpPanel().querySelector("form.card-note-form").dispatch("submit"); await tick();
+  expect(!cpPosts.length, "card panel: an empty note is not sent");
+  byId("card-note-body").value = "Check §6.16 too."; cpPanel().querySelector("form.card-note-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(cpPosts[0]) === JSON.stringify(["/projects/maity/tasks/tsk-0001/notes", { body: "Check §6.16 too." }])
+    && cpNotes().length === 2 && cpNotes()[1].startsWith("@maintainer") && document.activeElement === byId("card-note-body") && byId("card-note-body").value === "",
+    "card panel: a note is posted and listed, the form ready for the next");
+  // A second submit while the first post is on its way sends nothing; a refusal lets it be sent again.
+  let cpRelease = null;
+  win.Maity.api.post = (p, b) => {
+    if (!p.includes("/notes")) return cpPost(p, b);
+    cpPosts.push([p, b]);
+    return new Promise((resolve, reject) => { cpRelease = () => reject(new win.Maity.api.ApiError("busy", 503, p, "unavailable")); });
+  };
+  const cpBefore = cpPosts.length;
+  byId("card-note-body").value = "Twice?";
+  const cpForm = () => cpPanel().querySelector("form.card-note-form");
+  cpForm().dispatch("submit"); cpForm().dispatch("submit"); await tick();
+  expect(cpPosts.length === cpBefore + 1 && btn(cpForm(), "Post the note").disabled, "card panel: a note is posted once while the first post is pending, its button disabled");
+  cpRelease(); for (let k = 0; k < 3; k++) await tick();
+  expect(!btn(cpForm(), "Post the note").disabled && byId("card-note-body").value === "Twice?" && text(cpForm()).includes("Not posted"),
+    "card panel: a refused post keeps the text and the button usable again");
+  win.Maity.api.post = (p, b) => { if (p.includes("/notes")) cpPosts.push([p, b]); return cpPost(p, b); };
+  cpForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(cpPosts.length === cpBefore + 2 && cpNotes().length === 3, "card panel: the note is sent again after the refusal");
+  // Escape closes, as Close does: the board again, the card marked, its title focused.
+  cpPanel().dispatch("keydown", { key: "Escape" }); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  expect(win.location.hash === "#/p/maity/board" && !cpPanel() && cpCard().classList.contains("wanted") && document.activeElement === cpCard().querySelector("a.card-open"),
+    "card panel: Escape goes back to the board, the card marked and its title focused");
+  await go("#/p/maity/tasks/tsk-0001"); for (let k = 0; k < 6; k++) await tick();
+  btn(cpPanel(), "Close").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(win.location.hash === "#/p/maity/board" && !cpPanel(), "card panel: Close goes back to the board");
+  // Opened from a filtered, searched board: the filters and the search stay, opening and going back.
+  byId("board-column").value = "in_progress"; byId("board-column").dispatch("change"); await tick();
+  byId("board-search").value = "API contract"; byId("board-search").dispatch("input"); await tick();
+  const cpLink2 = cpCard().querySelector("a.card-open");
+  cpLink2.click(); await go(cpLink2.getAttribute("href")); for (let k = 0; k < 6; k++) await tick();
+  expect(cpPanel() && byId("board-column").value === "in_progress" && byId("board-search").value === "API contract"
+    && main.querySelector(".columns").querySelectorAll("article.card").length === 1,
+    "card panel: a title opens its card on the board as it was, filter and search kept");
+  cpPanel().dispatch("keydown", { key: "Escape" }); for (let k = 0; k < 6; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  expect(!cpPanel() && byId("board-column").value === "in_progress" && byId("board-search").value === "API contract"
+    && cpCard() && cpCard().classList.contains("wanted") && document.activeElement === cpCard().querySelector("a.card-open"),
+    "card panel: back on the board, the filter and the search as they were, the card marked and its title focused");
+  // A link from elsewhere still reveals its card whatever the filter says.
+  await go("#/p/maity/inbox"); await go("#/p/maity/tasks/tsk-0004"); for (let k = 0; k < 6; k++) await tick();
+  expect(cpPanel() && byId("board-column").value === "" && byId("board-search").value === "", "card panel: a link from elsewhere opens its card with every column shown");
+  // An action in the panel keeps the focus in the panel, on its redrawn control.
+  const cpMove = () => cpPanel().querySelector(".card-move .menu-button");
+  const cpPick = async (label) => {
+    cpMove().click(); await tick();
+    const item = cpPanel().querySelectorAll(".card-move .menu-item").find((el) => el.textContent === label);
+    if (item) { item.click(); for (let k = 0; k < 6; k++) await tick(); }
+    return !!item;
+  };
+  await go("#/p/maity/tasks/tsk-0006"); for (let k = 0; k < 6; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  const cpMoved = await cpPick("Move to Proposed");
+  expect(cpMoved && cpPanel() && cpPanel().contains(document.activeElement) && document.activeElement === cpMove()
+    && text(cpMove()).startsWith("Proposed"),
+    "card panel: a move from the panel redraws its card there and keeps the focus on its menu");
+  // A move that leaves no control to return to (done: no menu) keeps the focus in the panel, on its heading.
+  await go("#/p/maity/tasks/tsk-0005"); for (let k = 0; k < 6; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  const cpDone = await cpPick("Move to Done");
+  expect(cpDone && !cpMove() && document.activeElement === byId("card-panel-title"),
+    "card panel: a move to done, its menu gone, leaves the focus on the panel's heading");
+  cpPanel().dispatch("keydown", { key: "Escape" }); for (let k = 0; k < 4; k++) await tick();
+  expect(!cpPanel(), "card panel: after an action Escape still closes it");
+  // A hub without notes or history says so in the panel, nothing asked.
+  win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.resolve({ paths: {} }) : cpGet(p));
+  win.Maity.api.forgetRoutes(); cpGets.length = 0;
+  await go("#/p/maity/tasks/tsk-0001"); for (let k = 0; k < 6; k++) await tick();
+  expect(cpPanel() && text(cpPanel()).includes("This hub has no notes yet.") && text(cpPanel()).includes("This hub has no card history yet.") && !cpGets.length,
+    "card panel: a hub without notes or history says so and is not asked");
+  win.Maity.api.get = cpGet; win.Maity.api.getAll = cpGetAll; win.Maity.api.post = cpPost; win.Maity.api.forgetRoutes();
   await go("#/p/maity/tasks/tsk-zzzzzzzzzzzz"); for (let k = 0; k < 4; k++) await tick();
   expect(!main.querySelector("article.card.wanted") && text(main.querySelector(".wanted-note")).startsWith("No card tsk-zzzzzzzzzzzz on the board"),
     "ids: a card the board does not hold is said");
@@ -4178,13 +4277,111 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "mock as an admin agent: capabilities, proxy, a human's and its own membership are a human's");
   win.location.search = "";
 
+  // The Keep the Why commitment (docs/api.md §6.23): the policy in Settings, the Members mark, the why on a report,
+  // the notification's way to the agent. Quiet on a hub without the fields.
+  await go("#/p/maity/members"); for (let k = 0; k < 4; k++) await tick();
+  const ktRow = (name) => main.querySelectorAll("tr.member").find((tr) => tr.querySelector(".member-name").textContent === name);
+  expect(ktRow("Agent B").querySelector(".ktw-unconfirmed") && text(ktRow("Agent B")).includes("agent-b#wle2: to confirm by " + win.Maity.dom.formatTime("2026-10-21T10:42:00Z"))
+    && !ktRow("Agent C").querySelector(".ktw-unconfirmed") && text(ktRow("Agent C")).includes("agent-c#k3pa: confirmed")
+    && !main.querySelector(".error"), "keep the why: an agent past its deadline is marked with it, a confirmed one says when, per instance");
+  const ktGetAll = win.Maity.api.getAll;
+  const ktStrip = (m) => { const x = Object.assign({}, m); delete x.keep_the_why_unconfirmed; return x; };
+  const ktGet0 = win.Maity.api.get;
+  win.Maity.api.getAll = (p) => (p.endsWith("/members") ? ktGetAll(p).then((r) => ({ ...r, items: r.items.map(ktStrip) })) : ktGetAll(p));
+  win.Maity.api.get = (p) => (p.endsWith("/members") ? ktGet0(p).then((r) => ({ ...r, items: r.items.map(ktStrip) })) : ktGet0(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/members"); for (let k = 0; k < 4; k++) await tick();
+  expect(!main.querySelectorAll("th").some((t) => t.textContent === "Keep the Why") && !main.querySelector(".ktw-unconfirmed"),
+    "keep the why: without the hub's fields (optional, or an older hub) no column and no mark");
+  win.Maity.api.getAll = ktGetAll; win.Maity.api.get = ktGet0;
+  // Settings: required or optional, with a reason; disabled under no memory provider; absent where the hub has no such policy.
+  const ktPatches = [];
+  const ktPatch = win.Maity.api.patch, ktGet = win.Maity.api.get;
+  win.Maity.api.patch = (p, b) => { if (b && b.policy && "keep_the_why" in b.policy) ktPatches.push(b); return ktPatch(p, b); };
+  await go("#/p/maity/settings"); for (let k = 0; k < 6; k++) await tick();
+  const ktForm = () => main.querySelector("form.ktw-policy-form");
+  expect(ktForm() && byId("ktw-policy-select").value === "required" && !byId("ktw-policy-select").disabled, "keep the why: Settings offer the commitment, required here");
+  byId("ktw-policy-select").value = "optional"; ktForm().dispatch("submit"); await tick();
+  expect(!ktPatches.length, "keep the why: a change needs a reason");
+  byId("ktw-policy-select").value = "optional"; byId("ktw-policy-reason").value = "A trial project";
+  ktForm().dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(ktPatches[0]) === JSON.stringify({ policy: { keep_the_why: "optional" }, reason: "A trial project" }) && byId("ktw-policy-select").value === "optional",
+    "keep the why: switched to optional as a policy change with its reason");
+  await ktPatch("/projects/maity", { policy: { keep_the_why: "required" }, reason: "back" });
+  win.Maity.api.get = (p) => (p === "/projects/maity" ? ktGet(p).then((x) => ({ ...x, memory: { provider: "none" }, policy: { ...x.policy, keep_the_why: "optional" } })) : ktGet(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/settings"); for (let k = 0; k < 6; k++) await tick();
+  expect(ktForm() && byId("ktw-policy-select").getAttribute("disabled") !== null && byId("ktw-policy-reason").getAttribute("disabled") !== null
+    && btn(ktForm(), "Change").getAttribute("disabled") !== null && text(ktForm()).includes("no memory provider"),
+    "keep the why: under no memory provider the choice is disabled and says why");
+  win.Maity.api.get = (p) => (p === "/projects/maity" ? ktGet(p).then((x) => { const pol = { ...x.policy }; delete pol.keep_the_why; return { ...x, policy: pol }; }) : ktGet(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/settings"); for (let k = 0; k < 6; k++) await tick();
+  expect(!ktForm() && !main.querySelector(".error"), "keep the why: a hub without the policy shows no form");
+  win.Maity.api.get = ktGet; win.Maity.api.patch = ktPatch;
+  // The why on a code report: a link to the entry's file at the report's head; a reason when there is none; a bad path stays text.
+  const ktHead = "d91e294c" + "0".repeat(32);
+  const ktReport = (why) => ({ summary: "Done.", mentions: [], reported_at: "2026-10-22T13:10:00Z", verification: "signed", code: true, head: ktHead,
+    pr: null, pr_status: "none", observed: null, mismatch: false, why });
+  const ktWhys = { "tsk-0005": { ref: "context/cards.md#2280ced7-c51f-48f5-aab7-3bdacc7de21e" }, "tsk-0006": { none: "a mechanical rename" }, "tsk-0007": { ref: "../secret.md#x" } };
+  win.Maity.api.getAll = (p) => (p.includes("/tasks?") ? ktGetAll(p).then((r) => ({ ...r, items: r.items.map((c) => (ktWhys[c.id] ? { ...c, report: ktReport(ktWhys[c.id]) } : c)) })) : ktGetAll(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/board"); for (let k = 0; k < 6; k++) await tick();
+  const ktCard = (id) => main.querySelectorAll("article.card").find((a) => a.attrs["data-card"] === id);
+  const ktLink = ktCard("tsk-0005").querySelector(".report-why a");
+  expect(ktLink && ktLink.getAttribute("href") === "https://github.com/oliver-zehentleitner/maity/blob/" + ktHead + "/context/cards.md"
+    && ktLink.getAttribute("rel") === "noopener noreferrer" && text(ktCard("tsk-0005").querySelector(".report-why")).endsWith("#2280ced7-c51f-48f5-aab7-3bdacc7de21e"),
+    "keep the why: a report's why links its entry's file at the reported head, the entry's id beside it");
+  expect(text(ktCard("tsk-0006").querySelector(".report-why")) === "No why: a mechanical rename"
+    && !ktCard("tsk-0007").querySelector(".report-why a") && text(ktCard("tsk-0007").querySelector(".report-why")).includes("../secret.md"),
+    "keep the why: no why says the reason; a path out of the repository stays text");
+  win.Maity.api.getAll = ktGetAll;
+  // The notification: to the member in the project, or to the agent on one's account when not a member.
+  const ktItem = (member) => ({ kind: "keep_the_why", project: { slug: "maity", name: "Maity", member }, target: { type: "member", id: "agt-b" } });
+  expect(win.Maity.notify.linkOf(ktItem(true)) === "#/p/maity/members/agt-b" && win.Maity.notify.linkOf(ktItem(false)) === "#/account/picture/agt-b"
+    && win.Maity.notify.KIND_WORDS.keep_the_why === "Keep the Why",
+    "keep the why: its notification leads to the agent in the project's Members, or among one's agents when one is no member");
+  const ktProto = Object.getPrototypeOf(main), ktFocus = ktProto.focus;
+  ktProto.focus = function () { document.activeElement = this; };
+  await go("#/account/picture/agt-b"); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  const ktAgent = main.querySelectorAll("li.wanted").find((li) => li.getAttribute("data-agent") === "agt-b");
+  expect(ktAgent && main.querySelectorAll("li.wanted").length === 1 && document.activeElement === ktAgent.querySelector(".picture-name"),
+    "keep the why: the account marks the agent the notice is about and starts there");
+  ktProto.focus = ktFocus; document.activeElement = undefined;
+
   // Notifications (docs/api.md §18): the bell, the counts, browser notifications.
   await go("#/p/maity/inbox");
   const bellBtn = () => header.querySelector("button.bell");
   const tabCountOf = (name) => { const a = header.querySelectorAll("nav.views a").find((x) => x.textContent.startsWith(name)); const c = a && a.querySelector(".count"); return c ? c.textContent : null; };
   // Unread on the bell: every kind but the open requests (the inbox shows those); a sign-in alert counts.
-  expect(bellBtn() && bellBtn().getAttribute("aria-label") === "Notifications, 4 unread" && text(bellBtn()).includes("4")
-    && tabCountOf("Chat") === "1", "notifications: the bell says how many are unread; the chat tab its unread chats");
+  expect(bellBtn() && bellBtn().getAttribute("aria-label") === "4 new notifications" && text(bellBtn()).includes("4")
+    && tabCountOf("Chat") === "1", "notifications: the bell says how many are new; the chat tab its unread chats");
+  // The header's right block: Chat, Notifications, the gear, the profile; the Chat badge is the hub's unread chat messages.
+  const chatBtn = () => header.querySelector("a.chat-button");
+  const meOrder = header.querySelector(".me").childNodes.map((el) => (el.getAttribute("class") || "").split(" ").concat(el.tagName ? [el.tagName.toLowerCase()] : []).join(" "));
+  expect(chatBtn() && chatBtn().getAttribute("href") === "#/chats" && chatBtn().getAttribute("aria-label") === "1 unread chat message"
+    && text(chatBtn().querySelector(".count")) === "1" && chatBtn().querySelector(".count").getAttribute("aria-hidden") === "true"
+    && /chat-button/.test(meOrder[0]) && /bell/.test(meOrder[1]) && !/chat-button/.test(meOrder[1]) && header.querySelector(".me").childNodes.length === 4,
+    "header: Chat, then Notifications, the gear and the profile; the chat badge a number, its words in the label " + JSON.stringify(meOrder));
+  // The counts' refresh redraws Chat on the same route: 1 to 0 drops the badge, 0 to 3 brings it back.
+  const rcGet = win.Maity.api.get;
+  let rcChat = 0;
+  win.Maity.api.get = (p) => (p.startsWith("/me/notifications?limit=0")
+    ? rcGet(p).then((r) => ({ ...r, counts: { ...r.counts, chat: rcChat } })) : rcGet(p));
+  await fireIntervals(); for (let k = 0; k < 3; k++) await tick();
+  expect(chatBtn().getAttribute("aria-label") === "Chats" && !chatBtn().querySelector(".count"), "header: a refresh to no unread chat messages drops Chat's badge on the same route");
+  rcChat = 3;
+  await fireIntervals(); for (let k = 0; k < 3; k++) await tick();
+  expect(chatBtn().getAttribute("aria-label") === "3 unread chat messages" && text(chatBtn().querySelector(".count")) === "3"
+    && header.querySelectorAll("a.chat-button").length === 1, "header: a refresh to new chat messages brings Chat's badge back, one button");
+  win.Maity.api.get = rcGet;
+  await fireIntervals(); for (let k = 0; k < 3; k++) await tick();
+  await go("#/chats"); for (let k = 0; k < 4; k++) await tick();
+  const chLinks = main.querySelectorAll(".chats-all a");
+  expect(plainTitle() === "Chats · Maity" && chLinks.length === 7 && chLinks.slice(0, 2).every((a) => a.className === "conv unread")
+    && !chLinks.slice(2).some((a) => a.className.includes("unread"))
+    && chLinks[0].getAttribute("href") === "#/p/maity/chat/cnv-0007" && text(chLinks[0]).startsWith("Release 0.2 go/no-go, Maity")
+    && chLinks[1].getAttribute("href") === "#/p/maity/chat/agt-a" && text(chLinks[1]).includes("1 unread")
+    && chLinks[6].getAttribute("href") === "#/p/sample/chat/agt-s1" && text(chLinks[6]).includes("Sample shop")
+    && header.querySelector("a.chat-button").getAttribute("aria-current") === "page",
+    "chats: every project's chats in one list, unread first, then the newest, each with its project and opening in it");
+  await go("#/p/maity/inbox"); for (let k = 0; k < 2; k++) await tick();
   const nPosts = [];
   const nPost = win.Maity.api.post;
   win.Maity.api.post = (p, b) => { if (p.startsWith("/me/notifications")) nPosts.push([p, b]); return nPost(p, b); };
@@ -4207,18 +4404,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   bellBtn().click(); await tick(); await tick();
   const maityBefore = Number(chipCount("Maity"));
   bellItem("Agent A in agent-a").querySelector("a").click(); for (let k = 0; k < 4; k++) await tick();
-  expect(JSON.stringify(nPosts[0]) === JSON.stringify(["/me/notifications/read", { ids: ["ntf-4237"] }]) && bellBtn().getAttribute("aria-label") === "Notifications, 3 unread"
+  expect(JSON.stringify(nPosts[0]) === JSON.stringify(["/me/notifications/read", { ids: ["ntf-4237"] }]) && bellBtn().getAttribute("aria-label") === "3 new notifications"
     && Number(chipCount("Maity")) === maityBefore - 1, "notifications: opening an item marks it read, and the counts follow");
   // A sign-in alert is never confirmed by opening it (§2.6.5, §18.3).
   bellBtn().click(); await tick(); await tick();
   expect(text(bellPanel()).includes("stays unread: opening it here does not confirm it") && text(bellPanel()).includes("This was me under Sessions"),
     "notifications: the panel says a sign-in alert stays unread until This was me under Sessions");
   bellItem("New sign-in").querySelector("a").click(); for (let k = 0; k < 4; k++) await tick();
-  expect(nPosts.length === 1 && bellBtn().getAttribute("aria-label") === "Notifications, 3 unread", "notifications: opening a sign-in alert marks nothing");
+  expect(nPosts.length === 1 && bellBtn().getAttribute("aria-label") === "3 new notifications", "notifications: opening a sign-in alert marks nothing");
   bellBtn().click(); await tick(); await tick();
   btn(bellPanel(), "Mark all read").click(); for (let k = 0; k < 4; k++) await tick();
   const maityOpen = (await win.Maity.api.get("/me")).projects.find((x) => x.slug === "maity").open_requests;
-  expect(JSON.stringify(nPosts[1]) === JSON.stringify(["/me/notifications/read", { up_to: "4241.7" }]) && bellBtn().getAttribute("aria-label") === "Notifications, 1 unread"
+  expect(JSON.stringify(nPosts[1]) === JSON.stringify(["/me/notifications/read", { up_to: "4241.7" }]) && bellBtn().getAttribute("aria-label") === "1 new notification"
     && Number(chipCount("Maity")) === maityOpen,
     "notifications: Mark all read marks up to the bell's position, never the sign-in alert; the project's count is its open requests again");
   bellBtn().click(); await tick(); await tick();
@@ -4229,7 +4426,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const nGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p.startsWith("/me/notifications") ? Promise.reject(new win.Maity.api.ApiError("Not found", 404, p, "not_found", {})) : nGet(p));
   await go("#/p/maity/board"); await go("#/p/maity/inbox");
-  expect(!bellBtn() && !text(main).includes("Could not read your notifications") && !tabCountOf("Chat"), "notifications: a hub without them shows no bell and no error");
+  const bellLink = header.querySelectorAll("a.bell").find((a) => a.getAttribute("href") === "#/all");
+  expect(!bellBtn() && bellLink && bellLink.getAttribute("aria-label") === "Notifications" && !bellLink.querySelector(".count")
+    && chatBtn() && chatBtn().getAttribute("aria-label") === "Chats" && !chatBtn().querySelector(".count")
+    && !text(main).includes("Could not read your notifications") && !tabCountOf("Chat"),
+    "notifications: a hub without them keeps the bell as a link to everything waiting and Chat, both without a count, and no error");
+  // Refreshes on such a hub replace the bell in place: one bell, the order kept.
+  for (let k = 0; k < 3; k++) { await fireIntervals(); await tick(); }
+  const fbOrder = header.querySelector(".me").childNodes.map((el) => el.getAttribute("class") || "");
+  expect(header.querySelectorAll("a.bell").filter((a) => a.getAttribute("href") === "#/all").length === 1 && fbOrder.length === 4
+    && /chat-button/.test(fbOrder[0]) && fbOrder[1] === "bell-box", "notifications: refreshes without them keep one bell, Chat first " + JSON.stringify(fbOrder));
   const nSettingsAsked = [];
   const nGetNone = win.Maity.api.get;
   win.Maity.api.get = (p) => { if (p === "/me/notification-settings") nSettingsAsked.push(p); return nGetNone(p); };
@@ -4254,6 +4460,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/account/notifications");
   expect(byId("notify-browser") && !byId("notify-browser").checked && asked === 0 && text(main).includes("has not been asked yet")
     && byId("notify-kind-card").attrs.disabled !== undefined, "notifications: the settings, off, the browser not asked on opening them");
+  expect(!byId("notify-kind-keep_the_why"), "notifications: a hub whose settings do not list Keep the Why shows no switch for it");
+  const ksGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/me/notification-settings"
+    ? ksGet(p).then((x) => ({ ...x, kinds: x.kinds.concat(["keep_the_why"]), browser: { ...x.browser, kinds: { ...x.browser.kinds, keep_the_why: true } } })) : ksGet(p));
+  win.Maity.notify.state.settings = null;
+  await go("#/all"); await go("#/account/notifications");
+  expect(byId("notify-kind-keep_the_why") && byId("notify-kind-keep_the_why").checked, "notifications: a hub that lists Keep the Why has its switch, on by default");
+  win.Maity.api.get = ksGet; win.Maity.notify.state.settings = null;
+  await go("#/all"); await go("#/account/notifications");
   const fresh = [
     { id: "ntf-5001", seq: 5001, kind: "chat", at: "2026-10-22T15:00:00Z", project: { slug: "maity", name: "Maity" }, actor: { member_id: "agt-a" }, title: "Agent A in agent-a", target: { type: "conversation", id: "agt-a" }, read: false, redacted: false, content: "secret text" },
     { id: "ntf-5002", seq: 5002, kind: "card", at: "2026-10-22T15:01:00Z", project: { slug: "maity", name: "Maity" }, actor: { member_id: "agt-b" }, title: "tsk-0004 …: reported", target: { type: "task", id: "tsk-0004" }, read: false, redacted: false },

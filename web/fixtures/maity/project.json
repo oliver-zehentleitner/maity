@@ -23,7 +23,8 @@
     "lease_seconds": 7200,
     "signing": "optional",
     "swarm_public": "on",
-    "badge": "off"
+    "badge": "off",
+    "keep_the_why": "required"
   },
   "absence": null,
   "settings": {

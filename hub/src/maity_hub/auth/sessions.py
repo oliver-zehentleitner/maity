@@ -2,9 +2,8 @@
 (docs/api.md §2.6.5).
 
 A session is in good standing when it was signed in by password, or when its own
-`session_created` item was marked read by an allowed session. Only the password exists
-as a method so far, so every session is in good standing until the device code and the
-mail link add the others; the rules below are written for both already.
+`session_created` item was marked read by an allowed session (§18.3); `confirmed` below
+is the set of public ids whose sign-in record was so marked.
 """
 
 from __future__ import annotations
@@ -29,6 +28,7 @@ from maity_hub.auth.caller import (
     session_id_hash,
 )
 from maity_hub.errors import ApiError
+from maity_hub.notifications import records
 from maity_hub.views import ts
 
 # Ended sessions stay in the list for this long (`?ended=true`).
@@ -64,9 +64,18 @@ def describe(user_agent: str | None) -> tuple[str | None, str | None]:
     return browser, system
 
 
-def good_standing(row: Any) -> bool:
-    """§2.6.5. Without account records yet, only the password grants it."""
-    return bool(row.method == "password")
+def good_standing(row: Any, confirmed: frozenset[str] = frozenset()) -> bool:
+    """§2.6.5: signed in by password, or its sign-in confirmed from another session."""
+    return bool(row.method == "password" or row.public_id in confirmed)
+
+
+def confirmed_sessions(conn: Connection, human_id: str) -> frozenset[str]:
+    """The public ids whose `session_created` record an allowed session marked read."""
+    return frozenset(
+        public_id
+        for public_id, record in records.sign_in_records(conn, human_id).items()
+        if record.read_at is not None
+    )
 
 
 def ended(row: Any, now: datetime) -> tuple[datetime, str] | None:
@@ -79,8 +88,15 @@ def ended(row: Any, now: datetime) -> tuple[datetime, str] | None:
     return None
 
 
-def view(row: Any, current: str | None, now: datetime) -> dict[str, Any]:
+def view(
+    row: Any,
+    current: str | None,
+    now: datetime,
+    sign_ins: dict[str, Any] | None = None,
+    confirmed: frozenset[str] = frozenset(),
+) -> dict[str, Any]:
     finished = ended(row, now)
+    record = (sign_ins or {}).get(row.public_id)
     return {
         "id": row.public_id,
         "current": row.id_hash == current,
@@ -92,9 +108,17 @@ def view(row: Any, current: str | None, now: datetime) -> dict[str, Any]:
         "os": row.os,
         "ip": None if finished else row.ip,
         "approved_by": row.approved_by,
-        "good_standing": good_standing(row),
-        # The account record of the sign-in (§2.6.5) arrives with account records.
-        "created": None,
+        "good_standing": good_standing(row, confirmed),
+        "created": (
+            {
+                "record": f"acr-{record.n}",
+                "ip": record.data.get("ip"),
+                "browser": record.data.get("browser"),
+                "os": record.data.get("os"),
+            }
+            if record is not None
+            else None
+        ),
         "ended_at": ts(finished[0]) if finished else None,
         "ended_by": finished[1] if finished else None,
     }
@@ -118,11 +142,13 @@ def listing(conn: Connection, human_id: str, current: str, *, with_ended: bool) 
     return shown
 
 
-def refusal(actor: Any, target: Any, now: datetime) -> str | None:
+def refusal(
+    actor: Any, target: Any, now: datetime, confirmed: frozenset[str] = frozenset()
+) -> str | None:
     """Why `actor` may not end `target`, or None (§2.6.5 "Who may end which session")."""
-    if actor.id_hash == target.id_hash or good_standing(actor):
+    if actor.id_hash == target.id_hash or good_standing(actor, confirmed):
         return None
-    if good_standing(target):
+    if good_standing(target, confirmed):
         return "not_in_good_standing"
     if now - actor.created_at < YOUNG and target.created_at < actor.created_at:
         return "session_too_new"
@@ -143,7 +169,12 @@ def end_where(conn: Connection, which: Any, by: str) -> None:
     keeps no address history of an ended session (personal data), and the device codes a
     session made die with it (§2.6.2)."""
     live = which & t.human_session.c.ended_at.is_(None)
-    hashes = list(conn.execute(select(t.human_session.c.id_hash).where(live)).scalars())
+    ending = conn.execute(
+        select(
+            t.human_session.c.id_hash, t.human_session.c.human_id, t.human_session.c.public_id
+        ).where(live)
+    ).all()
+    hashes = [row.id_hash for row in ending]
     if not hashes:
         return
     conn.execute(
@@ -159,6 +190,8 @@ def end_where(conn: Connection, which: Any, by: str) -> None:
         )
         .values(status="denied")
     )
+    for row in ending:
+        records.session_ended(conn, row.human_id, row.public_id, by)
 
 
 def forget_expired_addresses(conn: Connection) -> None:
@@ -250,6 +283,19 @@ def create(
     )
     conn.execute(
         update(t.human).where(t.human.c.id == human_id).values(last_seen_at=now, last_login_at=now)
+    )
+    # Every new session tells its human, whichever the method (§2.6.5).
+    records.session_created(
+        conn,
+        human_id,
+        {
+            "session_id": public_id,
+            "method": method,
+            "browser": browser,
+            "os": system,
+            "ip": address[:64],
+            "approved_by": approved_by,
+        },
     )
     return session_id, csrf, public_id
 

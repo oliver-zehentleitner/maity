@@ -158,6 +158,7 @@ window.Maity = window.Maity || {};
     // and /me come back with the hub's new avatar_url.
     const changed = (answer, words) => { pictureNote = words; ctx.refresh(); };
     const pictureHeading = h("h3", { class: "picture-heading", tabindex: "-1" }, "Your picture");
+    const wantedAgent = args && args[0] === "picture" ? args[1] || null : null;
     const note = pictureNote ? h("p", { class: "ok", role: "status" }, pictureNote) : null;
     pictureNote = null;
     // Your agents' pictures (§6.10: the profile's owner sets them); a hub
@@ -187,8 +188,10 @@ window.Maity = window.Maity || {};
       pictureEditor(ctx.me, "/me/avatar", true, changed),
       agents && agents.length ? [h("h3", null, "Your agents' pictures"),
         h("p", { class: "muted" }, "Each agent can also set its own; the last change wins."),
-        h("ul", { class: "picture-list" }, agents.map((a) => h("li", null,
-          h("h4", { class: "picture-name" }, a.display_name, h("span", { class: "muted" }, " @" + (a.name || a.handle))),
+        // #/account/picture/<agent id> (a Keep the Why notice about an agent
+        // in a project one is not in) marks that agent and starts there.
+        h("ul", { class: "picture-list" }, agents.map((a) => h("li", { class: wantedAgent === a.id ? "wanted" : null, "data-agent": a.id },
+          h("h4", { class: "picture-name", tabindex: wantedAgent === a.id ? "-1" : null }, a.display_name, h("span", { class: "muted" }, " @" + (a.name || a.handle))),
           pictureEditor(a, "/agents/" + encodeURIComponent(a.id) + "/avatar", false, changed))))] : null,
       themeBox ? [themeHeading, h("p", { class: "muted" }, "Kept in this browser only: another browser or device has its own. System follows the light or dark setting of your device."), themeBox] : null,
       preferences ? preferences.el : null,
@@ -198,7 +201,10 @@ window.Maity = window.Maity || {};
       h("p", { class: "muted" }, "Changing it signs out every other browser and device where you are signed in."),
       form);
     // #/account/picture (the profile menu's Picture) starts at the picture.
-    if (args && args[0] === "picture") window.setTimeout(() => pictureHeading.focus(), 0);
+    if (args && args[0] === "picture") {
+      const marked = wantedAgent && Array.from(root.querySelectorAll("li.wanted")).find((li) => li.getAttribute("data-agent") === wantedAgent);
+      window.setTimeout(() => (marked ? marked.querySelector(".picture-name") : pictureHeading).focus(), 0);
+    }
     // #/account/theme (the profile menu's Theme) starts there.
     if (themeBox && args && args[0] === "theme") window.setTimeout(() => themeHeading.focus(), 0);
     // #/account/notifications (the bell's settings link) starts there.

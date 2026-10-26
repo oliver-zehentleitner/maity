@@ -1032,3 +1032,112 @@ screen reader still reads where the page is.
 screen readers too, and the page title alone is read only on load.
 Shortening the text: the project names are the operators', of any
 length.
+
+## A card opens as a panel on the board, not as a page of its own
+
+**Id:** 254c3ddf-d7be-4e70-ad71-384a6eb3d36b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's report of 2026-10-25 that a board card could not be opened on a phone (tsk-1tva2482j90b), and the coordinator's ruling the same day on the proposal; the dashboard's implementation, 2026-10-25
+**Revisit when:** a card needs more than one screen of its own (sub-cards, a long discussion), or the board stops being the place where cards are worked on
+
+A card's title links to `#/p/<slug>/tasks/<id>`, which was already the
+board with that card marked. The board view now also opens the card
+there as a panel: beside the columns on a wide screen, full width above
+them on a phone. The panel holds the card as the board draws it,
+controls included, and what the board leaves out: the description, the
+links, the open notes with a form, the history. Close, Escape and Back
+return to the board with the card marked and its title focused.
+
+**Reason:** until then the dashboard had no way to open a card at all;
+the description, notes and history were nowhere to be read, which on a
+phone looked like a card that would not open. In place, the card keeps
+the board's controls and their reload and focus handling, the columns
+stay in view on a desktop, and the existing deep link and its marking
+need no second route.
+
+**Rejected alternative:** a page of its own per card: it would need its
+own copy of the board's move, assign and place handling, and Back would
+lose the board's filter and scroll. Expanding the card inside its
+column: a column is too narrow for a description and a history, and
+every board reload would close it again. A modal dialog: on a phone the
+same as the panel, on a desktop it hides the board the card belongs to.
+
+## The header's Chat badge counts unread chat messages from the notifications, not chats
+
+**Id:** 3ad5cf20-0240-4536-aaef-3bd8b411288f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's instruction of 2026-10-25 for Chat and Notifications buttons in the signed-in header (tsk-wnk7wv6p4se7), and the coordinator's ruling the same day on the badge; docs/api.md §9.3, §18.2; the dashboard's implementation, 2026-10-26
+**Revisit when:** the hub counts conversations with unread messages (a per-conversation count on /me/notifications), or the message count proves misleading in practice
+
+Where the theme menu was, the signed-in header has Chat, then the bell,
+then the gear and the profile. Chat leads to `#/chats` and carries
+`counts.chat` from `/me/notifications`, which the header already reads,
+worded "N unread chat messages". `#/chats` reads each project's
+conversation list (§9.3) once when it opens, unread first. On a hub
+without notifications both buttons stand without a count, the bell as a
+link to everything waiting.
+
+**Reason:** the hub has no list of conversations across projects; the
+instruction asked for unread chats, but counting them would mean one
+§9.3 call per project on every count refresh. `counts.chat` costs
+nothing extra and needs no hub change; the view itself may read every
+project because it is opened rarely.
+
+**Rejected alternative:** counting conversations with unread messages
+from one §9.3 read per project each refresh: N calls every cycle. A
+per-conversation count added to `/me/notifications`: the cleaner
+number, but a contract change, kept as the follow-up should the message
+count mislead.
+
+## A report's why links its entry's file at the reported head; the dashboard builds the link
+
+**Id:** bae95d1f-f84a-4261-ae51-6a0f7f51296a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §6.23 and the maintainer's card for the web side of the Keep the Why commitment (tsk-bq6q65910g13), 2026-10-25; the dashboard's implementation, 2026-10-26
+**Revisit when:** the hub sends a URL for the why, a forge other than GitHub is supported (§11), or the probe reads the entry at the head
+
+A code report's `why.ref` (`<path>#<id>`) shows under the report as a
+link to `<repository url>/blob/<head>/<path>`, with the entry's `#<id>`
+beside it as text; `why.none` shows as "No why: <reason>". The link is
+made only for an https repository, a 40-hex head and a relative `.md`
+path without `..`; anything else stays as code text.
+
+**Reason:** the contract carries the reference, not a URL, and the hub
+reads no repository for it. At the report's head the file is the one
+the review saw, not whatever the default branch holds later. The
+entry's Id is no heading anchor on the forge, so a fragment would point
+nowhere; it is shown for the reader to find.
+
+**Rejected alternative:** linking the default branch: the entry may move
+or change after the merge. A fragment with the Id: no forge renders it as
+an anchor. Waiting for a hub-made URL: none is in the contract.
+
+## A Keep the Why notice about an agent leads to its project's Members, or to one's agents on the account
+
+**Id:** be999be7-325a-4fcf-954a-2bdadb6e6f84
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §6.23 and §18.2; the coordinator's ruling of 2026-10-25 on the item's target and the interim place (tsk-bq6q65910g13); the dashboard's implementation, 2026-10-26
+**Revisit when:** the dashboard gets a page of one's agents outside any project
+
+The `keep_the_why` item names the agent as `target: {type: "member"}`.
+Where the owner is a member of the project it opens
+`#/p/<slug>/members/<agent id>`; where not, `#/account/picture/<agent
+id>`, the list of one's agents on the account, with that agent marked
+and focused.
+
+**Reason:** the owner of an agent need not be a member of the project the
+agent works in, and cannot open that project; the account's list is the
+one place the dashboard shows all of one's agents.
+
+**Rejected alternative:** the cross-project inbox (`#/all`), where other
+items of a project one cannot open go: it says nothing about the agent.
+A new page of one's agents: the right place, but beyond this change; the
+link moves there once it exists.

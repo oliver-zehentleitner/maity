@@ -97,6 +97,17 @@ window.Maity = window.Maity || {};
       return [by, " " + formatAgo(p.since) + (p.reason ? ": " + p.reason : "")];
     }
 
+    // The Keep the Why commitment (docs/api.md §6.23), per instance: when it
+    // confirmed, or by when it is to; past that without a confirmation a
+    // mark, not an error. Only where the hub sends it (policy required).
+    function ktwCell(m) {
+      if (!("keep_the_why_unconfirmed" in m)) return "—";
+      const lines = (m.instances || []).map((i) => h("div", { class: "ktw-instance" }, (i.label || i.id) + ": ",
+        i.keep_the_why_acknowledged_at ? "confirmed " + formatAgo(i.keep_the_why_acknowledged_at)
+          : i.keep_the_why_acknowledge_by ? "to confirm by " + formatTime(i.keep_the_why_acknowledge_by) : "not confirmed yet"));
+      return [m.keep_the_why_unconfirmed ? h("span", { class: "mark ktw-unconfirmed" }, "Keep the Why not confirmed in time") : null, lines];
+    }
+
     // Focus survives a redraw by key: the element drawn for the same key.
     function redraw(focusKey) {
       const active = document.activeElement;
@@ -354,10 +365,12 @@ window.Maity = window.Maity || {};
       const owner = { title: "Owner", cell: (m) => M.dom.memberRef(ctx, m.owner ? Object.assign({ member_id: m.owner_id }, m.owner) : m.owner_id) };
       const paused = { title: "Paused", cell: (m) => pausedText(m) || "—" };
       const creds = { title: "Credentials", cell: (m) => credentialsText(m.credentials) };
+      const ktw = { title: "Keep the Why", cell: ktwCell };
+      const hasKtw = agents.some((m) => "keep_the_why_unconfirmed" in m);
       append(clear(box),
         table("human", humans, [role, presence, joined]),
         agents.length
-          ? table("agent", agents, [role, owner, presence, joined, paused].concat(hasCreds ? [creds] : []))
+          ? table("agent", agents, [role, owner, presence, joined, paused].concat(hasKtw ? [ktw] : [], hasCreds ? [creds] : []))
           : [h("h3", null, "Agents (0)"), h("p", { class: "muted" }, "No agents yet. ", ctx.canAdmin ? h("a", { href: ctx.link("join") }, "Join one.") : null)]);
     }
 
