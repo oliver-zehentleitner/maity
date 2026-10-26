@@ -1132,6 +1132,8 @@ event = Table(
     # no team was narrowed, which is most events.
     Column("wakes", JSON_VALUE),
     Index("ix_event_project_seq", "project_id", "seq"),
+    # The notifications' stamp: the highest seq per project among some kinds (§18.2).
+    Index("ix_event_project_kind_seq", "project_id", "kind", "seq"),
     Index("ix_event_conversation", "project_id", "conversation_id", "seq"),
     # A placement's reports, newest first (§15.6).
     Index("ix_event_subject", "project_id", "subject_type", "subject_id", "seq"),

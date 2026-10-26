@@ -8,7 +8,7 @@ import time
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 
 from maity_hub import clock
 from maity_hub import tables as t
@@ -146,12 +146,39 @@ def test_a_request_opened_to_the_admins_reaches_an_admin(
         f"/projects/maity/requests/{asked['id']}/forward", {"to": "role:admin", "reason": "yours"}
     )
     assert opened.status_code == 200, opened.text
-    found = [i for i in bell(admin)["items"] if i["kind"] == "inbox"]
-    assert found and all(i["target"] == {"type": "request", "id": asked["id"]} for i in found)
+    [found] = [i for i in bell(admin)["items"] if i["kind"] == "inbox"]  # one per request
+    assert found["target"] == {"type": "request", "id": asked["id"]}
     events = admin.get("/projects/maity/events").json()["items"]
     forwarded = max(e["seq"] for e in events if e["kind"] == "request_forwarded")
-    assert forwarded in [i["seq"] for i in found]  # the forward itself is an item
-    assert all(i["title"].endswith("asks: Which?") for i in found)
+    assert found["seq"] == forwarded  # the forward itself is the item
+    assert found["title"].endswith("asks: Which?")
+    assert not [i for i in bell(owner)["items"] if i["kind"] == "inbox"]  # no longer holds it
+    with migrated.begin() as conn:  # the admin loses the role: the item goes with it
+        conn.execute(
+            update(t.membership).where(t.membership.c.human_id == admin.id).values(role="member")
+        )
+    assert not [i for i in bell(admin)["items"] if i["kind"] == "inbox"]
+
+
+def test_a_claim_leaves_the_item_with_the_claiming_admin_only(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    agent = flow.agent(make_client, owner)
+    admins = [flow.human(make_client, migrated, h) for h in ("admin-one", "admin-two")]
+    with migrated.connect() as conn:
+        project_id = str(conn.execute(select(t.project.c.id)).scalar_one())
+    for admin in admins:
+        factory.membership(migrated, project_id, "admin", human_id=admin.id)
+    asked = agent.post(
+        "/projects/maity/requests", {"class": "decision", "title": "Which?", "to": "owner"}
+    ).json()
+    owner.post(
+        f"/projects/maity/requests/{asked['id']}/forward", {"to": "role:admin", "reason": "yours"}
+    )
+    claimed = admins[0].post(f"/projects/maity/requests/{asked['id']}/claim", {})
+    assert claimed.status_code == 200, claimed.text
+    holding, other = ([i for i in bell(a)["items"] if i["kind"] == "inbox"] for a in admins)
+    assert len(holding) == 1 and other == []
 
 
 def test_own_actions_never_notify(owner: flow.Human) -> None:
