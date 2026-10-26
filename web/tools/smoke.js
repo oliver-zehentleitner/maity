@@ -5085,14 +5085,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const waitCtx = { scope: "all", me: { id: "hum-me" }, refreshCounts: async () => {}, onDispose: (fn) => waitDisposers.push(fn) };
   const waitingView = win.Maity.waiting.mount(waitCtx, waitHost, waitRequests, () => waitFilter);
   await waitingView.ready;
-  expect(waitCalls.length === 4 && waitCalls.every((p) => p.includes("limit=50")) && waitHost.querySelectorAll(".waiting-item").length <= 200
-    && waitHost.querySelectorAll(".waiting-item").length > 190,
+  const waitFirst200 = win.Maity.waiting.rows(waitRows.slice(0, 200), waitRequests, "");
+  const waitExpected = Math.min(200, Object.values(waitFirst200).reduce((n, g) => n + g.length, 0));
+  expect(waitCalls.length === 4 && waitCalls.every((p) => p.includes("limit=50") && !p.includes("project=")) && waitHost.querySelectorAll(".waiting-item").length === waitExpected,
     "waiting: reads at most the 4 pages of 50 the 200 rows need, however many are unread");
   expect(text(waitHost).includes("More notifications") && !text(waitHost).includes("PRIVATE MESSAGE") && !text(waitHost).includes("Duplicate request"),
     "waiting: overflow has a full-list link; message content and duplicate requests are absent");
-  waitFilter = "maity"; waitingView.draw();
-  expect(waitHost.querySelectorAll(".waiting-item").length === 2 && !text(waitHost).includes("Security alert"), "waiting: project filter applies across groups");
+  const waitCallsBefore = waitCalls.length;
+  waitFilter = "maity"; waitingView.draw(); for (let i = 0; i < 8; i++) await tick();
+  expect(waitCalls.length > waitCallsBefore && waitCalls.slice(waitCallsBefore).every((p) => p.includes("&project=maity"))
+    && waitHost.querySelectorAll(".waiting-item").length === 2 && !text(waitHost).includes("Security alert"),
+    "waiting: a project filter reads that project's unread, not a filter over the 200 of all");
   const waitChat = waitHost.querySelectorAll(".waiting-item").find((el) => el.getAttribute("data-notification") === "ntf-w2");
+  expect(text(waitChat).includes("2+ unread"), "waiting: past the 200 a conversation's count is a lower bound, said with a plus");
   waitChat.querySelector("a").click(); await tick();
   expect(JSON.stringify(waitWrites[0]) === JSON.stringify(["/me/notifications/read", { ids: ["ntf-w2"] }]), "waiting: opening a conversation marks its newest item read");
   // A busy stream: five events in a row are one refresh once they settle.
@@ -5127,6 +5132,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   bigHold(); await bigView.ready;
   expect(bigCalls.length === 4 && bigHost.querySelectorAll(".waiting-item").length === 200 && text(bigHost).includes("Showing 200 activity rows. More notifications")
     && !text(bigHost).includes("Reading what else is new"), "waiting: 1226 unread are 4 reads and 200 rows with More notifications");
+  // A hub without the route: the reading line goes, nothing else is said.
+  win.Maity.api.get = (path) => (path === "/openapi.json" ? Promise.resolve({ paths: {} })
+    : path.startsWith("/me/notifications?unread=true") ? Promise.reject(new win.Maity.api.ApiError("Not found", 404, path, "not_found", {})) : waitGet(path));
+  win.Maity.api.forgetRoutes(); win.Maity.api.absent.clear();
+  const goneHost = document.createElement("div");
+  const goneView = win.Maity.waiting.mount({ scope: "all", me: { id: "hum-me" }, refreshCounts: async () => {}, onDispose: (fn) => waitDisposers.push(fn) },
+    goneHost, [], () => "");
+  await goneView.ready;
+  expect(!text(goneHost).includes("Reading what else is new") && !goneHost.querySelector(".send-status.failed"), "waiting: a hub without the route clears the reading line, no error");
+  win.Maity.api.forgetRoutes(); win.Maity.api.absent.clear(); win.Maity.notify.state.available = true;
   // The inbox itself never waits for that list: with the activity read hanging, its requests are on screen.
   win.Maity.api.get = (path) => (path.startsWith("/me/notifications?unread=true") ? new Promise(() => {}) : waitGet(path));
   await go("#/p/maity/board"); await go("#/p/maity/inbox"); for (let k = 0; k < 4; k++) await tick();

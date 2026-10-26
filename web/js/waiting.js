@@ -38,7 +38,9 @@ window.Maity = window.Maity || {};
     return groups;
   }
 
-  function rowLink(ctx, row, afterRead, status) {
+  // more: the list stopped at its 200 rows, so a conversation's count may
+  // be short of the hub's.
+  function rowLink(ctx, row, afterRead, status, more) {
     const x = row.item;
     return h("li", { class: "waiting-item", "data-notification": x.id },
       h("a", { href: M.notify.linkOf(x), onclick: () => {
@@ -49,7 +51,7 @@ window.Maity = window.Maity || {};
           return ctx.refreshCounts();
         }).catch((err) => status.fail("Could not mark the item read: ", err));
       } }, x.redacted ? "Removed" : x.title || M.notify.KIND_WORDS[x.kind] || "Notification"),
-      x.kind === "chat" && !x.read ? h("span", { class: "count" }, row.count + " unread") : null,
+      x.kind === "chat" && !x.read ? h("span", { class: "count" }, row.count + (more ? "+" : "") + " unread") : null,
       h("span", { class: "muted" }, (x.project ? x.project.name + " · " : "") + formatAgo(x.at)));
   }
 
@@ -59,8 +61,12 @@ window.Maity = window.Maity || {};
     const box = h("div", { class: "waiting-activity" }), status = M.statusLine();
     append(root, box, status.el);
     let items = [], more = false, disposed = false, loading = false, again = false, last = null, settle = null;
+    // The project the last read was for: the 200 are read per project, so a
+    // filter changed to another one reads again instead of filtering the 200.
+    let readFor;
     const draw = () => {
       if (!M.notify.state.available) { clear(box); last = null; return; }
+      if (readFor !== undefined && project() !== readFor) { refresh(); return; }
       const groups = rows(items, requests, project());
       const signature = JSON.stringify(groups) + more;
       if (signature === last) return;
@@ -73,7 +79,7 @@ window.Maity = window.Maity || {};
         const all = groups[key]; total += all.length;
         const visible = all.slice(0, left); left -= visible.length;
         if (visible.length) append(box, h("section", { class: "waiting-group", "aria-label": title },
-          h("h3", null, title), h("ul", { class: "waiting-items" }, visible.map((row) => rowLink(ctx, row, () => refresh(), status)))));
+          h("h3", null, title), h("ul", { class: "waiting-items" }, visible.map((row) => rowLink(ctx, row, null, status, more)))));
       });
       if (total > SHOWN || more) append(box, h("p", { class: "hint" }, "Showing " + Math.min(total, SHOWN) + " activity rows. ", h("a", { href: "#/notifications" }, "More notifications")));
       if (focusId) {
@@ -86,7 +92,8 @@ window.Maity = window.Maity || {};
       if (loading) { again = true; return; }
       loading = true;
       try {
-        const path = "/me/notifications?unread=true&limit=50" + (ctx.scope === "project" ? "&project=" + encodeURIComponent(ctx.slug) : "");
+        readFor = project();
+        const path = "/me/notifications?unread=true&limit=50" + (readFor ? "&project=" + encodeURIComponent(readFor) : "");
         const all = [], cursors = new Set();
         let cursor = null, pages = 0;
         do {
@@ -102,7 +109,7 @@ window.Maity = window.Maity || {};
       } catch (err) {
         if (disposed) return;
         if (await M.api.missingRoute(err, "GET", "/me/notifications")) {
-          M.api.absent.note("GET", "/me/notifications"); M.notify.state.available = false; items = []; draw();
+          M.api.absent.note("GET", "/me/notifications"); M.notify.state.available = false; items = []; status.done(); draw();
         } else status.fail("Could not read waiting activity: ", err);
       } finally {
         loading = false;
@@ -115,7 +122,7 @@ window.Maity = window.Maity || {};
     ctx.onDispose(() => { disposed = true; window.clearTimeout(settle); unsubscribe(); });
     if (M.notify.state.available) status.busy("Reading what else is new…");
     const ready = refresh();
-    return { draw, ready };
+    return { draw, ready, refresh };
   }
 
   // The overflow destination is paginated, so the 200-row landing page
