@@ -252,3 +252,8 @@ scan every event of every project.
   itself is the problem for the human, not the cost of computing it.
 - Drop `security` too: security alerts protect the account, so they
   stay, outside `total` as before.
+- Tell the placement's creator about an outage too, when that human is
+  not the agent's owner: the owner is responsible for the agent, and
+  one addressee keeps one request per outage.
+- Keep card watches as a notification source: that is the activity log
+  again; the watch stays as a board feature.
