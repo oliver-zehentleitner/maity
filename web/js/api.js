@@ -35,6 +35,7 @@ window.Maity = window.Maity || {};
   let deviceSim = null;
   let deviceSerial = 0;
   let mailPending = false;
+  let mailNext = "/";
   function deviceOf(id, path) {
     if (!deviceSim || deviceSim.id !== id) fail(404, "not_found", "Not found", path);
     if (["waiting", "redeemed"].includes(deviceSim.status) && Date.parse(deviceSim.expires_at) <= Date.now()) deviceSim.status = "expired";
@@ -654,6 +655,13 @@ window.Maity = window.Maity || {};
     // §2.6.1–2.6.3 in one tab: this tab makes the code, and a simulated
     // phone has entered it by the second read, so the approval can be seen.
     ["GET", /^\/auth\/methods$/, () => ({ password: true, device_code: true, email_link: true, registration: false, terms: null })],
+    // §3.4: what an invitation page shows, signed out too (registration reads
+    // whether it admits); fixtures/invitations.json per token.
+    ["GET", /^\/invitations\/([^/]+)$/, (m, body, path) => {
+      const view = (fixtures()["invitations.json"].pages || {})[m[1]];
+      if (!view) fail(404, "not_found", "Not found", path);
+      return view;
+    }],
     ["POST", /^\/auth\/device-codes$/, (m, body, path) => {
       if (!fixtureSignedIn) fail(401, "unauthenticated", "Not signed in", path);
       const code = "K7QM4XPR";
@@ -701,12 +709,12 @@ window.Maity = window.Maity || {};
       return { member: me().member, next: "/" };
     }],
     // §2.6.3: always 202; the fixtures' mailed code is 482913.
-    ["POST", /^\/auth\/email-link$/, () => { mailPending = true; return { expires_in: 900 }; }],
+    ["POST", /^\/auth\/email-link$/, (m, body) => { mailPending = true; mailNext = body.next || "/"; return { expires_in: 900 }; }],
     ["POST", /^\/auth\/email-code$/, (m, body, path) => {
       if (!mailPending || String(body.code || "").replace(/\s/g, "") !== "482913") fail(400, "code_invalid", "the code does not match", path);
       mailPending = false;
       fixtureSignedIn = true;
-      return { member: me().member, next: "/" };
+      return { member: me().member, next: mailNext };
     }],
     ["GET", /^\/auth\/session$/, (m, body, path) => {
       if (!fixtureSignedIn) fail(401, "unauthenticated", "Not signed in", path);
@@ -754,7 +762,15 @@ window.Maity = window.Maity || {};
         fail(401, "unauthenticated", "Handle or password is wrong", path);
       }
       fixtureSignedIn = true;
-      return { member: me().member };
+      return { member: me().member, next: body.next || "/" };
+    }],
+    // §2.7.1: always 202 for a well-formed request; what follows is in the mail.
+    ["POST", /^\/auth\/register$/, (m, body, path) => {
+      const fields = {};
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(body.address || ""))) fields.address = "invalid";
+      if ([...(body.password || "")].length < 12) fields.password = "too_short";
+      if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
+      return { expires_in: 86400 };
     }],
     // docs/api.md §2.1: any password signs in until one is set here; then
     // that one. The new one has at least 12 characters, as the hub wants.
@@ -1412,6 +1428,8 @@ window.Maity = window.Maity || {};
       "/api/v1/requests/{request_id}/withdraw": { post: {} },
       "/api/v1/projects/{slug}/swarm": { get: {} },
       "/api/v1/swarm/{slug}": { get: {} },
+      "/api/v1/invitations/{token}": { get: {} },
+      "/api/v1/auth/register": { post: {} },
       "/api/v1/projects": { get: {}, post: { requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/ProjectCreate" } } } } } },
       "/api/v1/projects/{slug}/tasks/{task_id}/contract": { get: {} },
       "/api/v1/projects/{slug}/tasks/{task_id}/notes": { get: {}, post: {} },
@@ -2352,7 +2370,7 @@ window.Maity = window.Maity || {};
     const query = new URLSearchParams(q < 0 ? "" : fullPath.slice(q + 1));
     return loadFixtures().then(() => {
       // The hub serves its machine form and the landing page without a session.
-      if (!fixtureSignedIn && !path.startsWith("/auth/") && path !== "/landing" && path !== "/openapi.json" && !path.startsWith("/swarm/")) {
+      if (!fixtureSignedIn && !path.startsWith("/auth/") && path !== "/landing" && path !== "/openapi.json" && !path.startsWith("/swarm/") && !path.startsWith("/invitations/")) {
         fail(401, "unauthenticated", "Not signed in", fullPath);
       }
       for (const [verb, pattern, handler] of routes) {

@@ -2933,6 +2933,30 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/s/maity"); for (let k = 0; k < 4; k++) await tick();
   expect(main.querySelector("article.swarm-public") && main.querySelector("article.swarm-public ul.swarm-live") && !byId("login-handle"),
     "swarm: the public page opens without a session");
+  // Registration (§2.7.1): from an invitation that admits, though the hub does not register on request.
+  const rgPosts = [];
+  const rgPost = win.Maity.api.post;
+  win.Maity.api.post = (p, b) => { if (p === "/auth/register") rgPosts.push(b); return rgPost(p, b); };
+  await go("#/register?next=%2F%23%2Finvite%2Finv-bound-token-00000003"); for (let k = 0; k < 6; k++) await tick();
+  const rgForm = () => main.querySelector("form.register-form");
+  expect(rgForm() && text(rgForm()).includes("Use the address the invitation was sent to"), "register: from an invitation that admits, the form, bound to its address");
+  byId("register-address").value = "anna@example.org"; byId("register-password").value = "short"; byId("register-repeat").value = "short";
+  rgForm().dispatch("submit"); await tick();
+  expect(!rgPosts.length && text(rgForm()).includes("at least 12 characters"), "register: a short password is said before anything is sent");
+  byId("register-password").value = "a long enough password"; byId("register-repeat").value = "a long enough password";
+  rgForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(rgPosts[0]) === JSON.stringify({ address: "anna@example.org", password: "a long enough password", next: "/#/invite/inv-bound-token-00000003" })
+    && text(main).includes("Check your mail") && text(main).includes("works for 24 hours") && text(main).includes("come back to where you were"),
+    "register: sent with the invitation as next, then 'check your mail' for every address alike");
+  win.Maity.api.post = rgPost;
+  await go("#/register"); for (let k = 0; k < 6; k++) await tick();
+  expect(!rgForm() && text(main).includes("This hub does not create new accounts on request."), "register: a hub that does not register says so, with the way to sign in");
+  // Signing in with a next (§2.6.5) goes there, in place of the login page.
+  await go("#/login?next=%2F%23%2Fp%2Fmaity%2Fboard"); for (let k = 0; k < 4; k++) await tick();
+  byId("login-handle").value = "maintainer"; byId("login-password").value = "a long new password";
+  main.querySelector("form").dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+  expect(win.location.hash === "#/p/maity/board" && main.querySelector("section.view-board"), "sign-in: a next sends the signed-in page there");
+  await win.Maity.api.post("/auth/logout");
   await go(""); await tick(); await tick();
   byId("login-handle").value = "maintainer"; byId("login-password").value = "initial-generated";
   main.querySelector("form").dispatch("submit"); await tick(); await tick(); await tick();
@@ -4505,6 +4529,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "subtasks: the mock refuses a member's open subtask, takes the form's proposed one, starts one without a status as proposed, and refuses an unknown parent as the hub does");
   stProto.focus = stFocus; document.activeElement = undefined;
   await go("#/p/maity/inbox");
+
+  // An account waiting for approval (§2.7.5) sees that page and nothing else.
+  const ivGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => ivGet(p).then((v) => (p === "/me" ? Object.assign({}, v, { member: Object.assign({}, v.member, { account_status: "pending" }), projects: [] }) : v));
+  await go("#/all"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main).includes("Your account waits for the operator's approval") && btn(main, "Sign out") && !header.querySelector("nav.switcher"),
+    "pending: an account waiting for approval sees that, and can sign out");
+  win.Maity.api.get = ivGet;
+  await go("#/p/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
 
   // Notifications (docs/api.md §18): the bell, the counts, browser notifications.
   await go("#/p/maity/inbox");

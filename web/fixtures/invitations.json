@@ -1,0 +1,20 @@
+{
+  "pages": {
+    "inv-open-token-000000001": { "project": { "slug": "maity", "name": "Maity" }, "role": "member", "invited_by": { "display_name": "Maintainer" },
+      "note": "You review the web side; D will brief you.", "expires_at": "2030-01-01T12:00:00Z", "address_bound": false, "registration": "sign_in_or_register" },
+    "inv-only-token-000000002": { "project": { "slug": "maity", "name": "Maity" }, "role": "reviewer", "invited_by": { "display_name": "Maintainer" },
+      "note": null, "expires_at": "2030-01-01T12:00:00Z", "address_bound": false, "registration": "sign_in_only" },
+    "inv-bound-token-00000003": { "project": { "slug": "sample", "name": "Sample shop" }, "role": "member", "invited_by": { "display_name": "Maintainer" },
+      "note": null, "expires_at": "2030-01-01T12:00:00Z", "address_bound": true, "registration": "sign_in_or_register" },
+    "inv-mismatch-token-00004": { "project": { "slug": "maity", "name": "Maity" }, "role": "member", "invited_by": { "display_name": "Maintainer" },
+      "note": null, "expires_at": "2030-01-01T12:00:00Z", "address_bound": true, "registration": "sign_in_or_register" },
+    "inv-member-token-0000005": { "project": { "slug": "maity", "name": "Maity" }, "role": "member", "invited_by": { "display_name": "Maintainer" },
+      "note": null, "expires_at": "2030-01-01T12:00:00Z", "address_bound": false, "registration": "sign_in_or_register" },
+    "inv-void-token-000000006": { "project": { "slug": "maity", "name": "Maity" }, "role": "admin", "invited_by": { "display_name": "Maintainer" },
+      "note": null, "expires_at": "2030-01-01T12:00:00Z", "address_bound": false, "registration": "sign_in_only" },
+    "inv-closed-token-0000007": { "project": { "slug": "maity", "name": "Maity" }, "role": "member", "invited_by": { "display_name": "Maintainer" },
+      "note": null, "expires_at": "2030-01-01T12:00:00Z", "address_bound": false, "registration": "sign_in_only" },
+    "inv-pending-token-000008": { "project": { "slug": "maity", "name": "Maity" }, "role": "member", "invited_by": { "display_name": "Maintainer" },
+      "note": null, "expires_at": "2030-01-01T12:00:00Z", "address_bound": false, "registration": "sign_in_or_register" }
+  }
+}

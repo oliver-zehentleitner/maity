@@ -1010,6 +1010,122 @@ window.MAITY_FIXTURES = {
     ],
     "next_cursor": null
   },
+  "invitations.json": {
+    "pages": {
+      "inv-bound-token-00000003": {
+        "address_bound": true,
+        "expires_at": "2030-01-01T12:00:00Z",
+        "invited_by": {
+          "display_name": "Maintainer"
+        },
+        "note": null,
+        "project": {
+          "name": "Sample shop",
+          "slug": "sample"
+        },
+        "registration": "sign_in_or_register",
+        "role": "member"
+      },
+      "inv-closed-token-0000007": {
+        "address_bound": false,
+        "expires_at": "2030-01-01T12:00:00Z",
+        "invited_by": {
+          "display_name": "Maintainer"
+        },
+        "note": null,
+        "project": {
+          "name": "Maity",
+          "slug": "maity"
+        },
+        "registration": "sign_in_only",
+        "role": "member"
+      },
+      "inv-member-token-0000005": {
+        "address_bound": false,
+        "expires_at": "2030-01-01T12:00:00Z",
+        "invited_by": {
+          "display_name": "Maintainer"
+        },
+        "note": null,
+        "project": {
+          "name": "Maity",
+          "slug": "maity"
+        },
+        "registration": "sign_in_or_register",
+        "role": "member"
+      },
+      "inv-mismatch-token-00004": {
+        "address_bound": true,
+        "expires_at": "2030-01-01T12:00:00Z",
+        "invited_by": {
+          "display_name": "Maintainer"
+        },
+        "note": null,
+        "project": {
+          "name": "Maity",
+          "slug": "maity"
+        },
+        "registration": "sign_in_or_register",
+        "role": "member"
+      },
+      "inv-only-token-000000002": {
+        "address_bound": false,
+        "expires_at": "2030-01-01T12:00:00Z",
+        "invited_by": {
+          "display_name": "Maintainer"
+        },
+        "note": null,
+        "project": {
+          "name": "Maity",
+          "slug": "maity"
+        },
+        "registration": "sign_in_only",
+        "role": "reviewer"
+      },
+      "inv-open-token-000000001": {
+        "address_bound": false,
+        "expires_at": "2030-01-01T12:00:00Z",
+        "invited_by": {
+          "display_name": "Maintainer"
+        },
+        "note": "You review the web side; D will brief you.",
+        "project": {
+          "name": "Maity",
+          "slug": "maity"
+        },
+        "registration": "sign_in_or_register",
+        "role": "member"
+      },
+      "inv-pending-token-000008": {
+        "address_bound": false,
+        "expires_at": "2030-01-01T12:00:00Z",
+        "invited_by": {
+          "display_name": "Maintainer"
+        },
+        "note": null,
+        "project": {
+          "name": "Maity",
+          "slug": "maity"
+        },
+        "registration": "sign_in_or_register",
+        "role": "member"
+      },
+      "inv-void-token-000000006": {
+        "address_bound": false,
+        "expires_at": "2030-01-01T12:00:00Z",
+        "invited_by": {
+          "display_name": "Maintainer"
+        },
+        "note": null,
+        "project": {
+          "name": "Maity",
+          "slug": "maity"
+        },
+        "registration": "sign_in_only",
+        "role": "admin"
+      }
+    }
+  },
   "landing.json": {
     "cta": {
       "href": "/#/register",
