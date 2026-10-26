@@ -142,9 +142,25 @@ def test_what_the_markdown_may_hold(owner: flow.Human, markdown: str) -> None:
     assert saved.status_code == 200, (markdown, saved.text)
 
 
+def test_a_page_at_the_markdown_limit_passes_the_body_cap(owner: flow.Human) -> None:
+    """§16.7: 64 KiB of Markdown whose JSON escaping doubles it on the wire is accepted;
+    one byte more is the field's `invalid`, not 413; past 256 KiB the body is 413."""
+    quoted = ('"' * 63 + "\n") * (landing.MAX_MARKDOWN // 64)  # each character escaped
+    assert len(quoted.encode()) == landing.MAX_MARKDOWN
+    saved = owner.patch(ADMIN_PATH, {"markdown": quoted})
+    assert saved.status_code == 200, saved.text
+    assert field(owner.patch(ADMIN_PATH, {"markdown": quoted + "x"})) == {"markdown": "invalid"}
+    huge = owner.patch(ADMIN_PATH, {"markdown": "x" * (257 * 1024)})
+    assert (huge.status_code, huge.json()["error"]["code"]) == (413, "payload_too_large")
+
+
+def test_the_larger_cap_is_the_landing_settings_alone(owner: flow.Human) -> None:
+    refused = owner.patch("/me", {"display_name": "x" * (65 * 1024)})
+    assert refused.status_code == 413
+
+
 def test_the_markdown_is_capped_in_bytes() -> None:
-    """64 KiB of UTF-8 (§16.7): a four-byte character counts four times. Checked on
-    `check` itself: through the API the body cap (64 KiB, 413) is reached first."""
+    """64 KiB of UTF-8 (§16.7): a four-byte character counts four times."""
     fits = "\U0001f984" * (landing.MAX_MARKDOWN // 4)
     assert landing.check({"markdown": fits}, OFF)["markdown"] == fits
     with pytest.raises(ApiError) as over:
