@@ -141,7 +141,6 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
                     instance=mine.instance,
                     credential_id=caller.credential_id,
                     supervised=supervised,
-                    caller.instance,
                 )
             else:
                 rows, examined, _ = events.read(

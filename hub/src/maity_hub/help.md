@@ -440,6 +440,7 @@ mean — and nothing is stored: write `@oliver/agent-b` instead. A human comes
 first: if a human member has the handle, `@oliver` is the human. A global name
 that is no member stays plain text; a human has no long form. Stored mentions
 also carry `name` (the global name, `null` for a human) and `instance`.
+
 ## The jour fixe
 
 When the project runs a jour fixe (`policy.jour_fixe`), a round opens at

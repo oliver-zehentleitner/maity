@@ -114,14 +114,13 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         availability_worker.start()
         registrations_worker = registration_accounts.Worker(engine)
         registrations_worker.start()
-        yield
-        registrations_worker.stop()
         from maity_hub.jourfixe import worker as jour_fixe_worker
 
         jour_fixe_clock = jour_fixe_worker.Worker(engine)  # the schedule acts on its own
         jour_fixe_clock.start()
         yield
         jour_fixe_clock.stop()
+        registrations_worker.stop()
         availability_worker.stop()
         image_worker.stop()
         if worker is not None:

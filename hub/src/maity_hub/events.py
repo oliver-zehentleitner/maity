@@ -289,13 +289,10 @@ def readable_by(
         )
     if membership.role in SEE_ALL_ROLES:
         return True
-    # `instance:<member id>#<id>` names one instance, and the whole team reads it (§8.2).
-    own_instance = f"instance:{principal}#"
     return (
         "all" in audience
         or _names_team(audience, principal)
         or f"role:{membership.role}" in audience
-        or any(token.startswith(own_instance) for token in audience)
     )
 
 
@@ -417,12 +414,6 @@ def wakes(
     each wake is a model run there (§15.11). `all` beside another member's term (a
     sender's own) is still `all`."""
     if row.kind in NON_WAKING:
-def wakes(row: Any, membership: Any, principal: str, instance: str | None = None) -> bool:
-    """§8.2 wake-relevant: addressed to the reader by audience (or a conversation naming
-    it), and not caused by the reader's own membership. Seeing everything as an owner or
-    admin never wakes, and neither does a kind in NON_WAKING. `instance:<member>#<id>`
-    wakes only that instance, though the whole team reads it."""
-    if row.actor_membership == membership.id or row.kind in NON_WAKING:
         return False
     if row.kind == "ticker":
         return ticker_read.wakes(row, principal)
@@ -457,13 +448,6 @@ def wakes(row: Any, membership: Any, principal: str, instance: str | None = None
         return False
     chosen = (row.wakes or {}).get(principal)
     return chosen is None or instance is None or instance in chosen
-    return (
-        "all" in audience
-        or f"member:{principal}" in audience
-        or f"role:{membership.role}" in audience
-        or row.conversation_id == principal
-        or (instance is not None and f"instance:{principal}#{instance}" in audience)
-    )
 
 
 def _group_chat(row: Any) -> bool:
@@ -481,7 +465,6 @@ def read_waking(
     instance: str | None = None,
     credential_id: str | None = None,
     supervised: bool = False,
-    instance: str | None = None,
 ) -> tuple[list[Any], int]:
     """Wake-relevant events after `after`: (rows, highest seq examined)."""
     rows, examined, truncated = read(conn, project_id, membership, principal, after, 10_000)
@@ -491,7 +474,6 @@ def read_waking(
         r
         for r in rows
         if wakes(r, membership, principal, instance, credential_id, supervised)
-        if wakes(r, membership, principal, instance)
         and not (r.kind == "event_redacted" and f"notice:{r.subject_id}" in notices)
     ][:limit]
     if found and (len(found) == limit or truncated):
