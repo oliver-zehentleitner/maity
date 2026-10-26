@@ -2542,7 +2542,9 @@ window.Maity = window.Maity || {};
   // The calls a visitor without a session makes, where a 401 says nothing ended.
   // Signing in and out, registering and the session check answer 401 to a
   // visitor by design; every other /auth/* call is the session's own.
-  const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code)$|landing$|openapi\.json$|swarm\/|invitations\/[^/]+$)/;
+  // The path carries its query (the device-login wait, ?wait=0): a public
+  // route ends at the path, whatever query follows.
+  const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code)|landing|openapi\.json|swarm\/[^?]*|invitations\/[^/?]+)(\?|$)/;
 
   // Every page of a list, following next_cursor (docs/api.md §1.4).
   async function getAll(path) {
@@ -2624,6 +2626,8 @@ window.Maity = window.Maity || {};
   const routeOf = (method, path) => method.toUpperCase() + " " + String(path).split("?")[0];
 
   M.api = {
+    // Whether a 401 on this path says nothing about a session (above).
+    isPublicPath: (path) => PUBLIC_PATH.test(path),
     notOnHub: (err) => !!err && (err.status === 404 || err.status === 405),
     // A promise: true when err says the route itself is missing (see above).
     missingRoute: (err, method, path) => (!!err && (err.status === 404 || err.status === 405)
