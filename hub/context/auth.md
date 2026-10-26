@@ -153,3 +153,36 @@ the mail settings are complete but nothing would send the link.
 - Answering `email_link_available` from the setting and the mail
   settings alone, as §2.6.6 reads: it would report a method the hub
   cannot perform.
+
+## A device code's long-poll looks at its row every quarter second, and the device cookie holds one value per human
+
+**Id:** c84e1ec4-84b4-4f1b-a72f-ce33c7939014
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.6.2, §2.6.4, §2.6.5; the implementation of tsk-03ak6rjn2mfd, 2026-10-23
+**Revisit when:** device codes get many concurrent waiters, or the hub runs more than one replica
+
+`GET /auth/device-codes/{id}?wait` and `GET /auth/device-login?wait`
+read the code's row again every 0.25 seconds until its status changes
+or the wait ends. A second long-poll of the same session or pending
+cookie takes the key over and the first answers with `superseded:
+true`, as §8.3 does for events. The device cookie `maity_device` holds
+up to four dot-separated random values, one per human who signed in on
+that browser, each stored as `sha256` with its human. A new sign-in adds
+a value only when none of them belongs to that human. Codes that die
+with their session or with the method switched off become `denied`.
+
+**Reason:** a code lives five minutes, has at most two waiters, and
+changes state three times. Reading one row by primary key a few times a
+second costs less than a wake path from the committing thread into each
+waiter's loop, the way events have one, and a status written by any
+thread or a second replica is seen without it. One cookie with a value
+per human is what §2.6.5 asks of a shared browser. A single value would
+make every second human's browser look new.
+
+**Rejected alternatives:**
+- Waking device-code waiters through the events notifier: the codes are
+  no events and belong to no project.
+- One cookie per human (`maity_device_<id>`): it would put the human's
+  id in a cookie name that every request to the hub carries.

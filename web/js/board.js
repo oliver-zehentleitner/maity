@@ -122,7 +122,28 @@ window.Maity = window.Maity || {};
       h("span", { class: "label" }, "Report " + formatAgo(r.reported_at) + " (" + r.verification + ")"),
       h("p", { class: "pre" }, M.dom.withMentions(r.summary, r.mentions, "summary", (id) => ctx.link("members", id), M.ids.where(ctx))),
       h("p", { class: "muted" }, pr + " · " + observed),
-      r.mismatch ? h("p", { class: "flag" }, "The observed head differs from the reported one.") : null);
+      r.mismatch ? h("p", { class: "flag" }, "The observed head differs from the reported one.") : null,
+      whyLine(ctx, r));
+  }
+
+  // The why of a code report (docs/api.md §6.23): the entry that keeps it,
+  // as a link to its file at the report's head on the forge, the entry's id
+  // beside it; or the reason there is none, for the reviewer to judge.
+  function whyLine(ctx, r) {
+    const w = r.why;
+    if (!w) return null;
+    if (typeof w.none === "string") return h("p", { class: "report-why" }, "No why: " + w.none);
+    if (typeof w.ref !== "string") return null;
+    const cut = w.ref.indexOf("#");
+    const path = cut < 0 ? w.ref : w.ref.slice(0, cut);
+    const id = cut < 0 ? "" : w.ref.slice(cut + 1);
+    const repo = M.ids.where(ctx).repository;
+    const safe = typeof repo === "string" && /^https:\/\//.test(repo) && /^[0-9a-f]{40}$/.test(r.head || "")
+      && /^[A-Za-z0-9._\/-]+\.md$/.test(path) && !path.startsWith("/") && !path.split("/").includes("..");
+    const href = safe ? repo.replace(/\/+$/, "").replace(/\.git$/, "") + "/blob/" + r.head + "/" + path : null;
+    return h("p", { class: "report-why" }, "Why: ",
+      href ? h("a", { href, target: "_blank", rel: "noopener noreferrer" }, path) : h("code", null, path),
+      id ? h("span", { class: "muted" }, " #" + id) : null);
   }
 
   // One pull request as the hub has it. Only what the forge probe observed
@@ -212,7 +233,9 @@ window.Maity = window.Maity || {};
   // Editing a release for members with releases:write (owner, admin,
   // reviewer; docs/api.md §2.3, §6.7): tick items, edit the checklist, and
   // the typed pull requests. The hub's answer redraws this card alone.
-  function releaseEditor(ctx, c, redraw) {
+  // idp: a prefix for its ids, so the panel's copy (js/card-panel.js) has
+  // its own and a label never reaches the board's.
+  function releaseEditor(ctx, c, redraw, idp) {
     const rel = c.release;
     const path = ctx.base + "/tasks/" + encodeURIComponent(c.id);
     const status = M.statusLine();
@@ -228,7 +251,7 @@ window.Maity = window.Maity || {};
     function checklist() {
       const items = rel.checklist || [];
       const list = h("ul", { class: "checklist editable" }, items.map((item) => {
-        const id = "chk-" + c.id + "-" + item.id;
+        const id = idp + "chk-" + c.id + "-" + item.id;
         const box = h("input", { type: "checkbox", id });
         box.checked = !!item.done;
         box.addEventListener("change", async () => {
@@ -249,8 +272,8 @@ window.Maity = window.Maity || {};
       append(box,
         items.length ? list : h("p", { class: "muted" }, "No checklist items."),
         h("div", { class: "row" },
-          h("button", { type: "button", class: "small", id: "edit-checklist-" + c.id, onclick: () => editChecklist(box) }, "Edit checklist"),
-          h("button", { type: "button", class: "small", id: "edit-typed-" + c.id, onclick: () => editTyped(box) }, "Typed pull requests")),
+          h("button", { type: "button", class: "small", id: idp + "edit-checklist-" + c.id, onclick: () => editChecklist(box) }, "Edit checklist"),
+          h("button", { type: "button", class: "small", id: idp + "edit-typed-" + c.id, onclick: () => editTyped(box) }, "Typed pull requests")),
         status.el);
       return box;
     }
@@ -304,7 +327,7 @@ window.Maity = window.Maity || {};
           .filter((i) => i.text);
         // An item keeps its tick by its id; a new one gets the next id from the hub.
         return { checklist: items.map((i) => (i.id ? { id: i.id, text: i.text } : { text: i.text })) };
-      }, "the checklist", "edit-checklist-" + c.id);
+      }, "the checklist", idp + "edit-checklist-" + c.id);
     }
 
     function editTyped(box) {
@@ -334,14 +357,14 @@ window.Maity = window.Maity || {};
           return null;
         }
         return { pull_requests_typed: rows.map((r) => ({ number: Number(r.raw), state: r.state })) };
-      }, "the typed pull requests", "edit-typed-" + c.id);
+      }, "the typed pull requests", idp + "edit-typed-" + c.id);
     }
 
     return { checklist };
   }
 
-  function release(ctx, c, byId, closed, redraw) {
-    const editor = !closed && ctx.canRelease && redraw ? releaseEditor(ctx, c, redraw) : null;
+  function release(ctx, c, byId, closed, redraw, idp) {
+    const editor = !closed && ctx.canRelease && redraw ? releaseEditor(ctx, c, redraw, idp || "") : null;
     const rel = c.release;
     const r = rel.readiness || { ready: false, blocking: [] };
     const noProbe = r.blocking.some((b) => b.reason === "probe_not_configured");
@@ -378,31 +401,34 @@ window.Maity = window.Maity || {};
     return shown.length ? h("div", { class: "card-actions" }, shown) : null;
   }
 
-  function card(ctx, c, byId, manage) {
+  // inPanel: drawn in the opened card's panel (js/card-panel.js): the
+  // title is no link to itself and the card is not dragged from there.
+  function card(ctx, c, byId, manage, inPanel) {
     const frozen = c.kind === "release" && (c.status === "done" || c.status === "cancelled");
     // The hub's answer to an edit replaces this card in place.
     // focusId names the control to focus in the new card (the box just
     // ticked, the button that opened an editor), so the focus is not lost.
     const redraw = (updated, focusId) => {
       byId[updated.id] = updated;
-      const fresh = card(ctx, updated, byId, manage);
+      const fresh = card(ctx, updated, byId, manage, inPanel);
       el.parentNode.insertBefore(fresh, el);
       el.remove();
-      const target = focusId && document.getElementById(focusId);
+      const target = focusId && Array.from(fresh.querySelectorAll("button, input, select")).find((x) => x.getAttribute("id") === focusId);
       if (target) target.focus();
     };
     const E = M.boardEdit;
     // Movable to another column, or within its own by tasks:admin.
     const movable = manage && (E.targets(ctx, c).length > 0 || E.orderable(ctx, c));
+    const draggable = movable && !inPanel;
     const el = h("article", {
-      class: "card card-" + c.kind + (movable ? " movable" : ""),
+      class: "card card-" + c.kind + (draggable ? " movable" : ""),
       "aria-label": c.title,
       "data-card": c.id,
       // A pointer may drag it to a column it may move to; the Move menu
       // below does the same for the keyboard and on a phone.
-      draggable: movable ? "true" : null,
-      ondragstart: movable ? (e) => manage.drag.start(e, c) : null,
-      ondragend: movable ? () => manage.drag.end() : null,
+      draggable: draggable ? "true" : null,
+      ondragstart: draggable ? (e) => manage.drag.start(e, c) : null,
+      ondragend: draggable ? () => manage.drag.end() : null,
     },
       h("header", null,
         h("span", { class: "card-id" }, c.id),
@@ -415,7 +441,9 @@ window.Maity = window.Maity || {};
         c.label ? h("span", { class: "label-tag" }, c.label) : null,
         c.area ? h("span", { class: "area" }, c.area) : null,
         assignee(ctx, c)),
-      h("h3", null, M.ids.link(c.title, M.ids.where(ctx))),
+      // The title opens the card; ids in it are links in the panel's text.
+      h("h3", null, inPanel ? M.ids.link(c.title, M.ids.where(ctx))
+        : h("a", { class: "card-open", href: ctx.link("tasks", c.id), onclick: manage && manage.remember ? () => manage.remember(c.id) : null }, c.title)),
       claimLine(ctx, c),
       edges(c.kind === "release" ? "Ships" : "Depends on", c.depends_on, byId, frozen),
       edges("Ships with", c.ships_with, byId),
@@ -432,18 +460,32 @@ window.Maity = window.Maity || {};
       c.contract && "path" in c.contract && M.contractPanel ? M.contractPanel.panel(ctx, c, redraw) : null,
       checkpoint(ctx, c),
       report(ctx, c),
-      c.kind === "release" && c.release ? release(ctx, c, byId, frozen, redraw) : null,
+      c.kind === "release" && c.release ? release(ctx, c, byId, frozen, redraw, inPanel ? "panel-" : "") : null,
       // One row of controls: the column, the assignee, the place in the column.
       manage ? actions(E.moveControl(ctx, c, manage.move), E.assignControl(ctx, c, manage.assign),
         E.orderControl(ctx, c, manage.columnOf(c), manage.place)) : null);
     return el;
   }
 
-  // args[0]: a card to show (#/p/<slug>/tasks/<id>, an id's link,
-  // js/ids.js): marked on the board and focused; one the board does not
-  // hold is said, nothing is looked up.
+  // The board a card was opened from, or whose panel was open last: the
+  // card, whether its title opened it, and the board's filters, search and
+  // scroll as they are when the next board view asks (snapshot). Going back
+  // (Close, Escape, Back) marks the card, focuses its title and restores
+  // them; a title opening its card keeps them too.
+  let lastBoard = null;
+
+  // args[0]: a card to open (#/p/<slug>/tasks/<id>, a title's or an id's
+  // link, js/ids.js): its panel, and the card marked on the board; one the
+  // board does not hold is read by itself, and said when there is none.
   M.views.board = async function (ctx, root, args) {
     const wanted = (args && args[0]) || null;
+    const prior = lastBoard && lastBoard.slug === ctx.slug ? lastBoard : null;
+    lastBoard = null;
+    const returning = !wanted && prior ? prior.id : null;
+    // A link from elsewhere (an id in a text, the URL) reveals its card
+    // whatever the filters said; the board's own title keeps them.
+    const kept = prior && (returning || (prior.fromTitle && prior.id === wanted)) ? prior.snapshot() : null;
+    const marked = wanted || returning;
     ctx.canRelease = RELEASERS.has(ctx.role);
     const E = M.boardEdit;
     const since = new Date(Date.now() - CLOSED_WINDOW_DAYS * 86400000).toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -461,32 +503,49 @@ window.Maity = window.Maity || {};
     const formBox = h("div", { class: "new-card-box" });
     const intro = h("div");
     const wantedNote = h("p", { class: "muted wanted-note", role: "status" });
-    const filter = { member: "", area: "", silent: false };
+    // The column filter (the maintainer's request): one column, or the
+    // closed ones together; remembered per viewer and project in this
+    // browser. A card asked for by the URL is shown whatever it says.
+    const COLUMN_GROUPS = [["", "every column"], ["proposed", "Proposed"], ["open", "Open"], ["in_progress", "In progress"],
+      ["blocked", "Blocked"], ["review", "Review"], ["closed", "Closed (done and cancelled)"]];
+    const inGroup = (group, status) => !group || (group === "closed" ? status === "done" || status === "cancelled" : status === group);
+    const columnKey = "maity.board.column." + ctx.slug;
+    let rememberedColumn = "";
+    try { rememberedColumn = window.localStorage.getItem(columnKey) || ""; } catch (err) { rememberedColumn = ""; }
+    if (!COLUMN_GROUPS.some(([v]) => v === rememberedColumn)) rememberedColumn = "";
+    const filter = kept ? { member: kept.member, area: kept.area, silent: kept.silent, column: kept.column }
+      : { member: "", area: "", silent: false, column: marked ? "" : rememberedColumn };
 
     // Focus survives a redraw by key (data-focus), as on the Members view.
     // A card that left the view (closed and moved out, or filtered away)
     // takes no focus with it: the status line that says what happened does.
     // A Place arrow the new spot disables (to the top, then at the top) hands
     // the focus to the card's next arrow that still works.
-    function refocus(key) {
+    // inPanel: the action came from the opened card's panel; the focus
+    // stays there, on its redrawn card.
+    function refocus(key, inPanel) {
       if (!key) return;
-      const all = Array.from(columnsBox.querySelectorAll("select, button"));
+      const all = Array.from((inPanel && panel ? panel.el : columnsBox).querySelectorAll("select, button"));
       const usable = (e) => !e.disabled && e.getAttribute("disabled") == null;
       let again = all.find((e) => e.getAttribute("data-focus") === key);
       if (again && !usable(again) && key.startsWith("order:")) {
         const card = key.split(":").slice(0, 2).join(":") + ":";
         again = all.find((e) => (e.getAttribute("data-focus") || "").startsWith(card) && usable(e)) || again;
       }
-      (again || status.el).focus();
+      // A control gone from the panel (a card moved to done has no menu
+      // left) hands the focus to the panel's heading, never out of it.
+      if (again) again.focus();
+      else if (inPanel && panel) panel.focus();
+      else status.el.focus();
     }
 
-    async function reload(focusKey) {
+    async function reload(focusKey, inPanel) {
       boardItems = (await M.api.getAll(listPath)).items;
       items = boardItems;
       hubResults = false;
       if (searchInput.value) await search();
       else draw();
-      refocus(focusKey);
+      refocus(focusKey, inPanel);
     }
 
     // A write, then the board read again; a failed re-read is no failed write.
@@ -494,13 +553,14 @@ window.Maity = window.Maity || {};
     // settle (a neighbour that moved meanwhile): the board is read again, and
     // what it returns is called with the fresh cards for the words to say.
     async function write(label, done, call, focusKey, stale) {
+      const fromPanel = !!(panel && panel.el.contains(document.activeElement));
       status.busy(label + "…");
       try {
         await call();
       } catch (err) {
         const words = stale && stale(err);
         if (words) {
-          try { await reload(focusKey); } catch (ignored) { /* the refusal below is what matters */ }
+          try { await reload(focusKey, fromPanel); } catch (ignored) { /* the refusal below is what matters */ }
           status.fail(label + " failed: ", { message: words(items) });
           return false;
         }
@@ -509,7 +569,7 @@ window.Maity = window.Maity || {};
       }
       // Said once the board shows it: the words and the board never disagree.
       try {
-        await reload(focusKey);
+        await reload(focusKey, fromPanel);
       } catch (err) {
         status.fail(done + " Could not refresh: ", err);
         return true;
@@ -598,7 +658,11 @@ window.Maity = window.Maity || {};
     // The cards of each column as drawn, in order: the neighbours a place names.
     let columns = {};
     const columnOf = (c) => columns[c.status] || [];
-    const manage = { move, assign, place, columnOf, drag };
+    // What the board is showing, read when the next board view asks.
+    const snapshot = () => ({ column: filter.column, member: filter.member, area: filter.area, silent: filter.silent,
+      search: searchInput.value, hub: hubResults, scroll: window.scrollY || 0 });
+    const remember = (id) => { lastBoard = { slug: ctx.slug, id, fromTitle: true, snapshot }; };
+    const manage = { move, assign, place, columnOf, drag, remember };
 
     function column(s, label, cards) {
       const may = () => dragging && E.targets(ctx, dragging).includes(s);
@@ -637,7 +701,19 @@ window.Maity = window.Maity || {};
     }
 
     let byId = {};
+    // The opened card's panel (js/card-panel.js), beside or above the columns.
+    let panel = null;
+    const boardBody = h("div", { class: "board-body" }, columnsBox);
+    function openPanel(c) {
+      lastBoard = { slug: ctx.slug, id: c.id, fromTitle: false, snapshot };
+      panel = M.cardPanel.render(ctx, c, card(ctx, c, byId, manage, true), () => window.location.replace(ctx.link("board")));
+      boardBody.className = "board-body has-panel";
+      append(boardBody, panel.el);
+      window.setTimeout(() => panel.focus(), 0);
+    }
+
     function shown(c) {
+      if (!inGroup(filter.column, c.status)) return false;
       if (filter.member && !(c.assigned_to === filter.member || (c.claim && c.claim.holder === filter.member))) return false;
       if (filter.area && c.area !== filter.area) return false;
       if (filter.silent && !(c.claim && M.dom.isSilentAgent(ctx.memberById[c.claim.holder]))) return false;
@@ -665,14 +741,15 @@ window.Maity = window.Maity || {};
         append(intro, h("p", { class: "muted" }, "No card matches the filter."));
       }
       append(clear(columnsBox),
-        COLUMNS.map(([s, label]) => column(s, label, columns[s])),
-        other.length
+        COLUMNS.filter(([s]) => inGroup(filter.column, s)).map(([s, label]) => column(s, label, columns[s])),
+        other.length && !filter.column
           ? h("section", { class: "column", "aria-label": "Other" },
             h("h3", { class: "column-head" }, "Unknown status"),
             other.map((c) => card(ctx, c, byId, manage)))
           : null);
-      if (wanted) {
-        const el = Array.from(columnsBox.querySelectorAll("article.card")).find((a) => a.getAttribute("data-card") === wanted);
+      if (panel && byId[panel.id]) panel.update(card(ctx, byId[panel.id], byId, manage, true));
+      if (marked) {
+        const el = Array.from(columnsBox.querySelectorAll("article.card")).find((a) => a.getAttribute("data-card") === marked);
         if (el) { el.className += " wanted"; el.setAttribute("tabindex", "-1"); }
         return el || null;
       }
@@ -724,7 +801,7 @@ window.Maity = window.Maity || {};
     // Filters, from what is on the board.
     const memberSel = h("select", { id: "board-member" }, h("option", { value: "" }, "everyone"),
       ctx.members.map((m) => h("option", { value: m.id }, m.display_name)));
-    memberSel.value = "";
+    memberSel.value = filter.member;
     const areaSel = h("select", { id: "board-area" });
     // The areas on the board now; a chosen one stays offered while filtered.
     function areaOptions() {
@@ -733,11 +810,21 @@ window.Maity = window.Maity || {};
       append(clear(areaSel), h("option", { value: "" }, "every area"), [...areas].sort().map((a) => h("option", { value: a }, a)));
       areaSel.value = filter.area;
     }
+    const columnSel = h("select", { id: "board-column" }, COLUMN_GROUPS.map(([v, l]) => h("option", { value: v, selected: v === filter.column }, l)));
+    columnSel.value = filter.column;
+    columnSel.addEventListener("change", () => {
+      filter.column = columnSel.value;
+      try { if (filter.column) window.localStorage.setItem(columnKey, filter.column); else window.localStorage.removeItem(columnKey); } catch (err) { /* this browser keeps nothing */ }
+      draw();
+    });
     memberSel.addEventListener("change", () => { filter.member = memberSel.value; draw(); });
     areaSel.addEventListener("change", () => { filter.area = areaSel.value; draw(); });
 
     const silentOnly = ctx.canAdmin ? h("input", { id: "board-silent", type: "checkbox" }) : null;
-    if (silentOnly) silentOnly.addEventListener("change", () => { filter.silent = silentOnly.checked; draw(); });
+    if (silentOnly) {
+      silentOnly.checked = filter.silent;
+      silentOnly.addEventListener("change", () => { filter.silent = silentOnly.checked; draw(); });
+    }
 
     const newButton = h("button", { type: "button", "aria-expanded": "false", "aria-controls": "new-card-box" }, "New card");
     formBox.id = "new-card-box";
@@ -769,12 +856,25 @@ window.Maity = window.Maity || {};
       h("form", { class: "board-filter", role: "search", onsubmit: (e) => { e.preventDefault(); search(); } },
         h("label", { for: "board-search" }, "Search"), searchInput,
         h("button", { type: "submit" }, "Search all cards"), clearSearch,
+        h("label", { for: "board-column" }, "Column"), columnSel,
         h("label", { for: "board-member" }, "Member (assigned or holding)"), memberSel,
         h("label", { for: "board-area" }, "Area"), areaSel,
         silentOnly ? h("label", { class: "check", for: "board-silent" }, silentOnly, " Held by a silent agent") : null),
-      searchStatus, formBox, status.el, intro, wantedNote, columnsBox);
-    const wantedCard = draw();
-    if (wantedCard) window.setTimeout(() => wantedCard.focus(), 0);
+      searchStatus, formBox, status.el, intro, wantedNote, boardBody);
+    let markedCard = draw();
+    // The board as it was left: its search too, the hub's one asked again.
+    if (kept && kept.search) {
+      searchInput.value = kept.search;
+      if (kept.hub) await search(); else localSearch();
+      markedCard = Array.from(columnsBox.querySelectorAll("article.card")).find((a) => a.getAttribute("data-card") === marked) || null;
+    }
+    if (kept && returning && window.scrollTo) window.scrollTo(0, kept.scroll);
+    const opened = wanted ? byId[wanted] || await M.api.get(cardPath({ id: wanted })).catch(() => null) : null;
+    if (opened) openPanel(opened);
+    else if (markedCard && returning) {
+      const title = markedCard.querySelector("a.card-open");
+      window.setTimeout(() => (title || markedCard).focus(), 0);
+    } else if (markedCard) window.setTimeout(() => markedCard.focus(), 0);
     else if (wanted) {
       wantedNote.textContent = "No card " + wanted + " on the board: it is neither open nor closed within the last "
         + CLOSED_WINDOW_DAYS + " days, or there is no such card. Search all cards finds a closed one.";

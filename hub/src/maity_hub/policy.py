@@ -38,6 +38,8 @@ CHOICES = {
     "spawn_consent_by": ("human", "role"),
     "on_runner_revoke": ("keep", "stop", "inherit"),
     "badge": ("off", "members", "agents_online"),
+    "subtasks": ("proposed", "direct"),
+    "swarm_public": ("off", "on"),
 }
 LEASE_MIN, LEASE_MAX, LEASE_DEFAULT = 600, 86400, 7200
 MAX_PLACEMENTS_DEFAULT, MAX_PLACEMENTS_MAX = 8, 1000
@@ -51,7 +53,7 @@ FIELDS = (
     "coordinator_substitute",
 )
 # Kept when a preset changes: a preset must not quietly loosen signing or who may start
-# agents, reset the placement limit or coordinator seats, or publish a badge;
+# agents, reset the placement limit or coordinator seats, or publish a badge or the swarm;
 # only the field itself changes them (§6.1).
 KEPT_ON_PRESET = (
     "signing",
@@ -62,6 +64,8 @@ KEPT_ON_PRESET = (
     "coordinator_substitute",
     "on_runner_revoke",
     "badge",
+    "subtasks",
+    "swarm_public",
 )
 
 
@@ -75,6 +79,8 @@ def filled(preset: str, owner_id: str) -> dict[str, Any]:
         "coordinator_substitute": None,
         "on_runner_revoke": "inherit",
         "badge": "off",
+        "subtasks": "proposed",
+        "swarm_public": "off",
     }
     if preset == "solo":
         policy["contract_arbiter"] = owner_id
@@ -99,6 +105,8 @@ def of(project: Any) -> dict[str, Any]:
         "coordinator_substitute": project.coordinator_substitute,
         "on_runner_revoke": project.on_runner_revoke,
         "badge": getattr(project, "badge", "off"),
+        "subtasks": getattr(project, "subtasks", "proposed"),
+        "swarm_public": getattr(project, "swarm_public", "off"),
     }
 
 
@@ -120,6 +128,8 @@ def columns(policy: dict[str, Any]) -> dict[str, Any]:
         "coordinator_substitute": policy["coordinator_substitute"],
         "on_runner_revoke": policy["on_runner_revoke"],
         "badge": policy["badge"],
+        "subtasks": policy["subtasks"],
+        "swarm_public": policy["swarm_public"],
     }
 
 

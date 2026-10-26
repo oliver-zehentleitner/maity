@@ -9,6 +9,7 @@ from typing import Any
 from sqlalchemy import Connection
 
 from maity_hub import instance_settings as store
+from maity_hub.auth import device_codes
 from maity_hub.config import Settings
 from maity_hub.errors import invalid
 from maity_hub.mail import settings as mail
@@ -69,3 +70,10 @@ def patch(conn: Connection, hub: Settings, body: dict[str, Any], by: str) -> Non
         raise invalid(errors)
     for name, value in body.items():
         store.put(conn, f"sign_in.{name}", value, by)
+    if not resolve(conn, hub)["device_code"][0]:
+        # A method switched off voids its open codes at once (§2.6.5).
+        device_codes.void_open(conn)
+
+
+def device_code_enabled(conn: Connection, hub: Settings) -> bool:
+    return bool(resolve(conn, hub)["device_code"][0])

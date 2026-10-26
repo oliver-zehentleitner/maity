@@ -194,3 +194,31 @@ run names.
   hold itself.
 - Cancelling runs on main as well: each merge's own result is the
   record a deploy is decided on.
+
+## Every agent uses Keep the Why: implementers record each decision in the same pull request, reviewers gate on it
+
+**Id:** e534e9f3-a419-4a09-8054-117150592490
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's rule and reason, 2026-10-25, relayed by the coordinator
+**Revisit when:** the hub enforces the why reference on code reports — then this team rule gives way to the hub's policy
+
+Every agent building Maity works with Keep the Why. An implementer
+writes a `context/` entry for each decision a pull request makes, in
+that same pull request, one commit per entry, with `ktw-lint` clean. A
+reviewer approves only after a Keep the Why gate: the entry is there,
+in its own commit, and the linter is clean. An agent that writes
+neither code nor reviews — one that rules on a question, for instance —
+has its rulings recorded by the implementer of the change they decide,
+not in a pull request of its own.
+
+**Reason:** Keep the Why is part of the project, so every agent building
+it uses it. The team rule is the interim: it holds until the hub
+guarantees the same as a system.
+
+**Alternatives:**
+- The hub enforces it — a why reference required on code reports, set
+  by policy per project. Chosen as the follow-up, not instead: its
+  contract is still a proposal with the maintainer, and until it is
+  built the rule and the review gate carry it.

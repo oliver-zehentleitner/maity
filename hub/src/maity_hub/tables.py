@@ -223,6 +223,49 @@ human_session = Table(
     **MYSQL_TABLE,
 )
 
+# A device code (docs/api.md §2.6.2): made by one session of a human, redeemed by one
+# new browser (bound by the pending cookie), approved by number matching on the session
+# that made it, completed into one new session. The code and the pending cookie are kept
+# only as `sha256`; `user_agent` is what the new browser claimed, shown in the dialog
+# while the code lives.
+device_code = Table(
+    "device_code",
+    metadata,
+    _id(primary_key=True),
+    _ref("human_id", "human.id", nullable=False, index=True),
+    Column("session_hash", String(HEX_SHA256), nullable=False, index=True),
+    Column("code_hash", String(HEX_SHA256), nullable=False, unique=True),
+    Column("status", String(16), nullable=False),  # waiting redeemed approved used denied
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("expires_at", UtcDateTime, nullable=False),
+    Column("pending_hash", String(HEX_SHA256), unique=True),
+    Column("redeemed_at", UtcDateTime),
+    Column("ip", String(64)),
+    Column("user_agent", String(300)),
+    Column("browser", String(64)),
+    Column("os", String(64)),
+    Column("new_device", Boolean),
+    Column("match_number", Integer),
+    Column("choices", JSON_VALUE),
+    Column("next", String(512)),
+    Column("approved_at", UtcDateTime),
+    Column("session_public_id", String(ID)),  # the session it was completed into
+    **MYSQL_TABLE,
+)
+
+# The device cookie (docs/api.md §2.6.5): one random value per human and browser, kept as
+# `sha256`; it authenticates nothing and only tells the approval dialog whether this
+# browser signed in to the human's account before.
+human_device = Table(
+    "human_device",
+    metadata,
+    Column("value_hash", String(HEX_SHA256), nullable=False),
+    _ref("human_id", "human.id", nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("value_hash", "human_id"),
+    **MYSQL_TABLE,
+)
+
 # --- projects and memberships -------------------------------------------------
 
 project = Table(
@@ -240,6 +283,9 @@ project = Table(
     # The policy (docs/api.md §6.1); its history is in the events.
     Column("policy_preset", String(32), nullable=False),
     Column("badge", String(20), nullable=False, server_default="off"),
+    Column("subtasks", String(16), nullable=False, server_default="proposed"),
+    # Whether visitors without a session see the swarm page, agents only (§6.22).
+    Column("swarm_public", String(8), nullable=False, server_default="off"),
     Column("claim_policy", String(32), nullable=False),
     Column("done_authority", String(32), nullable=False),
     Column("contract_arbiter", String(ID + 8), nullable=False),  # member id or role:admin
@@ -748,6 +794,7 @@ card = Table(
     Column("mentions", JSON_VALUE),  # resolved from `body` at write time (§8.6)
     Column("label", String(16)),
     Column("status", String(16), nullable=False),
+    _ref("parent", "card.id", index=True),
     # The card's place in its status column (§6.4): set by the hub only, compared
     # bytewise in Python (`ranks`), null until the card is first placed.
     Column("rank", String(64)),
@@ -1216,5 +1263,63 @@ mail_delivery = Table(
     Column("at", UtcDateTime, nullable=False),
     Index("ix_mail_delivery_at", "at"),
     sqlite_autoincrement=True,
+    **MYSQL_TABLE,
+)
+
+# --- notifications (docs/api.md §18, §6.4) -------------------------------------------
+#
+# Account records: audit records about one human's own account (sign-ins, ended
+# sessions, address changes, personal requests), never events (§18.1). `n` is their own
+# sequence, numbered under a lock on the human's row, so one account never shows a
+# number before every lower one; `read_at`/`read_by` mark the item read. Kept 90 days.
+account_record = Table(
+    "account_record",
+    metadata,
+    Column("n", BIG_ID, primary_key=True, autoincrement=True),
+    _ref("human_id", "human.id", nullable=False),
+    Column("type", String(40), nullable=False),
+    Column("data", JSON_VALUE, nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    Column("read_at", UtcDateTime),
+    Column("read_by", String(ID)),  # the public id of the session that marked it
+    Index("ix_account_record_human", "human_id", "n"),
+    sqlite_autoincrement=True,
+    **MYSQL_TABLE,
+)
+
+# A human's read marks on items from events; a chat's items read through the chat's own
+# mark (`conversation_read`) instead (§18.2).
+notification_read = Table(
+    "notification_read",
+    metadata,
+    _ref("human_id", "human.id", nullable=False),
+    Column("seq", BIG_ID, nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("human_id", "seq"),
+    **MYSQL_TABLE,
+)
+
+# The stored vector behind a position handle, when the inline form would not fit
+# (§18.2): immutable, kept at least 30 days after its last use.
+notification_position = Table(
+    "notification_position",
+    metadata,
+    Column("id", String(ID), primary_key=True),
+    _ref("human_id", "human.id", nullable=False),
+    Column("vector", JSON_VALUE, nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("last_used_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# A human's own watch on a card (§6.4), by membership, so it ends with the membership;
+# never written into an event's audience.
+card_watch = Table(
+    "card_watch",
+    metadata,
+    _ref("card_id", "card.id", nullable=False),
+    _membership_ref("membership_id", nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("card_id", "membership_id"),
     **MYSQL_TABLE,
 )

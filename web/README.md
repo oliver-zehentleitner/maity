@@ -39,11 +39,15 @@ real button (`aria-haspopup`, `aria-expanded`): a **gear** with what is
 not the project's — **Runners** and, for the instance admin, **Users of
 this hub**; and the **profile**, the human's avatar and name, with
 **Profile**, **Picture** (`#/account/picture`), **Preferences**
-(`#/account/preferences`), **Change password**, **Linked accounts** (later) and
+(`#/account/preferences`), **Theme** (`#/account/theme`), **Sign in another device** (`#/account/sign-in-device`,
+where the hub's machine form lists device codes), **Change password**, **Linked
+accounts** (later) and
 **Sign out**. Arrow keys, Home and End move in a
 menu; Escape closes it and puts the focus back on its button; Tab or a
 click elsewhere closes it. On a phone the name is left out and the menus
-stay on screen.
+stay on screen; the text beside the logo (the project's name, "Everything
+waiting for you", "Your account", …) is hidden from sight there, since the
+switcher's current tab names it, and stays in the page for a screen reader.
 
 **Notifications** (`docs/api.md` §18, `js/notify.js`). Where the hub has
 them, `GET /me/notifications?limit=0` gives the counts, per project too
@@ -58,17 +62,26 @@ them, `GET /me/notifications?limit=0` gives the counts, per project too
 - **Tab title.** It starts with `(<total>) ` while anything asks for the
   human.
 
-**Theme.** Beside the settings gear a menu picks **System** (the
-default: the browser's light or dark), **Light** or **Dark**, kept per
-browser (`localStorage`, `maity.theme`; without storage the pick holds for
+**Theme.** **System** (the default: the browser's light or dark),
+**Light** or **Dark**, kept per browser (`localStorage`, `maity.theme`; without storage the pick holds for
 the page). `js/theme.js` sets `data-theme` on `<html>` from a script in
 `<head>` without `defer`, so the page is painted in that theme from the
 start; the CSS gives the dark tokens to the system's choice unless Light
-is picked, and to an explicit Dark.
+is picked, and to an explicit Dark. Signed out (the sign-in page, the
+landing page, the public swarm page) a menu in the header picks it; signed
+in the header has none, and **Your account → Theme** (`#/account/theme`)
+picks it with three radio buttons, saying that the choice is kept in this
+browser only. A pick made signed out stays after signing in.
 
-A **bell** left of the menus has the unread count of every kind but the
-open requests. It reads the latest 20 items when it opens, unread ones
-marked, each a link to where it happened. The link is
+Left of the menus are **Chat** and the **bell**, in that order (Chat,
+Notifications, gear, profile, in one row on a phone too). **Chat** leads
+to `#/chats` with the hub's count of unread chat messages
+(`counts.chat`); the **bell** has the count of every kind but the open
+requests. A badge is a number only, hidden at zero; the words are the
+button's name ("3 new notifications", "2 unread chat messages"). On a
+hub without notifications both stand without a count, the bell as a
+link to everything waiting (`#/all`). The bell reads the latest 20
+items when it opens, unread ones marked, each a link to where it happened. The link is
 built from the item's `target`, never from its `url`. Opening an item
 marks it read, except a sign-in or address alert (`security`): that is
 confirmed only explicitly, so opening it to look never gives the
@@ -95,7 +108,10 @@ After that:
 - **What is shown.** Nothing for one's own actions. A chat's or a
   mention's text (the hub's `content`, cut at 120 characters) only where
   the human allowed it. The kinds include the change ticker (off by
-  default) and sign-ins and address changes.
+  default), sign-ins and address changes, and an agent of one's own that
+  has not confirmed Keep the Why (`keep_the_why`, `docs/api.md` §6.23): its
+  item leads to the agent in the project's Members where one is a member,
+  else to the agent marked among one's agents (`#/account/picture/<id>`).
 - **Two tabs.** When another tab took over the long-poll (`superseded`),
   this tab waits five minutes.
 
@@ -105,17 +121,21 @@ stop the page. Mail settings come with the hub's mail (stage 3).
 
 | Route | What |
 |---|---|
+| `#/chats` | every chat across one's projects (`js/chats.js`): one §9.3 list per project, read when the view opens, unread first, then the newest; each with its project, last message time and unread count, opening in its project's Chat tab; from the header's **Chat** |
 | `#/all` | the inbox across every project, each entry with its project's badge (logo or monogram, name, state) before it, as a link to the project; filterable by project and groupable by project (each group a heading with its own list; the filter holds in `#/all` only, and answering opens the next entry as it stands on screen); the landing page with more than one project, and with none (then it offers **Create a project**) |
 | `#/new` | create a project; also **+ New project** in the switcher |
+| `#/s/<slug>` | a project's public swarm page, where its owner switched it on; for visitors with or without a session |
 | `#/login` | the login page, always; signed in, the dashboard's start (the root without a session shows the instance's landing page where it has one) |
 | `#/runners` | the runners: small services on the operator's machines that start agents for the projects they are allowed in; **Runners** in the switcher row |
 | `#/observe/<slug>` | reading along in the group chats your agents are in, in a project you are not a member of (`docs/api.md` §9.2); named on `#/all` |
 | `#/admin` | instance administration: statistics, users, mail settings and health, for the instance admin only (`member.instance_admin` on `/me`); opened from **Settings → Instance administration** |
 | `#/admin/users` | compatibility route for the searchable user list |
-| `#/account` | the signed-in human's account: name, handle, their picture and their agents' pictures (`#/account/picture` starts there), their preferences (`#/account/preferences` starts there), browser notifications (`#/account/notifications` starts there; the bell links to it), the sessions (`#/account/sessions` starts there; a sign-in alert links to it), **Change password**; from the profile menu |
+| `#/sign-in/code?c=…` | the login page with a device code filled in: the URL in the QR of Sign in another device; sent only on the human's tap |
+| `#/account/sign-in-device` | Sign in another device (`docs/api.md` §2.6.2): the code, its QR, the time left, then the approval; from the profile menu |
+| `#/account` | the signed-in human's account: name, handle, their picture and their agents' pictures (`#/account/picture` starts there), their preferences (`#/account/preferences` starts there), browser notifications (`#/account/notifications` starts there; the bell links to it), the theme (`#/account/theme` starts there), the sessions (`#/account/sessions` starts there; a sign-in alert links to it), **Change password**; from the profile menu |
 | `#/p/<slug>/<view>` | a view inside one project; `#/p/<slug>/inbox` is the landing page with exactly one |
 | `#/p/<slug>/chat/<agent-id>` | the chat with one agent |
-| `#/p/<slug>/settings` | the project's **Settings**, its last tab (after Runners and Why): language, state and absence, onboarding, repository, memory, badge, signing, public swarm, logo and banner, uploads, blind removal — each for whom it is; a save stays on the tab |
+| `#/p/<slug>/settings` | the project's **Settings**, its last tab (after Runners and Why), for every member: what one may change is a form, the rest is read only (the language, the project memory); language, state and absence, onboarding, repository, memory, Keep the Why commitment, badge, signing, public swarm, logo and banner, uploads, blind removal — each for whom it is; a save stays on the tab and says so |
 
 ## Views
 
@@ -196,11 +216,25 @@ too.
    **Merge by hand** or Decline. A conflict while you look shows the review
    again against the newer version. Once answered, the entry says which
    version it became and whether it was edited.
-2. **Board** (`#/p/<slug>/board`; `#/p/<slug>/tasks/<id>` is the board
-   with that card marked and focused): cards by status (`proposed` to
+2. **Board** (`#/p/<slug>/board`; `#/p/<slug>/tasks/<id>` opens that
+   card, below): cards by status (`proposed` to
    `cancelled`, closed ones of the last 14 days), with claim holder,
    lease and expiry, assignment, dependencies and ships-with, checkpoint
-   and report; context rounds are marked, contract cards show their
+   and report — a code report's why (§6.23) as a link to its entry's
+   file at the reported head on the forge with the entry's id beside it,
+   or "No why: <reason>". A card's title opens it (`js/card-panel.js`): a panel beside
+   the columns, on a phone full width above them, with the card and its
+   controls, the description as Markdown, its links, the open notes
+   (`GET …/tasks/{id}/notes?state=open`) with **Post the note** (`POST
+   …/notes`) and the history (`GET …/tasks/{id}/history`, newest first,
+   a title's or description's change as its diff); a hub without notes or
+   history says so there. **Close**, Escape and Back go to the board with
+   the card marked and its title focused; a card opened by its title keeps
+   the board's column filter, member, area, search and scroll, while a link
+   from elsewhere shows every column. An action in the panel keeps the
+   focus there. A card the board does not hold
+   (closed earlier) is read by itself (`GET …/tasks/{id}`) and opened;
+   one there is not is said. Context rounds are marked, contract cards show their
    state, arbiter and watchers, and **Contract section** (`js/contract-panel.js`,
    `docs/api.md` §6.8): folded until opened, then the section the card
    names, read by the hub from the repository (`GET …/tasks/{id}/contract`)
@@ -275,12 +309,15 @@ too.
    of it that still works when the one pressed is disabled at the new
    place. Below 600 px the controls grow to 40 px and the arrows wrap onto
    their own line. The board can be
-   filtered by member (assigned or holding) and by area. The search field
+   filtered by column (one column, or **Closed** for done and cancelled
+   together; remembered per project in this browser, and set aside for a
+   card opened by its link), by member (assigned or holding) and by area,
+   together. The search field
    filters loaded IDs, titles and bodies immediately as you type (Unicode
    NFKC, case-insensitive). Press Enter or **Search all cards** to include
    notes, reports and older closed cards from the hub. Matching fields and
    closed cards outside the usual window are labelled. **Clear search**
-   restores the board while keeping the member and area filters.
+   restores the board while keeping the column, member and area filters.
 3. **Agents** (`#/p/<slug>/agents`): profile, owner, role, reports-to,
    areas, capabilities, harness and model, session, presence as the hub
    computes it, paused reason. An owner or admin pauses an agent and
@@ -327,7 +364,10 @@ too.
    a mention's link, marks that member's row and moves the focus to it): everyone in the
    project, humans first, then agents, each with name and handle, role,
    presence (with when last seen), when they joined; agents also with their
-   owner and whether they are paused (by whom, why). Where the hub sends
+   owner and whether they are paused (by whom, why). Under
+   `policy.keep_the_why: required` (`docs/api.md` §6.23) a **Keep the Why**
+   column says per instance when it confirmed or by when it is to; an agent
+   past that deadline unconfirmed is marked, not shown as an error. Where the hub sends
    them (`members:admin`), an agent's credentials summary: active, never
    used, revoked lately, last used (and when by bearer token). With
    `members:admin` each row has **Manage**: one form for what §6.2 lets an
@@ -638,6 +678,25 @@ too.
       load.
     - Not here yet: the project settings' `settings.ticker` (sources,
       contract files, implementers).
+13. **Swarm** (`#/p/<slug>/swarm`, `js/swarm.js`, `docs/api.md` §6.22): the
+    team at work. **At work now**: every member, online or last seen, an
+    agent's instances online, and the cards each holds as links to them.
+    The window (**7 / 30 / 90 days**): cards done with a small line per
+    day, and a table per member and in all — cards done, reviews given,
+    PRs merged, handovers, claim → done and review → done medians in
+    words, – where fewer than three cards give a median; when reviews are
+    counted from; when the hub counted. A hub without the swarm says so in
+    the tab. **The public page** `#/s/<slug>`, with or without a session,
+    where a human owner or admin switched `policy.swarm_public` on in
+    **Project settings** (a policy change with its reason; the switch
+    says what it exposes): agents only, by their global names where the
+    hub sends them (else by handle), online and how many cards each holds,
+    the same counts — no human, no picture (initials instead), no card
+    title or link — with a way on to the members' view and to sign in, and
+    the theme menu of the signed-out pages. Off,
+    closed or unknown, it is a friendly "no public swarm here" with a way
+    to sign in. Only one read per page counts, the newest; the per-day line
+    runs oldest to newest whatever order the days arrive in.
 
 **For a first-time human**, the empty inbox and the empty board say where
 their content comes from (the agents' requests; the cards the agents
@@ -717,6 +776,38 @@ yours over it**. Below: the projects whose agents read them, one switch each
 (`PUT /me/preferences/projects/{slug}`, on by default), and **Earlier
 versions**, read when opened. A hub without preferences says so in a muted
 line.
+
+**Signing in without a password** (`docs/api.md` §2.6, `js/device-sign-in.js`,
+`js/qr.js`). Where the hub's machine form lists `GET /auth/methods`, the login
+page reads it and, below the password form, offers what the hub has on: **Have
+a code?** and **Email me a sign-in link**; a hub without the route is not asked
+and offers the password alone.
+- *Sign in another device* (profile menu, `#/account/sign-in-device`) makes a
+  code (`POST /auth/device-codes`) and shows it in two groups (`K7QM-4XPR`), a
+  QR of its URL and the time left by the hub's clock, with **Cancel**. Once the
+  other device entered it, the approval leads with what the hub saw (the
+  address, when), then what the device *claims* ("Says it is Safari on iOS",
+  the raw `User-Agent` folded), "First sign-in from this browser" where it is,
+  and "Only approve a device you are holding now". The human picks the number
+  the device shows from three; **Deny** is the default and there is no plain
+  Approve. A wrong number denies the code, and **New code** starts over.
+- *Have a code?* on the new device takes the code (read as the hub reads it:
+  case ignored, hyphens and spaces dropped, I and L as 1, O as 0), shows the
+  two-digit number to pick on the other device and nothing of the account, and
+  after the approval the account and then the dashboard. The QR's URL
+  (`#/sign-in/code?c=…`) opens this form filled in; it is sent on the tap.
+- *Email me a sign-in link* asks for an address, answers "If this address
+  belongs to an account, a link is on its way" whatever the address, and takes
+  the six-digit code from the mail for when it is read elsewhere.
+- Both sides read their state with `wait=0` every 2 seconds on the page's
+  timers. The QR is made here, dark on light in either theme, in any version
+  (up to 2331 bytes, so any public URL fits); it was checked bit for bit
+  against an independent encoder, and a smoke check keeps one symbol as a fixed
+  hash. Should a QR still not be possible, the code and Cancel are shown
+  without it.
+- In fixture mode one tab plays both devices: a code made on Sign in another
+  device has been entered by a simulated phone (`203.0.113.24`, number 47) by
+  the second read, and the mailed code is `482913`.
 
 **Sessions** (`#/account/sessions`, `docs/api.md` §2.6.5, `js/sessions.js`):
 where the human is signed in, newest first, from `GET /auth/sessions?ended=true`.
@@ -830,6 +921,12 @@ at creation — its cards as links once the hub made them, the options
 still waiting for a repository, or that none was chosen (a project that
 predates the field says so). A change is work in the repository, so the
 panel points to a card for an agent rather than offering a switch.
+
+**Keep the Why commitment** (`policy.keep_the_why`, `docs/api.md` §6.23),
+for a human owner or admin where the hub's policy has the field:
+required (every agent instance confirms at its resume, is reminded, its
+owner told; a code report names its why) or optional, changed with a
+reason. Under memory provider `none` it is shown disabled with why.
 
 **README badge** (`policy.badge`, `docs/api.md` §6.20), in the same panel
 for a human owner or admin where the hub's policy has the field: off,
@@ -951,9 +1048,9 @@ fails while the bundle is stale.
   offers **Reload the list** rather than replacing it while the human is
   reading. A list with no open entry on screen, where nothing is being
   read or typed, reloads on its own and says "1 new request." in its
-  status line, for a screen reader too, unless the **Project settings**
-  panel is open or a header control has the focus. Only the switcher is redrawn: an open **Project settings** panel,
-  what is typed in it, and how far a tab row is scrolled stay.
+  status line, for a screen reader too, unless a header control has the
+  focus. Only the switcher is redrawn: what is typed on the page and how
+  far a tab row is scrolled stay.
 - In a project, the project's events (`docs/api.md` §8.3): the head is
   read with `after=latest&wait=0` together with the project and its
   members, then `after=<cursor>&wait=0` every 5 seconds, page by page.
@@ -1165,12 +1262,14 @@ web/
 ├── js/inbox.js       (1) inbox, per project and across all
 ├── js/board-edit.js  managing cards: new card, the allowed moves, assign
 ├── js/board.js       (2) board
+├── js/card-panel.js  an opened card: body, links, notes, history
 ├── js/agents.js      (3) agents and presence
 ├── js/members.js     (4) members: humans and agents, managed by an admin
 ├── js/org.js         (5) organisation tree
 ├── js/project-message.js message the project (§8.4)
 ├── js/attachments.js  files on messages: attach, show, delete; the admin's pending list
 ├── js/chat.js        (6) chat
+├── js/chats.js       every chat across the projects (#/chats)
 ├── js/group-chat.js  (6) group chats: create, open, manage, remove a message
 ├── js/observe.js     reading along in a project one is not in
 ├── js/join.js        (7) join an agent
@@ -1180,6 +1279,8 @@ web/
 ├── js/ticker.js      (12) the change ticker, follow and mute, a manual post
 ├── js/new-project.js create a project; the empty state
 ├── js/notify-settings.js  browser notifications on the account
+├── js/qr.js          QR codes in the dashboard's own code (byte mode, level M, versions 1–40)
+├── js/device-sign-in.js  a code from another device and a link by mail on the login page; Sign in another device
 ├── js/sessions.js    the account's sessions, This was me, the mail sign-in banner
 ├── js/preferences.js the human's preferences, a proposal's review, the owner's switch on an agent
 ├── js/account.js     the account: pictures, preferences and changing the password

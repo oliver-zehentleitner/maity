@@ -2,25 +2,33 @@
 (docs/api.md §2.6.5).
 
 A session is in good standing when it was signed in by password, or when its own
-`session_created` item was marked read by an allowed session. Only the password exists
-as a method so far, so every session is in good standing until the device code and the
-mail link add the others; the rules below are written for both already.
+`session_created` item was marked read by an allowed session (§18.3); `confirmed` below
+is the set of public ids whose sign-in record was so marked.
 """
 
 from __future__ import annotations
 
+import hashlib
 import re
+import secrets
 import unicodedata
 from collections.abc import Iterable
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Connection, select, update
+from sqlalchemy import Connection, insert, select, update
 
-from maity_hub import clock
+from maity_hub import clock, ids
 from maity_hub import tables as t
-from maity_hub.auth.caller import SESSION_IDLE, session_alive, session_expires_at
+from maity_hub.auth.caller import (
+    SESSION_ABSOLUTE,
+    SESSION_IDLE,
+    session_alive,
+    session_expires_at,
+    session_id_hash,
+)
 from maity_hub.errors import ApiError
+from maity_hub.notifications import records
 from maity_hub.views import ts
 
 # Ended sessions stay in the list for this long (`?ended=true`).
@@ -56,9 +64,18 @@ def describe(user_agent: str | None) -> tuple[str | None, str | None]:
     return browser, system
 
 
-def good_standing(row: Any) -> bool:
-    """§2.6.5. Without account records yet, only the password grants it."""
-    return bool(row.method == "password")
+def good_standing(row: Any, confirmed: frozenset[str] = frozenset()) -> bool:
+    """§2.6.5: signed in by password, or its sign-in confirmed from another session."""
+    return bool(row.method == "password" or row.public_id in confirmed)
+
+
+def confirmed_sessions(conn: Connection, human_id: str) -> frozenset[str]:
+    """The public ids whose `session_created` record an allowed session marked read."""
+    return frozenset(
+        public_id
+        for public_id, record in records.sign_in_records(conn, human_id).items()
+        if record.read_at is not None
+    )
 
 
 def ended(row: Any, now: datetime) -> tuple[datetime, str] | None:
@@ -71,8 +88,15 @@ def ended(row: Any, now: datetime) -> tuple[datetime, str] | None:
     return None
 
 
-def view(row: Any, current: str | None, now: datetime) -> dict[str, Any]:
+def view(
+    row: Any,
+    current: str | None,
+    now: datetime,
+    sign_ins: dict[str, Any] | None = None,
+    confirmed: frozenset[str] = frozenset(),
+) -> dict[str, Any]:
     finished = ended(row, now)
+    record = (sign_ins or {}).get(row.public_id)
     return {
         "id": row.public_id,
         "current": row.id_hash == current,
@@ -84,9 +108,17 @@ def view(row: Any, current: str | None, now: datetime) -> dict[str, Any]:
         "os": row.os,
         "ip": None if finished else row.ip,
         "approved_by": row.approved_by,
-        "good_standing": good_standing(row),
-        # The account record of the sign-in (§2.6.5) arrives with account records.
-        "created": None,
+        "good_standing": good_standing(row, confirmed),
+        "created": (
+            {
+                "record": f"acr-{record.n}",
+                "ip": record.data.get("ip"),
+                "browser": record.data.get("browser"),
+                "os": record.data.get("os"),
+            }
+            if record is not None
+            else None
+        ),
         "ended_at": ts(finished[0]) if finished else None,
         "ended_by": finished[1] if finished else None,
     }
@@ -110,11 +142,13 @@ def listing(conn: Connection, human_id: str, current: str, *, with_ended: bool) 
     return shown
 
 
-def refusal(actor: Any, target: Any, now: datetime) -> str | None:
+def refusal(
+    actor: Any, target: Any, now: datetime, confirmed: frozenset[str] = frozenset()
+) -> str | None:
     """Why `actor` may not end `target`, or None (§2.6.5 "Who may end which session")."""
-    if actor.id_hash == target.id_hash or good_standing(actor):
+    if actor.id_hash == target.id_hash or good_standing(actor, confirmed):
         return None
-    if good_standing(target):
+    if good_standing(target, confirmed):
         return "not_in_good_standing"
     if now - actor.created_at < YOUNG and target.created_at < actor.created_at:
         return "session_too_new"
@@ -132,12 +166,32 @@ def end(conn: Connection, rows: Iterable[Any], by: str) -> None:
 
 def end_where(conn: Connection, which: Any, by: str) -> None:
     """End the live sessions `which` selects. The addresses go with the end: the table
-    keeps no address history of an ended session (personal data)."""
+    keeps no address history of an ended session (personal data), and the device codes a
+    session made die with it (§2.6.2)."""
+    live = which & t.human_session.c.ended_at.is_(None)
+    ending = conn.execute(
+        select(
+            t.human_session.c.id_hash, t.human_session.c.human_id, t.human_session.c.public_id
+        ).where(live)
+    ).all()
+    hashes = [row.id_hash for row in ending]
+    if not hashes:
+        return
     conn.execute(
         update(t.human_session)
-        .where(which, t.human_session.c.ended_at.is_(None))
+        .where(t.human_session.c.id_hash.in_(hashes))
         .values(ended_at=clock.now(), ended_by=by, ip=None, source=None)
     )
+    conn.execute(
+        update(t.device_code)
+        .where(
+            t.device_code.c.session_hash.in_(hashes),
+            t.device_code.c.status.in_(("waiting", "redeemed", "approved")),
+        )
+        .values(status="denied")
+    )
+    for row in ending:
+        records.session_ended(conn, row.human_id, row.public_id, by)
 
 
 def forget_expired_addresses(conn: Connection) -> None:
@@ -193,3 +247,95 @@ def safe_next(value: str | None) -> str:
     ):
         return "/"
     return value
+
+
+def create(
+    conn: Connection,
+    human_id: str,
+    *,
+    method: str,
+    address: str,
+    user_agent: str | None,
+    approved_by: str | None = None,
+) -> tuple[str, str, str]:
+    """A new session of `human_id`: (cookie value, CSRF token, public id). Only the
+    cookie value's hash is stored."""
+    now = clock.now()
+    session_id, csrf = secrets.token_urlsafe(32), secrets.token_hex(32)
+    browser, system = describe(user_agent)
+    public_id = ids.new_id("human_session")
+    conn.execute(
+        insert(t.human_session).values(
+            id_hash=session_id_hash(session_id),
+            human_id=human_id,
+            csrf_token=csrf,
+            created_at=now,
+            last_seen_at=now,
+            expires_at=now + SESSION_ABSOLUTE,
+            source=address[:64],
+            public_id=public_id,
+            method=method,
+            browser=browser,
+            os=system,
+            ip=address[:64],
+            approved_by=approved_by,
+        )
+    )
+    conn.execute(
+        update(t.human).where(t.human.c.id == human_id).values(last_seen_at=now, last_login_at=now)
+    )
+    # Every new session tells its human, whichever the method (§2.6.5).
+    records.session_created(
+        conn,
+        human_id,
+        {
+            "session_id": public_id,
+            "method": method,
+            "browser": browser,
+            "os": system,
+            "ip": address[:64],
+            "approved_by": approved_by,
+        },
+    )
+    return session_id, csrf, public_id
+
+
+# --- the device cookie (§2.6.5) ------------------------------------------------------
+
+DEVICE_COOKIE = "maity_device"
+DEVICE_LIFETIME = timedelta(days=400)
+# One value per human who signed in on this browser; the oldest drop out past this.
+DEVICE_VALUES = 4
+
+
+def _device_values(cookie: str | None) -> list[str]:
+    return [v for v in (cookie or "").split(".") if 0 < len(v) <= 64][-DEVICE_VALUES:]
+
+
+def knows_device(conn: Connection, human_id: str, cookie: str | None) -> bool:
+    """Whether this browser's device cookie holds a value of this human."""
+    hashes = [hashlib.sha256(v.encode()).hexdigest() for v in _device_values(cookie)]
+    if not hashes:
+        return False
+    found = conn.execute(
+        select(t.human_device.c.value_hash).where(
+            t.human_device.c.human_id == human_id, t.human_device.c.value_hash.in_(hashes)
+        )
+    ).first()
+    return found is not None
+
+
+def remember_device(conn: Connection, human_id: str, cookie: str | None) -> str | None:
+    """At a completed sign-in: the cookie's new value when this browser held no value of
+    this human, else None (the cookie stays as it is)."""
+    if knows_device(conn, human_id, cookie):
+        return None
+    value = secrets.token_urlsafe(32)
+    conn.execute(
+        insert(t.human_device).values(
+            value_hash=hashlib.sha256(value.encode()).hexdigest(),
+            human_id=human_id,
+            created_at=clock.now(),
+        )
+    )
+    return ".".join([*_device_values(cookie), value][-DEVICE_VALUES:])

@@ -27,6 +27,8 @@ from maity_hub import (
     longpoll,  # noqa: F401  (subscribes the long-poll to new events)
     probe,
 )
+from maity_hub.auth import device_codes as codes
+from maity_hub.auth import sign_in_settings as sign_in
 from maity_hub.config import ConfigError, Settings
 from maity_hub.db import current_revision, head_revision, make_engine
 from maity_hub.errors import error_response
@@ -42,6 +44,7 @@ from maity_hub.routes import (
     board,
     contract_text,
     conversations,
+    device_codes,
     forge_webhook,
     joins,
     keep_the_why,
@@ -50,6 +53,7 @@ from maity_hub.routes import (
     me_session,
     members,
     memory,
+    notifications,
     placements,
     preferences,
     project_images,
@@ -58,6 +62,7 @@ from maity_hub.routes import (
     runner,
     runners,
     sign_in_settings,
+    swarm,
     tasks,
     ticker,
 )
@@ -89,6 +94,10 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
             except MailConfigError as error:
                 raise ConfigError(str(error)) from None
         check_secrets(engine, settings.secret_key)
+        with engine.begin() as conn:
+            # A method the environment switched off voids its open codes at once (§2.6.5).
+            if not sign_in.device_code_enabled(conn, settings):
+                codes.void_open(conn)
         reader = forge.Forge(settings.forge_github_token)
         worker = probe.Worker(engine, reader) if reader.token is not None else None
         _app.state.probe = worker
@@ -124,7 +133,9 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     prefix = f"/api/{API_VERSION}"
     app.include_router(_api_router(), prefix=prefix)
     app.include_router(auth_routes.router, prefix=prefix)
+    app.include_router(device_codes.router, prefix=prefix)
     app.include_router(me_routes.router, prefix=prefix)
+    app.include_router(notifications.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)
     app.include_router(registration_routes.router, prefix=prefix)
     app.include_router(invitation_routes.router, prefix=prefix)
@@ -156,6 +167,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(joins.page_router)  # /j/{token}, before the dashboard mount
     app.include_router(runners.page_router)  # /r/{token}, likewise
     app.include_router(badges.router)  # public /badge/*.svg, before the dashboard
+    app.include_router(swarm.router, prefix=prefix)  # the members' and the public swarm page
     _mount_web(app, settings)
     if settings.public_url_guessed:
         log.warning(

@@ -36,8 +36,11 @@ or the human's proxy as a personal request reviewed with conflict
 detection, quoted in the resume packet (8 texts, the agent's owner first)
 and given to one agent on its membership by its owner.
 The session list (`docs/api.md` §2.6.5), the instance's sign-in settings
-(§2.6.6) and the login's `next` are in; device codes and the sign-in link
-follow.
+(§2.6.6), the login's `next`, device codes with number matching (§2.6.2)
+and `GET /auth/methods` are in; the sign-in link follows. Notifications
+(`docs/api.md` §18.1–§18.3): account records, `GET /me/notifications` with
+sealed positions and its long-poll, `POST /me/notifications/read`, and
+watches on cards (§6.4) are in; notification settings and mail follow.
 
 Availability (`docs/api.md` §6.12): every member's computed
 `availability`, the agent's and the human's limit (`POST /me/limit`, a
@@ -54,6 +57,14 @@ body, tied to the write's event and redacted with it; notes with their
 caps, the agents' share and the per-member rate, resolution by the
 creator or an admin, and redaction. The card import from a forge issue
 (§6.14) follows.
+
+Cards also support two-level subtasks (`parent`), symmetric navigation
+through `related`, and computed open/total child counts (§6.4). The done
+gate includes open children. `policy.subtasks` defaults to `proposed`,
+requiring an admin to open a member's child card; `direct` lets the team
+use ordinary card rights. Parent and dependency edits are checked together
+under the project lock, so a combined edit cannot bypass depth or cycle
+rules. Parent and related edits are in history; computed counts are events.
 
 The public project badge (`docs/api.md` §6.20) is served at
 `GET /badge/{slug}.svg`, outside the API and without a session. It is off

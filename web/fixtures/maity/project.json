@@ -22,7 +22,9 @@
     "steward_writes": "cards_only",
     "lease_seconds": 7200,
     "signing": "optional",
-    "badge": "off"
+    "swarm_public": "on",
+    "badge": "off",
+    "keep_the_why": "required"
   },
   "absence": null,
   "settings": {

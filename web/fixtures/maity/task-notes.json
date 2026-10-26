@@ -1,0 +1,13 @@
+{
+  "tsk-0001": [
+    { "id": "nte-0031", "task_id": "tsk-0001",
+      "author": { "member_id": "agt-c", "handle": "agent-c", "kind": "agent" },
+      "body": "The CLI needs `--no-code` here too.",
+      "mentions": [], "state": "open", "resolution": null, "created_at": "2026-10-21T10:30:00Z" },
+    { "id": "nte-0032", "task_id": "tsk-0001",
+      "author": { "member_id": "agt-r", "handle": "reviewer", "kind": "agent" },
+      "body": "Already in §6.4.",
+      "mentions": [], "state": "dismissed",
+      "resolution": { "by": "hum-maintainer", "at": "2026-10-21T11:00:00Z", "reason": "covered" }, "created_at": "2026-10-21T10:40:00Z" }
+  ]
+}

@@ -125,10 +125,18 @@ def open_dependencies(conn: Connection, card_id: str) -> list[str]:
 
 
 def refuse_open_dependencies(conn: Connection, card_id: str) -> None:
-    pending = open_dependencies(conn, card_id)
+    children = list(
+        conn.execute(
+            select(t.card.c.id).where(t.card.c.parent == card_id, t.card.c.status.not_in(CLOSED))
+        ).scalars()
+    )
+    pending = sorted(set(open_dependencies(conn, card_id)) | set(children))
     if pending:
         raise ApiError(
-            409, "dependencies_open", "cards this one depends on are not done", {"open": pending}
+            409,
+            "dependencies_open",
+            "dependencies or children are not done",
+            {"open": pending, **({"children": sorted(children)} if children else {})},
         )
 
 
@@ -162,7 +170,72 @@ def would_cycle(conn: Connection, card_id: str, depends_on: list[str]) -> bool:
                 )
             ).scalars()
         )
+        frontier += list(
+            conn.execute(select(t.card.c.id).where(t.card.c.parent == current)).scalars()
+        )
     return False
+
+
+def check_subtask_graph(
+    conn: Connection,
+    project_id: str,
+    card_id: str,
+    *,
+    kind: str,
+    parent: str | None,
+    depends_on: list[str] | None,
+    fields: set[str],
+) -> None:
+    """Validate the resulting graph under the project lock, before either edge write.
+
+    In particular, removing a parent and adding a dependency in one PATCH must not
+    be checked against the old parent gate.
+    """
+    rows = {
+        row.id: row for row in conn.execute(select(t.card).where(t.card.c.project_id == project_id))
+    }
+    old_parent = rows[card_id].parent if card_id in rows else None
+    if parent is not None:
+        if parent == card_id:
+            raise invalid({"parent": "self"})
+        if parent not in rows:
+            raise invalid({"parent": "unknown_task"})
+        target = rows[parent]
+        if kind == "release" or target.kind == "release":
+            raise invalid({"parent": "release_card"})
+        if target.parent is not None:
+            raise invalid({"parent": "too_deep"})
+        if any(row.parent == card_id for row in rows.values()):
+            raise invalid({"parent": "has_children"})
+        if parent != old_parent and target.status in CLOSED:
+            raise invalid({"parent": "parent_closed"})
+    graph: dict[str, set[str]] = {key: set() for key in [*rows, card_id]}
+    for edge in conn.execute(
+        select(t.card_edge.c.from_card, t.card_edge.c.to_card).where(
+            t.card_edge.c.from_card.in_(rows), t.card_edge.c.kind == "depends_on"
+        )
+    ):
+        graph[edge.from_card].add(edge.to_card)
+    if depends_on is not None:
+        if card_id in depends_on:
+            raise invalid({"depends_on": "self"})
+        check_edge_targets(conn, project_id, "depends_on", depends_on)
+        graph[card_id] = set(depends_on)
+    for row in rows.values():
+        gate = parent if row.id == card_id else row.parent
+        if gate is not None:
+            graph[gate].add(row.id)
+    if card_id not in rows and parent is not None:
+        graph[parent].add(card_id)
+    seen: set[str] = set()
+    frontier = list(graph[card_id])
+    while frontier:
+        current = frontier.pop()
+        if current == card_id:
+            raise invalid({field: "cycle" for field in sorted(fields)})
+        if current not in seen:
+            seen.add(current)
+            frontier.extend(graph[current])
 
 
 def _edges(conn: Connection, card_id: str, kind: str) -> set[str]:
@@ -202,15 +275,23 @@ def set_ships_with(conn: Connection, project_id: str, card_id: str, ids: list[st
 
     Returns the other cards whose `ships_with` changed with it.
     """
+    return set_symmetric(conn, project_id, card_id, ids, "ships_with")
+
+
+def set_symmetric(
+    conn: Connection, project_id: str, card_id: str, ids: list[str], field: str
+) -> set[str]:
+    """Replace a symmetric edge; related permits release cards and gates nothing."""
     ids = list(dict.fromkeys(ids))
-    before = _edges(conn, card_id, "ships_with")
+    before = _edges(conn, card_id, field)
     if set(ids) == before:
         return set()
     if card_id in ids:
-        raise invalid({"ships_with": "self"}, "a card cannot ship with itself")
-    check_edge_targets(conn, project_id, "ships_with", ids)
+        raise invalid({field: "self"})
+    check_edge_targets(conn, project_id, field, ids)
     if (
-        ids
+        field == "ships_with"
+        and ids
         and conn.execute(
             select(t.card.c.id).where(t.card.c.id.in_([card_id, *ids]), t.card.c.kind == "release")
         ).first()
@@ -218,10 +299,10 @@ def set_ships_with(conn: Connection, project_id: str, card_id: str, ids: list[st
         # A release ships cards; it is never one of the cards shipped together (§6.7).
         raise invalid({"ships_with": "release_card"}, "ships_with never names a release card")
     both = (t.card_edge.c.from_card == card_id) | (t.card_edge.c.to_card == card_id)
-    conn.execute(delete(t.card_edge).where(both, t.card_edge.c.kind == "ships_with"))
+    conn.execute(delete(t.card_edge).where(both, t.card_edge.c.kind == field))
     for other in ids:
         for a, b in ((card_id, other), (other, card_id)):
-            conn.execute(insert(t.card_edge).values(from_card=a, to_card=b, kind="ships_with"))
+            conn.execute(insert(t.card_edge).values(from_card=a, to_card=b, kind=field))
     return before ^ set(ids)
 
 
@@ -251,7 +332,7 @@ def _contains(owned: str, area: str) -> bool:
 
 def edges(conn: Connection, card_id: str) -> dict[str, list[str]]:
     """A card's `depends_on` and `ships_with`, sorted as the card view shows them."""
-    found: dict[str, list[str]] = {"depends_on": [], "ships_with": []}
+    found: dict[str, list[str]] = {"depends_on": [], "ships_with": [], "related": []}
     for to_card, kind in conn.execute(
         select(t.card_edge.c.to_card, t.card_edge.c.kind).where(t.card_edge.c.from_card == card_id)
     ):
