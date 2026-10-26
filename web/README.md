@@ -222,7 +222,10 @@ too.
    lease and expiry, assignment, dependencies and ships-with, checkpoint
    and report — a code report's why (§6.23) as a link to its entry's
    file at the reported head on the forge with the entry's id beside it,
-   or "No why: <reason>". A card's title opens it (`js/card-panel.js`): a panel beside
+   or "No why: <reason>". Subtasks (`docs/api.md` §6.4, `parent`): a child stands folded under its parent,
+   whatever its column, behind a toggle with the hub's "Subtasks 1 open of 2"; unfolded, each child with its
+   status and a link that opens it; one whose parent is not shown (outside the window or filtered away) stands
+   in its column with "Subtask of <id>"; a folded child's link unfolds its parent and marks its row. A card's title opens it (`js/card-panel.js`): a panel beside
    the columns, on a phone full width above them, with the card and its
    controls, the description as Markdown, its links, the open notes
    (`GET …/tasks/{id}/notes?state=open`) with **Post the note** (`POST
@@ -234,7 +237,12 @@ too.
    from elsewhere shows every column. An action in the panel keeps the
    focus there. A card the board does not hold
    (closed earlier) is read by itself (`GET …/tasks/{id}`) and opened;
-   one there is not is said. Context rounds are marked, contract cards show their
+   one there is not is said. In the panel: the parent, the children and the related cards as links;
+   for whoever may edit the card **Parent and related cards** (`PATCH {parent, related}`, a parent chosen among open
+   cards that are no subtask and no release; a card with children takes none) and, under any open card that is no
+   subtask or release, **New subtask** (the new-card form with the parent set; under `policy.subtasks: proposed` a
+   member's subtask starts as proposed and the form says so). A refusal (`too_deep`, `has_children`,
+   `parent_closed`, `cycle`, `subtasks_proposed`) is said as the hub words it, with its reason. Context rounds are marked, contract cards show their
    state, arbiter and watchers, and **Contract section** (`js/contract-panel.js`,
    `docs/api.md` §6.8): folded until opened, then the section the card
    names, read by the hub from the repository (`GET …/tasks/{id}/contract`)
