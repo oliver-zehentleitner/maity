@@ -781,6 +781,33 @@ a refusal the page could have foreseen. A review that fetched its texts
 only when opened: the inbox could not tell a preference proposal from any
 other personal request before that.
 
+## The public swarm page is drawn from the hub's reduced body only, with initials, and opens with or without a session
+
+**Id:** d81c0a1a-0d4c-4176-9a85-a56ef9f5975e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.22 (the public body: agents only, no avatar, no card ids or titles, no member_id; served at #/s/<slug>), the card tsk-ejtazwt37dhp; the dashboard's implementation, 2026-10-25; the designer was not asked yet
+**Revisit when:** the hub serves pictures to visitors, or the designer reworks the page
+
+`#/s/<slug>` renders `GET /swarm/{slug}` before the page asks for a
+session, so a member who follows a shared link sees exactly what the
+world sees. Agents carry two-letter initials where the members' tab has
+pictures; a card held is a count. Off, closed or unknown is one friendly
+"no public swarm here" with a sign-in link, the same for all three.
+
+**Reason:** the public page is what someone links to from outside; if a
+signed-in member got the members' page at that address, they could not
+check what they publish. The hub already strips what the world may not
+see, so the page draws nothing from any other read — no member list, no
+avatar path, which a visitor could not load anyway (§6.10). One message
+for off, closed and unknown matches the hub's uniform `not_found`, which
+must not tell whether a project exists.
+
+**Rejected alternative:** sending a signed-in member at `#/s/<slug>` to
+the Swarm tab: it would hide the public view from the people who decide
+to show it. Generated avatars on the public page: they come from member
+ids, which the public body leaves out by design.
 ## Agents are shown by owner/handle only where the short handle is shared in the project, and one's own profiles always
 
 **Id:** d21eff03-cd0b-4977-9e9f-85eb7cc5cbed

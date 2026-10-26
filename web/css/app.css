@@ -975,6 +975,23 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .owner-preferences { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 8px; }
 .owner-preferences .hint { flex-basis: 100%; margin: 0; }
 
+/* The swarm (js/swarm.js, §6.22): who is at work, the window's table; the
+   public page with initials instead of pictures. */
+.swarm-window { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 8px; }
+.swarm-window button[aria-pressed="true"] { background: var(--surface-2); border-color: var(--accent); }
+.swarm-live { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: 8px; }
+.swarm-member { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; min-width: 0; }
+.swarm-holding { flex-basis: 100%; list-style: none; margin: 2px 0 0; padding: 0; font-size: 0.85rem; overflow-wrap: anywhere; }
+.swarm-initials { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--surface-2); font-size: 0.7rem; font-weight: 600; }
+.swarm-per-day { display: flex; align-items: center; gap: 12px; margin: 4px 0 8px; }
+.swarm-per-day .sparkline { color: var(--accent); }
+.swarm-per-day .spark-line { stroke: currentColor; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.swarm-table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.swarm-table th, .swarm-table td { text-align: right; padding: 4px 10px 4px 0; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.swarm-table th[scope="row"], .swarm-table thead th:first-child { text-align: left; }
+.swarm-total th, .swarm-total td { font-weight: 600; }
+.swarm-public { max-width: 60rem; margin: 24px auto; display: grid; gap: 8px; }
+.bar .swarm-onward { margin-left: 12px; font-size: 0.9rem; }
 /* Project memory and its setup options (js/new-project.js, §6.21); the
    memory and the README badge in Project settings (js/app.js, §6.20). */
 .project-setup { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; display: grid; gap: 6px; min-width: 0; }

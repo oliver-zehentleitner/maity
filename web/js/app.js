@@ -35,6 +35,8 @@ window.Maity = window.Maity || {};
     { route: "messages", label: "Messages" },
     // The change feed (js/ticker.js); new items from the feed, in place.
     { route: "ticker", label: "Ticker" },
+    // The team at work (js/swarm.js, docs/api.md §6.22).
+    { route: "swarm", label: "Swarm" },
     // No tab: opened from the inbox and from a chat (js/project-message.js).
     { route: "message", label: "Message the project", tab: false },
     // Joining is in Agents now; the old route opens it there (js/join.js).
@@ -84,6 +86,8 @@ window.Maity = window.Maity || {};
     const parts = window.location.hash.replace(/^#\/?/, "").split("/").filter(Boolean).map(decodeURIComponent);
     if (!parts.length) return { scope: null };
     if (parts[0] === "notifications") return { scope: "notifications" };
+    // A project's public swarm page (§6.22), with or without a session.
+    if (parts[0] === "s" && parts[1]) return { scope: "public-swarm", slug: parts[1] };
     if (parts[0] === "chats") return { scope: "chats" };
     // The login page, always reachable (docs/api.md §16.7); signed in, the root.
     if (parts[0] === "login") return { scope: "login" };
@@ -400,6 +404,8 @@ window.Maity = window.Maity || {};
     }
     if (ctx.canAdmin && ctx.project.settings && "onboarding" in ctx.project.settings) append(panel, onboardingForm(ctx));
     if (ctx.canAdmin && "repository" in ctx.project) append(panel, repositoryForm(ctx));
+    // A policy field, humans only (§2.3 ʰ); where the hub knows it (§6.22).
+    if (humanAdmin && M.swarm && ctx.project.policy && "swarm_public" in ctx.project.policy) append(panel, M.swarm.settingsForm(ctx, save));
     if ("memory" in ctx.project && M.projectSetup) append(panel, memoryPanel(ctx));
     // Humans only, as every policy field (§2.3 ʰ); where the hub knows it.
     if (humanAdmin && ctx.project.policy && "badge" in ctx.project.policy) append(panel, badgeForm(ctx, save));
@@ -1189,6 +1195,10 @@ window.Maity = window.Maity || {};
     let ctx;
     try {
       where = parseHash();
+      if (where.scope === "public-swarm" && M.swarm) {
+        await M.swarm.publicPage(main, document.getElementById("header"), where.slug);
+        return;
+      }
       try {
         await M.api.get("/auth/session");
       } catch (err) {

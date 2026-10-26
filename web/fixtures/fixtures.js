@@ -2273,6 +2273,7 @@ window.MAITY_FIXTURES = {
       "preset": "hierarchical",
       "signing": "optional",
       "steward_writes": "cards_only",
+      "swarm_public": "on",
       "tag_authority": "human"
     },
     "repository": {
@@ -2525,6 +2526,256 @@ window.MAITY_FIXTURES = {
       }
     ],
     "next_cursor": null
+  },
+  "maity/swarm.json": {
+    "as_of": "2026-10-21T13:00:00Z",
+    "coverage": {
+      "reviews_since": "2026-10-20"
+    },
+    "live": [
+      {
+        "avatar_url": null,
+        "display_name": "Maintainer",
+        "handle": "maintainer",
+        "holding": [],
+        "instances_online": 0,
+        "kind": "human",
+        "last_seen_at": "2026-10-21T13:40:00Z",
+        "member_id": "hum-maintainer",
+        "name": null,
+        "online": true
+      },
+      {
+        "avatar_url": null,
+        "display_name": "Agent A",
+        "handle": "agent-a",
+        "holding": [
+          {
+            "since": "2026-10-21T09:10:00Z",
+            "task_id": "tsk-0001",
+            "title": "API contract: docs/api.md"
+          }
+        ],
+        "instances_online": 1,
+        "kind": "agent",
+        "last_seen_at": "2026-10-21T13:41:10Z",
+        "member_id": "agt-a",
+        "name": "maintainer/agent-a",
+        "online": true
+      },
+      {
+        "avatar_url": null,
+        "display_name": "Agent B",
+        "handle": "agent-b",
+        "holding": [
+          {
+            "since": "2026-10-21T10:00:00Z",
+            "task_id": "tsk-0004",
+            "title": "Hub: credential exchange and storage"
+          }
+        ],
+        "instances_online": 2,
+        "kind": "agent",
+        "last_seen_at": "2026-10-21T13:39:30Z",
+        "member_id": "agt-b",
+        "name": "maintainer/agent-b",
+        "online": true
+      },
+      {
+        "avatar_url": null,
+        "display_name": "Agent C",
+        "handle": "agent-c",
+        "holding": [],
+        "instances_online": 0,
+        "kind": "agent",
+        "last_seen_at": "2026-10-21T11:02:00Z",
+        "member_id": "agt-c",
+        "name": "maintainer/agent-c",
+        "online": false
+      }
+    ],
+    "live_at": "2026-10-21T13:41:03Z",
+    "members": [
+      {
+        "cards_done": 3,
+        "claim_to_done_median_seconds": null,
+        "handle": "maintainer",
+        "handovers": 0,
+        "kind": "human",
+        "member_id": "hum-maintainer",
+        "name": null,
+        "prs_merged": 0,
+        "review_to_done_median_seconds": null,
+        "reviews_given": 9
+      },
+      {
+        "cards_done": 12,
+        "claim_to_done_median_seconds": 5400,
+        "handle": "agent-a",
+        "handovers": 1,
+        "kind": "agent",
+        "member_id": "agt-a",
+        "name": "maintainer/agent-a",
+        "prs_merged": 10,
+        "review_to_done_median_seconds": 1800,
+        "reviews_given": 4
+      },
+      {
+        "cards_done": 19,
+        "claim_to_done_median_seconds": 9000,
+        "handle": "agent-b",
+        "handovers": 2,
+        "kind": "agent",
+        "member_id": "agt-b",
+        "name": "maintainer/agent-b",
+        "prs_merged": 12,
+        "review_to_done_median_seconds": 2700,
+        "reviews_given": 0
+      },
+      {
+        "cards_done": 2,
+        "claim_to_done_median_seconds": null,
+        "handle": "agent-c",
+        "handovers": 0,
+        "kind": "agent",
+        "member_id": "agt-c",
+        "name": "maintainer/agent-c",
+        "prs_merged": 1,
+        "review_to_done_median_seconds": null,
+        "reviews_given": 0
+      }
+    ],
+    "totals": {
+      "cards_done": 36,
+      "cards_done_per_day": [
+        {
+          "count": 2,
+          "date": "2026-09-22"
+        },
+        {
+          "count": 4,
+          "date": "2026-09-23"
+        },
+        {
+          "count": 2,
+          "date": "2026-09-24"
+        },
+        {
+          "count": 1,
+          "date": "2026-09-25"
+        },
+        {
+          "count": 5,
+          "date": "2026-09-26"
+        },
+        {
+          "count": 3,
+          "date": "2026-09-27"
+        },
+        {
+          "count": 0,
+          "date": "2026-09-28"
+        },
+        {
+          "count": 2,
+          "date": "2026-09-29"
+        },
+        {
+          "count": 4,
+          "date": "2026-09-30"
+        },
+        {
+          "count": 2,
+          "date": "2026-10-01"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-02"
+        },
+        {
+          "count": 5,
+          "date": "2026-10-03"
+        },
+        {
+          "count": 3,
+          "date": "2026-10-04"
+        },
+        {
+          "count": 0,
+          "date": "2026-10-05"
+        },
+        {
+          "count": 2,
+          "date": "2026-10-06"
+        },
+        {
+          "count": 4,
+          "date": "2026-10-07"
+        },
+        {
+          "count": 2,
+          "date": "2026-10-08"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-09"
+        },
+        {
+          "count": 5,
+          "date": "2026-10-10"
+        },
+        {
+          "count": 3,
+          "date": "2026-10-11"
+        },
+        {
+          "count": 0,
+          "date": "2026-10-12"
+        },
+        {
+          "count": 2,
+          "date": "2026-10-13"
+        },
+        {
+          "count": 4,
+          "date": "2026-10-14"
+        },
+        {
+          "count": 2,
+          "date": "2026-10-15"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-16"
+        },
+        {
+          "count": 5,
+          "date": "2026-10-17"
+        },
+        {
+          "count": 3,
+          "date": "2026-10-18"
+        },
+        {
+          "count": 0,
+          "date": "2026-10-19"
+        },
+        {
+          "count": 2,
+          "date": "2026-10-20"
+        },
+        {
+          "count": 4,
+          "date": "2026-10-21"
+        }
+      ],
+      "claim_to_done_median_seconds": 6100,
+      "handovers": 3,
+      "prs_merged": 23,
+      "review_to_done_median_seconds": 2400,
+      "reviews_given": 13
+    },
+    "window_days": 30
   },
   "maity/task-history.json": {
     "tsk-0001": [

@@ -68,7 +68,7 @@ the page). `js/theme.js` sets `data-theme` on `<html>` from a script in
 `<head>` without `defer`, so the page is painted in that theme from the
 start; the CSS gives the dark tokens to the system's choice unless Light
 is picked, and to an explicit Dark. Signed out (the sign-in page, the
-landing page) a menu in the header picks it; signed
+landing page, the public swarm page) a menu in the header picks it; signed
 in the header has none, and **Your account → Theme** (`#/account/theme`)
 picks it with three radio buttons, saying that the choice is kept in this
 browser only. A pick made signed out stays after signing in.
@@ -124,6 +124,7 @@ stop the page. Mail settings come with the hub's mail (stage 3).
 | `#/chats` | every chat across one's projects (`js/chats.js`): one §9.3 list per project, read when the view opens, unread first, then the newest; each with its project, last message time and unread count, opening in its project's Chat tab; from the header's **Chat** |
 | `#/all` | the inbox across every project, each entry with its project's badge (logo or monogram, name, state) before it, as a link to the project; filterable by project and groupable by project (each group a heading with its own list; the filter holds in `#/all` only, and answering opens the next entry as it stands on screen); the landing page with more than one project, and with none (then it offers **Create a project**) |
 | `#/new` | create a project; also **+ New project** in the switcher |
+| `#/s/<slug>` | a project's public swarm page, where its owner switched it on; for visitors with or without a session |
 | `#/login` | the login page, always; signed in, the dashboard's start (the root without a session shows the instance's landing page where it has one) |
 | `#/runners` | the runners: small services on the operator's machines that start agents for the projects they are allowed in; **Runners** in the switcher row |
 | `#/observe/<slug>` | reading along in the group chats your agents are in, in a project you are not a member of (`docs/api.md` §9.2); named on `#/all` |
@@ -677,6 +678,25 @@ too.
       load.
     - Not here yet: the project settings' `settings.ticker` (sources,
       contract files, implementers).
+13. **Swarm** (`#/p/<slug>/swarm`, `js/swarm.js`, `docs/api.md` §6.22): the
+    team at work. **At work now**: every member, online or last seen, an
+    agent's instances online, and the cards each holds as links to them.
+    The window (**7 / 30 / 90 days**): cards done with a small line per
+    day, and a table per member and in all — cards done, reviews given,
+    PRs merged, handovers, claim → done and review → done medians in
+    words, – where fewer than three cards give a median; when reviews are
+    counted from; when the hub counted. A hub without the swarm says so in
+    the tab. **The public page** `#/s/<slug>`, with or without a session,
+    where a human owner or admin switched `policy.swarm_public` on in
+    **Project settings** (a policy change with its reason; the switch
+    says what it exposes): agents only, by their global names where the
+    hub sends them (else by handle), online and how many cards each holds,
+    the same counts — no human, no picture (initials instead), no card
+    title or link — with a way on to the members' view and to sign in, and
+    the theme menu of the signed-out pages. Off,
+    closed or unknown, it is a friendly "no public swarm here" with a way
+    to sign in. Only one read per page counts, the newest; the per-day line
+    runs oldest to newest whatever order the days arrive in.
 
 **For a first-time human**, the empty inbox and the empty board say where
 their content comes from (the agents' requests; the cards the agents
