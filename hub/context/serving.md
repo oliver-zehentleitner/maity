@@ -119,3 +119,35 @@ ordinary cache policy.
 
 **Rejected alternatives:** reading the template from the optional dashboard at
 request time, or enabling public caching for every route that asks for it.
+
+## The landing settings' PATCH alone takes a body of 256 KiB
+
+**Id:** daba0a34-2414-4da2-a0b4-7fe3a82f0d5c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the #359 review ruling and the ruling on control characters, 2026-10-26 (card "landing page body cap matches its Markdown limit"); docs/api.md §16.7; implementation session, 2026-10-26
+**Revisit when:** another field's limit reaches the 64 KiB body cap, or a landing page within its limits is refused with 413
+
+The landing Markdown may be 64 KiB of decoded UTF-8 (§16.7). On the wire,
+JSON escaping makes that larger: a quote or a newline takes two bytes, and
+some characters take more. With the 64 KiB body cap of every endpoint, a page
+near its own limit was refused with 413 before the route could check it.
+`middleware._body_cap` now gives `PATCH /api/v1/admin/settings/landing`
+256 KiB, and the route still checks 64 KiB decoded.
+
+**Reason:** the limit that matters is the stored Markdown. The body cap only
+keeps a request from buffering without bound. The rest of the API keeps 64 KiB.
+
+**Rejected alternatives:**
+- Raising the global cap: every endpoint would buffer four times as much for
+  one admin-only field.
+- Lowering the Markdown limit to fit the body: the page would lose a quarter
+  or more, depending on how much of its text needs escaping.
+- Raising the cap to 384 KiB for control characters' sixfold escaping: no
+  page needs them, and accepting them would only grow the cap.
+
+The fields refuse C0 control characters other than tab, newline and carriage
+return (`control_character`). Without them a valid page escapes to at most
+three times its size (`\u00e9` for a two-byte character, two `\uXXXX` for a
+four-byte one), and 256 KiB holds every valid page.

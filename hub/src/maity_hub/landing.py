@@ -27,6 +27,9 @@ ROW = "landing"  # the one row of `instance_landing`
 MAX_TITLE, MAX_LABEL = 120, 40
 MAX_MARKDOWN = 64 * 1024  # bytes of UTF-8, not characters (§16.7)
 FIELDS = ("enabled", "title", "markdown", "cta")
+# C0 control characters other than tab, newline and carriage return (§16.7): no page has
+# them, and without them JSON escapes a page to at most three times its size.
+CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 # A fence as `web/js/markdown.js` reads one: three or more backticks or tildes, up to
 # three spaces in; a backtick fence's info string holds no backtick. It closes on the
@@ -95,6 +98,10 @@ def _text(value: object, maximum: int) -> str | None:
     return value
 
 
+def _control(value: object) -> bool:
+    return isinstance(value, str) and CONTROL.search(value) is not None
+
+
 def check(body: object, current: dict[str, Any]) -> dict[str, Any]:
     """The setting after the instance admin's `PATCH` body; `invalid` names each field."""
     if not isinstance(body, dict):
@@ -104,6 +111,12 @@ def check(body: object, current: dict[str, Any]) -> dict[str, Any]:
     for name, value in body.items():
         if name not in FIELDS:
             errors[name] = "extra_forbidden"
+        elif name == "cta" and isinstance(value, dict) and _control(value.get("label")):
+            errors[name] = "control_character"
+        elif name == "cta" and isinstance(value, dict) and _control(value.get("href")):
+            errors["cta.href"] = "control_character"
+        elif _control(value):
+            errors[name] = "control_character"
         elif name == "enabled":
             if isinstance(value, bool):
                 after[name] = value

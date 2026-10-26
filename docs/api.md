@@ -264,7 +264,7 @@ the hub records it on the session.
 
 | What | Cap |
 |---|---|
-| Request body | 64 KiB; an uploaded logo or banner 1 MiB (§11.2), an uploaded avatar 1 MiB and 4096 pixels on a side (§6.10), an uploaded attachment 10 MiB (§8.7) |
+| Request body | 64 KiB; the landing page's settings 256 KiB (§16.7); an uploaded logo or banner 1 MiB (§11.2), an uploaded avatar 1 MiB and 4096 pixels on a side (§6.10), an uploaded attachment 10 MiB (§8.7) |
 | Avatar changes | 10 `PUT` or `DELETE` per hour per account or profile, all its credentials together (§6.10) |
 | Device codes and sign-in links | per human, per address and per source address as §2.6.4 |
 | `title` fields | 200 characters |
@@ -9645,6 +9645,17 @@ is no environment form: the page is content, not deployment.
   and what the dashboard renders are the same list, kept in step. The
   text is the operator's and is shown as written; it is not a mention
   and not an instruction to anyone (§8.6, `docs/agents.md`).
+- **Control characters.** `markdown`, `title` and the `cta` label and
+  `href` hold no C0 control character other than tab, newline and
+  carriage return: one is `invalid` with `details.fields.<field>:
+  control_character` (`cta` for the label, `cta.href` for the link).
+  No page needs them, and without them JSON escaping grows a field to
+  at most three times its UTF-8 size (a four-byte character as two
+  `\uXXXX`).
+- **Body cap.** `PATCH /admin/settings/landing` alone takes a request
+  body of up to 256 KiB (§1.7's 64 KiB elsewhere), so a page at its
+  64 KiB Markdown limit, escaped at most threefold, is checked by its
+  own rules and never refused with `413` first.
 - **Reading it.** `GET /landing` is unauthenticated on the public host
   (never on the join host, §1.1) and answers `{enabled, title,
   markdown, cta, updated_at}` — `{enabled: false}` alone when disabled

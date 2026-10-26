@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
@@ -142,9 +143,55 @@ def test_what_the_markdown_may_hold(owner: flow.Human, markdown: str) -> None:
     assert saved.status_code == 200, (markdown, saved.text)
 
 
+def test_a_page_at_the_markdown_limit_passes_the_body_cap(owner: flow.Human) -> None:
+    """§16.7: 64 KiB of Markdown whose JSON escaping grows it on the wire is accepted;
+    one byte more is the field's `invalid`, not 413; past 256 KiB the body is 413."""
+    quoted = ('"' * 63 + "\n") * (landing.MAX_MARKDOWN // 64)  # each character escaped
+    # The widest escaping of a valid page: `\u00e9` for two bytes, three times on the wire.
+    widest = json.dumps({"markdown": "\u00e9" * (landing.MAX_MARKDOWN // 2)}, ensure_ascii=True)
+    assert len(widest) > 3 * landing.MAX_MARKDOWN
+    sent = owner.client.patch(
+        f"/api/v1{ADMIN_PATH}",
+        content=widest,
+        headers={"X-CSRF-Token": owner.csrf, "Content-Type": "application/json"},
+    )
+    assert sent.status_code == 200, sent.text
+    assert len(quoted.encode()) == landing.MAX_MARKDOWN
+    saved = owner.patch(ADMIN_PATH, {"markdown": quoted})
+    assert saved.status_code == 200, saved.text
+    assert field(owner.patch(ADMIN_PATH, {"markdown": quoted + "x"})) == {"markdown": "invalid"}
+    huge = owner.patch(ADMIN_PATH, {"markdown": "x" * (257 * 1024)})
+    assert (huge.status_code, huge.json()["error"]["code"]) == (413, "payload_too_large")
+
+
+@pytest.mark.parametrize(
+    ("body", "fields"),
+    [
+        ({"markdown": "a\x01b"}, {"markdown": "control_character"}),
+        ({"markdown": "a\x1b[31mred"}, {"markdown": "control_character"}),
+        ({"title": "a\x00b"}, {"title": "control_character"}),
+        ({"cta": {"label": "Go\x07", "href": "/#/login"}}, {"cta": "control_character"}),
+        ({"cta": {"label": "Go", "href": "/#/login\x0b"}}, {"cta.href": "control_character"}),
+    ],
+)
+def test_control_characters_are_refused(
+    owner: flow.Human, body: dict[str, Any], fields: dict[str, str]
+) -> None:
+    assert field(owner.patch(ADMIN_PATH, body)) == fields
+
+
+def test_tab_newline_and_carriage_return_are_text(owner: flow.Human) -> None:
+    saved = owner.patch(ADMIN_PATH, {"markdown": "# Head\r\n\n\tindented\n"})
+    assert saved.status_code == 200, saved.text
+
+
+def test_the_larger_cap_is_the_landing_settings_alone(owner: flow.Human) -> None:
+    refused = owner.patch("/me", {"display_name": "x" * (65 * 1024)})
+    assert refused.status_code == 413
+
+
 def test_the_markdown_is_capped_in_bytes() -> None:
-    """64 KiB of UTF-8 (§16.7): a four-byte character counts four times. Checked on
-    `check` itself: through the API the body cap (64 KiB, 413) is reached first."""
+    """64 KiB of UTF-8 (§16.7): a four-byte character counts four times."""
     fits = "\U0001f984" * (landing.MAX_MARKDOWN // 4)
     assert landing.check({"markdown": fits}, OFF)["markdown"] == fits
     with pytest.raises(ApiError) as over:

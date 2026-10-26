@@ -9,9 +9,10 @@
 from __future__ import annotations
 
 import contextlib
+import functools
 import logging
 import re
-from collections.abc import MutableMapping
+from collections.abc import Awaitable, Callable, MutableMapping
 from typing import Any
 from urllib.parse import unquote_to_bytes
 
@@ -38,6 +39,10 @@ IMAGE_CAP = 1024 * 1024
 _IMAGE_UPLOAD = re.compile(
     r"^/api/v1/(projects/[^/]+/(logo|banner)|me/avatar|agents/[^/]+/avatar)$"
 )
+# The landing page's Markdown may be 64 KiB decoded (§16.7); JSON escaping can grow it up
+# to four times on the wire, so its PATCH alone takes a larger body.
+LANDING_CAP = 256 * 1024
+_LANDING_SETTINGS = "/api/v1/admin/settings/landing"
 CSP = "default-src 'self'"
 # The private Cache-Control a route may set instead of no-store: the project images
 # (images.HEADERS) and the avatars, revalidated on every use (avatars.HEADERS).
@@ -88,9 +93,7 @@ class HubMiddleware:
             # Nothing here would read it: 404 before the cap, and the body is never read.
             await _not_found(scope, receive, send)
             return
-        image = scope.get("method") == "PUT" and bool(_IMAGE_UPLOAD.match(scope.get("path", "")))
-        cap = IMAGE_CAP if image else BODY_CAP
-        refuse = _image_too_large if image else _too_large
+        cap, refuse = _body_cap(scope)
         declared = _content_length(scope)
         if declared is not None and declared > cap:
             await refuse(scope, receive, send)
@@ -241,8 +244,18 @@ async def _not_found(scope: Scope, receive: Receive, send: Send) -> None:
     access.info("%s %s %s", scope.get("method"), _logged_path(scope), 404)
 
 
-async def _too_large(scope: Scope, receive: Receive, send: Send) -> None:
-    response = error_response(413, "payload_too_large", "the body is over 64 KiB")
+def _body_cap(scope: Scope) -> tuple[int, Callable[[Scope, Receive, Send], Awaitable[None]]]:
+    """The largest body this request may send, and how a larger one is refused."""
+    method, path = scope.get("method"), scope.get("path", "")
+    if method == "PUT" and _IMAGE_UPLOAD.match(path):
+        return IMAGE_CAP, _image_too_large
+    if method == "PATCH" and path == _LANDING_SETTINGS:
+        return LANDING_CAP, functools.partial(_too_large, cap=LANDING_CAP)
+    return BODY_CAP, _too_large
+
+
+async def _too_large(scope: Scope, receive: Receive, send: Send, cap: int = BODY_CAP) -> None:
+    response = error_response(413, "payload_too_large", f"the body is over {cap // 1024} KiB")
     await response(scope, receive, send)
     access.info("%s %s %s", scope.get("method"), _logged_path(scope), 413)
 
