@@ -5869,6 +5869,27 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   finish("/held-401", 401, { error: { code: "unauthenticated", message: "Old session ended" } });
   await old401;
   expect(!main.querySelector(".login"), "stale session: a late401 still cannot end the new session");
+  // The readable CSRF cookie is optional: logout must send the token supplied
+  // by /auth/session before invalidating it along with the old replies.
+  document.cookie = "";
+  let logoutToken, serverSignedOut = false;
+  ctx.fetch = (url, init) => {
+    const reply = (status, data) => Promise.resolve({ ok: status < 400, status, headers: { get: () => null }, json: async () => data });
+    if (url === "/api/v1/auth/logout") {
+      logoutToken = init.headers["X-CSRF-Token"];
+      if (logoutToken !== F["auth-session.json"].csrf_token) return reply(403, { error: { code: "csrf_mismatch", message: "CSRF token mismatch" } });
+      serverSignedOut = true;
+      return reply(200, {});
+    }
+    if (serverSignedOut && url === "/api/v1/auth/session") return reply(401, { error: { code: "unauthenticated", message: "Signed out" } });
+    return staleFetch(url, init);
+  };
+  header.querySelectorAll("button").find((b) => (b.getAttribute("aria-label") || "").startsWith("Your profile: ")).click();
+  header.querySelectorAll("button.menu-item").find((b) => b.textContent === "Sign out").click();
+  await tick(); await tick();
+  expect(serverSignedOut && logoutToken === F["auth-session.json"].csrf_token && main.querySelector(".login"),
+    "stale session: logout with no readable cookie sends the fallback CSRF token and stays signed out");
+  ctx.fetch = staleFetch;
   mode = "down";
   await go("#/p/maity/inbox");
   expect(main.querySelector(".error") && text(main).includes("did not answer"), "API mode without hub fails loud");

@@ -262,9 +262,11 @@ window.Maity = window.Maity || {};
     M.notify.halt();
     // Signing out on purpose is no session that ended under the page.
     sessionEnded = true;
-    M.api.endSession();
     try {
-      await M.api.post("/auth/logout");
+      // Build the request while the fallback CSRF token is still available.
+      const ending = M.api.post("/auth/logout");
+      M.api.endSession();
+      await ending;
     } finally {
       if (M.clearChatDrafts) M.clearChatDrafts();
       M.notify.stopBrowser();
