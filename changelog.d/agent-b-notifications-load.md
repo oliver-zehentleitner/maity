@@ -11,5 +11,4 @@
 ### Added
 
 - hub: `MAITY_DB_POOL_SIZE` and `MAITY_DB_MAX_OVERFLOW` (defaults 5 and 10, as before) size
-  the server database's connection pool. The hub runs no more request threads than the
-  two together.
+  the server database's connection pool.

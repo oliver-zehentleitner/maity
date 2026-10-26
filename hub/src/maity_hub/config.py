@@ -56,7 +56,7 @@ class Settings:
     avatar_decode_memory_mb: int = 512
     avatar_decodes: int = 2
     # MAITY_DB_POOL_SIZE, MAITY_DB_MAX_OVERFLOW: the server database's connection pool
-    # (SQLAlchemy's defaults, 5 + 10); the request threads are capped at their sum.
+    # (SQLAlchemy's defaults, 5 + 10).
     db_pool_size: int = 5
     db_max_overflow: int = 10
     # MAITY_SECRET_KEY: the instance key for secrets stored at rest (§16.2, §17.4);
