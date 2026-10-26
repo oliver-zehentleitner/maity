@@ -43,6 +43,7 @@ CHOICES = {
 }
 LEASE_MIN, LEASE_MAX, LEASE_DEFAULT = 600, 86400, 7200
 MAX_PLACEMENTS_DEFAULT, MAX_PLACEMENTS_MAX = 8, 1000
+WINDOW_MIN, WINDOW_MAX, WINDOW_DEFAULT = 5, 1440, 60  # takeover_window_minutes (§6.19)
 FIELDS = (
     "preset",
     *CHOICES,
@@ -53,10 +54,11 @@ FIELDS = (
     "coordinator_substitute",
     "jour_fixe",
     "jour_fixe_moderators",
+    "takeover_window_minutes",
 )
 # Kept when a preset changes: a preset must not quietly loosen signing or who may start
-# agents, reset the placement limit or coordinator seats, or publish a badge or the swarm;
-# only the field itself changes them (§6.1).
+# agents, reset the placement limit, the coordinator seats or the takeover window, or
+# publish a badge or the swarm; only the field itself changes them (§6.1).
 KEPT_ON_PRESET = (
     "signing",
     "spawn_requests",
@@ -70,6 +72,7 @@ KEPT_ON_PRESET = (
     "swarm_public",
     "jour_fixe",
     "jour_fixe_moderators",
+    "takeover_window_minutes",
 )
 
 
@@ -87,6 +90,7 @@ def filled(preset: str, owner_id: str) -> dict[str, Any]:
         "swarm_public": "off",
         "jour_fixe": None,
         "jour_fixe_moderators": None,
+        "takeover_window_minutes": WINDOW_DEFAULT,
     }
     if preset == "solo":
         policy["contract_arbiter"] = owner_id
@@ -115,6 +119,7 @@ def of(project: Any) -> dict[str, Any]:
         "swarm_public": getattr(project, "swarm_public", "off"),
         "jour_fixe": project.jour_fixe,
         "jour_fixe_moderators": project.jour_fixe_moderators,
+        "takeover_window_minutes": project.takeover_window_minutes,
     }
 
 
@@ -140,6 +145,7 @@ def columns(policy: dict[str, Any]) -> dict[str, Any]:
         "swarm_public": policy["swarm_public"],
         "jour_fixe": policy["jour_fixe"],
         "jour_fixe_moderators": policy["jour_fixe_moderators"],
+        "takeover_window_minutes": policy["takeover_window_minutes"],
     }
 
 

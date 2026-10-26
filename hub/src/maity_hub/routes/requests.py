@@ -160,6 +160,7 @@ def request_view(conn: Connection, row: Any, *, with_proposal: bool = False) -> 
         "holder": _holder(conn, row),
         "forwarding": row.forwarding or [],
         "humans_only": inbox.humans_only(row),
+        "takeover_id": row.takeover_id,  # set by the hub only (§6.19)
     }
     shown = proposals.view(conn, row) if with_proposal else {}
     if shown.keys() & view.keys():  # a kind adds its own fields, it never replaces one
@@ -430,10 +431,14 @@ def _locked_member(conn: Connection, caller: Caller, slug: str) -> Membership:
 
 def _addressee_audience(conn: Connection, mine: Membership, to: inbox.Addressee) -> list[str]:
     """`to` resolved to `member:` or `role:` (§8.2); `owner` is the owner's member id."""
+    return _audience_of(conn, mine.project.id, to)
+
+
+def _audience_of(conn: Connection, project_id: str, to: inbox.Addressee) -> list[str]:
     if to.kind == "role":
         return [f"role:{to.role}"]
     if to.kind == "owner":
-        owner = inbox.owner_membership(conn, mine.project.id)
+        owner = inbox.owner_membership(conn, project_id)
         return [f"member:{owner.human_id}"] if owner else ["role:owner"]
     return [f"member:{principal_id(conn, to.member)}"]
 
@@ -725,11 +730,22 @@ def _check_answer(row: Any, body: AnswerIn) -> None:
     reply_ids = {r["id"] for r in replies(klass(row), row.options)}
     if body.reply_id is not None and body.reply_id not in reply_ids:
         raise invalid({"reply_id": "not_a_reply"})
+    rule = proposals.answerer(row)
+    if rule is not None and rule.reply_required and body.reply_id is None:
+        raise invalid({"reply_id": "required"}, "this request is answered with one of its replies")
     edits = body.markdown is not None or body.base_version is not None
     if edits and (row.proposal or {}).get("kind") != "preferences":
         raise invalid({"markdown": "not_a_preference_proposal"})
     if edits and (body.reply_id != "go" or body.markdown is None or body.base_version is None):
         raise invalid({"markdown": "go_with_markdown_and_base_version"})
+
+
+def _refuse_by_kind(conn: Connection, row: Any, who: Any) -> None:
+    """The proposal kind's own rule on who answers (`proposals.refusal`), for the one who
+    answers, claims or is forwarded the request: `forbidden` with its reason."""
+    reason = proposals.refusal(conn, row, who)
+    if reason is not None:
+        raise ApiError(403, "forbidden", "this request is not theirs to answer", {"reason": reason})
 
 
 def _refuse_unless_open(row: Any) -> None:
@@ -759,6 +775,7 @@ def answer(
             raise humans_only(refusal)
         if inbox.forwarded(row) and row.holder_member != mine.id:
             raise _not_holder()  # once forwarded, only its holder answers (§7)
+        _refuse_by_kind(conn, row, mine)
         if not inbox.may_answer(conn, row, mine):
             raise forbidden(inbox.answer_scope(row))
         if inbox.is_asker(row, mine):
@@ -807,7 +824,9 @@ def answer(
         # A consent for a placement: `go` approves, any other answer refuses (§15.6).
         outcome = "go" if body.reply_id == "go" else "no"
         placements.settle(conn, row, outcome, caller.actor(mine.id), mine.principal_id)
-        proposals.settle(conn, row, outcome, mine.principal_id, caller.actor(mine.id))
+        proposals.settle(
+            conn, row, outcome, mine.principal_id, caller.actor(mine.id), reply_id=body.reply_id
+        )
         view = request_view(conn, _row(conn, row.id))
         emit(
             conn,
@@ -956,6 +975,8 @@ def forward(
                 raise invalid({"to": "not_admin"}, "a member holding admin, or the addressee")
             if target.agent_id is not None and inbox.humans_only(row):
                 raise humans_only("a humans_only request goes to a human or to the admins")
+            # Nor to someone the proposal's kind would not let answer it (§6.19).
+            _refuse_by_kind(conn, row, target)
             target_id = target.id
             values = {"holder_member": target.id, "holder_pool": None}
         action_name = "opened" if target_id is None else "forwarded"
@@ -997,6 +1018,7 @@ def claim(slug: str, request_id: str, request: Request, caller: AnyCaller) -> JS
             )
         if mine.kind == "agent" and inbox.humans_only(row):
             raise humans_only("only a human admin claims a humans_only request")
+        _refuse_by_kind(conn, row, mine)  # a holder that may not answer would strand it
         if inbox.is_asker(row, mine):
             raise invalid({"to": "self"}, "nobody holds a request it asked")
         won = conn.execute(
@@ -1159,7 +1181,14 @@ def close_request(
         kind, extra = "request_answered", {}
     _unblock(conn, row)
     if not unknown:
-        proposals.settle(conn, row, outcome, None if outcome == "withdrawn" else by, actor)
+        proposals.settle(
+            conn,
+            row,
+            outcome,
+            None if outcome == "withdrawn" else by,
+            actor,
+            reply_id=outcome if outcome in ("go", "no") else None,
+        )
     closed = _row(conn, row.id)
     records.personal_request(conn, closed)
     view = request_view(conn, closed)
@@ -1226,6 +1255,67 @@ def file_consent(
         _addressee_audience(conn, mine, to),
         request_view(conn, _row(conn, request_id)),
         actor=caller.actor(mine.id),
+        subject=("request", request_id),
+    )
+    return request_id
+
+
+def file_proposal(
+    conn: Connection,
+    project_id: str,
+    asked_by: int,
+    class_: str,
+    title_text: str,
+    summary: str,
+    proposal: dict[str, Any],
+    *,
+    to: inbox.Addressee,
+    options: list[dict[str, str]],
+    while_open: str,
+    actor: Actor | None,
+    tried: str | None = None,
+    task_id: str | None = None,
+    takeover_id: str | None = None,
+) -> str:
+    """A request the hub files on someone's behalf that carries a proposal of a registered
+    kind: any class, addressee and options, unlike `file_consent` (§6.19's escalation is a
+    `decision` to `role:admin` with `transfer` and `keep`); returns its id."""
+    proposals.check_kind(proposal)
+    request_id = new_id("request")
+    conn.execute(
+        insert(t.request).values(
+            {
+                "id": request_id,
+                "project_id": project_id,
+                "class": class_,
+                "title": title_text[:200],
+                "summary": summary,
+                "tried": tried,
+                "options": options,
+                "priority": "normal",
+                "to_kind": to.kind,
+                "to_member": to.member,
+                "to_role": to.role,
+                "asked_by": asked_by,
+                "asked_session_id": actor.session_id if actor else None,
+                "task_id": task_id,
+                "takeover_id": takeover_id,
+                "proposal": proposal,
+                "while_open": while_open,
+                "status": "open",
+                "changed_by_credential": actor.credential_id if actor else None,
+                "changed_via": actor.via if actor else None,
+                "created_at": clock.now(),
+            }
+        )
+    )
+    emit(
+        conn,
+        project_id,
+        "request_created",
+        _audience_of(conn, project_id, to),
+        request_view(conn, _row(conn, request_id)),
+        actor=actor,
         subject=("request", request_id),
     )
     return request_id
@@ -1475,7 +1565,9 @@ def answer_personal(
         _unblock(conn, row)
         actor = caller.actor(member.id) if member is not None else None
         outcome = "go" if body.reply_id == "go" else "no"
-        proposals.settle(conn, _row(conn, row.id), outcome, caller.human_id, actor)
+        proposals.settle(
+            conn, _row(conn, row.id), outcome, caller.human_id, actor, reply_id=body.reply_id
+        )
         closed = _row(conn, row.id)
         records.personal_request(conn, closed)
         view = request_view(conn, closed)

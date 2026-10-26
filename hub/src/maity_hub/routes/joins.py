@@ -25,7 +25,7 @@ from sqlalchemy import Connection, insert, select, update
 from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import briefings, clock, events, idempotency, instances
+from maity_hub import briefings, clock, events, idempotency, instances, takeovers
 from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.auth import credentials
@@ -783,6 +783,8 @@ def _move_to_replacement(
             actor=actor,
             subject=("task", card.id),
         )
+        # A takeover from the replaced instance ends with it (§6.19).
+        takeovers.reconcile(conn, card.id, actor, decided=False)
 
 
 def _create_for_join(conn: Connection, row: Any) -> str:
