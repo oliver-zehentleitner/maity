@@ -1189,7 +1189,10 @@ message, as its project's feed would have made it, and reads its newest
 page and (for a group chat) itself again, to take over what the stream
 cannot name: a removal, a deleted file, a rename, a change of who is in it
 or of closed. The lists and the members are also read every 30 seconds, as
-a project's Chat tab does.
+a project's Chat tab does. All of it is one update at a time, with at most
+one more pass for whatever was asked meanwhile; the open chat's re-read
+and its delivery check take one page per pass and go on from there the
+next time, so no nudge reads a whole history.
 
 **Reason:** a feed per project, or even one for the open conversation's
 project, multiplies with every open tab; that multiplication was the
