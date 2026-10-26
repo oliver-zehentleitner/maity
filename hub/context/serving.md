@@ -119,3 +119,32 @@ ordinary cache policy.
 
 **Rejected alternatives:** reading the template from the optional dashboard at
 request time, or enabling public caching for every route that asks for it.
+
+## The landing settings' PATCH alone takes a body of 256 KiB
+
+**Id:** daba0a34-2414-4da2-a0b4-7fe3a82f0d5c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the #359 review ruling, 2026-10-26 (card "landing page body cap matches its Markdown limit"); implementation session, 2026-10-26
+**Revisit when:** another field's limit reaches the 64 KiB body cap, or a landing page with many control characters or non-ASCII text is refused with 413
+
+The landing Markdown may be 64 KiB of decoded UTF-8 (§16.7). On the wire,
+JSON escaping makes that larger: a quote or a newline takes two bytes, and
+some characters take more. With the 64 KiB body cap of every endpoint, a page
+near its own limit was refused with 413 before the route could check it.
+`middleware._body_cap` now gives `PATCH /api/v1/admin/settings/landing`
+256 KiB, and the route still checks 64 KiB decoded.
+
+**Reason:** the limit that matters is the stored Markdown. The body cap only
+keeps a request from buffering without bound. The rest of the API keeps 64 KiB.
+
+**Rejected alternatives:**
+- Raising the global cap: every endpoint would buffer four times as much for
+  one admin-only field.
+- Lowering the Markdown limit to fit the body: the page would lose a quarter
+  or more, depending on how much of its text needs escaping.
+
+256 KiB is not the worst case: a control character escapes to six bytes
+(`\u0001`), so a page of them can still be refused with 413 within its own
+limit.
