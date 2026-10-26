@@ -1168,3 +1168,33 @@ counts are the hub's, so a child closed outside the window still counts.
 badge: no folding, and a parent's open work spread over four columns.
 Folding only children of the same column as the parent: a parent in
 review with an open child would hide nothing, the common case.
+
+## The global chat updates from the notifications stream, not from any project's events feed
+
+**Id:** dc0a02f8-c657-406a-8f63-f260b588e7e8
+**Type:** decision
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's card for the global chat (tsk-z8z8cg56y00s), 2026-10-26, after that day's incident of an events long-poll multiplied by open tabs; the dashboard's implementation, 2026-10-26
+**Revisit when:** the hub offers a cross-project conversation list or a per-user chat stream, or the notifications stream stops reporting chat messages
+
+`#/chats` shows every project's chats in the Chat tab's layout and opens
+one in place with chat.js's own pane, in that project's context. It opens
+no events long-poll: the notifications stream (js/notify.js), which every
+signed-in page reads anyway, says that something changed; the global view
+then reads each project's conversation list once a burst has settled
+(0.4 s), and the open conversation fetches what came after its last
+message, as its project's feed would have made it. The lists are also
+read every 30 seconds, as a project's Chat tab does.
+
+**Reason:** a feed per project, or even one for the open conversation's
+project, multiplies with every open tab; that multiplication was the
+incident of the same day. The stream already carries a chat message as a
+notification for its human party, so it is enough to know when to read.
+
+**Rejected alternative:** one events feed per project the human is in: the
+incident's pattern, N long-polls per tab. Only the open conversation's
+project's feed (the card allowed it): still one more long-poll per tab,
+and the list of the other projects would still need the stream. Polling
+the lists every few seconds: more reads than the stream for slower news.
