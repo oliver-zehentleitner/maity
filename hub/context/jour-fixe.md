@@ -30,3 +30,56 @@ small: at most 1500 rows per agent.
   out of the window.
 - Online intervals (start, end) per membership: the same answer with
   overlap and clipping logic instead of a count.
+
+## A round's thread opens with the round, and a pending further step waits in the steps list
+
+**Id:** 9215f9e8-e417-43df-a815-6d8bd702808d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session, 2026-10-25 (jour fixe, part 2)
+**Revisit when:** a round needs a thread it did not have from the start, or a second pending further step is allowed
+
+This hub runs group chats, so every round runs in chat mode (`docs/api.md`
+§20.5). The hub creates the round's thread when the round opens, with the
+invited members, right after the round row so that the thread's view names
+the round. A further step the moderator asks for is an entry in the round's
+`steps` with `opened_at` null until it opens; when the exchange closes
+first, the entry is dropped.
+
+**Reason:** §20.7 defines the current participants as invited, active and
+still in the thread. With the thread there from the start, that holds in
+every phase: a member who leaves it during the answers is no participant of
+the exchange either. The contract allows one pending further step at a time,
+so one marked entry in the list the round already stores is enough.
+
+**Rejected alternatives:**
+- Create the thread with the statement: before it, participation would need
+  a second definition, and a round without a statement would never get one.
+- A column or table for the pending step: a migration for at most one value
+  per round, which the steps list carries already.
+
+## A round's thread and its messages wake nobody, told apart by the payload's jour_fixe marker
+
+**Id:** b198fec1-37bb-4d0b-a6d4-7fe11a1800b4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session, 2026-10-25 (jour fixe, part 2)
+**Revisit when:** a round's thread gets messages that should wake (the contract allows none today)
+
+`events.wakes` returns false for a `message`, `conversation_created` or
+`conversation_updated` whose payload carries `jour_fixe`: the statement,
+the posts, and the thread's own open and close events. Each step wakes its
+eligible members once, through `jour_fixe_step_opened`.
+
+**Reason:** §20.5 counts every wake of a round: nothing else may wake anyone.
+The thread's events are ordinary group-chat events addressed to the
+participants by `member:`, which would wake each of them. The kinds are
+shared with every other chat, so the kind alone cannot decide; the payload
+already marks a round's message (§20.5) and the thread's view names its round.
+
+**Rejected alternatives:**
+- Add the kinds to `NON_WAKING`: it would silence every chat in the hub.
+- Leave the participants out of the audience: they could no longer read
+  their own thread.

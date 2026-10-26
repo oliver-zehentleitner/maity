@@ -167,7 +167,17 @@ def access(conn: Connection, conversation_id: str, mine: Any) -> str | None:
         return "participant"
     if mine.kind == "human" and mine.principal_id in observers(conn, current):
         return "observer"
+    if mine.kind == "human" and mine.role == "owner" and _round_of(conn, conversation_id):
+        return "observer"  # every project owner reads a round's thread along (§20.5)
     return None
+
+
+def _round_of(conn: Connection, conversation_id: str) -> str | None:
+    """The jour fixe round whose thread this is, or None."""
+    found: str | None = conn.execute(
+        select(t.jour_fixe_round.c.id).where(t.jour_fixe_round.c.conversation_id == conversation_id)
+    ).scalar()
+    return found
 
 
 def view(conn: Connection, conversation: Any, access_of: str | None = None) -> dict[str, Any]:
@@ -186,6 +196,8 @@ def view(conn: Connection, conversation: Any, access_of: str | None = None) -> d
         "closed_at": ts(conversation.closed_at),
         "closed_reason": conversation.closed_reason,
     }
+    if conversation.hub_thread:
+        result["jour_fixe"] = {"round_id": _round_of(conn, conversation.id)}
     if access_of is not None:
         result["access"] = access_of
     return result
@@ -272,6 +284,37 @@ def refuse_closed_project(project: Any) -> None:
     """A closed project refuses what adds to a room (§9.2)."""
     if project.state in CLOSED_STATES:
         raise ApiError(409, "project_closed", f"the project is {project.state}")
+
+
+def round_thread() -> ApiError:
+    """A round's thread takes messages and members only through the round (§20.5)."""
+    return ApiError(
+        403,
+        "forbidden",
+        "a jour fixe round's thread is written through the round",
+        {"reason": "round_thread"},
+    )
+
+
+def close_thread(conn: Connection, conversation: Any) -> None:
+    """Close a round's thread for good when its exchange closes (§20.5)."""
+    lock_project(conn, conversation.project_id)
+    conversation = find(conn, conversation.project_id, conversation.id)  # as of the lock
+    if conversation.closed_at is not None:
+        return
+    conn.execute(
+        update(t.conversation)
+        .where(t.conversation.c.id == conversation.id)
+        .values(closed_at=clock.now(), closed_reason="round_closed")
+    )
+    _announce(
+        conn,
+        find(conn, conversation.project_id, conversation.id),
+        "conversation_updated",
+        {"closed": {"closed_reason": "round_closed"}},
+        [],
+        None,
+    )
 
 
 def refuse_closed(conversation: Any) -> None:
@@ -379,6 +422,8 @@ def add(conn: Connection, conversation: Any, member_id: str, by: str, actor: Act
     conversation = find(conn, conversation.project_id, conversation.id)  # as of the lock
     refuse_closed(conversation)
     refuse_closed_project(project)
+    if conversation.hub_thread:
+        raise round_thread()
     row = _members(conn, conversation.project_id, [member_id])[member_id]
     if stay(conn, conversation.id, row.id) is not None:
         return False
@@ -423,7 +468,11 @@ def remove(
         "participants_removed": [{"member_id": left, "by": by, "reason": reason}]
     }
     remaining = stays(conn, conversation.id)
-    if conversation.closed_at is None and not any(s.human_id for s in remaining):
+    if (
+        conversation.closed_at is None
+        and not conversation.hub_thread  # a round's thread needs no human (§20.5)
+        and not any(s.human_id for s in remaining)
+    ):
         conn.execute(
             update(t.conversation)
             .where(t.conversation.c.id == conversation.id)
@@ -491,11 +540,12 @@ def _announce(
     """`conversation_created`/`_updated` to the participants after the change and whoever
     it removed (§8.2); a conversation's event, so no see-all reaches it."""
     current = stays(conn, conversation.id)
+    readers = ["role:owner"] if conversation.hub_thread else []  # they read along (§20.5)
     emit(
         conn,
         conversation.project_id,
         kind,
-        list(dict.fromkeys([*audience(current), *also])),
+        list(dict.fromkeys([*audience(current), *also, *readers])),
         {**view(conn, conversation), "changed": changed},
         actor=actor,
         subject=("conversation", conversation.id),

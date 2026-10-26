@@ -361,6 +361,8 @@ def _group_for_posting(conn: Connection, mine: Membership, conversation_id: str)
         raise ApiError(
             403, "forbidden", "an owner reads along and does not post", {"reason": "observer"}
         )
+    if group.hub_thread:
+        raise group_chats.round_thread()
     group_chats.refuse_closed(group)
     return group
 
@@ -544,6 +546,11 @@ def _tombstone(
     ).rowcount
     if won != 1:
         return
+    marker = (row.payload or {}).get("jour_fixe") if row.kind == "message" else None
+    if marker:  # a round's statement or post: its copy in the round goes with it (§20.8)
+        from maity_hub.jourfixe import exchange
+
+        exchange.redact_copy(conn, marker, {k: v for k, v in tombstone.items() if k != "redacted"})
     events.emit(
         conn,
         mine.project.id,
