@@ -1152,6 +1152,9 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     fits("the global chat list at 390 px")
     page.set_viewport_size({"width": 1280, "height": 900})
     no_problems(run, "global chat")
+    # Back where the chat step left the page: the project's chat with the agent.
+    page.goto(f"{run.base}/#/p/e2e-alpha/chat/{agent_id}")
+    expect(page.get_by_role("heading", name="Chat with E2E Agent", exact=True)).to_be_visible()
 
     run.step("pause: the owner pauses the agent; the agent cannot lift it itself")
     view_tab(page, "Agents").click()
