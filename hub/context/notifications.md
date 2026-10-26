@@ -81,7 +81,7 @@ form invisible to the client.
 **Id:** 06563fc8-cd5c-4820-b089-9d233f3d44b8
 **Type:** decision
 **Type:** incident
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** production incident 2026-10-26 (hub not ready, connection pool timeouts), analysis from the code and the incident log
 **See:** notifications.md#items-are-derived-on-every-read-from-30-days-of-the-humans-projects-with-the-relations-as-they-are-now — e29065f2-c5d3-43dd-9209-f7f30b67269a — as of 2026-10-26
@@ -118,3 +118,37 @@ would raise a serialization failure even with an on-conflict clause.
 **Reason:** the smallest change that makes an idle long-poll cheap and bounds what a busy
 one can take. Evidence is inferred: the cost per event was measured locally; the incident
 log showed pool timeouts at a low request rate, with no lock wait found on these paths.
+
+## Deriving items reads each kind of lookup once per batch, not once per event
+
+**Id:** b4a7c2f0-e8c8-4e9d-a093-95f07b4eb411
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** incident follow-up 2026-10-26 (the hub slow after the stamp check, the stamp moving with every agent action); measured on a local fixture before and after
+**See:** notifications.md#a-held-long-poll-compares-a-stamp-before-it-derives-again-and-full-answers-run-a-few-at-a-time — 06563fc8-cd5c-4820-b089-9d233f3d44b8 — as of 2026-10-26
+**Revisit when:** the classification reads something new per event, or the long-poll waits on commits instead of looking
+
+With agents at work, the stamp moves on almost every look, so a held long-poll still
+derives often. The cost was the per-event lookups in `_classify`: the card, the watch,
+twice the owner of an agent membership, and the names. That is about three queries for
+every foreign event of thirty days.
+
+**Decision:** `items.Lookup` loads per project batch, each in one query: the cards and
+requests the rows name, the human's watches among those cards, the memberships behind
+actors, holders and assignees, and the profiles and humans behind them. Its answers equal
+the single lookups. An id the batch did not name falls back to the single lookup, so a
+missed case costs a query instead of giving a different answer. The read marks are read by
+the batch's seq range instead of a list of every seq. Measured on a local fixture of 450
+card events and 150 chat messages: 1059 queries and ~110 ms became 13 queries and ~20 ms,
+with the same 601 items. A test keeps the count flat as events grow.
+
+**Rejected alternatives:**
+- Caching the derived items per human between answers. Every read rule (§18.1) is applied
+  as things are now, so a cache would need invalidation on every relation the
+  classification reads: more state, for what one batch of queries already makes cheap.
+- Rewriting the classification as SQL. It would duplicate §18.1's rules in a second form
+  that has to agree with the Python one.
+
+**Reason:** the smallest change that removes the per-event cost while keeping the rules in
+one place. Evidence is inferred: measured locally, production to confirm.

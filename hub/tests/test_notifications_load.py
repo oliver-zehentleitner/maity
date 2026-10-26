@@ -13,7 +13,7 @@ from typing import Any
 
 import anyio
 import pytest
-from sqlalchemy import Engine, insert
+from sqlalchemy import Engine, event, insert
 
 from maity_hub import clock
 from maity_hub import tables as t
@@ -230,3 +230,35 @@ def test_a_watch_during_the_hold_wakes_it(make_client: ClientFactory, owner: flo
     waiter.join(timeout=10)
     assert held and [i["target"]["id"] for i in held[0]["items"]] == [theirs["id"]]
     assert time.monotonic() - begun < 4  # woken by the watch, not the 6 s deadline
+
+
+def test_the_derive_reads_a_fixed_number_of_queries_however_many_events(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    """One query per kind of lookup for the whole batch, never one per event: what made
+    the held long-poll cost thousands of round trips per answer."""
+    from maity_hub.notifications import items
+
+    agent = flow.agent(make_client, owner)
+    cards = [owner.post("/projects/maity/tasks", {"title": f"Card {n}"}).json() for n in range(12)]
+
+    def act(batch: list[dict[str, Any]]) -> None:
+        for card in batch:
+            agent.post(f"/projects/maity/tasks/{card['id']}/claim", {})
+            agent.patch(f"/projects/maity/tasks/{card['id']}", {"title": card["title"] + "!"})
+            agent.post(f"/projects/maity/conversations/{agent.id}/messages", {"body": "hi"})
+
+    def queries() -> tuple[int, int]:
+        counted: list[int] = []
+        with migrated.connect() as conn:
+            event.listen(conn, "before_cursor_execute", lambda *a: counted.append(1))
+            where = items.scope(conn, owner.id, "https://hub.example")
+            found = items.derive(conn, where)
+        return len(counted), len(found)
+
+    act(cards[:4])
+    few, few_items = queries()
+    act(cards[4:])
+    many, many_items = queries()
+    assert many_items > few_items * 2  # three times the events, and their items
+    assert many == few
