@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -126,15 +126,22 @@ def test_the_query_count_does_not_grow_with_the_window(owner: flow.Human, migrat
 
 
 def test_it_is_computed_once_an_hour(owner: flow.Human) -> None:
+    """At 23:30 UTC, so the hour later is always the next day: the card is counted on
+    the day it was made, whatever time the test runs (forward only, §18.2)."""
+    now = clock.now()
+    late = datetime(now.year, now.month, now.day, 23, 30, tzinfo=UTC)
+    clock.set_source(lambda: late)
     first = owner.get(PATH).json()
     task(owner)
     again = owner.get(PATH).json()
     assert again == first  # the kept answer
-    later = clock.now() + timedelta(hours=1, seconds=1)
+    later = late + timedelta(hours=1, seconds=1)
     clock.set_source(lambda: later)
     fresh = owner.get(PATH).json()
     assert fresh["as_of"] != first["as_of"]
-    assert fresh["days"][0]["cards_created"] >= 1
+    assert fresh["days"][0]["date"] == later.date().isoformat()  # the new day, empty
+    made = [d for d in fresh["days"] if d["date"] == late.date().isoformat()]
+    assert made and made[0]["cards_created"] >= 1
 
 
 def test_only_the_instance_admin_reads_it_and_the_window_is_bounded(

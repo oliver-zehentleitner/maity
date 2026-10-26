@@ -818,6 +818,10 @@ def scenario(run: Run, page: Page) -> None:
     run.maity(alpha, "ask", "Phone check?", "--to", "human", "--class", "consent")
     page.set_viewport_size({"width": 390, "height": 844})
     page.goto(f"{run.base}/#/p/e2e-alpha/inbox")
+    # The text beside the logo is hidden from sight only: still in the page for a screen reader.
+    expect(page.locator("header .bar > .project")).to_have_count(1)
+    box = page.locator("header .bar > .project").bounding_box()
+    assert box and box["width"] <= 1 and box["height"] <= 1, f"the header's text beside the logo shows at 390 px: {box}"
     # Each view through its tab: the tab row scrolls sideways on its own, so
     # every tab has to stay reachable there.
     tabs = (
@@ -897,6 +901,36 @@ def id_links_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
         view_tab(page, "Board")
     ).to_have_attribute("aria-current", "page")
     run.shot(page, "card-from-id-link")
+    # The link opened the card's panel: its body, notes and history; on a
+    # phone full width above the columns, nothing wider than the screen.
+    panel = page.locator("aside.card-panel")
+    expect(panel).to_be_visible()
+    expect(panel.locator("#card-panel-title")).to_have_text(card_id)
+    expect(panel.locator(".card-history-list li").first).to_contain_text("created the card")
+    run.a11y(page, "board, a card's panel")
+    page.set_viewport_size({"width": 390, "height": 844})
+    box = panel.bounding_box()
+    width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
+    assert box and box["width"] >= 300 and width[0] <= width[1], f"the card's panel at 390 px: {box}, page {width}"
+    run.shot(page, "card-panel-phone")
+    panel.locator("#card-panel-title").press("Escape")
+    expect(page).to_have_url(re.compile(r"#/p/e2e-alpha/board$"))
+    expect(panel).to_have_count(0)
+    expect(page.locator(f'article.card.wanted[data-card="{card_id}"] a.card-open')).to_be_focused()
+    page.set_viewport_size({"width": 1280, "height": 900})
+    # On a phone (touch, 390 px) the card opens by a tap on its title.
+    phone = page.context.browser.new_context(storage_state=page.context.storage_state(),
+                                             viewport={"width": 390, "height": 844}, has_touch=True, is_mobile=True)
+    try:
+        tapping = phone.new_page()
+        tapping.goto(f"{run.base}/#/p/e2e-alpha/board")
+        tapping.locator(f'section.column article.card[data-card="{card_id}"] a.card-open').tap()
+        expect(tapping.locator("aside.card-panel")).to_be_visible()
+        expect(tapping).to_have_url(re.compile(rf"#/p/e2e-alpha/tasks/{card_id}$"))
+        tapping.locator("aside.card-panel").get_by_role("button", name="Close", exact=True).tap()
+        expect(tapping.locator("aside.card-panel")).to_have_count(0)
+    finally:
+        phone.close()
     page.goto(f"{run.base}/#/p/e2e-alpha/inbox/{request_id}")
     current = page.locator("li.entry.current")
     current.locator("textarea").fill("After the release.")
@@ -1703,11 +1737,29 @@ def notifications_step(run: Run, page: Page) -> None:
     bell = page.locator("header button.bell")
     if run.no_notifications:
         # Only a hub without the endpoint is skipped: no bell, and no error on the page.
-        run.step("notifications: this hub has no notifications yet; no bell, the counts from /me")
+        run.step("notifications: this hub has no notifications yet; the bell a link to everything waiting, no counts")
         expect(bell).to_have_count(0)
+        expect(page.locator('header a.bell[href="#/all"]')).to_have_attribute("aria-label", "Notifications")
+        expect(page.locator("header a.chat-button")).to_have_attribute("aria-label", "Chats")
         expect(page.locator("main")).not_to_contain_text("Could not read your notifications")
         no_problems(run, "notifications")
         return
+    # The header's right block: Chat, Notifications, the gear, the profile, in one row also on a phone.
+    order = page.evaluate("Array.from(document.querySelectorAll('header .me > *')).map((e) => e.className)")
+    assert len(order) == 4 and "chat-button" in order[0] and "bell" in order[1], f"header order: {order}"
+    page.set_viewport_size({"width": 390, "height": 844})
+    # One row: every button's vertical middle within the others' height (a pixel of alignment is no wrap).
+    boxes = page.evaluate("Array.from(document.querySelectorAll('header .me > *')).map((e) => { const r = e.getBoundingClientRect(); return [r.top, r.bottom]; })")
+    middles = [(top + bottom) / 2 for top, bottom in boxes]
+    assert all(top <= m <= bottom for top, bottom in boxes for m in middles), f"the header's four buttons wrap at 390 px: {boxes}"
+    page.set_viewport_size({"width": 1280, "height": 900})
+    run.step("chats: the Chat button opens every chat across the projects")
+    page.locator("header a.chat-button").click()
+    expect(page).to_have_url(re.compile(r"#/chats$"))
+    expect(page.locator("main section.view-chats h2")).to_have_text("Chats")
+    run.a11y(page, "chats across projects")
+    page.goto(f"{run.base}/#/p/e2e-alpha/inbox")
+    expect(page.locator("main section.view-inbox")).to_be_visible()
     run.step("notifications: the owner opens the bell, reads the list, closes it with Escape")
     bell.click()
     panel = page.locator("header .bell-panel")

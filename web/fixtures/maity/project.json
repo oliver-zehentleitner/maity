@@ -22,7 +22,8 @@
     "steward_writes": "cards_only",
     "lease_seconds": 7200,
     "signing": "optional",
-    "badge": "off"
+    "badge": "off",
+    "keep_the_why": "required"
   },
   "absence": null,
   "settings": {

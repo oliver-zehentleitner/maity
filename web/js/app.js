@@ -84,6 +84,7 @@ window.Maity = window.Maity || {};
     const parts = window.location.hash.replace(/^#\/?/, "").split("/").filter(Boolean).map(decodeURIComponent);
     if (!parts.length) return { scope: null };
     if (parts[0] === "notifications") return { scope: "notifications" };
+    if (parts[0] === "chats") return { scope: "chats" };
     // The login page, always reachable (docs/api.md §16.7); signed in, the root.
     if (parts[0] === "login") return { scope: "login" };
     if (parts[0] === "all") return { scope: "all" };
@@ -128,6 +129,34 @@ window.Maity = window.Maity || {};
       h("img", { class: "brand-lockup brand-dark", src: "brand/maity-lockup-dark.svg", alt: "Maity", width: "94", height: "28" }));
   }
 
+  // Light, dark, or as the system has it; per browser (js/theme.js). The
+  // header's menu is for pages without a session (the maintainer's
+  // instruction): signed in, the theme is chosen in Your account.
+  const THEME_WORDS = { system: "System", light: "Light", dark: "Dark" };
+  function themeMenu() {
+    if (!M.theme) return null;
+    const theme = M.menuButton({
+      label: "Theme: " + THEME_WORDS[M.theme.get()],
+      listLabel: "Theme",
+      class: "theme-menu",
+      face: M.icons.theme(M.theme.get(), 18),
+      items: () => M.theme.THEMES.map((t) => ({
+        label: THEME_WORDS[t],
+        checked: t === M.theme.get(),
+        onSelect: () => {
+          M.theme.set(t);
+          clear(theme.button);
+          append(theme.button, M.icons.theme(t, 18));
+          theme.button.setAttribute("aria-label", "Theme: " + THEME_WORDS[t]);
+          theme.button.setAttribute("title", "Theme: " + THEME_WORDS[t]);
+        },
+      })),
+    });
+    return h("span", { class: "me" }, theme.el);
+  }
+  M.themeMenu = themeMenu;
+  M.THEME_WORDS = THEME_WORDS;
+
   function stateBadge(state, note) {
     return h("span", { class: "state state-" + state, title: note || "" }, STATE_LABELS[state] || state);
   }
@@ -139,7 +168,8 @@ window.Maity = window.Maity || {};
     document.title = "Sign in · Maity";
     append(clear(document.getElementById("header")), h("div", { class: "bar" },
       brandTitle(),
-      M.api.source === "fixtures" ? h("span", { class: "source" }, "Fixtures") : null));
+      M.api.source === "fixtures" ? h("span", { class: "source" }, "Fixtures") : null,
+      themeMenu()));
     const handle = h("input", { id: "login-handle", name: "handle", autocomplete: "username", required: true });
     const password = h("input", { id: "login-password", name: "password", type: "password", autocomplete: "current-password", required: true });
     const status = statusLine();
@@ -163,7 +193,10 @@ window.Maity = window.Maity || {};
     h("label", { for: "login-password" }, "Password"), password,
     h("button", { type: "submit" }, "Sign in"),
     status.el);
-    append(clear(main), form);
+    // A code from another device or a link by mail, as the hub offers them
+    // (js/device-sign-in.js), on this page's own timers.
+    append(clear(main), form,
+      M.deviceSignIn ? M.deviceSignIn.loginOptions((ms, fn) => { timers.push(window.setInterval(fn, ms)); }, () => render()) : null);
   }
 
   async function logout() {
@@ -370,6 +403,7 @@ window.Maity = window.Maity || {};
     if ("memory" in ctx.project && M.projectSetup) append(panel, memoryPanel(ctx));
     // Humans only, as every policy field (§2.3 ʰ); where the hub knows it.
     if (humanAdmin && ctx.project.policy && "badge" in ctx.project.policy) append(panel, badgeForm(ctx, save));
+    if (humanAdmin && ctx.project.policy && "keep_the_why" in ctx.project.policy) append(panel, keepTheWhyForm(ctx, save));
     // Only on a hub with group chats: without them there is no closed one.
     if (ctx.canAdmin && M.groupChat) {
       const slot = h("div", { class: "remove-reported-slot" });
@@ -594,6 +628,38 @@ window.Maity = window.Maity || {};
   // the badge as the hub serves it.
   const BADGES = [["off", "Off: no badge is served"], ["members", "Members: how many humans and agents"],
     ["agents_online", "Agents online: how many agents are online now"]];
+  // The Keep the Why commitment (docs/api.md §6.23): required, the hub
+  // makes every agent confirm it and every code report name its why;
+  // optional, nobody is held to it. Without the memory provider it can
+  // only be optional, and the form says why instead of offering it.
+  function keepTheWhyForm(ctx, save) {
+    const current = ctx.project.policy.keep_the_why;
+    const provider = ctx.project.memory && ctx.project.memory.provider;
+    const off = provider === "none";
+    const select = h("select", { id: "ktw-policy-select", disabled: off ? true : null },
+      [["required", "Required: every agent confirms it, every code report names its why"], ["optional", "Optional: nobody is reminded"]]
+        .map(([v, l]) => h("option", { value: v, selected: v === current }, l)));
+    select.value = current;
+    const reason = h("input", { id: "ktw-policy-reason", required: true, placeholder: "Why it changes (logged)", disabled: off ? true : null });
+    return h("form", {
+      class: "inline-form ktw-policy-form",
+      onsubmit: (e) => {
+        e.preventDefault();
+        if (off || select.value === current) return;
+        if (!reason.value.trim()) { reason.focus(); return; }
+        save({ policy: { keep_the_why: select.value }, reason: reason.value.trim() }, "Keep the Why commitment");
+      },
+    },
+    h("h2", { class: "panel-title" }, "Keep the Why commitment"),
+    h("p", { class: "hint" }, off
+      ? "This project has no memory provider, so Keep the Why stays optional. Choose Keep the Why as the memory to require it."
+      : "Required: each agent instance confirms at its resume that it uses Keep the Why, is reminded once after 30 minutes, "
+        + "and its owner is told 30 minutes later; a code report names the entry that keeps its why, or says why there is none."),
+    h("label", { for: "ktw-policy-select" }, "Keep the Why"), select,
+    h("label", { for: "ktw-policy-reason" }, "Reason"), reason,
+    h("button", { type: "submit", disabled: off ? true : null }, "Change"));
+  }
+
   function badgeForm(ctx, save) {
     const current = ctx.project.policy.badge;
     const select = h("select", { id: "badge-select" }, BADGES.map(([v, l]) => h("option", { value: v, selected: v === current }, l)));
@@ -774,6 +840,17 @@ window.Maity = window.Maity || {};
     else if (fresh) { const me = header.querySelector(".me"); if (me) me.insertBefore(fresh, me.firstChild); }
   }
 
+  // The Chat button follows the counts too, keeping the focus if it had it.
+  function renderChat(ctx) {
+    const old = document.getElementById("header").querySelector("a.chat-button");
+    if (!old) return;
+    const focused = document.activeElement === old;
+    const fresh = M.notify.chatButton(ctx);
+    old.parentNode.insertBefore(fresh, old);
+    old.remove();
+    if (focused) fresh.focus();
+  }
+
   // The counts changed: only the switcher is replaced, so an open State &
   // absence panel and the tab row's scroll position stay as they are.
   function renderSwitcher(ctx) {
@@ -807,25 +884,9 @@ window.Maity = window.Maity || {};
         ctx.me.instance_admin ? { label: "Instance administration", href: "#/admin" } : null,
       ].filter(Boolean),
     });
-    // Light, dark, or as the system has it; per browser (js/theme.js).
-    const THEME_WORDS = { system: "System", light: "Light", dark: "Dark" };
-    const theme = M.theme ? M.menuButton({
-      label: "Theme: " + THEME_WORDS[M.theme.get()],
-      listLabel: "Theme",
-      class: "theme-menu",
-      face: M.icons.theme(M.theme.get(), 18),
-      items: () => M.theme.THEMES.map((t) => ({
-        label: THEME_WORDS[t],
-        checked: t === M.theme.get(),
-        onSelect: () => {
-          M.theme.set(t);
-          clear(theme.button);
-          append(theme.button, M.icons.theme(t, 18));
-          theme.button.setAttribute("aria-label", "Theme: " + THEME_WORDS[t]);
-          theme.button.setAttribute("title", "Theme: " + THEME_WORDS[t]);
-        },
-      })),
-    }) : null;
+    // Sign in another device (§2.6.2) where the hub's machine form has it.
+    let deviceCodes = false;
+    M.api.hubHas("POST", "/auth/device-codes").then((yes) => { deviceCodes = yes; }, () => {});
     // The human: their picture, the account, signing out.
     const profile = M.menuButton({
       label: "Your profile: " + ctx.me.display_name,
@@ -835,22 +896,25 @@ window.Maity = window.Maity || {};
         { label: "Profile", href: "#/account" },
         { label: "Picture", href: "#/account/picture" },
         { label: "Preferences", href: "#/account/preferences" },
+        { label: "Theme", href: "#/account/theme" },
+        deviceCodes ? { label: "Sign in another device", href: "#/account/sign-in-device" } : null,
         { label: "Change password", href: "#/account" },
         { label: "Linked accounts", disabled: true, why: "later" },
         { separator: true },
         { label: "Sign out", onSelect: logout },
-      ],
+      ].filter(Boolean),
     });
     append(header,
       h("div", { class: "bar" },
         brandTitle(),
         ctx.scope === "project"
           ? [projectMark(ctx.slug, ctx.project.name, ctx.project), h("span", { class: "project" }, ctx.project.name)]
-          : h("span", { class: "project" }, { new: "New project", account: "Your account", runners: "Runners", "admin-users": "Users of this hub", "instance-admin": "Instance administration", observe: "Read along" }[ctx.scope] || "Everything waiting for you"),
+          : h("span", { class: "project" }, { new: "New project", account: "Your account", runners: "Runners", "admin-users": "Users of this hub", "instance-admin": "Instance administration", observe: "Read along", chats: "Chats" }[ctx.scope] || "Everything waiting for you"),
         M.api.source === "fixtures"
           ? h("span", { class: "source", title: "Data from web/fixtures/, not from the hub. Changes are kept in this tab only." }, "Fixtures")
           : null,
-        h("span", { class: "me" }, M.notify.bell(ctx, () => ctx.refreshCounts()), theme ? theme.el : null, settings.el, profile.el)),
+        // Chat, Notifications, the gear, the profile: in one row on a phone too.
+        h("span", { class: "me" }, M.notify.chatButton(ctx), M.notify.bell(ctx, () => ctx.refreshCounts()), settings.el, profile.el)),
       // The projects, and at their right, apart, this project's state and
       // the owner's absence with the settings that change them.
       h("div", { class: "switcher-row" },
@@ -944,6 +1008,7 @@ window.Maity = window.Maity || {};
         const [fresh] = await Promise.all([M.api.get("/me"), M.notify.read().catch(() => null)]);
         ctx.projects = fresh.projects;
         renderSwitcher(ctx);
+        renderChat(ctx);
         renderBell(ctx);
         renderTabCounts(ctx);
         document.title = M.notify.title(baseTitle);
@@ -1161,10 +1226,10 @@ window.Maity = window.Maity || {};
     const item = where.scope === "project" ? NAV.find((n) => n.route === where.route) : null;
     renderHeader(ctx, (item && item.current) || where.route);
     const empty = where.scope === "all" && !ctx.projects.length;
-    const known = ["all", "new", "account", "runners", "admin-users", "instance-admin", "observe", "notifications"].includes(where.scope)
+    const known = ["all", "new", "account", "runners", "admin-users", "instance-admin", "observe", "notifications", "chats"].includes(where.scope)
       || (item && own(M.views, item.view || item.route) && offered(ctx, item));
     let viewName = "unknown";
-    if (["all", "new", "account", "runners", "admin-users", "instance-admin", "observe", "notifications"].includes(where.scope)) viewName = where.scope;
+    if (["all", "new", "account", "runners", "admin-users", "instance-admin", "observe", "notifications", "chats"].includes(where.scope)) viewName = where.scope;
     else if (known) viewName = (item && item.current) || where.route;
     const root = h("section", { class: "view view-" + viewName });
     try {
@@ -1194,6 +1259,8 @@ window.Maity = window.Maity || {};
         if (elsewhere) append(root, elsewhere);
       } else if (where.scope === "notifications") {
         await M.waiting.full(ctx, root);
+      } else if (where.scope === "chats") {
+        await M.views.chats(ctx, root);
       } else if (where.scope === "observe") {
         await M.views.observe(ctx, root, where);
       } else if (where.scope === "new") {
@@ -1223,6 +1290,7 @@ window.Maity = window.Maity || {};
     if (empty) label = "No projects yet";
     else if (where.scope === "all") label = "All projects";
     else if (where.scope === "notifications") label = "Notifications";
+    else if (where.scope === "chats") label = "Chats";
     else if (where.scope === "new") label = "New project";
     else if (where.scope === "account") label = "Your account";
     else if (where.scope === "runners") label = "Runners";

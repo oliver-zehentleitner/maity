@@ -119,3 +119,29 @@ human's curiosity.
 included, as the bell did at first: one click on the alert would confirm
 the sign-in.
 
+
+## A device code is followed with wait=0 every 2 seconds on both devices, not with its long-poll
+
+**Id:** e977fe7b-e4f3-4214-a498-8117180a8265
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.6.2 (`GET /auth/device-codes/{id}` and `GET /auth/device-login`, `?wait=0–55`); the dashboard's implementation, 2026-10-25
+**Revisit when:** a code's 5 minutes need a quicker answer than 2 seconds, or the hub limits how often these are read
+
+The signed-in device reads `GET /auth/device-codes/{id}?wait=0` and the
+new device `GET /auth/device-login?wait=0` every 2 seconds, one read at a
+time, on the page's own timers; a countdown by the hub's clock runs
+beside them. The reads stop at a terminal state, and the timers end with
+the page, the login page's included.
+
+**Reason:** a held request would outlive the page that made it: leaving
+Sign in another device, or signing in, would leave a 55-second request
+open with nothing to receive it, while the dashboard's timers already
+stop on every navigation. Two seconds is within what a human notices
+while looking from one device to the other, and a code lives 5 minutes.
+
+**Rejected alternative:** the contract's `wait=55`, for the quickest
+answer and fewer reads: it needs cancelling held requests on navigation,
+which the dashboard does nowhere else. The 5-second interval of the event
+feed: noticeably slow while someone holds a phone waiting.

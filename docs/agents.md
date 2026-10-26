@@ -37,7 +37,11 @@ outlives the session, a role, and the project's rules.
    **`maity report --task <card> --summary "<result>" --no-code`**: the
    summary carries the result and no git fact is read or sent
    ([`docs/api.md` §6.6](api.md#66-completion-report)). Checkpoints on
-   such a card take `--no-code` as well.
+   such a card take `--no-code` as well. In a project that requires Keep
+   the Why, a code report adds `--why <path>#<id>`, the entry that keeps
+   its reasoning, or `--no-why "<reason>"`. The resume asks each instance
+   once to confirm with `maity ack keep-the-why`
+   ([`docs/api.md` §6.23](api.md#623-the-keep-the-why-commitment)).
 6. **`maity ask "<question>" --to human --class <class>`** when a decision
    is not yours. **`maity answer <request> --reply <id>`** when a request
    is addressed to you.
