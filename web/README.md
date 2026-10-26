@@ -1340,9 +1340,12 @@ count and newest title; request updates, mentions, cards, agent outages,
 jour fixe, changes and account alerts have separate groups. Message content
 is not shown. The project filter applies to every group.
 
-Unread items are fetched in pages of 50. At most 200 activity rows appear;
-**More notifications** and the bell's **All notifications** link open a
-paginated list. Links use the dashboard's existing target-to-route mapping.
+Unread items are fetched in pages of 50, at most four (the 200 rows the
+list shows), however large the backlog; when more are unread, or more than
+200 rows result, **More notifications** and the bell's **All
+notifications** link open a paginated list. The inbox is drawn first and
+does not wait for this list, which says "Reading what else is new…" until
+it has read; stream events within 0.4 s are one refresh. Links use the dashboard's existing target-to-route mapping.
 Opening a chat marks its newest notification read, moving its conversation
 read mark. Opening a security alert never confirms it; use **This was me**.
 

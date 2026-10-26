@@ -5083,19 +5083,69 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.post = (path, body) => { waitWrites.push([path, body]); return Promise.resolve({}); };
   const waitHost = document.createElement("div");
   const waitCtx = { scope: "all", me: { id: "hum-me" }, refreshCounts: async () => {}, onDispose: (fn) => waitDisposers.push(fn) };
-  const waitingView = await win.Maity.waiting.mount(waitCtx, waitHost, waitRequests, () => waitFilter);
-  expect(waitCalls.length === 5 && waitCalls.every((p) => p.includes("limit=50")) && waitHost.querySelectorAll(".waiting-item").length === 200,
-    "waiting: pages all unread items at50, renders at most200 rows");
+  const waitingView = win.Maity.waiting.mount(waitCtx, waitHost, waitRequests, () => waitFilter);
+  await waitingView.ready;
+  const waitFirst200 = win.Maity.waiting.rows(waitRows.slice(0, 200), waitRequests, "");
+  const waitExpected = Math.min(200, Object.values(waitFirst200).reduce((n, g) => n + g.length, 0));
+  expect(waitCalls.length === 4 && waitCalls.every((p) => p.includes("limit=50") && !p.includes("project=")) && waitHost.querySelectorAll(".waiting-item").length === waitExpected,
+    "waiting: reads at most the 4 pages of 50 the 200 rows need, however many are unread");
   expect(text(waitHost).includes("More notifications") && !text(waitHost).includes("PRIVATE MESSAGE") && !text(waitHost).includes("Duplicate request"),
     "waiting: overflow has a full-list link; message content and duplicate requests are absent");
-  waitFilter = "maity"; waitingView.draw();
-  expect(waitHost.querySelectorAll(".waiting-item").length === 2 && !text(waitHost).includes("Security alert"), "waiting: project filter applies across groups");
+  const waitCallsBefore = waitCalls.length;
+  waitFilter = "maity"; waitingView.draw(); for (let i = 0; i < 8; i++) await tick();
+  expect(waitCalls.length > waitCallsBefore && waitCalls.slice(waitCallsBefore).every((p) => p.includes("&project=maity"))
+    && waitHost.querySelectorAll(".waiting-item").length === 2 && !text(waitHost).includes("Security alert"),
+    "waiting: a project filter reads that project's unread, not a filter over the 200 of all");
   const waitChat = waitHost.querySelectorAll(".waiting-item").find((el) => el.getAttribute("data-notification") === "ntf-w2");
+  expect(text(waitChat).includes("2+ unread"), "waiting: past the 200 a conversation's count is a lower bound, said with a plus");
   waitChat.querySelector("a").click(); await tick();
   expect(JSON.stringify(waitWrites[0]) === JSON.stringify(["/me/notifications/read", { ids: ["ntf-w2"] }]), "waiting: opening a conversation marks its newest item read");
-  waitVersion = 1; win.Maity.notify.changed(); for (let i = 0; i < 8; i++) await tick();
+  // A busy stream: five events in a row are one refresh once they settle.
+  const waitBefore = waitCalls.length;
+  waitVersion = 1; for (let i = 0; i < 5; i++) win.Maity.notify.changed();
+  await tick();
+  expect(waitCalls.length === waitBefore, "waiting: stream events wait to settle before reading again");
+  await new Promise((r) => setTimeout(r, 450)); for (let i = 0; i < 8; i++) await tick();
+  expect(waitCalls.length === waitBefore + 4, "waiting: five stream events are one refresh of at most 4 pages " + (waitCalls.length - waitBefore));
   expect(!text(waitHost).includes("Newest chat"), "waiting: a read update removes the conversation without replacing requests");
   expect(waitPolls <= 1, "waiting: one shared long-poll while browser notifications are off");
+  // A backlog of 1226 unread: the list mounts at once, says it is reading, and stops at 200 rows with the way to the rest.
+  const bigRows = Array.from({ length: 1226 }, (_, i) => ({ id: "ntf-big-" + i, kind: "card", at: "2026-10-24T01:00:00Z", title: "Big " + i,
+    project: { slug: "maity", name: "Maity" }, target: { type: "task", id: "tsk-b" + i } }));
+  const bigCalls = [];
+  let bigHold = null;
+  win.Maity.api.get = (path) => {
+    if (path.startsWith("/me/notifications?unread=true")) {
+      bigCalls.push(path);
+      const cursor = Number(new URLSearchParams(path.split("?")[1]).get("cursor") || 0);
+      const page = { items: bigRows.slice(cursor, cursor + 50), next_cursor: cursor + 50 < bigRows.length ? String(cursor + 50) : null };
+      return bigCalls.length === 1 ? new Promise((resolve) => { bigHold = () => resolve(page); }) : Promise.resolve(page);
+    }
+    if (path.startsWith("/me/notifications?after=")) return new Promise(() => {});
+    return waitGet(path);
+  };
+  const bigHost = document.createElement("div");
+  const bigView = win.Maity.waiting.mount({ scope: "all", me: { id: "hum-me" }, refreshCounts: async () => {}, onDispose: (fn) => waitDisposers.push(fn) },
+    bigHost, [], () => "");
+  expect(bigView && typeof bigView.draw === "function" && text(bigHost).includes("Reading what else is new") && bigCalls.length === 1,
+    "waiting: with a large backlog the list mounts at once and says it is reading");
+  bigHold(); await bigView.ready;
+  expect(bigCalls.length === 4 && bigHost.querySelectorAll(".waiting-item").length === 200 && text(bigHost).includes("Showing 200 activity rows. More notifications")
+    && !text(bigHost).includes("Reading what else is new"), "waiting: 1226 unread are 4 reads and 200 rows with More notifications");
+  // A hub without the route: the reading line goes, nothing else is said.
+  win.Maity.api.get = (path) => (path === "/openapi.json" ? Promise.resolve({ paths: {} })
+    : path.startsWith("/me/notifications?unread=true") ? Promise.reject(new win.Maity.api.ApiError("Not found", 404, path, "not_found", {})) : waitGet(path));
+  win.Maity.api.forgetRoutes(); win.Maity.api.absent.clear();
+  const goneHost = document.createElement("div");
+  const goneView = win.Maity.waiting.mount({ scope: "all", me: { id: "hum-me" }, refreshCounts: async () => {}, onDispose: (fn) => waitDisposers.push(fn) },
+    goneHost, [], () => "");
+  await goneView.ready;
+  expect(!text(goneHost).includes("Reading what else is new") && !goneHost.querySelector(".send-status.failed"), "waiting: a hub without the route clears the reading line, no error");
+  win.Maity.api.forgetRoutes(); win.Maity.api.absent.clear(); win.Maity.notify.state.available = true;
+  // The inbox itself never waits for that list: with the activity read hanging, its requests are on screen.
+  win.Maity.api.get = (path) => (path.startsWith("/me/notifications?unread=true") ? new Promise(() => {}) : waitGet(path));
+  await go("#/p/maity/board"); await go("#/p/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+  expect(main.querySelectorAll("li.entry").length > 0 && text(main).includes("Reading what else is new"), "waiting: the inbox is drawn while the activity is still being read");
   waitDisposers.forEach((fn) => fn());
   if (waitRelease) waitRelease({ items: [], next_after: "waiting-head" });
   await tick();
