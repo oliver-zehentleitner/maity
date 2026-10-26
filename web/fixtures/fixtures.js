@@ -3968,22 +3968,20 @@ window.MAITY_FIXTURES = {
     "items": [
       {
         "actor": null,
-        "at": "2026-10-22T13:20:00Z",
-        "id": "ntf-4241",
-        "kind": "agent",
-        "project": {
-          "name": "Maity",
-          "slug": "maity"
-        },
-        "read": false,
+        "at": "2026-10-22T13:19:00Z",
+        "id": "ntf-acr-8",
+        "kind": "inbox",
+        "open_matter": false,
+        "project": null,
+        "read": true,
+        "record": "acr-8",
         "redacted": false,
-        "seq": 4241,
         "target": {
-          "id": "plc-0003",
-          "type": "placement"
+          "id": "hum-newcomer",
+          "type": "registration"
         },
-        "title": "agent-c stopped: quota",
-        "url": "https://maity.team/#/p/maity/agents"
+        "title": "newcomer waits for approval",
+        "url": "https://maity.team/#/admin"
       },
       {
         "actor": null,
@@ -4094,30 +4092,6 @@ window.MAITY_FIXTURES = {
         },
         "title": "Shop Dev asks: Which payment provider?",
         "url": "https://maity.team/#/p/sample/inbox"
-      },
-      {
-        "actor": {
-          "avatar_url": null,
-          "display_name": "Agent B",
-          "member_id": "agt-b"
-        },
-        "at": "2026-10-22T12:41:12Z",
-        "id": "ntf-4231",
-        "kind": "card",
-        "project": {
-          "name": "Maity",
-          "slug": "maity"
-        },
-        "read": true,
-        "reason": "creator",
-        "redacted": false,
-        "seq": 4231,
-        "target": {
-          "id": "tsk-0004",
-          "type": "task"
-        },
-        "title": "tsk-0004 Hub: credential exchange and storage: status review",
-        "url": "https://maity.team/#/p/maity/board?task=tsk-0004"
       }
     ],
     "settings": {
@@ -4128,14 +4102,10 @@ window.MAITY_FIXTURES = {
         },
         "enabled": false,
         "kinds": {
-          "agent": true,
-          "card": false,
           "chat": true,
           "inbox": true,
-          "jour_fixe": true,
           "mention": true,
-          "security": true,
-          "ticker": false
+          "security": true
         }
       },
       "email": {
@@ -4155,10 +4125,6 @@ window.MAITY_FIXTURES = {
         "inbox",
         "chat",
         "mention",
-        "card",
-        "agent",
-        "ticker",
-        "jour_fixe",
         "security"
       ],
       "mail_available": false
