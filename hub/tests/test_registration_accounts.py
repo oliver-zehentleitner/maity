@@ -605,11 +605,10 @@ def test_a_waiting_registration_is_the_admins_inbox_item_until_decided(
     assert item["target"] == {"type": "registration", "id": done.human_id}
     assert (item["read"], item["project"]) == (False, None)
     assert bell["counts"]["inbox"] == 1 and bell["by_project"] == {}
-    admin.post("/me/notifications/read", {"ids": [item["id"]]})
-    admin.post("/me/notifications/read", {"up_to": bell["next_after"]})  # mark all read
-    marked = admin.get("/me/notifications").json()
-    assert marked["counts"]["inbox"] == 1
-    assert [i["read"] for i in marked["items"] if i["id"] == item["id"]] == [False]
+    for body in ({"ids": [item["id"]]}, {"up_to": bell["next_after"]}):  # "mark all read"
+        assert admin.post("/me/notifications/read", body).json()["counts"]["inbox"] == 1, body
+        marked = admin.get("/me/notifications").json()
+        assert [i["read"] for i in marked["items"] if i["id"] == item["id"]] == [False], body
     assert admin.post(f"{ADMIN}/{done.human_id}/approve").status_code == 200
     decided = admin.get("/me/notifications").json()
     assert decided["counts"]["inbox"] == 0
