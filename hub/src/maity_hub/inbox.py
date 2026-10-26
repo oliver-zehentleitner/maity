@@ -96,6 +96,10 @@ def originally_addressed(conn: Connection, request: Any, mine: Membership) -> bo
 
 
 def is_asker(request: Any, mine: Membership) -> bool:
+    """A notice the hub files on an agent's behalf has no asker who reads it: not the
+    agent it names, nor any of its instances (§7)."""
+    if getattr(request, "filed_by", None) == "hub":
+        return False
     return mine.id in (request.asked_by, request.on_behalf_of)
 
 
