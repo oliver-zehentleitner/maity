@@ -209,6 +209,10 @@ def _error_from(exc: urllib.error.HTTPError, what: str) -> HubError:
     if code == "invalid":
         text += _field_reasons(details.get("fields"))
         text += _ambiguous(details.get("mentions"))
+    for key, label in (("reason", "reason"), ("scope", "needs")):
+        value = details.get(key)  # a code, never a value echoed back (`_field_reasons`)
+        if isinstance(value, str) and _TOKEN.match(value):
+            text += f"\n  {label}: {value}"
     err = HubError(text, code=code, status=exc.code)
     err.details = details
     retry_after = exc.headers.get("Retry-After") if exc.headers else None
