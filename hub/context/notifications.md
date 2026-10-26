@@ -95,7 +95,9 @@ of them took the pool from every other call, the health probe included.
 **Decision:** between two looks, a held long-poll reads `listing.stamp`. That is a few
 aggregates: the memberships, each project's highest event, the account records and their
 reads, the event items' read marks and the chat marks; the project heads count only
-the event kinds that can make an item, so a card's churn wakes no held long-poll. The
+the event kinds that can make an item, so a card's churn wakes no held long-poll. That
+filter needs its own index, `(project_id, kind, seq)`: with only `(project_id, seq)`
+the head reads every event row of the project on every look. The
 full answer runs only when the
 stamp differs; a read mark counts as movement. Full answers and marks pass a semaphore of
 four per process. The marks are
