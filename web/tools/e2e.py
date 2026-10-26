@@ -2196,7 +2196,7 @@ def members_step(run: Run, page: Page) -> None:
     # Reports to: the agent under the owner, at once in the organisation.
     manage.locator("select").nth(1).select_option(label="Owner (@owner)")
     manage.get_by_role("button", name="Save changes", exact=True).click()
-    expect(page.locator("main section.view-members .send-status")).to_contain_text("Saved for E2E Agent: reports to.")
+    expect(page.locator("main section.view-members > .send-status")).to_contain_text("Saved for E2E Agent: reports to.")
     view_tab(page, "Organisation").click()
     owner_node = page.locator(".org-tree > li", has=page.locator(".org-node strong", has_text="Owner"))
     expect(owner_node.locator("ul .org-node")).to_contain_text("E2E Agent")
@@ -2206,12 +2206,12 @@ def members_step(run: Run, page: Page) -> None:
     owner_manage = page.locator("tr.member-manage")
     owner_manage.locator("select").nth(1).select_option(label="E2E Agent (@e2e-agent)")
     owner_manage.get_by_role("button", name="Save changes", exact=True).click()
-    expect(page.locator("main section.view-members .send-status")).to_contain_text("That would close a circle")
+    expect(page.locator("main section.view-members > .send-status")).to_contain_text("That would close a circle")
     humans.get_by_role("button", name="Done managing Owner").click()
     row.get_by_role("button", name="Manage E2E Agent").click()
     manage.locator("select").nth(1).select_option("")
     manage.get_by_role("button", name="Save changes", exact=True).click()
-    expect(page.locator("main section.view-members .send-status")).to_contain_text("Saved for E2E Agent: reports to.")
+    expect(page.locator("main section.view-members > .send-status")).to_contain_text("Saved for E2E Agent: reports to.")
     # On a phone each row is a card: Manage and Remove are on screen, not in a sideways scroll.
     page.set_viewport_size({"width": 360, "height": 780})
     for button in (row.get_by_role("button", name=re.compile("^(Manage|Done managing) E2E Agent$")),
