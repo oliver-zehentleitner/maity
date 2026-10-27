@@ -841,7 +841,7 @@ def scenario(run: Run, page: Page) -> None:
         expect(page.locator(f"main section.view-{view}")).to_be_visible()
         if view == "inbox":
             expect(page.locator("li.entry.current")).to_contain_text("Phone check?")
-        expect(page.locator("main .send-status.failed, main .error")).to_have_count(0)
+        expect(page.locator("main .send-status.failed, main .error, main .page-failed")).to_have_count(0)
         width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
         assert width[0] <= width[1], f"#/p/e2e-alpha/{view} is {width[0]} px wide at {width[1]} px"
         # The views row is wider than 390 px; it shows a fade where more tabs are.
