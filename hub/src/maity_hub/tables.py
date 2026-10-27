@@ -1466,6 +1466,9 @@ address_lock = Table(
     "address_lock",
     metadata,
     Column("address", String(254), primary_key=True),
+    **MYSQL_TABLE,
+)
+
 # Mail waiting for the worker (docs/api.md §16.2, §18.5, §18.7): written in the
 # transaction that decides it. `kind` is the budget kind. `not_before` is when the row is
 # next due, and while it is `sending` the deadline of the claim. A row that left the
