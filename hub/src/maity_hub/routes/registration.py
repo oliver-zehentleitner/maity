@@ -174,7 +174,9 @@ def _store(
             registration.DROPPED.add()
             return
         if _has_account(conn, normalized):
-            registration_mail.send(conn, kind="already_registered", to=given)
+            registration_mail.send(
+                conn, kind="already_registered", to=given, language=language, hub=hub
+            )
             return
         lock_address(conn, normalized)
         _void_earlier(conn, normalized, source, now)
@@ -195,7 +197,7 @@ def _store(
                 expires_at=now + registration.PENDING_FOR,
             )
         )
-        registration_mail.send(conn, kind="register_link", to=given, pending_id=pending_id)
+        registration_mail.send(conn, kind="register_link", to=given, pending_id=pending_id, hub=hub)
 
 
 def _has_account(conn: Connection, normalized: str) -> bool:
