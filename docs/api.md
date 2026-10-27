@@ -445,9 +445,17 @@ MAITY-HMAC-V1
 <query: pairs sorted bytewise by key, repeated keys in request order, each key=value RFC 3986 encoded, key= for an empty value, joined by &; empty line if none. A `+` is a literal plus (RFC 3986), never a space: a space is `%20`>
 <Maity-Timestamp>
 <Maity-Nonce>
-<Maity-On-Request: the request id as sent; empty line if the header is absent (§2.3)>
+<Maity-On-Request: the request id as sent — this line only when the header is sent (§2.3)>
 <sha256 hex of the raw body bytes; of the empty body: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855>
 ```
+
+Without `Maity-On-Request` the string has seven lines, the body hash
+last; with it, eight. The line is not there as an empty line when the
+header is absent, so a request without it signs exactly as before the
+header existed, and hub and CLI releases need not ship together. Adding
+or stripping the header changes the number of lines, and no field can
+hold a newline, so a signature never verifies for the request with the
+header changed.
 
 `Maity-Signature = hex(HMAC-SHA256(key, canonical))` with `key` = the
 raw 32 bytes of `sha256(<secret>)` as defined above — the same value the
