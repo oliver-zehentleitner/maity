@@ -373,28 +373,30 @@ too.
    notes, reports and older closed cards from the hub. Matching fields and
    closed cards outside the usual window are labelled. **Clear search**
    restores the board while keeping the column, member and area filters.
-3. **Agents** (`#/p/<slug>/agents`): profile, owner, role, reports-to,
-   areas, capabilities, harness and model, session, presence as the hub
-   computes it, paused reason. An owner or admin pauses an agent and
-   clears the pause; the form says in one line what a human's pause does
-   (`docs/api.md` §5.3): the agent is told at once and gets no new work,
-   and can still park its work and talk. An owner or admin also reads and
-   edits the agent's **briefing** (Markdown, at most 16,384 characters, `PATCH
-   …/members/{id}`), which the agent gets in its resume packet; the
-   editor is offered only where the hub's member view has the field. The
-   text is sent as typed (only line ends made the same; Markdown keeps its
-   spaces), and where the hub says who wrote it, "Set by @handle" follows.
-   This is the one briefing editor; Members → Manage links here. On an
-   agent you own, where the hub's member view has `owner_preferences`, a
-   switch **Give my preferences to this agent** (`PATCH …/members/{id}`
-   `{owner_preferences}`, §19.4): its resume carries your current
-   preferences next to its briefing, whatever the project's setting, and
-   no other member sees them.
-   Credentials are shown as id, client, dates and a
-   revoke button, never their value; "never resumed" and revoked ones
-   are visible.
+3. **Agents** are in **Members** (no tab of their own; `#/p/<slug>/agents`
+   leads there, `#/p/<slug>/agents/join` with the join panel open). An
+   agent's row opens with its membership form, its **briefing** (Markdown,
+   at most 16,384 characters, `PATCH …/members/{id}`, offered only where
+   the hub's member view has the field; sent as typed, "Set by @handle"
+   where the hub says who wrote it), **Give my preferences to this agent**
+   on an agent you own (where the member view has `owner_preferences`,
+   §19.4), its credentials (id, client, dates, Revoke, never their value;
+   "never resumed" and revoked ones visible), and its pause: an owner or
+   admin pauses an agent and clears the pause, the form saying in one
+   line what a human's pause does (`docs/api.md` §5.3). On an agent you
+   own, the **Team rulebook** (§6.18; nobody else sees it, an admin
+   included): at most how many instances (1–16, the active count beside
+   it), how cards assigned to the team reach an instance, the lead
+   instance (needed while cards or wakes go to the lead; one revoked
+   since stays chosen, marked revoked), which instance an event for the
+   team wakes, and whether one instance may review another's work; only
+   what changed is sent. A join refused with `instance_quota` links
+   there (`#/p/<slug>/members/<id>/rulebook`: the row open, at the
+   limit). Without
+   members:admin a human's own agents open as **Details** with their
+   credentials and the preferences switch.
    **Where they run** (`js/placements.js`, `docs/api.md` §15.5–§15.7),
-   after the agents' grid where the hub has placements: one row per
+   in Members after the agents' table where the hub has placements: one row per
    active placement — the agent, the runner (and target), harness, model
    and mode, what is wanted (`desired`), what the runner last reported
    (state and reason in words, a crash loop with its count, a retry time,
@@ -600,13 +602,22 @@ too.
      there stay as links. An upload or a delete that met it first says
      "attachments are not set up on this instance" in place, and Project
      settings says so too, beside the storage line.
-7. **Join an agent**, inside **Agents** (owner and admin; no tab of its
-   own: `#/p/<slug>/agents/join`, and the old `#/p/<slug>/join`, open it
-   there). **+ Join an agent** in Agents' title row opens a panel under it
+7. **Add an agent**, inside **Members** (owner and admin; and, as **Add
+   my agent**, a human member while the project's `member_agents` is on,
+   docs/api.md §3.1 "Bringing your own agent": the panel then offers trust
+   member or guest, the roles coder, reviewer, tester and designer, and a
+   briefing, the agent reporting to its owner; the member's own open joins
+   only, with Revoke; "n of max agents of yours" beside the button, which
+   is off at the limit; the hub's `member_join_limit` and
+   `member_agents_max` said in words with the field; Project settings let
+   a human admin turn it on or off and set how many, with a reason; no tab of its
+   own: `#/p/<slug>/members/join`, and the old `#/p/<slug>/agents/join`
+   and `#/p/<slug>/join`, open it there). **+ Add an agent** at the head of
+   the agents' table opens a panel under it
    (a project without agents opens it at once); the panel has its own
    Close, and Cancel. The title's count line says how many agents, online
-   and open joins there are. An open join is an **open seat** at the front
-   of the agents' grid (dashed, its profile, role, expiry and id, Revoke);
+   and open joins there are. An open join is an **open seat** under the
+   agents' table (dashed, its profile, role, expiry and id, Revoke);
    used, expired, burned and revoked joins are folded at the view's end
    under **Earlier joins**. Once a join is made, the panel shows its line
    in the form's place, with **Join another** and **Done**. The panel creates a join
@@ -964,7 +975,7 @@ once the project has a repository, and that the Maity badge also
 switches the project's public badge on. A hub whose machine form does
 not name `memory` and `setup` for `POST /projects` would refuse them, so
 there they are neither shown nor sent. The creator becomes the
-owner. On `201` the page opens the new project's Agents view, whose empty
+owner. On `201` the page opens the new project's Members, whose empty
 state offers **Join an agent**. The hub's `invalid` answer is shown under
 each field it names in `details.fields` (`slug: taken`,
 `repository.url: not_a_configured_forge`, …); a refused setup option is
@@ -1003,7 +1014,7 @@ optional or required, with a reason. Before it becomes required, the
 panel reads every agent's credentials and lists those last used as a
 bearer token (`last_used_via`, §10): they would be refused with
 `signature_required` until they sign, and the switch then needs an
-explicit confirmation. The Agents view shows on each credential how it
+explicit confirmation. An agent's row in Members shows on each credential how it
 was last used, signed or as a bearer token.
 
 **Project memory** (`docs/api.md` §6.1, §6.21) is shown in the same
@@ -1156,7 +1167,7 @@ fails while the bundle is stale.
     someone else caused them;
   - a chat event of the open conversation fetches its new messages
     (`?after=<cursor>`).
-- Presence emits no event; the Agents view re-reads the members every
+- Presence emits no event; Members re-reads the members every
   30 seconds and updates presence and "last seen" in place.
 
 ## Checks
@@ -1269,7 +1280,7 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     a frozen record without any editing, and the hub refuses an edit
     (`invalid_transition`);
 13. **Signing**, where the hub has `policy.signing`: the agent makes one
-    call with its bare bearer credential; the Agents view shows it, and the
+    call with its bare bearer credential; its row in Members shows it, and the
     switch to required lists the agent and refuses to send without the
     confirmation; once required, the bearer call answers 403
     `signature_required` while the CLI's signed calls go on; then back to
@@ -1357,7 +1368,7 @@ web/
 ├── js/board-edit.js  managing cards: new card, the allowed moves, assign
 ├── js/board.js       (2) board
 ├── js/card-panel.js  an opened card: body, links, notes, history
-├── js/agents.js      (3) agents and presence
+├── js/agents.js      an agent's credentials and briefing for its row in Members; #/agents leads there
 ├── js/members.js     (4) members: humans and agents, managed by an admin
 ├── js/org.js         (5) organisation tree
 ├── js/project-message.js message the project (§8.4)
