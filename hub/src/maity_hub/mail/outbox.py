@@ -121,6 +121,9 @@ def send_due(engine: Engine, env: MailEnvironment, secret_key: bytes | None) -> 
                     # Over the budget: security mail waits for the next hour (§16.2).
                     _release(conn, row.id, clock.now() + timedelta(minutes=5))
                 continue
+            if _disabled_address(conn, row):
+                _finish(conn, row.id, "dropped")  # no further mail to it (§18.7)
+                continue
         outcome = smtp.send(resolved, _message(resolved, row))
         with engine.begin() as conn:
             sent += _settle(conn, row, outcome)
@@ -147,6 +150,24 @@ def _over_budget(conn: Connection, row: Any, budget: int) -> bool:
         )
     ).scalar_one()
     return _sent_last_hour(conn, row.kind) + int(in_flight) >= budget
+
+
+def _disabled_address(conn: Connection, row: Any) -> bool:
+    """Whether the mail goes to a human's address that three hard failures disabled, as
+    it stands now (§18.7): decided before each delivery, so what was queued earlier and
+    the rest of a batch after the third failure stop too. The link to set the same
+    address again goes to the pending address and is the way back, so it passes."""
+    if row.human_id is None:
+        return False
+    found = conn.execute(
+        select(t.notification_settings).where(t.notification_settings.c.human_id == row.human_id)
+    ).first()
+    return (
+        found is not None
+        and found.address_status == "disabled"
+        and found.address == row.recipient
+        and found.pending_address != row.recipient
+    )
 
 
 def _release(conn: Connection, row_id: int, not_before: datetime) -> None:
