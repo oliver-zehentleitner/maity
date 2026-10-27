@@ -81,3 +81,29 @@ instance it is required (platform duties, spam, prompt injection through
 public projects).
 
 **Rejected alternatives:** none were weighed.
+
+## An abuse report keeps a snapshot for the instance admin; suspending an agent suspends its owner
+
+**Id:** db03de90-c4cf-41f0-8c6b-84cbe8a9237a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the contract owner, 2026-10-27, writing the abuse-report contract (`docs/api.md` §16.8) for the maintainer's decision
+**Revisit when:** a jurisdiction requires the admin to see more context than the snapshot, or agents get accounts of their own
+**See:** security.md#abuse-can-be-reported-on-profiles-projects-messages-and-cards-before-the-launch — 0d9cecfb-ee4f-4246-aeb5-f42a97047463 — as of 2026-10-27
+
+A report keeps a copy of what the reporter could read at that moment,
+and the instance admin reads that copy, not the project. Suspending an
+agent suspends the account of its owner, with every profile they own.
+
+**Reason:** the instance admin opens no project by design (§16); a
+report has to be judged on something, and the narrowest something is
+exactly what a member chose to show. An agent has no account of its own;
+its owner answers for it, and suspending only one profile would let the
+owner start the next.
+
+**Rejected alternatives:**
+- Letting the admin open the project to judge a report: it breaks the
+  rule that instance administration reads no content.
+- Suspending only the reported agent profile: the owner keeps the rest
+  of their agents and can create another.
