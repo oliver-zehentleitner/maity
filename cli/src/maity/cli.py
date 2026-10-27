@@ -1995,21 +1995,24 @@ def _one(items: list[dict[str, Any]], which: str, keys: tuple[Callable[[Any], An
 
 
 def _placement(session: Session, which: str) -> dict[str, Any]:
-    """The active placement with id `which`, or the one of the agent with that id or handle;
-    a former handle through the member list (§6.24)."""
+    """The active placement with id `which`, or the one of the member `which` names. The name
+    is resolved against the whole member list first, aliases and the ambiguity rule included
+    (§6.24, §8.6): the placements alone would pick one of two members sharing a name, or a
+    current handle over another member's alias, for a call that stops an agent."""
     placements = [p for p in _placements(session) if isinstance(p.get("id"), str)]
-    keys: tuple[Callable[[Any], Any], ...] = (
-        lambda p: p.get("id"), lambda p: _obj(p.get("agent")).get("id"),
-        lambda p: _obj(p.get("agent")).get("handle"))  # fmt: skip
-    try:
-        return _one(placements, which, keys, "active placement")
-    except CommandError:
-        if any(k(p) == which for p in placements for k in keys):
-            raise  # ambiguous among the placements: an alias does not settle it
-        member = resolve_member(_members(session), which, strict=False)
-    if member == which:
-        raise CommandError(f"no active placement {onboarding.inline(which)} in this project")
-    return _one(placements, member, keys[1:2], "active placement")
+    exact = [p for p in placements if p["id"] == which]
+    if len(exact) == 1:
+        return exact[0]
+    member = resolve_member(_members(session), which, strict=False)
+    if member != which or any(_obj(p.get("agent")).get("id") == which for p in placements):
+        found = [p for p in placements if _obj(p.get("agent")).get("id") == member]
+        if len(found) != 1:
+            named = onboarding.inline(which) + (f" ({member})" if member != which else "")
+            raise CommandError(f"no single active placement for {named} in this project")
+        return found[0]
+    # No member has that name: the placements' own handles, still refusing two matches.
+    return _one(placements, which, (lambda p: _obj(p.get("agent")).get("handle"),),
+                "active placement")  # fmt: skip
 
 
 def _members(session: Session) -> list[dict[str, Any]]:
