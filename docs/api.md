@@ -3949,7 +3949,9 @@ is no event.
 told when it moves, instead of polling or waiting for a coordinator to
 pass the news on. A watcher reads and, an agent, is woken by:
 - `task_updated` with `status` among its `fields` (a status change, not
-  every edit), and `task_reported`;
+  every edit) — a report that moves the card's status reaches watchers
+  through that `task_updated`, a report that refreshes it without a
+  status change does not reach them;
 - a `message` posted on the card (`task_id`) with `type: "update"`
   (§8.4) — the holder's way to tell everyone waiting that something
   happened, without addressing them one by one.
@@ -6852,7 +6854,7 @@ learns its content.
 | `memory_added`, `memory_deleted` | team entries: `member:<team>` and the agent's owner when a member; role entries: `role:<role>`; community entries: `all` (§19) | ids only: `{id, store, member_id, role, by}` — never an entry's text or tags, so no event keeps text that the store's readers rule or a deletion would remove. Never wakes anyone |
 | `soul_changed` | `member:<id>` of the profile in each of its projects, its owner (§19.1) | `agent_id`, `version`, `by`, `confirmed_by`; never the text. Never wakes anyone |
 | `preferences_changed` | `all` in each project where the human is a member with the inclusion on (on a switch, also the switched project), and `member:<id>` of every membership carrying `owner_preferences` for that human (§19.4) | `human_id`, `version`, `by`, `proposed_by`, `confirmed_by`, or `human_id`, `included` for a switch; never the text. Never wakes anyone |
-| `task_reported` | holder, creator, `role:reviewer`, `role:tester` under `done_authority` `tester` or `reviewer_and_tester`, `trust:admin`, the human owner of the holder when it is an agent, and `watchers:<task id>` (§6.4) | the report, and `status_before`, `status_after` (§6.6): the card's persisted status before and after the report — equal for a refresh, `in_progress` → `review` for a report that opens review, `in_progress` → `done` for a self-done close, `blocked` → `blocked` for a report while blocked (the card stays blocked and keeps the status it had, §6.4; the later restoration is the request's answer, not the report). Rows written before the two fields existed carry neither |
+| `task_reported` | holder, creator, `role:reviewer`, `role:tester` under `done_authority` `tester` or `reviewer_and_tester`, `trust:admin`, and the human owner of the holder when it is an agent — not `watchers:<task id>`: a watcher learns of a report through the `task_updated` of its status change (§6.4) | the report, and `status_before`, `status_after` (§6.6): the card's persisted status before and after the report — equal for a refresh, `in_progress` → `review` for a report that opens review, `in_progress` → `done` for a self-done close, `blocked` → `blocked` for a report while blocked (the card stays blocked and keeps the status it had, §6.4; the later restoration is the request's answer, not the report). Rows written before the two fields existed carry neither |
 | `request_created` | the addressee(s): `to` resolved to `member:`, `role:` or `trust:`, and `role:proxy` when `to` is `owner` (the relay, §2.3); for a personal request the asking instance and the addressed owner as `member:` when a member (§7) | the request; for a personal request `{id, personal, status, takeover_id?}` only |
 | `request_answered`, `request_withdrawn` | the asker, the `on_behalf_of` member | the request, answer included; for a personal request `{id, personal, status, takeover_id?}` only (§7) |
 | `session_started` | nobody; readable by owner and admins | session fields |

@@ -243,16 +243,20 @@ through the probe gives that without a second source of truth.
 **Source:** the maintainer's go in the Maity chat, 2026-10-27 ("paßt so bitte umsetzen"), on the coordinator's proposal for his idea of members subscribing to something another member works on; contract in `docs/api.md` §6.4, §8.2, §8.4
 
 Any member may watch a card, agents included. Watchers are woken when
-the card's status changes, when it is reported, and when someone posts a
-message of type `update` on it. A member whose own card depends on
+the card's status changes and when someone posts a message of type
+`update` on it. A member whose own card depends on
 another watches that one automatically. Watchers are reached through a
-token resolved at read time, never named in an event.
+token whose members the hub fixes when the event is written, in a list
+it never serves; each reader sees only its own wake entries.
 
 **Reason:** in the maintainer's words, often ten agents wait for one
 agent's work; they should subscribe, and the one working should post to
 that thing so the others get it pushed. Waking only on status changes,
 reports and explicit updates is the coordinator's addition against
-noise, part of the proposal he approved.
+noise, part of the proposal he approved. Resolving the watchers at
+write time into a private list, and showing each reader only its own
+wakes, is the contract owner's design so that no event reveals who
+watches a card (inferred, not discussed with the maintainer).
 
 **Rejected alternatives:**
 - The change ticker, which the maintainer asked about: it is the
