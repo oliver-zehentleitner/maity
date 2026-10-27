@@ -135,14 +135,23 @@ def _resolved(engine: Engine, env: MailEnvironment, secret_key: bytes | None) ->
 
 def _over_budget(conn: Connection, row: Any, budget: int) -> bool:
     """Whether the hour's budget of the row's kind is spent: what was sent in the last hour
-    plus the claims of that kind that are in flight and older (a lower id), which will be
-    sent unless they fail. A claim that lapsed is not counted."""
+    plus the claims of that kind that are in flight and were taken before this one, which
+    will be sent unless they fail. Claims are ordered by when they were taken (their
+    deadline, then the id), not by the id of the row: a retry that falls due late has a low
+    id and a late claim. A claim that lapsed is not counted."""
+    mine = conn.execute(
+        select(t.mail_outbox.c.not_before).where(t.mail_outbox.c.id == row.id)
+    ).scalar_one()
+    earlier = (t.mail_outbox.c.not_before < mine) | (
+        (t.mail_outbox.c.not_before == mine) & (t.mail_outbox.c.id < row.id)
+    )
     in_flight = conn.execute(
         select(func.count()).where(
             t.mail_outbox.c.kind == row.kind,
             t.mail_outbox.c.status == "sending",
-            t.mail_outbox.c.id < row.id,
+            t.mail_outbox.c.id != row.id,
             t.mail_outbox.c.not_before > clock.now(),
+            earlier,
         )
     ).scalar_one()
     return _sent_last_hour(conn, row.kind) + int(in_flight) >= budget
