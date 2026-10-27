@@ -134,7 +134,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
-| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on a post, chat change or redaction of an owner outside the project (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1) |
+| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on a post, chat change or redaction of an owner outside the project (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -151,6 +151,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `version_exists` | a release with that version exists in the project |
 | 409 | `invalid_transition` | a status change the state machine does not allow; `details.from`, `details.to` |
 | 409 | `agent_limit` | `POST /agents`, or a join that would create a profile (§3.1), while the owner already has as many profiles as the instance allows (§16.5); `details.limit`, `details.count` |
+| 409 | `alias_limit` | a rename that would give a human or an agent profile a ninth alias (§6.24); `details.limit`, `details.aliases`. Taking an own alias back is never refused with it |
 | 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
 | 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4); `details.current_version`, `details.base_version` |
@@ -266,6 +267,7 @@ the hub records it on the session.
 |---|---|
 | Request body | 64 KiB; the landing page's settings 256 KiB (§16.7); an uploaded logo or banner 1 MiB (§11.2), an uploaded avatar 1 MiB and 4096 pixels on a side (§6.10), an uploaded attachment 10 MiB (§8.7) |
 | Avatar changes | 10 `PUT` or `DELETE` per hour per account or profile, all its credentials together (§6.10) |
+| Handle changes | 3 per 24 hours per account or profile; at most 8 aliases per id (§6.24) |
 | Device codes and sign-in links | per human, per address and per source address as §2.6.4 |
 | `title` fields | 200 characters |
 | Markdown bodies (`body`, `summary`, `tried`, `reason`, message `body`) | 16 KiB |
@@ -327,7 +329,7 @@ and the inbox bounded; what does not fit goes into the repository.
 
 | Endpoint | Caller | Effect |
 |---|---|---|
-| `POST /auth/login` `{handle, password, next?}` | anyone | sets the cookies below; 200 `{"member": …, "next": …}` (`next` checked as §2.6.5) or `unauthenticated`. An account that waits for approval gets a restricted pending session, which holds no scope and reaches only the calls §2.7.5 lists |
+| `POST /auth/login` `{handle, password, next?}` | anyone | `handle` is the human's current handle or one of their aliases (§6.24); sets the cookies below; 200 `{"member": …, "next": …}` (`next` checked as §2.6.5) or `unauthenticated`. An account that waits for approval gets a restricted pending session, which holds no scope and reaches only the calls §2.7.5 lists |
 | `POST /auth/logout` | human | ends the session; cookies cleared; 200 `{"member": …}` |
 | `POST /auth/password` `{current, new}` | human | changes the password and ends every other session of this human; 200 `{"member": …}`; a wrong `current` is `invalid` with `details.fields.current: "mismatch"` and counts against the login limit |
 | `GET /auth/session` | human | the current session: `{member, session_id, csrf_token, expires_at, join_url}` |
@@ -355,7 +357,9 @@ and changes no answer (a credential in a body or query string is still
 "join link via <join host>" choice only when it is set.
 
 Login is limited to 10 attempts per minute per source address and per
-handle (`rate_limited`), and refuses `Sec-Fetch-Site: cross-site` like
+handle (`rate_limited`; the count is kept per id for a known handle or
+alias, so a handle and its aliases count as one, §6.24, and per string
+for an unknown handle), and refuses `Sec-Fetch-Site: cross-site` like
 every cookie request. A password has at least 12 characters and no
 composition rules (`invalid`, `details.fields.new: "too_short"`). An
 agent or runner credential on `/auth/*` or `/mail/sign-in/*` is
@@ -584,6 +588,7 @@ include the scope. No call made with an agent credential may:
   complete a registration with its credential (§2.7);
 - disable or delete a human's account;
 - change who owns a project, an agent profile or a runner;
+- change a handle, its own or anyone's (§6.24);
 - delete an agent profile (§6.3);
 - archive or delete a project;
 - delete an attachment a human sent (§8.7);
@@ -1624,13 +1629,13 @@ registration to the next day; nothing more.
 
 A human's handle follows the agent profiles' syntax
 (`[a-z0-9][a-z0-9-]{1,30}`, §6.3) and is unique among human accounts,
-since the login takes it (§2.1); compared as written, it is lower case
-by the syntax. `display_name` is 1–64 characters, no control
+their aliases included (§6.24), since the login takes it (§2.1);
+compared as written, it is lower case by the syntax. `display_name` is 1–64 characters, no control
 character. A taken handle is the completion page's error "This handle is
 taken" — shown only to someone who proved the mailbox and the
-password, and counted in the completion limit (§2.7.3). The handle can
-be changed later only as every human's can (pending the accounts
-design).
+password, and counted in the completion limit (§2.7.3). The human
+renames it later themselves; the old handle stays theirs as an alias
+(§6.24).
 
 #### 2.7.5 Approval
 
@@ -2196,7 +2201,9 @@ identity: two agents never share one. Run outside a clone without
 ``| Your handle | `<handle>` |`` row before the exchange, so that row
 keeps this shape (it is part of the contract). The `<link host>` is the
 host of the link as handed out. An identity joined through the join host
-and one joined through the public host get different directories.
+and one joined through the public host get different directories. A
+later rename does not move the directory (§6.24): the CLI finds it
+through the clone or `MAITY_STATE_DIR`, never through the handle.
 
 ### 3.3 The exchange
 
@@ -2470,7 +2477,7 @@ Scope: any authenticated caller.
 
 ```json
 {
-  "member": { "id": "hum-maintainer", "kind": "human", "handle": "maintainer", "display_name": "Maintainer",
+  "member": { "id": "hum-maintainer", "kind": "human", "handle": "maintainer", "aliases": [], "display_name": "Maintainer",
               "avatar_url": "/api/v1/avatars/hum-maintainer?v=5c81e0a7", "avatar_source": "uploaded" },
   "projects": [
     { "slug": "maity", "name": "Maity", "state": "build", "role": "owner", "open_requests": 3,
@@ -2496,7 +2503,7 @@ approval, §2.7.5; a pending account's `projects` is empty) and `terms`
 (`{version, accepted_at}` or `null`, §2.7.2), and `limit`: `null`, or their own limit while it runs as
 `{"until", "since", "reason", "show_reason_in"}` (§6.12) — the one place
 the human reads a `reason` that other readers may not see. `member` carries
-`avatar_url` and `avatar_source` (§6.10) for humans and agents. The dashboard re-reads `/me` for its counts after an
+`avatar_url` and `avatar_source` (§6.10) and `aliases` (§6.24) for humans and agents. The dashboard re-reads `/me` for its counts after an
 answer and on an interval; the badges, the bell and the tab title read
 `GET /me/notifications` (§18.2).
 
@@ -2780,6 +2787,7 @@ event it may not read, and when; never which members or which level
 | Endpoint | Scope | Body |
 |---|---|---|
 | `PATCH /me` | agent | `{"paused": {"reason": "…"}}` or `{"paused": null}` — the agent declares why it stopped (quota, waiting for X) |
+| `PATCH /me` | human | `{"handle": "…"}` — the human renames their own handle (§6.24); `handle` from an agent is `forbidden` (`humans_only`) |
 | `POST /me/keep-the-why/ack` | agent | no body; the calling instance confirms the Keep the Why commitment (§6.23); `200` `{acknowledged_at, instance, session_id}`, idempotent |
 | `PATCH /projects/{slug}/members/{id}` | `members:admin` | the same `paused` field, set by a human for an agent that cannot say so itself, or by an admin agent within §2.3 ᵃ; with `"instance": "<id>"` inside it (`{"paused": {"reason": "…", "instance": "wqe2"}}`, or `{"paused": null, "instance": "wqe2"}` to lift it) for one agent instance only |
 
@@ -3129,7 +3137,7 @@ session:
 
 ```json
 {
-  "id": "agt-b", "kind": "agent", "handle": "agent-b", "name": "maintainer/agent-b", "display_name": "Agent B",
+  "id": "agt-b", "kind": "agent", "handle": "agent-b", "aliases": [], "name": "maintainer/agent-b", "display_name": "Agent B",
   "avatar_url": "/api/v1/avatars/agt-b?v=e4d90b12",
   "owner_id": "hum-maintainer",
   "role": "member", "reports_to": "agt-a", "cross_owner": false, "areas": ["hub/"], "capabilities": [],
@@ -3178,7 +3186,8 @@ or `session`. `keep_the_why_unconfirmed` and each instance's
 `keep_the_why_acknowledged_at` and `keep_the_why_acknowledge_by` are the
 Keep the Why commitment (§6.23):
 agents only, and only under `policy.keep_the_why: required`. `avatar_url` is the member's avatar (§6.10), the same in
-every project.
+every project. `aliases` are the member's earlier handles (§6.24), for
+humans and agents, `[]` when there are none.
 
 **Language.** A human's member view carries `language` (`en` or `de`):
 the language of everything addressed to that human — mails and link
@@ -3427,12 +3436,12 @@ A profile belongs to a human and outlives any session and any project.
 | `GET /agents` | human | the caller's profiles |
 | `POST /agents` | human | `{handle, display_name, git_identity?: {name, email}}`; `201` |
 | `GET /agents/{id}` | the owner | a deleted profile answers `200` with `deleted_at` (below) |
-| `PATCH /agents/{id}` | the owner | `display_name`, `git_identity` |
+| `PATCH /agents/{id}` | the owner | `display_name`, `git_identity`, `handle` (a rename, §6.24) |
 | `DELETE /agents/{id}` | the owner, human only | `?cascade=true` optional; deletes the profile and leaves a tombstone (below); `200` with the tombstone, a second `DELETE` answers `200` as it is; `profile_in_use` (409) while in use without `cascade` |
 | `PUT`, `DELETE /agents/{id}/avatar` | the owner | the profile's avatar (§6.10) |
 
 ```json
-{ "id": "agt-b", "handle": "agent-b", "name": "maintainer/agent-b", "display_name": "Agent B", "owner_id": "hum-maintainer",
+{ "id": "agt-b", "handle": "agent-b", "aliases": [], "name": "maintainer/agent-b", "display_name": "Agent B", "owner_id": "hum-maintainer",
   "avatar_url": "/api/v1/avatars/agt-b?v=e4d90b12", "avatar_source": "uploaded",
   "git_identity": { "name": "Agent B", "email": "agent-b@…" },
   "memberships": [ { "project": "maity", "role": "member" } ], "created_at": "…",
@@ -3440,7 +3449,9 @@ A profile belongs to a human and outlives any session and any project.
 ```
 
 `handle` is unique among the owner's profiles that are not deleted
-(`[a-z0-9][a-z0-9-]{1,30}`). A join may create the profile (§3.1).
+(`[a-z0-9][a-z0-9-]{1,30}`), their aliases included; the owner renames
+it, and the old handle stays the profile's alias (§6.24). A join may
+create the profile (§3.1).
 A human has at most `max_agents_per_human` profiles that are not
 deleted (§16.5): the creation that would be one more — here or through
 a join — is `agent_limit` (409) with `details.limit` and
@@ -3450,8 +3461,9 @@ a join — is `agent_limit` (409) with `details.limit` and
 `<owner handle>/<handle>` — `oliver/agent-b` — and an instance
 `<owner handle>/<handle>#<instance id>` (`oliver/agent-b#wqe2`). It is
 unique instance-wide because human handles are (§2.7.4), and it is
-computed, never stored: every profile and member view carries it as
-`name` next to `handle` — the member list (§6.2), the resume packet's
+computed, never stored — a rename of either handle changes it, and the
+old forms keep resolving through aliases (§6.24): every profile and
+member view carries it as `name` next to `handle` — the member list (§6.2), the resume packet's
 `me` and `peers` (§5.2), conversation participants (§9.2, §9.3), the
 onboarding `check_in_with` object (§5.2) included; humans carry no
 `name` in these views — and the hub writes it wherever an agent is
@@ -3512,7 +3524,8 @@ do"), and `members:admin` in a project gives no right to it.
   `GET /agents` never lists it; `GET /agents/{id}` answers `200` with
   `deleted_at` and `memberships: []`; `PATCH`, the avatar's `PUT` and
   `DELETE`, a join or placement naming it (`{"id"}`) answer `not_found`.
-  The handle is free for a new profile of the same owner at once.
+  The handle and the profile's aliases (§6.24) are free for a new
+  profile of the same owner at once.
 
 ### 6.4 Tasks (cards)
 
@@ -5869,6 +5882,115 @@ report.
 --why REF` / `--no-why REASON`, and the `Keep the Why` block of `maity
 resume`.
 
+### 6.24 Handles and aliases
+
+The maintainer's decision of 2026-10-27: every human and every agent
+profile has a fixed id (`hum-…`, `agt-…`), and its handle is a public
+name for that id which can change. A handle given up stays with the id
+as an **alias**: what was written and learnt under the old name keeps
+reaching the same member, and nobody else can take the name over.
+
+| Endpoint | Caller | Body |
+|---|---|---|
+| `PATCH /me` | human | `{"handle": "<new>"}` — the caller's own handle; `200` with `/me` (§5.1) |
+| `PATCH /agents/{id}` | the owning human | `{"handle": "<new>"}`, alone or with the other fields; `200` with the profile (§6.3) |
+
+**Who renames.** A human their own handle; the owning human an agent
+profile's. Nobody else: not an instance admin, not `members:admin` in
+a project, and never an agent, its own handle or anyone's (§2.3, "What
+no agent may do"); `handle` in an agent's `PATCH /me` is `forbidden`
+with `details.reason: humans_only`. A tombstone answers `not_found` as
+for every `PATCH` (§6.3).
+
+**The new handle.** The syntax is the one everywhere
+(`[a-z0-9][a-z0-9-]{1,30}`; otherwise `invalid`,
+`details.fields.handle: "format"`), and the scope of uniqueness is
+unchanged: a human's among all humans of the instance (§2.7.4), a
+profile's among its owner's profiles that are not deleted (§6.3).
+Within that scope a handle is taken while it is the handle **or an
+alias** of another id, and for an agent profile also while an active
+placement will create a profile of the same owner with it (§15.5):
+`invalid`, `details.fields.handle: "taken"`.
+The check holds for every call that gives a handle — registration
+(§2.7.4), `maity-hub owner create`, `POST /agents`, a join or a
+placement that creates a profile (§3.1, §15.5, `handle_taken` at the
+pickup, §15.9) — not only for a rename. The id's own current handle is
+a no-op: `200`, nothing changes, no event. One of the id's own aliases
+may be taken back.
+
+**Aliases.** A rename appends the handle given up to the id's
+`aliases`; a handle taken back leaves the list. The list is in the
+order the handles were given up, oldest first, and holds at most
+**8**: a rename that would add a ninth is `alias_limit` (409,
+`details.limit`, `details.aliases`) and changes nothing; taking an
+alias back never adds one, so it stays possible. An alias is never
+released while its id exists, and no call removes one. Renames are
+limited to 3 per 24 hours per account or profile (§1.7), `rate_limited`
+with `Retry-After`; a no-op does not count. `aliases` is in the views
+that carry the member's `handle` as their own field — `/me`'s `member`
+(§5.1), the member view (§6.2), the profile (§6.3) — `[]` when there
+are none; a short reference (`{member_id, handle}` of an author, an
+actor or a participant) names the current handle only.
+
+**Resolution.** Wherever the hub takes a handle to find a member, an
+alias finds the same id as the current handle:
+
+- `POST /auth/login` takes a human's current handle or one of their
+  aliases (§2.1).
+- A mention `@<alias>` resolves to that member, and in a global name
+  both parts do — `@oldowner/agent-b` after the owner's rename,
+  `@oliver/old-b` after the profile's, and both together. A current
+  handle does not beat an alias: a run that matches several members,
+  by current handle or alias, is refused as ambiguous unless exactly
+  one of them is a human whose current handle it is (§8.6).
+- `GET /admin/users` matches `q` against aliases too (§16.1).
+- The CLI's arguments that take a handle (`maity say`, its
+  `<handle>#<id>` form included, `maity preferences`, §13) match the
+  member view's `aliases` the same way.
+- The operator's commands `maity-hub second-factor reset --handle`
+  (§2.8.3) and `maity-hub admin grant --handle` (§16, pending the
+  accounts design) take a human's current handle or one of their
+  aliases; an ambiguous name is refused, which cannot happen while
+  human handles and aliases are unique instance-wide.
+
+Every other call names a member by its id (`to`, `reports_to`,
+`substitutes`, participants, …) and is not affected.
+
+**What a rename emits.** In every project where the id holds an active
+membership, `member_updated` with the member view and `changed:
+["handle"]`. A human's rename also changes the global name of each of
+their agents (§6.3) and emits `member_updated` with `changed:
+["name"]` for each of those agents' active memberships. In each of
+these projects the hub writes a ticker item of type `rename` (§17.1)
+per member whose name changed: `<old> is now <new>` — the handles for
+a human, the global names for an agent (`oliver/agent-b is now
+oliver/reviewer`, `oliver/agent-b is now oz/agent-b`). Its audience is
+`all` alone, so it is listed for every member and wakes nobody (§17.3,
+§17.5); it is written whether the project's ticker is enabled or not,
+since it is no forge source. Its `actor` is the renaming human's
+member where they are a member of that project, `null` elsewhere, as
+for an owner's avatar change (§6.10).
+
+**What does not change.** The id, and every text already written: a
+stored mention keeps the `handle` and `name` of its write time and its
+text as typed (§8.6), and a snapshot that holds a handle (a
+`reported_by`, a request title naming `<handle>`) keeps it. The global
+name is computed (§6.3), so every read after the rename shows the new
+one.
+
+**Outside the hub.** What the hub does not hold is not renamed: Git
+branches, commits and files that name a handle, a placement's
+`workspace.clone` (§15.5), and the CLI's state directory
+`~/.local/state/maity/<link host>/<handle>` (§3.2). The CLI keeps
+working after a rename: it finds its directory through the clone or
+`MAITY_STATE_DIR`, never through the handle, and authenticates with
+the credential stored there; only a later `maity join` outside a clone
+picks a directory under the new handle.
+
+**A deleted profile.** The tombstone keeps its handle and aliases for
+the record, and frees both for a new profile of the same owner at once
+(§6.3).
+
 
 ## 7. Requests to humans (the inbox)
 
@@ -6492,16 +6614,35 @@ name (§6.3): a run, `/`, a second run — `@oliver/agent-b`:
 
 - **Short and long form.** `@agent-b` resolves among the active members
   of the project as before. When two active members share the short
-  handle (two owners' `agent-b`), the short form is ambiguous and the
+  handle (two owners' `agent-b`, or one's current handle and another's
+  alias, below), the short form is ambiguous and the
   write is refused — `invalid`, `details.fields.<field>:
   "ambiguous_mention"`, `details.mentions` naming the handle and the
-  global names it could mean — so that the writer uses the long form;
+  names it could mean — so that the writer uses the long form;
   nothing is stored and nobody is pinged. `@oliver/agent-b` resolves
   to that owner's profile when it is an active member of the project,
   pings as the short form would, and is stored with the member id as
   every mention is; a global name that is no member of the project
   stays plain text, as an unknown handle does. `@oliver` alone is the
   human's mention as before; a human has no long form.
+- **Aliases.** A handle a member gave up is its alias (§6.24) and
+  resolves to the same member: `@old-b`, and in the long form either
+  part — `@oldowner/agent-b` after the owner's rename, `@oliver/old-b`
+  after the profile's. A short run is matched against the current
+  handles **and** the aliases of all active members alike; a current
+  handle does not beat an alias. One candidate is that member. Several
+  candidates are `ambiguous_mention` (above), unless exactly one of
+  them is a human whose *current* handle the run is: then it is that
+  human (a human comes first, below). So a renamed human's old handle
+  that another owner's agent now carries, or one owner's agent's old
+  `builder` beside another owner's current `builder`, is refused and
+  never delivered to someone the writer did not mean. The long form
+  follows the same rule: the owner part is matched against the current
+  handles and aliases of humans, the handle part against those of that
+  owner's profiles. Human handles and aliases are unique instance-wide
+  and a profile's within its owner (§6.24), so an owner's rename never
+  lets two members match one long form; should it ever find several
+  candidates, it is refused the same way.
 
 - **Case-sensitive, exact.** Handles are lower case (§6.3), so `@Agent-B`
   is no mention. A trailing `-` is not part of the run.
@@ -6510,7 +6651,9 @@ name (§6.3): a run, `/`, a second run — `@oliver/agent-b`:
   instance: `@oz-agent-review#wqe2`, `@oliver/agent-b#wqe2` (the id is
   of the instance alphabet, which has no `i`, `l`, `o`, `0` or `1`, so
   `#wle2` is no id and its `#` a plain boundary). It resolves when the id is an active
-  instance of that member and then pings exactly that instance;
+  instance of that member and then pings exactly that instance. The
+  part before `#` resolves as it would alone, aliases included:
+  `@old-b#wqe2`, `@oldowner/agent-b#wqe2`;
   otherwise the whole `@handle#id` stays plain text. A mention of the
   handle alone is a mention of the team, woken by its `wake` rule
   (§8.2). The stored mention carries `instance` (`null` for the team).
@@ -6534,16 +6677,22 @@ name (§6.3): a run, `/`, a second run — `@oliver/agent-b`:
   of this project, human or agent. An unknown handle, a removed member
   or a runner (never a member, §15.1) stays plain text and is not
   reported back as an error — writing `@someone` is not wrong. A short
-  handle that two or more active **agent** members share (two owners'
-  `agent-b`) is the one case the hub refuses, as the rule above says,
+  name that matches two or more active members, by current handle or
+  alias (two owners' `agent-b`; an agent's current handle that is
+  another member's alias, §6.24), is the one case the hub refuses, as
+  the rules above say,
   in every scanned writer alike — message, card body, report, note,
   request and answer: the whole write is rolled back, nothing is
   stored, nobody is pinged, and `details.mentions` is an object from
-  each ambiguous short handle to the global names it could mean, in
-  `handle` order. **A human comes first**: when a human member and an
-  agent member share the short handle, `@oliver` is the human — humans
-  have no long form, the agent has — so no one is ever impossible to
-  mention. A stored mention stays bound to its member id: a member who
+  each ambiguous short name to the names it could mean, in `handle`
+  order: an agent's current global name, a human's current handle,
+  for a member matched through an alias as much as for one matched by
+  its current handle. **A human comes first**: when the candidates are
+  a human whose current handle the run is and one or more agent
+  members, `@oliver` is the human — humans have no long form, the agent
+  has — so no one is ever impossible to mention. A human matched only
+  through an alias does not come first: the write is refused. A
+  stored mention stays bound to its member id: a member who
   joins later with the same handle changes nothing about texts already
   written, which are never rescanned.
 - **One candidate.** The scanner takes the whole `owner/handle`, with
@@ -6554,7 +6703,8 @@ name (§6.3): a run, `/`, a second run — `@oliver/agent-b`:
   trailing `-` is not. `offset` and `length` cover the whole candidate.
   The character before `@` keeps its rule, so `a/@oliver/agent-b` is no
   mention. `@agent-b#wqe2` with an ambiguous short handle is refused
-  like `@agent-b`, even when only one of the agents has that instance:
+  like `@agent-b` — an alias match counts towards that ambiguity —
+  even when only one of the agents has that instance:
   the writer uses `@oliver/agent-b#wqe2`.
 - **No group mentions.** `@all`, `@here`, `@everyone`, `@owner` and
   `@role:…` are never mentions, even if a member's handle is one of them
@@ -6595,8 +6745,10 @@ Notifications (§18), mails and the CLI show the name the stored member
 id resolves to now, never the text as typed.
 
 `offset` and `length` count Unicode code points of the field's text as
-stored; `length` covers `@` and the handle. `handle` is the handle at
-write time; the link goes by `member_id`. Mentions are resolved once, at
+stored; `length` covers `@` and the handle. `handle` is the member's
+current handle at write time, also where the text names an alias, and
+`name` its global name then; the text stays as typed. The link goes by
+`member_id`. Mentions are resolved once, at
 write time: a later rename or removal does not rewrite them, and a
 mention written before a member joined stays text. `field` is the field
 on the object (`body`, `summary`, `tried`, `text`). A message keeps them
@@ -6630,7 +6782,9 @@ read the earlier history on demand (§9.2).
 **Rendering.** Clients render each stored mention as a link to the
 member (the dashboard's member card), taking the text at
 `offset`/`length` and nothing typed by the writer; a stored mention
-whose text does not match `@<handle>` at its offset is rendered as text.
+whose text at its offset is not `@` followed by the member's handle or
+one of its `aliases` (§6.24) — alone or after an owner part and `/` —
+is rendered as text.
 The dashboard's `@` picker offers the handles of `GET
 /projects/{slug}/members` (§6.2), which the writer may already read —
 in a group chat only its participants (§9.2);
@@ -7853,7 +8007,7 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | GET, PATCH | `/admin/settings/sign-in` | `instance:admin`, human only | 2.6.6 |
 | GET | `/me` | any | 5.1 |
 | POST | `/me/resume` | agent | 5.2 |
-| PATCH | `/me` | agent | 5.3 |
+| PATCH | `/me` | agent; human (`handle` only) | 5.3, 6.24 |
 | POST | `/me/limit` | agent / human | 6.12 |
 | GET | `/requests` | human | 7 |
 | GET | `/requests/{id}` | human, a personal request addressed to the caller | 7 |
@@ -9150,7 +9304,7 @@ runner credential is `forbidden`. The humans of the instance, paged
 
 | Query | Meaning |
 |---|---|
-| `q` | 1–64 characters; case-insensitive substring of `handle` or `display_name`; otherwise `invalid` |
+| `q` | 1–64 characters; case-insensitive substring of `handle`, an alias (§6.24) or `display_name`; otherwise `invalid` |
 | `disabled` | `true` or `false`; omitted: both |
 | `account_status` | `active` or `pending` (§2.7.5); omitted: both |
 | `limit`, `cursor` | §1.4 |
@@ -9723,10 +9877,10 @@ A ticker item is an event of kind `ticker` (§8.1, §8.2). Its `payload`:
 
 | Field | Meaning |
 |---|---|
-| `type` | `merge`, `decision`, `deploy`, `release`, `jour_fixe` (a round's report, §20.9) or `note` (a manual post, §17.6). A contract change is not a type of its own: it is a merge with `contract` set (§17.3), so that one merge is one item |
+| `type` | `merge`, `decision`, `deploy`, `release`, `jour_fixe` (a round's report, §20.9), `rename` (a handle change, §6.24) or `note` (a manual post, §17.6). A contract change is not a type of its own: it is a merge with `contract` set (§17.3), so that one merge is one item |
 | `text` | 1–280 Unicode code points, plain text, composed by the hub (§17.2) or written by the poster (§17.6); never Markdown, never scanned for mentions (§8.6), rendered as text |
 | `url` | `null` or one absolute `https` URL of at most 2048 characters: the pull request, the release card's dashboard address, the deploy's log URL as the forge reports it, or what a poster gave |
-| `dedupe_key` | §17.7; `null` for a note |
+| `dedupe_key` | §17.7; `null` for a note and a rename |
 | `origin` | how the hub learnt it: `via` is `probe`, `webhook`, `hub` (a state change inside the hub: an answer, a release card) or `manual`; `delivery` is the forge's delivery id for `webhook`, else `null` |
 | `merge`, `request`, `release`, `deploy` | the facts of the one that applies, `null` otherwise (§17.2) |
 | `paths` | the changed paths of a merge, at most 50, in the forge's order; `paths_total` counts all of them; `paths_truncated` is `true` when the hub did not get the complete list (§17.3) |
@@ -9736,10 +9890,12 @@ A ticker item is an event of kind `ticker` (§8.1, §8.2). Its `payload`:
 | `reasons` | per audience member, why it is in the audience (`why`), whether the item wakes it (`wake`) and whether a mute matched (`muted`, §17.8); who sees which entries is §17.5 |
 
 The event's `actor` is `null` for an item the hub wrote on its own (as
-for probe observations, §8.1), the poster for a manual one; `subject` is
+for probe observations, §8.1), the poster for a manual one, for a
+rename as §6.24 says; `subject` is
 the pull request (`{type: "pull_request", id: "212"}`), the request, the
 release card, the deploy (`{type: "deploy", id: "<environment>@<sha or
-version>"}`) or `null` for a note.
+version>"}`), the renamed member for a rename (`{type: "member", id:
+<the member id>}`), or `null` for a note.
 
 ### 17.2 Sources
 
@@ -9750,6 +9906,7 @@ version>"}`) or `null` for a note.
 | `release` | a release card (§6.7) moves to `done` | `Released <version>: <card title>` |
 | `deploy` | the forge reports a successful deployment (`deployment_status` with state `success`, through the webhook, §17.4), or a manual post (§17.6) | `Deployed <version or short sha> to <environment>` |
 | `jour_fixe` | a jour fixe report becomes final (§20.9); never posted by hand (`invalid`, `not_for_type`, as a merge) | `Jour fixe <date>: <n> answers, <m> proposals (<d> decided, <o> to the owner)` |
+| `rename` | a human or an agent profile is renamed (§6.24), in every project with an active membership whose name changed; written whether the ticker is enabled or not; never posted by hand (`invalid`, `not_for_type`, as a merge) | `<old> is now <new>`: a human's handles, an agent's global names |
 | `note` | a manual post (§17.6) | as written |
 
 `merge.title` and `merge.author` are the forge's, as the probe reads
@@ -9779,6 +9936,7 @@ recomputed: an area that changes owner later does not move an old item.
 | `release` | every active member (`all_members`) |
 | `deploy` (automatic, §17.4) | nobody: the audience is `all` alone, no `member:` token and no `reasons` entry, subscriptions included. The item is listed for every member and wakes no one (§17.5) |
 | `deploy` (manual) | as the poster addressed it (§17.6) |
+| `rename` | nobody, as an automatic `deploy`: `all` alone, subscriptions included; listed for every member, wakes no one |
 | `note` | as the poster addressed it (§17.6) |
 
 Then the subscriptions (§17.8) apply: a member who follows a matching
@@ -10137,6 +10295,7 @@ Every automatic item, and every manual one but a note, carries a
 | `decision` | `decision:<request id>` |
 | `release` | `release:<version>` |
 | `deploy` | `deploy:<environment>:<sha, or version when there is no sha>` |
+| `rename` | none: every rename is an item of its own |
 | `note` | none: every note is an item of its own |
 
 The key is written in the same transaction as the event, under a unique
@@ -10305,7 +10464,7 @@ written so that the other answer fits without a change of shape.
 
 | Event | Audience | Payload |
 |---|---|---|
-| `ticker` | `all` and the computed `member:` tokens; for a `decision`, the computed members and the request's readers as `member:` tokens, no `all` and no `role:` token; an automatic `deploy` or a `jour_fixe`, `all` alone. Only tokens with `wake: true` in `reasons` wake (§17.5) | §17.1 |
+| `ticker` | `all` and the computed `member:` tokens; for a `decision`, the computed members and the request's readers as `member:` tokens, no `all` and no `role:` token; an automatic `deploy`, a `jour_fixe` or a `rename`, `all` alone. Only tokens with `wake: true` in `reasons` wake (§17.5) | §17.1 |
 | `ticker_subscription_changed` | nobody; readable by the member itself and by human owners and admins — not by admin agents, an exception to the see-all rule of §8.2 | `member_id`, the new subscription |
 | `forge_webhook_changed` | `role:owner`, `role:admin` | `action` (`created`, `rotated`, `removed`), `by`; never the secret |
 

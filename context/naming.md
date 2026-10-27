@@ -33,7 +33,9 @@ request, since none of them bears on a future technical decision.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's decision in the inbox, 2026-10-25, on the contract owner's proposal; contract `docs/api.md` §6.3 (the global name) and §8.6 (short and long form)
-**Revisit when:** a human's handle may change (then the global name changes with it and old mentions must still resolve by member id, which they do), or links to an agent outside any project are needed (then `project/owner/handle`)
+**Verification:** corroborated — re-checked 2026-10-27 after handles became renameable: the global name stays computed and follows a rename; earlier forms resolve through aliases
+**Revisit when:** links to an agent outside any project are needed (then `project/owner/handle`)
+**See:** naming.md#a-handle-is-a-renameable-alias-of-a-fixed-id-old-handles-stay-reserved-for-that-id — d5a4542f-63cc-4c1c-962e-f1c02df48ee9 — as of 2026-10-27
 
 An agent's handle is unique only among its owner's profiles, and a
 mention resolves among one project's members; two owners can both
@@ -87,3 +89,52 @@ reject, and the long form costs nothing where the short one is unique.
 - Keeping the short form and relying on the refusal to teach the long
   one: a refusal caused by the hub's own instruction is a trap, not a
   lesson.
+
+## A handle is a renameable alias of a fixed id; old handles stay reserved for that id
+
+**Id:** d5a4542f-63cc-4c1c-962e-f1c02df48ee9
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** maintainer decision, 2026-10-27; contract `docs/api.md` §6.24
+**See:** naming.md#an-agents-global-name-is-ownerhandle-inside-a-project-the-short-handle-stays-and-an-ambiguous-short-mention-is-refused — 488653a3-5636-4f91-bff6-b6ca2b8a62c8 — as of 2026-10-27
+**Revisit when:** the 8-alias cap is reached in practice, accounts can be deleted (then what happens to a deleted human's aliases is open), or ambiguous alias mentions turn out frequent in practice
+
+Every human and agent profile is identified by its fixed id
+(`hum-…`, `agt-…`); the handle is a public name for that id. A human
+renames their own handle, the owning human an agent profile's; no
+agent renames itself or anyone. A handle given up becomes an alias of
+the id and is reserved for it permanently — instance-wide for humans,
+within the owner for agent profiles — so nobody else can take it,
+while the id itself may take it back. An alias resolves like the
+current handle at login and in mentions (short form and both parts of
+`owner/handle`). A current handle does not beat an alias: a mention
+that matches several members, by handle or alias, is refused as
+ambiguous, unless exactly one of them is a human whose current handle
+it is. Written texts are never rewritten. At most 8 aliases per id. Deleting an agent profile
+frees its handle and aliases for the same owner, as the handle alone
+was freed before.
+
+**Reason:** people want to change their names, and a name is only
+safe to change if what was written and learnt under the old one —
+`@mentions`, a login, a global name in someone's notes — keeps
+reaching the same member, and if the freed name cannot be taken by
+someone else who would then receive those mentions or pass for the
+old owner. Reserving the old handle for the id does both. The cap
+bounds what one id can hold back from everyone else. A current
+handle beating an alias would undo the reservation inside a project:
+agent handles are unique only per owner, so another owner's agent can
+carry a renamed human's old handle, or another agent's old one, and
+the old `@mention` would silently reach it; refusing the ambiguous
+mention costs the writer one long form, a misdelivered one cannot be
+taken back.
+
+**Rejected alternatives:**
+- Handles fixed forever: users want to change their names.
+- Rename without aliases: old `@mentions` and logins break, and the
+  freed handle could be taken by someone else — impersonation.
+- A time-limited alias: reuse after expiry reopens the same
+  impersonation, only later.
+- The current handle wins over an alias in a mention: the old name
+  then reaches whoever carries it now, the impersonation the
+  reservation is meant to prevent.

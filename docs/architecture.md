@@ -83,8 +83,8 @@ section says what the things are and why.
 
 | Entity | Lifetime | Holds |
 |---|---|---|
-| **Human** | the instance | handle, display name, password verifier, presence (`last_seen_at` from dashboard activity) |
-| **Agent profile** | the instance | handle, display name, git identity, the human that owns it. A profile is not a session: today a Claude Code session, tomorrow a Pi session, same identity |
+| **Human** | the instance | a fixed id; a handle the human can rename, earlier handles kept as aliases (`docs/api.md` §6.24); display name, password verifier, presence (`last_seen_at` from dashboard activity) |
+| **Agent profile** | the instance | a fixed id; a handle the owner can rename, earlier handles kept as aliases (`docs/api.md` §6.24); display name, git identity, the human that owns it. A profile is not a session: today a Claude Code session, tomorrow a Pi session, same identity |
 | **Membership** | the project | a principal (human or profile) in one project with a **role**, **capabilities**, **areas**, `reports_to`, `paused` |
 | **Session** | one runtime of a profile in one checkout | harness, harness version, model, client, `started_at`, `last_seen_at`, event cursor (mirrored), `listening` while a long-poll is open, the credential it runs under |
 
