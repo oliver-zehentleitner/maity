@@ -3032,6 +3032,7 @@ around.
 
 ```json
 {
+  "id": "prj-7k2m9q",
   "slug": "maity",
   "owner": { "id": "hum-mebxvnc20qeg", "handle": "oliver" },
   "full_name": "oliver/maity",
@@ -6402,6 +6403,17 @@ legacy path below) —
 accepted, since keying on the resolved project would tell a stranger
 which paths name the same project.
 
+**The project's id.** A project also carries an opaque `id`
+(`prj-…`, §1.1), fixed for its lifetime: the one name of a project that
+no rename or transfer changes. The API addresses projects by
+`{owner}/{slug}`; the id is for clients that keep something per project
+across a rename — a runner's workspace directory above all (§15.5),
+which is keyed on `project_id` so that a renamed or transferred
+project's next pickup finds its clone and the agent's credential in
+it. A runner's placement view also carries `project_aliases`, the
+project's earlier full names (§6.25 "Aliases"), so that a runner's
+configured project list written with an old name still matches.
+
 **Card and request references outside the project.** Inside a project
 an id stands alone (`tsk-p94e7njrmg1p`). Wherever a reference is shown
 outside its project — the global chat, another project, notifications,
@@ -9170,7 +9182,8 @@ clone Z. It is the only thing the hub asks of a runner.
 
 ```json
 {
-  "id": "plc-0003", "project": "oliver/maity",
+  "id": "plc-0003", "project": "oliver/maity", "project_id": "prj-7k2m9q",
+  "project_aliases": ["oliver/maity-old"],
   "agent": { "id": "agt-b", "handle": "agent-b", "display_name": "Agent B",
              "avatar_url": "/api/v1/avatars/agt-b?v=e4d90b12" },
   "runner": { "id": "rnr-0002", "name": "home-laptop" },
@@ -9201,7 +9214,8 @@ clone Z. It is the only thing the hub asks of a runner.
 | `target` | `null` (the runner chooses) or a target name the runner advertised |
 | `harness`, `model` | from the runner's advertised list for the target (`harness_not_offered`, `details.offered`); `model: null` is the runner's default |
 | `mode` | `interactive` (a session a human can attach to) or `supervised` (woken by events, no open session); omitted at creation: the harness's advertised `default_mode` |
-| `workspace` | `clone`: `[a-z0-9][a-z0-9-]{0,62}`, default the agent's handle; `branch`: an optional starting branch. The repository is always the project's `repository.url`; a placement never names a repository or a path. `continues_existing` is true when a closed placement of the same membership on the same (runner, clone) exists, which is also when the credential is carried over |
+| `workspace` | `clone`: `[a-z0-9][a-z0-9-]{0,62}`, default the agent's handle; `branch`: an optional starting branch. The repository is always the project's `repository.url`; a placement never names a repository or a path. `continues_existing` is true when a closed placement of the same membership on the same (runner, clone) exists, which is also when the credential is carried over. The runner keeps the workspace under the project's `project_id` and the clone (`<workspaces>/<project_id>/<clone>`), never under the full name, so a rename or transfer of the project (§6.25) keeps it; a workspace recorded before the project namespace under the old slug is taken over once, for the same agent, and recorded under the id (not moved) |
+| `project_id`, `project_aliases` | the project's fixed id and its earlier full names (§6.25), for the runner's workspace key and for matching its configured `projects` list, current name or alias |
 | `desired` | `running`, `stopped` |
 | `generation` | starts at 1; incremented on every change of the spec, every restart and every `rejoin`; the runner reports which generation it acted on |
 | `rejoin` | set by a restart with `rejoin: true` after the clone's credential was revoked: the runner removes the old credential file and picks up a new join |
