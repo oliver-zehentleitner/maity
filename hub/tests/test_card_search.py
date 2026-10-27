@@ -67,7 +67,7 @@ def test_unicode_search_and_paging_after_filtering(owner: flow.Human, order: str
         task(owner, title=("Ärger" if i % 2 else "unrelated"), body="literal % _") for i in range(9)
     ]
     expected = {c["id"] for i, c in enumerate(cards) if i % 2}
-    path = f"/projects/maity/tasks?q=är&order={order}&limit=2"
+    path = f"/projects/maintainer/maity/tasks?q=är&order={order}&limit=2"
     seen: list[str] = []
     while True:
         response = owner.get(path)
@@ -78,9 +78,14 @@ def test_unicode_search_and_paging_after_filtering(owner: flow.Human, order: str
         seen.extend(c["id"] for c in page["items"])
         if page["next_cursor"] is None:
             break
-        path = f"/projects/maity/tasks?q=är&order={order}&limit=2&cursor=" + page["next_cursor"]
+        path = (
+            f"/projects/maintainer/maity/tasks?q=är&order={order}&limit=2&cursor="
+            + page["next_cursor"]
+        )
     assert set(seen) == expected and len(seen) == 4
-    assert all("match" not in c for c in owner.get("/projects/maity/tasks").json()["items"])
+    assert all(
+        "match" not in c for c in owner.get("/projects/maintainer/maity/tasks").json()["items"]
+    )
 
 
 @pytest.mark.parametrize("query", ["%", "_"])
@@ -88,28 +93,28 @@ def test_wildcards_are_literal(owner: flow.Human, query: str) -> None:
 
     hit = task(owner, body="100% literal_")
     task(owner, body="100X literalY")
-    page = owner.get("/projects/maity/tasks", params={"q": query}).json()
+    page = owner.get("/projects/maintainer/maity/tasks", params={"q": query}).json()
     assert [(c["id"], c["match"]) for c in page["items"]] == [(hit["id"], ["body"])]
 
 
 def test_match_order_and_latest_report_via_api(owner: flow.Human) -> None:
 
     hit = task(owner, title="TSK", body="tsk")
-    path = f"/projects/maity/tasks/{hit['id']}"
+    path = f"/projects/maintainer/maity/tasks/{hit['id']}"
     owner.post(path + "/claim", {})
     assert owner.post(path + "/report", _report(summary="tsk")).status_code == 200
-    result = owner.get("/projects/maity/tasks?q=tsk").json()["items"]
+    result = owner.get("/projects/maintainer/maity/tasks?q=tsk").json()["items"]
     assert result[0]["match"] == ["id", "title", "body", "report"]
     owner.post(path + "/report", _report(summary="new phrase"))
-    assert owner.get("/projects/maity/tasks?q=new%20phrase").json()["items"][0]["match"] == [
-        "report"
-    ]
-    assert owner.get("/projects/maity/tasks?q=agent-b/lease").json()["items"] == []
+    assert owner.get("/projects/maintainer/maity/tasks?q=new%20phrase").json()["items"][0][
+        "match"
+    ] == ["report"]
+    assert owner.get("/projects/maintainer/maity/tasks?q=agent-b/lease").json()["items"] == []
 
 
 @pytest.mark.parametrize("query", ["", "x" * 201])
 def test_query_length_is_validated(owner: flow.Human, query: str) -> None:
-    result = owner.get("/projects/maity/tasks", params={"q": query})
+    result = owner.get("/projects/maintainer/maity/tasks", params={"q": query})
     assert result.headers["Maity-Error"] == "invalid"
 
 
@@ -117,10 +122,12 @@ def test_query_boundary_and_normalization(owner: flow.Human) -> None:
 
     hit = task(owner, title="plain", body="x" * 200 + " ＡＲ")
     assert (
-        owner.get("/projects/maity/tasks", params={"q": "x" * 200}).json()["items"][0]["id"]
+        owner.get("/projects/maintainer/maity/tasks", params={"q": "x" * 200}).json()["items"][0][
+            "id"
+        ]
         == hit["id"]
     )
-    result = owner.get("/projects/maity/tasks?q=ar").json()["items"][0]
+    result = owner.get("/projects/maintainer/maity/tasks?q=ar").json()["items"][0]
     assert result["id"] == hit["id"] and "body" in result["match"]
 
 
@@ -139,48 +146,51 @@ def test_filters_and_cursor_bind_the_query(owner: flow.Human, order: str) -> Non
         "order": order,
         "limit": 2,
     }
-    page = owner.get("/projects/maity/tasks", params=params).json()
+    page = owner.get("/projects/maintainer/maity/tasks", params=params).json()
     assert len(page["items"]) == 2 and page["next_cursor"]
     last = owner.get(
-        "/projects/maity/tasks", params={**params, "cursor": page["next_cursor"]}
+        "/projects/maintainer/maity/tasks", params={**params, "cursor": page["next_cursor"]}
     ).json()
     assert len(last["items"]) == 1 and last["next_cursor"] is None
     refused = owner.get(
-        "/projects/maity/tasks", params={**params, "q": "different", "cursor": page["next_cursor"]}
+        "/projects/maintainer/maity/tasks",
+        params={**params, "q": "different", "cursor": page["next_cursor"]},
     )
     assert refused.headers["Maity-Error"] == "invalid"
 
 
 def test_search_includes_closed_cards_and_replaces_old_report_text(owner: flow.Human) -> None:
     hit = task(owner, title="ordinary")
-    path = f"/projects/maity/tasks/{hit['id']}"
+    path = f"/projects/maintainer/maity/tasks/{hit['id']}"
     owner.post(path + "/claim", {})
     owner.post(path + "/report", _report(summary="older report phrase"))
     owner.post(path + "/report", _report(summary="latest report phrase"))
     assert owner.patch(path, {"status": "done"}).status_code == 200
-    assert owner.get("/projects/maity/tasks?q=older").json()["items"] == []
-    page = owner.get("/projects/maity/tasks?q=latest&status=done").json()["items"]
+    assert owner.get("/projects/maintainer/maity/tasks?q=older").json()["items"] == []
+    page = owner.get("/projects/maintainer/maity/tasks?q=latest&status=done").json()["items"]
     assert [(c["id"], c["match"]) for c in page] == [(hit["id"], ["report"])]
-    assert owner.get("/projects/maity/tasks?q=latest&status=open").json()["items"] == []
+    assert owner.get("/projects/maintainer/maity/tasks?q=latest&status=open").json()["items"] == []
 
 
 @pytest.mark.parametrize("state", ["open", "incorporated", "dismissed"])
 def test_a_note_in_every_state_is_searched(owner: flow.Human, state: str) -> None:
     card = task(owner, title="plain", body=None)
-    path = f"/projects/maity/tasks/{card['id']}/notes"
+    path = f"/projects/maintainer/maity/tasks/{card['id']}/notes"
     posted = owner.post(path, {"body": "Überlauf im Cache"}).json()
     if state != "open":
         resolved = owner.post(f"{path}/{posted['id']}/resolve", {"state": state})
         assert resolved.status_code == 200, resolved.text
-    [found] = owner.get("/projects/maity/tasks?q=überlauf&status=all").json()["items"]
+    [found] = owner.get("/projects/maintainer/maity/tasks?q=überlauf&status=all").json()["items"]
     assert found["id"] == card["id"] and found["match"] == ["note"]
 
 
 def test_a_redacted_note_is_not_searched(owner: flow.Human) -> None:
     card = task(owner, title="plain", body=None)
-    path = f"/projects/maity/tasks/{card['id']}/notes"
+    path = f"/projects/maintainer/maity/tasks/{card['id']}/notes"
     posted = owner.post(path, {"body": "the token is s3cret"}).json()
-    assert owner.get("/projects/maity/tasks?q=s3cret").json()["items"][0]["match"] == ["note"]
+    assert owner.get("/projects/maintainer/maity/tasks?q=s3cret").json()["items"][0]["match"] == [
+        "note"
+    ]
     redacted = owner.post(f"{path}/{posted['id']}/redact", {"reason": "secret"})
     assert redacted.status_code == 200, redacted.text
-    assert owner.get("/projects/maity/tasks?q=s3cret").json()["items"] == []
+    assert owner.get("/projects/maintainer/maity/tasks?q=s3cret").json()["items"] == []

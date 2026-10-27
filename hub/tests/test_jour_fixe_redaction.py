@@ -102,10 +102,10 @@ def test_a_redacted_proposal_reaches_its_request_its_card_and_the_report_event(
     by_agent = round_.lead.get(rounds_path(round_.id)).json()["report"]
     assert by_agent["summary_redaction"]["reason"] is None  # §8.5: not for an agent
     assert by_agent["proposals"][0]["redaction"]["reason"] is None
-    card = round_.owner.get(f"/projects/maity/tasks/{task_id}").json()
+    card = round_.owner.get(f"/projects/maintainer/maity/tasks/{task_id}").json()
     assert card["title"] == "[redacted jour fixe proposal]"
     assert card["body"].startswith("[redacted]") and "Fewer surprises" not in card["body"]
-    asked = round_.owner.get(f"/projects/maity/requests/{request_id}").json()
+    asked = round_.owner.get(f"/projects/maintainer/maity/requests/{request_id}").json()
     assert asked["title"] == "[redacted jour fixe proposal]" and asked["summary"] is None
     with round_.engine.connect() as conn:
         rows = conn.execute(select(t.event)).all()
@@ -129,12 +129,14 @@ def test_a_redacted_statement_reaches_the_report_the_hub_built(round_: Round) ->
     built = round_.get()["report"]
     [request_id] = [p["request_id"] for p in built["proposals"]]
     seq = round_.get()["statement"]["message_seq"]
-    done = round_.owner.post(f"/projects/maity/events/{seq}/redact", {"reason": "a secret"})
+    done = round_.owner.post(
+        f"/projects/maintainer/maity/events/{seq}/redact", {"reason": "a secret"}
+    )
     assert done.status_code == 200, done.text
     after = round_.get()["report"]
     assert after["findings"][0]["text"] is None and after["findings"][0]["redaction"]
     assert after["proposals"][0]["title"] is None
-    asked = round_.owner.get(f"/projects/maity/requests/{request_id}").json()
+    asked = round_.owner.get(f"/projects/maintainer/maity/requests/{request_id}").json()
     assert asked["title"] == "[redacted jour fixe proposal]"
 
 
@@ -142,7 +144,9 @@ def test_a_proposal_drawn_from_a_statement_redacted_before_the_report_is_refused
     round_: Round,
 ) -> None:
     seq = round_.get()["statement"]["message_seq"]
-    done = round_.owner.post(f"/projects/maity/events/{seq}/redact", {"reason": "a secret"})
+    done = round_.owner.post(
+        f"/projects/maintainer/maity/events/{seq}/redact", {"reason": "a secret"}
+    )
     assert done.status_code == 200, done.text
     refused = report(round_, proposals=[TO_OWNER])
     assert refused.status_code == 400, refused.text
@@ -162,7 +166,7 @@ def test_a_multiline_reason_is_found_in_every_history_entry(round_: Round) -> No
     reason = "SECRET-LINE-ONE\nSECRET-LINE-TWO \\ and a backslash"
     proposal = {**decided(round_.owner), "reason": reason}
     [task_id] = report(round_, proposals=[proposal]).json()["tasks"]
-    path = f"/projects/maity/tasks/{task_id}"
+    path = f"/projects/maintainer/maity/tasks/{task_id}"
     edited = round_.owner.patch(path, {"title": "Pinned by hand", "body": "rewritten"})
     assert edited.status_code == 200, edited.text
     assert redact(round_.owner, round_, "proposal:r1").status_code == 200
@@ -181,7 +185,7 @@ def test_adopting_a_proposal_redacted_before_opens_a_placeholder_card(round_: Ro
     [request_id] = report(round_, proposals=[TO_OWNER]).json()["requests"]
     assert redact(round_.owner, round_, "proposal:r1").status_code == 200
     adopted = round_.owner.post(
-        f"/projects/maity/requests/{request_id}/answer", {"reply_id": "adopt"}
+        f"/projects/maintainer/maity/requests/{request_id}/answer", {"reply_id": "adopt"}
     )
     assert adopted.status_code == 200, adopted.text
     with round_.engine.connect() as conn:
@@ -194,7 +198,7 @@ def test_a_body_a_person_extended_is_left_and_every_rewritten_event_is_announced
     round_: Round,
 ) -> None:
     [task_id] = report(round_, proposals=[decided(round_.owner)]).json()["tasks"]
-    path = f"/projects/maity/tasks/{task_id}"
+    path = f"/projects/maintainer/maity/tasks/{task_id}"
     hub_body = round_.owner.get(path).json()["body"]
     extended = hub_body + "\nHuman clarification"
     assert round_.owner.patch(path, {"body": extended}).status_code == 200

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, select
 
-from maity_hub import avatars, clock, images
+from maity_hub import avatars, clock, images, namespace
 from maity_hub import tables as t
 from maity_hub.admin import is_instance_admin
 from maity_hub.auth.caller import Caller
@@ -79,10 +79,11 @@ def limit_view(human: Any) -> dict[str, Any] | None:
     }
 
 
-def _project_row(project: Any, role: str, shown: dict[str, Any]) -> dict[str, Any]:
+def _project_row(project: Any, role: str, shown: dict[str, Any], full_name: str) -> dict[str, Any]:
     logo = shown["logo"]
     return {
         "slug": project.slug,
+        "full_name": full_name,
         "name": project.name,
         "state": project.state,
         "role": role,
@@ -106,9 +107,10 @@ def _human_projects(conn: Connection, human_id: str) -> list[dict[str, Any]]:
         .order_by(t.project.c.slug)
     ).all()
     shown = images.views(conn, [row.project_id for row in rows])
+    names = namespace.full_names(conn, [row.project_id for row in rows])
     return [
         {
-            **_project_row(row, row.role, shown[row.project_id]),
+            **_project_row(row, row.role, shown[row.project_id], names[row.project_id]),
             "open_requests": open_requests(conn, row.id, row.role),
         }
         for row in rows
@@ -121,7 +123,8 @@ def _agent_project(conn: Connection, caller: Caller) -> list[dict[str, Any]]:
         .join(t.project, t.project.c.id == t.membership.c.project_id)
         .where(t.membership.c.id == caller.membership_id)
     ).one()
-    return [_project_row(row, row.role, images.views(conn, [row.id])[row.id])]
+    shown = images.views(conn, [row.id])[row.id]
+    return [_project_row(row, row.role, shown, namespace.name_of(conn, row.id))]
 
 
 def open_requests(conn: Connection, membership_id: int, role: str) -> int:

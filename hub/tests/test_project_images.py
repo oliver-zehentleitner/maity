@@ -107,11 +107,11 @@ def test_the_type_comes_from_the_magic_bytes(data: bytes, kind: str | None) -> N
 
 def test_an_upload_is_served_with_the_image_headers(owner: flow.Human, migrated: Engine) -> None:
     flow.project(owner, "maity")
-    answer = put(owner, "/projects/maity/logo", PNG, "image/png")
+    answer = put(owner, "/projects/maintainer/maity/logo", PNG, "image/png")
     assert answer.status_code == 200, answer.text
     state = answer.json()["logo"]
     assert state["available"] is True and state["source"] == "uploaded"
-    got = owner.get("/projects/maity/logo")
+    got = owner.get("/projects/maintainer/maity/logo")
     assert got.status_code == 200
     assert got.content == PNG
     assert got.headers["content-type"] == "image/png"
@@ -120,16 +120,16 @@ def test_an_upload_is_served_with_the_image_headers(owner: flow.Human, migrated:
     assert got.headers["x-content-type-options"] == "nosniff"
     assert got.headers["content-security-policy"] == "default-src 'none'; sandbox"
     assert got.headers["cross-origin-resource-policy"] == "same-origin"
-    view = owner.get("/projects/maity").json()
+    view = owner.get("/projects/maintainer/maity").json()
     assert view["logo"] == state
     assert view["banner"] == {"available": False, "source": None}
-    assert owner.get("/projects/maity").headers["cache-control"] == "no-store"
+    assert owner.get("/projects/maintainer/maity").headers["cache-control"] == "no-store"
 
 
 def test_me_carries_each_projects_logo(owner: flow.Human) -> None:
     flow.project(owner, "maity")
     flow.project(owner, "other")
-    tag = put(owner, "/projects/maity/logo", PNG, "image/png").json()["logo"]["etag"]
+    tag = put(owner, "/projects/maintainer/maity/logo", PNG, "image/png").json()["logo"]["etag"]
     logos = {p["slug"]: p["logo"] for p in owner.get("/me").json()["projects"]}
     assert logos == {
         "maity": {"available": True, "etag": tag},
@@ -139,8 +139,12 @@ def test_me_carries_each_projects_logo(owner: flow.Human) -> None:
 
 def test_a_matching_etag_is_304_without_a_body(owner: flow.Human) -> None:
     flow.project(owner, "maity")
-    tag = put(owner, "/projects/maity/banner", WEBP, "image/webp").json()["banner"]["etag"]
-    again = owner.get("/projects/maity/banner", headers={"If-None-Match": f'W/{tag}, "other"'})
+    tag = put(owner, "/projects/maintainer/maity/banner", WEBP, "image/webp").json()["banner"][
+        "etag"
+    ]
+    again = owner.get(
+        "/projects/maintainer/maity/banner", headers={"If-None-Match": f'W/{tag}, "other"'}
+    )
     assert again.status_code == 304
     assert again.content == b""
     assert again.headers["etag"] == tag
@@ -155,7 +159,7 @@ def test_anything_but_a_sniffed_and_declared_image_is_refused(
     owner: flow.Human, data: bytes, declared: str
 ) -> None:
     flow.project(owner, "maity")
-    answer = put(owner, "/projects/maity/logo", data, declared)
+    answer = put(owner, "/projects/maintainer/maity/logo", data, declared)
     assert answer.status_code == 400
     assert answer.json()["error"]["details"]["fields"] == {"body": "unsupported_type"}
 
@@ -163,15 +167,15 @@ def test_anything_but_a_sniffed_and_declared_image_is_refused(
 def test_one_mebibyte_is_accepted_one_byte_more_is_too_large(owner: flow.Human) -> None:
     flow.project(owner, "maity")
     exact = PNG + b"\0" * (images.CAP - len(PNG))
-    assert put(owner, "/projects/maity/logo", exact, "image/png").status_code == 200
-    over = put(owner, "/projects/maity/logo", exact + b"\0", "image/png")
+    assert put(owner, "/projects/maintainer/maity/logo", exact, "image/png").status_code == 200
+    over = put(owner, "/projects/maintainer/maity/logo", exact + b"\0", "image/png")
     assert over.status_code == 400
     assert over.json()["error"]["details"]["fields"] == {"body": "too_large"}
 
 
 def test_the_64_kib_cap_still_holds_elsewhere(owner: flow.Human) -> None:
     flow.project(owner, "maity")
-    big = owner.patch("/projects/maity", {"name": "x" * (70 * 1024)})
+    big = owner.patch("/projects/maintainer/maity", {"name": "x" * (70 * 1024)})
     assert big.status_code == 413
 
 
@@ -181,13 +185,15 @@ def test_an_agent_may_not_upload_whatever_its_scopes(
     flow.project(owner, "maity")
     agent = flow.agent(make_client, owner, "maity", role="admin")
     answer = agent.client.put(
-        "/api/v1/projects/maity/logo",
+        "/api/v1/projects/maintainer/maity/logo",
         content=PNG,
         headers=agent.auth | agent.key() | {"Content-Type": "image/png"},
     )
     assert answer.status_code == 403
     assert answer.json()["error"]["code"] == "forbidden"
-    assert agent.get("/projects/maity/logo").status_code == 404  # reading is project:read
+    assert (
+        agent.get("/projects/maintainer/maity/logo").status_code == 404
+    )  # reading is project:read
 
 
 def test_a_human_member_without_project_admin_may_not_upload(
@@ -198,14 +204,16 @@ def test_a_human_member_without_project_admin_may_not_upload(
     with migrated.begin() as conn:
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
     factory.membership(migrated, project_id, role="member", human_id=other.id)
-    assert put(other, "/projects/maity/logo", PNG, "image/png").status_code == 403
-    assert other.get("/projects/maity/logo").status_code == 404  # may read: there is none
+    assert put(other, "/projects/maintainer/maity/logo", PNG, "image/png").status_code == 403
+    assert (
+        other.get("/projects/maintainer/maity/logo").status_code == 404
+    )  # may read: there is none
 
 
 def test_an_upload_needs_the_csrf_token(owner: flow.Human) -> None:
     flow.project(owner, "maity")
     answer = owner.client.put(
-        "/api/v1/projects/maity/logo", content=PNG, headers={"Content-Type": "image/png"}
+        "/api/v1/projects/maintainer/maity/logo", content=PNG, headers={"Content-Type": "image/png"}
     )
     assert answer.status_code == 403
     assert answer.json()["error"]["code"] == "csrf_mismatch"
@@ -215,10 +223,10 @@ def test_an_upload_replaces_the_last_and_announces_without_bytes(
     owner: flow.Human, migrated: Engine
 ) -> None:
     flow.project(owner, "maity")
-    first = put(owner, "/projects/maity/logo", PNG, "image/png").json()["logo"]
-    second = put(owner, "/projects/maity/logo", JPEG, "image/jpeg").json()["logo"]
+    first = put(owner, "/projects/maintainer/maity/logo", PNG, "image/png").json()["logo"]
+    second = put(owner, "/projects/maintainer/maity/logo", JPEG, "image/jpeg").json()["logo"]
     assert first["etag"] != second["etag"]
-    assert owner.get("/projects/maity/logo").content == JPEG
+    assert owner.get("/projects/maintainer/maity/logo").content == JPEG
     announced = events_of(migrated, "project_updated")
     assert [e.payload for e in announced] == [
         {"fields": {"logo": first}},
@@ -229,14 +237,14 @@ def test_an_upload_replaces_the_last_and_announces_without_bytes(
 
 def test_the_same_upload_twice_announces_once(owner: flow.Human, migrated: Engine) -> None:
     flow.project(owner, "maity")
-    put(owner, "/projects/maity/logo", PNG, "image/png")
-    put(owner, "/projects/maity/logo", PNG, "image/png")
+    put(owner, "/projects/maintainer/maity/logo", PNG, "image/png")
+    put(owner, "/projects/maintainer/maity/logo", PNG, "image/png")
     assert len(events_of(migrated, "project_updated")) == 1
 
 
 def test_project_updated_wakes_nobody(owner: flow.Human, migrated: Engine) -> None:
     flow.project(owner, "maity")
-    put(owner, "/projects/maity/logo", PNG, "image/png")
+    put(owner, "/projects/maintainer/maity/logo", PNG, "image/png")
     [event] = events_of(migrated, "project_updated")
 
     class Reader:
@@ -249,29 +257,29 @@ def test_project_updated_wakes_nobody(owner: flow.Human, migrated: Engine) -> No
 
 def test_delete_removes_the_upload_and_is_idempotent(owner: flow.Human, migrated: Engine) -> None:
     flow.project(owner, "maity")
-    put(owner, "/projects/maity/logo", PNG, "image/png")
-    gone = owner.delete("/projects/maity/logo")
+    put(owner, "/projects/maintainer/maity/logo", PNG, "image/png")
+    gone = owner.delete("/projects/maintainer/maity/logo")
     assert gone.status_code == 200
     assert gone.json() == {"logo": {"available": False, "source": None}}
-    assert owner.delete("/projects/maity/logo").status_code == 200
-    assert owner.get("/projects/maity/logo").status_code == 404
+    assert owner.delete("/projects/maintainer/maity/logo").status_code == 200
+    assert owner.get("/projects/maintainer/maity/logo").status_code == 404
     assert len(events_of(migrated, "project_updated")) == 2  # the upload and the delete
 
 
 def test_an_idempotent_replay_answers_the_state(owner: flow.Human) -> None:
     flow.project(owner, "maity")
     key = {"Idempotency-Key": "logo-upload-key-0001"}
-    first = put(owner, "/projects/maity/logo", PNG, "image/png", **key)
-    again = put(owner, "/projects/maity/logo", PNG, "image/png", **key)
+    first = put(owner, "/projects/maintainer/maity/logo", PNG, "image/png", **key)
+    again = put(owner, "/projects/maintainer/maity/logo", PNG, "image/png", **key)
     assert again.headers.get("idempotent-replayed") == "true"
     assert again.json() == first.json()
-    other = put(owner, "/projects/maity/logo", JPEG, "image/jpeg", **key)
+    other = put(owner, "/projects/maintainer/maity/logo", JPEG, "image/jpeg", **key)
     assert other.status_code == 409
 
 
 def test_no_repository_and_no_upload_is_not_found(owner: flow.Human) -> None:
     flow.project(owner, "maity")
-    answer = owner.get("/projects/maity/banner")
+    answer = owner.get("/projects/maintainer/maity/banner")
     assert answer.status_code == 404
     assert answer.headers["cache-control"] == "no-store"
 
@@ -283,12 +291,12 @@ def test_the_forge_logo_is_read_once_and_then_served_from_the_hub(
     owner: flow.Human, fake_forge: FakeForge, migrated: Engine
 ) -> None:
     flow.project(owner, "maity", repository={"url": REPO})
-    got = owner.get("/projects/maity/logo")
+    got = owner.get("/projects/maintainer/maity/logo")
     assert got.status_code == 200 and got.content == PNG
     assert fake_forge.reads == ["avatar acme/widget", f"image {AVATAR}"]
-    assert owner.get("/projects/maity/logo").content == PNG
+    assert owner.get("/projects/maintainer/maity/logo").content == PNG
     assert len(fake_forge.reads) == 2  # stored: no second read
-    view = owner.get("/projects/maity").json()["logo"]
+    view = owner.get("/projects/maintainer/maity").json()["logo"]
     assert view["source"] == "forge" and view["available"] is True
     [event] = events_of(migrated, "project_updated")
     assert event.payload == {"fields": {"logo": view}}
@@ -296,8 +304,8 @@ def test_the_forge_logo_is_read_once_and_then_served_from_the_hub(
 
 def test_without_a_token_there_is_no_banner(owner: flow.Human, fake_forge: FakeForge) -> None:
     flow.project(owner, "maity", repository={"url": REPO})
-    assert owner.get("/projects/maity/banner").status_code == 404
-    assert owner.get("/projects/maity/banner").status_code == 404
+    assert owner.get("/projects/maintainer/maity/banner").status_code == 404
+    assert owner.get("/projects/maintainer/maity/banner").status_code == 404
     assert fake_forge.reads == ["preview acme/widget"]  # the "none" is stored, read once
 
 
@@ -312,11 +320,11 @@ def test_with_a_token_the_custom_social_preview_is_the_banner(
     assert login.status_code == 200, login.text
     human = flow.Human(client, client.get("/api/v1/auth/session").json()["csrf_token"], human_id)
     flow.project(human, "maity", repository={"url": REPO})
-    got = human.get("/projects/maity/banner")
+    got = human.get("/projects/maintainer/maity/banner")
     assert got.status_code == 200
     assert got.headers["content-type"] == "image/jpeg"
     fake_forge.preview = None  # GitHub's generated card: no banner
-    assert human.get("/projects/maity").json()["banner"]["source"] == "forge"
+    assert human.get("/projects/maintainer/maity").json()["banner"]["source"] == "forge"
 
 
 @pytest.mark.parametrize(
@@ -329,13 +337,13 @@ def test_a_forge_image_the_rules_refuse_is_no_image(
 ) -> None:
     fake_forge.bodies[AVATAR] = body
     flow.project(owner, "maity", repository={"url": REPO})
-    assert owner.get("/projects/maity/logo").status_code == 404
+    assert owner.get("/projects/maintainer/maity/logo").status_code == 404
 
 
 def test_an_image_on_another_host_is_no_image(owner: flow.Human, fake_forge: FakeForge) -> None:
     fake_forge.avatar = "https://www.gravatar.com/avatar/1"
     flow.project(owner, "maity", repository={"url": REPO})
-    assert owner.get("/projects/maity/logo").status_code == 404
+    assert owner.get("/projects/maintainer/maity/logo").status_code == 404
     assert not any(r.startswith("image ") for r in fake_forge.reads)
 
 
@@ -344,7 +352,7 @@ def test_a_forge_that_does_not_answer_with_nothing_stored_is_probe_unavailable(
 ) -> None:
     fake_forge.forge_down = True
     flow.project(owner, "maity", repository={"url": REPO})
-    answer = owner.get("/projects/maity/logo")
+    answer = owner.get("/projects/maintainer/maity/logo")
     assert answer.status_code == 503
     assert answer.json()["error"]["code"] == "probe_unavailable"
 
@@ -354,58 +362,64 @@ def test_an_unreachable_image_host_is_probe_unavailable_too(
 ) -> None:
     fake_forge.bodies[AVATAR] = outbound.Refused("timeout")
     flow.project(owner, "maity", repository={"url": REPO})
-    assert owner.get("/projects/maity/logo").status_code == 503
+    assert owner.get("/projects/maintainer/maity/logo").status_code == 503
 
 
 def test_an_upload_wins_over_the_forge_and_its_delete_brings_the_forge_back(
     owner: flow.Human, fake_forge: FakeForge
 ) -> None:
     flow.project(owner, "maity", repository={"url": REPO})
-    assert owner.get("/projects/maity/logo").content == PNG  # the forge's
-    put(owner, "/projects/maity/logo", JPEG, "image/jpeg")
-    assert owner.get("/projects/maity/logo").content == JPEG
-    back = owner.delete("/projects/maity/logo").json()["logo"]
+    assert owner.get("/projects/maintainer/maity/logo").content == PNG  # the forge's
+    put(owner, "/projects/maintainer/maity/logo", JPEG, "image/jpeg")
+    assert owner.get("/projects/maintainer/maity/logo").content == JPEG
+    back = owner.delete("/projects/maintainer/maity/logo").json()["logo"]
     assert back["source"] == "forge"
-    assert owner.get("/projects/maity/logo").content == PNG
+    assert owner.get("/projects/maintainer/maity/logo").content == PNG
 
 
 def test_a_refresh_that_fails_keeps_the_image_and_one_that_changes_it_announces(
     owner: flow.Human, fake_forge: FakeForge, migrated: Engine
 ) -> None:
     flow.project(owner, "maity", repository={"url": REPO})
-    owner.get("/projects/maity/logo")
+    owner.get("/projects/maintainer/maity/logo")
     with migrated.begin() as conn:
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
     fake_forge.forge_down = True
     assert images.refresh(migrated, forge.Forge(None), project_id, "logo") is False
-    assert owner.get("/projects/maity/logo").content == PNG
+    assert owner.get("/projects/maintainer/maity/logo").content == PNG
     fake_forge.forge_down = False
     fake_forge.bodies[AVATAR] = WEBP
     assert images.refresh(migrated, forge.Forge(None), project_id, "logo") is True
-    assert owner.get("/projects/maity/logo").content == WEBP
+    assert owner.get("/projects/maintainer/maity/logo").content == WEBP
     assert len(events_of(migrated, "project_updated")) == 2
     fake_forge.avatar = None  # the forge now has none: the image is dropped
     images.refresh(migrated, forge.Forge(None), project_id, "logo")
-    assert owner.get("/projects/maity/logo").status_code == 404
-    assert owner.get("/projects/maity").json()["logo"] == {"available": False, "source": None}
+    assert owner.get("/projects/maintainer/maity/logo").status_code == 404
+    assert owner.get("/projects/maintainer/maity").json()["logo"] == {
+        "available": False,
+        "source": None,
+    }
 
 
 def test_a_users_photo_is_no_logo_and_a_stored_one_goes_on_the_next_refresh(
     owner: flow.Human, fake_forge: FakeForge, migrated: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     flow.project(owner, "maity", repository={"url": REPO})
-    assert owner.get("/projects/maity/logo").content == PNG  # stored under the old rule
+    assert owner.get("/projects/maintainer/maity/logo").content == PNG  # stored under the old rule
     with migrated.begin() as conn:
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
     repository = {"owner": {"type": "User", "avatar_url": AVATAR}}
     monkeypatch.setattr(forge.Forge, "owner_avatar", OWNER_AVATAR)
     monkeypatch.setattr(forge.Forge, "_call", lambda self, path, *a: repository)
     assert images.refresh(migrated, forge.Forge(None), project_id, "logo") is True
-    assert owner.get("/projects/maity/logo").status_code == 404  # the monogram (§11.2)
-    assert owner.get("/projects/maity").json()["logo"] == {"available": False, "source": None}
+    assert owner.get("/projects/maintainer/maity/logo").status_code == 404  # the monogram (§11.2)
+    assert owner.get("/projects/maintainer/maity").json()["logo"] == {
+        "available": False,
+        "source": None,
+    }
     repository["owner"]["type"] = "Organization"
     images.refresh(migrated, forge.Forge(None), project_id, "logo")
-    assert owner.get("/projects/maity/logo").content == PNG
+    assert owner.get("/projects/maintainer/maity/logo").content == PNG
 
 
 def test_the_worker_finds_what_is_stale(
@@ -421,17 +435,22 @@ def test_the_worker_finds_what_is_stale(
     images.Worker(migrated, forge.Forge(None)).sweep()
     with migrated.begin() as conn:
         assert images.stale(conn) == []
-    assert owner.get("/projects/maity").json()["logo"]["source"] == "forge"
+    assert owner.get("/projects/maintainer/maity").json()["logo"]["source"] == "forge"
 
 
 def test_a_new_repository_drops_the_old_forge_images(
     owner: flow.Human, fake_forge: FakeForge
 ) -> None:
     flow.project(owner, "maity", repository={"url": REPO})
-    owner.get("/projects/maity/logo")
-    owner.patch("/projects/maity", {"repository": {"url": "https://github.com/acme/other"}})
-    assert owner.get("/projects/maity").json()["logo"] == {"available": False, "source": None}
-    owner.get("/projects/maity/logo")
+    owner.get("/projects/maintainer/maity/logo")
+    owner.patch(
+        "/projects/maintainer/maity", {"repository": {"url": "https://github.com/acme/other"}}
+    )
+    assert owner.get("/projects/maintainer/maity").json()["logo"] == {
+        "available": False,
+        "source": None,
+    }
+    owner.get("/projects/maintainer/maity/logo")
     assert fake_forge.reads[-2] == "avatar acme/other"
 
 
@@ -445,13 +464,13 @@ def test_after_a_failed_read_through_gets_answer_503_without_reading_for_a_minut
     monkeypatch.setattr(images, "_now", lambda: clock_now[0])
     fake_forge.forge_down = True
     flow.project(owner, "maity", repository={"url": REPO})
-    assert owner.get("/projects/maity/logo").status_code == 503
+    assert owner.get("/projects/maintainer/maity/logo").status_code == 503
     reads = len(fake_forge.reads)
-    assert owner.get("/projects/maity/logo").status_code == 503
+    assert owner.get("/projects/maintainer/maity/logo").status_code == 503
     assert len(fake_forge.reads) == reads  # no second read inside the minute
     clock_now[0] += images.NEGATIVE + 1
     fake_forge.forge_down = False
-    assert owner.get("/projects/maity/logo").content == PNG
+    assert owner.get("/projects/maintainer/maity/logo").content == PNG
 
 
 def test_concurrent_read_throughs_read_the_forge_once(
@@ -513,7 +532,7 @@ def test_the_worker_backs_off_after_failures(
 
 def test_every_other_answer_is_still_no_store(owner: flow.Human) -> None:
     flow.project(owner, "maity")
-    put(owner, "/projects/maity/logo", PNG, "image/png")
-    for path in ("/api/v1/health", "/api/v1/projects/maity", "/api/v1/me", "/"):
+    put(owner, "/projects/maintainer/maity/logo", PNG, "image/png")
+    for path in ("/api/v1/health", "/api/v1/projects/maintainer/maity", "/api/v1/me", "/"):
         answer = owner.client.get(path)
         assert answer.headers["cache-control"] == "no-store", path

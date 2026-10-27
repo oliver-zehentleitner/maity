@@ -42,7 +42,7 @@ def events(engine: Engine, kind: str) -> list[Any]:
 
 
 def member(who: Any, member_id: str) -> dict[str, Any]:
-    response = who.get(f"/projects/maity/members/{member_id}")
+    response = who.get(f"/projects/maintainer/maity/members/{member_id}")
     assert response.status_code == 200, response.text
     result: dict[str, Any] = response.json()
     return result
@@ -107,7 +107,9 @@ def test_an_agent_without_a_session_is_offline_and_a_paused_one_paused(
     agent = flow.agent(make_client, owner)
     assert member(owner, agent.id)["availability"]["state"] == "offline"
     agent.resume()
-    paused = owner.patch(f"/projects/maity/members/{agent.id}", {"paused": {"reason": "hold"}})
+    paused = owner.patch(
+        f"/projects/maintainer/maity/members/{agent.id}", {"paused": {"reason": "hold"}}
+    )
     assert paused.status_code == 200, paused.text
     assert paused.json()["availability"]["state"] == "paused"
 
@@ -182,7 +184,8 @@ def test_an_agent_names_no_show_reason_in_and_clears_with_null(
     agent = flow.agent(make_client, owner)
     agent.resume()
     response = agent.post(
-        "/me/limit", {"until": z(now[0] + timedelta(hours=1)), "show_reason_in": ["maity"]}
+        "/me/limit",
+        {"until": z(now[0] + timedelta(hours=1)), "show_reason_in": ["maintainer/maity"]},
     )
     assert response.status_code == 400
     assert response.json()["error"]["details"]["fields"] == {"show_reason_in": "humans_only"}
@@ -198,7 +201,7 @@ def test_a_limit_holds_the_leases_to_until_plus_grace_for_at_most_a_day(
     agent = flow.agent(make_client, owner)
     agent.resume()
     card = task(owner)
-    assert agent.post(f"/projects/maity/tasks/{card['id']}/claim", {}).status_code == 200
+    assert agent.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {}).status_code == 200
 
     def lease() -> datetime:
         with migrated.connect() as conn:
@@ -261,23 +264,24 @@ def test_a_humans_reason_shows_only_where_they_choose(
     agent.resume()
     until = now[0] + timedelta(days=2)
     response = owner.post(
-        "/me/limit", {"until": z(until), "reason": "dentist", "show_reason_in": ["other"]}
+        "/me/limit",
+        {"until": z(until), "reason": "dentist", "show_reason_in": ["maintainer/other"]},
     )
     assert response.status_code == 200, response.text
     assert response.json()["member"]["limit"] == {
         "until": z(until),
         "since": z(now[0]),
         "reason": "dentist",
-        "show_reason_in": ["other"],
+        "show_reason_in": ["maintainer/other"],
     }
     shown = member(agent, owner.id)["availability"]
     assert shown == {"state": "limited", "since": z(now[0]), "until": z(until), "source": "self"}
-    other = owner.get(f"/projects/other/members/{owner.id}").json()["availability"]
+    other = owner.get(f"/projects/maintainer/other/members/{owner.id}").json()["availability"]
     assert other["reason"] == "dentist"
     # Every membership of the account had an outage.
     assert len(events(migrated, "member_availability_changed")) == 2
     assert owner.post("/me/limit", {"until": z(until), "harness": "x"}).status_code == 400
-    refused = owner.post("/me/limit", {"until": z(until), "show_reason_in": ["nowhere"]})
+    refused = owner.post("/me/limit", {"until": z(until), "show_reason_in": ["maintainer/nowhere"]})
     assert refused.json()["error"]["details"]["fields"] == {"show_reason_in": "not_a_member"}
     owner.post("/me/limit", {"until": None})
     assert member(agent, owner.id)["availability"]["state"] == "available"
@@ -289,12 +293,14 @@ def test_the_owners_absence_makes_the_owner_limited_and_ends_within_90_days(
 ) -> None:
     until = now[0] + timedelta(days=10)
     too_far = owner.patch(
-        "/projects/maity",
+        "/projects/maintainer/maity",
         {"absence": {"until": z(now[0] + timedelta(days=91)), "scope": "away"}},
     )
     assert too_far.status_code == 400
     assert too_far.json()["error"]["details"]["fields"] == {"absence": "too_far"}
-    set_ = owner.patch("/projects/maity", {"absence": {"until": z(until), "scope": "away"}})
+    set_ = owner.patch(
+        "/projects/maintainer/maity", {"absence": {"until": z(until), "scope": "away"}}
+    )
     assert set_.status_code == 200, set_.text
     shown = member(owner, owner.id)["availability"]
     assert shown == {"state": "limited", "since": z(now[0]), "until": z(until), "source": "absence"}
@@ -312,7 +318,7 @@ def test_an_admin_sets_a_members_policy(
     covered = flow.agent(make_client, owner)
     cover = flow.agent(make_client, owner)
     response = owner.patch(
-        f"/projects/maity/members/{covered.id}",
+        f"/projects/maintainer/maity/members/{covered.id}",
         {
             "availability_policy": {
                 "on_unavailable": "substitute",
@@ -330,7 +336,8 @@ def test_an_admin_sets_a_members_policy(
     assert updated.payload["changed"] == ["availability_policy"]
     # Fields not named keep their value.
     owner.patch(
-        f"/projects/maity/members/{covered.id}", {"availability_policy": {"grace_minutes": 0}}
+        f"/projects/maintainer/maity/members/{covered.id}",
+        {"availability_policy": {"grace_minutes": 0}},
     )
     assert member(owner, covered.id)["availability_policy"]["on_unavailable"] == "substitute"
 
@@ -356,7 +363,9 @@ def test_a_bad_policy_is_invalid(
     agent = flow.agent(make_client, owner)
     if policy.get("substitutes") == ["SELF"]:
         policy = {"substitutes": [agent.id]}
-    response = owner.patch(f"/projects/maity/members/{agent.id}", {"availability_policy": policy})
+    response = owner.patch(
+        f"/projects/maintainer/maity/members/{agent.id}", {"availability_policy": policy}
+    )
     assert response.status_code == 400, response.text
     assert response.json()["error"]["details"]["fields"] == {f"availability_policy.{field}": code}
 
@@ -368,17 +377,21 @@ def test_a_human_sets_their_own_policy_and_no_agent_decides_for_a_human(
     agent = flow.agent(make_client, owner)
     agent.resume()
     own = second.patch(
-        f"/projects/maity/members/{second.id}",
+        f"/projects/maintainer/maity/members/{second.id}",
         {"availability_policy": {"on_unavailable": "substitute", "substitutes": [agent.id]}},
     )
     assert own.status_code == 200, own.text
     # members:admin for anything else, as before.
     assert (
-        second.patch(f"/projects/maity/members/{second.id}", {"areas": ["web/"]}).status_code == 403
+        second.patch(
+            f"/projects/maintainer/maity/members/{second.id}", {"areas": ["web/"]}
+        ).status_code
+        == 403
     )
     assert (
         second.patch(
-            f"/projects/maity/members/{agent.id}", {"availability_policy": {"grace_minutes": 5}}
+            f"/projects/maintainer/maity/members/{agent.id}",
+            {"availability_policy": {"grace_minutes": 5}},
         ).status_code
         == 403
     )
@@ -387,7 +400,9 @@ def test_a_human_sets_their_own_policy_and_no_agent_decides_for_a_human(
         (second.id, {"grace_minutes": 5}),
         (agent.id, {"on_unavailable": "substitute", "substitutes": [owner.id]}),
     ):
-        refused = agent.patch(f"/projects/maity/members/{target}", {"availability_policy": body})
+        refused = agent.patch(
+            f"/projects/maintainer/maity/members/{target}", {"availability_policy": body}
+        )
         assert refused.status_code == 403, refused.text
         assert refused.json()["error"]["details"]["reason"] == "humans_only"
 
@@ -398,10 +413,10 @@ def test_removing_a_substitute_takes_it_off_every_list(
     covered = flow.agent(make_client, owner)
     cover = flow.agent(make_client, owner)
     owner.patch(
-        f"/projects/maity/members/{covered.id}",
+        f"/projects/maintainer/maity/members/{covered.id}",
         {"availability_policy": {"on_unavailable": "substitute", "substitutes": [cover.id]}},
     )
-    assert owner.delete(f"/projects/maity/members/{cover.id}").status_code == 200
+    assert owner.delete(f"/projects/maintainer/maity/members/{cover.id}").status_code == 200
     assert member(owner, covered.id)["availability_policy"] == {
         "on_unavailable": "wait",  # an empty list with substitute is invalid
         "substitutes": [],
@@ -418,11 +433,11 @@ def test_the_coordinator_seats_are_policy_fields_kept_by_a_preset(
 ) -> None:
     lead = flow.agent(make_client, owner, role="admin")
     worker = flow.agent(make_client, owner)
-    policy = owner.get("/projects/maity").json()["policy"]
+    policy = owner.get("/projects/maintainer/maity").json()["policy"]
     assert policy["coordinator"] == "role:admin" and policy["coordinator_substitute"] is None
 
     def refused(change: dict[str, Any]) -> Any:
-        response = owner.patch("/projects/maity", {"policy": change, "reason": "test"})
+        response = owner.patch("/projects/maintainer/maity", {"policy": change, "reason": "test"})
         assert response.status_code == 400, response.text
         return response.json()["error"]["details"]["fields"]
 
@@ -431,17 +446,19 @@ def test_the_coordinator_seats_are_policy_fields_kept_by_a_preset(
         "policy.coordinator_substitute": "not_an_agent_admin"
     }
     response = owner.patch(
-        "/projects/maity",
+        "/projects/maintainer/maity",
         {"policy": {"coordinator": worker.id, "coordinator_substitute": lead.id}, "reason": "t"},
     )
     assert response.status_code == 200, response.text
-    kept = owner.patch("/projects/maity", {"policy": {"preset": "solo"}, "reason": "t"}).json()
+    kept = owner.patch(
+        "/projects/maintainer/maity", {"policy": {"preset": "solo"}, "reason": "t"}
+    ).json()
     assert kept["policy"]["coordinator"] == worker.id
     assert kept["policy"]["coordinator_substitute"] == lead.id
     # Removing them resets both seats in one policy_changed.
-    owner.delete(f"/projects/maity/members/{worker.id}")
-    owner.delete(f"/projects/maity/members/{lead.id}")
-    policy = owner.get("/projects/maity").json()["policy"]
+    owner.delete(f"/projects/maintainer/maity/members/{worker.id}")
+    owner.delete(f"/projects/maintainer/maity/members/{lead.id}")
+    policy = owner.get("/projects/maintainer/maity").json()["policy"]
     assert policy["coordinator"] == "role:admin" and policy["coordinator_substitute"] is None
     reset = [
         e for e in events(migrated, "policy_changed") if e.payload["reason"] == "member_removed"
@@ -542,7 +559,7 @@ def test_an_ordinary_call_never_shortens_a_limits_hold(
     agent = flow.agent(make_client, owner)
     agent.resume()
     card = task(owner)
-    agent.post(f"/projects/maity/tasks/{card['id']}/claim", {})
+    agent.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
     until = now[0] + timedelta(hours=5)
     agent.post("/me/limit", {"until": z(until)})
     held = until + timedelta(minutes=15)
@@ -557,7 +574,7 @@ def test_renewals_and_new_limits_never_pass_the_outages_24_hours(
     agent = flow.agent(make_client, owner)
     agent.resume()
     card = task(owner)
-    agent.post(f"/projects/maity/tasks/{card['id']}/claim", {})
+    agent.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
     start = now[0]
     agent.post("/me/limit", {"until": z(start + timedelta(days=6))})
     cap = start + availability.LEASE_HOLD
@@ -596,11 +613,11 @@ def test_a_pause_on_top_of_a_limit_keeps_its_cap_and_a_pause_alone_holds_nothing
     agent = flow.agent(make_client, owner)
     agent.resume()
     card = task(owner)
-    agent.post(f"/projects/maity/tasks/{card['id']}/claim", {})
+    agent.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
     start = now[0]
     agent.post("/me/limit", {"until": z(start + timedelta(days=6))})
     cap = start + availability.LEASE_HOLD
-    owner.patch(f"/projects/maity/members/{agent.id}", {"paused": {"reason": "hold"}})
+    owner.patch(f"/projects/maintainer/maity/members/{agent.id}", {"paused": {"reason": "hold"}})
     now[0] = start + timedelta(hours=23)
     agent.post("/me/limit", {"until": z(now[0] + timedelta(days=6))})
     assert _lease(migrated, card["id"]) == cap
@@ -617,15 +634,15 @@ def test_an_admin_agent_sets_a_members_policy_and_asks_for_a_reviewers(
     worker = flow.agent(make_client, owner)
     reviewer = flow.agent(make_client, owner, role="reviewer")
     body = {"availability_policy": {"on_unavailable": "substitute", "substitutes": [lead.id]}}
-    direct = lead.patch(f"/projects/maity/members/{worker.id}", body)
+    direct = lead.patch(f"/projects/maintainer/maity/members/{worker.id}", body)
     assert direct.status_code == 200, direct.text
     assert direct.json()["availability_policy"]["substitutes"] == [lead.id]
-    asked = lead.patch(f"/projects/maity/members/{reviewer.id}", body)
+    asked = lead.patch(f"/projects/maintainer/maity/members/{reviewer.id}", body)
     assert asked.status_code == 202, asked.text
     assert asked.json()["title"] == f"Change cover for {asked.json()['title'].split()[-1]}"
     assert asked.json()["class"] == "consent"
     # Its own policy is not an admin agent's to set.
-    assert lead.patch(f"/projects/maity/members/{lead.id}", body).status_code == 403
+    assert lead.patch(f"/projects/maintainer/maity/members/{lead.id}", body).status_code == 403
 
 
 def test_a_cover_proposal_whose_substitute_left_does_not_apply_at_go(
@@ -635,15 +652,17 @@ def test_a_cover_proposal_whose_substitute_left_does_not_apply_at_go(
     reviewer = flow.agent(make_client, owner, role="reviewer")
     stand_in = flow.agent(make_client, owner)
     body = {"availability_policy": {"on_unavailable": "substitute", "substitutes": [stand_in.id]}}
-    asked = lead.patch(f"/projects/maity/members/{reviewer.id}", body)
+    asked = lead.patch(f"/projects/maintainer/maity/members/{reviewer.id}", body)
     assert asked.status_code == 202, asked.text
-    assert owner.delete(f"/projects/maity/members/{stand_in.id}").status_code == 200
-    go = owner.post(f"/projects/maity/requests/{asked.json()['id']}/answer", {"reply_id": "go"})
+    assert owner.delete(f"/projects/maintainer/maity/members/{stand_in.id}").status_code == 200
+    go = owner.post(
+        f"/projects/maintainer/maity/requests/{asked.json()['id']}/answer", {"reply_id": "go"}
+    )
     assert go.status_code == 400, go.text
     assert go.json()["error"]["details"]["fields"] == {
         "availability_policy.substitutes": "not_a_member"
     }
-    still = owner.get(f"/projects/maity/requests/{asked.json()['id']}").json()
+    still = owner.get(f"/projects/maintainer/maity/requests/{asked.json()['id']}").json()
     assert still["status"] == "open"
     assert member(owner, reviewer.id)["availability_policy"]["on_unavailable"] == "wait"
 
@@ -654,10 +673,10 @@ def test_seat_resets_name_the_humans_who_decide(
     covered = flow.agent(make_client, owner)
     cover = flow.agent(make_client, owner)
     owner.patch(
-        f"/projects/maity/members/{covered.id}",
+        f"/projects/maintainer/maity/members/{covered.id}",
         {"availability_policy": {"on_unavailable": "substitute", "substitutes": [cover.id]}},
     )
-    owner.delete(f"/projects/maity/members/{cover.id}")
+    owner.delete(f"/projects/maintainer/maity/members/{cover.id}")
     reset = [e for e in events(migrated, "member_updated") if e.payload.get("changed")][-1]
     assert reset.audience == ["all", f"member:{owner.id}"]
 
@@ -685,11 +704,11 @@ def test_one_removal_resets_every_policy_seat_in_one_policy_changed(
     flow.agent(make_client, owner, role="admin")  # an admin stays: the arbiter goes to role
     worker = flow.agent(make_client, owner)
     response = owner.patch(
-        "/projects/maity",
+        "/projects/maintainer/maity",
         {"policy": {"coordinator": worker.id, "contract_arbiter": worker.id}, "reason": "t"},
     )
     assert response.status_code == 200, response.text
-    owner.delete(f"/projects/maity/members/{worker.id}")
+    owner.delete(f"/projects/maintainer/maity/members/{worker.id}")
     reset = [
         e for e in events(migrated, "policy_changed") if e.payload["reason"] == "member_removed"
     ]

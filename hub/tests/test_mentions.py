@@ -97,7 +97,9 @@ def test_offsets_count_code_points() -> None:
 
 
 def say(who: Any, **body: Any) -> Any:
-    return who.post("/projects/maity/events", {"kind": "message", "type": "notice", **body})
+    return who.post(
+        "/projects/maintainer/maity/events", {"kind": "message", "type": "notice", **body}
+    )
 
 
 def test_a_message_mention_joins_the_audience(
@@ -139,12 +141,12 @@ def test_a_chat_is_never_resolved(make_client: ClientFactory, owner: flow.Human)
     agent = agent_named(make_client, owner, "agent-a")
     other = agent_named(make_client, owner, "agent-c")
     response = owner.post(
-        f"/projects/maity/conversations/{agent.id}/messages", {"body": "ask @agent-c"}
+        f"/projects/maintainer/maity/conversations/{agent.id}/messages", {"body": "ask @agent-c"}
     )
     assert response.status_code == 201, response.text
     message = response.json()
     assert message["mentions"] == [] and message["body"] == "ask @agent-c"
-    events = owner.get("/projects/maity/events?after=0&limit=200").json()["items"]
+    events = owner.get("/projects/maintainer/maity/events?after=0&limit=200").json()["items"]
     [chat] = [e for e in events if e["kind"] == "message" and e["payload"].get("type") == "chat"]
     assert chat["payload"]["mentions"] == [] and f"member:{other.id}" not in chat["audience"]
 
@@ -242,7 +244,7 @@ def test_a_card_body_with_a_shared_short_handle_stores_nothing(
 ) -> None:
     agent_named(make_client, owner, "agent-b")
     second_owners_agent(migrated, "anna", "agent-b")
-    refused = owner.post("/projects/maity/tasks", {"title": "x", "body": "for @agent-b"})
+    refused = owner.post("/projects/maintainer/maity/tasks", {"title": "x", "body": "for @agent-b"})
     assert refused.json()["error"]["details"]["fields"] == {"body": "ambiguous_mention"}
     with migrated.connect() as conn:
         assert conn.execute(select(t.card)).first() is None
@@ -263,7 +265,9 @@ def test_ambiguity_is_judged_among_whom_a_text_may_name(
 
 def team_of_two(make_client: ClientFactory, owner: flow.Human) -> tuple[flow.Agent, flow.Agent]:
     first = agent_named(make_client, owner, "agent-b")
-    team = owner.patch(f"/projects/maity/members/{first.id}", {"team": {"max_instances": 2}})
+    team = owner.patch(
+        f"/projects/maintainer/maity/members/{first.id}", {"team": {"max_instances": 2}}
+    )
     assert team.status_code == 200, team.text
     second = flow.agent(make_client, owner, agent={"id": first.id}, new_instance=True)
     return first, second
@@ -297,7 +301,10 @@ def test_to_the_team_still_wakes_the_mentioned_instance(
     writer = agent_named(make_client, owner, "agent-a")
     lead, other = team_of_two(make_client, owner)
     team = {"wake": "lead", "lead_instance": lead.instance}
-    assert owner.patch(f"/projects/maity/members/{lead.id}", {"team": team}).status_code == 200
+    assert (
+        owner.patch(f"/projects/maintainer/maity/members/{lead.id}", {"team": team}).status_code
+        == 200
+    )
     event = say(writer, to=lead.id, body=f"@agent-b#{other.instance} please").json()
     assert f"instance:{lead.id}#{other.instance}" in event["audience"]
     with migrated.connect() as conn:
@@ -347,7 +354,7 @@ def test_a_card_mention_of_an_instance_wakes_that_instance(
 ) -> None:
     first, second = team_of_two(make_client, owner)
     created = owner.post(
-        "/projects/maity/tasks", {"title": "x", "body": f"@agent-b#{second.instance}"}
+        "/projects/maintainer/maity/tasks", {"title": "x", "body": f"@agent-b#{second.instance}"}
     )
     assert created.status_code == 201, created.text
     with migrated.connect() as conn:
@@ -361,12 +368,13 @@ def test_in_a_group_chat_an_instance_mention_wakes_that_instance_only(
     first, second = team_of_two(make_client, owner)
     other = agent_named(make_client, owner, "agent-c")
     created = owner.post(
-        "/projects/maity/conversations", {"title": "Room", "participants": [first.id, other.id]}
+        "/projects/maintainer/maity/conversations",
+        {"title": "Room", "participants": [first.id, other.id]},
     )
     assert created.status_code == 201, created.text
     chat = created.json()
     sent = owner.post(
-        f"/projects/maity/conversations/{chat['id']}/messages",
+        f"/projects/maintainer/maity/conversations/{chat['id']}/messages",
         {"body": f"@agent-b#{second.instance} please"},
     )
     assert sent.status_code == 201, sent.text
@@ -440,7 +448,8 @@ def test_a_chat_refuses_mentions_as_read_only(
 ) -> None:
     agent = agent_named(make_client, owner, "agent-a")
     response = owner.post(
-        f"/projects/maity/conversations/{agent.id}/messages", {"body": "x", "mentions": []}
+        f"/projects/maintainer/maity/conversations/{agent.id}/messages",
+        {"body": "x", "mentions": []},
     )
     assert response.json()["error"]["details"]["fields"] == {"mentions": "read_only"}
 
@@ -458,9 +467,13 @@ def test_a_card_body_pings_only_new_mentions(
     make_client: ClientFactory, owner: flow.Human, migrated: Engine
 ) -> None:
     named = agent_named(make_client, owner, "agent-c")
-    card = owner.post("/projects/maity/tasks", {"title": "t", "body": "for @agent-c"}).json()
+    card = owner.post(
+        "/projects/maintainer/maity/tasks", {"title": "t", "body": "for @agent-c"}
+    ).json()
     assert card["mentions"][0]["member_id"] == named.id
-    owner.patch(f"/projects/maity/tasks/{card['id']}", {"body": "still for @agent-c, now longer"})
+    owner.patch(
+        f"/projects/maintainer/maity/tasks/{card['id']}", {"body": "still for @agent-c, now longer"}
+    )
     with migrated.connect() as conn:
         pinged = conn.execute(select(t.event).where(t.event.c.kind == "mentioned")).all()
     assert len(pinged) == 1
@@ -474,7 +487,7 @@ def test_a_request_mention_is_a_link_only(
     asker = agent_named(make_client, owner, "agent-a")
     agent_named(make_client, owner, "agent-c")
     request = asker.post(
-        "/projects/maity/requests",
+        "/projects/maintainer/maity/requests",
         {"class": "info", "title": "q", "summary": "as @agent-c said", "tried": "@agent-c"},
     ).json()
     assert [m["field"] for m in request["mentions"]] == ["summary", "tried"]
@@ -489,7 +502,7 @@ def test_admins_and_owners_see_owner_and_credentials(
     make_client: ClientFactory, owner: flow.Human, migrated: Engine
 ) -> None:
     agent = agent_named(make_client, owner, "agent-a")
-    view = owner.get(f"/projects/maity/members/{agent.id}").json()
+    view = owner.get(f"/projects/maintainer/maity/members/{agent.id}").json()
     assert view["owner"] == {
         "id": owner.id,
         "handle": "maintainer",
@@ -498,13 +511,13 @@ def test_admins_and_owners_see_owner_and_credentials(
     }
     assert view["credentials"]["active"] == 1 and view["credentials"]["never_resumed"] == 1
     agent.resume()
-    after = owner.get(f"/projects/maity/members/{agent.id}").json()["credentials"]
+    after = owner.get(f"/projects/maintainer/maity/members/{agent.id}").json()["credentials"]
     assert after["never_resumed"] == 0 and after["last_used_via"] == "bearer"
     plain = flow.human(make_client, migrated, "reader")
     factory.membership(migrated, _project_id(migrated), "member", human_id=plain.id)
-    seen = plain.get(f"/projects/maity/members/{agent.id}").json()
+    seen = plain.get(f"/projects/maintainer/maity/members/{agent.id}").json()
     assert "owner" not in seen and "credentials" not in seen
-    listed = owner.get("/projects/maity/members").json()["items"]
+    listed = owner.get("/projects/maintainer/maity/members").json()["items"]
     human_row = next(m for m in listed if m["id"] == owner.id)
     assert human_row["owner"] is None and human_row["credentials"] is None
 
@@ -519,9 +532,12 @@ def test_the_conversation_list_previews_the_last_message(
     make_client: ClientFactory, owner: flow.Human
 ) -> None:
     agent = agent_named(make_client, owner, "agent-a")
-    assert owner.get("/projects/maity/conversations").json()["items"][0]["last_message"] is None
-    owner.post(f"/projects/maity/conversations/{agent.id}/messages", {"body": "ä" * 250})
-    [item] = owner.get("/projects/maity/conversations").json()["items"]
+    assert (
+        owner.get("/projects/maintainer/maity/conversations").json()["items"][0]["last_message"]
+        is None
+    )
+    owner.post(f"/projects/maintainer/maity/conversations/{agent.id}/messages", {"body": "ä" * 250})
+    [item] = owner.get("/projects/maintainer/maity/conversations").json()["items"]
     preview = item["last_message"]
     assert preview["from"] == owner.id and preview["body"] == "ä" * 200
     assert preview["redacted"] is False and "mentions" not in preview

@@ -22,6 +22,7 @@ from maity_hub import (
     idempotency,
     invitation_mail,
     invitations,
+    namespace,
     paging,
     registration,
 )
@@ -35,11 +36,12 @@ from maity_hub.events import Actor
 from maity_hub.ids import new_id
 from maity_hub.mail import address
 from maity_hub.models import Strict
+from maity_hub.namespace import ProjectRoute
 from maity_hub.policy import CLOSED_STATES
 from maity_hub.routes.joins import EXCHANGE_BY_ADDRESS
 from maity_hub.views import member_view
 
-router = APIRouter()
+router = APIRouter(route_class=ProjectRoute)
 
 PAGE_DEFAULT, PAGE_MAX = 50, 200
 
@@ -72,14 +74,14 @@ def _url(request: Request, token: str) -> str:
 
 def _load(conn: Connection, invitation_id: str) -> dict[str, Any]:
     row = conn.execute(select(t.invitation).where(t.invitation.c.id == invitation_id)).one()
-    slug = conn.execute(select(t.project.c.slug).where(t.project.c.id == row.project_id)).scalar()
+    slug = namespace.name_of(conn, row.project_id)
     return invitations.view(row, str(slug))
 
 
 idempotency.LOADERS["invitation"] = idempotency.plain(_load)
 
 
-@router.post("/projects/{slug}/invitations", status_code=201)
+@router.post("/projects/{owner}/{slug}/invitations", status_code=201)
 def create_invitation(
     slug: str, body: InvitationIn, request: Request, caller: HumanCaller
 ) -> JSONResponse:
@@ -117,13 +119,16 @@ def create_invitation(
         if given is not None:
             invitation_mail.send(conn, invitation_id=invitation_id, to=given, url=url)
         return idempotency.Outcome(
-            201, "invitation", invitation_id, invitations.view(row, mine.project.slug, url)
+            201,
+            "invitation",
+            invitation_id,
+            invitations.view(row, namespace.full_name(conn, mine.project), url),
         )
 
     return idempotency.run(engine_of(request), request, caller, action)
 
 
-@router.get("/projects/{slug}/invitations")
+@router.get("/projects/{owner}/{slug}/invitations")
 def list_invitations(
     slug: str,
     request: Request,
@@ -160,11 +165,12 @@ def list_invitations(
         rows = conn.execute(query.order_by(c.created_at.desc(), c.id.desc()).limit(limit + 1)).all()
         page = rows[:limit]
         next_cursor = paging.cursor(page[-1].created_at, page[-1].id) if len(rows) > limit else None
-        items = [invitations.view(r, mine.project.slug) for r in page]
+        name = namespace.full_name(conn, mine.project)
+        items = [invitations.view(r, name) for r in page]
         return JSONResponse({"items": items, "next_cursor": next_cursor})
 
 
-@router.delete("/projects/{slug}/invitations/{invitation_id}")
+@router.delete("/projects/{owner}/{slug}/invitations/{invitation_id}")
 def revoke_invitation(
     slug: str, invitation_id: str, request: Request, caller: HumanCaller
 ) -> JSONResponse:
@@ -218,7 +224,8 @@ def _logo_url(conn: Connection, request: Request, project: Any) -> str | None:
     shown = images.views(conn, [project.id]).get(project.id, {})
     if not shown.get("logo", {}).get("available"):
         return None
-    return f"{settings_of(request).public_url}/api/v1/projects/{project.slug}/logo"
+    name = namespace.full_name(conn, project)
+    return f"{settings_of(request).public_url}/api/v1/projects/{name}/logo"
 
 
 @router.get("/invitations/{token}")
@@ -242,6 +249,7 @@ async def invitation_page(token: str, request: Request) -> JSONResponse:
             return {
                 "project": {
                     "slug": project.slug,
+                    "full_name": namespace.full_name(conn, project),
                     "name": project.name,
                     "logo_url": _logo_url(conn, request, project),
                 },

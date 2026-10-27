@@ -71,13 +71,16 @@ def remove(s: Setup, **body: Any) -> Any:
 
 
 def placement(s: Setup, placement_id: str) -> dict[str, Any]:
-    found: dict[str, Any] = s.owner.get(f"/projects/maity/placements/{placement_id}").json()
+    found: dict[str, Any] = s.owner.get(
+        f"/projects/maintainer/maity/placements/{placement_id}"
+    ).json()
     return found
 
 
 def set_policy(s: Setup, rule: str) -> Any:
     return s.owner.patch(
-        "/projects/maity", {"policy": {"on_runner_revoke": rule}, "reason": "the runner's agents"}
+        "/projects/maintainer/maity",
+        {"policy": {"on_runner_revoke": rule}, "reason": "the runner's agents"},
     )
 
 
@@ -91,7 +94,7 @@ def test_keep_is_the_default_and_changes_nothing(setup: Setup) -> None:
     answer = revoke(setup)
     assert answer.status_code == 200, answer.text
     assert answer.json()["on_runner_revoke"] == [
-        {"project": "maity", "rule": "keep", "stopped": []}
+        {"project": "maintainer/maity", "rule": "keep", "stopped": []}
     ]
     assert placement(setup, first["id"])["active"] is True
     later(3600)
@@ -103,7 +106,7 @@ def test_stop_closes_tells_and_revokes_after_the_grace(setup: Setup) -> None:
     first = running(setup)
     answer = revoke(setup, reason="stolen laptop")
     assert answer.json()["on_runner_revoke"] == [
-        {"project": "maity", "rule": "stop", "stopped": [first["id"]]}
+        {"project": "maintainer/maity", "rule": "stop", "stopped": [first["id"]]}
     ]
     closed = placement(setup, first["id"])
     assert (closed["active"], closed["closed_reason"]) == (False, "runner_revoked")
@@ -134,7 +137,7 @@ def test_the_owners_override_stops_at_once_whatever_the_policy(setup: Setup) -> 
     first = running(setup)  # the project keeps (inherit, instance keep)
     answer = revoke(setup, agents="stop")
     assert answer.json()["on_runner_revoke"][0] == {
-        "project": "maity",
+        "project": "maintainer/maity",
         "rule": "stop",
         "stopped": [first["id"]],
     }
@@ -158,7 +161,7 @@ def test_removing_under_stop_revokes_the_agents_too(setup: Setup) -> None:
     body = answer.json()
     assert body["removed_at"] is not None
     assert body["on_runner_revoke"] == [
-        {"project": "maity", "rule": "stop", "stopped": [first["id"]]}
+        {"project": "maintainer/maity", "rule": "stop", "stopped": [first["id"]]}
     ]
     assert placement(setup, first["id"])["closed_reason"] == "runner_removed"
     later(first["stop_grace_seconds"] + 1)
@@ -168,7 +171,9 @@ def test_removing_under_stop_revokes_the_agents_too(setup: Setup) -> None:
 def test_removing_under_keep_closes_the_placements_and_keeps_the_agents(setup: Setup) -> None:
     first = running(setup)
     body = remove(setup).json()
-    assert body["on_runner_revoke"] == [{"project": "maity", "rule": "keep", "stopped": []}]
+    assert body["on_runner_revoke"] == [
+        {"project": "maintainer/maity", "rule": "keep", "stopped": []}
+    ]
     assert placement(setup, first["id"])["closed_reason"] == "runner_removed"
     later(3600)
     assert setup.agent.get("/me").status_code == 200
@@ -188,7 +193,9 @@ def test_the_policy_field_and_the_instance_floor(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
     s = setup_with(make_client, migrated, on_runner_revoke="stop_floor")
-    assert s.owner.get("/projects/maity").json()["policy"]["on_runner_revoke"] == "inherit"
+    assert (
+        s.owner.get("/projects/maintainer/maity").json()["policy"]["on_runner_revoke"] == "inherit"
+    )
     refused = set_policy(s, "keep")
     assert refused.json()["error"]["details"]["fields"] == {"policy.on_runner_revoke": "stop_floor"}
     assert set_policy(s, "unknown").json()["error"]["details"]["fields"] == {
@@ -204,7 +211,7 @@ def test_a_due_credential_shows_as_revoked_before_it_is_used(setup: Setup) -> No
     assert set_policy(setup, "stop").status_code == 200
     first = running(setup)
     revoke(setup)
-    url = f"/projects/maity/members/{setup.agent.id}/credentials"
+    url = f"/projects/maintainer/maity/members/{setup.agent.id}/credentials"
     [before] = [
         c for c in setup.owner.get(url).json()["items"] if c["id"] == setup.agent.credential_id
     ]
@@ -214,7 +221,7 @@ def test_a_due_credential_shows_as_revoked_before_it_is_used(setup: Setup) -> No
         c for c in setup.owner.get(url).json()["items"] if c["id"] == setup.agent.credential_id
     ]
     assert (after["revoked_reason"], after["revoked_by"]) == ("runner_revoked", setup.owner.id)
-    view = setup.owner.get(f"/projects/maity/members/{setup.agent.id}").json()
+    view = setup.owner.get(f"/projects/maintainer/maity/members/{setup.agent.id}").json()
     assert view["credentials"]["active"] == 0
 
 
@@ -226,7 +233,7 @@ def test_a_stop_after_a_keep_still_stops_the_agents(setup: Setup) -> None:
     url = f"/api/v1/runners/{setup.runner.id}/revoke"
     stopped = setup.owner.client.post(url, json={"agents": "stop"}, headers=headers)
     assert stopped.status_code == 200, stopped.text
-    expected = [{"project": "maity", "rule": "stop", "stopped": [first["id"]]}]
+    expected = [{"project": "maintainer/maity", "rule": "stop", "stopped": [first["id"]]}]
     assert stopped.json()["on_runner_revoke"] == expected
     again = setup.owner.client.post(url, json={"agents": "stop"}, headers=headers)
     assert again.json()["on_runner_revoke"] == expected  # the replay agrees

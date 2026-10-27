@@ -35,12 +35,12 @@ def hosted_human(make_client: ClientFactory, migrated: Any, handle: str) -> flow
     login = client.post("/api/v1/auth/login", json={"handle": handle, "password": factory.PASSWORD})
     assert login.status_code == 200, login.text
     csrf = client.get("/api/v1/auth/session").json()["csrf_token"]
-    return flow.Human(client, csrf, human_id)
+    return flow.Human(client, csrf, human_id, handle)
 
 
 def create(owner: flow.Human, **body: Any) -> dict[str, Any]:
     body.setdefault("agent", {"handle": "agent-j", "display_name": "Agent J"})
-    response = owner.post("/projects/maity/joins", body)
+    response = owner.post(f"/projects/{owner.handle}/maity/joins", body)
     assert response.status_code == 201, response.text
     created: dict[str, Any] = response.json()
     return created
@@ -89,13 +89,16 @@ def test_links_go_to_the_join_host_by_default(make_client: ClientFactory, migrat
     assert via_join["paste_line"].startswith(f"maity join {JOIN}/")
     via_public = create(owner, agent={"handle": "agent-p", "display_name": "P"}, via="public")
     assert via_public["join_url"] == f"{PUBLIC}/join/{token_of(via_public)}"
-    listed = {j["id"]: j["via"] for j in owner.get("/projects/maity/joins").json()["items"]}
+    listed = {
+        j["id"]: j["via"]
+        for j in owner.get(f"/projects/{owner.handle}/maity/joins").json()["items"]
+    }
     assert listed == {via_join["id"]: "join", via_public["id"]: "public"}
 
 
 def test_via_join_without_a_join_host_is_invalid(owner: flow.Human) -> None:
     response = owner.post(
-        "/projects/maity/joins",
+        "/projects/maintainer/maity/joins",
         {"agent": {"handle": "agent-x", "display_name": "X"}, "via": "join"},
     )
     assert response.json()["error"]["details"]["fields"] == {"via": "no_join_host"}
@@ -138,7 +141,7 @@ def test_the_exchange_on_the_join_host_ignores_credentials_and_cookies(
 
 def test_a_dead_link_says_so(make_client: ClientFactory, owner: flow.Human) -> None:
     created = create(owner)
-    owner.delete(f"/projects/maity/joins/{created['id']}")
+    owner.delete(f"/projects/maintainer/maity/joins/{created['id']}")
     dead = join_client(make_client).get(f"/{token_of(created)}")
     assert dead.status_code == 404 and dead.headers["Maity-Error"] == "not_found"
     assert "no longer works" in dead.text and "new join line" in dead.text

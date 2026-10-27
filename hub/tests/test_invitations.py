@@ -22,7 +22,7 @@ from tests.conftest import ClientFactory
 from tests.test_join_host import join_client
 from tests.test_registration import MAIL, PASSWORD, SIGNING, hub, pending
 
-PATH = "/projects/maity/invitations"
+PATH = "/projects/maintainer/maity/invitations"
 
 
 @pytest.fixture(autouse=True)
@@ -166,7 +166,7 @@ def test_an_agent_never_touches_invitations(
     revoked = lead.client.delete(f"/api/v1{PATH}/{made['id']}", headers=lead.auth | lead.key())
     assert revoked.status_code == 403
     # An admin agent reads every event of the project, but not these (§3.4, §8.2).
-    seen = lead.get("/projects/maity/events?after=0").json()["items"]
+    seen = lead.get("/projects/maintainer/maity/events?after=0").json()["items"]
     assert not [e for e in seen if e["kind"] in invitations.KINDS]
 
 
@@ -248,7 +248,12 @@ def test_the_page_says_who_invites_to_what(owner: flow.Human, make_client: Clien
     shown = page(make_client(), token_of(made))
     assert shown.status_code == 200
     assert shown.json() == {
-        "project": {"slug": "maity", "name": "Maity", "logo_url": None},
+        "project": {
+            "slug": "maity",
+            "full_name": "maintainer/maity",
+            "name": "Maity",
+            "logo_url": None,
+        },
         "role": "reviewer",
         "invited_by": {"display_name": shown.json()["invited_by"]["display_name"]},
         "note": "Welcome.",
@@ -343,9 +348,9 @@ def test_accepting_makes_a_member_and_uses_the_invitation(
         "reviewer",
         "human",
     )
-    assert guest.get("/projects/maity").status_code == 200
-    owners_view = owner.get(f"/projects/maity/members/{owner.id}").json()
-    guests_view = owner.get(f"/projects/maity/members/{guest.id}").json()
+    assert guest.get("/projects/maintainer/maity").status_code == 200
+    owners_view = owner.get(f"/projects/maintainer/maity/members/{owner.id}").json()
+    guests_view = owner.get(f"/projects/maintainer/maity/members/{guest.id}").json()
     for key in ("briefing", "briefing_version", "briefing_by"):  # as every human starts
         assert guests_view.get(key) == owners_view.get(key), key
     used = owner.get(PATH).json()["items"][0]

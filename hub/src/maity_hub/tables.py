@@ -292,7 +292,12 @@ project = Table(
     "project",
     metadata,
     _id(primary_key=True),
-    Column("slug", String(HANDLE), nullable=False, unique=True),
+    # The namespace owner, a human, and the slug: unique together, with the project's
+    # aliases (§6.25). `legacy_slug` is the slug at the namespace migration, frozen, for the
+    # addresses outside the API that predate it; null for every later project.
+    _ref("owner_id", "human.id", nullable=False),
+    Column("slug", String(HANDLE), nullable=False),
+    Column("legacy_slug", String(HANDLE)),
     Column("name", String(TITLE), nullable=False),
     Column("state", String(16), nullable=False),
     Column("state_note", MARKDOWN_TEXT),
@@ -347,6 +352,22 @@ project = Table(
     # does writing an event look for the instances it wakes.
     Column("team_wake", Boolean, nullable=False, server_default=false()),
     Column("created_at", UtcDateTime, nullable=False),
+    UniqueConstraint("owner_id", "slug", name="uq_project_owner_slug"),
+    **MYSQL_TABLE,
+)
+
+# A full name a project gave up by a rename or a transfer (§6.25): the namespace owner's id
+# at that time and the slug. Never released, never given to another project, so an old
+# address cannot lead somewhere else.
+project_alias = Table(
+    "project_alias",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    _ref("project_id", "project.id", nullable=False),
+    _ref("owner_id", "human.id", nullable=False),
+    Column("slug", String(HANDLE), nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    UniqueConstraint("owner_id", "slug", name="uq_project_alias_owner_slug"),
     **MYSQL_TABLE,
 )
 

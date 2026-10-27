@@ -58,12 +58,12 @@ def put(
     query = "" if name is None else f"?name={name}"
     if isinstance(who, flow.Human):
         return who.client.post(
-            f"/api/v1/projects/maity/attachments{query}",
+            f"/api/v1/projects/maintainer/maity/attachments{query}",
             content=data,
             headers={"Content-Type": content_type, "X-CSRF-Token": who.csrf, **more},
         )
     return who.client.post(
-        f"/api/v1/projects/maity/attachments{query}",
+        f"/api/v1/projects/maintainer/maity/attachments{query}",
         content=data,
         headers={"Content-Type": content_type, **who.auth, **who.key(), **more},
     )
@@ -95,13 +95,14 @@ def test_a_file_is_stored_byte_for_byte_and_answers_with_its_metadata(
     [project_dir] = [p for p in blobs.iterdir() if p.is_dir()]
     assert (project_dir / shown["id"]).read_bytes() == body  # never in the database
     assert (
-        owner.get(f"/projects/maity/attachments/{shown['id']}").json()["sha256"] == shown["sha256"]
+        owner.get(f"/projects/maintainer/maity/attachments/{shown['id']}").json()["sha256"]
+        == shown["sha256"]
     )
 
 
 def test_a_file_is_served_as_a_download_with_the_hardening_headers(owner: flow.Human) -> None:
     shown = put(owner, "page.html", b"<script>alert(1)</script>", "text/html").json()
-    served = owner.get(f"/projects/maity/attachments/{shown['id']}/content")
+    served = owner.get(f"/projects/maintainer/maity/attachments/{shown['id']}/content")
     assert served.status_code == 200 and served.content == b"<script>alert(1)</script>"
     assert served.headers["content-type"] == "application/octet-stream"  # whatever `type` says
     assert served.headers["content-disposition"].startswith("attachment; filename=")
@@ -111,7 +112,7 @@ def test_a_file_is_served_as_a_download_with_the_hardening_headers(owner: flow.H
     assert served.headers["cache-control"] == "private, no-cache"
     assert served.headers["etag"] == f'"{shown["sha256"]}"'
     again = owner.get(
-        f"/projects/maity/attachments/{shown['id']}/content",
+        f"/projects/maintainer/maity/attachments/{shown['id']}/content",
         headers={"If-None-Match": served.headers["etag"]},
     )
     assert again.status_code == 304
@@ -124,7 +125,7 @@ def test_an_image_is_reencoded_inline_and_download_overrides(owner: flow.Human) 
     assert (shown["kind"], shown["type"], shown["width"], shown["height"]) == (
         "image", "image/png", 40, 30,
     )  # fmt: skip
-    path = f"/projects/maity/attachments/{shown['id']}/content"
+    path = f"/projects/maintainer/maity/attachments/{shown['id']}/content"
     inline = owner.get(path)
     assert inline.headers["content-type"] == "image/png"
     assert inline.headers["content-disposition"] == "inline; filename*=UTF-8''shot.png"
@@ -180,15 +181,15 @@ def test_without_a_configured_store_every_attachment_call_says_so(
     owner = flow.human(make_client, migrated)
     flow.project(owner, "maity")
     calls = (
-        owner.get("/projects/maity/attachments/att-anything0000"),
-        owner.get("/projects/maity/attachments/att-anything0000/content"),
+        owner.get("/projects/maintainer/maity/attachments/att-anything0000"),
+        owner.get("/projects/maintainer/maity/attachments/att-anything0000/content"),
         owner.get(
-            "/projects/maity/attachments/att-anything0000/content",
+            "/projects/maintainer/maity/attachments/att-anything0000/content",
             headers={"If-None-Match": '"abc"'},
         ),
-        owner.get("/projects/maity/attachments?status=pending"),
-        owner.get("/projects/maity/attachments"),
-        owner.delete("/projects/maity/attachments/att-anything0000"),
+        owner.get("/projects/maintainer/maity/attachments?status=pending"),
+        owner.get("/projects/maintainer/maity/attachments"),
+        owner.delete("/projects/maintainer/maity/attachments/att-anything0000"),
     )
     for answer in calls:
         assert answer.status_code == 409, answer.text
@@ -214,7 +215,7 @@ def test_the_project_quota_counts_pending_uploads_and_deleting_frees_it(
     over = put(owner, "b.bin", b"x" * 1000, "application/octet-stream")
     assert over.status_code == 409 and over.json()["error"]["code"] == "attachment_quota"
     assert over.json()["error"]["details"] == {"scope": "project", "used": 1500, "quota": 2048}
-    assert owner.delete(f"/projects/maity/attachments/{first['id']}").status_code == 200
+    assert owner.delete(f"/projects/maintainer/maity/attachments/{first['id']}").status_code == 200
     assert put(owner, "b.bin", b"x" * 1000, "application/octet-stream").status_code == 201
 
 
@@ -247,12 +248,12 @@ def test_a_replayed_upload_answers_the_first_and_stores_nothing_twice(
     agent = flow.agent(stored, owner)
     headers = {"Idempotency-Key": "same-upload-0001"}
     first = agent.client.post(
-        "/api/v1/projects/maity/attachments?name=a.txt",
+        "/api/v1/projects/maintainer/maity/attachments?name=a.txt",
         content=b"abc",
         headers={"Content-Type": "text/plain", **agent.auth, **headers},
     )
     again = agent.client.post(
-        "/api/v1/projects/maity/attachments?name=a.txt",
+        "/api/v1/projects/maintainer/maity/attachments?name=a.txt",
         content=b"abc",
         headers={"Content-Type": "text/plain", **agent.auth, **headers},
     )
@@ -265,12 +266,12 @@ def test_a_replayed_upload_answers_the_first_and_stores_nothing_twice(
 def test_a_pending_upload_is_its_uploaders_alone(stored: ClientFactory, owner: flow.Human) -> None:
     agent, other = flow.agent(stored, owner), flow.agent(stored, owner)
     shown = put(agent, "mine.txt", b"secret").json()
-    path = f"/projects/maity/attachments/{shown['id']}"
+    path = f"/projects/maintainer/maity/attachments/{shown['id']}"
     assert agent.get(path).status_code == 200 and agent.get(f"{path}/content").content == b"secret"
     for stranger in (other, owner):  # not even a human owner reads another's pending upload
         assert stranger.get(path).status_code == 404
         assert stranger.get(f"{path}/content").status_code == 404
-    assert agent.get("/projects/maity/attachments/att-nonexistent00").status_code == 404
+    assert agent.get("/projects/maintainer/maity/attachments/att-nonexistent00").status_code == 404
 
 
 def test_the_pending_listing_shows_a_member_its_own_and_an_admin_the_rest_in_part(
@@ -279,35 +280,37 @@ def test_the_pending_listing_shows_a_member_its_own_and_an_admin_the_rest_in_par
     agent, other = flow.agent(stored, owner), flow.agent(stored, owner)
     mine = put(agent, "mine.txt", b"1").json()
     theirs = put(other, "theirs.txt", b"22").json()
-    own = agent.get("/projects/maity/attachments?status=pending").json()
+    own = agent.get("/projects/maintainer/maity/attachments?status=pending").json()
     assert [i["id"] for i in own["items"]] == [mine["id"]] and own["items"][0]["name"] == "mine.txt"
-    everyone = owner.get("/projects/maity/attachments?status=pending").json()["items"]
+    everyone = owner.get("/projects/maintainer/maity/attachments?status=pending").json()["items"]
     assert [i["id"] for i in everyone] == [mine["id"], theirs["id"]]
     for item in everyone:
         assert item["name"] is None and item["type"] is None and item["sha256"] is None
         assert item["size"] and item["uploaded_by"] and item["expires_at"]
     narrowed = owner.get(
-        f"/projects/maity/attachments?status=pending&uploaded_by={other.id}"
+        f"/projects/maintainer/maity/attachments?status=pending&uploaded_by={other.id}"
     ).json()["items"]
     assert [i["id"] for i in narrowed] == [theirs["id"]]
     assert (
-        agent.get(f"/projects/maity/attachments?status=pending&uploaded_by={other.id}").status_code
+        agent.get(
+            f"/projects/maintainer/maity/attachments?status=pending&uploaded_by={other.id}"
+        ).status_code
         == 403
     )
-    assert owner.get("/projects/maity/attachments?status=sent").status_code == 400
-    assert owner.get("/projects/maity/attachments").status_code == 400
+    assert owner.get("/projects/maintainer/maity/attachments?status=sent").status_code == 400
+    assert owner.get("/projects/maintainer/maity/attachments").status_code == 400
 
 
 def test_the_pending_listing_pages_oldest_first(owner: flow.Human) -> None:
     made = [put(owner, f"{n}.txt", b"x").json()["id"] for n in range(3)]
-    page = owner.get("/projects/maity/attachments?status=pending&limit=2").json()
+    page = owner.get("/projects/maintainer/maity/attachments?status=pending&limit=2").json()
     assert [i["id"] for i in page["items"]] == made[:2] and page["next_cursor"]
     rest = owner.get(
-        f"/projects/maity/attachments?status=pending&limit=2&cursor={page['next_cursor']}"
+        f"/projects/maintainer/maity/attachments?status=pending&limit=2&cursor={page['next_cursor']}"
     ).json()
     assert [i["id"] for i in rest["items"]] == made[2:] and rest["next_cursor"] is None
     other = owner.get(
-        f"/projects/maity/attachments?status=pending&limit=2&uploaded_by={owner.id}"
+        f"/projects/maintainer/maity/attachments?status=pending&limit=2&uploaded_by={owner.id}"
         f"&cursor={page['next_cursor']}"
     )
     assert other.status_code == 400  # a cursor belongs to its own query
@@ -318,7 +321,7 @@ def test_deleting_a_pending_upload_removes_it_with_its_bytes_and_leaves_nothing(
 ) -> None:
     agent = flow.agent(stored, owner)
     shown = put(agent, "gone.txt", b"bye").json()
-    path = f"/projects/maity/attachments/{shown['id']}"
+    path = f"/projects/maintainer/maity/attachments/{shown['id']}"
     deleted = agent.client.delete(f"/api/v1{path}", headers={**agent.auth, **agent.key()})
     assert deleted.status_code == 200 and deleted.json()["name"] == "gone.txt"
     assert agent.get(path).status_code == 404
@@ -334,7 +337,7 @@ def test_an_admin_deletes_another_members_pending_upload_and_sees_no_more_than_t
 ) -> None:
     agent, other = flow.agent(stored, owner), flow.agent(stored, owner)
     shown = put(agent, "private-name.txt", b"x").json()
-    path = f"/projects/maity/attachments/{shown['id']}"
+    path = f"/projects/maintainer/maity/attachments/{shown['id']}"
     refused = other.client.delete(f"/api/v1{path}", headers={**other.auth, **other.key()})
     assert refused.status_code == 404  # it does not exist for another member
     deleted = owner.delete(path)
@@ -354,12 +357,14 @@ def test_an_admin_agent_never_deletes_what_it_did_not_send(
             update(t.membership).where(t.membership.c.agent_id == boss.id).values(role="admin")
         )
     shown = put(agent, "x.txt", b"x").json()
-    path = f"/projects/maity/attachments/{shown['id']}"
+    path = f"/projects/maintainer/maity/attachments/{shown['id']}"
     refused = boss.client.delete(f"/api/v1{path}", headers={**boss.auth, **boss.key()})
     assert (
         refused.status_code == 403 and refused.json()["error"]["details"]["reason"] == "humans_only"
     )
-    other = boss.get(f"/projects/maity/attachments?status=pending&uploaded_by={agent.id}")
+    other = boss.get(
+        f"/projects/maintainer/maity/attachments?status=pending&uploaded_by={agent.id}"
+    )
     assert other.status_code == 403 and other.json()["error"]["details"]["reason"] == "humans_only"
     assert agent.get(path).status_code == 200  # still there
 
@@ -367,11 +372,14 @@ def test_an_admin_agent_never_deletes_what_it_did_not_send(
 def test_a_closed_project_takes_no_upload_and_still_lets_one_go(owner: flow.Human) -> None:
     shown = put(owner, "a.txt", b"x").json()
     assert (
-        owner.patch("/projects/maity", {"state": "accepted", "reason": "done"}).status_code == 200
+        owner.patch(
+            "/projects/maintainer/maity", {"state": "accepted", "reason": "done"}
+        ).status_code
+        == 200
     )
     closed = put(owner, "b.txt", b"x")
     assert closed.status_code == 409 and closed.json()["error"]["code"] == "project_closed"
-    assert owner.delete(f"/projects/maity/attachments/{shown['id']}").status_code == 200
+    assert owner.delete(f"/projects/maintainer/maity/attachments/{shown['id']}").status_code == 200
 
 
 def test_bytes_that_do_not_match_their_digest_are_never_served(
@@ -380,7 +388,7 @@ def test_bytes_that_do_not_match_their_digest_are_never_served(
     shown = put(owner, "a.txt", b"original").json()
     [folder] = [p for p in blobs.iterdir() if p.is_dir()]
     (folder / shown["id"]).write_bytes(b"swapped!")
-    broken = owner.get(f"/projects/maity/attachments/{shown['id']}/content")
+    broken = owner.get(f"/projects/maintainer/maity/attachments/{shown['id']}/content")
     assert broken.status_code == 500 and broken.json()["error"]["code"] == "internal"
 
 
