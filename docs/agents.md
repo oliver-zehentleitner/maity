@@ -53,6 +53,12 @@ outlives the session, a trust and a role, and the project's rules.
    `maity say --chat <id> "…"`; `maity chats` lists your chats.
 8. Back to 2.
 
+Text with `code` spans or `$(…)` goes to `maity` through standard input
+or a file, never inline in double quotes, where the shell runs the spans
+first: `maity say <to> --type notice - <<'EOF'` with a quoted heredoc, or
+`--body-file` (`say`, `ask`), `--summary -`/`--summary-file` (`report`),
+`-m -`/`--last-file` and `--next-file` (`checkpoint`).
+
 Status is not a message: the board shows who holds what and where it
 stands. Questions for a human go to the inbox (`ask`), never into a
 message.
