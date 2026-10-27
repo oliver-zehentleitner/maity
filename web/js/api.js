@@ -153,6 +153,9 @@ window.Maity = window.Maity || {};
   let uploadSerial = 0;
   const attachmentBlobs = {};  // "<slug>/<attachment id>" -> object URL of the file uploaded in this tab
   const earlierRepos = {};  // "<slug> <url>" -> the repository and export it had, for a repository set again
+  const webhooks = {};  // slug -> the forge webhook's secret and times (§17.4), fixture mode only
+  // The address a forge would deliver to: this page's origin, or a placeholder on file://.
+  const hubOrigin = () => (window.location && window.location.origin && window.location.origin !== "null" ? window.location.origin : "https://<hub>");
   const avatarChanges = {};  // member id -> times of its last PUT or DELETE (§6.10: 10 per hour)
 
   function runnersFile() {
@@ -1277,6 +1280,19 @@ window.Maity = window.Maity || {};
         p.settings = Object.assign({}, p.settings, { language: body.settings.language });
       }
 
+      // §6.1, §17.3: the ticker setting, sent whole, by a human with project:admin.
+      if (body.settings && "ticker" in body.settings) {
+        if (me().member.kind !== "human" || !["owner", "admin"].includes(roleIn(m[1]))) fail(403, "forbidden", "human project:admin needed", path);
+        const t = body.settings.ticker;
+        if (t !== null && (typeof t !== "object" || (t.contract_files || []).length > 10 || Object.keys(t.contract_implementers || {}).length > 200
+          || Object.values(t.contract_implementers || {}).some((v) => !Array.isArray(v) || v.length > 20))) {
+          fail(400, "invalid", "the request does not validate", path, { fields: { "settings.ticker": "invalid" } });
+        }
+        const next = Object.assign({}, p.settings);
+        if (t === null) delete next.ticker; else next.ticker = t;
+        p.settings = next;
+      }
+
       if (body.settings && "onboarding" in body.settings) {
         if (!["owner", "admin"].includes(roleIn(m[1]))) fail(403, "forbidden", "project:admin needed", path);
         const value = body.settings.onboarding || { check_in_with: "coordinator" };
@@ -1479,6 +1495,8 @@ window.Maity = window.Maity || {};
       "/api/v1/admin/settings/mail/test": { post: {} },
       "/api/v1/health": { get: {} },
       "/api/v1/projects/{slug}/ticker": { get: {}, post: {} },
+      "/api/v1/projects/{slug}/forge/webhook": { get: {} },
+      "/api/v1/projects/{slug}/forge/webhook/secret": { post: {}, delete: {} },
       "/api/v1/projects/{slug}/ticker/subscription": { get: {}, patch: {} },
       "/api/v1/projects/{slug}/conversations": { get: {}, post: {} },
       "/api/v1/projects/{slug}/attachments": { get: {}, post: {} },
@@ -2193,6 +2211,25 @@ window.Maity = window.Maity || {};
           audience: owner.audience.slice(), redacted: false, payload: { attachment_id: a.id, message_seq: a.message_seq, reason: "deleted", by: meId } });
       }
       return Object.assign({}, a);
+    }],
+    // §17.4: the forge webhook's state and its secret, a human with project:admin only; the secret answered once.
+    ["GET", /^\/projects\/([^/]+)\/forge\/webhook$/, (m, body, path) => {
+      if (me().member.kind !== "human" || !["owner", "admin"].includes(roleIn(m[1]))) fail(403, "forbidden", "human project:admin needed", path);
+      const w = webhooks[m[1]] || {};
+      return { configured: !!w.secret, url: hubOrigin() + "/api/v1/projects/" + m[1] + "/forge/webhook", created_at: w.created_at || null,
+        rotated_at: w.rotated_at || null, last_delivery_at: w.last_delivery_at || null, last_result: w.last_result || null };
+    }],
+    ["POST", /^\/projects\/([^/]+)\/forge\/webhook\/secret$/, (m, body, path) => {
+      if (me().member.kind !== "human" || !["owner", "admin"].includes(roleIn(m[1]))) fail(403, "forbidden", "human project:admin needed", path);
+      const w = webhooks[m[1]] || {};
+      const secret = "whsec_" + Array.from({ length: 32 }, (_, i) => "abcdefghjkmnpqrstuvwxyz23456789"[(i * 7 + Date.now()) % 31]).join("");
+      webhooks[m[1]] = Object.assign({}, w, { secret, created_at: w.created_at || nowIso(), rotated_at: w.secret ? nowIso() : null });
+      return { secret, url: hubOrigin() + "/api/v1/projects/" + m[1] + "/forge/webhook" };
+    }],
+    ["DELETE", /^\/projects\/([^/]+)\/forge\/webhook\/secret$/, (m, body, path) => {
+      if (me().member.kind !== "human" || !["owner", "admin"].includes(roleIn(m[1]))) fail(403, "forbidden", "human project:admin needed", path);
+      webhooks[m[1]] = {};
+      return null;
     }],
     // §9.3: the direct conversations and the group chats, newest first; with
     // observed=true also the group chats read along as an agent's owner.

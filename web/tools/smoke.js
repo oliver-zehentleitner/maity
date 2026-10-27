@@ -889,6 +889,46 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = prGet;
   await go("#/p/maity/agents"); for (let k = 0; k < 4; k++) await tick();
 
+  // The change ticker's settings and the forge webhook in Project settings (tsk-a3cj2canahy3, §17.3, §17.4).
+  await go("#/p/maity/inbox"); await projectSettings();
+  expect(byId("ticker-enabled") && byId("ticker-enabled").checked && byId("ticker-files").value === "docs/api.md"
+    && byId("ticker-implementers").value === "8: area:hub/ area:web/\n15: member:agt-b\n*: area:hub/"
+    && main.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/p/maity/ticker"),
+    "ticker settings: on, the contract file and who implements which section, written as lines; one's follows in the Ticker");
+  byId("ticker-implementers").value = "8: area:hub/ member:agt-gone\n*: role:nobody"; byId("ticker-implementers").dispatch("input");
+  expect(!byId("ticker-unresolved").hidden && text(byId("ticker-unresolved")).includes("member:agt-gone") && text(byId("ticker-unresolved")).includes("role:nobody"),
+    "ticker settings: a token that names nobody now is said as unresolved");
+  const tsetPatches = [];
+  const tsetPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { tsetPatches.push([p, b]); return tsetPatch(p, b); };
+  byId("ticker-implementers").value = "eight area:hub/"; main.querySelector("form.ticker-settings").dispatch("submit"); await tick();
+  expect(!tsetPatches.length && text(main.querySelector("form.ticker-settings .send-status")).includes("write it as"), "ticker settings: a line that is no mapping is refused before sending");
+  byId("ticker-enabled").checked = false; byId("ticker-files").value = "docs/api.md\ndocs/runner.md";
+  byId("ticker-implementers").value = "8.2: area:web/\n*: trust:admin";
+  main.querySelector("form.ticker-settings").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(tsetPatches.length === 1 && JSON.stringify(tsetPatches[0][1]) === JSON.stringify({ settings: { ticker: { enabled: false,
+    contract_files: ["docs/api.md", "docs/runner.md"], contract_implementers: { "8.2": ["area:web/"], "*": ["trust:admin"] } } } }),
+    "ticker settings: saved whole, as the hub takes the setting " + JSON.stringify(tsetPatches[0] && tsetPatches[0][1]));
+  win.Maity.api.patch = tsetPatch;
+  // The webhook: none yet; made, the secret shown once with the address; rotated after a confirm; removed.
+  await go("#/p/maity/inbox"); await projectSettings();
+  const whBox = () => main.querySelector("section.webhook");
+  expect(whBox() && text(whBox()).includes("Secret") && text(whBox()).includes("none") && btn(whBox(), "Create a secret"), "webhook: none set, Create a secret");
+  btn(whBox(), "Create a secret").click(); for (let k = 0; k < 6; k++) await tick();
+  const whSecret = whBox().querySelector(".webhook-secret-value");
+  expect(whSecret && /^whsec_/.test(text(whSecret)) && text(whBox()).includes("/api/v1/projects/maity/forge/webhook") && text(whBox()).includes("Shown only now")
+    && btn(whBox(), "Rotate the secret") && btn(whBox(), "Remove the secret"), "webhook: a made secret is shown once with the payload URL, then Rotate and Remove");
+  const whConfirm = win.confirm;
+  let whAsked = 0;
+  win.confirm = () => { whAsked += 1; return false; };
+  btn(whBox(), "Rotate the secret").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(whAsked === 1 && text(whBox().querySelector(".webhook-secret-value")) === text(whSecret), "webhook: rotating asks first; declined, nothing changes");
+  win.confirm = () => true;
+  btn(whBox(), "Remove the secret").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(btn(whBox(), "Create a secret") && !whBox().querySelector(".webhook-secret-value"), "webhook: removed, none set again");
+  win.confirm = whConfirm;
+  await go("#/p/maity/inbox");
+
   // Runners (docs/api.md §15): the instance-level view.
   const runnersLink = header.querySelectorAll(".switcher a").find((a) => a.textContent === "Runners");
   expect(runnersLink && runnersLink.getAttribute("href") === "#/runners", "runners: a link beside the projects");

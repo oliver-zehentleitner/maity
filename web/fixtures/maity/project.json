@@ -10,7 +10,9 @@
     "forge": "github",
     "probe_configured": true
   },
-  "memory": { "provider": "keep-the-why" },
+  "memory": {
+    "provider": "keep-the-why"
+  },
   "keep_the_why": true,
   "setup": null,
   "policy": {
@@ -34,6 +36,24 @@
     ],
     "onboarding": {
       "check_in_with": "coordinator"
+    },
+    "ticker": {
+      "enabled": true,
+      "contract_files": [
+        "docs/api.md"
+      ],
+      "contract_implementers": {
+        "8": [
+          "area:hub/",
+          "area:web/"
+        ],
+        "15": [
+          "member:agt-b"
+        ],
+        "*": [
+          "area:hub/"
+        ]
+      }
     }
   },
   "rules_version": 7,
