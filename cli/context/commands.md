@@ -467,3 +467,42 @@ hub, would then refuse each other until both shipped together.
 - Normalising the action body to compact JSON in `ask`: the proxy could
   no longer see that the file it showed the owner is the file that is
   sent.
+
+## Handle arguments resolve through the member list, aliases included, and an unknown name goes on to the hub
+
+**Id:** 8469ac89-8dc4-44e7-b506-94e03372672d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card "cli: handle arguments resolve aliases" (contract #420, `docs/api.md` §6.24, §8.6, §13)
+**Revisit when:** the hub takes handles in `to` itself, or the member list gets paged
+
+`say <to>`, `ask --to`, `takeover --to`, `answer --on-behalf-of` and the
+placement commands read `GET …/members` once and send a member id. The
+id itself, the current handle, any of the member's `aliases`, and a
+global name `owner/handle` (either part current or former) all name the
+same member. The rule is the hub's rule for a mention: several
+candidates are refused, with their global names, unless exactly one of
+them is a human whose current handle it is. Tokens (`all`, `human`,
+`owner`, `role:`, `trust:`, `area:`, `member:`) are never looked up.
+A name that no member has is sent as given for an addressee, and the hub
+answers `not_a_member` as before. `--on-behalf-of` and the placements
+refuse it locally. `maity say` without `--type` compares the stored
+owner id first and looks the name up only when that does not match, so
+`maity say <your human's handle>` is the chat as the id is.
+
+**Reason:** the hub takes only ids in `to` (§8.4) and resolves handles
+only in mentions and at login. An agent that learnt a member by an old
+handle would otherwise send a handle the hub cannot place. Ids are
+opaque (§1.1), so the CLI cannot tell a handle from an id by its shape
+and asks the list. Passing unknown names on keeps the hub as the one
+judge of what is a member, and keeps the errors agents already know.
+The two strict places name a member for a write that only makes sense
+for a listed one.
+
+**Rejected alternatives:**
+- Current handle before alias: the hub does not rank them for mentions.
+  The CLI would pick a different member than the hub for the same text.
+- Refusing every name the list does not have: a member id the list does
+  not show would be refused by the CLI instead of being answered by the
+  hub.
