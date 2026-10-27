@@ -53,7 +53,7 @@ def error_response(
 
 
 # The contract's errors, by the situation that raises them.
-def invalid(fields: dict[str, str], message: str = "the request does not validate") -> ApiError:
+def invalid(fields: dict[str, Any], message: str = "the request does not validate") -> ApiError:
     return ApiError(400, "invalid", message, {"fields": fields})
 
 

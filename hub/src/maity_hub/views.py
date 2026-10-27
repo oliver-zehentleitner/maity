@@ -104,9 +104,11 @@ def project_view(
     settings: Settings,
     shown: dict[str, Any] | None = None,
     export: dict[str, Any] | None = None,
+    stored: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     """`shown` is what `images.views` says the project shows as logo and banner, `export`
-    the Keep the Why export as `ktw.export_for_view` holds it."""
+    the Keep the Why export as `ktw.export_for_view` holds it, `stored` the attachments
+    `{used, quota}` for a caller with `project:admin` (§8.7) and None for anyone else."""
     shown = shown or {}
     return {
         "slug": project.slug,
@@ -119,6 +121,7 @@ def project_view(
         "banner": shown.get("banner", NO_IMAGE),
         "keep_the_why": project.keep_the_why,
         "keep_the_why_export": export,
+        "attachments": stored,
         "policy": policy.of(project),
         "absence": absence(project),
         "settings": {

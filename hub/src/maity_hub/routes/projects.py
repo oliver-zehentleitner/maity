@@ -14,6 +14,7 @@ from pydantic_core import PydanticCustomError
 from sqlalchemy import Connection, delete, insert, select, update
 
 from maity_hub import (
+    attachments,
     availability,
     clock,
     idempotency,
@@ -255,9 +256,33 @@ def _export(project: Any, request: Request) -> dict[str, Any] | None:
     return ktw.export_for_view(reader_of(request), project.id, project.repository_url)
 
 
+def _stored(conn: Connection, project: Any, request: Request) -> dict[str, int] | None:
+    """The project's attachment bytes against its quota, for a caller with `project:admin`
+    in it (§8.7); anyone else gets None."""
+    caller = getattr(request.state, "caller", None)
+    if caller is None:
+        return None
+    try:
+        mine = membership(conn, caller, project.slug)
+    except ApiError:
+        return None
+    if not mine.may("project:admin"):
+        return None
+    return {
+        "used": attachments.used(conn, project.id),
+        "quota": settings_of(request).attachment_quota,
+    }
+
+
 def _view(conn: Connection, project: Any, request: Request) -> dict[str, Any]:
     shown = images.views(conn, [project.id])[project.id]
-    return project_view(project, settings_of(request), shown, _export(project, request))
+    return project_view(
+        project,
+        settings_of(request),
+        shown,
+        _export(project, request),
+        _stored(conn, project, request),
+    )
 
 
 def load_project(conn: Connection, project_id: str, request: Request) -> dict[str, Any]:
@@ -283,7 +308,10 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
         return JSONResponse(
             {
                 "items": [
-                    project_view(r, settings, shown[r.id], _export(r, request)) for r in rows
+                    project_view(
+                        r, settings, shown[r.id], _export(r, request), _stored(conn, r, request)
+                    )
+                    for r in rows
                 ],
                 "next_cursor": None,
             }

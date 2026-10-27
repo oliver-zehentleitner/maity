@@ -9,15 +9,28 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Path, Request
 from fastapi.responses import JSONResponse
+from pydantic import Field, ValidationInfo, field_validator
+from pydantic_core import PydanticCustomError
 from sqlalchemy import Connection, insert, select, update
 from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import clock, events, group_chats, idempotency, instances, longpoll, mentions
+from maity_hub import (
+    attachment_store,
+    attachments,
+    clock,
+    events,
+    group_chats,
+    idempotency,
+    instances,
+    longpoll,
+    mentions,
+)
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
-from maity_hub.deps import AnyCaller, EventsCaller, engine_of, wait_of
+from maity_hub.config import Settings
+from maity_hub.deps import AnyCaller, EventsCaller, engine_of, settings_of, wait_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.models import Strict, Written, markdown
 from maity_hub.views import event_views
@@ -41,9 +54,20 @@ class MessageIn(Written):
     kind: Literal["message"]
     type: str
     to: str | None = None
-    body: str = markdown(min_length=1)
+    attachments: list[str] = Field(default_factory=list)
+    body: str = markdown()
     task_id: str | None = None
     conversation_id: str | None = None
+
+    @field_validator("body")
+    @classmethod
+    def _text_or_attachments(cls, value: str, info: ValidationInfo) -> str:
+        """A message has text, or names attachments and may then have none (§8.7)."""
+        if not value and not info.data.get("attachments"):
+            raise PydanticCustomError(
+                "string_too_short", "String should have at least 1 character", {"min_length": 1}
+            )
+        return value
 
 
 class RedactIn(Strict):
@@ -233,9 +257,14 @@ def chat_parties(conn: Connection, mine: Membership, agent_id: str) -> tuple[Any
 
 
 def post_message(
-    conn: Connection, mine: Membership, caller: Caller, body: MessageIn
+    conn: Connection,
+    mine: Membership,
+    caller: Caller,
+    body: MessageIn,
+    settings: Settings | None = None,
 ) -> dict[str, Any]:
-    """Validate and emit one `message` event; returns its view."""
+    """Validate and emit one `message` event; returns its view. The attachments it names
+    are bound to it in the same transaction (§8.7)."""
     if body.type not in MESSAGE_TYPES:
         raise invalid({"type": "unknown"})
     me = mine.principal_id
@@ -323,6 +352,7 @@ def post_message(
                 pinged[token] = m["member_id"]
         mentions.charge(conn, mine.id, len({m for m in pinged.values() if m != me}))
         audience = list(dict.fromkeys([*audience, *pinged]))
+    named = attachments.bind(conn, mine, body.attachments, settings)
     payload = {
         "type": body.type,
         "to": to,
@@ -330,6 +360,7 @@ def post_message(
         "conversation_id": body.conversation_id,
         "task_id": body.task_id,
         "mentions": mentioned,
+        "attachments": [attachments.meta(r) for r in named],
     }
     if group is not None:  # where an agent that lost the chat answers (§9.4)
         payload["conversation"] = {"id": group.id, "kind": "group", "title": group.title}
@@ -343,6 +374,7 @@ def post_message(
         subject=("task", body.task_id) if body.task_id else None,
         conversation_id=body.conversation_id,
     )
+    attachments.attach(conn, named, seq)
     if group is not None:  # whoever speaks has read up to there (§9.2)
         remember_read(conn, mine.id, group.id, seq)
     return load_event(conn, str(seq))
@@ -463,7 +495,7 @@ def post_event(slug: str, body: MessageIn, request: Request, caller: AnyCaller) 
             else membership(conn, caller, slug)
         )
         mine.require("events:post")
-        view = post_message(conn, mine, caller, body)
+        view = post_message(conn, mine, caller, body, settings_of(request))
         return idempotency.Outcome(201, "event", str(view["seq"]), view)
 
     return idempotency.run(engine_of(request), request, caller, action)
@@ -483,6 +515,8 @@ def redact(
     if "expect" in body.model_fields_set and body.expect != "closed_chat_message":
         raise invalid({"expect": "unknown"}, "expect names closed_chat_message or is left out")
 
+    store = attachment_store.optional_store(settings_of(request))
+
     def action(conn: Connection) -> idempotency.Outcome:
         mine = writer(conn, caller, slug, seq=seq)
         row = conn.execute(
@@ -490,7 +524,7 @@ def redact(
         ).first()
         if row is not None and group_chats.is_group(row.conversation_id):
             # A group chat's own rule: a place in the chat, no scope (§8.5).
-            return _redact_in_group(conn, mine, caller, row, body)
+            return _redact_in_group(conn, mine, caller, row, body, store)
         mine.require("events:admin")
         if row is None:
             raise not_found()
@@ -518,14 +552,20 @@ def redact(
         # never tells anyone else what a `seq` is. No group chat's message comes here.
         if "expect" in body.model_fields_set:
             raise invalid({"expect": "mismatch"}, "the event is not a closed group chat's message")
-        _tombstone(conn, mine, caller, row, body.reason, audience)
+        _tombstone(conn, mine, caller, row, body.reason, audience, store)
         return idempotency.Outcome(200, "event", str(seq), load_event(conn, str(seq), mine))
 
     return idempotency.run(engine_of(request), request, caller, action)
 
 
 def _tombstone(
-    conn: Connection, mine: Membership, caller: Caller, row: Any, reason: str, audience: list[str]
+    conn: Connection,
+    mine: Membership,
+    caller: Caller,
+    row: Any,
+    reason: str,
+    audience: list[str],
+    store: attachment_store.LocalStore | None = None,
 ) -> None:
     """The one mutation the log allows, itself on record (§8.5); a second redaction of
     the same event changes nothing."""
@@ -546,6 +586,8 @@ def _tombstone(
     ).rowcount
     if won != 1:
         return
+    if row.kind == "message":
+        attachments.redact_message(conn, row.seq, mine.principal_id, store)
     marker = (row.payload or {}).get("jour_fixe") if row.kind == "message" else None
     if marker:  # a round's statement or post: its copy in the round goes with it (§20.8)
         from maity_hub.jourfixe import exchange
@@ -571,7 +613,12 @@ def _not_a_participant() -> ApiError:
 
 
 def _redact_in_group(
-    conn: Connection, mine: Membership, caller: Caller, row: Any, body: RedactIn
+    conn: Connection,
+    mine: Membership,
+    caller: Caller,
+    row: Any,
+    body: RedactIn,
+    store: attachment_store.LocalStore | None = None,
 ) -> idempotency.Outcome:
     """§8.5 in a group chat: any human participant now, no agent; once the chat closed,
     its former human participants, and a human with `members:admin` blind, by `seq`."""
@@ -617,7 +664,7 @@ def _redact_in_group(
         everyone = group_chats.stays(conn, group.id, current=False)
         audience += [f"member:{s.human_id}" for s in everyone if s.human_id]
         audience.append(f"member:{mine.principal_id}")
-    _tombstone(conn, mine, caller, row, body.reason, list(dict.fromkeys(audience)))
+    _tombstone(conn, mine, caller, row, body.reason, list(dict.fromkeys(audience)), store)
     if blind:  # never the event: its actor and audience are not the admin's to read
         return idempotency.Outcome(200, "blind_redaction", str(row.seq), _blind(row.seq))
     return idempotency.Outcome(200, "event", str(row.seq), load_event(conn, str(row.seq), mine))

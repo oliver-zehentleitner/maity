@@ -14,14 +14,15 @@ from typing import Any
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
-from pydantic import Field
+from pydantic import Field, ValidationInfo, field_validator
+from pydantic_core import PydanticCustomError
 from sqlalchemy import Connection, func, select
 
 from maity_hub import events, group_chats, idempotency, instances, paging
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.auth.caller import Caller
-from maity_hub.deps import AnyCaller, engine_of
+from maity_hub.deps import AnyCaller, engine_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.models import Strict, Written, markdown, title
 from maity_hub.routes.events import (
@@ -43,7 +44,18 @@ class ChatIn(Written):
     """A chat message. A direct chat is never resolved for mentions, a group chat
     against its participants (§8.6); a client's `mentions` is `read_only` on both."""
 
-    body: str = markdown(min_length=1)
+    attachments: list[str] = Field(default_factory=list)
+    body: str = markdown()
+
+    @field_validator("body")
+    @classmethod
+    def _text_or_attachments(cls, value: str, info: ValidationInfo) -> str:
+        """A message has text, or names attachments and may then have none (§8.7)."""
+        if not value and not info.data.get("attachments"):
+            raise PydanticCustomError(
+                "string_too_short", "String should have at least 1 character", {"min_length": 1}
+            )
+        return value
 
 
 class GroupIn(Strict):
@@ -168,7 +180,7 @@ def message_views(conn: Connection, rows: list[Any], reader: Any = None) -> list
         view |= {
             # A direct chat is never resolved; a group chat's resolved mentions (§8.6).
             "mentions": [] if row.redacted or not group else payload.get("mentions") or [],
-            "attachments": [],  # the contract's shape before attachments land (§8.7)
+            "attachments": [] if row.redacted else payload.get("attachments") or [],
             "redacted": bool(row.redacted),  # as in the list preview (§9.3)
             "redaction": _redaction(
                 row, reader, readers.get(row.conversation_id) if group else None
@@ -717,7 +729,14 @@ def send_message(
             conn,
             mine,
             caller,
-            MessageIn(kind="message", type="chat", body=body.body, conversation_id=conversation_id),
+            MessageIn(
+                kind="message",
+                type="chat",
+                body=body.body,
+                attachments=body.attachments,
+                conversation_id=conversation_id,
+            ),
+            settings_of(request),
         )
         return idempotency.Outcome(
             201, "message", str(view["seq"]), load_message(conn, str(view["seq"]))
