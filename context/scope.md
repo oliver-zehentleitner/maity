@@ -524,7 +524,8 @@ use it. The hosted offering secures its position through network effect,
 fast adoption and an excellent product, not through licence terms.
 
 **Rejected alternatives:**
-- A licence that reserves the hosted service (source-available or
-  AGPL-style terms), considered by the coordinator earlier together with
-  a trademark and a contributor agreement: it would slow adoption and
-  add friction for contributors.
+- A licence that reserves the hosted service to the authors
+  (source-available or AGPL-style terms): the question put to the
+  maintainer; it would slow adoption and add friction for contributors.
+  (The coordinator had recommended MIT plus a registered trademark and a
+  contributor agreement; the trademark is a separate open reminder.)
