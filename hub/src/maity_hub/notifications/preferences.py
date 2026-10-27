@@ -4,7 +4,8 @@ The settings belong to the account and follow it to every device: what the brows
 shows, and what is mailed how often (`mode`), with a daily time, quiet hours, a time zone
 and the human's language. The stored value is only what the human changed; the defaults
 fill the rest when it is read. The address and its verification sit in the same row but
-are not set here yet (§18.4, the address part follows).
+are not set here yet (§18.4, the address part follows). The unsubscribe link of a mail
+(§18.6) switches one kind's `mode` off.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from sqlalchemy import Connection, insert, select, update
 from maity_hub import clock
 from maity_hub import tables as t
 from maity_hub.errors import invalid
+from maity_hub.notifications import tokens
 
 KINDS = ("inbox", "chat", "mention", "security")
 # Kinds removed on 2026-10-26 (§18.1): settings stored for them are dropped when read and
@@ -314,3 +316,42 @@ def _without_removed(stored: dict[str, Any]) -> dict[str, Any]:
                 kept[key] = {k: v for k, v in kept[key].items() if k in KINDS}
         out[side] = kept
     return out
+
+
+# --- the unsubscribe link (§18.6) ----------------------------------------------------
+
+
+def unsubscribe(conn: Connection, token: str, signing_key: bytes | None) -> str | None:
+    """Switch the token's kind off; the kind, or None for a link that does not work: a
+    token this hub did not sign, one for another purpose, for a kind removed on
+    2026-10-26, or from before the address changed (the `epoch` moved)."""
+    payload = tokens.read(signing_key, token)
+    if payload is None or payload.get("p") != "unsubscribe" or payload.get("k") not in KINDS:
+        return None
+    owner = str(payload.get("h"))
+    row = conn.execute(
+        select(t.notification_settings)
+        .where(t.notification_settings.c.human_id == owner)
+        .with_for_update()
+    ).first()
+    if row is None or payload.get("e") != row.epoch:
+        return None
+    kind = str(payload["k"])
+    stored = _without_removed(dict(row.preferences or {}))
+    email = dict(stored.get("email") or {})
+    kinds = dict(email.get("kinds") or {})
+    kinds[kind] = {**(kinds.get(kind) or {}), "mode": "off"}
+    email["kinds"] = kinds
+    stored["email"] = email
+    conn.execute(
+        update(t.notification_settings)
+        .where(t.notification_settings.c.human_id == owner)
+        .values(preferences=stored, updated_at=clock.now())
+    )
+    return kind
+
+
+def unsubscribe_token(signing_key: bytes, human_id: str, kind: str, epoch: int) -> str:
+    """The token in a mail's unsubscribe link. The hub stores none: it stays valid until
+    the human's `epoch` moves, which an address change or removal does."""
+    return tokens.make(signing_key, {"h": human_id, "p": "unsubscribe", "k": kind, "e": epoch})
