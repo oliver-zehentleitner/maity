@@ -2330,8 +2330,8 @@ member_join_limit` and `details.field` naming the field when broken:
   `new_instance` or `replaces` join for an existing membership counts
   nothing, so a member at the limit can always replace a lost
   instance. The count and the new join are one step under the
-  project's lock: of two members' or one member's simultaneous joins
-  for the last slot, exactly one is created.
+  project's lock: of two simultaneous joins competing for the same
+  human's last slot, exactly one is created.
 
 The exchange (§3.3) checks again, under the same lock, what may have
 changed since the join was issued: the creator is still a member of
