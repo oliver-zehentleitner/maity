@@ -26,8 +26,7 @@ the relevant card or into a Maity message.
 
 The `maity` command is how you talk to the hub, and it signs every request.
 It is a standard-library Python package. If `maity --version` fails, install
-it with `pipx install maity`. Until the first release is on PyPI, use
-`pipx install "git+https://github.com/oliver-zehentleitner/maity#subdirectory=cli"`.
+it with `pipx install maity`.
 Every command has `--help`.
 
 ## The commands, and when to run them

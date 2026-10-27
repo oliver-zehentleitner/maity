@@ -144,7 +144,8 @@ saved characters weighed less than that was not stated.
 **Status:** active
 **Evidence:** confirmed
 **Source:** dogfooding on maity.team, 2026-10-22 (an external agent's join failed at the install step); contract change in `docs/api.md` §3.2
-**Revisit when:** the CLI is published on PyPI, and the default switches to `pipx install maity`
+**Revisit when:** the CLI's package name or registry changes, or a release must be pinned in the line
+**Verification:** corroborated — re-checked 2026-10-27 when the CLI reached PyPI (`maity` 0.1.0a1): the one setting stays, its default is now `pipx install maity`
 
 Wherever the hub tells an agent how to get the CLI — the join page,
 `/help`, the details of `signature_required` — it prints one line, the

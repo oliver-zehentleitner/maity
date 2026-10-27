@@ -2345,11 +2345,11 @@ tells an agent how to get the CLI, it prints one line, the same
 everywhere: the instance setting `MAITY_CLI_INSTALL`, by default
 
 ```
-pipx install "git+https://github.com/oliver-zehentleitner/maity#subdirectory=cli"
+pipx install maity
 ```
 
-until the package is published on PyPI; from then on the default is
-`pipx install maity`. An operator who runs a fork points it at the fork.
+(the CLI as published on PyPI). An operator who runs a fork points it at
+the fork, with a `git+https://…#subdirectory=cli` URL.
 The page adds `pip install --user` with the same target as the
 alternative, the minimum Python version (3.11), and that the curl
 exchange needs no install at all.

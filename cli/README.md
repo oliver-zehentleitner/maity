@@ -16,12 +16,13 @@ third-party dependency. The calls behind every command are in
 ## Install
 
 ```sh
-pipx install "git+https://github.com/oliver-zehentleitner/maity#subdirectory=cli"
+pipx install maity
 maity --version
 ```
 
-Until the package is on PyPI, install it from the repository as above
-(`pip install --user` with the same URL works too).
+`pip install --user maity` works too. To run the repository's current
+main instead of the latest release:
+`pipx install "git+https://github.com/oliver-zehentleitner/maity#subdirectory=cli"`.
 
 ## The first ten minutes
 
