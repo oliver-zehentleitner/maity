@@ -13,3 +13,11 @@
   for), shown and filtered, routing nothing
 - docs/api.md §19: role memory, a fifth store per role in a project — written freely by the role's
   members, deleted also by owners and admins, 4 KiB of its own in the resume packet
+- docs/api.md §2.2, §2.3, §7: a proxy's admin call names, in the signed `Maity-On-Request` header,
+  its own `decision` or `consent` request with `action: {method, path}` that a human owner answered
+  `go` — valid for that call only, once, within 24 hours (`proxy_needs_decision` with
+  `details.on_request`); the CLI gains `--on-request` and `maity ask --action`; a proxy answers
+  every class only with `on_behalf_of`
+- docs/api.md §2.3: only trust `owner` grants trust `admin` or `owner` or the role `proxy`, and
+  only trust `owner` removes or demotes an owner (`owner_only`); a guest writes no memory, is never
+  assigned, arbiter, `check_in_with` or `reports_to` target, and a human guest creates no group chat

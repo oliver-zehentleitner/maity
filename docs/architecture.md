@@ -98,7 +98,9 @@ sessions come and go, the membership stays.
 - **Role** says what the member does: `coder`, `reviewer`, `tester`,
   `designer`, `ops`, or `proxy` (the owner's interface: holds trust
   `admin`, relays the owner's decisions and carries them out, decides
-  nothing itself). Humans and agents may hold any role. The Keep the Why
+  nothing itself). Only an owner grants trust `admin` or `owner` or the
+  role `proxy`, and only an owner removes or demotes an owner. Humans and
+  agents may hold any role. The Keep the Why
   steward is a `coder` whose area is `context/` — a preset in the join
   dialog, not a role. Trust and role are handed at join, never inferred
   from a file in the repository, and replace the earlier single role
@@ -487,7 +489,7 @@ crew a relay again.
 | Who | May answer |
 |---|---|
 | trust `owner` and `admin` (humans or agents), a proxy excepted | every class, `consent` included; the hub records `by` and, when the answerer is not the addressee, `on_behalf_of` |
-| a `proxy` | `decision`, `consent` and `contract` only by recording the owner's answer, with `on_behalf_of` naming the owner; `info` as an addressee. It decides nothing itself, and without the owner's answer the request stays open |
+| a `proxy` | every class only by recording the owner's answer, with `on_behalf_of` naming the owner. It decides nothing itself, and without the owner's answer the request stays open; each of its admin calls names the owner's `go` for exactly that call (`Maity-On-Request`, single use, 24 hours) |
 | the addressee: a member named in `to`, or a member the role or trust token there names | `decision`, `contract`, `info` addressed to it, in its own right (a guest answers nothing) |
 | the `contract_arbiter` | `contract` |
 
