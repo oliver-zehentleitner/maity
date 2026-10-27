@@ -1510,3 +1510,21 @@ list would have no way in from the header outside a project.
 and All chats when there are several (asked as B): a second click to
 every chat, and one button meaning two things. Keeping the strip: it took
 the room above the tabs on every page of a project.
+
+## Runners in the gear menu, not in the projects' row
+
+**Id:** a6c7bf3a-9742-4535-ae21-110bd809dc47
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request (tsk-cb6myw32def0), 2026-10-27
+
+The link to `#/runners` sits in the header's gear menu, beside the
+instance administration, and no longer in the row that lists the
+projects. The menu marks it as the page shown.
+
+**Reason:** a runner belongs to the person who runs it, not to a project;
+the projects' row lists projects, and the gear menu holds what is not a
+project's.
+
+**Alternatives:** unknown.

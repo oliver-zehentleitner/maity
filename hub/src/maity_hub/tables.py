@@ -1287,6 +1287,36 @@ avatar_image = Table(
     **MYSQL_TABLE,
 )
 
+# A file a message carries (docs/api.md §8.7). The bytes are in the blob store under a
+# key made from the project and the id, never in this table. `message_seq` is null while
+# the upload is pending (no message names it yet); a deletion keeps the row as a
+# tombstone (`deleted_at`) and removes the blob.
+attachment = Table(
+    "attachment",
+    metadata,
+    _id(primary_key=True),
+    _ref("project_id", "project.id", nullable=False),
+    _membership_ref("uploaded_by", nullable=False),
+    Column("name", String(255), nullable=False),
+    Column("size", BIG_ID, nullable=False),
+    Column("type", String(255), nullable=False),
+    Column("kind", String(8), nullable=False),  # image, file
+    Column("sha256", String(64), nullable=False),
+    Column("width", Integer),
+    Column("height", Integer),
+    Column("uploaded_at", UtcDateTime, nullable=False),
+    # The event of the message that names it; no foreign key, as for other event refs.
+    Column("message_seq", BIG_ID),
+    Column("deleted_at", UtcDateTime),
+    Column("deleted_by", String(ID)),
+    Column("deleted_reason", String(16)),  # deleted, redacted
+    CheckConstraint("kind IN ('image', 'file')", name="kind"),
+    Index("ix_attachment_project_pending", "project_id", "message_seq", "uploaded_at"),
+    Index("ix_attachment_uploaded_by", "uploaded_by", "message_seq"),
+    Index("ix_attachment_message_seq", "message_seq"),
+    **MYSQL_TABLE,
+)
+
 # A project's logo and banner (docs/api.md §11.2): what a project admin uploaded, and
 # the forge's image as the hub last read it. A forge row without `data` records that
 # the forge had none at `checked_at`; an upload always has data.

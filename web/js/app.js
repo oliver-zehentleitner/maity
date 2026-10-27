@@ -851,8 +851,9 @@ window.Maity = window.Maity || {};
       p.name,
       h("span", { class: "dot state-dot-" + p.state, title: STATE_LABELS[p.state] || p.state, "aria-label": STATE_LABELS[p.state] || p.state }),
       pill(p))),
-    h("a", { href: "#/new", class: "new-project", "aria-current": ctx.scope === "new" ? "page" : null }, "+ New project"),
-    h("a", { href: "#/runners", class: "runners-link", "aria-current": ctx.scope === "runners" ? "page" : null }, "Runners"));
+    // Runners belong to the person, not to a project (the maintainer's
+    // wish, tsk-cb6myw32def0): they are in the gear menu, not this row.
+    h("a", { href: "#/new", class: "new-project", "aria-current": ctx.scope === "new" ? "page" : null }, "+ New project"));
   }
 
   // A row that scrolls shows it: a fade on the side with more entries. Set
@@ -961,8 +962,8 @@ window.Maity = window.Maity || {};
       class: "settings-menu",
       face: M.icons.gear(18),
       items: () => [
-        { label: "Runners", href: "#/runners" },
-        ctx.me.instance_admin ? { label: "Instance administration", href: "#/admin" } : null,
+        { label: "Runners", href: "#/runners", current: ctx.scope === "runners" },
+        ctx.me.instance_admin ? { label: "Instance administration", href: "#/admin", current: ctx.scope === "instance-admin" } : null,
       ].filter(Boolean),
     });
     // Sign in another device (§2.6.2) where the hub's machine form has it.

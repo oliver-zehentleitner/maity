@@ -128,7 +128,8 @@ window.Maity = window.Maity || {};
           el = h("span", Object.assign(attrs, { "aria-disabled": "true", class: "menu-item disabled" }), it.label,
             it.why ? h("span", { class: "muted" }, " · " + it.why) : null);
         } else if (it.href) {
-          el = h("a", Object.assign(attrs, { href: it.href, onclick: () => close(false) }), it.label);
+          // A link to the page shown says so, as the tabs do.
+          el = h("a", Object.assign(attrs, { href: it.href, "aria-current": it.current ? "page" : null, onclick: () => close(false) }), it.label);
         } else {
           // Back on the button before the action runs: whatever it does next
           // (moves the focus itself, fails, redraws) starts from a visible control.
