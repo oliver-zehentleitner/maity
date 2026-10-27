@@ -1344,6 +1344,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Members (docs/api.md §6.2): humans and agents, managed by an admin.
   const membersTab = header.querySelectorAll("nav.views a").find((a) => a.textContent === "Members");
   expect(membersTab && membersTab.getAttribute("href") === "#/p/maity/members", "members: a tab");
+  // The reviewer's one credential, revoked further down (the fixture's has none).
+  const rvAll = win.Maity.api.getAll;
+  let rvRevoked = null;
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/members/agt-r/credentials"
+    ? Promise.resolve({ items: [{ id: "crd-r-0001", client: "cli", created_at: "2026-10-20T10:00:00Z", resumed_at: "2026-10-20T10:01:00Z",
+      last_used_at: "2026-10-27T10:00:00Z", last_used_via: "signed", revoked_at: rvRevoked, revoked_by: rvRevoked ? "hum-maintainer" : null, revoked_reason: null }], next_cursor: null })
+    : rvAll(p));
   await go("#/p/maity/members");
   const mRow = (name) => main.querySelectorAll("tr.member").find((tr) => tr.querySelector(".member-name").textContent === name);
   const tables = main.querySelectorAll("table.members");
@@ -1432,6 +1439,25 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "members: an agent's manage row holds its briefing");
   expect(eRow().querySelector(".member-credentials .credentials") && eRow().querySelectorAll("form.member-pause, .member-pause").length === 1,
     "members: and its credentials, and one pause");
+  // Revoked here: the row stays open, its list read again in place, the focus on its heading.
+  const rvCreds = () => eRow().querySelector(".member-credentials");
+  const rvItem = rvCreds().querySelectorAll("li").find((li) => btn(li, "Revoke"));
+  if (rvItem) {
+    const rvId = rvItem.querySelector("code").textContent;
+    const rvPost = win.Maity.api.post;
+    let rvSent = null;
+    win.Maity.api.post = (p, b) => (/\/revoke$/.test(p) ? (rvSent = p, rvRevoked = "2026-10-27T11:00:00Z", Promise.resolve({})) : rvPost(p, b));
+    const rvProto = Object.getPrototypeOf(rvItem), rvFocus = rvProto.focus;
+    rvProto.focus = function () { document.activeElement = this; };
+    btn(rvItem, "Revoke").click(); for (let k = 0; k < 6; k++) await tick();
+    rvProto.focus = rvFocus;
+    win.Maity.api.post = rvPost;
+    const rvAfter = eRow() && rvCreds().querySelectorAll("li").find((li) => li.querySelector("code").textContent === rvId);
+    expect(rvSent && rvSent.endsWith("/credentials/" + rvId + "/revoke") && rvAfter && rvAfter.className.includes("revoked") && !btn(rvAfter, "Revoke")
+      && document.activeElement === rvCreds().querySelector(".credentials-title"), "members: a credential revoked in the row, the row stays open");
+    document.activeElement = undefined;
+  } else expect(false, "members: the reviewer has a credential to revoke");
+  win.Maity.api.getAll = rvAll;
   eSel(1).value = "agt-d"; eSel(1).dispatch("change");
   eIn()[0].value = "docs/, web/tools/, docs/"; eIn()[0].dispatch("input");
   eIn()[1].checked = true; eIn()[1].dispatch("change");

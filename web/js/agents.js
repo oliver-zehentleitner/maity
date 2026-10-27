@@ -28,8 +28,9 @@ window.Maity = window.Maity || {};
   // required would refuse is the bearer kind.
   const VIA = { signed: "(signed)", bearer: "(bearer token)" };
 
-  function credentials(ctx, m, list) {
-    const box = h("div", { class: "credentials" }, h("h4", null, "Credentials"));
+  // revoked(): what follows a revocation; the whole view drawn anew without one.
+  function credentials(ctx, m, list, revoked) {
+    const box = h("div", { class: "credentials" }, h("h4", { class: "credentials-title" }, "Credentials"));
     if (!list.items.length) {
       append(box, h("p", { class: "muted" }, "None."));
       return box;
@@ -60,7 +61,7 @@ window.Maity = window.Maity || {};
               status.busy("Revoking…");
               try {
                 await M.api.post(ctx.base + "/credentials/" + encodeURIComponent(c.id) + "/revoke", {});
-                ctx.refresh();
+                if (revoked) revoked(); else ctx.refresh();
               } catch (err) {
                 e.target.disabled = false;
                 status.fail("Not revoked: ", err);

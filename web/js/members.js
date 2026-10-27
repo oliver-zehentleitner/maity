@@ -165,17 +165,28 @@ window.Maity = window.Maity || {};
       const P = M.agentParts;
       if (!P) return null;
       const slot = h("div", { class: "member-credentials" });
-      const fill = (got) => append(clear(slot), got.error
-        ? h("div", { class: "credentials" }, h("h4", null, "Credentials"), M.errorBox(got.error))
-        : P.credentials(ctx, m, got.list));
-      const known = credsOf.get(m.id);
-      if (known && !known.then) fill(known);
-      else {
-        append(slot, h("p", { class: "muted" }, "Reading the credentials…"));
+      // A revocation reads this row's list again, in place: the row stays
+      // open and the focus goes to the list's heading.
+      const revoked = () => {
+        credsOf.delete(m.id);
+        load(true);
+      };
+      const fill = (got, refocus) => {
+        append(clear(slot), got.error
+          ? h("div", { class: "credentials" }, h("h4", { class: "credentials-title" }, "Credentials"), M.errorBox(got.error))
+          : P.credentials(ctx, m, got.list, revoked));
+        const head = refocus && slot.querySelector(".credentials-title");
+        if (head) { head.setAttribute("tabindex", "-1"); head.focus(); }
+      };
+      function load(refocus) {
+        const known = credsOf.get(m.id);
+        if (known && !known.then) { fill(known, refocus); return; }
+        if (!refocus) append(slot, h("p", { class: "muted" }, "Reading the credentials…"));
         const reading = known || P.loadCredentials(ctx, m).then((got) => { credsOf.set(m.id, got); return got; });
         credsOf.set(m.id, reading);
-        reading.then((got) => { if (slot.isConnected !== false) fill(got); });
+        reading.then((got) => { if (slot.isConnected !== false) fill(got, refocus); });
       }
+      load(false);
       return slot;
     }
 
@@ -334,8 +345,7 @@ window.Maity = window.Maity || {};
         h("p", { class: "hint", id: id("areas") + "-hint" }, "Repository paths this member owns, comma separated; cards in an area go to its narrowest owner."),
         errors.areas,
         h("fieldset", { class: "member-caps" }, h("legend", null, "Capabilities"),
-          caps.map((c) => h("label", { class: "check", for: c.box.id }, c.box, " " + c.label))),
-        null),
+          caps.map((c) => h("label", { class: "check", for: c.box.id }, c.box, " " + c.label)))),
       h("div", { class: "actions" }, save));
     }
 
