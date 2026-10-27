@@ -196,17 +196,20 @@ window.Maity = window.Maity || {};
     return null;
   }
   const submitOf = (form) => form && Array.from(form.querySelectorAll("button")).find((b) => b.getAttribute("type") === "submit");
-  // The keys next to the button that sends, muted, and in its tooltip, so
-  // whoever looks at the button learns them; the label keeps saying them.
-  // Once per button; none on a touch-only device.
+  // The keys right before the button that sends, muted, the two one group
+  // (span.send-with-keys, in the button's place), and in the button's
+  // tooltip, so whoever looks at the button learns them; the label keeps
+  // saying them for a screen reader. Once per button; none on a touch-only
+  // device. The designer's pass on #431: the hint reads as Send's label.
   function showSendKeys(button) {
-    if (!button || button.getAttribute("data-send-keys") || touchOnly()) return;
+    if (!button || button.getAttribute("data-send-keys") || touchOnly() || !button.parentNode) return;
     button.setAttribute("data-send-keys", SEND_KEYS);
     button.setAttribute("aria-keyshortcuts", "Control+Enter Meta+Enter");
     const said = button.getAttribute("title");
     button.setAttribute("title", (said ? said + " " : (button.textContent || "").trim() + " ") + "(" + SEND_KEYS + ")");
-    const hint = h("span", { class: "send-keys muted", "aria-hidden": "true" }, SEND_KEYS);
-    if (button.parentNode) button.parentNode.insertBefore(hint, button.nextSibling);
+    const group = h("span", { class: "send-with-keys" });
+    button.parentNode.insertBefore(group, button);
+    append(group, h("span", { class: "send-keys muted", "aria-hidden": "true" }, SEND_KEYS), button);
   }
   function sendOnCtrlEnter(field, act, button) {
     field.addEventListener("keydown", (e) => {

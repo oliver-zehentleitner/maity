@@ -1238,14 +1238,18 @@ not register at all, which §3.4 allows.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's wish relayed by the coordinator (tsk-00q3ddrh7a1q), 2026-10-27: users should see that Ctrl+Enter sends; the hint in the field label went unnoticed; on the button or as its mouse-over, both fine; the dashboard's implementation, 2026-10-27; the designer was not asked yet
+**Source:** the maintainer's wish relayed by the coordinator (tsk-00q3ddrh7a1q), 2026-10-27: users should see that Ctrl+Enter sends; the hint in the field label went unnoticed; on the button or as its mouse-over, both fine; the designer's pass on #431, 2026-10-27 (left of Send in one action row, not twice, hidden on a phone); the dashboard's implementation, 2026-10-27
 **Revisit when:** the designer reworks the composers, or the dashboard gets a language setting of its own
 
 `M.dom.sendOnCtrlEnter` puts the keys, once the view is on the page,
-right after the button that sends (the one it was given, else the form's
-submit button): a muted `span.send-keys`, hidden from a screen reader,
-which reads the button's `aria-keyshortcuts` instead; the button's
-tooltip says them too. The label keeps them. `sendKeysFor` names them:
+right before the button that sends (the one it was given, else the form's
+submit button), the two one group (`span.send-with-keys`): a muted
+`span.send-keys`, hidden from a screen reader, which reads the button's
+`aria-keyshortcuts` instead; the button's tooltip says them too. The
+chat composers (direct, group, global) have one row of actions, Attach
+at the start and the keys with a primary Send at the end; their label
+says the keys to a screen reader only, so they are not seen twice. At
+phone width the hint goes and the button is laid out as before. `sendKeysFor` names them:
 ⌘+Enter on an Apple device (platform or user agent), Strg+Enter where
 the page's `lang` or else the browser's language is German, Ctrl+Enter
 otherwise. A device that only knows touch (`hover: none` and

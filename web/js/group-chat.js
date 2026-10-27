@@ -379,7 +379,7 @@ window.Maity = window.Maity || {};
         hintMention();
       });
       hintMention();
-      const button = h("button", { type: "submit" }, "Send");
+      const button = h("button", { type: "submit", class: "primary" }, "Send");
       const files = M.attachments ? M.attachments.picker(ctx, "group") : null;
       const sendIt = async (e) => {
         e.preventDefault();
@@ -405,8 +405,8 @@ window.Maity = window.Maity || {};
       };
       M.dom.sendOnCtrlEnter(text, sendIt, button);
       compose = h("form", { class: "compose", onsubmit: sendIt },
-        h("label", { for: "chat-text" }, "Message (" + M.dom.SEND_KEYS + " sends; @handle reaches someone in the chat)"),
-        text, hint, files ? files.el : null, button);
+        h("label", { for: "chat-text" }, "Message (", h("span", { class: "visually-hidden" }, M.dom.SEND_KEYS + " sends; "), "@handle reaches someone in the chat)"),
+        text, hint, files ? files.el : null, parts.actionRow(files, button));
     }
 
     const heading = h("h2", { class: "group-title", tabindex: "-1" }, titleOf());

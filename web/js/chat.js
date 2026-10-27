@@ -201,6 +201,10 @@ window.Maity = window.Maity || {};
       r && r.by ? [" by ", M.dom.memberRef(ctx, r.by)] : null, (r && r.reason ? ": " + r.reason : "") + ".");
   }
 
+  // A composer's one row of actions (the designer's pass on #431): Attach
+  // at the start, the keys and Send at the end.
+  const actionRow = (files, button) => h("div", { class: "compose-actions" }, files ? files.chooser : null, button);
+
   // opts.group: a group chat's message (no delivery: several recipients,
   // §9.2); opts.onRedact: offered to a human in the room (§8.5).
   function message(ctx, msg, pending, grouped, onQuote, opts) {
@@ -344,7 +348,7 @@ window.Maity = window.Maity || {};
 
   // What js/group-chat.js draws with: the same history, Markdown, quotes,
   // drafts, sizing and the same reading of mentions.
-  M.chatParts = { timeline, quoteOf, withoutCode, atBottom, follower, fitToScreen, drafts, isRemoved, askReason, HISTORY_PAGE,
+  M.chatParts = { actionRow, timeline, quoteOf, withoutCode, atBottom, follower, fitToScreen, drafts, isRemoved, askReason, HISTORY_PAGE,
     chatsOf, ordered, listItem, LIST_MS, RESYNC };
 
   // One focus handler for the page; it serves the chat view on screen.
@@ -565,7 +569,7 @@ window.Maity = window.Maity || {};
     });
     hintMention();
     const status = M.statusLine();
-    const button = h("button", { type: "submit" }, "Send");
+    const button = h("button", { type: "submit", class: "primary" }, "Send");
 
     // Files go with the message (§8.7): uploaded when chosen, named when sent.
     const files0 = M.attachments ? M.attachments.picker(ctx, "chat") : null;
@@ -607,8 +611,8 @@ window.Maity = window.Maity || {};
       jump,
       pollStatus.el,
       h("form", { class: "compose", onsubmit: send },
-        h("label", { for: "chat-text" }, "Message (" + M.dom.SEND_KEYS + " sends)"),
-        text, mentionHint, files0 ? files0.el : null, button, status.el));
+        h("label", { for: "chat-text" }, "Message", h("span", { class: "visually-hidden" }, " (" + M.dom.SEND_KEYS + " sends)")),
+        text, mentionHint, files0 ? files0.el : null, actionRow(files0, button), status.el));
     // Sizing, scrolling and focus need the view in the page, which the
     // router does once this function has returned.
     window.setTimeout(() => {

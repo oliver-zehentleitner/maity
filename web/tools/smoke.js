@@ -5122,11 +5122,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(ceLabel("chat-text")).includes("Ctrl+Enter sends"), "Ctrl+Enter: the chat says so");
   // The keys beside the button that sends, muted, and in its tooltip; named as the keyboard prints them.
   const ceSend = ceSubmitOf(byId("chat-text"));
-  const ceHint = ceSend.parentNode.childNodes[ceSend.parentNode.childNodes.indexOf(ceSend) + 1];
-  expect(ceHint && ceHint.classList.contains("send-keys") && ceHint.classList.contains("muted") && text(ceHint) === "Ctrl+Enter"
+  const ceGroup = ceSend.parentNode;
+  const ceHint = ceGroup.childNodes[0];
+  expect(ceGroup.classList.contains("send-with-keys") && ceGroup.childNodes.length === 2 && ceGroup.childNodes[1] === ceSend
+    && ceGroup.parentNode.classList.contains("compose-actions") && ceGroup.parentNode.querySelector("label.attach-button")
+    && ceHint.classList.contains("send-keys") && ceHint.classList.contains("muted") && text(ceHint) === "Ctrl+Enter"
     && ceHint.getAttribute("aria-hidden") === "true" && ceSend.getAttribute("title") === "Send (Ctrl+Enter)"
-    && ceSend.getAttribute("aria-keyshortcuts") === "Control+Enter Meta+Enter",
-    "Ctrl+Enter: the chat's Send button has the keys beside it and in its tooltip");
+    && ceSend.getAttribute("aria-keyshortcuts") === "Control+Enter Meta+Enter" && ceSend.classList.contains("primary"),
+    "Ctrl+Enter: the chat's primary Send has the keys right before it and in its tooltip, in one row with Attach");
+  // The label says the keys to a screen reader only: the hint by the button is the one seen.
+  const ceLabelHidden = ceLabel("chat-text").querySelector(".visually-hidden");
+  expect(ceLabelHidden && text(ceLabelHidden).includes("Ctrl+Enter sends") && !text(ceLabel("chat-text")).replace(text(ceLabelHidden), "").includes("Ctrl+Enter"),
+    "Ctrl+Enter: the chat's label keeps the keys for a screen reader, not shown twice");
   const ceKeys = win.Maity.dom.sendKeysFor;
   expect(ceKeys("de-AT", "Linux x86_64", "") === "Strg+Enter" && ceKeys("de", "Win32", "") === "Strg+Enter"
     && ceKeys("en-US", "Win32", "") === "Ctrl+Enter" && ceKeys("", "", "") === "Ctrl+Enter" && ceKeys("dev", "Win32", "") === "Ctrl+Enter"
@@ -5141,7 +5148,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const ceTouch = ceButton("Send");
   win.Maity.dom.showSendKeys(ceTouch);
   win.matchMedia = ceMedia;
-  expect(ceTwice.parentNode.querySelectorAll(".send-keys").length === 1 && ceTwice.getAttribute("title") === "Post (Ctrl+Enter)"
+  expect(ceTwice.parentNode.parentNode.querySelectorAll(".send-keys").length === 1 && ceTwice.getAttribute("title") === "Post (Ctrl+Enter)"
     && !ceTouch.parentNode.querySelectorAll(".send-keys").length && !ceTouch.getAttribute("title"),
     "Ctrl+Enter: the keys are shown once per button, and not on a touch-only device");
   await ceCase("chat", byId("chat-text"), "hello", "/projects/maity/conversations/agt-b/messages", ceSubmitOf(byId("chat-text")));
