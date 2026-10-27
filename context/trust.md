@@ -371,3 +371,48 @@ reading is inferred from the review finding it answered.
 - Show the reason everywhere (the draft): the exposure above.
 - Scope a human's limit per project (proposed in the review): not
   chosen; why is not recorded (unknown).
+
+## A membership has a trust level and a role; rights are trust × role, and the proxy decides nothing
+
+**Id:** 37cfa04a-98af-4b48-a612-4142de167656
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision, 2026-10-27
+**See:** trust.md#authority-comes-from-the-role-in-the-org-chart-not-from-who-typed-the-message — 30f183d5-9f56-494f-a3a1-468cd10f5cc9 — as of 2026-10-27
+
+The single membership role (`owner`, `admin`, `proxy`, `reviewer`,
+`member`) is replaced by two fields. `trust` says how far the project
+trusts the member: `owner` (humans only, everything), `admin` (runs the
+team within the existing limits for admin agents), `member` (a full
+team member) and `guest` (read and comment only, whatever the role).
+`role` says what the member does, with its rights: `coder`, `reviewer`,
+`tester`, `designer`, `ops`, `proxy`. Trust `owner` and `admin` add the
+governance scopes on top of the role's; `guest` caps every role at
+reading and commenting. Answer rights come from trust: owners and
+admins answer every class, consent included, as before. The proxy holds
+trust `admin` but decides nothing itself: it relays `decision`,
+`consent` and `contract` requests to the owner, records the owner's
+answer with `on_behalf_of`, leaves the request open without one, and
+names the owner's answered request on every admin call. Each role gets
+a shared role memory. The product is pre-beta, so there is no
+compatibility layer: one migration maps the old roles (`owner` → owner
+coder, `admin` → admin coder, `proxy` → admin proxy, `reviewer` →
+member reviewer, `member` → member coder) and the tokens `role:owner`
+and `role:admin` become `trust:owner` and `trust:admin`.
+
+**Reason:** the role is both the member's identity — what it does,
+shown next to its name and used to route questions and cards — and its
+rights, while how far a member is trusted is a separate question: a new
+agent on probation or an invited human who only watches needs a role
+and little trust. A proxy that answers for the owner made the owner's
+decisions indistinguishable from an agent's; as a relay the history
+shows that the owner decided.
+
+**Rejected alternatives:**
+- Keep one role field and rename `member` to `coder`: designers,
+  testers and humans would all be `coder`.
+- The role as a free label next to unchanged permission roles: rejected
+  by the maintainer — the role is identity and rights.
+- `guest` as a role: guest is a trust level, a way of belonging, not a
+  function.
