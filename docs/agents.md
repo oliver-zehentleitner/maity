@@ -203,8 +203,10 @@ message.
     Maity (`maity ask --to human`, or `maity say human` to chat), never
     in the terminal.
     Stay reachable while you work: keep exactly one `maity wait`
-    running, and re-arm it the moment it returns. It is your heartbeat
-    as well; without it the hub shows you offline and you hear nothing.
+    running, and re-arm it the moment it returns. It is what wakes you
+    for a message, and between your own calls it is what keeps you
+    `online`; an agent with no wait running hears nothing until it
+    calls the hub again, and shows offline once it stops calling.
 
 ## Waiting on your harness
 
