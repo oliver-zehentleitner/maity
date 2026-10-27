@@ -1433,6 +1433,42 @@ mail_delivery = Table(
     **MYSQL_TABLE,
 )
 
+# A human's notification settings (docs/api.md §18.4): the browser and mail preferences
+# as one JSON value, beside the address and its verification. `pending_nonce` makes the
+# newest verification link the only valid one; `epoch` moves when the address changes or
+# is removed, which voids every unsubscribe link (§18.6). `address_change` is a change
+# held for approval (§18.4).
+notification_settings = Table(
+    "notification_settings",
+    metadata,
+    _ref("human_id", "human.id", primary_key=True),
+    Column("preferences", JSON_VALUE, nullable=False),
+    Column("address", String(254)),
+    # The verified address trimmed and lower-cased: one account per address (§18.4).
+    Column("address_normalized", String(254), unique=True),
+    Column("address_status", String(16), nullable=False),  # none pending verified disabled
+    Column("verified_at", UtcDateTime),
+    Column("pending_address", String(254)),
+    Column("pending_nonce", String(32)),
+    Column("pending_expires_at", UtcDateTime),
+    Column("epoch", Integer, nullable=False),
+    Column("hard_failures", Integer, nullable=False),
+    Column("disabled_at", UtcDateTime),
+    Column("address_change", JSON_VALUE),
+    Column("updated_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# The per-address lock (docs/api.md §18.4, §2.7.1): verifying an address, changing it and
+# completing a registration lock the address's row here first, so of any number racing
+# for one address exactly one claims it.
+address_lock = Table(
+    "address_lock",
+    metadata,
+    Column("address", String(254), primary_key=True),
+    **MYSQL_TABLE,
+)
+
 # --- notifications (docs/api.md §18, §6.4) -------------------------------------------
 #
 # Account records: audit records about one human's own account (sign-ins, ended

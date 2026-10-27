@@ -43,7 +43,8 @@ and `GET /auth/methods` are in; the sign-in link follows. Notifications
 `mention`, `security`): account records, `GET /me/notifications` with sealed
 positions and its long-poll, `POST /me/notifications/read`, and a waiting
 registration as the instance admin's `inbox` item are in; card watches (§6.4)
-stay but notify nobody; notification settings and mail follow.
+stay but notify nobody. The notification settings (§18.4) are in, without the
+address; verified addresses and mail follow.
 
 Availability (`docs/api.md` §6.12): every member's computed
 `availability`, the agent's and the human's limit (`POST /me/limit`, a
