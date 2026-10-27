@@ -133,6 +133,8 @@ def _legacy(root: Path, key: str, clone: str, host: str) -> Path | None:
     base = root if host else root.resolve()
     if path.name != clone or path.parent.parent != base or not TOKEN.match(path.parent.name):
         return None
+    if not host and path.resolve() != path:
+        return None  # replaced by a link since the takeover: as `locate`, it may not leave
     return path
 
 
@@ -168,12 +170,17 @@ def records(state_dir: Path) -> dict[str, Any]:
 def record(state_dir: Path, workspace: Workspace, agent: str, placement_id: str) -> None:
     with _lock:
         found = records(state_dir)
-        found[workspace.key] = {
+        entry: dict[str, Any] = {
             "project": workspace.project,
             "agent": agent,
             "placement_id": placement_id,
             "created_at": int(time.time()),
         }
+        # A taken-over clone keeps its location across placements: gc finds it by it.
+        earlier = found.get(workspace.key)
+        if isinstance(earlier, dict) and earlier.get("legacy_slug"):
+            entry["legacy_slug"] = earlier["legacy_slug"]
+        found[workspace.key] = entry
         state.save_state(state_dir, found, name=RECORDS)
 
 

@@ -1275,6 +1275,37 @@ def test_a_workspace_from_before_the_namespace_is_taken_over_in_place(world: Any
     assert found.path == old.path  # found again by the id, whatever the name is now
 
 
+def test_a_taken_over_workspace_replaced_by_a_link_is_not_followed(
+    world: Any, tmp_path: Path
+) -> None:
+    sup, _, _, _, _ = world
+    assert sup.cfg.local is not None
+    old = _legacy(sup.cfg, "maity", 3, "agt-3")
+    root = sup.cfg.local.workspaces
+    args = (sup.cfg.state_dir, root, "prj-7k2m9q", ["oliver/maity"], "agent-3", {"agt-3"})
+    assert workspace.find(*args).path == old.path  # taken over
+    outside = tmp_path / "outside-clone"
+    outside.mkdir()
+    shutil.rmtree(old.path)
+    old.path.symlink_to(outside)
+    assert workspace.find(*args).path == root.resolve() / "prj-7k2m9q" / "agent-3"
+
+
+def test_a_taken_over_workspace_keeps_its_location_on_a_new_placement(world: Any) -> None:
+    sup, _, _, _, _ = world
+    assert sup.cfg.local is not None
+    old = _legacy(sup.cfg, "maity", 3, "agt-3")
+    found = workspace.find(sup.cfg.state_dir, sup.cfg.local.workspaces, "prj-7k2m9q",
+                           ["oliver/maity"], "agent-3", {"agt-3"})  # fmt: skip
+    workspace.record(sup.cfg.state_dir, found, "agt-3", "plc-0009")  # a new placement
+    rec = workspace.records(sup.cfg.state_dir)[str(old.path)]
+    assert (rec["project"], rec["placement_id"], rec["legacy_slug"]) == (
+        "prj-7k2m9q",
+        "plc-0009",
+        "maity",
+    )
+
+
 def test_a_legacy_workspace_of_another_agent_is_not_taken_over(world: Any) -> None:
     sup, _, _, _, _ = world
     assert sup.cfg.local is not None

@@ -953,4 +953,3 @@ operator's config would admit every owner's project with that slug.
   hold the same clone name in two projects.
 - Reading a bare slug in the config as "any owner": an operator who
   allowed `shop` for one owner would run every owner's `shop`.
-
