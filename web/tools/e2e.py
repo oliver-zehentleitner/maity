@@ -864,8 +864,9 @@ def scenario(run: Run, page: Page) -> None:
     assert width[0] <= width[1], f"#/new is {width[0]} px wide at {width[1]} px"
     run.shot(page, "phone-new")
     run.a11y(page, "create a project")
-    # The Runners view: the pairing form and its long install line.
-    page.locator("nav.switcher").get_by_role("link", name="Runners", exact=True).click()
+    # The Runners view: the pairing form and its long install line; reached from the gear menu.
+    page.locator("header").get_by_role("button", name="Settings", exact=True).click()
+    page.get_by_role("menuitem", name="Runners", exact=True).click()
     expect(page.locator("main section.view-runners")).to_be_visible()
     width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
     assert width[0] <= width[1], f"#/runners is {width[0]} px wide at {width[1]} px"
@@ -906,7 +907,9 @@ def id_links_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
     # phone full width above the columns, nothing wider than the screen.
     panel = page.locator("aside.card-panel")
     expect(panel).to_be_visible()
-    expect(panel.locator("#card-panel-title")).to_have_text(card_id)
+    # The panel is the card: its id in the bar, its title the heading.
+    expect(panel.locator(".card-panel-head .card-id")).to_have_text(card_id)
+    expect(panel.locator("#card-panel-title")).to_be_focused()
     expect(panel.locator(".card-history-list li").first).to_contain_text("created the card")
     run.a11y(page, "board, a card's panel")
     page.set_viewport_size({"width": 390, "height": 844})
@@ -1458,8 +1461,10 @@ def pair_exchange(run: Run, pair_line: str) -> tuple[int, dict, str]:
 def runners_step(run: Run, page: Page) -> None:
     """The instance-level Runners view (docs/api.md §15.2, §15.3) against the hub."""
     page.goto(f"{run.base}/#/p/e2e-alpha/agents")
-    link = page.locator("nav.switcher").get_by_role("link", name="Runners", exact=True)
-    link.click()
+    # Runners are the person's: in the gear menu, not the project row (tsk-cb6myw32def0).
+    expect(page.locator("nav.switcher").get_by_role("link", name="Runners", exact=True)).to_have_count(0)
+    page.locator("header").get_by_role("button", name="Settings", exact=True).click()
+    page.get_by_role("menuitem", name="Runners", exact=True).click()
     expect(page).to_have_url(re.compile(r"#/runners$"))
     view = page.locator("main section.view-runners")
     expect(view.or_(page.locator("main .error"))).to_be_visible()
@@ -1788,9 +1793,11 @@ def notifications_step(run: Run, page: Page) -> None:
         expect(page.locator("main")).not_to_contain_text("Could not read your notifications")
         no_problems(run, "notifications")
         return
-    # The header's right block: Chat, Notifications, the gear, the profile, in one row also on a phone.
+    # The header's right block: Chat, the Lead button where there is a lead to reach, Notifications,
+    # the gear, the profile, in one row also on a phone.
     order = page.evaluate("Array.from(document.querySelectorAll('header .me > *')).map((e) => e.className)")
-    assert len(order) == 4 and "chat-button" in order[0] and "bell" in order[1], f"header order: {order}"
+    lead = 1 if len(order) > 1 and "lead-button" in order[1] else 0
+    assert len(order) == 4 + lead and "chat-button" in order[0] and "bell-box" in order[1 + lead], f"header order: {order}"
     page.set_viewport_size({"width": 390, "height": 844})
     # One row: every button's vertical middle within the others' height (a pixel of alignment is no wrap).
     boxes = page.evaluate("Array.from(document.querySelectorAll('header .me > *')).map((e) => { const r = e.getBoundingClientRect(); return [r.top, r.bottom]; })")

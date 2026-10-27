@@ -592,7 +592,12 @@ def _tombstone(
     if marker:  # a round's statement or post: its copy in the round goes with it (§20.8)
         from maity_hub.jourfixe import exchange
 
-        exchange.redact_copy(conn, marker, {k: v for k, v in tombstone.items() if k != "redacted"})
+        exchange.redact_copy(
+            conn,
+            marker,
+            {k: v for k, v in tombstone.items() if k != "redacted"},
+            caller.actor(mine.id),
+        )
     events.emit(
         conn,
         mine.project.id,

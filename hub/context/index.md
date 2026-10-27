@@ -23,7 +23,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 ## 9
 
 ## A
-- [attachments.md](attachments.md) — without MAITY_ATTACHMENT_DIR the hub starts and uploads say `attachments_not_configured` (open: the contract requires the directory); the blob is written before the row and removed when the row never commits; a pending upload is its uploader's alone and the rate counts 64 KiB units; a message names its attachments in its own transaction and always carries the list; redaction tombstones them with the message; the project view's quota is filled where the caller is known
+- [attachments.md](attachments.md) — without MAITY_ATTACHMENT_DIR the hub starts with attachments off and every attachment call says `attachments_not_configured` (the coordinator's ruling, #464); the blob is written before the row and removed when the row never commits; a pending upload is its uploader's alone and the rate counts 64 KiB units; a message names its attachments in its own transaction and always carries the list; redaction tombstones them with the message; the project view's quota is filled where the caller is known
 - [auth.md](auth.md) — a call's presence and lease side effects commit before the endpoint runs; a runner caller is confined before any route runs; an admin agent's members:admin as two endpoints, not the scope; a session's public id, named browser and system, no address kept once it ends; good standing by password only and `not_implemented` for the mail link until the other methods exist; device-code long-polls read the row, the device cookie holds one value per human; a pending account confined in the same place; no registration before the operator's account exists
 - [availability.md](availability.md) — availability computed on read, the announced state stored and reconciled under the project lock by requests and a one-minute sweep; an agent's first look a silent baseline; a limit only lengthens leases; a human's limit on the account
 
@@ -35,7 +35,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 ## D
 
 ## E
-- [events.md](events.md) — the long-poll waits on an asyncio event in-process, never on the database; a runner's stream reads every project it was ever attached to; mention pings counted in process, given back when the write does not commit; shared environments computed from live sessions, only announcements stored
+- [events.md](events.md) — the long-poll waits on an asyncio event in-process, never on the database; a runner's stream reads every project it was ever attached to; mention pings counted in process, given back when the write does not commit; shared environments computed from live sessions, only announcements stored; the project message listing runs the events through the same read rule in Python, with a cursor bound to its query
 
 ## F
 
@@ -49,7 +49,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 
 ## J
 - [joins.md](joins.md) — the join page's HTML via markdown-it-py with raw HTML off; the template shipped from docs/ into the wheel; the join host as a path rewrite in the middleware, matched on the hostname alone (fails closed); unused join links and new-profile placements lose reports_to with the removed member, the exchange keeps only an active boss; invitations voided at accept, listed 30 days from their own end, the page's registration from the effective mode and mail
-- [jour-fixe.md](jour-fixe.md) — minutes online for the moderator order counted per agent membership and minute in their own table; a round's thread opens with the round, a pending further step waits in the steps list; the thread and its messages wake nobody; a proposal's decision request asked by the moderator; a later adopt opens the card, the report stays final
+- [jour-fixe.md](jour-fixe.md) — minutes online for the moderator order counted per agent membership and minute in their own table; a round's thread opens with the round, a pending further step waits in the steps list; the thread and its messages wake nobody; a proposal's decision request asked by the moderator; a later adopt opens the card, the report stays final; a card still carries the hub's text while it is exactly what the hub wrote
 
 ## K
 - [keep-the-why.md](keep-the-why.md) — the Keep the Why export in memory: read through on request, refreshed in the background for the project view, never stored

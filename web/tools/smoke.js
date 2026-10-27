@@ -161,7 +161,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const plainTitle = () => document.title.replace(/^\(\d+\) /, "");
   expect(win.location.hash === "#/all", "empty hash with two projects lands on #/all");
   expect(!main.querySelector(".error"), "cross-project inbox renders");
-  expect(gets.some((p) => p.startsWith("/requests")) && main.querySelector(".lead-projects"), "#/all renders requests and project lead controls");
+  expect(gets.some((p) => p.startsWith("/requests")) && !main.querySelector(".lead-projects") && !header.querySelector(".lead-chat"),
+    "#/all renders requests; no lead strip (the lead is behind the header's Chat button)");
   expect(!text(main).includes("null") && !text(header).includes("null"), "no stray 'null' text");
   // With notifications (docs/api.md §18.2): requests plus unread chats and mentions; Maity has one of each unread.
   // The total also holds a personal request of a project the human is no member of (member: false), on no project's pill.
@@ -890,14 +891,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/agents"); for (let k = 0; k < 4; k++) await tick();
 
   // Runners (docs/api.md §15): the instance-level view.
-  const runnersLink = header.querySelectorAll(".switcher a").find((a) => a.textContent === "Runners");
-  expect(runnersLink && runnersLink.getAttribute("href") === "#/runners", "runners: a link beside the projects");
+  // Runners are the person's (tsk-cb6myw32def0): in the gear menu, not beside the projects.
+  expect(!header.querySelectorAll(".switcher a").some((a) => a.textContent === "Runners"), "runners: no link in the projects' row");
+  gearButton().click(); await tick();
+  const runnersLink = gearButton().parentNode.querySelectorAll(".menu-item").find((a) => a.textContent === "Runners");
+  expect(runnersLink && runnersLink.getAttribute("href") === "#/runners", "runners: in the gear menu");
+  gearButton().click(); await tick();
   const rWrites = [];
   const rPost = win.Maity.api.post, rPatch = win.Maity.api.patch, rDel = win.Maity.api.del;
   win.Maity.api.post = (p, b) => { rWrites.push(["POST", p, b]); return rPost(p, b); };
   win.Maity.api.patch = (p, b) => { rWrites.push(["PATCH", p, b]); return rPatch(p, b); };
   win.Maity.api.del = (p) => { rWrites.push(["DELETE", p]); return rDel(p); };
   await go("#/runners"); await tick();
+  gearButton().click(); await tick();
+  const runnersHere = gearButton().parentNode.querySelectorAll(".menu-item").find((a) => a.textContent === "Runners");
+  expect(!runnersLink.getAttribute("aria-current") && runnersHere && runnersHere.getAttribute("aria-current") === "page",
+    "runners: the gear menu marks the page shown");
+  gearButton().click(); await tick();
   const card = (name) => main.querySelectorAll("article.runner").find((a) => a.getAttribute("aria-label") === name);
   expect(plainTitle() === "Runners · Maity" && main.querySelectorAll("article.runner").length === 3, "runners: the view lists the runners");
   const laptop = text(card("home-laptop"));
@@ -1901,7 +1911,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const mdPre = mdBlock.querySelector("pre");
   expect(mdPre.getAttribute("role") === "region" && /^Code \(js\), block \d+$/.test(mdPre.getAttribute("aria-label"))
     && btn(mdBlock, "Copied").getAttribute("aria-label") === "Copy " + mdPre.getAttribute("aria-label")
-    && mdBlock.querySelector(".md-code-bar .md-lang"), "markdown: a code block is a named region, its Copy names it, the bar sits above the code");
+    && mdBlock.querySelector(".md-code-bar .md-lang"), "markdown: a code block is a named region, its Copy names it, language and Copy in the block's corner");
+  expect(thCss.includes(".md-code { margin: 0; padding: 36px 10px 8px;"), "markdown: the code block keeps a row of its own for language and Copy, no line runs under them");
 
   // Ids in text become links (js/ids.js, tsk-dcj6qwjxc9cq): by shape only, the id as the link's text.
   const IDS = win.Maity.ids;
@@ -1956,9 +1967,25 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const boardTab = () => header.querySelectorAll("nav.views a").find((a) => a.textContent.startsWith("Board"));
   const cpPanel = () => main.querySelector("aside.card-panel");
   expect(idCard && idCard.classList.contains("wanted") && main.querySelectorAll("article.card.wanted").length === 1
-    && cpPanel() && document.activeElement === byId("card-panel-title") && text(byId("card-panel-title")) === "tsk-0004"
+    && cpPanel() && document.activeElement === byId("card-panel-title") && text(byId("card-panel-title")) === idCard.getAttribute("aria-label")
+    && text(cpPanel().querySelector(".card-panel-head .card-id")) === "tsk-0004"
     && boardTab().getAttribute("aria-current") === "page" && main.querySelector("section.view-board"),
     "ids: a card's link opens the card's panel on the board, the card marked there, the Board tab current");
+  // The designer's pass part 2: the panel is the card (one id, in the bar; the title its heading), the controls right
+  // under the claim line, one style of section heading, and on a phone the panel alone.
+  const dpCard = cpPanel().querySelector(".card-panel-card article.card");
+  const dpKids = dpCard.childNodes.map((x) => x.className || x.tagName);
+  const dpClaim = dpKids.findIndex((k) => /claim/.test(String(k)));
+  expect(dpKids.indexOf("card-actions") > -1 && (dpClaim < 0 || dpKids.indexOf("card-actions") === dpClaim + 1)
+    && thCss.includes(".card-panel .card > header .card-id, .card-panel .card > h3 { display: none; }")
+    && thCss.includes(".card-panel h3, .card-panel h4 { font-size: 0.85rem; text-transform: uppercase;")
+    && /@media \(max-width: 600px\) \{\s*\.board-body\.has-panel > \.columns \{ display: none; \}/.test(thCss),
+    "card panel: one id and one title, the controls right under the claim, one heading style, the panel alone on a phone " + JSON.stringify(dpKids));
+  // A refresh that brings a new title brings it to the panel's heading too (H on #461).
+  const rtCard = (title) => { const a = document.createElement("article"); a.setAttribute("aria-label", title); return a; };
+  const rtPanel = win.Maity.cardPanel.render({ slug: "maity", project: { state: "build", repository: null }, base: "/projects/maity", link: (v, id) => "#/p/maity/" + v + "/" + id, me: { id: "hum-maintainer", kind: "human" }, members: [], memberById: {} }, { id: "tsk-0004", title: "Old title", links: [] }, rtCard("Old title"), () => {});
+  rtPanel.update(rtCard("New title"));
+  expect(text(rtPanel.el.querySelector(".panel-title")) === "New title", "card panel: a refresh's new title reaches the heading");
   // The opened card (js/card-panel.js): the card with its controls, the body, the open notes with a form, the history.
   await go("#/p/maity/board"); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
   const cpCard = () => main.querySelector(".columns").querySelectorAll("article.card").find((a) => a.attrs["data-card"] === "tsk-0001");
@@ -2994,10 +3021,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !lpLinks.some((a) => text(a) === "this") && text(lp).includes("<b>bold</b>") && !lp.querySelector("b") && lp.querySelector("pre code").textContent === "<script>x</script>",
     "landing: https links open apart, dashboard routes stay in the page, anything else and HTML stay text");
   const lpCta = lpLinks.find((a) => a.classList.contains("landing-cta"));
-  const lpSign = lpLinks.find((a) => text(a) === "Sign in");
+  const lpSign = header.querySelectorAll("a").find((a) => text(a) === "Sign in");
   expect(lpCta && text(lpCta) === "Get started" && lpCta.getAttribute("href") === "#/register" && lpSign && lpSign.getAttribute("href") === "#/login",
-    "landing: the button and a sign-in link");
-  expect(thButton() && header.querySelector(".theme-menu"), "landing: the theme switch in its header");
+    "landing: the button, and Sign in in the header");
+  // The designer's pass part 1: one logo (the large lockup, the page's h1), the action before the text.
+  const lpKids = lp.childNodes.map((x) => x.className);
+  expect(thButton() && header.querySelector(".theme-menu") && !header.querySelector(".brand") && lp.querySelector(".landing-lockup").tagName === "H1"
+    && lp.querySelector(".landing-lockup img").getAttribute("alt") === "Maity"
+    && JSON.stringify(lpKids) === JSON.stringify(["landing-lockup", "landing-title", "landing-actions", "md landing-body"]),
+    "landing: the header holds the theme switch and Sign in; the large lockup is the one logo; lockup, title, action, text " + JSON.stringify(lpKids));
   await go("#/login"); await tick();
   expect(byId("login-handle") && !main.querySelector("article.landing") && plainTitle() === "Sign in · Maity", "landing: #/login always reaches the login page, its own title again");
   lpAnswer = () => Promise.resolve({ enabled: false });
@@ -3031,6 +3063,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && ivRegister && ivRegister.getAttribute("href") === "#/register?next=%2F%23%2Finvite%2Fopen-xxxxxxxxxxxxxxxx1"
     && header.querySelector(".theme-menu") && plainTitle() === "Join Maity · Maity",
     "invite: signed out, the invitation and both ways in, each returning to it");
+  // The door (the designer's pass part 2): one centred card; the role in bold, the note a quote with who wrote it,
+  // the logo or its monogram, the action full width.
+  expect(ivPage().classList.contains("door") && text(ivPage().querySelector(".invite-lead strong")) === "member"
+    && text(ivPage().querySelector(".invite-note-by")) === "— Maintainer" && ivPage().querySelector(".invite-project .invite-logo")
+    && ivSignIn.classList.contains("door-action") && thCss.includes(".door { max-width: 28rem; margin: 10vh auto;"),
+    "invite: one centred card, the role in bold, the note a quote signed, the logo, the action full width");
   await go("#/invite/only-xxxxxxxxxxxxxxxx2"); for (let k = 0; k < 4; k++) await tick();
   expect(!ivPage().querySelectorAll("a").some((a) => text(a) === "Create one") && text(ivPage()).includes("This hub does not create new accounts")
     && ivPage().querySelectorAll("a").some((a) => text(a) === "Sign in to accept"), "invite: where the hub does not register, only signing in");
@@ -4553,7 +4591,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const stCard = (id) => main.querySelector(".columns").querySelectorAll("article.card").find((a) => a.attrs["data-card"] === id);
   const stToggle = (id) => stCard(id).querySelector("button.subtask-toggle");
   const stRows = (id) => stCard(id).querySelectorAll("li.subtask").map((li) => li.getAttribute("data-card"));
-  expect(!stCard("tsk-0011") && !stCard("tsk-0012") && !stCard("tsk-0014") && stToggle("tsk-0010") && text(stToggle("tsk-0010")) === "Subtasks 1 open of 2"
+  expect(!stCard("tsk-0011") && !stCard("tsk-0012") && !stCard("tsk-0014") && stToggle("tsk-0010") && text(stToggle("tsk-0010")) === "Subtasks · 1 of 2 open"
     && stToggle("tsk-0010").getAttribute("aria-expanded") === "false" && stCard("tsk-0010").querySelector("ul.subtask-list").hidden,
     "subtasks: children stand folded under their parent, the hub's open and total on the toggle");
   stToggle("tsk-0010").click(); await tick();
@@ -4561,7 +4599,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && JSON.stringify(stRows("tsk-0010").sort()) === JSON.stringify(["tsk-0011", "tsk-0012"])
     && stCard("tsk-0010").querySelectorAll("li.subtask a").some((a) => a.getAttribute("href") === "#/p/maity/tasks/tsk-0011"),
     "subtasks: unfolded, each child with its status, linked to open it");
-  expect(stToggle("tsk-0013") && text(stToggle("tsk-0013")) === "Subtasks 1 open of 1" && (stToggle("tsk-0013").click(), JSON.stringify(stRows("tsk-0013"))) === JSON.stringify(["tsk-0014"]),
+  expect(stToggle("tsk-0013") && text(stToggle("tsk-0013")) === "Subtasks · 1 of 1 open" && (stToggle("tsk-0013").click(), JSON.stringify(stRows("tsk-0013"))) === JSON.stringify(["tsk-0014"]),
     "subtasks: a cancelled parent keeps its open child under it");
   // Only open cards: the parent (in review) is not shown, so its open child stands with the parent's id.
   byId("board-column").value = "open"; byId("board-column").dispatch("change"); await tick();
@@ -4673,7 +4711,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("new-subtask-title").value = "Subtasks: the designer's pass";
   stPanel().querySelector("form.new-subtask").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   expect(stPosts.length === 1 && stPosts[0].parent === "tsk-0010" && stPosts[0].status === "proposed"
-    && text(stPanel().querySelector(".card-panel-card .subtasks")).includes("Subtasks 2 open of 3"),
+    && text(stPanel().querySelector(".card-panel-card .subtasks")).includes("Subtasks · 2 of 3 open"),
     "subtasks: the subtask is created under its parent and the parent's counts follow");
   win.Maity.api.post = stPost;
   expect(win.Maity.boardEdit.childProposed({ role: "member", project: { policy: {} } }) && !win.Maity.boardEdit.childProposed({ role: "member", project: { policy: { subtasks: "direct" } } })
@@ -4753,6 +4791,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "Not joined: this invitation is for another address (invitation_address_mismatch)", "Not joined: the request does not validate (already_member)",
     "Not joined: the person who invited you can no longer give this role (invitation_void)", "Not joined: the project is closed (project_closed)",
     "Not joined: your account waits for approval (account_pending)"]), "invite: each refusal said in the hub's words with its reason " + JSON.stringify(ivSaid));
+  // Not you? Sign out (H on #461): signed out, the same invitation again, with its ways in; never the root.
+  const soPost = win.Maity.api.post, soEnd = win.Maity.api.endSession, soGet = win.Maity.api.get;
+  let soOut = false;
+  win.Maity.api.post = (p, b) => (p === "/auth/logout" ? (soOut = true, Promise.resolve({})) : soPost(p, b));
+  win.Maity.api.endSession = () => {};
+  win.Maity.api.get = (p) => (soOut && (p === "/auth/session" || p === "/me") ? Promise.reject(new win.Maity.api.ApiError("signed out", 401, p, "unauthenticated")) : soGet(p));
+  await go("#/invite/void-xxxxxxxxxxxxxxxx6"); for (let k = 0; k < 6; k++) await tick();
+  btn(ivArticle(), "Not you? Sign out").click(); for (let k = 0; k < 8; k++) await tick();
+  expect(soOut && win.location.hash === "#/invite/void-xxxxxxxxxxxxxxxx6" && ivArticle()
+    && ivArticle().querySelectorAll("a").some((a) => text(a) === "Sign in to accept") && !btn(ivArticle(), "Not you? Sign out"),
+    "invite: Not you? Sign out signs out and shows the same invitation, signed out " + win.location.hash);
+  win.Maity.api.post = soPost; win.Maity.api.endSession = soEnd; win.Maity.api.get = soGet;
+  if (win.Maity.notify && win.Maity.notify.resume) win.Maity.notify.resume();
   win.Maity.api.post = ivPost; win.Maity.api.del = ivDel;
   // A next that is no dashboard route of this page is no next (§2.6.5): signed in, #/login goes to the start instead.
   const nxStart = (await win.Maity.api.get("/me")).projects.length === 1 ? "#/p/maity/inbox" : "#/all";
@@ -4836,8 +4887,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const meOrder = header.querySelector(".me").childNodes.map((el) => (el.getAttribute("class") || "").split(" ").concat(el.tagName ? [el.tagName.toLowerCase()] : []).join(" "));
   expect(chatBtn() && chatBtn().getAttribute("href") === "#/chats" && chatBtn().getAttribute("aria-label") === "1 unread chat message"
     && text(chatBtn().querySelector(".count")) === "1" && chatBtn().querySelector(".count").getAttribute("aria-hidden") === "true"
-    && /chat-button/.test(meOrder[0]) && /bell/.test(meOrder[1]) && !/chat-button/.test(meOrder[1]) && header.querySelector(".me").childNodes.length === 4,
-    "header: Chat, then Notifications, the gear and the profile; the chat badge a number, its words in the label " + JSON.stringify(meOrder));
+    && /chat-button/.test(meOrder[0]) && /lead-button/.test(meOrder[1]) && /bell-box/.test(meOrder[2]) && header.querySelector(".me").childNodes.length === 5,
+    "header: Chat, Lead, then Notifications, the gear and the profile; the chat badge a number, its words in the label " + JSON.stringify(meOrder));
+  // The Lead button (the maintainer's decision, req-4rpd7vqb6xe3): Chat stays the way to every chat; Lead reaches
+  // the one lead at once (here the owner's own admin agent, on a hub without coordinator data).
+  const leadBtn = () => header.querySelector(".lead-button");
+  expect(leadBtn() && leadBtn().tagName === "A" && leadBtn().getAttribute("href") === "#/p/maity/chat/agt-a"
+    && leadBtn().getAttribute("aria-label") === "Talk to the lead: Agent A" && !header.querySelector(".lead-chat") && !main.querySelector(".lead-chat"),
+    "header: one lead, the Lead button opens that chat; no lead strip anywhere");
   // The counts' refresh redraws Chat on the same route: 1 to 0 drops the badge, 0 to 3 brings it back.
   const rcGet = win.Maity.api.get;
   let rcChat = 0;
@@ -5030,8 +5087,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Refreshes on such a hub replace the bell in place: one bell, the order kept.
   for (let k = 0; k < 3; k++) { await fireIntervals(); await tick(); }
   const fbOrder = header.querySelector(".me").childNodes.map((el) => el.getAttribute("class") || "");
-  expect(header.querySelectorAll("a.bell").filter((a) => a.getAttribute("href") === "#/all").length === 1 && fbOrder.length === 4
-    && /chat-button/.test(fbOrder[0]) && fbOrder[1] === "bell-box", "notifications: refreshes without them keep one bell, Chat first " + JSON.stringify(fbOrder));
+  expect(header.querySelectorAll("a.bell").filter((a) => a.getAttribute("href") === "#/all").length === 1
+    && /chat-button/.test(fbOrder[0]) && fbOrder.filter((c) => c === "bell-box").length === 1 && header.querySelectorAll(".lead-button").length <= 1,
+    "notifications: refreshes without them keep one bell, one Lead, Chat first " + JSON.stringify(fbOrder));
   const nSettingsAsked = [];
   const nGetNone = win.Maity.api.get;
   win.Maity.api.get = (p) => { if (p === "/me/notification-settings") nSettingsAsked.push(p); return nGetNone(p); };
@@ -5493,9 +5551,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "lead: explicit available substitute precedes cover");
   const leadCtx = { me: { id: "hum-me", kind: "human" }, base: "/projects/maity", project: { policy: { coordinator: leadA.id } },
     members: [leadA, leadB], memberById: { [leadA.id]: leadA, [leadB.id]: leadB }, link: (view, id) => "#/p/maity/" + view + "/" + id };
-  const oldHubLeadBox = win.Maity.leadChat.control({ ...leadCtx, project: { policy: {} } });
-  expect(oldHubLeadBox.querySelectorAll("option").length === 1 && oldHubLeadBox.querySelector("option").attrs.value === leadB.id,
-    "lead: older hub picker offers only the caller's own admins and proxies");
+  expect(JSON.stringify(win.Maity.leadChat.targets({ ...leadCtx, project: { policy: {} } }).map((m) => m.id)) === JSON.stringify([leadB.id]),
+    "lead: on an older hub the Lead button reaches only the caller's own admins and proxies");
+  expect(JSON.stringify(win.Maity.leadChat.targets(leadCtx).map((m) => m.id)) === JSON.stringify([leadA.id]), "lead: with a lead, the Lead button reaches that lead");
   const leadGetAll = win.Maity.api.getAll, leadPost = win.Maity.api.post, leadServed = win.Maity.groupChat.served;
   const leadWrites = [];
   win.Maity.groupChat.served = async () => true;
@@ -5505,16 +5563,37 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     { id: "cnv-observed", kind: "group", access: "observer", participants: [{ member_id: "hum-me" }, { member_id: leadA.id }] }
   ] });
   win.Maity.api.post = async (path, body) => { leadWrites.push([path, body]); return { id: "cnv-new-lead" }; };
-  const leadBox = win.Maity.leadChat.control(leadCtx);
-  btn(leadBox, "Talk to the lead").click(); await tick(); await tick();
+  await win.Maity.leadChat.open(leadCtx, leadA); await tick();
   expect(JSON.stringify(leadWrites) === JSON.stringify([["/projects/maity/conversations", { title: "Talk to the lead", participants: [leadA.id] }]])
     && win.location.hash.endsWith("/cnv-new-lead"), "lead: foreign-owned agent gets a two-person group, never a broader existing chat");
   win.Maity.api.getAll = async () => ({ items: [{ id: "cnv-pair", kind: "group", access: "participant", closed_at: null, participants: [{ member_id: "hum-me" }, { member_id: leadA.id }] }] });
-  btn(leadBox, "Talk to the lead").click(); await tick(); await tick();
+  await win.Maity.leadChat.open(leadCtx, leadA); await tick();
   expect(leadWrites.length === 1 && win.location.hash.endsWith("/cnv-pair"), "lead: reuses an open exact pair");
-  const ownLeadBox = win.Maity.leadChat.control({ ...leadCtx, project: { policy: { coordinator: leadB.id } } });
-  expect(ownLeadBox.querySelectorAll("a").some((a) => a.textContent === "Talk to the lead" && a.attrs.href.endsWith("/" + leadB.id)), "lead: own agent uses direct link");
-  expect(win.Maity.leadChat.control({ ...leadCtx, me: { id: leadA.id, kind: "agent" } }) === null, "lead: agents have no button");
+  await win.Maity.leadChat.open(leadCtx, leadB); await tick();
+  expect(leadWrites.length === 1 && win.location.hash === "#/p/maity/chat/" + leadB.id, "lead: own agent opens its direct chat");
+  expect(!win.Maity.leadChat.targets({ ...leadCtx, me: { id: leadA.id, kind: "agent" } }).length, "lead: agents reach no one through it");
+  // Several to reach: a menu of them and, per project with more than one, a group chat with all of them.
+  const leadFound = { multiProject: false, list: [leadA, leadB].map((member) => ({ ctx: leadCtx, member, project: { slug: "maity", name: "Maity" } })) };
+  const leadMenu = win.Maity.leadChat.leadControl(leadCtx, leadFound);
+  leadMenu.querySelector("button").click(); await tick();
+  const leadItems = leadMenu.querySelectorAll(".menu-item").map((b) => b.textContent);
+  expect(JSON.stringify(leadItems) === JSON.stringify(["Lead A", "Lead B", "Group chat with all leads"]), "lead: several leads in a menu, and a group chat with all " + JSON.stringify(leadItems));
+  leadWrites.length = 0;
+  win.Maity.api.getAll = async () => ({ items: [] });
+  leadMenu.querySelectorAll(".menu-item").find((b) => b.textContent === "Group chat with all leads").click(); await tick(); await tick();
+  expect(JSON.stringify(leadWrites) === JSON.stringify([["/projects/maity/conversations", { title: "Talk to the leads", participants: [leadA.id, leadB.id] }]]),
+    "lead: the group chat with all leads is made with exactly them " + JSON.stringify(leadWrites));
+  // A double click while the first is on its way makes one group chat, not two (H on #459).
+  leadWrites.length = 0;
+  let leadRelease;
+  win.Maity.api.getAll = () => new Promise((r) => { leadRelease = () => r({ items: [] }); });
+  leadMenu.querySelector("button").click(); await tick();
+  leadMenu.querySelectorAll(".menu-item").find((b) => b.textContent === "Group chat with all leads").click(); await tick();
+  leadMenu.querySelector("button").click(); await tick();
+  leadMenu.querySelectorAll(".menu-item").find((b) => b.textContent === "Group chat with all leads").click(); await tick();
+  leadRelease(); await tick(); await tick(); await tick();
+  expect(leadWrites.length === 1, "lead: a second click while the first is on its way makes nothing more " + leadWrites.length);
+  expect(win.Maity.leadChat.leadControl(leadCtx, { multiProject: false, list: [] }) === null, "lead: no one to reach, no button");
   win.Maity.api.getAll = leadGetAll; win.Maity.api.post = leadPost; win.Maity.groupChat.served = leadServed;
 
   // Presence is independent of a live claim; timestamps never come from the lease.
