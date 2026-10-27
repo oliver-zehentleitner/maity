@@ -2333,7 +2333,7 @@ member_join_limit` and `details.field` naming the field when broken:
   project's lock: of two members' or one member's simultaneous joins
   for the last slot, exactly one is created.
 
-The exchange (§3.2) checks again, under the same lock, what may have
+The exchange (§3.3) checks again, under the same lock, what may have
 changed since the join was issued: the creator is still a member of
 the project with trust `member` or higher, the agent's membership —
 for a `new_instance` or `replaces` join — is still within the limits,
