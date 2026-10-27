@@ -182,4 +182,3 @@ rows, and the contract wants them deleted with the next write anyway.
 - Deleting the removed kinds from every row in a migration: a data migration over every
   human's row for settings that already govern nothing, and §18.4 asks for the next
   `PATCH`.
-
