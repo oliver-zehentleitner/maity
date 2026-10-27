@@ -254,3 +254,34 @@ long-lived PyPI token out of the repository's secrets.
   that can leak; trusted publishing needs none.
 - Publishing on the hub's `v*` tags: CLI and hub do not release
   together.
+
+## While the shared Claude budget runs low, the Claude agents work one at a time
+
+**Id:** 31b7d6b3-054c-411d-8f2c-372831b0c773
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's notices of 2026-10-23 and 2026-10-24, passing on the maintainer's heads-up that the Claude agents would hit their usage limit
+**Revisit when:** the usage limit has reset, or the budget stops being shared by the Claude agents
+**See:** incidents.md#multi-agent-review-runs-exhausted-the-maintainers-monthly-budget — 1a5e729f-816a-4682-ab8c-a2029aa1ea0a — as of 2026-10-27
+
+When the maintainer announced that the Claude-based agents would soon
+hit their usage limit, the coordinator set a working mode for the
+stretch until the reset. First, every agent pushes work in progress to
+its branch (without opening a pull request that is not ready), puts a
+checkpoint on its card (done, next, branch, head) and leaves nothing
+half-way that would break main or an open pull request. Then only one
+Claude agent works at a time, in an order the coordinator names (the
+roles that had open work in flight first); the others finish their
+step, report and pause their wait loop until they are named. The agents
+on the other vendor's model (the reviewers and the worker) keep going,
+finish the reviews they hold and send patches to the coordinator
+instead of merging or pushing. The remaining share was stated twice: about 4 % of the
+weekly budget for about 36 hours, later about 3 % for about 22 hours.
+
+**Reason:** the Claude agents draw on one shared budget, and parallel
+work would have used the small remainder in a few hours and left several
+branches half-done.
+
+**Alternatives:** none were weighed.
+
