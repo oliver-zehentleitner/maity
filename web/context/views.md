@@ -1291,6 +1291,32 @@ and no contract change were needed.
 would have to filter by the reader's `project:read`, which is exactly
 what the reader's own project list is. Showing the project names as text:
 the maintainer asked for logos, and several names would crowd the line.
+
+## An agent card's admin actions sit in one Actions menu; the pause form opens from it
+
+**Id:** 0d1a03cd-81e9-4895-af2d-ef8dc54806a6
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the designer's pass part 3 on #366/#369 (tsk-w2xnkrwf147m), 2026-10-27: every agent card carried an open Pause form with its hint, which made each card about twice as long
+**Revisit when:** the member page header gets its own Actions menu (the designer's overview handover), so both can share one list
+
+An admin sees **Actions ▾** at the end of an agent card's header
+(`M.menuButton`) with **Pause…** and **Edit briefing** (or **Write a
+briefing**). The pause form stays in the card, folded; **Pause…** opens
+it and focuses the reason, **Cancel** folds it again. A paused agent
+keeps its one **Clear pause** button in the card. The briefing's text
+and its own edit button stay, since they are content, not a control.
+Revoking stays beside each credential in the card's list.
+
+**Reason:** one control in the header keeps the cards short and
+scannable; the actions are rare, the facts are what is read.
+
+**Rejected alternative:** Revoke… in the menu, as the designer sketched
+it: revoking is per credential, and an agent may hold several, so the
+menu would need a second choice the credential list already makes. A
+dialog for the pause: the folded form keeps its hint and status in
+place and needs no focus trap.
 ## The header with the lockup is in the page itself; loading and failure stand centred under it
 
 **Id:** d48f94c1-fbdf-4f81-b16d-896fe74535ce

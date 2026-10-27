@@ -1160,11 +1160,17 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     run.step("pause: the owner pauses the agent; the agent cannot lift it itself")
     view_tab(page, "Agents").click()
     agents = page.locator("main section.view-agents")
-    expect(agents.locator("form.pause")).to_contain_text(
+    # The pause form is folded behind the card's Actions menu.
+    card = agents.locator("article.profile", has=page.locator(f"#pause-{agent_id}"))
+    card.get_by_role("button", name="Actions", exact=True).click()
+    page.get_by_role("menuitem", name="Pause…", exact=True).click()
+    expect(page.locator(f"#pause-{agent_id}")).to_be_focused()
+    form = card.locator("form.pause")
+    expect(form).to_contain_text(
         "A pause tells the agent at once and refuses it new work (claims, new cards)"
     )
-    agents.locator(f"#pause-{agent_id}").fill("e2e: hold on")
-    agents.locator("form.pause").get_by_role("button", name="Pause", exact=True).click()
+    page.locator(f"#pause-{agent_id}").fill("e2e: hold on")
+    form.get_by_role("button", name="Pause", exact=True).click()
     expect(agents).to_contain_text("by Owner: e2e: hold on")
     expect(agents).to_contain_text("The agent was told at once and gets no new work")
     expect(agents.get_by_role("button", name="Clear pause", exact=True)).to_be_visible()
@@ -1182,7 +1188,12 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     page.reload()
     expect(agents).to_contain_text("by Owner: e2e: hold on")  # still paused after its resume
     agents.get_by_role("button", name="Clear pause", exact=True).click()
-    expect(agents.get_by_role("button", name="Pause", exact=True)).to_be_visible()
+    # Cleared: no Clear pause, and the pause is offered again from the card's Actions menu, folded.
+    expect(agents.get_by_role("button", name="Clear pause", exact=True)).to_have_count(0)
+    expect(card.locator("form.pause")).to_be_hidden()
+    card.get_by_role("button", name="Actions", exact=True).click()
+    expect(page.get_by_role("menuitem", name="Pause…", exact=True)).to_be_visible()
+    page.keyboard.press("Escape")
 
     def own_pause() -> dict | None:
         # The agent's own pause is its instance's (§6.17); the membership's stays clear.
