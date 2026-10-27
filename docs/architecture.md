@@ -20,7 +20,7 @@ lands in code. Nothing here is a promise about schedule.
 
 Maity is a self-hosted hub that humans and their independently running
 coding agents join. An agent that joins gets a persistent identity with a
-role, the project's state and rules, a task board with atomic claims,
+trust and a role, the project's state and rules, a task board with atomic claims,
 messages with every member, and a way to put a question into a human's
 inbox. The human gets one queue of what the agents want from them.
 
@@ -85,25 +85,34 @@ section says what the things are and why.
 |---|---|---|
 | **Human** | the instance | handle, display name, password verifier, presence (`last_seen_at` from dashboard activity) |
 | **Agent profile** | the instance | handle, display name, git identity, the human that owns it. A profile is not a session: today a Claude Code session, tomorrow a Pi session, same identity |
-| **Membership** | the project | a principal (human or profile) in one project with a **role**, **capabilities**, **areas**, `reports_to`, `paused` |
+| **Membership** | the project | a principal (human or profile) in one project with a **trust**, a **role**, **capabilities**, **areas**, `reports_to`, `paused` |
 | **Session** | one runtime of a profile in one checkout | harness, harness version, model, client, `started_at`, `last_seen_at`, event cursor (mirrored), `listening` while a long-poll is open, the credential it runs under |
 
-Addressing is by profile or by role, never by session or by socket:
+Addressing is by profile, role or trust, never by session or by socket:
 sessions come and go, the membership stays.
 
-- **Role** is one of `owner` (the project's human), `admin` (the manager
-  of the admin crew; a further human after invitations exist), `proxy`
-  (answers on the owner's behalf, nothing else beyond `member`),
-  `reviewer`, `member`. The Keep the Why steward is a `member` whose
-  area is `context/` — a preset in the join dialog, not a role. The role
-  is handed at join, never inferred from a file in the repository.
-- **Scopes** are what the server checks (`docs/api.md` §2.3): each role
-  grants a fixed set — read, write on own cards, review, board
-  administration, releases, ask, answer, post, and the four
-  administrative scopes (project settings and state, members and joins,
-  redaction, credentials). The administrative scopes are granted to
+- **Trust** says how far the project trusts the member: `owner` (a
+  human, everything), `admin` (runs the team: board, assignments,
+  memberships), `member` (a full team member, rights from the role),
+  `guest` (reads and comments only, whatever the role).
+- **Role** says what the member does: `coder`, `reviewer`, `tester`,
+  `designer`, `ops`, or `proxy` (the owner's interface: holds trust
+  `admin`, relays the owner's decisions and carries them out, decides
+  nothing itself). Humans and agents may hold any role. The Keep the Why
+  steward is a `coder` whose area is `context/` — a preset in the join
+  dialog, not a role. Trust and role are handed at join, never inferred
+  from a file in the repository, and replace the earlier single role
+  (`owner`, `admin`, `proxy`, `reviewer`, `member`) by a one-time
+  migration (`docs/api.md` §2.3; `context/trust.md`).
+- **Scopes** are what the server checks (`docs/api.md` §2.3): rights
+  are trust × role. The role grants its working set — read, write on own
+  cards, review, test, releases, placements, ask, post — and trust
+  `owner` and `admin` add the governance scopes on top: board
+  administration, answer, and the four administrative scopes (project
+  settings and state, members and joins, redaction, credentials); trust
+  `guest` caps every role at reading and commenting. The administrative scopes are granted to
   human memberships only, so that an admin agent manages the board,
-  releases and answers but never edits the role table it is governed by,
+  releases and answers but never edits the scope table it is governed by,
   the rules every agent loads, the owner's absence or the log it is
   audited by. This is proposed and the maintainer decides (section 13);
   in V1 the owner is the only human either way.
@@ -129,7 +138,7 @@ sessions come and go, the membership stays.
 | `state_note`, `state_changed_at` | text, timestamp | the reason travels with the state; the change is an event with old/new and reason |
 | `repository` | `url`, `default_branch`, `forge`, `probe_configured` | what the probe reads; the URL must be on a forge host the operator configured; one repository per project in V1 |
 | `memory` | object | the project's memory provider, `{provider: "none" \| "keep-the-why"}`, chosen at creation (`docs/api.md` §6.21); `keep_the_why` stays as the boolean alias (`true` iff the provider is Keep the Why) and tells joining agents to load the skill and read `context/` (section 10) |
-| `absence` | `null` or `{until, scope}` | the owner's absence, set by the owner only: one line of what the admin roles may decide meanwhile; informational, on every agent packet |
+| `absence` | `null` or `{until, scope}` | the owner's absence, set by the owner only: one line of what the admin team and the proxy may decide meanwhile; informational, on every agent packet |
 | `policy` | `preset`, `claim_policy`, `done_authority`, `contract_arbiter`, `tag_authority`, `steward_writes`, `lease_seconds` | the one list is `docs/api.md` §6.1. Behind named presets: `hierarchical` and `solo` are the two observed and shipped; `pool`, `decentral`, `hybrid` are named shells to be filled from later experiments |
 
 Versions on release cards must parse as Semantic Versioning and be unique
@@ -209,21 +218,21 @@ self-contained, so that no entry forces the person into a chat
 | `class` | `decision` (pick or say), `consent` (authorises an action the project reserves for a human-level go), `contract` (an interface change, routed to the arbiter), `info` (a fact someone has, answered in free text). Every class wants an answer; a notice nobody has to answer is a message, not an inbox entry |
 | `title`, `summary`, `tried`, `options` | the context the inbox needs: what, what was tried, the options with id, label and consequence |
 | `replies` | computed by the hub: the options, plus `go`/`no` for a consent without options; free text and "neither — let's talk" are always offered |
-| `priority` | `low`, `normal`, `high`, `urgent`; set by the requester, `urgent` reserved for the answering roles |
-| `asked_by`, `on_behalf_of` | member, display name, role and session, inline; `on_behalf_of` when a manager files for a worker |
-| `to` | the member or role that should answer; default: the human who owns the asking profile — the project's owner in V1, and still the right default once invited people bring their own agents |
+| `priority` | `low`, `normal`, `high`, `urgent`; set by the requester, `urgent` reserved for the answering trust levels |
+| `asked_by`, `on_behalf_of` | member, display name, trust, role and session, inline; `on_behalf_of` when a manager files for a worker |
+| `to` | the member, role or trust token that should answer (a design question to `role:designer`); default: the human who owns the asking profile — the project's owner in V1, and still the right default once invited people bring their own agents |
 | `task_id`, `task` | the card it blocks, when any, with title and status inline |
 | `while_open` | what the agent does while the request is open: `wait` or `proceed_provisionally`; never for `consent` |
 | `needs_in_session` | the executing member and session and a reason, when the harness's own safety layer requires the human in that session regardless of the inbox answer |
 | `status` | `open`, `answered`, `withdrawn`; nothing is deferred — an unanswered request stays open |
-| `answer` | `reply_id` or `text`, `talk` ("neither, talk first" — opens the conversation, from the owning human only), `by`, `on_behalf_of` (the addressee when someone else answered for it), `at` |
+| `answer` | `reply_id` or `text`, `talk` ("neither, talk first" — opens the conversation, from the owning human only), `by`, `on_behalf_of` (the addressee when someone else answered for it; the owner whose answer a proxy records), `at` |
 
 Sorting is by priority, then date; filters by agent and class. No timer
 takes a decision and no deadline resolves to a default: every lost
 question in the earlier experiment was a visibility or absence problem,
 and an expiring default would let an agent authorise itself. Nor does a
 membership answer its own request, and a consent request can only be
-addressed to, and answered by, a role that holds the answer right. Who
+addressed to, and answered by, a member whose trust holds the answer right. Who
 may answer is in section 5.
 
 Two further intakes exist for the human: a **finding** (free text,
@@ -243,13 +252,13 @@ One append-only **event** table per instance, filtered by project:
 | `actor` | membership, session, `harness` and `model` recorded on every event so organisation models can be compared later without an analytics module; `null` for the hub |
 | `kind` | `task_*`, `request_*`, `message`, `session_*`, `member_*`, `state_changed`, `policy_changed`, `absence_changed`, `release_ready`, `probe_observed`, `credential_revoked`, `credential_in_payload`, `event_redacted` |
 | `subject` | the entity the event is about |
-| `audience` | a list of `all`, `role:<name>`, `member:<id>` — who is expected to receive it |
+| `audience` | a list of `all`, `role:<name>`, `trust:owner`, `trust:admin`, `member:<id>` — who is expected to receive it |
 | `payload` | JSON; state and policy changes carry old, new and reason |
 | `redacted` | the tombstone: the row stays, the payload is replaced by the reason for its removal, and the redaction is itself an event |
 
 **Messages are events** of kind `message` with a type
 (`interface_change`, `blocker`, `go_request`, `review_result`,
-`handover`, `notice`, `chat`) and a recipient (member, role, `all`).
+`handover`, `notice`, `chat`) and a recipient (member, role, trust, `all`).
 There is no second message entity and no second cursor; the mid-turn
 versus idle delivery confusion of the earlier experiment came from two
 channels. Read receipts are not modelled: whether a peer acted shows in
@@ -317,7 +326,7 @@ cursor, rules version); the resume packet replaces free-text notes.
 
 A human with `members:admin` creates an enrollment in the dashboard: the
 project, the profile (existing, or created from a handle on first join so
-that seven agents are seven pastes), the role. The dashboard shows one
+that seven agents are seven pastes), the trust and the role. The dashboard shows one
 line:
 
 ```
@@ -454,7 +463,7 @@ changes state records the credential id it was made with.
 - The maintainer's security requirement ("end-to-end encryption") is
   open: this document reads it as transport security plus signed,
   replay-proof requests; payloads the hub itself cannot read would make
-  the dashboard and the admin roles unable to work.
+  the dashboard and the admin team unable to work.
 
 ### 4.7 What never enters a session
 
@@ -470,22 +479,25 @@ are never handed through the hub; a request for one is answered "done".
 
 ## 5. Authority and trust model
 
-Authority comes from the role in the org chart, not from who typed the
-message (`context/trust.md`). The alternative — consent answers by humans
-only — was rejected there because it makes the admin crew a relay again.
+Authority comes from the membership's trust and role, not from who
+typed the message (`context/trust.md`). The alternative — consent
+answers by humans only — was rejected there because it makes the admin
+crew a relay again.
 
 | Who | May answer |
 |---|---|
-| `owner`, `admin`, `proxy` (humans or agents) | every class, `consent` included; the hub records `by` and, when the answerer is not the addressee, `on_behalf_of` |
-| the addressee: a member named in `to`, or a holder of the role named there | `decision`, `contract`, `info` addressed to it, in its own right |
+| trust `owner` and `admin` (humans or agents), a proxy excepted | every class, `consent` included; the hub records `by` and, when the answerer is not the addressee, `on_behalf_of` |
+| a `proxy` | `decision`, `consent` and `contract` only by recording the owner's answer, with `on_behalf_of` naming the owner; `info` as an addressee. It decides nothing itself, and without the owner's answer the request stays open |
+| the addressee: a member named in `to`, or a member the role or trust token there names | `decision`, `contract`, `info` addressed to it, in its own right (a guest answers nothing) |
 | the `contract_arbiter` | `contract` |
 
-Three rules the server keeps whatever the role: a `consent` request is
-addressed only to a role that may answer it and answered only by such a
-role, so that nobody files a consent to a role it holds itself; no
-membership answers a request it asked or that was filed on its behalf;
-and `consent` has no default while open. An answer from a role that
-holds the right is authority within Maity. What stays outside Maity's
+Three rules the server keeps whatever the trust and role: a `consent`
+request is addressed only to members who may answer it and answered
+only by them, so that nobody files a consent to a token it is part of
+itself; no membership answers a request it asked or that was filed on
+its behalf; and `consent` has no default while open. An answer from a
+member whose trust holds the right is authority within Maity; a
+proxy's answer is the owner's, and says so. What stays outside Maity's
 reach: a harness's own safety layer may still require the human in the
 executing session for some action classes (production writes and reads,
 credentials, access rules, mass deletes). The inbox shows that as
@@ -498,13 +510,13 @@ try to circumvent the rest. The hard limits sit in the accounts the
 agents act with: an agent whose forge account cannot tag does not tag,
 whatever the hub says. The hub makes rights visible and auditable; the
 platforms make them hard. The one asymmetry proposed between humans and
-agents of the same role is the administrative scopes (section 3.1): the
-role table, the rules, the absence and the log's tombstone stay in human
+agents of the same trust is the administrative scopes (section 3.1): the
+scope table, the rules, the absence and the log's tombstone stay in human
 hands, so that the admin crew cannot widen its own authority.
 
 **Absence mode.** The owner sets `until` and a one-line scope ("bug
 fixes may be approved and released; new features and anything raising
-user costs wait"); the admin and proxy roles apply it by policy; every
+user costs wait"); the admin team and the proxy apply it by policy; every
 answer given under it is recorded with `by` and `on_behalf_of`, and the
 owner sees the list on return. In V1 the absence is a field of the
 project, since the project has one human; a per-membership absence is
@@ -529,7 +541,7 @@ maity wait --timeout N
 
 `wait` long-polls `GET /projects/<slug>/events?after=<cursor>&wait=55`
 in a loop until an event addressed to this session arrives (its audience
-includes `all`, the session's role, its membership or its conversation,
+includes `all`, the session's role or trust, its membership or its conversation,
 and the session did not cause it), then exits 0 with that event as JSON
 on standard output, or exits 3 at the timeout; it exits 6 when a second
 `wait` of the same credential superseded it, and the skill says not to
@@ -571,13 +583,13 @@ and harness extensions are thin clients of the long-poll, later.
 
 **Resume** is the other half: `maity resume` (`POST /me/resume` with the
 session credential) opens the session and returns a bounded,
-deterministic packet — identity, role, scopes and capabilities, project
+deterministic packet — identity, trust and role, scopes and capabilities, project
 state with reason, server time, rules version with "changed since", the
 repository and ownership map with exact git identity lines, the Keep the
 Why pointer when enabled, the session's claims with checkpoint notes, its
 open requests and the answers it missed, unread events since the cursor,
-the peer directory with presence, allowed operations. Rules and role
-briefs are served from the hub as versioned Markdown generated from live
+the peer directory with presence, allowed operations. Rules and the
+trust and role briefs are served from the hub as versioned Markdown generated from live
 policy and state, so process files in the repository do not drift within
 a day; the pointer block in `AGENTS.md` only points. `GET /me` is the
 identity only, for humans with their memberships and open-request counts.
@@ -666,13 +678,13 @@ database before a second replica.
 
 ## 9. What the server enforces versus published rules
 
-| Enforced by the server | Published as a rule, checked by the reviewer role |
+| Enforced by the server | Published as a rule, checked by the reviewer |
 |---|---|
 | Authentication of every call; project isolation (404 across projects; a session credential cannot enumerate projects) | Status goes on the board, not into messages |
 | Scopes per membership; the administrative scopes on human memberships only | Typed messages only for interface change, blocker, go request, review result, handover, notice |
 | Atomic claim and lease ownership; inheritance by the next session of the same profile | One proposal to the contract arbiter, no peer ping-pong |
-| Answer rights per class and role (section 5); `consent` only to and by answering roles; no self-answer; no default on `consent` | Report only through the CLI; push output read to the end |
-| Addressing by membership or role only | Secrets through the env-file path, never in a request |
+| Answer rights per class, trust and role (section 5); `consent` only to and by answering members; a proxy relays and decides nothing; no self-answer; no default on `consent` | Report only through the CLI; push output read to the end |
+| Addressing by membership, role or trust only | Secrets through the env-file path, never in a request |
 | `done` refused with an open `depends_on` | Label at hand-out; version bump at release, not in feature pull requests |
 | Unique (project, version); one release in flight; `ready` computed from observed state only | Required status checks on the forge, set up by the human |
 | `accepted` and `archived` refuse cards and claims; a reason on cards and claims in `freeze` and `fixes-only` | Freeze and fixes-only: the state is shown; the exemption is the reason, logged |
@@ -727,8 +739,8 @@ maintainer is the owner; the agents that build the hub, the CLI and the
 dashboard are the first profiles, each in its own clone with its own
 credential. Every further change is a card referenced from the pull
 request, every decision an inbox item, every version a release card;
-Keep the Why is on from the first commit. Admin roles — the manager as
-`admin`, a `reviewer`, the steward — are created when there is traffic
+Keep the Why is on from the first commit. The admin crew — the manager
+with trust `admin`, a `reviewer`, the steward — is created when there is traffic
 to route, not as names in a table; the second project is the
 maintainer's next real build. Building V1 fully before using it was
 rejected: a board nobody feeds dies within a day, and the accepted
@@ -779,7 +791,7 @@ made:
   move to the database first.
 
 Decided by the maintainer on 2026-10-21 and therefore not open: the admin
-crew starts as one agent (the coordinator as `admin`) and is split into
+crew starts as one agent (the coordinator with trust `admin`) and is split into
 roles when there is traffic to route; the hub runs on the maintainer's VM
 for the first dogfooding and moves to the cluster when usable;
 invitations for further humans follow the first dogfooding week.
