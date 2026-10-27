@@ -438,12 +438,16 @@ window.Maity = window.Maity || {};
     let J = null;
     // Bringing one's own agent (§3.1, tsk-zd2ch05rk7s1): a human member
     // without members:admin adds agents of their own while the project
-    // allows it, up to member_agents_max (active ones and open joins).
+    // allows it, up to member_agents_max. Only where the hub sends the
+    // field: a hub without it refuses a member's join.
     const policy = ctx.project.policy || {};
     const memberAdds = !ctx.canAdmin && ctx.me.kind === "human" && ctx.role !== "guest" && (ctx.trust || "member") !== "guest"
-      && policy.member_agents !== "off";
+      && "member_agents" in policy && policy.member_agents !== "off";
     const maxOwn = policy.member_agents_max === undefined ? 3 : policy.member_agents_max;
-    const ownCount = () => items.filter((m) => ownAgent(m) && !m.removed_at).length + (J ? J.openCount() : 0);
+    // What §3.1 counts: one's distinct agents with an active membership or
+    // an open join; an instance of one already counted adds nothing.
+    const ownMembers = () => items.filter((m) => ownAgent(m) && !m.removed_at);
+    const ownCount = () => new Set(ownMembers().map((m) => m.id).concat(J ? J.openAgents() : [])).size;
     const limitNote = h("span", { class: "muted member-agents-limit" });
     // How many agents, online, and joins open, under the agents' heading.
     const countLine = h("p", { class: "muted agents-count" });
@@ -456,8 +460,10 @@ window.Maity = window.Maity || {};
       if (memberAdds) {
         const n = ownCount();
         const full = n >= maxOwn;
-        limitNote.textContent = n + " of " + maxOwn + " agents of yours" + (full ? " · the project allows no more" : "");
-        addButton.disabled = full;
+        // At the limit the panel still makes an instance of one of them.
+        limitNote.textContent = n + " of " + maxOwn + " agents of yours"
+          + (full ? (ownMembers().length ? " · no new one; another instance or a replacement still" : " · the project allows no more") : "");
+        addButton.disabled = full && !ownMembers().length;
         addButton.setAttribute("aria-describedby", "member-agents-limit");
       }
     }
@@ -482,6 +488,7 @@ window.Maity = window.Maity || {};
     if ((ctx.canAdmin || memberAdds) && M.join) {
       M.join.mount(ctx, {
         member: memberAdds,
+        full: () => memberAdds && ownCount() >= maxOwn,
         changed: drawJoins,
         opened: (yes) => { addButton.hidden = yes; if (!yes) addButton.focus(); },
       }).then((mounted) => {

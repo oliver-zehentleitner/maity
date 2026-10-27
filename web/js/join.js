@@ -212,6 +212,14 @@ window.Maity = window.Maity || {};
           agent = { handle: handle.value.trim(), display_name: display.value.trim() || handle.value.trim() };
         }
         const member = agent.id ? memberOf(agent.id) : null;
+        // At the member's limit (§3.1) only an instance of an agent already
+        // in the project is made: that counts nothing.
+        if (!member && hooks.full && hooks.full()) {
+          status.fail("No join created: ", { message: "you hold as many agents in this project as it allows; "
+            + "choose one of yours that is a member to start another instance or replace one" });
+          agentSelect.focus();
+          return;
+        }
         const text = member ? "" : briefing.value.trim();
         if ([...text].length > BRIEFING_CHARS) {
           status.fail("No join created: ", { message: "the briefing is longer than 16,384 characters" });
@@ -409,12 +417,14 @@ window.Maity = window.Maity || {};
           h("code", null, j.id), " " + profileName(j.agent_id) + " as " + j.role + " · " + state.text))));
     }
     const openCount = () => { const now = M.api.now(); return joins.items.filter((j) => joinState(j, now).key === "open").length; };
+    // The agents open joins are for: with the active memberships, what §3.1 counts per profile.
+    const openAgents = () => { const now = M.api.now(); return joins.items.filter((j) => joinState(j, now).key === "open").map((j) => j.agent_id); };
 
     shownKey = keyOf(joins, M.api.now());
     // A join that expires while the view is open moves on without a reload.
     ctx.every(EXPIRY_MS, () => { if (keyOf(joins, M.api.now()) !== shownKey) changed(); });
 
-    return { open, close, seats, earlier, openCount, reread };
+    return { open, close, seats, earlier, openCount, openAgents, reread };
   }
 
   // On a page the router has not attached yet (a direct #/agents/join), the
@@ -490,6 +500,7 @@ window.Maity = window.Maity || {};
       seats: () => (impl ? impl.seats() : []),
       earlier: () => (impl ? impl.earlier() : null),
       openCount: () => (impl ? impl.openCount() : 0),
+      openAgents: () => (impl ? impl.openAgents() : []),
       // A failed first read keeps its Try again.
       reread: () => (impl ? impl.reread() : Promise.resolve()),
       // An open panel holds a form being filled in or a line shown once: a

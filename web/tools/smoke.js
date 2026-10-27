@@ -603,15 +603,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(main.querySelector("tr.member-manage") && !main.querySelector(".briefing"), "no briefing editor where the hub has no briefings");
   await go("#/p/sample/join"); for (let k = 0; k < 4; k++) await tick();
   expect(byId("join-agent") && !byId("join-briefing"), "no briefing field in the join where the hub has no briefings");
-  // Revoking keeps the credential listed, as revoked; the view is read again.
+  // Revoking keeps the credential listed, as revoked; the row stays open, its list read again.
   await go("#/p/maity/inbox"); await go("#/p/maity/members"); for (let k = 0; k < 4; k++) await tick();
   const agARow = await agOpen("agt-a");
   const agConfirm = win.confirm;
   win.confirm = () => true;
   btn(agARow.querySelector(".credentials"), "Revoke").click(); for (let k = 0; k < 6; k++) await tick();
   win.confirm = agConfirm;
-  const agAAfter = await agOpen("agt-a");
-  expect(agAAfter.querySelectorAll(".credentials li.revoked").length === 1, "revoke keeps the credential listed as revoked");
+  const agAAfter = main.querySelectorAll("tr.member-manage").find((r) => r.id === "member-manage-agt-a");
+  expect(agAAfter && agAAfter.querySelectorAll(".credentials li.revoked").length === 1, "revoke keeps the credential listed as revoked, the row open");
 
   // The theme (System, Light, Dark), signed in: no switch in the header; Your account sets it, kept per browser on <html> as data-theme.
   const thButton = () => header.querySelectorAll("button").find((b) => (b.getAttribute("aria-label") || "").startsWith("Theme: "));
@@ -1608,9 +1608,28 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   for (let k = 0; k < 4; k++) await tick();
   const byoButton = () => main.querySelector("button.join-open");
   const byoNote = () => main.querySelector(".member-agents-limit");
-  expect(byoButton() && text(byoButton()) === "+ Add my agent" && byoButton().disabled && /^\d+ of 3 agents of yours/.test(text(byoNote()))
-    && text(byoNote()).includes("the project allows no more"), "own agents: a member at the project's limit sees Add my agent off, and why " + (byoNote() && text(byoNote())));
+  // At the limit (§3.1) the panel still makes an instance of one already in the project; a new one is refused before sending.
+  expect(byoButton() && text(byoButton()) === "+ Add my agent" && !byoButton().disabled && /^\d+ of 3 agents of yours/.test(text(byoNote()))
+    && text(byoNote()).includes("no new one; another instance or a replacement still"), "own agents: at the project's limit Add my agent stays for an instance, and says why " + (byoNote() && text(byoNote())));
+  const byoFullPosts = [];
+  const byoFullPost = win.Maity.api.post;
+  win.Maity.api.post = (p, b) => { if (p.endsWith("/joins")) { byoFullPosts.push(b); return Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", {})); } return byoFullPost(p, b); };
+  byoButton().click(); await tick();
+  byId("join-agent").value = ""; byId("join-agent").dispatch("change");
+  byId("join-handle").value = "one-more"; byId("join-display").value = "One more";
+  main.querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(!byoFullPosts.length && text(main.querySelector(".join-panel")).includes("you hold as many agents in this project as it allows; choose one of yours"),
+    "own agents: at the limit a new agent is refused before sending");
+  byId("join-agent").value = "agt-a"; byId("join-agent").dispatch("change");
+  main.querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(byoFullPosts.length === 1 && byoFullPosts[0].agent.id === "agt-a" && (byoFullPosts[0].new_instance || byoFullPosts[0].replaces),
+    "own agents: at the limit an instance of one's member agent is still sent " + JSON.stringify(byoFullPosts[0]));
+  win.Maity.api.post = byoFullPost;
   const byoGet = win.Maity.api.get;
+  // A hub whose policy has no member_agents does not know members' own agents: no button that would get 403.
+  win.Maity.api.get = (p) => (p === "/projects/maity" ? byoGet(p).then((x) => { const pol = Object.assign({}, x.policy); delete pol.member_agents; return Object.assign({}, x, { policy: pol }); }) : byoGet(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/members"); for (let k = 0; k < 6; k++) await tick();
+  expect(!byoButton() || byoButton().hidden || text(byoButton()) !== "+ Add my agent", "own agents: no Add my agent where the hub sends no member_agents");
   win.Maity.api.get = (p) => (p === "/projects/maity" ? byoGet(p).then((x) => Object.assign({}, x, { policy: Object.assign({}, x.policy, { member_agents_max: 10 }) })) : byoGet(p));
   await go("#/p/maity/inbox"); await go("#/p/maity/members"); for (let k = 0; k < 6; k++) await tick();
   expect(byoButton() && !byoButton().disabled && /^\d+ of 10 agents of yours$/.test(text(byoNote())), "own agents: below the limit, Add my agent is on");
