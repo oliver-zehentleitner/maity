@@ -164,8 +164,10 @@ def _over_budget(conn: Connection, row: Any, budget: int) -> bool:
 def _disabled_address(conn: Connection, row: Any) -> bool:
     """Whether the mail goes to a human's address that three hard failures disabled, as
     it stands now (§18.7): decided before each delivery, so what was queued earlier and
-    the rest of a batch after the third failure stop too. The link to set the same
-    address again goes to the pending address and is the way back, so it passes."""
+    the rest of a batch after the third failure stop too. Only the confirmation link of
+    the address being set again passes (it is marked `_purpose: verify` and goes to the
+    pending address): it is the way back, and nothing else follows it while the address
+    stays disabled, the link used or not."""
     if row.human_id is None:
         return False
     found = conn.execute(
@@ -175,7 +177,10 @@ def _disabled_address(conn: Connection, row: Any) -> bool:
         found is not None
         and found.address_status == "disabled"
         and found.address == row.recipient
-        and found.pending_address != row.recipient
+        and not (
+            (row.headers or {}).get("_purpose") == "verify"
+            and found.pending_address == row.recipient
+        )
     )
 
 
@@ -225,7 +230,8 @@ def _message(resolved: settings.Resolved, row: Any) -> Any:
         reply_to=resolved.value("reply_to"),
     )
     for name, value in (row.headers or {}).items():
-        mail[name] = headers.clean(str(value))
+        if not name.startswith("_"):  # a mark for the hub's own use, never a header
+            mail[name] = headers.clean(str(value))
     return mail
 
 

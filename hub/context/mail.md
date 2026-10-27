@@ -92,9 +92,11 @@ third in a row disables the address and writes `mail_disabled` (§18.7), and
 a delivery resets the count. A verification mail to a pending address
 counts against no address. Once disabled, no further mail goes to that
 address: each row is checked against the address as it stands just before its
-delivery, so what was queued earlier and the rest of a batch stop too; the
-link that sets the same address again goes to the pending address and
-passes, which is the way back. Sign-in mail over its budget is
+delivery, so what was queued earlier and the rest of a batch stop too; only
+the confirmation link of an address being set again passes (the outbox row is
+marked `_purpose: verify`, a mark that is never sent as a header, and goes to
+the pending address): it is the way back. Nothing else follows it while the
+address stays disabled, the link used or not. Sign-in mail over its budget is
 dropped, not delayed, since a late link is useless. A row that left the
 queue is deleted after seven days, so the outbox keeps no lasting record
 of who got what.
