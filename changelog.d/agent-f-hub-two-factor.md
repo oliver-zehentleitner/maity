@@ -7,7 +7,7 @@
   minutes (`POST /auth/reauthenticate`) or, without a password, a session
   in good standing at least a day old; `GET`, `DELETE
   /auth/second-factor`, `POST …/totp`, `…/totp/confirm`,
-  `…/recovery-codes`, `…/verify`. Migration `0056`.
+  `…/recovery-codes`, `…/verify`. Migration `0061`.
 - hub: the second step of a sign-in — after the password or a device
   code an enrolled human's session reaches only `GET /auth/session`, the
   verify and logout for five minutes; the verify re-keys the session and
