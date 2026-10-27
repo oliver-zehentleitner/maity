@@ -383,7 +383,14 @@ too.
    §19.4), its credentials (id, client, dates, Revoke, never their value;
    "never resumed" and revoked ones visible), and its pause: an owner or
    admin pauses an agent and clears the pause, the form saying in one
-   line what a human's pause does (`docs/api.md` §5.3). Without
+   line what a human's pause does (`docs/api.md` §5.3). On an agent you
+   own, the **Team rulebook** (§6.18; nobody else sees it, an admin
+   included): at most how many instances (1–16, the active count beside
+   it), how cards assigned to the team reach an instance, the lead
+   instance (needed while cards or wakes go to the lead), which instance
+   an event for the team wakes, and whether one instance may review
+   another's work; only what changed is sent. A join refused with
+   `instance_quota` links there. Without
    members:admin a human's own agents open as **Details** with their
    credentials and the preferences switch.
    **Where they run** (`js/placements.js`, `docs/api.md` §15.5–§15.7),

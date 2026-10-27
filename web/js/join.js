@@ -254,6 +254,11 @@ window.Maity = window.Maity || {};
             : d.reason === "member_join_limit" ? { message: "a member may not set this for their own agent: " + (LIMIT_WORDS[d.field] || d.field || "a field") }
             : d.reason === "member_agents_max" ? { message: "you hold as many agents in this project as it allows (" + d.max + ")" }
             : err);
+          // The limit is the agent owner's rulebook, in the agent's row on Members (§6.18).
+          if (err.code === "instance_quota" && agent.id) {
+            append(status.el, " ", h("a", { class: "join-quota-link", href: ctx.link("members", agent.id) },
+              "Raise it in the team's rulebook"));
+          }
           // A member the list on screen did not show, a first join the list
           // took for a member's, or an instance revoked meanwhile: read the
           // members again and offer what the hub has.

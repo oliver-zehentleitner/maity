@@ -192,6 +192,63 @@ window.Maity = window.Maity || {};
       return slot;
     }
 
+    // The team's rulebook (docs/api.md §6.18, tsk-xzbk67raztm0): for the
+    // human who owns the agent profile only, as the hub allows it; other
+    // viewers see none of it. Only the fields that changed are sent.
+    const DISTRIBUTION = [["free", "Free: any instance claims"], ["lead", "Lead: the lead hands cards out"], ["round_robin", "Round robin: in turn"]];
+    const WAKE = [["all", "All listening instances"], ["lead", "Only the lead"], ["next_free", "The least busy instance"]];
+    function teamForm(m, memberPath) {
+      if (!ownAgent(m) || !("team" in m)) return null;
+      const t = Object.assign({ max_instances: 1, distribution: "free", lead_instance: null, wake: "all", review_within_team: false }, m.team || {});
+      const id = (what) => "team-" + what + "-" + m.id;
+      const active = (m.instances || []).filter((i) => !i.revoked_at);
+      const max = keyed("team-max:" + m.id, h("input", { id: id("max"), type: "number", min: "1", max: "16", step: "1", "aria-describedby": id("max") + "-hint" }));
+      max.value = String(t.max_instances);
+      const pick = (what, list, value) => {
+        const s = h("select", { id: id(what) }, list.map(([v, l]) => h("option", { value: v }, l)));
+        s.value = value;
+        return s;
+      };
+      const distribution = pick("distribution", DISTRIBUTION, t.distribution);
+      const wake = pick("wake", WAKE, t.wake);
+      const lead = pick("lead", [["", "none"]].concat(active.map((i) => [i.id, i.label ? i.label + " (#" + i.id + ")" : "#" + i.id])), t.lead_instance || "");
+      const review = h("input", { id: id("review"), type: "checkbox" });
+      review.checked = !!t.review_within_team;
+      const error = h("p", { class: "field-error", id: id("error"), role: "alert" });
+      const save = h("button", { type: "submit" }, "Save the rulebook");
+      return h("form", {
+        class: "member-team",
+        "aria-labelledby": id("title"),
+        onsubmit: async (e) => {
+          e.preventDefault();
+          error.textContent = "";
+          const n = Number(max.value);
+          if (!Number.isInteger(n) || n < 1 || n > 16) { error.textContent = "At most instances: a whole number from 1 to 16."; max.focus(); return; }
+          if ((distribution.value === "lead" || wake.value === "lead") && !lead.value) {
+            error.textContent = "A lead is needed while cards or wakes go to the lead."; lead.focus(); return;
+          }
+          const want = { max_instances: n, distribution: distribution.value, lead_instance: lead.value || null, wake: wake.value, review_within_team: review.checked };
+          const team = {};
+          Object.keys(want).forEach((k) => { if (want[k] !== t[k]) team[k] = want[k]; });
+          if (!Object.keys(team).length) { status.done(); append(status.el, h("span", { class: "ok" }, "Nothing changed.")); return; }
+          save.disabled = true;
+          await act("Saving the rulebook", "The rulebook of " + m.display_name + " is saved.", () => M.api.patch(memberPath, { team }), "team-max:" + m.id);
+          save.disabled = false;
+        },
+      },
+      h("h4", { id: id("title") }, "Team rulebook"),
+      h("p", { class: "hint" }, "How many instances of your agent may run here and how they share the work. Only you, its owner, set this."),
+      h("label", { for: id("max") }, "At most instances"), max,
+      h("p", { class: "hint", id: id("max") + "-hint" }, active.length + (active.length === 1 ? " instance is" : " instances are") + " active now. Lowering the limit stops none; it refuses new ones."),
+      h("label", { for: id("distribution") }, "Cards assigned to the team"), distribution,
+      h("label", { for: id("lead") }, "Lead instance"), lead,
+      h("label", { for: id("wake") }, "An event for the team wakes"), wake,
+      h("label", { class: "check", for: id("review") }, review, " One instance may review another's work"),
+      error,
+      t.updated_by ? h("p", { class: "muted" }, "Last set by @" + (t.updated_by.handle || t.updated_by.id) + (t.updated_at ? " · " + formatTime(t.updated_at) : "")) : null,
+      h("div", { class: "actions" }, save));
+    }
+
     function manage(m, rowId) {
       const memberPath = ctx.base + "/members/" + encodeURIComponent(m.id);
       const self = m.id === ctx.me.id;
@@ -199,6 +256,7 @@ window.Maity = window.Maity || {};
       // whether it gets their preferences, nothing that changes the membership.
       if (!ctx.canAdmin) {
         return h("tr", { class: "member-manage", id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell" },
+          teamForm(m, ctx.base + "/members/" + encodeURIComponent(m.id)),
           credentialsPart(m),
           M.preferences && "owner_preferences" in m ? M.preferences.ownerToggle(ctx, m) : null));
       }
@@ -207,6 +265,7 @@ window.Maity = window.Maity || {};
         // The briefing (§6.2), edited here; where the hub knows briefings.
         if ("briefing" in m && M.agentParts) parts.push(M.agentParts.briefingControl(ctx, m));
         if (ownAgent(m) && M.preferences && "owner_preferences" in m) parts.push(M.preferences.ownerToggle(ctx, m));
+        parts.push(teamForm(m, memberPath));
         parts.push(credentialsPart(m));
       }
       if (m.kind === "agent") {

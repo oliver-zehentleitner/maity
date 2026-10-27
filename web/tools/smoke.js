@@ -612,6 +612,36 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.confirm = agConfirm;
   const agAAfter = main.querySelectorAll("tr.member-manage").find((r) => r.id === "member-manage-agt-a");
   expect(agAAfter && agAAfter.querySelectorAll(".credentials li.revoked").length === 1, "revoke keeps the credential listed as revoked, the row open");
+  // The team's rulebook (§6.18, tsk-xzbk67raztm0): in the agent's row, for its owner; the active count beside the limit.
+  await go("#/p/maity/inbox"); await go("#/p/maity/members"); for (let k = 0; k < 4; k++) await tick();
+  const tmRow = await agOpen("agt-c");
+  const tmForm = tmRow.querySelector("form.member-team");
+  expect(tmForm && byId("team-max-agt-c").value === "3" && text(tmForm).includes("1 instance is active now") && byId("team-distribution-agt-c").value === "free"
+    && byId("team-lead-agt-c").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === ",k3pa",
+    "team: the owner sees the rulebook in the agent's row, the active count beside the limit, the lead among its instances");
+  const tmPatches = [];
+  const tmPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { tmPatches.push([p, b]); return tmPatch(p, b); };
+  byId("team-distribution-agt-c").value = "lead"; tmForm.dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(!tmPatches.length && text(tmForm).includes("A lead is needed"), "team: lead without a lead instance is refused before sending");
+  byId("team-lead-agt-c").value = "k3pa"; byId("team-max-agt-c").value = "4";
+  tmForm.dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(tmPatches.length === 1 && tmPatches[0][0] === "/projects/maity/members/agt-c"
+    && JSON.stringify(tmPatches[0][1]) === JSON.stringify({ team: { max_instances: 4, distribution: "lead", lead_instance: "k3pa" } }),
+    "team: only what changed is sent " + JSON.stringify(tmPatches[0] && tmPatches[0][1]));
+  win.Maity.api.patch = tmPatch;
+  // Back to the fixture's rulebook, for the join cases further down.
+  await win.Maity.api.patch("/projects/maity/members/agt-c", { team: { max_instances: 3, distribution: "free", lead_instance: null } });
+  // Another owner's agent: no rulebook, even for an admin.
+  const tmOthers = win.Maity.api.getAll;
+  const tmOthersGet = win.Maity.api.get;
+  const tmOtherOwner = (r) => Object.assign({}, r, { items: r.items.map((x) => (x.id === "agt-b" ? Object.assign({}, x, { owner_id: "hum-other" }) : x)), next_cursor: null });
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/members" ? tmOthers(p).then(tmOtherOwner) : tmOthers(p));
+  win.Maity.api.get = (p) => (p === "/projects/maity/members" ? tmOthersGet(p).then(tmOtherOwner) : tmOthersGet(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/members"); for (let k = 0; k < 4; k++) await tick();
+  const tmOther = await agOpen("agt-b");
+  expect(tmOther && !tmOther.querySelector("form.member-team"), "team: another owner's agent shows no rulebook, even to an admin");
+  win.Maity.api.getAll = tmOthers; win.Maity.api.get = tmOthersGet;
 
   // The theme (System, Light, Dark), signed in: no switch in the header; Your account sets it, kept per browser on <html> as data-theme.
   const thButton = () => header.querySelectorAll("button").find((b) => (b.getAttribute("aria-label") || "").startsWith("Theme: "));
@@ -2679,6 +2709,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(inPosts.length === 2 && inPosts[1][1].new_instance === true && !("replaces" in inPosts[1][1]) && !main.querySelector(".join-result")
     && text(main).includes("No join created: the team has as many instances as its rulebook allows"),
     "join: another instance beyond the team's limit shows the hub's instance_quota as it is");
+  const inQuota = main.querySelector("a.join-quota-link");
+  expect(inQuota && inQuota.getAttribute("href") === "#/p/maity/members/agt-b" && text(inQuota) === "Raise it in the team's rulebook",
+    "join: the quota refusal links to the agent's row, where its owner sets the rulebook");
   inPick("agt-c");
   expect(byId("join-replaces").querySelectorAll("option").map((o) => o.attrs.value).join() === "k3pa" && text(byId("join-quota")) === "1 of 3 instances active.",
     "join: a member's active instance offered, the team's count against its limit");

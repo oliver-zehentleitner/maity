@@ -1955,6 +1955,22 @@ window.Maity = window.Maity || {};
         target.owner_preferences = body.owner_preferences;
         return target;
       }
+      // §6.18: the team's rulebook, by the human who owns the agent profile only.
+      if ("team" in body) {
+        const target = member(m[1], m[2], path);
+        if (Object.keys(body).length !== 1) fail(400, "invalid", "set team on its own", path, { fields: { team: "alone" } });
+        if (who.member.kind !== "human" || target.kind !== "agent" || target.owner_id !== who.member.id) fail(403, "forbidden", "the profile's owner only", path, { reason: "humans_only" });
+        const next = Object.assign({ max_instances: 1, distribution: "free", lead_instance: null, wake: "all", review_within_team: false }, target.team || {}, body.team);
+        const errors = {};
+        if (!Number.isInteger(next.max_instances) || next.max_instances < 1 || next.max_instances > 16) errors["team.max_instances"] = "out_of_range";
+        if (!["free", "lead", "round_robin"].includes(next.distribution)) errors["team.distribution"] = "unknown";
+        if (!["all", "lead", "next_free"].includes(next.wake)) errors["team.wake"] = "unknown";
+        if ((next.distribution === "lead" || next.wake === "lead") && !next.lead_instance) errors["team.lead_instance"] = "required";
+        if (next.lead_instance && !(target.instances || []).some((i) => i.id === next.lead_instance && !i.revoked_at)) errors["team.lead_instance"] = "not_an_instance";
+        if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
+        target.team = Object.assign(next, { updated_by: { kind: "human", id: who.member.id, handle: who.member.handle }, updated_at: nowIso() });
+        return target;
+      }
       if (!who.admin) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
       const target = member(m[1], m[2], path);
       agentLimits(who.member, target, body, path);
