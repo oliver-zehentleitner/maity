@@ -783,6 +783,21 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .new-agent { display: grid; gap: 6px; }
 .new-agent[hidden] { display: none; }
 .login { margin: 10vh auto 0; }
+/* The door (the designer's pass part 2): sign-in, register and an
+   invitation as one centred card. */
+.door { max-width: 28rem; margin: 10vh auto; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; display: grid; gap: 12px; box-sizing: border-box; }
+.door h2 { margin: 0; }
+.door .door-action { width: 100%; justify-content: center; text-align: center; box-sizing: border-box; }
+.door-alt { text-align: center; margin: 0; }
+.door-mark { font-size: 2rem; color: var(--muted); }
+.door-who { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; }
+.door-who .link-button { min-height: 0; padding: 0; }
+.invite-project { display: flex; align-items: center; gap: 12px; }
+.invite-logo { width: 48px; height: 48px; border-radius: 10px; flex: none; }
+.project-mark.invite-logo { font-size: 1.1rem; }
+.invite-note { margin: 0; padding-inline-start: 12px; border-inline-start: 3px solid var(--border); }
+.invite-note p { margin: 0; }
+.invite-note-by { margin: -6px 0 0; }
 
 .join-result { margin: 12px 0; }
 .join-result .actions, .pair-steps .actions { margin-top: 8px; }
@@ -1258,10 +1273,15 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .board-body.has-panel > .columns { flex: 1 1 auto; min-width: 0; }
 .card-panel { flex: 0 0 min(30rem, 42%); position: sticky; top: 8px; max-height: calc(100vh - 16px); overflow-y: auto;
   border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); padding: 12px 16px; }
+/* Wide: a fixed side panel, the columns keep their width and scroll beside it. */
+@media (min-width: 1100px) { .card-panel { flex-basis: min(32rem, 40vw); } }
 .card-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.card-panel-head .panel-title { margin: 0; font-size: 1rem; }
-.card-panel .card { margin: 8px 0; }
-.card-panel h3 { font-size: 0.95rem; margin: 16px 0 6px; }
+.card-panel .panel-title { margin: 6px 0 0; font-size: 1.15rem; }
+/* The panel is the card: no frame inside the frame, no second id, no second title. */
+.card-panel .card { margin: 4px 0 8px; border: none; padding: 0; background: none; }
+.card-panel .card > header .card-id, .card-panel .card > h3 { display: none; }
+/* One style for the panel's section headings. */
+.card-panel h3, .card-panel h4 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 16px 0 6px; font-weight: 600; }
 .card-note-list, .card-history-list, .card-links { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
 .card-note-list li p { margin: 0; }
 .card-history-list li { overflow-wrap: anywhere; font-size: 0.9rem; }
@@ -1274,6 +1294,10 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
   .board-body.has-panel { flex-direction: column-reverse; }
   .card-panel { position: static; flex-basis: auto; width: 100%; max-height: none; box-sizing: border-box; }
 }
+/* A phone: the open card is a page of its own; Close goes back to the board at the card. */
+@media (max-width: 600px) {
+  .board-body.has-panel > .columns { display: none; }
+}
 
 /* Subtasks on a card (js/board.js): folded under the parent, a toggle with the counts. */
 .subtasks { margin-top: 6px; }
@@ -1281,7 +1305,7 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .subtask-list li { overflow-wrap: anywhere; }
 .subtask-list li.met { color: var(--muted); }
 .subtask-list li.wanted { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
-.subtask-status { font-size: 0.8rem; color: var(--muted); }
+.subtask-status { font-size: 0.8rem; color: var(--muted); display: inline-block; min-width: 4.5em; }
 .card-parent { margin: 4px 0; font-size: 0.85rem; }
 .card-family { display: grid; gap: 8px; margin-top: 8px; }
 .card-family-form { display: grid; gap: 6px; }

@@ -22,7 +22,7 @@ window.Maity = window.Maity || {};
     if (session) { window.location.replace(next ? next.slice(1) : "#/all"); return; }
     bar(header);
     document.title = "Create an account · Maity";
-    const box = h("article", { class: "register" });
+    const box = h("article", { class: "register door" });
     append(clear(main), box);
     const signIn = next ? "#/login?next=" + encodeURIComponent(next) : "#/login";
     // May this person register here? The instance's mode (§2.6.1), or an
