@@ -422,3 +422,48 @@ command for the board keeps cards in one place in the CLI.
   needs for the contract would be gone.
 - The hub's default of every status for `list`: in a project with
   hundreds of closed cards the board would be mostly history.
+
+## A proxy's go goes only on writes, and `maity api` sends its body as read
+
+**Id:** 47c1d15a-3ace-4eba-9116-b291fbf69a78
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card "cli: trust × role commands" (contract #419, `docs/api.md` §2.2, §2.3, §7, §13); the arbiter's ruling of 2026-10-27 that the `Maity-On-Request` line is in the canonical string only when the header is sent (contract PR #425)
+**Revisit when:** a governance call is a `GET`, or the hub starts to match a go by the parsed JSON instead of the body's bytes
+
+`--on-request <id>` is on `maity api` and on the commands that make
+calls under a governance scope (`task create`, `task edit`, `unclaim`,
+`takeover`, `release tick`, `ticker post`, `note resolve`, `link
+remove`, `placement start|stop|restart`, `memory add`). The client sends
+it as the signed `Maity-On-Request` header on every call of the command
+that is not a `GET`. The canonical string gets the header's line only
+when the header is sent, so a call without it is signed exactly as
+before. With `--on-request`, `maity api --json FILE` sends the file's
+bytes unchanged instead of re-encoding the JSON. `maity ask --action
+"METHOD PATH[?QUERY]" --action-body FILE` stores the body as the file's
+text and puts the query in the order the CLI signs and sends it
+(`sign.canonical_query`), with `/api/v1` dropped from the path. A proxy
+that asks with one file and calls `maity api` with the same file and the
+same query therefore sends what the go names. The request id is checked
+against `[A-Za-z0-9_-]{1,64}` before anything is sent, because it goes
+into a header.
+
+**Reason:** the hub matches a go by method, path, query string and the
+SHA-256 of the raw body (§2.3). Re-encoding the JSON (`maity api` sends
+it compact) would change the bytes, and the call would be refused as
+`mismatch`. Reads need no go, and a go is single use: a `GET` that a
+command makes first (for example `task edit` reading `related`) must not
+carry it. A line that is always in the canonical string would change
+the signature of every request. Every CLI already installed, and the
+hub, would then refuse each other until both shipped together.
+
+**Rejected alternatives:**
+- An empty `Maity-On-Request` line on every request, as #419 first
+  wrote it: no transition. The arbiter changed the contract instead.
+- A global `maity --on-request` before the command: it reads as if it
+  applied to every command, and argparse would take it only in that
+  position.
+- Normalising the action body to compact JSON in `ask`: the proxy could
+  no longer see that the file it showed the owner is the file that is
+  sent.

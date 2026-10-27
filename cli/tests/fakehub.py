@@ -42,11 +42,21 @@ def canonical_query(raw_query: str) -> str:
     return "&".join(f"{k}={v}" for k, v in encoded)
 
 
-def canonical(method: str, raw_path: str, raw_query: str, ts: str, nonce: str, body: bytes) -> str:
+def canonical(
+    method: str,
+    raw_path: str,
+    raw_query: str,
+    ts: str,
+    nonce: str,
+    body: bytes,
+    on_request: str | None = None,
+) -> str:
+    """The hub's rule (§2.2): the `Maity-On-Request` line only when the header came."""
     query = canonical_query(raw_query)
-    return "\n".join(
-        ["MAITY-HMAC-V1", method, raw_path, query, ts, nonce, hashlib.sha256(body).hexdigest()]
-    )
+    lines = ["MAITY-HMAC-V1", method, raw_path, query, ts, nonce]
+    if on_request is not None:
+        lines.append(on_request)
+    return "\n".join([*lines, hashlib.sha256(body).hexdigest()])
 
 
 @dataclass
@@ -122,6 +132,7 @@ def _handler(hub: FakeHub) -> type[BaseHTTPRequestHandler]:
                 seen.headers["maity-timestamp"],
                 seen.headers["maity-nonce"],
                 seen.body,
+                seen.headers.get("maity-on-request"),
             )
             expected = hmac.new(VERIFIER, text.encode(), hashlib.sha256).hexdigest()
             if not hmac.compare_digest(expected, seen.headers.get("maity-signature", "")):
