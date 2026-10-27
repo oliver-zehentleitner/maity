@@ -1699,9 +1699,9 @@ def overview_step(run: Run, page: Page) -> None:
 
 def message_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     """Message the project (docs/api.md §8.4): the owner writes to everyone; the agent's wait has it."""
-    run.step("message: the owner writes to the project from the inbox; the agent's maity wait gets it")
-    page.goto(f"{run.base}/#/p/e2e-alpha/inbox")
-    page.get_by_role("link", name="Message the project", exact=True).click()
+    run.step("message: the owner writes to the project from the Chat tab; the agent's maity wait gets it")
+    page.goto(f"{run.base}/#/p/e2e-alpha/chat")
+    page.locator(".chat-list-pane").get_by_role("link", name="Message the project", exact=True).click()
     expect(page).to_have_url(re.compile(r"#/p/e2e-alpha/message$"))
     wait = run.wait_start(alpha)
     page.locator("#message-type").select_option("notice")

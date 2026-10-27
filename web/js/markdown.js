@@ -100,10 +100,13 @@ window.Maity = window.Maity || {};
         window.setTimeout(() => { copy.textContent = "Copy"; }, 2000);
       },
     }, "Copy");
+    // The language and Copy sit inside the block's corner (the designer's
+    // pass part 1); a warning about invisible characters stands above it.
     return h("div", { class: "md-code-box" },
-      h("div", { class: "md-code-bar" }, lang ? h("span", { class: "md-lang" }, lang) : null, copy),
       INVISIBLE.test(code) ? h("p", { class: "flag md-invisible" }, "This code contains invisible characters (bidi or zero-width); what you copy may differ from what you see.") : null,
-      pre);
+      h("div", { class: "md-code-frame" },
+        h("div", { class: "md-code-bar" }, lang ? h("span", { class: "md-lang" }, lang) : null, copy),
+        pre));
   }
 
   // Quotes nest at most this deep; deeper is shown as written.

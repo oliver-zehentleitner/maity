@@ -37,7 +37,7 @@ window.Maity = window.Maity || {};
     { route: "ticker", label: "Ticker" },
     // The team at work (js/swarm.js, docs/api.md §6.22).
     { route: "swarm", label: "Swarm" },
-    // No tab: opened from the inbox and from a chat (js/project-message.js).
+    // No tab: opened from the Chat tab, the Messages view and a chat (js/project-message.js).
     { route: "message", label: "Message the project", tab: false },
     // Joining is in Agents now; the old route opens it there (js/join.js).
     { route: "join", label: "Join an agent", admin: true, tab: false },
