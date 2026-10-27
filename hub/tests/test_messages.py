@@ -395,6 +395,7 @@ def test_the_human_and_its_agent_chat_and_nobody_else_sees_it(
         "seq",
         "conversation_id",
         "from",
+        "from_instance",
         "to",
         "body",
         "sent_at",
@@ -410,6 +411,7 @@ def test_the_human_and_its_agent_chat_and_nobody_else_sees_it(
         agent.id,
     )
     assert message["id"] == f"evt-{message['seq']}" and message["delivered_at"] is None
+    assert message["from_instance"] is None  # a human has no instances (§9, §6.17)
     with migrated.connect() as conn:
         event = conn.execute(select(t.event).where(t.event.c.seq == message["seq"])).one()
     assert event.audience == [f"member:{agent.id}", f"member:{owner.id}"]
