@@ -185,6 +185,13 @@ refused.
 **Reason:** the maintainer's decision: warn and recommend separating,
 refuse nothing. Its reason beyond that was not stated.
 
+**Accepted limit:** an admin agent can tell that a resume was followed by
+a hidden event, from its position and timing, but not its content. The
+contract says that and no more: it does not claim the kind stays hidden.
+Accepted in the re-verification of the warning because only humans act
+on the warning, and moving the emit out of the resume would still leave
+the same gap.
+
 **Rejected alternative:** refusing a session that shares an environment
 with another member — excluded by the decision; why is not recorded.
 
@@ -439,3 +446,21 @@ Three security rules follow from the review of the contract change
   by the maintainer — the role is identity and rights.
 - `guest` as a role: guest is a trust level, a way of belonging, not a
   function.
+
+## A redaction notice reaches the event's audience, its reason only humans who may see it
+
+**Id:** 09862f34-3064-4b47-9f9e-3ae00a9c6253
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the contract arbiter's ruling on the re-verification of the shared-environment pull request, 2026-10-27 (`docs/api.md` §8.5)
+
+The redaction notice (`event_redacted`) goes to the redacted event's own
+audience. The reason text reaches only the human owners and admins and
+the redactor; everyone else gets the tombstone with `reason: null`. An
+`event_redacted` event is not itself redactable: that call is `invalid`
+with `details.reason: already_redacted`, on all three database backends.
+
+**Reason:** not stated in the ruling beyond the rule itself.
+
+**Rejected alternative:** none recorded; alternatives: unknown.
