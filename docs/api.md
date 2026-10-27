@@ -7560,10 +7560,25 @@ The operator chooses the store (§16):
 | Setting | Meaning |
 |---|---|
 | `MAITY_ATTACHMENT_STORE` | `local` (default) or `s3`; anything else stops the hub at startup |
-| `MAITY_ATTACHMENT_DIR` | `local`: the directory of the volume; when set, the hub refuses to start when it is missing or not writable; when unset, the hub starts with attachments off: every attachment call and a message that names one get `409 attachments_not_configured`, everything else works |
+| `MAITY_ATTACHMENT_DIR` | `local`: the directory of the volume; when set, the hub refuses to start when it is missing or not writable; when unset, attachments are off (below) |
 | `MAITY_ATTACHMENT_S3_ENDPOINT` | `s3`: the S3-compatible endpoint URL, `https`; plain HTTP only to a loopback or cluster-internal host and only with `MAITY_ATTACHMENT_S3_ALLOW_HTTP=1`, its own switch: `MAITY_ALLOW_PLAIN_HTTP` (§2.5) is about inbound transport and does not cover it |
 | `MAITY_ATTACHMENT_S3_BUCKET`, `MAITY_ATTACHMENT_S3_PREFIX`, `MAITY_ATTACHMENT_S3_REGION` | `s3`: bucket (required), key prefix and region (optional) |
 | `MAITY_ATTACHMENT_S3_ACCESS_KEY_ID`, `MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY` | `s3`: the credentials, from the environment (a Kubernetes secret in production), never logged, never in an answer |
+
+**Attachments off.** An instance with `MAITY_ATTACHMENT_STORE` `local`
+and no `MAITY_ATTACHMENT_DIR` is a valid way to run, not a broken one:
+the hub starts and everything but attachments works. Every attachment
+call — upload, list, metadata, content, delete — and a message that
+names an attachment answer `409 attachments_not_configured`, ahead of
+any other check. Delete is refused too, since without a store the hub
+cannot remove the bytes it would promise to remove; what the store
+holds stays where it is. A message redaction still works and tombstones
+the attachment rows it names; their bytes are removed by the sweep once
+a store is configured again, and the sweep and the expiry of pending
+uploads, which need the store, wait for it the same way. The project
+view keeps `attachments {used, quota}` from the database, so an admin
+still sees what is stored. The dashboard hides upload and delete while
+the hub answers `attachments_not_configured`.
 
 The browser and the agent only ever talk to the hub: the hub reads the
 blob and serves it under the rules below, never redirects to the store
@@ -7804,7 +7819,10 @@ whose bytes do not decode, a text chunk over its cap, a decode over its
 time or memory budget); `payload_too_large` (over 10 MiB);
 `attachment_quota` (`details.scope` `project` or `pending`);
 `rate_limited`; `project_closed` in an `archived` project.
-Every call: `not_found` for a runner credential. `GET`: `not_found` when
+Every call: `not_found` for a runner credential, then — before any
+other check, so it says nothing about a project or an attachment —
+`attachments_not_configured` while the instance has no attachment
+store (below). `GET`: `not_found` when
 there is no such attachment, the caller may not read its message, or —
 on `…/content` — it was deleted. `DELETE`: `not_found` as `GET`;
 `forbidden` (`details.reason: humans_only` for an agent,

@@ -149,3 +149,32 @@ delete is the remedy that needs no removal.
   agent fills a gigabyte in under two hours and keeps it full.
 - Refusing uploads from a paused agent: a pause is not meant to stop an
   agent putting its work down, and messages with files are part of that.
+
+## Without an attachment directory the hub runs with attachments off instead of refusing to start
+
+**Id:** de8f3512-27b5-4b88-8751-6d5dc24dbe9c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's ruling of 2026-10-27 on the deviation the implementer raised in the attachment core pull request (#463), contract change #464 with its follow-up (`docs/api.md` §8.7 "Attachments off")
+**Revisit when:** every deployment has an attachment volume, or the chart provisions one by default
+
+With `MAITY_ATTACHMENT_STORE` `local` and no `MAITY_ATTACHMENT_DIR`
+the hub starts and answers every attachment call, delete included, and
+a message that names an attachment with `409
+attachments_not_configured`, ahead of any other check. A directory that
+is set but missing or not writable still stops the hub.
+
+**Reason:** no deployment had the volume when the attachment core was
+built; a hub that refuses to start without it would have blocked the
+next rollout of everything else. An unset directory is a choice an
+operator can make; a set but broken one is a mistake and stays loud.
+Delete is refused as well because without a store the hub cannot
+remove the bytes a delete promises to remove.
+
+**Rejected alternatives:**
+- Refusing to start without the directory, as the contract first said:
+  couples every deploy to provisioning a volume.
+- Allowing delete while attachments are off, as metadata only: the
+  bytes would stay on a volume the hub no longer knows, behind a delete
+  that said they were gone.
