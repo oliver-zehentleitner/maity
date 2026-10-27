@@ -161,6 +161,33 @@ phone does not show makes the wrong device visible.
 - Hiding the code during screen sharing: the dashboard cannot detect
   screen sharing; number matching covers the case without it.
 
+## A device code is 12 characters in three groups of four
+
+**Id:** f74e7ab6-027b-47bc-906a-35e2e1892ec6
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision, 2026-10-27; contract in `docs/api.md` §2.6.2
+**Revisit when:** codes are typed wrong noticeably more often than before, or a sign-in method without number matching is added
+**See:** sign-in.md#a-device-code-approval-uses-number-matching-and-shows-what-the-hub-observed — 4af71207-7635-46b1-a943-72575a7e13dc — as of 2026-10-27
+
+The code shown for "Sign in another device" is 12 characters of
+Crockford's base32 (60 bits), shown as `XXXX-XXXX-XXXX`, instead of 8
+(40 bits, `XXXX-XXXX`).
+
+**Reason:** the maintainer found eight characters too short to trust at
+a glance. The code was already safe against guessing — short-lived,
+rate-limited, and useless without the approval and number matching on
+the signed-in device — so the length is for the confidence a human
+puts in it, kept at a length a phone user still types.
+
+**Rejected alternatives:**
+- Keeping 8 characters: technically sufficient, but did not read as
+  strong enough.
+- 24 characters (six groups): the maintainer's first ask; dropped in
+  favour of three groups because six are tedious to type on a phone,
+  where the QR code is not always usable.
+
 ## Registration verifies the address before an account exists
 
 **Id:** f592cf44-de6c-4eca-b83f-7c4125729373
