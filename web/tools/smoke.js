@@ -1859,6 +1859,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && idHrefs(idBox(IDS.link("tsk-0123456789ab #12", { slug: "maity", repository: "https://gitlab.com/o/r" }))) === "tsk-0123456789ab=#/p/maity/tasks/tsk-0123456789ab"
     && idHrefs(idBox(IDS.link("tsk-0123456789ab #12", { slug: null, repository: "https://github.com/o/r.git" }))) === "#12=https://github.com/o/r/issues/12",
     "ids: without a project no id links, without a GitHub repository no number does");
+  // An id is one unit, linked or not (the designer's pass part 3): an unlinked one in the code face too.
+  const idPlain = idBox(IDS.link("see tsk-0123456789ab and #12", { slug: null, repository: "https://github.com/o/r" }));
+  expect(text(idPlain) === "see tsk-0123456789ab and #12" && idPlain.querySelectorAll("span.id-ref").map((x) => text(x)).join() === "tsk-0123456789ab"
+    && idHrefs(idPlain) === "#12=https://github.com/o/r/issues/12",
+    "ids: an id that links nowhere still reads as one (span.id-ref) beside the links");
+  expect(thCss.includes(".id-ref { font-family: var(--mono); font-size: 0.9em; white-space: nowrap; }") && thCss.includes("a.id-ref { text-decoration: none; }"),
+    "ids: never broken across lines, underlined only on hover");
   const mdIds = idBox(win.Maity.markdown("Do tsk-0123456789ab **after #12**, not `tsk-0123456789ab`; [tsk-0123456789ab](https://example.org/x)\n\n```\nreq-abcdefghjkmn\n```", idAt));
   expect(idHrefs(mdIds) === "tsk-0123456789ab=#/p/maity/tasks/tsk-0123456789ab #12=https://github.com/oliver-zehentleitner/maity/issues/12"
     && mdIds.querySelector("strong a.id-ref") && mdIds.querySelector("code").textContent === "tsk-0123456789ab" && !mdIds.querySelector("pre a"),
@@ -3132,6 +3139,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && setupKeys.map((k) => text(setupRow(k)).trim()).join("|") === "Set up Keep the Why in the repository|Add the Keep the Why badge to the README|Add the Maity badge to the README"
     && text(main).includes("an agent sets it up in the repository, through the setup cards below"),
     "create: Project memory with Keep the Why preselected, the three setup options ticked, the setup's agent said");
+  const cpNote = byId("setup-maity_badge-note");
+  expect(cpNote && byId("setup-maity_badge").getAttribute("aria-describedby") === "setup-maity_badge-note" && text(cpNote).includes("how many humans and agents")
+    && cpNote.parentNode === setupRow("maity_badge").parentNode && !text(byId("project-setup-hint")).includes("badge")
+    && main.querySelectorAll("button").find((b) => b.textContent === "Create project").classList.contains("primary"),
+    "create: the Maity badge's consequence right under its checkbox; Create project is primary");
   // The hub's refusal of an option is said at the options.
   const spPost = win.Maity.api.post;
   win.Maity.api.post = (p, b) => (p === "/projects" ? Promise.reject(new win.Maity.api.ApiError("does not validate", 400, p, "invalid", { fields: { "setup.maity_badge": "not_a_boolean" } })) : spPost(p, b));
@@ -5592,6 +5604,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && stCells("humans_active")[1] === "up to 16 a day" && (() => { const sv = stRow("cards_done").childNodes[3].childNodes[0]; return sv && String(sv.tagName).toLowerCase() === "svg" && sv.getAttribute("aria-hidden") === "true"
       && sv.childNodes.some((n) => String(n.tagName).toLowerCase() === "polyline"); })(),
     "statistics: a series sums its days, people show their highest day, today beside it " + JSON.stringify([stCells("registrations"), stCells("humans_active")]));
+  expect(["stat-number", "stat-number", "stat-trend"].every((c, i) => stRow("registrations").childNodes[i + 1].classList.contains(c))
+    && thCss.includes(".stat-series td.stat-trend, .stat-series th.stat-trend { width: 120px;"),
+    "statistics: the numbers right-aligned in tabular figures, the sparklines in one 120 px column");
   expect(stCells("reviews")[1] === "38 since 2026-10-22" && text(stBox()).includes("Reviews are counted from 2026-10-22") && text(stBox()).includes("Today (UTC)") && text(stBox()).includes("11 after 7 days · 4 after 30 days")
     && text(stBox()).includes("Humans whose first visit lies at least 7 (or 30) days back") && text(stBox()).includes("Counted ")
     && stBox().querySelectorAll("details.stat-days tbody tr").length === 30,

@@ -96,17 +96,17 @@ window.Maity = window.Maity || {};
           h("span", { class: "stat-label" }, label),
           note && note(t) ? h("span", { class: "stat-note muted" }, note(t)) : null))),
         h("table", { class: "stat-series" },
-          h("thead", null, h("tr", null, h("th", { scope: "col" }, "Each day"), h("th", { scope: "col" }, "Last " + s.window_days + " days"),
-            h("th", { scope: "col" }, "Today (UTC)"), h("th", { scope: "col" }, h("span", { class: "visually-hidden" }, "Trend")))),
+          h("thead", null, h("tr", null, h("th", { scope: "col" }, "Each day"), h("th", { scope: "col", class: "stat-number" }, "Last " + s.window_days + " days"),
+            h("th", { scope: "col", class: "stat-number" }, "Today (UTC)"), h("th", { scope: "col", class: "stat-trend" }, h("span", { class: "visually-hidden" }, "Trend")))),
           h("tbody", null, SERIES.map(([key, label, how]) => {
             const f = figure(s.days || [], key, how);
             const text = !f ? "–" : (how === "peak" ? "up to " + f.value + " a day" : String(f.value))
               + (f && f.partial ? (since ? " since " + since : " (" + (s.days || []).filter((d) => d[key] != null).length + " days)") : "");
             return h("tr", { "data-series": key },
               h("th", { scope: "row" }, label),
-              h("td", null, text),
-              h("td", null, newest[key] == null ? "–" : String(newest[key])),
-              h("td", null, sparkline(list.map((d) => (d[key] == null ? null : d[key])))));
+              h("td", { class: "stat-number" }, text),
+              h("td", { class: "stat-number" }, newest[key] == null ? "–" : String(newest[key])),
+              h("td", { class: "stat-trend" }, sparkline(list.map((d) => (d[key] == null ? null : d[key])))));
           }))),
         since && (s.days || []).some((d) => d.reviews == null)
           ? h("p", { class: "muted" }, "Reviews are counted from " + since + ", when the hub began keeping card history; earlier days show –.") : null,
