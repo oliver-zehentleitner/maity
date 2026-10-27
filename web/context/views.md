@@ -1431,6 +1431,29 @@ the designer's other option: the scroll stays 5,000 px, only the jump is
 shorter. A route per section (`#/admin/users`): `#/admin/users` is the
 older Users page already, and links into a section were not asked for.
 
+## On a phone an opened card is a page of its own; the panel is the card
+
+**Id:** 54f93a4f-7e91-4d69-9b51-ca562daaa9a3
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the designer's pass part 2 (#6473, tsk-qk24j4ebxdwg), 2026-10-27: on a phone the panel opened above the whole board, making the page about 6,700 px long; the panel showed a frame and the card's id twice
+**Revisit when:** a card gets a route that is no board at all, or the board is drawn differently on a phone
+
+At 600 px and below, while a card is open, the board's columns are
+hidden and the panel stands alone; **Close**, Escape and Back return to
+the board at the card. On every width the panel is the card: one id, in
+the bar beside Close; the title is the panel's heading, where the focus
+goes; the card inside has no frame of its own; its controls stand right
+under the claim line.
+
+**Reason:** a panel above a long board turned an opened card into an
+insert in a page nobody could find the end of; as a page of its own it
+reads like one.
+
+**Rejected alternative:** a separate card route without the board: the
+board's filters and scroll, kept for the way back, would be lost. The
+panel above the columns, as before: the length of the page.
 ## A chat opens on its newest page in two requests; older pages on scroll-up
 
 **Id:** fcc59a72-46a0-4741-9d6f-abada05edab6
