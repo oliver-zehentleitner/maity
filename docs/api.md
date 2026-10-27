@@ -856,8 +856,8 @@ one as **B** (the phone):
 
 1. On A, Profile menu → "Sign in another device": `POST
    /auth/device-codes` (A's cookie session, CSRF) answers a code, a URL
-   and the expiry. The dashboard shows the code in two groups of four
-   (`K7QM-4XPR`), a QR of the URL, and a countdown.
+   and the expiry. The dashboard shows the code in three groups of four
+   (`K7QM-4XPR-9D2F`), a QR of the URL, and a countdown.
 2. On B, the login page → "Have a code?" → the code (or the QR's URL,
    which opens that page with the code filled in): `POST
    /auth/device-login` `{code}`. B shows "Waiting for approval on your
@@ -893,14 +893,14 @@ one as **B** (the phone):
   "choices": [ 18, 47, 83 ] }
 ```
 
-- **The code.** 8 characters from Crockford's base32 alphabet
-  (`0123456789ABCDEFGHJKMNPQRSTVWXYZ`, 40 bits), drawn from the
-  system's secure random source, shown as `XXXX-XXXX`. Input is read
+- **The code.** 12 characters from Crockford's base32 alphabet
+  (`0123456789ABCDEFGHJKMNPQRSTVWXYZ`, 60 bits), drawn from the
+  system's secure random source, shown as `XXXX-XXXX-XXXX`. Input is read
   case-insensitively with hyphens and spaces dropped, `I` and `L` read
   as `1`, `O` as `0`. The hub stores `sha256` of the normalised code,
   never the code; the code appears in no response but the one that
   created it.
-- **The URL** is `<MAITY_PUBLIC_URL>/#/sign-in/code?c=K7QM4XPR`: the code
+- **The URL** is `<MAITY_PUBLIC_URL>/#/sign-in/code?c=K7QM4XPR9D2F`: the code
   sits in the fragment, which the browser never sends, so it reaches no
   request log, proxy or `Referer`. The page fills the field in and waits
   for the human's tap; it does not redeem on its own.
@@ -1116,7 +1116,7 @@ HMAC with the signing key, never in clear.
 | What | Limit |
 |---|---|
 | `POST /auth/device-codes` | 5 per 10 minutes per human |
-| `POST /auth/device-login` | 10 per minute per source address, every attempt; and 60 wrong codes per minute across the instance — past that, every redemption is `rate_limited` for a minute (a distributed guess at 40 bits cannot get far; the password still works). This breaker is a known denial of service: a few source addresses can keep device-code sign-in off for the whole instance. It is accepted on purpose — a per-source limit alone would let a distributed guess run — and must not be "fixed" into one |
+| `POST /auth/device-login` | 10 per minute per source address, every attempt; and 60 wrong codes per minute across the instance — past that, every redemption is `rate_limited` for a minute (a distributed guess at 60 bits cannot get far; the password still works). This breaker is a known denial of service: a few source addresses can keep device-code sign-in off for the whole instance. It is accepted on purpose — a per-source limit alone would let a distributed guess run — and must not be "fixed" into one |
 | `POST /auth/email-link` | 3 per 15 minutes and 10 per day per (address, source address), existing or not; 10 per hour per source address; sign-in mails sent across the instance at most `sign_in_max_per_hour` (#160 §16.2, default 60) — a budget of their own, apart from security and notification mail |
 | `POST /auth/email-code` | 5 wrong codes per mailed code; 20 wrong codes per human per day, after which every outstanding code of that human is void (§2.6.3); 10 per minute per source address, shared with the login limit of §2.1 |
 | Long-polls on `GET /auth/device-codes/{id}` and `GET /auth/device-login` | one per session or pending cookie; a second supersedes the first |
