@@ -1264,6 +1264,33 @@ the form the same on every page.
 contract names an instance by handle, and that is what a reader types to
 reach it (`@handle#id`). Showing the instance only on hover: the
 maintainer wants it seen without looking for it.
+
+## In the global chat an agent's message names its projects by logo, from the reader's own member lists
+
+**Id:** bb8a9b29-8be9-4843-872c-07bd3e38641d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish relayed by the coordinator (tsk-p94e7njrmg1p), 2026-10-27: in the global chat every agent message shows the projects the agent is in, as the project logo with the name on hover, never a project the reader may not read; docs/api.md §11.2 (the logo), §6.3 (the member list); the dashboard's implementation, 2026-10-27
+**Revisit when:** the hub lists an agent's memberships across projects for a reader, or the global chat shows chats of projects whose member list the page has not read
+
+`#/chats` reads every project of the reader's context anyway (members
+included, for the names); `projectsOf(memberId)` is those of the
+reader's projects whose member list names the agent, in the switcher's
+order, each drawn with `M.projectMark` (the logo, else the monogram),
+the name as tooltip and as hidden text for a screen reader. It is set on
+the global chat's project contexts only, so a project's own Chat tab
+shows none. A human's message and the reader's own show none.
+
+**Reason:** the reader's own member lists already say every project the
+reader may see the agent in, and only those; a project the reader is not
+in never reaches the page, so nothing private can show. No new hub call
+and no contract change were needed.
+
+**Rejected alternative:** a hub list of the agent's memberships: it
+would have to filter by the reader's `project:read`, which is exactly
+what the reader's own project list is. Showing the project names as text:
+the maintainer asked for logos, and several names would crowd the line.
 ## The keys that send stand beside the send button, named as the keyboard prints them
 
 **Id:** dbb154d5-b5cf-4e9d-884f-0e9467a6788a
