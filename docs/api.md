@@ -6022,9 +6022,11 @@ reviewers' business, as the team rule of `context/process.md` says.
 under `none` reads `optional`, and setting `required` there is `invalid`
 (`details.fields["policy.keep_the_why"]: "no_memory_provider"`). A
 change needs `reason`, like every policy change. Under `optional`
-nothing below applies, except the shape of `why`: the packet's block
-carries `enabled` and `instruction` only, nobody is reminded, and a
-report may carry `why` or not.
+the hub enforces nothing below — the packet's block carries no
+commitment (`commitment`, `acknowledged_at`, `acknowledge_by`, `ack`),
+nobody is reminded, and a report may carry `why` or not — but the
+agent is still told how to load the skill ("Loading the skill",
+below), and `why`, when sent, keeps its shape.
 
 **Loading the skill.** The maintainer's decision of 2026-10-27: Maity,
 not the agent's operator, makes sure an agent can load Keep the Why. An
@@ -6045,14 +6047,21 @@ machine has installed and wherever its session was started:
   (`context/scope.md`); it says where the agent finds it, so that an
   agent started outside its clone still finds the project.
 - `personal_defaults` — the project's `policy.keep_the_why_defaults`
-  (§6.1). Under `adopt` the agent takes the personal settings the
-  repository's `.keep-the-why` offers in its `personal-defaults` block
-  as an instruction of this session — the skill's own resolution order
-  puts a session instruction first — and writes them to its personal
-  file with `source: project defaults`, without asking its human; a
-  repository without the block leaves the skill's defaults. Under `ask`
-  the agent runs the skill's personal wizard with its human, through
-  Maity (`maity say` to its human), not in its harness's chat.
+  (§6.1). It matters only on a machine where the agent has **no
+  personal file** for this project yet (`~/.keep-the-why/<id>.md`); an
+  existing personal file is left as it is, values and timestamps
+  alike, and nothing is asked again on a later resume. On a first
+  setup under `adopt` the agent creates the personal file from the
+  repository's `personal-defaults` block, recorded with `source:
+  project defaults (adopted by policy <date>)`, without asking its
+  human — the documented outcome of the skill's `auto-accept`, applied
+  to this project only, not written to the machine-wide
+  `~/.keep-the-why/config`; a repository without the block gets the
+  personal file from the skill's documented defaults the same way.
+  Under `ask` the agent runs the skill's personal wizard once, with its
+  human, through Maity (`maity say` to its human), not in its harness's
+  chat. A human who wants different settings for an agent changes its
+  personal file; the policy never overwrites one.
 
 The CLI prints this block first after the identity, before the briefing
 and the work (§13), because the skill's own setup runs before any task.
