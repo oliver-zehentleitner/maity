@@ -17,7 +17,7 @@ from maity_hub.errors import ApiError
 
 
 def make(kind: str, size: tuple[int, int] = (300, 200), mode: str = "RGB", **save: Any) -> bytes:
-    colour: Any = {"RGBA": (200, 30, 30, 128), "RGB": (200, 30, 30)}.get(mode, 0)
+    colour: Any = {"RGBA": (200, 30, 30, 128), "RGB": (200, 30, 30), "L": 128}.get(mode, 0)
     out = io.BytesIO()
     Image.new(mode, size, colour).save(out, format=kind, **save)
     return out.getvalue()
@@ -139,3 +139,121 @@ def test_a_decode_that_finds_every_slot_taken_is_rate_limited(settings: Settings
     finally:
         for _ in range(taken):
             slots.release()
+
+
+# --- a source profile of the image's own space is applied before the image is flattened ---------
+
+
+def _fixed(value: float) -> bytes:
+    return struct.pack(">i", round(value * 65536))
+
+
+def _profile(space: bytes, pcs: bytes, klass: bytes, tags: dict[bytes, bytes]) -> bytes:
+    """A minimal ICC v2 profile: header, tag table, tags."""
+    names = [b"desc", b"cprt", b"wtpt", *tags]
+    base = {
+        b"desc": b"desc"
+        + bytes(4)
+        + struct.pack(">I", 5)
+        + b"test\x00"
+        + bytes(4 + 4 + 2 + 1 + 67),
+        b"cprt": b"text" + bytes(4) + b"none\x00",
+        b"wtpt": b"XYZ " + bytes(4) + _fixed(0.9642) + _fixed(1.0) + _fixed(0.8249),
+        **tags,
+    }
+    table, body = b"", b""
+    start = 128 + 4 + 12 * len(names)
+    for name in names:
+        data = base[name]
+        table += name + struct.pack(">II", start + len(body), len(data))
+        body += data + bytes(-len(data) % 4)
+    header = bytearray(128)
+    struct.pack_into(">I", header, 0, 128 + 4 + len(table) + len(body))
+    struct.pack_into(">I", header, 8, 0x02400000)
+    header[12:16], header[16:20], header[20:24] = klass, space, pcs
+    header[36:40] = b"acsp"
+    header[68:80] = _fixed(0.9642) + _fixed(1.0) + _fixed(0.8249)
+    return bytes(header) + struct.pack(">I", len(names)) + table + body
+
+
+def _grey_profile(gamma: float) -> bytes:
+    curve = b"curv" + bytes(4) + struct.pack(">IH", 1, round(gamma * 256))
+    return _profile(b"GRAY", b"XYZ ", b"mntr", {b"kTRC": curve})
+
+
+def _cmyk_profile() -> bytes:
+    """Four inputs, two grid points each, to Lab: darker and tinted by ink, nothing like
+    the naive CMYK to RGB."""
+    clut = bytearray()
+    for c in (0, 1):
+        for m in (0, 1):
+            for y in (0, 1):
+                for k in (0, 1):
+                    lightness = (1 - 0.9 * k) * (1 - 0.25 * (c + m + y))
+                    clut += bytes(
+                        [
+                            round(255 * lightness),
+                            128 + round(40 * (m - c)),
+                            128 + round(40 * (y - 0.3 * c)),
+                        ]
+                    )
+    identity = bytes(range(256))
+    matrix = b"".join(_fixed(v) for v in (1, 0, 0, 0, 1, 0, 0, 0, 1))
+    lut = b"mft1" + bytes(4) + bytes([4, 3, 2, 0]) + matrix + identity * 4 + bytes(clut)
+    lut += identity * 3
+    return _profile(b"CMYK", b"Lab ", b"prtr", {b"A2B0": lut})
+
+
+def _centre(data: bytes) -> tuple[int, ...]:
+    image = reopen(data).convert("RGB")
+    value: tuple[int, ...] = image.getpixel((image.width // 2, image.height // 2))  # type: ignore[assignment]
+    return value
+
+
+def test_a_grey_image_with_its_profile_is_converted_to_srgb(settings: Settings) -> None:
+    profile = _grey_profile(1.0)  # linear grey: far from sRGB's curve
+    source = make("PNG", (32, 32), mode="L", icc_profile=profile)
+    stored = avatars.decode_attachment(settings, source, "image/png")
+    grey = Image.open(io.BytesIO(source))
+    wanted = ImageCms.profileToProfile(
+        grey,
+        ImageCms.ImageCmsProfile(io.BytesIO(profile)),
+        ImageCms.createProfile("sRGB"),
+        outputMode="RGB",
+    )
+    assert wanted is not None
+    expected = wanted.getpixel((5, 5))
+    naive = grey.convert("RGB").getpixel((5, 5))
+    got = _centre(stored.data)
+    assert all(abs(g - e) <= 2 for g, e in zip(got, expected, strict=True))
+    assert max(abs(g - n) for g, n in zip(got, naive, strict=True)) >= 20  # the profile mattered
+    assert "icc_profile" not in reopen(stored.data).info and reopen(stored.data).mode == "RGB"
+
+
+def test_a_cmyk_jpeg_with_its_profile_is_converted_to_srgb(settings: Settings) -> None:
+    profile = _cmyk_profile()
+    out = io.BytesIO()
+    Image.new("CMYK", (32, 32), (60, 120, 30, 40)).save(out, format="JPEG", icc_profile=profile)
+    source = out.getvalue()
+    stored = avatars.decode_attachment(settings, source, "image/jpeg")
+    reopened = Image.open(io.BytesIO(source))
+    wanted = ImageCms.profileToProfile(
+        reopened,
+        ImageCms.ImageCmsProfile(io.BytesIO(profile)),
+        ImageCms.createProfile("sRGB"),
+        outputMode="RGB",
+    )
+    assert wanted is not None
+    expected = wanted.getpixel((16, 16))
+    naive = reopened.convert("RGB").getpixel((16, 16))
+    got = _centre(stored.data)
+    assert all(abs(g - e) <= 3 for g, e in zip(got, expected, strict=True))
+    assert max(abs(g - n) for g, n in zip(got, naive, strict=True)) >= 10  # the profile mattered
+    assert "icc_profile" not in reopen(stored.data).info and reopen(stored.data).mode == "RGB"
+
+
+def test_a_profile_of_another_space_than_the_image_is_ignored(settings: Settings) -> None:
+    source = make("PNG", (16, 16), icc_profile=_grey_profile(1.0))  # grey profile, RGB image
+    stored = avatars.decode_attachment(settings, source, "image/png")
+    assert _centre(stored.data) == (200, 30, 30)  # untouched
+    assert "icc_profile" not in reopen(stored.data).info

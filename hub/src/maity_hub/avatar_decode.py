@@ -202,27 +202,34 @@ def webp_lossless(data: bytes) -> bool:
     return False
 
 
+# The image modes a profile's colour space describes, as Pillow decodes them.
+PROFILE_MODES = {"RGB": ("RGB", "RGBA"), "CMYK": ("CMYK",), "GRAY": ("L", "LA")}
+
+
 def _to_srgb(image: Any, profile: bytes | None) -> Any:
-    """The image in sRGB when it carries a colour profile of an RGB space; any other
-    profile is dropped with the rest of the metadata."""
-    if not profile or image.mode not in ("RGB", "RGBA"):
+    """The image in sRGB (RGB, or RGBA when it had alpha) when it carries a profile that
+    describes its own colour space — RGB, CMYK or grey — converted from the source mode
+    and its profile, before anything flattens it. Any other profile is ignored here and
+    dropped with the rest of the metadata."""
+    if not profile:
         return image
     from PIL import ImageCms
 
     try:
         source = ImageCms.ImageCmsProfile(io.BytesIO(profile))
-        if source.profile.xcolor_space.strip() != "RGB":
+        space = source.profile.xcolor_space.strip()
+        if image.mode not in PROFILE_MODES.get(space, ()):
             return image
+        alpha = image.getchannel("A") if image.mode in ("RGBA", "LA") else None
+        base = image.convert({"RGBA": "RGB", "LA": "L"}.get(image.mode, image.mode))
         target = ImageCms.createProfile("sRGB")
-        converted = ImageCms.profileToProfile(
-            image.convert("RGB"), source, target, outputMode="RGB"
-        )
+        converted = ImageCms.profileToProfile(base, source, target, outputMode="RGB")
     except ImageCms.PyCMSError as error:
         raise Refused("undecodable", f"colour profile: {error}") from None
     if converted is None:
         raise Refused("undecodable", "colour profile: no conversion")
-    if image.mode == "RGBA":
-        converted.putalpha(image.getchannel("A"))
+    if alpha is not None:
+        converted.putalpha(alpha)
     return converted
 
 
@@ -252,9 +259,9 @@ def process_file(data: bytes, content_type: str) -> bytes:
     image = ImageOps.exif_transpose(image)  # the photo as it is seen
     if image.mode in ("I;16", "I;16B", "I;16L", "I;16N", "I"):
         image = image.convert("I").point(lambda value: value * (1 / 256)).convert("L")
+    image = _to_srgb(image, profile)  # from the source mode, before it is flattened
     keep_alpha = alpha and content_type != "image/jpeg"
     flat = image.convert("RGBA" if keep_alpha else "RGB")
-    flat = _to_srgb(flat, profile)
     clean = Image.frombytes(flat.mode, flat.size, flat.tobytes())
     out = io.BytesIO()
     if content_type == "image/jpeg":
