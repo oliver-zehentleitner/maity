@@ -472,14 +472,15 @@ def join_line(
     """Create a join line in the join panel on Members; a new profile when handle is given."""
     view_tab(page, "Members").click()
     expect(page).to_have_url(re.compile(rf"#/p/{slug}/members$"))
-    # A project without agents opens the panel itself; otherwise the title row's
-    # button does. Wait for the view to be drawn (its count line comes with the
-    # panel and the button) before looking: an instant is_visible() on a view
-    # still loading could see neither, and click a button about to be hidden.
-    expect(page.locator(".agents-count")).to_be_visible()
+    # A project without agents opens the panel itself; otherwise the agents'
+    # heading's button does. The panel is read beside the list, after it: wait
+    # for one of the two, since the count line is drawn before either, and an
+    # instant look could see neither and click a button that stays hidden.
     panel = page.locator(".join-panel")
+    add = page.get_by_role("button", name="+ Add an agent", exact=True)
+    expect(panel.or_(add).first).to_be_visible()
     if not panel.is_visible():
-        page.get_by_role("button", name="+ Add an agent", exact=True).click()
+        add.click()
     expect(panel).to_be_visible()
     if handle:
         page.locator("#join-agent").select_option("")  # "A new agent profile…"
