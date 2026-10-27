@@ -201,6 +201,22 @@ window.Maity = window.Maity || {};
       r && r.by ? [" by ", M.dom.memberRef(ctx, r.by)] : null, (r && r.reason ? ": " + r.reason : "") + ".");
   }
 
+  // A composer's one row of actions (the designer's pass on #431): Attach
+  // at the start, the keys and Send at the end.
+  const actionRow = (files, button) => h("div", { class: "compose-actions" }, files ? files.chooser : null, button);
+
+  // In the global chat (ctx.projectsOf, js/chats.js) an agent's message
+  // names the projects it is in, each by its logo with the name on hover;
+  // only projects the reader is in, whose member lists the page has read.
+  function projectsOf(ctx, sender) {
+    if (!ctx.projectsOf || !sender || sender.kind !== "agent") return null;
+    const projects = ctx.projectsOf(sender.id);
+    if (!projects.length) return null;
+    return h("span", { class: "msg-projects" }, h("span", { class: "visually-hidden" }, ", in "),
+      projects.map((p, i) => h("span", { class: "msg-project", title: p.name },
+        M.projectMark(p.slug, p.name, p.view, "small"), h("span", { class: "visually-hidden" }, (i ? ", " : "") + p.name))));
+  }
+
   // opts.group: a group chat's message (no delivery: several recipients,
   // §9.2); opts.onRedact: offered to a human in the room (§8.5).
   function message(ctx, msg, pending, grouped, onQuote, opts) {
@@ -211,9 +227,11 @@ window.Maity = window.Maity || {};
     // Who (a link to them), then when; a delivery update rewrites the when alone.
     const said = (m) => formatTime(m.sent_at) + delivery(m);
     const when = h("span", { class: "when" }, said(msg));
-    const meta = h("span", { class: "meta" }, grouped || own ? null : [M.dom.memberRef(ctx, msg.from), " · "], when);
-    if (own && !o.group && !msg.delivered_at) pending.set(msg.seq, (fresh) => { when.textContent = said(fresh); });
     const sender = ctx.memberById ? ctx.memberById[msg.from] : null;
+    // An agent's message names its instance (from_instance, §9, §6.17).
+    const meta = h("span", { class: "meta" }, grouped || own ? null
+      : [M.dom.memberRef(ctx, msg.from, { instance: msg.from_instance }), projectsOf(ctx, sender), " · "], when);
+    if (own && !o.group && !msg.delivered_at) pending.set(msg.seq, (fresh) => { when.textContent = said(fresh); });
     // A removed message reads body null (§9); who and why only where known
     // (this page's own removal, or the event_redacted that said so).
     const removed = isRemoved(msg);
@@ -251,7 +269,9 @@ window.Maity = window.Maity || {};
         last = null;
       }
       if (firstUnread && msg.seq === firstUnread) out.push(h("li", { class: "new-line" }, h("span", null, "New messages")));
-      const grouped = !!last && last.from === msg.from && Date.parse(msg.sent_at) - Date.parse(last.sent_at) < GROUP_MS
+      // Two instances of one agent are two senders.
+      const grouped = !!last && last.from === msg.from && (last.from_instance || null) === (msg.from_instance || null)
+        && Date.parse(msg.sent_at) - Date.parse(last.sent_at) < GROUP_MS
         && !(firstUnread && msg.seq === firstUnread);
       out.push(message(ctx, msg, pending, grouped, onQuote, opts));
       last = msg;
@@ -344,7 +364,7 @@ window.Maity = window.Maity || {};
 
   // What js/group-chat.js draws with: the same history, Markdown, quotes,
   // drafts, sizing and the same reading of mentions.
-  M.chatParts = { timeline, quoteOf, withoutCode, atBottom, follower, fitToScreen, drafts, isRemoved, askReason, HISTORY_PAGE,
+  M.chatParts = { actionRow, timeline, quoteOf, withoutCode, atBottom, follower, fitToScreen, drafts, isRemoved, askReason, HISTORY_PAGE,
     chatsOf, ordered, listItem, LIST_MS, RESYNC };
 
   // One focus handler for the page; it serves the chat view on screen.
@@ -565,7 +585,7 @@ window.Maity = window.Maity || {};
     });
     hintMention();
     const status = M.statusLine();
-    const button = h("button", { type: "submit" }, "Send");
+    const button = h("button", { type: "submit", class: "primary" }, "Send");
 
     // Files go with the message (§8.7): uploaded when chosen, named when sent.
     const files0 = M.attachments ? M.attachments.picker(ctx, "chat") : null;
@@ -607,8 +627,8 @@ window.Maity = window.Maity || {};
       jump,
       pollStatus.el,
       h("form", { class: "compose", onsubmit: send },
-        h("label", { for: "chat-text" }, "Message (" + M.dom.SEND_KEYS + " sends)"),
-        text, mentionHint, files0 ? files0.el : null, button, status.el));
+        h("label", { for: "chat-text" }, "Message", h("span", { class: "visually-hidden" }, " (" + M.dom.SEND_KEYS + " sends)")),
+        text, mentionHint, files0 ? files0.el : null, actionRow(files0, button), status.el));
     // Sizing, scrolling and focus need the view in the page, which the
     // router does once this function has returned.
     window.setTimeout(() => {

@@ -175,6 +175,7 @@ window.Maity = window.Maity || {};
     const el = h("div", { class: "attach", hidden: true }, chooser, input, list, earlierBox, status.el);
     function offer(yes) {
       el.hidden = !yes;
+      chooser.hidden = !yes;
       input.disabled = !yes;
     }
     if (hubWithout) offer(false);
@@ -186,6 +187,9 @@ window.Maity = window.Maity || {};
     }
     return {
       el,
+      // A composer may set the chooser in its action row (js/chat.js);
+      // hidden with the rest while the hub takes no files.
+      chooser,
       ids: () => pending.filter((p) => p.att).map((p) => p.att.id),
       busy: () => pending.some((p) => !p.att),
       // After the message was sent: the ones it named belong to it now; a

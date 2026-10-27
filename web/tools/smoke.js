@@ -12,6 +12,7 @@ const WEB = process.argv[2];
 class Node_ {
   constructor() { this.childNodes = []; this.parentNode = null; }
   get firstChild() { return this.childNodes[0] || null; }
+  get nextSibling() { const p = this.parentNode; return (p && p.childNodes[p.childNodes.indexOf(this) + 1]) || null; }
   appendChild(c) { if (c.parentNode) c.parentNode.removeChild(c); c.parentNode = this; this.childNodes.push(c); return c; }
   append(...cs) { cs.forEach((c) => this.appendChild(typeof c === "string" ? new Text_(c) : c)); }
   prepend(c) { c.parentNode = this; this.childNodes.unshift(c); }
@@ -392,7 +393,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
 
   // malformed and unknown routes
   await go("#/p/%E0%A4%A");
-  expect(main.querySelector(".error") && text(main).includes("URI"), "malformed hash shows an error box");
+  expect(main.querySelector(".page-failed") && text(main.querySelector(".page-failed details")).includes("URI"), "malformed hash says the page could not load, the reason under Details");
   await go("#/p/maity/constructor");
   expect(text(main).includes("No such view") && plainTitle() === "No such view · Maity", "prototype key is no view, sane title");
   await go("#/p/maity/nonsense");
@@ -647,9 +648,45 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && thCss.includes(':root[data-theme="dark"] .brand-lockup.brand-light { display: none; }'),
     "brand: the dark lockup shows where the page is dark, by the system or by the pick");
   expect(['rel="icon" href="brand/favicon.svg"', 'rel="apple-touch-icon" href="brand/apple-touch-icon.png"', 'property="og:image" content="brand/og-image.png"', 'href="brand/loader.css"']
-    .every((x) => html.includes(x)) && /<p class="page-loading" role="status"><svg class="maity-loader"[^]*<\/svg> Loading…<\/p>/.test(html)
+    .every((x) => html.includes(x)) && /<p class="page-loading" role="status"><svg class="maity-loader"[^]*<\/svg> Loading Maity…<\/p>/.test(html)
     && !/ style=/.test(html.split('<main id="main">')[1]), "brand: favicons, the social image and the page loader, with no inline style (CSP)");
   expect(!main.querySelector(".page-loading"), "brand: the first view replaces the loader");
+  // The header with the lockup is in the page itself, before any script or hub call (tsk-vb0dgwhrkvsn).
+  expect(/<header id="header"><div class="bar"><h1 class="brand"><img class="brand-lockup brand-light" src="brand\/maity-lockup.svg" alt="Maity"[^>]*><img class="brand-lockup brand-dark" src="brand\/maity-lockup-dark.svg" alt="Maity"[^>]*><\/h1><\/div><\/header>/.test(html)
+    && !/ style=/.test(html.split('<header id="header">')[1].split("</header>")[0]),
+    "loading: the header with the lockup is static in the page, before any script runs");
+  expect(thCss.includes("body:has(> main > .page-loading, > main > .page-failed)") && thCss.includes("main:has(> .page-loading, > .page-failed) { flex: 1;")
+    && thCss.includes(".page-loading { display: flex; flex-direction: column; align-items: center; justify-content: center;")
+    && thCss.includes("animation: page-loading-shows 0s linear 300ms forwards") && thCss.includes(".page-loading .maity-loader { width: 48px; height: 48px; }"),
+    "loading: the loader (48 px, its word under it, after 300 ms) and a failure are centred in what the header leaves of the screen");
+  // A page that cannot load: the header and its lockup stay, the failure stands centred, Try again loads again.
+  const ldgGet = win.Maity.api.get;
+  let ldgFail = true;
+  win.Maity.api.get = (p) => (ldgFail && p === "/auth/session" ? Promise.reject(new win.Maity.api.ApiError("The hub did not answer: offline", 0, p)) : ldgGet(p));
+  await go("#/p/maity/board"); for (let k = 0; k < 4; k++) await tick();
+  const ldgBox = main.querySelector(".page-failed");
+  const ldgAgain = ldgBox && ldgBox.querySelectorAll("button").find((b) => b.textContent === "Try again");
+  const ldgTitle = ldgBox && ldgBox.querySelector(".page-failed-title");
+  const ldgDetails = ldgBox && ldgBox.querySelector("details");
+  expect(ldgBox && ldgBox.parentNode === main && ldgTitle && ["Maity can't reach its hub", "The sample data didn't load"].includes(text(ldgTitle))
+    && ldgBox.querySelectorAll("img.page-failed-mark").length === 2 && !ldgBox.querySelector(".error")
+    && ldgDetails && text(ldgDetails.querySelector("summary")) === "Details" && text(ldgDetails).includes("The hub did not answer: offline")
+    && ldgAgain && ldgAgain.classList.contains("primary") && ldgAgain.parentNode.classList.contains("page-failed-actions")
+    && !ldgBox.querySelectorAll("button").some((b) => b.textContent === "Sign in again")
+    && header.querySelector(".brand") && header.querySelector(".brand").querySelectorAll("img").length === 2,
+    "loading: a page that could not load keeps the header, says in plain words what does not work, the reason under Details, Try again primary");
+  // A session gone (401 past /auth/session): Sign in again beside Try again.
+  win.Maity.api.get = (p) => (ldgFail && p === "/me" ? Promise.reject(new win.Maity.api.ApiError("session expired", 401, p, "unauthenticated")) : ldgGet(p));
+  await go("#/p/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+  const ldgSignIn = main.querySelectorAll(".page-failed-actions button").map((b) => b.textContent);
+  expect(JSON.stringify(ldgSignIn) === JSON.stringify(["Sign in again", "Try again"]), "loading: a lost session offers Sign in again before Try again");
+  win.Maity.api.get = (p) => (ldgFail && p === "/auth/session" ? Promise.reject(new win.Maity.api.ApiError("The hub did not answer: offline", 0, p)) : ldgGet(p));
+  await go("#/p/maity/board"); for (let k = 0; k < 4; k++) await tick();
+  ldgFail = false;
+  ldgAgain.click(); for (let k = 0; k < 6; k++) await tick();
+  expect(!main.querySelector(".page-failed") && !main.querySelector(".page-loading") && main.querySelector("section.view"),
+    "loading: Try again loads the page");
+  win.Maity.api.get = ldgGet;
   expect(/<script src="js\/theme.js"><\/script>/.test(html) && html.indexOf("js/theme.js") < html.indexOf("js/dom.js"),
     "theme: applied before the first paint, by a script in <head> without defer");
   // Users of this hub (docs/api.md §16.1), for the instance admin only.
@@ -4703,6 +4740,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && chLinks[6].getAttribute("href") === "#/chats/sample/agt-s1" && text(chLinks[6]).endsWith("in Sample shop")
     && text(main).includes("Pick a conversation.") && header.querySelector("a.chat-button").getAttribute("aria-current") === "page",
     "chats: the Chat tab's layout with every project's chats, unread first, then the newest, each with its project");
+  // The project as a mark after the who line, its name on hover (no line of its own).
+  const chMark = (a) => a.querySelector(".conv-sub .conv-project");
+  expect(chLinks.every((a) => chMark(a) && chMark(a).querySelector(".project-mark")) && chMark(chLinks[0]).getAttribute("title") === "Maity"
+    && chMark(chLinks[6]).getAttribute("title") === "Sample shop",
+    "chats: each row's project is a mark after the who line, its name on hover");
   // Opening one keeps the global view: its messages and composer in place, the list beside it, its unread gone.
   const gxGets = [], gxPosts = [];
   const gxGet = win.Maity.api.get, gxGetAll = win.Maity.api.getAll, gxPost = win.Maity.api.post, gxPatch = win.Maity.api.patch;
@@ -4796,6 +4838,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main.querySelector("section.group-chat")).includes("Release 0.2: go"), "chats: a group chat renamed elsewhere shows its new title after the stream's nudge");
   await go("#/chats/nowhere/agt-a"); for (let k = 0; k < 4; k++) await tick();
   expect(text(main).includes("No project of yours with the slug nowhere."), "chats: an unknown project is said");
+  // In the global chat an agent's message names the projects it is in, by logo with the name on
+  // hover: only the reader's projects whose members name it; a human's message and a project's own chat none.
+  const gpIn = () => main.querySelectorAll("li.msg.in").filter((li) => !li.classList.contains("grouped"));
+  const gpMarks = (li) => li.querySelectorAll(".msg-project").map((s) => s.getAttribute("title"));
+  await go("#/chats/maity/agt-a"); for (let k = 0; k < 8; k++) await tick();
+  expect(gpIn().length && gpIn().every((li) => JSON.stringify(gpMarks(li)) === JSON.stringify(["Maity"]))
+    && gpIn()[0].querySelector(".msg-project .project-mark") && text(gpIn()[0].querySelector(".msg-projects")).includes("in Maity"),
+    "global chat: an agent in one of the reader's projects shows that one project's mark, its name on hover");
+  win.Maity.api.getAll = (p) => gxGetAll(p).then((r) => (p === "/projects/sample/members"
+    ? Object.assign({}, r, { items: r.items.concat([{ id: "agt-a", kind: "agent", handle: "agent-a", display_name: "Agent A", role: "member", presence: "online" }]) }) : r));
+  await go("#/chats/maity/agt-a"); for (let k = 0; k < 8; k++) await tick();
+  expect(gpIn().length && JSON.stringify(gpMarks(gpIn()[0])) === JSON.stringify(["Maity", "Sample shop"]),
+    "global chat: an agent in two of the reader's projects shows both, in the switcher's order");
+  win.Maity.api.getAll = gxGetAll;
+  expect(!main.querySelectorAll("li.msg.out .msg-projects").length, "global chat: the reader's own messages name no project");
+  await go("#/p/maity/chat/agt-a"); for (let k = 0; k < 8; k++) await tick();
+  expect(main.querySelectorAll("li.msg.in").length && !main.querySelector(".msg-projects"), "global chat: a project's own chat names no projects");
   win.Maity.api.get = gxGet; win.Maity.api.getAll = gxGetAll; win.Maity.api.post = gxPost;
 
   await go("#/p/maity/inbox"); for (let k = 0; k < 2; k++) await tick();
@@ -5119,6 +5178,37 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // The chat, the group chat, the project message.
   await go("#/p/maity/chat/agt-b"); await tick();
   expect(text(ceLabel("chat-text")).includes("Ctrl+Enter sends"), "Ctrl+Enter: the chat says so");
+  // The keys beside the button that sends, muted, and in its tooltip; named as the keyboard prints them.
+  const ceSend = ceSubmitOf(byId("chat-text"));
+  const ceGroup = ceSend.parentNode;
+  const ceHint = ceGroup.childNodes[0];
+  expect(ceGroup.classList.contains("send-with-keys") && ceGroup.childNodes.length === 2 && ceGroup.childNodes[1] === ceSend
+    && ceGroup.parentNode.classList.contains("compose-actions") && ceGroup.parentNode.querySelector("label.attach-button")
+    && ceHint.classList.contains("send-keys") && ceHint.classList.contains("muted") && text(ceHint) === "Ctrl+Enter"
+    && ceHint.getAttribute("aria-hidden") === "true" && ceSend.getAttribute("title") === "Send (Ctrl+Enter)"
+    && ceSend.getAttribute("aria-keyshortcuts") === "Control+Enter Meta+Enter" && ceSend.classList.contains("primary"),
+    "Ctrl+Enter: the chat's primary Send has the keys right before it and in its tooltip, in one row with Attach");
+  // The label says the keys to a screen reader only: the hint by the button is the one seen.
+  const ceLabelHidden = ceLabel("chat-text").querySelector(".visually-hidden");
+  expect(ceLabelHidden && text(ceLabelHidden).includes("Ctrl+Enter sends") && !text(ceLabel("chat-text")).replace(text(ceLabelHidden), "").includes("Ctrl+Enter"),
+    "Ctrl+Enter: the chat's label keeps the keys for a screen reader, not shown twice");
+  const ceKeys = win.Maity.dom.sendKeysFor;
+  expect(ceKeys("de-AT", "Linux x86_64", "") === "Strg+Enter" && ceKeys("de", "Win32", "") === "Strg+Enter"
+    && ceKeys("en-US", "Win32", "") === "Ctrl+Enter" && ceKeys("", "", "") === "Ctrl+Enter" && ceKeys("dev", "Win32", "") === "Ctrl+Enter"
+    && ceKeys("de-DE", "MacIntel", "") === "⌘+Enter" && ceKeys("en", "", "Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)") === "⌘+Enter",
+    "Ctrl+Enter: the keys are Strg+Enter in German, ⌘+Enter on an Apple device, Ctrl+Enter elsewhere");
+  // Once per button; none where only touch is, which has no keys to press.
+  const ceButton = (label) => { const f = document.createElement("form"); const b = document.createElement("button"); b.textContent = label; f.appendChild(b); return b; };
+  const ceTwice = ceButton("Post");
+  win.Maity.dom.showSendKeys(ceTwice); win.Maity.dom.showSendKeys(ceTwice);
+  const ceMedia = win.matchMedia;
+  win.matchMedia = (q) => ({ matches: q.includes("pointer: coarse") });
+  const ceTouch = ceButton("Send");
+  win.Maity.dom.showSendKeys(ceTouch);
+  win.matchMedia = ceMedia;
+  expect(ceTwice.parentNode.parentNode.querySelectorAll(".send-keys").length === 1 && ceTwice.getAttribute("title") === "Post (Ctrl+Enter)"
+    && !ceTouch.parentNode.querySelectorAll(".send-keys").length && !ceTouch.getAttribute("title"),
+    "Ctrl+Enter: the keys are shown once per button, and not on a touch-only device");
   await ceCase("chat", byId("chat-text"), "hello", "/projects/maity/conversations/agt-b/messages", ceSubmitOf(byId("chat-text")));
   await go("#/p/maity/inbox"); await go("#/p/maity/chat/cnv-0007"); for (let k = 0; k < 4; k++) await tick();
   await ceCase("group chat", byId("chat-text"), "hello all", "/projects/maity/conversations/cnv-0007/messages", ceSubmitOf(byId("chat-text")));
@@ -5184,6 +5274,40 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const mrPlain = win.Maity.dom.memberRef({ memberById: {}, link: () => "#/x", nameOf: () => "Gone" }, { member_id: "agt-gone", display_name: "Gone Agent" });
   expect(mrPlain.tagName === "SPAN" && mrPlain.classList.contains("plain") && text(mrPlain) === "Gone Agent" && mrPlain.getAttribute("title") === "Gone Agent",
     "member links: a member the project does not list is plain text");
+  // An agent's instance (§6.17): <handle>#<id>, the #id muted with harness and model as tooltip;
+  // a human keeps the name, and an id that is no instance id is not shown.
+  const inCtx = { memberById: { "agt-b": { id: "agt-b", kind: "agent", handle: "agent-b", display_name: "Agent B" },
+    "hum-m": { id: "hum-m", kind: "human", handle: "maintainer", display_name: "Maintainer" } }, link: (k, id) => "#/p/maity/" + k + "/" + id, nameOf: (id) => id };
+  const inRef = win.Maity.dom.memberRef(inCtx, "agt-b", { instance: { instance: "wqe2", harness: "Claude Code", model: "claude-opus-5-5" } });
+  const inSuffix = inRef.querySelector(".member-instance");
+  const inLink = inRef.querySelector("a.member-ref");
+  expect(text(inRef) === "agent-b#wqe2" && inLink && text(inLink) === "agent-b" && inLink.getAttribute("title") === "Agent B"
+    && inSuffix && inSuffix.parentNode === inRef && inSuffix.classList.contains("muted")
+    && inSuffix.getAttribute("title") === "Instance wqe2 · Claude Code · claude-opus-5-5",
+    "instances: an agent is named <handle>#<id>, the id muted beside the link, harness and model as its tooltip");
+  expect(text(win.Maity.dom.memberRef(inCtx, "agt-b", { text: "handle", instance: "k7mq" })) === "@agent-b#k7mq"
+    && text(win.Maity.dom.memberRef(inCtx, "hum-m", { instance: "wqe2" })) === "Maintainer"
+    && text(win.Maity.dom.memberRef(inCtx, "agt-b", { instance: "<b>x" })) === "Agent B"
+    && text(win.Maity.dom.memberRef(inCtx, "agt-b", { instance: null })) === "Agent B",
+    "instances: @handle#id as a handle; a human, a malformed id and no instance stay as before");
+  // Across projects a reference has no handle and the member no list entry: the name, plain, then the #id.
+  const inBare = win.Maity.dom.memberRef({ memberById: {}, link: () => "#/x", nameOf: (id) => id }, { member_id: "agt-q", display_name: "Agent Q", instance: "k7mq" }, { instance: "k7mq" });
+  expect(text(inBare) === "Agent Q#k7mq" && !inBare.querySelector("a") && inBare.querySelector(".member-ref.plain") && inBare.querySelector(".member-instance"),
+    "instances: without a handle (all projects, personal requests) the name and the #id, as plain text");
+  const inShared = Object.assign({}, inCtx, { members: [{ id: "agt-b", kind: "agent", handle: "agent-b", name: "oliver/agent-b" }, { id: "agt-x", kind: "agent", handle: "agent-b", name: "sam/agent-b" }] });
+  inShared.memberById = Object.assign({}, inCtx.memberById, { "agt-b": inShared.members[0] });
+  expect(text(win.Maity.dom.memberRef(inShared, "agt-b", { instance: "wqe2" })) === "oliver/agent-b#wqe2",
+    "instances: where two agents share the handle, owner/handle#id");
+  // Two instances of one agent in one thread: two senders, each named, never grouped as one.
+  const inLine = win.Maity.chatParts.timeline(Object.assign({ me: { id: "hum-m" } }, inCtx), new Map(), null, null, {});
+  const inMsgs = [
+    { seq: 1, from: "agt-b", from_instance: "wqe2", body: "First.", sent_at: "2026-10-27T10:00:00Z", delivered_at: null },
+    { seq: 2, from: "agt-b", from_instance: "k7mq", body: "Second.", sent_at: "2026-10-27T10:00:30Z", delivered_at: null },
+    { seq: 3, from: "agt-b", from_instance: "k7mq", body: "Third.", sent_at: "2026-10-27T10:01:00Z", delivered_at: null },
+  ].map((m) => inLine(m).find((li) => li.classList.contains("msg")));
+  expect(!inMsgs[0].classList.contains("grouped") && !inMsgs[1].classList.contains("grouped") && inMsgs[2].classList.contains("grouped")
+    && text(inMsgs[0].querySelector(".meta")).includes("agent-b#wqe2") && text(inMsgs[1].querySelector(".meta")).includes("agent-b#k7mq"),
+    "instances: two instances of one agent in a chat are two senders, each named <handle>#<id>");
   // Not on this hub (404 or 405): said quietly where the feature would be, asked once, never red.
   const nhGet = win.Maity.api.get;
   const nhAsked = {};
@@ -5892,7 +6016,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   ctx.fetch = staleFetch;
   mode = "down";
   await go("#/p/maity/inbox");
-  expect(main.querySelector(".error") && text(main).includes("did not answer"), "API mode without hub fails loud");
+  expect(main.querySelector(".page-failed") && text(main.querySelector(".page-failed-title")) === "Maity can't reach its hub"
+    && text(main.querySelector(".page-failed details")).includes("did not answer"), "API mode without hub says Maity can't reach its hub, the reason under Details");
   expect(!main.querySelectorAll("a").some((a) => (a.attrs.href || "").includes("fixtures")), "the error offers no way into fixture mode");
 
   console.log(failures ? failures + " failure(s)" : "all ok");

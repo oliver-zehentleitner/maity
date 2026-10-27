@@ -1321,8 +1321,10 @@ window.Maity = window.Maity || {};
       if (seq !== renderSeq) return;
     } catch (err) {
       if (seq !== renderSeq) return;
+      // The page could not load: the header with the lockup stays, the
+      // failure stands where the loader stood, with a way to try again.
       append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle()));
-      append(clear(main), errorBox(err));
+      append(clear(main), pageFailed(err));
       return;
     }
     if (seq !== renderSeq) return;
@@ -1405,6 +1407,55 @@ window.Maity = window.Maity || {};
     document.title = M.notify.title(baseTitle);
     if (M.notify.state.available) startBrowserNotifications(ctx);
     setFavicon(where.scope === "project" ? ctx.slug : null, where.scope === "project" ? ctx.project : null);
+  }
+
+  // The loader as web/index.html has it, for a page that loads again.
+  const SVG = "http://www.w3.org/2000/svg";
+  function loading() {
+    const svg = document.createElementNS(SVG, "svg");
+    svg.setAttribute("class", "maity-loader");
+    svg.setAttribute("viewBox", "0 0 64 64");
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", "Loading");
+    const seats = [[32, 10], [51, 21], [51, 43], [32, 54], [13, 43], [13, 21]];
+    seats.forEach(([cx, cy]) => {
+      const c = document.createElementNS(SVG, "circle");
+      c.setAttribute("cx", String(cx)); c.setAttribute("cy", String(cy)); c.setAttribute("r", "6");
+      svg.appendChild(c);
+    });
+    seats.forEach(([cx, cy]) => {
+      const r = document.createElementNS(SVG, "rect");
+      r.setAttribute("class", "maity-loader-t");
+      r.setAttribute("x", String(cx - 6)); r.setAttribute("y", String(cy - 6));
+      r.setAttribute("width", "12"); r.setAttribute("height", "12"); r.setAttribute("rx", "3");
+      svg.appendChild(r);
+    });
+    return h("p", { class: "page-loading", role: "status" }, svg, " Loading Maity…");
+  }
+
+  // A page that could not load, in plain words for the person (the
+  // designer's pass on #433): the mark at rest, what does not work, what to
+  // do, the technical reason folded away, and Try again; Sign in again
+  // where the session is gone.
+  function pageFailed(err) {
+    const fixtures = M.api.source === "fixtures";
+    const unreachable = !err.status;
+    const title = fixtures ? "The sample data didn't load"
+      : unreachable ? "Maity can't reach its hub" : "Maity couldn't load this page";
+    const advice = fixtures ? "Reload the page. If it keeps happening, the fixtures are missing from this copy."
+      : unreachable ? "Check your connection, then try again. If it keeps happening, the hub may be down."
+        : "Try again. If it keeps happening, the hub may have a problem; the details say which.";
+    const again = h("button", { type: "button", class: "primary", onclick: () => { append(clear(document.getElementById("main")), loading()); render(); } }, "Try again");
+    const signIn = err.status === 401
+      ? h("button", { type: "button", onclick: () => { window.location.hash = "#/login"; } }, "Sign in again") : null;
+    const mark = (file, theme) => h("img", { class: "page-failed-mark brand-mark " + theme, src: "brand/" + file, alt: "", width: "40", height: "40" });
+    return h("div", { class: "page-failed", role: "alert" },
+      mark("maity-mark-small.svg", "brand-light"), mark("maity-mark-small-dark.svg", "brand-dark"),
+      h("h2", { class: "page-failed-title" }, title),
+      h("p", { class: "muted" }, advice),
+      h("details", null, h("summary", null, "Details"), h("p", { class: "page-failed-reason" },
+        [err.status ? "HTTP " + err.status + (err.code ? " " + err.code : "") : "No answer", err.message, err.path || null].filter(Boolean).join(" · "))),
+      h("div", { class: "page-failed-actions" }, signIn, again));
   }
 
   M.errorBox = errorBox;

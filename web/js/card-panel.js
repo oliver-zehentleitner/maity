@@ -24,8 +24,13 @@ window.Maity = window.Maity || {};
     return String(v);
   }
 
+  // Who changed or wrote it, as @handle, an agent with its instance
+  // (§6.17) where the hub names one.
+  const byline = (ctx, who) => (who && (who.member_id || who.handle)
+    ? M.dom.memberRef(ctx, who, { text: "handle", instance: who.instance }) : "@?");
+
   function historyLine(ctx, e) {
-    const who = h("span", null, "@" + ((e.actor && e.actor.handle) || "?"));
+    const who = h("span", null, byline(ctx, e.actor));
     const when = h("span", { class: "muted" }, " · " + formatAgo(e.at, M.api.now()));
     if (e.field === "created") return h("li", null, who, " created the card", when);
     if (e.redacted) return h("li", null, who, " changed " + (FIELD_WORDS[e.field] || e.field) + " (removed)", when);
@@ -79,7 +84,7 @@ window.Maity = window.Maity || {};
       }
       append(notesBox, list.length
         ? h("ul", { class: "card-note-list" }, list.map((n) => h("li", null,
-          h("p", { class: "muted" }, "@" + n.author.handle + " · " + formatTime(n.created_at)),
+          h("p", { class: "muted" }, byline(ctx, n.author), " · " + formatTime(n.created_at)),
           h("div", { class: "md" }, M.markdown(n.body, where)))))
         : h("p", { class: "muted" }, "No open notes."));
       const closed = ctx.project && ["accepted", "archived"].includes(ctx.project.state);

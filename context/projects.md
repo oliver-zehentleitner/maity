@@ -278,3 +278,97 @@ review already looks.
   session — would never reach either mark, and nobody would learn that
   it never confirmed. The deadline belongs to the commitment, which is
   per instance, so it survives the sessions.
+
+## Maity tells every agent how to load Keep the Why and lets it adopt the project's personal defaults
+
+**Id:** 4859417a-15f0-44c1-821e-cc80f888e34d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answers in the Maity chat, 2026-10-27 ("Maity soll das gewährleisten", defaults for project and personal settings); an incident the same day: the coordinating agent worked for hours without the skill; contract in `docs/api.md` §6.23
+**Revisit when:** the skill ships through a channel every harness installs from by itself; or an agent harness needs a load instruction the `load` text cannot express
+**See:** projects.md#keep-the-why-is-guaranteed-by-the-hub-a-commitment-at-resume-a-reminder-the-owners-notification-and-a-why-on-every-code-report — 7c1a4f0e-2b8d-4c6e-9a3f-5e2d8b7a1c90 — as of 2026-10-27
+
+The resume packet's `keep_the_why` block tells the agent how to install
+the skill (the skills installer, or a Git fallback for a machine without
+Node), how to load it per harness, and where the project's
+`.keep-the-why` is. The CLI prints this first, before the briefing. A
+project policy, `keep_the_why_defaults`, decides whether the agent adopts
+the personal settings the repository offers without asking its human
+(`adopt`, the default) or runs the skill's personal wizard with them —
+only on a machine with no personal file for the project yet; an
+existing one is never overwritten or re-asked.
+
+**Reason:** the commitment at resume only made the agent say that it
+uses Keep the Why. It did not get the skill onto the machine. An agent
+started outside its clone never read the repository's `AGENTS.md`, found
+no installed skill and had no `npx`, so it confirmed nothing and wrote
+entries from the format alone. Each new agent machine would also ask the
+owner the personal wizard again. The hub still reads no repository: it
+hands out instructions and a path, and the settings stay in
+`.keep-the-why`, where the skill expects them.
+
+**Rejected alternatives:**
+- Leave installation to each agent's operator: the gap that caused the
+  incident.
+- Vendoring the skill into every project repository: the skill's own
+  setup advises against it, and copies drift from the published
+  version.
+- Storing the personal defaults in Maity's project settings: a second
+  source next to `.keep-the-why` that the skill does not read.
+- Setting `personal-defaults-policy: auto-accept` in the agent machine's
+  `~/.keep-the-why/config`: that changes the machine for every project;
+  a session instruction scoped to this project does the same.
+
+## Projects live in their owner's namespace, owner/slug, as on a forge; old names stay aliases; the change is made once in v1 before the launch
+
+**Id:** 281820c9-2286-45c4-9389-603b7e8a3923
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision in the chat, 2026-10-27 ("ja unbedingt jetzt vor launch"), on the contract owner's proposal; the three details (human owners only, aliases on rename and transfer, old addresses forwarded) in the inbox; contract in `docs/api.md` §6.25
+**Revisit when:** organisations become namespace owners (they share the namespace of human handles); or the one-segment API routes are found in use after the release (then a `v2`-style period, §1.6)
+**See:** naming.md#a-handle-is-a-renameable-alias-of-a-fixed-id-old-handles-stay-reserved-for-that-id — d5a4542f-63cc-4c1c-962e-f1c02df48ee9 — as of 2026-10-27
+
+A project is addressed as `<owner>/<slug>` — in the API
+(`/projects/{owner}/{slug}/…`), the dashboard, the badge, the swarm page
+and every reference shown outside the project. The namespace owner is
+one human, the creator; a slug is unique within that namespace only. A
+rename or a transfer keeps the old full name as an alias that is never
+given away; a request on an alias is served like one on the current
+name. The one-segment API routes are dropped in the same release, hub
+and CLI together, and an older CLI is told `client_outdated` instead of
+being misrouted. That works without guessing because a slug may never be
+one of the words that follow a project in a route, so an old path always
+shows a route word where a new one has a slug; for the same reason the
+dashboard's own route words are reserved as handles. Badges, the swarm
+page, the dashboard's `#/p/…` and the forge webhook keep their old
+addresses, because those sit where the hub cannot rewrite them, and
+answer an unknown or unserved slug exactly as before, so they reveal no
+project. A transfer needs the receiver's consent, and the namespace
+owner cannot be demoted or removed while the project lives under their
+name.
+
+**Reason:** with self-registration on maity.team an instance-wide slug
+would let the first comer own `shop` or `blog` for everyone, the
+problem global agent handles already solved with `owner/handle`
+(naming.md). The owner's handle is the one name every project already
+has exactly one of, it is unique instance-wide and renameable through
+aliases, so `owner/slug` needs no registry and reads as what it is. The
+change touches every project route, which §1.6 would serve as `v2`; but
+before the launch every caller is one of the project's own clients, so
+one coordinated release costs less than carrying two route trees, and
+a two-segment path `/projects/a/b` cannot be served in both forms
+without guessing.
+
+**Rejected alternatives:**
+- Keeping instance-wide slugs: first come, first served for common
+  names on a shared SaaS, and no way out once a name is taken.
+- A `v2` path next to `v1`: the clean form after a launch, here a second
+  route tree to maintain for callers that do not exist yet.
+- Serving the old and the new routes side by side under `v1`:
+  `/projects/maity/rules` is both "rules of maity" and "project rules of
+  owner maity"; any tie-break rule silently misroutes someone.
+- An opaque project id in the API and owner/slug only in the dashboard:
+  stable paths, but agents and humans would read and write two names for
+  one thing, and every log line and link would need a lookup.
