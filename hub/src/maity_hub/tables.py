@@ -328,6 +328,10 @@ project = Table(
     Column("coordinator_substitute", String(ID)),
     # What revoking a runner does to its agents here: keep, stop or inherit (§6.1, §15.3).
     Column("on_runner_revoke", String(16), nullable=False, server_default="inherit"),
+    # What a human set for the Keep the Why commitment (NULL: nobody did) and whether a
+    # joining agent adopts the repository's personal defaults (§6.1, §6.23).
+    Column("keep_the_why_policy", String(16)),
+    Column("keep_the_why_defaults", String(8), nullable=False, server_default="adopt"),
     # The jour fixe (§20.1, §20.2): the schedule, the explicit moderator order, the day
     # its weekly interval counts from, and the last slot the hub handled.
     Column("jour_fixe", JSON_VALUE),

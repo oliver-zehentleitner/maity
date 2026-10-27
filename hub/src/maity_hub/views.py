@@ -99,6 +99,11 @@ def project_language(project: Any) -> str:
     return "de" if (project.settings or {}).get("language") == "de" else "en"
 
 
+def memory_of(project: Any) -> dict[str, str]:
+    """The project's memory provider (§6.1); `keep_the_why` is its boolean alias."""
+    return {"provider": "keep-the-why" if project.keep_the_why else "none"}
+
+
 def project_view(
     project: Any,
     settings: Settings,
@@ -117,6 +122,7 @@ def project_view(
         "repository": repository(project, settings),
         "logo": shown.get("logo", NO_IMAGE),
         "banner": shown.get("banner", NO_IMAGE),
+        "memory": memory_of(project),
         "keep_the_why": project.keep_the_why,
         "keep_the_why_export": export,
         "policy": policy.of(project),

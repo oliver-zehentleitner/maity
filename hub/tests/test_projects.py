@@ -45,6 +45,7 @@ def test_a_created_project_has_the_contract_shape(owner: flow.Human) -> None:
         "repository",
         "logo",
         "banner",
+        "memory",
         "keep_the_why",
         "keep_the_why_export",
         "policy",
@@ -79,6 +80,8 @@ def test_a_created_project_has_the_contract_shape(owner: flow.Human) -> None:
         "badge": "off",
         "subtasks": "proposed",
         "swarm_public": "off",
+        "keep_the_why": "required",
+        "keep_the_why_defaults": "adopt",
         "jour_fixe": None,
         "jour_fixe_moderators": None,
         "takeover_window_minutes": 60,
@@ -243,7 +246,7 @@ def test_an_admin_agent_cannot_change_state_or_policy(
 def test_owner_text_and_keep_the_why_bump_the_rules_with_rules_changed(
     owner: flow.Human, migrated: Engine
 ) -> None:
-    flow.project(owner, "maity")
+    flow.project(owner, "maity", keep_the_why=False)
     owner.patch("/projects/maity", {"rules_markdown": "Commit in English.", "reason": "style"})
     owner.patch("/projects/maity", {"keep_the_why": True})
     events = _events(migrated, "rules_changed")
