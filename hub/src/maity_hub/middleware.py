@@ -42,6 +42,10 @@ _IMAGE_UPLOAD = re.compile(
 # The landing page's Markdown may be 64 KiB decoded (§16.7); JSON escaping can grow it up
 # to four times on the wire, so its PATCH alone takes a larger body.
 LANDING_CAP = 256 * 1024
+# An attachment upload is one raw file of up to 10 MiB (§8.7); the body cap of §1.7 does not
+# apply to it, the file cap does.
+ATTACHMENT_CAP = 10 * 1024 * 1024
+_ATTACHMENT_UPLOAD = re.compile(r"^/api/v1/projects/[^/]+/attachments$")
 _LANDING_SETTINGS = "/api/v1/admin/settings/landing"
 CSP = "default-src 'self'"
 # The private Cache-Control a route may set instead of no-store: the project images
@@ -250,13 +254,16 @@ def _body_cap(scope: Scope) -> tuple[int, Callable[[Scope, Receive, Send], Await
     method, path = scope.get("method"), scope.get("path", "")
     if method == "PUT" and _IMAGE_UPLOAD.match(path):
         return IMAGE_CAP, _image_too_large
+    if method == "POST" and _ATTACHMENT_UPLOAD.match(path):
+        return ATTACHMENT_CAP, functools.partial(_too_large, cap=ATTACHMENT_CAP)
     if method == "PATCH" and path == _LANDING_SETTINGS:
         return LANDING_CAP, functools.partial(_too_large, cap=LANDING_CAP)
     return BODY_CAP, _too_large
 
 
 async def _too_large(scope: Scope, receive: Receive, send: Send, cap: int = BODY_CAP) -> None:
-    response = error_response(413, "payload_too_large", f"the body is over {cap // 1024} KiB")
+    size = f"{cap // 1024 // 1024} MiB" if cap >= 1024 * 1024 else f"{cap // 1024} KiB"
+    response = error_response(413, "payload_too_large", f"the body is over {size}")
     await response(scope, receive, send)
     access.info("%s %s %s", scope.get("method"), _logged_path(scope), 413)
 

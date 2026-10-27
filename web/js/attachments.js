@@ -18,9 +18,13 @@ window.Maity = window.Maity || {};
   const CLOSED_STATES = ["accepted", "archived"];
   // The types the hub re-encodes an image to (§8.7): only these inline.
   const INLINE_TYPES = ["image/png", "image/jpeg", "image/webp"];
-  // A hub that answered 404 or 405 to attachments has none: not asked again
-  // until the page is loaded anew.
+  // A hub that answered 404 or 405 to attachments has none, and so has one whose
+  // operator set no store (409 attachments_not_configured, §8.7, §16): not asked
+  // again until the page is loaded anew.
   let hubWithout = false;
+  function noAttachments(err) {
+    return err.status === 404 || err.status === 405 || err.code === "attachments_not_configured";
+  }
 
   function sizeOf(n) {
     if (n === null || n === undefined) return "";
@@ -118,7 +122,7 @@ window.Maity = window.Maity || {};
       } catch (err) {
         earlier = [];
         // A hub without attachments has nothing to offer; any other failure is said.
-        if (err.status === 404 || err.status === 405) { hubWithout = true; offer(false); } else status.fail("Could not read your files waiting from before: ", err);
+        if (noAttachments(err)) { hubWithout = true; offer(false); } else status.fail("Could not read your files waiting from before: ", err);
       }
       drawEarlier();
     };
@@ -285,7 +289,7 @@ window.Maity = window.Maity || {};
       try {
         items = (await M.api.getAll(ctx.base + "/attachments?status=pending")).items;
       } catch (err) {
-        if (err.status === 404 || err.status === 405) { hubWithout = true; none(); return; }
+        if (noAttachments(err)) { hubWithout = true; none(); return; }
         status.fail("Could not read them: ", err);
         return;
       }
