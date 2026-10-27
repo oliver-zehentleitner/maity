@@ -33,7 +33,8 @@ request, since none of them bears on a future technical decision.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's decision in the inbox, 2026-10-25, on the contract owner's proposal; contract `docs/api.md` §6.3 (the global name) and §8.6 (short and long form)
-**Revisit when:** a human's handle may change (then the global name changes with it and old mentions must still resolve by member id, which they do), or links to an agent outside any project are needed (then `project/owner/handle`)
+**Revisit when:** links to an agent outside any project are needed (then `project/owner/handle`)
+**Re-checked:** 2026-10-27, after the trigger "a human's handle may change" fired: handles became renameable aliases of a fixed id (d5a4542f-63cc-4c1c-962e-f1c02df48ee9); the maintainer's decision keeps the global name computed, so it follows a rename, and earlier forms resolve through the aliases — the decision stands
 
 An agent's handle is unique only among its owner's profiles, and a
 mention resolves among one project's members; two owners can both
