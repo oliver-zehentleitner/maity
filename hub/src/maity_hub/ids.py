@@ -41,6 +41,7 @@ PREFIXES = {
     "jour_fixe": "jfx",
     "jour_fixe_answer": "jfa",
     "takeover": "tko",
+    "attachment": "att",
 }
 
 

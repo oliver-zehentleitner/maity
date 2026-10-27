@@ -327,3 +327,26 @@ the one place the contract allows it.
 **Rejected alternative:** a separate renderer for the landing page: two
 renderers would drift from the list the hub validates. Showing an error
 on a failed landing read: it would stand between the person and sign-in.
+
+## A hub whose attachment store is off is treated like a hub without attachments
+
+**Id:** 831e6402-6484-42a6-971a-0cafd0e7ecb4
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-10-27 (the contract change #464: without `MAITY_ATTACHMENT_DIR` every attachment call answers `409 attachments_not_configured`); the dashboard's reading of it is the implementer's
+**Revisit when:** an operator can switch the store on without reloading the page, or the hub tells the dashboard which parts it has before it asks
+**See:** rendering.md#attachments-an-image-is-shown-from-the-hubs-own-path-every-other-file-is-only-ever-a-download-link-and-nothing-is-previewed-before-it-is-sent — 52e88bfb-69a5-4f6d-95e8-a2a3dd8acdd7 — as of 2026-10-27
+
+`web/js/attachments.js` took a `404` or `405` for "this hub has no attachments"
+and stopped asking until the page was loaded anew. A hub that has the
+routes but no store answers `409` with the code `attachments_not_configured`
+to the same calls, and the e2e run counted that as a problem on a page that
+does nothing wrong. The same check now covers that code, so the Attach files
+part is hidden and the listing of waiting files is not asked for again.
+
+**Reason:** to the person at the page the two hubs are the same: no files can
+be sent. The dashboard should not report an operator's choice as a fault.
+
+**Rejected alternative:** switching the store on in the e2e run only: the page
+would still treat an unconfigured hub as broken in production.

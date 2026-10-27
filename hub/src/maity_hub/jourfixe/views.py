@@ -34,6 +34,37 @@ def _redaction(redaction: Any, reader: Any, readers: set[str]) -> Any:
     return {**redaction, "reason": redaction.get("reason") if shown else None}
 
 
+def project_redaction(redaction: Any, reader: Any) -> Any:
+    """A report's or an answer's `redaction` by §8.5's project rule: the human owners and
+    admins and the redactor read the reason."""
+    if redaction is None:
+        return None
+    from maity_hub.views import sees_reasons
+
+    mine = reader is not None and redaction.get("by") == reader.principal_id
+    return {
+        **redaction,
+        "reason": redaction.get("reason") if sees_reasons(reader) or mine else None,
+    }
+
+
+def _report(report: Any, reader: Any) -> Any:
+    if report is None:
+        return None
+    return {
+        **report,
+        "summary_redaction": project_redaction(report.get("summary_redaction"), reader),
+        "findings": [
+            {**f, "redaction": project_redaction(f.get("redaction"), reader)}
+            for f in report["findings"]
+        ],
+        "proposals": [
+            {**p, "redaction": project_redaction(p.get("redaction"), reader)}
+            for p in report["proposals"]
+        ],
+    }
+
+
 def _statement(statement: Any, reader: Any, readers: set[str]) -> Any:
     if statement is None:
         return None
@@ -100,7 +131,7 @@ def full(
         "conversation_id": round_row.conversation_id,
         "statement": _statement(round_row.statement, reader, readers),
         "posts": _posts(round_row, reader, readers),
-        "report": round_row.report,
+        "report": _report(round_row.report, reader),
     }
 
 
@@ -113,7 +144,7 @@ def minimal(
 ) -> dict[str, Any]:
     """For an observer from outside the project (§20.7): nothing about the members beyond
     the participant list, no answers, counts, config, moderator or eligibility."""
-    report = round_row.report
+    report = _report(round_row.report, reader)
     if report is not None:
         report = {k: v for k, v in report.items() if k != "proposals_not_carded"}
         report["proposals"] = [
