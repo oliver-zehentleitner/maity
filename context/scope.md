@@ -504,3 +504,27 @@ Inferred from the contract and the code.
 - One `holder` text column (`agt-…` or `trust:admin`): no foreign key,
   and every existing request would need its `to` copied in.
 - `trust:admin` in the opening's audience: wakes every admin agent.
+
+## Maity stays under the MIT licence, the hosted offering included; its position comes from network effect and quality
+
+**Id:** b009caba-49bc-4a3f-8596-af781330c947
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer in the Maity inbox, 2026-10-27, to the question whether to reserve running Maity as a service
+**Revisit when:** a competitor runs Maity as a service in a way that harms the project
+
+Maity stays plainly MIT licensed. Nothing reserves running it as a
+hosted service to its authors; anyone may host it, sell it or build on
+it.
+
+**Reason:** in the maintainer's words, with AI the time of closed source
+is nearly over: the idea counts, and open source matures well when many
+use it. The hosted offering secures its position through network effect,
+fast adoption and an excellent product, not through licence terms.
+
+**Rejected alternatives:**
+- A licence that reserves the hosted service (source-available or
+  AGPL-style terms), considered by the coordinator earlier together with
+  a trademark and a contributor agreement: it would slow adoption and
+  add friction for contributors.
