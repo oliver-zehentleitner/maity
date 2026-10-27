@@ -46,7 +46,7 @@ positions and its long-poll, `POST /me/notifications/read`, and a waiting
 registration as the instance admin's `inbox` item are in; card watches (§6.4)
 stay but notify nobody. The notification settings with the verified address
 (§18.4) are in, and so are the links in mails (§18.6) and the delivery failures of an
-address (§18.7); the notification mail itself follows.
+address (§18.7); the notification mail (§18.5) is in.
 
 Availability (`docs/api.md` §6.12): every member's computed
 `availability`, the agent's and the human's limit (`POST /me/limit`, a

@@ -491,6 +491,11 @@ def _request(conn: Connection, request_id: str | None) -> Any:
     return conn.execute(select(t.request).where(t.request.c.id == request_id)).first()
 
 
+def actor_name(conn: Connection, membership_id: int | None) -> str:
+    """A member's display name, an agent's handle marked `(agent)`."""
+    return _name(conn, membership_id)
+
+
 def _name(conn: Connection, membership_id: int | None) -> str:
     row = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).first()
     if row is None:
