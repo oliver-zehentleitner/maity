@@ -3133,6 +3133,7 @@ around.
   "owner": { "id": "hum-mebxvnc20qeg", "handle": "oliver" },
   "full_name": "oliver/maity",
   "legacy_slug": "maity",
+  "aliases": [],
   "name": "Maity",
   "state": "build",
   "released_at": null,
@@ -6521,7 +6522,9 @@ close it.
 pair of the namespace owner's id at that time and the slug — to the
 project's `aliases` (oldest first, at most **8**, `alias_limit` as in
 §6.24; renames and transfers together at most 3 per 24 hours per
-project, `rate_limited`). An alias is never released, not even when the
+project, `rate_limited`). The project view (§6.1) lists them as
+`aliases`: each alias as a full name `<handle>/<slug>` with that owner's
+current handle, oldest first, `[]` for a project with no aliases. An alias is never released, not even when the
 project is closed, and is never given to another project, so an old link
 can never lead somewhere else. A namespace owner's handle rename (§6.24) needs no
 alias of its own: the owner's handle aliases already resolve, so
