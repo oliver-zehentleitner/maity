@@ -13,6 +13,8 @@ from typing import Any
 
 from maity_hub.errors import invalid
 
+SEQ_MAX = 2**63 - 1  # BIGINT
+
 
 def scope(**filters: Any) -> str:
     """A short fingerprint of a list's filters and order: a cursor is valid for one."""
@@ -78,5 +80,22 @@ def unkey(
             (str(following), tuple(next_was)),
             frozenset(str(i) for i in shown),
         )
+    except (ValueError, TypeError):
+        raise invalid({"cursor": "invalid"}) from None
+
+
+def seq_cursor(seq: int, bound: str) -> str:
+    """After `seq` in the list's direction; `bound` ties it to a `scope`."""
+    return _encode(["seq", seq, bound])
+
+
+def unseq(text: str, bound: str) -> int:
+    try:
+        tag, seq, given = _decode(text)
+        if tag != "seq" or given != bound or not isinstance(seq, int) or isinstance(seq, bool):
+            raise ValueError
+        if not 0 <= seq <= SEQ_MAX:
+            raise ValueError
+        return seq
     except (ValueError, TypeError):
         raise invalid({"cursor": "invalid"}) from None

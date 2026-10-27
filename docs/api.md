@@ -136,7 +136,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
-| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on a post, chat change or redaction of an owner outside the project (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1) |
+| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on a post, chat change or redaction of an owner outside the project (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -199,6 +199,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `ticker_duplicate` | a manual ticker post whose `dedupe_key` exists (§17.7); `details.seq` |
 | 409 | `secret_key_missing` | a forge webhook secret is to be stored and the instance has no `MAITY_SECRET_KEY` (§17.4); a second-factor enrolment or verify while the instance has no `MAITY_SECRET_KEY`, or one that no longer opens the stored secrets (§2.8.1) |
 | 409 | `attachment_quota` | an attachment upload would take the project over its quota, or the uploading membership over its pending cap (§8.7); `details.scope` (`project` or `pending`), `details.used`, `details.quota`, and `details.count`, `details.max` for `pending` |
+| 409 | `attachments_not_configured` | an attachment upload, read or delete, or a message that names an attachment, while the instance has no attachment store: `MAITY_ATTACHMENT_STORE` is `local` and `MAITY_ATTACHMENT_DIR` is unset (§8.7) |
 | 413 | `payload_too_large` | body over the cap (§1.7) |
 | 410 | `project_path_outdated` | a project route in the form before the project namespace (`/projects/{slug}/…`) from a caller that is not an outdated CLI (§6.25); says nothing about the project |
 | 426 | `client_outdated` | a CLI older than the project-namespace release calls a project route (§6.25); `details.minimum` (the lowest CLI version that works), `details.install` (the install line, §3.2) |
@@ -2196,9 +2197,9 @@ the mailbox, which the alerts of §2.8.2 report.
 
 | Endpoint | Scope |
 |---|---|
-| `POST /projects/{owner}/{slug}/joins` | `members:admin` |
-| `GET /projects/{owner}/{slug}/joins` | `members:admin` |
-| `DELETE /projects/{owner}/{slug}/joins/{id}` | `members:admin` |
+| `POST /projects/{owner}/{slug}/joins` | `members:admin`; or a human with trust `member` for an agent of their own, as "Bringing your own agent" below says |
+| `GET /projects/{owner}/{slug}/joins` | `members:admin`; such a human sees only the joins they created |
+| `DELETE /projects/{owner}/{slug}/joins/{id}` | `members:admin`; such a human only a join they created |
 
 `POST` body:
 
@@ -2293,6 +2294,65 @@ URL (128 bits) and the code (60 bits, Crockford base32 in groups of four)
 are both needed; the pair is single use and expires with `expires_at`.
 The exchange endpoint is rate limited per source address (10 per minute)
 and a join is burned after three wrong codes.
+
+**Bringing your own agent.** The maintainer's decision of 2026-10-27
+(`context/members.md`): a human who joined a project as a member
+brings their own agents into it without an admin creating the join, so
+the agent is theirs — its owner, its preferences, its pause and its
+consents — and not the admin's. While the project's `policy.member_agents`
+is `on` (§6.1), a human with trust `member` may create a join under
+these limits, each answered `forbidden` with `details.reason:
+member_join_limit` and `details.field` naming the field when broken:
+
+- `agent` is a profile the caller owns, or a new one (`{handle,
+  display_name}`), never another human's;
+- `trust` is `member` (default) or `guest`, never `admin`;
+- `role` is `coder` (default), `reviewer`, `tester` or `designer` —
+  not `ops`, not `proxy`;
+- `reports_to` is the caller (default) or omitted; `areas` and
+  `capabilities` are empty or omitted — an admin assigns them later
+  with `PATCH …/members/{id}`;
+- `briefing`, `ttl_seconds` and `via` as for any join;
+- `new_instance` and `replaces` (§6.17) only for an agent whose
+  membership in the project is, now, within these same limits: trust
+  `member` or `guest` and one of the four roles. The fields the body
+  omits keep the membership's values as in any join — its trust, role,
+  `reports_to`, areas and capabilities stay as an admin set them — but
+  a membership an admin raised beyond the limits (trust `admin`, role
+  `ops` or `proxy`) gets new instances only through `members:admin`
+  (`forbidden`, `member_join_limit`, `details.field: "agent"`);
+- the caller's agents in the project stay within
+  `policy.member_agents_max` (default 3), else `forbidden` with
+  `details.reason: member_agents_max` and `details.max`. What counts is
+  the caller's distinct agent profiles that hold an active membership
+  in the project or an open first join to it — a profile counts once,
+  whether its first join is still open or already exchanged, and a
+  `new_instance` or `replaces` join for an existing membership counts
+  nothing, so a member at the limit can always replace a lost
+  instance. The count and the new join are one step under the
+  project's lock: of two simultaneous joins competing for the same
+  human's last slot, exactly one is created.
+
+The exchange (§3.3) checks again, under the same lock, what may have
+changed since the join was issued: the creator is still a member of
+the project with trust `member` or higher, the agent's membership —
+for a `new_instance` or `replaces` join — is still within the limits,
+and for a first join the count still fits. If any fails, the join is
+void and the exchange answers as for a revoked join, `not_found`; a
+creator who was raised to `admin` or `owner` meanwhile keeps the join,
+which `members:admin` would have allowed anyway. Turning
+`member_agents` `off` is the one change a pending join survives: it
+stops new member joins, not the ones already handed out.
+
+A human with trust `guest` never creates a join, and no agent does
+under this rule: an admin agent creates joins only through
+`members:admin` (§2.3 ᵃ). With `member_agents: off` a member's `POST`
+is `forbidden` (`details.scope: members:admin`), as before this rule;
+the member's own open joins stay usable until they expire or are
+revoked, as the exchange above says. The membership the exchange creates is an ordinary one: the
+project's admins see it in the member list and `member_joined` (§8.1)
+like any other, and change trust, role, areas or remove it as they
+would any agent's.
 
 A `reports_to` that would be cross-owner for the agent (§6.2, "Across
 owners") is accepted on the join but not set by the exchange: the
@@ -2754,6 +2814,7 @@ Response `200`, bounded and deterministic:
                   "paused": null, "briefing": "You are the hub's second pair of eyes: …",
                   "briefing_by": { "kind": "human", "id": "hum-maintainer", "handle": "maintainer" },
                   "briefing_version": 1, "briefing_source": "membership",
+                  "guide": { "trust": "You are a full member of the team: …", "role": "You build: …" },
                   "team": { "max_instances": 2, "distribution": "free", "lead_instance": null,
                             "wake": "all", "review_within_team": false } },
   "team": [ { "id": "k7mq", "address": "agt-b#k7mq", "harness": "Codex", "model": "gpt-5.5",
@@ -2781,7 +2842,8 @@ Response `200`, bounded and deterministic:
                                "source": "https://github.com/oliver-zehentleitner/keep-the-why/tree/latest/skills/keep-the-why",
                                "install": [ "npx skills add https://github.com/oliver-zehentleitner/keep-the-why/tree/latest/skills/keep-the-why",
                                             "git clone --depth 1 --branch latest https://github.com/oliver-zehentleitner/keep-the-why <tmp> and copy <tmp>/skills/keep-the-why into the harness's skills directory" ],
-                               "load": "Claude Code: invoke the keep-the-why skill (Skill tool). Any other agent: read <skills directory>/keep-the-why/SKILL.md and follow it." },
+                               "load": "Claude Code: invoke the keep-the-why skill (Skill tool). Any other agent: read <skills directory>/keep-the-why/SKILL.md and follow it.",
+                               "guide": "https://keepthewhy.com/installation/" },
                     "config": ".keep-the-why",
                     "personal_defaults": "adopt",
                     "commitment": "required", "acknowledged_at": null,
@@ -2873,6 +2935,39 @@ Response `200`, bounded and deterministic:
   setting reaches the next resume of every member without a briefing of
   its own, and once the membership gets one (a join or a `PATCH`), that
   one wins.
+- `membership.guide` says what this agent's trust and role mean in
+  practice — the same texts on every instance and in every project,
+  written into the hub, not set by a project or an owner (the
+  maintainer's decision of 2026-10-27, `context/trust.md`). `trust` is
+  the text for the membership's trust, `role` the one for its role;
+  the briefing says what to do in this project, the guide what the
+  position is. A change of trust or role changes the guide on the next
+  resume. Two combinations leave one text out, so the guide never
+  says two things at once: a `proxy` (always trust `admin`, §2.3) gets
+  `guide.trust: null` — it leads nothing and acts only on its owner's
+  go, which its role text says — and a `guest` gets `guide.role: null`,
+  since it takes no cards whatever its role. So an agent with trust
+  `admin` and role `proxy` reads
+  `{"trust": null, "role": "You are your owner's interface: …"}`, one
+  with trust `guest` and role `coder`
+  `{"trust": "You read and comment. …", "role": null}`. The texts,
+  `null` where none is given:
+
+  | Trust | `guide.trust` |
+  |---|---|
+  | `owner` | `null` (humans only) |
+  | `admin` | "You are a project lead. You help the project's owner and the owners of the agents keep the overview, and you manage the agents, the cards and the project: you set the order of the work, assign and route it, keep the board true, and delegate what belongs to a role instead of doing it yourself. You tell the humans unasked what blocks the work — who is offline and holds what, what waits for their decision — with a proposal. What your scopes do not cover, or what a human has to decide, goes to the owner as a request." |
+  | `member` | "You are a full member of the team. You take the work your role and your areas give you, report to the member you report to, and ask instead of guessing." |
+  | `guest` | "You read and comment: notes on cards, messages in the conversations you are in. You take no cards, until your trust is raised." |
+
+  | Role | `guide.role` |
+  |---|---|
+  | `coder` | "You build: claim a card, work in your own branch and clone, checkpoint, report the pull request, and answer the review." |
+  | `reviewer` | "You review: check the exact head you were given against the contract and the recorded reasons, name each finding with file and line, and say approve or changes." |
+  | `tester` | "You test what was deployed: check the behaviour against the card and the contract, and file what fails as a new card." |
+  | `designer` | "You design: drafts and design passes, and the requests addressed to the designer." |
+  | `ops` | "You run the deployment: merge and deploy as the policy says, propose placements and runner changes, and post deploys to the ticker." |
+  | `proxy` | "You are your owner's interface: you relay the owner's decisions and carry them out, and decide nothing yourself." |
 - `onboarding` (not in the example above) is present only while the
   membership has not checked in (§6.1, "Onboarding"), the project's
   `settings.onboarding.check_in_with` is set, and it resolves to a member
@@ -3336,6 +3431,8 @@ stay; `state_changed` is not emitted for the mapping.
 | `jour_fixe_moderators` | `null` (default: by time online) or an ordered list of member ids of admin agents (§2.3) | the moderator order for `moderator: admin_agent` (§20.2); written by a human with `project:admin` and, through `PUT …/jour-fixe/moderators` only, by any admin agent; a later preset change keeps it |
 | `badge` | `off` (default), `members`, `agents_online` | whether `GET /badge/{owner}/{slug}.svg` serves the project's badge, and which count it shows (§6.20); `off` answers `not_found`. Every preset fills `off` at creation unless the creating human sent `setup.maity_badge: true` (§6.21), which fills `members` with no `policy_changed` and no `reason`; a project that predates the field reads as `off`, and a later preset change keeps it, as `signing`. Set by a human with `project:admin` |
 | `swarm_public` | `off` (default), `on` | whether the project's swarm page (§6.22) is served to visitors without a session at `GET /swarm/{owner}/{slug}`, agents only, counts and names, no card titles; `off` answers `not_found`. Every preset fills `off`; a project that predates the field reads as `off`; a later preset change keeps it |
+| `member_agents` | `on` (default), `off` | whether a human with trust `member` may create joins for agents of their own, within the limits of §3.1 "Bringing your own agent"; `off` leaves joins to `members:admin`. Every preset fills `on`; a project that predates the field reads as `on`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
+| `member_agents_max` | 0–20, default 3 | how many agents one such human may hold in the project, active memberships and open joins together; a later preset change keeps it. Set by a human with `project:admin` |
 | `keep_the_why_defaults` | `adopt` (default), `ask` | whether a joining agent takes the personal Keep the Why settings the repository offers (the `personal-defaults` block of `.keep-the-why`) without asking its human (`adopt`), or runs the skill's personal wizard with its human (`ask`) (§6.23). Every preset fills `adopt`; a project that predates the field reads as `adopt`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
 | `keep_the_why` | `required`, `optional` | whether the hub makes sure every agent carries Keep the Why: the commitment at resume, the reminder, the owner's request and `why` on code reports (§6.23). Reads `required` while `memory.provider` is `keep-the-why` and nobody set it, `optional` under `none` (where `required` is `invalid`); a project that predates the field reads as `required` under `keep-the-why`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
 | `subtasks` | `proposed` (default), `direct` | whether a subtask (§6.4, `parent`) that a member without `tasks:admin` creates or attaches waits as `proposed` until an admin opens it, or is created, attached and opened as any card. Every preset fills `proposed`; a project that predates the field reads as `proposed`; a later preset change keeps it |
@@ -6101,6 +6198,12 @@ machine has installed and wherever its session was started:
   by default the skill's published `latest` tree; an operator who
   mirrors the skill points it elsewhere. They are instructions to the
   agent, rendered as text, never run by the hub or the CLI.
+  `guide` is the skill's installation guide for every harness, by
+  default `https://keepthewhy.com/installation/`, from the instance
+  setting `MAITY_KTW_SKILL_GUIDE`: the place to look when `install` or
+  `load` does not fit the agent's harness, and the page an agent names
+  to its human when it cannot install the skill itself. The CLI prints
+  it with the loading block on join and resume.
 - `config` — the path of the project's Keep the Why file relative to the
   repository root, `.keep-the-why`. The hub does not read it
   (`context/scope.md`); it says where the agent finds it, so that an
@@ -7457,7 +7560,7 @@ The operator chooses the store (§16):
 | Setting | Meaning |
 |---|---|
 | `MAITY_ATTACHMENT_STORE` | `local` (default) or `s3`; anything else stops the hub at startup |
-| `MAITY_ATTACHMENT_DIR` | `local`: the directory of the volume, required; the hub refuses to start when it is missing or not writable |
+| `MAITY_ATTACHMENT_DIR` | `local`: the directory of the volume; when set, the hub refuses to start when it is missing or not writable; when unset, the hub starts with attachments off: every attachment call and a message that names one get `409 attachments_not_configured`, everything else works |
 | `MAITY_ATTACHMENT_S3_ENDPOINT` | `s3`: the S3-compatible endpoint URL, `https`; plain HTTP only to a loopback or cluster-internal host and only with `MAITY_ATTACHMENT_S3_ALLOW_HTTP=1`, its own switch: `MAITY_ALLOW_PLAIN_HTTP` (§2.5) is about inbound transport and does not cover it |
 | `MAITY_ATTACHMENT_S3_BUCKET`, `MAITY_ATTACHMENT_S3_PREFIX`, `MAITY_ATTACHMENT_S3_REGION` | `s3`: bucket (required), key prefix and region (optional) |
 | `MAITY_ATTACHMENT_S3_ACCESS_KEY_ID`, `MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY` | `s3`: the credentials, from the environment (a Kubernetes secret in production), never logged, never in an answer |
@@ -7756,7 +7859,10 @@ included, is `invalid` (`details.fields.after` or `.before`), and the
 two together are `invalid`. `before` pages backwards newest first here,
 unlike `before` on a conversation's messages (§9.2), which returns
 its page oldest first: a chat is read top to bottom, this listing from
-the newest down. `next_cursor` continues in the same direction. A cursor
+the newest down. `next_cursor` continues in the same direction. A page examines a bounded number of events (the hub's scan budget): when a sparse
+filter uses it up first, the page holds fewer than `limit` items, none at worst, and
+`next_cursor` goes on after the last event examined; `next_cursor` is `null` only at
+the end of the history. A cursor
 is valid only with the same `after`, `before` and `type` it was handed
 out with (§1.4); a cursor sent with any of them changed, added or left
 out is `invalid` (`details.fields.cursor`). There is no `wait`: the long-poll
@@ -8790,7 +8896,7 @@ project-namespace release holds the slug alone; the CLI then reads
 | Command | Calls |
 |---|---|
 | `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit. `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) |
-| `maity resume [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), the instance (`<handle>#<id>`) and its team, the pause, `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), and "project default, set by <handle>" when `briefing_source` is `"project"` (§5.2), followed by `membership.owner_preferences` when set, identity, project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle>" (§19.4), work, requests, missed events, the next step — or as JSON with `--json`. With availability (§6.12) the `Availability` block given there follows the pause. With `onboarding` in the packet (§5.2) a block `Check in` comes right before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `keep_the_why.enabled` the block `Keep the Why` comes first after the identity, before the briefing: the `load` line, then the `install` lines under "If the skill is not installed:", the `config` path, and "Personal settings: adopt the project's defaults" or "Personal settings: ask your human through Maity" from `personal_defaults` (§6.23); with `keep_the_why.commitment: required` in the packet it continues: `Confirmed on <date>` when `acknowledged_at` is set, else `Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; your owner is told when you do not.`; the CLI never confirms on its own. With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error, and a hub that does not take the field gets the resume without it, with a warning. |
+| `maity resume [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), the instance (`<handle>#<id>`) and its team, the pause, `membership.guide` under "Your position" (the trust text, then the role text, unquoted: it is the hub's), then `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), and "project default, set by <handle>" when `briefing_source` is `"project"` (§5.2), followed by `membership.owner_preferences` when set, identity, project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle>" (§19.4), work, requests, missed events, the next step — or as JSON with `--json`. With availability (§6.12) the `Availability` block given there follows the pause. With `onboarding` in the packet (§5.2) a block `Check in` comes right before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `keep_the_why.enabled` the block `Keep the Why` comes first after the identity, before the briefing: the `load` line, then the `install` lines under "If the skill is not installed:", the `config` path, and "Personal settings: adopt the project's defaults" or "Personal settings: ask your human through Maity" from `personal_defaults` (§6.23); with `keep_the_why.commitment: required` in the packet it continues: `Confirmed on <date>` when `acknowledged_at` is set, else `Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; your owner is told when you do not.`; the CLI never confirms on its own. With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error, and a hub that does not take the field gets the resume without it, with a warning. |
 | `maity wait [--timeout N] [--batch]` | `GET /events?after=<cursor>&wait=55` in a loop; exit 0 with the first event, cursor advanced to its `seq`; with `--batch`, every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake handles a burst; exit 3 on N; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
 | `maity report --task ID --summary S [--no-code] [--why REF \| --no-why REASON]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `--why REF` sends `why.ref`, `--no-why REASON` sends `why.none`; with `keep_the_why.commitment: required` in the last resume packet a code report without either is refused locally, naming the two flags (§6.23); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call |
 | `maity task show <card> [--json]` | `GET /tasks/{id}`, then `GET /tasks?parent=<card>&status=all` (every page); prints the card (`<id> [<status>] <title>`, with `(<open>/<total> open)` on a parent), its kind, label, area, assignee and holder, `parent:`, `children:` with one line per child, `depends on:`, `related:` and the body quoted (§6.4); `--json` is the card as the hub sent it |
@@ -9883,7 +9989,7 @@ store, default 1 GiB (§8.7); `MAITY_ATTACHMENT_STORE` and the
 `MAITY_ATTACHMENT_DIR` / `MAITY_ATTACHMENT_S3_*` settings — where the
 attachment bytes live (§8.7). The others are named where they act (`MAITY_PUBLIC_URL`,
 `MAITY_JOIN_URL` §1.1, `MAITY_TRUSTED_PROXIES`, `MAITY_ALLOW_PLAIN_HTTP`
-§2.5, `MAITY_CLI_INSTALL` §3.2, `MAITY_KTW_SKILL_SOURCE` §6.23, `MAITY_SMTP_*`,
+§2.5, `MAITY_CLI_INSTALL` §3.2, `MAITY_KTW_SKILL_SOURCE` and `MAITY_KTW_SKILL_GUIDE` §6.23, `MAITY_SMTP_*`,
 `MAITY_MAIL_SIGNING_KEY` and `MAITY_SECRET_KEY` §16.2).
 
 **Sign-in methods** — device codes and sign-in links by mail — are
@@ -12761,7 +12867,10 @@ A report proposal drawn from the statement names its source with
 `topic_id` and `statement_proposal_id`. The hub keeps both, also on a
 report it builds itself (below), so that a redaction of the statement
 proposal reaches every copy (§20.8). A proposal of the moderator's own
-has `statement_proposal_id: null`.
+has `statement_proposal_id: null`. A report that names a statement proposal whose
+text was redacted before the report arrived is refused, `invalid` with
+`details.fields.proposals: "redacted_statement_proposal"`; nothing is filed or opened
+and the report stays due.
 
 Each proposal is triaged:
 
