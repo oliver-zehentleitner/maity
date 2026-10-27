@@ -91,6 +91,9 @@ class Run:
         self.a11y_findings: list[dict] = []
         # Set when the hub answers the notifications read with 404 (§18).
         self.no_notifications = False
+        # §8.7 "Attachments off": each 409 for the pending uploads as the page got
+        # it, judged one by one in no_problems() (a response handler reads no body).
+        self.off_answers: list = []
 
     def a11y(self, page: Page, view: str) -> None:
         """axe-core on the page as it stands, in each pass; back to 1280 px, light, after."""
@@ -279,6 +282,10 @@ def port_taken(port: int) -> bool:
 def start_hub(work: Path, logs: Path, port: int) -> subprocess.Popen:
     """Migrate, create the owner and serve; every output goes to logs/hub.log."""
     base = f"http://127.0.0.1:{port}"
+    # No store for attachments yet (§8.7): the hub starts with them off and the
+    # attachments step checks that case. The upload step waits for messages that
+    # name their attachments (E's #474); with it on main, set MAITY_ATTACHMENT_DIR
+    # here again (card tsk-8h6yzp4f8jqg).
     env = dict(
         CLEAN_ENV,
         MAITY_DATABASE_URL=f"sqlite:///{work / 'hub.db'}",
@@ -369,13 +376,19 @@ def watch_page(run: Run, page: Page) -> None:
         # once per page load; the account page says so.
         if resp.status == 404 and path == "/api/v1/auth/sessions?ended=true":
             return
-        # Signed out, the page asks /auth/session first and expects 401.
         # A composer, and Project settings, ask once per page load for the
-        # uploads waiting to be sent (§8.7); a hub without attachments answers 404.
+        # uploads waiting to be sent (§8.7); a hub without attachments answers
+        # 404, and one with them off 409, which no_problems() accepts only with
+        # the code attachments_not_configured.
+        pending = PENDING_UPLOADS.match(path)
+        if resp.status == 409 and pending:
+            run.off_answers.append(resp)
+            return
+        # Signed out, the page asks /auth/session first and expects 401.
         if resp.status >= 400 and not (
             resp.status == 401 and path.startswith("/api/v1/auth/session")
         ) and not (
-            resp.status == 404 and re.match(r"/api/v1/projects/[^/]+/attachments\?status=pending(&uploaded_by=[^&]+)?&limit=200$", path)
+            resp.status == 404 and pending
         ):
             run.problems.append(f"{resp.request.method} {path} answered {resp.status}")
 
@@ -407,7 +420,34 @@ def project_settings(page: Page) -> None:
     expect(page.locator("#project-panel")).to_be_visible()
 
 
+# The pending uploads a composer and Project settings ask for (§8.7).
+PENDING_UPLOADS = re.compile(r"/api/v1/projects/[^/]+/attachments\?status=pending(&uploaded_by=[^&]+)?&limit=200$")
+
+
+def off_problem(method: str, path: str, status: int, body: object) -> str | None:
+    """None for exactly a hub with attachments off answering the pending list:
+    GET, that path, 409, code attachments_not_configured (§8.7). Anything else
+    is the problem it is, said with its code. Each answer on its own: no flag
+    carries one answer's verdict to another."""
+    error = body.get("error") if isinstance(body, dict) else None
+    code = error.get("code") if isinstance(error, dict) else None
+    if method == "GET" and PENDING_UPLOADS.match(path) and status == 409 and code == "attachments_not_configured":
+        return None
+    return f"{method} {path} answered {status}" + (f" ({code})" if code else "")
+
+
 def no_problems(run: Run, where: str) -> None:
+    # Each 409 for the pending uploads, judged by its own body, read here
+    # outside the response handler.
+    answers, run.off_answers = run.off_answers, []
+    for resp in answers:
+        try:
+            body = resp.json()
+        except Exception:  # not JSON: no code, so a problem
+            body = None
+        problem = off_problem(resp.request.method, resp.url.split(run.base, 1)[-1], resp.status, body)
+        if problem:
+            run.problems.append(problem)
     if run.problems:
         raise AssertionError(f"{where}:\n  " + "\n  ".join(run.problems))
 
@@ -960,6 +1000,19 @@ def attachments_step(run: Run, page: Page, agent_id: str) -> None:
         expect(page.locator("form.compose")).to_be_visible()
         expect(page.locator("form.compose .attach")).to_be_hidden()
         expect(page.locator("#chat-files")).to_be_disabled()
+        no_problems(run, "attachments")
+        return
+    # Configured but off (§8.7 "Attachments off"): the route exists, the hub has no
+    # store and answers every attachment call 409 attachments_not_configured. Then the
+    # composer offers no files and no Delete; only those answers, checked by their
+    # code, are no problem.
+    probe = page.request.get(f"{run.base}/api/v1/projects/e2e-alpha/attachments?status=pending&limit=200")
+    if probe.status == 409 and (probe.json().get("error") or {}).get("code") == "attachments_not_configured":
+        run.step("attachments: the hub has them off; the composer offers no Attach files and no Delete")
+        expect(page.locator("form.compose")).to_be_visible()
+        expect(page.locator("form.compose .attach")).to_be_hidden()
+        expect(page.locator("#chat-files")).to_be_disabled()
+        expect(page.locator("li.attach-item button", has_text="Delete")).to_have_count(0)
         no_problems(run, "attachments")
         return
     page.locator("#chat-files").set_input_files(

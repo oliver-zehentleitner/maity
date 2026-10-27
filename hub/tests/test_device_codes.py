@@ -51,7 +51,7 @@ def test_a_device_signs_in_by_code_and_number(
     make_client: ClientFactory, migrated: Engine, desk: flow.Human
 ) -> None:
     code = started(desk)
-    assert len(code["code"]) == 9 and code["code"][4] == "-"
+    assert len(code["code"]) == 14 and code["code"][4] == "-" and code["code"][9] == "-"
     assert code["url"] == f"https://hub.example/#/sign-in/code?c={code['code'].replace('-', '')}"
     assert desk.get(f"/auth/device-codes/{code['id']}").json()["status"] == "waiting"
 
@@ -103,16 +103,17 @@ def test_the_first_redemption_wins_and_every_other_fails_alike(
 ) -> None:
     code = started(desk)["code"]
     assert redeem(phone(make_client), code).status_code == 200
-    for attempt in (code, "ZZZZ-ZZZZ", "short", "I0L0-0000"):
+    for attempt in (code, "ZZZZ-ZZZZ-ZZZZ", "short", "I0L0-0000-0000", code[:9]):
         second = redeem(make_client(peer="192.0.2.9"), attempt)
         assert (second.status_code, second.json()["error"]["code"]) == (403, "code_invalid")
 
 
 def test_input_is_read_loosely(make_client: ClientFactory) -> None:
-    assert device_codes.normalise("k7qm-4xpr") == "K7QM4XPR"
-    assert device_codes.normalise(" K7QM 4XPR ") == "K7QM4XPR"
-    assert device_codes.normalise("iLoO-0000") == "1100" + "0000"
-    assert device_codes.normalise("K7QM-4XPU") is None  # U is not Crockford
+    assert device_codes.normalise("k7qm-4xpr-9d2f") == "K7QM4XPR9D2F"
+    assert device_codes.normalise(" K7QM 4XPR 9D2F ") == "K7QM4XPR9D2F"
+    assert device_codes.normalise("iLoO-0000-0000") == "1100" + "0000" + "0000"
+    assert device_codes.normalise("K7QM-4XPR-9D2U") is None  # U is not Crockford
+    assert device_codes.normalise("K7QM-4XPR") is None  # the eight of before, no longer
     assert device_codes.normalise("K7QM") is None
 
 
