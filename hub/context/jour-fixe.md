@@ -161,3 +161,36 @@ anything.
   would count as an edit, though the text is the proposal's again.
 - The body starting with the reason: a person's added line would be
   rewritten with it.
+
+## A report that names a statement proposal redacted before it arrived is refused
+
+**Id:** b9b46e40-52be-47c6-8ae4-c57739f2683d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the reviewer's finding on the redaction pull request, 2026-10-27 (a redacted statement came back as a report proposal when the report arrived after the redaction); the choice between the two repairs the finding named is the implementer's
+**Revisit when:** a moderator may legitimately carry a redacted proposal into the report, or the statement's redaction is recorded elsewhere than on the round's copy
+**See:** jour-fixe.md#a-card-still-carries-the-hubs-text-while-its-title-or-body-is-exactly-what-the-hub-wrote — b49bda1d-56e3-4435-93c1-c021ba596480 — as of 2026-10-27
+
+The redaction of a statement reaches the proposals and findings of a report
+that already exists (§20.8). A report written after the redaction has no
+such copy to reach: the moderator names `statement_proposal_id`, and the
+hub took the title and reason from the report body itself. So a text the
+maintainer had redacted could be filed again as a decision request. The hub
+now refuses such a report: `invalid`, `details.fields.proposals:
+"redacted_statement_proposal"`, checked on the round's copy, where the
+statement proposal carries its `redaction`. Nothing is filed or opened and the
+report stays due; a proposal of the moderator's own, with no
+`statement_proposal_id`, goes through. The report the hub builds itself
+already skips redacted topics and proposals.
+
+**Reason:** the tombstone already sits on the round's copy, so one check
+there closes the gap in the one place a report is accepted, and the
+moderator learns at once why the proposal cannot be drawn from that source.
+
+**Rejected alternatives:**
+- Propagating the tombstone onto the new report before it is made final:
+  the report would then file requests and cards that exist only as
+  placeholders, work nobody asked for, and the moderator would not be told.
+- Dropping the redacted proposal from the report silently: the moderator's
+  report would differ from what was sent, without a word.
