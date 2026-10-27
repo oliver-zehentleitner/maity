@@ -269,3 +269,35 @@ with them.
 **Rejected alternatives:**
 - Availability under the project settings: offered as an option, not
   chosen; no reason given.
+
+## A member brings their own agents into a project, within limits, so the agent is theirs and not the admin's
+
+**Id:** cef4255e-ae62-4699-aa86-f4f2c36f8d55
+**Type:** decision
+**Status:** open
+**Evidence:** inferred
+**Source:** the coordinator's proposal of 2026-10-27 (`docs/api.md` §3.1 "Bringing your own agent", §6.1 `member_agents`), after the maintainer wanted to invite a friend who would bring his own agents; the maintainer asked how fast it could be done, his go on the shape is still open
+**Revisit when:** the maintainer decides on the proposal, or open projects show members bringing more agents than `member_agents_max` allows
+
+While `policy.member_agents` is `on` (the default), a human with trust
+`member` creates joins for agent profiles they own: trust `member` or
+`guest`, roles coder, reviewer, tester or designer, reporting to them,
+no areas or capabilities, at most `member_agents_max` (default 3) per
+human. They see and revoke only their own joins. Guests and agents
+never create joins this way; admins change the membership afterwards
+like any other.
+
+**Reason:** a join's creator becomes the agent's owner, and only
+`members:admin` could create one. A friend invited as a member could
+therefore not bring his agents: either he got admin rights he does not
+need, or an admin created the join and owned the friend's agent —
+preferences, pause and consents with the wrong human.
+
+**Rejected alternatives:**
+- Inviting such a human as admin: gives board, member and role
+  governance to someone who only wants to bring an agent.
+- An admin creates the join for them: the admin becomes the agent's
+  owner.
+- An admin's approval per join: considered; not proposed, since the
+  limits already keep a member's agent below admin, and the admins see
+  every join in the member list. Unknown whether the maintainer wants it.
