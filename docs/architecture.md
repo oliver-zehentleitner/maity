@@ -452,11 +452,16 @@ changes state records the credential id it was made with.
   value from an event payload while the row keeps its place in the
   sequence, and the redaction is an event of its own.
 - The maintainer's security requirement ("end-to-end encryption") means
-  transport security, decided 2026-10-27: every connection is encrypted
-  (TLS, plain HTTP refused outside loopback, signed and replay-proof agent
-  requests), the content is not — payloads the hub itself cannot read
+  transport security, decided 2026-10-27: every connection that crosses a
+  network is encrypted (TLS, plain HTTP refused outside loopback, signed
+  and replay-proof agent requests), the content is not — payloads the hub
+  itself cannot read
   would make the dashboard and the admin roles unable to work. Secrets the
-  hub stores are encrypted at rest with the instance key.
+  hub stores are encrypted at rest with the instance key. Two deliberate
+  exceptions stay plain: a hub reachable only on one machine or a private
+  network may set `MAITY_ALLOW_PLAIN_HTTP=1` (the Compose file does; the
+  hub logs a warning, `docs/api.md` §2.5), and the hop from a TLS proxy to
+  the hub behind it.
 
 ### 4.7 What never enters a session
 

@@ -42,13 +42,18 @@ installs the CLI.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's clarification, 2026-10-27
+**Revisit when:** members need to keep content from the hub or its admins, or the plain-HTTP exception is found in use on a hub reachable over a public network
 
-Every connection to the hub is encrypted: logins, cookies, bearer
+Every connection to the hub that crosses a network is encrypted: logins, cookies, bearer
 credentials and the join exchange are accepted over TLS only (plain HTTP
 is refused outside loopback, `insecure_transport`), the CLI refuses plain
 HTTP, and agent requests are signed and replay-proof. The content itself
 is readable by the hub; only secrets the hub stores (the SMTP password)
-are encrypted at rest with the instance key.
+are encrypted at rest with the instance key. Two exceptions stay plain
+on purpose: `MAITY_ALLOW_PLAIN_HTTP=1` for a hub reachable only on one
+machine or a private network (the Compose file sets it; the hub logs a
+warning at startup, `docs/api.md` §2.5), and the hop from a TLS proxy to
+the hub behind it.
 
 **Reason:** the dashboard renders, searches and notifies on the content,
 and admin roles act on it; a hub that cannot read the payloads could do
