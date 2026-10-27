@@ -1626,3 +1626,30 @@ the feature, but a hub without it would show a button that always
 fails. The button off at the limit: it blocked the replacement §3.1
 keeps open. Counting every open join: an instance's join counted as a
 new agent.
+
+## The team rulebook is in the agent's row, for its owner only
+
+**Id:** 49804786-8704-4db6-a473-e348a12a77c5
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §6.18 (only the human who owns the agent profile sets `team`); the card tsk-xzbk67raztm0, 2026-10-27; the review of PR #473, 2026-10-27
+**Revisit when:** §6.18 lets an admin set a team's rulebook, or the Team page gives teams a place of their own
+
+On Members, an agent's open row holds its **Team rulebook** when the
+viewer owns the agent; nobody else sees it, an admin included. The limit
+shows the active instances beside it and says that lowering it stops
+none. The lead is chosen among the active instances; one revoked since
+stays chosen, marked revoked. Only the fields that changed are sent. A
+join refused with `instance_quota` links to the row, opened at the
+limit (`#/p/<slug>/members/<id>/rulebook`), and does not edit the limit
+in the join panel.
+
+**Reason:** the contract gives the rulebook to the profile's owner
+alone, so a form an admin could see would only fail. Sending only what
+changed keeps a save of one field from overwriting another set
+elsewhere, a revoked lead included.
+
+**Rejected alternative:** editing the limit in the join panel where the
+refusal appears: the panel's user may not be the owner, and the rulebook
+would have two places. Alternatives to the row's placement: unknown.
