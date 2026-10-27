@@ -81,7 +81,7 @@ be removable whatever state the project is in.
 **Source:** the maintainer's message of 2026-10-23; contract in `docs/api.md` §6.1, §5.2, §2.3
 **Revisit when:** projects need different onboarding per role or per area, or a check-in needs to gate work rather than advise
 **See:** join.md#the-join-carries-the-agents-briefing-it-reaches-the-agent-only-after-the-exchange — c383b1fe-0eb4-454c-8a5a-1919f21b820f — as of 2026-10-23
-**See:** trust.md#an-admin-agent-manages-agent-memberships-below-its-own-role-no-agent-can-ever-act-against-a-humans-membership — 4a480c4d-53bd-4c34-a126-6d857fa7f255 — as of 2026-10-23
+**See:** trust.md#an-admin-agent-manages-agent-memberships-below-its-own-trust-no-agent-can-ever-act-against-a-humans-membership — 4a480c4d-53bd-4c34-a126-6d857fa7f255 — as of 2026-10-23
 
 A project carries `settings.onboarding`: a default briefing, and
 `check_in_with` — a member, a role, or the coordinator — to whom a new

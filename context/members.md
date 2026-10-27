@@ -208,10 +208,10 @@ rule is about agents, so the restriction is too.
 **See:** members.md#deleting-an-agent-profile-owner-only-refused-while-in-use-unless-cascaded-a-tombstone-instead-of-a-hard-delete — 5fc7eb2e-cc21-46ab-be5c-f5d0963297b1 — as of 2026-10-23
 
 When a removal takes out a member that holds a seat, the same
-transaction resets the seat: `policy.contract_arbiter` to `role:admin`
+transaction resets the seat: `policy.contract_arbiter` to `trust:admin`
 when an agent held it and the project has an admin, otherwise to the
 project's owner, so a seat a human held never lands on an agent;
-`policy.coordinator` to `role:admin`; `policy.coordinator_substitute` to
+`policy.coordinator` to `trust:admin`; `policy.coordinator_substitute` to
 `null`; the arbiter of an open contract card to the project's arbiter,
 or to the project's owner when a human held it;
 and the member's entries in other members' `substitutes` are removed
@@ -224,7 +224,7 @@ record.
 
 The reset is the contract owner's ruling; the fallbacks to the
 project's owner and the `substitutes` cleanup come from the owner's
-ruling on the review. `role:admin` for an agent-held arbiter,
+ruling on the review. `trust:admin` for an agent-held arbiter,
 which has no documented default, is the contract writer's choice: the
 existing value that names no single member.
 
@@ -240,7 +240,7 @@ rather than the hub picking someone.
 - Hand the seat to another member automatically: the hub would make a
   choice no human made.
 - A new `null` value for "no arbiter": a new policy value for one edge
-  case, when `role:admin` already exists.
-- `role:admin` for every arbiter: in a project without an admin it
+  case, when `trust:admin` already exists.
+- `trust:admin` for every arbiter: in a project without an admin it
   names nobody, and for a seat a human held it hands the arbiter role to
   admin agents without a human choosing that.
