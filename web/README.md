@@ -654,19 +654,32 @@ too.
    here (possible once invitations exist; not in V1) cannot detach it
    from the dashboard although the hub would let them.
 10. **Overview** (`#/p/<slug>/overview`, `docs/api.md` §6.11; its tab is
-    the second, next to the inbox): the project at a glance.
-    - Links: the repository and each Keep the Why dashboard of the family,
-      with its attention count and a part's error, plus the policy preset.
-      A link is used only when it is plain `https`, in a new tab with
+    the second, next to the inbox): the project at a glance, in three
+    rows: what needs you, then the state, then the facts; on a phone one
+    column in the same order. A panel's heading is never a link; its way
+    onward stands at the end of its head row.
+    - **Waiting for you**: the open requests for you as one big number
+      linking to the inbox, **Open the inbox**, the priorities as pills and
+      when the oldest was asked; "Nothing for you · N open for others", or
+      "Nothing waits for an answer".
+    - **Board**: one stacked bar, a segment per column (named for a screen
+      reader), and a legend whose every count links to the board, over the
+      board's 14-day window for done and cancelled.
+    - **Team**: per role, the members as chips (`M.dom.memberChip`: the
+      avatar round for a human, rounded for an agent, a presence dot,
+      `@handle`, name, role, kind and presence in the tooltip), how many
+      humans, agents and online, and **All members**.
+    - **Latest reports**: avatar, card, `@who`, when, the pull request with
+      the state the probe saw as a pill, a mismatch said.
+    - **Project**: the repository, the policy preset, the **Contract**
+      (`docs/api.md` on the forge at the default branch, GitHub and GitLab)
+      and each Keep the Why dashboard of the family as a pill: green, amber
+      with what needs attention, red with why it was not read. A link is
+      used only when it is plain `https`, in a new tab with
       `rel="noopener noreferrer"`; anything else is text.
-    - Members by role, with how many are humans, agents and online.
-    - The board's count per column, over the board's 14-day window for
-      done and cancelled, each linking to the board (the board has no
-      route to one column or card yet, so a report links there too).
-    - Open requests, those for oneself and by priority, linking to the
-      inbox.
-    - The latest reports: author, card, when, the pull request with the
-      state the probe saw, and a mismatch said.
+    - **README badge**: its state (Off, Members, Agents online), the badge
+      as the hub serves it while on, the snippet with **Copy**; an owner or
+      admin changes it in Project settings, where the change takes a reason.
 
     Links and members come from what the header already read. The counts
     come from `GET …/overview`, which is read again on `task_*`,
