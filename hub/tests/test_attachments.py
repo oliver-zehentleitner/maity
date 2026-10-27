@@ -174,6 +174,27 @@ def test_without_a_configured_store_uploads_say_so(
     assert refused.json()["error"]["code"] == "attachments_not_configured"
 
 
+def test_without_a_configured_store_every_attachment_call_says_so(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = flow.human(make_client, migrated)
+    flow.project(owner, "maity")
+    calls = (
+        owner.get("/projects/maity/attachments/att-anything0000"),
+        owner.get("/projects/maity/attachments/att-anything0000/content"),
+        owner.get(
+            "/projects/maity/attachments/att-anything0000/content",
+            headers={"If-None-Match": '"abc"'},
+        ),
+        owner.get("/projects/maity/attachments?status=pending"),
+        owner.get("/projects/maity/attachments"),
+        owner.delete("/projects/maity/attachments/att-anything0000"),
+    )
+    for answer in calls:
+        assert answer.status_code == 409, answer.text
+        assert answer.json()["error"]["code"] == "attachments_not_configured"
+
+
 def test_a_file_over_the_cap_is_payload_too_large_before_it_is_read(
     owner: flow.Human, monkeypatch: pytest.MonkeyPatch
 ) -> None:

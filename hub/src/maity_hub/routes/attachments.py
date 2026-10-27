@@ -153,6 +153,7 @@ def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
 def get_attachment(
     slug: str, attachment_id: str, request: Request, caller: AnyCaller
 ) -> JSONResponse:
+    blobs.store_of(settings_of(request))  # every attachment call: configured, or 409
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
@@ -165,6 +166,7 @@ def get_attachment(
 @router.get("/projects/{slug}/attachments/{attachment_id}/content")
 def get_content(slug: str, attachment_id: str, request: Request, caller: AnyCaller) -> Response:
     settings = settings_of(request)
+    store = blobs.store_of(settings)  # also before a 304: configured, or 409
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
@@ -176,7 +178,7 @@ def get_content(slug: str, attachment_id: str, request: Request, caller: AnyCall
     headers = {**HEADERS, "ETag": tag}
     if _matches(request.headers.get("if-none-match"), tag):
         return Response(status_code=304, headers=headers)
-    data = blobs.store_of(settings).get(blobs.key_of(row.project_id, row.id))
+    data = store.get(blobs.key_of(row.project_id, row.id))
     if data is None or hashlib.sha256(data).hexdigest() != row.sha256:
         raise ApiError(500, "internal", "the stored bytes do not match their digest")
     if row.kind == "image":
@@ -189,6 +191,7 @@ def get_content(slug: str, attachment_id: str, request: Request, caller: AnyCall
 
 @router.get("/projects/{slug}/attachments")
 def list_pending(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
+    blobs.store_of(settings_of(request))  # every attachment call: configured, or 409
     if request.query_params.get("status") != "pending":
         raise invalid({"status": "unknown"}, "only status=pending is listed")
     narrowed = request.query_params.get("uploaded_by")
