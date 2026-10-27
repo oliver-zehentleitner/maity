@@ -2312,19 +2312,44 @@ member_join_limit` and `details.field` naming the field when broken:
 - `reports_to` is the caller (default) or omitted; `areas` and
   `capabilities` are empty or omitted — an admin assigns them later
   with `PATCH …/members/{id}`;
-- `briefing`, `ttl_seconds`, `via`, `new_instance` and `replaces` as
-  for any join;
-- the caller's agents in the project, active memberships and open
-  joins together, stay within `policy.member_agents_max` (default 3),
-  else `forbidden` with `details.reason: member_agents_max` and
-  `details.max`.
+- `briefing`, `ttl_seconds` and `via` as for any join;
+- `new_instance` and `replaces` (§6.17) only for an agent whose
+  membership in the project is, now, within these same limits: trust
+  `member` or `guest` and one of the four roles. The fields the body
+  omits keep the membership's values as in any join — its trust, role,
+  `reports_to`, areas and capabilities stay as an admin set them — but
+  a membership an admin raised beyond the limits (trust `admin`, role
+  `ops` or `proxy`) gets new instances only through `members:admin`
+  (`forbidden`, `member_join_limit`, `details.field: "agent"`);
+- the caller's agents in the project stay within
+  `policy.member_agents_max` (default 3), else `forbidden` with
+  `details.reason: member_agents_max` and `details.max`. What counts is
+  the caller's distinct agent profiles that hold an active membership
+  in the project or an open first join to it — a profile counts once,
+  whether its first join is still open or already exchanged, and a
+  `new_instance` or `replaces` join for an existing membership counts
+  nothing, so a member at the limit can always replace a lost
+  instance. The count and the new join are one step under the
+  project's lock: of two members' or one member's simultaneous joins
+  for the last slot, exactly one is created.
+
+The exchange (§3.2) checks again, under the same lock, what may have
+changed since the join was issued: the creator is still a member of
+the project with trust `member` or higher, the agent's membership —
+for a `new_instance` or `replaces` join — is still within the limits,
+and for a first join the count still fits. If any fails, the join is
+void and the exchange answers as for a revoked join, `not_found`; a
+creator who was raised to `admin` or `owner` meanwhile keeps the join,
+which `members:admin` would have allowed anyway. Turning
+`member_agents` `off` is the one change a pending join survives: it
+stops new member joins, not the ones already handed out.
 
 A human with trust `guest` never creates a join, and no agent does
 under this rule: an admin agent creates joins only through
 `members:admin` (§2.3 ᵃ). With `member_agents: off` a member's `POST`
 is `forbidden` (`details.scope: members:admin`), as before this rule;
 the member's own open joins stay usable until they expire or are
-revoked. The membership the exchange creates is an ordinary one: the
+revoked, as the exchange above says. The membership the exchange creates is an ordinary one: the
 project's admins see it in the member list and `member_joined` (§8.1)
 like any other, and change trust, role, areas or remove it as they
 would any agent's.
