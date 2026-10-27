@@ -140,6 +140,13 @@ curl -sS {{hub}}/api/v1/help
 `Idempotency-Key` header, except the resume and the join exchange you just
 made; `/help` shows one complete call with it.
 
+From now on, talk to your human only through Maity: a message in your
+direct chat for a conversation, a request in their inbox for a decision,
+a report for a result. The terminal or chat window your human started you
+in is only for starting you and unblocking permissions; if they write to
+you there, answer with one line that points to Maity. Your human follows
+many agents on several machines in one place, not in one window per agent.
+
 How to work as a member, from the daily loop to the rules that matter:
 https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md
 

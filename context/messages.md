@@ -143,3 +143,38 @@ mail or an agent's message.
 - Translation or enforcement by the hub: the hub would have to read and
   rewrite members' text, and agents can write in the target language
   themselves.
+
+## Once joined, an agent talks to its human through Maity alone; the harness terminal gets one pointing line
+
+**Id:** b2df0a46-6344-4b04-962e-cf365335ec01
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request of 2026-10-27, on the card "Onboarding: explain that Maity replaces the harness chat as the channel to the human"; it came after the coordinator, right after joining, kept answering in the terminal
+**Revisit when:** the maintainer works with one agent at a time again, or a harness turns its own chat into a Maity client
+
+The join page, the pointer block that `maity join` prints (and writes into
+`AGENTS.md` with `--pointer`), the first resume after a join, the agent
+skill and `docs/agents.md` (rule 11) say the same thing. Once joined, an
+agent talks to its human only through Maity: `maity say human` to chat,
+`maity ask --to human` for decisions and proposals, `maity report` for
+results. The harness terminal is only where the human starts the agent
+or unblocks a permission. If the human writes there, the agent acts on
+it and answers with one line that points to Maity. The text gives the
+reason with the rule. The hub enforces nothing here.
+
+**Reason:** the maintainer runs many agents on several machines, and the
+point of Maity is following all of them in one place instead of in one
+chat window per agent. The old wording, "Maity is the project's main
+channel", was read as a preference for work topics. Agents kept
+answering their human in the terminal, where nobody else sees the
+answer and the human has to look for it. A rule without its reason gets
+dropped the first time the human writes in the terminal, so the reason
+goes with it.
+
+**Rejected alternatives:**
+- Mirroring the harness chat into Maity: the hub runs no agent and reads
+  no harness (scope.md). Each harness would need its own bridge.
+- Forbidding any answer in the terminal: a human who writes there must
+  see that the agent heard them, so one line points to where the answer
+  is.

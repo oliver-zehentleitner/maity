@@ -628,6 +628,8 @@ def _action(spec: str, body_source: str | None) -> dict[str, Any]:
 def cmd_ask(args: argparse.Namespace) -> int:
     body = _ask_body(args)
     session = Session()
+    if "to" in body:
+        body["to"] = _address(session, body["to"])
     request = session.client.call("POST", session.project_path("requests"), body=body)
     rid, rclass, rstatus = (_field(request, k) for k in ("id", "class", "status"))
     return _done(args, request, f"asked {rid} ({rclass}, {rstatus})")
@@ -1243,6 +1245,8 @@ def cmd_say(args: argparse.Namespace) -> int:
     except argparse.ArgumentTypeError as exc:
         raise UsageError(str(exc)) from None
     text = _say_body(args.body, attach)
+    if to != "human" and (args.type is not None or Session().data.get("owner_id") != to):
+        to = _address(Session(), to)  # a handle or a former one names the member (§6.24)
     to_owner = to == "human"
     if not to_owner and args.type is None:
         # A reply to your own human is the chat of your conversation (§8.4, §9); to anyone
@@ -1592,7 +1596,7 @@ def cmd_takeover(args: argparse.Namespace) -> int:
         )
     body: dict[str, Any] = {"reason": _text(args.reason, "--reason")}
     if args.to:
-        body["to"] = args.to
+        body["to"] = _address(session, args.to)
     path = session.project_path("tasks", card_id, "takeover")
     takeover = _takeover_call(session, "POST", path, body)
     if args.json:
@@ -1991,26 +1995,100 @@ def _one(items: list[dict[str, Any]], which: str, keys: tuple[Callable[[Any], An
 
 
 def _placement(session: Session, which: str) -> dict[str, Any]:
-    """The active placement with id `which`, or the one of the agent with that id or handle."""
-    found = _one(
-        [p for p in _placements(session) if isinstance(p.get("id"), str)],
-        which,
-        (lambda p: p.get("id"), lambda p: _obj(p.get("agent")).get("id"),
-         lambda p: _obj(p.get("agent")).get("handle")),
-        "active placement",
-    )  # fmt: skip
-    return found
+    """The active placement with id `which`, or the one of the member `which` names. The name
+    is resolved against the whole member list first, aliases and the ambiguity rule included
+    (§6.24, §8.6): the placements alone would pick one of two members sharing a name, or a
+    current handle over another member's alias, for a call that stops an agent."""
+    placements = [p for p in _placements(session) if isinstance(p.get("id"), str)]
+    exact = [p for p in placements if p["id"] == which]
+    if len(exact) == 1:
+        return exact[0]
+    member = resolve_member(_members(session), which, strict=False)
+    if member != which or any(_obj(p.get("agent")).get("id") == which for p in placements):
+        found = [p for p in placements if _obj(p.get("agent")).get("id") == member]
+        if len(found) != 1:
+            named = onboarding.inline(which) + (f" ({member})" if member != which else "")
+            raise CommandError(f"no single active placement for {named} in this project")
+        return found[0]
+    # No member has that name: the placements' own handles, still refusing two matches.
+    return _one(placements, which, (lambda p: _obj(p.get("agent")).get("handle"),),
+                "active placement")  # fmt: skip
 
 
-def _member_id(session: Session, which: str) -> str:
-    """The member id for an agent named by id or handle."""
+def _members(session: Session) -> list[dict[str, Any]]:
     answer = session.client.call("GET", session.project_path("members"))
-    members = [
+    return [
         m for m in (answer.get("items") if isinstance(answer, dict) else None) or []
         if isinstance(m, dict) and isinstance(m.get("id"), str)
     ]  # fmt: skip
-    member = _one(members, which, (lambda m: m.get("id"), lambda m: m.get("handle")), "member")
-    return str(member["id"])
+
+
+def _names_of(member: dict[str, Any]) -> list[str]:
+    """A member's current handle and its aliases, the names an argument may use (§6.24)."""
+    aliases = member.get("aliases")
+    names = [member.get("handle"), *(aliases if isinstance(aliases, list) else [])]
+    return [n.casefold() for n in names if isinstance(n, str) and n]
+
+
+def resolve_member(members: list[dict[str, Any]], which: str, strict: bool = True) -> str:
+    """The member id `which` names: an id; a handle, current or an alias (§6.24); or a global
+    name `owner/handle`, where either part may be an alias. A current handle does not beat
+    an alias: several candidates are refused as ambiguous unless exactly one of them is a
+    human whose current handle it is, as the hub resolves a mention (§8.6). A name no member
+    has is refused, or with `strict` off given back as it is, for the hub to judge."""
+    for member in members:
+        if member["id"] == which:
+            return str(member["id"])
+    owner, slash, handle = which.casefold().rpartition("/")
+    if slash:
+        by_id = {m["id"]: m for m in members}
+
+        def owned(m: dict[str, Any]) -> bool:
+            name = m.get("name")
+            if isinstance(name, str) and name.casefold().startswith(f"{owner}/"):
+                return True
+            return owner in _names_of(by_id.get(m.get("owner_id"), {}))
+
+        found = [m for m in members if m.get("kind") == "agent" and handle in _names_of(m)]
+        found = [m for m in found if owned(m)]
+    else:
+        found = [m for m in members if handle in _names_of(m)]
+        if len(found) > 1:
+            current = [
+                m for m in found
+                if m.get("kind") == "human" and str(m.get("handle")).casefold() == handle
+            ]  # fmt: skip
+            found = current if len(current) == 1 else found
+    if len(found) == 1:
+        return str(found[0]["id"])
+    shown = onboarding.inline(which)
+    if not found and not strict:
+        return which
+    if not found:
+        raise CommandError(f"no member {shown} in this project, by id, handle or former handle")
+    names = ", ".join(sorted(onboarding.label(m) for m in found))
+    raise CommandError(f"{shown} could mean {names}; name one by its global name or id")
+
+
+# What an addressee may be besides a member (§7, §8.4): passed on as given.
+_TOKENS = ("all", "human", "owner")
+_TOKEN_PREFIXES = ("role:", "trust:", "area:", "member:")
+
+
+def _address(session: Session, to: str, members: list[dict[str, Any]] | None = None) -> str:
+    """An addressee with a handle in it resolved to the member id (§6.24): `<handle>` and
+    `<handle>#<instance>` (§6.17). Tokens, ids and names no member has go on unchanged: the
+    hub answers for those as before."""
+    if to in _TOKENS or to.startswith(_TOKEN_PREFIXES):
+        return to
+    who, hash_, instance = to.partition("#")
+    member = resolve_member(members if members is not None else _members(session), who, False)
+    return f"{member}{hash_}{instance}"
+
+
+def _member_id(session: Session, which: str) -> str:
+    """The member id for a member named by id, handle, former handle or global name."""
+    return resolve_member(_members(session), which)
 
 
 def _placement_line(p: dict[str, Any]) -> str:
@@ -2679,9 +2757,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--task", required=True, type=_id, help="the task id the report is for")
     p.add_argument(
         "--summary",
-        required=True,
-        help="one or two sentences on what was done; with --no-code, the result itself",
+        help="one or two sentences on what was done; with --no-code, the result itself; "
+        "- reads it from stdin",
     )
+    p.add_argument("--summary-file", dest="summary_file", metavar="FILE",
+                   help="the summary from FILE, Markdown with code spans safe")  # fmt: skip
     p.add_argument(
         "--no-code", action="store_true", help="the result is not code: no git facts are sent"
     )
@@ -2720,7 +2800,13 @@ def build_parser() -> argparse.ArgumentParser:
         "line is the title, the rest the summary. With --option values the answer is one click; "
         "without, it is free text.",
     )
-    p.add_argument("question", help="first line: the title; further lines: the context")
+    p.add_argument(
+        "question",
+        nargs="?",
+        help="first line: the title; further lines: the context; - reads it from stdin",
+    )
+    p.add_argument("--body-file", dest="body_file", metavar="FILE",
+                   help="the question from FILE instead")  # fmt: skip
     p.add_argument(
         "--to",
         required=True,
@@ -2788,9 +2874,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("card", type=_id, help="the card id")
     p.add_argument(
-        "-m", "--last", dest="message", metavar="LAST", required=True, help="the step just finished"
-    )
-    p.add_argument("--next", required=True, help="the step to take next")
+        "-m", "--last", dest="message", metavar="LAST",
+        help="the step just finished; - reads it from stdin",
+    )  # fmt: skip
+    p.add_argument("--last-file", dest="message_file", metavar="FILE",
+                   help="the step just finished, from FILE")  # fmt: skip
+    p.add_argument("--next", help="the step to take next; - reads it from stdin")
+    p.add_argument("--next-file", dest="next_file", metavar="FILE",
+                   help="the step to take next, from FILE")  # fmt: skip
     p.add_argument(
         "--no-code", action="store_true", help="the card is not code: no branch or head is sent"
     )
@@ -2822,6 +2913,10 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="CONVERSATION",
         help="write in a chat, its id as `maity chats` prints it; no TO, --type or --task",
     )
+    p.add_argument("--body-file", dest="body_file", metavar="FILE",
+                   help="the message from FILE; or give - as the message to read stdin. "
+                   "Markdown with `code` spans goes this way, never inline in double "
+                   "quotes, where the shell runs them")  # fmt: skip
     p.add_argument(
         "--attach",
         action="append",
@@ -3406,11 +3501,90 @@ def _pause_note(event: dict[str, Any], member_id: Any) -> str | None:
     return "your pause was lifted; you can take new work again."
 
 
+def _say_body_after_options(args: argparse.Namespace, extra: list[str]) -> bool:
+    """`maity say <to> --type T "…"`: argparse fills both optional positionals before the
+    options and leaves the message over. Taken as the message when it is the one thing left
+    and no message was given; anything else stays an error."""
+    if getattr(args, "handler", None) is not cmd_say or args.body is not None:
+        return False
+    if args.to is None or args.chat is not None or len(extra) != 1:
+        return False
+    if extra[0].startswith("-") and extra[0] != "-":  # `-` is the message from stdin
+        return False
+    args.body = extra[0]
+    return True
+
+
+# Where each command's free text lives: (attribute, its --…-file attribute, the flag named in
+# errors, required). A value of `-` reads standard input, once per command.
+TEXT_ARGS: dict[Handler, tuple[tuple[str, str, str, bool], ...]] = {
+    cmd_ask: (("question", "body_file", "the question", True),),
+    cmd_report: (("summary", "summary_file", "--summary", True),),
+    cmd_checkpoint: (
+        ("message", "message_file", "-m", True),
+        ("next", "next_file", "--next", True),
+    ),
+}
+
+
+def _texts(args: argparse.Namespace) -> tuple[tuple[str, str, str, bool], ...]:
+    handler = getattr(args, "handler", None)
+    if handler is cmd_say:  # with --chat the text is the first positional
+        return (("to" if args.chat is not None else "body", "body_file", "the message", False),)
+    return TEXT_ARGS.get(handler, ()) if handler is not None else ()
+
+
+def _read_text_file(path: str, flag: str) -> str:
+    try:
+        return Path(path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise UsageError(f"{flag}: cannot read {path}: {exc}") from None
+
+
+# What the shell leaves where it ran a `code` span or a $(…) inside double quotes: two
+# spaces between words, or a space before punctuation.
+_EATEN = re.compile(r"\w  +\w|\w +[.,;:!?)](?:\s|$)")
+
+
+def _load_texts(args: argparse.Namespace) -> None:
+    """Resolve `-` and the `--…-file` flags into the text arguments, before the command runs,
+    and warn about text that looks like the shell already ran parts of it."""
+    stdin_used = False
+    for attr, file_attr, flag, required in _texts(args):
+        value, path = getattr(args, attr, None), getattr(args, file_attr, None)
+        if path is not None:
+            if value is not None:
+                raise UsageError(f"{flag}: give the text or a file, not both")
+            setattr(args, attr, _read_text_file(path, flag))
+        elif value == "-":
+            if stdin_used:
+                raise UsageError("only one text can come from stdin (-); use a file for the other")
+            stdin_used = True
+            setattr(args, attr, sys.stdin.read().rstrip("\n"))
+        elif value is None:
+            if required:
+                raise UsageError(f"{flag} is required (as text, - for stdin, or a file)")
+            continue
+        elif (gap := _EATEN.search(value)) is not None:
+            _err(
+                f"warning: {flag} has a gap where a word could have been ({gap[0]!r}): if it "
+                "held `code` or $(…) in double quotes, the shell ran it. Pass Markdown with a "
+                "quoted heredoc (- <<'EOF') or a file"
+            )
+        text = getattr(args, attr)
+        if isinstance(text, str) and text.count("`") % 2:
+            _err(f"warning: {flag} has an odd number of backticks: a `code` span is not closed")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args, extra = parser.parse_known_args(argv)
+    if extra and not _say_body_after_options(args, extra):
+        parser.error(f"unrecognized arguments: {' '.join(extra)}")
     handler: Handler = args.handler
     Session.on_request = getattr(args, "on_request", None)
     try:
+        _load_texts(args)
         return handler(args)
     except (
         state.StateError,

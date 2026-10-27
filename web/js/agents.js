@@ -93,6 +93,8 @@ window.Maity = window.Maity || {};
         h("button", { type: "button", class: "small", onclick: edit }, m.briefing ? "Edit briefing" : "Write a briefing"),
         status.el);
     };
+    box.edit = () => edit();
+    box.hasText = () => !!m.briefing;
     const edit = () => {
       const id = "briefing-" + m.id;
       const text = M.dom.sendOnCtrlEnter(h("textarea", { id, rows: "6" }));
@@ -154,7 +156,10 @@ window.Maity = window.Maity || {};
     }
     const id = "pause-" + m.id;
     const reason = h("input", { id, placeholder: "Why it stopped" });
-    return h("form", {
+    // Folded until Pause… in the card's Actions menu opens it (the
+    // designer's pass part 3): an open form on every card made each one twice
+    // as long.
+    const form = h("form", {
       class: "pause",
       onsubmit: (e) => {
         e.preventDefault();
@@ -163,7 +168,22 @@ window.Maity = window.Maity || {};
       },
     },
     h("label", { for: id }, "Pause"), reason, h("button", { type: "submit" }, "Pause"),
+    h("button", { type: "button", onclick: () => { form.hidden = true; reason.value = ""; } }, "Cancel"),
     h("p", { class: "hint" }, PAUSE_EFFECT), status.el);
+    form.hidden = true;
+    form.openPause = () => { form.hidden = false; reason.focus(); };
+    return form;
+  }
+
+  // The card's Actions menu (the designer's pass part 3): what an admin
+  // does to the agent, folded into one control in the card's header.
+  function actionsMenu(pause, briefing) {
+    const items = () => [
+      pause && pause.openPause ? { label: "Pause…", onSelect: pause.openPause } : null,
+      briefing && briefing.edit ? { label: briefing.hasText() ? "Edit briefing" : "Write a briefing", onSelect: briefing.edit } : null,
+    ].filter(Boolean);
+    if (!items().length) return null;
+    return M.menuButton({ label: "Actions", class: "agent-actions", face: ["Actions ", h("span", { "aria-hidden": "true" }, "▾")], items }).el;
   }
 
   // One failing credentials call costs that card its credentials section,
@@ -264,13 +284,17 @@ window.Maity = window.Maity || {};
         const s = m.session;
         const p = presenceNodes(m);
         live[m.id] = p;
+        const pause = ctx.canAdmin ? pauseControl(ctx, m) : null;
+        // A hub that does not know briefings yet has no such key.
+        const briefing = ctx.canAdmin && m.kind === "agent" && "briefing" in m ? briefingControl(ctx, m) : null;
         return h("article", { class: "profile", "aria-label": m.display_name },
           h("header", null,
             M.avatar(m, 28),
             p.dot,
             h("h3", null, M.dom.memberRef(ctx, m.id)),
             h("span", { class: "handle" }, "@" + M.dom.handleOf(ctx, m)),
-            p.label),
+            p.label,
+            actionsMenu(pause, briefing)),
           h("dl", { class: "facts" },
             h("dt", null, "Owner"), h("dd", null, M.dom.memberRef(ctx, m.owner_id)),
             h("dt", null, "Role"), h("dd", null, m.role),
@@ -291,9 +315,8 @@ window.Maity = window.Maity || {};
               m.paused.by && m.paused.by !== m.id ? [" by ", M.dom.memberRef(ctx, m.paused.by)] : null, ": " + m.paused.reason,
               m.paused.by && m.paused.by !== m.id ? h("span", { class: "hint" }, " " + PAUSED_EFFECT) : null)
             : null,
-          ctx.canAdmin ? pauseControl(ctx, m) : null,
-          // A hub that does not know briefings yet has no such key.
-          ctx.canAdmin && m.kind === "agent" && "briefing" in m ? briefingControl(ctx, m) : null,
+          pause,
+          briefing,
           // Its owner gives it their preferences (§19.4); a hub without them has no key.
           M.preferences && m.owner_id === ctx.me.id && "owner_preferences" in m ? M.preferences.ownerToggle(ctx, m) : null,
           creds[i].error
