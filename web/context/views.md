@@ -1381,3 +1381,26 @@ keyboard prints them are found on it at once.
 Ctrl+Enter"): the button's name for a screen reader and every test of it
 would change, and a narrow composer has less room for it. The tooltip
 alone: it is not seen without a mouse resting on the button.
+
+## The instance admin area shows one section at a time
+
+**Id:** 4c499cf2-cd9d-4ce1-be8d-639aa32306b6
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the designer's pass part 3 on #371 (tsk-w2xnkrwf147m), 2026-10-27: the admin page was one scroll of about 5,000 px (Statistics, Users, Mail settings, Landing page, Instance information)
+**Revisit when:** a section needs a link of its own (a route per section), or the area grows past one row of buttons
+
+`#/admin` reads every section the hub serves as before, then shows one:
+a row of buttons at the top names them (`aria-pressed` on the shown
+one), and the page opens on the first, Statistics. A section the hub
+turns out not to serve leaves the row with its section. The others stay
+in the page, hidden, so a form half filled in keeps what was typed.
+
+**Reason:** the admin comes for one thing at a time; five long sections
+under each other hid all but the first below the fold.
+
+**Rejected alternative:** a sticky list of anchors over the whole page,
+the designer's other option: the scroll stays 5,000 px, only the jump is
+shorter. A route per section (`#/admin/users`): `#/admin/users` is the
+older Users page already, and links into a section were not asked for.
