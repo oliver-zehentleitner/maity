@@ -809,6 +809,7 @@ must not tell whether a project exists.
 the Swarm tab: it would hide the public view from the people who decide
 to show it. Generated avatars on the public page: they come from member
 ids, which the public body leaves out by design.
+
 ## Agents are shown by owner/handle only where the short handle is shared in the project, and one's own profiles always
 
 **Id:** d21eff03-cd0b-4977-9e9f-85eb7cc5cbed
@@ -836,6 +837,7 @@ it to the human first.
 **Rejected alternative:** the long form for every agent in every view:
 noise for the common case. Translating the refusal in each composer:
 six places to keep in step instead of one.
+
 ## A join for an agent that is already a member asks which instance it makes, replace preselected
 
 **Id:** 48b11115-3f26-4f0b-b3c6-7e50cb6d9b90
@@ -1319,6 +1321,7 @@ it: revoking is per credential, and an agent may hold several, so the
 menu would need a second choice the credential list already makes. A
 dialog for the pause: the folded form keeps its hint and status in
 place and needs no focus trap.
+
 ## The header with the lockup is in the page itself; loading and failure stand centred under it
 
 **Id:** d48f94c1-fbdf-4f81-b16d-896fe74535ce
@@ -1351,6 +1354,7 @@ waits for every deferred script. A class on `main` that the router
 removes: one more step every path to a view must remember. The error box
 as the failure: red in an empty screen reads as a crash, and a file path
 as its title is the system talking to itself.
+
 ## The keys that send stand beside the send button, named as the keyboard prints them
 
 **Id:** dbb154d5-b5cf-4e9d-884f-0e9467a6788a
@@ -1410,6 +1414,7 @@ Settings already asks for it; a second form would duplicate that.
 badge on the overview: they would need the reason field too, or change a
 logged policy without one. A Contract link guessed for any forge: a
 wrong path shape would be a dead link that looks right.
+
 ## The instance admin area shows one section at a time
 
 **Id:** 4c499cf2-cd9d-4ce1-be8d-639aa32306b6
@@ -1456,6 +1461,7 @@ reads like one.
 **Rejected alternative:** a separate card route without the board: the
 board's filters and scroll, kept for the way back, would be lost. The
 panel above the columns, as before: the length of the page.
+
 ## A chat opens on its newest page in two requests; older pages on scroll-up
 
 **Id:** fcc59a72-46a0-4741-9d6f-abada05edab6
@@ -1558,6 +1564,7 @@ the projects' row lists projects, and the gear menu holds what is not a
 project's.
 
 **Alternatives:** unknown.
+
 ## Agents are added in Members: Add at the head of the agents' table, open joins as seats under it
 
 **Id:** 621d28a8-36f5-4ebd-a90a-f7d729d7af34
