@@ -541,6 +541,7 @@ def apply_address(
         kind="security",
         human_id=human_id,
         to=wanted,
+        extra_headers={"_purpose": "verify"},
         subject="[Maity] Confirm your address",
         body=(
             f"Someone asked to send Maity mail from {public_url} to {wanted}.\n\n"

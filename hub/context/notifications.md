@@ -240,4 +240,3 @@ answered `False` and failed closed).
   shared lock, and registration needs it to void the other pending registrations in the same
   transaction.
 - A lock on the human's row: it would not serialize two accounts racing for one address.
-
