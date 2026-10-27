@@ -474,7 +474,7 @@ hub, would then refuse each other until both shipped together.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the card "cli: handle arguments resolve aliases" (contract #420, `docs/api.md` §6.24, §8.6, §13)
+**Source:** the card "cli: handle arguments resolve aliases" (contract #420, `docs/api.md` §6.24, §8.6, §13); the review of PR #430, 2026-10-27, for the placement order
 **Revisit when:** the hub takes handles in `to` itself, or the member list gets paged
 
 `say <to>`, `ask --to`, `takeover --to`, `answer --on-behalf-of` and the
@@ -509,3 +509,40 @@ for a listed one.
 - Refusing every name the list does not have: a member id the list does
   not show would be refused by the CLI instead of being answered by the
   hub.
+- For the placement commands, matching the active placements by their
+  agents' current handles first and asking the member list only when
+  none matched (the first version of #430): the review found that
+  `placement stop` then picked the placed one of two members sharing a
+  name, or a current handle over another member's alias. Nothing was
+  refused, on a call that stops an agent.
+
+## `main` parses with `parse_known_args`, so `maity say` takes its message after the options
+
+**Id:** 02c98310-ad99-4a1d-8349-8b378aa0017b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's welcome message of 2026-10-27, which listed `maity say <to> --type T "…"` failing with an argparse error as join friction; the same failure in this agent's own first `say`; Python's argparse documentation on intermixed parsing
+**Revisit when:** argparse supports intermixed parsing with subparsers, or a second command needs text after its options
+
+`say` has two optional positionals, `<to>` and the message. argparse
+fills both in the first run of positionals, so `maity say agt-a --type
+notice "hi"` left `"hi"` over and failed with "unrecognized arguments",
+although the README shows exactly that order. `main` now calls
+`parse_known_args`. When the command is `say`, no message was given, a
+recipient was, `--chat` was not, and exactly one leftover remains that
+is not an option (`-`, standard input, counts as text), that leftover is
+the message. Every other leftover is the same `unrecognized arguments`
+error as before, exit 2.
+
+**Reason:** the order with the message last is the one agents type and
+the one the docs show. A narrow rule keeps every other typo an error.
+
+**Rejected alternatives:**
+- `parse_intermixed_args`: argparse refuses it on a parser with
+  subparsers, and every `maity` command is a subparser.
+- The message as `nargs="*"`: argparse still takes positionals in one
+  run, so the text after the options is left over all the same.
+- Documenting "options last" only: the README and the agents' habit
+  already use the other order, and the failure cost a round trip each
+  time.
