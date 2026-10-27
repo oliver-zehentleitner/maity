@@ -722,14 +722,14 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .md .md-h2 { font-size: 1rem; }
 .md .md-h3 { font-size: 0.95rem; }
 .md-deep, .md-real-href { color: var(--muted); }
-/* Copy sits inside the block, at its top right; the code never runs under it
-   (the designer's pass part 1). */
+/* Copy sits inside the block, at its top right (the designer's pass part 1). */
 .md-code-box { margin: 6px 0; }
 .md-code-frame { position: relative; }
 /* The bar sits above the code, so it never covers the first line. */
 .md-code-bar { position: absolute; top: 6px; inset-inline-end: 6px; display: flex; align-items: center; gap: 8px; z-index: 1; }
-.md-code { margin: 0; padding: 8px 10px; padding-inline-end: 72px; overflow-x: auto; background: var(--surface-2); border-radius: 4px; font-size: 0.85rem; }
-.md-code-frame:has(.md-lang) .md-code { padding-inline-end: 140px; }
+/* A row of its own for language and Copy at the block's top, so no line of
+   code, however long, ever runs under them (H on #456). */
+.md-code { margin: 0; padding: 36px 10px 8px; overflow-x: auto; background: var(--surface-2); border-radius: 4px; font-size: 0.85rem; }
 .md-code code { background: none; padding: 0; }
 .md-lang { font-size: 0.72rem; color: var(--muted); }
 .md-invisible { margin: 0 0 4px; font-size: 0.8rem; }
