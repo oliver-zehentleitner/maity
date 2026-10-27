@@ -3189,6 +3189,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && cpNote.parentNode === setupRow("maity_badge").parentNode && !text(byId("project-setup-hint")).includes("badge")
     && main.querySelectorAll("button").find((b) => b.textContent === "Create project").classList.contains("primary"),
     "create: the Maity badge's consequence right under its checkbox; Create project is primary");
+  // The policy select names the presets; what one means is the hint under it, following the choice.
+  expect(byId("project-preset").querySelectorAll("option").map((o) => text(o)).join() === "Hierarchical,Solo"
+    && text(byId("project-preset-hint")).startsWith("Reviewers move cards to done"),
+    "create: the policy options are the presets' names, the hint says what the chosen one means");
+  byId("project-preset").value = "solo"; byId("project-preset").dispatch("change");
+  expect(text(byId("project-preset-hint")).startsWith("The holder moves its own card"), "create: the hint follows the chosen preset");
+  byId("project-preset").value = "hierarchical"; byId("project-preset").dispatch("change");
   // The hub's refusal of an option is said at the options.
   const spPost = win.Maity.api.post;
   win.Maity.api.post = (p, b) => (p === "/projects" ? Promise.reject(new win.Maity.api.ApiError("does not validate", 400, p, "invalid", { fields: { "setup.maity_badge": "not_a_boolean" } })) : spPost(p, b));
