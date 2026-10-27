@@ -419,7 +419,9 @@ Three security rules follow from the review of the contract change
   path}`, answered `go` by a human owner; it fits only that call, is
   used once and expires 24 hours after the answer, and the header is
   signed. An unbound go would let one old answer authorise any later
-  admin call.
+  admin call. The go must come from the owner directly, never relayed:
+  a relayed go is unverifiable, so the one thing that unlocks admin
+  power comes from the owner's own session.
 - Only an owner grants trust `admin` or `owner` or the role `proxy`, on
   every path: a proxy records "the owner's" answers, so whoever
   appoints it speaks for the owner.
