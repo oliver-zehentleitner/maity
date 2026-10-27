@@ -1522,6 +1522,19 @@ mail_outbox = Table(
     **MYSQL_TABLE,
 )
 
+# The admissions of the hour, per budget kind (docs/api.md §16.2): one row a kind, locked
+# for the check and the admission together, so of any number of workers exactly the ones the
+# budget has room for are admitted. `window_start` is when the hour began; it rolls when an
+# hour has passed. Counted when a mail is admitted, not when it is sent.
+mail_budget = Table(
+    "mail_budget",
+    metadata,
+    Column("kind", String(16), primary_key=True),
+    Column("window_start", UtcDateTime, nullable=False),
+    Column("admitted", Integer, nullable=False),
+    **MYSQL_TABLE,
+)
+
 # What notification mail already carried (docs/api.md §18.5): one row per human and item
 # (`e:<seq>` or `r:<n>`), so an item goes out once, and when each human's last hourly and
 # daily digest left. `stamp` is what `listing.stamp` read at the last pass and `waiting`
