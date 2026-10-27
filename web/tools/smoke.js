@@ -3662,6 +3662,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   gcLongN = 2001;
   await fireIntervals(); await tick(); await tick(); await tick();
   expect(gcLast() === "10001", "read along: a new message shows");
+  // More than a page between two re-reads (H on #452): what is shown is let go, the gap read on scroll-up in order.
+  gcLongN = 2101;
+  await fireIntervals(); await tick(); await tick(); await tick();
+  const gcSeqs = () => main.querySelectorAll(".group-chat li.msg").map((li) => Number(li.attrs["data-seq"]));
+  expect(gcSeqs().length === 50 && gcSeqs()[0] === 10052 && gcLast() === "10101" && btn(main.querySelector(".group-chat .earlier"), "Show earlier messages"),
+    "read along: more than a page between re-reads drops what no longer meets it; the gap comes on scroll-up");
+  btn(main.querySelector(".group-chat .earlier"), "Show earlier messages").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(gcSeqs().length === 100 && gcSeqs()[0] === 10002 && gcSeqs().every((x, i, a) => !i || x === a[i - 1] + 1), "read along: the gap is read back in order, nothing missing");
+  // A long tail drawn and the reader at the newest: the re-read lets the oldest go, as an arrival does.
+  for (let n = 0; n < 5; n++) { btn(main.querySelector(".group-chat .earlier"), "Show earlier messages").click(); for (let k = 0; k < 4; k++) await tick(); }
+  const gcList2 = main.querySelector(".group-chat ol.messages");
+  Object.assign(gcList2, { scrollHeight: 9000, clientHeight: 400, scrollTop: 8600 });
+  await fireIntervals(); await tick(); await tick(); await tick();
+  expect(gcSeqs().length === 100 && gcLast() === "10101", "read along: at the newest, a long tail is let go on the re-read too " + gcSeqs().length);
   win.Maity.api.get = (p) => (p.startsWith("/projects/guestlab/conversations/cnv-0301/messages") ? Promise.reject(new win.Maity.api.ApiError("Not found", 404, p, "not_found", {})) : gcOutGet(p));
   await fireIntervals(); await tick(); await tick();
   expect(text(main).includes("You no longer read this chat: your agent left it, or left the project"), "read along: an access that ended is said on the next re-read");

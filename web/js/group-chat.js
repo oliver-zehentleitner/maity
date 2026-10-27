@@ -467,7 +467,7 @@ window.Maity = window.Maity || {};
     }, 0);
     // An observer is in no audience (§9.2): its view re-reads what is new.
     // From outside the project no event says a message was removed, so the
-    // window is read again whole; a 404 means the access has ended.
+    // newest page is read again; a 404 means the access has ended.
     if (observer && ctx.outsider) {
       ctx.every(30000, async () => {
         try {
@@ -476,7 +476,18 @@ window.Maity = window.Maity || {};
           const page = await M.api.get(path + "?before=" + Number.MAX_SAFE_INTEGER + "&limit=" + parts.PAGE);
           const fresh = page.items;
           const from = fresh.length ? fresh[0].seq : Infinity;
-          const next = all.filter((m) => m.seq < from).concat(fresh);
+          const newestShown = all.length ? all[all.length - 1].seq : 0;
+          // More came than one page holds: what is shown no longer meets the
+          // page, so it is let go, and scrolling up reads the gap in order.
+          const gap = fresh.length && from > newestShown && page.earlier !== null && page.earlier !== undefined && all.length > 0;
+          let next = gap ? fresh.slice() : all.filter((m) => m.seq < from).concat(fresh);
+          if (gap) { earlier = page.earlier; drawEarlier(); }
+          // At the newest with a long tail drawn: the oldest are let go, as in add().
+          if (next.length > parts.KEEP && parts.atBottom(messages)) {
+            next = next.slice(next.length - parts.PAGE * 2);
+            earlier = next[0].seq;
+            drawEarlier();
+          }
           // Drawn again only on a change: the list is a live region.
           const sig = (list) => JSON.stringify(list.map((m) => [m.seq, m.body, !!m.redacted]));
           if (sig(next) !== sig(all)) {
