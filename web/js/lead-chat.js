@@ -116,13 +116,22 @@ window.Maity = window.Maity || {};
     };
     const name = (t) => t.member.display_name + (found.multiProject ? " · " + t.project.name : "")
       + (t.member.role === "proxy" ? " (your proxy)" : "");
+    // One opening at a time: a second click while a chat is being found or
+    // made does nothing, so no second group chat is made (H on #459).
+    let opening = false;
+    const once = (act) => {
+      if (opening) return;
+      opening = true;
+      status(null);
+      act().catch(status).finally(() => { opening = false; });
+    };
     const face = [M.icons && M.icons.lead ? M.icons.lead(18) : null, h("span", { class: "lead-button-label" }, "Lead")];
     if (list.length === 1) {
       const t = list[0];
       const own = t.member.owner_id === ctx.me.id;
       const a = h("a", { class: "bell lead-button", href: own ? t.ctx.link("chat", t.member.id) : "#",
         "aria-label": "Talk to the lead: " + name(t), title: "Talk to the lead: " + name(t) }, face);
-      if (!own) a.addEventListener("click", (e) => { e.preventDefault(); status(null); open(t.ctx, t.member).catch(status); });
+      if (!own) a.addEventListener("click", (e) => { e.preventDefault(); once(() => open(t.ctx, t.member)); });
       return a;
     }
     // Per project, its leads and, with more than one, a group chat with all.
@@ -140,10 +149,10 @@ window.Maity = window.Maity || {};
         const items = [];
         projects.forEach((p, i) => {
           if (i) items.push({ separator: true });
-          list.filter((t) => t.project.slug === p.slug).forEach((t) => items.push({ label: name(t), onSelect: () => { status(null); open(t.ctx, t.member).catch(status); } }));
+          list.filter((t) => t.project.slug === p.slug).forEach((t) => items.push({ label: name(t), onSelect: () => once(() => open(t.ctx, t.member)) }));
           if (p.members.length > 1) {
             items.push({ label: "Group chat with all leads" + (found.multiProject ? " · " + p.name : ""),
-              onSelect: () => { status(null); openGroup(p.ctx, p.members).catch(status); } });
+              onSelect: () => once(() => openGroup(p.ctx, p.members)) });
           }
         });
         return items;

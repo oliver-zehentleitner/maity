@@ -5485,6 +5485,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   leadMenu.querySelectorAll(".menu-item").find((b) => b.textContent === "Group chat with all leads").click(); await tick(); await tick();
   expect(JSON.stringify(leadWrites) === JSON.stringify([["/projects/maity/conversations", { title: "Talk to the leads", participants: [leadA.id, leadB.id] }]]),
     "lead: the group chat with all leads is made with exactly them " + JSON.stringify(leadWrites));
+  // A double click while the first is on its way makes one group chat, not two (H on #459).
+  leadWrites.length = 0;
+  let leadRelease;
+  win.Maity.api.getAll = () => new Promise((r) => { leadRelease = () => r({ items: [] }); });
+  leadMenu.querySelector("button").click(); await tick();
+  leadMenu.querySelectorAll(".menu-item").find((b) => b.textContent === "Group chat with all leads").click(); await tick();
+  leadMenu.querySelector("button").click(); await tick();
+  leadMenu.querySelectorAll(".menu-item").find((b) => b.textContent === "Group chat with all leads").click(); await tick();
+  leadRelease(); await tick(); await tick(); await tick();
+  expect(leadWrites.length === 1, "lead: a second click while the first is on its way makes nothing more " + leadWrites.length);
   expect(win.Maity.leadChat.leadControl(leadCtx, { multiProject: false, list: [] }) === null, "lead: no one to reach, no button");
   win.Maity.api.getAll = leadGetAll; win.Maity.api.post = leadPost; win.Maity.groupChat.served = leadServed;
 
