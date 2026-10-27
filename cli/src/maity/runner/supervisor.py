@@ -118,7 +118,14 @@ def valid(p: Any) -> bool:
         isinstance(p.get("id"), str)
         and PLACEMENT_ID.match(p["id"]) is not None
         and isinstance(p.get("project"), str)
-        and workspace.TOKEN.match(p["project"]) is not None
+        and workspace.FULL_NAME.match(p["project"]) is not None
+        and isinstance(p.get("project_id"), str)
+        and workspace.TOKEN.match(p["project_id"]) is not None
+        and isinstance(p.get("project_aliases", []), list)
+        and all(
+            isinstance(a, str) and workspace.FULL_NAME.match(a) is not None
+            for a in p.get("project_aliases", [])
+        )
         and isinstance(generation, int)
         and not isinstance(generation, bool)
         and generation >= 1
@@ -340,7 +347,7 @@ class Supervisor:
     ) -> None:
         """Find where a placement runs, or should, and act on it there."""
         rec = self.records.get(p["id"])
-        name = session_name(p["project"], p["workspace"]["clone"])
+        name = session_name(p["project_id"], p["workspace"]["clone"])
         found = labelled.get(p["id"])
         where: str | None
         mine: Session | None
@@ -580,7 +587,8 @@ class Supervisor:
 
     def _refusal(self, p: dict[str, Any], target: Target) -> tuple[str, str | None] | None:
         limits = self.cfg.limits
-        if p["project"] not in limits.projects:
+        names = [p["project"], *p.get("project_aliases", [])]
+        if not any(name in limits.projects for name in names):  # a renamed project stays in
             return ("project_refused", None)
         repository = p["workspace"].get("repository") or ""
         if not config.repository_allowed(repository, limits.repositories):
@@ -611,7 +619,7 @@ class Supervisor:
         return 0
 
     def _launch(self, p: dict[str, Any], rec: Record, now: float, target: Target) -> int:
-        name = session_name(p["project"], p["workspace"]["clone"])
+        name = session_name(p["project_id"], p["workspace"]["clone"])
         refused = self._refusal(p, target)
         if refused is not None:
             rec.enter(now, "failed", refused[0], detail=refused[1])
@@ -620,14 +628,20 @@ class Supervisor:
         if harness.id not in adapters.READY:
             return self._wait(rec, f"no adapter for {harness.id} in this version", name)
         as_user = target.as_user
+        agent = p.get("agent") or {}
         try:
-            place = workspace.locate(
-                target.workspaces, p["project"], p["workspace"]["clone"], target.host
+            place = workspace.find(
+                self.cfg.state_dir,
+                target.workspaces,
+                p["project_id"],
+                [p["project"], *p.get("project_aliases", [])],
+                p["workspace"]["clone"],
+                {v for v in (agent.get("id"), agent.get("handle")) if isinstance(v, str)},
+                target.host,
             )
         except workspace.Refused as refused_:
             rec.enter(now, "failed", refused_.reason, detail=refused_.detail)
             return 0
-        agent = p.get("agent") or {}
         owner = agent.get("id") or agent.get("handle") or ""
         repository = p["workspace"].get("repository") or ""
         if agent.get("id") and agent.get("handle"):  # recorded under the handle before a join

@@ -673,7 +673,7 @@ change (a warning), and finally `GET /health` on the hub
 url = "https://maity.example.org"
 
 [limits]
-projects = ["maity"]
+projects = ["oliver/maity"]   # full names <owner>/<slug>; an earlier name of a project matches too
 repositories = ["github.com/oliver-zehentleitner/maity"]   # or "github.com/oliver-zehentleitner/*"
 
 [harness.claude-code]
@@ -707,8 +707,15 @@ otherwise) and then starts, restarts, stops, adopts or ends sessions:
 - **Clean environment.** The tmux server starts under `env -i` with only
   `HOME`, `PATH` (= `agent_path`), `LANG` and `TERM`, so `SSH_AUTH_SOCK`,
   `MAITY_STATE_DIR` and the runner's own variables never reach an agent.
-- **Clones.** Each clone is `<workspaces>/<project>/<clone>`, recorded in
-  `<state_dir>/workspaces.json`. The runner runs `git clone` only into a
+- **Clones.** Each clone is `<workspaces>/<project id>/<clone>`, recorded in
+  `<state_dir>/workspaces.json`. The project id (`prj-…`) is fixed, so a
+  renamed or transferred project (`docs/api.md` §6.25) finds its clone and
+  the agent's credential in it again. A clone recorded before the project
+  namespace, under `<workspaces>/<slug>/<clone>`, is taken over in place on
+  the first pickup of the same agent and recorded under the id; it is never
+  moved. `limits.projects` takes full names (`oliver/maity`); a bare slug is
+  a configuration error, since a slug is unique only within its owner's
+  namespace. The runner runs `git clone` only into a
   missing directory and never runs git in an existing clone; it parses
   `.git/config` instead.
 - **Restarts.** A process that exits is restarted after `10 s × 2^n`
@@ -932,7 +939,7 @@ maity runner logs agent-f [--follow]   # a placement's session output (by id or 
 maity runner approve agent-f           # with limits.require_local_approval: let it start
 maity runner stop-all [--grace 30]     # end every agent; refused while the service runs
 maity runner gc --revoked [--yes]      # workspaces whose credential is revoked: list, then remove
-maity runner workspace claim maity/agent-h --agent agt-h   # record a clone made by hand
+maity runner workspace claim prj-7k2m9q/agent-h --agent agt-h   # record a clone made by hand
 ```
 
 `gc` asks the hub through each clone's own `maity`, so the runner never

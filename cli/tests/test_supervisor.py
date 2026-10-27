@@ -19,7 +19,7 @@ url = "https://hub.example"
 state_dir = "{root}/st"
 
 [limits]
-projects = ["maity"]
+projects = ["oliver/maity"]
 repositories = ["github.com/oliver-zehentleitner/*"]
 max_agents = {max_agents}
 
@@ -44,7 +44,8 @@ def load(root: Path, max_agents: int = 2) -> config.Config:
 
 def placement(n: int = 3, **overrides: Any) -> dict[str, Any]:
     data: dict[str, Any] = {
-        "id": f"plc-000{n}", "project": "maity", "generation": 1, "desired": "running",
+        "id": f"plc-000{n}", "project": "oliver/maity", "project_id": "maity",
+        "generation": 1, "desired": "running",
         "agent": {"id": f"agt-{n}", "handle": f"agent-{n}", "member": True,
                   "credential_expected": True},
         "harness": "stub", "mode": "supervised", "model": None, "target": None,
@@ -297,7 +298,7 @@ def test_a_new_generation_restarts_a_running_session(world: Any) -> None:
 @pytest.mark.parametrize(
     ("change", "expected"),
     [
-        ({"project": "other"}, ("project_refused", None)),
+        ({"project": "anna/other"}, ("project_refused", None)),
         ({"workspace": {"clone": "a", "repository": "https://github.com/x/y"}},
          ("repository_refused", None)),
         ({"harness": "claude-code"}, ("harness_refused", None)),
@@ -780,11 +781,14 @@ def test_session_names_cannot_collide() -> None:
 
 def test_two_placements_whose_names_would_have_collided_both_run(world: Any) -> None:
     sup, backend, _, clock, logs = world
-    sup.cfg = replace(sup.cfg, limits=replace(sup.cfg.limits, projects=("ab", "ab-cd")))
-    first = placement(3, project="ab", workspace={"clone": "cd-ef", "repository": REPO})
-    second = placement(4, project="ab-cd", workspace={"clone": "ef", "repository": REPO})
+    projects = ("oliver/ab", "oliver/ab-cd")
+    sup.cfg = replace(sup.cfg, limits=replace(sup.cfg.limits, projects=projects))
+    first = placement(3, project="oliver/ab", project_id="ab",
+                      workspace={"clone": "cd-ef", "repository": REPO})  # fmt: skip
+    second = placement(4, project="oliver/ab-cd", project_id="ab-cd",
+                       workspace={"clone": "ef", "repository": REPO})  # fmt: skip
     for p in (first, second):
-        place = workspace.locate(sup.cfg.local.workspaces, p["project"], p["workspace"]["clone"])
+        place = workspace.locate(sup.cfg.local.workspaces, p["project_id"], p["workspace"]["clone"])
         (place.path / ".git" / "maity").mkdir(parents=True)
         (place.path / ".git" / "config").write_text(f'[remote "origin"]\n\turl = {REPO}\n')
         (place.path / ".git" / "maity" / "credential").write_text("mty1.crd-x.y")
@@ -1220,3 +1224,76 @@ def test_codex_is_refused_where_the_repository_grants_commands(world: Any) -> No
     sup.update([placement(harness="codex")])
     sup.tick()
     assert states(reports) == [("failed", "harness_refused", None)]
+
+
+# --- the project namespace (§6.25, §15.5) ------------------------------------------------------
+
+
+def test_the_workspace_is_keyed_on_the_project_id_and_survives_a_rename(world: Any) -> None:
+    sup, backend, _, _, _ = world
+    recorded(sup.cfg)  # <workspaces>/maity/agent-3, maity being the project id here
+    renamed = placement(project="oliver/maity-hub", project_aliases=["oliver/maity"])
+    sup.update([renamed])
+    settle(sup)
+    assert [s[0] for s in backend.started] == ["maity_maity_agent-3"]
+
+
+def test_a_configured_old_name_still_matches_through_the_aliases(world: Any) -> None:
+    sup, backend, reports, _, _ = world
+    recorded(sup.cfg)  # the configuration names oliver/maity
+    sup.update([placement(project="oz/maity", project_aliases=["oliver/maity"])])
+    settle(sup)
+    assert len(backend.started) == 1
+    sup.update([placement(n=4, project="oz/other", project_aliases=[])])
+    settle(sup)
+    assert ("failed", "project_refused", None) in states(reports)
+
+
+def _legacy(cfg: config.Config, slug: str, n: int, agent: str) -> workspace.Workspace:
+    """A clone recorded before the namespace: under the slug, the record naming the slug."""
+    assert cfg.local is not None
+    place = workspace.locate(cfg.local.workspaces, slug, f"agent-{n}")
+    (place.path / ".git" / "maity").mkdir(parents=True)
+    (place.path / ".git" / "config").write_text(f'[remote "origin"]\n\turl = {REPO}.git\n')
+    (place.path / ".git" / "maity" / "credential").write_text("mty1.crd-x.y")
+    workspace.record(cfg.state_dir, place, agent, f"plc-000{n}")
+    return place
+
+
+def test_a_workspace_from_before_the_namespace_is_taken_over_in_place(world: Any) -> None:
+    sup, backend, _, _, _ = world
+    old = _legacy(sup.cfg, "maity", 3, "agt-3")
+    sup.update([placement(project_id="prj-7k2m9q")])
+    settle(sup)
+    assert len(backend.started) == 1
+    rec = workspace.records(sup.cfg.state_dir)[str(old.path)]
+    assert (rec["project"], rec["legacy_slug"]) == ("prj-7k2m9q", "maity")
+    assert sup.cfg.local is not None
+    assert not (sup.cfg.local.workspaces / "prj-7k2m9q").exists()  # never moved, never cloned
+    found = workspace.find(sup.cfg.state_dir, sup.cfg.local.workspaces, "prj-7k2m9q",
+                           ["oliver/renamed"], "agent-3", set())  # fmt: skip
+    assert found.path == old.path  # found again by the id, whatever the name is now
+
+
+def test_a_legacy_workspace_of_another_agent_is_not_taken_over(world: Any) -> None:
+    sup, _, _, _, _ = world
+    assert sup.cfg.local is not None
+    old = _legacy(sup.cfg, "maity", 3, "agt-other")
+    found = workspace.find(sup.cfg.state_dir, sup.cfg.local.workspaces, "prj-7k2m9q",
+                           ["oliver/maity"], "agent-3", {"agt-3", "agent-3"})  # fmt: skip
+    assert found.path == sup.cfg.local.workspaces.resolve() / "prj-7k2m9q" / "agent-3"
+    assert workspace.records(sup.cfg.state_dir)[str(old.path)]["project"] == "maity"
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"project": "maity"},  # a slug from before the namespace
+        {"project_id": None},
+        {"project_id": "../x"},
+        {"project_aliases": ["maity"]},
+        {"project_aliases": "oliver/maity"},
+    ],
+)
+def test_a_placement_without_a_namespaced_project_is_dropped(change: dict[str, Any]) -> None:
+    assert not supervisor.valid(placement(**change))

@@ -1,6 +1,9 @@
 """A placement's clone (runner design §5.3).
 
-The path is `<workspaces>/<project>/<clone>`, built from validated tokens and checked to stay
+The path is `<workspaces>/<project_id>/<clone>` (§15.5): keyed on the project's fixed id, so a
+renamed or transferred project (§6.25) finds its clone again. A workspace recorded before the
+namespace under `<workspaces>/<slug>/<clone>` is taken over in place (`find`). The path is
+built from validated tokens and checked to stay
 inside `<workspaces>`. Which agent a clone belongs to is the runner's record in
 `<state_dir>/workspaces.json`, never a file in the clone, which the agent can write.
 
@@ -26,6 +29,8 @@ from . import config
 from .asuser import RUNNER, AsUser
 
 TOKEN = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
+# A project as the hub names it since the namespace (§6.25): `<owner>/<slug>`.
+FULL_NAME = re.compile(r"^([a-z0-9][a-z0-9-]{0,62})/([a-z0-9][a-z0-9-]{0,62})$")
 RECORDS = "workspaces.json"
 CLONE_TIMEOUT = 600.0
 STALE_LOCK = 600.0
@@ -73,6 +78,62 @@ def locate(root: Path, project: str, clone: str, host: str = "") -> Workspace:
     if path.parent.parent != base:
         raise Refused("workspace_in_use", "workspace_unrecorded")
     return Workspace(path, project, clone)
+
+
+def find(
+    state_dir: Path,
+    root: Path,
+    project_id: str,
+    names: list[str],
+    clone: str,
+    agents: set[str],
+    host: str = "",
+) -> Workspace:
+    """The workspace of a placement: `<root>/<project_id>/<clone>`, or the clone recorded
+    before the project namespace under the slug of one of the project's `names` (its full
+    name and aliases) for one of `agents` (the agent's id and handle). Such a clone is taken
+    over in place, once: its record is rewritten to the project id, and it is never moved,
+    since the agent may be running in it (§15.5)."""
+    current = locate(root, project_id, clone, host)
+    with _lock:
+        found = records(state_dir)
+        if current.key in found:
+            return current
+        for key, rec in found.items():
+            if isinstance(rec, dict) and rec.get("project") == project_id:
+                taken = _legacy(root, key, clone, host)
+                if taken is not None:
+                    return Workspace(taken, project_id, clone, host)
+        for name in names:
+            full = FULL_NAME.match(name)
+            if full is None:
+                continue
+            try:
+                legacy = locate(root, full[2], clone, host)
+            except Refused:
+                continue
+            rec = found.get(legacy.key)
+            if (
+                isinstance(rec, dict)
+                and rec.get("project") == full[2]
+                and rec.get("agent") in agents
+            ):
+                found[legacy.key] = {**rec, "project": project_id, "legacy_slug": full[2]}
+                state.save_state(state_dir, found, name=RECORDS)
+                return Workspace(legacy.path, project_id, clone, host)
+    return current
+
+
+def _legacy(root: Path, key: str, clone: str, host: str) -> Path | None:
+    """The path of a taken-over record's key, when it is `<root>/<slug>/<clone>` on `host`."""
+    prefix = f"{host}:" if host else ""
+    if not key.startswith(prefix):
+        return None
+    path = Path(key[len(prefix) :])
+    base = root if host else root.resolve()
+    if path.name != clone or path.parent.parent != base or not TOKEN.match(path.parent.name):
+        return None
+    return path
 
 
 def origin(path: Path, as_user: AsUser = RUNNER) -> str | None:

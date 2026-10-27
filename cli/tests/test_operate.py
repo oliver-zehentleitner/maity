@@ -17,7 +17,7 @@ url = "https://hub.example"
 state_dir = "{root}/st"
 
 [limits]
-projects = ["maity"]
+projects = ["oliver/maity"]
 repositories = ["github.com/oliver-zehentleitner/*"]
 require_local_approval = {approval}
 
@@ -34,7 +34,17 @@ def setup(tmp_path: Path, approval: bool = False) -> Path:
     (tmp_path / "st").mkdir(mode=0o700)
     state.save_state(
         tmp_path / "st",
-        {"pid": 1, "placements": [{"id": "plc-0003", "project": "maity", "agent": "agent-f"}]},
+        {
+            "pid": 1,
+            "placements": [
+                {
+                    "id": "plc-0003",
+                    "project": "oliver/maity",
+                    "project_id": "maity",
+                    "agent": "agent-f",
+                }
+            ],
+        },
         name=serve.STATUS_FILE,
     )
     return path
@@ -324,7 +334,12 @@ def test_a_record_pointing_outside_the_workspaces_is_never_followed(
     important = tmp_path / "operator-home" / "important"
     important.mkdir(parents=True)
     records = workspace.records(cfg.state_dir)
-    records[str(important)] = {"project": "maity", "agent": "agt-z", "placement_id": "plc-9"}
+    records[str(important)] = {
+        "project": "oliver/maity",
+        "project_id": "maity",
+        "agent": "agt-z",
+        "placement_id": "plc-9",
+    }
     state.save_state(cfg.state_dir, records, name=workspace.RECORDS)
     assert cli.main(["runner", "gc", "--revoked", "--yes", "--config", str(path)]) == 0
     assert important.exists()
