@@ -3961,6 +3961,64 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(main.querySelector(".attach") && main.querySelector(".attach").hidden, "attachments: once the hub answered 404, the composer offers no Attach files");
   await go("#/p/maity/inbox");
 
+  // Attachments off (§8.7, #477): 409 attachments_not_configured hides upload and delete, files stay as links.
+  win.Maity.attachments.forget();
+  win.location.search = "?attachments=off";
+  win.Maity.api.postRaw = (p, b, t) => { atCalls.push(["RAW", p, t, b.size]); return atRaw(p, b, t); };
+  win.Maity.api.attachmentUrl = (slug, id, download) => "/api/v1/projects/" + slug + "/attachments/" + id + "/content" + (download ? "?download=1" : "");
+  // Before the hub said so (its waiting uploads read as none), an upload is tried: refused in words, the chooser gone.
+  win.Maity.api.getAll = (p) => (/\/attachments\?status=pending&uploaded_by=/.test(p) ? Promise.resolve({ items: [], next_cursor: null }) : atAll2(p));
+  await go("#/p/maity/chat/agt-b"); for (let k = 0; k < 6; k++) await tick();
+  expect(!main.querySelector(".attach").hidden && !main.querySelector("label.attach-button").hidden, "attachments off: before the hub said so, Attach files is offered");
+  await atPick("chat-files", [atFile("late.txt", [0x6c], 1, "text/plain")]);
+  expect(text(main.querySelector(".attach")).includes("Not attached: late.txt: attachments are not set up on this instance")
+    && main.querySelector("label.attach-button").hidden && byId("chat-files").hidden && !main.querySelectorAll(".attach-pending li").length,
+    "attachments off: an upload refused with 409 says so and Attach files goes");
+  win.Maity.api.getAll = atAll2;
+  // One's upload from before, removed after the hub turned them off: said, the list and the chooser gone.
+  win.Maity.attachments.forget();
+  win.Maity.api.getAll = (p) => (/\/attachments\?status=pending&uploaded_by=/.test(p)
+    ? Promise.resolve({ items: [{ id: "att-old", name: "old.txt", size: 3, type: "text/plain", kind: "file", uploaded_by: "hum-maintainer", message_seq: null }], next_cursor: null })
+    : atAll2(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/chat/agt-b"); for (let k = 0; k < 6; k++) await tick();
+  const aoOld = main.querySelectorAll(".attach-earlier li").find((li) => text(li).includes("old.txt"));
+  if (aoOld) {
+    btn(aoOld, "Remove").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(text(main.querySelector(".attach")).includes("Not removed: attachments are not set up on this instance")
+      && main.querySelector(".attach-earlier-box").hidden && main.querySelector("label.attach-button").hidden,
+      "attachments off: removing an upload from before says so; the list and Attach files go");
+  } else expect(false, "attachments off: one's upload from before is offered");
+  win.Maity.api.getAll = atAll2;
+  // A Delete drawn before the hub said so: refused calmly, the button gone.
+  win.Maity.attachments.forget();
+  await go("#/p/maity/inbox"); await go("#/p/maity/chat/agt-b");
+  const aoDel = main.querySelectorAll("li.attach-item").find((li) => btn(li, "Delete"));
+  if (aoDel) {
+    btn(aoDel, "Delete").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(!btn(aoDel, "Delete") && text(aoDel).includes("Not deleted: attachments are not set up on this instance.") && !aoDel.querySelector(".failed"),
+      "attachments off: a delete refused with 409 is said calmly and offered no more");
+  }
+  for (let k = 0; k < 6; k++) await tick();
+  // Known off: the composer offers no files, a message's files stay as links without Delete.
+  await go("#/p/maity/inbox"); await go("#/p/maity/chat/agt-b"); for (let k = 0; k < 6; k++) await tick();
+  const aoLinks = main.querySelectorAll("li.attach-item").filter((li) => li.querySelector("a.attach-link"));
+  expect(main.querySelector(".attach").hidden && aoLinks.length && !aoLinks.some((li) => btn(li, "Delete")),
+    "attachments off: no Attach files, files stay as links, no Delete");
+  // Project settings: said in words, the storage line kept.
+  const aoGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/projects/maity" ? aoGet(p).then((x) => Object.assign({}, x, { attachments: { used: 0, quota: 1024 * 1024 * 1024 } })) : aoGet(p));
+  win.Maity.attachments.forget();
+  await go("#/p/maity/inbox"); await projectSettings(); for (let k = 0; k < 4; k++) await tick();
+  const aoAdmin = main.querySelector(".attach-admin-box");
+  expect(aoAdmin && text(aoAdmin).includes("Attachments are not set up on this instance.") && text(aoAdmin).includes("Stored: 0 B of 1024.0 MB.")
+    && !btn(aoAdmin, "Delete"), "attachments off: settings say so in words and keep the storage line");
+  await projectSettings();
+  win.Maity.api.get = aoGet;
+  win.Maity.api.postRaw = atRaw; win.Maity.api.attachmentUrl = atUrl;
+  win.location.search = "";
+  win.Maity.attachments.forget();
+  await go("#/p/maity/inbox");
+
   // Messages (§8.4): the project's messages, newest first, by type, with mentions, files and removal.
   // A hub that keeps files again: the earlier 404 case left this page thinking it has none.
   if (win.Maity.attachments.forget) win.Maity.attachments.forget();
