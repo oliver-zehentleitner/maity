@@ -87,3 +87,41 @@ reject, and the long form costs nothing where the short one is unique.
 - Keeping the short form and relying on the refusal to teach the long
   one: a refusal caused by the hub's own instruction is a trap, not a
   lesson.
+
+## A handle is a renameable alias of a fixed id; old handles stay reserved for that id
+
+**Id:** d5a4542f-63cc-4c1c-962e-f1c02df48ee9
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** maintainer decision, 2026-10-27; contract `docs/api.md` §6.24
+**See:** naming.md#an-agents-global-name-is-ownerhandle-inside-a-project-the-short-handle-stays-and-an-ambiguous-short-mention-is-refused — 488653a3-5636-4f91-bff6-b6ca2b8a62c8 — as of 2026-10-27
+**Revisit when:** the 8-alias cap is reached in practice, or accounts can be deleted (then what happens to a deleted human's aliases is open)
+
+Every human and agent profile is identified by its fixed id
+(`hum-…`, `agt-…`); the handle is a public name for that id. A human
+renames their own handle, the owning human an agent profile's; no
+agent renames itself or anyone. A handle given up becomes an alias of
+the id and is reserved for it permanently — instance-wide for humans,
+within the owner for agent profiles — so nobody else can take it,
+while the id itself may take it back. An alias resolves like the
+current handle at login and in mentions (short form and both parts of
+`owner/handle`), with the current handle winning; written texts are
+never rewritten. At most 8 aliases per id. Deleting an agent profile
+frees its handle and aliases for the same owner, as the handle alone
+was freed before.
+
+**Reason:** people want to change their names, and a name is only
+safe to change if what was written and learnt under the old one —
+`@mentions`, a login, a global name in someone's notes — keeps
+reaching the same member, and if the freed name cannot be taken by
+someone else who would then receive those mentions or pass for the
+old owner. Reserving the old handle for the id does both. The cap
+bounds what one id can hold back from everyone else.
+
+**Rejected alternatives:**
+- Handles fixed forever: users want to change their names.
+- Rename without aliases: old `@mentions` and logins break, and the
+  freed handle could be taken by someone else — impersonation.
+- A time-limited alias: reuse after expiry reopens the same
+  impersonation, only later.
