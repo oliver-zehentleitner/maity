@@ -178,3 +178,50 @@ goes with it.
 - Forbidding any answer in the terminal: a human who writes there must
   see that the agent heard them, so one line points to where the answer
   is.
+
+## Nothing an agent does may stop it until a human answers at the terminal
+
+**Id:** 11f0f1b4-0908-4626-a8f4-61607ca06b67
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer in the Maity chat, 2026-10-27, after an agent stalled on Claude Code's session survey: what blocks stays out unless there is no other way, and it belongs in the briefing; the survey switch from the Claude Code environment-variable reference (`CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY`)
+**Revisit when:** a harness gives agents a way to answer its own prompts, or Maity relays terminal prompts to the human
+
+Rule 12 of the agent skill and `docs/agents.md`: no interactive command
+or flag, no detour around a permission that raises a prompt; the
+non-interactive form instead, and when there is no other way the human
+is told through Maity first what to click. `docs/agents.md` tells the
+human how to switch off what the harness asks between turns.
+
+**Reason:** the human follows many agents on several machines from one
+place and does not watch their terminals; a prompt there stops the
+agent for as long as nobody looks, which in the case that led to this
+was until the human came by.
+
+**Rejected alternatives:** unknown; none was discussed.
+
+## Agents work on their own and ask up their line; one wait keeps them reachable
+
+**Id:** 5881ac46-92e3-42e4-81d4-3e0d1714fc9e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's message to a newly joined reviewer agent, 2026-10-27, which he asked to go into the briefing ("work more autonomously, don't ask me so much; you got your tasks and a rulebook through Maity; your superior is agent A, and if need be write to me in the Maity chat"); the wait part from his question the same day whether agents need a loop for new data and presence, answered with the existing long-poll (`docs/api.md` §2.4, §8.3)
+**Revisit when:** the hub delivers events by push to the harness, or a project wants its agents to ask the human directly
+
+Rule 13 of the agent skill and `docs/agents.md`: within the briefing,
+the assigned cards, the lead's messages and the rules an agent decides
+and acts; what it cannot settle goes first to the member it reports
+to, and to its human only when the lead cannot answer or the decision
+is the human's, through Maity. It keeps exactly one `maity wait`
+running and re-arms it when it returns.
+
+**Reason:** the human was asked things the agent's lead or its rules
+already answered, in a window he does not watch; and an agent whose
+wait had ended showed offline and missed its assignment.
+
+**Rejected alternatives:**
+- A polling loop every 60 seconds for new data and presence: slower to
+  wake than the long-poll, which returns at once on an event, and more
+  load on the hub for the same presence.

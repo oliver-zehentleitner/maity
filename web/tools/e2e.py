@@ -906,7 +906,9 @@ def id_links_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
     # phone full width above the columns, nothing wider than the screen.
     panel = page.locator("aside.card-panel")
     expect(panel).to_be_visible()
-    expect(panel.locator("#card-panel-title")).to_have_text(card_id)
+    # The panel is the card: its id in the bar, its title the heading.
+    expect(panel.locator(".card-panel-head .card-id")).to_have_text(card_id)
+    expect(panel.locator("#card-panel-title")).to_be_focused()
     expect(panel.locator(".card-history-list li").first).to_contain_text("created the card")
     run.a11y(page, "board, a card's panel")
     page.set_viewport_size({"width": 390, "height": 844})
@@ -1788,9 +1790,11 @@ def notifications_step(run: Run, page: Page) -> None:
         expect(page.locator("main")).not_to_contain_text("Could not read your notifications")
         no_problems(run, "notifications")
         return
-    # The header's right block: Chat, Notifications, the gear, the profile, in one row also on a phone.
+    # The header's right block: Chat, the Lead button where there is a lead to reach, Notifications,
+    # the gear, the profile, in one row also on a phone.
     order = page.evaluate("Array.from(document.querySelectorAll('header .me > *')).map((e) => e.className)")
-    assert len(order) == 4 and "chat-button" in order[0] and "bell" in order[1], f"header order: {order}"
+    lead = 1 if len(order) > 1 and "lead-button" in order[1] else 0
+    assert len(order) == 4 + lead and "chat-button" in order[0] and "bell-box" in order[1 + lead], f"header order: {order}"
     page.set_viewport_size({"width": 390, "height": 844})
     # One row: every button's vertical middle within the others' height (a pixel of alignment is no wrap).
     boxes = page.evaluate("Array.from(document.querySelectorAll('header .me > *')).map((e) => { const r = e.getBoundingClientRect(); return [r.top, r.bottom]; })")

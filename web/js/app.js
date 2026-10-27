@@ -221,7 +221,7 @@ window.Maity = window.Maity || {};
     const password = h("input", { id: "login-password", name: "password", type: "password", autocomplete: "current-password", required: true });
     const status = statusLine();
     const form = h("form", {
-      class: "login",
+      class: "login door",
       onsubmit: async (e) => {
         e.preventDefault();
         status.busy("Signing in…");
@@ -257,7 +257,11 @@ window.Maity = window.Maity || {};
       h("button", { type: "button", onclick: logout }, "Sign out")));
   }
 
-  async function logout() {
+  // back: a dashboard route ("/#/…", checked as a sign-in's next is) to
+  // show once signed out, e.g. the invitation that offered Not you? Sign
+  // out (H on #461); anything else, and none, is the root.
+  async function logout(back) {
+    const after = safeNext(back);
     // The held long-poll goes before the session does (§18.2).
     M.notify.halt();
     // Signing out on purpose is no session that ended under the page.
@@ -271,7 +275,7 @@ window.Maity = window.Maity || {};
       if (M.clearChatDrafts) M.clearChatDrafts();
       M.notify.stopBrowser();
       M.notify.state.settings = null;
-      window.location.hash = "";
+      window.location.hash = after ? after.slice(1) : "";
       render();
     }
   }
@@ -918,6 +922,16 @@ window.Maity = window.Maity || {};
     if (focused) fresh.focus();
   }
 
+  // The Lead button beside Chat, once whom it reaches is known
+  // (js/lead-chat.js); none where it reaches no one.
+  function renderLead(ctx) {
+    const me = document.getElementById("header").querySelector(".me");
+    const chat = me && me.querySelector("a.chat-button");
+    if (!chat || !ctx.chatFound || !M.leadChat) return;
+    const lead = M.leadChat.leadControl(ctx, ctx.chatFound);
+    if (lead) me.insertBefore(lead, chat.nextSibling);
+  }
+
   // The counts changed: only the switcher is replaced, so an open State &
   // absence panel and the tab row's scroll position stay as they are.
   function renderSwitcher(ctx) {
@@ -996,7 +1010,6 @@ window.Maity = window.Maity || {};
       absence
         ? h("p", { class: "flag absence" }, "While away: " + absence.scope)
         : null,
-      ctx.scope === "project" && M.leadChat ? M.leadChat.control(ctx) : null,
       ctx.scope === "project"
         ? h("nav", { class: "views", "aria-label": "Views" },
           NAV.filter((item) => offered(ctx, item) && item.tab !== false).map((item) => h("a", {
@@ -1005,6 +1018,15 @@ window.Maity = window.Maity || {};
           }, item.label, tabCount(ctx, item.route))))
         : null);
     header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
+    // Whom the Lead button reaches: known at once in a project, read for every project outside one.
+    header.chatCtx = ctx;
+    if (M.leadChat) {
+      M.leadChat.found(ctx).then((f) => {
+        if (document.getElementById("header").chatCtx !== ctx) return;
+        ctx.chatFound = f;
+        renderLead(ctx);
+      }, () => {});
+    }
   }
 
   // The field a link into Settings asked for (the overview's Set the
@@ -1351,13 +1373,6 @@ window.Maity = window.Maity || {};
         const elsewhere0 = M.observe ? await M.observe.note(ctx) : null;
         if (elsewhere0) append(root, elsewhere0);
       } else if (where.scope === "all") {
-        if (M.leadChat) {
-          const leadSlot = h("div");
-          append(root, leadSlot);
-          // The inbox stays usable while each project's agents are being read.
-          M.leadChat.all(ctx).then((el) => { if (seq === renderSeq) append(leadSlot, el); })
-            .catch(() => { if (seq === renderSeq) append(leadSlot, h("p", { class: "muted" }, "Could not read project leads.")); });
-        }
         await M.views.inbox(ctx, root, []);
         // Where one's agents are in projects one is not: read along there.
         const elsewhere = M.observe ? await M.observe.note(ctx) : null;
@@ -1459,6 +1474,7 @@ window.Maity = window.Maity || {};
   }
 
   M.errorBox = errorBox;
+  M.logout = logout;
   M.brandTitle = brandTitle;
   M.statusLine = statusLine;
   M.STATE_LABELS = STATE_LABELS;

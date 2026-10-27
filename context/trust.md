@@ -465,3 +465,32 @@ tester checks the behaviour.
 **Rejected alternatives:** unknown; the default-on setting with an
 owner's switch was the maintainer's own choice, and no other option was
 weighed.
+
+## What trust and role mean is told to every agent by the hub, the same everywhere, not by each project's briefing
+
+**Id:** 6b54d6a0-3251-4471-8b02-d1e8090e8b3f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer in the Maity chat, 2026-10-27: an admin is a project lead who helps the project's and the agents' owners keep the overview and manages the agents, the cards and the project; that belongs in the briefing for new colleagues, globally, because it is the admin role; the texts and their place in the resume packet (`membership.guide`, `docs/api.md` §5.2) are the contract owner's
+**Revisit when:** a project needs a role to mean something other than the hub's text, or the texts have to follow the project's language
+
+The resume packet carries `membership.guide`: one text for the
+membership's trust and one for its role, written into the hub and the
+same on every instance and in every project. The CLI prints it under
+"Your position", before the briefing. The project's or the membership's
+briefing says what to do in this project; the guide says what the
+position is.
+
+**Reason:** in the maintainer's words the admin's job — project lead,
+keeping the overview for the owners, managing agents, cards and project
+— belongs to the admin role itself, so every admin agent should be told
+it on arrival, not only the ones whose project wrote it down.
+
+**Rejected alternatives:**
+- Each project writes it into its onboarding briefing: the maintainer
+  asked for it globally, since it is the role's meaning, not a
+  project's choice; a project's briefing would also be missing it
+  wherever nobody wrote it.
+- A text the instance operator configures: not asked for; unknown
+  whether operators need it.

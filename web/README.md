@@ -151,7 +151,7 @@ stop the page. Mail settings come with the hub's mail (stage 3).
 | `#/new` | create a project; also **+ New project** in the switcher |
 | `#/s/<slug>` | a project's public swarm page, where its owner switched it on; for visitors with or without a session |
 | `#/login` | the login page, always; signed in, the dashboard's start (the root without a session shows the instance's landing page where it has one). `#/login?next=<route>` signs in and goes on to that dashboard route (`/#/…` only, §2.6.5), passed to the password, mail-link and device sign-in calls; the page offers **Create an account** where `GET /auth/methods` says the instance registers |
-| `#/invite/<token>` | an invitation (`js/invite.js`, §3.4), with or without a session: who invites to which project as what, the note, until when, whether it is for one address; signed out **Sign in to accept** and, where the hub registers or the invitation admits, **Create one**, both returning here; signed in **Join <project> as <you>** (`POST …/accept`), then the way into the project; a refusal (address mismatch, already a member, void, project closed, account pending) said in the hub's words with its reason; an unknown, used, expired or revoked link one answer |
+| `#/invite/<token>` | an invitation (`js/invite.js`, §3.4), with or without a session, as one centred card like sign-in and register: the project's logo or monogram, who invites to which project as what, the note, until when, whether it is for one address; signed out **Sign in to accept** and, where the hub registers or the invitation admits, **Create one**, both returning here; signed in **Join <project> as <you>** (`POST …/accept`), then the way into the project; a refusal (address mismatch, already a member, void, project closed, account pending) said in the hub's words with its reason; an unknown, used, expired or revoked link one answer |
 | `#/register?next=<route>` | registration (`js/register.js`, §2.7.1): the address and a password (at least 12 characters, asked twice), `POST /auth/register` with the `next`, then "check your mail" — the same for every address; offered where the instance registers, or where the invitation in `next` admits (§3.4, `registration: sign_in_or_register`), else it says the hub does not create accounts on request. The account is made from the mailed link, which returns to `next`. An account that waits for approval (§2.7.5) sees one page, "Your account waits for the operator's approval", and Sign out |
 | `#/runners` | the runners: small services on the operator's machines that start agents for the projects they are allowed in; **Runners** in the switcher row |
 | `#/observe/<slug>` | reading along in the group chats your agents are in, in a project you are not a member of (`docs/api.md` §9.2); named on `#/all` |
@@ -258,13 +258,16 @@ too.
    file at the reported head on the forge with the entry's id beside it,
    or "No why: <reason>". Subtasks (`docs/api.md` §6.4, `parent`): a
    child stands folded under its parent, whatever its column, behind a
-   toggle with the hub's "Subtasks 1 open of 2"; unfolded, each child with
+   toggle with the hub's counts, "Subtasks · 1 of 2 open"; unfolded, each child with
    its status and a link that opens it; one whose parent is not shown
    (outside the window or filtered away) stands in its column with
    "Subtask of <id>"; a folded child's link unfolds its parent and marks
    its row. A card's title opens it (`js/card-panel.js`): a panel beside
-   the columns, on a phone full width above them, with the card and its
-   controls, the description as Markdown, its links, the open notes
+   the columns (a fixed side panel from 1100 px), on a phone a page of its
+   own with the columns hidden while it is open. The panel is the card: its
+   id in the bar beside **Close**, its title the heading the focus goes to,
+   the controls right under the claim line, then the description as
+   Markdown, its links, the open notes
    (`GET …/tasks/{id}/notes?state=open`) with **Post the note** (`POST
    …/notes`) and the history (`GET …/tasks/{id}/history`, newest first,
    a title's or description's change as its diff); a hub without notes or
@@ -1375,14 +1378,21 @@ web/
 └── context/          why the dashboard is built this way (Keep the Why)
 ```
 
-**Talk to the lead** sits above the project view tabs and appears per project
-on All projects. With coordinator availability data it selects the current
-lead or substitute; on older hubs choose one of your own admin or proxy agents. Your own
-agent opens in direct chat. Another owner's agent opens an existing open
-group of exactly you and that agent, or creates one on click; the agent's
-owner can read along. This does not expand direct-chat access. Agents see
-no control. A hub without group chats shows an error instead of opening an
-unauthorized direct chat.
+The header's **Chat** button, a button like the bell, opens every chat.
+Beside it, the **Lead** button reaches the lead (`js/lead-chat.js`). In a
+project that is the lead the policy names now (with coordinator
+availability data: the current lead or substitute) and one's own proxy;
+on an older hub, one's own admin and proxy agents. Outside a project it
+gathers them from every project, each named with its project. With one to
+reach, a click opens that chat. With several, a small menu lists them, and
+for each project with more than one, a **Group chat with all leads**.
+With none, there is no Lead button. There is no lead strip above the tabs
+or on All projects any more. Your own agent opens in direct chat. Another
+owner's agent opens an existing open group of exactly you and that agent
+(or you and all leads), or creates one on click; the agents' owners can
+read along. This does not expand direct-chat access. Agents get none of
+it. A hub without group chats says so under the header instead of opening
+an unauthorized direct chat.
 
 Held cards show the holder's presence beside the claim. An agent that is
 away, offline or paused shows **silent since HH:MM** in your browser's local
@@ -1466,11 +1476,12 @@ controls for that unimplemented route.
 **Landing page** (`js/landing.js`, `docs/api.md` §16.7). At the root, a
 visitor without a session gets the instance's landing page when the hub's
 `GET /landing` (asked only where its machine form lists the route) says it is on: the large lockup (light or dark with the
-theme), the title (also the tab's), the operator's Markdown drawn by the
-chat's renderer with one addition for this page alone — links to
-dashboard routes (`/#/…`) stay in the page, `https` links open apart,
-anything else and raw HTML stay text — then the button (`cta`) and a
-**Sign in** link. Off, absent or failing, the root is the login page as
+theme, at most 240 px wide), the page's one logo and its h1, the title
+(also the tab's), the button (`cta`), above the fold on a phone, then the
+operator's Markdown drawn by the chat's renderer with one addition for
+this page alone — links to dashboard routes (`/#/…`) stay in the page,
+`https` links open apart, anything else and raw HTML stay text. The
+header holds only the theme menu and **Sign in**, at its right edge. Off, absent or failing, the root is the login page as
 before, and `#/login` is the login page always (in fixture mode the page
 is off, as on a fresh instance; `?landing=on` shows it and `?landing=fail`
 makes its read fail): the landing page never
