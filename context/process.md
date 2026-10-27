@@ -207,9 +207,10 @@ run names.
 
 Every agent building Maity works with Keep the Why. An implementer
 writes a `context/` entry for each decision a pull request makes, in
-that same pull request, one commit per entry, with `ktw-lint` clean. A
-reviewer approves only after a Keep the Why gate: the entry is there,
-in its own commit, and the linter is clean. An agent that writes
+that same pull request, with `ktw-lint` clean (one commit per entry
+until 2026-10-27, see the entry on squash merges below). A reviewer
+approves only after a Keep the Why gate: the entry is there and the
+linter is clean. An agent that writes
 neither code nor reviews — one that rules on a question, for instance —
 has its rulings recorded by the implementer of the change they decide,
 not in a pull request of its own.
@@ -350,3 +351,29 @@ without an agreed place follow in the order they are reviewed.
 same head.
 
 **Alternatives:** none were weighed.
+
+## Context entries need no commit of their own; pull requests stay squash-merged
+
+**Id:** 70b1f348-5885-4b97-95c9-70544e5ee62c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision in the Maity inbox, 2026-10-27, on the coordinator's question
+**See:** process.md#every-agent-uses-keep-the-why-implementers-record-each-decision-in-the-same-pull-request-reviewers-gate-on-it — e534e9f3-a419-4a09-8054-117150592490 — as of 2026-10-27
+
+A `context/` entry goes into the pull request of the change it explains.
+It no longer needs a commit of its own, and pull requests stay
+squash-merged, so on `main` an entry's time is the merge.
+
+**Reason:** the own-commit rule existed so that an entry's Git timestamp
+would record when the reasoning was written. Squash merges fold every
+commit of a pull request into one, so that timestamp never reached
+`main`. The rule cost each implementer extra commits and history
+rewrites without serving its purpose.
+
+**Rejected alternatives:**
+- Rebase-merging pull requests that carry `context/` entries, so that
+  each entry's commit and timestamp survive: recommended by the
+  coordinator, not chosen. It lengthens the history and mixes two merge
+  methods.
+- Keeping the rule as it was: work without effect.

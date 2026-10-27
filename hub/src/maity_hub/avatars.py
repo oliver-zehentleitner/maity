@@ -55,9 +55,10 @@ DECODER = Path(avatar_decode.__file__)
 REASONS = ("dimensions", "undecodable")  # what the decoder may answer (§6.10)
 
 
-def decode(settings: Settings, data: bytes, content_type: str) -> bytes:
-    """The PNG to store, or `invalid` (`details.fields.body`) for an image that is not
-    accepted, or `rate_limited` when every decode slot is taken (§6.10).
+def decode(settings: Settings, data: bytes, content_type: str, mode: str = "avatar") -> bytes:
+    """The PNG to store (with `mode` `attachment`: the re-encoded image file), or `invalid`
+    (`details.fields.body`) for an image that is not accepted, or `rate_limited` when
+    every decode slot is taken (§6.10).
 
     The child runs the decoder file by path under `python -I` with an empty
     environment: neither the hub's settings (the database URL, the forge token) nor its
@@ -74,6 +75,7 @@ def decode(settings: Settings, data: bytes, content_type: str) -> bytes:
         content_type,
         str(settings.avatar_decode_memory_mb * 1024 * 1024),
         str(seconds),
+        *([mode] if mode != "avatar" else []),
     ]
     try:
         done = subprocess.run(
@@ -85,7 +87,7 @@ def decode(settings: Settings, data: bytes, content_type: str) -> bytes:
             env={},
         )
     except subprocess.TimeoutExpired:  # run() has killed it
-        log.warning("avatar decode killed after %ss", settings.avatar_decode_seconds)
+        log.warning("%s decode killed after %ss", mode, settings.avatar_decode_seconds)
         raise invalid({"body": "undecodable"}, "the image did not decode in time") from None
     finally:
         slots.release()
@@ -94,14 +96,15 @@ def decode(settings: Settings, data: bytes, content_type: str) -> bytes:
     detail = done.stderr.decode("utf-8", "replace").strip().splitlines()[-1:] or [""]
     if done.returncode == REFUSED:
         reason = done.stdout.decode("ascii", "replace")
-        log.info("avatar refused: %s (%s)", reason, detail[0][:200])
+        log.info("%s refused: %s (%s)", mode, reason, detail[0][:200])
         reason = reason if reason in REASONS else "undecodable"
         raise invalid({"body": reason}, "the image was not accepted")
     # Killed by a signal (past its memory or CPU limit, or a crash) or failed otherwise:
     # refused, nothing stored, and the operator can tell it from a plain refusal.
     signal = -done.returncode if done.returncode < 0 else None
     log.warning(
-        "avatar decoder exited %s%s: %s",
+        "%s decoder exited %s%s: %s",
+        mode,
         done.returncode,
         f" (signal {signal})" if signal else "",
         detail[0][:200],
@@ -301,3 +304,37 @@ def _projects_of(conn: Connection, member_id: str) -> set[str]:
             )
         ).scalars()
     )
+
+
+class Reencoded:
+    """An attachment's image as the hub stores it (docs/api.md §8.7): the bytes, their
+    type, and the size the stored file's own header states."""
+
+    __slots__ = ("data", "height", "type", "width")
+
+    def __init__(self, data: bytes, type_: str, width: int, height: int) -> None:
+        self.data = data
+        self.type = type_
+        self.width = width
+        self.height = height
+
+
+STORED_TYPE = {
+    "image/png": "image/png",
+    "image/gif": "image/png",  # a GIF keeps its first frame, as a PNG
+    "image/jpeg": "image/jpeg",
+    "image/webp": "image/webp",
+}
+
+
+def decode_attachment(settings: Settings, data: bytes, content_type: str) -> Reencoded:
+    """An attachment's image decoded and encoded again, in the avatar decoder's process,
+    under its budgets and its decode slots (§8.7); `invalid` (`details.fields.body`) for
+    an image that is not accepted, `rate_limited` when every slot is taken."""
+    stored = decode(settings, data, content_type, "attachment")
+    kind = STORED_TYPE[content_type]
+    try:
+        width, height = avatar_decode.dimensions(stored, kind)
+    except avatar_decode.Refused:
+        raise invalid({"body": "undecodable"}, "the image could not be decoded") from None
+    return Reencoded(stored, kind, width, height)

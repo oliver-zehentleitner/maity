@@ -53,6 +53,12 @@ class Settings:
     avatar_decode_seconds: float = 5.0
     avatar_decode_memory_mb: int = 512
     avatar_decodes: int = 2
+    # MAITY_ATTACHMENT_STORE, MAITY_ATTACHMENT_DIR, MAITY_ATTACHMENT_QUOTA (§8.7, §16):
+    # where an attachment's bytes live and how many a project may store. Only the local
+    # store is built; `attachment_dir` unset leaves attachments unconfigured.
+    attachment_store: str = "local"
+    attachment_dir: Path | None = None
+    attachment_quota: int = 1024 * 1024 * 1024
     # MAITY_DB_POOL_SIZE, MAITY_DB_MAX_OVERFLOW: the server database's connection pool
     # (SQLAlchemy's defaults, 5 + 10).
     db_pool_size: int = 5
@@ -116,6 +122,11 @@ class Settings:
                 parse_number(env, "MAITY_AVATAR_DECODE_MEMORY_MB", 512, minimum=128, maximum=8192)
             ),
             avatar_decodes=int(parse_number(env, "MAITY_AVATAR_DECODES", 2, minimum=1, maximum=64)),
+            attachment_store=parse_attachment_store(env),
+            attachment_dir=parse_attachment_dir(env),
+            attachment_quota=int(
+                parse_number(env, "MAITY_ATTACHMENT_QUOTA", 1024**3, minimum=1024, maximum=2**50)
+            ),
             db_pool_size=int(parse_number(env, "MAITY_DB_POOL_SIZE", 5, minimum=1, maximum=500)),
             db_max_overflow=int(
                 parse_number(env, "MAITY_DB_MAX_OVERFLOW", 10, minimum=0, maximum=500)
@@ -130,6 +141,31 @@ class Settings:
             registration=parse_registration(env),
             sign_in_second_factor=parse_second_factor(env),
         )
+
+
+def parse_attachment_store(env: dict[str, str]) -> str:
+    """`local` is the one store built; `s3` is documented (§8.7) and stops the hub with a
+    plain statement, as does anything else."""
+    value = env.get("MAITY_ATTACHMENT_STORE", "").strip() or "local"
+    if value == "s3":
+        raise ConfigError("MAITY_ATTACHMENT_STORE=s3 is not built yet: use local")
+    if value != "local":
+        raise ConfigError(f"MAITY_ATTACHMENT_STORE must be local or s3: {value!r}")
+    return value
+
+
+def parse_attachment_dir(env: dict[str, str]) -> Path | None:
+    """The directory of the local store: absolute, existing and writable when set (§8.7);
+    unset leaves attachments unconfigured."""
+    value = env.get("MAITY_ATTACHMENT_DIR", "").strip()
+    if not value:
+        return None
+    path = Path(value)
+    if not path.is_absolute():
+        raise ConfigError("MAITY_ATTACHMENT_DIR must be an absolute path")
+    if not path.is_dir() or not os.access(path, os.W_OK | os.X_OK):
+        raise ConfigError("MAITY_ATTACHMENT_DIR is not a writable directory")
+    return path
 
 
 def parse_secret_key(value: str) -> bytes | None:
