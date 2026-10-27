@@ -167,6 +167,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `not_claimed` | a takeover on a card nobody holds: claim or assign it instead (§6.19) |
 | 409 | `memory_full` | a memory write beyond its store's total cap (§19.2); `details.store`, `details.cap` |
 | 409 | `coordinator_unavailable` | an agent's `assign`, `assigned_to` or claim on another's behalf while the coordinator and its substitute are out (§6.12); `details.coordinator`, `details.until` |
+| 409 | `namespace_owner` | a demotion below trust `owner`, a removal or an account deletion of a project's namespace owner (§6.25); `details.projects`, the full names |
 | 409 | `project_closed` | claim or task creation while the project is `accepted` or `archived`, an import included; there also creating a group chat or adding a participant to one (§9.2), adding a card link and posting a note (§6.13, §6.16), an attachment upload and a message that names one (§8.7) |
 | 409 | `already_linked` | the same forge item or URL is linked on the card already (`details.link`), or the issue is imported on a card that is not closed (`details.task`) (§6.13, §6.14) |
 | 409 | `idempotency_mismatch` | same `Idempotency-Key`, different body |
@@ -198,6 +199,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `secret_key_missing` | a forge webhook secret is to be stored and the instance has no `MAITY_SECRET_KEY` (§17.4); a second-factor enrolment or verify while the instance has no `MAITY_SECRET_KEY`, or one that no longer opens the stored secrets (§2.8.1) |
 | 409 | `attachment_quota` | an attachment upload would take the project over its quota, or the uploading membership over its pending cap (§8.7); `details.scope` (`project` or `pending`), `details.used`, `details.quota`, and `details.count`, `details.max` for `pending` |
 | 413 | `payload_too_large` | body over the cap (§1.7) |
+| 410 | `project_path_outdated` | a project route in the form before the project namespace (`/projects/{slug}/…`) from a caller that is not an outdated CLI (§6.25); says nothing about the project |
 | 426 | `client_outdated` | a CLI older than the project-namespace release calls a project route (§6.25); `details.minimum` (the lowest CLI version that works), `details.install` (the install line, §3.2) |
 | 429 | `rate_limited` | `Retry-After` is set |
 | 500 | `internal` | an unexpected failure; `details` is `{}`, the message names no internals; the response still carries the envelope and every header of §1.1 |
@@ -260,7 +262,9 @@ state-changing call (`claim`, §13) with it.
 The path carries the major version. Within `v1`, fields and endpoints
 are added, never removed or changed in meaning; a removal or a change of
 meaning is `v2` under its own path, served next to `v1` for a stated
-period. `GET /api/v1/health` reports `api` and the hub's `version`; the
+period. One exception was made before the launch: the project namespace
+(§6.25) changed every project route within `v1`, once, while every caller
+was one of the project's own clients. `GET /api/v1/health` reports `api` and the hub's `version`; the
 resume packet carries both. The CLI sends `User-Agent: maity-cli/<version>`,
 the hub records it on the session.
 
@@ -1121,7 +1125,7 @@ Offered when `email_link` is `true` in §2.6.1. On the login page,
 "Email me a sign-in link" → an address:
 
 ```
-POST /auth/email-link   {"address": "maintainer@example.org", "next"?: "/#/p/maity/board"}
+POST /auth/email-link   {"address": "maintainer@example.org", "next"?: "/#/oliver/maity/board"}
 ```
 
 Unauthenticated. **Always** answers `202 {"expires_in": 900}` and sets
@@ -2089,6 +2093,8 @@ The sensitive calls:
   (`POST /projects/{owner}/{slug}/joins`, §3.1) and a runner enrollment
   (`POST /runners/enrollments`, §15.2),
   and approving a device code (§2.6.2);
+- transferring a project to another namespace owner (`POST
+  /projects/{owner}/{slug}/transfer`, §6.25);
 - the instance admin's changes of instance settings (`PATCH
   /admin/settings/*`, §2.6.6, §16).
 
@@ -2240,7 +2246,7 @@ Response `201`:
   "code": "Q7MD-3XPL-8ZWE",
   "paste_line": "maity join https://join.maity.team/9fK2… --code Q7MD-3XPL-8ZWE",
   "agent_id": "agt-b",
-  "project": "maity",
+  "project": "oliver/maity",
   "via": "join",
   "expires_at": "2026-10-21T14:00:00Z"
 }
@@ -2536,13 +2542,13 @@ person, one project and one trust and role, it is used once, and it expires.
   join's is (§3.1); the `GET` list never shows it again.
 
 ```json
-{ "id": "inv-0007", "project": "maity", "trust": "member", "role": "coder", "address": "anna@example.org",
+{ "id": "inv-0007", "project": "oliver/maity", "trust": "member", "role": "coder", "address": "anna@example.org",
   "note": "…", "created_by": "hum-maintainer", "created_at": "…", "expires_at": "…",
   "used_at": null, "used_by": null, "revoked_at": null, "voided_at": null,
   "url": "https://maity.team/#/invite/9fK2…" }
 ```
 
-**The page.** `GET /invitations/{token}` answers `{project: {slug,
+**The page.** `GET /invitations/{token}` answers `{project: {slug, full_name,
 name, logo_url?}, trust, role, invited_by: {display_name}, note, expires_at,
 address_bound: true|false, registration: "sign_in_or_register" |
 "sign_in_only"}` — enough for the dashboard's `/#/invite/<token>` to
@@ -3626,7 +3632,7 @@ A profile belongs to a human and outlives any session and any project.
 { "id": "agt-b", "handle": "agent-b", "aliases": [], "name": "maintainer/agent-b", "display_name": "Agent B", "owner_id": "hum-maintainer",
   "avatar_url": "/api/v1/avatars/agt-b?v=e4d90b12", "avatar_source": "uploaded",
   "git_identity": { "name": "Agent B", "email": "agent-b@…" },
-  "memberships": [ { "project": "maity", "trust": "member", "role": "coder" } ], "created_at": "…",
+  "memberships": [ { "project": "oliver/maity", "trust": "member", "role": "coder" } ], "created_at": "…",
   "deleted_at": null }
 ```
 
@@ -4712,7 +4718,7 @@ same way:
 
 | Endpoint | Scope | Body |
 |---|---|---|
-| `POST /me/limit` | agent; human | `{"until": "<RFC 3339>", "harness"?: "…", "reason"?: "…"}`; `200` with the member view (for a human, `/me`). `until` must carry an offset (`Z` or `±hh:mm`) and is stored and returned in UTC with `Z` (§1.1); a time without an offset, or anything that is not RFC 3339, is `invalid` (`details.fields.until: "format"`), never read as some local time. `until` in the past or more than 7 days ahead is `invalid` (`details.fields.until`: `past`, `too_far`); `reason` ≤ 200 characters; `harness` defaults to the session's and is `invalid` from a human. A human's limit applies to every membership of the account; a human may add `"show_reason_in": ["<slug>", …]`, the projects whose member view shows `reason` (default `[]`: none, below); from an agent it is `invalid` (`details.fields.show_reason_in: "humans_only"`), since an agent's `reason` is shown as sent anyway; a slug of a project the human is not a member of is `invalid` (`not_a_member`), and `harness` from a human is `invalid` (`agents_only`). `{"until": null}` clears the caller's stored limit, from an agent or a human |
+| `POST /me/limit` | agent; human | `{"until": "<RFC 3339>", "harness"?: "…", "reason"?: "…"}`; `200` with the member view (for a human, `/me`). `until` must carry an offset (`Z` or `±hh:mm`) and is stored and returned in UTC with `Z` (§1.1); a time without an offset, or anything that is not RFC 3339, is `invalid` (`details.fields.until: "format"`), never read as some local time. `until` in the past or more than 7 days ahead is `invalid` (`details.fields.until`: `past`, `too_far`); `reason` ≤ 200 characters; `harness` defaults to the session's and is `invalid` from a human. A human's limit applies to every membership of the account; a human may add `"show_reason_in": ["<full_name>", …]`, the projects whose member view shows `reason` (default `[]`: none, below); from an agent it is `invalid` (`details.fields.show_reason_in: "humans_only"`), since an agent's `reason` is shown as sent anyway; a slug of a project the human is not a member of is `invalid` (`not_a_member`), and `harness` from a human is `invalid` (`agents_only`). `{"until": null}` clears the caller's stored limit, from an agent or a human |
 
 For a human, `offline` is shown and triggers nothing: a human who is
 out for long enough to be covered says so, with `POST /me/limit` or, as
@@ -6235,37 +6241,62 @@ so a handle and an organisation name never collide.
 `slug` alone is unique only within its owner's namespace; a client keeps
 `full_name` or the pair, never `slug` alone.
 
-**Uniqueness.** A slug is taken within a namespace while it is the slug
-**or an alias** of another project of the same owner (below). The check
-holds for `POST /projects`, a rename and a transfer (`invalid`,
-`details.fields.slug: "taken"`).
+**The slug.** The syntax is unchanged (§1.1), and a slug is never one of
+the fixed words that follow a project in a route (`members`, `tasks`,
+`events`, `rules`, `forge`, `transfer`, … — every literal segment of a
+`/projects/{owner}/{slug}/<word>` route in §12, now and later): `invalid`,
+`details.fields.slug: "reserved"`. That keeps every old one-segment route
+(`/projects/maity/tasks/…`) from ever reading as a new two-segment one
+(below).
+
+**Uniqueness.** A full name, once used, belongs to one project forever.
+A slug is taken in a namespace while that namespace owner's id and the
+slug are the current name **or an alias** of any project — whoever owns
+that project now. The check holds for `POST /projects`, a rename and a
+transfer (`invalid`, `details.fields.slug: "taken"`); a project may take
+back its own alias, by a rename or by a transfer back.
 
 **Rename.** `PATCH /projects/{owner}/{slug}` with `{"slug": "<new>"}`, by a
-human with trust `owner` in the project, never an agent. The old slug
-becomes an alias of the project within the owner's namespace.
+human with trust `owner` in the project, never an agent. The old full
+name becomes an alias of the project. It emits `project_updated` with
+`fields: {slug, full_name}` and a ticker item of type `rename` (§17.1)
+`oliver/maity is now oliver/maity-hub`, written as for a handle rename
+(§6.24).
 
 **Transfer.** `POST /projects/{owner}/{slug}/transfer` with
 `{"to": "<hum-id>"}`, by the namespace owner only, human, with the step-up
 of §2.8.4. The receiving human must already hold trust `owner` in the
-project; the slug must be free in their namespace, otherwise `invalid`
+project, and nothing moves into a namespace without its owner's word:
+the call files a `consent` request to the receiver (§7), and the
+transfer happens when they answer `go`; the namespace owner may withdraw
+it until then. At that moment the slug must be free in the receiver's
+namespace, otherwise the answer is refused with `invalid`
 (`details.fields.slug: "taken"`) and nothing changes. The old full name
-becomes an alias. `project_updated` with `changed: ["owner"]` and a
-ticker item of type `rename` (`oliver/maity is now oz/maity`, §17.1),
-written as for a handle rename (§6.24).
+becomes an alias. It emits `project_updated` with `fields: {owner,
+full_name}` and a ticker item of type `rename` (`oliver/maity is now
+oz/maity`, §17.1), written as for a handle rename (§6.24).
 
-**Aliases.** A rename or a transfer adds the full name given up to the
+**The namespace owner stays an owner.** While a human is a project's
+namespace owner, no call demotes them below trust `owner`, removes them
+from the project, or deletes their account: `namespace_owner` (409,
+`details.projects`, the full names). They transfer the project first, or
+close it.
+
+**Aliases.** A rename or a transfer adds the full name given up — the
+pair of the namespace owner's id at that time and the slug — to the
 project's `aliases` (oldest first, at most **8**, `alias_limit` as in
 §6.24; renames and transfers together at most 3 per 24 hours per
-project, `rate_limited`). An alias is never released while the project
-exists and is never given to another project, so an old link can never
-lead somewhere else. A namespace owner's handle rename (§6.24) needs no
+project, `rate_limited`). An alias is never released, not even when the
+project is closed, and is never given to another project, so an old link
+can never lead somewhere else. A namespace owner's handle rename (§6.24) needs no
 alias of its own: the owner's handle aliases already resolve, so
 `<old handle>/<slug>` reaches the same project.
 
 **Resolution.** Wherever the hub takes `{owner}/{slug}` — every
 `/projects/{owner}/{slug}/…` route, the badge, the swarm page — it
-resolves the owner by current handle or alias (§6.24), then the slug by
-current slug or alias within that namespace. A request on an alias is
+resolves the owner by current handle or alias (§6.24) to a human's id,
+then the pair of that id and the slug among every project's current name
+and aliases; by the uniqueness rule above at most one project matches. A request on an alias is
 served as on the current name; the answer carries the current
 `full_name`, and the dashboard replaces the address with it. Requests
 are signed over the path as sent (§2.2), so an alias path verifies like
@@ -6275,17 +6306,26 @@ any other.
 agent never chooses a namespace; the CLI keeps the project's
 `full_name` in its state and refreshes it from every resume (§5.2), so a
 rename or a transfer needs no new join. Join links, invitations and
-runner pairings are tokens and are not affected.
+runner pairings are tokens and keep working; their views carry the
+`full_name` like every other.
 
 **Everywhere else a project is named.** Every project reference in a
-view — `project: {slug, name, …}` in the inbox, notifications, the
-global chat, the preferences, the runner views, the statistics — gains
-`full_name`. Every input that names a project by its slug — the
+view that is an object (`project: {slug, name, …}` in the inbox,
+notifications, the global chat, the invitation page, the statistics)
+gains `full_name`. Every reference that is a bare string
+(`"project": "<…>"` in the join answer, an invitation, an agent profile's
+`memberships`, a runner attachment, a placement, a preferences proposal,
+a jour fixe; a runner's `projects` lists) carries the `full_name`, and
+so does every key that names a project (`by_project` of the
+notification counts, §18). Every input that names a project — the
 limit's `show_reason_in` (§6.12), a runner enrollment's `attach`
-(§15.2), the preferences' `projects[].include` (§19) — takes the
-`full_name` instead; the `Maity-Attached` header of a pairing lists
-full names. The project-scoped rate-limit buckets of the forge webhook
-(§17.4) count per project, as before.
+(§15.2), the preferences' `projects` (§19) — takes the `full_name`; the
+`Maity-Attached` header of a pairing lists full names. The forge
+webhook's buckets (§17.4) key on the path as sent, before anything is
+looked up, as before; a project reachable under several alias paths has
+a budget per path, at most 64 (8 owner aliases × 8 project aliases) —
+accepted, since keying on the resolved project would tell a stranger
+which paths name the same project.
 
 **Card and request references outside the project.** Inside a project
 an id stands alone (`tsk-p94e7njrmg1p`). Wherever a reference is shown
@@ -6298,23 +6338,57 @@ still the identifier; the prefix is display only and is never parsed.
 unique instance-wide and the routes were `/projects/{slug}/…`. The
 migration gives every existing project a namespace owner: the human
 who created it, or, where that account is gone, the earliest human
-with trust `owner`; slugs stay as they are, so no collision can arise.
-The one-segment API routes are not served next to the new ones — a
-two-segment path `/projects/a/b` could be either form — so the hub and
-the CLI change together, in one release before the launch: a CLI older
-than that release receives `client_outdated` (426, `details.minimum`,
-`details.install`) on every project route instead of a misrouted
-answer. Outside the API, where no ambiguity exists, old addresses keep
-working: `GET /badge/{slug}.svg` and `GET /swarm/{slug}` for a project
-that existed before the migration redirect (`301`) to the new form
-permanently, since badges sit in READMEs the hub cannot rewrite, and
-the dashboard rewrites `#/p/{slug}` to `#/{owner}/{slug}` (and `#/s/{slug}`
-to `#/s/{owner}/{slug}`). The forge webhook (§17.4) is configured on the
-forge with its URL, which the hub cannot rewrite either: for a project
-that existed before the migration the hub keeps accepting deliveries at
-`POST /api/v1/projects/{slug}/forge/webhook` — three segments after
-`/projects/`, which no new route has, so it is not ambiguous — and the
-webhook view's `url` shows the new address to move to.
+with trust `owner`; slugs stay as they are, so no collision can arise
+(a slug that is now a reserved word, or a human handle that is now a
+reserved dashboard word, below, stops the migration and is named to the
+operator, who renames it first). Stored values that named a project by
+its slug are rewritten to the full name: open runner enrollments'
+`attach`, limits' `show_reason_in`, the preferences' `projects`, and
+the `action.path` of open requests that carry an action (§7) — the
+call they are bound to is the same call under its new path, so the
+binding holds.
+
+**Old routes.** The one-segment API routes are not served next to the
+new ones. Since no slug is a reserved word, an old path always has a
+reserved word where the new form has a slug (`/projects/maity/tasks`:
+`tasks` cannot be a slug), so the hub recognises it without guessing and
+never routes it to another project: a CLI older than the release
+(`User-Agent: maity-cli/<version>`, §1.6) receives `client_outdated`
+(426, `details.minimum`, `details.install`), every other caller
+`project_path_outdated` (410). Both say nothing about the project: the
+same answer whether the first segment was ever a slug or not.
+
+**Old addresses outside the API.** Badges sit in READMEs, the forge has
+the webhook URL, people have bookmarks; the hub cannot rewrite those.
+The old slug of a project that existed before the migration stays
+frozen to that project for these addresses, through any later rename or
+transfer:
+
+- `GET /badge/{slug}.svg` and `GET /swarm/{slug}` redirect (`301`) to the
+  new form only while the badge, or the public swarm page, is served
+  for that project (§6.20, §6.22); otherwise, and for a slug that never
+  existed, they answer exactly as an unserved badge or swarm page does
+  — the same `not_found`, from the same shared bucket — so the old
+  address tells nobody whether a project exists.
+- `POST /api/v1/projects/{slug}/forge/webhook` keeps accepting
+  deliveries for that project (`forge` is a reserved word, so the path
+  is never a new route). For any other slug it answers exactly as §17.4
+  answers a delivery for a project that does not exist or has no secret
+  — the same `401 webhook_signature` after the same buckets and the
+  same body read. The webhook view's `url` shows the new address to move
+  to.
+- The dashboard rewrites `#/p/{slug}/…` to `#/{owner}/{slug}/…` (and
+  `#/s/{slug}` to `#/s/{owner}/{slug}`) from the viewer's own project
+  list (`GET /projects`); a slug that is not among the viewer's projects
+  shows the same "not found" as any unknown project, with no lookup.
+
+**Dashboard routes and handles.** The dashboard's address for a project
+is `#/{owner}/{slug}`, next to its own top-level routes (`#/login`,
+`#/invite/…`, `#/requests/…`, `#/sign-in/…`, `#/all`, `#/s/…`,
+`#/p/…`, `#/admin`, `#/settings`, and every one added later). Those
+words are reserved as human handles from this change on (`invalid`,
+`details.fields.handle: "reserved"` at registration and rename, §6.24),
+so `#/invite/…` can never be read as the namespace `invite`.
 
 **Why one release instead of `v2`.** §1.6 serves a breaking change as
 `v2` next to `v1`. This change is made before the launch, while every
@@ -8748,7 +8822,7 @@ credential as `text/plain`, a file the CLI writes and never prints.
 
 | Endpoint | Caller | Effect |
 |---|---|---|
-| `POST /runners/enrollments` | human | `{name?, ttl_seconds?, attach?: [slug], runner_id?}`; `201` with `{id, runner_id, pair_url, code, pair_line, expires_at}` |
+| `POST /runners/enrollments` | human | `{name?, ttl_seconds?, attach?: [full_name], runner_id?}`; `201` with `{id, runner_id, pair_url, code, pair_line, expires_at}` |
 | `GET /runners/enrollments` | human | the caller's own enrollments, `{id, runner_id, name, attach, created_at, expires_at, used_at, burned, revoked_at}`, nothing that opens one; newest first; paged |
 | `DELETE /runners/enrollments/{id}` | the human who created it | revokes an unused enrollment; idempotence and refusals as for a join (§3.1): `200` with `revoked_at`, a revoked one answers `200` as it is, a used, burned or expired one is `invalid_transition` |
 | `POST /runners/pair/{token}` | unauthenticated | the exchange, below |
@@ -8775,7 +8849,7 @@ credential as `text/plain`, a file the CLI writes and never prints.
 
 ```
 POST /api/v1/runners/enrollments
-{ "name": "home-laptop", "ttl_seconds": 900, "attach": ["maity"] }
+{ "name": "home-laptop", "ttl_seconds": 900, "attach": ["oliver/maity"] }
 
 201
 { "id": "renr-0002",
@@ -8800,7 +8874,7 @@ Content-Type: text/plain; charset=utf-8
 Cache-Control: no-store
 Maity-Credential-Id: rcrd-0002-0001
 Maity-Runner-Id: rnr-0002
-Maity-Attached: maity
+Maity-Attached: oliver/maity
 Maity-Hub: https://maity.team
 Maity-Signing: required
 
@@ -8808,7 +8882,7 @@ mty1.rcrd-0002-0001.…
 ```
 
 The body is the credential and nothing else. `Maity-Attached` lists the
-slugs attached at this exchange, comma-separated, empty when none. A
+full names of the projects attached at this exchange, comma-separated, empty when none. A
 re-pair revokes the runner's previous credential in the same
 transaction (`revoked_reason: repaired`); attachments and placements
 stay. Errors as for the join exchange (§3.3): `insecure_transport` under
@@ -8922,12 +8996,12 @@ owner choose):
         "modes": ["supervised"], "default_mode": "supervised",
         "models": [], "targets": ["local"], "confinement": "allowlist", "sandbox": "off" }
     ],
-    "projects": ["maity", "sample"],
+    "projects": ["oliver/maity", "oliver/sample"],
     "repositories": ["github.com/oliver-zehentleitner/*"],
     "require_local_approval": false,
     "reported_at": "2026-10-22T13:40:00Z"
   },
-  "projects": ["maity"],
+  "projects": ["oliver/maity"],
   "created_at": "2026-10-22T13:31:00Z", "updated_at": "2026-10-22T13:31:00Z", "removed_at": null
 }
 ```
@@ -8984,7 +9058,7 @@ A runner does nothing in a project until it is attached. An attachment
 is a row with its own id:
 
 ```json
-{ "id": "ratt-0004", "runner": { "…runner view…": "" }, "project": "maity",
+{ "id": "ratt-0004", "runner": { "…runner view…": "" }, "project": "oliver/maity",
   "attached_by": "hum-maintainer", "attached_at": "2026-10-22T13:31:05Z", "detached_at": null,
   "active_placements": 2 }
 ```
@@ -9011,7 +9085,7 @@ clone Z. It is the only thing the hub asks of a runner.
 
 ```json
 {
-  "id": "plc-0003", "project": "maity",
+  "id": "plc-0003", "project": "oliver/maity",
   "agent": { "id": "agt-b", "handle": "agent-b", "display_name": "Agent B",
              "avatar_url": "/api/v1/avatars/agt-b?v=e4d90b12" },
   "runner": { "id": "rnr-0002", "name": "home-laptop" },
@@ -9407,7 +9481,7 @@ A placement as the runner reads it:
 
 ```json
 {
-  "id": "plc-0003", "project": "maity", "generation": 4, "desired": "running",
+  "id": "plc-0003", "project": "oliver/maity", "generation": 4, "desired": "running",
   "agent": { "id": "agt-b", "handle": "agent-b", "member": true, "credential_expected": true },
   "harness": "claude-code", "mode": "interactive", "model": "opus",
   "target": null,
@@ -10235,7 +10309,7 @@ A ticker item is an event of kind `ticker` (§8.1, §8.2). Its `payload`:
 
 | Field | Meaning |
 |---|---|
-| `type` | `merge`, `decision`, `deploy`, `release`, `jour_fixe` (a round's report, §20.9), `rename` (a handle change, §6.24) or `note` (a manual post, §17.6). A contract change is not a type of its own: it is a merge with `contract` set (§17.3), so that one merge is one item |
+| `type` | `merge`, `decision`, `deploy`, `release`, `jour_fixe` (a round's report, §20.9), `rename` (a handle change, §6.24, or a project's rename or transfer, §6.25) or `note` (a manual post, §17.6). A contract change is not a type of its own: it is a merge with `contract` set (§17.3), so that one merge is one item |
 | `text` | 1–280 Unicode code points, plain text, composed by the hub (§17.2) or written by the poster (§17.6); never Markdown, never scanned for mentions (§8.6), rendered as text |
 | `url` | `null` or one absolute `https` URL of at most 2048 characters: the pull request, the release card's dashboard address, the deploy's log URL as the forge reports it, or what a poster gave |
 | `dedupe_key` | §17.7; `null` for a note and a rename |
@@ -10264,7 +10338,7 @@ version>"}`), the renamed member for a rename (`{type: "member", id:
 | `release` | a release card (§6.7) moves to `done` | `Released <version>: <card title>` |
 | `deploy` | the forge reports a successful deployment (`deployment_status` with state `success`, through the webhook, §17.4), or a manual post (§17.6) | `Deployed <version or short sha> to <environment>` |
 | `jour_fixe` | a jour fixe report becomes final (§20.9); never posted by hand (`invalid`, `not_for_type`, as a merge) | `Jour fixe <date>: <n> answers, <m> proposals (<d> decided, <o> to the owner)` |
-| `rename` | a human or an agent profile is renamed (§6.24), in every project with an active membership whose name changed; written whether the ticker is enabled or not; never posted by hand (`invalid`, `not_for_type`, as a merge) | `<old> is now <new>`: a human's handles, an agent's global names |
+| `rename` | a human or an agent profile is renamed (§6.24), in every project with an active membership whose name changed; or the project itself is renamed or transferred (§6.25), in that project; written whether the ticker is enabled or not; never posted by hand (`invalid`, `not_for_type`, as a merge) | `<old> is now <new>`: a human's handles, an agent's global names, a project's full names |
 | `note` | a manual post (§17.6) | as written |
 
 `merge.title` and `merge.author` are the forge's, as the probe reads
@@ -10535,7 +10609,7 @@ narrow the audience a contract change must reach.
 
 ```json
 { "type": "note", "text": "Staging runs 0.3.0-rc.2 from now on; the old database is gone.",
-  "url": "https://maity.team/#/p/maity/board?task=tsk-0040",
+  "url": "https://maity.team/#/oliver/maity/board?task=tsk-0040",
   "to": "computed", "areas": ["hub/"] }
 ```
 
@@ -10563,7 +10637,7 @@ A field given for a type that does not take it is `invalid`
 
 ```json
 { "type": "release", "text": "Released 0.3.0: first public release",
-  "url": "https://maity.team/#/p/maity/board?task=tsk-0050", "release_task_id": "tsk-0050",
+  "url": "https://maity.team/#/oliver/maity/board?task=tsk-0050", "release_task_id": "tsk-0050",
   "to": ["trust:admin", "area:cli/"] }
 ```
 
@@ -10970,8 +11044,8 @@ no membership.
 {
   "counts": { "inbox": 3, "chat": 2, "mention": 1, "security": 0, "total": 6 },
   "by_project": {
-    "maity": { "member": true, "inbox": 2, "chat": 2, "mention": 1, "total": 5 },
-    "lasteverlm": { "member": false, "inbox": 1, "chat": 0, "mention": 0, "total": 1 }
+    "oliver/maity": { "member": true, "inbox": 2, "chat": 2, "mention": 1, "total": 5 },
+    "oz/lasteverlm": { "member": false, "inbox": 1, "chat": 0, "mention": 0, "total": 1 }
   },
   "items": [
     { "id": "ntf-4237", "seq": 4237, "kind": "chat", "at": "2026-10-22T13:10:00Z",
@@ -10980,14 +11054,14 @@ no membership.
       "title": "Agent A in agent-a",
       "content": "The exchange now refuses a second redemption; tests are green, can you",
       "target": { "type": "conversation", "id": "agt-a" },
-      "url": "https://maity.team/#/p/maity/chat/agt-a",
+      "url": "https://maity.team/#/oliver/maity/chat/agt-a",
       "read": false, "redacted": false },
     { "id": "ntf-4231", "seq": 4231, "kind": "inbox", "at": "2026-10-22T12:41:12Z",
       "project": { "slug": "maity", "full_name": "oliver/maity", "name": "Maity" },
       "actor": { "member_id": "agt-b", "display_name": "Agent B", "avatar_url": "/api/v1/avatars/agt-b?v=e4d9" },
       "title": "Agent B asks: Which mail library for the hub?",
       "target": { "type": "request", "id": "req-0012" },
-      "url": "https://maity.team/#/p/maity/inbox/req-0012",
+      "url": "https://maity.team/#/oliver/maity/inbox/req-0012",
       "read": true, "redacted": false }
   ],
   "next_cursor": null,
@@ -11145,7 +11219,7 @@ rules that make a position safe to resume from:
   `security` shows on the bell only. The keys are exactly these five;
   the counts of the kinds removed on 2026-10-26 (§18.1) are not sent.
 - **`by_project`.** The same counts per project, keyed by the project's
-  slug, for every project of the human with at least one non-zero
+  `full_name`, for every project of the human with at least one non-zero
   count; computed by the hub over every unread item and open request,
   not over the listed items, so the dashboard never counts from the
   newest 50. `inbox` is that project's `open_requests` plus the open
@@ -11800,7 +11874,7 @@ briefing per project. The maintainer's decision of 2026-10-23
   "version": 3,
   "by": { "kind": "human", "id": "hum-maintainer", "handle": "maintainer" },
   "proposed_by": { "kind": "agent", "member_id": "agt-a", "instance": "k2pq", "handle": "agent-a",
-                   "project": "maity", "request_id": "req-0091" },
+                   "project": "oliver/maity", "request_id": "req-0091" },
   "confirmed_by": null, "updated_at": "2026-10-23T11:00:00Z" }
 ```
 
@@ -11932,7 +12006,7 @@ every change.
 
 | Endpoint | Caller | Notes |
 |---|---|---|
-| `GET /me/preferences` | human | the current text, plus `projects: [{slug, include}]` for every membership |
+| `GET /me/preferences` | human | the current text, plus `projects: [{full_name, include}]` for every membership |
 | `PUT /me/preferences` | human | `{markdown, base_version?}`; replaces it, `version` +1; a `base_version` that is not current is `conflict` (above); emits `preferences_changed` |
 | `GET /me/preferences/versions` | human | `{items: [{version, markdown, by, proposed_by, confirmed_by, at}]}`, newest first; paged |
 | `PUT /me/preferences/projects/{owner}/{slug}` | human, a member of the project | `{include}`; emits `preferences_changed` with `included` in that project |
@@ -12483,7 +12557,7 @@ redaction (§20.8); a second `POST …/report` is `jour_fixe_state`.
 
 ```json
 {
-  "id": "jfx-0012", "project": "maity", "status": "reported",
+  "id": "jfx-0012", "project": "oliver/maity", "status": "reported",
   "trigger": "schedule", "mode": "message",
   "scheduled_for": "2026-10-29T09:00:00Z", "opened_at": "2026-10-29T09:00:01Z",
   "answers_close_at": "2026-10-29T11:00:01Z",
@@ -12541,7 +12615,7 @@ so that it learns no more of the project's members than a chat's
 participant list tells it (§9.2):
 
 ```json
-{ "id": "jfx-0012", "project": "maity", "status": "reported",
+{ "id": "jfx-0012", "project": "oliver/maity", "status": "reported",
   "opened_at": "…", "answers_close_at": "…", "exchange_closed_at": "…", "reported_at": "…",
   "participants": [ { "member_id": "agt-b", "kind": "agent", "handle": "agent-b" } ],
   "statement": { "…": "" }, "posts": [ { "…": "" } ],
