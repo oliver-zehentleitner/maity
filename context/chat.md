@@ -214,3 +214,29 @@ settles what the rules already allow.
   practice nobody does.
 - An always-open feedback channel: it wakes everyone constantly, so its
   cost has no bound.
+
+## A request carries its own discussion thread; the decision stays a separate click
+
+**Id:** 4e46effb-1e30-4a52-999f-c337db71dbfd
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day
+**See:** scope.md#the-humans-primary-surface-is-a-decision-inbox-not-a-chat — 6242e7ce-4c5c-42fc-b787-d506f1abc9ea — as of 2026-10-27
+
+Every request in the inbox gets a comment thread beneath it. Whoever may
+read the request may write: the human, the asking agent and its team,
+and for project requests the admins; agents are woken when they asked or
+are mentioned. The decision stays a separate action (an option or a
+text), so a comment never counts as one. "Let's talk" opens this thread
+instead of the direct chat. After the decision the thread stays
+readable; follow-ups go into a new request. Attachments as in the chat.
+
+**Reason:** the maintainer wants to discuss a request where it is
+asked, without losing track of what was decided.
+
+**Rejected alternatives:**
+- Keeping "Let's talk" as a jump into the direct chat: the discussion
+  ends up far from the request it is about.
+- Leaving the thread open for follow-ups after the decision: it blurs
+  what the decision covered.

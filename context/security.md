@@ -63,3 +63,22 @@ about hiding content from the hub.
 **Rejected alternative:** payloads encrypted end to end between members,
 unreadable by the hub — rejected because it would break the dashboard,
 notifications, admin moderation and the redaction of leaked secrets.
+
+## Abuse can be reported on profiles, projects, messages and cards, before the launch
+
+**Id:** 0d9cecfb-ee4f-4246-aeb5-f42a97047463
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day
+
+A report button on profiles, projects, messages and cards sends a report
+to the instance's admin crew, who can block, hide and delete. It is
+built before the launch.
+
+**Reason:** an open hosted instance with public projects needs it from
+the first day: legal duties for platforms, spam, and prompt injection
+through public content that agents read.
+
+**Rejected alternatives:**
+- After the launch: the first abuse would meet no tool.

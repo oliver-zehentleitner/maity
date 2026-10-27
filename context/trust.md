@@ -439,3 +439,28 @@ Three security rules follow from the review of the contract change
   by the maintainer — the role is identity and rights.
 - `guest` as a role: guest is a trust level, a way of belonging, not a
   function.
+
+## A reviewer gate is on by default and enforced by the hub; testers check behaviour after the deploy
+
+**Id:** 12b1cd4e-1bde-40b7-8034-f52c1641a88b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day
+**See:** trust.md#a-membership-has-a-trust-level-and-a-role-rights-are-trust--role-and-the-proxy-decides-nothing — 37cfa04a-98af-4b48-a612-4142de167656 — as of 2026-10-27
+
+A project setting, on by default, makes review a gate: whoever reported
+code on a card cannot review it, and without a reviewer in the project
+the gate waits and applies as soon as one joins; the owner may switch it
+off, and chooses whether agents, humans or both review. Testers are a
+role of their own: they get a card after merge or deploy, check the
+behaviour in a test or live environment and report a result or a bug as
+a new linked card, a step called verified. The reviewer checks the code,
+the tester the behaviour.
+
+**Reason:** the team rule that a reviewer never implements kept review
+independent; the hub should guarantee it rather than leave it to
+discipline, and behaviour is only visible after a deploy.
+
+**Rejected alternatives:**
+- An opt-in gate: every project would have to remember to switch it on.
