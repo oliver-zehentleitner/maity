@@ -352,7 +352,7 @@ def test_no_token_to_the_image_host(
     reader = forge.Forge(token="ghp_SECRETTOKEN")
     monkeypatch.setattr("maity_hub.routes.project_images.reader_of", lambda _r: reader)
     flow.project(owner, "maity", repository={"url": REPO})
-    got = owner.get("/projects/maity/logo")
+    got = owner.get("/projects/maintainer/maity/logo")
     print("STATUS", got.status_code, dict(got.headers))
     print("REQUEST", server.requests)
     assert got.status_code == 200
@@ -363,8 +363,8 @@ def test_no_token_to_the_image_host(
 
 def test_response_headers_and_etag(owner: flow.Human) -> None:
     flow.project(owner, "maity")
-    put(owner, "/projects/maity/logo", PNG + b"<script>alert(1)</script>", "image/png")
-    got = owner.get("/projects/maity/logo")
+    put(owner, "/projects/maintainer/maity/logo", PNG + b"<script>alert(1)</script>", "image/png")
+    got = owner.get("/projects/maintainer/maity/logo")
     h = got.headers
     print("HEADERS", h.multi_items())
     assert h["content-type"] == "image/png"
@@ -381,10 +381,12 @@ def test_response_headers_and_etag(owner: flow.Human) -> None:
         ('"nope"', 200),
         (tag.strip('"'), 200),
     ):
-        r = owner.client.get("/api/v1/projects/maity/logo", headers={"If-None-Match": inm})
+        r = owner.client.get(
+            "/api/v1/projects/maintainer/maity/logo", headers={"If-None-Match": inm}
+        )
         print("INM", inm, r.status_code, len(r.content))
         assert r.status_code == expect
-    missing = owner.get("/projects/maity/banner")
+    missing = owner.get("/projects/maintainer/maity/banner")
     print("404 cache", missing.headers.get("cache-control"))
     assert missing.headers["cache-control"] == "no-store"
 
@@ -401,17 +403,17 @@ def test_declared_svg_or_mismatch(owner: flow.Human) -> None:
         (b"RIFF\0\0\0\0WAVEfmt ", "image/webp"),
         (b"", "image/png"),
     ):
-        r = put(owner, "/projects/maity/logo", data, ctype)
+        r = put(owner, "/projects/maintainer/maity/logo", data, ctype)
         print("PUT", ctype, data[:8], r.status_code, r.text[:120])
 
 
 def test_project_isolation(owner: flow.Human, make_client: ClientFactory, migrated: Engine) -> None:
     flow.project(owner, "alpha")
     flow.project(owner, "beta")
-    put(owner, "/projects/alpha/logo", PNG, "image/png")
-    assert owner.get("/projects/beta/logo").status_code == 404
+    put(owner, "/projects/maintainer/alpha/logo", PNG, "image/png")
+    assert owner.get("/projects/maintainer/beta/logo").status_code == 404
     stranger = flow.human(make_client, migrated, "stranger")
-    r = stranger.get("/projects/alpha/logo")
+    r = stranger.get("/projects/maintainer/alpha/logo")
     print("STRANGER", r.status_code)
     assert r.status_code in (403, 404)
 
@@ -419,17 +421,17 @@ def test_project_isolation(owner: flow.Human, make_client: ClientFactory, migrat
 def test_long_poll_not_woken_by_upload(owner: flow.Human, make_client: ClientFactory) -> None:
     flow.project(owner, "maity")
     agent = flow.agent(make_client, owner)
-    cursor = agent.get("/projects/maity/events?after=latest").json()["cursor"]
+    cursor = agent.get("/projects/maintainer/maity/events?after=latest").json()["cursor"]
     with ThreadPoolExecutor(max_workers=1) as pool:
         start = time.monotonic()
-        waiting = pool.submit(agent.get, f"/projects/maity/events?after={cursor}&wait=3")
+        waiting = pool.submit(agent.get, f"/projects/maintainer/maity/events?after={cursor}&wait=3")
         time.sleep(0.5)
-        assert put(owner, "/projects/maity/logo", PNG, "image/png").status_code == 200
+        assert put(owner, "/projects/maintainer/maity/logo", PNG, "image/png").status_code == 200
         body = waiting.result(timeout=10).json()
     elapsed = time.monotonic() - start
     print("LONGPOLL", round(elapsed, 2), body)
     assert elapsed >= 2.8 and body["items"] == []
-    plain = agent.get(f"/projects/maity/events?after={cursor}").json()
+    plain = agent.get(f"/projects/maintainer/maity/events?after={cursor}").json()
     print("PLAIN", [e["kind"] for e in plain["items"]])
     assert "project_updated" in [e["kind"] for e in plain["items"]]
 
@@ -438,7 +440,7 @@ def test_read_through_amplification(owner: flow.Human, monkeypatch: pytest.Monke
     fake = FakeForge(monkeypatch)
     fake.forge_down = True
     flow.project(owner, "maity", repository={"url": REPO})
-    codes = [owner.get("/projects/maity/logo").status_code for _ in range(5)]
+    codes = [owner.get("/projects/maintainer/maity/logo").status_code for _ in range(5)]
     print("CODES", codes, "FORGE READS", len(fake.reads), fake.reads)
 
 
@@ -450,8 +452,8 @@ def test_concurrent_first_uploads(owner: flow.Human) -> None:
         slug = f"race{i}"
         flow.project(owner, slug)
         with ThreadPoolExecutor(max_workers=2) as pool:
-            a = pool.submit(put, owner, f"/projects/{slug}/logo", PNG, "image/png")
-            b = pool.submit(put, owner, f"/projects/{slug}/logo", JPEG, "image/jpeg")
+            a = pool.submit(put, owner, f"/projects/maintainer/{slug}/logo", PNG, "image/png")
+            b = pool.submit(put, owner, f"/projects/maintainer/{slug}/logo", JPEG, "image/jpeg")
             codes += [a.result().status_code, b.result().status_code]
     print("RACE", codes)
     assert set(codes) == {200}

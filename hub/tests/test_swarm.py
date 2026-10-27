@@ -96,7 +96,7 @@ def history(
 
 
 def page(who: Any, days: int = 30) -> dict[str, Any]:
-    response = who.get(f"/projects/maity/swarm?days={days}")
+    response = who.get(f"/projects/maintainer/maity/swarm?days={days}")
     assert response.status_code == 200, response.text
     found: dict[str, Any] = response.json()
     return found
@@ -141,7 +141,7 @@ def test_cards_done_go_to_the_last_holder_and_the_rest_to_the_totals(
     done(migrated, project_id, creator, None, NOW - timedelta(days=2))  # no holder
     done(migrated, project_id, creator, membership_of(migrated, gone.id), NOW)
     done(migrated, project_id, creator, mine, NOW - timedelta(days=40))  # before the window
-    owner.delete(f"/projects/maity/members/{gone.id}")
+    owner.delete(f"/projects/maintainer/maity/members/{gone.id}")
     found = page(owner)
     assert row(found, agent.id)["cards_done"] == 1
     assert found["totals"]["cards_done"] == 3
@@ -248,8 +248,10 @@ def test_task_reported_carries_the_persisted_status_on_both_sides(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
     agent = flow.agent(make_client, owner)
-    created = owner.post("/projects/maity/tasks", {"title": "x", "status": "open"}).json()
-    path = f"/projects/maity/tasks/{created['id']}"
+    created = owner.post(
+        "/projects/maintainer/maity/tasks", {"title": "x", "status": "open"}
+    ).json()
+    path = f"/projects/maintainer/maity/tasks/{created['id']}"
     assert agent.post(f"{path}/claim", {}).status_code == 200
     from tests.test_tasks import _report
 
@@ -266,7 +268,7 @@ def test_task_reported_carries_the_persisted_status_on_both_sides(
 
 
 def public(client: Any, slug: str = "maity", **headers: str) -> Any:
-    return client.get(f"/api/v1/swarm/{slug}", headers=headers)
+    return client.get(f"/api/v1/swarm/maintainer/{slug}", headers=headers)
 
 
 def test_the_policy_is_checked_before_any_etag(
@@ -276,7 +278,9 @@ def test_the_policy_is_checked_before_any_etag(
     off = public(visitor, **{"If-None-Match": "*"})
     assert off.status_code == 404 and "etag" not in off.headers
     assert public(visitor, "nope").status_code == 404
-    switched = owner.patch("/projects/maity", {"policy": {"swarm_public": "on"}, "reason": "show"})
+    switched = owner.patch(
+        "/projects/maintainer/maity", {"policy": {"swarm_public": "on"}, "reason": "show"}
+    )
     assert switched.status_code == 200, switched.text
     on = public(visitor)
     assert on.status_code == 200 and on.headers["cache-control"] == "public, max-age=60"
@@ -285,7 +289,7 @@ def test_the_policy_is_checked_before_any_etag(
     clock.set_source(lambda: later)
     assert public(visitor).headers["etag"] == on.headers["etag"]  # stable within the minute
     assert public(visitor, **{"If-None-Match": on.headers["etag"]}).status_code == 304
-    owner.patch("/projects/maity", {"state": "accepted", "reason": "done"})
+    owner.patch("/projects/maintainer/maity", {"state": "accepted", "reason": "done"})
     closed = public(visitor, **{"If-None-Match": on.headers["etag"]})
     assert closed.status_code == 404 and "etag" not in closed.headers
 
@@ -298,14 +302,14 @@ def test_the_public_page_shows_agents_only(
     done(migrated, project_id, creator, membership_of(migrated, agent.id), NOW)
     done(migrated, project_id, creator, creator, NOW)  # the human's: nowhere public
     done(migrated, project_id, creator, None, NOW)  # nobody's: not in the agents' totals
-    owner.patch("/projects/maity", {"policy": {"swarm_public": "on"}, "reason": "show"})
-    handle = owner.get(f"/projects/maity/members/{agent.id}").json()["handle"]
+    owner.patch("/projects/maintainer/maity", {"policy": {"swarm_public": "on"}, "reason": "show"})
+    handle = owner.get(f"/projects/maintainer/maity/members/{agent.id}").json()["handle"]
     body = public(make_client()).json()
     assert [m["handle"] for m in body["live"]] == [handle]
     assert set(body["live"][0]) == {
         "handle", "name", "display_name", "online", "instances_online", "holding_count"
     }  # fmt: skip
-    owner_handle = owner.get(f"/projects/maity/members/{owner.id}").json()["handle"]
+    owner_handle = owner.get(f"/projects/maintainer/maity/members/{owner.id}").json()["handle"]
     assert body["live"][0]["name"] == f"{owner_handle}/{handle}"
     assert body["members"][0]["name"] == body["live"][0]["name"]
     assert len(body["members"]) == 1 and "member_id" not in body["members"][0]
@@ -318,9 +322,11 @@ def test_swarm_public_is_set_by_a_human(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
     admin = flow.agent(make_client, owner, role="admin")
-    refused = admin.patch("/projects/maity", {"policy": {"swarm_public": "on"}, "reason": "r"})
+    refused = admin.patch(
+        "/projects/maintainer/maity", {"policy": {"swarm_public": "on"}, "reason": "r"}
+    )
     assert refused.status_code == 403
-    assert owner.get("/projects/maity").json()["policy"]["swarm_public"] == "off"
+    assert owner.get("/projects/maintainer/maity").json()["policy"]["swarm_public"] == "off"
 
 
 def test_the_badge_and_the_swarm_share_one_budget(
@@ -384,8 +390,8 @@ def test_the_three_not_served_answers_are_one(
     unknown = public(visitor, "nope")
     off = public(visitor)
     owner.post("/projects", {"slug": "closed", "name": "Closed"})
-    owner.patch("/projects/closed", {"policy": {"swarm_public": "on"}, "reason": "r"})
-    owner.patch("/projects/closed", {"state": "accepted", "reason": "done"})
+    owner.patch("/projects/maintainer/closed", {"policy": {"swarm_public": "on"}, "reason": "r"})
+    owner.patch("/projects/maintainer/closed", {"state": "accepted", "reason": "done"})
     closed = public(visitor, "closed")
     assert unknown.status_code == off.status_code == closed.status_code == 404
     assert unknown.content == off.content == closed.content
@@ -403,8 +409,8 @@ def test_nothing_of_a_human_or_a_card_reaches_the_public_page(
         claim_holder=membership_of(migrated, agent.id), claim_since=NOW,
     )  # fmt: skip
     done(migrated, project_id, creator, creator, NOW)
-    human = owner.get(f"/projects/maity/members/{owner.id}").json()
-    owner.patch("/projects/maity", {"policy": {"swarm_public": "on"}, "reason": "show"})
+    human = owner.get(f"/projects/maintainer/maity/members/{owner.id}").json()
+    owner.patch("/projects/maintainer/maity", {"policy": {"swarm_public": "on"}, "reason": "show"})
     text = public(make_client()).text
     for leaked in (
         secret, "SECRET TITLE 7731", owner.id, agent.id, human["display_name"],

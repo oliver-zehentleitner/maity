@@ -61,16 +61,17 @@ def test_a_request_to_the_human_is_an_inbox_item(
 ) -> None:
     agent = flow.agent(make_client, owner)
     asked = agent.post(
-        "/projects/maity/requests", {"class": "decision", "title": "Which?", "to": "owner"}
+        "/projects/maintainer/maity/requests",
+        {"class": "decision", "title": "Which?", "to": "owner"},
     )
     assert asked.status_code == 201, asked.text
     got = bell(owner)
     assert got["counts"]["inbox"] == 1 and got["counts"]["total"] == 1
-    assert got["by_project"]["maity"]["inbox"] == 1
+    assert got["by_project"]["maintainer/maity"]["inbox"] == 1
     item = next(i for i in got["items"] if i["kind"] == "inbox")
     assert item["title"].endswith("asks: Which?")
     assert item["target"] == {"type": "request", "id": asked.json()["id"]}
-    assert item["url"] == "https://hub.example/#/p/maity/inbox"
+    assert item["url"] == "https://hub.example/#/maintainer/maity/inbox"
     assert item["actor"]["member_id"] == agent.id
 
 
@@ -78,7 +79,9 @@ def test_a_chat_message_counts_and_reads_through_the_chat(
     make_client: ClientFactory, owner: flow.Human
 ) -> None:
     agent = flow.agent(make_client, owner)
-    sent = agent.post(f"/projects/maity/conversations/{agent.id}/messages", {"body": "done"})
+    sent = agent.post(
+        f"/projects/maintainer/maity/conversations/{agent.id}/messages", {"body": "done"}
+    )
     assert sent.status_code in (200, 201), sent.text
     got = bell(owner)
     assert got["counts"]["chat"] == 1 and got["counts"]["total"] == 1
@@ -86,7 +89,7 @@ def test_a_chat_message_counts_and_reads_through_the_chat(
     assert item["target"] == {"type": "conversation", "id": agent.id}
     marked = owner.post(f"{N}/read", {"ids": [item["id"]]})
     assert marked.status_code == 200 and marked.json()["counts"]["chat"] == 0
-    chats = owner.get(f"/projects/maity/conversations/{agent.id}/messages").json()
+    chats = owner.get(f"/projects/maintainer/maity/conversations/{agent.id}/messages").json()
     assert chats["items"][-1]["seq"] == item["seq"]
 
 
@@ -96,15 +99,15 @@ def test_cards_and_watches_notify_nobody(
     """§18.1 (2026-10-26): a card's changes, and a watch on it, show on the board, not
     as notifications; only four kinds remain, and items carry no `reason`."""
     agent = flow.agent(make_client, owner)
-    mine = owner.post("/projects/maity/tasks", {"title": "Mine"}).json()
-    theirs = agent.post("/projects/maity/tasks", {"title": "Theirs"}).json()
+    mine = owner.post("/projects/maintainer/maity/tasks", {"title": "Mine"}).json()
+    theirs = agent.post("/projects/maintainer/maity/tasks", {"title": "Theirs"}).json()
     watched = owner.client.put(
-        f"/api/v1/projects/maity/tasks/{theirs['id']}/watch",
+        f"/api/v1/projects/maintainer/maity/tasks/{theirs['id']}/watch",
         headers={"X-CSRF-Token": owner.csrf},
     )
     assert watched.status_code == 200
-    assert agent.post(f"/projects/maity/tasks/{mine['id']}/claim", {}).status_code == 200
-    agent.patch(f"/projects/maity/tasks/{theirs['id']}", {"title": "Theirs, renamed"})
+    assert agent.post(f"/projects/maintainer/maity/tasks/{mine['id']}/claim", {}).status_code == 200
+    agent.patch(f"/projects/maintainer/maity/tasks/{theirs['id']}", {"title": "Theirs, renamed"})
     got = bell(owner)
     assert got["items"] == [
         i for i in got["items"] if i["kind"] in ("inbox", "chat", "mention", "security")
@@ -139,16 +142,18 @@ def test_a_request_opened_to_the_admins_reaches_an_admin(
         project_id = str(conn.execute(select(t.project.c.id)).scalar_one())
     factory.membership(migrated, project_id, "admin", human_id=admin.id)
     asked = agent.post(
-        "/projects/maity/requests", {"class": "decision", "title": "Which?", "to": "owner"}
+        "/projects/maintainer/maity/requests",
+        {"class": "decision", "title": "Which?", "to": "owner"},
     ).json()
     assert not [i for i in bell(admin)["items"] if i["kind"] == "inbox"]
     opened = owner.post(
-        f"/projects/maity/requests/{asked['id']}/forward", {"to": "role:admin", "reason": "yours"}
+        f"/projects/maintainer/maity/requests/{asked['id']}/forward",
+        {"to": "role:admin", "reason": "yours"},
     )
     assert opened.status_code == 200, opened.text
     [found] = [i for i in bell(admin)["items"] if i["kind"] == "inbox"]  # one per request
     assert found["target"] == {"type": "request", "id": asked["id"]}
-    events = admin.get("/projects/maity/events").json()["items"]
+    events = admin.get("/projects/maintainer/maity/events").json()["items"]
     forwarded = max(e["seq"] for e in events if e["kind"] == "request_forwarded")
     assert found["seq"] == forwarded  # the forward itself is the item
     assert found["title"].endswith("asks: Which?")
@@ -170,20 +175,22 @@ def test_a_claim_leaves_the_item_with_the_claiming_admin_only(
     for admin in admins:
         factory.membership(migrated, project_id, "admin", human_id=admin.id)
     asked = agent.post(
-        "/projects/maity/requests", {"class": "decision", "title": "Which?", "to": "owner"}
+        "/projects/maintainer/maity/requests",
+        {"class": "decision", "title": "Which?", "to": "owner"},
     ).json()
     owner.post(
-        f"/projects/maity/requests/{asked['id']}/forward", {"to": "role:admin", "reason": "yours"}
+        f"/projects/maintainer/maity/requests/{asked['id']}/forward",
+        {"to": "role:admin", "reason": "yours"},
     )
-    claimed = admins[0].post(f"/projects/maity/requests/{asked['id']}/claim", {})
+    claimed = admins[0].post(f"/projects/maintainer/maity/requests/{asked['id']}/claim", {})
     assert claimed.status_code == 200, claimed.text
     holding, other = ([i for i in bell(a)["items"] if i["kind"] == "inbox"] for a in admins)
     assert len(holding) == 1 and other == []
 
 
 def test_own_actions_never_notify(owner: flow.Human) -> None:
-    card = owner.post("/projects/maity/tasks", {"title": "Mine"}).json()
-    owner.patch(f"/projects/maity/tasks/{card['id']}", {"title": "Renamed"})
+    card = owner.post("/projects/maintainer/maity/tasks", {"title": "Mine"}).json()
+    owner.patch(f"/projects/maintainer/maity/tasks/{card['id']}", {"title": "Renamed"})
     assert [i["kind"] for i in bell(owner)["items"]] == ["security"]
 
 
@@ -194,7 +201,9 @@ def test_positions_follow_new_items_and_never_skip(
     start = bell(owner, limit=0)
     assert start["items"] == []
     for n in range(3):
-        agent.post(f"/projects/maity/conversations/{agent.id}/messages", {"body": f"m{n}"})
+        agent.post(
+            f"/projects/maintainer/maity/conversations/{agent.id}/messages", {"body": f"m{n}"}
+        )
     first = bell(owner, after=start["next_after"], limit=2)
     assert [i["kind"] for i in first["items"]] == ["chat", "chat"]
     assert first["items"][0]["seq"] < first["items"][1]["seq"]
@@ -241,7 +250,7 @@ def test_mark_all_read_skips_security_items(make_client: ClientFactory, owner: f
     agent = flow.agent(make_client, owner)
     second_session(make_client, owner)
     said = agent.post(
-        "/projects/maity/events",
+        "/projects/maintainer/maity/events",
         {"kind": "message", "type": "notice", "to": "all", "body": "@maintainer look"},
     )
     assert said.status_code in (200, 201), said.text
@@ -288,7 +297,7 @@ def test_the_long_poll_returns_on_a_new_item(make_client: ClientFactory, owner: 
     begun = time.monotonic()
     waiter.start()
     time.sleep(0.6)
-    agent.post(f"/projects/maity/conversations/{agent.id}/messages", {"body": "now"})
+    agent.post(f"/projects/maintainer/maity/conversations/{agent.id}/messages", {"body": "now"})
     waiter.join(timeout=15)
     assert answers and [i["kind"] for i in answers[0]["items"]] == ["chat"]
     assert time.monotonic() - begun < 8
@@ -316,7 +325,9 @@ def test_the_cursor_keeps_items_that_share_a_timestamp(
     frozen = clock.now().replace(microsecond=123456)
     clock.set_source(lambda: frozen)
     for n in range(3):
-        agent.post(f"/projects/maity/conversations/{agent.id}/messages", {"body": f"m{n}"})
+        agent.post(
+            f"/projects/maintainer/maity/conversations/{agent.id}/messages", {"body": f"m{n}"}
+        )
     seen: list[int] = []
     page = bell(owner, kind="chat", limit=1)
     seen += [i["seq"] for i in page["items"]]
@@ -341,7 +352,7 @@ def test_a_session_ended_during_a_wait_gets_nothing(
     time.sleep(0.6)
     # Another password session ends the waiting one.
     assert other.delete(f"/auth/sessions/{mine}").json()["ended_by"] == "revoked"
-    agent.post(f"/projects/maity/conversations/{agent.id}/messages", {"body": "private"})
+    agent.post(f"/projects/maintainer/maity/conversations/{agent.id}/messages", {"body": "private"})
     waiter.join(timeout=15)
     assert answers and answers[0].status_code == 401
     assert "private" not in answers[0].text
@@ -374,15 +385,16 @@ def test_a_card_view_shows_only_the_readers_own_watch(
     make_client: ClientFactory, owner: flow.Human, migrated: Engine
 ) -> None:
     agent = flow.agent(make_client, owner)
-    card = agent.post("/projects/maity/tasks", {"title": "Watched"}).json()
+    card = agent.post("/projects/maintainer/maity/tasks", {"title": "Watched"}).json()
     owner.client.put(
-        f"/api/v1/projects/maity/tasks/{card['id']}/watch", headers={"X-CSRF-Token": owner.csrf}
+        f"/api/v1/projects/maintainer/maity/tasks/{card['id']}/watch",
+        headers={"X-CSRF-Token": owner.csrf},
     )
-    assert owner.get(f"/projects/maity/tasks/{card['id']}").json()["watching"] is True
-    listed = owner.get("/projects/maity/tasks").json()["items"]
+    assert owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()["watching"] is True
+    listed = owner.get("/projects/maintainer/maity/tasks").json()["items"]
     assert next(c for c in listed if c["id"] == card["id"])["watching"] is True
-    assert agent.get(f"/projects/maity/tasks/{card['id']}").json()["watching"] is False
-    assert "watchers" not in owner.get(f"/projects/maity/tasks/{card['id']}").json()
+    assert agent.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()["watching"] is False
+    assert "watchers" not in owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()
 
 
 def test_a_malformed_cursor_is_invalid(owner: flow.Human) -> None:
@@ -402,7 +414,11 @@ def test_a_replayed_card_write_carries_watching(
     agent = flow.agent(make_client, owner)
     key = {"Idempotency-Key": "replay-key-0000000001"}
     body = {"title": "Once"}
-    first = agent.client.post("/api/v1/projects/maity/tasks", json=body, headers=agent.auth | key)
-    again = agent.client.post("/api/v1/projects/maity/tasks", json=body, headers=agent.auth | key)
+    first = agent.client.post(
+        "/api/v1/projects/maintainer/maity/tasks", json=body, headers=agent.auth | key
+    )
+    again = agent.client.post(
+        "/api/v1/projects/maintainer/maity/tasks", json=body, headers=agent.auth | key
+    )
     assert again.headers.get("Idempotent-Replayed") == "true"
     assert first.json()["watching"] is False and again.json()["watching"] is False

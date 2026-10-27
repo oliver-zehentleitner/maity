@@ -135,11 +135,20 @@ def _projects(conn: Connection, runner_id: str) -> list[dict[str, Any]]:
     """The projects a runner reads: attached, or with an active placement of it (§15.8)."""
     ids = pl.reading_projects(conn, runner_id)
     rows = conn.execute(
-        select(t.project.c.slug, t.project.c.name, t.project.c.repository_url)
+        select(t.project.c.slug, t.project.c.name, t.project.c.repository_url, t.human.c.handle)
+        .join(t.human, t.human.c.id == t.project.c.owner_id)
         .where(t.project.c.id.in_(ids))
         .order_by(t.project.c.slug)
     ).all()
-    return [{"slug": r.slug, "name": r.name, "repository": r.repository_url} for r in rows]
+    return [
+        {
+            "slug": r.slug,
+            "full_name": f"{r.handle}/{r.slug}",
+            "name": r.name,
+            "repository": r.repository_url,
+        }
+        for r in rows
+    ]
 
 
 def _refuse_revoked(conn: Connection, caller: Caller) -> None:

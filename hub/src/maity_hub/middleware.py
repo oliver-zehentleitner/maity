@@ -22,7 +22,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.routing import Match
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from maity_hub import clock, events, forge_webhook, join_host, net
+from maity_hub import clock, events, forge_webhook, join_host, namespace, net
 from maity_hub.auth import credentials
 from maity_hub.auth.leaks import revoke_leaked
 from maity_hub.config import Settings
@@ -37,7 +37,7 @@ BODY_CAP = 64 * 1024
 # §6.10); past it the answer is `invalid` with `fields.body: too_large`, not 413.
 IMAGE_CAP = 1024 * 1024
 _IMAGE_UPLOAD = re.compile(
-    r"^/api/v1/(projects/[^/]+/(logo|banner)|me/avatar|agents/[^/]+/avatar)$"
+    r"^/api/v1/(projects/[^/]+/[^/]+/(logo|banner)|me/avatar|agents/[^/]+/avatar)$"
 )
 # The landing page's Markdown may be 64 KiB decoded (§16.7); JSON escaping can grow it up
 # to four times on the wire, so its PATCH alone takes a larger body.
@@ -49,7 +49,9 @@ CSP = "default-src 'self'"
 ROUTE_CACHE = frozenset({b"private, max-age=21600", b"private, no-cache"})
 # The answers a visitor without a session may cache: the badge, the swarm page and the
 # instance's landing page (§16.7).
-PUBLIC_PATHS = re.compile(r"/badge/[^/]+\.svg|/api/v1/swarm/[^/]+|/api/v1/landing")
+PUBLIC_PATHS = re.compile(
+    r"/badge/(?:[^/]+/)?[^/]+\.svg|/api/v1/swarm/(?:[^/]+/)?[^/]+|/api/v1/landing"
+)
 
 
 class HubMiddleware:
@@ -57,6 +59,13 @@ class HubMiddleware:
         self.app = app
         self.settings = settings
         self.engine = engine
+
+    async def _outdated(self, scope: Scope, receive: Receive, send: Send) -> None:
+        agent = dict(scope.get("headers") or []).get(b"user-agent", b"").decode("latin-1")
+        error = namespace.outdated_error(agent, self.settings.cli_install)
+        response = error_response(error.status, error.code, error.message, error.details)
+        await response(scope, receive, send)
+        access.info("%s %s %s", scope.get("method"), _logged_path(scope), error.status)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -87,6 +96,12 @@ class HubMiddleware:
                 await error_response(500, "internal", "an unexpected failure")(scope, receive, send)
             finally:
                 access.info("%s %s %s", scope.get("method"), _logged_path(scope), status)
+            return
+
+        if not on_join_host and _outdated(scope):
+            # A project path from before the namespace (§6.25): answered before the body is
+            # read or anything is looked up, the same whether the slug ever existed.
+            await self._outdated(scope, receive, send)
             return
 
         if not on_join_host and _unrouted(scope):
@@ -215,6 +230,13 @@ def _content_length(scope: Scope) -> int | None:
             except ValueError:
                 return None
     return None
+
+
+def _outdated(scope: Scope) -> bool:
+    app = scope.get("app")
+    if app is None or getattr(app, "state", None) is None:
+        return False
+    return namespace.outdated(str(scope.get("path", "")), namespace.app_words(app))
 
 
 def _unrouted(scope: Scope) -> bool:

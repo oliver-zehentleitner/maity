@@ -21,7 +21,7 @@ from typing import Any
 from sqlalchemy import Connection, func, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import availability, avatars, clock, events, mentions
+from maity_hub import availability, avatars, clock, events, mentions, namespace
 from maity_hub import tables as t
 from maity_hub.errors import ApiError
 from maity_hub.events import Actor
@@ -217,13 +217,12 @@ def view(conn: Connection, placement: Any, *, viewer_id: str, briefing: bool) ->
     """The placement as humans and agents read it (§15.5). `viewer_id` decides the
     runner owner's fields; `briefing` whether a profile still to be made shows it."""
     runner = _runner(conn, placement.runner_id)
-    project_slug = conn.execute(
-        select(t.project.c.slug).where(t.project.c.id == placement.project_id)
-    ).scalar_one()
+    project_name = namespace.name_of(conn, placement.project_id)
     approved = placement.approval_status
     found: dict[str, Any] = {
         "id": placement.id,
-        "project": project_slug,
+        "project": project_name,
+        "project_id": placement.project_id,
         "agent": _agent(conn, placement),
         "runner": {"id": runner.id, "name": runner.name},
         "target": placement.target,
@@ -274,14 +273,16 @@ def for_runner(conn: Connection, placement: Any) -> dict[str, Any]:
     """A placement as its runner reads it (§15.8): never the briefing, the approval or
     who created it."""
     project = conn.execute(
-        select(t.project.c.slug, t.project.c.repository_url).where(
-            t.project.c.id == placement.project_id
-        )
+        select(t.project.c.repository_url).where(t.project.c.id == placement.project_id)
     ).one()
     agent = _agent(conn, placement)
     return {
         "id": placement.id,
-        "project": project.slug,
+        # The full name, the fixed id the runner keys the clone on, and the earlier full
+        # names its configured project list may still name (§6.25, §15.5).
+        "project": namespace.name_of(conn, placement.project_id),
+        "project_id": placement.project_id,
+        "project_aliases": namespace.aliases_of(conn, placement.project_id),
         "generation": placement.generation,
         "desired": placement.desired,
         "agent": {

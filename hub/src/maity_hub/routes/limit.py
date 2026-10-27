@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, select
 
-from maity_hub import availability, clock, idempotency
+from maity_hub import availability, clock, idempotency, namespace
 from maity_hub import tables as t
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, engine_of
@@ -90,14 +90,19 @@ def _human(
     if "harness" in given:
         raise invalid({"harness": "agents_only"})
     assert caller.human_id is not None
+    # Full names (§6.25), each a project the caller is a member of.
     slugs = list(dict.fromkeys(body.show_reason_in or []))
     if slugs:
         mine = set(
-            conn.execute(
-                select(t.project.c.slug)
-                .join(t.membership, t.membership.c.project_id == t.project.c.id)
-                .where(t.membership.c.human_id == caller.human_id, t.membership.c.active.is_(True))
-            ).scalars()
+            namespace.full_names(
+                conn,
+                conn.execute(
+                    select(t.membership.c.project_id).where(
+                        t.membership.c.human_id == caller.human_id,
+                        t.membership.c.active.is_(True),
+                    )
+                ).scalars(),
+            ).values()
         )
         if any(slug not in mine for slug in slugs):
             raise invalid({"show_reason_in": "not_a_member"})

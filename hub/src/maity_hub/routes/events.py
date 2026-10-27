@@ -13,16 +13,26 @@ from sqlalchemy import Connection, insert, select, update
 from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import clock, events, group_chats, idempotency, instances, longpoll, mentions
+from maity_hub import (
+    clock,
+    events,
+    group_chats,
+    idempotency,
+    instances,
+    longpoll,
+    mentions,
+    namespace,
+)
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, EventsCaller, engine_of, wait_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.models import Strict, Written, markdown
+from maity_hub.namespace import ProjectRoute
 from maity_hub.views import event_views
 
-router = APIRouter()
+router = APIRouter(route_class=ProjectRoute)
 
 FALLBACK_SECONDS = 2.0
 PAGE_DEFAULT, PAGE_MAX = 50, 200
@@ -62,7 +72,7 @@ def _load_for_caller(conn: Connection, seq: str, request: Request) -> dict[str, 
     """A replay shows the event as the caller saw it the first time: the caller's
     membership in the event's project is the reader (§8.5)."""
     row = conn.execute(select(t.event).where(t.event.c.seq == int(seq))).one()
-    slug = conn.execute(select(t.project.c.slug).where(t.project.c.id == row.project_id)).scalar()
+    slug = namespace.name_of(conn, row.project_id)
     try:
         reader = membership(conn, request.state.caller, slug) if slug else None
     except ApiError:
@@ -96,7 +106,7 @@ def parse_limit(request: Request) -> int:
     return int(raw_limit)
 
 
-@router.get("/projects/{slug}/events")
+@router.get("/projects/{owner}/{slug}/events")
 async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSONResponse:
     wait = wait_of(request)
     after_param = parse_after(request.query_params.get("after"))
@@ -452,7 +462,7 @@ def writer(
         raise
 
 
-@router.post("/projects/{slug}/events")
+@router.post("/projects/{owner}/{slug}/events")
 def post_event(slug: str, body: MessageIn, request: Request, caller: AnyCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         # A chat post is a write in a chat an owner outside may read along; any other
@@ -472,7 +482,7 @@ def post_event(slug: str, body: MessageIn, request: Request, caller: AnyCaller) 
 # --- redaction --------------------------------------------------------------------------------
 
 
-@router.post("/projects/{slug}/events/{seq}/redact")
+@router.post("/projects/{owner}/{slug}/events/{seq}/redact")
 def redact(
     slug: str,
     seq: Annotated[int, Path(ge=1, le=SEQ_MAX)],
@@ -578,7 +588,7 @@ def _redact_in_group(
     events.lock_project(conn, mine.project.id)
     # The caller's membership and role, the event, the chat and who is in it, all as of
     # the lock: a demotion or a removal that commits first is never overtaken.
-    mine = membership(conn, caller, mine.project.slug)
+    mine = membership(conn, caller, namespace.full_name(conn, mine.project))
     row = conn.execute(select(t.event).where(t.event.c.seq == row.seq)).one()
     group = group_chats.find(conn, mine.project.id, row.conversation_id)
     closed = group.closed_at is not None

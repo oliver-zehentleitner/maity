@@ -12,7 +12,7 @@ from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
 
-BASE = "/projects/maity/conversations"
+BASE = "/projects/maintainer/maity/conversations"
 
 
 @pytest.fixture
@@ -159,7 +159,7 @@ def test_a_message_reaches_the_room_and_wakes_an_agent_only_when_mentioned(
     assert not events.wakes(created, membership_row(migrated, agent.id), agent.id)
     assert say(outsider, chat["id"], "me too").status_code == 404
     via_events = agent.post(
-        "/projects/maity/events",
+        "/projects/maintainer/maity/events",
         {"kind": "message", "type": "chat", "body": "on it", "conversation_id": chat["id"]},
     )
     assert via_events.status_code == 201, via_events.text  # the same write (§9.2)
@@ -230,7 +230,7 @@ def test_the_list_mixes_both_kinds_newest_first_and_pages(
     guest = other_human(make_client, migrated, "guest")
     older = create(owner, guest.id, title="older").json()
     newer = create(owner, guest.id, title="newer").json()
-    owner.post(f"/projects/maity/conversations/{agent.id}/messages", {"body": "hi"})
+    owner.post(f"/projects/maintainer/maity/conversations/{agent.id}/messages", {"body": "hi"})
     say(owner, older["id"], "now the older one is the newest")
     items = owner.get(BASE).json()["items"]
     assert [i["id"] for i in items] == [older["id"], agent.id, newer["id"]]
@@ -293,7 +293,7 @@ def test_removal_from_the_project_leaves_every_room(
     agent = flow.agent(make_client, owner)
     guest = other_human(make_client, migrated, "guest")
     chat = create(owner, guest.id, agent.id).json()
-    assert owner.delete(f"/projects/maity/members/{guest.id}").status_code == 200
+    assert owner.delete(f"/projects/maintainer/maity/members/{guest.id}").status_code == 200
     view = owner.get(f"{BASE}/{chat['id']}").json()
     assert [p["member_id"] for p in view["participants"]] == [owner.id, agent.id]
     removed = conn_events(migrated, "conversation_updated")[-1]
@@ -319,7 +319,7 @@ def test_the_owner_of_an_agent_reads_along_and_does_nothing_else(
     refused = say(other, chat["id"], "hi")
     assert (refused.status_code, reason(refused)) == (403, "observer")
     assert reason(other.patch(f"{BASE}/{chat['id']}", {"title": "x"})) == "observer"
-    seen = other.get(f"/projects/maity/events?after={said['seq'] - 1}").json()["items"]
+    seen = other.get(f"/projects/maintainer/maity/events?after={said['seq'] - 1}").json()["items"]
     assert said["seq"] in [e["seq"] for e in seen]  # through GET /events too
     assert other.get(BASE).json()["items"] == [
         i for i in other.get(BASE).json()["items"] if i["id"] != chat["id"]
@@ -333,7 +333,9 @@ def test_the_owner_of_an_agent_reads_along_and_does_nothing_else(
         None,
     )
     assert admin.get(f"{BASE}/{chat['id']}").status_code == 404  # an admin outside sees nothing
-    outside = admin.get(f"/projects/maity/events?after={said['seq'] - 1}").json()["items"]
+    outside = admin.get(f"/projects/maintainer/maity/events?after={said['seq'] - 1}").json()[
+        "items"
+    ]
     assert said["seq"] not in [e["seq"] for e in outside]
 
 
@@ -341,7 +343,9 @@ def test_the_owner_of_an_agent_reads_along_and_does_nothing_else(
 
 
 def redact(who: Any, seq: int, **body: Any) -> Any:
-    return who.post(f"/projects/maity/events/{seq}/redact", {"reason": "a secret", **body})
+    return who.post(
+        f"/projects/maintainer/maity/events/{seq}/redact", {"reason": "a secret", **body}
+    )
 
 
 def test_any_human_in_the_room_redacts_nobody_else(
@@ -393,7 +397,8 @@ def test_a_closed_room_is_redacted_by_its_former_humans_or_blind_by_an_admin(
     assert f"member:{admin.id}" in notice.audience and f"member:{owner.id}" in notice.audience
     assert plain not in (first, second)
     not_closed = owner.post(
-        "/projects/maity/events", {"kind": "message", "type": "notice", "to": "all", "body": "x"}
+        "/projects/maintainer/maity/events",
+        {"kind": "message", "type": "notice", "to": "all", "body": "x"},
     ).json()["seq"]
     mismatch = redact(owner, not_closed, expect="closed_chat_message")
     assert mismatch.json()["error"]["details"]["fields"] == {"expect": "mismatch"}

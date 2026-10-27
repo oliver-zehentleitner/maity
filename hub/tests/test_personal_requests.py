@@ -18,7 +18,7 @@ from tests.conftest import ClientFactory
 from tests.test_claims import _claim
 from tests.test_tasks import task
 
-R = "/projects/maity/requests"
+R = "/projects/maintainer/maity/requests"
 
 
 @pytest.fixture
@@ -34,7 +34,7 @@ def _file(engine: Engine, agent_id: str, **kwargs: Any) -> str:
         row = conn.execute(select(t.membership).where(t.membership.c.agent_id == agent_id)).one()
         caller = Caller(kind="agent", via="bearer", agent_id=agent_id,
                         membership_id=row.id, project_id=row.project_id)  # fmt: skip
-        mine = membership(conn, caller, "maity")
+        mine = membership(conn, caller, "maintainer/maity")
         return file_personal(conn, mine, caller, agent_id, "consent", "May my soul read so?",
                              "the proposed text", **kwargs)  # fmt: skip
 
@@ -186,7 +186,7 @@ def test_it_never_blocks_a_card(
     normal = agent.post(R, {"class": "decision", "title": "Which?", "task_id": card["id"]}).json()
     personal = _file(migrated, agent.id, task_id=card["id"])
     owner.post(f"{R}/{normal['id']}/answer", {"text": "go ahead"})
-    view = owner.get(f"/projects/maity/tasks/{card['id']}").json()
+    view = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()
     assert (view["status"], view["blocked_by_request"]) == ("in_progress", None)
     assert personal not in str(view)
 
@@ -247,7 +247,7 @@ def test_every_close_keeps_the_card_as_it_was(
     else:
         with transaction(migrated) as conn:
             close_request(conn, request_id, "go", None, by=owner.id)
-    owner.patch(f"/projects/maity/tasks/{card['id']}", {"title": "After"})
+    owner.patch(f"/projects/maintainer/maity/tasks/{card['id']}", {"title": "After"})
     assert owner.get(f"/requests/{request_id}").json()["task"]["title"] == "Before"
 
 
@@ -306,7 +306,9 @@ def test_other_roles_see_nothing_of_it(
     assert proxy.get(f"{R}/{request_id}").status_code == 404
     assert proxy.post(f"{R}/{request_id}/answer", {"reply_id": "go"}).status_code == 404
     assert agent.get(R, params={"asked_by": "me", "status": "all"}).json()["items"] == []
-    events = owner.get("/projects/maity/events", params={"after": 0, "limit": 200}).json()
+    events = owner.get(
+        "/projects/maintainer/maity/events", params={"after": 0, "limit": 200}
+    ).json()
     created = [e for e in events["items"] if e["kind"] == "request_created"]
     assert [e["payload"] for e in created] == [
         {"id": request_id, "personal": True, "status": "open"}]  # fmt: skip

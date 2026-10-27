@@ -17,7 +17,7 @@ from typing import Any
 from fastapi import Request
 from sqlalchemy import Connection, and_, func, insert, select, update
 
-from maity_hub import clock, events, idempotency, proposals
+from maity_hub import clock, events, idempotency, namespace, proposals
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.auth.caller import Caller
@@ -264,7 +264,7 @@ def load_entry(conn: Connection, entry_id: str) -> dict[str, Any]:
 def _load_for_caller(conn: Connection, entry_id: str, request: Request) -> dict[str, Any]:
     """A replay answers only a caller who still reads the entry (§19.2), as a GET would."""
     row = entry_row(conn, entry_id)
-    slug = conn.execute(select(t.project.c.slug).where(t.project.c.id == row.project_id)).scalar()
+    slug = namespace.name_of(conn, row.project_id)
     mine = membership(conn, request.state.caller, str(slug))  # not_found once it left
     if row.store == "team" and not reads_team(conn, mine, member(conn, row.team_membership)):
         raise not_found()
