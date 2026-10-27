@@ -890,8 +890,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/agents"); for (let k = 0; k < 4; k++) await tick();
 
   // Runners (docs/api.md §15): the instance-level view.
-  const runnersLink = header.querySelectorAll(".switcher a").find((a) => a.textContent === "Runners");
-  expect(runnersLink && runnersLink.getAttribute("href") === "#/runners", "runners: a link beside the projects");
+  // Runners are the person's (tsk-cb6myw32def0): in the gear menu, not beside the projects.
+  expect(!header.querySelectorAll(".switcher a").some((a) => a.textContent === "Runners"), "runners: no link in the projects' row");
+  gearButton().click(); await tick();
+  const runnersLink = gearButton().parentNode.querySelectorAll(".menu-item").find((a) => a.textContent === "Runners");
+  expect(runnersLink && runnersLink.getAttribute("href") === "#/runners", "runners: in the gear menu");
+  gearButton().click(); await tick();
   const rWrites = [];
   const rPost = win.Maity.api.post, rPatch = win.Maity.api.patch, rDel = win.Maity.api.del;
   win.Maity.api.post = (p, b) => { rWrites.push(["POST", p, b]); return rPost(p, b); };
