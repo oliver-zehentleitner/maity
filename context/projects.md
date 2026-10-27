@@ -278,3 +278,56 @@ review already looks.
   session — would never reach either mark, and nobody would learn that
   it never confirmed. The deadline belongs to the commitment, which is
   per instance, so it survives the sessions.
+
+## Projects live in their owner's namespace, owner/slug, as on a forge; old names stay aliases; the change is made once in v1 before the launch
+
+**Id:** 281820c9-2286-45c4-9389-603b7e8a3923
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision in the chat, 2026-10-27 ("ja unbedingt jetzt vor launch"), on the contract owner's proposal; the three details (human owners only, aliases on rename and transfer, old addresses forwarded) in the inbox; contract in `docs/api.md` §6.25
+**Revisit when:** organisations become namespace owners (they share the namespace of human handles); or the one-segment API routes are found in use after the release (then a `v2`-style period, §1.6)
+**See:** naming.md#a-handle-is-a-renameable-alias-of-a-fixed-id-old-handles-stay-reserved-for-that-id — d5a4542f-63cc-4c1c-962e-f1c02df48ee9 — as of 2026-10-27
+
+A project is addressed as `<owner>/<slug>` — in the API
+(`/projects/{owner}/{slug}/…`), the dashboard, the badge, the swarm page
+and every reference shown outside the project. The namespace owner is
+one human, the creator; a slug is unique within that namespace only. A
+rename or a transfer keeps the old full name as an alias that is never
+given away; a request on an alias is served like one on the current
+name. The one-segment API routes are dropped in the same release, hub
+and CLI together, and an older CLI is told `client_outdated` instead of
+being misrouted. That works without guessing because a slug may never be
+one of the words that follow a project in a route, so an old path always
+shows a route word where a new one has a slug; for the same reason the
+dashboard's own route words are reserved as handles. Badges, the swarm
+page, the dashboard's `#/p/…` and the forge webhook keep their old
+addresses, because those sit where the hub cannot rewrite them, and
+answer an unknown or unserved slug exactly as before, so they reveal no
+project. A transfer needs the receiver's consent, and the namespace
+owner cannot be demoted or removed while the project lives under their
+name.
+
+**Reason:** with self-registration on maity.team an instance-wide slug
+would let the first comer own `shop` or `blog` for everyone, the
+problem global agent handles already solved with `owner/handle`
+(naming.md). The owner's handle is the one name every project already
+has exactly one of, it is unique instance-wide and renameable through
+aliases, so `owner/slug` needs no registry and reads as what it is. The
+change touches every project route, which §1.6 would serve as `v2`; but
+before the launch every caller is one of the project's own clients, so
+one coordinated release costs less than carrying two route trees, and
+a two-segment path `/projects/a/b` cannot be served in both forms
+without guessing.
+
+**Rejected alternatives:**
+- Keeping instance-wide slugs: first come, first served for common
+  names on a shared SaaS, and no way out once a name is taken.
+- A `v2` path next to `v1`: the clean form after a launch, here a second
+  route tree to maintain for callers that do not exist yet.
+- Serving the old and the new routes side by side under `v1`:
+  `/projects/maity/rules` is both "rules of maity" and "project rules of
+  owner maity"; any tie-break rule silently misroutes someone.
+- An opaque project id in the API and owner/slug only in the dashboard:
+  stable paths, but agents and humans would read and write two names for
+  one thing, and every log line and link would need a lookup.
