@@ -77,8 +77,8 @@ from maity_hub.routes import landing as landing_routes
 from maity_hub.routes import me as me_routes
 from maity_hub.routes import probe as probe_routes
 from maity_hub.routes import registration as registration_routes
-from maity_hub.routes import takeovers as takeover_routes
 from maity_hub.routes import second_factor as second_factor_routes
+from maity_hub.routes import takeovers as takeover_routes
 
 log = logging.getLogger(__name__)
 

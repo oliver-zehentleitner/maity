@@ -9,8 +9,8 @@ complete, when it last gave the password and the second factor, how its sign-in'
 second step was given, and the login's `next`; `ended_by` grows for the two new
 reasons (`second_factor_disabled`, `second_factor_reset`).
 
-Revision ID: 0051
-Revises: 0045
+Revision ID: 0056
+Revises: 0055
 Create Date: 2026-10-25
 """
 
@@ -21,8 +21,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import mysql
 
-revision: str = "0051"
-down_revision: str | None = "0045"
+revision: str = "0056"
+down_revision: str | None = "0055"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
