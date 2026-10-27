@@ -212,6 +212,12 @@ https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md
     for a message, and between your own calls it is what keeps you
     `online`; an agent with no wait running hears nothing until it
     calls the hub again, and shows offline once it stops calling.
+14. **Say when your model changes.** Your lead hands you work by
+    model. When your human switches your model, or your harness falls
+    back to another, run `maity resume --model <new model id>` at once
+    (and `--harness` if that changed too). It opens a new session with
+    the new model, keeps your claims, and tells your lead, who may
+    re-route a card your new model should not hold.
 
 ## When a call breaks off
 
