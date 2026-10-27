@@ -140,3 +140,75 @@ A list of projects does that per project.
 
 **Rejected alternative:** a reader argument on `project_view` for every caller of it
 (replays, the creation answer, events): a wide change for one field.
+
+## The sweep keeps the database and the blob store equal, and does not trust a young blob
+
+**Id:** 02fb33e3-0fc5-4140-8e33-016045fefdbb
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-10-27 (`docs/api.md` §8.7: pending uploads expire after 24 hours, a blob without a row "is removed by the hub's sweep", a failed removal "is retried by the sweep", `hub/` documents the interval); the interval and the grace are the implementer's
+**Revisit when:** a second replica runs (each would sweep), or the `s3` store is built
+**See:** attachments.md#the-blob-is-written-before-the-row-and-removed-when-the-row-never-commits-or-is-gone — 7dcd4850-9dc4-4b4a-9148-e156c8e11718 — as of 2026-10-27
+
+A worker thread, started when a store is configured, runs every five
+minutes (`attachments.SWEEP_EVERY`). One pass deletes pending uploads older
+than 24 hours with their bytes, removes the bytes of a tombstoned row that
+are still there (a removal that failed after a commit), and removes a blob no
+row names. That last rule only touches a blob older than ten minutes
+(`BLOB_GRACE`): an upload writes the blob before its row is committed, so a
+younger blob without a row may belong to a transaction still open. A removed
+member's pending uploads are deleted as rows in the removal's transaction and
+their bytes go by this last rule.
+
+**Reason:** the write order of the contract leaves exactly one kind of
+leftover, a blob without a row, and every clean-up that cannot run in the
+request (a crash, a failed delete, a removed member) ends up as that kind, so
+one rule removes all of them.
+
+**Rejected alternatives:**
+- Removing a member's blobs in the removal itself: the removal has no store,
+  and a failed delete there would have to fail the removal or be forgotten.
+- No grace: the sweep could delete the bytes of an upload a moment before it
+  commits.
+
+## An owner outside the project reads a group chat's attachments through a stand-in row
+
+**Id:** 0ac62e3d-4c33-4745-8b2f-48a45f1d397e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-10-27 (`docs/api.md` §8.7: whoever can read a message reads its attachments, "an owner outside the project included")
+**Revisit when:** the read rule takes a reader that is not a membership row
+
+The one read rule (`events.readable_by`) takes a membership row, and an owner
+outside the project has none. For attachments the reader gets a stand-in row
+(no role, no agent) and two gates in front of it: the message must be a group
+chat's, and the group chat's own `access` must call the owner an observer.
+Without the gates the stand-in would reach any project message addressed to
+`all`. Such an owner reads the attachment and its tombstone, and deleting is
+`forbidden` with `reason: observer`.
+
+**Rejected alternative:** a second copy of the read rule for outsiders: the two
+would drift.
+
+## Deleting a sent attachment follows who the message is for
+
+**Id:** 77b7e1d8-ec10-40f1-9447-0764eef69b4f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-10-27 (`docs/api.md` §8.7, Deleting one)
+**Revisit when:** a chat kind other than direct and group exists
+
+A sent attachment is readable as its message is. Its uploader may delete it;
+no other agent may (`humans_only`); a human may delete it if they are the human
+party of a direct chat, a participant now of a group chat (an observer or a
+former participant: `not_a_participant`), or have `members:admin` for a project
+message. The row becomes a tombstone, the bytes go after the commit, and
+`attachment_deleted` goes to the message's audience (a group chat's current
+participants), in the chat's own scope so no see-all role reaches it. It wakes
+nobody. Deleting a deleted attachment answers with its tombstone.
+
+**Reason:** the log is append-only, so the message keeps naming the file; the
+tombstone is how readers learn it is gone.
