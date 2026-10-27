@@ -64,7 +64,7 @@ def test_a_human_writes_versions_and_a_stale_base_is_a_conflict(
     assert (empty["markdown"], empty["version"], empty["projects"]) == (
         "",
         0,
-        [{"slug": "maity", "include": True}],
+        [{"slug": "maity", "full_name": "maintainer/maity", "include": True}],
     )
     first = put(owner, "German in chat, English in code.")
     assert first.status_code == 200, first.text
@@ -103,7 +103,9 @@ def test_agents_read_a_humans_text_other_humans_do_not_and_the_switch_turns_it_o
         headers={"X-CSRF-Token": owner.csrf},
     )
     assert off.status_code == 200, off.text
-    assert off.json()["projects"] == [{"slug": "maity", "include": False}]
+    assert off.json()["projects"] == [
+        {"slug": "maity", "full_name": "maintainer/maity", "include": False}
+    ]
     assert agent.get(path).status_code == 404
     switched = events(migrated, "preferences_changed")[-1]
     assert switched.payload == {"human_id": owner.id, "included": False}
@@ -337,3 +339,26 @@ def test_an_open_proposal_older_than_a_day_is_superseded_too(
     propose(admin, owner.id, "new")
     statuses = {r["id"]: r["status"] for r in owner.get("/requests?status=all").json()["items"]}
     assert statuses[old["id"]] == "withdrawn"
+
+
+def test_projects_of_two_owners_with_one_slug_stay_apart(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    # Each project is named by its full name (§6.25), and a switch reaches that one only.
+    maintainer = flow.human(make_client, migrated)
+    anna = flow.human(make_client, migrated, "anna")
+    flow.project(maintainer, "shared")
+    hers = flow.project(anna, "shared")
+    factory.membership(migrated, hers["id"], "member", human_id=maintainer.id)
+    put = maintainer.client.put(
+        "/api/v1/me/preferences/projects/anna/shared",
+        json={"include": False},
+        headers={"X-CSRF-Token": maintainer.csrf},
+    )
+    assert put.status_code == 200, put.text
+    expected = [
+        {"slug": "shared", "full_name": "anna/shared", "include": False},
+        {"slug": "shared", "full_name": "maintainer/shared", "include": True},
+    ]
+    assert put.json()["projects"] == expected
+    assert maintainer.get("/me/preferences").json()["projects"] == expected
