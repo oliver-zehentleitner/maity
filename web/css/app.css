@@ -170,8 +170,13 @@ button.small { padding: 2px 8px; font-size: 0.82rem; }
 }
 :root[data-theme="dark"] .brand-lockup.brand-light { display: none; }
 :root[data-theme="dark"] .brand-lockup.brand-dark { display: block; }
-/* Before the first view: the loader (web/brand/loader.css) and its word. */
-.page-loading { display: flex; align-items: center; gap: 8px; color: var(--muted); margin: 24px 0; }
+/* Before the first view: the loader (web/brand/loader.css) and its word,
+   and a page that could not load: centred in what the header leaves of
+   the screen, on a phone as on a desktop. Without :has, at the top. */
+.page-loading { display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--muted); margin: 24px 0; }
+.page-failed { display: grid; gap: 12px; justify-items: center; text-align: center; max-width: 36rem; margin: 24px auto; }
+body:has(> main > .page-loading, > main > .page-failed) { display: flex; flex-direction: column; min-height: 100vh; min-height: 100dvh; }
+main:has(> .page-loading, > .page-failed) { flex: 1; display: flex; flex-direction: column; justify-content: center; width: 100%; box-sizing: border-box; }
 .me { margin-inline-start: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 0.88rem; }
 .project { color: var(--muted); }
 

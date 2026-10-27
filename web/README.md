@@ -25,8 +25,11 @@ public site at maity.dev is `docs/index.html`, not this.
 
 The header starts with the Maity lockup (`web/brand/`, 28 px, the small
 mark; the dark file where the page is dark, by the system or by the theme
-picked), and the page shows the brand's loader until the first view is
-drawn. The favicons, the social image and the description come from the
+picked). `index.html` carries that header itself, so it shows before any
+script runs or the hub answers, and the page shows the brand's loader,
+centred in the rest of the screen, until the first view is drawn. A page
+that cannot load keeps the header and says why in the loader's place,
+with **Try again**. The favicons, the social image and the description come from the
 same folder; `web/brand/BRAND.md` has the rules.
 
 One account holds many projects. The header of every screen has a

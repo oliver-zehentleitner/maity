@@ -68,7 +68,8 @@
   <script src="js/project-runners.js" defer></script>
 </head>
 <body>
-  <header id="header"></header>
+  <!-- The header with the lockup at once, before any script or hub call (app.js brandTitle); the first view redraws it. -->
+  <header id="header"><div class="bar"><h1 class="brand"><img class="brand-lockup brand-light" src="brand/maity-lockup.svg" alt="Maity" width="94" height="28"><img class="brand-lockup brand-dark" src="brand/maity-lockup-dark.svg" alt="Maity" width="94" height="28"></h1></div></header>
   <main id="main">
     <noscript><p>The Maity dashboard needs JavaScript.</p></noscript>
     <!-- Until the first view replaces it (web/brand/loader.html; its timing lives in brand/loader.css). -->

@@ -1231,3 +1231,31 @@ whether an account will be made.
 on a closed hub every visitor would fill it in for a mail that never
 comes. Only `GET /auth/methods`: an invited person on a closed hub could
 not register at all, which §3.4 allows.
+
+## The header with the lockup is in the page itself; loading and failure stand centred under it
+
+**Id:** d48f94c1-fbdf-4f81-b16d-896fe74535ce
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's feedback relayed by the coordinator (tsk-vb0dgwhrkvsn), 2026-10-27: on a phone, while the app loads or cannot load, the page was a blank strip with "Loading…" top-left; wanted the header with the logo at once and kept on failure, the loader centred, the same for the failure, static so it shows before JavaScript runs; the dashboard's implementation, 2026-10-27; the designer was not asked yet
+**Revisit when:** the header's first row changes, or the page gets a shell that renders on the server
+
+`web/index.html` holds the header's first row as `brandTitle()` draws
+it (the lockup, one file per theme), so it is on screen before any
+script or hub call; every view redraws the header as before. The loader
+(`p.page-loading`) and a page that could not load (`div.page-failed`:
+the error and **Try again**, which shows the loader and loads again) are
+centred in what the header leaves of the screen: `body:has(> main >
+…)` becomes a column of the screen's height and `main` takes the rest.
+A browser without `:has` shows them at the top, as before.
+
+**Reason:** the first thing a person sees should say where they are, and
+a failure should not look like a broken page; plain HTML and CSS show
+before the scripts load, which on a slow phone is the longest wait. A
+selector on what `main` holds needs no class to set and none to forget
+to remove when the first view arrives.
+
+**Rejected alternative:** drawing the header from JavaScript first: it
+waits for every deferred script. A class on `main` that the router
+removes: one more step every path to a view must remember.

@@ -650,6 +650,28 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     .every((x) => html.includes(x)) && /<p class="page-loading" role="status"><svg class="maity-loader"[^]*<\/svg> Loading…<\/p>/.test(html)
     && !/ style=/.test(html.split('<main id="main">')[1]), "brand: favicons, the social image and the page loader, with no inline style (CSP)");
   expect(!main.querySelector(".page-loading"), "brand: the first view replaces the loader");
+  // The header with the lockup is in the page itself, before any script or hub call (tsk-vb0dgwhrkvsn).
+  expect(/<header id="header"><div class="bar"><h1 class="brand"><img class="brand-lockup brand-light" src="brand\/maity-lockup.svg" alt="Maity"[^>]*><img class="brand-lockup brand-dark" src="brand\/maity-lockup-dark.svg" alt="Maity"[^>]*><\/h1><\/div><\/header>/.test(html)
+    && !/ style=/.test(html.split('<header id="header">')[1].split("</header>")[0]),
+    "loading: the header with the lockup is static in the page, before any script runs");
+  expect(thCss.includes("body:has(> main > .page-loading, > main > .page-failed)") && thCss.includes("main:has(> .page-loading, > .page-failed) { flex: 1;")
+    && thCss.includes(".page-loading { display: flex; align-items: center; justify-content: center;"),
+    "loading: the loader and a failure are centred in what the header leaves of the screen");
+  // A page that cannot load: the header and its lockup stay, the failure stands centred, Try again loads again.
+  const ldgGet = win.Maity.api.get;
+  let ldgFail = true;
+  win.Maity.api.get = (p) => (ldgFail && p === "/auth/session" ? Promise.reject(new win.Maity.api.ApiError("The hub did not answer: offline", 0, p)) : ldgGet(p));
+  await go("#/p/maity/board"); for (let k = 0; k < 4; k++) await tick();
+  const ldgBox = main.querySelector(".page-failed");
+  const ldgAgain = ldgBox && ldgBox.querySelectorAll("button").find((b) => b.textContent === "Try again");
+  expect(ldgBox && ldgBox.parentNode === main && text(ldgBox).includes("The hub did not answer") && ldgAgain
+    && header.querySelector(".brand") && header.querySelector(".brand").querySelectorAll("img").length === 2,
+    "loading: a page that could not load keeps the header and lockup, says why, centred, with Try again");
+  ldgFail = false;
+  ldgAgain.click(); for (let k = 0; k < 6; k++) await tick();
+  expect(!main.querySelector(".page-failed") && !main.querySelector(".page-loading") && main.querySelector("section.view"),
+    "loading: Try again loads the page");
+  win.Maity.api.get = ldgGet;
   expect(/<script src="js\/theme.js"><\/script>/.test(html) && html.indexOf("js/theme.js") < html.indexOf("js/dom.js"),
     "theme: applied before the first paint, by a script in <head> without defer");
   // Users of this hub (docs/api.md §16.1), for the instance admin only.

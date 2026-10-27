@@ -1321,8 +1321,11 @@ window.Maity = window.Maity || {};
       if (seq !== renderSeq) return;
     } catch (err) {
       if (seq !== renderSeq) return;
+      // The page could not load: the header with the lockup stays, the
+      // failure stands where the loader stood, with a way to try again.
       append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle()));
-      append(clear(main), errorBox(err));
+      append(clear(main), h("div", { class: "page-failed" }, errorBox(err),
+        h("button", { type: "button", onclick: () => { append(clear(main), loading()); render(); } }, "Try again")));
       return;
     }
     if (seq !== renderSeq) return;
@@ -1405,6 +1408,30 @@ window.Maity = window.Maity || {};
     document.title = M.notify.title(baseTitle);
     if (M.notify.state.available) startBrowserNotifications(ctx);
     setFavicon(where.scope === "project" ? ctx.slug : null, where.scope === "project" ? ctx.project : null);
+  }
+
+  // The loader as web/index.html has it, for a page that loads again.
+  const SVG = "http://www.w3.org/2000/svg";
+  function loading() {
+    const svg = document.createElementNS(SVG, "svg");
+    svg.setAttribute("class", "maity-loader");
+    svg.setAttribute("viewBox", "0 0 64 64");
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", "Loading");
+    const seats = [[32, 10], [51, 21], [51, 43], [32, 54], [13, 43], [13, 21]];
+    seats.forEach(([cx, cy]) => {
+      const c = document.createElementNS(SVG, "circle");
+      c.setAttribute("cx", String(cx)); c.setAttribute("cy", String(cy)); c.setAttribute("r", "6");
+      svg.appendChild(c);
+    });
+    seats.forEach(([cx, cy]) => {
+      const r = document.createElementNS(SVG, "rect");
+      r.setAttribute("class", "maity-loader-t");
+      r.setAttribute("x", String(cx - 6)); r.setAttribute("y", String(cy - 6));
+      r.setAttribute("width", "12"); r.setAttribute("height", "12"); r.setAttribute("rx", "3");
+      svg.appendChild(r);
+    });
+    return h("p", { class: "page-loading", role: "status" }, svg, " Loading…");
   }
 
   M.errorBox = errorBox;
