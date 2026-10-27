@@ -3019,6 +3019,7 @@ around.
   "slug": "maity",
   "owner": { "id": "hum-mebxvnc20qeg", "handle": "oliver" },
   "full_name": "oliver/maity",
+  "legacy_slug": "maity",
   "name": "Maity",
   "state": "build",
   "state_note": "MVP skeletons in progress.",
@@ -6269,9 +6270,17 @@ of §2.8.4. The receiving human must already hold trust `owner` in the
 project, and nothing moves into a namespace without its owner's word:
 the call files a `consent` request to the receiver (§7), and the
 transfer happens when they answer `go`; the namespace owner may withdraw
-it until then. At that moment the slug must be free in the receiver's
-namespace, otherwise the answer is refused with `invalid`
-(`details.fields.slug: "taken"`) and nothing changes. The old full name
+it until then. A project has at most one open transfer: a new one
+withdraws the open one, and so does every change of the project's
+namespace owner or full name (a rename, another transfer). The request
+is bound to the project's id and to its namespace owner and full name
+at filing; the `go` checks, in one transaction with the move, that both
+are unchanged, that the receiver still holds an active membership with
+trust `owner`, and that the slug is free in the receiver's namespace.
+If any check fails the answer is refused — `invalid_transition`
+(`details.reason: "transfer_stale"`) for a changed owner or name or a
+receiver no longer owner, `invalid` (`details.fields.slug: "taken"`)
+for the slug — the request is withdrawn and nothing changes. The old full name
 becomes an alias. It emits `project_updated` with `fields: {owner,
 full_name}` and a ticker item of type `rename` (`oliver/maity is now
 oz/maity`, §17.1), written as for a handle rename (§6.24).
@@ -6323,7 +6332,9 @@ limit's `show_reason_in` (§6.12), a runner enrollment's `attach`
 `Maity-Attached` header of a pairing lists full names. The forge
 webhook's buckets (§17.4) key on the path as sent, before anything is
 looked up, as before; a project reachable under several alias paths has
-a budget per path, at most 64 (8 owner aliases × 8 project aliases) —
+a budget per path, at most 82 (the current handle and 8 aliases of the
+owner × the current slug and 8 aliases of the project, plus the frozen
+legacy path below) —
 accepted, since keying on the resolved project would tell a stranger
 which paths name the same project.
 
@@ -6337,8 +6348,12 @@ still the identifier; the prefix is display only and is never parsed.
 **Migration from instance-wide slugs.** Before this change a slug was
 unique instance-wide and the routes were `/projects/{slug}/…`. The
 migration gives every existing project a namespace owner: the human
-who created it, or, where that account is gone, the earliest human
-with trust `owner`; slugs stay as they are, so no collision can arise
+who created it, if they still hold an active membership with trust
+`owner`; otherwise the human with an active membership and trust
+`owner` whose membership is the oldest (ties by id); a project with no
+such human stops the migration and is named to the operator. Nobody's
+removed membership or lowered trust is restored by it. Slugs stay as
+they are, so no collision can arise
 (a slug that is now a reserved word, or a human handle that is now a
 reserved dashboard word, below, stops the migration and is named to the
 operator, who renames it first). Stored values that named a project by
@@ -6377,10 +6392,16 @@ transfer:
   — the same `401 webhook_signature` after the same buckets and the
   same body read. The webhook view's `url` shows the new address to move
   to.
-- The dashboard rewrites `#/p/{slug}/…` to `#/{owner}/{slug}/…` (and
-  `#/s/{slug}` to `#/s/{owner}/{slug}`) from the viewer's own project
-  list (`GET /projects`); a slug that is not among the viewer's projects
-  shows the same "not found" as any unknown project, with no lookup.
+- A project that existed before the migration carries `legacy_slug`
+  (its slug at the migration, frozen; `null` for every later project) in
+  the project and in `GET /projects`. The dashboard rewrites
+  `#/p/{slug}/…` to the current `#/{owner}/{slug}/…` of the project in
+  the viewer's own list whose `legacy_slug` it is — never by the current
+  slug, which another project may carry by now; no match shows the same
+  "not found" as any unknown project, with no lookup. `#/s/{slug}`
+  follows the public `GET /swarm/{slug}` above, so a visitor without a
+  session reaches a public swarm page and learns nothing about any
+  other.
 
 **Dashboard routes and handles.** The dashboard's address for a project
 is `#/{owner}/{slug}`, next to its own top-level routes (`#/login`,
