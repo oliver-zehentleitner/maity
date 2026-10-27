@@ -290,3 +290,63 @@ split.
   independent of its own rulings.
 - The coordinator implements small items itself. That is faster in the
   moment, but it blurs who answers for the code.
+
+## While the shared Claude budget runs low, the Claude agents work one at a time
+
+**Id:** 31b7d6b3-054c-411d-8f2c-372831b0c773
+**Type:** decision
+**Status:** needs-review
+**Evidence:** confirmed
+**Source:** the coordinator's notices of 2026-10-23 and 2026-10-24, passing on the maintainer's heads-up that the Claude agents would hit their usage limit
+**Revisit when:** the usage limit has reset, or the budget stops being shared by the Claude agents
+**See:** incidents.md#multi-agent-review-runs-exhausted-the-maintainers-monthly-budget — 1a5e729f-816a-4682-ab8c-a2029aa1ea0a — as of 2026-10-27
+
+**Revisit:** the condition triggered on 2026-10-27: a new team runs on new
+subscriptions, several Claude agents in parallel, on the maintainer's
+instruction (coordinator, 2026-10-27). This is not today's rule; the entry
+stays as the record of the earlier stretch until a person re-checks it.
+
+When the maintainer announced that the Claude-based agents would soon
+hit their usage limit, the coordinator set a working mode for the
+stretch until the reset. First, every agent pushes work in progress to
+its branch (without opening a pull request that is not ready), puts a
+checkpoint on its card (done, next, branch, head) and leaves nothing
+half-way that would break main or an open pull request. Then only one
+Claude agent works at a time, in an order the coordinator names (the
+roles that had open work in flight first); the others finish their
+step, report and pause their wait loop until they are named. The agents
+on the other vendor's model (the reviewers and the worker) keep going,
+finish the reviews they hold and send patches to the coordinator
+instead of merging or pushing. The remaining share was stated twice: about 4 % of the
+weekly budget for about 36 hours, later about 3 % for about 22 hours.
+
+**Reason:** the Claude agents draw on one shared budget, and parallel
+work would have used the small remainder in a few hours and left several
+branches half-done.
+
+**Alternatives:** none were weighed.
+
+## A migration chains on main's head at merge time; the numbers are reservations, and the coordinator sets the merge order
+
+**Id:** 65a9b523-fa1f-4f1f-966c-4f49a2660343
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's notices of 2026-10-23 and 2026-10-25
+**Revisit when:** parallel migration branches stop being a routine problem, or the hub gets a check that finds a diverging head before merge
+
+Several open hub pull requests each carried a migration, numbered in
+advance (0021 to 0027 at first). The rule: a pull request's migration
+has `down_revision` equal to main's alembic head at the moment it merges;
+the numbers are reservations, not an order. When a pull request ahead
+of yours lands, you rebase and re-point `down_revision`; the
+coordinator checks the chain before every merge. Later, with five
+branches waiting on the same head, the coordinator gave an explicit
+merge order: each owner re-points only after the coordinator's ping,
+each step merges only after the previous one is on main, and branches
+without an agreed place follow in the order they are reviewed.
+
+**Reason:** the stated aim was to stop five branches racing for the
+same head.
+
+**Alternatives:** none were weighed.

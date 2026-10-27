@@ -208,3 +208,24 @@ skill as `AGENTS.md` says.
 The ignore file marks it as personal, so committing it would override
 every developer's own file. That it is meant to be personal is read
 from the ignore file's comment, not confirmed by the maintainer.
+
+## Parallel full test suites on the shared VM took it down twice
+
+**Id:** 998fc76e-6c7b-4791-91de-d04a0d514333
+**Type:** incident
+**Status:** active
+**Evidence:** inferred
+**Source:** the coordinator's notice of 2026-10-23, after two outages of the shared VM that also killed the agents' wait loops and a full-suite run
+**Revisit when:** the agents get hosts of their own, or the VM's memory is sized for parallel suites
+**See:** incidents.md#the-shared-machine-ran-out-of-disk-review-artefacts-filled-it — b1c7bd7d-a497-41ed-97e3-989f63c80a1c — as of 2026-10-27
+
+The shared VM went down twice, and one agent's `maity wait` and its
+local full-suite run died with it. The coordinator named memory pressure
+from several agents running full test suites in parallel as the prime
+suspect; that was not confirmed. The rule since then: no local
+full-suite runs on the VM, only one targeted test file at a time, and
+CI runs the full suite on all three databases.
+
+**Learned:** like the full disk, a shared host is a shared resource that
+parallel work can exhaust; the cause stays inferred, the rule is stated.
+After a reboot every agent re-arms exactly one wait.
