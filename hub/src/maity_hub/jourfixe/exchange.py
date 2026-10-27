@@ -535,7 +535,9 @@ def handle_deadlines(conn: Connection, project_id: str) -> None:
 # --- redaction of a round's message (§20.8) ---------------------------------------------------
 
 
-def redact_copy(conn: Connection, marker: dict[str, Any], redaction: dict[str, Any]) -> None:
+def redact_copy(
+    conn: Connection, marker: dict[str, Any], redaction: dict[str, Any], actor: Any = None
+) -> None:
     """The round's copy of a redacted statement or post becomes a tombstone, in the same
     transaction as the message: the text null, `redaction` `{at, by, reason}`."""
     row = conn.execute(
@@ -571,3 +573,14 @@ def redact_copy(conn: Connection, marker: dict[str, Any], redaction: dict[str, A
             ]
         }
     conn.execute(update(t.jour_fixe_round).where(t.jour_fixe_round.c.id == row.id).values(**values))
+    if marker["step"] == "statement" and row.statement is not None:
+        from maity_hub.jourfixe import redaction as cascade
+
+        cascade.statement_redacted(
+            conn,
+            row.id,
+            [topic["id"] for topic in row.statement["topics"]],
+            [p["id"] for topic in row.statement["topics"] for p in topic["proposals"]],
+            redaction,
+            actor,
+        )
