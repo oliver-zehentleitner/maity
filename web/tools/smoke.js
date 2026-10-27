@@ -1956,9 +1956,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const boardTab = () => header.querySelectorAll("nav.views a").find((a) => a.textContent.startsWith("Board"));
   const cpPanel = () => main.querySelector("aside.card-panel");
   expect(idCard && idCard.classList.contains("wanted") && main.querySelectorAll("article.card.wanted").length === 1
-    && cpPanel() && document.activeElement === byId("card-panel-title") && text(byId("card-panel-title")) === "tsk-0004"
+    && cpPanel() && document.activeElement === byId("card-panel-title") && text(byId("card-panel-title")) === idCard.getAttribute("aria-label")
+    && text(cpPanel().querySelector(".card-panel-head .card-id")) === "tsk-0004"
     && boardTab().getAttribute("aria-current") === "page" && main.querySelector("section.view-board"),
     "ids: a card's link opens the card's panel on the board, the card marked there, the Board tab current");
+  // The designer's pass part 2: the panel is the card (one id, in the bar; the title its heading), the controls right
+  // under the claim line, one style of section heading, and on a phone the panel alone.
+  const dpCard = cpPanel().querySelector(".card-panel-card article.card");
+  const dpKids = dpCard.childNodes.map((x) => x.className || x.tagName);
+  const dpClaim = dpKids.findIndex((k) => /claim/.test(String(k)));
+  expect(dpKids.indexOf("card-actions") > -1 && (dpClaim < 0 || dpKids.indexOf("card-actions") === dpClaim + 1)
+    && thCss.includes(".card-panel .card > header .card-id, .card-panel .card > h3 { display: none; }")
+    && thCss.includes(".card-panel h3, .card-panel h4 { font-size: 0.85rem; text-transform: uppercase;")
+    && /@media \(max-width: 600px\) \{\s*\.board-body\.has-panel > \.columns \{ display: none; \}/.test(thCss),
+    "card panel: one id and one title, the controls right under the claim, one heading style, the panel alone on a phone " + JSON.stringify(dpKids));
   // The opened card (js/card-panel.js): the card with its controls, the body, the open notes with a form, the history.
   await go("#/p/maity/board"); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
   const cpCard = () => main.querySelector(".columns").querySelectorAll("article.card").find((a) => a.attrs["data-card"] === "tsk-0001");
@@ -4553,7 +4564,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const stCard = (id) => main.querySelector(".columns").querySelectorAll("article.card").find((a) => a.attrs["data-card"] === id);
   const stToggle = (id) => stCard(id).querySelector("button.subtask-toggle");
   const stRows = (id) => stCard(id).querySelectorAll("li.subtask").map((li) => li.getAttribute("data-card"));
-  expect(!stCard("tsk-0011") && !stCard("tsk-0012") && !stCard("tsk-0014") && stToggle("tsk-0010") && text(stToggle("tsk-0010")) === "Subtasks 1 open of 2"
+  expect(!stCard("tsk-0011") && !stCard("tsk-0012") && !stCard("tsk-0014") && stToggle("tsk-0010") && text(stToggle("tsk-0010")) === "Subtasks · 1 of 2 open"
     && stToggle("tsk-0010").getAttribute("aria-expanded") === "false" && stCard("tsk-0010").querySelector("ul.subtask-list").hidden,
     "subtasks: children stand folded under their parent, the hub's open and total on the toggle");
   stToggle("tsk-0010").click(); await tick();
@@ -4561,7 +4572,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && JSON.stringify(stRows("tsk-0010").sort()) === JSON.stringify(["tsk-0011", "tsk-0012"])
     && stCard("tsk-0010").querySelectorAll("li.subtask a").some((a) => a.getAttribute("href") === "#/p/maity/tasks/tsk-0011"),
     "subtasks: unfolded, each child with its status, linked to open it");
-  expect(stToggle("tsk-0013") && text(stToggle("tsk-0013")) === "Subtasks 1 open of 1" && (stToggle("tsk-0013").click(), JSON.stringify(stRows("tsk-0013"))) === JSON.stringify(["tsk-0014"]),
+  expect(stToggle("tsk-0013") && text(stToggle("tsk-0013")) === "Subtasks · 1 of 1 open" && (stToggle("tsk-0013").click(), JSON.stringify(stRows("tsk-0013"))) === JSON.stringify(["tsk-0014"]),
     "subtasks: a cancelled parent keeps its open child under it");
   // Only open cards: the parent (in review) is not shown, so its open child stands with the parent's id.
   byId("board-column").value = "open"; byId("board-column").dispatch("change"); await tick();
@@ -4673,7 +4684,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("new-subtask-title").value = "Subtasks: the designer's pass";
   stPanel().querySelector("form.new-subtask").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   expect(stPosts.length === 1 && stPosts[0].parent === "tsk-0010" && stPosts[0].status === "proposed"
-    && text(stPanel().querySelector(".card-panel-card .subtasks")).includes("Subtasks 2 open of 3"),
+    && text(stPanel().querySelector(".card-panel-card .subtasks")).includes("Subtasks · 2 of 3 open"),
     "subtasks: the subtask is created under its parent and the parent's counts follow");
   win.Maity.api.post = stPost;
   expect(win.Maity.boardEdit.childProposed({ role: "member", project: { policy: {} } }) && !win.Maity.boardEdit.childProposed({ role: "member", project: { policy: { subtasks: "direct" } } })

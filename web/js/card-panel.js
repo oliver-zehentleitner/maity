@@ -56,15 +56,18 @@ window.Maity = window.Maity || {};
   function render(ctx, c, cardEl, close) {
     const where = M.ids.where(ctx);
     const base = ctx.base + "/tasks/" + encodeURIComponent(c.id);
-    const heading = h("h2", { class: "panel-title", id: "card-panel-title", tabindex: "-1" }, c.id);
+    // The panel is the card (the designer's pass part 2): its id in the
+    // bar beside Close, its title the panel's heading, where the focus goes.
+    const heading = h("h2", { class: "panel-title", id: "card-panel-title", tabindex: "-1" }, M.ids.link(c.title, where));
     const cardSlot = h("div", { class: "card-panel-card" }, cardEl);
     const notesBox = h("div", { class: "card-notes" });
     const historyBox = h("div", { class: "card-history" });
     // The note field as last drawn: it gets the focus back after a post.
     let noteField = null;
     const box = h("aside", { class: "card-panel", "aria-labelledby": "card-panel-title" },
-      h("div", { class: "card-panel-head" }, heading,
+      h("div", { class: "card-panel-head" }, h("span", { class: "card-id" }, c.id),
         h("button", { type: "button", class: "small card-panel-close", onclick: () => close() }, "Close")),
+      heading,
       cardSlot,
       h("h3", null, "Description"),
       c.body ? h("div", { class: "md card-body" }, M.markdown(c.body, where)) : h("p", { class: "muted" }, "No description."),

@@ -906,7 +906,9 @@ def id_links_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
     # phone full width above the columns, nothing wider than the screen.
     panel = page.locator("aside.card-panel")
     expect(panel).to_be_visible()
-    expect(panel.locator("#card-panel-title")).to_have_text(card_id)
+    # The panel is the card: its id in the bar, its title the heading.
+    expect(panel.locator(".card-panel-head .card-id")).to_have_text(card_id)
+    expect(panel.locator("#card-panel-title")).to_be_focused()
     expect(panel.locator(".card-history-list li").first).to_contain_text("created the card")
     run.a11y(page, "board, a card's panel")
     page.set_viewport_size({"width": 390, "height": 844})
