@@ -1319,6 +1319,12 @@ window.Maity = window.Maity || {};
             fail(400, "invalid", "no memory provider", path, { fields: { "policy.keep_the_why": "no_memory_provider" } });
           }
         }
+        if ("member_agents" in body.policy && !["on", "off"].includes(body.policy.member_agents)) {
+          fail(400, "invalid", "unknown member_agents value", path, { fields: { "policy.member_agents": "unknown" } });
+        }
+        if ("member_agents_max" in body.policy && !(Number.isInteger(body.policy.member_agents_max) && body.policy.member_agents_max >= 0 && body.policy.member_agents_max <= 20)) {
+          fail(400, "invalid", "member_agents_max is 0 to 20", path, { fields: { "policy.member_agents_max": "out_of_range" } });
+        }
         p.policy = Object.assign({}, p.policy, body.policy);
       }
       return p;
@@ -2059,6 +2065,25 @@ window.Maity = window.Maity || {};
     }],
     // The join line is made up here and shown once, as the hub would.
     ["POST", /^\/projects\/([^/]+)\/joins$/, (m, body, path) => {
+      // §3.1 "Bringing your own agent": a human with trust member, within the project's limits.
+      if (!["owner", "admin"].includes(roleIn(m[1]))) {
+        const pol = project(m[1], path).policy || {};
+        if (me().member.kind !== "human" || pol.member_agents === "off") fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
+        const limit = (field) => fail(403, "forbidden", "not within the limits of bringing your own agent", path, { reason: "member_join_limit", field });
+        if (body.agent && body.agent.id && !fixtures()["agents.json"].items.some((a) => a.id === body.agent.id && a.owner_id === me().member.id)) limit("agent");
+        if (body.trust && !["member", "guest"].includes(body.trust)) limit("trust");
+        if (body.role && !["coder", "reviewer", "tester", "designer"].includes(body.role)) limit("role");
+        if (body.reports_to && body.reports_to !== me().member.id) limit("reports_to");
+        if ((body.areas || []).length) limit("areas");
+        if ((body.capabilities || []).length) limit("capabilities");
+        if (!body.new_instance && !body.replaces) {
+          const mine = new Set(file(m[1], "members.json", path).items.filter((x) => x.kind === "agent" && x.owner_id === me().member.id && !x.removed_at).map((x) => x.id));
+          file(m[1], "joins.json", path).items.filter((j) => j.created_by === me().member.id && !j.used_at && !j.revoked_at && !j.burned && Date.parse(j.expires_at) > Date.now() && !j.new_instance && !j.replaces)
+            .forEach((j) => mine.add(j.agent_id));
+          const max = pol.member_agents_max === undefined ? 3 : pol.member_agents_max;
+          if (mine.size >= max) fail(403, "forbidden", "you hold as many agents here as the project allows", path, { reason: "member_agents_max", max });
+        }
+      }
       let agentId = body.agent && body.agent.id;
       if (!agentId) {
         if (!body.agent || !body.agent.handle) fail(400, "invalid", "agent needs an id or a handle", path, { fields: { agent: "required" } });

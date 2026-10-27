@@ -421,7 +421,7 @@ window.Maity = window.Maity || {};
       agentsHeading.textContent = "Agents (" + agents.length + ")";
       append(clear(agentsBox), agents.length
         ? table("agent", agents, [role, owner, presence, joined, paused].concat(hasKtw ? [ktw] : [], hasCreds ? [creds] : []), false)
-        : h("p", { class: "muted" }, "No agents yet.", ctx.canAdmin && M.join ? " Add one: its line is made here." : ""));
+        : h("p", { class: "muted" }, "No agents yet.", (ctx.canAdmin || memberAdds) && M.join ? " Add one: its line is made here." : ""));
       drawJoins();
     }
 
@@ -431,11 +431,20 @@ window.Maity = window.Maity || {};
     // the placements. The panel, its form and a line shown once live
     // outside the redrawn table, so a redraw loses neither.
     const agentsHeading = h("h3", { id: "members-agent" }, "Agents");
-    const addButton = h("button", { type: "button", class: "primary join-open" }, "+ Add an agent");
+    const addButton = h("button", { type: "button", class: "primary join-open" }, !ctx.canAdmin ? "+ Add my agent" : "+ Add an agent");
     const agentsBox = h("div", { class: "members-agents" });
     const seatsBox = h("div", { class: "profiles join-seats" });
     const earlierBox = h("div", { class: "earlier-box" });
     let J = null;
+    // Bringing one's own agent (§3.1, tsk-zd2ch05rk7s1): a human member
+    // without members:admin adds agents of their own while the project
+    // allows it, up to member_agents_max (active ones and open joins).
+    const policy = ctx.project.policy || {};
+    const memberAdds = !ctx.canAdmin && ctx.me.kind === "human" && ctx.role !== "guest" && (ctx.trust || "member") !== "guest"
+      && policy.member_agents !== "off";
+    const maxOwn = policy.member_agents_max === undefined ? 3 : policy.member_agents_max;
+    const ownCount = () => items.filter((m) => ownAgent(m) && !m.removed_at).length + (J ? J.openCount() : 0);
+    const limitNote = h("span", { class: "muted member-agents-limit" });
     // How many agents, online, and joins open, under the agents' heading.
     const countLine = h("p", { class: "muted agents-count" });
     function drawCount() {
@@ -443,7 +452,14 @@ window.Maity = window.Maity || {};
       const open = J ? J.openCount() : 0;
       countLine.textContent = agents.length + (agents.length === 1 ? " agent" : " agents") + " · "
         + agents.filter((m) => m.presence === "online").length + " online"
-        + (J ? " · " + open + (open === 1 ? " open join" : " open joins") : "");
+        + (J ? " · " + open + (open === 1 ? (memberAdds ? " open join of yours" : " open join") : (memberAdds ? " open joins of yours" : " open joins")) : "");
+      if (memberAdds) {
+        const n = ownCount();
+        const full = n >= maxOwn;
+        limitNote.textContent = n + " of " + maxOwn + " agents of yours" + (full ? " · the project allows no more" : "");
+        addButton.disabled = full;
+        addButton.setAttribute("aria-describedby", "member-agents-limit");
+      }
     }
     function drawJoins() {
       drawCount();
@@ -461,19 +477,21 @@ window.Maity = window.Maity || {};
     // a member asked for by the URL never wait for the joins.
     const panelSlot = h("div", { class: "join-panel-slot" });
     addButton.hidden = true;
-    append(root, h("div", { class: "toolbar agents-head" }, agentsHeading, addButton), countLine, panelSlot, agentsBox, seatsBox);
-    if (ctx.canAdmin && M.join) {
+    limitNote.id = "member-agents-limit";
+    append(root, h("div", { class: "toolbar agents-head" }, agentsHeading, memberAdds ? limitNote : null, addButton), countLine, panelSlot, agentsBox, seatsBox);
+    if ((ctx.canAdmin || memberAdds) && M.join) {
       M.join.mount(ctx, {
+        member: memberAdds,
         changed: drawJoins,
         opened: (yes) => { addButton.hidden = yes; if (!yes) addButton.focus(); },
       }).then((mounted) => {
         J = mounted;
         addButton.hidden = false;
-        addButton.addEventListener("click", () => J.open(addButton));
+        addButton.addEventListener("click", () => { if (!addButton.disabled) J.open(addButton); });
         append(panelSlot, J.panel, J.listStatus.el);
         drawJoins();
         // Asked for, or no agent yet: the panel is the way in, open at once.
-        if (joinAsked || !items.some((m) => m.kind === "agent")) J.open(addButton);
+        if (joinAsked || (ctx.canAdmin && !items.some((m) => m.kind === "agent"))) J.open(addButton);
       }, (err) => append(panelSlot, h("p", { class: "send-status failed" }, "Could not read the joins: " + err.message)));
       // An agent running its line takes its seat: the list is read again,
       // unless the panel is open; then only the seats move.

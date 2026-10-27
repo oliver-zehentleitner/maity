@@ -1604,7 +1604,49 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const ownRow = main.querySelector("tr.member-manage");
   expect(ownRow && ownRow.querySelector(".member-credentials .credentials") && !ownRow.querySelector("form.member-edit") && !ownRow.querySelector(".member-pause")
     && !btn(ownRow, "Remove from the project"), "members: the owner's details hold the credentials, no form that changes the membership");
+  // Bringing one's own agent (§3.1, tsk-zd2ch05rk7s1): a member adds agents of their own, within the project's limit.
+  for (let k = 0; k < 4; k++) await tick();
+  const byoButton = () => main.querySelector("button.join-open");
+  const byoNote = () => main.querySelector(".member-agents-limit");
+  expect(byoButton() && text(byoButton()) === "+ Add my agent" && byoButton().disabled && /^\d+ of 3 agents of yours/.test(text(byoNote()))
+    && text(byoNote()).includes("the project allows no more"), "own agents: a member at the project's limit sees Add my agent off, and why " + (byoNote() && text(byoNote())));
+  const byoGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/projects/maity" ? byoGet(p).then((x) => Object.assign({}, x, { policy: Object.assign({}, x.policy, { member_agents_max: 10 }) })) : byoGet(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/members"); for (let k = 0; k < 6; k++) await tick();
+  expect(byoButton() && !byoButton().disabled && /^\d+ of 10 agents of yours$/.test(text(byoNote())), "own agents: below the limit, Add my agent is on");
+  byoButton().click(); await tick();
+  expect(byId("join-trust") && byId("join-trust").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "member,guest"
+    && byId("join-role").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "coder,reviewer,tester,designer"
+    && !byId("join-reports") && !byId("join-areas") && text(main.querySelector(".join-panel")).includes("Add my agent"),
+    "own agents: the panel offers only member or guest, the four roles, no reports to and no areas");
+  const byoPosts = [];
+  const byoPost = win.Maity.api.post;
+  win.Maity.api.post = (p, b) => { if (p.endsWith("/joins")) byoPosts.push(b); return Promise.reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", { reason: "member_join_limit", field: "role" })); };
+  byId("join-agent").value = ""; byId("join-agent").dispatch("change");
+  byId("join-handle").value = "my-helper"; byId("join-display").value = "My helper"; byId("join-role").value = "tester"; byId("join-trust").value = "guest"; byId("join-ttl").value = "900";
+  main.querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(byoPosts[0]) === JSON.stringify({ agent: { handle: "my-helper", display_name: "My helper" }, trust: "guest", role: "tester", ttl_seconds: 900 })
+    && text(main.querySelector(".join-panel")).includes("a member may not set this for their own agent: the role"),
+    "own agents: the join carries trust and role only, and the hub's limit is said with its field " + JSON.stringify(byoPosts[0]));
+  win.Maity.api.post = (p, b) => Promise.reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", { reason: "member_agents_max", max: 10 }));
+  main.querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main.querySelector(".join-panel")).includes("you hold as many agents in this project as it allows (10)"), "own agents: the hub's count limit in words");
+  win.Maity.api.post = byoPost; win.Maity.api.get = byoGet;
   win.Maity.api.get = mGet;
+  // Project settings: whether members add their own agents, and how many each, with a reason (an owner).
+  await go("#/p/maity/inbox"); await projectSettings();
+  const maPatches = [];
+  const maPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { maPatches.push([p, b]); return maPatch(p, b); };
+  expect(byId("member-agents-select") && byId("member-agents-select").value === "on" && byId("member-agents-max").value === "3",
+    "own agents: Project settings show members' own agents on, three each");
+  byId("member-agents-max").value = "5"; byId("member-agents-reason").value = "a bigger team";
+  main.querySelector("form.member-agents-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(maPatches.length === 1 && JSON.stringify(maPatches[0][1]) === JSON.stringify({ policy: { member_agents_max: 5 }, reason: "a bigger team" }),
+    "own agents: only what changed is sent, with its reason " + JSON.stringify(maPatches[0] && maPatches[0][1]));
+  await win.Maity.api.patch("/projects/maity", { policy: { member_agents_max: 3 }, reason: "back for the tests" });
+  win.Maity.api.patch = maPatch;
+  await go("#/p/maity/inbox");
 
   // Message the project (docs/api.md §8.4): from the Chat tab (tsk-r1adgwp0a5dr), no longer the inbox, no tab of its own.
   await go("#/p/maity/inbox");

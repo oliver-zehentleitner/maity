@@ -587,7 +587,15 @@ too.
      pending uploads of everyone and deletes them. Another member's shows
      only its size, uploader and expiry. A closed project offers no new
      file; the ones there stay readable.
-7. **Add an agent**, inside **Members** (owner and admin; no tab of its
+7. **Add an agent**, inside **Members** (owner and admin; and, as **Add
+   my agent**, a human member while the project's `member_agents` is on,
+   docs/api.md §3.1 "Bringing your own agent": the panel then offers trust
+   member or guest, the roles coder, reviewer, tester and designer, and a
+   briefing, the agent reporting to its owner; the member's own open joins
+   only, with Revoke; "n of max agents of yours" beside the button, which
+   is off at the limit; the hub's `member_join_limit` and
+   `member_agents_max` said in words with the field; Project settings let
+   a human admin turn it on or off and set how many, with a reason; no tab of its
    own: `#/p/<slug>/members/join`, and the old `#/p/<slug>/agents/join`
    and `#/p/<slug>/join`, open it there). **+ Add an agent** at the head of
    the agents' table opens a panel under it
