@@ -23,9 +23,10 @@ from maity_hub.views import _without_reason, principal_ids, ts
 
 router = APIRouter()
 
-SEQ_MAX = 2**63 - 1  # BIGINT
+SEQ_MAX = paging.SEQ_MAX
 LISTED_TYPES = tuple(kind for kind in MESSAGE_TYPES if kind != "chat")
 BATCH = 500
+SCAN_BUDGET = 2000  # events examined per page; a sparse filter continues on the next one
 
 
 def _seq(request: Request, name: str) -> int | None:
@@ -72,12 +73,16 @@ def _scan(
     limit: int,
     *,
     oldest_first: bool,
-) -> list[Any]:
-    """Up to `limit` readable messages past `start` in the direction, and one more when
-    there is a further page."""
+) -> tuple[list[Any], int | None]:
+    """The page past `start` in the direction, and where the next one goes on: after the
+    last message shown when one more was found, else after the last row examined when the
+    scan budget ran out (a page may then be short or empty), else `None` at the end of
+    the history. A page examines at most `SCAN_BUDGET` events, however sparse the filter."""
     found: list[Any] = []
     position = start
+    scanned = 0
     while True:
+        wanted = min(BATCH, SCAN_BUDGET - scanned)
         query = select(t.event).where(
             t.event.c.project_id == mine.project.id,
             t.event.c.kind == "message",
@@ -87,16 +92,19 @@ def _scan(
             query = query.where(t.event.c.seq > position).order_by(t.event.c.seq)
         else:
             query = query.where(t.event.c.seq < position).order_by(t.event.c.seq.desc())
-        batch = conn.execute(query.limit(BATCH)).all()
+        batch = conn.execute(query.limit(wanted)).all()
         hidden = events.hidden_redactions(conn, batch, mine.row)
         for row in batch:
+            scanned += 1
             if events.readable_by(row, mine.row, mine.principal_id, hidden) and _listed(row, types):
                 found.append(row)
                 if len(found) > limit:
-                    return found
+                    return found[:limit], found[limit - 1].seq
             position = row.seq
-        if len(batch) < BATCH:
-            return found
+        if len(batch) < wanted:
+            return found, None
+        if scanned >= SCAN_BUDGET:
+            return found, position
 
 
 def _items(conn: Connection, rows: list[Any], mine: Membership) -> list[dict[str, Any]]:
@@ -147,7 +155,6 @@ def read_project_messages(slug: str, request: Request, caller: AnyCaller) -> JSO
             start = after or 0
         else:
             start = before if before is not None else SEQ_MAX
-        rows = _scan(conn, mine, types, start, limit, oldest_first=oldest_first)
-        page = rows[:limit]
-        next_cursor = paging.seq_cursor(page[-1].seq, bound) if len(rows) > limit else None
+        page, resume = _scan(conn, mine, types, start, limit, oldest_first=oldest_first)
+        next_cursor = paging.seq_cursor(resume, bound) if resume is not None else None
         return JSONResponse({"items": _items(conn, page, mine), "next_cursor": next_cursor})

@@ -7,6 +7,9 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine
 
+from maity_hub import paging
+from maity_hub.errors import ApiError
+from maity_hub.routes import project_messages
 from tests import flow
 from tests.conftest import ClientFactory
 
@@ -188,3 +191,56 @@ def test_a_stranger_gets_not_found(
     stranger = flow.human(make_client, migrated, "stranger")
     refused = listed(stranger)
     assert refused.status_code == 404
+
+
+def test_a_sparse_filter_costs_a_bounded_page_and_continues_without_skipping(
+    owner: flow.Human, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(project_messages, "SCAN_BUDGET", 3)
+    monkeypatch.setattr(project_messages, "BATCH", 2)
+    wanted = say(owner, "all", "the one", "blocker")
+    for n in range(8):
+        say(owner, "all", f"note {n}")
+    found: list[int] = []
+    pages = 0
+    answer = listed(owner, "?type=blocker&limit=1").json()
+    while True:
+        pages += 1
+        found += [i["seq"] for i in answer["items"]]
+        if answer["next_cursor"] is None:
+            break
+        assert pages < 20
+        answer = listed(owner, f"?type=blocker&limit=1&cursor={answer['next_cursor']}").json()
+    assert found == [wanted]
+    assert pages > 1  # short or empty pages carried a cursor on the way
+    everything = [i["seq"] for p in _all_pages(owner, "?limit=2") for i in p["items"]]
+    assert len(everything) == 9 and everything == sorted(everything, reverse=True)
+
+
+def _all_pages(who: Any, query: str) -> list[dict[str, Any]]:
+    pages = [listed(who, query).json()]
+    while pages[-1]["next_cursor"] is not None:
+        pages.append(listed(who, f"{query}&cursor={pages[-1]['next_cursor']}").json())
+        assert len(pages) < 50
+    return pages
+
+
+@pytest.mark.parametrize("seq", [-1, 2**63, 2**100, True, "5", 1.5, None])
+def test_a_cursor_with_a_seq_outside_the_bigint_range_is_invalid(seq: Any) -> None:
+    bound = paging.scope(after=None, before=None, type=[])
+    with pytest.raises(ApiError) as refused:
+        paging.unseq(paging.seq_cursor(seq, bound), bound)
+    assert refused.value.details["fields"] == {"cursor": "invalid"}
+
+
+def test_the_edge_seqs_are_valid_cursors_and_a_huge_one_is_refused_over_http(
+    owner: flow.Human,
+) -> None:
+    say(owner, "all")
+    bound = paging.scope(after=None, before=None, type=[])
+    for seq in (0, 2**63 - 1):
+        assert paging.unseq(paging.seq_cursor(seq, bound), bound) == seq
+        assert listed(owner, f"?cursor={paging.seq_cursor(seq, bound)}").status_code == 200
+    huge = listed(owner, f"?cursor={paging.seq_cursor(2**100, bound)}")
+    assert huge.status_code == 400
+    assert huge.json()["error"]["details"]["fields"] == {"cursor": "invalid"}
