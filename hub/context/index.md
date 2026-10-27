@@ -43,7 +43,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 ## H
 
 ## I
-- [images.md](images.md) — a project's logo and banner: the forge's images as rows next to the uploads, refreshed by a worker that needs no token; image routes choose their own caching; a 1 MiB cap for uploads only; avatars decoded in a self-limiting process (-I, empty environment, size from the header first); replays first, the change limit counts refused images; a GitHub logo is the owner's avatar only for an organization
+- [images.md](images.md) — a project's logo and banner: the forge's images as rows next to the uploads, refreshed by a worker that needs no token; image routes choose their own caching; a 1 MiB cap for uploads only; avatars decoded in a self-limiting process (-I, empty environment, size from the header first); replays first, the change limit counts refused images; a GitHub logo is the owner's avatar only for an organization; an attachment's image runs through the same child in an attachment mode (8192 px, 40 MP, kept size, sRGB, PNG/JPEG/WebP out)
 - [instances.md](instances.md) — an agent's claim always names its instance, none held by nobody; the rulebook through the member PATCH with team alone, a non-member owner included; a replacement moves claims and lead before revoking; what a rollback and old join links do; the team wake stored per team at write; PATCH /me pauses the calling instance; instance_assigned only for the team's own cards (open); an instance mention resolves to any live instance, a malformed suffix is a boundary; a chat message's and a request's instance read from the credential behind them, not stored
 
 ## J

@@ -172,3 +172,38 @@ project's logo.
 §11.2 said before. It gives an organization's repositories their logo
 and a person's repositories that person's face.
 
+
+## An attachment's image goes through the avatar decoder's child process, in a mode of its own
+
+**Id:** d5b69637-6f20-4b71-a9c7-213a87f171d8
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-10-27 (`docs/api.md` §8.7, which names the avatar decoder's rules and two differences); the way to share the process is the implementer's
+**Revisit when:** attachments take another image format, or the avatar decoder moves out of its single file
+**See:** images.md#an-avatar-is-decoded-in-a-process-of-its-own-that-limits-itself — 28da8cdf-5d46-4306-a49a-9ef02bb2185d — as of 2026-10-27
+
+`avatar_decode.py` takes `attachment` as a fourth argument and then runs
+`process_file` instead of `process`: the limit is 8192 pixels on a side and
+40 megapixels in all, read from the header before Pillow opens the file, GIF
+is a fourth format (its size from the logical screen), and the image keeps
+its size. EXIF orientation is applied, a colour profile of an RGB space is
+converted to sRGB, and the image is built again from raw pixels, so nothing of
+the input but its pixels survives: PNG and GIF come out as PNG (alpha kept
+only when the source had it), JPEG as JPEG at quality 90, WebP as WebP,
+lossless when the source's first image was (read from its chunks, not from a
+guess). `avatars.decode_attachment` runs the same child under the same
+settings and the same decode slots, as the contract says, and reads the
+stored file's size from its own header.
+
+**Reason:** the decoder is the most exposed parser of the hub, and its
+protections (isolated interpreter, empty environment, memory and CPU limits,
+no file writes, header checks before decoding) are tuned once. A mode keeps
+one file to audit and patch.
+
+**Rejected alternatives:**
+- A second decoder file for attachments: two copies of the parser that every
+  Pillow advisory would have to be applied to.
+- A second child that imports the avatar module's helpers: `python -I` leaves
+  the script's directory off `sys.path`, so the child could not import it
+  without widening what it loads.
