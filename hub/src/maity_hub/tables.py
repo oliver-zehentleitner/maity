@@ -1466,6 +1466,26 @@ address_lock = Table(
     "address_lock",
     metadata,
     Column("address", String(254), primary_key=True),
+# Mail waiting for the worker (docs/api.md §16.2, §18.5, §18.7): written in the
+# transaction that decides it. `kind` is the budget kind. `not_before` is when the row is
+# next due, and while it is `sending` the deadline of the claim. A row that left the
+# queue (sent, failed, dropped) is deleted after seven days.
+mail_outbox = Table(
+    "mail_outbox",
+    metadata,
+    Column("id", BIG_ID, primary_key=True, autoincrement=True),
+    Column("kind", String(16), nullable=False),
+    _ref("human_id", "human.id", nullable=True),
+    Column("recipient", String(254), nullable=False),
+    Column("subject", String(255), nullable=False),
+    Column("body", Text, nullable=False),
+    Column("headers", JSON_VALUE, nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("not_before", UtcDateTime, nullable=False),
+    Column("attempts", Integer, nullable=False),
+    Column("status", String(16), nullable=False),  # waiting sending sent failed dropped
+    Index("ix_mail_outbox_due", "status", "not_before"),
+    sqlite_autoincrement=True,
     **MYSQL_TABLE,
 )
 
