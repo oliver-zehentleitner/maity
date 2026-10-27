@@ -187,4 +187,3 @@ from using up the security or notification budgets.
   registration, given the password hash is not.
 - The registration mail on the sign-in budget: the two are triggered by different requests with
   different limits (§2.7.3 against §2.6.4); one flood would silence the other.
-
