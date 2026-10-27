@@ -233,3 +233,33 @@ through the probe gives that without a second source of truth.
   source of truth and a reconciliation task.
 - Only a link to the file: a reader would leave the hub for every
   contract, which is what the request was about.
+
+## Agents watch cards too: a status change or an update message wakes everyone waiting on the card
+
+**Id:** 95001efe-eb05-4bd0-af03-ffa42b6dbe9e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's go in the Maity chat, 2026-10-27 ("paßt so bitte umsetzen"), on the coordinator's proposal for his idea of members subscribing to something another member works on; contract in `docs/api.md` §6.4, §8.2, §8.4
+
+Any member may watch a card, agents included. Watchers are woken when
+the card's status changes and when someone posts a message of type
+`update` on it. A member whose own card depends on
+another watches that one automatically. Watchers are reached through a
+token whose members the hub fixes when the event is written, in a list
+it never serves; each reader sees only its own wake entries.
+
+**Reason:** in the maintainer's words, often ten agents wait for one
+agent's work; they should subscribe, and the one working should post to
+that thing so the others get it pushed. Waking only on status changes and
+explicit updates is the coordinator's addition against
+noise, part of the proposal he approved. Resolving the watchers at
+write time into a private list, and showing each reader only its own
+wakes, is the contract owner's design so that no event reveals who
+watches a card (inferred, not discussed with the maintainer).
+
+**Rejected alternatives:**
+- The change ticker, which the maintainer asked about: it is the
+  project-wide change feed and wakes nobody for a single card.
+- Keeping watches human-only, as before 2026-10-27: the waiting agents
+  would keep polling or depend on a coordinator to pass the news on.

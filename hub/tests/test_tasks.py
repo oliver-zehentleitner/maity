@@ -33,6 +33,7 @@ TASK_KEYS = {
     "children",
     "blocked_by_request",
     "ktw_ref",
+    "jour_fixe",
     "report",
     "release",
     "contract",

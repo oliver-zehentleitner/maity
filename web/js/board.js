@@ -117,7 +117,7 @@ window.Maity = window.Maity || {};
     const away = counts.total - kids.length;
     const list = h("ul", { class: "subtask-list" }, kids.map((t) => childRow(ctx, t)),
       away > 0 ? h("li", { class: "muted" }, away + " more not loaded on the board") : null);
-    const words = "Subtasks " + counts.open + " open of " + counts.total;
+    const words = "Subtasks · " + counts.open + " of " + counts.total + " open";
     if (inPanel) return h("div", { class: "subtasks" }, h("span", { class: "label" }, words), list);
     const key = ctx.slug + "/" + c.id;
     const listId = "subtasks-" + c.id;
@@ -546,6 +546,8 @@ window.Maity = window.Maity || {};
       if (target) target.focus();
     };
     const E = M.boardEdit;
+    const controls = manage ? actions(E.moveControl(ctx, c, manage.move), E.assignControl(ctx, c, manage.assign),
+      E.orderControl(ctx, c, manage.columnOf(c), manage.place)) : null;
     // Movable to another column, or within its own by tasks:admin.
     const movable = manage && (E.targets(ctx, c).length > 0 || E.orderable(ctx, c));
     const draggable = movable && !inPanel;
@@ -574,6 +576,9 @@ window.Maity = window.Maity || {};
       h("h3", null, inPanel ? M.ids.link(c.title, M.ids.where(ctx))
         : h("a", { class: "card-open", href: ctx.link("tasks", c.id), onclick: manage && manage.remember ? () => manage.remember(c.id) : null }, c.title)),
       claimLine(ctx, c),
+      // In the panel the row of controls comes right under the claim (the
+      // designer's pass part 2): on a phone it was far down.
+      inPanel ? controls : null,
       family(ctx, c, inPanel),
       edges(c.kind === "release" ? "Ships" : "Depends on", c.depends_on, byId, frozen),
       edges("Ships with", c.ships_with, byId),
@@ -594,8 +599,7 @@ window.Maity = window.Maity || {};
       report(ctx, c),
       c.kind === "release" && c.release ? release(ctx, c, byId, frozen, redraw, inPanel ? "panel-" : "") : null,
       // One row of controls: the column, the assignee, the place in the column.
-      manage ? actions(E.moveControl(ctx, c, manage.move), E.assignControl(ctx, c, manage.assign),
-        E.orderControl(ctx, c, manage.columnOf(c), manage.place)) : null);
+      inPanel ? null : controls);
     return el;
   }
 

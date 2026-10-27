@@ -44,6 +44,9 @@ window.Maity = window.Maity || {};
     const body = h("div", { class: "contract-body", "aria-live": "polite" });
     const status = M.statusLine();
     let loaded = false;
+    // Refresh is a small text button in the line that says what was read
+    // (the designer's pass part 3), not a row of its own.
+    const refresh = () => h("button", { type: "button", class: "link-button contract-refresh", onclick: () => read() }, "Refresh");
 
     async function read() {
       loaded = true;
@@ -56,28 +59,40 @@ window.Maity = window.Maity || {};
         const code = fields["contract.section"] || fields["contract.path"] || err.code || "error";
         append(clear(body), h("p", { class: "flag contract-unresolved" },
           h("code", null, (k.path || DEFAULT_PATH) + (k.section ? " § " + k.section : "")), " is not shown: ",
-          WHY[code] || err.message || code, " (", h("code", null, code), ")."));
+          WHY[code] || err.message || code, " (", h("code", null, code), "). ", refresh()));
         return;
       }
       const url = safeUrl(s.url);
       append(clear(body),
         h("p", { class: "muted contract-meta" }, s.path + " at ", h("code", null, String(s.ref || "").slice(0, 7)),
           " · read " + formatAgo(s.fetched_at, M.api.now()),
-          url ? [" · ", h("a", { href: url, rel: "noopener noreferrer", target: "_blank" }, "the file on the forge")] : null),
+          url ? [" · ", h("a", { href: url, rel: "noopener noreferrer", target: "_blank" }, "the file on the forge")] : null,
+          " · ", refresh()),
         h("div", { class: "md contract-text" }, M.markdown(s.text)),
         s.truncated ? h("p", { class: "flag" }, "Cut at 64 KiB; the whole section is in the file",
           url ? [" (", h("a", { href: url, rel: "noopener noreferrer", target: "_blank" }, "open it"), ")"] : null, ".") : null);
     }
 
-    const refresh = h("button", { type: "button", class: "small", onclick: () => read() }, "Refresh");
+    // Where the section is read from changes rarely: its form waits behind
+    // Change source, so the card shows the text, not an editor.
+    const place = mayEdit(ctx, c) ? placeForm(ctx, c, onSaved, status) : null;
+    const change = place ? h("button", { type: "button", class: "link-button contract-change", "aria-expanded": "false",
+      onclick: () => {
+        place.hidden = !place.hidden;
+        change.setAttribute("aria-expanded", String(!place.hidden));
+        if (!place.hidden) place.querySelector("input").focus();
+      } }, "Change source") : null;
+    if (place) place.hidden = true;
     const box = h("details", { class: "contract-section" },
       h("summary", null, "Contract section: ", h("code", null, where)),
-      h("div", { class: "contract-bar" }, refresh),
       body,
-      mayEdit(ctx, c) ? placeForm(ctx, c, onSaved, status) : null,
+      change ? h("p", { class: "contract-change-row" }, change) : null,
+      place,
       status.el);
     box.addEventListener("toggle", () => { if (box.open && !loaded && k.section) read(); });
     if (!k.section) append(body, h("p", { class: "muted" }, "The card names no section yet."));
+    // Without a section the form is what there is to do: open at once.
+    if (place && !k.section) { place.hidden = false; change.setAttribute("aria-expanded", "true"); }
     if (reopen.delete(c.id)) {
       box.open = true;
       if (k.section) read();

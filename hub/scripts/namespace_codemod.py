@@ -1,6 +1,7 @@
 """The mechanical half of the project namespace (docs/api.md §6.25), as a script.
 
-Rewrites project route paths from `/projects/{slug}` to `/projects/{owner}/{slug}`, gives every
+Rewrites project route paths from `/projects/{slug}` to `/projects/{owner}/{slug}` (and the
+middleware's per-route path patterns to two segments), gives every
 route module's router the `ProjectRoute` class that hands a route the full name as `slug`, and
 moves the tests' project paths into the namespace of the human that creates the project in
 the test helpers (`maintainer`). It is idempotent: a second run changes nothing, so a rebase
@@ -14,6 +15,7 @@ from __future__ import annotations
 
 import ast
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -30,6 +32,9 @@ ROUTE_PATH = re.compile(r"/projects/\{slug\}")
 FSTRING_PATH = re.compile(r"/projects/\{\{slug\}\}")
 PLAIN_ROUTER = re.compile(r"\bAPIRouter\(\)")
 IMPORT = "from maity_hub.namespace import ProjectRoute\n"
+# A path pattern in the middleware that matches one project segment (body caps per route).
+MIDDLEWARE = ROOT / "src" / "maity_hub" / "middleware.py"
+ONE_SEGMENT = re.compile(r"projects/\[\^/\]\+/(?!\[\^/\]\+/)")
 TEST_BADGE = re.compile(r"/badge/(" + "|".join(TEST_SLUGS) + r"|p-\{preset\})\.svg")
 TEST_SWARM = re.compile(r"/api/v1/swarm/\{slug\}")
 TEST_FSTRING = re.compile(r"/projects/\{slug\}")
@@ -59,6 +64,10 @@ def _add_import(text: str) -> str:
     return "".join(lines)
 
 
+def middleware(text: str) -> str:
+    return ONE_SEGMENT.sub("projects/[^/]+/[^/]+/", text)
+
+
 def tests(text: str) -> str:
     text = TEST_PATH.sub(lambda m: f"/projects/{OWNER}/{m[1]}", text)
     text = TEST_FSTRING.sub(f"/projects/{OWNER}/{{slug}}", text)
@@ -69,18 +78,26 @@ def tests(text: str) -> str:
 def main(argv: list[str]) -> int:
     check = "--check" in argv
     changed = []
-    for folder, rewrite in ((ROUTES, routes), (TESTS, tests)):
-        for path in sorted(folder.rglob("*.py")):
-            if path.name in EXEMPT:
-                continue
-            old = path.read_text(encoding="utf-8")
-            new = rewrite(old)
-            if new != old:
-                changed.append(path.relative_to(ROOT))
-                if not check:
-                    path.write_text(new, encoding="utf-8")
+    jobs = [(path, routes) for path in sorted(ROUTES.rglob("*.py"))]
+    jobs += [(path, tests) for path in sorted(TESTS.rglob("*.py"))]
+    jobs.append((MIDDLEWARE, middleware))
+    for path, rewrite in jobs:
+        if path.name in EXEMPT:
+            continue
+        old = path.read_text(encoding="utf-8")
+        new = rewrite(old)
+        if new != old:
+            changed.append(path.relative_to(ROOT))
+            if not check:
+                path.write_text(new, encoding="utf-8")
     for path in changed:
         print(path)
+    if changed and not check:  # the added import, in its sorted place
+        subprocess.run(
+            [sys.executable, "-m", "ruff", "check", "-q", "--fix", "--select", "I"]
+            + [str(ROOT / p) for p in changed],
+            check=False,
+        )
     return 1 if check and changed else 0
 
 
