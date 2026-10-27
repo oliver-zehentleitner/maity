@@ -14,10 +14,19 @@ from maity import proc
 
 BEGIN = "<!-- maity:begin -->"
 END = "<!-- maity:end -->"
+# The maintainer's request of 2026-10-27: once joined, an agent talks to its human through
+# Maity alone, because the human follows many agents in one place, not in many chat windows.
+HUMAN_CHANNEL = (
+    "Once joined, talk to your human only through Maity: `maity say human` to chat, "
+    "`maity ask --to human` for decisions and proposals, `maity report` for results. The "
+    "harness terminal is only where your human starts you or unblocks a permission; if they "
+    "write there, answer with one line that points to Maity. Your human follows many agents "
+    "on several machines in one place, not in one chat window per agent."
+)
 PROJECT_CHANNEL = (
     "Maity is the project's main channel: use `maity say`, `maity ask` and `maity report` "
     "for work communication; bring project instructions from other chats onto the relevant "
-    "card or into a Maity message."
+    f"card or into a Maity message. {HUMAN_CHANNEL}"
 )
 BLOCK = f"""{BEGIN}
 ## Maity
