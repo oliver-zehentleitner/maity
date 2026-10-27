@@ -3481,8 +3481,25 @@ def _pause_note(event: dict[str, Any], member_id: Any) -> str | None:
     return "your pause was lifted; you can take new work again."
 
 
+def _say_body_after_options(args: argparse.Namespace, extra: list[str]) -> bool:
+    """`maity say <to> --type T "…"`: argparse fills both optional positionals before the
+    options and leaves the message over. Taken as the message when it is the one thing left
+    and no message was given; anything else stays an error."""
+    if getattr(args, "handler", None) is not cmd_say or args.body is not None:
+        return False
+    if args.to is None or args.chat is not None or len(extra) != 1:
+        return False
+    if extra[0].startswith("-"):
+        return False
+    args.body = extra[0]
+    return True
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args, extra = parser.parse_known_args(argv)
+    if extra and not _say_body_after_options(args, extra):
+        parser.error(f"unrecognized arguments: {' '.join(extra)}")
     handler: Handler = args.handler
     Session.on_request = getattr(args, "on_request", None)
     try:

@@ -139,3 +139,39 @@ def test_resume_shows_former_handles() -> None:
     text = onboarding.render({"peers": peers})
     assert "lead [agt-a] (admin coder, online; formerly agent-a, a" in text
     assert "\x1b" not in text
+
+
+# --- `say <to> --type T "…"`: the message after the options --------------------------------------
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["say", "agt-a", "--type", "notice", "hi there"],
+        ["say", "agt-a", "--task", "tsk-4", "--type", "notice", "hi there"],
+        ["say", "--type", "notice", "agt-a", "hi there"],
+        ["say", "agt-a", "hi there", "--type", "notice"],
+    ],
+)
+def test_say_takes_the_message_before_or_after_the_options(
+    joined: Path, fake: fakehub.FakeHub, argv: list[str]
+) -> None:
+    fake.routes[("POST", f"{P}/events")] = lambda s: (201, {"seq": 7})
+    assert cli.main(argv) == cli.EXIT_OK
+    sent = fake.signed()[-1].json()
+    assert (sent["to"], sent["body"]) == ("agt-a", "hi there")
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["say", "agt-a", "--type", "notice", "one", "two"],
+        ["say", "agt-a", "hi", "--type", "notice", "more"],
+        ["say", "agt-a", "--type", "notice", "--bogus"],
+        ["task", "show", "tsk-1", "extra"],
+    ],
+)
+def test_anything_else_left_over_is_still_an_error(joined: Path, argv: list[str]) -> None:
+    with pytest.raises(SystemExit) as exc:
+        cli.main(argv)
+    assert exc.value.code == cli.EXIT_USAGE
