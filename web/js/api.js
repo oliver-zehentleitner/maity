@@ -2399,17 +2399,30 @@ window.Maity = window.Maity || {};
       stamp();
       return event();
     }],
+    // §9.1: after= reads forward and marks what it returns read; before=
+    // the limit messages below it, marking nothing; earlier the page's
+    // lowest seq while older ones exist.
     ["GET", /^\/projects\/([^/]+)\/conversations\/([^/]+)\/messages$/, (m, body, path, query) => {
       const conv = keyed(m[1], "conversations.json", m[2], path);
-      const after = Number(query.get("after") || 0);
-      conv.items.forEach((x) => { x.seen_by_human = true; });
+      if (query.get("after") !== null && query.get("before") !== null) fail(400, "invalid", "after or before", path, { fields: { before: "invalid" } });
+      const limit = Math.min(200, Number(query.get("limit") || 200));
+      let items;
+      if (query.get("before") !== null) {
+        items = conv.items.filter((x) => x.seq < Number(query.get("before"))).slice(-limit);
+      } else {
+        const after = Number(query.get("after") || 0);
+        items = conv.items.filter((x) => x.seq > after).slice(0, limit);
+        items.forEach((x) => { x.seen_by_human = true; });
+      }
+      const earlier = items.length && conv.items.some((x) => x.seq < items[0].seq) ? items[0].seq : null;
       return {
-        items: conv.items.filter((x) => x.seq > after).map((x) => {
+        items: items.map((x) => {
           const copy = messageView(x);
           delete copy.seen_by_human;
           return copy;
         }),
-        cursor: conv.items.length ? conv.items[conv.items.length - 1].seq : null,
+        cursor: query.get("before") !== null ? 0 : (items.length ? items[items.length - 1].seq : (conv.items.length ? conv.items[conv.items.length - 1].seq : null)),
+        earlier,
       };
     }],
     ["POST", /^\/projects\/([^/]+)\/conversations\/([^/]+)\/messages$/, (m, body, path) => {

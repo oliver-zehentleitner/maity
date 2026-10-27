@@ -475,8 +475,13 @@ too.
    follow the same way, with the same **Newest** pill. A redraw of the list
    keeps the keyboard focus on the same chat. On a phone (≤ 720 px) the
    list is one screen and the chat another, with **← Conversations**
-   back; opening a chat there moves the focus to its heading. The history
-   is read to its end (pages of 200, oldest first) and drawn with a separator per day ("Today", "Yesterday", the date), a
+   back; opening a chat there moves the focus to its heading. A chat opens
+   on its newest 50 messages, read in two requests whatever its length
+   (back with `before=`, which marks nothing, then forward from the first
+   of them, which marks them read); older pages come when the reader
+   scrolls near the top, or with **Show earlier messages**, the place
+   kept; at the newest, a tail of more than 300 is let go and read again
+   on scroll-up. The messages are drawn with a separator per day ("Today", "Yesterday", the date), a
    sender's messages within five minutes grouped (the agent's picture and
    name only on the first), and a "New messages" line before what was
    unread when the chat was opened; scrolled up, a **Newest** button (with
@@ -508,9 +513,11 @@ too.
      others. Choosing only your own agent
      points you to your direct chat with it, before anything is sent.
    - **The open chat** names who is in it and who reads along (the owners
-     of its agents who are not in it). It shows the window since you
-     joined, with the unread line. **Show earlier messages** reads what
-     came before, on demand.
+     of its agents who are not in it). It shows the newest page of the
+     window since you joined, with the unread line. **Show earlier
+     messages**, or scrolling near the top, reads what came before, on
+     demand; reading along from outside, the 30-second re-read takes the
+     newest page only.
    - **Writing.** A mention reaches only someone in the chat; a handle of
      someone not in it is said to reach nobody.
    - **Removing.** A human in the chat can remove a message for everyone,
@@ -1035,7 +1042,8 @@ and falls back to the generated one when the image does not load (a
 organisation and in the chat list.
 
 **Message the project** (`#/p/<slug>/message`, no tab: **Message the
-project** in the inbox's toolbar, and from a chat: an `@name` typed there
+project** in the Chat tab's list beside **New group chat** and in the
+Messages view, no longer in the inbox, and from a chat: an `@name` typed there
 is said to notify nobody, with a link to a project message that has it
 already written) posts a message (`POST /projects/{slug}/events`, `docs/api.md`
 §8.4): to everyone, a role or one member (never oneself), of one of the
