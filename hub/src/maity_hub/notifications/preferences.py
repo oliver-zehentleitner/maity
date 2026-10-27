@@ -238,8 +238,11 @@ def _check_modes(value: Any, errors: dict[str, str]) -> dict[str, Any] | None:
         if not isinstance(setting, dict) or not set(setting) <= {"mode", "content"}:
             errors["email.kinds"] = "invalid"
             return None
-        mode = setting.get("mode")
-        if mode is not None and mode not in (("immediate", "off") if kind == "security" else MODES):
+        # A missing `mode` is a partial change; one that is present must be a mode, `null`
+        # included (§18.4).
+        if "mode" in setting and setting["mode"] not in (
+            ("immediate", "off") if kind == "security" else MODES
+        ):
             errors["email.kinds"] = "invalid"  # a delayed alert is no alert (§18.4)
             return None
         if "content" in setting and (
