@@ -13,10 +13,12 @@ from html import escape
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
-from sqlalchemy import Connection
+from sqlalchemy import Connection, select
 
+from maity_hub import tables as t
 from maity_hub.deps import engine_of, settings_of
 from maity_hub.notifications import preferences, tokens
+from maity_hub.notifications.preferences import KINDS
 
 page_router = APIRouter()
 
@@ -53,7 +55,8 @@ def _page(title: str, text: str, *, button: str | None = None, status: int = 200
         f"<title>{escape(title)}</title></head><body>"
         f"<h1>{escape(title)}</h1><p>{escape(text)}</p>{form}</body></html>"
     )
-    return HTMLResponse(html, status_code=status)
+    # The token is in the address: no page that carries it may leak it in a `Referer`.
+    return HTMLResponse(html, status_code=status, headers={"Referrer-Policy": "no-referrer"})
 
 
 def _language(conn: Connection, request: Request, token: str) -> str:
@@ -78,8 +81,14 @@ def unsubscribe_page(token: str, request: Request) -> HTMLResponse:
         payload = tokens.read(hub.mail.signing_key, token)
         if payload is None or payload.get("p") != "unsubscribe":
             return _dead(words)
-        row = preferences.row_of(conn, str(payload.get("h")))
-        if payload.get("e") != row.epoch or payload.get("k") not in preferences.KINDS:
+        # The row itself, not the defaults a read falls back to: a human with no stored
+        # settings has no link that works, and a `GET` writes nothing.
+        row = conn.execute(
+            select(t.notification_settings).where(
+                t.notification_settings.c.human_id == str(payload.get("h"))
+            )
+        ).first()
+        if row is None or payload.get("e") != row.epoch or payload.get("k") not in KINDS:
             return _dead(words)
         text = words["unsub_text"].format(kind=payload["k"])
         return _page(words["unsub_title"], text, button=words["unsub_button"])

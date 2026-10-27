@@ -204,8 +204,13 @@ def test_a_link_for_a_removed_or_unknown_kind_is_dead(
 
 def test_a_link_of_a_human_without_settings_is_dead(client: TestClient, migrated: Engine) -> None:
     human_id = factory.human(migrated, "maintainer")
-    assert client.post(f"/mail/unsubscribe/{link(human_id)}").status_code == 404
-    with migrated.begin() as conn:  # and the attempt made no row
+    token = link(human_id)
+    for answer in (
+        client.get(f"/mail/unsubscribe/{token}"),
+        client.post(f"/mail/unsubscribe/{token}"),
+    ):
+        assert answer.status_code == 404 and "no longer works" in answer.text
+    with migrated.begin() as conn:  # and neither made a row
         assert conn.execute(select(t.notification_settings)).first() is None
 
 
@@ -257,6 +262,9 @@ def test_the_page_is_escaped_and_carries_the_headers(client: TestClient, migrate
     page = client.get(f"/mail/unsubscribe/{link(human_id, 'inbox')}")
     assert page.headers["cache-control"] == "no-store"
     assert page.headers["x-content-type-options"] == "nosniff"
+    assert page.headers["referrer-policy"] == "no-referrer"
+    dead = client.get("/mail/unsubscribe/garbage")
+    assert dead.headers["referrer-policy"] == "no-referrer"
 
 
 def test_the_join_host_does_not_serve_the_page(
