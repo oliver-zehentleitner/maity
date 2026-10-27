@@ -416,10 +416,13 @@ Three security rules follow from the review of the contract change
 (maintainer's rulings, 2026-10-27):
 - The proxy's go is bound: `Maity-On-Request` names a `decision` or
   `consent` request the proxy filed itself with `action: {method,
-  path}`, answered `go` by a human owner; it fits only that call, is
-  used once and expires 24 hours after the answer, and the header is
-  signed. An unbound go would let one old answer authorise any later
-  admin call. The go must come from the owner directly, never relayed:
+  path, query, body}`, answered `go` by a human owner who saw that call
+  rendered; it fits only that exact call (body by SHA-256), is used
+  once, in the call's own transaction, and expires 24 hours after the
+  answer, and the header is signed. An unbound go would let one old
+  answer authorise any later admin call, and a go on the route alone
+  let the proxy swap the payload — cancel instead of retitle, another
+  assignee. The go must come from the owner directly, never relayed:
   a relayed go is unverifiable, so the one thing that unlocks admin
   power comes from the owner's own session.
 - Only an owner grants trust `admin` or `owner` or the role `proxy`, on
