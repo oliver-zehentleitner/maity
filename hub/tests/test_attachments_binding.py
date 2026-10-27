@@ -223,3 +223,27 @@ def test_the_project_view_shows_the_quota_to_a_project_admin_only(
     assert agent.get("/projects/maity").json()["attachments"] is None
     listing = owner.get("/projects").json()["items"][0]
     assert listing["attachments"]["used"] == 150
+
+
+def test_a_redaction_goes_through_with_the_store_off_and_leaves_the_bytes_to_the_sweep(
+    stored: ClientFactory,
+    make_client: ClientFactory,
+    owner: flow.Human,
+    blobs: Path,
+    migrated: Engine,
+) -> None:
+    agent = flow.agent(stored, owner)
+    named = upload(agent, "kept.txt", b"bytes")
+    sent = say(agent, owner.id, "oops", [named]).json()
+    bare = make_client()  # the same database, a hub whose store is switched off
+    bare.cookies.update(owner.client.cookies)
+    done = bare.post(
+        f"/api/v1/projects/maity/events/{sent['seq']}/redact",
+        json={"reason": "x"},
+        headers={"X-CSRF-Token": owner.csrf},
+    )
+    assert done.status_code == 200, done.text  # never attachments_not_configured
+    with migrated.connect() as conn:
+        row = conn.execute(select(t.attachment)).one()
+    assert row.deleted_reason == "redacted" and row.deleted_at  # the rows are tombstoned
+    assert len(list(blobs.glob("*/*"))) == 1  # the bytes wait for the sweep

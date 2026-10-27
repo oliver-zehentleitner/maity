@@ -117,7 +117,9 @@ which the contract asks for, and a bound attachment always has its message.
 replaces the payload, and the bytes are removed once it commits
 (`events.on_commit`). No `attachment_deleted` is emitted: `event_redacted` covers
 them. A redacted message has no readable attachments, so the metadata and the
-content answer `not_found`, to its sender too.
+content answer `not_found`, to its sender too. With the store switched off the
+redaction still goes through and the rows are tombstoned; the bytes then wait
+for the sweep, so a redaction never fails on `attachments_not_configured`.
 
 **Reason:** the payload that named them is gone in the same step, so the rows
 cannot outlive it readable.
