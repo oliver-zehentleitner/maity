@@ -140,11 +140,10 @@ provides the evidence of work from what it already stores (finished
 cards, reports with pull requests and commits, review status, time
 range), exportable per person and period. That work does not count
 towards points. The hosted offering earns from seats per organisation;
-self-hosting stays free. When a legal check happens is open: the
-accepted proposal (req-v2e6zje9vsmk) names a lawyer's check before
-organisations and the evidence are built, while the maintainer's chat
-message just before he accepted it says to check only once someone
-complains. The two are recorded side by side until he settles it.
+self-hosting stays free. A legal check happens only once someone
+complains: the accepted proposal had named a lawyer's check before the
+build, the maintainer's chat said to wait for a complaint, and asked to
+settle the conflict he chose the latter (req-6bv3vgh6f0xn).
 
 **Reason:** in the maintainer's words, Maity does not broker; work
 arises on the platform and Maity only provides the management tools,
