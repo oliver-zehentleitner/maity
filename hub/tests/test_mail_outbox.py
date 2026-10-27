@@ -305,3 +305,38 @@ def test_mail_switched_off_during_a_delivery_stops_the_rest_of_the_pass(
     with migrated.begin() as conn:
         statuses = [r.status for r in conn.execute(select(t.mail_outbox).order_by("id"))]
     assert statuses == ["sent", "waiting", "waiting"]
+
+
+def test_an_older_retry_that_falls_due_while_a_newer_mail_is_in_flight_waits(
+    migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The id of a row says nothing about when it was claimed: the older mail was put
+    back by a retry and falls due while the newer one is being sent."""
+    from maity_hub.mail import smtp
+
+    hub = mail_env(1)
+    with migrated.begin() as conn:
+        store.put(conn, "mail.security_max_per_hour", 1, None)
+        older = queue(conn)
+        newer = queue(conn)
+        conn.execute(  # a retry: due only after the newer one has been claimed
+            update(t.mail_outbox)
+            .where(t.mail_outbox.c.id == older)
+            .values(not_before=clock.now() + timedelta(seconds=1))
+        )
+    sends: list[int] = []
+
+    def slow(resolved: Any, message: Any) -> Any:
+        sends.append(1)
+        if len(sends) == 1:  # two seconds later worker B takes the older mail, now due
+            later = clock.now() + timedelta(seconds=2)
+            clock.set_source(lambda: later)
+            assert outbox.send_due(migrated, hub.mail, None) == 0
+        return _ok()
+
+    monkeypatch.setattr(smtp, "send", slow)
+    assert outbox.send_due(migrated, hub.mail, None) == 1
+    assert len(sends) == 1
+    with migrated.begin() as conn:
+        rows = {r.id: r.status for r in conn.execute(select(t.mail_outbox))}
+    assert rows == {older: "waiting", newer: "sent"}
