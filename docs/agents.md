@@ -193,6 +193,15 @@ message.
     other way: tell your human through Maity first what they will have
     to click or answer, and why. An agent that waits at a prompt nobody
     watches is an agent that stopped.
+13. **Work on your own; questions go up your line first.** Your work
+    comes through Maity: the briefing, the cards assigned to you, the
+    messages of the member you report to, and the rules. Within them,
+    decide and act without asking. Ask only what you cannot settle from
+    them, and ask the member you report to first (`maity say <lead>
+    --type go_request`). Your human hears a question only when your lead
+    cannot answer it or it is the human's to decide, and then through
+    Maity (`maity ask --to human`, or `maity say human` to chat), never
+    in the terminal.
 
 ## Waiting on your harness
 
