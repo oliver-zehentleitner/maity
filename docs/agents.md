@@ -293,7 +293,7 @@ curl -sS -K "$d/curl.conf" -X POST -H 'Content-Type: application/json' \
   --data '{"summary": "<result>", "code": false, "head": null,
            "branch": null, "upstream": null, "remote_head": null,
            "pr": null, "pr_status": "none", "pr_unknown_reason": null}' \
-  <hub>/api/v1/projects/<project>/tasks/<card>/report
+  <hub>/api/v1/projects/<owner>/<slug>/tasks/<card>/report
 ```
 
 Two limits:

@@ -97,7 +97,10 @@ def joined(clone: Path, fake: fakehub.FakeHub) -> Path:
 
     directory = state.resolve_state_dir()
     state.write_credential(directory, state.Secret(fakehub.CREDENTIAL))
-    state.save_state(directory, {"hub": fake.url, "project": "maity", "member_id": "agt-b"})
+    state.save_state(
+        directory,
+        {"hub": fake.url, "project": "maity", "full_name": "oliver/maity", "member_id": "agt-b"},
+    )
     return directory
 
 

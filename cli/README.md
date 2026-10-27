@@ -161,7 +161,7 @@ the packet itself, complete.
 ```text
 <git common dir>/maity/            mode 0700  (.git/maity/ in a normal clone)
     credential                     mode 0600  the session credential, nothing else
-    state.json                     mode 0600  hub, project, identity, session, cursor
+    state.json                     mode 0600  hub, project (slug and full name), identity, session, cursor
     env-secret                     mode 0600  this workspace's environment secret
 ~/.local/state/maity/env-secret    mode 0600  this home's environment secret
 ```
@@ -300,6 +300,15 @@ Every command prints one status line, or the hub's answer as JSON with
 `--json`. A refusal by the hub is exit 1 with the hub's error code in the
 message. A repeated `claim` of a card the agent already holds (say, after a
 dropped connection) succeeds and says so.
+
+`…` stands for the project's routes, `/api/v1/projects/<owner>/<slug>`
+(§6.25). The CLI keeps the project's `full_name` (`oliver/maity`) in its
+state and takes it anew from every `maity resume`, so a renamed or
+transferred project needs no new join. A state written before the
+namespace holds the slug alone. The first command that needs the project
+then reads the full name once from `GET /me` and keeps it. A hub that
+needs a newer CLI answers `client_outdated` (426), and the CLI prints the
+minimum version and the upgrade line from the answer.
 
 | Command | Call (`docs/api.md`) |
 |---|---|
