@@ -101,6 +101,9 @@ def send_due(engine: Engine, env: MailEnvironment, secret_key: bytes | None) -> 
         with engine.begin() as conn:
             if not _claim(conn, row.id):
                 continue  # another process took it
+            if _disabled_address(conn, row):
+                _finish(conn, row.id, "dropped")  # no further mail to it (§18.7)
+                continue
             # A retry was admitted when it first went out; a claim that lapsed is
             # admitted again, which errs on the side of the budget.
             attempts = conn.execute(
@@ -113,9 +116,6 @@ def send_due(engine: Engine, env: MailEnvironment, secret_key: bytes | None) -> 
                 else:
                     # Over the budget: security mail waits for the next hour (§16.2).
                     _release(conn, row.id, clock.now() + timedelta(minutes=5))
-                continue
-            if _disabled_address(conn, row):
-                _finish(conn, row.id, "dropped")  # no further mail to it (§18.7)
                 continue
         outcome = smtp.send(resolved, _message(resolved, row))
         with engine.begin() as conn:
