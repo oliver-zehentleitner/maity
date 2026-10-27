@@ -722,10 +722,14 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .md .md-h2 { font-size: 1rem; }
 .md .md-h3 { font-size: 0.95rem; }
 .md-deep, .md-real-href { color: var(--muted); }
+/* Copy sits inside the block, at its top right (the designer's pass part 1). */
 .md-code-box { margin: 6px 0; }
+.md-code-frame { position: relative; }
 /* The bar sits above the code, so it never covers the first line. */
-.md-code-bar { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-bottom: 2px; }
-.md-code { margin: 0; padding: 8px 10px; overflow-x: auto; background: var(--surface-2); border-radius: 4px; font-size: 0.85rem; }
+.md-code-bar { position: absolute; top: 6px; inset-inline-end: 6px; display: flex; align-items: center; gap: 8px; z-index: 1; }
+/* A row of its own for language and Copy at the block's top, so no line of
+   code, however long, ever runs under them (H on #456). */
+.md-code { margin: 0; padding: 36px 10px 8px; overflow-x: auto; background: var(--surface-2); border-radius: 4px; font-size: 0.85rem; }
 .md-code code { background: none; padding: 0; }
 .md-lang { font-size: 0.72rem; color: var(--muted); }
 .md-invisible { margin: 0 0 4px; font-size: 0.8rem; }
@@ -833,7 +837,7 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
 
 @media (max-width: 600px) {
   main { padding: 12px; }
-  .project-state { border-inline-start: none; padding-inline-start: 0; flex-wrap: wrap; }
+  .project-state { border-inline-start: none; padding-inline-start: 0; flex-wrap: wrap; flex-basis: 100%; }
   .me-name { display: none; }
   /* On a phone the buttons of a form or a row stack, full width. */
   .actions > button, .inline-form > button, .login > button, .join-form > button, .project-form > button,
@@ -1196,7 +1200,10 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* The instance's landing page (js/landing.js, §16.7): the face of the
    instance, with room; the large lockup in the theme's pair. */
 .landing { max-width: 44rem; margin: 32px auto 48px; display: grid; gap: 16px; }
-.landing-lockup img { display: block; width: min(320px, 80vw); height: auto; }
+.landing-lockup { margin: 0; }
+.landing-lockup img { display: block; width: min(240px, 70vw); height: auto; }
+/* The landing page's header: the theme menu and Sign in at the right edge. */
+.landing-bar { justify-content: flex-end; }
 .landing-lockup .brand-dark { display: none; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .landing-lockup .brand-light { display: none; }
@@ -1204,8 +1211,9 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 }
 :root[data-theme="dark"] .landing-lockup .brand-light { display: none; }
 :root[data-theme="dark"] .landing-lockup .brand-dark { display: block; }
-.landing-title { font-size: clamp(1.6rem, 5vw, 2.4rem); line-height: 1.15; margin: 0; }
+.landing-title { font-size: clamp(1.6rem, 5vw, 2.4rem); line-height: 1.15; margin: 0; text-wrap: balance; letter-spacing: -0.02em; }
 .landing-body { font-size: 1.05rem; line-height: 1.6; }
+.landing-body h2 { font-size: 1.25rem; margin: 24px 0 4px; }
 .landing-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; margin: 8px 0 0; }
 .landing-cta { font-size: 1.05rem; padding: 10px 20px; }
 .landing-preview { border: 1px dashed var(--border); border-radius: 6px; padding: 0 16px; }

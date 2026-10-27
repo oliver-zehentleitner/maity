@@ -38,22 +38,25 @@ window.Maity = window.Maity || {};
     return url ? h("a", { class: cls, href: url, rel: "noopener noreferrer", target: "_blank" }, cta.label) : null;
   }
 
-  // The page itself, for the visitor and as the editor's preview.
+  // The page itself, for the visitor and as the editor's preview (the
+  // designer's pass part 1): the large lockup is the page's one logo and
+  // its h1; the title; the action, above the fold on a phone; the text.
   function page(p) {
     return h("article", { class: "landing" },
-      h("div", { class: "landing-lockup" },
-        h("img", { class: "brand-light", src: "brand/maity-lockup-large.svg", alt: "", width: "320", height: "96" }),
-        h("img", { class: "brand-dark", src: "brand/maity-lockup-large-dark.svg", alt: "", width: "320", height: "96" })),
+      h("h1", { class: "landing-lockup" },
+        h("img", { class: "brand-light", src: "brand/maity-lockup-large.svg", alt: "Maity", width: "320", height: "96" }),
+        h("img", { class: "brand-dark", src: "brand/maity-lockup-large-dark.svg", alt: "Maity", width: "320", height: "96" })),
       p.title ? h("h2", { class: "landing-title" }, p.title) : null,
-      h("div", { class: "md landing-body" }, M.markdown.withRoutes(p.markdown || "")),
-      h("p", { class: "landing-actions" },
-        ctaLink(p.cta, "button primary landing-cta"),
-        p.cta && p.cta.href === "/#/login" ? null : h("a", { class: "landing-sign-in", href: "#/login" }, "Sign in")));
+      ctaLink(p.cta, "button primary landing-cta") ? h("p", { class: "landing-actions" }, ctaLink(p.cta, "button primary landing-cta")) : null,
+      h("div", { class: "md landing-body" }, M.markdown.withRoutes(p.markdown || "")));
   }
 
+  // The header holds the theme menu and Sign in, at its right edge; no
+  // small lockup over the large one.
   function show(main, p, header) {
     if (p.title) document.title = p.title;
-    append(clear(header), h("div", { class: "bar" }, M.brandTitle(), M.themeMenu ? M.themeMenu() : null));
+    const signIn = p.cta && p.cta.href === "/#/login" ? null : h("a", { class: "button landing-sign-in", href: "#/login" }, "Sign in");
+    append(clear(header), h("div", { class: "bar landing-bar" }, M.themeMenu ? M.themeMenu() : null, signIn));
     append(clear(main), page(p));
   }
 
