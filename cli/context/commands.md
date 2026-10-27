@@ -584,4 +584,3 @@ the contract: the full name is computed and follows renames.
   a single-use link per agent for a change the hub can answer itself.
 - Keeping the slug as the only stored name: a slug is unique only
   within its owner's namespace now (§6.25).
-
