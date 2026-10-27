@@ -110,6 +110,13 @@ window.Maity = window.Maity || {};
     await Promise.all(ctx.projects.map((p) => M.projectContext(ctx, p.slug, chatLink)
       .then((pctx) => { pctxs[p.slug] = pctx; }, (err) => { unreadable.push(h("p", { class: "send-status failed" }, "Could not read " + p.name + ": " + err.message)); })));
     append(root, unreadable);
+    // The projects an agent is in, as far as the reader may see: those of
+    // the reader's whose member list names it (tsk-p94e7njrmg1p), in the
+    // switcher's order. Never a project the reader is not in.
+    const projectsOf = (memberId) => ctx.projects
+      .filter((p) => pctxs[p.slug] && pctxs[p.slug].memberById && pctxs[p.slug].memberById[memberId])
+      .map((p) => ({ slug: p.slug, name: p.name || p.slug, view: (ctx.projectViews || {})[p.slug] }));
+    Object.values(pctxs).forEach((x) => { x.projectsOf = projectsOf; });
     const list = globalList(pctxs, open);
     const pctx = open ? pctxs[open.slug] : null;
 

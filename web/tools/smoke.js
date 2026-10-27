@@ -4796,6 +4796,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main.querySelector("section.group-chat")).includes("Release 0.2: go"), "chats: a group chat renamed elsewhere shows its new title after the stream's nudge");
   await go("#/chats/nowhere/agt-a"); for (let k = 0; k < 4; k++) await tick();
   expect(text(main).includes("No project of yours with the slug nowhere."), "chats: an unknown project is said");
+  // In the global chat an agent's message names the projects it is in, by logo with the name on
+  // hover: only the reader's projects whose members name it; a human's message and a project's own chat none.
+  const gpIn = () => main.querySelectorAll("li.msg.in").filter((li) => !li.classList.contains("grouped"));
+  const gpMarks = (li) => li.querySelectorAll(".msg-project").map((s) => s.getAttribute("title"));
+  await go("#/chats/maity/agt-a"); for (let k = 0; k < 8; k++) await tick();
+  expect(gpIn().length && gpIn().every((li) => JSON.stringify(gpMarks(li)) === JSON.stringify(["Maity"]))
+    && gpIn()[0].querySelector(".msg-project .project-mark") && text(gpIn()[0].querySelector(".msg-projects")).includes("in Maity"),
+    "global chat: an agent in one of the reader's projects shows that one project's mark, its name on hover");
+  win.Maity.api.getAll = (p) => gxGetAll(p).then((r) => (p === "/projects/sample/members"
+    ? Object.assign({}, r, { items: r.items.concat([{ id: "agt-a", kind: "agent", handle: "agent-a", display_name: "Agent A", role: "member", presence: "online" }]) }) : r));
+  await go("#/chats/maity/agt-a"); for (let k = 0; k < 8; k++) await tick();
+  expect(gpIn().length && JSON.stringify(gpMarks(gpIn()[0])) === JSON.stringify(["Maity", "Sample shop"]),
+    "global chat: an agent in two of the reader's projects shows both, in the switcher's order");
+  win.Maity.api.getAll = gxGetAll;
+  expect(!main.querySelectorAll("li.msg.out .msg-projects").length, "global chat: the reader's own messages name no project");
+  await go("#/p/maity/chat/agt-a"); for (let k = 0; k < 8; k++) await tick();
+  expect(main.querySelectorAll("li.msg.in").length && !main.querySelector(".msg-projects"), "global chat: a project's own chat names no projects");
   win.Maity.api.get = gxGet; win.Maity.api.getAll = gxGetAll; win.Maity.api.post = gxPost;
 
   await go("#/p/maity/inbox"); for (let k = 0; k < 2; k++) await tick();
