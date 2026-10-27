@@ -15,7 +15,9 @@
     "forge": "github",
     "probe_configured": true
   },
-  "memory": { "provider": "keep-the-why" },
+  "memory": {
+    "provider": "keep-the-why"
+  },
   "keep_the_why": true,
   "setup": null,
   "policy": {
@@ -29,7 +31,9 @@
     "signing": "optional",
     "swarm_public": "on",
     "badge": "off",
-    "keep_the_why": "required"
+    "keep_the_why": "required",
+    "member_agents": "on",
+    "member_agents_max": 3
   },
   "absence": null,
   "settings": {

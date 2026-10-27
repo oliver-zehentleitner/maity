@@ -27,8 +27,9 @@ window.Maity = window.Maity || {};
     // One card (#/<owner>/<slug>/tasks/<id>, an id's link, js/ids.js): the board
     // with that card marked; its tab is the board's.
     { route: "tasks", view: "board", label: "Board", tab: false, current: "board", watch: /^task_/, changed: "The board changed." },
-    { route: "agents", label: "Agents", watch: /^(member_|session_|credential_)/, changed: "The agents changed." },
-    { route: "members", label: "Members", watch: /^member_/, changed: "The members changed." },
+    // No tab: the agents are in Members (tsk-7v2snhk002ak); old links lead there.
+    { route: "agents", label: "Agents", tab: false },
+    { route: "members", label: "Members", watch: /^(member_|session_|credential_)/, changed: "The members changed." },
     { route: "org", label: "Organisation", watch: /^member_/, changed: "The organisation changed." },
     { route: "chat", label: "Chat" },
     // Redrawn in place from the feed (js/messages.js).
@@ -483,6 +484,7 @@ window.Maity = window.Maity || {};
     // Humans only, as every policy field (§2.3 ʰ); where the hub knows it.
     if (humanAdmin && ctx.project.policy && "badge" in ctx.project.policy) append(panel, badgeForm(ctx, save));
     if (humanAdmin && ctx.project.policy && "keep_the_why" in ctx.project.policy) append(panel, keepTheWhyForm(ctx, save));
+    if (humanAdmin && ctx.project.policy && "member_agents" in ctx.project.policy) append(panel, memberAgentsForm(ctx, save));
     // Only on a hub with group chats: without them there is no closed one.
     if (ctx.canAdmin && M.groupChat) {
       const slot = h("div", { class: "remove-reported-slot" });
@@ -737,6 +739,41 @@ window.Maity = window.Maity || {};
     h("label", { for: "ktw-policy-select" }, "Keep the Why"), select,
     h("label", { for: "ktw-policy-reason" }, "Reason"), reason,
     h("button", { type: "submit", disabled: off ? true : null }, "Change"));
+  }
+
+  // §3.1 "Bringing your own agent", §6.1: whether members add agents of
+  // their own, and how many each may hold here; a human with project:admin,
+  // with a reason, as every policy field.
+  function memberAgentsForm(ctx, save) {
+    const pol = ctx.project.policy;
+    const on = h("select", { id: "member-agents-select" }, [["on", "On: members add agents of their own"], ["off", "Off: only admins add agents"]]
+      .map(([v, l]) => h("option", { value: v }, l)));
+    on.value = pol.member_agents || "on";
+    const max = h("input", { id: "member-agents-max", type: "number", min: "0", max: "20", step: "1" });
+    max.value = String(pol.member_agents_max === undefined ? 3 : pol.member_agents_max);
+    const reason = h("input", { id: "member-agents-reason", required: true, placeholder: "Why it changes (logged)" });
+    const error = h("p", { class: "field-error", id: "member-agents-error", role: "alert" });
+    return h("form", {
+      class: "inline-form member-agents-form",
+      onsubmit: (e) => {
+        e.preventDefault();
+        const n = Number(max.value);
+        if (!Number.isInteger(n) || n < 0 || n > 20) { error.textContent = "Agents per member: a whole number from 0 to 20."; max.focus(); return; }
+        const policy = {};
+        if (on.value !== (pol.member_agents || "on")) policy.member_agents = on.value;
+        if (n !== (pol.member_agents_max === undefined ? 3 : pol.member_agents_max)) policy.member_agents_max = n;
+        if (!Object.keys(policy).length) return;
+        if (!reason.value.trim()) { reason.focus(); return; }
+        save({ policy, reason: reason.value.trim() }, "Members' own agents");
+      },
+    },
+    h("h2", { class: "panel-title" }, "Members' own agents"),
+    h("p", { class: "hint" }, "A member may add agents of their own: as member or guest, as coder, reviewer, tester or designer, reporting to them. "
+      + "Turning it off stops new ones; joins already handed out stay usable."),
+    h("label", { for: "member-agents-select" }, "Members add agents"), on,
+    h("label", { for: "member-agents-max" }, "Agents per member (active and open joins)"), max, error,
+    h("label", { for: "member-agents-reason" }, "Reason"), reason,
+    h("button", { type: "submit" }, "Save"));
   }
 
   function badgeForm(ctx, save) {

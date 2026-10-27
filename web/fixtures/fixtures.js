@@ -2504,6 +2504,8 @@ window.MAITY_FIXTURES = {
       "done_authority": "reviewer",
       "keep_the_why": "required",
       "lease_seconds": 7200,
+      "member_agents": "on",
+      "member_agents_max": 3,
       "preset": "hierarchical",
       "signing": "optional",
       "steward_writes": "cards_only",

@@ -180,7 +180,7 @@ window.Maity = window.Maity || {};
           status.done();
           // A new project has nothing waiting yet; its next step is to
           // join an agent, which the Agents view offers when it is empty.
-          window.location.hash = ctx.projectLink(created.full_name, "agents");
+          window.location.hash = ctx.projectLink(created.full_name, "members");
         } catch (err) {
           submit.disabled = false;
           const fields = err.code === "invalid" && err.details && err.details.fields ? err.details.fields : null;
