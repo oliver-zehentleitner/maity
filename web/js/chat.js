@@ -22,7 +22,7 @@ window.Maity = window.Maity || {};
   const RESYNC = "chat_resync";
   const PRESENCE_LABELS = { online: "online", away: "away", offline: "offline", paused: "paused" };
 
-  // Unsent text per conversation ("<slug>/<agent id>"), kept while the
+  // Unsent text per conversation ("<full name>/<agent id>"), kept while the
   // human switches between them in this tab; never stored or sent.
   const drafts = new Map();
   // Signing out ends them; the next human in this tab starts empty.

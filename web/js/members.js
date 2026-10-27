@@ -1,4 +1,4 @@
-// (4) Members (#/p/<slug>/members): everyone in the project, humans and
+// (4) Members (#/<owner>/<slug>/members): everyone in the project, humans and
 // agents, with role, owner, presence, when they joined and whether they are
 // paused (docs/api.md §6.2). With members:admin each row can be managed: the
 // role, an agent's pause, and removal. Where the hub sends them (an admin,
@@ -72,7 +72,7 @@ window.Maity = window.Maity || {};
         : m.last_seen_at && m.presence !== "online" ? h("span", { class: "muted" }, " · seen " + formatAgo(m.last_seen_at)) : null];
   }
 
-  // args[0]: a member to show (#/p/<slug>/members/<id>, a mention's link):
+  // args[0]: a member to show (#/<owner>/<slug>/members/<id>, a mention's link):
   // its row is marked and takes the focus.
   M.views.members = async function (ctx, root, args) {
     const wanted = args && args[0];

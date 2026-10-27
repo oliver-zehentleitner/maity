@@ -37,7 +37,8 @@ window.Maity = window.Maity || {};
 
   // The hub's reasons, in words; any other reason is shown as it comes.
   const REASONS = {
-    taken: "A project with this slug exists.",
+    taken: "You have a project with this slug already, or had one by that name.",
+    reserved: "This word is part of the dashboard's addresses; choose another slug.",
     string_pattern_mismatch: M.dom.NAME_RULES.slug.text,
     string_too_short: "Required.",
     string_too_long: "Too long.",
@@ -179,7 +180,7 @@ window.Maity = window.Maity || {};
           status.done();
           // A new project has nothing waiting yet; its next step is to
           // join an agent, which the Agents view offers when it is empty.
-          window.location.hash = ctx.projectLink(created.slug, "agents");
+          window.location.hash = ctx.projectLink(created.full_name, "agents");
         } catch (err) {
           submit.disabled = false;
           const fields = err.code === "invalid" && err.details && err.details.fields ? err.details.fields : null;

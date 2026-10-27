@@ -480,9 +480,9 @@ window.Maity = window.Maity || {};
   }
 
   M.join = { mount };
-  // #/p/<slug>/join, from before joining moved into Agents: the same place, panel open.
+  // #/<owner>/<slug>/join, from before joining moved into Agents: the same place, panel open.
   M.views.join = async function (ctx, root) {
-    const there = "#/p/" + encodeURIComponent(ctx.slug) + "/agents/join";
+    const there = ctx.link("agents", "join");
     if (window.history && window.history.replaceState) window.history.replaceState(null, "", there);
     await M.views.agents(ctx, root, ["join"]);
   };

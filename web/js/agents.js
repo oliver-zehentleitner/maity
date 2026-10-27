@@ -326,7 +326,7 @@ window.Maity = window.Maity || {};
       });
     append(root, presenceStatus.el, grid, earlierBox);
     drawGrid();
-    // #/p/<slug>/agents/join (and the old #/join): the panel open at once.
+    // #/<owner>/<slug>/agents/join (and the old #/join): the panel open at once.
     if (J && args && args[0] === "join") J.open(joinButton);
     placements();
   };

@@ -1,7 +1,7 @@
 {
   "items": [
     {
-      "id": "plc-0001", "project": "maity",
+      "id": "plc-0001", "project": "maintainer/maity",
       "agent": { "id": "agt-b", "handle": "agent-b", "display_name": "Agent B", "avatar_url": null },
       "runner": { "id": "rnr-0002", "name": "home-laptop" },
       "target": null, "harness": "claude-code", "mode": "interactive", "model": "opus",
@@ -18,7 +18,7 @@
         "since": "2026-10-22T13:58:30Z", "target": "local", "reported_at": "2026-10-22T13:58:31Z" }
     },
     {
-      "id": "plc-0002", "project": "maity",
+      "id": "plc-0002", "project": "maintainer/maity",
       "agent": { "id": "agt-c", "handle": "agent-c", "display_name": "Agent C", "avatar_url": null },
       "runner": { "id": "rnr-0002", "name": "home-laptop" },
       "target": null, "harness": "codex", "mode": "supervised", "model": null,
@@ -34,7 +34,7 @@
         "since": "2026-10-21T12:09:00Z", "target": "local", "reported_at": "2026-10-21T12:09:01Z" }
     },
     {
-      "id": "plc-0003", "project": "maity",
+      "id": "plc-0003", "project": "maintainer/maity",
       "agent": { "id": "agt-d", "handle": "agent-d", "display_name": "Agent D", "avatar_url": null },
       "runner": { "id": "rnr-0002", "name": "home-laptop" },
       "target": "local", "harness": "claude-code", "mode": "supervised", "model": null,
@@ -50,7 +50,7 @@
         "since": "2026-10-21T13:20:00Z", "target": "local", "reported_at": "2026-10-21T13:20:01Z" }
     },
     {
-      "id": "plc-0004", "project": "maity",
+      "id": "plc-0004", "project": "maintainer/maity",
       "agent": { "id": "agt-r", "handle": "reviewer", "display_name": "Reviewer", "avatar_url": null },
       "runner": { "id": "rnr-0002", "name": "home-laptop" },
       "target": null, "harness": "claude-code", "mode": "interactive", "model": null,
