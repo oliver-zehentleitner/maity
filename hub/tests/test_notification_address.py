@@ -405,3 +405,98 @@ def test_a_claimed_address_blocks_a_verification_for_another_account(
     token = link(outbox_rows(migrated)[-1], "verify")
     assert owner.client.post(f"/mail/verify/{token}").status_code == 404
     assert owner.get(S).json()["email"]["address"] is None
+
+
+# --- what H found in #484 ----------------------------------------------------------------
+
+
+def disabled(make_client: ClientFactory, engine: Engine) -> flow.Human:
+    owner = verified(make_client, engine, "me@example.org")
+    with engine.begin() as conn:
+        conn.execute(update(t.mail_outbox).values(status="sent"))
+        conn.execute(
+            update(t.notification_settings)
+            .where(t.notification_settings.c.human_id == owner.id)
+            .values(address_status="disabled", hard_failures=3, disabled_at=clock.now())
+        )
+    return owner
+
+
+def test_nothing_is_sent_to_a_disabled_address(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = disabled(make_client, migrated)
+    server = FakeSmtp(Script())
+    try:
+        with migrated.begin() as conn:
+            outbox.enqueue(
+                conn, kind="security", human_id=owner.id, to="me@example.org", subject="s", body="b"
+            )
+        assert outbox.send_due(migrated, mail_env(server.port).mail, None) == 0
+        assert server.record.commands == []  # nothing even connected
+    finally:
+        server.close()
+    assert outbox_rows(migrated)[-1].status == "dropped"
+
+
+def test_the_rest_of_a_batch_stops_after_the_third_failure(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = verified(make_client, migrated, "me@example.org")
+    with migrated.begin() as conn:
+        conn.execute(update(t.mail_outbox).values(status="sent"))
+        conn.execute(
+            update(t.notification_settings)
+            .where(t.notification_settings.c.human_id == owner.id)
+            .values(hard_failures=2)
+        )
+        for _ in range(3):
+            outbox.enqueue(
+                conn, kind="security", human_id=owner.id, to="me@example.org", subject="s", body="b"
+            )
+    server = FakeSmtp(Script(rcpt_reply="550 5.1.1 no such user"))
+    try:
+        outbox.send_due(migrated, mail_env(server.port).mail, None)
+    finally:
+        server.close()
+    statuses = [r.status for r in outbox_rows(migrated)[-3:]]
+    assert statuses == ["failed", "dropped", "dropped"]  # the first disabled it
+    assert owner.get(S).json()["email"]["address_status"] == "disabled"
+
+
+def test_mail_to_another_address_of_the_human_still_goes(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The notice to the old address after a change is not mail to the disabled one."""
+    owner = disabled(make_client, migrated)
+    server = FakeSmtp(Script())
+    try:
+        with migrated.begin() as conn:
+            outbox.enqueue(
+                conn,
+                kind="security",
+                human_id=owner.id,
+                to="old@example.org",
+                subject="s",
+                body="b",
+            )
+        assert outbox.send_due(migrated, mail_env(server.port).mail, None) == 1
+    finally:
+        server.close()
+
+
+def test_setting_a_disabled_address_again_sends_its_link_and_enables_it(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = disabled(make_client, migrated)
+    owner.patch(S, {"email": {"address": "me@example.org"}, "current_password": factory.PASSWORD})
+    link_mail = outbox_rows(migrated)[-1]
+    assert (link_mail.recipient, link_mail.status) == ("me@example.org", "waiting")
+    server = FakeSmtp(Script())
+    try:
+        assert outbox.send_due(migrated, mail_env(server.port).mail, None) == 1
+    finally:
+        server.close()
+    owner.client.post(f"/mail/verify/{link(link_mail, 'verify')}")
+    got = owner.get(S).json()["email"]
+    assert (got["address_status"], got["hard_failures"]) == ("verified", 0)
