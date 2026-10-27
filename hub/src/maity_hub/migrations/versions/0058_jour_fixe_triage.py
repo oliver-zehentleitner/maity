@@ -1,9 +1,9 @@
 """The jour fixe's triage (docs/api.md §20.6): a decision request the hub filed for a
 proposal, and a card it opened for an adopted one, name their round and proposal.
 
-Revision ID: 0041
-Revises: 0038
-Create Date: 2026-10-25
+Revision ID: 0058
+Revises: 0055
+Create Date: 2026-10-27
 """
 
 from collections.abc import Sequence
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0041"
-down_revision: str | None = "0038"
+revision: str = "0058"
+down_revision: str | None = "0055"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
