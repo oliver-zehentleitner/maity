@@ -10,7 +10,7 @@ second stage after the core launch, contract by contract.
 **Id:** fe4bbd1f-93d5-4032-87b0-204fed9acf49
 **Type:** decision
 **Status:** active
-**Evidence:** confirmed
+**Evidence:** inferred
 **Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day
 **Revisit when:** the economy stage is contracted, or abuse shows a rule does not hold
 **See:** scope.md#later-stages-agreed-in-principle-and-deliberately-not-in-v1-public-projects-and-discovery-sponsoring-and-credits-a-managed-instance-per-customer-federation — 54e1a38b-1e54-480f-87f2-014139a563d1 — as of 2026-10-27
@@ -32,17 +32,17 @@ owner open sponsoring without it. A deleted account's debt lapses, but a
 salted hash of its address is kept with the amount, so a new
 registration with the same address takes the debt back.
 
-**Reason:** two currencies keep goodwill and exchange apart: sponsoring
-is a gift that earns standing, not a loan, and only a trade moves points.
-No points are created except the starting grant, and that grant waits
-for earned credit, so fake accounts gain nothing. Integer storage avoids
-rounding in a currency.
+**Reason:** sponsoring earns the sponsor standing and leaves the
+recipient without debt, while a trade moves points both ways — the
+maintainer's distinction (earlier inbox answer on sponsoring, 2026-10-25,
+and the accepted proposal). The starting grant waits for earned credit
+against fake accounts (stated in the accepted proposal). That integers
+avoid rounding errors is the coordinator's argument from the chat, not a
+reason the maintainer gave.
 
-**Rejected alternatives:**
-- One currency for both: a sponsor would turn into a creditor.
-- Floating-point amounts: rounding errors in a balance.
-- Measuring effort automatically instead of an offered price: easy to
-  game, and fairness becomes an argument with the meter.
+**Rejected alternatives:** floating-point amounts, named by the
+coordinator (rounding); no other alternative was weighed with the
+maintainer.
 
 ## Imbalance is settled without money between members: give more by sponsoring, take more by buying points from Maity
 
@@ -65,8 +65,10 @@ duties. A closed loop where only Maity sells is like an in-app currency:
 simpler legally, and revenue for the hosted offering.
 
 **Rejected alternatives:**
-- A peer-to-peer market for points against money, with Maity as the
-  intermediary: regulated, and it turns points into a speculative asset.
+- A peer-to-peer market for points against money, which the maintainer
+  first suggested himself; dropped with the accepted proposal, whose
+  stated reason is that it would make the operator a payment service or a
+  broker.
 
 ## Disputes go to a judge: first the crew, later trusted members and an AI arbiter with a quota
 
@@ -94,8 +96,8 @@ data, only a procedure. The stepped exchange is the one the jour fixe
 already uses.
 
 **Rejected alternatives:**
-- Penalties from the first judgement: the maintainer wants a learning
-  culture before sanctions.
+- Sanctions from the first judgement: the maintainer chose a warning
+  first; no further reason was given.
 
 ## Proposals: an owner may accept them; the proposer earns points and a head start on the build
 
@@ -128,7 +130,7 @@ from being outrun on their own idea.
 **Id:** 8cf5aed0-3d79-4601-a81d-72960ece376f
 **Type:** decision
 **Status:** active
-**Evidence:** confirmed
+**Evidence:** inferred
 **Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day
 **See:** scope.md#the-beta-is-free-later-plans-price-humans-and-organisations-never-agents-one-hard-ceiling-of-agent-profiles-per-human-protects-the-hosted-instance — 37803db9-3f8a-4a1a-b42f-20ba9c783e1f — as of 2026-10-27
 
@@ -138,14 +140,21 @@ provides the evidence of work from what it already stores (finished
 cards, reports with pull requests and commits, review status, time
 range), exportable per person and period. That work does not count
 towards points. The hosted offering earns from seats per organisation;
-self-hosting stays free. A legal check is deferred until there is a
-complaint.
+self-hosting stays free. When a legal check happens is open: the
+accepted proposal (req-v2e6zje9vsmk) names a lawyer's check before
+organisations and the evidence are built, while the maintainer's chat
+message just before he accepted it says to check only once someone
+complains. The two are recorded side by side until he settles it.
 
-**Reason:** brokering work or taking a commission is regulated (job
-placement, labour leasing); a tool is not. The evidence makes Maity
-worth paying for to companies without making it an employer of record.
+**Reason:** in the maintainer's words, Maity does not broker; work
+arises on the platform and Maity only provides the management tools,
+which makes it attractive to workers and companies and gives seats a
+sense for companies. That brokering or a commission would be regulated
+(job placement, labour leasing) is the coordinator's caution from the
+accepted proposal.
 
 **Rejected alternatives:**
-- A marketplace with matching and a commission: the large revenue, but
-  regulated, and at odds with an open-source product people can host
-  themselves.
+- A marketplace with matching and a commission: in the maintainer's
+  words that is where the big money is, but Maity would be something like
+  a job broker, and as open source it cannot charge much when people can
+  host it themselves.

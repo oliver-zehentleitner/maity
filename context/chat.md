@@ -236,7 +236,7 @@ readable; follow-ups go into a new request. Attachments as in the chat.
 asked, without losing track of what was decided.
 
 **Rejected alternatives:**
-- Keeping "Let's talk" as a jump into the direct chat: the discussion
-  ends up far from the request it is about.
-- Leaving the thread open for follow-ups after the decision: it blurs
-  what the decision covered.
+- Keeping "Let's talk" as a jump into the direct chat, as built: the
+  maintainer asked for a discussion inside the request instead.
+- Leaving the thread open for follow-ups after the decision: offered as
+  an option, not chosen; no reason given.

@@ -458,9 +458,10 @@ behaviour in a test or live environment and report a result or a bug as
 a new linked card, a step called verified. The reviewer checks the code,
 the tester the behaviour.
 
-**Reason:** the team rule that a reviewer never implements kept review
-independent; the hub should guarantee it rather than leave it to
-discipline, and behaviour is only visible after a deploy.
+**Reason:** the maintainer's words: reviewers must not implement, so
+that the context stays clean, and the reviewer checks the code while the
+tester checks the behaviour.
 
-**Rejected alternatives:**
-- An opt-in gate: every project would have to remember to switch it on.
+**Rejected alternatives:** unknown; the default-on setting with an
+owner's switch was the maintainer's own choice, and no other option was
+weighed.

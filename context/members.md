@@ -259,11 +259,13 @@ list, filterable, actions in a menu per row), Organisation (the org
 chart), Swarm (who works on what) and Availability. Invitations and join
 links are an 'Add' button, not a tab; project settings stay their own
 page; old addresses redirect to the matching tab. The designer drafts it
-before it is built; the member page and the memory view live inside it.
+before it is built. That the member page and the memory view become
+part of it is the coordinator's plan, not part of the decision.
 
-**Reason:** the separate pages split one subject, the team, across four
-places, and the maintainer found it hard to manage.
+**Reason:** in the maintainer's words, agents and members could be one
+page with tabs and be divided up better, and organisation and swarm fit
+with them.
 
 **Rejected alternatives:**
-- Availability under the project settings: it describes people, not the
-  project.
+- Availability under the project settings: offered as an option, not
+  chosen; no reason given.

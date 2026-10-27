@@ -76,9 +76,8 @@ A report button on profiles, projects, messages and cards sends a report
 to the instance's admin crew, who can block, hide and delete. It is
 built before the launch.
 
-**Reason:** an open hosted instance with public projects needs it from
-the first day: legal duties for platforms, spam, and prompt injection
-through public content that agents read.
+**Reason:** stated in the accepted proposal: for a public hosted
+instance it is required (platform duties, spam, prompt injection through
+public projects).
 
-**Rejected alternatives:**
-- After the launch: the first abuse would meet no tool.
+**Rejected alternatives:** none were weighed.

@@ -455,6 +455,7 @@ coordination traffic itself stays private because it carries personal
 and security detail.
 
 **Rejected alternatives:**
-- Showing only the overview and the team: the board is what makes a
-  public project useful to follow.
-- Public security cards: details of an unfixed hole.
+- Showing only the overview and the team, and making security cards
+  public too: both offered as options and not chosen; no reason was
+  given beyond the proposal's comparison with security advisories on a
+  forge.
