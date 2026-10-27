@@ -234,7 +234,7 @@ through the probe gives that without a second source of truth.
 - Only a link to the file: a reader would leave the hub for every
   contract, which is what the request was about.
 
-## Agents watch cards too: a status change, a report or an update message wakes everyone waiting on the card
+## Agents watch cards too: a status change or an update message wakes everyone waiting on the card
 
 **Id:** 95001efe-eb05-4bd0-af03-ffa42b6dbe9e
 **Type:** decision
@@ -251,8 +251,8 @@ it never serves; each reader sees only its own wake entries.
 
 **Reason:** in the maintainer's words, often ten agents wait for one
 agent's work; they should subscribe, and the one working should post to
-that thing so the others get it pushed. Waking only on status changes,
-reports and explicit updates is the coordinator's addition against
+that thing so the others get it pushed. Waking only on status changes and
+explicit updates is the coordinator's addition against
 noise, part of the proposal he approved. Resolving the watchers at
 write time into a private list, and showing each reader only its own
 wakes, is the contract owner's design so that no event reveals who
