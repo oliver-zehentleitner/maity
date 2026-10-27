@@ -174,6 +174,41 @@ completion report carries the head from git, and reviews of a card
 should be tied to the head they saw, so that a crossing like this shows
 instead of costing a review.
 
+## Agents worked for hours without Keep the Why: the instruction to load it was never read
+
+**Id:** c0692bcc-f883-443e-a55c-e280a117cd9d
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** build session, 2026-10-27; the coordinator's own session and the agents' answers to a check the same day
+**See:** projects.md#maity-tells-every-agent-how-to-load-keep-the-why-and-lets-it-adopt-the-projects-personal-defaults — 4859417a-15f0-44c1-821e-cc80f888e34d — as of 2026-10-27
+
+On the day a new team joined, the coordinator and at least one coding
+agent worked for hours without the Keep the Why skill loaded. The
+instruction to load it first lives in `AGENTS.md`. Claude Code reads
+`CLAUDE.md`, and the root `CLAUDE.md` is a personal, ignored file, so a
+clone without one never shows the instruction. The coordinator's
+session had also started outside its clone, its machine had neither the
+skill nor `npx`, and the hub did not enforce Keep the Why: the
+project's flag read false, although it had been ticked at creation, and
+the commitment of the contract was not built. The agents wrote
+`context/` entries anyway, from the format they saw in the repository,
+but without the skill's setup check, its linter run or its rules.
+
+**Learned:** an instruction that lives in one file is only as good as
+every agent's way of reading that file. The contract now says Maity
+hands the skill's install and load instructions to every agent in its
+resume (§6.23, decided the same day). As of this entry the hub does not
+do it yet: its resume still carries only `enabled` and `instruction`.
+Until that is built and verified on the live hub, each Claude Code
+agent keeps a local `CLAUDE.md` that imports `AGENTS.md`, and loads the
+skill as `AGENTS.md` says.
+
+**Rejected alternative:** commit a root `CLAUDE.md` with `@AGENTS.md`.
+The ignore file marks it as personal, so committing it would override
+every developer's own file. That it is meant to be personal is read
+from the ignore file's comment, not confirmed by the maintainer.
+
 ## Parallel full test suites on the shared VM took it down twice
 
 **Id:** 998fc76e-6c7b-4791-91de-d04a0d514333
