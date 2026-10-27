@@ -1557,11 +1557,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "members: a member reads the list without actions; the owner from the members");
   win.Maity.api.get = mGet;
 
-  // Message the project (docs/api.md §8.4): from the inbox, no tab of its own.
+  // Message the project (docs/api.md §8.4): from the Chat tab (tsk-r1adgwp0a5dr), no longer the inbox, no tab of its own.
   await go("#/p/maity/inbox");
-  const msgLink = main.querySelectorAll("a").find((a) => a.textContent === "Message the project");
+  expect(!main.querySelectorAll("a").some((a) => a.textContent === "Message the project"), "message: no longer in the inbox");
+  await go("#/p/maity/chat");
+  const msgLink = main.querySelector(".chat-list-pane").querySelectorAll("a").find((a) => a.textContent === "Message the project");
   expect(msgLink && msgLink.getAttribute("href") === "#/p/maity/message"
-    && !header.querySelectorAll("nav.views a").some((a) => a.textContent === "Message the project"), "message: a link in the inbox, no tab");
+    && !header.querySelectorAll("nav.views a").some((a) => a.textContent === "Message the project"), "message: a link in the Chat tab, no tab");
   const msgPosts = [];
   const mPost0 = win.Maity.api.post;
   win.Maity.api.post = (p, b) => { msgPosts.push([p, b]); return mPost0(p, b); };
@@ -2158,33 +2160,53 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Messages of one sender close together are grouped; a day apart, separated; the empty chat says what happens.
   const hGet = win.Maity.api.get;
   const at = (min) => new Date(Date.parse("2026-10-21T10:00:00Z") + min * 60000).toISOString();
-  win.Maity.api.get = (p) => (p.startsWith("/projects/maity/conversations/agt-c/messages?limit=") ? Promise.resolve({ cursor: 5, items: [
+  // A conversation's messages as the hub pages them (docs/api.md §9.1): before= the limit below, after= forward.
+  const convStub = (all, reads) => (p) => {
+    const q = new URLSearchParams(p.split("?")[1] || "");
+    reads.push(p);
+    const limit = Number(q.get("limit") || 200);
+    const items = q.get("before") !== null ? all.filter((m) => m.seq < Number(q.get("before"))).slice(-limit)
+      : all.filter((m) => m.seq > Number(q.get("after") || 0)).slice(0, limit);
+    const earlier = items.length && all.some((m) => m.seq < items[0].seq) ? items[0].seq : null;
+    return Promise.resolve({ items, earlier, cursor: q.get("before") !== null ? 0 : (items.length ? items[items.length - 1].seq : 0) });
+  };
+  const shortReads = [];
+  const shortConv = convStub([
     { id: "e1", seq: 1, conversation_id: "agt-c", from: "agt-c", to: "hum-maintainer", body: "one", sent_at: at(0), delivered_at: at(0) },
     { id: "e2", seq: 2, conversation_id: "agt-c", from: "agt-c", to: "hum-maintainer", body: "two", sent_at: at(2), delivered_at: at(2) },
     { id: "e3", seq: 3, conversation_id: "agt-c", from: "agt-c", to: "hum-maintainer", body: "later", sent_at: at(20), delivered_at: at(20) },
     { id: "e4", seq: 4, conversation_id: "agt-c", from: "agt-c", to: "hum-maintainer", body: "next day", sent_at: at(24 * 60), delivered_at: at(24 * 60) },
-  ] }) : hGet(p));
+  ], shortReads);
+  win.Maity.api.get = (p) => (p.startsWith("/projects/maity/conversations/agt-c/messages?") ? shortConv(p) : hGet(p));
   await go("#/p/maity/chat/agt-c");
   const gl = main.querySelector("ol.messages").childNodes.map((li) => li.className);
   expect(JSON.stringify(gl) === JSON.stringify(["day", "msg in", "msg in grouped", "msg in", "day", "msg in"])
     && !main.querySelectorAll("li.msg")[1].querySelector(".msg-avatar"), "chat: within five minutes grouped without the picture again; a new day separated " + JSON.stringify(gl));
   win.Maity.api.get = hGet;
-  // A history longer than a page is read to its end; the unread line stands before the unread ones there.
+  // A long history (tsk-r1adgwp0a5dr): opening reads the newest page only, in two requests (back, then forward,
+  // which marks it read), whatever the length; older pages come on scroll-up, one at a time, never twice.
+  // Measured on 2000 messages: before, 10 requests and 2000 messages drawn; now 2 requests and 50.
   const longMsg = (seq) => ({ id: "l" + seq, seq, conversation_id: "agt-c", from: "agt-c", to: "hum-maintainer", body: "m" + seq, sent_at: at(seq), delivered_at: at(seq) });
   const longReads = [];
-  win.Maity.api.get = (p) => {
-    if (p.startsWith("/projects/maity/conversations/agt-c/messages?limit=200")) { longReads.push(p); return Promise.resolve({ cursor: 200, items: Array.from({ length: 200 }, (_, i) => longMsg(i + 1)) }); }
-    if (p.startsWith("/projects/maity/conversations/agt-c/messages?after=200&limit=200")) { longReads.push(p); return Promise.resolve({ cursor: 203, items: [201, 202, 203].map(longMsg) }); }
-    return hGet(p);
-  };
+  const longConv = convStub(Array.from({ length: 2000 }, (_, i) => longMsg(i + 1)), longReads);
+  win.Maity.api.get = (p) => (p.startsWith("/projects/maity/conversations/agt-c/messages?") ? longConv(p) : hGet(p));
   const hAll = win.Maity.api.getAll;
   win.Maity.api.getAll = (p) => (p === "/projects/maity/conversations?observed=true"
-    ? hAll(p).then((r) => ({ items: r.items.map((c) => (c.agent_id === "agt-c" ? Object.assign({}, c, { unread: 3 }) : c)), next_cursor: null })) : hAll(p));
+    ? hAll(p).then((r) => ({ items: r.items.map((c) => (c.agent_id === "agt-c" ? Object.assign({}, c, { unread: 3, last_message: { seq: 2000, from: "agt-c", body: "m2000", sent_at: at(2000), redacted: false } }) : c)), next_cursor: null })) : hAll(p));
   await go("#/p/maity/chat/agt-c");
   const histList = main.querySelector("ol.messages");
   const nl = histList.childNodes.findIndex((li) => li.className === "new-line");
-  expect(longReads.length === 2 && histList.querySelectorAll("li.msg").length === 203 && nl > 0
-    && histList.childNodes[nl + 1].attrs["data-seq"] === "201", "chat: the history is read to its end, the unread line before the first unread at the end");
+  expect(longReads.length === 2 && /before=2001&limit=50$/.test(longReads[0]) && /after=1950&limit=50$/.test(longReads[1])
+    && histList.querySelectorAll("li.msg").length === 50 && nl > 0 && histList.childNodes[nl + 1].attrs["data-seq"] === "1998",
+    "chat: a 2000-message chat opens with its newest 50 in two requests, the unread line before the first unread " + JSON.stringify(longReads));
+  // Near the top, the page before; a second scroll while it is read asks nothing more.
+  histList.scrollTop = 0; histList.dispatch("scroll"); histList.dispatch("scroll"); for (let k = 0; k < 4; k++) await tick();
+  expect(longReads.length === 3 && /before=1951&limit=50$/.test(longReads[2]) && histList.querySelectorAll("li.msg").length === 100
+    && histList.querySelectorAll("li.msg")[0].attrs["data-seq"] === "1901" && main.querySelectorAll(".chat-pane .earlier button").length === 1,
+    "chat: scrolled to the top, the 50 before are read once and drawn in front; Show earlier messages stays for a keyboard");
+  btn(main.querySelector(".chat-pane .earlier"), "Show earlier messages").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(longReads.length === 4 && histList.querySelectorAll("li.msg").length === 150, "chat: Show earlier messages reads the next page before");
+  win.Maity.api.get = hGet;
   // The unread count that cannot be read draws no line, and says so.
   win.Maity.api.get = hGet;
   win.Maity.api.getAll = (p) => (p === "/projects/maity/conversations?observed=true" ? Promise.reject(new win.Maity.api.ApiError("down", 500, p, "internal", {})) : hAll(p));
@@ -2304,23 +2326,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = feedStub;
   // A long chat, scrolled up: arriving messages leave the view where it is (Newest, below).
   const nGet2 = win.Maity.api.get;
-  let arriving = [];
-  win.Maity.api.get = (p) => {
-    if (p.startsWith("/projects/maity/conversations/agt-c/messages?limit=200")) return Promise.resolve({ cursor: 203, items: Array.from({ length: 203 }, (_, i) => longMsg(i + 1)).slice(0, 200) });
-    if (p.startsWith("/projects/maity/conversations/agt-c/messages?after=200&limit=200")) return Promise.resolve({ cursor: 203, items: [201, 202, 203].map(longMsg) });
-    if (p.startsWith("/projects/maity/conversations/agt-c/messages?after=")) { const items = arriving; arriving = []; return Promise.resolve({ cursor: 205, items }); }
-    return nGet2(p);
-  };
+  const arrivingAll = Array.from({ length: 203 }, (_, i) => longMsg(i + 1));
+  const arrivingConv = convStub(arrivingAll, []);
+  win.Maity.api.get = (p) => (p.startsWith("/projects/maity/conversations/agt-c/messages?") ? arrivingConv(p) : nGet2(p));
   await go("#/p/maity/chat/agt-c");
   const longList = main.querySelector("ol.messages");
-  // Scrolled up, two messages arrive: the view stays, both are counted; Newest goes down and keeps the focus in the chat.
-  Object.assign(longList, { scrollHeight: 5000, clientHeight: 400, scrollTop: 100 });
+  // Scrolled up (not near the top), two messages arrive: the view stays, both are counted; Newest goes down and keeps the focus in the chat.
+  Object.assign(longList, { scrollHeight: 5000, clientHeight: 400, scrollTop: 300 });
   longList.dispatch("scroll");
-  arriving = [longMsg(204), longMsg(205)];
+  arrivingAll.push(longMsg(204), longMsg(205));
   feed = [{ seq: 204, kind: "message", actor: { member_id: "agt-c" }, payload: { type: "chat", conversation_id: "agt-c" } }];
   await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
   const jumpBtn = main.querySelector(".jump-latest");
-  expect(longList.querySelectorAll("li.msg").length === 205 && longList.scrollTop === 100 && !jumpBtn.hidden && jumpBtn.textContent === "2 new · Newest",
+  expect(longList.querySelectorAll("li.msg").length === 52 && longList.scrollTop === 300 && !jumpBtn.hidden && jumpBtn.textContent === "2 new · Newest",
     "chat: two messages arriving while scrolled up leave the view where it is and count both " + jumpBtn.textContent);
   const jProto = Object.getPrototypeOf(jumpBtn);
   const jFocus = jProto.focus;
@@ -2330,7 +2348,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   jProto.focus = jFocus; document.activeElement = undefined;
   // At the end, a message that arrives is followed, and so is content that grows after it was drawn (an image loading).
   Object.assign(longList, { scrollHeight: 5200, scrollTop: 4800 }); longList.dispatch("scroll");
-  arriving = [longMsg(206)];
+  arrivingAll.push(longMsg(206));
   feed = [{ seq: 206, kind: "message", actor: { member_id: "agt-c" }, payload: { type: "chat", conversation_id: "agt-c" } }];
   await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
   expect(longList.scrollTop === 5200 && main.querySelector(".jump-latest").hidden, "chat: at the end, an arriving message is followed, no pill");
@@ -3473,21 +3491,29 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(gcDirect && text(gcDirect).includes("This message was removed by Maintainer: pasted.") && !btn(gcDirect, "Quote"), "direct chat: a removal reaches the open chat too");
   win.Maity.api.get = gcEvGet;
   // A removed message as the hub gives it: body null, with or without redacted.
-  win.Maity.api.get = (p) => (p === "/projects/maity/conversations/cnv-0007/messages?limit=200"
-    ? gcEvGet(p).then((r) => Object.assign({}, r, { items: r.items.map((m, i) => (i === 1 ? Object.assign({}, m, { body: null }) : m)) })) : gcEvGet(p));
+  let gcNullSeq = null;
+  win.Maity.api.get = (p) => (p.startsWith("/projects/maity/conversations/cnv-0007/messages?")
+    ? gcEvGet(p).then((r) => { if (gcNullSeq === null && r.items.length > 1) gcNullSeq = r.items[1].seq;
+      return Object.assign({}, r, { items: r.items.map((m) => (m.seq === gcNullSeq ? Object.assign({}, m, { body: null }) : m)) }); }) : gcEvGet(p));
   await go("#/p/maity/inbox"); await go("#/p/maity/chat/cnv-0007");
   const gcNull = gcList().querySelectorAll("li.msg")[1];
   expect(text(gcNull).includes("This message was removed.") && !btn(gcNull, "Quote") && !btn(gcNull, "Remove"), "group chat: body null reads as removed, nothing to quote or remove");
   // A latecomer with nothing new: said, with the earlier part a button away.
-  win.Maity.api.get = (p) => (p === "/projects/maity/conversations/cnv-0007/messages?limit=200" ? Promise.resolve({ items: [], cursor: null, earlier: 5021 }) : gcEvGet(p));
+  // Before one joined there is history (before= finds it), in the window nothing (after= reads none).
+  win.Maity.api.get = (p) => (p.startsWith("/projects/maity/conversations/cnv-0007/messages?before=")
+    ? Promise.resolve({ items: [{ id: "evt-5020", seq: 5020, conversation_id: "cnv-0007", from: "agt-a", to: "cnv-0007", body: "before you came", sent_at: "2026-10-21T10:00:00Z", mentions: [], attachments: [], redacted: false, redaction: null }], cursor: 0, earlier: null })
+    : p.startsWith("/projects/maity/conversations/cnv-0007/messages?after=") ? Promise.resolve({ items: [], cursor: 5021, earlier: null }) : gcEvGet(p));
   await go("#/p/maity/inbox"); await go("#/p/maity/chat/cnv-0007");
   expect(text(gcList()).includes("Nothing new since you joined.") && btn(main.querySelector(".earlier"), "Show earlier messages"), "group chat: a latecomer with nothing new is told the earlier part is there");
   win.Maity.api.get = gcEvGet;
   // The earlier part, on demand.
   const gcGet = win.Maity.api.get;
   win.Maity.api.get = (p) => {
-    if (p === "/projects/maity/conversations/cnv-0007/messages?limit=200") return gcGet(p).then((r) => Object.assign({}, r, { items: r.items.slice(1), earlier: 5010 }));
-    if (p === "/projects/maity/conversations/cnv-0007/messages?before=5010&limit=50") return Promise.resolve({ items: [{ id: "evt-5001", seq: 5001, conversation_id: "cnv-0007", from: "agt-a", to: "cnv-0007", body: "before you came", sent_at: "2026-10-21T12:00:00Z", mentions: [] }], cursor: 5001, earlier: null });
+    // The window begins after the chat's first message: that one lies before it.
+    if (p.startsWith("/projects/maity/conversations/cnv-0007/messages?after=")) return gcGet(p).then((r) => Object.assign({}, r, { items: r.items.slice(1) }));
+    if (p.startsWith("/projects/maity/conversations/cnv-0007/messages?before=") && !p.includes("before=" + Number.MAX_SAFE_INTEGER)) {
+      return Promise.resolve({ items: [{ id: "evt-5001", seq: 5001, conversation_id: "cnv-0007", from: "agt-a", to: "cnv-0007", body: "before you came", sent_at: "2026-10-21T12:00:00Z", mentions: [] }], cursor: 0, earlier: null });
+    }
     return gcGet(p);
   };
   await go("#/p/maity/inbox"); await go("#/p/maity/chat/cnv-0007");
@@ -3602,32 +3628,54 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (p) => {
     gcOutGets.push(p);
     if (p === "/projects/guestlab/conversations/cnv-0301") return gcOutGet(p).then((v) => Object.assign({}, v, { observers: v.observers.concat(["hum-other"]) }));
-    if (p === "/projects/guestlab/conversations/cnv-0301/messages?limit=200") {
-      return gcOutGet(p).then((r) => Object.assign({}, r, { items: r.items.concat([{ id: "evt-7002", seq: 7002, conversation_id: "cnv-0301", from: "hum-gone", to: "cnv-0301", body: "bye", sent_at: "2026-10-22T09:05:00Z", mentions: [], redacted: false, redaction: null }]) }));
+    if (p.startsWith("/projects/guestlab/conversations/cnv-0301/messages?")) {
+      return gcOutGet(p).then((r) => Object.assign({}, r, { items: r.items.filter((m) => m.seq !== 7002).concat([{ id: "evt-7002", seq: 7002, conversation_id: "cnv-0301", from: "hum-gone", to: "cnv-0301", body: "bye", sent_at: "2026-10-22T09:05:00Z", mentions: [], redacted: false, redaction: null }]) }));
     }
     return gcOutGet(p);
   };
   await go("#/observe/guestlab/cnv-0301");
   expect(text(main.querySelector(".group-observers")).includes("another agent's owner") && !text(main.querySelector(".group-observers")).includes("outside the project")
     && text(main.querySelectorAll(".group-chat li.msg")[1]).includes("someone not in the chat"), "read along: other observers and someone not in the chat named neutrally");
-  // The 30-second re-read pages to the end, and draws again only on a change.
+  // The 30-second re-read reads the newest page only, never the whole history (tsk-r1adgwp0a5dr), and draws again only on a change.
   const gcLong = (seq) => ({ id: "evt-" + seq, seq, conversation_id: "cnv-0301", from: "hum-guest", to: "cnv-0301", body: "m" + seq, sent_at: "2026-10-22T10:00:00Z", mentions: [], redacted: false, redaction: null });
-  let gcLongN = 205;
+  let gcLongN = 2000;
   const gcPages = [];
   win.Maity.api.get = (p) => {
-    if (p === "/projects/guestlab/conversations/cnv-0301/messages?limit=200") { gcPages.push(p); return Promise.resolve({ items: Array.from({ length: 200 }, (_, i) => gcLong(8001 + i)), cursor: 8200, earlier: null }); }
-    if (p === "/projects/guestlab/conversations/cnv-0301/messages?after=8200&limit=200") { gcPages.push(p); return Promise.resolve({ items: Array.from({ length: gcLongN - 200 }, (_, i) => gcLong(8201 + i)), cursor: 8000 + gcLongN }); }
+    if (p.startsWith("/projects/guestlab/conversations/cnv-0301/messages?")) {
+      gcPages.push(p);
+      const all = Array.from({ length: gcLongN }, (_, i) => gcLong(8001 + i));
+      const q = new URLSearchParams(p.split("?")[1]);
+      const items = q.get("before") !== null ? all.filter((m) => m.seq < Number(q.get("before"))).slice(-Number(q.get("limit")))
+        : all.filter((m) => m.seq > Number(q.get("after") || 0)).slice(0, Number(q.get("limit") || 200));
+      return Promise.resolve({ items, cursor: items.length ? items[items.length - 1].seq : 0, earlier: items.length ? items[0].seq : null });
+    }
     return gcOutGet(p);
   };
+  const gcLast = () => { const lis = main.querySelectorAll(".group-chat li.msg"); return lis[lis.length - 1].attrs["data-seq"]; };
   await fireIntervals(); await tick(); await tick(); await tick();
   const gcFirstLi = main.querySelector(".group-chat li.msg");
-  expect(main.querySelectorAll(".group-chat li.msg").length === 205 && gcPages.includes("/projects/guestlab/conversations/cnv-0301/messages?after=8200&limit=200"),
-    "read along: the re-read pages to the end of a chat longer than 200");
+  expect(gcPages.length === 1 && gcPages[0] === "/projects/guestlab/conversations/cnv-0301/messages?before=" + Number.MAX_SAFE_INTEGER + "&limit=50"
+    && gcLast() === "10000" && main.querySelectorAll(".group-chat li.msg").length <= 60,
+    "read along: the re-read of a 2000-message chat is one request for its newest 50 " + JSON.stringify(gcPages));
   await fireIntervals(); await tick(); await tick(); await tick();
-  expect(main.querySelector(".group-chat li.msg") === gcFirstLi, "read along: nothing new, nothing drawn again (the list is a live region)");
-  gcLongN = 206;
+  expect(main.querySelector(".group-chat li.msg") === gcFirstLi && gcPages.length === 2, "read along: nothing new, nothing drawn again (the list is a live region)");
+  gcLongN = 2001;
   await fireIntervals(); await tick(); await tick(); await tick();
-  expect(main.querySelectorAll(".group-chat li.msg").length === 206, "read along: a new message after the 200th shows");
+  expect(gcLast() === "10001", "read along: a new message shows");
+  // More than a page between two re-reads (H on #452): what is shown is let go, the gap read on scroll-up in order.
+  gcLongN = 2101;
+  await fireIntervals(); await tick(); await tick(); await tick();
+  const gcSeqs = () => main.querySelectorAll(".group-chat li.msg").map((li) => Number(li.attrs["data-seq"]));
+  expect(gcSeqs().length === 50 && gcSeqs()[0] === 10052 && gcLast() === "10101" && btn(main.querySelector(".group-chat .earlier"), "Show earlier messages"),
+    "read along: more than a page between re-reads drops what no longer meets it; the gap comes on scroll-up");
+  btn(main.querySelector(".group-chat .earlier"), "Show earlier messages").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(gcSeqs().length === 100 && gcSeqs()[0] === 10002 && gcSeqs().every((x, i, a) => !i || x === a[i - 1] + 1), "read along: the gap is read back in order, nothing missing");
+  // A long tail drawn and the reader at the newest: the re-read lets the oldest go, as an arrival does.
+  for (let n = 0; n < 5; n++) { btn(main.querySelector(".group-chat .earlier"), "Show earlier messages").click(); for (let k = 0; k < 4; k++) await tick(); }
+  const gcList2 = main.querySelector(".group-chat ol.messages");
+  Object.assign(gcList2, { scrollHeight: 9000, clientHeight: 400, scrollTop: 8600 });
+  await fireIntervals(); await tick(); await tick(); await tick();
+  expect(gcSeqs().length === 100 && gcLast() === "10101", "read along: at the newest, a long tail is let go on the re-read too " + gcSeqs().length);
   win.Maity.api.get = (p) => (p.startsWith("/projects/guestlab/conversations/cnv-0301/messages") ? Promise.reject(new win.Maity.api.ApiError("Not found", 404, p, "not_found", {})) : gcOutGet(p));
   await fireIntervals(); await tick(); await tick();
   expect(text(main).includes("You no longer read this chat: your agent left it, or left the project"), "read along: an access that ended is said on the next re-read");

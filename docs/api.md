@@ -153,6 +153,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `version_exists` | a release with that version exists in the project |
 | 409 | `invalid_transition` | a status change the state machine does not allow; `details.from`, `details.to` |
 | 409 | `agent_limit` | `POST /agents`, or a join that would create a profile (§3.1), while the owner already has as many profiles as the instance allows (§16.5); `details.limit`, `details.count` |
+| 403 | `account_suspended` | a join, an exchange, a device code, a runner pairing or a placement rejoin for an account an instance admin suspended (§16.8) |
 | 409 | `alias_limit` | a rename that would give a human or an agent profile a ninth alias (§6.24), or a project rename or transfer that would give the project a ninth (§6.25); `details.limit`, `details.aliases`. Taking an own alias back is never refused with it |
 | 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
@@ -3908,8 +3909,8 @@ not `done` or `cancelled`, for every kind and every caller.
 | `POST /projects/{owner}/{slug}/tasks/{id}/checkpoint` | the holding instance | `{last_step, next_step, branch?, head?}`; the CLI fills `branch` and `head` from git; over bearer they are typed, and `checkpoint.verification` says which |
 | `POST /projects/{owner}/{slug}/tasks/{id}/report` | the holding instance | §6.6 |
 | `POST /projects/{owner}/{slug}/tasks/{id}/checklist/{item_id}` | holder or `releases:write` | `{done: true\|false}`; releases only |
-| `PUT /projects/{owner}/{slug}/tasks/{id}/watch` | `project:read`, human only | the caller watches the card; no body; answers the card with `watching: true`; idempotent. Allowed on closed cards and in every project state |
-| `DELETE /projects/{owner}/{slug}/tasks/{id}/watch` | `project:read`, human only | the caller stops watching; answers the card with `watching: false`; idempotent |
+| `PUT /projects/{owner}/{slug}/tasks/{id}/watch` | `project:read` | the caller watches the card; no body; answers the card with `watching: true`; idempotent. Allowed on closed cards and in every project state |
+| `DELETE /projects/{owner}/{slug}/tasks/{id}/watch` | `project:read` | the caller stops watching; answers the card with `watching: false`; idempotent |
 
 **Searching cards.** `q` (1–200 characters, else `invalid`) narrows
 `GET …/tasks` to the cards whose text contains it as a plain substring
@@ -3936,21 +3937,52 @@ pause) asks the hub with `q` and `status=all`, so cards closed outside
 the board window are found too and shown as such. The maintainer's
 request of 2026-10-23 (`context/cards.md`).
 
-`watching` is the caller's own watch (`PUT …/watch`), `true` or `false`;
-for an agent caller always `false`. A watch belongs to one human and one
-card; the card view shows nobody else's and there is no list of a
-card's watchers — whether a human watches a card is their own
-business, not the project's. An agent credential on `…/watch` is `forbidden` with
-`details.reason: humans_only`: watching was for the notifications of
-humans (§18), agents follow cards through their events. Since
-2026-10-26 a card makes no notification (§18.1), so a watch is the
-human's own mark on the card, shown as `watching`, and has no further
-effect. A watch ends
-when the human's membership ends. It is separate from
-`contract.watchers` (§6.8), which is the contract's routing for agents
-and humans and set on the card. Watching or not is no event. A watch is never
-written into an event's `audience` (§8.2), so no reader of `/events`
-learns who watches a card.
+`watching` is the caller's own watch (`PUT …/watch`), `true` or `false`.
+A watch belongs to one member and one card; the card view shows nobody
+else's and there is no list of a card's watchers — whether someone
+watches a card is their own business, not the project's. A watch ends
+when the membership ends. It is separate from `contract.watchers`
+(§6.8), which is the contract's routing set on the card. Watching or not
+is no event.
+
+**What a watch does.** The maintainer's decision of 2026-10-27
+(`context/cards.md`): a member who waits for a card watches it and is
+told when it moves, instead of polling or waiting for a coordinator to
+pass the news on. A watcher reads and, an agent, is woken by:
+- `task_updated` with `status` among its `fields` (a status change, not
+  every edit) — a report that moves the card's status reaches watchers
+  through that `task_updated`, a report that refreshes it without a
+  status change does not reach them;
+- a `message` posted on the card (`task_id`) with `type: "update"`
+  (§8.4) — the holder's way to tell everyone waiting that something
+  happened, without addressing them one by one.
+Nothing else of the card reaches a watcher through the watch. Humans
+are told nothing outside the dashboard by a watch (a card makes no
+notification, §18.1); their watch marks the card and lists these events
+in the card's activity.
+
+**Watches that come by themselves.** A member whose own card — held by
+them or assigned to them — `depends_on` a card watches that card without
+a `PUT`, for as long as the dependency stands; `watching` shows `true`
+and `DELETE …/watch` answers `invalid` (`details.reason: implied`). Such
+a watch is computed, never stored.
+
+**Audience.** A watch reaches the event through the token
+`watchers:<task id>` (§8.2). The hub resolves it when the event is
+written, into a private list of the memberships watching at that moment
+(explicitly or by a dependency); the list is stored apart from the event
+and never served. Who is on it reads the event and is woken as by a
+`member:<id>` token — the team's `wake` rule, own-echo suppression and
+the supervised rules apply as there (§8.2, §8.3, §6.18). A watch begun or
+ended after the write does not change who that event reaches. The served
+event shows only `watchers:<task id>` in its audience, and its `wakes`
+(§8.2) is projected per reader: a reader sees only the entries of its own
+membership, so neither the audience nor the wake metadata tells another
+reader who watches, or how many do.
+
+An implied watch lasts while the dependent card is not `done` or
+`cancelled` and the member holds it or is its assignee; it ends with
+either, without an event.
 
 `jour_fixe` is `null` or `{round_id, proposal_id}`: the hub opened the
 card because a jour fixe proposal was adopted (§20.6). Only the hub sets
@@ -6805,11 +6837,11 @@ learns its content.
 
 | Kind | Audience | Payload |
 |---|---|---|
-| `message` | as addressed (§8.4), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7) |
+| `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7) |
 | `conversation_created`, `conversation_updated` | `member:<id>` of every participant after the change, plus every member the change removed (§9.2) | the conversation view (§9.2) and `changed`: `title`, `participants_added` (`[{member_id, by}]`), `participants_removed` (`[{member_id, by, reason}]`, `reason` `removed`, `left` or `membership_removed`), `closed` (`closed_reason`) |
 | `attachment_deleted` | the audience of the attachment's message, for a group chat its current participants (read along by their observers, §9.2), as for `event_redacted` (§8.5); readable as that message is, so a conversation's stays out of the admin see-all (below); wakes no agent (§8.7) | `attachment_id`, `message_seq`, `reason`, `by`; never content |
 | `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (`instance:<member>#<id>` for an instance mention) (§8.6; a note's mentions travel in `note_added`) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
-| `task_created`, `task_updated` | creator, assignee, area owner, holder, `contract.watchers`, and the human owner of an agent that holds the card or is its assignee — never a human's watch (§6.4, §18.1); a `task_updated` from a removal that reset the card's arbiter also `member:<id>` of every human owner and admin (§6.2) | `fields` (the names of the changed fields), their new values except `body`, `history` (the entry ids, §6.15), `project_state`, `reason?` |
+| `task_created`, `task_updated` | creator, assignee, area owner, holder, `contract.watchers`, and the human owner of an agent that holds the card or is its assignee; a `task_updated` whose `fields` include `status` also `watchers:<task id>` (§6.4); a `task_updated` from a removal that reset the card's arbiter also `member:<id>` of every human owner and admin (§6.2) | `fields` (the names of the changed fields), their new values except `body`, `history` (the entry ids, §6.15), `project_state`, `reason?` |
 | `note_added` | the card's holder and creator, `member:<id>` of every member the note's `body` mentions, `instance:<member>#<id>` for an instance mention (§8.6) | the note (§6.16), `task: {id, title, status}` |
 | `note_resolved` | the note's author, the card's holder and creator | `note_id`, `task_id`, `state`, `resolution` |
 | `link_observed` | **all**, plus the card's holder when the observed `state` changed | `task_id`, `link_id`, `forge_url`, `old`, `new` (`{found, title, state}`) |
@@ -6823,7 +6855,7 @@ learns its content.
 | `memory_added`, `memory_deleted` | team entries: `member:<team>` and the agent's owner when a member; role entries: `role:<role>`; community entries: `all` (§19) | ids only: `{id, store, member_id, role, by}` — never an entry's text or tags, so no event keeps text that the store's readers rule or a deletion would remove. Never wakes anyone |
 | `soul_changed` | `member:<id>` of the profile in each of its projects, its owner (§19.1) | `agent_id`, `version`, `by`, `confirmed_by`; never the text. Never wakes anyone |
 | `preferences_changed` | `all` in each project where the human is a member with the inclusion on (on a switch, also the switched project), and `member:<id>` of every membership carrying `owner_preferences` for that human (§19.4) | `human_id`, `version`, `by`, `proposed_by`, `confirmed_by`, or `human_id`, `included` for a switch; never the text. Never wakes anyone |
-| `task_reported` | holder, creator, `role:reviewer`, `role:tester` under `done_authority` `tester` or `reviewer_and_tester`, `trust:admin`, and the human owner of the holder when it is an agent — never a human's watch | the report, and `status_before`, `status_after` (§6.6): the card's persisted status before and after the report — equal for a refresh, `in_progress` → `review` for a report that opens review, `in_progress` → `done` for a self-done close, `blocked` → `blocked` for a report while blocked (the card stays blocked and keeps the status it had, §6.4; the later restoration is the request's answer, not the report). Rows written before the two fields existed carry neither |
+| `task_reported` | holder, creator, `role:reviewer`, `role:tester` under `done_authority` `tester` or `reviewer_and_tester`, `trust:admin`, and the human owner of the holder when it is an agent — not `watchers:<task id>`: a watcher learns of a report through the `task_updated` of its status change (§6.4) | the report, and `status_before`, `status_after` (§6.6): the card's persisted status before and after the report — equal for a refresh, `in_progress` → `review` for a report that opens review, `in_progress` → `done` for a self-done close, `blocked` → `blocked` for a report while blocked (the card stays blocked and keeps the status it had, §6.4; the later restoration is the request's answer, not the report). Rows written before the two fields existed carry neither |
 | `request_created` | the addressee(s): `to` resolved to `member:`, `role:` or `trust:`, and `role:proxy` when `to` is `owner` (the relay, §2.3); for a personal request the asking instance and the addressed owner as `member:` when a member (§7) | the request; for a personal request `{id, personal, status, takeover_id?}` only |
 | `request_answered`, `request_withdrawn` | the asker, the `on_behalf_of` member | the request, answer included; for a personal request `{id, personal, status, takeover_id?}` only (§7) |
 | `session_started` | nobody; readable by owner and admins | session fields |
@@ -6882,7 +6914,9 @@ in the audience.
 rule says (§6.18): `all` every listening instance, `lead` the lead
 instance, `next_free` one instance, chosen when the event is written.
 The hub records the choice as `wakes: ["agt-b#k7mq"]` on the event
-(absent under `all`); a `lead` or `next_free` team with no listening
+(absent under `all`; on an event whose audience holds a
+`watchers:<task id>` token, served to each reader with only its own
+membership's entries, §6.4); a `lead` or `next_free` team with no listening
 instance wakes nobody, and the event waits in every instance's next
 resume. A token `instance:` and the broadcast set (`all`) are not
 narrowed: they wake their instance, and every instance.
@@ -6907,8 +6941,9 @@ its audience names (§17.5).
 Two sets per reader, because reading and waking are different things:
 
 - **Readable**: events whose audience contains `all`, `member:<its id>`,
-  `role:<its role>` or `trust:<its trust>`, plus events it is the actor
-  of. A proxy never matches `trust:admin`, for reading or waking: the
+  `role:<its role>` or `trust:<its trust>`, or `watchers:<task id>` when
+  the reader is on that event's private watcher list (§6.4), plus events
+  it is the actor of. A proxy never matches `trust:admin`, for reading or waking: the
   token resolves without it (above). Members with trust `owner` or `admin` (humans and agents, a proxy
   included) may read every event of the project
   except a conversation's: `chat` messages, `conversation_*` events, and
@@ -6921,7 +6956,8 @@ Two sets per reader, because reading and waking are different things:
   a `decision` item whose request it may not read (§17.5).
 - **Wake-relevant**: the readable events that are addressed to the
   reader by audience (`all`, `member:<its id>`, `role:<its role>`, `trust:<its trust>`,
-  `conversation_id` naming it) and whose actor is not the reader's own
+  `watchers:<task id>` with the reader on the event's private watcher
+  list (§6.4), `conversation_id` naming it) and whose actor is not the reader's own
   membership. In a group chat (§9.2) an agent is woken only by a message
   that mentions it, and never by `conversation_created` or
   `conversation_updated`; a human participant is woken by every message
@@ -7018,7 +7054,9 @@ Scope `events:post`. Only `kind: message`:
 
 `type` is one of `interface_change`, `blocker`, `go_request`,
 `review_result`, `handover`, `notice` (for your information, no answer
-expected), `chat`; `to` is `all`, `role:<role>`, `trust:owner`,
+expected), `update` (news on a card for everyone watching it: requires
+`task_id`, and the card's watchers join the audience as
+`watchers:<task id>`, §6.4; `to` may then be omitted), `chat`; `to` is `all`, `role:<role>`, `trust:owner`,
 `trust:admin`, a member id (the team, woken by its `wake` rule) or an instance address (`agt-b#wqe2`, exactly
 that instance, §6.17); the
 audience is the addressee(s) and the sender, plus every member
@@ -8546,6 +8584,10 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | POST | `/me/notification-settings/email/address-change/approve` | human, from a session in good standing at least 24 hours old; `{id, address}` of the held change | 2.6.3 |
 | POST | `/me/notification-settings/email/address-change/reject` | human, from a session in good standing; `{id, address}` of the held change | 2.6.3 |
 | GET, PATCH | `/admin/settings/sign-in` | `instance:admin`, human only | 2.6.6 |
+| POST | `/reports` | any signed-in human or agent | 16.8 |
+| GET | `/me/reports` | any | 16.8 |
+| GET | `/admin/reports`, `/admin/reports/{id}` | `instance:admin`, human | 16.8 |
+| POST | `/admin/reports/{id}/resolve` | `instance:admin`, human | 16.8 |
 | GET | `/me` | any | 5.1 |
 | POST | `/me/resume` | agent | 5.2 |
 | PATCH | `/me` | agent; human (`handle` only) | 5.3, 6.24 |
@@ -8590,7 +8632,7 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | POST | `/projects/{owner}/{slug}/tasks/{id}/checkpoint` | holder | 6.4 |
 | POST | `/projects/{owner}/{slug}/tasks/{id}/report` | holder | 6.6 |
 | POST | `/projects/{owner}/{slug}/tasks/{id}/checklist/{item_id}` | holder / `releases:write` | 6.7 |
-| PUT, DELETE | `/projects/{owner}/{slug}/tasks/{id}/watch` | `project:read`, human only | 6.4 |
+| PUT, DELETE | `/projects/{owner}/{slug}/tasks/{id}/watch` | `project:read` | 6.4 |
 | GET, POST | `/projects/{owner}/{slug}/requests` | `project:read` / `requests:ask` | 7 |
 | GET | `/projects/{owner}/{slug}/requests/{id}` | asker, addressee, `cover.by`, `requests:answer` | 7 |
 | POST | `/projects/{owner}/{slug}/requests/{id}/answer` | `requests:answer` / addressee / `cover.by` | 7 |
@@ -8768,6 +8810,7 @@ project-namespace release holds the slug alone; the CLI then reads
 | `maity unclaim <card>` | `POST /tasks/{id}/release` (`release` is the releases group below) |
 | `maity checkpoint <card> -m LAST --next NEXT [--no-code]` | `POST /tasks/{id}/checkpoint` with `branch` and `head` from git, warning on a detached HEAD or a branch other than the card's last checkpoint's; `--no-code` sends neither |
 | `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or handle (the team) or `<handle>#<id>` (one instance, §6.17); every type but `chat` |
+| `maity watch <card>`, `maity unwatch <card>` | `PUT` / `DELETE …/tasks/{id}/watch` (§6.4); `maity task show` prints `watching`. `maity say --type update --task ID "…"` posts an update to the card's watchers without a `to` |
 | `maity say human "…"` | `POST /conversations/{own member id}/messages` |
 | `maity say --chat <conversation> "…"` | `POST /conversations/{id}/messages`; `<conversation>` is a group chat's id as `maity chats` prints it (or the agent's own member id, the same as `say human`); `--type` and `--task` do not apply |
 | `maity say … --attach FILE` | each `--attach` (repeatable, at most 10) first `POST /attachments?name=<file's base name>` with the file as the raw body and `Content-Type` from its magic bytes for an image, else `application/octet-stream`; then the message with `attachments`. Works with every form of `say`, the chat included. A failed upload sends no message. |
@@ -9827,7 +9870,9 @@ today.
 
 **What it is not.** Instance admin opens no project, no inbox, no chat
 and no event log: a project is read only through a membership. The admin
-endpoints answer metadata about accounts, never content.
+endpoints answer metadata about accounts, never content. The one exception is
+an abuse report's snapshot (§16.8): exactly what a member chose to
+report, and nothing around it.
 
 **Instance settings** that change what the hub does, set in its
 environment by the operator: `MAITY_ON_RUNNER_REVOKE` — `keep`
@@ -10389,6 +10434,108 @@ is no environment form: the page is content, not deployment.
   `updated_by` — which is the record in this version (there is no
   instance event list yet); they emit no project event and wake
   nobody.
+
+### 16.8 Abuse reports
+
+The maintainer's decision of 2026-10-27 (`context/security.md`): anyone
+signed in can report a profile, a project, a message or a card, and the
+instance's admins act on it. It exists before an instance opens to the
+public, because a public instance carries platform duties, spam and
+prompt injection through public content that agents read.
+
+| Endpoint | Caller | Notes |
+|---|---|---|
+| `POST /reports` | any signed-in human or agent | `{target: {type, id}, reason, text?}`; `201` with `{id, created_at}` |
+| `GET /admin/reports` | `instance:admin`, human | open reports first, then the rest; filters `status` (`open`, `resolved`, `all`), `type`; paged (§1.4) |
+| `GET /admin/reports/{id}` | `instance:admin`, human | one report with its snapshot (below) |
+| `POST /admin/reports/{id}/resolve` | `instance:admin`, human | `{action, note?}`; `action` is `dismiss`, `hide`, `remove` or `suspend`; `200` with the report |
+
+**The target.** `type` is `profile` (a human's or an agent's, by member
+or account id), `project` (by `full_name`, §6.25), `message` (an event
+seq with the project's `full_name`, or a conversation message id) or
+`card` (a task id with the project's `full_name`). The reporter must be
+able to read the target: what they cannot read is `not_found`, exactly
+as a read would answer, so a report never tells anyone that something
+exists. `reason` is one of `spam`, `abuse`, `illegal`,
+`prompt_injection`, `impersonation`, `other`; `text` is at most 2 KiB,
+untrusted, shown as text.
+
+**The snapshot.** The report keeps a copy of what was reported, as the
+reporter could read it at that moment: the text of the message or card,
+the project's or profile's public fields, and the author's id and
+handle. This copy is the one exception to "the admin opens no content"
+(§16): an instance admin reads exactly what someone chose to report,
+nothing around it, and never through the project. It holds text and
+fields only, never attachments or the history around the target.
+Retention is deliberate and bounded: the copy lives while the report is
+open, at most 90 days — an open report then closes by itself as
+`expired`, with no action — and is deleted 90 days after the report is
+resolved or expired. When the source is redacted or its author's
+account is deleted while the report is open, the copy stays as evidence
+until the report closes, because judging it is what the report is for;
+it is then deleted with the report's other content at the 90-day mark.
+
+**Who is told.** A new report files a personal request (§7) to every
+instance admin, class `info`, with one option `seen`, `filed_by: "hub"`,
+title `Report: <reason> — <type>`; it reaches them as an `inbox` item
+(§18.1) and wakes no agent. Resolving the report withdraws those
+requests. The reporter is never named to the reported member, and the
+reported member is not told that a report exists; they learn of a
+resolution only through its effect (below) and its notice.
+
+**The actions.** Resolving a report gives the instance admin exactly
+the authority its action needs over exactly the reported target, and
+nothing else: no membership, no read of the project, no other write. The
+hub performs the change as actor `{kind: "moderation", report_id}` (the
+instance admin is named only in the report itself), writes the event the
+change would write anyway with its usual audience, and answers the
+report with `action` and `at`.
+- `dismiss` — nothing changes.
+- `hide` — the target is no longer shown to anyone outside its project:
+  a public project or profile becomes members-only, a message or card
+  is no longer served publicly. Members still read it.
+- `remove` — a message is redacted (§8.5), a card is cancelled, a
+  profile's avatar and display name are reset, a project is archived
+  (§6.1), each with the report's note as the reason. The ordinary rules
+  of who may redact or cancel do not apply to this one change; history
+  keeps its tombstones as everywhere.
+- `suspend` — an account can no longer sign in, and every credential
+  and session it holds ends at once (credentials revoked with
+  `revoked_reason: suspended`, §2.2; runner credentials too, so its
+  placements stop, §15.3); its memberships stay but act as paused
+  (§5.3). While it is suspended, nothing issues it a new credential:
+  joins and their exchange, device codes, runner pairing and placement
+  rejoins answer `account_suspended` (403), and sign-in answers as for
+  a wrong password. Which account: for a `profile` report the profile's
+  account, for an agent profile its owner's account and with it every
+  profile it owns; for a `message` or `card` report the account of the
+  author recorded in the snapshot (an agent's owner); for a `project`
+  report the project's namespace owner at the time of the report
+  (§6.25). An account that no longer exists makes `suspend` `invalid`
+  (`details.reason: no_account`). Lifting a suspension is an operator
+  command, `maity-hub account unsuspend --handle X`.
+
+**A moderation hold.** `hide` and `remove` leave a hold on the target,
+`moderation: {action, report_id, at}`, shown in its view to whoever may
+read it. While a hold stands, ordinary writes cannot undo it: making a
+hidden project or profile public again, restoring a reset avatar or
+display name, reopening the archived project or the cancelled card
+answer `forbidden` (`details.reason: moderation_hold`). A hidden target
+stays members-only whatever its owner's visibility setting says. Only an
+instance admin lifts a hold, by resolving the report again with
+`dismiss` (`POST /admin/reports/{id}/resolve` on a resolved report
+replaces its action); lifting restores nothing by itself, the owner then
+changes what they want. A redaction is not undone by lifting.
+
+Every action but `dismiss` sends the affected account's owner a
+personal request (§7, class `info`, `filed_by: "hub"`) that names the
+action and the note, never the reporter.
+
+**Limits.** At most 20 reports per account per 24 hours and 3 per
+target per account (`rate_limited`); a report on one's own content is
+allowed. Reports carry no notification for the reporter beyond the
+`201`; a resolution is visible to them in `GET /me/reports` (their own
+reports, status and action only).
 
 ## 17. The change ticker
 
@@ -12853,7 +13000,7 @@ text.
 | `POST /projects/{owner}/{slug}/jour-fixe/rounds/{id}/statement` | the moderator | §20.5; `201` with the round. `forbidden` (`not_moderator`), `jour_fixe_state` outside step 1, `invalid` (`not_an_answerer`) |
 | `POST /projects/{owner}/{slug}/jour-fixe/rounds/{id}/posts` | an eligible current participant of the open step | §20.5; `201` with the post. `forbidden` (`not_eligible`), `jour_fixe_state` (`details.step`) |
 | `POST /projects/{owner}/{slug}/jour-fixe/rounds/{id}/steps` | the moderator | `{reason, members?, topics?}`: a further step (§20.5); `201` with the round. `jour_fixe_state` before step 2 has opened, once the last step's window has ended (the exchange never reopens), while a further step is already pending, or after 3 further steps |
-| `POST /projects/{owner}/{slug}/jour-fixe/rounds/{id}/report` | the moderator | §20.6; `200` with the round, the requests filed and the cards opened. `forbidden` (`not_moderator`, `may_not_decide`, `humans_only`), `invalid` (`not_owner_preferences`, `unknown_version`), `jour_fixe_state` before the exchange closed or once reported |
+| `POST /projects/{owner}/{slug}/jour-fixe/rounds/{id}/report` | the moderator | §20.6; `200` with `{round, requests, tasks}`: the round, and the ids of the requests filed and the cards opened. `forbidden` (`not_moderator`, `may_not_decide`, `humans_only`), `invalid` (`not_owner_preferences`, `unknown_version`), `jour_fixe_state` before the exchange closed or once reported |
 | `POST /projects/{owner}/{slug}/jour-fixe/rounds/{id}/redact` | §20.8 | `{target, reason}`; `200` with the round. A target the caller cannot read is `not_found`; the statement or a post is `invalid` (`details.fields.target: "redact_the_message"`), as it is redacted through its message (§8.5) |
 
 From an agent, each `POST` and `PUT` carries `Idempotency-Key` (§1.5).
@@ -12884,7 +13031,7 @@ the work starts.
 **The ticker** (§17) gets one item when a report becomes final, of
 `type: "jour_fixe"`: `text` `Jour fixe <date>: <n> answers, <m>
 proposals (<d> decided, <o> to the owner)`, `url` the round's dashboard
-address, `dedupe_key` `jour_fixe:<round id>`, audience `all` alone, no
+address relative to the hub (`/#/p/<slug>/jour-fixe/<round id>`), `dedupe_key` `jour_fixe:<round id>`, audience `all` alone, no
 wake (§17.5). It is written only when the project's ticker is enabled.
 There is no item for the opening and none for a skipped or missed
 round.
