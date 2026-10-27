@@ -91,6 +91,12 @@ class Run:
         self.a11y_findings: list[dict] = []
         # Set when the hub answers the notifications read with 404 (§18).
         self.no_notifications = False
+        # §8.7 "Attachments off": the pending-list answers of 409, each judged by
+        # its code in no_problems() (a response handler reads no body), and
+        # whether the hub said attachments_not_configured.
+        self.off_answers: list[str] = []
+        self.attachments_off = False
+        self.request = None
 
     def a11y(self, page: Page, view: str) -> None:
         """axe-core on the page as it stands, in each pass; back to 1280 px, light, after."""
@@ -279,16 +285,16 @@ def port_taken(port: int) -> bool:
 def start_hub(work: Path, logs: Path, port: int) -> subprocess.Popen:
     """Migrate, create the owner and serve; every output goes to logs/hub.log."""
     base = f"http://127.0.0.1:{port}"
-    # A store for attachments (§8.7): without one the hub starts with them off.
-    files = work / "attachments"
-    files.mkdir(exist_ok=True)
+    # No store for attachments yet (§8.7): the hub starts with them off and the
+    # attachments step checks that case. The upload step waits for messages that
+    # name their attachments (E's #474); with it on main, set MAITY_ATTACHMENT_DIR
+    # here again (card tsk-8h6yzp4f8jqg).
     env = dict(
         CLEAN_ENV,
         MAITY_DATABASE_URL=f"sqlite:///{work / 'hub.db'}",
         MAITY_BIND=f"127.0.0.1:{port}",
         MAITY_PUBLIC_URL=base,
         MAITY_WEB_DIR=str(WEB),
-        MAITY_ATTACHMENT_DIR=str(files),
     )
     log_path = logs / "hub.log"
     with open(log_path, "w") as log:  # the hub keeps its own copy of the descriptor
@@ -373,18 +379,23 @@ def watch_page(run: Run, page: Page) -> None:
         # once per page load; the account page says so.
         if resp.status == 404 and path == "/api/v1/auth/sessions?ended=true":
             return
-        # Signed out, the page asks /auth/session first and expects 401.
         # A composer, and Project settings, ask once per page load for the
         # uploads waiting to be sent (§8.7); a hub without attachments answers
-        # 404. One with them off answers 409: never this run's own hub, which
-        # has a store; the attachments step says the case where it happens.
+        # 404, and one with them off 409, which no_problems() accepts only with
+        # the code attachments_not_configured.
+        pending = re.match(r"/api/v1/projects/[^/]+/attachments\?status=pending(&uploaded_by=[^&]+)?&limit=200$", path)
+        if resp.status == 409 and pending:
+            run.off_answers.append(path)
+            return
+        # Signed out, the page asks /auth/session first and expects 401.
         if resp.status >= 400 and not (
             resp.status == 401 and path.startswith("/api/v1/auth/session")
         ) and not (
-            resp.status == 404 and re.match(r"/api/v1/projects/[^/]+/attachments\?status=pending(&uploaded_by=[^&]+)?&limit=200$", path)
+            resp.status == 404 and pending
         ):
             run.problems.append(f"{resp.request.method} {path} answered {resp.status}")
 
+    run.request = page.request
     page.on("console", console)
     page.on("pageerror", lambda err: run.problems.append(f"page error: {err}"))
     page.on("response", response)
@@ -414,6 +425,15 @@ def project_settings(page: Page) -> None:
 
 
 def no_problems(run: Run, where: str) -> None:
+    # A 409 for the pending uploads is no problem only when the hub says why:
+    # its attachments are off (§8.7). Asked again here, outside the handler.
+    while run.off_answers:
+        path = run.off_answers.pop()
+        if not run.attachments_off:
+            answer = run.request.get(run.base + path)
+            run.attachments_off = answer.status == 409 and (answer.json().get("error") or {}).get("code") == "attachments_not_configured"
+        if not run.attachments_off:
+            run.problems.append(f"GET {path} answered 409 without attachments_not_configured")
     if run.problems:
         raise AssertionError(f"{where}:\n  " + "\n  ".join(run.problems))
 
@@ -982,8 +1002,6 @@ def attachments_step(run: Run, page: Page, agent_id: str) -> None:
         expect(page.locator("form.compose .attach")).to_be_hidden()
         expect(page.locator("#chat-files")).to_be_disabled()
         expect(page.locator("li.attach-item button", has_text="Delete")).to_have_count(0)
-        off = re.compile(r"GET /api/v1/projects/[^/]+/attachments\?status=pending(&uploaded_by=[^&]+)?&limit=200 answered 409$")
-        run.problems = [p for p in run.problems if not off.match(p)]
         no_problems(run, "attachments")
         return
     page.locator("#chat-files").set_input_files(
