@@ -33,6 +33,13 @@ def mail_env(port: int = 25) -> Settings:
     )
 
 
+def spent(conn: Any, kind: str, admitted: int = 1) -> None:
+    """The hour's budget of `kind` already used."""
+    conn.execute(
+        t.mail_budget.insert().values(kind=kind, window_start=clock.now(), admitted=admitted)
+    )
+
+
 def queue(conn: object, kind: str = "security") -> int:
     return outbox.enqueue(conn, kind=kind, to="me@example.org", subject="s", body="b\n")  # type: ignore[arg-type]
 
@@ -71,9 +78,7 @@ def test_security_mail_over_its_budget_waits(migrated: Engine) -> None:
     hub = mail_env(1)  # nothing listens: nothing may be tried either
     with migrated.begin() as conn:
         store.put(conn, "mail.security_max_per_hour", 1, None)
-        conn.execute(
-            t.mail_delivery.insert().values(kind="security", outcome="sent", at=clock.now())
-        )
+        spent(conn, "security")
         queue(conn)
     assert outbox.send_due(migrated, hub.mail, None) == 0
     with migrated.begin() as conn:
@@ -99,9 +104,7 @@ def test_a_sign_in_mail_over_its_budget_is_dropped(migrated: Engine) -> None:
     hub = mail_env(1)
     with migrated.begin() as conn:
         store.put(conn, "mail.sign_in_max_per_hour", 1, None)
-        conn.execute(
-            t.mail_delivery.insert().values(kind="sign_in", outcome="sent", at=clock.now())
-        )
+        spent(conn, "sign_in")
         queue(conn, "sign_in")
     assert outbox.send_due(migrated, hub.mail, None) == 0
     with migrated.begin() as conn:
@@ -340,3 +343,110 @@ def test_an_older_retry_that_falls_due_while_a_newer_mail_is_in_flight_waits(
     with migrated.begin() as conn:
         rows = {r.id: r.status for r in conn.execute(select(t.mail_outbox))}
     assert rows == {older: "waiting", newer: "sent"}
+
+
+# --- the admission (H's third round on #478) --------------------------------------------
+
+
+def test_the_clock_jumping_when_a_worker_claims_does_not_admit_a_second_mail(
+    migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No clock decides who has the last place: worker A claims id2, the clock jumps by two
+    seconds, and worker B, a second later by its own reading, takes the older id1."""
+    from maity_hub.mail import smtp
+
+    hub = mail_env(1)
+    with migrated.begin() as conn:
+        store.put(conn, "mail.security_max_per_hour", 1, None)
+        older = queue(conn)
+        newer = queue(conn)
+        conn.execute(
+            update(t.mail_outbox)
+            .where(t.mail_outbox.c.id == older)
+            .values(not_before=clock.now() + timedelta(seconds=1))
+        )
+    start = clock.now()
+    sends: list[int] = []
+
+    def jumpy(resolved: Any, message: Any) -> Any:
+        sends.append(1)
+        if len(sends) == 1:
+            clock.set_source(lambda: start + timedelta(seconds=1, milliseconds=500))
+            assert outbox.send_due(migrated, hub.mail, None) == 0
+        return _ok()
+
+    monkeypatch.setattr(smtp, "send", jumpy)
+    assert outbox.send_due(migrated, hub.mail, None) == 1
+    with migrated.begin() as conn:
+        rows = {r.id: r.status for r in conn.execute(select(t.mail_outbox))}
+    assert rows == {older: "waiting", newer: "sent"}
+
+
+def test_two_admissions_racing_for_the_last_place_admit_one(migrated: Engine) -> None:
+    import threading
+
+    barrier = threading.Barrier(2)
+    answers: list[bool] = []
+
+    def admit() -> None:
+        barrier.wait(timeout=10)  # both go for the row at once
+        with migrated.begin() as conn:
+            answers.append(outbox._admit(conn, "security", 1))
+
+    threads = [threading.Thread(target=admit) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert sorted(answers) == [False, True]
+    with migrated.begin() as conn:
+        assert conn.execute(select(t.mail_budget.c.admitted)).scalar_one() == 1
+
+
+def test_the_hour_rolls_and_the_budget_is_open_again(migrated: Engine) -> None:
+    with migrated.begin() as conn:
+        assert outbox._admit(conn, "security", 1) is True
+        assert outbox._admit(conn, "security", 1) is False
+    later = clock.now() + timedelta(hours=1, seconds=1)
+    clock.set_source(lambda: later)
+    with migrated.begin() as conn:
+        assert outbox._admit(conn, "security", 1) is True
+        row = conn.execute(select(t.mail_budget)).one()
+    assert row.admitted == 1 and row.window_start == later
+
+
+def test_each_kind_has_a_budget_of_its_own(migrated: Engine) -> None:
+    with migrated.begin() as conn:
+        assert outbox._admit(conn, "security", 1) is True
+        assert outbox._admit(conn, "sign_in", 1) is True
+        assert outbox._admit(conn, "security", 1) is False
+
+
+def test_a_retry_is_not_admitted_twice(migrated: Engine, monkeypatch: pytest.MonkeyPatch) -> None:
+    from maity_hub.mail import smtp
+
+    hub = mail_env(1)
+    with migrated.begin() as conn:
+        store.put(conn, "mail.security_max_per_hour", 1, None)
+        spent(conn, "security")  # the one place is used: by this mail's first attempt
+        row = queue(conn)
+        conn.execute(update(t.mail_outbox).where(t.mail_outbox.c.id == row).values(attempts=1))
+    monkeypatch.setattr(smtp, "send", lambda resolved, message: _ok())
+    assert outbox.send_due(migrated, hub.mail, None) == 1  # it is not asked for a second place
+    with migrated.begin() as conn:
+        assert conn.execute(select(t.mail_budget.c.admitted)).scalar_one() == 1
+
+
+def test_a_mail_that_fails_for_good_keeps_its_place(migrated: Engine) -> None:
+    server = FakeSmtp(Script(rcpt_reply="550 5.1.1 no such user"))
+    try:
+        with migrated.begin() as conn:
+            store.put(conn, "mail.security_max_per_hour", 1, None)
+            queue(conn)
+            queue(conn)
+        assert outbox.send_due(migrated, mail_env(server.port).mail, None) == 0
+    finally:
+        server.close()
+    with migrated.begin() as conn:
+        statuses = [r.status for r in conn.execute(select(t.mail_outbox).order_by("id"))]
+    assert statuses == ["failed", "waiting"]  # the second finds the place used
