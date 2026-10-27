@@ -199,6 +199,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `ticker_duplicate` | a manual ticker post whose `dedupe_key` exists (§17.7); `details.seq` |
 | 409 | `secret_key_missing` | a forge webhook secret is to be stored and the instance has no `MAITY_SECRET_KEY` (§17.4); a second-factor enrolment or verify while the instance has no `MAITY_SECRET_KEY`, or one that no longer opens the stored secrets (§2.8.1) |
 | 409 | `attachment_quota` | an attachment upload would take the project over its quota, or the uploading membership over its pending cap (§8.7); `details.scope` (`project` or `pending`), `details.used`, `details.quota`, and `details.count`, `details.max` for `pending` |
+| 409 | `attachments_not_configured` | an attachment upload, read or delete, or a message that names an attachment, while the instance has no attachment store: `MAITY_ATTACHMENT_STORE` is `local` and `MAITY_ATTACHMENT_DIR` is unset (§8.7) |
 | 413 | `payload_too_large` | body over the cap (§1.7) |
 | 410 | `project_path_outdated` | a project route in the form before the project namespace (`/projects/{slug}/…`) from a caller that is not an outdated CLI (§6.25); says nothing about the project |
 | 426 | `client_outdated` | a CLI older than the project-namespace release calls a project route (§6.25); `details.minimum` (the lowest CLI version that works), `details.install` (the install line, §3.2) |
@@ -7457,7 +7458,7 @@ The operator chooses the store (§16):
 | Setting | Meaning |
 |---|---|
 | `MAITY_ATTACHMENT_STORE` | `local` (default) or `s3`; anything else stops the hub at startup |
-| `MAITY_ATTACHMENT_DIR` | `local`: the directory of the volume, required; the hub refuses to start when it is missing or not writable |
+| `MAITY_ATTACHMENT_DIR` | `local`: the directory of the volume; when set, the hub refuses to start when it is missing or not writable; when unset, the hub starts with attachments off: every attachment call and a message that names one get `409 attachments_not_configured`, everything else works |
 | `MAITY_ATTACHMENT_S3_ENDPOINT` | `s3`: the S3-compatible endpoint URL, `https`; plain HTTP only to a loopback or cluster-internal host and only with `MAITY_ATTACHMENT_S3_ALLOW_HTTP=1`, its own switch: `MAITY_ALLOW_PLAIN_HTTP` (§2.5) is about inbound transport and does not cover it |
 | `MAITY_ATTACHMENT_S3_BUCKET`, `MAITY_ATTACHMENT_S3_PREFIX`, `MAITY_ATTACHMENT_S3_REGION` | `s3`: bucket (required), key prefix and region (optional) |
 | `MAITY_ATTACHMENT_S3_ACCESS_KEY_ID`, `MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY` | `s3`: the credentials, from the environment (a Kubernetes secret in production), never logged, never in an answer |
