@@ -295,7 +295,9 @@ Node), how to load it per harness, and where the project's
 `.keep-the-why` is. The CLI prints this first, before the briefing. A
 project policy, `keep_the_why_defaults`, decides whether the agent adopts
 the personal settings the repository offers without asking its human
-(`adopt`, the default) or runs the skill's personal wizard with them.
+(`adopt`, the default) or runs the skill's personal wizard with them —
+only on a machine with no personal file for the project yet; an
+existing one is never overwritten or re-asked.
 
 **Reason:** the commitment at resume only made the agent say that it
 uses Keep the Why. It did not get the skill onto the machine. An agent
