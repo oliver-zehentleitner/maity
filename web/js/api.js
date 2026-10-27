@@ -446,7 +446,14 @@ window.Maity = window.Maity || {};
   }
   const served = (e) => JSON.parse(JSON.stringify(e, (k, v) => (k.startsWith("_") ? undefined : v)));
   // §8.7 in fixture mode: fixtures/<slug>/attachments.json, made on first use.
+  // ?attachments=off is an instance without a store: every attachment call
+  // and a message that names one get 409 attachments_not_configured.
   const ATTACHMENT_MAX = 10 * 1024 * 1024;
+  function attachmentsOn(path) {
+    if (new URLSearchParams(window.location.search).get("attachments") === "off") {
+      fail(409, "attachments_not_configured", "attachments are not set up on this instance", path);
+    }
+  }
   function attachmentsOf(slug) {
     const all = fixtures();
     if (!all[slug + "/attachments.json"]) all[slug + "/attachments.json"] = { items: [] };
@@ -463,6 +470,7 @@ window.Maity = window.Maity || {};
   // The ids a message names, each a pending upload of the poster; bound to it.
   function bindAttachments(slug, ids, seq, path) {
     if (!ids || !ids.length) return [];
+    attachmentsOn(path);
     if (ids.length > 10) fail(400, "invalid", "at most 10 attachments", path, { fields: { attachments: "too_many" } });
     if (["accepted", "archived"].includes(project(slug, path).state)) fail(409, "project_closed", "the project is closed", path);
     const list = attachmentsOf(slug);
@@ -2119,6 +2127,7 @@ window.Maity = window.Maity || {};
     }],
     // §8.7 attachments: a raw upload, pending until a message names it.
     ["POST", /^\/projects\/([^/]+)\/attachments$/, (m, body, path, query) => {
+      attachmentsOn(path);
       if (["accepted", "archived"].includes(project(m[1], path).state)) fail(409, "project_closed", "the project is closed", path);
       const name = query.get("name");
       if (!name) fail(400, "invalid", "a name is required", path, { fields: { name: "required" } });
@@ -2151,13 +2160,15 @@ window.Maity = window.Maity || {};
       return att;
     }],
     ["GET", /^\/projects\/([^/]+)\/attachments$/, (m, body, path, query) => {
+      attachmentsOn(path);
       const admin = ["owner", "admin"].includes(roleIn(m[1]));
       const pending = attachmentsOf(m[1]).filter((a) => a.message_seq === null && !a.deleted_at
         && (a.uploaded_by === me().member.id || admin) && (!query.get("uploaded_by") || a.uploaded_by === query.get("uploaded_by")));
       return { items: pending.map((a) => (a.uploaded_by === me().member.id ? Object.assign({}, a) : hiddenUpload(a))), next_cursor: null };
     }],
-    ["GET", /^\/projects\/([^/]+)\/attachments\/([^/]+)$/, (m, body, path) => Object.assign({}, attachmentOf(m[1], m[2], path))],
+    ["GET", /^\/projects\/([^/]+)\/attachments\/([^/]+)$/, (m, body, path) => { attachmentsOn(path); return Object.assign({}, attachmentOf(m[1], m[2], path)); }],
     ["DELETE", /^\/projects\/([^/]+)\/attachments\/([^/]+)$/, (m, body, path) => {
+      attachmentsOn(path);
       const a = attachmentOf(m[1], m[2], path);
       const meId = me().member.id;
       const admin = ["owner", "admin"].includes(roleIn(m[1]));
