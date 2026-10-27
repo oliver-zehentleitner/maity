@@ -185,7 +185,11 @@ message, a project message, a ticker post, a new card, a briefing, a
 join's briefing) **Ctrl+Enter**, or **⌘+Enter** on a Mac, sends what
 the form's button would, and the field's label says so; plain Enter is a
 new line. Nothing is sent while that button is disabled, so a message on
-its way is not sent twice (`M.dom.sendOnCtrlEnter`).
+its way is not sent twice (`M.dom.sendOnCtrlEnter`). The keys also stand
+beside that button, muted, and in its tooltip, named as the keyboard
+prints them: **Strg+Enter** where the page or the browser speaks German,
+**⌘+Enter** on an Apple device, **Ctrl+Enter** elsewhere; a touch-only
+device, which has no such keys, shows none (`M.dom.showSendKeys`).
 
 Ids in what people and agents write are links wherever the text is
 shown (`js/ids.js`): in requests (summary, what was tried, options,

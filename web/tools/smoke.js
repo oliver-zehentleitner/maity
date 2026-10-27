@@ -12,6 +12,7 @@ const WEB = process.argv[2];
 class Node_ {
   constructor() { this.childNodes = []; this.parentNode = null; }
   get firstChild() { return this.childNodes[0] || null; }
+  get nextSibling() { const p = this.parentNode; return (p && p.childNodes[p.childNodes.indexOf(this) + 1]) || null; }
   appendChild(c) { if (c.parentNode) c.parentNode.removeChild(c); c.parentNode = this; this.childNodes.push(c); return c; }
   append(...cs) { cs.forEach((c) => this.appendChild(typeof c === "string" ? new Text_(c) : c)); }
   prepend(c) { c.parentNode = this; this.childNodes.unshift(c); }
@@ -5119,6 +5120,30 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // The chat, the group chat, the project message.
   await go("#/p/maity/chat/agt-b"); await tick();
   expect(text(ceLabel("chat-text")).includes("Ctrl+Enter sends"), "Ctrl+Enter: the chat says so");
+  // The keys beside the button that sends, muted, and in its tooltip; named as the keyboard prints them.
+  const ceSend = ceSubmitOf(byId("chat-text"));
+  const ceHint = ceSend.parentNode.childNodes[ceSend.parentNode.childNodes.indexOf(ceSend) + 1];
+  expect(ceHint && ceHint.classList.contains("send-keys") && ceHint.classList.contains("muted") && text(ceHint) === "Ctrl+Enter"
+    && ceHint.getAttribute("aria-hidden") === "true" && ceSend.getAttribute("title") === "Send (Ctrl+Enter)"
+    && ceSend.getAttribute("aria-keyshortcuts") === "Control+Enter Meta+Enter",
+    "Ctrl+Enter: the chat's Send button has the keys beside it and in its tooltip");
+  const ceKeys = win.Maity.dom.sendKeysFor;
+  expect(ceKeys("de-AT", "Linux x86_64", "") === "Strg+Enter" && ceKeys("de", "Win32", "") === "Strg+Enter"
+    && ceKeys("en-US", "Win32", "") === "Ctrl+Enter" && ceKeys("", "", "") === "Ctrl+Enter" && ceKeys("dev", "Win32", "") === "Ctrl+Enter"
+    && ceKeys("de-DE", "MacIntel", "") === "⌘+Enter" && ceKeys("en", "", "Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)") === "⌘+Enter",
+    "Ctrl+Enter: the keys are Strg+Enter in German, ⌘+Enter on an Apple device, Ctrl+Enter elsewhere");
+  // Once per button; none where only touch is, which has no keys to press.
+  const ceButton = (label) => { const f = document.createElement("form"); const b = document.createElement("button"); b.textContent = label; f.appendChild(b); return b; };
+  const ceTwice = ceButton("Post");
+  win.Maity.dom.showSendKeys(ceTwice); win.Maity.dom.showSendKeys(ceTwice);
+  const ceMedia = win.matchMedia;
+  win.matchMedia = (q) => ({ matches: q.includes("pointer: coarse") });
+  const ceTouch = ceButton("Send");
+  win.Maity.dom.showSendKeys(ceTouch);
+  win.matchMedia = ceMedia;
+  expect(ceTwice.parentNode.querySelectorAll(".send-keys").length === 1 && ceTwice.getAttribute("title") === "Post (Ctrl+Enter)"
+    && !ceTouch.parentNode.querySelectorAll(".send-keys").length && !ceTouch.getAttribute("title"),
+    "Ctrl+Enter: the keys are shown once per button, and not on a touch-only device");
   await ceCase("chat", byId("chat-text"), "hello", "/projects/maity/conversations/agt-b/messages", ceSubmitOf(byId("chat-text")));
   await go("#/p/maity/inbox"); await go("#/p/maity/chat/cnv-0007"); for (let k = 0; k < 4; k++) await tick();
   await ceCase("group chat", byId("chat-text"), "hello all", "/projects/maity/conversations/cnv-0007/messages", ceSubmitOf(byId("chat-text")));

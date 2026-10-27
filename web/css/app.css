@@ -717,6 +717,10 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .compose { display: grid; gap: 6px; }
 .compose label { font-size: 0.85rem; color: var(--muted); }
 .compose button { justify-self: end; }
+/* The keys that send, beside the button that sends (dom.js showSendKeys);
+   in a composer's grid right under it, flush with it. */
+.send-keys { font-size: 0.78rem; margin-inline-start: 8px; white-space: nowrap; }
+.compose .send-keys { justify-self: end; margin: -4px 0 0; }
 
 .absence { margin: 6px 0 0; font-size: 0.88rem; }
 

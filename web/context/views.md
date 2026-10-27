@@ -1231,3 +1231,32 @@ whether an account will be made.
 on a closed hub every visitor would fill it in for a mail that never
 comes. Only `GET /auth/methods`: an invited person on a closed hub could
 not register at all, which §3.4 allows.
+
+## The keys that send stand beside the send button, named as the keyboard prints them
+
+**Id:** dbb154d5-b5cf-4e9d-884f-0e9467a6788a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish relayed by the coordinator (tsk-00q3ddrh7a1q), 2026-10-27: users should see that Ctrl+Enter sends; the hint in the field label went unnoticed; on the button or as its mouse-over, both fine; the dashboard's implementation, 2026-10-27; the designer was not asked yet
+**Revisit when:** the designer reworks the composers, or the dashboard gets a language setting of its own
+
+`M.dom.sendOnCtrlEnter` puts the keys, once the view is on the page,
+right after the button that sends (the one it was given, else the form's
+submit button): a muted `span.send-keys`, hidden from a screen reader,
+which reads the button's `aria-keyshortcuts` instead; the button's
+tooltip says them too. The label keeps them. `sendKeysFor` names them:
+⌘+Enter on an Apple device (platform or user agent), Strg+Enter where
+the page's `lang` or else the browser's language is German, Ctrl+Enter
+otherwise. A device that only knows touch (`hover: none` and
+`pointer: coarse`) shows none.
+
+**Reason:** people look at the button when they are about to send, not
+at the label above the field; one place in the helper reaches every
+composer that sends this way, today's and later ones. Keys named as the
+keyboard prints them are found on it at once.
+
+**Rejected alternative:** the keys inside the button's text ("Send ·
+Ctrl+Enter"): the button's name for a screen reader and every test of it
+would change, and a narrow composer has less room for it. The tooltip
+alone: it is not seen without a mouse resting on the button.
