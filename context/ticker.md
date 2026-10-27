@@ -226,7 +226,7 @@ The decision is the contract owner's ruling (confirmed); the reasons are the rev
 
 **Reason:** a member's follows and mutes say what it pays attention to;
 the humans who run the project may see that as they see every event,
-but an agent with the `admin` role gains no view into a human's (or
+but an agent with trust `admin`, or a proxy, gains no view into a human's (or
 another agent's) attention from it.
 
 **Rejected alternatives:**

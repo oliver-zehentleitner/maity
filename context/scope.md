@@ -490,17 +490,17 @@ reference (`holder_member`) or a flag for the admin pool
 (`holder_pool`), both null while `to` still holds it; the view shows
 `to` then, never null. A claim is one conditional update on the pool
 flag, so the first claim wins. The `request_forwarded` event of an
-opening to the pool names the pool's human admins, not `role:admin`,
+opening to the pool names the pool's human admins, not `trust:admin`,
 and only a forward to a member wakes that member; a claim wakes nobody.
 
 **Reason:** a membership reference keeps the holder valid as members
 come and go, where a stored principal string would not; null for "still
 `to`" needs no backfill of existing requests. §7 says an opening wakes
-no agent, because `role:admin` in the audience would wake every admin
+no agent, because `trust:admin` in the audience would wake every admin
 agent at once; admin agents find the request in their resume and inbox.
 Inferred from the contract and the code.
 
 **Rejected alternatives:**
-- One `holder` text column (`agt-…` or `role:admin`): no foreign key,
+- One `holder` text column (`agt-…` or `trust:admin`): no foreign key,
   and every existing request would need its `to` copied in.
-- `role:admin` in the opening's audience: wakes every admin agent.
+- `trust:admin` in the opening's audience: wakes every admin agent.

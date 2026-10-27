@@ -4,7 +4,8 @@
 
 **Id:** 30f183d5-9f56-494f-a3a1-468cd10f5cc9
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 37cfa04a-98af-4b48-a612-4142de167656
 **Evidence:** confirmed
 **Source:** the maintainer's decision on the design synthesis, 2026-10-21
 **Revisit when:** the first invited human joins — answer rights for consent-class requests then need a per-person decision
@@ -118,7 +119,7 @@ the chain could not place a member inside one).
 re-hanging the reports onto the removed member's own `reports_to` was
 considered is not recorded.
 
-## An admin agent manages agent memberships below its own role; no agent can ever act against a human's membership
+## An admin agent manages agent memberships below its own trust; no agent can ever act against a human's membership
 
 **Id:** 4a480c4d-53bd-4c34-a126-6d857fa7f255
 **Type:** decision
@@ -129,13 +130,15 @@ considered is not recorded.
 **Revisit when:** a second human joins with an admin role, or an agent needs a membership right the table does not give it
 **See:** trust.md#authority-comes-from-the-role-in-the-org-chart-not-from-who-typed-the-message — 30f183d5-9f56-494f-a3a1-468cd10f5cc9 — as of 2026-10-22
 
-An agent with `admin` may change agent memberships with role `member` or
-`reviewer`, never its own: `reports_to`, `areas`, `briefing`, `paused`,
-and the role between `member` and `reviewer`. It cannot grant or remove
-`proxy`, set capabilities, or create, list or revoke joins. Removing an
-agent member, or changing the role of or pausing the reviewer or the
-contract arbiter, becomes a human-only consent request and applies on
-the human's go. On top, for every agent whatever its role: no reducing,
+An agent with trust `admin` may change agent memberships with trust
+`member` or `guest`, never its own: `reports_to`, `areas`, `briefing`,
+`paused`, the trust between `member` and `guest`, and the role among
+`coder`, `reviewer`, `tester`, `designer` and `ops`. It cannot grant or
+remove trust `admin` or `owner` or the role `proxy`, set capabilities,
+or create, list or revoke joins. Removing an agent member, or changing
+the trust or role of or pausing a reviewer, a tester or the contract
+arbiter, becomes a human-only consent request and applies on the
+human's go. On top, for every agent whatever its trust and role: no reducing,
 removing or pausing a human's membership, no revoking a human's
 sessions or credentials, no change to instance-admin status, human
 accounts or ownership, no archiving or deleting a project, no change to
@@ -151,7 +154,7 @@ and the arbiter in particular need a human's go is not recorded.
 
 **Rejected alternatives:**
 - The full `members:admin` scope for the admin agent, as first asked:
-  narrowed in review to agent memberships below its own role.
+  narrowed in review to agent memberships below its own trust.
 - Dropping `members:admin` from the hub's human-only list wholesale:
   every other use of the scope (runners, placements, enrollments, the
   owner and credential fields, the start-consent policy) stays human-only.
@@ -371,3 +374,68 @@ reading is inferred from the review finding it answered.
 - Show the reason everywhere (the draft): the exposure above.
 - Scope a human's limit per project (proposed in the review): not
   chosen; why is not recorded (unknown).
+
+## A membership has a trust level and a role; rights are trust × role, and the proxy decides nothing
+
+**Id:** 37cfa04a-98af-4b48-a612-4142de167656
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision, 2026-10-27
+**See:** trust.md#authority-comes-from-the-role-in-the-org-chart-not-from-who-typed-the-message — 30f183d5-9f56-494f-a3a1-468cd10f5cc9 — as of 2026-10-27
+
+The single membership role (`owner`, `admin`, `proxy`, `reviewer`,
+`member`) is replaced by two fields. `trust` says how far the project
+trusts the member: `owner` (humans only, everything), `admin` (runs the
+team within the existing limits for admin agents), `member` (a full
+team member) and `guest` (read and comment only, whatever the role).
+`role` says what the member does, with its rights: `coder`, `reviewer`,
+`tester`, `designer`, `ops`, `proxy`. Trust `owner` and `admin` add the
+governance scopes on top of the role's; `guest` caps every role at
+reading and commenting. Answer rights come from trust: owners and
+admins answer every class, consent included, as before. The proxy holds
+trust `admin` but decides nothing itself: it relays requests of every
+class to the owner, records the owner's answer with `on_behalf_of`,
+leaves the request open without one, and names the owner's answered
+request on every admin call. Each role gets
+a shared role memory. The product is pre-beta, so there is no
+compatibility layer: one migration maps the old roles (`owner` → owner
+coder, `admin` → admin coder, `proxy` → admin proxy, `reviewer` →
+member reviewer, `member` → member coder) and the tokens `role:owner`
+and `role:admin` become `trust:owner` and `trust:admin`.
+
+**Reason:** the role is both the member's identity — what it does,
+shown next to its name and used to route questions and cards — and its
+rights, while how far a member is trusted is a separate question: a new
+agent on probation or an invited human who only watches needs a role
+and little trust. A proxy that answers for the owner made the owner's
+decisions indistinguishable from an agent's; as a relay the history
+shows that the owner decided.
+
+Three security rules follow from the review of the contract change
+(maintainer's rulings, 2026-10-27):
+- The proxy's go is bound: `Maity-On-Request` names a `decision` or
+  `consent` request the proxy filed itself with `action: {method,
+  path, query, body}`, answered `go` by a human owner who saw that call
+  rendered; it fits only that exact call (body by SHA-256), is used
+  once, in the call's own transaction, and expires 24 hours after the
+  answer, and the header is signed. An unbound go would let one old
+  answer authorise any later admin call, and a go on the route alone
+  let the proxy swap the payload — cancel instead of retitle, another
+  assignee. The go must come from the owner directly, never relayed:
+  a relayed go is unverifiable, so the one thing that unlocks admin
+  power comes from the owner's own session.
+- Only an owner grants trust `admin` or `owner` or the role `proxy`, on
+  every path: a proxy records "the owner's" answers, so whoever
+  appoints it speaks for the owner.
+- Only an owner removes an owner or lowers an owner's trust, and the
+  last owner stays: no admin, human or agent, can take the maintainer's
+  owner rights.
+
+**Rejected alternatives:**
+- Keep one role field and rename `member` to `coder`: designers,
+  testers and humans would all be `coder`.
+- The role as a free label next to unchanged permission roles: rejected
+  by the maintainer — the role is identity and rights.
+- `guest` as a role: guest is a trust level, a way of belonging, not a
+  function.

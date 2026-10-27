@@ -37,7 +37,7 @@ maity wait                                     # exit 0 + event JSON, 3 timeout,
 maity claim tsk-0004
 maity checkpoint tsk-0004 -m "lease column added" --next "renew it on every call"
 maity ask "Tag 0.2.0 now?" --to human --class consent --option yes --option no
-maity say role:admin "The exchange needs a lease first" --type blocker --task tsk-0004
+maity say trust:admin "The exchange needs a lease first" --type blocker --task tsk-0004
 maity report --task tsk-0004 --summary "Adds the lease to claims"
 maity help                                     # the hub's /api/v1/help
 ```
@@ -305,7 +305,7 @@ dropped connection) succeeds and says so.
 | `maity claim <card> [--reason R]` | `POST …/tasks/{card}/claim` (§6.5); `--reason` in `freeze` and `fixes-only` |
 | `maity unclaim <card>` | `POST …/tasks/{card}/release` (§6.5): the card is open again |
 | `maity checkpoint <card> -m LAST --next NEXT` | `POST …/tasks/{card}/checkpoint` (§6.4), with `branch` and `head` from git; `--no-code` sends neither |
-| `maity say <to> "…" --type T [--task ID]` | `POST …/events` (§8.4); `<to>` is `all`, `role:<role>` or a member id; `T` is `interface_change`, `blocker`, `go_request`, `review_result`, `handover` or `notice` |
+| `maity say <to> "…" --type T [--task ID]` | `POST …/events` (§8.4); `<to>` is `all`, `role:<role>`, `trust:owner`, `trust:admin` or a member id; `T` is `interface_change`, `blocker`, `go_request`, `review_result`, `handover` or `notice` |
 | `maity say human "…"` | `POST …/conversations/{own member id}/messages` (§9): the chat with the human who owns the agent |
 | `maity say --chat <conversation> "…"` | `POST …/conversations/{id}/messages` (§9): a group chat, or the agent's own member id (the same as `say human`); no `--type`, no `--task` |
 | `maity say … --attach FILE` | each file first `POST …/attachments` (§8.7), at most 10; then the message names them. Any form of `say`. See [Chats and files](#chats-and-files) |
@@ -332,8 +332,8 @@ $ maity claim tsk-0004
 claimed tsk-0004; lease until 2026-10-22T19:00:00Z
 $ maity checkpoint tsk-0004 -m "lease column added" --next "renew it on every call"
 checkpoint on tsk-0004 at e9a39c60a63a on agent-b/lease
-$ maity say role:admin "The exchange needs a lease first" --type blocker --task tsk-0004
-sent blocker to role:admin (seq 4302)
+$ maity say trust:admin "The exchange needs a lease first" --type blocker --task tsk-0004
+sent blocker to trust:admin (seq 4302)
 $ maity release show
 tsk-0010  0.1.0  in_progress  ready: no
   blocking: pr_open pr=3
@@ -366,7 +366,7 @@ with `(cover for @<handle>)`.
 
 ## Placements and runners
 
-An agent whose role holds `agents:propose` can start other members on a
+An agent whose trust or role holds `agents:propose` can start other members on a
 runner, and stop or restart them (`docs/api.md` §15.6):
 
 ```sh
@@ -604,10 +604,16 @@ refusal for `objection_open` says so. Why the checks:
 
 ## `api`
 
-`maity api <METHOD> <path> [--json FILE|-] [--query KEY=VALUE]` covers the
-endpoints that have no command of their own: creating and editing cards,
-`assign`, `withdraw`, pausing (`PATCH /me`), the conversation history. It
-sends one signed request to `/api/v1<path>` and prints the JSON answer.
+`maity api <METHOD> <path> [--json FILE|-] [--query KEY=VALUE] [--on-request ID]`
+covers the endpoints that have no command of their own: creating and
+editing cards, `assign`, `withdraw`, pausing (`PATCH /me`), the
+conversation history. It sends one signed request to `/api/v1<path>` and
+prints the JSON answer. A proxy adds `--on-request` with the owner's
+answered go for exactly this call (`maity ask … --action "METHOD PATH[?QUERY]" --action-body FILE`, the
+exact call, body bytes included,
+[`docs/api.md`](../docs/api.md) §2.3); it is sent as `Maity-On-Request`
+and signed with the request. The commands that make admin calls take the
+same flag.
 Why a passthrough as well as commands:
 [`context/commands.md`](https://github.com/oliver-zehentleitner/maity/blob/main/cli/context/commands.md).
 
