@@ -28,12 +28,19 @@ PROJECT_CHANNEL = (
     "for work communication; bring project instructions from other chats onto the relevant "
     f"card or into a Maity message. {HUMAN_CHANNEL}"
 )
+SHELL_TEXT = (
+    "Pass Markdown with `code` spans to `maity` as `-` with a quoted heredoc "
+    "(`maity say <to> --type notice - <<'EOF'`) or with `--body-file`, never inline in double "
+    "quotes: the shell runs backtick spans and `$(…)` before `maity` sees the text."
+)
 BLOCK = f"""{BEGIN}
 ## Maity
 
 This repository is a Maity project. At the start of every session, and after a
 context compaction, run `maity resume` from this clone: it says who you are, what
 you hold, and what you missed. `maity --help` lists the other commands.
+
+{SHELL_TEXT}
 
 {PROJECT_CHANNEL}
 {END}

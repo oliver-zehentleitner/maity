@@ -2757,9 +2757,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--task", required=True, type=_id, help="the task id the report is for")
     p.add_argument(
         "--summary",
-        required=True,
-        help="one or two sentences on what was done; with --no-code, the result itself",
+        help="one or two sentences on what was done; with --no-code, the result itself; "
+        "- reads it from stdin",
     )
+    p.add_argument("--summary-file", dest="summary_file", metavar="FILE",
+                   help="the summary from FILE, Markdown with code spans safe")  # fmt: skip
     p.add_argument(
         "--no-code", action="store_true", help="the result is not code: no git facts are sent"
     )
@@ -2798,7 +2800,13 @@ def build_parser() -> argparse.ArgumentParser:
         "line is the title, the rest the summary. With --option values the answer is one click; "
         "without, it is free text.",
     )
-    p.add_argument("question", help="first line: the title; further lines: the context")
+    p.add_argument(
+        "question",
+        nargs="?",
+        help="first line: the title; further lines: the context; - reads it from stdin",
+    )
+    p.add_argument("--body-file", dest="body_file", metavar="FILE",
+                   help="the question from FILE instead")  # fmt: skip
     p.add_argument(
         "--to",
         required=True,
@@ -2866,9 +2874,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("card", type=_id, help="the card id")
     p.add_argument(
-        "-m", "--last", dest="message", metavar="LAST", required=True, help="the step just finished"
-    )
-    p.add_argument("--next", required=True, help="the step to take next")
+        "-m", "--last", dest="message", metavar="LAST",
+        help="the step just finished; - reads it from stdin",
+    )  # fmt: skip
+    p.add_argument("--last-file", dest="message_file", metavar="FILE",
+                   help="the step just finished, from FILE")  # fmt: skip
+    p.add_argument("--next", help="the step to take next; - reads it from stdin")
+    p.add_argument("--next-file", dest="next_file", metavar="FILE",
+                   help="the step to take next, from FILE")  # fmt: skip
     p.add_argument(
         "--no-code", action="store_true", help="the card is not code: no branch or head is sent"
     )
@@ -2900,6 +2913,10 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="CONVERSATION",
         help="write in a chat, its id as `maity chats` prints it; no TO, --type or --task",
     )
+    p.add_argument("--body-file", dest="body_file", metavar="FILE",
+                   help="the message from FILE; or give - as the message to read stdin. "
+                   "Markdown with `code` spans goes this way, never inline in double "
+                   "quotes, where the shell runs them")  # fmt: skip
     p.add_argument(
         "--attach",
         action="append",
@@ -3492,10 +3509,71 @@ def _say_body_after_options(args: argparse.Namespace, extra: list[str]) -> bool:
         return False
     if args.to is None or args.chat is not None or len(extra) != 1:
         return False
-    if extra[0].startswith("-"):
+    if extra[0].startswith("-") and extra[0] != "-":  # `-` is the message from stdin
         return False
     args.body = extra[0]
     return True
+
+
+# Where each command's free text lives: (attribute, its --…-file attribute, the flag named in
+# errors, required). A value of `-` reads standard input, once per command.
+TEXT_ARGS: dict[Handler, tuple[tuple[str, str, str, bool], ...]] = {
+    cmd_ask: (("question", "body_file", "the question", True),),
+    cmd_report: (("summary", "summary_file", "--summary", True),),
+    cmd_checkpoint: (
+        ("message", "message_file", "-m", True),
+        ("next", "next_file", "--next", True),
+    ),
+}
+
+
+def _texts(args: argparse.Namespace) -> tuple[tuple[str, str, str, bool], ...]:
+    handler = getattr(args, "handler", None)
+    if handler is cmd_say:  # with --chat the text is the first positional
+        return (("to" if args.chat is not None else "body", "body_file", "the message", False),)
+    return TEXT_ARGS.get(handler, ()) if handler is not None else ()
+
+
+def _read_text_file(path: str, flag: str) -> str:
+    try:
+        return Path(path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise UsageError(f"{flag}: cannot read {path}: {exc}") from None
+
+
+# What the shell leaves where it ran a `code` span or a $(…) inside double quotes: two
+# spaces between words, or a space before punctuation.
+_EATEN = re.compile(r"\w  +\w|\w +[.,;:!?)](?:\s|$)")
+
+
+def _load_texts(args: argparse.Namespace) -> None:
+    """Resolve `-` and the `--…-file` flags into the text arguments, before the command runs,
+    and warn about text that looks like the shell already ran parts of it."""
+    stdin_used = False
+    for attr, file_attr, flag, required in _texts(args):
+        value, path = getattr(args, attr, None), getattr(args, file_attr, None)
+        if path is not None:
+            if value is not None:
+                raise UsageError(f"{flag}: give the text or a file, not both")
+            setattr(args, attr, _read_text_file(path, flag))
+        elif value == "-":
+            if stdin_used:
+                raise UsageError("only one text can come from stdin (-); use a file for the other")
+            stdin_used = True
+            setattr(args, attr, sys.stdin.read().rstrip("\n"))
+        elif value is None:
+            if required:
+                raise UsageError(f"{flag} is required (as text, - for stdin, or a file)")
+            continue
+        elif (gap := _EATEN.search(value)) is not None:
+            _err(
+                f"warning: {flag} has a gap where a word could have been ({gap[0]!r}): if it "
+                "held `code` or $(…) in double quotes, the shell ran it. Pass Markdown with a "
+                "quoted heredoc (- <<'EOF') or a file"
+            )
+        text = getattr(args, attr)
+        if isinstance(text, str) and text.count("`") % 2:
+            _err(f"warning: {flag} has an odd number of backticks: a `code` span is not closed")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -3506,6 +3584,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     handler: Handler = args.handler
     Session.on_request = getattr(args, "on_request", None)
     try:
+        _load_texts(args)
         return handler(args)
     except (
         state.StateError,

@@ -126,9 +126,9 @@ def test_checkpoint_on_a_detached_head_sends_no_branch(joined: Path, fake: fakeh
     assert "branch" not in body and body["head"] == git(work, "rev-parse", "HEAD")
 
 
-def test_checkpoint_needs_both_steps() -> None:
-    with pytest.raises(SystemExit):
-        cli.build_parser().parse_args(["checkpoint", "tsk-0004", "-m", "only the last"])
+def test_checkpoint_needs_both_steps(joined: Path, fake: fakehub.FakeHub) -> None:
+    assert cli.main(["checkpoint", "tsk-0004", "-m", "only the last"]) == cli.EXIT_USAGE
+    assert fake.signed() == []
 
 
 def test_an_empty_step_is_a_usage_error(joined: Path, fake: fakehub.FakeHub) -> None:

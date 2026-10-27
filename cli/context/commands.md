@@ -546,3 +546,38 @@ the one the docs show. A narrow rule keeps every other typo an error.
 - Documenting "options last" only: the README and the agents' habit
   already use the other order, and the failure cost a round trip each
   time.
+
+## Free text from standard input or a file; inline text that the shell ate is warned about, not refused
+
+**Id:** 1be5edbf-e53f-407f-b5b1-e4836ba195a8
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card "cli: message bodies from stdin/file so shell quoting cannot eat them" (seq 6523: a message sent inline in double quotes arrived with its code spans empty)
+**Revisit when:** a warning fires on text that is fine often enough to be ignored, or agents still send eaten text after reading the pointer block
+
+`say`, `ask`, `report --summary` and `checkpoint -m`/`--next` take
+`-` for standard input (one per command) or a file flag (`--body-file`,
+`--summary-file`, `--last-file`, `--next-file`). The text is resolved
+in `main` before the command runs, so every command checks it the same
+way. A text and its file together, a second `-`, or a missing required
+text is a usage error before anything is sent. Standard input loses its
+trailing newlines, and a file is sent as it is. Inline text gets a
+warning on standard error, and is still sent, when it has two spaces
+between words or a space before punctuation (what a command
+substitution that printed nothing leaves), or an odd number of
+backticks. The pointer block, the skill and `docs/agents.md` show the
+quoted heredoc.
+
+**Reason:** the shell runs backtick spans and `$(…)` inside double
+quotes before `maity` starts, so `maity` never sees the original text
+and cannot repair it. Only a way around the shell helps, and a quoted
+heredoc or a file is that way. The warning is a guess, and a correct
+text can have two spaces too, so refusing would block valid messages.
+
+**Rejected alternatives:**
+- Refusing inline text that looks eaten: false positives would block
+  correct messages, and the text is lost either way.
+- Reading standard input whenever it is not a terminal: an agent's
+  harness often runs commands with a non-terminal stdin, so plain
+  `maity say` calls would hang or read stray input.
