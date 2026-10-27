@@ -189,7 +189,8 @@ and a person's repositories that person's face.
 is a fourth format (its size from the logical screen), and the image keeps
 its size. EXIF orientation is applied, a colour profile that describes the image's own
 space (RGB, CMYK or grey) is applied from the source mode to sRGB before the
-image is flattened to RGB (a profile of another space is ignored), and the
+image is flattened to RGB (a palette image is expanded first, with its
+transparency; a profile of another space is ignored), and the
 image is built again from raw pixels, so nothing of
 the input but its pixels survives: PNG and GIF come out as PNG (alpha kept
 only when the source had it), JPEG as JPEG at quality 90, WebP as WebP,
