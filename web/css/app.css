@@ -884,7 +884,7 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
 a.button { display: inline-flex; align-items: center; padding: 6px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); color: var(--text); text-decoration: none; }
 a.button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .overview-prios { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 0.88rem; }
-.prio-pill::before { display: none; }
+.pill.prio-pill::before { display: none; }
 .prio-pill-high { color: var(--high); border-color: var(--high); }
 /* Board: a stacked bar, one segment per column, and its legend. */
 .overview-bar { display: flex; gap: 2px; height: 10px; border-radius: 999px; overflow: hidden; }
@@ -911,13 +911,13 @@ a.button.primary { background: var(--accent); color: var(--accent-text); border-
 .overview-reports li { display: grid; grid-template-columns: 22px 1fr; gap: 8px; overflow-wrap: anywhere; }
 .overview-report-meta { font-size: 0.8rem; margin-top: 2px; }
 .pr-state { font-size: 0.75rem; padding: 0 8px; }
-.pr-state::before { display: none; }
+.pill.pr-state::before { display: none; }
 .pr-merged { color: var(--ok); }
 .pr-closed { color: var(--bad); }
 /* Project: Keep the Why parts as pills with a dot. */
 .overview-why { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px; }
 a.pill { text-decoration: none; }
-.pill-warn { background: var(--flag-bg); }
+.overview-why .pill-warn { background: var(--flag-bg); }
 /* README badge: its state as pills, the preview, the snippet with Copy. */
 .overview-badge-states { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .pill-on { color: var(--accent); border-color: var(--accent); }
