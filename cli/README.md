@@ -609,7 +609,8 @@ covers the endpoints that have no command of their own: creating and
 editing cards, `assign`, `withdraw`, pausing (`PATCH /me`), the
 conversation history. It sends one signed request to `/api/v1<path>` and
 prints the JSON answer. A proxy adds `--on-request` with the owner's
-answered go for exactly this call (`maity ask … --action "METHOD PATH"`,
+answered go for exactly this call (`maity ask … --action "METHOD PATH[?QUERY]" --action-body FILE`, the
+exact call, body bytes included,
 [`docs/api.md`](../docs/api.md) §2.3); it is sent as `Maity-On-Request`
 and signed with the request. The commands that make admin calls take the
 same flag.

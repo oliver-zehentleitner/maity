@@ -134,7 +134,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
-| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on a post, chat change or redaction of an owner outside the project (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call, unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1) |
+| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on a post, chat change or redaction of an owner outside the project (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -584,18 +584,28 @@ owner decides, and it decides nothing itself:
   `Maity-On-Request: <request id>` (signed, §2.2), naming the owner's
   go for exactly that call. The proxy asks for it first: a `decision`
   or `consent` request it files itself, `to: owner`, with `action:
-  {method, path}` — the call it wants to make; `path` may end in a
-  resource id, the body is not bound (§7). The header is valid only
+  {method, path, query, body}` — the full call it will make: `query`
+  the exact query string or `null`, `body` the exact JSON text it will
+  send (at most 64 KiB) or `null` (§7). The owner sees that call
+  rendered on the request — method, path, query and the body
+  pretty-printed — in the dashboard and the CLI, and decides on it.
+  The header is valid only
   when that request is `answered` with `go` by a human with trust
   `owner` directly, in their own session (dashboard, inbox, or the CLI
   as that human); a relayed answer never unlocks a call, and a proxy's
   answer with `on_behalf_of` on a request carrying `action` is
-  `forbidden` with `details.reason: action_needs_owner`; when the call's method and path match `action`; within 24
+  `forbidden` with `details.reason: action_needs_owner`; when the call
+  matches `action` exactly — method, path and query string equal, and
+  the SHA-256 of the call's raw body bytes equal to the SHA-256 of the
+  stored `body` text in UTF-8 (no body and `null` match); within 24
   hours of the answer; and when the request has not been used yet. The
-  first matching call that succeeds consumes it (`action.used_at`,
-  `action.used_seq`); a call that fails leaves it unused. Without the
+  call's effect and the consumption (`action.used_at`,
+  `action.used_seq`) are one transaction: a call that fails changes
+  nothing and leaves the go unused, and two calls racing on one go
+  succeed at most once. Without the
   header, or with a request that is open, answered otherwise than
-  `go`, used, expired, not the proxy's own, or bound to another call,
+  `go`, used, expired, not the proxy's own, or bound to another call —
+  any other method, path, query or body is `mismatch` —
   the call is `forbidden` with `details.reason: proxy_needs_decision`
   and `details.on_request` naming which (`missing`, `not_bound`,
   `unanswered`, `declined`, `used`, `expired`, `mismatch`), before any
@@ -3764,9 +3774,10 @@ changed like `label`, shown on the card and filtered on (`needs=` on
 `GET …/tasks`, and in the board), and it routes nothing: claim policy,
 area routing and assignment work as without it, and a member of another
 role may still claim the card. `approvals` is the two signatures under
-`done_authority: reviewer_and_tester` (§6.1): `{review: {by, at} | null,
-test: {by, at} | null}` while the card is in `review`, `null` under
-every other policy; set by the hub only (below). `status`:
+`done_authority: reviewer_and_tester` (§6.1): `{review: {by, at,
+revision} | null, test: {by, at, revision} | null}` while the card is in
+`review`, `null` under every other policy; set by the hub only (below).
+Each signature names the `report.revision` it signs (§6.6). `status`:
 
 | Status | Meaning |
 |---|---|
@@ -3789,9 +3800,12 @@ of `tasks:review` fills `approvals.review`, from a holder of
 `approve: "review" | "test"` in the body, else `invalid`
 (`details.fields.approve: "required"`); the card stays in `review`
 (`200`, `task_updated` with `fields: ["approvals"]`) until both are
-filled, by two different members, and then moves to `done`. One member
-never fills both (`invalid`, `details.fields.approve: "same_member"`).
-`review→in_progress` (rework) clears both.
+filled, by two different members, both naming the card's current
+`report.revision`, and then moves to `done`. One member never fills
+both (`invalid`, `details.fields.approve: "same_member"`).
+`review→in_progress` (rework) clears both, and so does every new report
+that replaces the card's report (§6.6): a signature covers the report
+revision it was given on, never a later one.
 On a card under an objection hold (§6.19) an agent sets neither `done`
 nor `cancelled` (`forbidden`, `objection_open`) — by `PATCH` or, for
 `done`, by a report (§6.6: there the card goes to `review` instead);
@@ -4030,8 +4044,15 @@ Stored on the card as `report`:
   "observed": { "pr_state": "open", "pr_head_sha": "d91e294c…", "checks": "success",
                 "branch_head_sha": "d91e294c…", "observed_at": "…" },
   "why": { "ref": "context/cards.md#2280ced7-c51f-48f5-aab7-3bdacc7de21e" },
-  "mismatch": false }
+  "revision": 2, "mismatch": false }
 ```
+
+`revision` is set by the hub: 1 for the card's first report, plus 1 for
+every report that replaces it, including a report on a `done` card
+(below). A replay of the same report under its `Idempotency-Key` (§1.5)
+is not a replacement: it returns the stored answer, and the revision and
+the card's `approvals` stay. Every replacement clears `approvals`
+(§6.4).
 
 - The hub stores what it received and records `verification`: `signed`
   when the request was HMAC-signed — signed with the credential, and the
@@ -4058,8 +4079,12 @@ Stored on the card as `report`:
   has none (§6.23). `maity report --why REF` and `--no-why REASON` send
   it.
 - Effect: status `review`, `claim` kept. With `"done": true` the card
-  goes to `done` instead when the caller holds done authority and no
-  dependency is open; otherwise the whole call is refused
+  goes to `done` instead only as a `PATCH` `review→done` by the same
+  caller would take it there (§6.4): the caller holds done authority
+  and no dependency is open, and under `done_authority:
+  reviewer_and_tester` the report fills at most the caller's own
+  signature on the new revision, so the card stays in `review` until
+  the second member signs — a report never bypasses the approvals; otherwise the whole call is refused
   (`dependencies_open`, `forbidden`) and nothing is stored — the agent
   reports again without `done`. On a card under an objection hold
   (§6.19) a report with `"done": true` by an agent is stored and moves
@@ -6105,7 +6130,7 @@ resume`.
 | `humans_only` | `true` when only a human may answer the request, because its effect is one only a human decides (§2.3); set by the asker in the `POST` body, or by the hub on what it files; default `false`. Checked before the holder is set: with `humans_only: true`, a `to` naming an agent is `invalid` (`details.fields.to: "humans_only"`), and `to: trust:admin` is a pool only human admins claim. The same rule is enforced at every entry: creation, forward and claim (forwarding, below) |
 | `jour_fixe` | set by the hub only, on a request it filed for a jour fixe proposal: `{round_id, proposal_id}` (§20.6); `null` otherwise |
 | `on_behalf_of` | `null`, or the same shape, when a holder of `requests:answer` files for another member |
-| `action` | `null`, or `{method, path, used_at, used_seq}` on a proxy's request for the owner's go on one governance call (§2.3): answered only by a human with trust `owner` directly — anyone else, a proxy relaying with `on_behalf_of` included, is `forbidden` (`action_needs_owner`); the asking proxy sets `method` (`POST`, `PUT`, `PATCH`, `DELETE`) and `path` (the API path below `/api/v1`, which may end in a resource id; the body is not bound) in the `POST` body; the hub sets `used_at` and `used_seq` when the call that consumes it succeeds. Only a proxy sets it, only on class `decision` or `consent` `to: owner`, and without `options` (its replies are `go` and `no`); otherwise `invalid` (`details.fields.action`: `proxy_only`, `class`, `to`, `options`). The go it records is valid for 24 hours after `answered_at`, once |
+| `action` | `null`, or `{method, path, query, body, body_sha256, used_at, used_seq}` on a proxy's request for the owner's go on one governance call (§2.3): answered only by a human with trust `owner` directly — anyone else, a proxy relaying with `on_behalf_of` included, is `forbidden` (`action_needs_owner`); the asking proxy sets `method` (`POST`, `PUT`, `PATCH`, `DELETE`), `path` (the API path below `/api/v1`, which may end in a resource id), `query` (the exact query string, or `null`) and `body` (the exact JSON text the call will send, at most 64 KiB, or `null`; `invalid` with `details.fields["action.body"]`: `too_large`, `not_json`) in the `POST` body; the hub stores them as sent, adds `body_sha256` (hex SHA-256 of `body` in UTF-8, `null` without a body), renders the call to the owner (the body pretty-printed), and sets `used_at` and `used_seq` in the transaction of the call that consumes it. A call matches only with the same method, path and query and a raw body whose SHA-256 is `body_sha256`. Only a proxy sets it, only on class `decision` or `consent` `to: owner`, and without `options` (its replies are `go` and `no`); otherwise `invalid` (`details.fields.action`: `proxy_only`, `class`, `to`, `options`). The go it records is valid for 24 hours after `answered_at`, once |
 | `task_id`, `task` | the card the request belongs to; `task` is `{id, title, status}` inline so that an inbox entry carries its card without a tasks call. On a closed personal request `task` is a snapshot taken when the hub closed it, not a live view, so a non-member owner does not follow the card after the outcome |
 | `while_open` | `wait` (default) or `proceed_provisionally`; `consent` must be `wait` |
 | `needs_in_session` | `null` or `{"reason", "member_id", "display_name", "avatar_url", "session_id", "harness"}`: the executing harness needs the human in that member's session for this action; the inbox shows it as a flag with the member and session, an answer here is still recorded |
@@ -8254,7 +8279,7 @@ reviewer.
 | `maity task create "<title>" [--body B] [--area A] [--label L] [--parent ID] [--related ID]... [--status proposed\|open] [--assign ID] [--json]` | `POST /tasks` (§6.4); `--assign` sends `assigned_to`, which needs `tasks:admin`; under `policy.subtasks: proposed` a subtask of a caller without `tasks:admin` starts `proposed` |
 | `maity task edit <card> [--parent ID \| --no-parent] [--related ID]... [--unrelated ID]... [--json]` | `PATCH /tasks/{id}` with `parent` (`null` for `--no-parent`) and `related`; for `related` the card is read first and the whole list sent. The hub's refusals of `task create` and `task edit` (`too_deep`, `has_children`, `parent_closed`, `self`, `release_card`, `cycle`, `subtasks_proposed`, `dependencies_open` with `details.children`, and `forbidden` with `details.scope` for `--assign`) are printed as they came, `details.reason` and `details.scope` included, with one hint line each |
 | `maity ack keep-the-why` | `POST /me/keep-the-why/ack` (§6.23); prints the time of the confirmation; a hub that answers `keep_the_why_not_required` is reported as such, exit 0 |
-| `maity ask "…" --to T --class C --option … --priority P --task ID [--action "METHOD PATH"]` | `POST /requests` with `title` = the first line of the question, `summary` = the rest when there is one, `options` from `--option` (ids `o1…`), `to` from `--to` (`human` → omitted, the hub's default); `--action` (a proxy asking the owner's go for one call, §2.3) sends `action: {method, path}` |
+| `maity ask "…" --to T --class C --option … --priority P --task ID [--action "METHOD PATH[?QUERY]" [--action-body FILE\|-]]` | `POST /requests` with `title` = the first line of the question, `summary` = the rest when there is one, `options` from `--option` (ids `o1…`), `to` from `--to` (`human` → omitted, the hub's default); `--action` (a proxy asking the owner's go for one call, §2.3) sends `action: {method, path, query, body}`, `body` read verbatim from `--action-body`; the later `maity api … --on-request` must send the same bytes |
 | `maity claim <card> [--reason R]` | `POST /tasks/{id}/claim` |
 | `maity takeover <card> --reason R [--to ADDR]` | `POST /tasks/{id}/takeover`; prints the takeover and its window. |
 | `maity takeover accept\|object <takeover> [--reasons R]`, `withdraw`, `escalate`, `list` | `POST /takeovers/{id}/respond`, `…/withdraw`, `…/escalate`; `GET /takeovers`. |
