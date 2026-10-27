@@ -185,7 +185,7 @@ window.Maity = window.Maity || {};
         h("li", { class: "pair-line-step" }, "Pair it. This line is shown once and expires " + formatTime(enrollment.expires_at) + ":",
           h("pre", { class: "paste-line" }, enrollment.pair_line), copyButton(() => enrollment.pair_line)),
         h("li", null, "Check it: ", h("code", null, "maity runner check"), " says what is still missing, such as the tool's login."),
-        h("li", null, "Start it: ", h("code", null, "maity runner serve"), " (with the next runner release; not in the CLI yet).")),
+        h("li", null, "Start it: ", h("code", null, "maity runner serve"), ".")),
       h("p", { class: "muted pair-wait" }, "Waiting for the runner to pair…"),
       h("div", { class: "actions" }, h("button", { type: "button", onclick: onHide }, "Hide")));
   }

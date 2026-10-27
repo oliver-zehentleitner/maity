@@ -887,8 +887,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(["state_dir", "workspaces", "tmux_socket", "max_agents", "default_mode", "default_model", "binary"].every((k) => !config.includes(k + " =")),
     "runners: the starter configuration holds only the keys without a default");
   expect(text(steps).includes("installs the published CLI, which brings maity runner pair, check, serve and stop-all")
-    && text(steps).includes("(with the next runner release; not in the CLI yet)"),
-    "runners: the steps say what the CLI has today and what is still to come");
+    && text(steps).includes("Start it: maity runner serve.") && !text(steps).includes("not in the CLI yet"),
+    "runners: the steps name the published CLI and how to start the runner");
   const hostile = win.Maity.runnerStarterConfig("https://h.example", [{ slug: "a\"b\\c\u007f\n\ud800", repository: null }]);
   expect(hostile.includes('projects = ["a\\"b\\\\c\\u007f\\u000a\ufffd"]'), "runners: TOML strings escape quotes, backslashes, control characters and DEL; a lone surrogate is replaced");
   expect(win.Maity.runnerStarterConfig("https://h.example", []).includes("projects = []   # none chosen"), "runners: no project chosen is said in the configuration");
