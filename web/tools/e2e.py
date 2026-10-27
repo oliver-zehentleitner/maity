@@ -1788,9 +1788,11 @@ def notifications_step(run: Run, page: Page) -> None:
         expect(page.locator("main")).not_to_contain_text("Could not read your notifications")
         no_problems(run, "notifications")
         return
-    # The header's right block: Chat, Notifications, the gear, the profile, in one row also on a phone.
+    # The header's right block: Chat, the Lead button where there is a lead to reach, Notifications,
+    # the gear, the profile, in one row also on a phone.
     order = page.evaluate("Array.from(document.querySelectorAll('header .me > *')).map((e) => e.className)")
-    assert len(order) == 4 and "chat-button" in order[0] and "bell" in order[1], f"header order: {order}"
+    lead = 1 if len(order) > 1 and "lead-button" in order[1] else 0
+    assert len(order) == 4 + lead and "chat-button" in order[0] and "bell-box" in order[1 + lead], f"header order: {order}"
     page.set_viewport_size({"width": 390, "height": 844})
     # One row: every button's vertical middle within the others' height (a pixel of alignment is no wrap).
     boxes = page.evaluate("Array.from(document.querySelectorAll('header .me > *')).map((e) => { const r = e.getBoundingClientRect(); return [r.top, r.bottom]; })")

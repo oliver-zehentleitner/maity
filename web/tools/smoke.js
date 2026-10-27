@@ -4789,8 +4789,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const meOrder = header.querySelector(".me").childNodes.map((el) => (el.getAttribute("class") || "").split(" ").concat(el.tagName ? [el.tagName.toLowerCase()] : []).join(" "));
   expect(chatBtn() && chatBtn().getAttribute("href") === "#/chats" && chatBtn().getAttribute("aria-label") === "1 unread chat message"
     && text(chatBtn().querySelector(".count")) === "1" && chatBtn().querySelector(".count").getAttribute("aria-hidden") === "true"
-    && /chat-button/.test(meOrder[0]) && /bell/.test(meOrder[1]) && !/chat-button/.test(meOrder[1]) && header.querySelector(".me").childNodes.length === 4,
-    "header: Chat, then Notifications, the gear and the profile; the chat badge a number, its words in the label " + JSON.stringify(meOrder));
+    && /chat-button/.test(meOrder[0]) && /lead-button/.test(meOrder[1]) && /bell-box/.test(meOrder[2]) && header.querySelector(".me").childNodes.length === 5,
+    "header: Chat, Lead, then Notifications, the gear and the profile; the chat badge a number, its words in the label " + JSON.stringify(meOrder));
+  // The Lead button (the maintainer's decision, req-4rpd7vqb6xe3): Chat stays the way to every chat; Lead reaches
+  // the one lead at once (here the owner's own admin agent, on a hub without coordinator data).
+  const leadBtn = () => header.querySelector(".lead-button");
+  expect(leadBtn() && leadBtn().tagName === "A" && leadBtn().getAttribute("href") === "#/p/maity/chat/agt-a"
+    && leadBtn().getAttribute("aria-label") === "Talk to the lead: Agent A" && !header.querySelector(".lead-chat") && !main.querySelector(".lead-chat"),
+    "header: one lead, the Lead button opens that chat; no lead strip anywhere");
   // The counts' refresh redraws Chat on the same route: 1 to 0 drops the badge, 0 to 3 brings it back.
   const rcGet = win.Maity.api.get;
   let rcChat = 0;
@@ -4983,8 +4989,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Refreshes on such a hub replace the bell in place: one bell, the order kept.
   for (let k = 0; k < 3; k++) { await fireIntervals(); await tick(); }
   const fbOrder = header.querySelector(".me").childNodes.map((el) => el.getAttribute("class") || "");
-  expect(header.querySelectorAll("a.bell").filter((a) => a.getAttribute("href") === "#/all").length === 1 && fbOrder.length === 4
-    && /chat-button/.test(fbOrder[0]) && fbOrder[1] === "bell-box", "notifications: refreshes without them keep one bell, Chat first " + JSON.stringify(fbOrder));
+  expect(header.querySelectorAll("a.bell").filter((a) => a.getAttribute("href") === "#/all").length === 1
+    && /chat-button/.test(fbOrder[0]) && fbOrder.filter((c) => c === "bell-box").length === 1 && header.querySelectorAll(".lead-button").length <= 1,
+    "notifications: refreshes without them keep one bell, one Lead, Chat first " + JSON.stringify(fbOrder));
   const nSettingsAsked = [];
   const nGetNone = win.Maity.api.get;
   win.Maity.api.get = (p) => { if (p === "/me/notification-settings") nSettingsAsked.push(p); return nGetNone(p); };
@@ -5447,8 +5454,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const leadCtx = { me: { id: "hum-me", kind: "human" }, base: "/projects/maity", project: { policy: { coordinator: leadA.id } },
     members: [leadA, leadB], memberById: { [leadA.id]: leadA, [leadB.id]: leadB }, link: (view, id) => "#/p/maity/" + view + "/" + id };
   expect(JSON.stringify(win.Maity.leadChat.targets({ ...leadCtx, project: { policy: {} } }).map((m) => m.id)) === JSON.stringify([leadB.id]),
-    "lead: on an older hub Chat reaches only the caller's own admins and proxies");
-  expect(JSON.stringify(win.Maity.leadChat.targets(leadCtx).map((m) => m.id)) === JSON.stringify([leadA.id]), "lead: with a lead, Chat reaches that lead");
+    "lead: on an older hub the Lead button reaches only the caller's own admins and proxies");
+  expect(JSON.stringify(win.Maity.leadChat.targets(leadCtx).map((m) => m.id)) === JSON.stringify([leadA.id]), "lead: with a lead, the Lead button reaches that lead");
   const leadGetAll = win.Maity.api.getAll, leadPost = win.Maity.api.post, leadServed = win.Maity.groupChat.served;
   const leadWrites = [];
   win.Maity.groupChat.served = async () => true;
@@ -5467,6 +5474,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await win.Maity.leadChat.open(leadCtx, leadB); await tick();
   expect(leadWrites.length === 1 && win.location.hash === "#/p/maity/chat/" + leadB.id, "lead: own agent opens its direct chat");
   expect(!win.Maity.leadChat.targets({ ...leadCtx, me: { id: leadA.id, kind: "agent" } }).length, "lead: agents reach no one through it");
+  // Several to reach: a menu of them and, per project with more than one, a group chat with all of them.
+  const leadFound = { multiProject: false, list: [leadA, leadB].map((member) => ({ ctx: leadCtx, member, project: { slug: "maity", name: "Maity" } })) };
+  const leadMenu = win.Maity.leadChat.leadControl(leadCtx, leadFound);
+  leadMenu.querySelector("button").click(); await tick();
+  const leadItems = leadMenu.querySelectorAll(".menu-item").map((b) => b.textContent);
+  expect(JSON.stringify(leadItems) === JSON.stringify(["Lead A", "Lead B", "Group chat with all leads"]), "lead: several leads in a menu, and a group chat with all " + JSON.stringify(leadItems));
+  leadWrites.length = 0;
+  win.Maity.api.getAll = async () => ({ items: [] });
+  leadMenu.querySelectorAll(".menu-item").find((b) => b.textContent === "Group chat with all leads").click(); await tick(); await tick();
+  expect(JSON.stringify(leadWrites) === JSON.stringify([["/projects/maity/conversations", { title: "Talk to the leads", participants: [leadA.id, leadB.id] }]]),
+    "lead: the group chat with all leads is made with exactly them " + JSON.stringify(leadWrites));
+  expect(win.Maity.leadChat.leadControl(leadCtx, { multiProject: false, list: [] }) === null, "lead: no one to reach, no button");
   win.Maity.api.getAll = leadGetAll; win.Maity.api.post = leadPost; win.Maity.groupChat.served = leadServed;
 
   // Presence is independent of a live claim; timestamps never come from the lease.
