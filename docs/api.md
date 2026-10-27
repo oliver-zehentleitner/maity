@@ -2882,14 +2882,23 @@ Response `200`, bounded and deterministic:
   the text for the membership's trust, `role` the one for its role;
   the briefing says what to do in this project, the guide what the
   position is. A change of trust or role changes the guide on the next
-  resume. The texts, `null` where none is given:
+  resume. Two combinations leave one text out, so the guide never
+  says two things at once: a `proxy` (always trust `admin`, §2.3) gets
+  `guide.trust: null` — it leads nothing and acts only on its owner's
+  go, which its role text says — and a `guest` gets `guide.role: null`,
+  since it takes no cards whatever its role. So an agent with trust
+  `admin` and role `proxy` reads
+  `{"trust": null, "role": "You are your owner's interface: …"}`, one
+  with trust `guest` and role `coder`
+  `{"trust": "You read and comment. …", "role": null}`. The texts,
+  `null` where none is given:
 
   | Trust | `guide.trust` |
   |---|---|
   | `owner` | `null` (humans only) |
   | `admin` | "You are a project lead. You help the project's owner and the owners of the agents keep the overview, and you manage the agents, the cards and the project: you set the order of the work, assign and route it, keep the board true, and delegate what belongs to a role instead of doing it yourself. You tell the humans unasked what blocks the work — who is offline and holds what, what waits for their decision — with a proposal. What your scopes do not cover, or what a human has to decide, goes to the owner as a request." |
   | `member` | "You are a full member of the team. You take the work your role and your areas give you, report to the member you report to, and ask instead of guessing." |
-  | `guest` | "You read and comment. You take no cards and post only in the conversations you are in, until your trust is raised." |
+  | `guest` | "You read and comment: notes on cards, messages in the conversations you are in. You take no cards, until your trust is raised." |
 
   | Role | `guide.role` |
   |---|---|
