@@ -158,3 +158,33 @@ itself and its peers, which the contract keeps from agents.
   moment, but one more worker for a warning, and the view would lag it.
 - Audience `role:admin`. It also reaches admin agents, which may not read it.
 
+
+## The project message listing reads the events through the one read rule, in Python
+
+**Id:** 56027d65-883a-4c87-a000-081c7fd236d1
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-10-27 (docs/api.md §8.8); the contract fixes the result, not the way the hub gets there
+**Revisit when:** a project's event volume makes a page cost many batches of events, or the read rule gains a clause that cannot be applied to a row alone
+
+`GET /projects/{slug}/messages` takes the project's `message` events that
+belong to no conversation and keeps those `events.readable_by` lets the
+caller read, in batches of 500 by `seq`, until the page and one more are
+found. The one more tells whether a next page exists. The conversation is
+read off the event row, which a redaction leaves, so a redacted chat
+message is never listed. A `type` filter is applied in Python too: a
+tombstone has no type in its payload, and it is listed only without a
+filter. The cursor is the last `seq` shown, bound to the `after`, `before`
+and `type` it was handed out with, so it is refused under any other query.
+
+**Reason:** the contract says nothing listed here may be unreadable through
+`GET /events`. Using the same function makes that true by construction,
+today and whenever the rule changes, instead of by two copies kept equal.
+
+**Rejected alternatives:**
+- A filter on `audience` in SQL: the audience is a JSON list that three
+  engines query differently, and the rule is more than the audience (the see-all
+  roles, instance tokens, humans-only kinds, redactions of hidden events).
+- A table of project messages kept beside the log: one more write on every
+  post and on every redaction, to speed up a read nobody has measured.
