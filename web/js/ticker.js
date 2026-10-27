@@ -112,7 +112,7 @@ window.Maity = window.Maity || {};
       return h("li", { class: "ticker-item type-" + x.type + (x.for_me ? " for-me" : ""), "data-seq": String(x.seq) },
         h("div", { class: "ticker-head" },
           h("span", { class: "badge" }, x.type === "merge" && x.contract ? "Contract change" : TYPE_WORD[x.type] || x.type),
-          " ", h("span", { class: "muted" }, formatTime(x.at), x.actor && x.actor.member_id ? [" · ", M.dom.memberRef(ctx, x.actor.member_id)] : null)),
+          " ", h("span", { class: "muted" }, formatTime(x.at), x.actor && x.actor.member_id ? [" · ", M.dom.memberRef(ctx, x.actor.member_id, { instance: x.actor })] : null)),
         x.redacted ? h("p", { class: "muted msg-redacted" }, "This item was removed.")
           // An item whose own link is a pull request or an issue links it
           // once: its numbers stay text.

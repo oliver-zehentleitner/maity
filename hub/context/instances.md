@@ -267,3 +267,31 @@ contract.
   fallback, and it would wake instances nobody addressed.
 - Any `#…` after a name voids the mention: ordinary text such as
   "@agent-b#1" would lose a mention its writer meant.
+
+## A chat message's and a request's instance are read from the credential behind them, not stored
+
+**Id:** bcc55638-fc1f-4896-8e34-b92f5fce7826
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's scope for the hub half of the instance suffix (tsk-6sxbvsf87219), 2026-10-27: exactly what the contract promises, no migration; `docs/api.md` §9 (`from_instance`), §7 (`asked_by.instance`), §6.17
+**Revisit when:** a request is filed by an agent without a live session in a way that matters, or the contract adds `from_instance` to the conversation list's `last_message`
+
+A conversation message's `from_instance` is the instance of the
+credential the message event was written with (`actor_credential_id`,
+one query per page through `instances_of`), `null` for a human. A
+request's `asked_by.instance` is the instance of the credential behind
+`asked_session_id`; it is `null` for a human, for a request the hub
+files, and for an agent that asked without a live session. The list
+preview (`last_message`) carries no `from_instance`, since the
+contract's preview does not name one.
+
+**Reason:** both facts are already in the rows the hub writes today, so
+the fields the contract promised need no column and no migration, and
+older rows answer too.
+
+**Rejected alternative:** a new `instance` column on the request (and
+reading the event's own column): exact for a session-less ask, but a
+migration and a reserved number for a case the CLI does not produce,
+since it resumes before it asks. Adding `from_instance` to the preview:
+beyond the contract.

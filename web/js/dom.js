@@ -178,21 +178,53 @@ window.Maity = window.Maity || {};
   // field's form is submitted, or for a field outside one `act` is called;
   // never while `button` (the form's submit button by default) is
   // disabled, so a send on its way is not sent twice.
-  const SEND_KEYS = /Mac|iPhone|iPad/.test((window.navigator && window.navigator.platform) || "") ? "⌘+Enter" : "Ctrl+Enter";
+  //
+  // The keys are named as the keyboard prints them (tsk-00q3ddrh7a1q):
+  // ⌘ on an Apple device, Strg where the page or the browser speaks German,
+  // Ctrl elsewhere.
+  function sendKeysFor(lang, platform, ua) {
+    if (/Mac|iPhone|iPad|iPod/.test(String(platform || "")) || /Macintosh|iPhone|iPad|iPod/.test(String(ua || ""))) return "⌘+Enter";
+    return /^de\b/i.test(String(lang || "")) ? "Strg+Enter" : "Ctrl+Enter";
+  }
+  const nav = window.navigator || {};
+  // dom.js also loads where there is no document (web/tools/starter-configs.js).
+  const root = typeof document !== "undefined" ? document.documentElement : null;
+  const pageLang = (root && root.getAttribute && root.getAttribute("lang")) || "";
+  const SEND_KEYS = sendKeysFor(/^de\b/i.test(pageLang) ? pageLang : nav.language, nav.platform, nav.userAgent);
+  // A device with no keyboard to press them on: touch alone, no hover.
+  const touchOnly = () => !!(window.matchMedia && window.matchMedia("(hover: none) and (pointer: coarse)").matches);
   function formOf(el) {
     for (let x = el.parentNode; x; x = x.parentNode) if (x.tagName === "FORM") return x;
     return null;
+  }
+  const submitOf = (form) => form && Array.from(form.querySelectorAll("button")).find((b) => b.getAttribute("type") === "submit");
+  // The keys right before the button that sends, muted, the two one group
+  // (span.send-with-keys, in the button's place), and in the button's
+  // tooltip, so whoever looks at the button learns them; the label keeps
+  // saying them for a screen reader. Once per button; none on a touch-only
+  // device. The designer's pass on #431: the hint reads as Send's label.
+  function showSendKeys(button) {
+    if (!button || button.getAttribute("data-send-keys") || touchOnly() || !button.parentNode) return;
+    button.setAttribute("data-send-keys", SEND_KEYS);
+    button.setAttribute("aria-keyshortcuts", "Control+Enter Meta+Enter");
+    const said = button.getAttribute("title");
+    button.setAttribute("title", (said ? said + " " : (button.textContent || "").trim() + " ") + "(" + SEND_KEYS + ")");
+    const group = h("span", { class: "send-with-keys" });
+    button.parentNode.insertBefore(group, button);
+    append(group, h("span", { class: "send-keys muted", "aria-hidden": "true" }, SEND_KEYS), button);
   }
   function sendOnCtrlEnter(field, act, button) {
     field.addEventListener("keydown", (e) => {
       if (e.key !== "Enter" || !(e.ctrlKey || e.metaKey) || e.isComposing) return;
       e.preventDefault();
       const form = act ? null : formOf(field);
-      const submit = button || (form && Array.from(form.querySelectorAll("button")).find((b) => b.getAttribute("type") === "submit"));
+      const submit = button || submitOf(form);
       if (submit && submit.disabled) return;
       if (act) act(e);
       else if (form) form.requestSubmit();
     });
+    // The view puts the field and its button on the page after this call.
+    window.setTimeout(() => showSendKeys(button || submitOf(formOf(field))), 0);
     return field;
   }
 
@@ -238,16 +270,40 @@ window.Maity = window.Maity || {};
   // display name by default; "handle" for @handle); opts.avatar: a picture
   // of that size before it. A member the project does not list (removed,
   // outside), or a view read from outside the project, gets plain text.
+  // opts.instance: the agent instance that wrote or did it (§6.17), its id
+  // or {instance, harness, model}; the agent is then named
+  // <handle>#<id> (owner/handle#id where two agents share the handle),
+  // the #id muted with the session's harness and model as its tooltip, so
+  // two instances of one agent read apart. A human has no instances.
   function memberRef(ctx, who, opts) {
     const o = opts || {};
     const id = typeof who === "string" ? who : who && (who.member_id || who.id);
     const m = id && ctx.memberById ? ctx.memberById[id] : null;
     const name = (m && m.display_name) || (who && who.display_name) || (id && ctx.nameOf ? ctx.nameOf(id) : id) || "—";
     const handle = (m && handleOf(ctx, m)) || (who && who.handle);
-    const label = o.text === "handle" ? (handle ? "@" + handle : name) : (o.text || name);
+    const inst = instanceOf(o.instance);
+    const agent = !(m && m.kind === "human") && !(who && who.kind === "human");
+    // Without a handle (a reference read across projects carries none) the
+    // name stands before the #id: the instance is said all the same.
+    const suffix = inst && agent ? h("span", { class: "member-instance muted", title: instanceTitle(inst) }, "#" + inst.id) : null;
+    const label = suffix && handle ? (o.text === "handle" ? "@" : "") + handle
+      : o.text === "handle" ? (handle ? "@" + handle : name) : (o.text || name);
     const pic = o.avatar && m && M.avatar ? M.avatar(m, o.avatar) : null;
-    if (!m || ctx.outsider || typeof ctx.link !== "function") return h("span", { class: "member-ref plain", title: name }, pic, label);
-    return h("a", { class: "member-ref", href: ctx.link("members", id), title: name, "data-member": id }, pic, label);
+    const ref = !m || ctx.outsider || typeof ctx.link !== "function"
+      ? h("span", { class: "member-ref plain", title: name }, pic, label)
+      : h("a", { class: "member-ref", href: ctx.link("members", id), title: name, "data-member": id }, pic, label);
+    // The #id stays outside the link (the designer's pass on #429): it names, it leads nowhere else.
+    return suffix ? h("span", { class: "member-ref-instance" }, ref, suffix) : ref;
+  }
+  const INSTANCE = /^[2-9a-hjkmnp-z]{4,5}$/; // an instance id (§6.17)
+  function instanceOf(x) {
+    const src = typeof x === "string" ? { instance: x } : x;
+    const iid = src && src.instance;
+    return typeof iid === "string" && INSTANCE.test(iid) ? { id: iid, harness: src.harness, model: src.model } : null;
+  }
+  function instanceTitle(inst) {
+    const said = [inst.harness, inst.model].filter((x) => typeof x === "string" && x);
+    return "Instance " + inst.id + (said.length ? " · " + said.join(" · ") : "");
   }
 
   const isSilentAgent = (member) => !!member && member.kind === "agent"
@@ -263,5 +319,5 @@ window.Maity = window.Maity || {};
       title: known ? "Last hub call: " + formatTime(member.last_seen_at) : "No last hub call is available" }, text);
   }
 
-  M.dom = { handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, memberRef, notOnHub, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, withMentions, sniffImage, IMAGE_MAX, SEND_KEYS, sendOnCtrlEnter };
+  M.dom = { handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, memberRef, notOnHub, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, withMentions, sniffImage, IMAGE_MAX, SEND_KEYS, sendKeysFor, showSendKeys, sendOnCtrlEnter };
 })(window.Maity);

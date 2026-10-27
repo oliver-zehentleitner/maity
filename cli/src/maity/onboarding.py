@@ -25,6 +25,8 @@ import unicodedata
 from collections.abc import Iterable
 from typing import Any
 
+from maity import pointer
+
 HANDBOOK = "https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md"
 MAX_BODY_LINES = 40
 MAX_BODY_CHARS = 4000
@@ -624,6 +626,7 @@ def render(packet: Any, first: bool = False, board_empty: bool = False) -> str:
         out += ["", f"Members: {listed}"]
     out += ["", "Next: " + _next_step(packet, isinstance(paused, dict), board_empty)]
     if first:
+        out.append(pointer.HUMAN_CHANNEL)
         out.append(f"How to work as a member, and the rules that matter: {HANDBOOK}")
         out.append(
             "Run `maity resume` at the start of every session; `maity --help` lists the rest."
