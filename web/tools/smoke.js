@@ -1344,6 +1344,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Members (docs/api.md §6.2): humans and agents, managed by an admin.
   const membersTab = header.querySelectorAll("nav.views a").find((a) => a.textContent === "Members");
   expect(membersTab && membersTab.getAttribute("href") === "#/p/maity/members", "members: a tab");
+  // The reviewer's one credential, revoked further down (the fixture's has none).
+  const rvAll = win.Maity.api.getAll;
+  let rvRevoked = null;
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/members/agt-r/credentials"
+    ? Promise.resolve({ items: [{ id: "crd-r-0001", client: "cli", created_at: "2026-10-20T10:00:00Z", resumed_at: "2026-10-20T10:01:00Z",
+      last_used_at: "2026-10-27T10:00:00Z", last_used_via: "signed", revoked_at: rvRevoked, revoked_by: rvRevoked ? "hum-maintainer" : null, revoked_reason: null }], next_cursor: null })
+    : rvAll(p));
   await go("#/p/maity/members");
   const mRow = (name) => main.querySelectorAll("tr.member").find((tr) => tr.querySelector(".member-name").textContent === name);
   const tables = main.querySelectorAll("table.members");
@@ -1426,7 +1433,31 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && eSel(1).querySelectorAll("option")[0].textContent === "nobody", "members: reports to offers nobody and everyone else, set to the current one");
   await submitEdit();
   expect(!eWrites.length && text(main).includes("Nothing changed."), "members: nothing changed, nothing sent");
-  expect(!eRow().querySelector("textarea") && text(eRow()).includes("The briefing is edited on the agent's card"), "members: one briefing editor, on the agent's card");
+  // What the Agents page had is in the manage row (tsk-7v2snhk002ak): the briefing, the credentials with Revoke, the pause once.
+  for (let k = 0; k < 4; k++) await tick();
+  expect(eRow().querySelector(".briefing") && (btn(eRow().querySelector(".briefing"), "Edit briefing") || btn(eRow().querySelector(".briefing"), "Write a briefing")),
+    "members: an agent's manage row holds its briefing");
+  expect(eRow().querySelector(".member-credentials .credentials") && eRow().querySelectorAll("form.member-pause, .member-pause").length === 1,
+    "members: and its credentials, and one pause");
+  // Revoked here: the row stays open, its list read again in place, the focus on its heading.
+  const rvCreds = () => eRow().querySelector(".member-credentials");
+  const rvItem = rvCreds().querySelectorAll("li").find((li) => btn(li, "Revoke"));
+  if (rvItem) {
+    const rvId = rvItem.querySelector("code").textContent;
+    const rvPost = win.Maity.api.post;
+    let rvSent = null;
+    win.Maity.api.post = (p, b) => (/\/revoke$/.test(p) ? (rvSent = p, rvRevoked = "2026-10-27T11:00:00Z", Promise.resolve({})) : rvPost(p, b));
+    const rvProto = Object.getPrototypeOf(rvItem), rvFocus = rvProto.focus;
+    rvProto.focus = function () { document.activeElement = this; };
+    btn(rvItem, "Revoke").click(); for (let k = 0; k < 6; k++) await tick();
+    rvProto.focus = rvFocus;
+    win.Maity.api.post = rvPost;
+    const rvAfter = eRow() && rvCreds().querySelectorAll("li").find((li) => li.querySelector("code").textContent === rvId);
+    expect(rvSent && rvSent.endsWith("/credentials/" + rvId + "/revoke") && rvAfter && rvAfter.className.includes("revoked") && !btn(rvAfter, "Revoke")
+      && document.activeElement === rvCreds().querySelector(".credentials-title"), "members: a credential revoked in the row, the row stays open");
+    document.activeElement = undefined;
+  } else expect(false, "members: the reviewer has a credential to revoke");
+  win.Maity.api.getAll = rvAll;
   eSel(1).value = "agt-d"; eSel(1).dispatch("change");
   eIn()[0].value = "docs/, web/tools/, docs/"; eIn()[0].dispatch("input");
   eIn()[1].checked = true; eIn()[1].dispatch("change");
@@ -1563,8 +1594,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       : mGet(p));
   await go("#/p/maity/inbox"); await go("#/p/maity/members");
   const ths2 = main.querySelectorAll("table.members")[1].querySelector("thead").querySelectorAll("th").map((t) => t.textContent);
-  expect(!btn(main, "Manage") && !ths2.includes("Credentials") && !ths2.includes("Actions") && text(mRow("Agent A")).includes("Maintainer"),
-    "members: a member reads the list without actions; the owner from the members");
+  expect(!btn(main, "Manage") && !ths2.includes("Credentials") && text(mRow("Agent A")).includes("Maintainer"),
+    "members: a member reads the list without managing; the owner from the members");
+  // A human's own agents open as Details: the credentials and the owner's preferences switch, nothing that changes the membership.
+  const ownDetails = btn(mRow("Agent A"), "Details");
+  expect(ownDetails && ths2.includes("Actions"), "members: one's own agent has Details, even without members:admin");
+  ownDetails.click(); for (let k = 0; k < 6; k++) await tick();
+  const ownRow = main.querySelector("tr.member-manage");
+  expect(ownRow && ownRow.querySelector(".member-credentials .credentials") && !ownRow.querySelector("form.member-edit") && !ownRow.querySelector(".member-pause")
+    && !btn(ownRow, "Remove from the project"), "members: the owner's details hold the credentials, no form that changes the membership");
   win.Maity.api.get = mGet;
 
   // Message the project (docs/api.md §8.4): from the Chat tab (tsk-r1adgwp0a5dr), no longer the inbox, no tab of its own.

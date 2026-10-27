@@ -1484,6 +1484,32 @@ guess: seqs are the project's, not the chat's, so no guess finds the last
 50. Reading back only: it marks nothing read, so the unread counts
 would never fall. Keeping everything drawn: the DOM of a chat open all
 day grows without bound.
+
+## An agent's credentials, briefing and pause live in its row on Members; an owner opens their own agents as Details
+
+**Id:** 1c00024d-a3a6-49bc-ba2e-704359713aeb
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish to fold the Agents page into Members → Manage (tsk-7v2snhk002ak, chat 2026-10-27); the coordinator's cut into two PRs and its tie to the decided Team page's Members tab (context/members.md f0ca2279: humans and agents in one list, actions per row), 2026-10-27
+**Revisit when:** the Team page's Members tab lands, or a member page of its own takes the actions (tsk-rtb5vjrvbh34)
+
+Opening an agent's row (members:admin) shows the membership form, the
+briefing (edited there), whether it gets your preferences if it is
+yours, its credentials with Revoke (read when the row first opens, kept
+across redraws), the pause once, and Remove. Without members:admin a
+human's own agents open as **Details**: credentials and the preferences
+switch, nothing that changes the membership. The join panel and the
+placements follow in a second change, and the Agents page goes then.
+
+**Reason:** one row per member, with what may be done to it, is the
+Members tab the Team page decided; nothing a person could see or do on
+the Agents page may get lost, an owner without admin rights included.
+
+**Rejected alternative:** the owner's own agents read only, with no row
+to open: their credentials and the preferences switch were theirs on the
+Agents page. Loading every agent's credentials with the list: a call per
+agent on every visit, for rows mostly never opened.
 ## The lead is reached by a Lead button beside Chat, not by Chat itself or a strip
 
 **Id:** 0ff66bde-7c26-412a-a856-069b52764910

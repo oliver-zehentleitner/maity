@@ -153,10 +153,60 @@ window.Maity = window.Maity || {};
       return isConsent(answer) ? "consent" : true;
     }
 
+    // A row opens for a member admin, and for a human on their own agents
+    // (tsk-7v2snhk002ak): what the Agents page showed them, in one place.
+    const ownAgent = (m) => m.kind === "agent" && ctx.me.kind === "human" && m.owner_id === ctx.me.id;
+    const mayOpen = (m) => ctx.canAdmin || ownAgent(m);
+
+    // An agent's credentials, read when its row first opens and kept across
+    // redraws; a failed read costs that row its list, not the view.
+    const credsOf = new Map();
+    function credentialsPart(m) {
+      const P = M.agentParts;
+      if (!P) return null;
+      const slot = h("div", { class: "member-credentials" });
+      // A revocation reads this row's list again, in place: the row stays
+      // open and the focus goes to the list's heading.
+      const revoked = () => {
+        credsOf.delete(m.id);
+        load(true);
+      };
+      const fill = (got, refocus) => {
+        append(clear(slot), got.error
+          ? h("div", { class: "credentials" }, h("h4", { class: "credentials-title" }, "Credentials"), M.errorBox(got.error))
+          : P.credentials(ctx, m, got.list, revoked));
+        const head = refocus && slot.querySelector(".credentials-title");
+        if (head) { head.setAttribute("tabindex", "-1"); head.focus(); }
+      };
+      function load(refocus) {
+        const known = credsOf.get(m.id);
+        if (known && !known.then) { fill(known, refocus); return; }
+        if (!refocus) append(slot, h("p", { class: "muted" }, "Reading the credentials…"));
+        const reading = known || P.loadCredentials(ctx, m).then((got) => { credsOf.set(m.id, got); return got; });
+        credsOf.set(m.id, reading);
+        reading.then((got) => { if (slot.isConnected !== false) fill(got, refocus); });
+      }
+      load(false);
+      return slot;
+    }
+
     function manage(m, rowId) {
       const memberPath = ctx.base + "/members/" + encodeURIComponent(m.id);
       const self = m.id === ctx.me.id;
+      // Their own agent's owner, without members:admin: its credentials and
+      // whether it gets their preferences, nothing that changes the membership.
+      if (!ctx.canAdmin) {
+        return h("tr", { class: "member-manage", id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell" },
+          credentialsPart(m),
+          M.preferences && "owner_preferences" in m ? M.preferences.ownerToggle(ctx, m) : null));
+      }
       const parts = [editForm(m, memberPath, self)];
+      if (m.kind === "agent") {
+        // The briefing (§6.2), edited here; where the hub knows briefings.
+        if ("briefing" in m && M.agentParts) parts.push(M.agentParts.briefingControl(ctx, m));
+        if (ownAgent(m) && M.preferences && "owner_preferences" in m) parts.push(M.preferences.ownerToggle(ctx, m));
+        parts.push(credentialsPart(m));
+      }
       if (m.kind === "agent") {
         const reasonId = "member-pause-" + m.id;
         const reason = keyed("reason:" + m.id, h("input", { id: reasonId, placeholder: "Why it stops, e.g. quota", autocomplete: "off" }));
@@ -295,12 +345,7 @@ window.Maity = window.Maity || {};
         h("p", { class: "hint", id: id("areas") + "-hint" }, "Repository paths this member owns, comma separated; cards in an area go to its narrowest owner."),
         errors.areas,
         h("fieldset", { class: "member-caps" }, h("legend", null, "Capabilities"),
-          caps.map((c) => h("label", { class: "check", for: c.box.id }, c.box, " " + c.label))),
-        // One briefing editor: on the agent's card.
-        m.kind === "agent" && "briefing" in m
-          ? h("p", { class: "muted member-briefing" }, "The briefing is edited on ", h("a", { href: ctx.link("agents") }, "the agent's card"),
-            m.briefing_by ? " · set by @" + m.briefing_by.handle : "", ".")
-          : null),
+          caps.map((c) => h("label", { class: "check", for: c.box.id }, c.box, " " + c.label)))),
       h("div", { class: "actions" }, save));
     }
 
@@ -319,6 +364,7 @@ window.Maity = window.Maity || {};
 
     function table(kind, list, columns) {
       const label = kind === "human" ? "Humans" : "Agents";
+      const withActions = ctx.canAdmin || list.some(ownAgent);
       const headingId = "members-" + kind;
       return [h("h3", { id: headingId }, label + " (" + list.length + ")"),
         h("div", { class: "table-wrap", tabindex: "0", role: "region", "aria-labelledby": headingId },
@@ -326,7 +372,7 @@ window.Maity = window.Maity || {};
             h("thead", { role: "rowgroup" }, h("tr", { role: "row" },
               h("th", { scope: "col", role: "columnheader" }, "Name"),
               columns.map((c) => h("th", { scope: "col", role: "columnheader" }, c.title)),
-              ctx.canAdmin ? h("th", { scope: "col", role: "columnheader" }, "Actions") : null)),
+              withActions ? h("th", { scope: "col", role: "columnheader" }, "Actions") : null)),
             h("tbody", { role: "rowgroup" }, list.map((m) => {
               const expanded = open.has(m.id);
               const rowId = "member-manage-" + m.id;
@@ -337,17 +383,18 @@ window.Maity = window.Maity || {};
                   if (c.presence) presenceCells.set(m.id, td);
                   return td;
                 }),
-                ctx.canAdmin ? h("td", { class: "member-actions", "data-label": "Actions", role: "cell" }, keyed("manage:" + m.id, h("button", {
+                !withActions ? null : !mayOpen(m) ? h("td", { class: "member-actions", "data-label": "Actions", role: "cell" })
+                  : h("td", { class: "member-actions", "data-label": "Actions", role: "cell" }, keyed("manage:" + m.id, h("button", {
                   type: "button",
                   class: "small",
                   "aria-expanded": expanded ? "true" : "false",
                   "aria-controls": expanded ? rowId : null,
-                  "aria-label": (expanded ? "Done managing " : "Manage ") + m.display_name,
+                  "aria-label": (expanded ? (ctx.canAdmin ? "Done managing " : "Close the details of ") : (ctx.canAdmin ? "Manage " : "Details of ")) + m.display_name,
                   onclick: () => {
                     // Done closes the row and drops its unsaved edits.
-                    if (open.has(m.id)) { open.delete(m.id); edits.delete(m.id); redraw("manage:" + m.id); } else { open.add(m.id); redraw("role:" + m.id); }
+                    if (open.has(m.id)) { open.delete(m.id); edits.delete(m.id); redraw("manage:" + m.id); } else { open.add(m.id); redraw(ctx.canAdmin ? "role:" + m.id : "manage:" + m.id); }
                   },
-                }, expanded ? "Done" : "Manage"))) : null);
+                }, expanded ? "Done" : ctx.canAdmin ? "Manage" : "Details"))));
               return expanded ? [row, manage(m, rowId)] : row;
             }))))];
     }
@@ -376,7 +423,8 @@ window.Maity = window.Maity || {};
 
     append(root, h("h2", null, "Members"),
       h("p", { class: "muted" }, "Everyone in " + (ctx.project.name || ctx.slug) + ", humans first."
-        + (ctx.canAdmin ? " Manage a row to change its role, pause an agent or remove a member." : "")),
+        + (ctx.canAdmin ? " Manage a row to change its role, see and revoke an agent's credentials, edit its briefing, pause it or remove a member."
+          : ctx.members.some(ownAgent) ? " Your own agents' Details show their credentials and whether they get your preferences." : "")),
       status.el, box);
     draw();
     // Inviting a person (§3.4), below the members, for a human with members:admin.
