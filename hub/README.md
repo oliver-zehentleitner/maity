@@ -29,7 +29,8 @@ sections from the diff), and the forge webhook: its secret sealed with
 `MAITY_SECRET_KEY`, signed deliveries as triggers for the probe, and
 automatic deploys. The
 instance's mail settings and the admin's test send (`docs/api.md` §16.2,
-§16.3) are in; the notifications and sign-in mails that use them follow.
+§16.3) are in, and so is the mail outbox with its worker; the notifications
+and sign-in mails that use them follow.
 A human's preferences (`docs/api.md` §19.4): one
 versioned text per human, written by the human, read by the agents of
 the projects they share (switch per project), proposed by an admin agent
