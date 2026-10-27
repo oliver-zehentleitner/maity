@@ -257,3 +257,59 @@ def test_a_profile_of_another_space_than_the_image_is_ignored(settings: Settings
     stored = avatars.decode_attachment(settings, source, "image/png")
     assert _centre(stored.data) == (200, 30, 30)  # untouched
     assert "icc_profile" not in reopen(stored.data).info
+
+
+def _palette_png(transparent: bool, **save: Any) -> bytes:
+    palette = Image.new("P", (32, 32))
+    palette.putpalette([200, 30, 30, 20, 160, 40] + [0] * 756)
+    if transparent:
+        save["transparency"] = 0
+    out = io.BytesIO()
+    palette.save(out, format="PNG", **save)
+    return out.getvalue()
+
+
+def _linear_rgb_profile() -> bytes:
+    """An RGB matrix profile with sRGB's primaries and a linear curve: a conversion to
+    sRGB changes every mid-tone, so a profile that is skipped shows."""
+    primaries = {
+        b"rXYZ": (0.4360, 0.2225, 0.0139),
+        b"gXYZ": (0.3851, 0.7169, 0.0971),
+        b"bXYZ": (0.1431, 0.0606, 0.7141),
+    }
+    tags = {
+        name: b"XYZ " + bytes(4) + b"".join(_fixed(v) for v in xyz)
+        for name, xyz in primaries.items()
+    }
+    curve = b"curv" + bytes(4) + struct.pack(">IH", 1, 256)  # gamma 1.0
+    tags |= {b"rTRC": curve, b"gTRC": curve, b"bTRC": curve}
+    return _profile(b"RGB ", b"XYZ ", b"mntr", tags)
+
+
+def test_a_palette_png_with_an_rgb_profile_is_converted_and_keeps_its_transparency(
+    settings: Settings,
+) -> None:
+    profile = _linear_rgb_profile()
+    sRGB = ImageCms.createProfile("sRGB")
+    for transparent in (False, True):
+        source = _palette_png(transparent, icc_profile=profile)
+        stored = reopen(avatars.decode_attachment(settings, source, "image/png").data)
+        expanded = Image.open(io.BytesIO(source)).convert("RGB")
+        wanted = ImageCms.profileToProfile(
+            expanded, ImageCms.ImageCmsProfile(io.BytesIO(profile)), sRGB, outputMode="RGB"
+        )
+        assert wanted is not None
+        # Pixel (20, 20) is palette index 0, the red, on a plain image and a see-through one.
+        expected, naive = wanted.getpixel((20, 20)), expanded.getpixel((20, 20))
+        got = stored.convert("RGB").getpixel((20, 20))
+        assert all(abs(g - e) <= 3 for g, e in zip(got, expected, strict=True))
+        assert max(abs(g - n) for g, n in zip(got, naive, strict=True)) >= 20
+        assert "icc_profile" not in stored.info
+        assert stored.mode == ("RGBA" if transparent else "RGB")
+        if transparent:
+            assert stored.getpixel((20, 20))[3] == 0  # index 0 stayed transparent
+
+
+def test_a_palette_png_without_a_profile_keeps_its_transparency(settings: Settings) -> None:
+    stored = avatars.decode_attachment(settings, _palette_png(True), "image/png")
+    assert reopen(stored.data).mode == "RGBA" and reopen(stored.data).getpixel((1, 1))[3] == 0

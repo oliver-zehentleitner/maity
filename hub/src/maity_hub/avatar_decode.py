@@ -259,6 +259,10 @@ def process_file(data: bytes, content_type: str) -> bytes:
     image = ImageOps.exif_transpose(image)  # the photo as it is seen
     if image.mode in ("I;16", "I;16B", "I;16L", "I;16N", "I"):
         image = image.convert("I").point(lambda value: value * (1 / 256)).convert("L")
+    if image.mode in ("P", "PA"):  # a palette is expanded first, transparency kept
+        image = image.convert("RGBA" if alpha else "RGB")
+    elif image.mode == "1":
+        image = image.convert("L")
     image = _to_srgb(image, profile)  # from the source mode, before it is flattened
     keep_alpha = alpha and content_type != "image/jpeg"
     flat = image.convert("RGBA" if keep_alpha else "RGB")
