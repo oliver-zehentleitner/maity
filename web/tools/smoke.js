@@ -5607,6 +5607,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(["stat-number", "stat-number", "stat-trend"].every((c, i) => stRow("registrations").childNodes[i + 1].classList.contains(c))
     && thCss.includes(".stat-series td.stat-trend, .stat-series th.stat-trend { width: 120px;"),
     "statistics: the numbers right-aligned in tabular figures, the sparklines in one 120 px column");
+  // The contract text's cue for more never fades a line: a shadow behind the text, hidden at the end.
+  expect(/\.contract-text \{[^}]*background:[^}]*local[^}]*scroll; \}/.test(thCss) && !/\.contract-text \{[^}]*mask-image/.test(thCss),
+    "contract: the cue for more is a shadow behind the text, gone at the end, never a mask over the last line");
   expect(stCells("reviews")[1] === "38 since 2026-10-22" && text(stBox()).includes("Reviews are counted from 2026-10-22") && text(stBox()).includes("Today (UTC)") && text(stBox()).includes("11 after 7 days · 4 after 30 days")
     && text(stBox()).includes("Humans whose first visit lies at least 7 (or 30) days back") && text(stBox()).includes("Counted ")
     && stBox().querySelectorAll("details.stat-days tbody tr").length === 30,

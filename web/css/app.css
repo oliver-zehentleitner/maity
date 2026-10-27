@@ -1019,9 +1019,14 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .contract-section summary { cursor: pointer; font-size: 0.85rem; }
 .contract-bar { display: flex; justify-content: flex-end; margin: 4px 0; }
 /* At most 16rem, so a long section never pushes the card's action row off
-   screen; the fade says there is more (the designer's pass part 3). */
+   screen (the designer's pass part 3). A shadow at the bottom says there
+   is more, only while there is: a cover scrolling with the content
+   (attachment local) hides it once the end is reached. It lies behind the
+   text, so no line is ever faded. */
 .contract-text { max-height: 16rem; overflow: auto; border-left: 3px solid var(--border); padding-left: 8px; overflow-wrap: anywhere;
-  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent); }
+  background:
+    linear-gradient(transparent, var(--surface) 70%) center bottom / 100% 32px no-repeat local,
+    radial-gradient(farthest-side at 50% 100%, rgba(0, 0, 0, 0.18), transparent) center bottom / 100% 12px no-repeat scroll; }
 .contract-unresolved code { overflow-wrap: anywhere; }
 .contract-place { margin-top: 6px; }
 /* Statistics in the admin area (js/statistics.js, §16.6): tiles, one row
