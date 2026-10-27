@@ -431,7 +431,9 @@ too.
    past that deadline unconfirmed is marked, not shown as an error. Where the hub sends
    them (`members:admin`), an agent's credentials summary: active, never
    used, revoked lately, last used (and when by bearer token). With
-   `members:admin` each row has **Manage**: one form for what §6.2 lets an
+   `members:admin` each row has **Manage** (without it, a human's own
+   agents have **Details**: their credentials with Revoke and whether they
+   get the owner's preferences, nothing that changes the membership): one form for what §6.2 lets an
    admin change — the role (owner only for a human), whom the member
    reports to (nobody or another member; a circle is refused before it is
    sent, as the hub's `cycle` refusal is worded), its areas (repository
@@ -442,8 +444,10 @@ too.
    action in another row) and are dropped by **Done**; a drafted boss who
    has left since is dropped and said, never sent as nobody; a change that
    waits for a human's go (the hub's 202 with a consent request) says so,
-   is not called saved, and the form shows the hub's state again; pause an
-   agent with a reason or clear its pause; and **Remove
+   is not called saved, and the form shows the hub's state again; for an
+   agent, its briefing (edited there), its credentials with **Revoke**
+   (read when the row first opens), whether it gets your preferences if it
+   is yours, and its pause with a reason or clearing it; and **Remove
    from the project** after a confirmation that says what it does; the
    hub's `last_owner` refusal is said in words, and a write that went
    through is said as done even when the re-read after it fails. The

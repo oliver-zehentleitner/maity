@@ -193,8 +193,10 @@ window.Maity = window.Maity || {};
       .then((list) => ({ list }), (error) => ({ error }));
   }
 
-  // Shared with the Members view.
+  // Shared with the Members view, whose manage row holds an agent's
+  // credentials and briefing too (tsk-7v2snhk002ak).
   M.pauseWords = { effect: PAUSE_EFFECT, paused: PAUSED_EFFECT };
+  M.agentParts = { credentials, briefingControl, loadCredentials };
 
   M.views.agents = async function (ctx, root, args) {
     const agents = ctx.members.filter((m) => m.kind === "agent");

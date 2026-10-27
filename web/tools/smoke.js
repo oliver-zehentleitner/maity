@@ -1426,7 +1426,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && eSel(1).querySelectorAll("option")[0].textContent === "nobody", "members: reports to offers nobody and everyone else, set to the current one");
   await submitEdit();
   expect(!eWrites.length && text(main).includes("Nothing changed."), "members: nothing changed, nothing sent");
-  expect(!eRow().querySelector("textarea") && text(eRow()).includes("The briefing is edited on the agent's card"), "members: one briefing editor, on the agent's card");
+  // What the Agents page had is in the manage row (tsk-7v2snhk002ak): the briefing, the credentials with Revoke, the pause once.
+  for (let k = 0; k < 4; k++) await tick();
+  expect(eRow().querySelector(".briefing") && (btn(eRow().querySelector(".briefing"), "Edit briefing") || btn(eRow().querySelector(".briefing"), "Write a briefing")),
+    "members: an agent's manage row holds its briefing");
+  expect(eRow().querySelector(".member-credentials .credentials") && eRow().querySelectorAll("form.member-pause, .member-pause").length === 1,
+    "members: and its credentials, and one pause");
   eSel(1).value = "agt-d"; eSel(1).dispatch("change");
   eIn()[0].value = "docs/, web/tools/, docs/"; eIn()[0].dispatch("input");
   eIn()[1].checked = true; eIn()[1].dispatch("change");
@@ -1563,8 +1568,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       : mGet(p));
   await go("#/p/maity/inbox"); await go("#/p/maity/members");
   const ths2 = main.querySelectorAll("table.members")[1].querySelector("thead").querySelectorAll("th").map((t) => t.textContent);
-  expect(!btn(main, "Manage") && !ths2.includes("Credentials") && !ths2.includes("Actions") && text(mRow("Agent A")).includes("Maintainer"),
-    "members: a member reads the list without actions; the owner from the members");
+  expect(!btn(main, "Manage") && !ths2.includes("Credentials") && text(mRow("Agent A")).includes("Maintainer"),
+    "members: a member reads the list without managing; the owner from the members");
+  // A human's own agents open as Details: the credentials and the owner's preferences switch, nothing that changes the membership.
+  const ownDetails = btn(mRow("Agent A"), "Details");
+  expect(ownDetails && ths2.includes("Actions"), "members: one's own agent has Details, even without members:admin");
+  ownDetails.click(); for (let k = 0; k < 6; k++) await tick();
+  const ownRow = main.querySelector("tr.member-manage");
+  expect(ownRow && ownRow.querySelector(".member-credentials .credentials") && !ownRow.querySelector("form.member-edit") && !ownRow.querySelector(".member-pause")
+    && !btn(ownRow, "Remove from the project"), "members: the owner's details hold the credentials, no form that changes the membership");
   win.Maity.api.get = mGet;
 
   // Message the project (docs/api.md §8.4): from the Chat tab (tsk-r1adgwp0a5dr), no longer the inbox, no tab of its own.
