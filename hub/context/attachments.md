@@ -1,30 +1,29 @@
 # Attachments
 
-## Without MAITY_ATTACHMENT_DIR the hub starts and uploads answer `attachments_not_configured`
+## Without MAITY_ATTACHMENT_DIR the hub starts with attachments off and every attachment call answers `attachments_not_configured`
 
 **Id:** e188f028-5494-4c51-8328-cf368d3c4e39
 **Type:** decision
-**Status:** open
-**Evidence:** inferred
-**Source:** implementation session, 2026-10-27 (`docs/api.md` §8.7, §16); the contract says the directory is required and that the hub refuses to start without it
-**Revisit when:** the deployment values carry a volume and the variable for it, or the contract owner rules on the deviation
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's ruling of 2026-10-27 on this change, and the contract change it led to (#464); `docs/api.md` §8.7 and §16 said before that the directory is required and the hub refuses to start without it
+**Revisit when:** every deployment carries a volume for the directory, or an operator asks for a hub that refuses to start without it
 
-The contract makes `MAITY_ATTACHMENT_DIR` required for the default `local` store
-and has the hub refuse to start without it. Every deployment that exists
-today, and every test, starts without the variable. A hub that stops there
-would not come back on the next rollout until the Helm values and the
-compose file gained a volume. So the setting is validated when it is set
-(absolute, an existing directory, writable, else the hub stops), and when it
-is unset the hub starts and every attachment call answers `409
-attachments_not_configured` with the variable's name. `s3` stops the hub with a
-plain message: it is documented and not built.
+`MAITY_ATTACHMENT_DIR` is validated when it is set (an absolute path to an
+existing, writable directory, else the hub stops). When it is unset the hub
+starts with attachments switched off: every attachment call, and a message
+that names an attachment, answers `409 attachments_not_configured` with the
+variable's name. `s3` stops the hub with a plain message: it is documented and
+not built.
 
-**Open:** which of the two the contract owner wants once a volume is
-deployed: enforce the contract (required at start), or keep the hub usable
-without attachments.
+**Reason:** every deployment that exists today starts without the variable,
+and a hub that stopped there would not come back on the next rollout until its
+Helm values and compose file had gained a volume, for a feature nobody uses
+yet.
 
-**Rejected alternative:** enforcing the contract now: it breaks every deployment
-that has not added the volume, for a feature that is not yet used.
+**Rejected alternative:** the contract as first written, the directory
+required and the hub refusing to start without it: it breaks every deployment
+that has not yet added the volume.
 
 ## The blob is written before the row, and removed when the row never commits or is gone
 
