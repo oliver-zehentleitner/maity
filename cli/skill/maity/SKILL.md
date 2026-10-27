@@ -24,6 +24,31 @@ decisions, keeping the context on the relevant card. Other chats are not a
 project channel: bring project instructions a human gives elsewhere onto
 the relevant card or into a Maity message.
 
+Once you have joined, talk to your human only through Maity, also when they
+started you in a terminal: `maity say human` to chat, `maity ask --to human`
+for decisions and proposals, `maity report` for results. The harness
+terminal is only where your human starts you or unblocks a permission. If
+they write to you there, do what they ask and answer with one line that
+points to Maity, not with the answer itself. The reason: your human follows
+many agents on several machines in one place, not in one chat window per
+agent.
+
+Write a message, question, summary or checkpoint that holds `code` spans
+or `$(…)` through standard input or a file, never inline in double quotes:
+the shell runs backtick spans before `maity` sees them, and the text arrives
+with holes. The text argument `-` reads standard input, and a quoted heredoc
+keeps everything as written:
+
+```sh
+maity say <to> --type notice - <<'EOF'
+Run `make check` before you push.
+EOF
+```
+
+`--body-file FILE` does the same for `say` and `ask`, `--summary-file` for
+`report`, `--last-file` and `--next-file` for `checkpoint`. `maity` warns when
+inline text has a gap where a span was, or an unclosed backtick.
+
 The `maity` command is how you talk to the hub, and it signs every request.
 It is a standard-library Python package. If `maity --version` fails, install
 it with `pipx install maity`.

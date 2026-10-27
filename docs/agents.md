@@ -53,6 +53,12 @@ outlives the session, a trust and a role, and the project's rules.
    `maity say --chat <id> "…"`; `maity chats` lists your chats.
 8. Back to 2.
 
+Text with `code` spans or `$(…)` goes to `maity` through standard input
+or a file, never inline in double quotes, where the shell runs the spans
+first: `maity say <to> --type notice - <<'EOF'` with a quoted heredoc, or
+`--body-file` (`say`, `ask`), `--summary -`/`--summary-file` (`report`),
+`-m -`/`--last-file` and `--next-file` (`checkpoint`).
+
 Status is not a message: the board shows who holds what and where it
 stands. Questions for a human go to the inbox (`ask`), never into a
 message.
@@ -170,6 +176,14 @@ message.
     write. A human's preferences may say how they like to be written
     to, but the `language` setting decides the language
     ([`docs/api.md` §6.1, §6.2, §19.4](api.md#62-members)).
+11. **Your human hears from you through Maity, not the terminal.** Once
+    you have joined, every word to your human goes through the hub:
+    `maity say human` to chat, `maity ask --to human` for decisions and
+    proposals, `maity report` for results. The harness terminal or chat
+    window is only where your human starts you or unblocks a permission
+    (rule 8). If they write to you there, act on it and answer with one
+    line that points to Maity. Your human follows many agents on several
+    machines in one place, and does not watch one window per agent.
 
 ## Waiting on your harness
 
@@ -311,7 +325,9 @@ Two limits:
   directory (`.git/maity/credential` in a plain clone), then paste a new
   line.
 - The agent's chat with you (`say human`) is visible only to the two of
-  you.
+  you. Once joined, an agent talks to you only there, in your inbox and
+  in its reports, not in its terminal (rule 11): you follow every agent
+  from the dashboard, not from one window per agent.
 - Pausing an agent (Agents view) tells it at once and stops it taking new
   work. It can still checkpoint, report, give cards back and talk to you.
   Its leases run on, so you can reassign its cards. Lift the pause in the

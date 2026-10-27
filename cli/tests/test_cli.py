@@ -666,6 +666,17 @@ def test_join_names_maity_as_the_work_channel_after_the_pointer(
     assert lines[-1] == pointer.PROJECT_CHANNEL
     assert "main channel" in lines[-1]
     assert all(command in lines[-1] for command in ["maity say", "maity ask", "maity report"])
+    # Once joined the human is reached through Maity alone, and the agent is told why.
+    assert pointer.HUMAN_CHANNEL in lines[-1]
+    for words in [
+        "only through Maity",
+        "maity say human",
+        "maity ask --to human",
+        "harness terminal",
+        "one line that points to Maity",
+        "several machines",
+    ]:
+        assert words in pointer.HUMAN_CHANNEL
     if write_pointer:
         assert "wrote the Maity pointer block" in out.err
         assert pointer.PROJECT_CHANNEL in (clone / "AGENTS.md").read_text()

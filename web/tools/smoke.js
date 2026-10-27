@@ -554,6 +554,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main).includes("Areas") && text(main).includes("capabilities".slice(0, 0) + "tag"), "areas and capabilities");
   expect(text(byId("pause-agt-b").parentNode).includes("A pause tells the agent at once and refuses it new work (claims, new cards)"),
     "the pause form says what a pause does");
+  // The pause is folded into the card's Actions menu (the designer's pass part 3).
+  const acCard = byId("pause-agt-b").parentNode.parentNode;
+  const acMenu = acCard.querySelector("header button.agent-actions");
+  expect(byId("pause-agt-b").parentNode.hidden && acMenu && acMenu.getAttribute("aria-haspopup") === "menu",
+    "agents: the pause form is folded, an Actions menu in the card's header");
+  acMenu.click(); await tick();
+  const acItems = acCard.querySelectorAll("header .menu-item").map((b) => b.textContent);
+  expect(JSON.stringify(acItems) === JSON.stringify(["Pause…", "Edit briefing"]), "agents: Actions offers Pause… and Edit briefing " + JSON.stringify(acItems));
+  acCard.querySelectorAll("header .menu-item").find((b) => b.textContent === "Pause…").click(); await tick();
+  expect(!byId("pause-agt-b").parentNode.hidden, "agents: Pause… opens the pause form");
+  btn(byId("pause-agt-b").parentNode, "Cancel").click(); await tick();
+  expect(byId("pause-agt-b").parentNode.hidden, "agents: Cancel folds it again");
   // Briefing: shown to an owner, edited in place with PATCH members.
   const patches = [];
   const realPatch = win.Maity.api.patch;
@@ -1696,11 +1708,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "contract: opened, the section as Markdown with the short commit, when it was read, and the file on the forge");
   expect(!ctBody().querySelector("a.mention") && !ctBody().querySelector("a.id-ref") && text(ctBody()).includes("Ask @agent-a about tsk-0123456789ab")
     && ctLinks.length === 2, "contract: the repository's text is untrusted: no mention, no id link, only its own link and the forge's");
+  // Refresh is a text button in the line that says what was read; the source's form waits behind Change source.
+  const ctChange = btn(ctBox(), "Change source");
+  expect(btn(ctBody().querySelector(".contract-meta"), "Refresh") && !ctBox().querySelector(".contract-bar")
+    && ctBox().querySelector("form.contract-place").hidden && ctChange && ctChange.getAttribute("aria-expanded") === "false",
+    "contract: Refresh in the meta line, the source's form folded behind Change source");
+  ctChange.click(); await tick();
+  expect(!ctBox().querySelector("form.contract-place").hidden && ctChange.getAttribute("aria-expanded") === "true", "contract: Change source opens the form");
+  ctChange.click(); await tick();
   btn(ctBox(), "Refresh").click(); for (let k = 0; k < 4; k++) await tick();
   expect(ctGets.length === 2, "contract: Refresh reads again");
   win.Maity.api.get = (p) => (p.endsWith("/contract") ? Promise.reject(new win.Maity.api.ApiError("the forge did not answer", 503, p, "probe_unavailable")) : ctGet(p));
   btn(ctBox(), "Refresh").click(); for (let k = 0; k < 4; k++) await tick();
-  expect(!ctBody().querySelector(".contract-text") && text(ctBody()) === "docs/api.md § 8.2 is not shown: the forge did not answer (probe_unavailable).",
+  expect(!ctBody().querySelector(".contract-text") && text(ctBody()) === "docs/api.md § 8.2 is not shown: the forge did not answer (probe_unavailable). Refresh",
     "contract: a failed read shows the place and the hub's code, never the older text");
   win.Maity.api.get = (p) => { if (p.endsWith("/contract")) ctGets.push(p); return ctGet(p); };
   const ctBeforeSave = ctGets.length;
@@ -1708,12 +1728,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(ctPatches.length === 1 && JSON.stringify(ctPatches[0][1]) === JSON.stringify({ contract: { path: "docs/api.md", section: "4.1" } })
     && text(ctBox().querySelector("summary")) === "Contract section: docs/api.md § 4.1", "contract: the section changed by one PATCH, the card drawn anew");
   expect(ctBox().open && ctGets.length === ctBeforeSave + 1, "contract: after a save the panel stays open and reads the new section once");
-  expect(text(ctBody()) === "docs/api.md § 4.1 is not shown: the file has two headings with this number; the hub shows neither (ambiguous_in_file).",
+  expect(text(ctBody()) === "docs/api.md § 4.1 is not shown: the file has two headings with this number; the hub shows neither (ambiguous_in_file). Refresh",
     "contract: ambiguous_in_file said with its code");
   await ctSave("docs/api.md", "9.99"); await ctOpen();
-  expect(text(ctBody()).endsWith("the file has no heading with this number (not_found_in_file)."), "contract: not_found_in_file said with its code");
+  expect(text(ctBody()).endsWith("the file has no heading with this number (not_found_in_file). Refresh"), "contract: not_found_in_file said with its code");
   await ctSave("docs/runner.md", "1"); await ctOpen();
-  expect(text(ctBody()) === "docs/runner.md § 1 is not shown: the hub has no forge token for this repository (probe_not_configured).",
+  expect(text(ctBody()) === "docs/runner.md § 1 is not shown: the hub has no forge token for this repository (probe_not_configured). Refresh",
     "contract: probe_not_configured said with its code");
   await ctSave("docs/api.md", "9.1"); await ctOpen();
   expect(text(ctBody()).includes("Cut at 64 KiB; the whole section is in the file (open it)."), "contract: a cut section says so and links the file");
@@ -1744,7 +1764,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && (() => { const kids = plBox().parentNode.childNodes; return kids[kids.indexOf(plBox()) + 1] === main.querySelector(".earlier-box"); })(),
     "placements: a section in Agents after the grid, one row per placement");
   expect(text(plRow("plc-0001")).includes("on home-laptop") && plFacts("plc-0001").includes("claude-code · opus · interactive")
-    && plFacts("plc-0001").includes("Wantedrunning") && plFacts("plc-0001").includes("running · since") && plFacts("plc-0001").includes("Generation4")
+    && plFacts("plc-0001").includes("Wantedrunning") && plFacts("plc-0001").includes("running · since") && plFacts("plc-0001").includes("· generation 4")
+    && plRow("plc-0001").querySelector(".placement-state").classList.contains("pill-ok")
     && btn(plRow("plc-0001"), "Stop") && btn(plRow("plc-0001"), "Restart") && !btn(plRow("plc-0001"), "Restart with a new join"),
     "placements: a running one — runner, harness, model, mode, wanted, reported, generation; Stop and Restart");
   expect(plFacts("plc-0002").includes("stopped: stopped as asked") && btn(plRow("plc-0002"), "Start") && btn(plRow("plc-0002"), "Restart with a new join"),
@@ -1755,7 +1776,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(plFacts("plc-0004").includes("Waits for consent to start") && plConsent && plConsent.getAttribute("href") === "#/p/maity/inbox/req-0012"
     && !plRow("plc-0004").querySelectorAll("button").length, "placements: pending consent links to its request in the inbox, and offers nothing else here");
   expect(text(plRow("plc-0001")).includes("Session: tmux -S /var/lib/maity-runner/tmux.sock attach") && text(plRow("plc-0001")).includes("Logs: maity runner logs plc-0001")
-    && !text(plRow("plc-0002")).includes("Session:"), "placements: the runner's owner sees how to look at it");
+    && plRow("plc-0001").querySelectorAll(".placement-command").length === 2 && plRow("plc-0001").querySelectorAll(".placement-command button").every((b) => b.textContent === "Copy")
+    && !text(plRow("plc-0002")).includes("Session:"), "placements: the runner's owner sees how to look at it, each command in its box with Copy");
+  expect(plRow("plc-0003").querySelector(".placement-state").classList.contains("pill-bad") && plRow("plc-0004").querySelector(".placement-consent").classList.contains("pill-warn"),
+    "placements: the state is a pill, a failure red, a consent waiting amber");
   const plStop = btn(plRow("plc-0001"), "Stop");
   plStop.click(); plStop.click(); for (let k = 0; k < 6; k++) await tick();
   expect(plPatches.length === 1 && plPatches[0][0] === "/projects/maity/placements/plc-0001" && JSON.stringify(plPatches[0][1]) === JSON.stringify({ desired: "stopped" })
@@ -1784,7 +1808,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     : p === "/projects/maity/members" ? plGetAll(p).then((r) => ({ items: r.items.map((x) => Object.assign({}, x, x.kind === "agent" ? { owner_id: "hum-other" } : {})), next_cursor: null })) : plGetAll(p));
   win.Maity.api.get = (p) => (p === "/projects/maity/members" ? plGet(p).then((r) => Object.assign({}, r, { items: r.items.map((x) => Object.assign({}, x, x.kind === "agent" ? { owner_id: "hum-other" } : {})) })) : plGet(p));
   await go("#/p/maity/inbox"); await go("#/p/maity/agents"); for (let k = 0; k < 8; k++) await tick();
-  expect(plBox() && !plBox().querySelectorAll("button").length, "placements: a runner someone else owns gives a project admin no actions");
+  // Copy beside a runner command is no action on the placement.
+  const plActs = () => plBox().querySelectorAll("button").filter((b) => !b.getAttribute("aria-label") || !b.getAttribute("aria-label").startsWith("Copy the "));
+  expect(plBox() && !plActs().length, "placements: a runner someone else owns gives a project admin no actions");
   // One's own runner gives the rights, also over agents someone else owns.
   win.Maity.api.getAll = (p) => (p === "/runners" ? plRunner("hum-maintainer")
     : p === "/projects/maity/members" ? plGetAll(p).then((r) => ({ items: r.items.map((x) => Object.assign({}, x, x.kind === "agent" ? { owner_id: "hum-other" } : {})), next_cursor: null })) : plGetAll(p));
@@ -1815,7 +1841,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.getAll = (p) => (p === "/runners" ? Promise.resolve({ items: [], next_cursor: null })
     : p === "/projects/maity/members" ? plGetAll(p).then(othersOwn) : plGetAll(p));
   await go("#/p/maity/inbox"); await go("#/p/maity/agents"); for (let k = 0; k < 8; k++) await tick();
-  expect(plBox() && plBox().querySelectorAll("li.placement").length === 4 && !plBox().querySelectorAll("button").length,
+  expect(plBox() && plBox().querySelectorAll("li.placement").length === 4 && !plActs().length,
     "placements: neither the runner's nor the agent's owner sees no actions");
   win.Maity.api.post = plPost; win.Maity.api.patch = plPatch; win.Maity.api.get = plGet; win.Maity.api.getAll = plGetAll;
   win.Maity.api.forgetRoutes();
@@ -1896,6 +1922,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && idHrefs(idBox(IDS.link("tsk-0123456789ab #12", { slug: "maity", repository: "https://gitlab.com/o/r" }))) === "tsk-0123456789ab=#/p/maity/tasks/tsk-0123456789ab"
     && idHrefs(idBox(IDS.link("tsk-0123456789ab #12", { slug: null, repository: "https://github.com/o/r.git" }))) === "#12=https://github.com/o/r/issues/12",
     "ids: without a project no id links, without a GitHub repository no number does");
+  // An id is one unit, linked or not (the designer's pass part 3): an unlinked one in the code face too.
+  const idPlain = idBox(IDS.link("see tsk-0123456789ab and #12", { slug: null, repository: "https://github.com/o/r" }));
+  expect(text(idPlain) === "see tsk-0123456789ab and #12" && idPlain.querySelectorAll("span.id-ref").map((x) => text(x)).join() === "tsk-0123456789ab"
+    && idHrefs(idPlain) === "#12=https://github.com/o/r/issues/12",
+    "ids: an id that links nowhere still reads as one (span.id-ref) beside the links");
+  expect(thCss.includes(".id-ref { font-family: var(--mono); font-size: 0.9em; white-space: nowrap; }") && thCss.includes("a.id-ref { text-decoration: none; }"),
+    "ids: never broken across lines, underlined only on hover");
   const mdIds = idBox(win.Maity.markdown("Do tsk-0123456789ab **after #12**, not `tsk-0123456789ab`; [tsk-0123456789ab](https://example.org/x)\n\n```\nreq-abcdefghjkmn\n```", idAt));
   expect(idHrefs(mdIds) === "tsk-0123456789ab=#/p/maity/tasks/tsk-0123456789ab #12=https://github.com/oliver-zehentleitner/maity/issues/12"
     && mdIds.querySelector("strong a.id-ref") && mdIds.querySelector("code").textContent === "tsk-0123456789ab" && !mdIds.querySelector("pre a"),
@@ -3169,6 +3202,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && setupKeys.map((k) => text(setupRow(k)).trim()).join("|") === "Set up Keep the Why in the repository|Add the Keep the Why badge to the README|Add the Maity badge to the README"
     && text(main).includes("an agent sets it up in the repository, through the setup cards below"),
     "create: Project memory with Keep the Why preselected, the three setup options ticked, the setup's agent said");
+  const cpNote = byId("setup-maity_badge-note");
+  expect(cpNote && byId("setup-maity_badge").getAttribute("aria-describedby") === "setup-maity_badge-note" && text(cpNote).includes("how many humans and agents")
+    && cpNote.parentNode === setupRow("maity_badge").parentNode && !text(byId("project-setup-hint")).includes("badge")
+    && main.querySelectorAll("button").find((b) => b.textContent === "Create project").classList.contains("primary"),
+    "create: the Maity badge's consequence right under its checkbox; Create project is primary");
+  // The policy select names the presets; what one means is the hint under it, following the choice.
+  expect(byId("project-preset").querySelectorAll("option").map((o) => text(o)).join() === "Hierarchical,Solo"
+    && text(byId("project-preset-hint")).startsWith("Reviewers move cards to done"),
+    "create: the policy options are the presets' names, the hint says what the chosen one means");
+  byId("project-preset").value = "solo"; byId("project-preset").dispatch("change");
+  expect(text(byId("project-preset-hint")).startsWith("The holder moves its own card"), "create: the hint follows the chosen preset");
+  byId("project-preset").value = "hierarchical"; byId("project-preset").dispatch("change");
   // The hub's refusal of an option is said at the options.
   const spPost = win.Maity.api.post;
   win.Maity.api.post = (p, b) => (p === "/projects" ? Promise.reject(new win.Maity.api.ApiError("does not validate", 400, p, "invalid", { fields: { "setup.maity_badge": "not_a_boolean" } })) : spPost(p, b));
@@ -5654,12 +5699,28 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const stTiles = () => stBox().querySelectorAll("li.stat-tile").map((li) => text(li));
   expect(stBox() && main.querySelectorAll(".admin-section")[0] === stBox() && stGets[0] === "/admin/statistics?days=30",
     "statistics: the admin area's first section, read for 30 days");
+  // One section at a time, picked in a row of buttons; it opens on Statistics.
+  const adNav = () => main.querySelector("nav.admin-nav");
+  const adSections = () => main.querySelectorAll(".admin-section");
+  expect(adNav() && adNav().querySelectorAll("button").map((b) => b.textContent).join() === adSections().map((x) => x.getAttribute("aria-label")).join()
+    && !stBox().hidden && adSections().slice(1).every((x) => x.hidden) && adNav().querySelectorAll("button")[0].getAttribute("aria-pressed") === "true",
+    "admin: a row of section buttons, Statistics shown, the rest folded");
+  btn(adNav(), "Users").click(); await tick();
+  const adUsers = adSections().find((x) => x.getAttribute("aria-label") === "Users");
+  expect(!adUsers.hidden && stBox().hidden && btn(adNav(), "Users").getAttribute("aria-pressed") === "true", "admin: a button shows its section alone");
+  btn(adNav(), "Statistics").click(); await tick();
   expect(JSON.stringify(stTiles()) === JSON.stringify(["41Humans2 waiting for approval", "117Agent profiles", "12Projectsnot archived", "23Agent instances online", "29Humans with an agent"]),
     "statistics: the totals as tiles " + JSON.stringify(stTiles()));
   expect(stCells("registrations")[0] === "Registrations" && stCells("registrations")[1] === "36" && stCells("registrations")[2] === "3"
     && stCells("humans_active")[1] === "up to 16 a day" && (() => { const sv = stRow("cards_done").childNodes[3].childNodes[0]; return sv && String(sv.tagName).toLowerCase() === "svg" && sv.getAttribute("aria-hidden") === "true"
       && sv.childNodes.some((n) => String(n.tagName).toLowerCase() === "polyline"); })(),
     "statistics: a series sums its days, people show their highest day, today beside it " + JSON.stringify([stCells("registrations"), stCells("humans_active")]));
+  expect(["stat-number", "stat-number", "stat-trend"].every((c, i) => stRow("registrations").childNodes[i + 1].classList.contains(c))
+    && thCss.includes(".stat-series td.stat-trend, .stat-series th.stat-trend { width: 120px;"),
+    "statistics: the numbers right-aligned in tabular figures, the sparklines in one 120 px column");
+  // The contract text's cue for more never fades a line: a shadow behind the text, hidden at the end.
+  expect(/\.contract-text \{[^}]*background:[^}]*local[^}]*scroll; \}/.test(thCss) && !/\.contract-text \{[^}]*mask-image/.test(thCss),
+    "contract: the cue for more is a shadow behind the text, gone at the end, never a mask over the last line");
   expect(stCells("reviews")[1] === "38 since 2026-10-22" && text(stBox()).includes("Reviews are counted from 2026-10-22") && text(stBox()).includes("Today (UTC)") && text(stBox()).includes("11 after 7 days · 4 after 30 days")
     && text(stBox()).includes("Humans whose first visit lies at least 7 (or 30) days back") && text(stBox()).includes("Counted ")
     && stBox().querySelectorAll("details.stat-days tbody tr").length === 30,

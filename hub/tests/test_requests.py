@@ -104,6 +104,7 @@ def test_a_request_has_the_contract_shape_and_goes_to_the_agents_human(
         "avatar_url": None,
         "role": "member",
         "session_id": session,
+        "instance": agent.instance,  # the instance that asked (§7, §6.17)
     }
     assert (body["status"], body["answer"], body["while_open"]) == ("open", None, "wait")
     created = _events(migrated, "request_created")[-1]

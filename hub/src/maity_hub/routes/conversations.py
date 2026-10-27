@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, func, select
 
-from maity_hub import events, group_chats, idempotency, paging
+from maity_hub import events, group_chats, idempotency, instances, paging
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.auth.caller import Caller
@@ -147,6 +147,8 @@ def message_views(conn: Connection, rows: list[Any], reader: Any = None) -> list
         if rows
         else {}
     )
+    # A message from an agent names its instance (§9, §6.17); a human's has none.
+    instance_of = instances.instances_of(conn, [r.actor_credential_id for r in rows])
     views = []
     for row in rows:
         payload = row.payload or {}
@@ -156,6 +158,7 @@ def message_views(conn: Connection, rows: list[Any], reader: Any = None) -> list
             "seq": row.seq,
             "conversation_id": row.conversation_id,
             "from": principal_id(conn, row.actor_membership),
+            "from_instance": instance_of.get(row.actor_credential_id or ""),
             "to": payload.get("to"),
             "body": None if row.redacted else payload.get("body"),
             "sent_at": ts(row.at),

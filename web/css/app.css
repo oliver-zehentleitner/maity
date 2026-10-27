@@ -390,8 +390,12 @@ a.mention:hover, a.mention:focus-visible { text-decoration: underline; }
 .card header { font-size: 0.8rem; }
 .card-id, .handle { font-family: var(--mono); font-size: 0.8rem; color: var(--muted); }
 .card.wanted { box-shadow: 0 0 0 2px var(--accent); }
-/* An id in text as a link (js/ids.js): the id as written, in the code face. */
-a.id-ref { font-family: var(--mono); font-size: 0.92em; white-space: nowrap; }
+/* An id in text (js/ids.js), linked or not: the id as written, in the code
+   face, never broken across lines; underlined only on hover, so a dense
+   paragraph with several ids stays quiet (the designer's pass part 3). */
+.id-ref { font-family: var(--mono); font-size: 0.9em; white-space: nowrap; }
+a.id-ref { text-decoration: none; }
+a.id-ref:hover, a.id-ref:focus-visible { text-decoration: underline; }
 .request-id { white-space: nowrap; }
 .area, .label-tag { font-family: var(--mono); font-size: 0.8rem; background: var(--surface-2); border-radius: 4px; padding: 0 6px; }
 .card-release { border-left: 3px solid var(--accent); }
@@ -482,7 +486,7 @@ a.id-ref { font-family: var(--mono); font-size: 0.92em; white-space: nowrap; }
 
 /* ---- agents --------------------------------------------------------- */
 
-.profiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--gap); }
+.profiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--gap); align-items: start; }
 
 .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; background: var(--muted); flex: none; }
 .dot.online { background: var(--ok); }
@@ -505,6 +509,10 @@ a.id-ref { font-family: var(--mono); font-size: 0.92em; white-space: nowrap; }
 .pause { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 8px; }
 .pause input { flex: 1 1 10rem; }
 .pause .hint { flex: 1 1 100%; }
+.pause[hidden] { display: none; }
+/* An agent card's Actions menu, at the header's end (the designer's pass part 3). */
+.profile header .menu-box { margin-inline-start: auto; }
+.menu-button.agent-actions { font-size: 0.85rem; padding: 4px 10px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); }
 .hint { margin: 0; font-size: 0.8rem; color: var(--muted); }
 .flag .hint { display: block; margin-top: 4px; }
 .briefing { margin-top: 10px; }
@@ -1046,6 +1054,8 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .project-setup legend { font-size: 0.85rem; font-weight: 600; padding: 0 4px; }
 .project-setup .check[hidden] { display: none; }
 .project-setup .hint { margin: 0; }
+/* What an option does beyond its card, under its label, read before ticking. */
+.project-setup .check-note { display: block; margin: 2px 0 0 24px; font-size: 0.8rem; }
 .badge-preview { display: block; height: 20px; max-width: 100%; }
 .badge-form .paste-row { min-width: 0; }
 .badge-form .paste-line { overflow-wrap: anywhere; }
@@ -1053,8 +1063,23 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* A contract card's section from the repository (js/contract-panel.js, §6.8). */
 .contract-section { margin-top: 6px; border-top: 1px solid var(--border); padding-top: 6px; min-width: 0; }
 .contract-section summary { cursor: pointer; font-size: 0.85rem; }
-.contract-bar { display: flex; justify-content: flex-end; margin: 4px 0; }
-.contract-text { max-height: 24rem; overflow: auto; border-left: 3px solid var(--border); padding-left: 8px; overflow-wrap: anywhere; }
+/* Refresh and Change source are small text buttons (the designer's pass part 3). */
+.contract-meta .link-button, .contract-unresolved .link-button { padding: 0; min-height: 0; font-size: inherit; }
+.contract-change-row { margin: 4px 0 0; font-size: 0.85rem; }
+.contract-place[hidden] { display: none; }
+/* The admin area's sections, one at a time (the designer's pass part 3). */
+.admin-nav { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }
+.admin-nav button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.admin-section[hidden] { display: none; }
+/* At most 16rem, so a long section never pushes the card's action row off
+   screen (the designer's pass part 3). A shadow at the bottom says there
+   is more, only while there is: a cover scrolling with the content
+   (attachment local) hides it once the end is reached. It lies behind the
+   text, so no line is ever faded. */
+.contract-text { max-height: 16rem; overflow: auto; border-left: 3px solid var(--border); padding-left: 8px; overflow-wrap: anywhere;
+  background:
+    linear-gradient(transparent, var(--surface) 70%) center bottom / 100% 32px no-repeat local,
+    radial-gradient(farthest-side at 50% 100%, rgba(0, 0, 0, 0.18), transparent) center bottom / 100% 12px no-repeat scroll; }
 .contract-unresolved code { overflow-wrap: anywhere; }
 .contract-place { margin-top: 6px; }
 /* Statistics in the admin area (js/statistics.js, §16.6): tiles, one row
@@ -1068,6 +1093,10 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .stat-note { font-size: 0.8rem; }
 .stat-series { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .stat-series th, .stat-series td { text-align: left; padding: 4px 8px 4px 0; border-bottom: 1px solid var(--border); }
+/* The number columns right-aligned in tabular figures, the sparkline column
+   120 px wide so every line starts at one x (the designer's pass part 3). */
+.stat-series td.stat-number, .stat-series th.stat-number { text-align: right; font-variant-numeric: tabular-nums; }
+.stat-series td.stat-trend, .stat-series th.stat-trend { width: 120px; padding-inline-start: 12px; }
 .sparkline { display: block; color: var(--accent); }
 .sparkline .spark-line { stroke: currentColor; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .sparkline .spark-dot { fill: currentColor; }
@@ -1085,6 +1114,17 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .placement .facts { margin: 0; }
 .placement-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .placement-consent, .placement-waiting { color: var(--muted); }
+/* The reported state as a pill with a dot (the designer's pass part 3). */
+.pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 1px 10px; border: 1px solid var(--border); font-size: 0.88rem; }
+.pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
+.pill-ok { color: var(--ok); }
+.pill-bad { color: var(--bad); border-color: var(--bad); }
+.pill-warn { color: var(--warn); border-color: var(--warn); }
+.pill-idle { color: var(--muted); }
+/* A runner command in a box that scrolls, with Copy beside it. */
+.placement-hints { display: grid; gap: 4px; }
+.placement-command { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 0.85rem; }
+.placement-command code { flex: 1 1 auto; min-width: 0; overflow-x: auto; white-space: nowrap; padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); }
 /* The instance's landing page (js/landing.js, §16.7): the face of the
    instance, with room; the large lockup in the theme's pair. */
 .landing { max-width: 44rem; margin: 32px auto 48px; display: grid; gap: 16px; }
