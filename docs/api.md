@@ -7798,7 +7798,10 @@ included, is `invalid` (`details.fields.after` or `.before`), and the
 two together are `invalid`. `before` pages backwards newest first here,
 unlike `before` on a conversation's messages (§9.2), which returns
 its page oldest first: a chat is read top to bottom, this listing from
-the newest down. `next_cursor` continues in the same direction. A cursor
+the newest down. `next_cursor` continues in the same direction. A page examines a bounded number of events (the hub's scan budget): when a sparse
+filter uses it up first, the page holds fewer than `limit` items, none at worst, and
+`next_cursor` goes on after the last event examined; `next_cursor` is `null` only at
+the end of the history. A cursor
 is valid only with the same `after`, `before` and `type` it was handed
 out with (§1.4); a cursor sent with any of them changed, added or left
 out is `invalid` (`details.fields.cursor`). There is no `wait`: the long-poll

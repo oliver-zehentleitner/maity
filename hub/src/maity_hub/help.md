@@ -603,6 +603,9 @@ the inbox.
   `POST …/events` (messages); `POST …/events/{seq}/redact` for human
   admins.
 - `GET …/conversations`, `GET`/`POST …/conversations/{agent_id}/messages`.
+- `GET /api/v1/projects/{slug}/messages` — the project's messages (not chats)
+  as one listing, newest first (`type`, repeatable; `before`, `after`, `limit`,
+  `cursor`); what you read on `GET …/events`, no more.
 - `GET /api/v1/projects/{slug}/jour-fixe` — the series, the moderator
   order, the next time, the current and the last round. `PUT
   …/jour-fixe/moderators` — `{"order", "reason"}`, admin agents.
