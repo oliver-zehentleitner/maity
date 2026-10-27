@@ -120,6 +120,7 @@ inferred, the ruling chose without stating it):
 **Status:** active
 **Evidence:** inferred
 **Source:** the contract owner's rulings of 2026-10-22 on the card links and import contract (only the configured repository is queried; imported mentions neutralised by a rule that does not depend on Markdown), after a review found two bypasses and a disclosure path
+**Verification:** corroborated — re-checked 2026-10-27 after §8.6's handle rule changed (aliases, ambiguity across handles and aliases): the import neutralises every `@` whether or not it would be a mention, so the rule does not depend on which handles exist or how they resolve
 **Revisit when:** a project spans several repositories, or §8.6's handle rule changes
 
 Forge links to another repository of the same owner are accepted but
