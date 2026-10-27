@@ -107,7 +107,7 @@ window.Maity = window.Maity || {};
     // Who is signed in, as a small row, with a way out when it is someone else.
     append(ways, h("p", { class: "door-who" }, M.avatar ? M.avatar(me, 24) : null,
       h("span", { class: "muted" }, "Signed in as " + me.display_name + " · @" + me.handle),
-      M.logout ? h("button", { type: "button", class: "link-button", onclick: () => M.logout() }, "Not you? Sign out") : null), accept, status.el);
+      M.logout ? h("button", { type: "button", class: "link-button", onclick: () => M.logout("/" + here) }, "Not you? Sign out") : null), accept, status.el);
   }
 
   // The reason a refusal names, beside the hub's words.

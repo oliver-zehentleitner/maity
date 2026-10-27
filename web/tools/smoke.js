@@ -1970,6 +1970,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && thCss.includes(".card-panel h3, .card-panel h4 { font-size: 0.85rem; text-transform: uppercase;")
     && /@media \(max-width: 600px\) \{\s*\.board-body\.has-panel > \.columns \{ display: none; \}/.test(thCss),
     "card panel: one id and one title, the controls right under the claim, one heading style, the panel alone on a phone " + JSON.stringify(dpKids));
+  // A refresh that brings a new title brings it to the panel's heading too (H on #461).
+  const rtCard = (title) => { const a = document.createElement("article"); a.setAttribute("aria-label", title); return a; };
+  const rtPanel = win.Maity.cardPanel.render({ slug: "maity", project: { state: "build", repository: null }, base: "/projects/maity", link: (v, id) => "#/p/maity/" + v + "/" + id, me: { id: "hum-maintainer", kind: "human" }, members: [], memberById: {} }, { id: "tsk-0004", title: "Old title", links: [] }, rtCard("Old title"), () => {});
+  rtPanel.update(rtCard("New title"));
+  expect(text(rtPanel.el.querySelector(".panel-title")) === "New title", "card panel: a refresh's new title reaches the heading");
   // The opened card (js/card-panel.js): the card with its controls, the body, the open notes with a form, the history.
   await go("#/p/maity/board"); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
   const cpCard = () => main.querySelector(".columns").querySelectorAll("article.card").find((a) => a.attrs["data-card"] === "tsk-0001");
@@ -4770,6 +4775,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "Not joined: this invitation is for another address (invitation_address_mismatch)", "Not joined: the request does not validate (already_member)",
     "Not joined: the person who invited you can no longer give this role (invitation_void)", "Not joined: the project is closed (project_closed)",
     "Not joined: your account waits for approval (account_pending)"]), "invite: each refusal said in the hub's words with its reason " + JSON.stringify(ivSaid));
+  // Not you? Sign out (H on #461): signed out, the same invitation again, with its ways in; never the root.
+  const soPost = win.Maity.api.post, soEnd = win.Maity.api.endSession, soGet = win.Maity.api.get;
+  let soOut = false;
+  win.Maity.api.post = (p, b) => (p === "/auth/logout" ? (soOut = true, Promise.resolve({})) : soPost(p, b));
+  win.Maity.api.endSession = () => {};
+  win.Maity.api.get = (p) => (soOut && (p === "/auth/session" || p === "/me") ? Promise.reject(new win.Maity.api.ApiError("signed out", 401, p, "unauthenticated")) : soGet(p));
+  await go("#/invite/void-xxxxxxxxxxxxxxxx6"); for (let k = 0; k < 6; k++) await tick();
+  btn(ivArticle(), "Not you? Sign out").click(); for (let k = 0; k < 8; k++) await tick();
+  expect(soOut && win.location.hash === "#/invite/void-xxxxxxxxxxxxxxxx6" && ivArticle()
+    && ivArticle().querySelectorAll("a").some((a) => text(a) === "Sign in to accept") && !btn(ivArticle(), "Not you? Sign out"),
+    "invite: Not you? Sign out signs out and shows the same invitation, signed out " + win.location.hash);
+  win.Maity.api.post = soPost; win.Maity.api.endSession = soEnd; win.Maity.api.get = soGet;
+  if (win.Maity.notify && win.Maity.notify.resume) win.Maity.notify.resume();
   win.Maity.api.post = ivPost; win.Maity.api.del = ivDel;
   // A next that is no dashboard route of this page is no next (§2.6.5): signed in, #/login goes to the start instead.
   const nxStart = (await win.Maity.api.get("/me")).projects.length === 1 ? "#/p/maity/inbox" : "#/all";

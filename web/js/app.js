@@ -257,7 +257,11 @@ window.Maity = window.Maity || {};
       h("button", { type: "button", onclick: logout }, "Sign out")));
   }
 
-  async function logout() {
+  // back: a dashboard route ("/#/…", checked as a sign-in's next is) to
+  // show once signed out, e.g. the invitation that offered Not you? Sign
+  // out (H on #461); anything else, and none, is the root.
+  async function logout(back) {
+    const after = safeNext(back);
     // The held long-poll goes before the session does (§18.2).
     M.notify.halt();
     // Signing out on purpose is no session that ended under the page.
@@ -271,7 +275,7 @@ window.Maity = window.Maity || {};
       if (M.clearChatDrafts) M.clearChatDrafts();
       M.notify.stopBrowser();
       M.notify.state.settings = null;
-      window.location.hash = "";
+      window.location.hash = after ? after.slice(1) : "";
       render();
     }
   }

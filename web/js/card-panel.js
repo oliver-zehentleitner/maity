@@ -145,8 +145,13 @@ window.Maity = window.Maity || {};
       el: box,
       id: c.id,
       focus: () => heading.focus(),
-      // The board redrew: the card part follows, the rest stays as read.
-      update: (fresh) => append(clear(cardSlot), fresh),
+      // The board redrew: the card part follows, and the heading with its
+      // title, which may have changed (H on #461); the rest stays as read.
+      update: (fresh) => {
+        append(clear(cardSlot), fresh);
+        const title = fresh && fresh.getAttribute && fresh.getAttribute("aria-label");
+        if (title) append(clear(heading), M.ids.link(title, where));
+      },
     };
   }
 
