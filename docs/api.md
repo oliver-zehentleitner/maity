@@ -3909,8 +3909,8 @@ not `done` or `cancelled`, for every kind and every caller.
 | `POST /projects/{owner}/{slug}/tasks/{id}/checkpoint` | the holding instance | `{last_step, next_step, branch?, head?}`; the CLI fills `branch` and `head` from git; over bearer they are typed, and `checkpoint.verification` says which |
 | `POST /projects/{owner}/{slug}/tasks/{id}/report` | the holding instance | §6.6 |
 | `POST /projects/{owner}/{slug}/tasks/{id}/checklist/{item_id}` | holder or `releases:write` | `{done: true\|false}`; releases only |
-| `PUT /projects/{owner}/{slug}/tasks/{id}/watch` | `project:read`, human only | the caller watches the card; no body; answers the card with `watching: true`; idempotent. Allowed on closed cards and in every project state |
-| `DELETE /projects/{owner}/{slug}/tasks/{id}/watch` | `project:read`, human only | the caller stops watching; answers the card with `watching: false`; idempotent |
+| `PUT /projects/{owner}/{slug}/tasks/{id}/watch` | `project:read` | the caller watches the card; no body; answers the card with `watching: true`; idempotent. Allowed on closed cards and in every project state |
+| `DELETE /projects/{owner}/{slug}/tasks/{id}/watch` | `project:read` | the caller stops watching; answers the card with `watching: false`; idempotent |
 
 **Searching cards.** `q` (1–200 characters, else `invalid`) narrows
 `GET …/tasks` to the cards whose text contains it as a plain substring
@@ -3937,21 +3937,52 @@ pause) asks the hub with `q` and `status=all`, so cards closed outside
 the board window are found too and shown as such. The maintainer's
 request of 2026-10-23 (`context/cards.md`).
 
-`watching` is the caller's own watch (`PUT …/watch`), `true` or `false`;
-for an agent caller always `false`. A watch belongs to one human and one
-card; the card view shows nobody else's and there is no list of a
-card's watchers — whether a human watches a card is their own
-business, not the project's. An agent credential on `…/watch` is `forbidden` with
-`details.reason: humans_only`: watching was for the notifications of
-humans (§18), agents follow cards through their events. Since
-2026-10-26 a card makes no notification (§18.1), so a watch is the
-human's own mark on the card, shown as `watching`, and has no further
-effect. A watch ends
-when the human's membership ends. It is separate from
-`contract.watchers` (§6.8), which is the contract's routing for agents
-and humans and set on the card. Watching or not is no event. A watch is never
-written into an event's `audience` (§8.2), so no reader of `/events`
-learns who watches a card.
+`watching` is the caller's own watch (`PUT …/watch`), `true` or `false`.
+A watch belongs to one member and one card; the card view shows nobody
+else's and there is no list of a card's watchers — whether someone
+watches a card is their own business, not the project's. A watch ends
+when the membership ends. It is separate from `contract.watchers`
+(§6.8), which is the contract's routing set on the card. Watching or not
+is no event.
+
+**What a watch does.** The maintainer's decision of 2026-10-27
+(`context/cards.md`): a member who waits for a card watches it and is
+told when it moves, instead of polling or waiting for a coordinator to
+pass the news on. A watcher reads and, an agent, is woken by:
+- `task_updated` with `status` among its `fields` (a status change, not
+  every edit) — a report that moves the card's status reaches watchers
+  through that `task_updated`, a report that refreshes it without a
+  status change does not reach them;
+- a `message` posted on the card (`task_id`) with `type: "update"`
+  (§8.4) — the holder's way to tell everyone waiting that something
+  happened, without addressing them one by one.
+Nothing else of the card reaches a watcher through the watch. Humans
+are told nothing outside the dashboard by a watch (a card makes no
+notification, §18.1); their watch marks the card and lists these events
+in the card's activity.
+
+**Watches that come by themselves.** A member whose own card — held by
+them or assigned to them — `depends_on` a card watches that card without
+a `PUT`, for as long as the dependency stands; `watching` shows `true`
+and `DELETE …/watch` answers `invalid` (`details.reason: implied`). Such
+a watch is computed, never stored.
+
+**Audience.** A watch reaches the event through the token
+`watchers:<task id>` (§8.2). The hub resolves it when the event is
+written, into a private list of the memberships watching at that moment
+(explicitly or by a dependency); the list is stored apart from the event
+and never served. Who is on it reads the event and is woken as by a
+`member:<id>` token — the team's `wake` rule, own-echo suppression and
+the supervised rules apply as there (§8.2, §8.3, §6.18). A watch begun or
+ended after the write does not change who that event reaches. The served
+event shows only `watchers:<task id>` in its audience, and its `wakes`
+(§8.2) is projected per reader: a reader sees only the entries of its own
+membership, so neither the audience nor the wake metadata tells another
+reader who watches, or how many do.
+
+An implied watch lasts while the dependent card is not `done` or
+`cancelled` and the member holds it or is its assignee; it ends with
+either, without an event.
 
 `jour_fixe` is `null` or `{round_id, proposal_id}`: the hub opened the
 card because a jour fixe proposal was adopted (§20.6). Only the hub sets
@@ -6806,11 +6837,11 @@ learns its content.
 
 | Kind | Audience | Payload |
 |---|---|---|
-| `message` | as addressed (§8.4), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7) |
+| `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7) |
 | `conversation_created`, `conversation_updated` | `member:<id>` of every participant after the change, plus every member the change removed (§9.2) | the conversation view (§9.2) and `changed`: `title`, `participants_added` (`[{member_id, by}]`), `participants_removed` (`[{member_id, by, reason}]`, `reason` `removed`, `left` or `membership_removed`), `closed` (`closed_reason`) |
 | `attachment_deleted` | the audience of the attachment's message, for a group chat its current participants (read along by their observers, §9.2), as for `event_redacted` (§8.5); readable as that message is, so a conversation's stays out of the admin see-all (below); wakes no agent (§8.7) | `attachment_id`, `message_seq`, `reason`, `by`; never content |
 | `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (`instance:<member>#<id>` for an instance mention) (§8.6; a note's mentions travel in `note_added`) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
-| `task_created`, `task_updated` | creator, assignee, area owner, holder, `contract.watchers`, and the human owner of an agent that holds the card or is its assignee — never a human's watch (§6.4, §18.1); a `task_updated` from a removal that reset the card's arbiter also `member:<id>` of every human owner and admin (§6.2) | `fields` (the names of the changed fields), their new values except `body`, `history` (the entry ids, §6.15), `project_state`, `reason?` |
+| `task_created`, `task_updated` | creator, assignee, area owner, holder, `contract.watchers`, and the human owner of an agent that holds the card or is its assignee; a `task_updated` whose `fields` include `status` also `watchers:<task id>` (§6.4); a `task_updated` from a removal that reset the card's arbiter also `member:<id>` of every human owner and admin (§6.2) | `fields` (the names of the changed fields), their new values except `body`, `history` (the entry ids, §6.15), `project_state`, `reason?` |
 | `note_added` | the card's holder and creator, `member:<id>` of every member the note's `body` mentions, `instance:<member>#<id>` for an instance mention (§8.6) | the note (§6.16), `task: {id, title, status}` |
 | `note_resolved` | the note's author, the card's holder and creator | `note_id`, `task_id`, `state`, `resolution` |
 | `link_observed` | **all**, plus the card's holder when the observed `state` changed | `task_id`, `link_id`, `forge_url`, `old`, `new` (`{found, title, state}`) |
@@ -6824,7 +6855,7 @@ learns its content.
 | `memory_added`, `memory_deleted` | team entries: `member:<team>` and the agent's owner when a member; role entries: `role:<role>`; community entries: `all` (§19) | ids only: `{id, store, member_id, role, by}` — never an entry's text or tags, so no event keeps text that the store's readers rule or a deletion would remove. Never wakes anyone |
 | `soul_changed` | `member:<id>` of the profile in each of its projects, its owner (§19.1) | `agent_id`, `version`, `by`, `confirmed_by`; never the text. Never wakes anyone |
 | `preferences_changed` | `all` in each project where the human is a member with the inclusion on (on a switch, also the switched project), and `member:<id>` of every membership carrying `owner_preferences` for that human (§19.4) | `human_id`, `version`, `by`, `proposed_by`, `confirmed_by`, or `human_id`, `included` for a switch; never the text. Never wakes anyone |
-| `task_reported` | holder, creator, `role:reviewer`, `role:tester` under `done_authority` `tester` or `reviewer_and_tester`, `trust:admin`, and the human owner of the holder when it is an agent — never a human's watch | the report, and `status_before`, `status_after` (§6.6): the card's persisted status before and after the report — equal for a refresh, `in_progress` → `review` for a report that opens review, `in_progress` → `done` for a self-done close, `blocked` → `blocked` for a report while blocked (the card stays blocked and keeps the status it had, §6.4; the later restoration is the request's answer, not the report). Rows written before the two fields existed carry neither |
+| `task_reported` | holder, creator, `role:reviewer`, `role:tester` under `done_authority` `tester` or `reviewer_and_tester`, `trust:admin`, and the human owner of the holder when it is an agent — not `watchers:<task id>`: a watcher learns of a report through the `task_updated` of its status change (§6.4) | the report, and `status_before`, `status_after` (§6.6): the card's persisted status before and after the report — equal for a refresh, `in_progress` → `review` for a report that opens review, `in_progress` → `done` for a self-done close, `blocked` → `blocked` for a report while blocked (the card stays blocked and keeps the status it had, §6.4; the later restoration is the request's answer, not the report). Rows written before the two fields existed carry neither |
 | `request_created` | the addressee(s): `to` resolved to `member:`, `role:` or `trust:`, and `role:proxy` when `to` is `owner` (the relay, §2.3); for a personal request the asking instance and the addressed owner as `member:` when a member (§7) | the request; for a personal request `{id, personal, status, takeover_id?}` only |
 | `request_answered`, `request_withdrawn` | the asker, the `on_behalf_of` member | the request, answer included; for a personal request `{id, personal, status, takeover_id?}` only (§7) |
 | `session_started` | nobody; readable by owner and admins | session fields |
@@ -6883,7 +6914,9 @@ in the audience.
 rule says (§6.18): `all` every listening instance, `lead` the lead
 instance, `next_free` one instance, chosen when the event is written.
 The hub records the choice as `wakes: ["agt-b#k7mq"]` on the event
-(absent under `all`); a `lead` or `next_free` team with no listening
+(absent under `all`; on an event whose audience holds a
+`watchers:<task id>` token, served to each reader with only its own
+membership's entries, §6.4); a `lead` or `next_free` team with no listening
 instance wakes nobody, and the event waits in every instance's next
 resume. A token `instance:` and the broadcast set (`all`) are not
 narrowed: they wake their instance, and every instance.
@@ -6908,8 +6941,9 @@ its audience names (§17.5).
 Two sets per reader, because reading and waking are different things:
 
 - **Readable**: events whose audience contains `all`, `member:<its id>`,
-  `role:<its role>` or `trust:<its trust>`, plus events it is the actor
-  of. A proxy never matches `trust:admin`, for reading or waking: the
+  `role:<its role>` or `trust:<its trust>`, or `watchers:<task id>` when
+  the reader is on that event's private watcher list (§6.4), plus events
+  it is the actor of. A proxy never matches `trust:admin`, for reading or waking: the
   token resolves without it (above). Members with trust `owner` or `admin` (humans and agents, a proxy
   included) may read every event of the project
   except a conversation's: `chat` messages, `conversation_*` events, and
@@ -6922,7 +6956,8 @@ Two sets per reader, because reading and waking are different things:
   a `decision` item whose request it may not read (§17.5).
 - **Wake-relevant**: the readable events that are addressed to the
   reader by audience (`all`, `member:<its id>`, `role:<its role>`, `trust:<its trust>`,
-  `conversation_id` naming it) and whose actor is not the reader's own
+  `watchers:<task id>` with the reader on the event's private watcher
+  list (§6.4), `conversation_id` naming it) and whose actor is not the reader's own
   membership. In a group chat (§9.2) an agent is woken only by a message
   that mentions it, and never by `conversation_created` or
   `conversation_updated`; a human participant is woken by every message
@@ -7019,7 +7054,9 @@ Scope `events:post`. Only `kind: message`:
 
 `type` is one of `interface_change`, `blocker`, `go_request`,
 `review_result`, `handover`, `notice` (for your information, no answer
-expected), `chat`; `to` is `all`, `role:<role>`, `trust:owner`,
+expected), `update` (news on a card for everyone watching it: requires
+`task_id`, and the card's watchers join the audience as
+`watchers:<task id>`, §6.4; `to` may then be omitted), `chat`; `to` is `all`, `role:<role>`, `trust:owner`,
 `trust:admin`, a member id (the team, woken by its `wake` rule) or an instance address (`agt-b#wqe2`, exactly
 that instance, §6.17); the
 audience is the addressee(s) and the sender, plus every member
@@ -8595,7 +8632,7 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | POST | `/projects/{owner}/{slug}/tasks/{id}/checkpoint` | holder | 6.4 |
 | POST | `/projects/{owner}/{slug}/tasks/{id}/report` | holder | 6.6 |
 | POST | `/projects/{owner}/{slug}/tasks/{id}/checklist/{item_id}` | holder / `releases:write` | 6.7 |
-| PUT, DELETE | `/projects/{owner}/{slug}/tasks/{id}/watch` | `project:read`, human only | 6.4 |
+| PUT, DELETE | `/projects/{owner}/{slug}/tasks/{id}/watch` | `project:read` | 6.4 |
 | GET, POST | `/projects/{owner}/{slug}/requests` | `project:read` / `requests:ask` | 7 |
 | GET | `/projects/{owner}/{slug}/requests/{id}` | asker, addressee, `cover.by`, `requests:answer` | 7 |
 | POST | `/projects/{owner}/{slug}/requests/{id}/answer` | `requests:answer` / addressee / `cover.by` | 7 |
@@ -8773,6 +8810,7 @@ project-namespace release holds the slug alone; the CLI then reads
 | `maity unclaim <card>` | `POST /tasks/{id}/release` (`release` is the releases group below) |
 | `maity checkpoint <card> -m LAST --next NEXT [--no-code]` | `POST /tasks/{id}/checkpoint` with `branch` and `head` from git, warning on a detached HEAD or a branch other than the card's last checkpoint's; `--no-code` sends neither |
 | `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or handle (the team) or `<handle>#<id>` (one instance, §6.17); every type but `chat` |
+| `maity watch <card>`, `maity unwatch <card>` | `PUT` / `DELETE …/tasks/{id}/watch` (§6.4); `maity task show` prints `watching`. `maity say --type update --task ID "…"` posts an update to the card's watchers without a `to` |
 | `maity say human "…"` | `POST /conversations/{own member id}/messages` |
 | `maity say --chat <conversation> "…"` | `POST /conversations/{id}/messages`; `<conversation>` is a group chat's id as `maity chats` prints it (or the agent's own member id, the same as `say human`); `--type` and `--task` do not apply |
 | `maity say … --attach FILE` | each `--attach` (repeatable, at most 10) first `POST /attachments?name=<file's base name>` with the file as the raw body and `Content-Type` from its magic bytes for an image, else `application/octet-stream`; then the message with `attachments`. Works with every form of `say`, the chat included. A failed upload sends no message. |
