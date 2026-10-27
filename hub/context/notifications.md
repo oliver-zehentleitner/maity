@@ -210,4 +210,3 @@ safety here, while a verify or reset link, which change things once, carry one (
   does nothing.
 - Telling the reason a link is dead ("expired", "already used"): it separates a guessed token
   from a real one, which §18.6 forbids.
-
