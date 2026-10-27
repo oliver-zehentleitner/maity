@@ -1188,7 +1188,12 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     page.reload()
     expect(agents).to_contain_text("by Owner: e2e: hold on")  # still paused after its resume
     agents.get_by_role("button", name="Clear pause", exact=True).click()
-    expect(agents.get_by_role("button", name="Pause", exact=True)).to_be_visible()
+    # Cleared: no Clear pause, and the pause is offered again from the card's Actions menu, folded.
+    expect(agents.get_by_role("button", name="Clear pause", exact=True)).to_have_count(0)
+    expect(card.locator("form.pause")).to_be_hidden()
+    card.get_by_role("button", name="Actions", exact=True).click()
+    expect(page.get_by_role("menuitem", name="Pause…", exact=True)).to_be_visible()
+    page.keyboard.press("Escape")
 
     def own_pause() -> dict | None:
         # The agent's own pause is its instance's (§6.17); the membership's stays clear.
