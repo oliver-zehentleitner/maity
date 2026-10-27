@@ -201,11 +201,10 @@ window.Maity = window.Maity || {};
       r && r.by ? [" by ", M.dom.memberRef(ctx, r.by)] : null, (r && r.reason ? ": " + r.reason : "") + ".");
   }
 
-<<<<<<< HEAD
   // A composer's one row of actions (the designer's pass on #431): Attach
   // at the start, the keys and Send at the end.
   const actionRow = (files, button) => h("div", { class: "compose-actions" }, files ? files.chooser : null, button);
-=======
+
   // In the global chat (ctx.projectsOf, js/chats.js) an agent's message
   // names the projects it is in, each by its logo with the name on hover;
   // only projects the reader is in, whose member lists the page has read.
@@ -217,7 +216,6 @@ window.Maity = window.Maity || {};
       projects.map((p, i) => h("span", { class: "msg-project", title: p.name },
         M.projectMark(p.slug, p.name, p.view, "small"), h("span", { class: "visually-hidden" }, (i ? ", " : "") + p.name))));
   }
->>>>>>> origin/main
 
   // opts.group: a group chat's message (no delivery: several recipients,
   // §9.2); opts.onRedact: offered to a human in the room (§8.5).
