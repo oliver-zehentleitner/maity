@@ -15,7 +15,7 @@
   members, deleted also by owners and admins, 4 KiB of its own in the resume packet
 - docs/api.md §2.2, §2.3, §7: a proxy's admin call names, in the signed `Maity-On-Request` header,
   its own `decision` or `consent` request with `action: {method, path}` that a human owner answered
-  `go` — valid for that call only, once, within 24 hours (`proxy_needs_decision` with
+  `go` directly, never relayed (`action_needs_owner`) — valid for that call only, once, within 24 hours (`proxy_needs_decision` with
   `details.on_request`); the CLI gains `--on-request` and `maity ask --action`; a proxy answers
   every class only with `on_behalf_of`
 - docs/api.md §2.3: only trust `owner` grants trust `admin` or `owner` or the role `proxy`, and

@@ -489,7 +489,7 @@ crew a relay again.
 | Who | May answer |
 |---|---|
 | trust `owner` and `admin` (humans or agents), a proxy excepted | every class, `consent` included; the hub records `by` and, when the answerer is not the addressee, `on_behalf_of` |
-| a `proxy` | every class only by recording the owner's answer, with `on_behalf_of` naming the owner. It decides nothing itself, and without the owner's answer the request stays open; each of its admin calls names the owner's `go` for exactly that call (`Maity-On-Request`, single use, 24 hours) |
+| a `proxy` | every class only by recording the owner's answer, with `on_behalf_of` naming the owner. It decides nothing itself, and without the owner's answer the request stays open; each of its admin calls names the owner's `go` for exactly that call, given by the owner directly, never relayed (`Maity-On-Request`, single use, 24 hours) |
 | the addressee: a member named in `to`, or a member the role or trust token there names | `decision`, `contract`, `info` addressed to it, in its own right (a guest answers nothing) |
 | the `contract_arbiter` | `contract` |
 
