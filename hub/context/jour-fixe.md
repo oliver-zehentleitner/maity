@@ -83,3 +83,50 @@ already marks a round's message (§20.5) and the thread's view names its round.
 - Add the kinds to `NON_WAKING`: it would silence every chat in the hub.
 - Leave the participants out of the audience: they could no longer read
   their own thread.
+
+## A proposal's decision request is asked by the moderator's membership
+
+**Id:** 872ac41e-f165-4860-bbe3-ab63f1e35e58
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session, 2026-10-25 (jour fixe, part 3a)
+**Revisit when:** requests get an asker that is the hub itself, or a human owner moderates rounds and files proposals to the owner
+
+The hub files a `to_owner` proposal as an ordinary `decision` request
+(`docs/api.md` §20.6, §7) with `asked_by` the moderator's membership, also
+for a report the hub builds itself; `jour_fixe: {round_id, proposal_id}`
+says where it came from.
+
+**Reason:** every request has an asker (`asked_by` is not null), and every
+reader of requests (the inbox, the views, the answer rules) relies on it. The
+moderator is the member the round's triage stands for.
+
+**Rejected alternatives:**
+- A nullable `asked_by` for hub-filed requests: a migration and a null case
+  in every request path, for requests that otherwise behave like any other.
+
+A human owner who moderates and files a proposal to the owner asks
+themselves, and a request is never answered by its asker; such a moderator
+decides the proposal instead.
+
+## An owner's later adopt opens the card; the final report stays as it was
+
+**Id:** f92f24b6-1f63-4b70-86ea-5e822a586942
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session, 2026-10-25 (jour fixe, part 3a)
+**Revisit when:** the report should show what became of its `to_owner` proposals
+
+An `adopt` answer to a request filed for a proposal opens the card then,
+with `created_by` the answerer and `jour_fixe` on it. The round's report,
+final since it was filed, keeps that proposal's `task_id` null; the card's
+`jour_fixe` and the request's link the two.
+
+**Reason:** §20.6 makes a report final once written, changed only by
+redaction. The request and the card already carry the round and the proposal.
+
+**Rejected alternatives:**
+- Write the card's id into the final report: a report that changes after it
+  is final, and a second writer of it besides the moderator and redaction.

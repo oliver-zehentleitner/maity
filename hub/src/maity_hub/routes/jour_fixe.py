@@ -14,9 +14,9 @@ from maity_hub import clock, events, group_chats, idempotency, paging, policy, r
 from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.auth.caller import Caller
-from maity_hub.deps import AnyCaller, engine_of
+from maity_hub.deps import AnyCaller, engine_of, reader_of
 from maity_hub.errors import ApiError, forbidden, invalid, not_found, rate_limited
-from maity_hub.jourfixe import answers, exchange, rounds, schedule, views
+from maity_hub.jourfixe import answers, exchange, rounds, schedule, triage, views
 from maity_hub.models import Strict
 from maity_hub.models import markdown as text_field
 
@@ -74,6 +74,39 @@ class StepIn(Strict):
     reason: str = text_field(min_length=1)
     members: list[str] | None = Field(default=None, min_length=1, max_length=50)
     topics: list[str] | None = Field(default=None, min_length=1, max_length=20)
+
+
+class BasisIn(Strict):
+    rules_version: int = Field(ge=1)
+    human_id: str = Field(min_length=1, max_length=64)
+    preferences_version: int
+
+
+class DecisionIn(Strict):
+    outcome: Literal["adopt", "reject"]
+    reason: str = text_field(min_length=1)
+    basis: BasisIn
+
+
+class FindingIn(Strict):
+    topic_id: str | None = Field(default=None, max_length=16)
+    text: str = Field(min_length=1, max_length=triage.FINDING_BYTES)
+
+
+class ReportProposalIn(Strict):
+    title: str = Field(min_length=1, max_length=200)
+    reason: str | None = Field(default=None, max_length=triage.REASON_BYTES)
+    topic_id: str | None = Field(default=None, max_length=16)
+    statement_proposal_id: str | None = Field(default=None, max_length=16)
+    triage: Literal["decided", "to_owner"]
+    humans_only: bool = False
+    decision: DecisionIn | None = None
+
+
+class ReportIn(Strict):
+    summary: str | None = Field(default=None, max_length=triage.SUMMARY_BYTES)
+    findings: list[FindingIn] = Field(default_factory=list, max_length=triage.FINDINGS_MAX)
+    proposals: list[ReportProposalIn] = Field(default_factory=list, max_length=triage.PROPOSALS_MAX)
 
 
 def _now(conn: Connection, rows: list[Any]) -> dict[str, set[str]]:
@@ -444,5 +477,45 @@ def further_step(
         row = _round(conn, mine.project.id, round_id)
         exchange.add_step(conn, row, mine, body.reason, body.members, body.topics)
         return idempotency.Outcome(201, "jour_fixe_round", row.id, round_view(conn, row.id))
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
+# --- the report (§20.6) -------------------------------------------------------------------------
+
+
+def report_view(conn: Connection, round_id: str) -> dict[str, Any]:
+    """The round, and what its report filed: the requests and the cards opened."""
+    row = conn.execute(select(t.jour_fixe_round).where(t.jour_fixe_round.c.id == round_id)).one()
+    proposals = (row.report or {}).get("proposals", [])
+    return {
+        "round": round_view(conn, round_id),
+        "requests": [p["request_id"] for p in proposals if p["request_id"]],
+        "tasks": [p["task_id"] for p in proposals if p["task_id"]],
+    }
+
+
+def _replay_report(conn: Connection, round_id: str, request: Request) -> dict[str, Any]:
+    _member_now(conn, _round_project(conn, round_id), request)
+    return report_view(conn, round_id)
+
+
+idempotency.LOADERS["jour_fixe_report"] = _replay_report
+
+
+@router.post("/projects/{slug}/jour-fixe/rounds/{round_id}/report")
+def report(
+    slug: str, round_id: str, body: ReportIn, request: Request, caller: AnyCaller
+) -> JSONResponse:
+    fg = reader_of(request)
+
+    def action(conn: Connection) -> idempotency.Outcome:
+        events.lock_project(conn, membership(conn, caller, slug).project.id)
+        # The caller's membership and role as of the lock: a demotion or a removal that
+        # commits first decides whether it may still decide (§20.6).
+        mine = membership(conn, caller, slug)
+        row = _round(conn, mine.project.id, round_id)
+        triage.submit_report(conn, row, mine, body.model_dump(), caller.actor(mine.id), fg)
+        return idempotency.Outcome(200, "jour_fixe_report", row.id, report_view(conn, row.id))
 
     return idempotency.run(engine_of(request), request, caller, action)

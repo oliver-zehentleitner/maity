@@ -13000,7 +13000,7 @@ text.
 | `POST /projects/{owner}/{slug}/jour-fixe/rounds/{id}/statement` | the moderator | §20.5; `201` with the round. `forbidden` (`not_moderator`), `jour_fixe_state` outside step 1, `invalid` (`not_an_answerer`) |
 | `POST /projects/{owner}/{slug}/jour-fixe/rounds/{id}/posts` | an eligible current participant of the open step | §20.5; `201` with the post. `forbidden` (`not_eligible`), `jour_fixe_state` (`details.step`) |
 | `POST /projects/{owner}/{slug}/jour-fixe/rounds/{id}/steps` | the moderator | `{reason, members?, topics?}`: a further step (§20.5); `201` with the round. `jour_fixe_state` before step 2 has opened, once the last step's window has ended (the exchange never reopens), while a further step is already pending, or after 3 further steps |
-| `POST /projects/{owner}/{slug}/jour-fixe/rounds/{id}/report` | the moderator | §20.6; `200` with the round, the requests filed and the cards opened. `forbidden` (`not_moderator`, `may_not_decide`, `humans_only`), `invalid` (`not_owner_preferences`, `unknown_version`), `jour_fixe_state` before the exchange closed or once reported |
+| `POST /projects/{owner}/{slug}/jour-fixe/rounds/{id}/report` | the moderator | §20.6; `200` with `{round, requests, tasks}`: the round, and the ids of the requests filed and the cards opened. `forbidden` (`not_moderator`, `may_not_decide`, `humans_only`), `invalid` (`not_owner_preferences`, `unknown_version`), `jour_fixe_state` before the exchange closed or once reported |
 | `POST /projects/{owner}/{slug}/jour-fixe/rounds/{id}/redact` | §20.8 | `{target, reason}`; `200` with the round. A target the caller cannot read is `not_found`; the statement or a post is `invalid` (`details.fields.target: "redact_the_message"`), as it is redacted through its message (§8.5) |
 
 From an agent, each `POST` and `PUT` carries `Idempotency-Key` (§1.5).
@@ -13031,7 +13031,7 @@ the work starts.
 **The ticker** (§17) gets one item when a report becomes final, of
 `type: "jour_fixe"`: `text` `Jour fixe <date>: <n> answers, <m>
 proposals (<d> decided, <o> to the owner)`, `url` the round's dashboard
-address, `dedupe_key` `jour_fixe:<round id>`, audience `all` alone, no
+address relative to the hub (`/#/p/<slug>/jour-fixe/<round id>`), `dedupe_key` `jour_fixe:<round id>`, audience `all` alone, no
 wake (§17.5). It is written only when the project's ticker is enabled.
 There is no item for the opening and none for a skipped or missed
 round.

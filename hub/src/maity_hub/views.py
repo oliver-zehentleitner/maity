@@ -668,6 +668,7 @@ def _task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[
                 "children": children[row.id],
                 "blocked_by_request": row.blocked_by_request,
                 "ktw_ref": row.ktw_ref,
+                "jour_fixe": row.jour_fixe,
                 "report": row.report,
                 "release": _release(conn, row, fg, release_tags),
                 "contract": view_contract(row.contract) if row.contract is not None else None,
