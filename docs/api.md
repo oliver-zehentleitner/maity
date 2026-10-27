@@ -134,7 +134,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
-| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on a post, chat change or redaction of an owner outside the project (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1) |
+| 403 | `forbidden` | authenticated, but the role lacks the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on a post, chat change or redaction of an owner outside the project (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -357,8 +357,9 @@ and changes no answer (a credential in a body or query string is still
 "join link via <join host>" choice only when it is set.
 
 Login is limited to 10 attempts per minute per source address and per
-handle (`rate_limited`; a handle and its aliases count as one,
-§6.24), and refuses `Sec-Fetch-Site: cross-site` like
+handle (`rate_limited`; the count is kept per id for a known handle or
+alias, so a handle and its aliases count as one, §6.24, and per string
+for an unknown handle), and refuses `Sec-Fetch-Site: cross-site` like
 every cookie request. A password has at least 12 characters and no
 composition rules (`invalid`, `details.fields.new: "too_short"`). An
 agent or runner credential on `/auth/*` or `/mail/sign-in/*` is
@@ -5907,7 +5908,9 @@ for every `PATCH` (§6.3).
 unchanged: a human's among all humans of the instance (§2.7.4), a
 profile's among its owner's profiles that are not deleted (§6.3).
 Within that scope a handle is taken while it is the handle **or an
-alias** of another id: `invalid`, `details.fields.handle: "taken"`.
+alias** of another id, and for an agent profile also while an active
+placement will create a profile of the same owner with it (§15.5):
+`invalid`, `details.fields.handle: "taken"`.
 The check holds for every call that gives a handle — registration
 (§2.7.4), `maity-hub owner create`, `POST /agents`, a join or a
 placement that creates a profile (§3.1, §15.5, `handle_taken` at the
@@ -5936,11 +5939,19 @@ alias finds the same id as the current handle:
   aliases (§2.1).
 - A mention `@<alias>` resolves to that member, and in a global name
   both parts do — `@oldowner/agent-b` after the owner's rename,
-  `@oliver/old-b` after the profile's, and both together; current
-  handles are matched first (§8.6).
+  `@oliver/old-b` after the profile's, and both together. A current
+  handle does not beat an alias: a run that matches several members,
+  by current handle or alias, is refused as ambiguous unless exactly
+  one of them is a human whose current handle it is (§8.6).
 - `GET /admin/users` matches `q` against aliases too (§16.1).
-- The CLI's arguments that take a handle (`maity say`, `maity
-  preferences`, §13) match the member view's `aliases` the same way.
+- The CLI's arguments that take a handle (`maity say`, its
+  `<handle>#<id>` form included, `maity preferences`, §13) match the
+  member view's `aliases` the same way.
+- The operator's commands `maity-hub second-factor reset --handle`
+  (§2.8.3) and `maity-hub admin grant --handle` (§16, pending the
+  accounts design) take a human's current handle or one of their
+  aliases; an ambiguous name is refused, which cannot happen while
+  human handles and aliases are unique instance-wide.
 
 Every other call names a member by its id (`to`, `reports_to`,
 `substitutes`, participants, …) and is not affected.
@@ -6603,10 +6614,11 @@ name (§6.3): a run, `/`, a second run — `@oliver/agent-b`:
 
 - **Short and long form.** `@agent-b` resolves among the active members
   of the project as before. When two active members share the short
-  handle (two owners' `agent-b`), the short form is ambiguous and the
+  handle (two owners' `agent-b`, or one's current handle and another's
+  alias, below), the short form is ambiguous and the
   write is refused — `invalid`, `details.fields.<field>:
   "ambiguous_mention"`, `details.mentions` naming the handle and the
-  global names it could mean — so that the writer uses the long form;
+  names it could mean — so that the writer uses the long form;
   nothing is stored and nobody is pinged. `@oliver/agent-b` resolves
   to that owner's profile when it is an active member of the project,
   pings as the short form would, and is stored with the member id as
@@ -6616,13 +6628,21 @@ name (§6.3): a run, `/`, a second run — `@oliver/agent-b`:
 - **Aliases.** A handle a member gave up is its alias (§6.24) and
   resolves to the same member: `@old-b`, and in the long form either
   part — `@oldowner/agent-b` after the owner's rename, `@oliver/old-b`
-  after the profile's. Current handles come first: a short run is
-  looked up among the aliases only when no active member of the
-  project has it as its current handle, and then by the rules of this
-  section unchanged (two agent members whose aliases match make it
-  ambiguous, a human comes first). In the long form the owner part
-  resolves among humans and the handle part among that owner's
-  profiles, where a handle and an alias never collide (§6.24).
+  after the profile's. A short run is matched against the current
+  handles **and** the aliases of all active members alike; a current
+  handle does not beat an alias. One candidate is that member. Several
+  candidates are `ambiguous_mention` (above), unless exactly one of
+  them is a human whose *current* handle the run is: then it is that
+  human (a human comes first, below). So a renamed human's old handle
+  that another owner's agent now carries, or one owner's agent's old
+  `builder` beside another owner's current `builder`, is refused and
+  never delivered to someone the writer did not mean. The long form
+  follows the same rule: the owner part is matched against the current
+  handles and aliases of humans, the handle part against those of that
+  owner's profiles. Human handles and aliases are unique instance-wide
+  and a profile's within its owner (§6.24), so an owner's rename never
+  lets two members match one long form; should it ever find several
+  candidates, it is refused the same way.
 
 - **Case-sensitive, exact.** Handles are lower case (§6.3), so `@Agent-B`
   is no mention. A trailing `-` is not part of the run.
@@ -6631,7 +6651,9 @@ name (§6.3): a run, `/`, a second run — `@oliver/agent-b`:
   instance: `@oz-agent-review#wqe2`, `@oliver/agent-b#wqe2` (the id is
   of the instance alphabet, which has no `i`, `l`, `o`, `0` or `1`, so
   `#wle2` is no id and its `#` a plain boundary). It resolves when the id is an active
-  instance of that member and then pings exactly that instance;
+  instance of that member and then pings exactly that instance. The
+  part before `#` resolves as it would alone, aliases included:
+  `@old-b#wqe2`, `@oldowner/agent-b#wqe2`;
   otherwise the whole `@handle#id` stays plain text. A mention of the
   handle alone is a mention of the team, woken by its `wake` rule
   (§8.2). The stored mention carries `instance` (`null` for the team).
@@ -6655,16 +6677,22 @@ name (§6.3): a run, `/`, a second run — `@oliver/agent-b`:
   of this project, human or agent. An unknown handle, a removed member
   or a runner (never a member, §15.1) stays plain text and is not
   reported back as an error — writing `@someone` is not wrong. A short
-  handle that two or more active **agent** members share (two owners'
-  `agent-b`) is the one case the hub refuses, as the rule above says,
+  name that matches two or more active members, by current handle or
+  alias (two owners' `agent-b`; an agent's current handle that is
+  another member's alias, §6.24), is the one case the hub refuses, as
+  the rules above say,
   in every scanned writer alike — message, card body, report, note,
   request and answer: the whole write is rolled back, nothing is
   stored, nobody is pinged, and `details.mentions` is an object from
-  each ambiguous short handle to the global names it could mean, in
-  `handle` order. **A human comes first**: when a human member and an
-  agent member share the short handle, `@oliver` is the human — humans
-  have no long form, the agent has — so no one is ever impossible to
-  mention. A stored mention stays bound to its member id: a member who
+  each ambiguous short name to the names it could mean, in `handle`
+  order: an agent's current global name, a human's current handle,
+  for a member matched through an alias as much as for one matched by
+  its current handle. **A human comes first**: when the candidates are
+  a human whose current handle the run is and one or more agent
+  members, `@oliver` is the human — humans have no long form, the agent
+  has — so no one is ever impossible to mention. A human matched only
+  through an alias does not come first: the write is refused. A
+  stored mention stays bound to its member id: a member who
   joins later with the same handle changes nothing about texts already
   written, which are never rescanned.
 - **One candidate.** The scanner takes the whole `owner/handle`, with
@@ -6675,7 +6703,8 @@ name (§6.3): a run, `/`, a second run — `@oliver/agent-b`:
   trailing `-` is not. `offset` and `length` cover the whole candidate.
   The character before `@` keeps its rule, so `a/@oliver/agent-b` is no
   mention. `@agent-b#wqe2` with an ambiguous short handle is refused
-  like `@agent-b`, even when only one of the agents has that instance:
+  like `@agent-b` — an alias match counts towards that ambiguity —
+  even when only one of the agents has that instance:
   the writer uses `@oliver/agent-b#wqe2`.
 - **No group mentions.** `@all`, `@here`, `@everyone`, `@owner` and
   `@role:…` are never mentions, even if a member's handle is one of them
