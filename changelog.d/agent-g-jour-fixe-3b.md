@@ -16,3 +16,6 @@
 - hub: a proposal redacted before the owner adopts it opens its card with
   the placeholders a redaction leaves (`[redacted jour fixe proposal]`,
   `[redacted]`).
+- hub: a report naming a statement proposal that was redacted before the report arrived
+  is refused with `invalid` (`redacted_statement_proposal`); nothing is filed and the report
+  stays due.

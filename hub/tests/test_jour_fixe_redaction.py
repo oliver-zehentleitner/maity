@@ -138,6 +138,26 @@ def test_a_redacted_statement_reaches_the_report_the_hub_built(round_: Round) ->
     assert asked["title"] == "[redacted jour fixe proposal]"
 
 
+def test_a_proposal_drawn_from_a_statement_redacted_before_the_report_is_refused(
+    round_: Round,
+) -> None:
+    seq = round_.get()["statement"]["message_seq"]
+    done = round_.owner.post(f"/projects/maity/events/{seq}/redact", {"reason": "a secret"})
+    assert done.status_code == 200, done.text
+    refused = report(round_, proposals=[TO_OWNER])
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {
+        "proposals": "redacted_statement_proposal"
+    }
+    with round_.engine.connect() as conn:
+        assert (
+            conn.execute(select(t.request).where(t.request.c.jour_fixe.isnot(None))).first() is None
+        )
+    assert round_.get()["status"] == "reporting"  # nothing was filed, the report is still due
+    own = {**TO_OWNER, "statement_proposal_id": None}
+    assert report(round_, proposals=[own]).status_code == 200  # the moderator's own text stands
+
+
 def test_a_multiline_reason_is_found_in_every_history_entry(round_: Round) -> None:
     reason = "SECRET-LINE-ONE\nSECRET-LINE-TWO \\ and a backslash"
     proposal = {**decided(round_.owner), "reason": reason}

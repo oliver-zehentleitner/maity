@@ -12588,7 +12588,10 @@ A report proposal drawn from the statement names its source with
 `topic_id` and `statement_proposal_id`. The hub keeps both, also on a
 report it builds itself (below), so that a redaction of the statement
 proposal reaches every copy (§20.8). A proposal of the moderator's own
-has `statement_proposal_id: null`.
+has `statement_proposal_id: null`. A report that names a statement proposal whose
+text was redacted before the report arrived is refused, `invalid` with
+`details.fields.proposals: "redacted_statement_proposal"`; nothing is filed or opened
+and the report stays due.
 
 Each proposal is triaged:
 

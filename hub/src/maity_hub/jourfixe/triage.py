@@ -123,6 +123,9 @@ def submit_report(
             source not in from_statement or from_statement[source]["topic_id"] != p["topic_id"]
         ):
             raise invalid({"proposals": "unknown_statement_proposal"})
+        if source is not None and from_statement[source].get("redaction") is not None:
+            # Redacted before the report: nothing may be derived from the tombstoned text.
+            raise invalid({"proposals": "redacted_statement_proposal"})
         if p.get("topic_id") not in (None, *topic_ids):
             raise invalid({"proposals": "unknown_topic"})
         if p["triage"] == "decided":
