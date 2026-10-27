@@ -3965,10 +3965,21 @@ and `DELETE …/watch` answers `invalid` (`details.reason: implied`). Such
 a watch is computed, never stored.
 
 **Audience.** A watch reaches the event through the token
-`watchers:<task id>` (§8.2), resolved when the event is read, never
-written as the watchers' `member:` ids — so no reader of `/events` learns
-who watches a card. An agent instance is woken by it as by any token that
-names its membership (§8.3).
+`watchers:<task id>` (§8.2). The hub resolves it when the event is
+written, into a private list of the memberships watching at that moment
+(explicitly or by a dependency); the list is stored apart from the event
+and never served. Who is on it reads the event and is woken as by a
+`member:<id>` token — the team's `wake` rule, own-echo suppression and
+the supervised rules apply as there (§8.2, §8.3, §6.18). A watch begun or
+ended after the write does not change who that event reaches. The served
+event shows only `watchers:<task id>` in its audience, and its `wakes`
+(§8.2) is projected per reader: a reader sees only the entries of its own
+membership, so neither the audience nor the wake metadata tells another
+reader who watches, or how many do.
+
+An implied watch lasts while the dependent card is not `done` or
+`cancelled` and the member holds it or is its assignee; it ends with
+either, without an event.
 
 `jour_fixe` is `null` or `{round_id, proposal_id}`: the hub opened the
 card because a jour fixe proposal was adopted (§20.6). Only the hub sets
@@ -6900,7 +6911,9 @@ in the audience.
 rule says (§6.18): `all` every listening instance, `lead` the lead
 instance, `next_free` one instance, chosen when the event is written.
 The hub records the choice as `wakes: ["agt-b#k7mq"]` on the event
-(absent under `all`); a `lead` or `next_free` team with no listening
+(absent under `all`; on an event whose audience holds a
+`watchers:<task id>` token, served to each reader with only its own
+membership's entries, §6.4); a `lead` or `next_free` team with no listening
 instance wakes nobody, and the event waits in every instance's next
 resume. A token `instance:` and the broadcast set (`all`) are not
 narrowed: they wake their instance, and every instance.
@@ -6925,8 +6938,9 @@ its audience names (§17.5).
 Two sets per reader, because reading and waking are different things:
 
 - **Readable**: events whose audience contains `all`, `member:<its id>`,
-  `role:<its role>` or `trust:<its trust>`, plus events it is the actor
-  of. A proxy never matches `trust:admin`, for reading or waking: the
+  `role:<its role>` or `trust:<its trust>`, or `watchers:<task id>` when
+  the reader is on that event's private watcher list (§6.4), plus events
+  it is the actor of. A proxy never matches `trust:admin`, for reading or waking: the
   token resolves without it (above). Members with trust `owner` or `admin` (humans and agents, a proxy
   included) may read every event of the project
   except a conversation's: `chat` messages, `conversation_*` events, and
@@ -6939,7 +6953,8 @@ Two sets per reader, because reading and waking are different things:
   a `decision` item whose request it may not read (§17.5).
 - **Wake-relevant**: the readable events that are addressed to the
   reader by audience (`all`, `member:<its id>`, `role:<its role>`, `trust:<its trust>`,
-  `conversation_id` naming it) and whose actor is not the reader's own
+  `watchers:<task id>` with the reader on the event's private watcher
+  list (§6.4), `conversation_id` naming it) and whose actor is not the reader's own
   membership. In a group chat (§9.2) an agent is woken only by a message
   that mentions it, and never by `conversation_created` or
   `conversation_updated`; a human participant is woken by every message
