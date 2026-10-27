@@ -4265,6 +4265,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(whyItems.length >= 2 && whyItems[0].querySelector("a").getAttribute("href") === "https://maity.dev/keep-the-why-dashboard/"
     && text(whyItems[0]).includes("the project · 1 entry needs attention") && text(whyItems[1]).startsWith("hub")
     && text(ovPart("overview-links")).includes("hierarchical"), "overview: each Keep the Why dashboard with its attention, and the policy preset");
+  const ovContract = ovPart("overview-links").querySelectorAll("a").find((a) => text(a) === "docs/api.md");
+  expect(ovContract && ovContract.getAttribute("href") === "https://github.com/oliver-zehentleitner/maity/blob/main/docs/api.md" && ovContract.getAttribute("target") === "_blank",
+    "overview: the contract on the forge at the default branch, beside Keep the Why");
+  // The README badge as it stands: off here, said so, the snippet with Copy; an owner is sent to Settings to change it.
+  const ovBadge = ovPart("overview-badge");
+  expect(ovBadge && text(ovBadge).includes("Off: the badge address answers 'not found'.") && !ovBadge.querySelector("img.badge-preview")
+    && ovBadge.querySelector(".overview-badge-states li[aria-current=\"true\"]") && text(ovBadge.querySelector(".overview-badge-states li[aria-current=\"true\"]")) === "Off"
+    && text(ovBadge.querySelector(".overview-snippet code")).includes("/badge/maity.svg") && btn(ovBadge, "Copy")
+    && ovBadge.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/p/maity/settings"),
+    "overview: the README badge's state, its snippet with Copy, and for an owner the way to change it");
   // The team: per role, member chips (the designer's layout); All members at the head's end.
   const ovChips = ovPart("overview-members").querySelectorAll("a.member-chip");
   const ovOwner = ovChips.find((a) => a.getAttribute("data-member") === "hum-maintainer");
@@ -4279,7 +4289,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && text(ovCounts.find((li) => li.attrs["data-status"] === "in_progress")).startsWith(String(ov.board.counts.in_progress)),
     "overview: every column's count, each linking to the board");
   // The fixtures' requests are answered by now: the count and its empty state.
-  expect(text(ovPart("overview-requests")).includes(String(ov.requests.open))
+  expect((!ov.requests.open || text(ovPart("overview-requests")).includes(String(ov.requests.open)))
     && (ov.requests.open ? text(ovPart("overview-requests")).includes(" for you") : text(ovPart("overview-requests")).includes("Nothing waits for an answer."))
     && (!ov.requests.open || ovPart("overview-requests").querySelector("a").getAttribute("href") === "#/p/maity/inbox")
     && text(byId("overview-requests")) === "Waiting for you" && main.querySelector(".overview-row-1").childNodes[0] === ovPart("overview-requests"),

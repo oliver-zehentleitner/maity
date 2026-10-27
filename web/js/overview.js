@@ -26,6 +26,18 @@ window.Maity = window.Maity || {};
     return href ? h("a", { href, rel: "noopener noreferrer", target: "_blank", "data-key": key }, text) : text;
   }
 
+  const CONTRACT_PATH = "docs/api.md";
+  // A file's page on the forge at the default branch: GitHub and GitLab
+  // only, whose path shapes are known; anything else gets no link.
+  function contractUrl(repo) {
+    const base = repo && safeUrl(repo.url) ? String(repo.url).replace(/\.git$/, "").replace(/\/+$/, "") : null;
+    if (!base || !repo.default_branch) return null;
+    const branch = encodeURIComponent(repo.default_branch);
+    if (repo.forge === "github") return base + "/blob/" + branch + "/" + CONTRACT_PATH;
+    if (repo.forge === "gitlab") return base + "/-/blob/" + branch + "/" + CONTRACT_PATH;
+    return null;
+  }
+
   const plural = (n, one, many) => n + " " + (n === 1 ? one : many);
 
   // A panel's head (the designer's handover, #6484): the heading, quiet
@@ -49,6 +61,10 @@ window.Maity = window.Maity || {};
       h("dd", null, repo ? out(repo, String(repo).replace(/^https:\/\//, ""), "repo") : "No repository.",
         !repo && admin && ctx.openSettings ? [" ", h("button", { type: "button", class: "small", "data-key": "set-repo", onclick: () => ctx.openSettings() }, "Set the repository")] : null)];
     if (p.policy && p.policy.preset) rows.push(h("dt", null, "Policy"), h("dd", null, p.policy.preset));
+    // The contract on the forge at the default branch (the maintainer's
+    // wish, tsk-yhbmz7mjng7n step 1); read inside Maity once the hub serves it.
+    const contract = contractUrl(p.repository);
+    if (contract) rows.push(h("dt", null, "Contract"), h("dd", null, out(contract, CONTRACT_PATH, "contract")));
     rows.push(h("dt", null, "Keep the Why"));
     if (!exp) {
       rows.push(h("dd", null, "No Keep the Why dashboard is published.",
@@ -62,8 +78,9 @@ window.Maity = window.Maity || {};
         const words = [name,
           attention ? " · " + plural(attention, "entry needs", "entries need") + " attention" : "",
           mm.error ? " · " + (mm.error.reason || mm.error.code || "not read") : ""].join("");
-        return h("li", null, mm.dashboard_url
-          ? h("a", { class: "pill " + tone, href: safeUrl(mm.dashboard_url) || "#", rel: "noopener noreferrer", target: "_blank", "data-key": "why:" + mm.path }, words)
+        const href = safeUrl(mm.dashboard_url);
+        return h("li", null, href
+          ? h("a", { class: "pill " + tone, href, rel: "noopener noreferrer", target: "_blank", "data-key": "why:" + mm.path }, words)
           : h("span", { class: "pill " + tone }, words));
       })),
       // A family cut at the hub's limit (§11.3) and a failed read of it are said.
