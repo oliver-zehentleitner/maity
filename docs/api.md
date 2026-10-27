@@ -3036,7 +3036,7 @@ opens one with the new `model`, the instance's claims carry over as on
 any resume (§6.5), and nothing else changes. When a resume's `model`
 or `harness` differs from the instance's previous session, the hub
 emits `session_model_changed` to the member the agent reports to and
-to `trust:admin`, the human owner of the agent included, with
+to `trust:admin` and to the human owner of the agent when that owner is a member of the project, with
 `{member_id, instance, from: {harness, model}, to: {harness, model},
 session_id}`; it wakes nobody but the lead, so the lead can re-route
 cards the new model should not hold. A resume that omits `model`
