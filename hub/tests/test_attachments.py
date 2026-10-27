@@ -42,7 +42,7 @@ def stored(make_client: ClientFactory, blobs: Path) -> ClientFactory:
     def factory(**overrides: Any) -> Any:
         return make_client(attachment_dir=blobs, **overrides)
 
-    return factory  # type: ignore[return-value]
+    return factory
 
 
 @pytest.fixture
