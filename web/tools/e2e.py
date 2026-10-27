@@ -2065,6 +2065,8 @@ def users_step(run: Run, page: Page) -> None:
     assert me["instance_admin"] is True, me  # the first human, made by maity-hub owner create
     link.click()
     expect(page).to_have_url(re.compile(r"#/admin$"))
+    # One section at a time: the page opens on Statistics, Users is picked.
+    page.locator("nav.admin-nav").get_by_role("button", name="Users", exact=True).click()
     owner = page.locator("table.users tbody tr", has_text="(you)")
     expect(owner).to_contain_text("instance admin")
     expect(owner).to_contain_text("@" + OWNER)

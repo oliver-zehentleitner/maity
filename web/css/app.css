@@ -1063,6 +1063,10 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .contract-meta .link-button, .contract-unresolved .link-button { padding: 0; min-height: 0; font-size: inherit; }
 .contract-change-row { margin: 4px 0 0; font-size: 0.85rem; }
 .contract-place[hidden] { display: none; }
+/* The admin area's sections, one at a time (the designer's pass part 3). */
+.admin-nav { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }
+.admin-nav button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.admin-section[hidden] { display: none; }
 /* At most 16rem, so a long section never pushes the card's action row off
    screen (the designer's pass part 3). A shadow at the bottom says there
    is more, only while there is: a cover scrolling with the content

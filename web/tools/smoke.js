@@ -5681,6 +5681,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const stTiles = () => stBox().querySelectorAll("li.stat-tile").map((li) => text(li));
   expect(stBox() && main.querySelectorAll(".admin-section")[0] === stBox() && stGets[0] === "/admin/statistics?days=30",
     "statistics: the admin area's first section, read for 30 days");
+  // One section at a time, picked in a row of buttons; it opens on Statistics.
+  const adNav = () => main.querySelector("nav.admin-nav");
+  const adSections = () => main.querySelectorAll(".admin-section");
+  expect(adNav() && adNav().querySelectorAll("button").map((b) => b.textContent).join() === adSections().map((x) => x.getAttribute("aria-label")).join()
+    && !stBox().hidden && adSections().slice(1).every((x) => x.hidden) && adNav().querySelectorAll("button")[0].getAttribute("aria-pressed") === "true",
+    "admin: a row of section buttons, Statistics shown, the rest folded");
+  btn(adNav(), "Users").click(); await tick();
+  const adUsers = adSections().find((x) => x.getAttribute("aria-label") === "Users");
+  expect(!adUsers.hidden && stBox().hidden && btn(adNav(), "Users").getAttribute("aria-pressed") === "true", "admin: a button shows its section alone");
+  btn(adNav(), "Statistics").click(); await tick();
   expect(JSON.stringify(stTiles()) === JSON.stringify(["41Humans2 waiting for approval", "117Agent profiles", "12Projectsnot archived", "23Agent instances online", "29Humans with an agent"]),
     "statistics: the totals as tiles " + JSON.stringify(stTiles()));
   expect(stCells("registrations")[0] === "Registrations" && stCells("registrations")[1] === "36" && stCells("registrations")[2] === "3"
