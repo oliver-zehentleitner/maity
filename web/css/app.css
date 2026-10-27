@@ -861,16 +861,84 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
 .picture-controls input[type="file"] { max-width: 100%; }
 .picture-list { list-style: none; padding: 0; margin: 0; }
 .picture-name { margin: 12px 0 4px; font-size: 0.95rem; }
-/* The project at a glance (js/overview.js). */
-.overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); gap: 12px; }
-.overview-part { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; min-width: 0; }
-.overview-part h3 { display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px; font-size: 1rem; }
+/* The project at a glance (js/overview.js), as the designer laid it out
+   (#6484): what needs you, then the state, then the facts, in three rows;
+   on a phone one column in the same order. */
+.overview { display: grid; gap: 16px; }
+.overview-row { display: grid; gap: 16px; min-width: 0; }
+.overview-row-1, .overview-row-3 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); }
+.overview-row-2 { display: flex; flex-wrap: wrap; align-items: flex-start; }
+.overview-team { flex: 2 1 480px; }
+.overview-latest { flex: 1 1 300px; }
+.overview-part { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; min-width: 0; display: grid; gap: 10px; align-content: start; }
+.overview-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.overview-head h3 { margin: 0; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 600; }
+.overview-onward { margin-inline-start: auto; font-size: 0.88rem; }
 .overview-part .facts { margin: 0; }
-.overview-why, .overview-reports { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
-.overview-reports li { overflow-wrap: anywhere; }
-.overview-counts { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr)); gap: 6px; }
-.overview-counts a { display: block; padding: 4px 6px; border-radius: 4px; background: var(--surface-2); text-decoration: none; }
-.overview-counts .n { font-weight: 600; font-variant-numeric: tabular-nums; }
+.overview-part p { margin: 0; }
+/* Waiting for you: one big number, the inbox at the right edge. */
+.overview-waiting { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.overview-waiting .button { margin-inline-start: auto; }
+.overview-big { color: var(--text); text-decoration: none; }
+.overview-big .big { font-size: 2.2rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
+a.button { display: inline-flex; align-items: center; padding: 6px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); color: var(--text); text-decoration: none; }
+a.button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.overview-prios { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 0.88rem; }
+.prio-pill::before { display: none; }
+.prio-pill-high { color: var(--high); border-color: var(--high); }
+/* Board: a stacked bar, one segment per column, and its legend. */
+.overview-bar { display: flex; gap: 2px; height: 10px; border-radius: 999px; overflow: hidden; }
+.overview-seg { min-width: 4px; }
+.seg-proposed { background: var(--seat); }
+.seg-open { background: var(--accent); }
+.seg-in_progress { background: var(--ok); }
+.seg-blocked { background: var(--bad); }
+.seg-review { background: var(--warn); }
+.seg-done { background: color-mix(in srgb, var(--ok) 45%, var(--surface)); }
+.seg-cancelled { background: var(--border); }
+.overview-counts { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 6px; }
+.overview-counts a { display: flex; align-items: center; gap: 6px; padding: 2px 0; text-decoration: none; color: var(--text); }
+.overview-counts .n { font-weight: 700; font-variant-numeric: tabular-nums; }
+.overview-swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; order: -1; }
+.overview-part .hint { font-size: 0.75rem; }
+/* Team: per role, a muted name column and the member chips. */
+.overview-roles { display: grid; gap: 8px; }
+.overview-role { display: grid; grid-template-columns: 6.5rem 1fr; gap: 8px; align-items: start; }
+.overview-role-name { padding-top: 6px; font-size: 0.85rem; }
+.overview-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Latest reports: an avatar column, the card, then who, when and the pull request. */
+.overview-reports { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.overview-reports li { display: grid; grid-template-columns: 22px 1fr; gap: 8px; overflow-wrap: anywhere; }
+.overview-report-meta { font-size: 0.8rem; margin-top: 2px; }
+.pr-state { font-size: 0.75rem; padding: 0 8px; }
+.pr-state::before { display: none; }
+.pr-merged { color: var(--ok); }
+.pr-closed { color: var(--bad); }
+/* Project: Keep the Why parts as pills with a dot. */
+.overview-why { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+a.pill { text-decoration: none; }
+.pill-warn { background: var(--flag-bg); }
+/* README badge: its state as pills, the preview, the snippet with Copy. */
+.overview-badge-states { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.pill-on { color: var(--accent); border-color: var(--accent); }
+.overview-snippet { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.overview-snippet code { flex: 1 1 auto; min-width: 0; overflow-x: auto; white-space: nowrap; padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); font-size: 0.8rem; }
+@media (max-width: 600px) {
+  .overview-role { grid-template-columns: 1fr; }
+  .overview-role-name { padding-top: 0; }
+}
+
+/* A member as a chip (dom.js memberChip): a pill, the avatar's shape by
+   kind, a presence dot on it, then @handle. */
+.member-chip { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px 0 4px; border-radius: 999px;
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text); text-decoration: none; font-size: 0.88rem; }
+a.member-chip:hover { border-color: var(--accent); }
+.chip-avatar { position: relative; display: inline-flex; width: 22px; height: 22px; flex: none; }
+.chip-avatar > img, .chip-avatar > svg { width: 22px; height: 22px; border-radius: 50%; overflow: hidden; }
+.chip-avatar.agent > img, .chip-avatar.agent > svg { border-radius: 5px; }
+.chip-dot { position: absolute; right: -2px; bottom: -2px; width: 9px; height: 9px; border-radius: 50%; background: var(--seat); box-shadow: 0 0 0 2px var(--surface-2); }
+.chip-dot.presence-online { background: var(--ok); }
+.chip-dot.presence-paused { background: var(--warn); }
 
 /* Group chats (js/group-chat.js). */
 .chat-list-pane .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
