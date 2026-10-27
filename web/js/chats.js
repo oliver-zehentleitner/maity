@@ -51,6 +51,7 @@ window.Maity = window.Maity || {};
         const pctx = pctxs[x.slug];
         const li = P.listItem(pctx, x.chat, x.key === currentKey ? x.chat.id : null);
         const a = li.querySelector("a.conv");
+        if (a) a.className += " with-project";
         // Its project as a 14 px mark after the who line, as a message's
         // meta has it (the designer's pass on #429), the name on hover and
         // read out at the row's end.

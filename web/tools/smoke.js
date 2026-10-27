@@ -4697,7 +4697,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/chats"); for (let k = 0; k < 4; k++) await tick();
   const chLinks = main.querySelectorAll(".chat-list a.conv");
   expect(plainTitle() === "Chats · Maity" && main.querySelector(".chat-layout") && !main.querySelector(".chat-layout.open")
-    && chLinks.length === 7 && chLinks.slice(0, 2).every((a) => a.className === "conv unread") && !chLinks.slice(2).some((a) => a.className.includes("unread"))
+    && chLinks.length === 7 && chLinks.slice(0, 2).every((a) => a.className === "conv unread with-project") && !chLinks.slice(2).some((a) => a.className.includes("unread"))
     && chLinks[0].getAttribute("href") === "#/chats/maity/cnv-0007" && text(chLinks[0]).endsWith("in Maity")
     && chLinks[1].getAttribute("href") === "#/chats/maity/agt-a" && text(chLinks[1]).includes("1 unread")
     && chLinks[6].getAttribute("href") === "#/chats/sample/agt-s1" && text(chLinks[6]).endsWith("in Sample shop")
