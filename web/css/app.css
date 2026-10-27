@@ -1107,6 +1107,17 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .placement .facts { margin: 0; }
 .placement-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .placement-consent, .placement-waiting { color: var(--muted); }
+/* The reported state as a pill with a dot (the designer's pass part 3). */
+.pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 1px 10px; border: 1px solid var(--border); font-size: 0.88rem; }
+.pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
+.pill-ok { color: var(--ok); }
+.pill-bad { color: var(--bad); border-color: var(--bad); }
+.pill-warn { color: var(--warn); border-color: var(--warn); }
+.pill-idle { color: var(--muted); }
+/* A runner command in a box that scrolls, with Copy beside it. */
+.placement-hints { display: grid; gap: 4px; }
+.placement-command { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 0.85rem; }
+.placement-command code { flex: 1 1 auto; min-width: 0; overflow-x: auto; white-space: nowrap; padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); }
 /* The instance's landing page (js/landing.js, §16.7): the face of the
    instance, with room; the large lockup in the theme's pair. */
 .landing { max-width: 44rem; margin: 32px auto 48px; display: grid; gap: 16px; }
