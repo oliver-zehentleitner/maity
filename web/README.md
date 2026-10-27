@@ -1458,11 +1458,12 @@ controls for that unimplemented route.
 **Landing page** (`js/landing.js`, `docs/api.md` §16.7). At the root, a
 visitor without a session gets the instance's landing page when the hub's
 `GET /landing` (asked only where its machine form lists the route) says it is on: the large lockup (light or dark with the
-theme), the title (also the tab's), the operator's Markdown drawn by the
-chat's renderer with one addition for this page alone — links to
-dashboard routes (`/#/…`) stay in the page, `https` links open apart,
-anything else and raw HTML stay text — then the button (`cta`) and a
-**Sign in** link. Off, absent or failing, the root is the login page as
+theme, at most 240 px wide), the page's one logo and its h1, the title
+(also the tab's), the button (`cta`), above the fold on a phone, then the
+operator's Markdown drawn by the chat's renderer with one addition for
+this page alone — links to dashboard routes (`/#/…`) stay in the page,
+`https` links open apart, anything else and raw HTML stay text. The
+header holds only the theme menu and **Sign in**, at its right edge. Off, absent or failing, the root is the login page as
 before, and `#/login` is the login page always (in fixture mode the page
 is off, as on a fresh instance; `?landing=on` shows it and `?landing=fail`
 makes its read fail): the landing page never

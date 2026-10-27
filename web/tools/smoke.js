@@ -1899,7 +1899,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const mdPre = mdBlock.querySelector("pre");
   expect(mdPre.getAttribute("role") === "region" && /^Code \(js\), block \d+$/.test(mdPre.getAttribute("aria-label"))
     && btn(mdBlock, "Copied").getAttribute("aria-label") === "Copy " + mdPre.getAttribute("aria-label")
-    && mdBlock.querySelector(".md-code-bar .md-lang"), "markdown: a code block is a named region, its Copy names it, the bar sits above the code");
+    && mdBlock.querySelector(".md-code-bar .md-lang"), "markdown: a code block is a named region, its Copy names it, language and Copy in the block's corner");
 
   // Ids in text become links (js/ids.js, tsk-dcj6qwjxc9cq): by shape only, the id as the link's text.
   const IDS = win.Maity.ids;
@@ -2976,10 +2976,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !lpLinks.some((a) => text(a) === "this") && text(lp).includes("<b>bold</b>") && !lp.querySelector("b") && lp.querySelector("pre code").textContent === "<script>x</script>",
     "landing: https links open apart, dashboard routes stay in the page, anything else and HTML stay text");
   const lpCta = lpLinks.find((a) => a.classList.contains("landing-cta"));
-  const lpSign = lpLinks.find((a) => text(a) === "Sign in");
+  const lpSign = header.querySelectorAll("a").find((a) => text(a) === "Sign in");
   expect(lpCta && text(lpCta) === "Get started" && lpCta.getAttribute("href") === "#/register" && lpSign && lpSign.getAttribute("href") === "#/login",
-    "landing: the button and a sign-in link");
-  expect(thButton() && header.querySelector(".theme-menu"), "landing: the theme switch in its header");
+    "landing: the button, and Sign in in the header");
+  // The designer's pass part 1: one logo (the large lockup, the page's h1), the action before the text.
+  const lpKids = lp.childNodes.map((x) => x.className);
+  expect(thButton() && header.querySelector(".theme-menu") && !header.querySelector(".brand") && lp.querySelector(".landing-lockup").tagName === "H1"
+    && lp.querySelector(".landing-lockup img").getAttribute("alt") === "Maity"
+    && JSON.stringify(lpKids) === JSON.stringify(["landing-lockup", "landing-title", "landing-actions", "md landing-body"]),
+    "landing: the header holds the theme switch and Sign in; the large lockup is the one logo; lockup, title, action, text " + JSON.stringify(lpKids));
   await go("#/login"); await tick();
   expect(byId("login-handle") && !main.querySelector("article.landing") && plainTitle() === "Sign in · Maity", "landing: #/login always reaches the login page, its own title again");
   lpAnswer = () => Promise.resolve({ enabled: false });
