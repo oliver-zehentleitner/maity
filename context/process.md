@@ -222,3 +222,35 @@ guarantees the same as a system.
   by policy per project. Chosen as the follow-up, not instead: its
   contract is still a proposal with the maintainer, and until it is
   built the rule and the review gate carry it.
+
+## The CLI is published to PyPI as `maity` from a `cli-v*` tag, through trusted publishing
+
+**Id:** 227cd75c-bfc7-4cd8-9ba8-cf877cd3bf21
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision, 2026-10-27 (install agents the official way so that path gets used and matures); `.github/workflows/release-cli.yml`
+**Revisit when:** the CLI and the hub start sharing one version, or PyPI's trusted publishing stops covering this repository's workflow
+**See:** join.md#the-install-line-is-one-instance-setting-maity_cli_install-installing-from-git-until-the-package-is-on-pypi — 001ad88d-5119-4347-b0d7-72f99ec3affd — as of 2026-10-27
+
+The agent CLI goes to PyPI under the name `maity`, the name its
+command already has. A tag `cli-v<version>` starts the release; the
+workflow refuses to build unless the tag, `cli/pyproject.toml` and
+`__version__` name the same version, runs the CLI's checks, builds
+and checks sdist and wheel, and uploads them from a job that proves its
+identity to PyPI with a short-lived token. Versions start as
+pre-releases (`0.1.0a1`) while Maity is before its beta.
+
+**Reason:** agents on fresh machines could not install the CLI without
+the Git URL, and the maintainer wants agents on the official path so it
+is exercised. The CLI versions apart from the hub, so it gets a tag
+prefix of its own beside the hub's `v*`. Trusted publishing keeps a
+long-lived PyPI token out of the repository's secrets.
+
+**Rejected alternatives:**
+- Installing from the Git URL for good: works, but nobody tests the
+  path most users would take.
+- An API token stored as a repository secret: a long-lived credential
+  that can leak; trusted publishing needs none.
+- Publishing on the hub's `v*` tags: CLI and hub do not release
+  together.
