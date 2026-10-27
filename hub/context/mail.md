@@ -110,7 +110,7 @@ like the images worker needs no new process for one replica.
 **Status:** active
 **Evidence:** inferred
 **Source:** the coordinator's agreement on making the mail workers safe for a second process (`maity say`, seq 3405), 2026-10-25; the implementation of tsk-s7rktpfc3ejh, folded into the outbox when it was re-cut, 2026-10-27
-**Revisit when:** a second hub replica runs for good (then the instance budget needs a reservation across processes), or a mail is found sent twice after a crash mid-send
+**Revisit when:** a second hub replica runs for good and mail volume makes the unused places of a lost race matter, or a mail is found sent twice after a crash mid-send
 **See:** kubernetes.md — 5e42eb26-9883-49e2-89c0-9fe4e6517c62 — as of 2026-10-25
 
 A process takes a row with one conditional UPDATE, from `waiting` (or a
@@ -118,6 +118,13 @@ lapsed `sending`) to `sending`, with `not_before` set to now plus
 `CLAIM_FOR` (two minutes). Only the process whose UPDATE changed the row
 sends it; a process that dies mid-send leaves a claim that lapses, and
 the row is taken again. A retry puts the row back to `waiting`.
+
+The budget of the row's kind is decided after the claim, in a transaction of its
+own: what was sent in the last hour plus the claims of that kind still in flight
+with a lower id. Over it, a security mail is released (`waiting`, five minutes
+on) and a sign-in answer dropped. The settings are read again before every
+delivery, so `enabled: false` stops the rest of a pass, and a delivery under way
+runs to its end.
 
 **Reason:** the chart keeps one pod with Recreate, but an overlap, a
 manual second process or a future replica must not send mail twice. A
@@ -133,3 +140,8 @@ part of the outbox from its first version, not a later change on top.
 - Exactly-once delivery: not possible across a crash between the
   server's `250` and the commit; the claim makes it at-least-once and
   one-at-a-time.
+- Checking the budget before the claim, as the first version did: two workers
+  could each see room for the last place while the first was still in the SMTP
+  conversation and both send (found in review, #478). The lowest claim in
+  flight wins instead; a worker that drops out leaves a place unused until the
+  next pass, which is the safe side of a budget.

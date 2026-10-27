@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import base64
 from datetime import timedelta
+from typing import Any
 
+import pytest
 from sqlalchemy import Engine, select, update
 
 from maity_hub import clock
@@ -193,3 +195,113 @@ def test_a_claim_that_outlived_its_process_is_taken_again(migrated: Engine) -> N
         assert outbox.send_due(migrated, mail_env(server.port).mail, None) == 1
     finally:
         server.close()
+
+
+# --- what H found in the first version (#478) -----------------------------------------
+
+
+def _ok() -> Any:
+    from maity_hub.mail import smtp
+
+    return smtp.Outcome(ok=True, stage=None, smtp_code=None, detail=None, at=clock.now())
+
+
+def test_two_workers_never_both_take_the_last_place_of_a_budget(
+    migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A claims the first mail and is still in the SMTP conversation when B passes over
+    the second: with a budget of one, B must not send."""
+    from maity_hub.mail import smtp
+
+    hub = mail_env(1)
+    with migrated.begin() as conn:
+        store.put(conn, "mail.security_max_per_hour", 1, None)
+        queue(conn)
+        queue(conn)
+    sends: list[str] = []
+
+    def slow(resolved: Any, message: Any) -> Any:
+        sends.append(message["Subject"])
+        if len(sends) == 1:  # worker B passes while A is in the conversation
+            assert outbox.send_due(migrated, hub.mail, None) == 0
+        return _ok()
+
+    monkeypatch.setattr(smtp, "send", slow)
+    assert outbox.send_due(migrated, hub.mail, None) == 1
+    assert len(sends) == 1
+    with migrated.begin() as conn:
+        rows = conn.execute(select(t.mail_outbox).order_by(t.mail_outbox.c.id)).all()
+    assert [r.status for r in rows] == ["sent", "waiting"]
+    assert rows[1].not_before > clock.now()  # the second waits for the next hour
+
+
+def test_an_anonymous_answer_in_flight_counts_too(
+    migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from maity_hub.mail import smtp
+
+    hub = mail_env(1)
+    with migrated.begin() as conn:
+        store.put(conn, "mail.sign_in_max_per_hour", 1, None)
+        queue(conn, "sign_in")
+        queue(conn, "sign_in")
+    sends: list[int] = []
+
+    def slow(resolved: Any, message: Any) -> Any:
+        sends.append(1)
+        if len(sends) == 1:
+            outbox.send_due(migrated, hub.mail, None)
+        return _ok()
+
+    monkeypatch.setattr(smtp, "send", slow)
+    assert outbox.send_due(migrated, hub.mail, None) == 1
+    with migrated.begin() as conn:
+        statuses = [r.status for r in conn.execute(select(t.mail_outbox).order_by("id"))]
+    assert statuses == ["sent", "dropped"]  # over its budget, it is dropped, never sent late
+
+
+def test_a_lapsed_claim_does_not_hold_a_place_of_the_budget(
+    migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from maity_hub.mail import smtp
+
+    hub = mail_env(1)
+    with migrated.begin() as conn:
+        store.put(conn, "mail.security_max_per_hour", 1, None)
+        first = queue(conn)
+        queue(conn)
+        conn.execute(  # a process claimed the first one and died, long ago
+            update(t.mail_outbox)
+            .where(t.mail_outbox.c.id == first)
+            .values(status="sending", not_before=clock.now() - timedelta(minutes=1))
+        )
+    monkeypatch.setattr(smtp, "send", lambda resolved, message: _ok())
+    assert outbox.send_due(migrated, hub.mail, None) == 1  # the lapsed one, then no room
+    with migrated.begin() as conn:
+        statuses = [r.status for r in conn.execute(select(t.mail_outbox).order_by("id"))]
+    assert statuses == ["sent", "waiting"]
+
+
+def test_mail_switched_off_during_a_delivery_stops_the_rest_of_the_pass(
+    migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from maity_hub.mail import smtp
+
+    hub = mail_env(1)
+    with migrated.begin() as conn:
+        for _ in range(3):
+            queue(conn)
+    sends: list[int] = []
+
+    def switch_off(resolved: Any, message: Any) -> Any:
+        sends.append(1)
+        with migrated.begin() as conn:
+            store.put(conn, "mail.enabled", False, None)  # the operator, mid-pass
+        return _ok()
+
+    monkeypatch.setattr(smtp, "send", switch_off)
+    assert outbox.send_due(migrated, hub.mail, None) == 1
+    assert len(sends) == 1  # the delivery under way ended, nothing else left
+    with migrated.begin() as conn:
+        statuses = [r.status for r in conn.execute(select(t.mail_outbox).order_by("id"))]
+    assert statuses == ["sent", "waiting", "waiting"]
