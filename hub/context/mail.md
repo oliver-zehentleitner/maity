@@ -92,9 +92,11 @@ third in a row disables the address and writes `mail_disabled` (§18.7), and
 a delivery resets the count. A verification mail to a pending address
 counts against no address. Once disabled, no further mail goes to that
 address: each row is checked against the address as it stands just before its
-delivery, so what was queued earlier and the rest of a batch stop too; the
-link that sets the same address again goes to the pending address and
-passes, which is the way back. Sign-in mail over its budget is
+delivery, so what was queued earlier and the rest of a batch stop too; only
+the confirmation link of an address being set again passes (the outbox row is
+marked `_purpose: verify`, a mark that is never sent as a header, and goes to
+the pending address): it is the way back. Nothing else follows it while the
+address stays disabled, the link used or not. Sign-in mail over its budget is
 dropped, not delayed, since a late link is useless. A row that left the
 queue is deleted after seven days, so the outbox keeps no lasting record
 of who got what.
@@ -129,7 +131,8 @@ the row is taken again. A retry puts the row back to `waiting`.
 
 The budget of the row's kind is decided after the claim, in a transaction of its
 own: what was sent in the last hour plus the claims of that kind still in flight
-with a lower id. Over it, a security mail is released (`waiting`, five minutes
+that were taken earlier (by their deadline, then by id; the id of a row says
+nothing about when it was claimed, since a retry falls due late). Over it, a security mail is released (`waiting`, five minutes
 on) and a sign-in answer dropped. The settings are read again before every
 delivery, so `enabled: false` stops the rest of a pass, and a delivery under way
 runs to its end.
@@ -150,6 +153,6 @@ part of the outbox from its first version, not a later change on top.
   one-at-a-time.
 - Checking the budget before the claim, as the first version did: two workers
   could each see room for the last place while the first was still in the SMTP
-  conversation and both send (found in review, #478). The lowest claim in
+  conversation and both send (found in review, #478). The earliest claim in
   flight wins instead; a worker that drops out leaves a place unused until the
   next pass, which is the safe side of a budget.

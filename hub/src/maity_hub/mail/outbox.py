@@ -139,14 +139,23 @@ def _resolved(engine: Engine, env: MailEnvironment, secret_key: bytes | None) ->
 
 def _over_budget(conn: Connection, row: Any, budget: int) -> bool:
     """Whether the hour's budget of the row's kind is spent: what was sent in the last hour
-    plus the claims of that kind that are in flight and older (a lower id), which will be
-    sent unless they fail. A claim that lapsed is not counted."""
+    plus the claims of that kind that are in flight and were taken before this one, which
+    will be sent unless they fail. Claims are ordered by when they were taken (their
+    deadline, then the id), not by the id of the row: a retry that falls due late has a low
+    id and a late claim. A claim that lapsed is not counted."""
+    mine = conn.execute(
+        select(t.mail_outbox.c.not_before).where(t.mail_outbox.c.id == row.id)
+    ).scalar_one()
+    earlier = (t.mail_outbox.c.not_before < mine) | (
+        (t.mail_outbox.c.not_before == mine) & (t.mail_outbox.c.id < row.id)
+    )
     in_flight = conn.execute(
         select(func.count()).where(
             t.mail_outbox.c.kind == row.kind,
             t.mail_outbox.c.status == "sending",
-            t.mail_outbox.c.id < row.id,
+            t.mail_outbox.c.id != row.id,
             t.mail_outbox.c.not_before > clock.now(),
+            earlier,
         )
     ).scalar_one()
     return _sent_last_hour(conn, row.kind) + int(in_flight) >= budget
@@ -155,8 +164,10 @@ def _over_budget(conn: Connection, row: Any, budget: int) -> bool:
 def _disabled_address(conn: Connection, row: Any) -> bool:
     """Whether the mail goes to a human's address that three hard failures disabled, as
     it stands now (§18.7): decided before each delivery, so what was queued earlier and
-    the rest of a batch after the third failure stop too. The link to set the same
-    address again goes to the pending address and is the way back, so it passes."""
+    the rest of a batch after the third failure stop too. Only the confirmation link of
+    the address being set again passes (it is marked `_purpose: verify` and goes to the
+    pending address): it is the way back, and nothing else follows it while the address
+    stays disabled, the link used or not."""
     if row.human_id is None:
         return False
     found = conn.execute(
@@ -166,7 +177,10 @@ def _disabled_address(conn: Connection, row: Any) -> bool:
         found is not None
         and found.address_status == "disabled"
         and found.address == row.recipient
-        and found.pending_address != row.recipient
+        and not (
+            (row.headers or {}).get("_purpose") == "verify"
+            and found.pending_address == row.recipient
+        )
     )
 
 
@@ -216,7 +230,8 @@ def _message(resolved: settings.Resolved, row: Any) -> Any:
         reply_to=resolved.value("reply_to"),
     )
     for name, value in (row.headers or {}).items():
-        mail[name] = headers.clean(str(value))
+        if not name.startswith("_"):  # a mark for the hub's own use, never a header
+            mail[name] = headers.clean(str(value))
     return mail
 
 

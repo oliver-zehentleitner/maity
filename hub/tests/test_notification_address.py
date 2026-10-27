@@ -500,3 +500,45 @@ def test_setting_a_disabled_address_again_sends_its_link_and_enables_it(
     owner.client.post(f"/mail/verify/{link(link_mail, 'verify')}")
     got = owner.get(S).json()["email"]
     assert (got["address_status"], got["hard_failures"]) == ("verified", 0)
+
+
+def test_setting_a_disabled_address_again_enables_no_ordinary_mail(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """Only the confirmation link goes to the address being set again; the address stays
+    disabled, and nothing else reaches it, until the link is used (§18.7)."""
+    owner = disabled(make_client, migrated)
+    owner.patch(S, {"email": {"address": "me@example.org"}, "current_password": factory.PASSWORD})
+    [link_mail] = [r for r in outbox_rows(migrated) if r.status == "waiting"]
+    with migrated.begin() as conn:
+        outbox.enqueue(
+            conn, kind="security", human_id=owner.id, to="me@example.org", subject="s", body="b"
+        )
+    server = FakeSmtp(Script())
+    try:
+        assert outbox.send_due(migrated, mail_env(server.port).mail, None) == 1
+        assert b"s" in server.record.data  # something was sent: the confirmation link
+    finally:
+        server.close()
+    rows = outbox_rows(migrated)
+    assert [r.status for r in rows[-2:]] == ["sent", "dropped"]
+    assert rows[-2].id == link_mail.id
+    assert owner.get(S).json()["email"]["address_status"] == "disabled"  # until the link is used
+    assert "_purpose" not in server.record.data.decode(errors="replace")  # never a header
+    owner.client.post(f"/mail/verify/{link(link_mail, 'verify')}")
+    assert owner.get(S).json()["email"]["address_status"] == "verified"
+
+
+def test_the_confirmation_link_is_marked_and_the_mark_is_never_a_header(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = with_mail(make_client, migrated)
+    owner.patch(S, {"email": {"address": "new@example.org"}})
+    [mail] = outbox_rows(migrated)
+    assert (mail.recipient, mail.headers) == ("new@example.org", {"_purpose": "verify"})
+    server = FakeSmtp(Script())
+    try:
+        assert outbox.send_due(migrated, mail_env(server.port).mail, None) == 1
+    finally:
+        server.close()
+    assert "_purpose" not in server.record.data.decode(errors="replace")

@@ -284,4 +284,3 @@ the incident of 2026-10-26 showed does not scale.
   per minute that grows with the humans' histories, the shape the incident was about.
 - Letting mails over the instance budget wait in the outbox: simpler, but it can mean two
   mails where §18.5 asks for one (the first version, changed before review).
-
