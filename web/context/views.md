@@ -1382,6 +1382,32 @@ Ctrl+Enter"): the button's name for a screen reader and every test of it
 would change, and a narrow composer has less room for it. The tooltip
 alone: it is not seen without a mouse resting on the button.
 
+## The overview leads with what needs the reader; its README badge is shown there and changed in Settings
+
+**Id:** 057e7277-3eba-4267-93d2-c6b74a5e2ff1
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the designer's handover on the overview (#6484, tsk-qse9t2b3a9n8), 2026-10-27: the five panels had equal weight and the one thing to act on (open requests) sat bottom left; the maintainer's wish for a Contract link in the project facts (tsk-yhbmz7mjng7n, step 1), 2026-10-27; the dashboard's implementation, 2026-10-27
+**Revisit when:** the hub serves the contract for reading inside Maity, or the badge can be changed without a logged reason
+
+Three rows: Waiting for you and Board, then Team and Latest reports,
+then Project and README badge. A member in a list is a chip
+(`M.dom.memberChip`), the shared form the member page header will use
+too. The Contract link is `docs/api.md` on the forge at the repository's
+default branch, built only for GitHub and GitLab, whose path shapes are
+known. The badge panel shows the state, the badge and the snippet to
+everyone; an owner or admin is sent to Project settings to change it.
+
+**Reason:** a person opening the overview comes to see whether anything
+waits for them, so that is the first thing, with its action one click
+away. A badge change is a policy change the hub logs with a reason, and
+Settings already asks for it; a second form would duplicate that.
+
+**Rejected alternative:** the designer's radio pills that change the
+badge on the overview: they would need the reason field too, or change a
+logged policy without one. A Contract link guessed for any forge: a
+wrong path shape would be a dead link that looks right.
 ## The instance admin area shows one section at a time
 
 **Id:** 4c499cf2-cd9d-4ce1-be8d-639aa32306b6
