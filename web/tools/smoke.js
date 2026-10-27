@@ -902,6 +902,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.patch = (p, b) => { rWrites.push(["PATCH", p, b]); return rPatch(p, b); };
   win.Maity.api.del = (p) => { rWrites.push(["DELETE", p]); return rDel(p); };
   await go("#/runners"); await tick();
+  gearButton().click(); await tick();
+  const runnersHere = gearButton().parentNode.querySelectorAll(".menu-item").find((a) => a.textContent === "Runners");
+  expect(!runnersLink.getAttribute("aria-current") && runnersHere && runnersHere.getAttribute("aria-current") === "page",
+    "runners: the gear menu marks the page shown");
+  gearButton().click(); await tick();
   const card = (name) => main.querySelectorAll("article.runner").find((a) => a.getAttribute("aria-label") === name);
   expect(plainTitle() === "Runners · Maity" && main.querySelectorAll("article.runner").length === 3, "runners: the view lists the runners");
   const laptop = text(card("home-laptop"));

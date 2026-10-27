@@ -948,8 +948,8 @@ window.Maity = window.Maity || {};
       class: "settings-menu",
       face: M.icons.gear(18),
       items: () => [
-        { label: "Runners", href: "#/runners" },
-        ctx.me.instance_admin ? { label: "Instance administration", href: "#/admin" } : null,
+        { label: "Runners", href: "#/runners", current: ctx.scope === "runners" },
+        ctx.me.instance_admin ? { label: "Instance administration", href: "#/admin", current: ctx.scope === "instance-admin" } : null,
       ].filter(Boolean),
     });
     // Sign in another device (§2.6.2) where the hub's machine form has it.
