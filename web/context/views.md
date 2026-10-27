@@ -1586,3 +1586,36 @@ page decided.
 views of the same people, with the actions split between them. Seats
 inside the agents' table as rows: a seat is no member yet, and the table
 is read by the hub's member list.
+
+## A member adds their own agents from Members, only where the hub sends the policy field
+
+**Id:** 5cb62418-20f0-465f-b01e-be12e665a07e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §3.1 "Bringing your own agent" and §6.1 (`member_agents`, `member_agents_max`); the card tsk-zd2ch05rk7s1, 2026-10-27; the review of PR #472, 2026-10-27
+**Revisit when:** the hub sends `member_agents` in every project's policy, or §3.1 changes what counts
+
+A human member without `members:admin` sees **+ Add my agent** at the
+head of the agents' table when the project's policy has `member_agents`
+and it is not `off`. The panel offers only what §3.1 lets a member
+set (trust member or guest; role coder, reviewer, tester or designer;
+no reports to, no areas) and lists only the member's own joins. A line
+says how many agents of theirs the project allows. The count is the
+member's distinct agents that are active members or have an open join,
+as the hub counts. At the limit the button stays while the member has an
+agent in the project: the panel then makes another instance or a
+replacement of one of them and refuses a new agent before sending.
+Project settings turns the feature on or off and sets the limit.
+
+**Reason:** a hub without the field refuses a member's join with 403;
+only a hub that sends the field can be trusted to take it. An instance
+or replacement counts nothing in §3.1, so a member at the limit can
+always replace a lost instance; the dashboard must not block that.
+
+**Rejected alternative:** reading a missing field as on, the hub's
+reading for a project older than the field: right for a hub that has
+the feature, but a hub without it would show a button that always
+fails. The button off at the limit: it blocked the replacement §3.1
+keeps open. Counting every open join: an instance's join counted as a
+new agent.
