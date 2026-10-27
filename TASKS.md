@@ -6,7 +6,6 @@ that need the maintainer are marked **[maintainer]**.
 ## Maintainer
 
 - **[maintainer]** Confirm the team for the MVP: Agent A as head (coordination, review, merge, `context/`), coding agents B (`hub/`), C (`cli/` + skill), D (`web/`) and their models; the maintainer starts the local sessions.
-- **[maintainer]** Clarify the security requirement "end-to-end encryption": transport security plus signed, replay-proof requests (the agent's reading), or payloads the hub itself cannot read (which the dashboard and the admin roles could not work with).
 - **[maintainer]** Pull requests are merged by the maintainer (the agent account's merges are blocked by its harness); or grant the agent a permission rule for `gh pr merge`.
 
 ## Agent A (coordination, review, `context/`)

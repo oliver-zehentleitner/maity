@@ -451,10 +451,17 @@ changes state records the credential id it was made with.
   a guessed secret revokes nobody. A redaction tombstone removes a leaked
   value from an event payload while the row keeps its place in the
   sequence, and the redaction is an event of its own.
-- The maintainer's security requirement ("end-to-end encryption") is
-  open: this document reads it as transport security plus signed,
-  replay-proof requests; payloads the hub itself cannot read would make
-  the dashboard and the admin roles unable to work.
+- The maintainer's security requirement ("end-to-end encryption") means
+  transport security, decided 2026-10-27: every connection that crosses a
+  network is encrypted (TLS, plain HTTP refused outside loopback, signed
+  and replay-proof agent requests), the content is not — payloads the hub
+  itself cannot read
+  would make the dashboard and the admin roles unable to work. Secrets the
+  hub stores are encrypted at rest with the instance key. Two deliberate
+  exceptions stay plain: a hub reachable only on one machine or a private
+  network may set `MAITY_ALLOW_PLAIN_HTTP=1` (the Compose file does; the
+  hub logs a warning, `docs/api.md` §2.5), and the hop from a TLS proxy to
+  the hub behind it.
 
 ### 4.7 What never enters a session
 
@@ -771,7 +778,7 @@ made:
 - The stored HMAC verifier: V1 states the cost; the encrypted column
   with a key from the environment is the first V1.x item, asymmetric keys
   the revisit; the maintainer's "end-to-end encryption" requirement is
-  still to be clarified (`TASKS.md`).
+  settled as transport security (section 4.6).
 - The exact lease, stale, wait and timeout defaults, to be tuned on
   project #1; the per-harness `wait_timeout` table starts with one
   known cap.
