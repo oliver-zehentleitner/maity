@@ -2667,7 +2667,7 @@ Scope: any authenticated caller.
   "projects": [
     { "slug": "maity", "full_name": "oliver/maity", "name": "Maity", "state": "build", "trust": "owner", "role": "coder", "open_requests": 3,
       "logo": { "available": true, "etag": "\"3f2a…\"" } },
-    { "slug": "sample", "full_name": "oliver/sample", "name": "Sample shop", "state": "freeze", "trust": "owner", "role": "coder", "open_requests": 1,
+    { "slug": "sample", "full_name": "oliver/sample", "name": "Sample shop", "state": "review", "trust": "owner", "role": "coder", "open_requests": 1,
       "logo": { "available": false, "etag": null } }
   ],
   "server_time": "2026-10-21T13:41:10Z"
@@ -3292,15 +3292,21 @@ stay through `archived` and back (§8.7); in `archived` an upload is
 `project_closed`, deleting one is not.
 
 **Released** is a separate mark, `released_at` (`null` until then), set
-by the hub once, when the project's first release reaches `done` (§6.7),
-and never cleared: it says the project has users. A released project
+by the hub once, when it first observes a release tag of the project:
+the `tag` of a release (§6.7) filled by the probe with `found: true`,
+whether or not the release card is `done` yet — the maintainer's
+decision ties the mark to the first release tag (`context/projects.md`).
+It is never cleared: it says the project has users. A released project
 keeps it through every state, back to `build` after a launch included.
-From then on the project's rules text (§6.9) adds the released rules:
-interfaces change only with versioning and a stated transition period,
-migrations stay backward compatible, and the release checklist is
-required. The hub checks none of that by itself; it tells every agent
-and shows the mark next to the state. A project created before this
-change reads `released_at` from its first `done` release, or `null`.
+Setting it bumps `rules_version` with a `state_changed` event carrying
+`released_at`, and from then on the project's rules text (§6.9) adds the
+released rules: interfaces change only with versioning and a stated
+transition period, migrations stay backward compatible, and the release
+checklist is required. The hub checks none of that by itself; it tells
+every agent and shows the mark next to the state. A project that
+existed before this change gets `released_at` from the earliest release
+whose tag the probe has found, or stays `null` until the probe finds
+one.
 
 States before 2026-10-27 are mapped once: `freeze` and `fixes-only`
 become `review`, `accepted` becomes `archived`, `build` and `archived`
@@ -3886,14 +3892,14 @@ not `done` or `cancelled`, for every kind and every caller.
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `GET /projects/{owner}/{slug}/tasks` | `project:read` | filters `status` (comma list, or `all`), `kind`, `label`, `needs`, `holder`, `assigned_to`, `area`, `parent` (a card id: that card's children), `q` (text search, below), `closed_after` (RFC 3339: closed cards are included only when `closed_at` is later; open cards always); ordered by status in the board's column order, then within a status by the card order below; closed cards by `closed_at` desc, then `id`; `order=updated` keeps the old `updated_at` desc order; paged. The board asks for `limit=200`, `closed_after` at its window and follows `next_cursor`; a `depends_on` or `parent` id outside the window is shown as an id |
-| `POST /projects/{owner}/{slug}/tasks` | `tasks:write` | `{title, body?, kind?, label?, needs?, area?, status?: proposed\|open, assigned_to?, depends_on?, ships_with?, parent?, related?, ktw_ref?, release?, contract?, links?, reason?}`; `201`; `project_closed` when accepted/archived; `reason` required in `plan`/`review`; `assigned_to` needs `tasks:admin` |
+| `POST /projects/{owner}/{slug}/tasks` | `tasks:write` | `{title, body?, kind?, label?, needs?, area?, status?: proposed\|open, assigned_to?, depends_on?, ships_with?, parent?, related?, ktw_ref?, release?, contract?, links?, reason?}`; `201`; `project_closed` when archived; `reason` required in `plan`/`review`; `assigned_to` needs `tasks:admin` |
 | `GET /projects/{owner}/{slug}/tasks/{id}` | `project:read` | |
 | `PATCH /projects/{owner}/{slug}/tasks/{id}` | holder, creator or `tasks:admin`; a status-only change `review→done` or `review→in_progress` also by whoever holds done authority under the policy (`tasks:review` for `reviewer`, `tasks:test` for `tester`, either for `reviewer_and_tester`) | `title`, `body`, `label`, `needs`, `area`, `status`, `depends_on`, `ships_with`, `parent`, `related`, `ktw_ref`, `assigned_to` (admin), `release.pull_requests_typed`, `release.checklist` (§6.7), `contract` (§6.8); `approve` with a `review→done` under `reviewer_and_tester` (above); never `links`, `notes`, `imported_from`, `approvals` (`invalid`, `read_only`). Every change is recorded in the card's history (§6.15) |
 | `POST /projects/{owner}/{slug}/tasks/import` | `tasks:write` | `{issue_url, …}`: a new card from a forge issue (§6.14) |
 | `GET /projects/{owner}/{slug}/tasks/{id}/history` | `project:read` | who changed which field when, before and after (§6.15); `POST …/history/{history_id}/redact` with `events:admin` (humans) |
 | `POST`, `DELETE` `/projects/{owner}/{slug}/tasks/{id}/links…` | `tasks:write` / adder, holder, creator, `tasks:admin` | references to forge issues, pull requests and URLs (§6.13) |
 | `GET`, `POST` `/projects/{owner}/{slug}/tasks/{id}/notes…` | `project:read` to read, `tasks:write` to post; resolving `tasks:admin` or the creator | remarks on the card that never change it (§6.16) |
-| `POST /projects/{owner}/{slug}/tasks/{id}/move` | `tasks:admin` (humans and admin agents) | `{"before": "<task id>"}` or `{"after": "<task id>"}` or `{"to": "top"\|"bottom"}`: places the card within its current status column, as described under card order (§6.4); answers the card. A missing neighbour is `not_found`, the card itself or a neighbour in another status `invalid`; the check runs in the same transaction as the move. Refused with `project_closed` when the project is accepted or archived; allowed in `plan` and `review` without a `reason`, because it changes no status |
+| `POST /projects/{owner}/{slug}/tasks/{id}/move` | `tasks:admin` (humans and admin agents) | `{"before": "<task id>"}` or `{"after": "<task id>"}` or `{"to": "top"\|"bottom"}`: places the card within its current status column, as described under card order (§6.4); answers the card. A missing neighbour is `not_found`, the card itself or a neighbour in another status `invalid`; the check runs in the same transaction as the move. Refused with `project_closed` when the project is archived; allowed in `plan` and `review` without a `reason`, because it changes no status |
 | `POST /projects/{owner}/{slug}/tasks/{id}/claim` | `tasks:write` | §6.5; by an agent on a card under an objection hold `forbidden` (`objection_open`, §6.19) |
 | `POST /projects/{owner}/{slug}/tasks/{id}/release` | the holding instance, or `tasks:admin` after expiry | gives the card back: status `open`, claim `null`; an agent releasing another's claim is `takeover_required` while its lease is active, and recorded as a `lease_expired` takeover after expiry (§6.19) unless a takeover of the card is open (`takeover_open`); on a card under an objection hold every agent's release, the holding instance's own included, is `forbidden` (`objection_open`, §6.19); an agent releasing a claim a human holds is `forbidden` (`humans_only`), expired or not |
 | `POST /projects/{owner}/{slug}/tasks/{id}/assign` | `tasks:admin`; the lead instance within its team (§6.18) | `{assignee, instance?}`; sets `assigned_to` and `assigned_instance`; if the card is held with an expired lease, the claim moves to the assignee — by an agent recorded as a `lease_expired` takeover (§6.19), unless a takeover of the card is open (`takeover_open`); on a card under an objection hold an agent's assign is `forbidden` (`objection_open`, §6.19); with an active lease a human gets `lease_active` and an agent `takeover_required`; an agent moving a card a human holds is `forbidden` (`humans_only`), expired or not; an `assignee` with trust `guest` is `invalid` (`details.fields.assignee: "guest"`, §2.3), as is `assigned_to` naming one on `POST` and `PATCH` (`details.fields.assigned_to: "guest"`) |
@@ -5060,7 +5066,7 @@ so two members adding links at once never overwrite each other. Adding
 or removing a link is a change to the card: it bumps `updated_at`,
 emits `task_updated` with `fields: ["links"]` and is recorded in the
 history (§6.15). Adding a link is refused with `project_closed` when
-the project is accepted or archived; removing one stays allowed there —
+the project is archived; removing one stays allowed there —
 a closed project refuses what adds to it, never what removes, so that a
 link that should not have been made can still be taken out. Both are
 allowed in `plan` and `review` without a `reason`; they change no
@@ -5276,8 +5282,7 @@ to every body.
   redacted or dismissed note keeps its place. The open cap is not
   permanent: a human who may resolve notes dismisses open ones to make
   room.
-- Posting is refused with `project_closed` when the project is accepted
-  or archived; resolving and redacting stay allowed there — a closed
+- Posting is refused with `project_closed` when the project is archived; resolving and redacting stay allowed there — a closed
   project refuses additions, never removal. Posting is allowed on a
   closed card and in `plan` and `review` without a `reason`.
 - The card shows `notes: {open, total}`; `GET …/tasks/{id}` and the list
