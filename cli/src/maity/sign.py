@@ -4,6 +4,7 @@
     Maity-Timestamp: <unix seconds>
     Maity-Nonce: <16 random bytes, base64url>
     Maity-Signature: hex(HMAC-SHA256(sha256(<secret>), canonical))
+    Maity-On-Request: <request id>      only on a proxy's governance call (§2.3)
 
 The key is the raw 32 bytes of sha256 over the secret's text, the value the hub stores as the
 verifier; the secret itself never leaves this process.
@@ -22,6 +23,8 @@ from dataclasses import dataclass
 from maity.state import Secret
 
 SCHEME = "MAITY-HMAC-V1"
+# A request id fit for a header: no space or control character can end it early (§2.3).
+ON_REQUEST_RE = re.compile(r"[A-Za-z0-9_-]{1,64}", re.ASCII)
 CREDENTIAL_RE = re.compile(r"^mty1\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)$")
 # The pattern the hub refuses in any body or query, and revokes a real credential for.
 CREDENTIAL_IN_TEXT_RE = re.compile(r"\bmty1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b")
@@ -68,19 +71,20 @@ def canonical_query(pairs: Sequence[tuple[str, str]]) -> str:
 
 
 def canonical_string(
-    method: str, path: str, query: str, timestamp: str, nonce: str, body: bytes
+    method: str,
+    path: str,
+    query: str,
+    timestamp: str,
+    nonce: str,
+    body: bytes,
+    on_request: str | None = None,
 ) -> str:
-    return "\n".join(
-        [
-            SCHEME,
-            method.upper(),
-            path,
-            query,
-            timestamp,
-            nonce,
-            hashlib.sha256(body).hexdigest(),
-        ]
-    )
+    """The `Maity-On-Request` line is there only when the header is sent: without it the
+    string is the seven lines every hub and CLI already sign (§2.2)."""
+    lines = [SCHEME, method.upper(), path, query, timestamp, nonce]
+    if on_request is not None:
+        lines.append(on_request)
+    return "\n".join([*lines, hashlib.sha256(body).hexdigest()])
 
 
 def new_nonce() -> str:
@@ -88,15 +92,24 @@ def new_nonce() -> str:
 
 
 def sign_headers(
-    key: SigningKey, method: str, path: str, query: str, body: bytes, timestamp: int
+    key: SigningKey,
+    method: str,
+    path: str,
+    query: str,
+    body: bytes,
+    timestamp: int,
+    on_request: str | None = None,
 ) -> dict[str, str]:
     nonce = new_nonce()
     stamp = str(timestamp)
-    canonical = canonical_string(method, path, query, stamp, nonce, body)
+    canonical = canonical_string(method, path, query, stamp, nonce, body, on_request)
     signature = hmac.new(key._key, canonical.encode("utf-8"), hashlib.sha256).hexdigest()
-    return {
+    headers = {
         "Authorization": f"Maity-HMAC {key.credential_id}",
         "Maity-Timestamp": stamp,
         "Maity-Nonce": nonce,
         "Maity-Signature": signature,
     }
+    if on_request is not None:
+        headers["Maity-On-Request"] = on_request
+    return headers

@@ -4739,6 +4739,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && chLinks[6].getAttribute("href") === "#/chats/sample/agt-s1" && text(chLinks[6]).endsWith("in Sample shop")
     && text(main).includes("Pick a conversation.") && header.querySelector("a.chat-button").getAttribute("aria-current") === "page",
     "chats: the Chat tab's layout with every project's chats, unread first, then the newest, each with its project");
+  // The project as a mark after the who line, its name on hover (no line of its own).
+  const chMark = (a) => a.querySelector(".conv-sub .conv-project");
+  expect(chLinks.every((a) => chMark(a) && chMark(a).querySelector(".project-mark")) && chMark(chLinks[0]).getAttribute("title") === "Maity"
+    && chMark(chLinks[6]).getAttribute("title") === "Sample shop",
+    "chats: each row's project is a mark after the who line, its name on hover");
   // Opening one keeps the global view: its messages and composer in place, the list beside it, its unread gone.
   const gxGets = [], gxPosts = [];
   const gxGet = win.Maity.api.get, gxGetAll = win.Maity.api.getAll, gxPost = win.Maity.api.post, gxPatch = win.Maity.api.patch;
@@ -4832,6 +4837,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main.querySelector("section.group-chat")).includes("Release 0.2: go"), "chats: a group chat renamed elsewhere shows its new title after the stream's nudge");
   await go("#/chats/nowhere/agt-a"); for (let k = 0; k < 4; k++) await tick();
   expect(text(main).includes("No project of yours with the slug nowhere."), "chats: an unknown project is said");
+  // In the global chat an agent's message names the projects it is in, by logo with the name on
+  // hover: only the reader's projects whose members name it; a human's message and a project's own chat none.
+  const gpIn = () => main.querySelectorAll("li.msg.in").filter((li) => !li.classList.contains("grouped"));
+  const gpMarks = (li) => li.querySelectorAll(".msg-project").map((s) => s.getAttribute("title"));
+  await go("#/chats/maity/agt-a"); for (let k = 0; k < 8; k++) await tick();
+  expect(gpIn().length && gpIn().every((li) => JSON.stringify(gpMarks(li)) === JSON.stringify(["Maity"]))
+    && gpIn()[0].querySelector(".msg-project .project-mark") && text(gpIn()[0].querySelector(".msg-projects")).includes("in Maity"),
+    "global chat: an agent in one of the reader's projects shows that one project's mark, its name on hover");
+  win.Maity.api.getAll = (p) => gxGetAll(p).then((r) => (p === "/projects/sample/members"
+    ? Object.assign({}, r, { items: r.items.concat([{ id: "agt-a", kind: "agent", handle: "agent-a", display_name: "Agent A", role: "member", presence: "online" }]) }) : r));
+  await go("#/chats/maity/agt-a"); for (let k = 0; k < 8; k++) await tick();
+  expect(gpIn().length && JSON.stringify(gpMarks(gpIn()[0])) === JSON.stringify(["Maity", "Sample shop"]),
+    "global chat: an agent in two of the reader's projects shows both, in the switcher's order");
+  win.Maity.api.getAll = gxGetAll;
+  expect(!main.querySelectorAll("li.msg.out .msg-projects").length, "global chat: the reader's own messages name no project");
+  await go("#/p/maity/chat/agt-a"); for (let k = 0; k < 8; k++) await tick();
+  expect(main.querySelectorAll("li.msg.in").length && !main.querySelector(".msg-projects"), "global chat: a project's own chat names no projects");
   win.Maity.api.get = gxGet; win.Maity.api.getAll = gxGetAll; win.Maity.api.post = gxPost;
 
   await go("#/p/maity/inbox"); for (let k = 0; k < 2; k++) await tick();
@@ -5220,6 +5242,40 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const mrPlain = win.Maity.dom.memberRef({ memberById: {}, link: () => "#/x", nameOf: () => "Gone" }, { member_id: "agt-gone", display_name: "Gone Agent" });
   expect(mrPlain.tagName === "SPAN" && mrPlain.classList.contains("plain") && text(mrPlain) === "Gone Agent" && mrPlain.getAttribute("title") === "Gone Agent",
     "member links: a member the project does not list is plain text");
+  // An agent's instance (§6.17): <handle>#<id>, the #id muted with harness and model as tooltip;
+  // a human keeps the name, and an id that is no instance id is not shown.
+  const inCtx = { memberById: { "agt-b": { id: "agt-b", kind: "agent", handle: "agent-b", display_name: "Agent B" },
+    "hum-m": { id: "hum-m", kind: "human", handle: "maintainer", display_name: "Maintainer" } }, link: (k, id) => "#/p/maity/" + k + "/" + id, nameOf: (id) => id };
+  const inRef = win.Maity.dom.memberRef(inCtx, "agt-b", { instance: { instance: "wqe2", harness: "Claude Code", model: "claude-opus-5-5" } });
+  const inSuffix = inRef.querySelector(".member-instance");
+  const inLink = inRef.querySelector("a.member-ref");
+  expect(text(inRef) === "agent-b#wqe2" && inLink && text(inLink) === "agent-b" && inLink.getAttribute("title") === "Agent B"
+    && inSuffix && inSuffix.parentNode === inRef && inSuffix.classList.contains("muted")
+    && inSuffix.getAttribute("title") === "Instance wqe2 · Claude Code · claude-opus-5-5",
+    "instances: an agent is named <handle>#<id>, the id muted beside the link, harness and model as its tooltip");
+  expect(text(win.Maity.dom.memberRef(inCtx, "agt-b", { text: "handle", instance: "k7mq" })) === "@agent-b#k7mq"
+    && text(win.Maity.dom.memberRef(inCtx, "hum-m", { instance: "wqe2" })) === "Maintainer"
+    && text(win.Maity.dom.memberRef(inCtx, "agt-b", { instance: "<b>x" })) === "Agent B"
+    && text(win.Maity.dom.memberRef(inCtx, "agt-b", { instance: null })) === "Agent B",
+    "instances: @handle#id as a handle; a human, a malformed id and no instance stay as before");
+  // Across projects a reference has no handle and the member no list entry: the name, plain, then the #id.
+  const inBare = win.Maity.dom.memberRef({ memberById: {}, link: () => "#/x", nameOf: (id) => id }, { member_id: "agt-q", display_name: "Agent Q", instance: "k7mq" }, { instance: "k7mq" });
+  expect(text(inBare) === "Agent Q#k7mq" && !inBare.querySelector("a") && inBare.querySelector(".member-ref.plain") && inBare.querySelector(".member-instance"),
+    "instances: without a handle (all projects, personal requests) the name and the #id, as plain text");
+  const inShared = Object.assign({}, inCtx, { members: [{ id: "agt-b", kind: "agent", handle: "agent-b", name: "oliver/agent-b" }, { id: "agt-x", kind: "agent", handle: "agent-b", name: "sam/agent-b" }] });
+  inShared.memberById = Object.assign({}, inCtx.memberById, { "agt-b": inShared.members[0] });
+  expect(text(win.Maity.dom.memberRef(inShared, "agt-b", { instance: "wqe2" })) === "oliver/agent-b#wqe2",
+    "instances: where two agents share the handle, owner/handle#id");
+  // Two instances of one agent in one thread: two senders, each named, never grouped as one.
+  const inLine = win.Maity.chatParts.timeline(Object.assign({ me: { id: "hum-m" } }, inCtx), new Map(), null, null, {});
+  const inMsgs = [
+    { seq: 1, from: "agt-b", from_instance: "wqe2", body: "First.", sent_at: "2026-10-27T10:00:00Z", delivered_at: null },
+    { seq: 2, from: "agt-b", from_instance: "k7mq", body: "Second.", sent_at: "2026-10-27T10:00:30Z", delivered_at: null },
+    { seq: 3, from: "agt-b", from_instance: "k7mq", body: "Third.", sent_at: "2026-10-27T10:01:00Z", delivered_at: null },
+  ].map((m) => inLine(m).find((li) => li.classList.contains("msg")));
+  expect(!inMsgs[0].classList.contains("grouped") && !inMsgs[1].classList.contains("grouped") && inMsgs[2].classList.contains("grouped")
+    && text(inMsgs[0].querySelector(".meta")).includes("agent-b#wqe2") && text(inMsgs[1].querySelector(".meta")).includes("agent-b#k7mq"),
+    "instances: two instances of one agent in a chat are two senders, each named <handle>#<id>");
   // Not on this hub (404 or 405): said quietly where the feature would be, asked once, never red.
   const nhGet = win.Maity.api.get;
   const nhAsked = {};

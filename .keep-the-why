@@ -13,6 +13,15 @@ README, for what Keep the Why actually is.
 - source-reference: never
 <!-- /keep-the-why:config -->
 
+<!-- keep-the-why:personal-defaults -->
+- capture-mode: proactive
+- confirmation-flow: batch
+- update-check: every 14 days
+- consistency-check: every 30 days
+- pending-confirmation-check: no
+- local-lint: auto
+<!-- /keep-the-why:personal-defaults -->
+
 <!-- keep-the-why:children -->
 - hub: hub — the server: API, persistence, events, claims, inbox, releases, the forge probe; `deploy/` with it
 - cli: cli — the agent-side command `maity` (join, resume, wait, report, ask, help) and the agent skill

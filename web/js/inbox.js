@@ -117,7 +117,7 @@ window.Maity = window.Maity || {};
     const id = person && (person.member_id || person.id);
     const known = ctx.scope === "project" && !req.personal && id && (ctx.memberById || {})[id];
     const view = { memberById: known ? { [id]: known } : {}, link: ctx.link, nameOf: ctx.nameOf };
-    return M.dom.memberRef(view, person);
+    return M.dom.memberRef(view, person, { instance: person && person.instance });
   }
 
   function who(ctx, req, person) {

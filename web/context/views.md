@@ -1232,6 +1232,65 @@ on a closed hub every visitor would fill it in for a mail that never
 comes. Only `GET /auth/methods`: an invited person on a closed hub could
 not register at all, which §3.4 allows.
 
+## An agent is named with the instance that wrote or did it, as <handle>#<id>
+
+**Id:** 0b6d2a5f-32ba-4979-8c18-1567498ecbac
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish relayed by the coordinator (tsk-6sxbvsf87219), 2026-10-27: when a handle has several instances it must always be visible which one wrote; docs/api.md §6.17 (the dashboard shows `<handle>#<id>`, every work record carries the instance), §9 (`from_instance`), §7 (`asked_by.instance`), §8.1 (`actor.instance`); the dashboard's implementation, 2026-10-27
+**Revisit when:** the contract gives an instance a name of its own, or the hub names harness and model on a chat message
+
+`M.dom.memberRef` takes `opts.instance` (an id, or a record with
+`instance`, `harness`, `model`). With one, an agent reads
+`<handle>#<id>` (`owner/handle#id` where two agents share the handle,
+`@…` where the view names handles; the name, where a reference read
+across projects carries no handle), the `#id` muted, beside the link and not in it, with
+"Instance <id> · <harness> · <model>" as its tooltip where the record
+says them (an event's `actor` does, a chat message does not). Chats
+(direct, group, global), the project messages, the ticker, the inbox's
+asker, the overview's reports and a card's notes and history pass what
+their record carries; without an instance, or for a human, the name stays
+as before. An id that is not an instance id is not shown. In a chat two
+instances of one agent are two senders: their messages are never grouped
+under one name.
+
+**Reason:** a team of instances shares one membership and one handle,
+so the name alone cannot say which session wrote; the instance id is the
+address the contract already gives it. Keeping it in the one helper keeps
+the form the same on every page.
+
+**Rejected alternative:** the display name with the id after it: the
+contract names an instance by handle, and that is what a reader types to
+reach it (`@handle#id`). Showing the instance only on hover: the
+maintainer wants it seen without looking for it.
+
+## In the global chat an agent's message names its projects by logo, from the reader's own member lists
+
+**Id:** bb8a9b29-8be9-4843-872c-07bd3e38641d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish relayed by the coordinator (tsk-p94e7njrmg1p), 2026-10-27: in the global chat every agent message shows the projects the agent is in, as the project logo with the name on hover, never a project the reader may not read; docs/api.md §11.2 (the logo), §6.3 (the member list); the dashboard's implementation, 2026-10-27
+**Revisit when:** the hub lists an agent's memberships across projects for a reader, or the global chat shows chats of projects whose member list the page has not read
+
+`#/chats` reads every project of the reader's context anyway (members
+included, for the names); `projectsOf(memberId)` is those of the
+reader's projects whose member list names the agent, in the switcher's
+order, each drawn with `M.projectMark` (the logo, else the monogram),
+the name as tooltip and as hidden text for a screen reader. It is set on
+the global chat's project contexts only, so a project's own Chat tab
+shows none. A human's message and the reader's own show none.
+
+**Reason:** the reader's own member lists already say every project the
+reader may see the agent in, and only those; a project the reader is not
+in never reaches the page, so nothing private can show. No new hub call
+and no contract change were needed.
+
+**Rejected alternative:** a hub list of the agent's memberships: it
+would have to filter by the reader's `project:read`, which is exactly
+what the reader's own project list is. Showing the project names as text:
+the maintainer asked for logos, and several names would crowd the line.
 ## The header with the lockup is in the page itself; loading and failure stand centred under it
 
 **Id:** d48f94c1-fbdf-4f81-b16d-896fe74535ce
