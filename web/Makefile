@@ -3,9 +3,11 @@ NODE ?= node
 
 .PHONY: check fixtures smoke starter-configs e2e
 
-# HTML, JavaScript, CSS and fixture checks; Python standard library only.
+# HTML, JavaScript, CSS and fixture checks, and the e2e harness's own
+# judgement of answers; Python standard library only.
 check:
 	$(PYTHON) tools/check.py
+	$(PYTHON) tools/test_e2e_harness.py
 
 # Regenerate fixtures/fixtures.js from fixtures/**/*.json.
 fixtures:

@@ -18,12 +18,14 @@ window.Maity = window.Maity || {};
   const ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
   // As the hub reads a code: case ignored, hyphens and spaces dropped, I and
-  // L as 1, O as 0 (§2.6.2). null when it is not 8 characters of the alphabet.
+  // L as 1, O as 0 (§2.6.2). null when it is not 12 characters of the alphabet.
+  const CODE_LENGTH = 12;
   function normalCode(text) {
     const c = String(text || "").toUpperCase().replace(/[\s-]/g, "").replace(/[IL]/g, "1").replace(/O/g, "0");
-    return c.length === 8 && [...c].every((ch) => ALPHABET.includes(ch)) ? c : null;
+    return c.length === CODE_LENGTH && [...c].every((ch) => ALPHABET.includes(ch)) ? c : null;
   }
-  const grouped = (c) => c.slice(0, 4) + "-" + c.slice(4);
+  // Three groups of four, as the hub shows it: K7QM-4XPR-9D2F.
+  const grouped = (c) => (c.match(/.{1,4}/g) || []).join("-");
 
   // "4:07" until the hub's expiry, by the hub's clock.
   function left(expiresAt) {
@@ -81,7 +83,7 @@ window.Maity = window.Maity || {};
     return box;
   }
 
-  // #/sign-in/code?c=K7QM4XPR, the QR's URL: the field filled in, sent only
+  // #/sign-in/code?c=K7QM4XPR9D2F, the QR's URL: the field filled in, sent only
   // on the human's tap (§2.6.2).
   function codeFromHash() {
     const m = /^#\/sign-in\/code\?(.*)$/.exec(window.location.hash || "");
@@ -94,14 +96,14 @@ window.Maity = window.Maity || {};
     const panel = h("section", { class: "sign-in-code", "aria-labelledby": "sign-in-code-title" });
     const status = M.statusLine();
     const input = h("input", { id: "device-code", autocomplete: "off", autocapitalize: "characters", spellcheck: "false",
-      placeholder: "XXXX-XXXX", "aria-describedby": "device-code-hint" });
+      placeholder: "XXXX-XXXX-XXXX", "aria-describedby": "device-code-hint" });
     const submit = h("button", { type: "submit", class: "primary" }, "Continue");
     const form = h("form", {
       class: "sign-in-form",
       onsubmit: (e) => {
         e.preventDefault();
         const code = normalCode(input.value);
-        if (!code) { status.fail("Not sent: ", { message: "a code is eight letters and digits, like K7QM-4XPR" }); input.focus(); return; }
+        if (!code) { status.fail("Not sent: ", { message: "a code is twelve letters and digits, like K7QM-4XPR-9D2F" }); input.focus(); return; }
         redeem(code);
       },
     },
