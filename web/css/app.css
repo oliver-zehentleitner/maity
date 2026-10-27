@@ -509,6 +509,10 @@ a.id-ref:hover, a.id-ref:focus-visible { text-decoration: underline; }
 .pause { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 8px; }
 .pause input { flex: 1 1 10rem; }
 .pause .hint { flex: 1 1 100%; }
+.pause[hidden] { display: none; }
+/* An agent card's Actions menu, at the header's end (the designer's pass part 3). */
+.profile header .menu-box { margin-inline-start: auto; }
+.menu-button.agent-actions { font-size: 0.85rem; padding: 4px 10px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); }
 .hint { margin: 0; font-size: 0.8rem; color: var(--muted); }
 .flag .hint { display: block; margin-top: 4px; }
 .briefing { margin-top: 10px; }

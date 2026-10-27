@@ -554,6 +554,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main).includes("Areas") && text(main).includes("capabilities".slice(0, 0) + "tag"), "areas and capabilities");
   expect(text(byId("pause-agt-b").parentNode).includes("A pause tells the agent at once and refuses it new work (claims, new cards)"),
     "the pause form says what a pause does");
+  // The pause is folded into the card's Actions menu (the designer's pass part 3).
+  const acCard = byId("pause-agt-b").parentNode.parentNode;
+  const acMenu = acCard.querySelector("header button.agent-actions");
+  expect(byId("pause-agt-b").parentNode.hidden && acMenu && acMenu.getAttribute("aria-haspopup") === "menu",
+    "agents: the pause form is folded, an Actions menu in the card's header");
+  acMenu.click(); await tick();
+  const acItems = acCard.querySelectorAll("header .menu-item").map((b) => b.textContent);
+  expect(JSON.stringify(acItems) === JSON.stringify(["Pause…", "Edit briefing"]), "agents: Actions offers Pause… and Edit briefing " + JSON.stringify(acItems));
+  acCard.querySelectorAll("header .menu-item").find((b) => b.textContent === "Pause…").click(); await tick();
+  expect(!byId("pause-agt-b").parentNode.hidden, "agents: Pause… opens the pause form");
+  btn(byId("pause-agt-b").parentNode, "Cancel").click(); await tick();
+  expect(byId("pause-agt-b").parentNode.hidden, "agents: Cancel folds it again");
   // Briefing: shown to an owner, edited in place with PATCH members.
   const patches = [];
   const realPatch = win.Maity.api.patch;
