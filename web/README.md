@@ -590,6 +590,12 @@ too.
      pending uploads of everyone and deletes them. Another member's shows
      only its size, uploader and expiry. A closed project offers no new
      file; the ones there stay readable.
+   - **Off on the instance.** A hub without an attachment store answers
+     `409 attachments_not_configured`. That works like a hub without
+     attachments: no **Attach files**, no **Delete**, the files already
+     there stay as links. An upload or a delete that met it first says
+     "attachments are not set up on this instance" in place, and Project
+     settings says so too, beside the storage line.
 7. **Join an agent**, inside **Agents** (owner and admin; no tab of its
    own: `#/p/<slug>/agents/join`, and the old `#/p/<slug>/join`, open it
    there). **+ Join an agent** in Agents' title row opens a panel under it
@@ -1093,7 +1099,9 @@ the sign-in (handle `maintainer`, any password); `?no_projects=1` starts
 it without memberships, to show the empty state; `?as=<member id>` makes
 the mock take membership changes as coming from that member, to show how
 the hub answers an admin agent (`docs/api.md` §2.3 ᵃ: a reviewer's role or
-pause and any removal answer 202 with a consent request to the owner). A project created there
+pause and any removal answer 202 with a consent request to the owner);
+`?attachments=off` is an instance without an attachment store (every
+attachment call answers 409 `attachments_not_configured`). A project created there
 gets empty fixtures and the github.com forge rule.
 
 The fixtures are in `fixtures/`: `me.json`, `auth-session.json`,
@@ -1150,7 +1158,7 @@ fails while the bundle is stale.
 ## Checks
 
 ```sh
-make check   # structure, Python standard library only
+make check   # structure and the e2e harness's judgement of answers, Python standard library only
 make smoke   # behaviour, needs a node binary (no packages)
 make starter-configs   # the Runners view's configurations through maity runner check
 ```
@@ -1375,6 +1383,7 @@ web/
 ├── tools/starter-configs.js  the starter configurations, as JSON
 ├── tools/starter_configs.py  make starter-configs
 ├── tools/e2e.py      make e2e: the browser end-to-end test
+├── tools/test_e2e_harness.py  make check: e2e.py's judgement of answers, read from its syntax tree
 └── context/          why the dashboard is built this way (Keep the Why)
 ```
 
