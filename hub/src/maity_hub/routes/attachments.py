@@ -13,16 +13,18 @@ from typing import Any
 
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
-from sqlalchemy import Connection, delete, insert, select
+from sqlalchemy import Connection, delete, insert, select, update
 
 from maity_hub import attachment_store as blobs
-from maity_hub import attachments, avatars, clock, idempotency, paging
+from maity_hub import attachments, avatars, clock, group_chats, idempotency, paging
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.deps import AnyCaller, engine_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
-from maity_hub.events import lock_project, on_commit, on_rollback
+from maity_hub.events import emit, lock_project, on_commit, on_rollback
 from maity_hub.ids import new_id
+from maity_hub.routes.conversations import Outsider, _reader
+from maity_hub.routes.events import chat_parties
 from maity_hub.routes.project_images import _matches
 
 router = APIRouter()
@@ -161,8 +163,9 @@ def get_attachment(
 ) -> JSONResponse:
     blobs.store_of(settings_of(request))  # every attachment call: configured, or 409
     with engine_of(request).begin() as conn:
-        mine = membership(conn, caller, slug)
-        mine.require("project:read")
+        mine = _reader(conn, caller, slug)
+        if isinstance(mine, Membership):
+            mine.require("project:read")
         row = _row(conn, mine, attachment_id)
         if not attachments.readable(conn, mine, row):
             raise not_found()
@@ -174,8 +177,9 @@ def get_content(slug: str, attachment_id: str, request: Request, caller: AnyCall
     settings = settings_of(request)
     store = blobs.store_of(settings)  # also before a 304: configured, or 409
     with engine_of(request).begin() as conn:
-        mine = membership(conn, caller, slug)
-        mine.require("project:read")
+        mine = _reader(conn, caller, slug)
+        if isinstance(mine, Membership):
+            mine.require("project:read")
         row = _row(conn, mine, attachment_id)
         # Authorized first, and only then compared: no `304` for a caller who may not read.
         if row.deleted_at is not None or not attachments.readable(conn, mine, row):
@@ -259,14 +263,15 @@ def delete_attachment(
     store = blobs.store_of(settings_of(request))
 
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = membership(conn, caller, slug)
-        mine.require("events:post")
-        lock_project(conn, mine.project.id)
+        mine = _reader(conn, caller, slug)
+        project = lock_project(conn, mine.project.id)
+        del project
         row = _row(conn, mine, attachment_id)
         if row.message_seq is not None:
-            # A sent message's attachment is part of the message: read and taken out by
-            # the message's rules, which arrive with the binding.
+            return _delete_sent(conn, mine, caller, row, store)
+        if isinstance(mine, Outsider):
             raise not_found()
+        mine.require("events:post")
         own = row.uploaded_by == mine.id
         if not own and not _admin_human(mine):
             if mine.kind == "agent" and mine.role in ("owner", "admin"):
@@ -279,3 +284,75 @@ def delete_attachment(
         return idempotency.Outcome(200, None, None, shown)
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+def _not_a_participant() -> ApiError:
+    return ApiError(
+        403, "forbidden", "only a human in the chat deletes here", {"reason": "not_a_participant"}
+    )
+
+
+def _delete_sent(
+    conn: Connection, mine: Any, caller: Any, row: Any, store: blobs.LocalStore
+) -> idempotency.Outcome:
+    """An attachment a message carries (§8.7): readable as the message is, deleted by its
+    uploader, by a human in the chat now (a chat message), or by a human with
+    `members:admin` (a project message). The row stays as a tombstone, the bytes go after
+    the commit, and `attachment_deleted` reaches whoever reads the message."""
+    if not attachments.readable(conn, mine, row):
+        raise not_found()  # what the caller cannot read does not exist for it
+    event = conn.execute(select(t.event).where(t.event.c.seq == row.message_seq)).one()
+    if isinstance(mine, Outsider):
+        raise ApiError(
+            403, "forbidden", "an owner reads along and does not act", {"reason": "observer"}
+        )
+    if row.deleted_at is not None:  # a deleted one answers with its tombstone (§1.5)
+        return idempotency.Outcome(200, None, None, attachments.view(conn, [row])[0])
+    if row.uploaded_by != mine.id:
+        if mine.kind == "agent":
+            raise humans_only("an agent deletes only what it sent")
+        if event.conversation_id is None:
+            if not mine.may("members:admin"):
+                raise forbidden("members:admin")
+        elif group_chats.is_group(event.conversation_id):
+            if group_chats.access(conn, event.conversation_id, mine) != "participant":
+                raise _not_a_participant()
+        else:  # a direct chat: its human party
+            _, human = chat_parties(conn, mine, event.conversation_id)
+            if mine.id != human.id:
+                raise _not_a_participant()
+    conn.execute(
+        update(t.attachment)
+        .where(t.attachment.c.id == row.id, t.attachment.c.deleted_at.is_(None))
+        .values(deleted_at=clock.now(), deleted_by=mine.principal_id, deleted_reason="deleted")
+    )
+    on_commit(conn, lambda: store.delete(blobs.key_of(row.project_id, row.id)))
+    emit(
+        conn,
+        mine.project.id,
+        "attachment_deleted",
+        _audience(conn, event),
+        {
+            "attachment_id": row.id,
+            "message_seq": row.message_seq,
+            "reason": "deleted",
+            "by": mine.principal_id,
+        },
+        actor=caller.actor(mine.id),
+        subject=("event", str(event.seq)),
+        # A chat's notice is the chat's, as the message was: no see-all reaches it.
+        conversation_id=event.conversation_id,
+    )
+    fresh = conn.execute(select(t.attachment).where(t.attachment.c.id == row.id)).one()
+    return idempotency.Outcome(200, None, None, attachments.view(conn, [fresh])[0])
+
+
+def _audience(conn: Connection, event: Any) -> list[str]:
+    """Whoever reads the message, as `event_redacted` reaches it (§8.5): a project message's
+    own audience; a direct chat's two parties; a group chat's current participants (their
+    observers read along by the owner rule)."""
+    if event.conversation_id is None:
+        return list(event.audience or [])
+    if group_chats.is_group(event.conversation_id):
+        return group_chats.audience(group_chats.stays(conn, event.conversation_id))
+    return list(event.audience or [])
