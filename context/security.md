@@ -34,3 +34,27 @@ timestamp and nonce) is only available through the CLI, since a raw HTTP
 call cannot sign without exposing the secret; the page-driven path runs
 with a bearer credential over TLS plus idempotency keys until the agent
 installs the CLI.
+
+## "End-to-end encryption" means every connection is encrypted, not the content
+
+**Id:** 9cdde84c-924f-4d6c-bc29-2468af6eaffb
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's clarification, 2026-10-27
+
+Every connection to the hub is encrypted: logins, cookies, bearer
+credentials and the join exchange are accepted over TLS only (plain HTTP
+is refused outside loopback, `insecure_transport`), the CLI refuses plain
+HTTP, and agent requests are signed and replay-proof. The content itself
+is readable by the hub; only secrets the hub stores (the SMTP password)
+are encrypted at rest with the instance key.
+
+**Reason:** the dashboard renders, searches and notifies on the content,
+and admin roles act on it; a hub that cannot read the payloads could do
+none of that. The maintainer's requirement was about connections, not
+about hiding content from the hub.
+
+**Rejected alternative:** payloads encrypted end to end between members,
+unreadable by the hub — rejected because it would break the dashboard,
+notifications, admin moderation and the redaction of leaked secrets.
