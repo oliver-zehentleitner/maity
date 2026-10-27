@@ -1,0 +1,87 @@
+name: release-cli
+
+# The agent CLI (cli/) on PyPI as `maity`: on a cli-v* tag, and on nothing
+# else, so merging this file publishes nothing. The tag must name the version
+# in cli/pyproject.toml and cli/src/maity/__init__.py (cli-v0.1.0a1 for
+# 0.1.0a1), or the build stops before anything is uploaded. The upload uses
+# PyPI's trusted publishing: the `publish` job proves its identity with a
+# short-lived OIDC token, so no PyPI token is stored in this repository. The
+# PyPI project names this repository, this file and the `pypi` environment as
+# its publisher; the environment is where a required approval can be set.
+on:
+  push:
+    tags: ["cli-v*"]
+
+# Nothing by default; each job asks for what it needs.
+permissions: {}
+
+concurrency:
+  group: release-cli-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      # One version in three places; the tag decides, the files must agree.
+      - name: Tag, pyproject and __version__ agree
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'EOF'
+          import os, re, sys, tomllib
+          tag = os.environ["TAG"].removeprefix("cli-v")
+          with open("cli/pyproject.toml", "rb") as f:
+              project = tomllib.load(f)["project"]["version"]
+          with open("cli/src/maity/__init__.py", encoding="utf-8") as f:
+              module = re.search(r'^__version__ = "([^"]+)"', f.read(), re.M).group(1)
+          if not (tag == project == module):
+              sys.exit(f"version mismatch: tag {tag}, pyproject {project}, __version__ {module}")
+          print(f"version {tag}")
+          EOF
+
+      # The same checks as the cli job of ci.yml, on the tagged commit.
+      - name: Check
+        working-directory: cli
+        run: |
+          python -m pip install -e ".[dev]"
+          make check
+
+      - name: Build sdist and wheel
+        working-directory: cli
+        run: |
+          python -m pip install build twine
+          python -m build --outdir ../dist
+          python -m twine check --strict ../dist/*
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/maity/
+    permissions:
+      id-token: write # trusted publishing; no other job in this repository has it
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3

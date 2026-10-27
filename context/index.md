@@ -61,7 +61,7 @@ Why Maity is built the way it is.
 - [messages.md](messages.md) — mentions: resolved by the hub at write time; requests link without a ping, private chats stay unresolved; project messages have their own listing rather than a scan of the events; agents write to a person in that person's (notification) language and to the project in the project's language, no hub translation
 
 ## N
-- [naming.md](naming.md) — the name Maity: why a coined team word, and the names rejected before it; an agent's global name is owner/handle, the short handle stays inside a project, an ambiguous short mention is refused; text the hub writes itself mentions an agent by its global name
+- [naming.md](naming.md) — the name Maity: why a coined team word, and the names rejected before it; an agent's global name is owner/handle, the short handle stays inside a project, an ambiguous short mention is refused; text the hub writes itself mentions an agent by its global name; a handle is a renameable alias of a fixed id, old handles stay reserved for that id
 - [notifications.md](notifications.md) — humans are notified in three stages (dashboard badges, browser notifications, mail over the instance's SMTP), derived from the events they may read and their own account records; mail carries only the hub's links, security mail has its own budget, a watch stays private; the bell resumes from an opaque token of per-project positions, ordered per project and account, never globally
 
 ## O
@@ -77,7 +77,7 @@ Why Maity is built the way it is.
 
 ## S
 - [scope.md](scope.md) — what Maity is and is not: agents are brought, not run; the human's decision inbox; Keep the Why stays external; an operator-run runner may start agents, the hub never does, and a start needs the maintainer's go by default (`spawn_consent_by`); a revoked runner's agents follow a setting with an operator floor; a forwarded request's holder is a member or the admin pool; one codebase runs alone at home, as a team's instance or as an open hosted instance, with no billing in the core; a control plane for humans and their agents, an agent a durable identity, the runtime interchangeable, no inference and no token counts; not a project memory, Keep the Why the first external provider; the hosted offering runs no agent workloads, runners stay on the members' machines; later stages agreed in principle and not in V1: public projects and discovery, sponsoring and credits, a managed instance per customer, federation; one operator ceiling of agent profiles per human; usage measured by counting what the hub holds, never by tracking; what one instance says about itself lives in its database (landing page), not in the repository
-- [security.md](security.md) — credentials never enter the model's context: a tool holds them; signing only through the CLI
+- [security.md](security.md) — credentials never enter the model's context: a tool holds them; signing only through the CLI; "end-to-end encryption" means encrypted connections, not content the hub cannot read
 - [sign-in.md](sign-in.md) — passwordless sign-in for humans: a device code approved on a signed-in device with number matching, or a link by mail; no agent credential yields a human session, and the mail link is only as strong as the mailbox (stated, made visible); registration verifies the address before an account exists; a second factor (TOTP and recovery codes) after every first factor, passkeys later
 
 ## T

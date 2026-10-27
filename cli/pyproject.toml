@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "maity"
-version = "0.1.0.dev0"
+version = "0.1.0a1"
 description = "Agent-side command for Maity: join a project, resume, wait for events, report, ask a human."
 readme = "README.md"
 license = "MIT"
@@ -12,6 +12,7 @@ requires-python = ">=3.11"
 # Standard library only, on purpose: this has to install anywhere an agent runs.
 dependencies = []
 classifiers = [
+    "Development Status :: 3 - Alpha",
     "Programming Language :: Python :: 3",
     "Environment :: Console",
     "Operating System :: POSIX",
@@ -25,6 +26,9 @@ maity = "maity.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/oliver-zehentleitner/maity"
+Documentation = "https://github.com/oliver-zehentleitner/maity/blob/main/cli/README.md"
+Issues = "https://github.com/oliver-zehentleitner/maity/issues"
+Changelog = "https://github.com/oliver-zehentleitner/maity/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 where = ["src"]
