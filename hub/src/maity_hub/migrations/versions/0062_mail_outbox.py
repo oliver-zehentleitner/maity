@@ -3,7 +3,8 @@
 `mail_outbox` holds mail waiting for the mail worker, written in the transaction that
 decides it. `status` is `waiting`, `sending` (claimed by one process), `sent`, `failed` or
 `dropped`; `not_before` is when a row is next due, and while it is `sending` the deadline
-of the claim.
+of the claim. `mail_budget` is one row per budget kind with the admissions of the hour,
+locked for the check and the admission together.
 
 Revision ID: 0062
 Revises: 0063
@@ -57,8 +58,17 @@ def upgrade() -> None:
         **TABLE_OPTIONS,
     )
     op.create_index("ix_mail_outbox_due", "mail_outbox", ["status", "not_before"])
+    op.create_table(
+        "mail_budget",
+        sa.Column("kind", sa.String(length=16), nullable=False),
+        sa.Column("window_start", TIMESTAMP, nullable=False),
+        sa.Column("admitted", sa.Integer(), nullable=False),
+        sa.PrimaryKeyConstraint("kind", name=op.f("pk_mail_budget")),
+        **TABLE_OPTIONS,
+    )
 
 
 def downgrade() -> None:
+    op.drop_table("mail_budget")
     op.drop_index("ix_mail_outbox_due", table_name="mail_outbox")
     op.drop_table("mail_outbox")
