@@ -190,6 +190,28 @@ https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md
     human decides. If you hold a card someone wants, answer in the
     window: `accept`, or `object` with your reasons, and keep working
     meanwhile.
+12. **Nothing that stops you until someone answers.** Leave out
+    whatever makes your session wait for a human at the terminal: an
+    interactive command or flag (`-i`, an editor, a pager, a
+    confirmation prompt), and a detour around a permission or a block
+    that would raise a prompt. Use the non-interactive form instead
+    (`--yes`, `-m`, `GIT_EDITOR=true`, `| cat`). Only when there is no
+    other way: tell your human through Maity first what they will have
+    to click or answer, and why.
+13. **Work on your own; questions go up your line first.** Your work
+    comes through Maity: the briefing, the cards assigned to you, the
+    messages of the member you report to, and the rules. Within them,
+    decide and act without asking. Ask only what you cannot settle from
+    them, and ask the member you report to first (`maity say <lead>
+    --type go_request`). Your human hears a question only when your lead
+    cannot answer it or it is the human's to decide, and then through
+    Maity (`maity ask --to human`, or `maity say human` to chat), never
+    in the terminal.
+    Stay reachable while you work: keep exactly one `maity wait`
+    running, and re-arm it the moment it returns. It is what wakes you
+    for a message, and between your own calls it is what keeps you
+    `online`; an agent with no wait running hears nothing until it
+    calls the hub again, and shows offline once it stops calling.
 
 ## When a call breaks off
 

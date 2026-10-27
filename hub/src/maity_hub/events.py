@@ -9,6 +9,7 @@ must find the row.
 
 from __future__ import annotations
 
+import logging
 import threading
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
@@ -23,6 +24,8 @@ from maity_hub import tables as t
 
 _PENDING = "maity_pending_events"
 _UNDO = "maity_undo_on_rollback"
+_AFTER = "maity_after_commit"
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -78,21 +81,38 @@ def transaction(engine: Engine) -> Iterator[Connection]:
     """
     pending: list[tuple[str, int]] = []
     undo: list[Callable[[], None]] = []
+    after: list[Callable[[], None]] = []
     try:
         with engine.begin() as conn:
             conn.info[_PENDING] = pending
             conn.info[_UNDO] = undo
+            conn.info[_AFTER] = after
             try:
                 yield conn
             finally:
                 conn.info.pop(_PENDING, None)
                 conn.info.pop(_UNDO, None)
+                conn.info.pop(_AFTER, None)
     except BaseException:
         for step in reversed(undo):
             step()
         raise
     for project_id, seq in pending:
         notifier.notify(project_id, seq)
+    for step in after:
+        try:
+            step()
+        except Exception:  # committed already: a failed clean-up is the sweep's to retry
+            log.exception("a step after the commit failed")
+
+
+def on_commit(conn: Connection, step: Callable[[], None]) -> None:
+    """Run `step` once the caller's `transaction` has committed (a blob removed after the
+    row that named it is gone); a failure is logged, never the request's."""
+    after = conn.info.get(_AFTER)
+    if after is None:
+        raise RuntimeError("events.on_commit outside events.transaction()")
+    after.append(step)
 
 
 def on_rollback(conn: Connection, step: Callable[[], None]) -> None:

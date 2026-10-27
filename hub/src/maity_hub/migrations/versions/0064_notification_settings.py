@@ -5,7 +5,7 @@ its verification, with the normalized verified address unique across accounts;
 `address_lock` is the per-address lock that claiming an address takes.
 
 Revision ID: 0064
-Revises: 0058
+Revises: 0063
 Create Date: 2026-10-27
 """
 
@@ -17,7 +17,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql, postgresql
 
 revision: str = "0064"
-down_revision: str | None = "0058"
+down_revision: str | None = "0063"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
