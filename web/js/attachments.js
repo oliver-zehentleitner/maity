@@ -18,9 +18,19 @@ window.Maity = window.Maity || {};
   const CLOSED_STATES = ["accepted", "archived"];
   // The types the hub re-encodes an image to (§8.7): only these inline.
   const INLINE_TYPES = ["image/png", "image/jpeg", "image/webp"];
-  // A hub that answered 404 or 405 to attachments has none: not asked again
-  // until the page is loaded anew.
+  // A hub that answered 404 or 405 to attachments has none, and one that
+  // answered 409 attachments_not_configured has them off (§8.7: no store
+  // set up): either way not asked again until the page is loaded anew.
   let hubWithout = false;
+  // Off, not missing: said where files are managed, in these words.
+  let hubOff = false;
+  const OFF_WORDS = "attachments are not set up on this instance";
+  function without(err) {
+    if (err.status === 409 && err.code === "attachments_not_configured") hubOff = true;
+    else if (err.status !== 404 && err.status !== 405) return false;
+    hubWithout = true;
+    return true;
+  }
 
   function sizeOf(n) {
     if (n === null || n === undefined) return "";
@@ -51,6 +61,7 @@ window.Maity = window.Maity || {};
       ? "you have 20 files, or 100 MiB, waiting to be sent; send or remove some first" : "the project's storage for files is full" };
     if (err.code === "rate_limited") return { message: "too many uploads in a short time; try again in a few minutes" };
     if (err.code === "project_closed") return { message: "the project is closed: it takes no new files" };
+    if (err.code === "attachments_not_configured") return { message: OFF_WORDS };
     return err;
   }
 
@@ -102,7 +113,9 @@ window.Maity = window.Maity || {};
             try {
               await M.api.del(ctx.base + "/attachments/" + encodeURIComponent(a.id));
             } catch (err) {
-              status.fail("Not removed: ", err);
+              status.fail("Not removed: ", said(err));
+              // Off on the hub: the chooser goes, the line above says why.
+              if (without(err)) { earlier = []; pending.length = 0; draw(); offer(false); el.hidden = false; }
               return;
             }
             earlier = earlier.filter((x) => x !== a);
@@ -118,7 +131,7 @@ window.Maity = window.Maity || {};
       } catch (err) {
         earlier = [];
         // A hub without attachments has nothing to offer; any other failure is said.
-        if (err.status === 404 || err.status === 405) { hubWithout = true; offer(false); } else status.fail("Could not read your files waiting from before: ", err);
+        if (without(err)) offer(false); else status.fail("Could not read your files waiting from before: ", err);
       }
       drawEarlier();
     };
@@ -134,7 +147,9 @@ window.Maity = window.Maity || {};
             try {
               await M.api.del(ctx.base + "/attachments/" + encodeURIComponent(p.att.id));
             } catch (err) {
-              status.fail("Not removed: ", err);
+              status.fail("Not removed: ", said(err));
+              // Off on the hub: the chooser goes, the line above says why.
+              if (without(err)) { earlier = []; pending.length = 0; draw(); offer(false); el.hidden = false; }
               return;
             }
             pending.splice(pending.indexOf(p), 1);
@@ -161,6 +176,8 @@ window.Maity = window.Maity || {};
         } catch (err) {
           pending.splice(pending.indexOf(p), 1);
           status.fail("Not attached: " + p.name + ": ", said(err, file.size));
+          // Off on the hub: the chooser goes, the line above says why.
+          if (without(err)) { offer(false); el.hidden = false; draw(); break; }
           // Over the pending cap: show what waits, so it can be sent or removed.
           if (err.code === "attachment_quota") await loadEarlier();
         }
@@ -177,6 +194,7 @@ window.Maity = window.Maity || {};
       el.hidden = !yes;
       chooser.hidden = !yes;
       input.disabled = !yes;
+      input.hidden = !yes;
     }
     if (hubWithout) offer(false);
     else {
@@ -251,6 +269,13 @@ window.Maity = window.Maity || {};
               await M.api.del(ctx.base + "/attachments/" + encodeURIComponent(a.id));
               gone();
             } catch (err) {
+              // Off on the hub: no Delete left that would fail again, said calmly.
+              if (without(err)) {
+                const button = li.querySelector("button");
+                if (button) li.removeChild(button);
+                append(li, h("span", { class: "muted" }, " Not deleted: " + (hubOff ? OFF_WORDS : "this hub keeps no files") + "."));
+                return;
+              }
               append(li, h("span", { class: "send-status failed" }, " Not deleted: " + (err.message || err.code)));
             }
           },
@@ -279,13 +304,13 @@ window.Maity = window.Maity || {};
       ctx.project.attachments ? h("p", { class: "muted" }, "Stored: " + sizeOf(ctx.project.attachments.used) + " of " + sizeOf(ctx.project.attachments.quota) + ".") : null,
       list, status.el);
     async function load() {
-      const none = () => { clear(list); append(list, h("li", { class: "muted" }, "This hub keeps no files yet.")); };
+      const none = () => { clear(list); append(list, h("li", { class: "muted" }, hubOff ? "Attachments are not set up on this instance." : "This hub keeps no files yet.")); };
       if (hubWithout) { none(); return; }
       let items;
       try {
         items = (await M.api.getAll(ctx.base + "/attachments?status=pending")).items;
       } catch (err) {
-        if (err.status === 404 || err.status === 405) { hubWithout = true; none(); return; }
+        if (without(err)) { none(); return; }
         status.fail("Could not read them: ", err);
         return;
       }
@@ -304,6 +329,7 @@ window.Maity = window.Maity || {};
               status.el.focus();
               load();
             } catch (err) {
+              if (without(err)) { none(); return; }
               status.fail("Not deleted: ", err);
             }
           },
@@ -315,5 +341,5 @@ window.Maity = window.Maity || {};
 
   M.attachments = {
     // The hub is asked again whether it keeps files (the smoke test's hubs).
-    forget: () => { hubWithout = false; }, picker, render, markDeleted, pendingPanel, sizeOf, said };
+    forget: () => { hubWithout = false; hubOff = false; }, picker, render, markDeleted, pendingPanel, sizeOf, said };
 })(window.Maity);
