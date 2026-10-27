@@ -196,10 +196,13 @@ the commitment of the contract was not built. The agents wrote
 but without the skill's setup check, its linter run or its rules.
 
 **Learned:** an instruction that lives in one file is only as good as
-every agent's way of reading that file. Maity now hands the skill's
-install and load instructions to every agent in its resume. Until the
-hub enforces this, each Claude Code agent keeps a local `CLAUDE.md`
-that imports `AGENTS.md`.
+every agent's way of reading that file. The contract now says Maity
+hands the skill's install and load instructions to every agent in its
+resume (§6.23, decided the same day). As of this entry the hub does not
+do it yet: its resume still carries only `enabled` and `instruction`.
+Until that is built and verified on the live hub, each Claude Code
+agent keeps a local `CLAUDE.md` that imports `AGENTS.md`, and loads the
+skill as `AGENTS.md` says.
 
 **Rejected alternative:** commit a root `CLAUDE.md` with `@AGENTS.md`.
 The ignore file marks it as personal, so committing it would override
