@@ -279,6 +279,47 @@ review already looks.
   it never confirmed. The deadline belongs to the commitment, which is
   per instance, so it survives the sessions.
 
+## Maity tells every agent how to load Keep the Why and lets it adopt the project's personal defaults
+
+**Id:** 4859417a-15f0-44c1-821e-cc80f888e34d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answers in the Maity chat, 2026-10-27 ("Maity soll das gewährleisten", defaults for project and personal settings); an incident the same day: the coordinating agent worked for hours without the skill; contract in `docs/api.md` §6.23
+**Revisit when:** the skill ships through a channel every harness installs from by itself; or an agent harness needs a load instruction the `load` text cannot express
+**See:** projects.md#keep-the-why-is-guaranteed-by-the-hub-a-commitment-at-resume-a-reminder-the-owners-notification-and-a-why-on-every-code-report — 7c1a4f0e-2b8d-4c6e-9a3f-5e2d8b7a1c90 — as of 2026-10-27
+
+The resume packet's `keep_the_why` block tells the agent how to install
+the skill (the skills installer, or a Git fallback for a machine without
+Node), how to load it per harness, and where the project's
+`.keep-the-why` is. The CLI prints this first, before the briefing. A
+project policy, `keep_the_why_defaults`, decides whether the agent adopts
+the personal settings the repository offers without asking its human
+(`adopt`, the default) or runs the skill's personal wizard with them —
+only on a machine with no personal file for the project yet; an
+existing one is never overwritten or re-asked.
+
+**Reason:** the commitment at resume only made the agent say that it
+uses Keep the Why. It did not get the skill onto the machine. An agent
+started outside its clone never read the repository's `AGENTS.md`, found
+no installed skill and had no `npx`, so it confirmed nothing and wrote
+entries from the format alone. Each new agent machine would also ask the
+owner the personal wizard again. The hub still reads no repository: it
+hands out instructions and a path, and the settings stay in
+`.keep-the-why`, where the skill expects them.
+
+**Rejected alternatives:**
+- Leave installation to each agent's operator: the gap that caused the
+  incident.
+- Vendoring the skill into every project repository: the skill's own
+  setup advises against it, and copies drift from the published
+  version.
+- Storing the personal defaults in Maity's project settings: a second
+  source next to `.keep-the-why` that the skill does not read.
+- Setting `personal-defaults-policy: auto-accept` in the agent machine's
+  `~/.keep-the-why/config`: that changes the machine for every project;
+  a session instruction scoped to this project does the same.
+
 ## Projects live in their owner's namespace, owner/slug, as on a forge; old names stay aliases; the change is made once in v1 before the launch
 
 **Id:** 281820c9-2286-45c4-9389-603b7e8a3923

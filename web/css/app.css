@@ -170,8 +170,33 @@ button.small { padding: 2px 8px; font-size: 0.82rem; }
 }
 :root[data-theme="dark"] .brand-lockup.brand-light { display: none; }
 :root[data-theme="dark"] .brand-lockup.brand-dark { display: block; }
-/* Before the first view: the loader (web/brand/loader.css) and its word. */
-.page-loading { display: flex; align-items: center; gap: 8px; color: var(--muted); margin: 24px 0; }
+/* Before the first view: the loader (web/brand/loader.css) and its word,
+   and a page that could not load: centred in what the header leaves of
+   the screen, on a phone as on a desktop. Without :has, at the top. */
+/* The loader at 48 px, its word under it, shown only after 300 ms, so a
+   fast load never flashes it (the designer's pass on #433). */
+.page-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--muted); margin: 24px 0;
+  opacity: 0; animation: page-loading-shows 0s linear 300ms forwards; }
+.page-loading .maity-loader { width: 48px; height: 48px; }
+@keyframes page-loading-shows { to { opacity: 1; } }
+/* A calm block, not an alarm: the mark at rest, a plain title, what to do,
+   the reason folded away, Try again at the right edge. */
+.page-failed { display: grid; gap: 8px; max-width: 28rem; width: 100%; margin: 24px auto; text-align: start; box-sizing: border-box; }
+.page-failed h2 { margin: 4px 0 0; font-size: 1.15rem; }
+.page-failed p { margin: 0; }
+.page-failed-mark { width: 40px; height: 40px; opacity: 0.5; }
+.page-failed-mark.brand-dark { display: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .page-failed-mark.brand-light { display: none; }
+  :root:not([data-theme="light"]) .page-failed-mark.brand-dark { display: block; }
+}
+:root[data-theme="dark"] .page-failed-mark.brand-light { display: none; }
+:root[data-theme="dark"] .page-failed-mark.brand-dark { display: block; }
+.page-failed details { font-size: 0.85rem; }
+.page-failed-reason { margin-top: 6px; color: var(--muted); overflow-wrap: anywhere; }
+.page-failed-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+body:has(> main > .page-loading, > main > .page-failed) { display: flex; flex-direction: column; min-height: 100vh; min-height: 100dvh; }
+main:has(> .page-loading, > .page-failed) { flex: 1; display: flex; flex-direction: column; justify-content: center; width: 100%; box-sizing: border-box; }
 .me { margin-inline-start: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 0.88rem; }
 .project { color: var(--muted); }
 
