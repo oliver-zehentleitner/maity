@@ -1158,7 +1158,7 @@ fails while the bundle is stale.
 ## Checks
 
 ```sh
-make check   # structure, Python standard library only
+make check   # structure and the e2e harness's judgement of answers, Python standard library only
 make smoke   # behaviour, needs a node binary (no packages)
 make starter-configs   # the Runners view's configurations through maity runner check
 ```
@@ -1383,6 +1383,7 @@ web/
 ├── tools/starter-configs.js  the starter configurations, as JSON
 ├── tools/starter_configs.py  make starter-configs
 ├── tools/e2e.py      make e2e: the browser end-to-end test
+├── tools/test_e2e_harness.py  make check: e2e.py's judgement of answers, read from its syntax tree
 └── context/          why the dashboard is built this way (Keep the Why)
 ```
 

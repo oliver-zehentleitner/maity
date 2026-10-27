@@ -91,12 +91,9 @@ class Run:
         self.a11y_findings: list[dict] = []
         # Set when the hub answers the notifications read with 404 (§18).
         self.no_notifications = False
-        # §8.7 "Attachments off": the pending-list answers of 409, each judged by
-        # its code in no_problems() (a response handler reads no body), and
-        # whether the hub said attachments_not_configured.
-        self.off_answers: list[str] = []
-        self.attachments_off = False
-        self.request = None
+        # §8.7 "Attachments off": each 409 for the pending uploads as the page got
+        # it, judged one by one in no_problems() (a response handler reads no body).
+        self.off_answers: list = []
 
     def a11y(self, page: Page, view: str) -> None:
         """axe-core on the page as it stands, in each pass; back to 1280 px, light, after."""
@@ -383,9 +380,9 @@ def watch_page(run: Run, page: Page) -> None:
         # uploads waiting to be sent (§8.7); a hub without attachments answers
         # 404, and one with them off 409, which no_problems() accepts only with
         # the code attachments_not_configured.
-        pending = re.match(r"/api/v1/projects/[^/]+/attachments\?status=pending(&uploaded_by=[^&]+)?&limit=200$", path)
+        pending = PENDING_UPLOADS.match(path)
         if resp.status == 409 and pending:
-            run.off_answers.append(path)
+            run.off_answers.append(resp)
             return
         # Signed out, the page asks /auth/session first and expects 401.
         if resp.status >= 400 and not (
@@ -395,7 +392,6 @@ def watch_page(run: Run, page: Page) -> None:
         ):
             run.problems.append(f"{resp.request.method} {path} answered {resp.status}")
 
-    run.request = page.request
     page.on("console", console)
     page.on("pageerror", lambda err: run.problems.append(f"page error: {err}"))
     page.on("response", response)
@@ -424,16 +420,34 @@ def project_settings(page: Page) -> None:
     expect(page.locator("#project-panel")).to_be_visible()
 
 
+# The pending uploads a composer and Project settings ask for (§8.7).
+PENDING_UPLOADS = re.compile(r"/api/v1/projects/[^/]+/attachments\?status=pending(&uploaded_by=[^&]+)?&limit=200$")
+
+
+def off_problem(method: str, path: str, status: int, body: object) -> str | None:
+    """None for exactly a hub with attachments off answering the pending list:
+    GET, that path, 409, code attachments_not_configured (§8.7). Anything else
+    is the problem it is, said with its code. Each answer on its own: no flag
+    carries one answer's verdict to another."""
+    error = body.get("error") if isinstance(body, dict) else None
+    code = error.get("code") if isinstance(error, dict) else None
+    if method == "GET" and PENDING_UPLOADS.match(path) and status == 409 and code == "attachments_not_configured":
+        return None
+    return f"{method} {path} answered {status}" + (f" ({code})" if code else "")
+
+
 def no_problems(run: Run, where: str) -> None:
-    # A 409 for the pending uploads is no problem only when the hub says why:
-    # its attachments are off (§8.7). Asked again here, outside the handler.
-    while run.off_answers:
-        path = run.off_answers.pop()
-        if not run.attachments_off:
-            answer = run.request.get(run.base + path)
-            run.attachments_off = answer.status == 409 and (answer.json().get("error") or {}).get("code") == "attachments_not_configured"
-        if not run.attachments_off:
-            run.problems.append(f"GET {path} answered 409 without attachments_not_configured")
+    # Each 409 for the pending uploads, judged by its own body, read here
+    # outside the response handler.
+    answers, run.off_answers = run.off_answers, []
+    for resp in answers:
+        try:
+            body = resp.json()
+        except Exception:  # not JSON: no code, so a problem
+            body = None
+        problem = off_problem(resp.request.method, resp.url.split(run.base, 1)[-1], resp.status, body)
+        if problem:
+            run.problems.append(problem)
     if run.problems:
         raise AssertionError(f"{where}:\n  " + "\n  ".join(run.problems))
 
