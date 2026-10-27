@@ -16,7 +16,7 @@ from maity_hub.access import membership
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, engine_of, reader_of
 from maity_hub.errors import ApiError, forbidden, invalid, not_found, rate_limited
-from maity_hub.jourfixe import answers, exchange, rounds, schedule, triage, views
+from maity_hub.jourfixe import answers, exchange, redaction, rounds, schedule, triage, views
 from maity_hub.models import Strict
 from maity_hub.models import markdown as text_field
 
@@ -517,5 +517,28 @@ def report(
         row = _round(conn, mine.project.id, round_id)
         triage.submit_report(conn, row, mine, body.model_dump(), caller.actor(mine.id), fg)
         return idempotency.Outcome(200, "jour_fixe_report", row.id, report_view(conn, row.id))
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
+# --- redaction (§20.8) ----------------------------------------------------------------------------
+
+
+class RedactIn(Strict):
+    target: str = Field(min_length=1, max_length=64)
+    reason: str = text_field(min_length=1)
+
+
+@router.post("/projects/{slug}/jour-fixe/rounds/{round_id}/redact")
+def redact(
+    slug: str, round_id: str, body: RedactIn, request: Request, caller: AnyCaller
+) -> JSONResponse:
+    def action(conn: Connection) -> idempotency.Outcome:
+        events.lock_project(conn, membership(conn, caller, slug).project.id)
+        mine = membership(conn, caller, slug)  # its role as of the lock
+        row = _round(conn, mine.project.id, round_id)
+        redaction.redact(conn, row, mine, body.target, body.reason, caller.actor(mine.id))
+        shown = _views(conn, [_round(conn, mine.project.id, round_id)], slug, mine)[0]
+        return idempotency.Outcome(200, "jour_fixe_round", row.id, shown)
 
     return idempotency.run(engine_of(request), request, caller, action)
