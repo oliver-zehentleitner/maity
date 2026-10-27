@@ -402,3 +402,60 @@ hold clones of the same name in two projects.
 - Mapping old names to new ones from the aliases at pickup: it works
   only while the runner still has the alias history, and it couples the
   workspace to naming.
+
+## A project moves through plan, build, review and launch; 'released' is a separate mark that tightens the rules for good
+
+**Id:** de8abccf-94dc-4947-9926-463aa13edd8f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day
+**See:** projects.md#a-closed-project-refuses-additions-never-removal — e9c3b578-c282-43c1-b5f4-4a494ae0464e — as of 2026-10-27
+
+A project's state is plan (concept and contracts, no implementation
+cards), build, review (feature stop, load test, acceptance; the former
+freeze), launch (live) or archived. Separately, 'released' is set once,
+with the first release tag, and never cleared: from then on interfaces
+change only with versioning and a transition period, migrations stay
+backward compatible and the release checklist is mandatory. After a
+launch the project returns to build, still released. Moving to launch
+needs the owner's go.
+
+**Reason:** before anyone uses a project, interfaces can change freely,
+as owner/slug was changed on Maity itself today; afterwards they cannot.
+That difference is a property of the project's history, not of its
+current phase, so it is a mark, not a state.
+
+**Rejected alternatives:**
+- 'Released' as a fifth state: it would be lost on the next move back to
+  build.
+
+## Public projects and profiles follow the forge model: public on the free tier, private later as a paid feature
+
+**Id:** 038e685e-62bb-4f21-be5d-ab4a58b9c444
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day
+**See:** scope.md#later-stages-agreed-in-principle-and-deliberately-not-in-v1-public-projects-and-discovery-sponsoring-and-credits-a-managed-instance-per-customer-federation — 54e1a38b-1e54-480f-87f2-014139a563d1 — as of 2026-10-27
+
+Each project is public or private; on the free tier it is public, and
+private comes later as a paid feature; existing projects stay private
+until their owner switches. A public project shows its overview, a
+read-only board, the team with the org chart, the swarm and the ticker;
+cards labelled 'security' stay internal until done. Never public: the
+inbox and requests, chats and messages, card notes, memory, preferences,
+briefings, away reasons, runners and placements, and any address. The
+owner's address `#/<owner>` is a public profile: avatar, name, public
+projects and their own agents with presence.
+
+**Reason:** the maintainer orients the hosted offering on the forge
+model, where public is the free default and privacy is paid for; the
+coordination traffic itself stays private because it carries personal
+and security detail.
+
+**Rejected alternatives:**
+- Showing only the overview and the team, and making security cards
+  public too: both offered as options and not chosen; no reason was
+  given beyond the proposal's comparison with security advisories on a
+  forge.

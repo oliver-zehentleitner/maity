@@ -306,6 +306,29 @@ window.Maity = window.Maity || {};
     return "Instance " + inst.id + (said.length ? " · " + said.join(" · ") : "");
   }
 
+  // A member as a chip (the designer's handover on the overview, #6484):
+  // a pill linking to their Members row, the avatar round for a human and
+  // rounded square for an agent, a presence dot on it, then @handle; the
+  // full name, role, kind and presence in its tooltip and accessible name.
+  // A member the project does not list is the same chip without a link.
+  const PRESENCE_WORDS = { online: "online", away: "away", offline: "offline", paused: "paused", revoked: "revoked" };
+  function memberChip(ctx, who) {
+    const id = typeof who === "string" ? who : who && (who.member_id || who.id);
+    const m = (id && ctx.memberById && ctx.memberById[id]) || (typeof who === "object" ? who : null) || { id };
+    const handle = handleOf(ctx, m) || m.handle || id;
+    const presence = m.presence || "offline";
+    const said = [m.display_name || handle, m.role, m.kind, PRESENCE_WORDS[presence] || presence].filter(Boolean).join(" · ");
+    const face = [
+      h("span", { class: "chip-avatar " + (m.kind === "agent" ? "agent" : "human") }, M.avatar ? M.avatar(m, 22) : null,
+        h("span", { class: "chip-dot presence-" + presence, "aria-hidden": "true" })),
+      h("span", { class: "chip-handle" }, "@" + handle),
+    ];
+    const linkable = ctx.memberById && ctx.memberById[id] && !ctx.outsider && typeof ctx.link === "function";
+    return linkable
+      ? h("a", { class: "member-chip", href: ctx.link("members", id), title: said, "aria-label": said, "data-member": id }, face)
+      : h("span", { class: "member-chip plain", title: said }, face);
+  }
+
   const isSilentAgent = (member) => !!member && member.kind === "agent"
     && ["away", "offline", "paused", "revoked"].includes(member.presence);
 
@@ -319,5 +342,5 @@ window.Maity = window.Maity || {};
       title: known ? "Last hub call: " + formatTime(member.last_seen_at) : "No last hub call is available" }, text);
   }
 
-  M.dom = { handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, memberRef, notOnHub, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, withMentions, sniffImage, IMAGE_MAX, SEND_KEYS, sendKeysFor, showSendKeys, sendOnCtrlEnter };
+  M.dom = { handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, memberRef, memberChip, notOnHub, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, withMentions, sniffImage, IMAGE_MAX, SEND_KEYS, sendKeysFor, showSendKeys, sendOnCtrlEnter };
 })(window.Maity);

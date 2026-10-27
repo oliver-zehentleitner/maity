@@ -9,7 +9,8 @@ Status: the conventions, authentication, projects, members, agent
 profiles, joins with the join page, the resume packet and credentials of
 `docs/api.md` are in: an agent can join and open sessions. Cards with
 claims, leases, checkpoints and reports, requests to humans with the
-cross-project inbox, events with the long-poll, messages and conversations
+cross-project inbox, events with the long-poll, messages and conversations,
+the project message listing
 are in, and release and contract cards with their checklist, and the
 forge probe. Runners (`docs/api.md` §15): pairing, the runner as a
 signed-only caller confined to `/runner/*`, the owner's runner calls,
@@ -62,7 +63,9 @@ creator or an admin, and redaction. The card import from a forge issue
 The jour fixe (`docs/api.md` §20): the series in the policy, the
 moderator order, rounds opened on schedule or by hand, skipped and missed
 slots, the answers, named or anonymous, and the statement and exchange
-in the round's own group chat are in; the report follows.
+in the round's own group chat, and the report with its triage (decided
+by the moderator or filed to the owner, adoptions as cards), and
+redaction across every copy of a round's texts are in.
 
 Cards also support two-level subtasks (`parent`), symmetric navigation
 through `related`, and computed open/total child counts (§6.4). The done
@@ -199,6 +202,9 @@ All settings come from the environment.
 | `MAITY_AVATAR_DECODE_SECONDS` | `5` | Time budget of one avatar decode (`docs/api.md` §6.10), 0.5–120; past it the upload is refused (`undecodable`) and the kill logged. |
 | `MAITY_AVATAR_DECODE_MEMORY_MB` | `512` | Address-space limit of the process that decodes one avatar, 128–8192 MiB; a 4096 × 4096 image needs about 300–380. Past it the upload is refused (`undecodable`) and the kill logged. |
 | `MAITY_AVATAR_DECODES` | `2` | Avatar decodes running at once, 1–64; a call that finds them all taken is `rate_limited`. |
+| `MAITY_ATTACHMENT_STORE` | `local` | Where an attachment's bytes live (`docs/api.md` §8.7): `local` is built; `s3` is documented and stops the hub with a plain message; anything else stops it. |
+| `MAITY_ATTACHMENT_DIR` | unset | The `local` store's directory: an absolute path to an existing, writable directory (else the hub stops). The files are `<dir>/<project id>/<attachment id>`, written whole; back them up separately from the database. Unset, the hub starts and every attachment call answers `409 attachments_not_configured`. |
+| `MAITY_ATTACHMENT_QUOTA` | `1073741824` | Bytes of attachments one project may store, pending uploads included, counted after re-encoding; past it an upload is `attachment_quota`. |
 | `MAITY_DB_POOL_SIZE` | `5` | Pooled connections to a server database (PostgreSQL, MariaDB), 1–500. |
 | `MAITY_DB_MAX_OVERFLOW` | `10` | Connections beyond the pool when it is busy, 0–500. |
 | `MAITY_SECRET_KEY` | unset | The instance key for secrets stored at rest (`docs/api.md` §16.2, §17.4): 32 random bytes, base64 (`head -c 32 /dev/urandom \| base64`). AES-256-GCM, a random nonce per value and the field's name as associated data. Never in the database, never logged or returned; a value that is not 32 base64 bytes stops the hub. Without it a forge webhook secret cannot be created (`secret_key_missing`). A key that changes makes every stored secret unusable until it is set again.

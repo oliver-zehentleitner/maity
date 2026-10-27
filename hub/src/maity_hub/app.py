@@ -60,6 +60,7 @@ from maity_hub.routes import (
     placements,
     preferences,
     project_images,
+    project_messages,
     projects,
     requests,
     runner,
@@ -68,6 +69,9 @@ from maity_hub.routes import (
     swarm,
     tasks,
     ticker,
+)
+from maity_hub.routes import (
+    attachments as attachment_routes,
 )
 from maity_hub.routes import auth as auth_routes
 from maity_hub.routes import events as events_routes
@@ -179,6 +183,8 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(requests.router, prefix=prefix)
     app.include_router(events_routes.router, prefix=prefix)
     app.include_router(conversations.router, prefix=prefix)
+    app.include_router(attachment_routes.router, prefix=prefix)
+    app.include_router(project_messages.router, prefix=prefix)
     app.include_router(probe_routes.router, prefix=prefix)
     app.include_router(runners.router, prefix=prefix)
     app.include_router(runner.router, prefix=prefix)

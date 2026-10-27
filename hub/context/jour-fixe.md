@@ -83,3 +83,114 @@ already marks a round's message (§20.5) and the thread's view names its round.
 - Add the kinds to `NON_WAKING`: it would silence every chat in the hub.
 - Leave the participants out of the audience: they could no longer read
   their own thread.
+
+## A proposal's decision request is asked by the moderator's membership
+
+**Id:** 872ac41e-f165-4860-bbe3-ab63f1e35e58
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session, 2026-10-25 (jour fixe, part 3a)
+**Revisit when:** requests get an asker that is the hub itself, or a human owner moderates rounds and files proposals to the owner
+
+The hub files a `to_owner` proposal as an ordinary `decision` request
+(`docs/api.md` §20.6, §7) with `asked_by` the moderator's membership, also
+for a report the hub builds itself; `jour_fixe: {round_id, proposal_id}`
+says where it came from.
+
+**Reason:** every request has an asker (`asked_by` is not null), and every
+reader of requests (the inbox, the views, the answer rules) relies on it. The
+moderator is the member the round's triage stands for.
+
+**Rejected alternatives:**
+- A nullable `asked_by` for hub-filed requests: a migration and a null case
+  in every request path, for requests that otherwise behave like any other.
+
+A human owner who moderates and files a proposal to the owner asks
+themselves, and a request is never answered by its asker; such a moderator
+decides the proposal instead.
+
+## An owner's later adopt opens the card; the final report stays as it was
+
+**Id:** f92f24b6-1f63-4b70-86ea-5e822a586942
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session, 2026-10-25 (jour fixe, part 3a)
+**Revisit when:** the report should show what became of its `to_owner` proposals
+
+An `adopt` answer to a request filed for a proposal opens the card then,
+with `created_by` the answerer and `jour_fixe` on it. The round's report,
+final since it was filed, keeps that proposal's `task_id` null; the card's
+`jour_fixe` and the request's link the two.
+
+**Reason:** §20.6 makes a report final once written, changed only by
+redaction. The request and the card already carry the round and the proposal.
+
+**Rejected alternatives:**
+- Write the card's id into the final report: a report that changes after it
+  is final, and a second writer of it besides the moderator and redaction.
+
+## A card still carries the hub's text while its title or body is exactly what the hub wrote
+
+**Id:** b49bda1d-56e3-4435-93c1-c021ba596480
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session, 2026-10-25 (jour fixe, part 3b)
+**Revisit when:** a card opened from a proposal gets its text from somewhere else than the proposal
+
+Redacting a report proposal rewrites the card an adoption opened only "while
+the card still carries the hub's text" (`docs/api.md` §20.8). The hub
+compares: the title is replaced when it still equals the proposal's title,
+and the body when it still equals the body the hub wrote (the reason and the
+round's line), which then becomes the same body with `[redacted]` for the
+reason. A text a person has edited since, even by adding a line, is left as
+it is. The card is found by
+its `jour_fixe` mark, so a card opened by the owner's later adopt is reached
+too.
+
+**Reason:** the hub wrote exactly those values, and an edit by a person
+changes them; equality answers the contract's question without remembering
+anything.
+
+**Rejected alternatives:**
+- A flag on the card, set at creation and cleared by the first edit: a
+  column and a write in every edit path for what a comparison already tells.
+- The history's last title and body entries: an edit back to the hub's text
+  would count as an edit, though the text is the proposal's again.
+- The body starting with the reason: a person's added line would be
+  rewritten with it.
+
+## A report that names a statement proposal redacted before it arrived is refused
+
+**Id:** b9b46e40-52be-47c6-8ae4-c57739f2683d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the reviewer's finding on the redaction pull request, 2026-10-27 (a redacted statement came back as a report proposal when the report arrived after the redaction); the choice between the two repairs the finding named is the implementer's
+**Revisit when:** a moderator may legitimately carry a redacted proposal into the report, or the statement's redaction is recorded elsewhere than on the round's copy
+**See:** jour-fixe.md#a-card-still-carries-the-hubs-text-while-its-title-or-body-is-exactly-what-the-hub-wrote — b49bda1d-56e3-4435-93c1-c021ba596480 — as of 2026-10-27
+
+The redaction of a statement reaches the proposals and findings of a report
+that already exists (§20.8). A report written after the redaction has no
+such copy to reach: the moderator names `statement_proposal_id`, and the
+hub took the title and reason from the report body itself. So a text the
+maintainer had redacted could be filed again as a decision request. The hub
+now refuses such a report: `invalid`, `details.fields.proposals:
+"redacted_statement_proposal"`, checked on the round's copy, where the
+statement proposal carries its `redaction`. Nothing is filed or opened and the
+report stays due; a proposal of the moderator's own, with no
+`statement_proposal_id`, goes through. The report the hub builds itself
+already skips redacted topics and proposals.
+
+**Reason:** the tombstone already sits on the round's copy, so one check
+there closes the gap in the one place a report is accepted, and the
+moderator learns at once why the proposal cannot be drawn from that source.
+
+**Rejected alternatives:**
+- Propagating the tombstone onto the new report before it is made final:
+  the report would then file requests and cards that exist only as
+  placeholders, work nobody asked for, and the moderator would not be told.
+- Dropping the redacted proposal from the report silently: the moderator's
+  report would differ from what was sent, without a word.

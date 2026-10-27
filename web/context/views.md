@@ -1381,3 +1381,150 @@ keyboard prints them are found on it at once.
 Ctrl+Enter"): the button's name for a screen reader and every test of it
 would change, and a narrow composer has less room for it. The tooltip
 alone: it is not seen without a mouse resting on the button.
+
+## The overview leads with what needs the reader; its README badge is shown there and changed in Settings
+
+**Id:** 057e7277-3eba-4267-93d2-c6b74a5e2ff1
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the designer's handover on the overview (#6484, tsk-qse9t2b3a9n8), 2026-10-27: the five panels had equal weight and the one thing to act on (open requests) sat bottom left; the maintainer's wish for a Contract link in the project facts (tsk-yhbmz7mjng7n, step 1), 2026-10-27; the dashboard's implementation, 2026-10-27
+**Revisit when:** the hub serves the contract for reading inside Maity, or the badge can be changed without a logged reason
+
+Three rows: Waiting for you and Board, then Team and Latest reports,
+then Project and README badge. A member in a list is a chip
+(`M.dom.memberChip`), the shared form the member page header will use
+too. The Contract link is `docs/api.md` on the forge at the repository's
+default branch, built only for GitHub and GitLab, whose path shapes are
+known. The badge panel shows the state, the badge and the snippet to
+everyone; an owner or admin is sent to Project settings to change it.
+
+**Reason:** a person opening the overview comes to see whether anything
+waits for them, so that is the first thing, with its action one click
+away. A badge change is a policy change the hub logs with a reason, and
+Settings already asks for it; a second form would duplicate that.
+
+**Rejected alternative:** the designer's radio pills that change the
+badge on the overview: they would need the reason field too, or change a
+logged policy without one. A Contract link guessed for any forge: a
+wrong path shape would be a dead link that looks right.
+## The instance admin area shows one section at a time
+
+**Id:** 4c499cf2-cd9d-4ce1-be8d-639aa32306b6
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the designer's pass part 3 on #371 (tsk-w2xnkrwf147m), 2026-10-27: the admin page was one scroll of about 5,000 px (Statistics, Users, Mail settings, Landing page, Instance information)
+**Revisit when:** a section needs a link of its own (a route per section), or the area grows past one row of buttons
+
+`#/admin` reads every section the hub serves as before, then shows one:
+a row of buttons at the top names them (`aria-pressed` on the shown
+one), and the page opens on the first, Statistics. A section the hub
+turns out not to serve leaves the row with its section. The others stay
+in the page, hidden, so a form half filled in keeps what was typed.
+
+**Reason:** the admin comes for one thing at a time; five long sections
+under each other hid all but the first below the fold.
+
+**Rejected alternative:** a sticky list of anchors over the whole page,
+the designer's other option: the scroll stays 5,000 px, only the jump is
+shorter. A route per section (`#/admin/users`): `#/admin/users` is the
+older Users page already, and links into a section were not asked for.
+
+## On a phone an opened card is a page of its own; the panel is the card
+
+**Id:** 54f93a4f-7e91-4d69-9b51-ca562daaa9a3
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the designer's pass part 2 (#6473, tsk-qk24j4ebxdwg), 2026-10-27: on a phone the panel opened above the whole board, making the page about 6,700 px long; the panel showed a frame and the card's id twice
+**Revisit when:** a card gets a route that is no board at all, or the board is drawn differently on a phone
+
+At 600 px and below, while a card is open, the board's columns are
+hidden and the panel stands alone; **Close**, Escape and Back return to
+the board at the card. On every width the panel is the card: one id, in
+the bar beside Close; the title is the panel's heading, where the focus
+goes; the card inside has no frame of its own; its controls stand right
+under the claim line.
+
+**Reason:** a panel above a long board turned an opened card into an
+insert in a page nobody could find the end of; as a page of its own it
+reads like one.
+
+**Rejected alternative:** a separate card route without the board: the
+board's filters and scroll, kept for the way back, would be lost. The
+panel above the columns, as before: the length of the page.
+## A chat opens on its newest page in two requests; older pages on scroll-up
+
+**Id:** fcc59a72-46a0-4741-9d6f-abada05edab6
+**Type:** decision
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's report that chats grow slower and slower (tsk-r1adgwp0a5dr), 2026-10-27, and the rule from the incident of 2026-10-26: no request whose cost grows with history; docs/api.md §9.1 and §9.2 (`before` marks nothing read, `after` marks and delivers, a group chat's window); measured in web/tools/smoke.js on a 2000-message chat: 10 requests and 2000 messages drawn before, 2 and 50 after
+**Revisit when:** the hub can read the newest page and mark it read in one request, or serves the project messages listing (§8.8) the Messages view should page through
+
+Direct and group chats read the newest 50: back with `before=` (the
+list's last message, else the largest integer), then forward from the
+first of them with `after=`, which marks them read and delivered as
+opening a chat always did; in a group chat that forward read keeps to
+the window, so what lies before one joined is offered, not shown.
+Older pages come near the top or with **Show earlier messages**, the
+reader's place kept by the height drawn in front. At the newest, more
+than 300 drawn are cut to 100 and read again on scroll-up. Reading
+along from outside, the 30-second re-read takes the newest page only.
+
+**Reason:** a request whose cost grows with history slows every opening
+of a long chat and, multiplied by readers, loads the hub; two requests
+per opening and one per older page stay the same however long a chat
+grows.
+
+**Rejected alternative:** one forward read from the newest seq minus a
+guess: seqs are the project's, not the chat's, so no guess finds the last
+50. Reading back only: it marks nothing read, so the unread counts
+would never fall. Keeping everything drawn: the DOM of a chat open all
+day grows without bound.
+## The lead is reached by a Lead button beside Chat, not by Chat itself or a strip
+
+**Id:** 0ff66bde-7c26-412a-a856-069b52764910
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish (tsk-g2qe0fyqqmmq, chat 2026-10-27): the chat entry a button like the others, the lead strip gone; and his decision on the form (req-4rpd7vqb6xe3, 2026-10-27): two buttons, Chat to the chat list, a Lead button beside it, one lead opened at once, several listed with a group chat with all leads
+**Revisit when:** the Team page (req-2mwv85k5e1s6) gives the leads a place of their own, or a project names more than one lead by policy
+
+Chat in the header is a button like the bell and always opens every chat.
+The Lead button beside it reaches whom `M.leadChat.targets` names (the
+policy's lead now, one's own proxy; on an older hub one's own admin and
+proxy agents), across every project outside one: one is opened at once,
+several are a menu with, per project with more than one, a group chat
+with all of them (an open one of exactly those people reused). Without
+anyone to reach there is no Lead button. The strip above the tabs and
+the section on All projects are gone.
+
+**Reason:** the unread count on Chat counts every chat; a click on it
+that went to the lead would not lead to what the count says, and the chat
+list would have no way in from the header outside a project.
+
+**Rejected alternative:** Chat as the lead's button, a menu of the leads
+and All chats when there are several (asked as B): a second click to
+every chat, and one button meaning two things. Keeping the strip: it took
+the room above the tabs on every page of a project.
+
+## Runners in the gear menu, not in the projects' row
+
+**Id:** a6c7bf3a-9742-4535-ae21-110bd809dc47
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request (tsk-cb6myw32def0), 2026-10-27
+
+The link to `#/runners` sits in the header's gear menu, beside the
+instance administration, and no longer in the row that lists the
+projects. The menu marks it as the page shown.
+
+**Reason:** a runner belongs to the person who runs it, not to a project;
+the projects' row lists projects, and the gear menu holds what is not a
+project's.
+
+**Alternatives:** unknown.

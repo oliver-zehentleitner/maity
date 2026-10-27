@@ -13,7 +13,7 @@ A slug that is a word following a project in a route, or a human handle that is 
 route word, stops the migration too: the operator renames it first.
 
 Revision ID: 0060
-Revises: 0055
+Revises: 0063
 Create Date: 2026-10-27
 """
 
@@ -24,7 +24,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql
 
 revision: str = "0060"
-down_revision: str | None = "0055"
+down_revision: str | None = "0063"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -34,9 +34,10 @@ TIMESTAMP = sa.DateTime().with_variant(mysql.DATETIME(fsp=6), "mysql", "mariadb"
 # the dashboard's top-level route words (§6.25 "Dashboard routes and handles").
 ROUTE_WORDS = frozenset(
     {
-        "banner", "conversations", "credentials", "events", "forge", "invitations", "joins",
-        "jour-fixe", "keep-the-why", "logo", "members", "memory", "placements", "probe",
-        "requests", "rules", "runners", "swarm", "takeovers", "tasks", "ticker",
+        "attachments", "banner", "conversations", "credentials", "events", "forge",
+        "invitations", "joins", "jour-fixe", "keep-the-why", "logo", "members", "memory",
+        "messages", "placements", "probe", "requests", "rules", "runners", "swarm", "takeovers",
+        "tasks", "ticker", "transfer",
     }
 )  # fmt: skip
 DASHBOARD_WORDS = frozenset(

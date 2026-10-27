@@ -61,7 +61,7 @@ def test_an_alias_keeps_its_slug_taken_and_resolves(owner: flow.Human, migrated:
     assert taken.json()["error"]["details"]["fields"] == {"slug": "taken"}
 
 
-@pytest.mark.parametrize("slug", ["tasks", "members", "forge", "logo", "keep-the-why"])
+@pytest.mark.parametrize("slug", ["tasks", "members", "forge", "logo", "keep-the-why", "transfer"])
 def test_a_slug_is_never_a_route_word(owner: flow.Human, slug: str) -> None:
     refused = owner.post("/projects", {"slug": slug, "name": "X"})
     assert refused.status_code == 400

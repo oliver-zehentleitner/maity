@@ -73,7 +73,9 @@ window.Maity = window.Maity || {};
       try { await navigator.clipboard.writeText(text); copy.textContent = "Copied"; } catch (err) { copy.textContent = "Copy failed: select the text"; }
       window.setTimeout(() => { copy.textContent = "Copy"; }, 2000);
     });
-    return h("div", { class: "placement-command" }, h("span", { class: "muted" }, name + ": "), h("code", null, text), copy);
+    // A box that scrolls sideways is reachable by keyboard, and named.
+    return h("div", { class: "placement-command" }, h("span", { class: "muted" }, name + ": "),
+      h("code", { tabindex: "0", role: "region", "aria-label": name + " command" }, text), copy);
   }
 
   // The section, read and drawn into the Agents view. `credentials`: the

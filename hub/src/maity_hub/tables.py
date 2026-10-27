@@ -871,6 +871,8 @@ card = Table(
     Column("checkpoint", JSON_VALUE),
     # No foreign key: request.task_id points back here.
     Column("blocked_by_request", String(ID)),
+    # The hub opened it for an adopted jour fixe proposal: `{round_id, proposal_id}` (§20.6).
+    Column("jour_fixe", JSON_VALUE),
     Column("ktw_ref", String(255)),
     Column("report", JSON_VALUE),
     Column("contract", JSON_VALUE),
@@ -1010,6 +1012,8 @@ request = Table(
     Column("proposal", JSON_VALUE),
     # The takeover an escalation or a takeover notice belongs to (§6.19); hub only.
     _ref("takeover_id", "takeover.id", index=True),
+    # A decision the hub filed for a jour fixe proposal: `{round_id, proposal_id}` (§20.6).
+    Column("jour_fixe", JSON_VALUE),
     Column("while_open", String(32), nullable=False),
     Column("needs_in_session", JSON_VALUE),
     Column("ktw_ref", String(255)),
@@ -1301,6 +1305,36 @@ avatar_image = Table(
     Column("updated_at", UtcDateTime, nullable=False),
     PrimaryKeyConstraint("owner_id", "source"),
     CheckConstraint("source IN ('uploaded', 'forge')", name="source"),
+    **MYSQL_TABLE,
+)
+
+# A file a message carries (docs/api.md §8.7). The bytes are in the blob store under a
+# key made from the project and the id, never in this table. `message_seq` is null while
+# the upload is pending (no message names it yet); a deletion keeps the row as a
+# tombstone (`deleted_at`) and removes the blob.
+attachment = Table(
+    "attachment",
+    metadata,
+    _id(primary_key=True),
+    _ref("project_id", "project.id", nullable=False),
+    _membership_ref("uploaded_by", nullable=False),
+    Column("name", String(255), nullable=False),
+    Column("size", BIG_ID, nullable=False),
+    Column("type", String(255), nullable=False),
+    Column("kind", String(8), nullable=False),  # image, file
+    Column("sha256", String(64), nullable=False),
+    Column("width", Integer),
+    Column("height", Integer),
+    Column("uploaded_at", UtcDateTime, nullable=False),
+    # The event of the message that names it; no foreign key, as for other event refs.
+    Column("message_seq", BIG_ID),
+    Column("deleted_at", UtcDateTime),
+    Column("deleted_by", String(ID)),
+    Column("deleted_reason", String(16)),  # deleted, redacted
+    CheckConstraint("kind IN ('image', 'file')", name="kind"),
+    Index("ix_attachment_project_pending", "project_id", "message_seq", "uploaded_at"),
+    Index("ix_attachment_uploaded_by", "uploaded_by", "message_seq"),
+    Index("ix_attachment_message_seq", "message_seq"),
     **MYSQL_TABLE,
 )
 

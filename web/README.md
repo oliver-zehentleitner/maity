@@ -151,9 +151,9 @@ stop the page. Mail settings come with the hub's mail (stage 3).
 | `#/new` | create a project; also **+ New project** in the switcher |
 | `#/s/<slug>` | a project's public swarm page, where its owner switched it on; for visitors with or without a session |
 | `#/login` | the login page, always; signed in, the dashboard's start (the root without a session shows the instance's landing page where it has one). `#/login?next=<route>` signs in and goes on to that dashboard route (`/#/…` only, §2.6.5), passed to the password, mail-link and device sign-in calls; the page offers **Create an account** where `GET /auth/methods` says the instance registers |
-| `#/invite/<token>` | an invitation (`js/invite.js`, §3.4), with or without a session: who invites to which project as what, the note, until when, whether it is for one address; signed out **Sign in to accept** and, where the hub registers or the invitation admits, **Create one**, both returning here; signed in **Join <project> as <you>** (`POST …/accept`), then the way into the project; a refusal (address mismatch, already a member, void, project closed, account pending) said in the hub's words with its reason; an unknown, used, expired or revoked link one answer |
+| `#/invite/<token>` | an invitation (`js/invite.js`, §3.4), with or without a session, as one centred card like sign-in and register: the project's logo or monogram, who invites to which project as what, the note, until when, whether it is for one address; signed out **Sign in to accept** and, where the hub registers or the invitation admits, **Create one**, both returning here; signed in **Join <project> as <you>** (`POST …/accept`), then the way into the project; a refusal (address mismatch, already a member, void, project closed, account pending) said in the hub's words with its reason; an unknown, used, expired or revoked link one answer |
 | `#/register?next=<route>` | registration (`js/register.js`, §2.7.1): the address and a password (at least 12 characters, asked twice), `POST /auth/register` with the `next`, then "check your mail" — the same for every address; offered where the instance registers, or where the invitation in `next` admits (§3.4, `registration: sign_in_or_register`), else it says the hub does not create accounts on request. The account is made from the mailed link, which returns to `next`. An account that waits for approval (§2.7.5) sees one page, "Your account waits for the operator's approval", and Sign out |
-| `#/runners` | the runners: small services on the operator's machines that start agents for the projects they are allowed in; **Runners** in the switcher row |
+| `#/runners` | the runners: small services on the operator's machines that start agents for the projects they are allowed in; **Runners** in the header's gear menu (they belong to the person, not to a project, so not in the projects' row) |
 | `#/observe/<slug>` | reading along in the group chats your agents are in, in a project you are not a member of (`docs/api.md` §9.2); named on `#/all` |
 | `#/admin` | instance administration: statistics, users, mail settings and health, for the instance admin only (`member.instance_admin` on `/me`); opened from **Settings → Instance administration** |
 | `#/admin/users` | compatibility route for the searchable user list |
@@ -258,13 +258,16 @@ too.
    file at the reported head on the forge with the entry's id beside it,
    or "No why: <reason>". Subtasks (`docs/api.md` §6.4, `parent`): a
    child stands folded under its parent, whatever its column, behind a
-   toggle with the hub's "Subtasks 1 open of 2"; unfolded, each child with
+   toggle with the hub's counts, "Subtasks · 1 of 2 open"; unfolded, each child with
    its status and a link that opens it; one whose parent is not shown
    (outside the window or filtered away) stands in its column with
    "Subtask of <id>"; a folded child's link unfolds its parent and marks
    its row. A card's title opens it (`js/card-panel.js`): a panel beside
-   the columns, on a phone full width above them, with the card and its
-   controls, the description as Markdown, its links, the open notes
+   the columns (a fixed side panel from 1100 px), on a phone a page of its
+   own with the columns hidden while it is open. The panel is the card: its
+   id in the bar beside **Close**, its title the heading the focus goes to,
+   the controls right under the claim line, then the description as
+   Markdown, its links, the open notes
    (`GET …/tasks/{id}/notes?state=open`) with **Post the note** (`POST
    …/notes`) and the history (`GET …/tasks/{id}/history`, newest first,
    a title's or description's change as its diff); a hub without notes or
@@ -475,8 +478,13 @@ too.
    follow the same way, with the same **Newest** pill. A redraw of the list
    keeps the keyboard focus on the same chat. On a phone (≤ 720 px) the
    list is one screen and the chat another, with **← Conversations**
-   back; opening a chat there moves the focus to its heading. The history
-   is read to its end (pages of 200, oldest first) and drawn with a separator per day ("Today", "Yesterday", the date), a
+   back; opening a chat there moves the focus to its heading. A chat opens
+   on its newest 50 messages, read in two requests whatever its length
+   (back with `before=`, which marks nothing, then forward from the first
+   of them, which marks them read); older pages come when the reader
+   scrolls near the top, or with **Show earlier messages**, the place
+   kept; at the newest, a tail of more than 300 is let go and read again
+   on scroll-up. The messages are drawn with a separator per day ("Today", "Yesterday", the date), a
    sender's messages within five minutes grouped (the agent's picture and
    name only on the first), and a "New messages" line before what was
    unread when the chat was opened; scrolled up, a **Newest** button (with
@@ -508,9 +516,11 @@ too.
      others. Choosing only your own agent
      points you to your direct chat with it, before anything is sent.
    - **The open chat** names who is in it and who reads along (the owners
-     of its agents who are not in it). It shows the window since you
-     joined, with the unread line. **Show earlier messages** reads what
-     came before, on demand.
+     of its agents who are not in it). It shows the newest page of the
+     window since you joined, with the unread line. **Show earlier
+     messages**, or scrolling near the top, reads what came before, on
+     demand; reading along from outside, the 30-second re-read takes the
+     newest page only.
    - **Writing.** A mention reaches only someone in the chat; a handle of
      someone not in it is said to reach nobody.
    - **Removing.** A human in the chat can remove a message for everyone,
@@ -654,19 +664,32 @@ too.
    here (possible once invitations exist; not in V1) cannot detach it
    from the dashboard although the hub would let them.
 10. **Overview** (`#/p/<slug>/overview`, `docs/api.md` §6.11; its tab is
-    the second, next to the inbox): the project at a glance.
-    - Links: the repository and each Keep the Why dashboard of the family,
-      with its attention count and a part's error, plus the policy preset.
-      A link is used only when it is plain `https`, in a new tab with
+    the second, next to the inbox): the project at a glance, in three
+    rows: what needs you, then the state, then the facts; on a phone one
+    column in the same order. A panel's heading is never a link; its way
+    onward stands at the end of its head row.
+    - **Waiting for you**: the open requests for you as one big number
+      linking to the inbox, **Open the inbox**, the priorities as pills and
+      when the oldest was asked; "Nothing for you · N open for others", or
+      "Nothing waits for an answer".
+    - **Board**: one stacked bar, a segment per column (named for a screen
+      reader), and a legend whose every count links to the board, over the
+      board's 14-day window for done and cancelled.
+    - **Team**: per role, the members as chips (`M.dom.memberChip`: the
+      avatar round for a human, rounded for an agent, a presence dot,
+      `@handle`, name, role, kind and presence in the tooltip), how many
+      humans, agents and online, and **All members**.
+    - **Latest reports**: avatar, card, `@who`, when, the pull request with
+      the state the probe saw as a pill, a mismatch said.
+    - **Project**: the repository, the policy preset, the **Contract**
+      (`docs/api.md` on the forge at the default branch, GitHub and GitLab)
+      and each Keep the Why dashboard of the family as a pill: green, amber
+      with what needs attention, red with why it was not read. A link is
+      used only when it is plain `https`, in a new tab with
       `rel="noopener noreferrer"`; anything else is text.
-    - Members by role, with how many are humans, agents and online.
-    - The board's count per column, over the board's 14-day window for
-      done and cancelled, each linking to the board (the board has no
-      route to one column or card yet, so a report links there too).
-    - Open requests, those for oneself and by priority, linking to the
-      inbox.
-    - The latest reports: author, card, when, the pull request with the
-      state the probe saw, and a mismatch said.
+    - **README badge**: its state (Off, Members, Agents online), the badge
+      as the hub serves it while on, the snippet with **Copy**; an owner or
+      admin changes it in Project settings, where the change takes a reason.
 
     Links and members come from what the header already read. The counts
     come from `GET …/overview`, which is read again on `task_*`,
@@ -1022,7 +1045,8 @@ and falls back to the generated one when the image does not load (a
 organisation and in the chat list.
 
 **Message the project** (`#/p/<slug>/message`, no tab: **Message the
-project** in the inbox's toolbar, and from a chat: an `@name` typed there
+project** in the Chat tab's list beside **New group chat** and in the
+Messages view, no longer in the inbox, and from a chat: an `@name` typed there
 is said to notify nobody, with a link to a project message that has it
 already written) posts a message (`POST /projects/{slug}/events`, `docs/api.md`
 §8.4): to everyone, a role or one member (never oneself), of one of the
@@ -1354,14 +1378,21 @@ web/
 └── context/          why the dashboard is built this way (Keep the Why)
 ```
 
-**Talk to the lead** sits above the project view tabs and appears per project
-on All projects. With coordinator availability data it selects the current
-lead or substitute; on older hubs choose one of your own admin or proxy agents. Your own
-agent opens in direct chat. Another owner's agent opens an existing open
-group of exactly you and that agent, or creates one on click; the agent's
-owner can read along. This does not expand direct-chat access. Agents see
-no control. A hub without group chats shows an error instead of opening an
-unauthorized direct chat.
+The header's **Chat** button, a button like the bell, opens every chat.
+Beside it, the **Lead** button reaches the lead (`js/lead-chat.js`). In a
+project that is the lead the policy names now (with coordinator
+availability data: the current lead or substitute) and one's own proxy;
+on an older hub, one's own admin and proxy agents. Outside a project it
+gathers them from every project, each named with its project. With one to
+reach, a click opens that chat. With several, a small menu lists them, and
+for each project with more than one, a **Group chat with all leads**.
+With none, there is no Lead button. There is no lead strip above the tabs
+or on All projects any more. Your own agent opens in direct chat. Another
+owner's agent opens an existing open group of exactly you and that agent
+(or you and all leads), or creates one on click; the agents' owners can
+read along. This does not expand direct-chat access. Agents get none of
+it. A hub without group chats says so under the header instead of opening
+an unauthorized direct chat.
 
 Held cards show the holder's presence beside the claim. An agent that is
 away, offline or paused shows **silent since HH:MM** in your browser's local
@@ -1445,11 +1476,12 @@ controls for that unimplemented route.
 **Landing page** (`js/landing.js`, `docs/api.md` §16.7). At the root, a
 visitor without a session gets the instance's landing page when the hub's
 `GET /landing` (asked only where its machine form lists the route) says it is on: the large lockup (light or dark with the
-theme), the title (also the tab's), the operator's Markdown drawn by the
-chat's renderer with one addition for this page alone — links to
-dashboard routes (`/#/…`) stay in the page, `https` links open apart,
-anything else and raw HTML stay text — then the button (`cta`) and a
-**Sign in** link. Off, absent or failing, the root is the login page as
+theme, at most 240 px wide), the page's one logo and its h1, the title
+(also the tab's), the button (`cta`), above the fold on a phone, then the
+operator's Markdown drawn by the chat's renderer with one addition for
+this page alone — links to dashboard routes (`/#/…`) stay in the page,
+`https` links open apart, anything else and raw HTML stay text. The
+header holds only the theme menu and **Sign in**, at its right edge. Off, absent or failing, the root is the login page as
 before, and `#/login` is the login page always (in fixture mode the page
 is off, as on a fresh instance; `?landing=on` shows it and `?landing=fail`
 makes its read fail): the landing page never
