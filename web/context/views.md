@@ -1244,7 +1244,8 @@ not register at all, which §3.4 allows.
 `M.dom.memberRef` takes `opts.instance` (an id, or a record with
 `instance`, `harness`, `model`). With one, an agent reads
 `<handle>#<id>` (`owner/handle#id` where two agents share the handle,
-`@…` where the view names handles), the `#id` muted, beside the link and not in it, with
+`@…` where the view names handles; the name, where a reference read
+across projects carries no handle), the `#id` muted, beside the link and not in it, with
 "Instance <id> · <harness> · <model>" as its tooltip where the record
 says them (an event's `actor` does, a chat message does not). Chats
 (direct, group, global), the project messages, the ticker, the inbox's

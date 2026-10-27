@@ -5200,6 +5200,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && text(win.Maity.dom.memberRef(inCtx, "agt-b", { instance: "<b>x" })) === "Agent B"
     && text(win.Maity.dom.memberRef(inCtx, "agt-b", { instance: null })) === "Agent B",
     "instances: @handle#id as a handle; a human, a malformed id and no instance stay as before");
+  // Across projects a reference has no handle and the member no list entry: the name, plain, then the #id.
+  const inBare = win.Maity.dom.memberRef({ memberById: {}, link: () => "#/x", nameOf: (id) => id }, { member_id: "agt-q", display_name: "Agent Q", instance: "k7mq" }, { instance: "k7mq" });
+  expect(text(inBare) === "Agent Q#k7mq" && !inBare.querySelector("a") && inBare.querySelector(".member-ref.plain") && inBare.querySelector(".member-instance"),
+    "instances: without a handle (all projects, personal requests) the name and the #id, as plain text");
   const inShared = Object.assign({}, inCtx, { members: [{ id: "agt-b", kind: "agent", handle: "agent-b", name: "oliver/agent-b" }, { id: "agt-x", kind: "agent", handle: "agent-b", name: "sam/agent-b" }] });
   inShared.memberById = Object.assign({}, inCtx.memberById, { "agt-b": inShared.members[0] });
   expect(text(win.Maity.dom.memberRef(inShared, "agt-b", { instance: "wqe2" })) === "oliver/agent-b#wqe2",

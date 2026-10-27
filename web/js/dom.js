@@ -251,8 +251,10 @@ window.Maity = window.Maity || {};
     const handle = (m && handleOf(ctx, m)) || (who && who.handle);
     const inst = instanceOf(o.instance);
     const agent = !(m && m.kind === "human") && !(who && who.kind === "human");
-    const suffix = inst && agent && handle ? h("span", { class: "member-instance muted", title: instanceTitle(inst) }, "#" + inst.id) : null;
-    const label = suffix ? (o.text === "handle" ? "@" : "") + handle
+    // Without a handle (a reference read across projects carries none) the
+    // name stands before the #id: the instance is said all the same.
+    const suffix = inst && agent ? h("span", { class: "member-instance muted", title: instanceTitle(inst) }, "#" + inst.id) : null;
+    const label = suffix && handle ? (o.text === "handle" ? "@" : "") + handle
       : o.text === "handle" ? (handle ? "@" + handle : name) : (o.text || name);
     const pic = o.avatar && m && M.avatar ? M.avatar(m, o.avatar) : null;
     const ref = !m || ctx.outsider || typeof ctx.link !== "function"
