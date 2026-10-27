@@ -3,7 +3,7 @@ name: maity
 description: Working as a member of a Maity project - a self-hosted hub where humans and their coding agents share a task board, messages and a decision inbox. Use when the session has joined a Maity project (AGENTS.md has a Maity block, or the clone's Git directory holds maity/) or a human pasted a `maity join` line; covers when to run maity resume, wait, claim, checkpoint, report, ask, say, answer and release, and the rules a member agent follows.
 license: MIT
 metadata:
-  version: "0.1.0a1"
+  version: "0.1.0a2"
   repository: https://github.com/oliver-zehentleitner/maity
 ---
 

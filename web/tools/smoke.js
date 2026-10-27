@@ -4313,20 +4313,47 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(whyItems.length >= 2 && whyItems[0].querySelector("a").getAttribute("href") === "https://maity.dev/keep-the-why-dashboard/"
     && text(whyItems[0]).includes("the project · 1 entry needs attention") && text(whyItems[1]).startsWith("hub")
     && text(ovPart("overview-links")).includes("hierarchical"), "overview: each Keep the Why dashboard with its attention, and the policy preset");
-  expect(text(ovPart("overview-members")).includes("owner") && text(ovPart("overview-members")).includes("Maintainer")
-    && ovPart("overview-members").querySelector("a").getAttribute("href") === "#/p/maity/members", "overview: members by role, linking to Members");
+  const ovContract = ovPart("overview-links").querySelectorAll("a").find((a) => text(a) === "docs/api.md");
+  expect(ovContract && ovContract.getAttribute("href") === "https://github.com/oliver-zehentleitner/maity/blob/main/docs/api.md" && ovContract.getAttribute("target") === "_blank",
+    "overview: the contract on the forge at the default branch, beside Keep the Why");
+  // The README badge as it stands: off here, said so, the snippet with Copy; an owner is sent to Settings to change it.
+  const ovBadge = ovPart("overview-badge");
+  expect(ovBadge && text(ovBadge).includes("Off: the badge address answers 'not found'.") && !ovBadge.querySelector("img.badge-preview")
+    && ovBadge.querySelector(".overview-badge-states li[aria-current=\"true\"]") && text(ovBadge.querySelector(".overview-badge-states li[aria-current=\"true\"]")) === "Off"
+    && text(ovBadge.querySelector(".overview-snippet code")).includes("/badge/maity.svg") && btn(ovBadge, "Copy")
+    && ovBadge.querySelector(".overview-snippet code").getAttribute("tabindex") === "0" && ovBadge.querySelector(".overview-snippet code").getAttribute("aria-label")
+    && ovBadge.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/p/maity/settings"),
+    "overview: the README badge's state, its snippet with Copy, and for an owner the way to change it");
+  // The team: per role, member chips (the designer's layout); All members at the head's end.
+  const ovChips = ovPart("overview-members").querySelectorAll("a.member-chip");
+  const ovOwner = ovChips.find((a) => a.getAttribute("data-member") === "hum-maintainer");
+  expect(text(ovPart("overview-members")).includes("owner") && ovOwner && text(ovOwner).includes("@maintainer")
+    && ovOwner.getAttribute("title").startsWith("Maintainer · owner · human · ")
+    && ovOwner.getAttribute("href") === "#/p/maity/members/hum-maintainer" && ovOwner.querySelector(".chip-avatar.human .chip-dot")
+    && ovChips.some((a) => a.querySelector(".chip-avatar.agent"))
+    && ovPart("overview-members").querySelector("a").getAttribute("href") === "#/p/maity/members" && text(ovPart("overview-members").querySelector("a")) === "All members",
+    "overview: the team per role as member chips (name, role, kind and presence in the tooltip), All members at the head's end");
   const ovCounts = ovPart("overview-board").querySelectorAll(".overview-counts li");
   expect(ovCounts.length === 7 && ovCounts.every((li) => li.querySelector("a").getAttribute("href") === "#/p/maity/board")
     && text(ovCounts.find((li) => li.attrs["data-status"] === "in_progress")).startsWith(String(ov.board.counts.in_progress)),
     "overview: every column's count, each linking to the board");
   // The fixtures' requests are answered by now: the count and its empty state.
-  expect(text(ovPart("overview-requests")).includes(String(ov.requests.open))
+  expect((!ov.requests.open || text(ovPart("overview-requests")).includes(String(ov.requests.open)))
     && (ov.requests.open ? text(ovPart("overview-requests")).includes(" for you") : text(ovPart("overview-requests")).includes("Nothing waits for an answer."))
-    && ovPart("overview-requests").querySelector("a").getAttribute("href") === "#/p/maity/inbox", "overview: the open requests, those for oneself, linking to the inbox");
+    && (!ov.requests.open || ovPart("overview-requests").querySelector("a").getAttribute("href") === "#/p/maity/inbox")
+    && text(byId("overview-requests")) === "Waiting for you" && main.querySelector(".overview-row-1").childNodes[0] === ovPart("overview-requests"),
+    "overview: what waits for the reader comes first, linking to the inbox when anything does");
   const ovReport = ovPart("overview-reports").querySelector("li");
-  expect(ovReport && text(ovReport).includes("Agent B") && text(ovReport).includes("tsk-0005")
+  expect(ovReport && text(ovReport).includes("@agent-b") && text(ovReport).includes("tsk-0005")
     && ovReport.querySelectorAll("a").some((a) => a.getAttribute("href") === "https://github.com/oliver-zehentleitner/maity/pull/3") && text(ovReport).includes("PR #3 open"),
     "overview: the latest report with its card, its author and its pull request as the probe saw it");
+  // The layout: three rows in the designer's order; the board as a stacked bar with an accessible name.
+  const ovRows = main.querySelectorAll(".overview-row").map((row) => row.childNodes.filter((x) => x.tagName === "SECTION").map((x) => x.getAttribute("aria-labelledby")).join("+"));
+  const ovBar = ovPart("overview-board").querySelector(".overview-bar");
+  expect(JSON.stringify(ovRows) === JSON.stringify(["overview-requests+overview-board", "overview-members+overview-reports", "overview-links+overview-badge"])
+    && ovBar && ovBar.getAttribute("role") === "img" && ovBar.getAttribute("aria-label").includes(ov.board.counts.in_progress + " in progress")
+    && main.querySelectorAll(".overview-head").every((hd) => !hd.childNodes[0].querySelector("a")),
+    "overview: three rows, what needs you first; the board's bar named for a screen reader; no heading is a link " + JSON.stringify(ovRows));
   // Re-read on a card, a request or the probe; not on anything else; no Reload offered.
   ovFeed = [{ seq: 10100, kind: "member_updated", actor: { member_id: "agt-b" }, payload: {} }];
   await fireIntervals(); await tick(); await tick();

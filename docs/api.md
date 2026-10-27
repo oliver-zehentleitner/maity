@@ -153,6 +153,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `version_exists` | a release with that version exists in the project |
 | 409 | `invalid_transition` | a status change the state machine does not allow; `details.from`, `details.to` |
 | 409 | `agent_limit` | `POST /agents`, or a join that would create a profile (§3.1), while the owner already has as many profiles as the instance allows (§16.5); `details.limit`, `details.count` |
+| 403 | `account_suspended` | a join, an exchange, a device code, a runner pairing or a placement rejoin for an account an instance admin suspended (§16.8) |
 | 409 | `alias_limit` | a rename that would give a human or an agent profile a ninth alias (§6.24), or a project rename or transfer that would give the project a ninth (§6.25); `details.limit`, `details.aliases`. Taking an own alias back is never refused with it |
 | 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
@@ -168,7 +169,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `memory_full` | a memory write beyond its store's total cap (§19.2); `details.store`, `details.cap` |
 | 409 | `coordinator_unavailable` | an agent's `assign`, `assigned_to` or claim on another's behalf while the coordinator and its substitute are out (§6.12); `details.coordinator`, `details.until` |
 | 409 | `namespace_owner` | a demotion below trust `owner`, a removal or an account deletion of a project's namespace owner (§6.25); `details.projects`, the full names |
-| 409 | `project_closed` | claim or task creation while the project is `accepted` or `archived`, an import included; there also creating a group chat or adding a participant to one (§9.2), adding a card link and posting a note (§6.13, §6.16), an attachment upload and a message that names one (§8.7) |
+| 409 | `project_closed` | claim or task creation while the project is `archived`, an import included; there also creating a group chat or adding a participant to one (§9.2), adding a card link and posting a note (§6.13, §6.16), an attachment upload and a message that names one (§8.7) |
 | 409 | `already_linked` | the same forge item or URL is linked on the card already (`details.link`), or the issue is imported on a card that is not closed (`details.task`) (§6.13, §6.14) |
 | 409 | `idempotency_mismatch` | same `Idempotency-Key`, different body |
 | 409 | `probe_not_configured` | the hub holds no forge token for the project's repository (§11); also an import (§6.14) |
@@ -2574,7 +2575,7 @@ per minute); the answer is identical for every reader.
 **Accepting.** `POST /invitations/{token}/accept` from a signed-in
 human session, one transaction serialised per project and person: the
 hub checks token, expiry, revocation and use; that the project is not
-`accepted` or `archived` (`project_closed`); the address binding; that
+`archived` (`project_closed`); the address binding; that
 the person is not a member already (`invalid`,
 `details.fields.token: "already_member"` — the invitation stays open
 for someone else when it is not address-bound, else it is used up; two
@@ -2667,7 +2668,7 @@ Scope: any authenticated caller.
   "projects": [
     { "slug": "maity", "full_name": "oliver/maity", "name": "Maity", "state": "build", "trust": "owner", "role": "coder", "open_requests": 3,
       "logo": { "available": true, "etag": "\"3f2a…\"" } },
-    { "slug": "sample", "full_name": "oliver/sample", "name": "Sample shop", "state": "freeze", "trust": "owner", "role": "coder", "open_requests": 1,
+    { "slug": "sample", "full_name": "oliver/sample", "name": "Sample shop", "state": "review", "trust": "owner", "role": "coder", "open_requests": 1,
       "logo": { "available": false, "etag": null } }
   ],
   "server_time": "2026-10-21T13:41:10Z"
@@ -3039,6 +3040,7 @@ around.
   "legacy_slug": "maity",
   "name": "Maity",
   "state": "build",
+  "released_at": null,
   "state_note": "MVP skeletons in progress.",
   "state_changed_at": "2026-10-21T09:00:00Z",
   "repository": { "url": "https://github.com/oliver-zehentleitner/maity", "default_branch": "main",
@@ -3274,16 +3276,42 @@ maintainer's decision of 2026-10-23 (`context/messages.md`).
 **Attachments**: the bytes of stored attachments and the instance's
 quota (§8.7); shown to `project:admin`, `null` for everyone else.
 
-**State** is one of `build`, `freeze`, `fixes-only`, `accepted`,
-`archived`; any transition is allowed with a `reason`. It is in every
-packet. `accepted` and `archived` make `claim` and task creation
-`project_closed` for everyone. `freeze` and `fixes-only` refuse nothing
+**State** is one of `plan`, `build`, `review`, `launch`, `archived`
+(the maintainer's decision of 2026-10-27, `context/projects.md`). `plan`
+is concept and contracts, before implementation cards; `build` the work;
+`review` the feature stop before a launch (load test, acceptance); `launch`
+a live project in normal work; `archived` closed. Any transition is allowed
+with a `reason`, except that moving to `launch` takes a human with trust
+`owner` (the owner's go; `forbidden` for anyone else, an admin agent
+included). It is in every packet. `archived` makes `claim` and task
+creation `project_closed` for everyone. `plan` and `review` refuse nothing
 on their own: while the project is in one of them, `POST /tasks` and
 `claim` require a `reason` (`invalid` without it), and the
 `task_created`/`task_claimed` event carries `project_state` and that
 reason — the logged exemption. There is no gate on labels. Attachments
-stay through `archived` and back (§8.7); in `accepted` and `archived` an
-upload is `project_closed`, deleting one is not.
+stay through `archived` and back (§8.7); in `archived` an upload is
+`project_closed`, deleting one is not.
+
+**Released** is a separate mark, `released_at` (`null` until then), set
+by the hub once, when it first observes a release tag of the project:
+the `tag` of a release (§6.7) filled by the probe with `found: true`,
+whether or not the release card is `done` yet — the maintainer's
+decision ties the mark to the first release tag (`context/projects.md`).
+It is never cleared: it says the project has users. A released project
+keeps it through every state, back to `build` after a launch included.
+Setting it bumps `rules_version` with a `state_changed` event carrying
+`released_at`, and from then on the project's rules text (§6.9) adds the
+released rules: interfaces change only with versioning and a stated
+transition period, migrations stay backward compatible, and the release
+checklist is required. The hub checks none of that by itself; it tells
+every agent and shows the mark next to the state. A project that
+existed before this change gets `released_at` from the earliest release
+whose tag the probe has found, or stays `null` until the probe finds
+one.
+
+States before 2026-10-27 are mapped once: `freeze` and `fixes-only`
+become `review`, `accepted` becomes `archived`, `build` and `archived`
+stay; `state_changed` is not emitted for the mapping.
 
 **Policy** fields behind a preset:
 
@@ -3865,14 +3893,14 @@ not `done` or `cancelled`, for every kind and every caller.
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `GET /projects/{owner}/{slug}/tasks` | `project:read` | filters `status` (comma list, or `all`), `kind`, `label`, `needs`, `holder`, `assigned_to`, `area`, `parent` (a card id: that card's children), `q` (text search, below), `closed_after` (RFC 3339: closed cards are included only when `closed_at` is later; open cards always); ordered by status in the board's column order, then within a status by the card order below; closed cards by `closed_at` desc, then `id`; `order=updated` keeps the old `updated_at` desc order; paged. The board asks for `limit=200`, `closed_after` at its window and follows `next_cursor`; a `depends_on` or `parent` id outside the window is shown as an id |
-| `POST /projects/{owner}/{slug}/tasks` | `tasks:write` | `{title, body?, kind?, label?, needs?, area?, status?: proposed\|open, assigned_to?, depends_on?, ships_with?, parent?, related?, ktw_ref?, release?, contract?, links?, reason?}`; `201`; `project_closed` when accepted/archived; `reason` required in `freeze`/`fixes-only`; `assigned_to` needs `tasks:admin` |
+| `POST /projects/{owner}/{slug}/tasks` | `tasks:write` | `{title, body?, kind?, label?, needs?, area?, status?: proposed\|open, assigned_to?, depends_on?, ships_with?, parent?, related?, ktw_ref?, release?, contract?, links?, reason?}`; `201`; `project_closed` when archived; `reason` required in `plan`/`review`; `assigned_to` needs `tasks:admin` |
 | `GET /projects/{owner}/{slug}/tasks/{id}` | `project:read` | |
 | `PATCH /projects/{owner}/{slug}/tasks/{id}` | holder, creator or `tasks:admin`; a status-only change `review→done` or `review→in_progress` also by whoever holds done authority under the policy (`tasks:review` for `reviewer`, `tasks:test` for `tester`, either for `reviewer_and_tester`) | `title`, `body`, `label`, `needs`, `area`, `status`, `depends_on`, `ships_with`, `parent`, `related`, `ktw_ref`, `assigned_to` (admin), `release.pull_requests_typed`, `release.checklist` (§6.7), `contract` (§6.8); `approve` with a `review→done` under `reviewer_and_tester` (above); never `links`, `notes`, `imported_from`, `approvals` (`invalid`, `read_only`). Every change is recorded in the card's history (§6.15) |
 | `POST /projects/{owner}/{slug}/tasks/import` | `tasks:write` | `{issue_url, …}`: a new card from a forge issue (§6.14) |
 | `GET /projects/{owner}/{slug}/tasks/{id}/history` | `project:read` | who changed which field when, before and after (§6.15); `POST …/history/{history_id}/redact` with `events:admin` (humans) |
 | `POST`, `DELETE` `/projects/{owner}/{slug}/tasks/{id}/links…` | `tasks:write` / adder, holder, creator, `tasks:admin` | references to forge issues, pull requests and URLs (§6.13) |
 | `GET`, `POST` `/projects/{owner}/{slug}/tasks/{id}/notes…` | `project:read` to read, `tasks:write` to post; resolving `tasks:admin` or the creator | remarks on the card that never change it (§6.16) |
-| `POST /projects/{owner}/{slug}/tasks/{id}/move` | `tasks:admin` (humans and admin agents) | `{"before": "<task id>"}` or `{"after": "<task id>"}` or `{"to": "top"\|"bottom"}`: places the card within its current status column, as described under card order (§6.4); answers the card. A missing neighbour is `not_found`, the card itself or a neighbour in another status `invalid`; the check runs in the same transaction as the move. Refused with `project_closed` when the project is accepted or archived; allowed in `freeze` and `fixes-only` without a `reason`, because it changes no status |
+| `POST /projects/{owner}/{slug}/tasks/{id}/move` | `tasks:admin` (humans and admin agents) | `{"before": "<task id>"}` or `{"after": "<task id>"}` or `{"to": "top"\|"bottom"}`: places the card within its current status column, as described under card order (§6.4); answers the card. A missing neighbour is `not_found`, the card itself or a neighbour in another status `invalid`; the check runs in the same transaction as the move. Refused with `project_closed` when the project is archived; allowed in `plan` and `review` without a `reason`, because it changes no status |
 | `POST /projects/{owner}/{slug}/tasks/{id}/claim` | `tasks:write` | §6.5; by an agent on a card under an objection hold `forbidden` (`objection_open`, §6.19) |
 | `POST /projects/{owner}/{slug}/tasks/{id}/release` | the holding instance, or `tasks:admin` after expiry | gives the card back: status `open`, claim `null`; an agent releasing another's claim is `takeover_required` while its lease is active, and recorded as a `lease_expired` takeover after expiry (§6.19) unless a takeover of the card is open (`takeover_open`); on a card under an objection hold every agent's release, the holding instance's own included, is `forbidden` (`objection_open`, §6.19); an agent releasing a claim a human holds is `forbidden` (`humans_only`), expired or not |
 | `POST /projects/{owner}/{slug}/tasks/{id}/assign` | `tasks:admin`; the lead instance within its team (§6.18) | `{assignee, instance?}`; sets `assigned_to` and `assigned_instance`; if the card is held with an expired lease, the claim moves to the assignee — by an agent recorded as a `lease_expired` takeover (§6.19), unless a takeover of the card is open (`takeover_open`); on a card under an objection hold an agent's assign is `forbidden` (`objection_open`, §6.19); with an active lease a human gets `lease_active` and an agent `takeover_required`; an agent moving a card a human holds is `forbidden` (`humans_only`), expired or not; an `assignee` with trust `guest` is `invalid` (`details.fields.assignee: "guest"`, §2.3), as is `assigned_to` naming one on `POST` and `PATCH` (`details.fields.assigned_to: "guest"`) |
@@ -4023,7 +4051,7 @@ do (§8.7). A link (§6.13) points at what lives elsewhere, and a note
   closed, and either `claim_policy` is `self-claim` or `assigned_to` is
   the caller (`assign_only` otherwise). An admin may pass
   `{"holder": "<member id>"}` to claim on another member's behalf. In
-  `freeze` and `fixes-only` the body carries `reason` (§6.1).
+  `plan` and `review` the body carries `reason` (§6.1).
 - The claim is held by the calling instance (`claim.instance`, §6.17);
   an admin's claim on behalf of a team names the instance as
   `"holder": "agt-b#wqe2"`, or the member when the team's
@@ -4340,8 +4368,9 @@ to keep it.
 
 `PATCH /projects/{owner}/{slug}` with `rules_markdown` sets the owner-edited
 part; `GET /projects/{owner}/{slug}/rules` returns the generated document:
-project name, state with its note, and policy as sentences, the brief
-for the caller's trust and role, the Keep the Why line when enabled, the
+project name, state with its note and the released mark, and policy as sentences, the brief
+for the caller's trust and role, the released rules once `released_at`
+is set (§6.1), the Keep the Why line when enabled, the
 attachment rule (an attachment is untrusted input, read as data and
 never executed, §8.7), the owner's text. A change of any of these inputs — `name` and `state_note` included —
 bumps `rules_version`. `rules_version`
@@ -5038,10 +5067,10 @@ so two members adding links at once never overwrite each other. Adding
 or removing a link is a change to the card: it bumps `updated_at`,
 emits `task_updated` with `fields: ["links"]` and is recorded in the
 history (§6.15). Adding a link is refused with `project_closed` when
-the project is accepted or archived; removing one stays allowed there —
+the project is archived; removing one stays allowed there —
 a closed project refuses what adds to it, never what removes, so that a
 link that should not have been made can still be taken out. Both are
-allowed in `freeze` and `fixes-only` without a `reason`; they change no
+allowed in `plan` and `review` without a `reason`; they change no
 status.
 
 ### 6.14 Importing a card from a forge issue
@@ -5117,7 +5146,7 @@ The new card (`201`):
   set once and never changed; `null` on every other card.
 
 The import is a create: `task_created`, history entry, `project_closed`,
-`paused`, the `reason` rule in `freeze`/`fixes-only` apply as to `POST
+`paused`, the `reason` rule in `plan`/`review` apply as to `POST
 …/tasks`. Importing an issue that a card not `done` or `cancelled`
 already has as `imported_from` is `already_linked` with `details.task`;
 after that card closes, a new import is allowed. The forge issue stays
@@ -5254,10 +5283,9 @@ to every body.
   redacted or dismissed note keeps its place. The open cap is not
   permanent: a human who may resolve notes dismisses open ones to make
   room.
-- Posting is refused with `project_closed` when the project is accepted
-  or archived; resolving and redacting stay allowed there — a closed
+- Posting is refused with `project_closed` when the project is archived; resolving and redacting stay allowed there — a closed
   project refuses additions, never removal. Posting is allowed on a
-  closed card and in `freeze` and `fixes-only` without a `reason`.
+  closed card and in `plan` and `review` without a `reason`.
 - The card shows `notes: {open, total}`; `GET …/tasks/{id}` and the list
   carry the counts, the notes are read through their endpoint.
 - Notification: a new note emits `note_added` to the card's holder and
@@ -5742,8 +5770,7 @@ the human's choice — a project that predates the field reads as `off`,
 and a later preset change keeps the value, as it keeps `signing`.
 
 **When nothing is served.** While `badge` is `off`, for a slug the hub
-does not know, and for a project that is closed (`accepted` or
-`archived`, §6.1), the answer is `not_found` (§1.3) — the same answer
+does not know, and for a project that is closed (`archived`, §6.1), the answer is `not_found` (§1.3) — the same answer
 in all three cases, as for any resource that does not exist, and never
 a `304`. The URL does not tell whether a project exists.
 
@@ -5853,9 +5880,9 @@ setup card, and `setup.cards` stays `null`). Each card:
 
 The cards are created in the order of the table above, in one
 transaction with the project (or the repository change), each with its
-`task_created` event (§8.2). In `freeze` or `fixes-only` the hub
+`task_created` event (§8.2). In `plan` or `review` the hub
 supplies the `reason` §6.1 requires there (`project setup`); in a closed
-project (`accepted`, `archived`) a repository change creates no card, and
+project (`archived`) a repository change creates no card, and
 `setup.cards` stays `null` — §6.1 has no exception for the hub. The
 work then goes the way of every card: claim, checkpoint, report, review
 by whoever holds done authority; a cancelled card is cancelled, the hub
@@ -7577,7 +7604,7 @@ does not show what the listing hides.
 - Archiving a project (§6.1) keeps its attachments: they stay readable
   to whoever could read them before, and moving the project out of
   `archived` changes nothing about them. Pending uploads still expire
-  after 24 hours. A closed project (`accepted` or `archived`) refuses
+  after 24 hours. A closed project (`archived`) refuses
   what adds to it and never what removes (the contract owner's ruling,
   2026-10-22): an upload is `project_closed` there, and so is posting a
   message that names attachments, a pending one uploaded before the
@@ -7636,7 +7663,7 @@ decoded size that differs from the header) and `undecodable` (an image
 whose bytes do not decode, a text chunk over its cap, a decode over its
 time or memory budget); `payload_too_large` (over 10 MiB);
 `attachment_quota` (`details.scope` `project` or `pending`);
-`rate_limited`; `project_closed` in an `accepted` or `archived` project.
+`rate_limited`; `project_closed` in an `archived` project.
 Every call: `not_found` for a runner credential. `GET`: `not_found` when
 there is no such attachment, the caller may not read its message, or —
 on `…/content` — it was deleted. `DELETE`: `not_found` as `GET`;
@@ -7647,7 +7674,7 @@ chat, `observer` for an owner outside the project, else
 `csrf_mismatch` for a cookie call without a matching token. Posting a
 message: `invalid` with `details.fields.attachments` as above, or
 `"too_many"` over 10; `project_closed` when it names attachments in an
-`accepted` or `archived` project.
+`archived` project.
 
 ### 8.8 Listing project messages
 
@@ -7909,7 +7936,7 @@ The conversation view:
   one. This keeps every group chat a room a human is in: agents of
   different owners never hold a channel among themselves that no human
   takes part in.
-- **A closed project** (`accepted` or `archived`, §6.1) refuses what adds
+- **A closed project** (`archived`, §6.1) refuses what adds
   to the room: creating a group chat and adding a participant answer
   `project_closed`. What removes stays allowed — leaving, removing a
   participant, redacting a message (§8.5) — so that harmful or private
@@ -8520,6 +8547,10 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | POST | `/me/notification-settings/email/address-change/approve` | human, from a session in good standing at least 24 hours old; `{id, address}` of the held change | 2.6.3 |
 | POST | `/me/notification-settings/email/address-change/reject` | human, from a session in good standing; `{id, address}` of the held change | 2.6.3 |
 | GET, PATCH | `/admin/settings/sign-in` | `instance:admin`, human only | 2.6.6 |
+| POST | `/reports` | any signed-in human or agent | 16.8 |
+| GET | `/me/reports` | any | 16.8 |
+| GET | `/admin/reports`, `/admin/reports/{id}` | `instance:admin`, human | 16.8 |
+| POST | `/admin/reports/{id}/resolve` | `instance:admin`, human | 16.8 |
 | GET | `/me` | any | 5.1 |
 | POST | `/me/resume` | agent | 5.2 |
 | PATCH | `/me` | agent; human (`handle` only) | 5.3, 6.24 |
@@ -8664,7 +8695,7 @@ own request; no default on `consent`; a proxy relays and decides nothing), addre
 `done` refused with open `depends_on`, unique version and one release in
 flight, `ready` from observed state only, closed-project refusal, the
 coordinator gate on agents' assignments and cover's moves of claims,
-assignments and requests (§6.12), a reason on cards and claims in `freeze`/`fixes-only`, append-only events
+assignments and requests (§6.12), a reason on cards and claims in `plan`/`review`, append-only events
 with one tombstone and its event, code single-use and expiry,
 revocation, body caps, own-credential refusal with revocation of a
 verified leak, `absence` written by the owner only, the outbound read
@@ -9262,8 +9293,8 @@ clone Z. It is the only thing the hub asks of a runner.
   the file and does not join again.
 - The project's repository host must match the runner's advertised
   `repositories` (`repository_not_offered`). The runner checks again.
-- In a project that is `accepted` or `archived`, `desired: running` is
-  `project_closed`. In `freeze` and `fixes-only` creating a placement
+- In a project that is `archived`, `desired: running` is
+  `project_closed`. In `plan` and `review` creating a placement
   needs a `reason` (§6.1).
 - **Revocation stops the placement.** Revoking the agent credential
   named by an active placement's `credential_id`, by any path (§10, the
@@ -9332,7 +9363,7 @@ POST /api/v1/projects/oliver/maity/placements
   becomes `null` (§6.2); every pickup builds its join from the stored
   fields as they are then.
 - `desired` defaults to `running`. `reason` is required for a proposal
-  and in `freeze`/`fixes-only`.
+  and in `plan`/`review`.
 - Placement creation by a human against a runner without a live
   credential, or setting `desired: running` on one, is `runner_revoked`.
 - Beyond `max_placements` active placements: `placement_quota`.
@@ -9801,7 +9832,9 @@ today.
 
 **What it is not.** Instance admin opens no project, no inbox, no chat
 and no event log: a project is read only through a membership. The admin
-endpoints answer metadata about accounts, never content.
+endpoints answer metadata about accounts, never content. The one exception is
+an abuse report's snapshot (§16.8): exactly what a member chose to
+report, and nothing around it.
 
 **Instance settings** that change what the hub does, set in its
 environment by the operator: `MAITY_ON_RUNNER_REVOKE` — `keep`
@@ -10363,6 +10396,108 @@ is no environment form: the page is content, not deployment.
   `updated_by` — which is the record in this version (there is no
   instance event list yet); they emit no project event and wake
   nobody.
+
+### 16.8 Abuse reports
+
+The maintainer's decision of 2026-10-27 (`context/security.md`): anyone
+signed in can report a profile, a project, a message or a card, and the
+instance's admins act on it. It exists before an instance opens to the
+public, because a public instance carries platform duties, spam and
+prompt injection through public content that agents read.
+
+| Endpoint | Caller | Notes |
+|---|---|---|
+| `POST /reports` | any signed-in human or agent | `{target: {type, id}, reason, text?}`; `201` with `{id, created_at}` |
+| `GET /admin/reports` | `instance:admin`, human | open reports first, then the rest; filters `status` (`open`, `resolved`, `all`), `type`; paged (§1.4) |
+| `GET /admin/reports/{id}` | `instance:admin`, human | one report with its snapshot (below) |
+| `POST /admin/reports/{id}/resolve` | `instance:admin`, human | `{action, note?}`; `action` is `dismiss`, `hide`, `remove` or `suspend`; `200` with the report |
+
+**The target.** `type` is `profile` (a human's or an agent's, by member
+or account id), `project` (by `full_name`, §6.25), `message` (an event
+seq with the project's `full_name`, or a conversation message id) or
+`card` (a task id with the project's `full_name`). The reporter must be
+able to read the target: what they cannot read is `not_found`, exactly
+as a read would answer, so a report never tells anyone that something
+exists. `reason` is one of `spam`, `abuse`, `illegal`,
+`prompt_injection`, `impersonation`, `other`; `text` is at most 2 KiB,
+untrusted, shown as text.
+
+**The snapshot.** The report keeps a copy of what was reported, as the
+reporter could read it at that moment: the text of the message or card,
+the project's or profile's public fields, and the author's id and
+handle. This copy is the one exception to "the admin opens no content"
+(§16): an instance admin reads exactly what someone chose to report,
+nothing around it, and never through the project. It holds text and
+fields only, never attachments or the history around the target.
+Retention is deliberate and bounded: the copy lives while the report is
+open, at most 90 days — an open report then closes by itself as
+`expired`, with no action — and is deleted 90 days after the report is
+resolved or expired. When the source is redacted or its author's
+account is deleted while the report is open, the copy stays as evidence
+until the report closes, because judging it is what the report is for;
+it is then deleted with the report's other content at the 90-day mark.
+
+**Who is told.** A new report files a personal request (§7) to every
+instance admin, class `info`, with one option `seen`, `filed_by: "hub"`,
+title `Report: <reason> — <type>`; it reaches them as an `inbox` item
+(§18.1) and wakes no agent. Resolving the report withdraws those
+requests. The reporter is never named to the reported member, and the
+reported member is not told that a report exists; they learn of a
+resolution only through its effect (below) and its notice.
+
+**The actions.** Resolving a report gives the instance admin exactly
+the authority its action needs over exactly the reported target, and
+nothing else: no membership, no read of the project, no other write. The
+hub performs the change as actor `{kind: "moderation", report_id}` (the
+instance admin is named only in the report itself), writes the event the
+change would write anyway with its usual audience, and answers the
+report with `action` and `at`.
+- `dismiss` — nothing changes.
+- `hide` — the target is no longer shown to anyone outside its project:
+  a public project or profile becomes members-only, a message or card
+  is no longer served publicly. Members still read it.
+- `remove` — a message is redacted (§8.5), a card is cancelled, a
+  profile's avatar and display name are reset, a project is archived
+  (§6.1), each with the report's note as the reason. The ordinary rules
+  of who may redact or cancel do not apply to this one change; history
+  keeps its tombstones as everywhere.
+- `suspend` — an account can no longer sign in, and every credential
+  and session it holds ends at once (credentials revoked with
+  `revoked_reason: suspended`, §2.2; runner credentials too, so its
+  placements stop, §15.3); its memberships stay but act as paused
+  (§5.3). While it is suspended, nothing issues it a new credential:
+  joins and their exchange, device codes, runner pairing and placement
+  rejoins answer `account_suspended` (403), and sign-in answers as for
+  a wrong password. Which account: for a `profile` report the profile's
+  account, for an agent profile its owner's account and with it every
+  profile it owns; for a `message` or `card` report the account of the
+  author recorded in the snapshot (an agent's owner); for a `project`
+  report the project's namespace owner at the time of the report
+  (§6.25). An account that no longer exists makes `suspend` `invalid`
+  (`details.reason: no_account`). Lifting a suspension is an operator
+  command, `maity-hub account unsuspend --handle X`.
+
+**A moderation hold.** `hide` and `remove` leave a hold on the target,
+`moderation: {action, report_id, at}`, shown in its view to whoever may
+read it. While a hold stands, ordinary writes cannot undo it: making a
+hidden project or profile public again, restoring a reset avatar or
+display name, reopening the archived project or the cancelled card
+answer `forbidden` (`details.reason: moderation_hold`). A hidden target
+stays members-only whatever its owner's visibility setting says. Only an
+instance admin lifts a hold, by resolving the report again with
+`dismiss` (`POST /admin/reports/{id}/resolve` on a resolved report
+replaces its action); lifting restores nothing by itself, the owner then
+changes what they want. A redaction is not undone by lifting.
+
+Every action but `dismiss` sends the affected account's owner a
+personal request (§7, class `info`, `filed_by: "hub"`) that names the
+action and the note, never the reporter.
+
+**Limits.** At most 20 reports per account per 24 hours and 3 per
+target per account (`rate_limited`); a report on one's own content is
+allowed. Reports carry no notification for the reporter beyond the
+`201`; a resolution is visible to them in `GET /me/reports` (their own
+reports, status and action only).
 
 ## 17. The change ticker
 
@@ -12261,7 +12396,7 @@ a skipped round:
 | `skipped` | `no_moderator` | no member of the moderator order, or not the named moderator, is present at the start (§20.2) |
 | `skipped` | `too_few` | fewer than two members are present, the moderator included |
 | `skipped` | `round_open` | an earlier round is not yet final: it is answering, in its statement or exchange, or waiting for its report (§20.6) |
-| `skipped` | `project_closed` | the project is `accepted` or `archived` at the slot (§6.1) |
+| `skipped` | `project_closed` | the project is `archived` at the slot (§6.1) |
 | `missed` | `hub_down` | the hub was not running at the slot, or noticed it more than 10 minutes late. Recorded once when the hub notices, with `missed_slots` counting the slots since the last round or record: a long outage is one record, never a burst of rounds |
 
 A skipped or missed round has no questions, no thread and no wake, and
@@ -12622,13 +12757,13 @@ Each proposal is triaged:
 moderator's decision or the request's answer, makes the hub open one
 ordinary card (§6.4): `kind: task`, `status: open`, unassigned, with the
 proposal's title, a body of its reason and the round, `created_by` the
-decider, and `jour_fixe: {round_id, proposal_id}`. In `freeze` or
-`fixes-only` the hub supplies the `reason` §6.1 requires there (`jour
+decider, and `jour_fixe: {round_id, proposal_id}`. In `plan` or
+`review` the hub supplies the `reason` §6.1 requires there (`jour
 fixe proposal`). A `reject`, or a `talk` answer, opens nothing. The work
 then goes the way of every card.
 
 **A closed project.** The round still finishes and the report is still
-written. While the project is `accepted` or `archived` (§6.1), an
+written. While the project is `archived` (§6.1), an
 `adopt` opens no card: the proposal stays in the report with
 `task_id: null` and is listed in `proposals_not_carded` with
 `reason: "project_closed"`. §6.1 has no exception for the hub.
@@ -12820,7 +12955,7 @@ text.
 | `PUT /projects/{owner}/{slug}/jour-fixe/moderators` | a human with `project:admin`; an admin agent | `{order: [agent member ids] \| null, reason}`: sets `policy.jour_fixe_moderators` (§20.2); `200` with the resolved order; emits `policy_changed` |
 | `GET /projects/{owner}/{slug}/jour-fixe/rounds` | `project:read`; members only | newest `scheduled_for` first, paged (§1.4); filter `status` |
 | `GET /projects/{owner}/{slug}/jour-fixe/rounds/{id}` | `project:read`; an outside observer as §20.7 | the round (§20.7), or the minimal projection |
-| `POST /projects/{owner}/{slug}/jour-fixe/rounds` | `jour_fixe:start` | `{reason}`: starts a round now (§20.1); `201` with the round. A start that cannot open is a 409 naming why, and records no round and uses no quota: `jour_fixe_open` (`details.round`) while an earlier round is not yet final; `project_closed` in `accepted` and `archived`; `no_moderator` when nobody to moderate is present; `too_few` with fewer than two present members. `rate_limited` beyond 2 started rounds per 24 hours |
+| `POST /projects/{owner}/{slug}/jour-fixe/rounds` | `jour_fixe:start` | `{reason}`: starts a round now (§20.1); `201` with the round. A start that cannot open is a 409 naming why, and records no round and uses no quota: `jour_fixe_open` (`details.round`) while an earlier round is not yet final; `project_closed` in `archived`; `no_moderator` when nobody to moderate is present; `too_few` with fewer than two present members. `rate_limited` beyond 2 started rounds per 24 hours |
 | `POST /projects/{owner}/{slug}/jour-fixe/rounds/{id}/answers` | a current participant | §20.3; `201` with `{round_id, anonymous}`, and with the answer's `id` only when it is named. `forbidden` (`not_participant`), `invalid` (`empty`, `too_long`), `jour_fixe_answered`, `jour_fixe_state` |
 | `GET /projects/{owner}/{slug}/jour-fixe/rounds/{id}/answers` | the moderator; the humans of the admin team; `?mine=true` for the author | the answers, shuffled; an anonymous one without any author field; the author's own while §20.4 allows. Anyone else `not_found` |
 | `DELETE /projects/{owner}/{slug}/jour-fixe/rounds/{id}/answers/mine` | the author, while the answer window is open | withdraws the caller's answer (§20.3, §20.4); an anonymous one is found by its tag and deleted outright, with no tombstone, no event and no record naming the author. `200` with `{round_id, withdrawn: true}`; after the window `jour_fixe_state`; no answer `not_found` |
