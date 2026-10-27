@@ -1059,7 +1059,10 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* A contract card's section from the repository (js/contract-panel.js, §6.8). */
 .contract-section { margin-top: 6px; border-top: 1px solid var(--border); padding-top: 6px; min-width: 0; }
 .contract-section summary { cursor: pointer; font-size: 0.85rem; }
-.contract-bar { display: flex; justify-content: flex-end; margin: 4px 0; }
+/* Refresh and Change source are small text buttons (the designer's pass part 3). */
+.contract-meta .link-button, .contract-unresolved .link-button { padding: 0; min-height: 0; font-size: inherit; }
+.contract-change-row { margin: 4px 0 0; font-size: 0.85rem; }
+.contract-place[hidden] { display: none; }
 /* At most 16rem, so a long section never pushes the card's action row off
    screen (the designer's pass part 3). A shadow at the bottom says there
    is more, only while there is: a cover scrolling with the content

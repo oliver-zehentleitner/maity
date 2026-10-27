@@ -1696,11 +1696,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "contract: opened, the section as Markdown with the short commit, when it was read, and the file on the forge");
   expect(!ctBody().querySelector("a.mention") && !ctBody().querySelector("a.id-ref") && text(ctBody()).includes("Ask @agent-a about tsk-0123456789ab")
     && ctLinks.length === 2, "contract: the repository's text is untrusted: no mention, no id link, only its own link and the forge's");
+  // Refresh is a text button in the line that says what was read; the source's form waits behind Change source.
+  const ctChange = btn(ctBox(), "Change source");
+  expect(btn(ctBody().querySelector(".contract-meta"), "Refresh") && !ctBox().querySelector(".contract-bar")
+    && ctBox().querySelector("form.contract-place").hidden && ctChange && ctChange.getAttribute("aria-expanded") === "false",
+    "contract: Refresh in the meta line, the source's form folded behind Change source");
+  ctChange.click(); await tick();
+  expect(!ctBox().querySelector("form.contract-place").hidden && ctChange.getAttribute("aria-expanded") === "true", "contract: Change source opens the form");
+  ctChange.click(); await tick();
   btn(ctBox(), "Refresh").click(); for (let k = 0; k < 4; k++) await tick();
   expect(ctGets.length === 2, "contract: Refresh reads again");
   win.Maity.api.get = (p) => (p.endsWith("/contract") ? Promise.reject(new win.Maity.api.ApiError("the forge did not answer", 503, p, "probe_unavailable")) : ctGet(p));
   btn(ctBox(), "Refresh").click(); for (let k = 0; k < 4; k++) await tick();
-  expect(!ctBody().querySelector(".contract-text") && text(ctBody()) === "docs/api.md § 8.2 is not shown: the forge did not answer (probe_unavailable).",
+  expect(!ctBody().querySelector(".contract-text") && text(ctBody()) === "docs/api.md § 8.2 is not shown: the forge did not answer (probe_unavailable). Refresh",
     "contract: a failed read shows the place and the hub's code, never the older text");
   win.Maity.api.get = (p) => { if (p.endsWith("/contract")) ctGets.push(p); return ctGet(p); };
   const ctBeforeSave = ctGets.length;
@@ -1708,12 +1716,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(ctPatches.length === 1 && JSON.stringify(ctPatches[0][1]) === JSON.stringify({ contract: { path: "docs/api.md", section: "4.1" } })
     && text(ctBox().querySelector("summary")) === "Contract section: docs/api.md § 4.1", "contract: the section changed by one PATCH, the card drawn anew");
   expect(ctBox().open && ctGets.length === ctBeforeSave + 1, "contract: after a save the panel stays open and reads the new section once");
-  expect(text(ctBody()) === "docs/api.md § 4.1 is not shown: the file has two headings with this number; the hub shows neither (ambiguous_in_file).",
+  expect(text(ctBody()) === "docs/api.md § 4.1 is not shown: the file has two headings with this number; the hub shows neither (ambiguous_in_file). Refresh",
     "contract: ambiguous_in_file said with its code");
   await ctSave("docs/api.md", "9.99"); await ctOpen();
-  expect(text(ctBody()).endsWith("the file has no heading with this number (not_found_in_file)."), "contract: not_found_in_file said with its code");
+  expect(text(ctBody()).endsWith("the file has no heading with this number (not_found_in_file). Refresh"), "contract: not_found_in_file said with its code");
   await ctSave("docs/runner.md", "1"); await ctOpen();
-  expect(text(ctBody()) === "docs/runner.md § 1 is not shown: the hub has no forge token for this repository (probe_not_configured).",
+  expect(text(ctBody()) === "docs/runner.md § 1 is not shown: the hub has no forge token for this repository (probe_not_configured). Refresh",
     "contract: probe_not_configured said with its code");
   await ctSave("docs/api.md", "9.1"); await ctOpen();
   expect(text(ctBody()).includes("Cut at 64 KiB; the whole section is in the file (open it)."), "contract: a cut section says so and links the file");
