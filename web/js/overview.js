@@ -102,7 +102,7 @@ window.Maity = window.Maity || {};
       list.length
         ? h("ol", { class: "overview-reports" }, list.map((r) => h("li", null,
           M.avatar({ id: r.reported_by.member_id, avatar_url: r.reported_by.avatar_url }, 20),
-          " ", M.dom.memberRef(ctx, r.reported_by), " · ",
+          " ", M.dom.memberRef(ctx, r.reported_by, { instance: r.reported_by.instance }), " · ",
           // The board has no card route yet: a report links to the board.
           h("a", { href: ctx.link("board"), "data-key": "report:" + r.task.id }, h("span", { class: "card-id" }, r.task.id), " " + r.task.title),
           h("span", { class: "muted" }, " · " + formatAgo(r.reported_at)),

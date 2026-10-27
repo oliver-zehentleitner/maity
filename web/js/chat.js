@@ -211,7 +211,8 @@ window.Maity = window.Maity || {};
     // Who (a link to them), then when; a delivery update rewrites the when alone.
     const said = (m) => formatTime(m.sent_at) + delivery(m);
     const when = h("span", { class: "when" }, said(msg));
-    const meta = h("span", { class: "meta" }, grouped || own ? null : [M.dom.memberRef(ctx, msg.from), " · "], when);
+    // An agent's message names its instance (from_instance, §9, §6.17).
+    const meta = h("span", { class: "meta" }, grouped || own ? null : [M.dom.memberRef(ctx, msg.from, { instance: msg.from_instance }), " · "], when);
     if (own && !o.group && !msg.delivered_at) pending.set(msg.seq, (fresh) => { when.textContent = said(fresh); });
     const sender = ctx.memberById ? ctx.memberById[msg.from] : null;
     // A removed message reads body null (§9); who and why only where known
@@ -251,7 +252,9 @@ window.Maity = window.Maity || {};
         last = null;
       }
       if (firstUnread && msg.seq === firstUnread) out.push(h("li", { class: "new-line" }, h("span", null, "New messages")));
-      const grouped = !!last && last.from === msg.from && Date.parse(msg.sent_at) - Date.parse(last.sent_at) < GROUP_MS
+      // Two instances of one agent are two senders.
+      const grouped = !!last && last.from === msg.from && (last.from_instance || null) === (msg.from_instance || null)
+        && Date.parse(msg.sent_at) - Date.parse(last.sent_at) < GROUP_MS
         && !(firstUnread && msg.seq === firstUnread);
       out.push(message(ctx, msg, pending, grouped, onQuote, opts));
       last = msg;
