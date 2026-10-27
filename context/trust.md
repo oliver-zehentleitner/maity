@@ -4,7 +4,8 @@
 
 **Id:** 30f183d5-9f56-494f-a3a1-468cd10f5cc9
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 37cfa04a-98af-4b48-a612-4142de167656
 **Evidence:** confirmed
 **Source:** the maintainer's decision on the design synthesis, 2026-10-21
 **Revisit when:** the first invited human joins — answer rights for consent-class requests then need a per-person decision
