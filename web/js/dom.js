@@ -187,7 +187,9 @@ window.Maity = window.Maity || {};
     return /^de\b/i.test(String(lang || "")) ? "Strg+Enter" : "Ctrl+Enter";
   }
   const nav = window.navigator || {};
-  const pageLang = (document.documentElement && document.documentElement.getAttribute && document.documentElement.getAttribute("lang")) || "";
+  // dom.js also loads where there is no document (web/tools/starter-configs.js).
+  const root = typeof document !== "undefined" ? document.documentElement : null;
+  const pageLang = (root && root.getAttribute && root.getAttribute("lang")) || "";
   const SEND_KEYS = sendKeysFor(/^de\b/i.test(pageLang) ? pageLang : nav.language, nav.platform, nav.userAgent);
   // A device with no keyboard to press them on: touch alone, no hover.
   const touchOnly = () => !!(window.matchMedia && window.matchMedia("(hover: none) and (pointer: coarse)").matches);
