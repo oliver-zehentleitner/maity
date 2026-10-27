@@ -27,6 +27,13 @@ def reopen(data: bytes) -> Image.Image:
     return Image.open(io.BytesIO(data))
 
 
+def pixel(image: Image.Image, at: tuple[int, int]) -> tuple[int, ...]:
+    """A pixel of a colour image, as the tuple it is."""
+    value = image.getpixel(at)
+    assert isinstance(value, tuple)
+    return value
+
+
 def refused(settings: Settings, data: bytes, content_type: str) -> dict[str, str]:
     with pytest.raises(ApiError) as caught:
         avatars.decode_attachment(settings, data, content_type)
@@ -50,7 +57,7 @@ def test_a_png_keeps_its_size_and_loses_its_text_and_profile(settings: Settings)
 def test_a_png_with_transparency_keeps_its_alpha(settings: Settings) -> None:
     stored = avatars.decode_attachment(settings, make("PNG", mode="RGBA"), "image/png")
     assert reopen(stored.data).mode == "RGBA"
-    assert reopen(stored.data).getpixel((1, 1)) == (200, 30, 30, 128)
+    assert pixel(reopen(stored.data), (1, 1)) == (200, 30, 30, 128)
 
 
 def test_a_jpeg_loses_its_exif_and_is_turned_as_it_is_seen(settings: Settings) -> None:
@@ -73,8 +80,8 @@ def test_a_gif_becomes_a_png_of_its_first_frame(settings: Settings) -> None:
     first.save(out, format="GIF", save_all=True, append_images=[second], duration=50, loop=0)
     stored = avatars.decode_attachment(settings, out.getvalue(), "image/gif")
     assert stored.type == "image/png" and (stored.width, stored.height) == (64, 48)
-    pixel = reopen(stored.data).convert("RGB").getpixel((3, 3))
-    assert pixel[0] > 200 and pixel[2] < 60  # the first frame, red
+    red = pixel(reopen(stored.data).convert("RGB"), (3, 3))
+    assert red[0] > 200 and red[2] < 60  # the first frame, red
     assert getattr(reopen(stored.data), "n_frames", 1) == 1
 
 
@@ -97,7 +104,7 @@ def test_a_colour_profile_is_converted_to_srgb_and_dropped(settings: Settings) -
     srgb = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
     plain = avatars.decode_attachment(settings, make("PNG", icc_profile=srgb), "image/png")
     assert "icc_profile" not in reopen(plain.data).info
-    assert reopen(plain.data).getpixel((1, 1))[0] > 190  # the red is still red
+    assert pixel(reopen(plain.data), (1, 1))[0] > 190  # the red is still red
 
 
 def test_an_image_over_the_side_or_the_pixel_limit_is_refused_by_its_header(
@@ -206,8 +213,7 @@ def _cmyk_profile() -> bytes:
 
 def _centre(data: bytes) -> tuple[int, ...]:
     image = reopen(data).convert("RGB")
-    value: tuple[int, ...] = image.getpixel((image.width // 2, image.height // 2))  # type: ignore[assignment]
-    return value
+    return pixel(image, (image.width // 2, image.height // 2))
 
 
 def test_a_grey_image_with_its_profile_is_converted_to_srgb(settings: Settings) -> None:
@@ -222,8 +228,8 @@ def test_a_grey_image_with_its_profile_is_converted_to_srgb(settings: Settings) 
         outputMode="RGB",
     )
     assert wanted is not None
-    expected = wanted.getpixel((5, 5))
-    naive = grey.convert("RGB").getpixel((5, 5))
+    expected = pixel(wanted, (5, 5))
+    naive = pixel(grey.convert("RGB"), (5, 5))
     got = _centre(stored.data)
     assert all(abs(g - e) <= 2 for g, e in zip(got, expected, strict=True))
     assert max(abs(g - n) for g, n in zip(got, naive, strict=True)) >= 20  # the profile mattered
@@ -244,8 +250,8 @@ def test_a_cmyk_jpeg_with_its_profile_is_converted_to_srgb(settings: Settings) -
         outputMode="RGB",
     )
     assert wanted is not None
-    expected = wanted.getpixel((16, 16))
-    naive = reopened.convert("RGB").getpixel((16, 16))
+    expected = pixel(wanted, (16, 16))
+    naive = pixel(reopened.convert("RGB"), (16, 16))
     got = _centre(stored.data)
     assert all(abs(g - e) <= 3 for g, e in zip(got, expected, strict=True))
     assert max(abs(g - n) for g, n in zip(got, naive, strict=True)) >= 10  # the profile mattered
@@ -300,16 +306,16 @@ def test_a_palette_png_with_an_rgb_profile_is_converted_and_keeps_its_transparen
         )
         assert wanted is not None
         # Pixel (20, 20) is palette index 0, the red, on a plain image and a see-through one.
-        expected, naive = wanted.getpixel((20, 20)), expanded.getpixel((20, 20))
-        got = stored.convert("RGB").getpixel((20, 20))
+        expected, naive = pixel(wanted, (20, 20)), pixel(expanded, (20, 20))
+        got = pixel(stored.convert("RGB"), (20, 20))
         assert all(abs(g - e) <= 3 for g, e in zip(got, expected, strict=True))
         assert max(abs(g - n) for g, n in zip(got, naive, strict=True)) >= 20
         assert "icc_profile" not in stored.info
         assert stored.mode == ("RGBA" if transparent else "RGB")
         if transparent:
-            assert stored.getpixel((20, 20))[3] == 0  # index 0 stayed transparent
+            assert pixel(stored, (20, 20))[3] == 0  # index 0 stayed transparent
 
 
 def test_a_palette_png_without_a_profile_keeps_its_transparency(settings: Settings) -> None:
     stored = avatars.decode_attachment(settings, _palette_png(True), "image/png")
-    assert reopen(stored.data).mode == "RGBA" and reopen(stored.data).getpixel((1, 1))[3] == 0
+    assert reopen(stored.data).mode == "RGBA" and pixel(reopen(stored.data), (1, 1))[3] == 0
