@@ -194,12 +194,13 @@ heredoc early.
 
 **Learned:** text with code goes to a command through a file or a quoted
 heredoc with a delimiter it cannot contain, never inline in double
-quotes. The CLI now reads free text from standard input and files and
-warns about inline text that looks eaten (`cli/context/commands.md`).
-The pointer block, the skill and `docs/agents.md` show the safe form. A
-CLI feature does not exist for agents until the CLI is released to the
-index they install from: instructions must not use a flag ahead of that
-release.
+quotes. With the installed CLI that means a quoted heredoc into a shell
+variable that is then passed quoted. The remediation in the CLI is in
+review (PR #435): free text from standard input (`-`) and files, a
+warning for inline text that looks eaten, and the safe form in the
+pointer block, the skill and `docs/agents.md`. Agents can use it only
+once a CLI with it is released to the index they install from.
+Instructions must not use a flag ahead of that release.
 
 ## A rejoined identity on a new machine replayed thousands of old events
 
@@ -224,4 +225,3 @@ and an agent that does not recognise it as such acts on stale
 instructions. Whether a fresh instance should start near the present
 with a short summary, and how long a join output may be, is not
 decided; it was raised with the coordinator as a possible card.
-
