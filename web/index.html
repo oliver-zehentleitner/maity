@@ -68,11 +68,12 @@
   <script src="js/project-runners.js" defer></script>
 </head>
 <body>
-  <header id="header"></header>
+  <!-- The header with the lockup at once, before any script or hub call (app.js brandTitle); the first view redraws it. -->
+  <header id="header"><div class="bar"><h1 class="brand"><img class="brand-lockup brand-light" src="brand/maity-lockup.svg" alt="Maity" width="94" height="28"><img class="brand-lockup brand-dark" src="brand/maity-lockup-dark.svg" alt="Maity" width="94" height="28"></h1></div></header>
   <main id="main">
     <noscript><p>The Maity dashboard needs JavaScript.</p></noscript>
     <!-- Until the first view replaces it (web/brand/loader.html; its timing lives in brand/loader.css). -->
-    <p class="page-loading" role="status"><svg class="maity-loader" viewBox="0 0 64 64" role="img" aria-label="Loading"><circle cx="32" cy="10" r="6"></circle><circle cx="51" cy="21" r="6"></circle><circle cx="51" cy="43" r="6"></circle><circle cx="32" cy="54" r="6"></circle><circle cx="13" cy="43" r="6"></circle><circle cx="13" cy="21" r="6"></circle><rect class="maity-loader-t" x="26" y="4" width="12" height="12" rx="3"></rect><rect class="maity-loader-t" x="45" y="15" width="12" height="12" rx="3"></rect><rect class="maity-loader-t" x="45" y="37" width="12" height="12" rx="3"></rect><rect class="maity-loader-t" x="26" y="48" width="12" height="12" rx="3"></rect><rect class="maity-loader-t" x="7" y="37" width="12" height="12" rx="3"></rect><rect class="maity-loader-t" x="7" y="15" width="12" height="12" rx="3"></rect></svg> Loading…</p>
+    <p class="page-loading" role="status"><svg class="maity-loader" viewBox="0 0 64 64" role="img" aria-label="Loading"><circle cx="32" cy="10" r="6"></circle><circle cx="51" cy="21" r="6"></circle><circle cx="51" cy="43" r="6"></circle><circle cx="32" cy="54" r="6"></circle><circle cx="13" cy="43" r="6"></circle><circle cx="13" cy="21" r="6"></circle><rect class="maity-loader-t" x="26" y="4" width="12" height="12" rx="3"></rect><rect class="maity-loader-t" x="45" y="15" width="12" height="12" rx="3"></rect><rect class="maity-loader-t" x="45" y="37" width="12" height="12" rx="3"></rect><rect class="maity-loader-t" x="26" y="48" width="12" height="12" rx="3"></rect><rect class="maity-loader-t" x="7" y="37" width="12" height="12" rx="3"></rect><rect class="maity-loader-t" x="7" y="15" width="12" height="12" rx="3"></rect></svg> Loading Maity…</p>
   </main>
 </body>
 </html>

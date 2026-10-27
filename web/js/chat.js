@@ -175,7 +175,10 @@ window.Maity = window.Maity || {};
     const closedProject = ctx.outsider || ["accepted", "archived"].includes(ctx.project.state);
     const el = h("nav", { class: "chat-list-pane", "aria-label": "Conversations" },
       h("div", { class: "toolbar" }, h("h2", null, ctx.outsider ? "Group chats" : "Chat"),
-        closedProject || !groupsServed ? null : h("a", { class: "button small new-group", href: ctx.link("chat", "new") }, "New group chat")),
+        closedProject || !groupsServed ? null : h("a", { class: "button small new-group", href: ctx.link("chat", "new") }, "New group chat"),
+        // A message to the project is talk too (the maintainer's wish,
+        // tsk-r1adgwp0a5dr): it starts here, no longer in the inbox.
+        ctx.outsider ? null : h("a", { class: "button small message-project", href: ctx.link("message") }, "Message the project")),
       none, ul,
       // Not an empty-looking list: a hub before group chats lists none.
       groupsServed ? null : h("p", { class: "muted no-groups" }, "This hub has no group chats yet."),
@@ -201,6 +204,22 @@ window.Maity = window.Maity || {};
       r && r.by ? [" by ", M.dom.memberRef(ctx, r.by)] : null, (r && r.reason ? ": " + r.reason : "") + ".");
   }
 
+  // A composer's one row of actions (the designer's pass on #431): Attach
+  // at the start, the keys and Send at the end.
+  const actionRow = (files, button) => h("div", { class: "compose-actions" }, files ? files.chooser : null, button);
+
+  // In the global chat (ctx.projectsOf, js/chats.js) an agent's message
+  // names the projects it is in, each by its logo with the name on hover;
+  // only projects the reader is in, whose member lists the page has read.
+  function projectsOf(ctx, sender) {
+    if (!ctx.projectsOf || !sender || sender.kind !== "agent") return null;
+    const projects = ctx.projectsOf(sender.id);
+    if (!projects.length) return null;
+    return h("span", { class: "msg-projects" }, h("span", { class: "visually-hidden" }, ", in "),
+      projects.map((p, i) => h("span", { class: "msg-project", title: p.name },
+        M.projectMark(p.slug, p.name, p.view, "small"), h("span", { class: "visually-hidden" }, (i ? ", " : "") + p.name))));
+  }
+
   // opts.group: a group chat's message (no delivery: several recipients,
   // §9.2); opts.onRedact: offered to a human in the room (§8.5).
   function message(ctx, msg, pending, grouped, onQuote, opts) {
@@ -211,9 +230,11 @@ window.Maity = window.Maity || {};
     // Who (a link to them), then when; a delivery update rewrites the when alone.
     const said = (m) => formatTime(m.sent_at) + delivery(m);
     const when = h("span", { class: "when" }, said(msg));
-    const meta = h("span", { class: "meta" }, grouped || own ? null : [M.dom.memberRef(ctx, msg.from), " · "], when);
-    if (own && !o.group && !msg.delivered_at) pending.set(msg.seq, (fresh) => { when.textContent = said(fresh); });
     const sender = ctx.memberById ? ctx.memberById[msg.from] : null;
+    // An agent's message names its instance (from_instance, §9, §6.17).
+    const meta = h("span", { class: "meta" }, grouped || own ? null
+      : [M.dom.memberRef(ctx, msg.from, { instance: msg.from_instance }), projectsOf(ctx, sender), " · "], when);
+    if (own && !o.group && !msg.delivered_at) pending.set(msg.seq, (fresh) => { when.textContent = said(fresh); });
     // A removed message reads body null (§9); who and why only where known
     // (this page's own removal, or the event_redacted that said so).
     const removed = isRemoved(msg);
@@ -225,6 +246,36 @@ window.Maity = window.Maity || {};
         onQuote && !removed ? h("button", { type: "button", class: "small msg-quote", "aria-label": "Quote this message", onclick: () => onQuote(msg) }, "Quote") : null,
         o.onRedact && !removed ? h("button", { type: "button", class: "small msg-quote", "aria-label": "Remove this message for everyone", onclick: () => o.onRedact(msg) }, "Remove") : null));
   }
+
+  // The newest page of a conversation, and nothing before it (the
+  // maintainer's wish, tsk-r1adgwp0a5dr, and the rule after the 2026-10-26
+  // incident: no request whose cost grows with history). The last PAGE
+  // messages are read back (before=, which marks nothing), then once
+  // forward from the first of them, which marks them read and delivered as
+  // opening a chat always did and takes what came meanwhile. Two requests,
+  // whatever the length of the history; older pages come on scroll-up.
+  // The forward read keeps to a group chat's window (§9.2): what lies
+  // before one joined is not shown, only offered (earlier).
+  const PAGE = 50;
+  async function newestPage(path, newest) {
+    const back = await M.api.get(path + "?before=" + encodeURIComponent(newest || Number.MAX_SAFE_INTEGER) + "&limit=" + PAGE);
+    const from = back.items.length ? back.items[0].seq - 1 : 0;
+    const fwd = await M.api.get(path + "?after=" + encodeURIComponent(from) + "&limit=" + PAGE);
+    const start = fwd.items.length ? fwd.items[0].seq : Infinity;
+    const bySeq = new Map();
+    back.items.filter((m) => m.seq >= start).concat(fwd.items).forEach((m) => bySeq.set(m.seq, Object.assign(bySeq.get(m.seq) || {}, m)));
+    const items = Array.from(bySeq.values()).sort((a, b) => a.seq - b.seq);
+    const backEarlier = back.earlier === undefined ? null : back.earlier;
+    let earlier = null;
+    if (items.length) earlier = backEarlier !== null || back.items.some((m) => m.seq < items[0].seq) ? items[0].seq : null;
+    else if (back.items.length) earlier = back.items[back.items.length - 1].seq + 1;
+    return { items, earlier, cursor: Math.max(fwd.cursor || 0, items.length ? items[items.length - 1].seq : 0) };
+  }
+  // A long chat keeps at most KEEP messages drawn while the reader is at
+  // the newest; the older ones are read again on scroll-up.
+  const KEEP = 300;
+  // Older messages are read once the reader is this close to the top.
+  const NEAR_TOP = 120;
 
   // Messages of one sender this close together are one group.
   const GROUP_MS = 5 * 60 * 1000;
@@ -251,7 +302,9 @@ window.Maity = window.Maity || {};
         last = null;
       }
       if (firstUnread && msg.seq === firstUnread) out.push(h("li", { class: "new-line" }, h("span", null, "New messages")));
-      const grouped = !!last && last.from === msg.from && Date.parse(msg.sent_at) - Date.parse(last.sent_at) < GROUP_MS
+      // Two instances of one agent are two senders.
+      const grouped = !!last && last.from === msg.from && (last.from_instance || null) === (msg.from_instance || null)
+        && Date.parse(msg.sent_at) - Date.parse(last.sent_at) < GROUP_MS
         && !(firstUnread && msg.seq === firstUnread);
       out.push(message(ctx, msg, pending, grouped, onQuote, opts));
       last = msg;
@@ -344,7 +397,7 @@ window.Maity = window.Maity || {};
 
   // What js/group-chat.js draws with: the same history, Markdown, quotes,
   // drafts, sizing and the same reading of mentions.
-  M.chatParts = { timeline, quoteOf, withoutCode, atBottom, follower, fitToScreen, drafts, isRemoved, askReason, HISTORY_PAGE,
+  M.chatParts = { actionRow, newestPage, PAGE, KEEP, NEAR_TOP, timeline, quoteOf, withoutCode, atBottom, follower, fitToScreen, drafts, isRemoved, askReason, HISTORY_PAGE,
     chatsOf, ordered, listItem, LIST_MS, RESYNC };
 
   // One focus handler for the page; it serves the chat view on screen.
@@ -395,30 +448,72 @@ window.Maity = window.Maity || {};
     let unreadFailed = null;
     const before = await M.api.getAll(ctx.base + "/conversations?observed=true").catch((err) => { unreadFailed = err; return { items: [] }; });
     const unreadBefore = ((before.items.find((c) => (c.agent_id || c.id) === agent.id) || {}).unread) || 0;
-    // The whole history, oldest first, page by page (docs/api.md §9): the
-    // first page is the oldest, and what is unread is at the end.
-    const conv = await M.api.get(path + "?limit=" + HISTORY_PAGE);
-    for (let page = conv; page.items.length === HISTORY_PAGE;) {
-      page = await M.api.get(path + "?after=" + encodeURIComponent(page.items[page.items.length - 1].seq) + "&limit=" + HISTORY_PAGE);
-      conv.items.push(...page.items);
-      if (page.cursor) conv.cursor = page.cursor;
-    }
-    const theirs = conv.items.filter((m) => m.from === agent.id);
-    const firstUnread = unreadBefore && theirs.length >= unreadBefore ? theirs[theirs.length - unreadBefore].seq : null;
+    // The newest page only (docs/api.md §9); older ones on scroll-up. The
+    // list's last message says where the newest is.
+    const listed = before.items.find((c) => (c.agent_id || c.id) === agent.id);
+    const newest = listed && listed.last_message && listed.last_message.seq ? listed.last_message.seq + 1 : null;
+    const conv = await newestPage(path, newest);
+    // What is drawn, oldest first; `earlier`: the seq to read before, or null.
+    const loaded = conv.items;
+    let earlier = conv.earlier;
+    const theirs = loaded.filter((m) => m.from === agent.id);
+    // More unread than the page holds: the line stands at its top.
+    const firstUnread = unreadBefore && theirs.length ? theirs[Math.max(0, theirs.length - unreadBefore)].seq : null;
     // Read after the messages, so that this conversation's unread is gone.
     await list.refresh(false);
     let cursor = conv.cursor || 0;
-    const shown = new Set(conv.items.map((m) => m.seq));
+    const shown = new Set(loaded.map((m) => m.seq));
     // The human's messages not picked up yet: seq -> update of their line.
     const pending = new Map();
     // The human party removes a message of the chat, the agent's or their own (§8.5).
     // §8.5: it needs events:admin too, which owner and admin hold.
     // The human party deletes a file of the chat (§8.7), whoever sent it.
-    const draw = timeline(ctx, pending, firstUnread, quote, { onRedact: ctx.canAdmin ? redactDirect : null, canDeleteFile: () => true });
-    const messages = h("ol", { class: "messages", "aria-live": "polite" },
-      conv.items.length ? conv.items.map(draw)
-        : h("li", { class: "empty" }, h("p", null, "No messages yet."),
+    const drawOpts = { onRedact: ctx.canAdmin ? redactDirect : null, canDeleteFile: () => true };
+    let draw = timeline(ctx, pending, firstUnread, quote, drawOpts);
+    const messages = h("ol", { class: "messages", "aria-live": "polite" });
+    // Everything loaded drawn again as one timeline (days, groups): after
+    // older messages came in front, or the oldest were let go.
+    function redrawAll() {
+      draw = timeline(ctx, pending, firstUnread, quote, drawOpts);
+      clear(messages);
+      shown.clear();
+      loaded.forEach((m) => shown.add(m.seq));
+      if (loaded.length) append(messages, loaded.map(draw));
+      else {
+        append(messages, h("li", { class: "empty" }, h("p", null, "No messages yet."),
           h("p", { class: "muted" }, M.dom.memberRef(ctx, agent.id), " reads what you write here at its next wait or resume.")));
+      }
+      drawEarlier();
+    }
+    // Older messages: on scroll-up near the top, or with the button for a
+    // keyboard; one page at a time, the reader's place kept.
+    const earlierBox = h("div", { class: "earlier" });
+    let readingOlder = false;
+    async function older() {
+      if (earlier === null || readingOlder) return;
+      readingOlder = true;
+      try {
+        const page = await M.api.get(path + "?before=" + encodeURIComponent(earlier) + "&limit=" + PAGE);
+        const fresh = page.items.filter((m) => !shown.has(m.seq));
+        earlier = page.earlier === undefined ? null : page.earlier;
+        const height = messages.scrollHeight;
+        const top = messages.scrollTop;
+        loaded.unshift(...fresh);
+        redrawAll();
+        messages.scrollTop = top + (messages.scrollHeight - height);
+      } catch (err) {
+        pollStatus.fail("The earlier messages could not be read: ", err);
+      } finally {
+        readingOlder = false;
+      }
+    }
+    function drawEarlier() {
+      clear(earlierBox);
+      if (earlier === null) return;
+      append(earlierBox, h("button", { type: "button", class: "small", onclick: () => older() }, "Show earlier messages"));
+    }
+    messages.addEventListener("scroll", () => { if (messages.scrollTop < NEAR_TOP) older(); });
+    redrawAll();
     // Back to the newest, when the human has scrolled up; with what came
     // meanwhile. The pill goes away: the focus goes to the composer.
     const follow = follower(messages, () => text.focus());
@@ -457,11 +552,20 @@ window.Maity = window.Maity || {};
     function add(msg, own) {
       if (shown.has(msg.seq)) return;
       shown.add(msg.seq);
+      loaded.push(msg);
       const empty = messages.querySelector(".empty");
       if (empty) empty.remove();
       append(messages, draw(msg));
       follow.added(own);
       if (msg.seq > cursor) cursor = msg.seq;
+      // At the newest with a long tail drawn: the oldest are let go, and
+      // read again on scroll-up.
+      if (loaded.length > KEEP && atBottom(messages)) {
+        loaded.splice(0, loaded.length - PAGE * 2);
+        earlier = loaded[0].seq;
+        redrawAll();
+        messages.scrollTop = messages.scrollHeight;
+      }
     }
 
     const mentions = (e) => isChat(e) && e.payload.conversation_id === agent.id && !shown.has(e.seq);
@@ -512,6 +616,8 @@ window.Maity = window.Maity || {};
       const li = Array.from(messages.querySelectorAll("li.msg")).find((x) => x.getAttribute("data-seq") === String(seq));
       const md = li && li.querySelector(".md");
       if (!md) return;
+      const kept = loaded.find((m) => m.seq === seq);
+      if (kept) Object.assign(kept, { body: null, redacted: true, redaction: { by, reason } });
       md.parentNode.insertBefore(tombstone(ctx, { by, reason }), md);
       md.remove();
       Array.from(li.querySelectorAll("button.msg-quote")).forEach((b) => b.remove());
@@ -565,7 +671,7 @@ window.Maity = window.Maity || {};
     });
     hintMention();
     const status = M.statusLine();
-    const button = h("button", { type: "submit" }, "Send");
+    const button = h("button", { type: "submit", class: "primary" }, "Send");
 
     // Files go with the message (§8.7): uploaded when chosen, named when sent.
     const files0 = M.attachments ? M.attachments.picker(ctx, "chat") : null;
@@ -603,12 +709,13 @@ window.Maity = window.Maity || {};
         h("span", { class: "muted" }, agent.session
           ? "session " + agent.session.id + (agent.session.listening ? ", listening" : "")
           : "no session — picked up when it resumes")),
+      earlierBox,
       messages,
       jump,
       pollStatus.el,
       h("form", { class: "compose", onsubmit: send },
-        h("label", { for: "chat-text" }, "Message (" + M.dom.SEND_KEYS + " sends)"),
-        text, mentionHint, files0 ? files0.el : null, button, status.el));
+        h("label", { for: "chat-text" }, "Message", h("span", { class: "visually-hidden" }, " (" + M.dom.SEND_KEYS + " sends)")),
+        text, mentionHint, files0 ? files0.el : null, actionRow(files0, button), status.el));
     // Sizing, scrolling and focus need the view in the page, which the
     // router does once this function has returned.
     window.setTimeout(() => {

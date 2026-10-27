@@ -34,7 +34,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 ## D
 
 ## E
-- [events.md](events.md) — the long-poll waits on an asyncio event in-process, never on the database; a runner's stream reads every project it was ever attached to; mention pings counted in process, given back when the write does not commit; shared environments computed from live sessions, only announcements stored
+- [events.md](events.md) — the long-poll waits on an asyncio event in-process, never on the database; a runner's stream reads every project it was ever attached to; mention pings counted in process, given back when the write does not commit; shared environments computed from live sessions, only announcements stored; the project message listing runs the events through the same read rule in Python, with a cursor bound to its query
 
 ## F
 
@@ -43,12 +43,12 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 ## H
 
 ## I
-- [images.md](images.md) — a project's logo and banner: the forge's images as rows next to the uploads, refreshed by a worker that needs no token; image routes choose their own caching; a 1 MiB cap for uploads only; avatars decoded in a self-limiting process (-I, empty environment, size from the header first); replays first, the change limit counts refused images; a GitHub logo is the owner's avatar only for an organization
-- [instances.md](instances.md) — an agent's claim always names its instance, none held by nobody; the rulebook through the member PATCH with team alone, a non-member owner included; a replacement moves claims and lead before revoking; what a rollback and old join links do; the team wake stored per team at write; PATCH /me pauses the calling instance; instance_assigned only for the team's own cards (open); an instance mention resolves to any live instance, a malformed suffix is a boundary
+- [images.md](images.md) — a project's logo and banner: the forge's images as rows next to the uploads, refreshed by a worker that needs no token; image routes choose their own caching; a 1 MiB cap for uploads only; avatars decoded in a self-limiting process (-I, empty environment, size from the header first); replays first, the change limit counts refused images; a GitHub logo is the owner's avatar only for an organization; an attachment's image runs through the same child in an attachment mode (8192 px, 40 MP, kept size, sRGB, PNG/JPEG/WebP out)
+- [instances.md](instances.md) — an agent's claim always names its instance, none held by nobody; the rulebook through the member PATCH with team alone, a non-member owner included; a replacement moves claims and lead before revoking; what a rollback and old join links do; the team wake stored per team at write; PATCH /me pauses the calling instance; instance_assigned only for the team's own cards (open); an instance mention resolves to any live instance, a malformed suffix is a boundary; a chat message's and a request's instance read from the credential behind them, not stored
 
 ## J
 - [joins.md](joins.md) — the join page's HTML via markdown-it-py with raw HTML off; the template shipped from docs/ into the wheel; the join host as a path rewrite in the middleware, matched on the hostname alone (fails closed); unused join links and new-profile placements lose reports_to with the removed member, the exchange keeps only an active boss; invitations voided at accept, listed 30 days from their own end, the page's registration from the effective mode and mail
-- [jour-fixe.md](jour-fixe.md) — minutes online for the moderator order counted per agent membership and minute in their own table; a round's thread opens with the round, a pending further step waits in the steps list; the thread and its messages wake nobody
+- [jour-fixe.md](jour-fixe.md) — minutes online for the moderator order counted per agent membership and minute in their own table; a round's thread opens with the round, a pending further step waits in the steps list; the thread and its messages wake nobody; a proposal's decision request asked by the moderator; a later adopt opens the card, the report stays final; a card still carries the hub's text while it is exactly what the hub wrote
 
 ## K
 - [keep-the-why.md](keep-the-why.md) — the Keep the Why export in memory: read through on request, refreshed in the background for the project view, never stored

@@ -291,6 +291,45 @@ def test_each_instance_resumes_its_own_session(
     assert live == {two, again} and one not in live
 
 
+# --- the instance on what an instance wrote ----------------------------------------------------
+
+
+def test_a_chat_message_names_the_instance_that_sent_it(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    first = flow.agent(make_client, owner)
+    second = _second(make_client, owner, first)
+    path = f"/projects/maity/conversations/{first.id}/messages"
+    for who, body in ((first, "one"), (second, "two"), (owner, "three")):
+        assert who.post(path, {"body": body}).status_code == 201
+    items = owner.get(path).json()["items"]
+    assert [(m["body"], m["from_instance"]) for m in items] == [
+        ("one", first.instance),
+        ("two", second.instance),
+        ("three", None),  # a human has no instances
+    ]
+
+
+def test_a_request_names_the_instance_that_asked(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    first = flow.agent(make_client, owner)
+    second = _second(make_client, owner, first)
+    first.resume()
+    second.resume()
+    for who in (first, second):
+        response = who.post("/projects/maity/requests", {"class": "decision", "title": "Which?"})
+        assert response.status_code == 201, response.text
+        assert response.json()["asked_by"]["instance"] == who.instance
+    items = owner.get("/projects/maity/requests").json()["items"]
+    assert sorted(r["asked_by"]["instance"] for r in items) == sorted(
+        [first.instance, second.instance]
+    )
+    mine = owner.post("/projects/maity/requests", {"class": "decision", "title": "Mine?"})
+    assert mine.status_code == 201, mine.text
+    assert mine.json()["asked_by"]["instance"] is None  # a human has no instances
+
+
 # --- replacing and revoking ------------------------------------------------------------------
 
 

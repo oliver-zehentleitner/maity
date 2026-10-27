@@ -24,8 +24,13 @@ window.Maity = window.Maity || {};
     return String(v);
   }
 
+  // Who changed or wrote it, as @handle, an agent with its instance
+  // (§6.17) where the hub names one.
+  const byline = (ctx, who) => (who && (who.member_id || who.handle)
+    ? M.dom.memberRef(ctx, who, { text: "handle", instance: who.instance }) : "@?");
+
   function historyLine(ctx, e) {
-    const who = h("span", null, "@" + ((e.actor && e.actor.handle) || "?"));
+    const who = h("span", null, byline(ctx, e.actor));
     const when = h("span", { class: "muted" }, " · " + formatAgo(e.at, M.api.now()));
     if (e.field === "created") return h("li", null, who, " created the card", when);
     if (e.redacted) return h("li", null, who, " changed " + (FIELD_WORDS[e.field] || e.field) + " (removed)", when);
@@ -51,15 +56,18 @@ window.Maity = window.Maity || {};
   function render(ctx, c, cardEl, close) {
     const where = M.ids.where(ctx);
     const base = ctx.base + "/tasks/" + encodeURIComponent(c.id);
-    const heading = h("h2", { class: "panel-title", id: "card-panel-title", tabindex: "-1" }, c.id);
+    // The panel is the card (the designer's pass part 2): its id in the
+    // bar beside Close, its title the panel's heading, where the focus goes.
+    const heading = h("h2", { class: "panel-title", id: "card-panel-title", tabindex: "-1" }, M.ids.link(c.title, where));
     const cardSlot = h("div", { class: "card-panel-card" }, cardEl);
     const notesBox = h("div", { class: "card-notes" });
     const historyBox = h("div", { class: "card-history" });
     // The note field as last drawn: it gets the focus back after a post.
     let noteField = null;
     const box = h("aside", { class: "card-panel", "aria-labelledby": "card-panel-title" },
-      h("div", { class: "card-panel-head" }, heading,
+      h("div", { class: "card-panel-head" }, h("span", { class: "card-id" }, c.id),
         h("button", { type: "button", class: "small card-panel-close", onclick: () => close() }, "Close")),
+      heading,
       cardSlot,
       h("h3", null, "Description"),
       c.body ? h("div", { class: "md card-body" }, M.markdown(c.body, where)) : h("p", { class: "muted" }, "No description."),
@@ -79,7 +87,7 @@ window.Maity = window.Maity || {};
       }
       append(notesBox, list.length
         ? h("ul", { class: "card-note-list" }, list.map((n) => h("li", null,
-          h("p", { class: "muted" }, "@" + n.author.handle + " · " + formatTime(n.created_at)),
+          h("p", { class: "muted" }, byline(ctx, n.author), " · " + formatTime(n.created_at)),
           h("div", { class: "md" }, M.markdown(n.body, where)))))
         : h("p", { class: "muted" }, "No open notes."));
       const closed = ctx.project && ["accepted", "archived"].includes(ctx.project.state);
@@ -137,8 +145,13 @@ window.Maity = window.Maity || {};
       el: box,
       id: c.id,
       focus: () => heading.focus(),
-      // The board redrew: the card part follows, the rest stays as read.
-      update: (fresh) => append(clear(cardSlot), fresh),
+      // The board redrew: the card part follows, and the heading with its
+      // title, which may have changed (H on #461); the rest stays as read.
+      update: (fresh) => {
+        append(clear(cardSlot), fresh);
+        const title = fresh && fresh.getAttribute && fresh.getAttribute("aria-label");
+        if (title) append(clear(heading), M.ids.link(title, where));
+      },
     };
   }
 

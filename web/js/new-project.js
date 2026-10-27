@@ -17,9 +17,12 @@ window.Maity = window.Maity || {};
   const SLUG_PATTERN = M.dom.NAME_RULES.slug.pattern;
   const SLUG = M.dom.NAME_RULES.slug.test;
 
+  // The preset's name is the option; what it means is the hint under the
+  // select, which follows the choice (the designer's pass part 3: a long
+  // option was cut off in the select).
   const PRESETS = [
-    ["hierarchical", "Hierarchical: reviewers move cards to done, admins arbitrate contracts"],
-    ["solo", "Solo: the holder moves its own card to done, the owner arbitrates"],
+    ["hierarchical", "Hierarchical", "Reviewers move cards to done, admins arbitrate contracts."],
+    ["solo", "Solo", "The holder moves its own card to done, the owner arbitrates."],
   ];
 
   // §6.21: the providers, Keep the Why preselected, and the setup options
@@ -81,18 +84,25 @@ window.Maity = window.Maity || {};
       + "through the setup cards below, each a pull request.");
     memory.input.value = "keep-the-why";
     // The options, each a checkbox ticked to begin with.
+    // What an option does beyond its card is said right under it, read
+    // before it is ticked (the designer's pass part 3).
+    const NOTES = {
+      maity_badge: "It also switches the project's badge on from the start: it shows anyone how many humans and agents "
+        + "the project has. Project settings switch it off.",
+    };
     const options = OPTIONS.map(([key, label, ktwOnly]) => {
-      const box = h("input", { id: "setup-" + key, type: "checkbox", checked: true });
+      const note = NOTES[key] ? h("span", { class: "check-note muted", id: "setup-" + key + "-note" }, NOTES[key]) : null;
+      const box = h("input", { id: "setup-" + key, type: "checkbox", checked: true, "aria-describedby": note ? "setup-" + key + "-note" : null });
       box.checked = true;
-      return { key, ktwOnly, box, row: h("label", { class: "check", for: "setup-" + key }, box, " " + label) };
+      const check = h("label", { class: "check", for: "setup-" + key }, box, " " + label);
+      return { key, ktwOnly, box, row: note ? h("div", { class: "check-row" }, check, note) : check };
     });
     const setupError = h("p", { class: "field-error", id: "project-setup-error", role: "alert" });
     const setupBox = h("fieldset", { class: "project-setup", "aria-describedby": "project-setup-hint project-setup-error" },
       h("legend", null, "Setup cards"),
       options.map((o) => o.row),
       h("p", { class: "hint", id: "project-setup-hint" }, "Each ticked option becomes a card for an agent once the project has a repository "
-        + "(now, or when it is set later). The Maity badge also switches the project's badge on from the start: "
-        + "it shows anyone how many humans and agents the project has; Project settings switch it off."),
+        + "(now, or when it is set later)."),
       setupError);
     const showOptions = () => {
       const ktwChosen = memory.input.value === "keep-the-why";
@@ -100,7 +110,12 @@ window.Maity = window.Maity || {};
     };
     memory.input.addEventListener("change", showOptions);
     const preset = field("project-preset", "Policy preset",
-      h("select", { id: "project-preset" }, PRESETS.map(([value, label]) => h("option", { value }, label))));
+      h("select", { id: "project-preset" }, PRESETS.map(([value, label]) => h("option", { value }, label))), PRESETS[0][2]);
+    const presetHint = preset.nodes[2];
+    preset.input.addEventListener("change", () => {
+      const chosen = PRESETS.find(([value]) => value === preset.input.value);
+      presetHint.textContent = chosen ? chosen[2] : "";
+    });
 
     let slugTyped = false;
     slug.input.addEventListener("input", () => { slugTyped = slug.input.value !== ""; });
@@ -184,7 +199,7 @@ window.Maity = window.Maity || {};
     // What the hub chooses is said where its machine form could not be read.
     fieldsRead ? null : h("p", { class: "hint" }, "Project memory: this hub's machine form could not be read, so its defaults apply."),
     preset.nodes);
-    const submit = h("button", { type: "submit" }, "Create project");
+    const submit = h("button", { type: "submit", class: "primary" }, "Create project");
     append(form, submit, status.el);
 
     append(root, h("h2", null, "Create a project"),

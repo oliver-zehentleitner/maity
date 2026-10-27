@@ -37,7 +37,7 @@ window.Maity = window.Maity || {};
     { route: "ticker", label: "Ticker" },
     // The team at work (js/swarm.js, docs/api.md §6.22).
     { route: "swarm", label: "Swarm" },
-    // No tab: opened from the inbox and from a chat (js/project-message.js).
+    // No tab: opened from the Chat tab, the Messages view and a chat (js/project-message.js).
     { route: "message", label: "Message the project", tab: false },
     // Joining is in Agents now; the old route opens it there (js/join.js).
     { route: "join", label: "Join an agent", admin: true, tab: false },
@@ -221,7 +221,7 @@ window.Maity = window.Maity || {};
     const password = h("input", { id: "login-password", name: "password", type: "password", autocomplete: "current-password", required: true });
     const status = statusLine();
     const form = h("form", {
-      class: "login",
+      class: "login door",
       onsubmit: async (e) => {
         e.preventDefault();
         status.busy("Signing in…");
@@ -257,7 +257,11 @@ window.Maity = window.Maity || {};
       h("button", { type: "button", onclick: logout }, "Sign out")));
   }
 
-  async function logout() {
+  // back: a dashboard route ("/#/…", checked as a sign-in's next is) to
+  // show once signed out, e.g. the invitation that offered Not you? Sign
+  // out (H on #461); anything else, and none, is the root.
+  async function logout(back) {
+    const after = safeNext(back);
     // The held long-poll goes before the session does (§18.2).
     M.notify.halt();
     // Signing out on purpose is no session that ended under the page.
@@ -271,7 +275,7 @@ window.Maity = window.Maity || {};
       if (M.clearChatDrafts) M.clearChatDrafts();
       M.notify.stopBrowser();
       M.notify.state.settings = null;
-      window.location.hash = "";
+      window.location.hash = after ? after.slice(1) : "";
       render();
     }
   }
@@ -847,8 +851,9 @@ window.Maity = window.Maity || {};
       p.name,
       h("span", { class: "dot state-dot-" + p.state, title: STATE_LABELS[p.state] || p.state, "aria-label": STATE_LABELS[p.state] || p.state }),
       pill(p))),
-    h("a", { href: "#/new", class: "new-project", "aria-current": ctx.scope === "new" ? "page" : null }, "+ New project"),
-    h("a", { href: "#/runners", class: "runners-link", "aria-current": ctx.scope === "runners" ? "page" : null }, "Runners"));
+    // Runners belong to the person, not to a project (the maintainer's
+    // wish, tsk-cb6myw32def0): they are in the gear menu, not this row.
+    h("a", { href: "#/new", class: "new-project", "aria-current": ctx.scope === "new" ? "page" : null }, "+ New project"));
   }
 
   // A row that scrolls shows it: a fade on the side with more entries. Set
@@ -918,6 +923,16 @@ window.Maity = window.Maity || {};
     if (focused) fresh.focus();
   }
 
+  // The Lead button beside Chat, once whom it reaches is known
+  // (js/lead-chat.js); none where it reaches no one.
+  function renderLead(ctx) {
+    const me = document.getElementById("header").querySelector(".me");
+    const chat = me && me.querySelector("a.chat-button");
+    if (!chat || !ctx.chatFound || !M.leadChat) return;
+    const lead = M.leadChat.leadControl(ctx, ctx.chatFound);
+    if (lead) me.insertBefore(lead, chat.nextSibling);
+  }
+
   // The counts changed: only the switcher is replaced, so an open State &
   // absence panel and the tab row's scroll position stay as they are.
   function renderSwitcher(ctx) {
@@ -947,8 +962,8 @@ window.Maity = window.Maity || {};
       class: "settings-menu",
       face: M.icons.gear(18),
       items: () => [
-        { label: "Runners", href: "#/runners" },
-        ctx.me.instance_admin ? { label: "Instance administration", href: "#/admin" } : null,
+        { label: "Runners", href: "#/runners", current: ctx.scope === "runners" },
+        ctx.me.instance_admin ? { label: "Instance administration", href: "#/admin", current: ctx.scope === "instance-admin" } : null,
       ].filter(Boolean),
     });
     // Sign in another device (§2.6.2) where the hub's machine form has it.
@@ -996,7 +1011,6 @@ window.Maity = window.Maity || {};
       absence
         ? h("p", { class: "flag absence" }, "While away: " + absence.scope)
         : null,
-      ctx.scope === "project" && M.leadChat ? M.leadChat.control(ctx) : null,
       ctx.scope === "project"
         ? h("nav", { class: "views", "aria-label": "Views" },
           NAV.filter((item) => offered(ctx, item) && item.tab !== false).map((item) => h("a", {
@@ -1005,6 +1019,15 @@ window.Maity = window.Maity || {};
           }, item.label, tabCount(ctx, item.route))))
         : null);
     header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
+    // Whom the Lead button reaches: known at once in a project, read for every project outside one.
+    header.chatCtx = ctx;
+    if (M.leadChat) {
+      M.leadChat.found(ctx).then((f) => {
+        if (document.getElementById("header").chatCtx !== ctx) return;
+        ctx.chatFound = f;
+        renderLead(ctx);
+      }, () => {});
+    }
   }
 
   // The field a link into Settings asked for (the overview's Set the
@@ -1321,8 +1344,10 @@ window.Maity = window.Maity || {};
       if (seq !== renderSeq) return;
     } catch (err) {
       if (seq !== renderSeq) return;
+      // The page could not load: the header with the lockup stays, the
+      // failure stands where the loader stood, with a way to try again.
       append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle()));
-      append(clear(main), errorBox(err));
+      append(clear(main), pageFailed(err));
       return;
     }
     if (seq !== renderSeq) return;
@@ -1349,13 +1374,6 @@ window.Maity = window.Maity || {};
         const elsewhere0 = M.observe ? await M.observe.note(ctx) : null;
         if (elsewhere0) append(root, elsewhere0);
       } else if (where.scope === "all") {
-        if (M.leadChat) {
-          const leadSlot = h("div");
-          append(root, leadSlot);
-          // The inbox stays usable while each project's agents are being read.
-          M.leadChat.all(ctx).then((el) => { if (seq === renderSeq) append(leadSlot, el); })
-            .catch(() => { if (seq === renderSeq) append(leadSlot, h("p", { class: "muted" }, "Could not read project leads.")); });
-        }
         await M.views.inbox(ctx, root, []);
         // Where one's agents are in projects one is not: read along there.
         const elsewhere = M.observe ? await M.observe.note(ctx) : null;
@@ -1407,7 +1425,57 @@ window.Maity = window.Maity || {};
     setFavicon(where.scope === "project" ? ctx.slug : null, where.scope === "project" ? ctx.project : null);
   }
 
+  // The loader as web/index.html has it, for a page that loads again.
+  const SVG = "http://www.w3.org/2000/svg";
+  function loading() {
+    const svg = document.createElementNS(SVG, "svg");
+    svg.setAttribute("class", "maity-loader");
+    svg.setAttribute("viewBox", "0 0 64 64");
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", "Loading");
+    const seats = [[32, 10], [51, 21], [51, 43], [32, 54], [13, 43], [13, 21]];
+    seats.forEach(([cx, cy]) => {
+      const c = document.createElementNS(SVG, "circle");
+      c.setAttribute("cx", String(cx)); c.setAttribute("cy", String(cy)); c.setAttribute("r", "6");
+      svg.appendChild(c);
+    });
+    seats.forEach(([cx, cy]) => {
+      const r = document.createElementNS(SVG, "rect");
+      r.setAttribute("class", "maity-loader-t");
+      r.setAttribute("x", String(cx - 6)); r.setAttribute("y", String(cy - 6));
+      r.setAttribute("width", "12"); r.setAttribute("height", "12"); r.setAttribute("rx", "3");
+      svg.appendChild(r);
+    });
+    return h("p", { class: "page-loading", role: "status" }, svg, " Loading Maity…");
+  }
+
+  // A page that could not load, in plain words for the person (the
+  // designer's pass on #433): the mark at rest, what does not work, what to
+  // do, the technical reason folded away, and Try again; Sign in again
+  // where the session is gone.
+  function pageFailed(err) {
+    const fixtures = M.api.source === "fixtures";
+    const unreachable = !err.status;
+    const title = fixtures ? "The sample data didn't load"
+      : unreachable ? "Maity can't reach its hub" : "Maity couldn't load this page";
+    const advice = fixtures ? "Reload the page. If it keeps happening, the fixtures are missing from this copy."
+      : unreachable ? "Check your connection, then try again. If it keeps happening, the hub may be down."
+        : "Try again. If it keeps happening, the hub may have a problem; the details say which.";
+    const again = h("button", { type: "button", class: "primary", onclick: () => { append(clear(document.getElementById("main")), loading()); render(); } }, "Try again");
+    const signIn = err.status === 401
+      ? h("button", { type: "button", onclick: () => { window.location.hash = "#/login"; } }, "Sign in again") : null;
+    const mark = (file, theme) => h("img", { class: "page-failed-mark brand-mark " + theme, src: "brand/" + file, alt: "", width: "40", height: "40" });
+    return h("div", { class: "page-failed", role: "alert" },
+      mark("maity-mark-small.svg", "brand-light"), mark("maity-mark-small-dark.svg", "brand-dark"),
+      h("h2", { class: "page-failed-title" }, title),
+      h("p", { class: "muted" }, advice),
+      h("details", null, h("summary", null, "Details"), h("p", { class: "page-failed-reason" },
+        [err.status ? "HTTP " + err.status + (err.code ? " " + err.code : "") : "No answer", err.message, err.path || null].filter(Boolean).join(" · "))),
+      h("div", { class: "page-failed-actions" }, signIn, again));
+  }
+
   M.errorBox = errorBox;
+  M.logout = logout;
   M.brandTitle = brandTitle;
   M.statusLine = statusLine;
   M.STATE_LABELS = STATE_LABELS;

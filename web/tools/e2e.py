@@ -841,7 +841,7 @@ def scenario(run: Run, page: Page) -> None:
         expect(page.locator(f"main section.view-{view}")).to_be_visible()
         if view == "inbox":
             expect(page.locator("li.entry.current")).to_contain_text("Phone check?")
-        expect(page.locator("main .send-status.failed, main .error")).to_have_count(0)
+        expect(page.locator("main .send-status.failed, main .error, main .page-failed")).to_have_count(0)
         width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
         assert width[0] <= width[1], f"#/p/e2e-alpha/{view} is {width[0]} px wide at {width[1]} px"
         # The views row is wider than 390 px; it shows a fade where more tabs are.
@@ -864,8 +864,9 @@ def scenario(run: Run, page: Page) -> None:
     assert width[0] <= width[1], f"#/new is {width[0]} px wide at {width[1]} px"
     run.shot(page, "phone-new")
     run.a11y(page, "create a project")
-    # The Runners view: the pairing form and its long install line.
-    page.locator("nav.switcher").get_by_role("link", name="Runners", exact=True).click()
+    # The Runners view: the pairing form and its long install line; reached from the gear menu.
+    page.locator("header").get_by_role("button", name="Settings", exact=True).click()
+    page.get_by_role("menuitem", name="Runners", exact=True).click()
     expect(page.locator("main section.view-runners")).to_be_visible()
     width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
     assert width[0] <= width[1], f"#/runners is {width[0]} px wide at {width[1]} px"
@@ -906,7 +907,9 @@ def id_links_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
     # phone full width above the columns, nothing wider than the screen.
     panel = page.locator("aside.card-panel")
     expect(panel).to_be_visible()
-    expect(panel.locator("#card-panel-title")).to_have_text(card_id)
+    # The panel is the card: its id in the bar, its title the heading.
+    expect(panel.locator(".card-panel-head .card-id")).to_have_text(card_id)
+    expect(panel.locator("#card-panel-title")).to_be_focused()
     expect(panel.locator(".card-history-list li").first).to_contain_text("created the card")
     run.a11y(page, "board, a card's panel")
     page.set_viewport_size({"width": 390, "height": 844})
@@ -1160,11 +1163,17 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     run.step("pause: the owner pauses the agent; the agent cannot lift it itself")
     view_tab(page, "Agents").click()
     agents = page.locator("main section.view-agents")
-    expect(agents.locator("form.pause")).to_contain_text(
+    # The pause form is folded behind the card's Actions menu.
+    card = agents.locator("article.profile", has=page.locator(f"#pause-{agent_id}"))
+    card.get_by_role("button", name="Actions", exact=True).click()
+    page.get_by_role("menuitem", name="Pause…", exact=True).click()
+    expect(page.locator(f"#pause-{agent_id}")).to_be_focused()
+    form = card.locator("form.pause")
+    expect(form).to_contain_text(
         "A pause tells the agent at once and refuses it new work (claims, new cards)"
     )
-    agents.locator(f"#pause-{agent_id}").fill("e2e: hold on")
-    agents.locator("form.pause").get_by_role("button", name="Pause", exact=True).click()
+    page.locator(f"#pause-{agent_id}").fill("e2e: hold on")
+    form.get_by_role("button", name="Pause", exact=True).click()
     expect(agents).to_contain_text("by Owner: e2e: hold on")
     expect(agents).to_contain_text("The agent was told at once and gets no new work")
     expect(agents.get_by_role("button", name="Clear pause", exact=True)).to_be_visible()
@@ -1182,7 +1191,12 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     page.reload()
     expect(agents).to_contain_text("by Owner: e2e: hold on")  # still paused after its resume
     agents.get_by_role("button", name="Clear pause", exact=True).click()
-    expect(agents.get_by_role("button", name="Pause", exact=True)).to_be_visible()
+    # Cleared: no Clear pause, and the pause is offered again from the card's Actions menu, folded.
+    expect(agents.get_by_role("button", name="Clear pause", exact=True)).to_have_count(0)
+    expect(card.locator("form.pause")).to_be_hidden()
+    card.get_by_role("button", name="Actions", exact=True).click()
+    expect(page.get_by_role("menuitem", name="Pause…", exact=True)).to_be_visible()
+    page.keyboard.press("Escape")
 
     def own_pause() -> dict | None:
         # The agent's own pause is its instance's (§6.17); the membership's stays clear.
@@ -1447,8 +1461,10 @@ def pair_exchange(run: Run, pair_line: str) -> tuple[int, dict, str]:
 def runners_step(run: Run, page: Page) -> None:
     """The instance-level Runners view (docs/api.md §15.2, §15.3) against the hub."""
     page.goto(f"{run.base}/#/p/e2e-alpha/agents")
-    link = page.locator("nav.switcher").get_by_role("link", name="Runners", exact=True)
-    link.click()
+    # Runners are the person's: in the gear menu, not the project row (tsk-cb6myw32def0).
+    expect(page.locator("nav.switcher").get_by_role("link", name="Runners", exact=True)).to_have_count(0)
+    page.locator("header").get_by_role("button", name="Settings", exact=True).click()
+    page.get_by_role("menuitem", name="Runners", exact=True).click()
     expect(page).to_have_url(re.compile(r"#/runners$"))
     view = page.locator("main section.view-runners")
     expect(view.or_(page.locator("main .error"))).to_be_visible()
@@ -1688,9 +1704,9 @@ def overview_step(run: Run, page: Page) -> None:
 
 def message_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     """Message the project (docs/api.md §8.4): the owner writes to everyone; the agent's wait has it."""
-    run.step("message: the owner writes to the project from the inbox; the agent's maity wait gets it")
-    page.goto(f"{run.base}/#/p/e2e-alpha/inbox")
-    page.get_by_role("link", name="Message the project", exact=True).click()
+    run.step("message: the owner writes to the project from the Chat tab; the agent's maity wait gets it")
+    page.goto(f"{run.base}/#/p/e2e-alpha/chat")
+    page.locator(".chat-list-pane").get_by_role("link", name="Message the project", exact=True).click()
     expect(page).to_have_url(re.compile(r"#/p/e2e-alpha/message$"))
     wait = run.wait_start(alpha)
     page.locator("#message-type").select_option("notice")
@@ -1777,9 +1793,11 @@ def notifications_step(run: Run, page: Page) -> None:
         expect(page.locator("main")).not_to_contain_text("Could not read your notifications")
         no_problems(run, "notifications")
         return
-    # The header's right block: Chat, Notifications, the gear, the profile, in one row also on a phone.
+    # The header's right block: Chat, the Lead button where there is a lead to reach, Notifications,
+    # the gear, the profile, in one row also on a phone.
     order = page.evaluate("Array.from(document.querySelectorAll('header .me > *')).map((e) => e.className)")
-    assert len(order) == 4 and "chat-button" in order[0] and "bell" in order[1], f"header order: {order}"
+    lead = 1 if len(order) > 1 and "lead-button" in order[1] else 0
+    assert len(order) == 4 + lead and "chat-button" in order[0] and "bell-box" in order[1 + lead], f"header order: {order}"
     page.set_viewport_size({"width": 390, "height": 844})
     # One row: every button's vertical middle within the others' height (a pixel of alignment is no wrap).
     boxes = page.evaluate("Array.from(document.querySelectorAll('header .me > *')).map((e) => { const r = e.getBoundingClientRect(); return [r.top, r.bottom]; })")
@@ -2065,6 +2083,8 @@ def users_step(run: Run, page: Page) -> None:
     assert me["instance_admin"] is True, me  # the first human, made by maity-hub owner create
     link.click()
     expect(page).to_have_url(re.compile(r"#/admin$"))
+    # One section at a time: the page opens on Statistics, Users is picked.
+    page.locator("nav.admin-nav").get_by_role("button", name="Users", exact=True).click()
     owner = page.locator("table.users tbody tr", has_text="(you)")
     expect(owner).to_contain_text("instance admin")
     expect(owner).to_contain_text("@" + OWNER)

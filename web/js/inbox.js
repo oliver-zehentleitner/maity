@@ -117,7 +117,7 @@ window.Maity = window.Maity || {};
     const id = person && (person.member_id || person.id);
     const known = ctx.scope === "project" && !req.personal && id && (ctx.memberById || {})[id];
     const view = { memberById: known ? { [id]: known } : {}, link: ctx.link, nameOf: ctx.nameOf };
-    return M.dom.memberRef(view, person);
+    return M.dom.memberRef(view, person, { instance: person && person.instance });
   }
 
   function who(ctx, req, person) {
@@ -465,7 +465,6 @@ window.Maity = window.Maity || {};
     append(root,
       h("div", { class: "toolbar" },
         h("h2", null, ctx.scope === "all" ? "Waiting for you, all projects" : "Inbox"),
-        ctx.scope === "project" ? h("a", { class: "button-link", href: ctx.link("message") }, "Message the project") : null,
         h("label", { for: "inbox-sort" }, "Sort by"), sortSelect,
         showSelect ? [h("label", { for: "inbox-show" }, "Show"), showSelect] : null,
         projectSelect ? [h("label", { for: "inbox-project" }, "Project"), projectSelect,

@@ -126,9 +126,9 @@ def test_checkpoint_on_a_detached_head_sends_no_branch(joined: Path, fake: fakeh
     assert "branch" not in body and body["head"] == git(work, "rev-parse", "HEAD")
 
 
-def test_checkpoint_needs_both_steps() -> None:
-    with pytest.raises(SystemExit):
-        cli.build_parser().parse_args(["checkpoint", "tsk-0004", "-m", "only the last"])
+def test_checkpoint_needs_both_steps(joined: Path, fake: fakehub.FakeHub) -> None:
+    assert cli.main(["checkpoint", "tsk-0004", "-m", "only the last"]) == cli.EXIT_USAGE
+    assert fake.signed() == []
 
 
 def test_an_empty_step_is_a_usage_error(joined: Path, fake: fakehub.FakeHub) -> None:
@@ -160,7 +160,7 @@ def test_say_to_members_needs_a_type(
 ) -> None:
     assert cli.main(["say", "agt-a", "hello"]) == cli.EXIT_USAGE
     assert "--type is required" in capsys.readouterr().err
-    assert fake.signed() == []
+    assert [s.method for s in fake.signed()] == ["GET"]  # the member list, nothing posted
 
 
 def test_say_offers_no_chat_type() -> None:

@@ -1231,3 +1231,300 @@ whether an account will be made.
 on a closed hub every visitor would fill it in for a mail that never
 comes. Only `GET /auth/methods`: an invited person on a closed hub could
 not register at all, which §3.4 allows.
+
+## An agent is named with the instance that wrote or did it, as <handle>#<id>
+
+**Id:** 0b6d2a5f-32ba-4979-8c18-1567498ecbac
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish relayed by the coordinator (tsk-6sxbvsf87219), 2026-10-27: when a handle has several instances it must always be visible which one wrote; docs/api.md §6.17 (the dashboard shows `<handle>#<id>`, every work record carries the instance), §9 (`from_instance`), §7 (`asked_by.instance`), §8.1 (`actor.instance`); the dashboard's implementation, 2026-10-27
+**Revisit when:** the contract gives an instance a name of its own, or the hub names harness and model on a chat message
+
+`M.dom.memberRef` takes `opts.instance` (an id, or a record with
+`instance`, `harness`, `model`). With one, an agent reads
+`<handle>#<id>` (`owner/handle#id` where two agents share the handle,
+`@…` where the view names handles; the name, where a reference read
+across projects carries no handle), the `#id` muted, beside the link and not in it, with
+"Instance <id> · <harness> · <model>" as its tooltip where the record
+says them (an event's `actor` does, a chat message does not). Chats
+(direct, group, global), the project messages, the ticker, the inbox's
+asker, the overview's reports and a card's notes and history pass what
+their record carries; without an instance, or for a human, the name stays
+as before. An id that is not an instance id is not shown. In a chat two
+instances of one agent are two senders: their messages are never grouped
+under one name.
+
+**Reason:** a team of instances shares one membership and one handle,
+so the name alone cannot say which session wrote; the instance id is the
+address the contract already gives it. Keeping it in the one helper keeps
+the form the same on every page.
+
+**Rejected alternative:** the display name with the id after it: the
+contract names an instance by handle, and that is what a reader types to
+reach it (`@handle#id`). Showing the instance only on hover: the
+maintainer wants it seen without looking for it.
+
+## In the global chat an agent's message names its projects by logo, from the reader's own member lists
+
+**Id:** bb8a9b29-8be9-4843-872c-07bd3e38641d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish relayed by the coordinator (tsk-p94e7njrmg1p), 2026-10-27: in the global chat every agent message shows the projects the agent is in, as the project logo with the name on hover, never a project the reader may not read; docs/api.md §11.2 (the logo), §6.3 (the member list); the dashboard's implementation, 2026-10-27
+**Revisit when:** the hub lists an agent's memberships across projects for a reader, or the global chat shows chats of projects whose member list the page has not read
+
+`#/chats` reads every project of the reader's context anyway (members
+included, for the names); `projectsOf(memberId)` is those of the
+reader's projects whose member list names the agent, in the switcher's
+order, each drawn with `M.projectMark` (the logo, else the monogram),
+the name as tooltip and as hidden text for a screen reader. It is set on
+the global chat's project contexts only, so a project's own Chat tab
+shows none. A human's message and the reader's own show none.
+
+**Reason:** the reader's own member lists already say every project the
+reader may see the agent in, and only those; a project the reader is not
+in never reaches the page, so nothing private can show. No new hub call
+and no contract change were needed.
+
+**Rejected alternative:** a hub list of the agent's memberships: it
+would have to filter by the reader's `project:read`, which is exactly
+what the reader's own project list is. Showing the project names as text:
+the maintainer asked for logos, and several names would crowd the line.
+
+## An agent card's admin actions sit in one Actions menu; the pause form opens from it
+
+**Id:** 0d1a03cd-81e9-4895-af2d-ef8dc54806a6
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the designer's pass part 3 on #366/#369 (tsk-w2xnkrwf147m), 2026-10-27: every agent card carried an open Pause form with its hint, which made each card about twice as long
+**Revisit when:** the member page header gets its own Actions menu (the designer's overview handover), so both can share one list
+
+An admin sees **Actions ▾** at the end of an agent card's header
+(`M.menuButton`) with **Pause…** and **Edit briefing** (or **Write a
+briefing**). The pause form stays in the card, folded; **Pause…** opens
+it and focuses the reason, **Cancel** folds it again. A paused agent
+keeps its one **Clear pause** button in the card. The briefing's text
+and its own edit button stay, since they are content, not a control.
+Revoking stays beside each credential in the card's list.
+
+**Reason:** one control in the header keeps the cards short and
+scannable; the actions are rare, the facts are what is read.
+
+**Rejected alternative:** Revoke… in the menu, as the designer sketched
+it: revoking is per credential, and an agent may hold several, so the
+menu would need a second choice the credential list already makes. A
+dialog for the pause: the folded form keeps its hint and status in
+place and needs no focus trap.
+## The header with the lockup is in the page itself; loading and failure stand centred under it
+
+**Id:** d48f94c1-fbdf-4f81-b16d-896fe74535ce
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's feedback relayed by the coordinator (tsk-vb0dgwhrkvsn), 2026-10-27: on a phone, while the app loads or cannot load, the page was a blank strip with "Loading…" top-left; wanted the header with the logo at once and kept on failure, the loader centred, the same for the failure, static so it shows before JavaScript runs; the designer's pass on #433, 2026-10-27 (no red alarm box: a calm block, plain words, the reason folded, Try again primary at the edge; the loader after 300 ms); the dashboard's implementation, 2026-10-27
+**Revisit when:** the header's first row changes, or the page gets a shell that renders on the server
+
+`web/index.html` holds the header's first row as `brandTitle()` draws
+it (the lockup, one file per theme), so it is on screen before any
+script or hub call; every view redraws the header as before. The loader
+(`p.page-loading`, 48 px with "Loading Maity…" under it, shown after
+300 ms so a fast load never flashes it) and a page that could not load
+(`div.page-failed`: the mark at 50 %, a title in plain words, what to
+do, the reason under Details, a primary **Try again** that shows the
+loader and loads again, and **Sign in again** on a 401) are centred in
+what the header leaves of the screen: `body:has(> main >
+…)` becomes a column of the screen's height and `main` takes the rest.
+A browser without `:has` shows them at the top, as before.
+
+**Reason:** the first thing a person sees should say where they are, and
+a failure should not look like a broken page; plain HTML and CSS show
+before the scripts load, which on a slow phone is the longest wait. A
+selector on what `main` holds needs no class to set and none to forget
+to remove when the first view arrives.
+
+**Rejected alternative:** drawing the header from JavaScript first: it
+waits for every deferred script. A class on `main` that the router
+removes: one more step every path to a view must remember. The error box
+as the failure: red in an empty screen reads as a crash, and a file path
+as its title is the system talking to itself.
+## The keys that send stand beside the send button, named as the keyboard prints them
+
+**Id:** dbb154d5-b5cf-4e9d-884f-0e9467a6788a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish relayed by the coordinator (tsk-00q3ddrh7a1q), 2026-10-27: users should see that Ctrl+Enter sends; the hint in the field label went unnoticed; on the button or as its mouse-over, both fine; the designer's pass on #431, 2026-10-27 (left of Send in one action row, not twice, hidden on a phone); the dashboard's implementation, 2026-10-27
+**Revisit when:** the designer reworks the composers, or the dashboard gets a language setting of its own
+
+`M.dom.sendOnCtrlEnter` puts the keys, once the view is on the page,
+right before the button that sends (the one it was given, else the form's
+submit button), the two one group (`span.send-with-keys`): a muted
+`span.send-keys`, hidden from a screen reader, which reads the button's
+`aria-keyshortcuts` instead; the button's tooltip says them too. The
+chat composers (direct, group, global) have one row of actions, Attach
+at the start and the keys with a primary Send at the end; their label
+says the keys to a screen reader only, so they are not seen twice. At
+phone width the hint goes and the button is laid out as before. `sendKeysFor` names them:
+⌘+Enter on an Apple device (platform or user agent), Strg+Enter where
+the page's `lang` or else the browser's language is German, Ctrl+Enter
+otherwise. A device that only knows touch (`hover: none` and
+`pointer: coarse`) shows none.
+
+**Reason:** people look at the button when they are about to send, not
+at the label above the field; one place in the helper reaches every
+composer that sends this way, today's and later ones. Keys named as the
+keyboard prints them are found on it at once.
+
+**Rejected alternative:** the keys inside the button's text ("Send ·
+Ctrl+Enter"): the button's name for a screen reader and every test of it
+would change, and a narrow composer has less room for it. The tooltip
+alone: it is not seen without a mouse resting on the button.
+
+## The overview leads with what needs the reader; its README badge is shown there and changed in Settings
+
+**Id:** 057e7277-3eba-4267-93d2-c6b74a5e2ff1
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the designer's handover on the overview (#6484, tsk-qse9t2b3a9n8), 2026-10-27: the five panels had equal weight and the one thing to act on (open requests) sat bottom left; the maintainer's wish for a Contract link in the project facts (tsk-yhbmz7mjng7n, step 1), 2026-10-27; the dashboard's implementation, 2026-10-27
+**Revisit when:** the hub serves the contract for reading inside Maity, or the badge can be changed without a logged reason
+
+Three rows: Waiting for you and Board, then Team and Latest reports,
+then Project and README badge. A member in a list is a chip
+(`M.dom.memberChip`), the shared form the member page header will use
+too. The Contract link is `docs/api.md` on the forge at the repository's
+default branch, built only for GitHub and GitLab, whose path shapes are
+known. The badge panel shows the state, the badge and the snippet to
+everyone; an owner or admin is sent to Project settings to change it.
+
+**Reason:** a person opening the overview comes to see whether anything
+waits for them, so that is the first thing, with its action one click
+away. A badge change is a policy change the hub logs with a reason, and
+Settings already asks for it; a second form would duplicate that.
+
+**Rejected alternative:** the designer's radio pills that change the
+badge on the overview: they would need the reason field too, or change a
+logged policy without one. A Contract link guessed for any forge: a
+wrong path shape would be a dead link that looks right.
+## The instance admin area shows one section at a time
+
+**Id:** 4c499cf2-cd9d-4ce1-be8d-639aa32306b6
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the designer's pass part 3 on #371 (tsk-w2xnkrwf147m), 2026-10-27: the admin page was one scroll of about 5,000 px (Statistics, Users, Mail settings, Landing page, Instance information)
+**Revisit when:** a section needs a link of its own (a route per section), or the area grows past one row of buttons
+
+`#/admin` reads every section the hub serves as before, then shows one:
+a row of buttons at the top names them (`aria-pressed` on the shown
+one), and the page opens on the first, Statistics. A section the hub
+turns out not to serve leaves the row with its section. The others stay
+in the page, hidden, so a form half filled in keeps what was typed.
+
+**Reason:** the admin comes for one thing at a time; five long sections
+under each other hid all but the first below the fold.
+
+**Rejected alternative:** a sticky list of anchors over the whole page,
+the designer's other option: the scroll stays 5,000 px, only the jump is
+shorter. A route per section (`#/admin/users`): `#/admin/users` is the
+older Users page already, and links into a section were not asked for.
+
+## On a phone an opened card is a page of its own; the panel is the card
+
+**Id:** 54f93a4f-7e91-4d69-9b51-ca562daaa9a3
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the designer's pass part 2 (#6473, tsk-qk24j4ebxdwg), 2026-10-27: on a phone the panel opened above the whole board, making the page about 6,700 px long; the panel showed a frame and the card's id twice
+**Revisit when:** a card gets a route that is no board at all, or the board is drawn differently on a phone
+
+At 600 px and below, while a card is open, the board's columns are
+hidden and the panel stands alone; **Close**, Escape and Back return to
+the board at the card. On every width the panel is the card: one id, in
+the bar beside Close; the title is the panel's heading, where the focus
+goes; the card inside has no frame of its own; its controls stand right
+under the claim line.
+
+**Reason:** a panel above a long board turned an opened card into an
+insert in a page nobody could find the end of; as a page of its own it
+reads like one.
+
+**Rejected alternative:** a separate card route without the board: the
+board's filters and scroll, kept for the way back, would be lost. The
+panel above the columns, as before: the length of the page.
+## A chat opens on its newest page in two requests; older pages on scroll-up
+
+**Id:** fcc59a72-46a0-4741-9d6f-abada05edab6
+**Type:** decision
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's report that chats grow slower and slower (tsk-r1adgwp0a5dr), 2026-10-27, and the rule from the incident of 2026-10-26: no request whose cost grows with history; docs/api.md §9.1 and §9.2 (`before` marks nothing read, `after` marks and delivers, a group chat's window); measured in web/tools/smoke.js on a 2000-message chat: 10 requests and 2000 messages drawn before, 2 and 50 after
+**Revisit when:** the hub can read the newest page and mark it read in one request, or serves the project messages listing (§8.8) the Messages view should page through
+
+Direct and group chats read the newest 50: back with `before=` (the
+list's last message, else the largest integer), then forward from the
+first of them with `after=`, which marks them read and delivered as
+opening a chat always did; in a group chat that forward read keeps to
+the window, so what lies before one joined is offered, not shown.
+Older pages come near the top or with **Show earlier messages**, the
+reader's place kept by the height drawn in front. At the newest, more
+than 300 drawn are cut to 100 and read again on scroll-up. Reading
+along from outside, the 30-second re-read takes the newest page only.
+
+**Reason:** a request whose cost grows with history slows every opening
+of a long chat and, multiplied by readers, loads the hub; two requests
+per opening and one per older page stay the same however long a chat
+grows.
+
+**Rejected alternative:** one forward read from the newest seq minus a
+guess: seqs are the project's, not the chat's, so no guess finds the last
+50. Reading back only: it marks nothing read, so the unread counts
+would never fall. Keeping everything drawn: the DOM of a chat open all
+day grows without bound.
+## The lead is reached by a Lead button beside Chat, not by Chat itself or a strip
+
+**Id:** 0ff66bde-7c26-412a-a856-069b52764910
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish (tsk-g2qe0fyqqmmq, chat 2026-10-27): the chat entry a button like the others, the lead strip gone; and his decision on the form (req-4rpd7vqb6xe3, 2026-10-27): two buttons, Chat to the chat list, a Lead button beside it, one lead opened at once, several listed with a group chat with all leads
+**Revisit when:** the Team page (req-2mwv85k5e1s6) gives the leads a place of their own, or a project names more than one lead by policy
+
+Chat in the header is a button like the bell and always opens every chat.
+The Lead button beside it reaches whom `M.leadChat.targets` names (the
+policy's lead now, one's own proxy; on an older hub one's own admin and
+proxy agents), across every project outside one: one is opened at once,
+several are a menu with, per project with more than one, a group chat
+with all of them (an open one of exactly those people reused). Without
+anyone to reach there is no Lead button. The strip above the tabs and
+the section on All projects are gone.
+
+**Reason:** the unread count on Chat counts every chat; a click on it
+that went to the lead would not lead to what the count says, and the chat
+list would have no way in from the header outside a project.
+
+**Rejected alternative:** Chat as the lead's button, a menu of the leads
+and All chats when there are several (asked as B): a second click to
+every chat, and one button meaning two things. Keeping the strip: it took
+the room above the tabs on every page of a project.
+
+## Runners in the gear menu, not in the projects' row
+
+**Id:** a6c7bf3a-9742-4535-ae21-110bd809dc47
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request (tsk-cb6myw32def0), 2026-10-27
+
+The link to `#/runners` sits in the header's gear menu, beside the
+instance administration, and no longer in the row that lists the
+projects. The menu marks it as the page shown.
+
+**Reason:** a runner belongs to the person who runs it, not to a project;
+the projects' row lists projects, and the gear menu holds what is not a
+project's.
+
+**Alternatives:** unknown.
