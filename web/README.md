@@ -1367,14 +1367,18 @@ web/
 └── context/          why the dashboard is built this way (Keep the Why)
 ```
 
-**Talk to the lead** sits above the project view tabs and appears per project
-on All projects. With coordinator availability data it selects the current
-lead or substitute; on older hubs choose one of your own admin or proxy agents. Your own
-agent opens in direct chat. Another owner's agent opens an existing open
-group of exactly you and that agent, or creates one on click; the agent's
-owner can read along. This does not expand direct-chat access. Agents see
-no control. A hub without group chats shows an error instead of opening an
-unauthorized direct chat.
+The header's **Chat** button, a button like the bell, also reaches the
+lead (`js/lead-chat.js`). In a project it is the lead the policy names now
+(with coordinator availability data: the current lead or substitute) and
+one's own proxy; on an older hub one's own admin and proxy agents. Outside a
+project it gathers them from every project, each named with its project.
+With one to reach, a click opens that chat; with several, a small menu picks
+one, and **All chats** at its end opens every chat; with none it opens every
+chat, as before. Your own agent opens in direct chat. Another owner's agent
+opens an existing open group of exactly you and that agent, or creates one
+on click; the agent's owner can read along. This does not expand direct-chat
+access. Agents get none of it. A hub without group chats says so under the
+header instead of opening an unauthorized direct chat.
 
 Held cards show the holder's presence beside the claim. An agent that is
 away, offline or paused shows **silent since HH:MM** in your browser's local
