@@ -211,3 +211,33 @@ safety here, while a verify or reset link, which change things once, carry one (
 - Telling the reason a link is dead ("expired", "already used"): it separates a guessed token
   from a real one, which §18.6 forbids.
 
+## One account per address: a unique normalized column, claimed under a row of `address_lock`
+
+**Id:** ea46fd15-c3f9-49a6-bece-44f472471aed
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §18.4 and §2.7.1; the implementation of tsk-32jx98jzne6z, part 3 of the re-cut of #280, 2026-10-27
+**Revisit when:** the hub runs more than one replica on an engine whose row lock differs from the three the tests run on
+
+`notification_settings.address_normalized` holds the verified address trimmed and
+lower-cased, under a unique constraint. Verifying an address first locks the address's row
+in `address_lock` (inserted if absent, then `SELECT ... FOR UPDATE`), checks that no other
+account holds it, and writes it. A link for an address another account claimed meanwhile is
+the dead-link page and changes nothing. Removing the address clears the column, which frees
+the address. Setting a pending address claims nothing. A registration's completion claims
+its address the same way (`preferences.claim_verified`, called by
+`registration_accounts.claim_address`), under the same lock; the loser makes no account.
+
+**Reason:** the contract asks for a unique constraint as the guard and a lock that
+verification, address change and registration share. A lock row per address serializes
+exactly the contenders for one address, and the constraint still catches anything that
+skips the lock. Until this claim existed, no registration could complete (the stand-in
+answered `False` and failed closed).
+
+**Rejected alternatives:**
+- The unique constraint alone, catching the violation: it works, but the contract names the
+  shared lock, and registration needs it to void the other pending registrations in the same
+  transaction.
+- A lock on the human's row: it would not serialize two accounts racing for one address.
+

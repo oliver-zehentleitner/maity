@@ -22,6 +22,7 @@ from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
 from sqlalchemy import Connection, insert, select, update
+from sqlalchemy.exc import IntegrityError
 
 from maity_hub import clock
 from maity_hub import tables as t
@@ -610,6 +611,51 @@ def verify(
     if previous is not None and previous != row.pending_address:
         _tell_old_address(conn, owner, previous, row.pending_address, None, public_url)
     return True
+
+
+def claim_verified(conn: Connection, normalized: str, human_id: str) -> bool:
+    """Write `normalized` as the human's verified address, as a registration's completion
+    does (§2.7.1, §18.4), under the per-address lock: False when another account holds
+    it. The human has no settings yet; the defaults apply."""
+    addresses.lock(conn, normalized)
+    taken = conn.execute(
+        select(t.notification_settings.c.human_id).where(
+            t.notification_settings.c.address_normalized == normalized
+        )
+    ).first()
+    if taken is not None:
+        return False
+    now = clock.now()
+    try:
+        with conn.begin_nested():
+            conn.execute(
+                insert(t.notification_settings).values(
+                    human_id=human_id,
+                    preferences={},
+                    address=normalized,
+                    address_normalized=normalized,
+                    address_status="verified",
+                    verified_at=now,
+                    epoch=0,
+                    hard_failures=0,
+                    updated_at=now,
+                )
+            )
+    except IntegrityError:  # the unique constraint caught what the lock did not
+        return False
+    return True
+
+
+def has_verified_address(conn: Connection, normalized: str) -> bool:
+    """Whether an account holds `normalized` as its verified address (§18.4)."""
+    return (
+        conn.execute(
+            select(t.notification_settings.c.human_id).where(
+                t.notification_settings.c.address_normalized == normalized
+            )
+        ).first()
+        is not None
+    )
 
 
 def decide_held(

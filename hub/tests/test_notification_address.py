@@ -365,3 +365,43 @@ def test_one_account_per_address(make_client: ClientFactory, migrated: Engine) -
         second.client.post(f"/mail/verify/{link(outbox_rows(migrated)[-1], 'verify')}").status_code
         == 200
     )
+
+
+# --- a registration claims its address (§2.7.1) -----------------------------------------
+
+
+def test_a_registration_claims_its_address_once(migrated: Engine) -> None:
+    from maity_hub import registration_accounts
+
+    first = factory.human(migrated, "first")
+    second = factory.human(migrated, "second")
+    with migrated.begin() as conn:
+        assert registration_accounts.claim_address(conn, "ada@example.com", first) is True
+        assert registration_accounts.claim_address(conn, "ada@example.com", second) is False
+        assert preferences.has_verified_address(conn, "ada@example.com") is True
+        assert preferences.has_verified_address(conn, "grace@example.com") is False
+        view = preferences.view(conn, first, True)["email"]
+    assert (view["address"], view["address_status"]) == ("ada@example.com", "verified")
+    assert view["verified_at"] is not None and view["hard_failures"] == 0
+    with migrated.begin() as conn:  # the loser has no settings row and no address
+        assert (
+            conn.execute(
+                select(t.notification_settings).where(t.notification_settings.c.human_id == second)
+            ).first()
+            is None
+        )
+
+
+def test_a_claimed_address_blocks_a_verification_for_another_account(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    from maity_hub import registration_accounts
+
+    holder = factory.human(migrated, "holder")
+    with migrated.begin() as conn:
+        assert registration_accounts.claim_address(conn, "shared@example.org", holder)
+    owner = with_mail(make_client, migrated)
+    owner.patch(S, {"email": {"address": "Shared@Example.org"}})
+    token = link(outbox_rows(migrated)[-1], "verify")
+    assert owner.client.post(f"/mail/verify/{token}").status_code == 404
+    assert owner.get(S).json()["email"]["address"] is None

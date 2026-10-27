@@ -65,12 +65,10 @@ class Completion:
 
 def claim_address(conn: Connection, normalized: str, human_id: str) -> bool:
     """Write the address as the account's verified address (§18.4), unique across the
-    accounts; False when another account holds it. Fails closed: until the verified
-    address is stored, no completion can claim one, so none creates an account."""
-    # TODO(#280): insert the verified address under the unique normalized-address
-    # constraint of §18.4 and answer False when it refuses.
-    del conn, normalized, human_id
-    return False
+    accounts; False when another account holds it."""
+    from maity_hub.notifications import preferences
+
+    return preferences.claim_verified(conn, normalized, human_id)
 
 
 def admitted(
