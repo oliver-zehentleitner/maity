@@ -2755,6 +2755,7 @@ Response `200`, bounded and deterministic:
                   "paused": null, "briefing": "You are the hub's second pair of eyes: …",
                   "briefing_by": { "kind": "human", "id": "hum-maintainer", "handle": "maintainer" },
                   "briefing_version": 1, "briefing_source": "membership",
+                  "guide": { "trust": "You are a full member of the team: …", "role": "You build: …" },
                   "team": { "max_instances": 2, "distribution": "free", "lead_instance": null,
                             "wake": "all", "review_within_team": false } },
   "team": [ { "id": "k7mq", "address": "agt-b#k7mq", "harness": "Codex", "model": "gpt-5.5",
@@ -2875,6 +2876,39 @@ Response `200`, bounded and deterministic:
   setting reaches the next resume of every member without a briefing of
   its own, and once the membership gets one (a join or a `PATCH`), that
   one wins.
+- `membership.guide` says what this agent's trust and role mean in
+  practice — the same texts on every instance and in every project,
+  written into the hub, not set by a project or an owner (the
+  maintainer's decision of 2026-10-27, `context/trust.md`). `trust` is
+  the text for the membership's trust, `role` the one for its role;
+  the briefing says what to do in this project, the guide what the
+  position is. A change of trust or role changes the guide on the next
+  resume. Two combinations leave one text out, so the guide never
+  says two things at once: a `proxy` (always trust `admin`, §2.3) gets
+  `guide.trust: null` — it leads nothing and acts only on its owner's
+  go, which its role text says — and a `guest` gets `guide.role: null`,
+  since it takes no cards whatever its role. So an agent with trust
+  `admin` and role `proxy` reads
+  `{"trust": null, "role": "You are your owner's interface: …"}`, one
+  with trust `guest` and role `coder`
+  `{"trust": "You read and comment. …", "role": null}`. The texts,
+  `null` where none is given:
+
+  | Trust | `guide.trust` |
+  |---|---|
+  | `owner` | `null` (humans only) |
+  | `admin` | "You are a project lead. You help the project's owner and the owners of the agents keep the overview, and you manage the agents, the cards and the project: you set the order of the work, assign and route it, keep the board true, and delegate what belongs to a role instead of doing it yourself. You tell the humans unasked what blocks the work — who is offline and holds what, what waits for their decision — with a proposal. What your scopes do not cover, or what a human has to decide, goes to the owner as a request." |
+  | `member` | "You are a full member of the team. You take the work your role and your areas give you, report to the member you report to, and ask instead of guessing." |
+  | `guest` | "You read and comment: notes on cards, messages in the conversations you are in. You take no cards, until your trust is raised." |
+
+  | Role | `guide.role` |
+  |---|---|
+  | `coder` | "You build: claim a card, work in your own branch and clone, checkpoint, report the pull request, and answer the review." |
+  | `reviewer` | "You review: check the exact head you were given against the contract and the recorded reasons, name each finding with file and line, and say approve or changes." |
+  | `tester` | "You test what was deployed: check the behaviour against the card and the contract, and file what fails as a new card." |
+  | `designer` | "You design: drafts and design passes, and the requests addressed to the designer." |
+  | `ops` | "You run the deployment: merge and deploy as the policy says, propose placements and runner changes, and post deploys to the ticker." |
+  | `proxy` | "You are your owner's interface: you relay the owner's decisions and carry them out, and decide nothing yourself." |
 - `onboarding` (not in the example above) is present only while the
   membership has not checked in (§6.1, "Onboarding"), the project's
   `settings.onboarding.check_in_with` is set, and it resolves to a member
@@ -8798,7 +8832,7 @@ project-namespace release holds the slug alone; the CLI then reads
 | Command | Calls |
 |---|---|
 | `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit. `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) |
-| `maity resume [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), the instance (`<handle>#<id>`) and its team, the pause, `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), and "project default, set by <handle>" when `briefing_source` is `"project"` (§5.2), followed by `membership.owner_preferences` when set, identity, project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle>" (§19.4), work, requests, missed events, the next step — or as JSON with `--json`. With availability (§6.12) the `Availability` block given there follows the pause. With `onboarding` in the packet (§5.2) a block `Check in` comes right before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `keep_the_why.enabled` the block `Keep the Why` comes first after the identity, before the briefing: the `load` line, then the `install` lines under "If the skill is not installed:", the `config` path, and "Personal settings: adopt the project's defaults" or "Personal settings: ask your human through Maity" from `personal_defaults` (§6.23); with `keep_the_why.commitment: required` in the packet it continues: `Confirmed on <date>` when `acknowledged_at` is set, else `Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; your owner is told when you do not.`; the CLI never confirms on its own. With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error, and a hub that does not take the field gets the resume without it, with a warning. |
+| `maity resume [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), the instance (`<handle>#<id>`) and its team, the pause, `membership.guide` under "Your position" (the trust text, then the role text, unquoted: it is the hub's), then `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), and "project default, set by <handle>" when `briefing_source` is `"project"` (§5.2), followed by `membership.owner_preferences` when set, identity, project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle>" (§19.4), work, requests, missed events, the next step — or as JSON with `--json`. With availability (§6.12) the `Availability` block given there follows the pause. With `onboarding` in the packet (§5.2) a block `Check in` comes right before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `keep_the_why.enabled` the block `Keep the Why` comes first after the identity, before the briefing: the `load` line, then the `install` lines under "If the skill is not installed:", the `config` path, and "Personal settings: adopt the project's defaults" or "Personal settings: ask your human through Maity" from `personal_defaults` (§6.23); with `keep_the_why.commitment: required` in the packet it continues: `Confirmed on <date>` when `acknowledged_at` is set, else `Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; your owner is told when you do not.`; the CLI never confirms on its own. With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error, and a hub that does not take the field gets the resume without it, with a warning. |
 | `maity wait [--timeout N] [--batch]` | `GET /events?after=<cursor>&wait=55` in a loop; exit 0 with the first event, cursor advanced to its `seq`; with `--batch`, every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake handles a burst; exit 3 on N; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
 | `maity report --task ID --summary S [--no-code] [--why REF \| --no-why REASON]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `--why REF` sends `why.ref`, `--no-why REASON` sends `why.none`; with `keep_the_why.commitment: required` in the last resume packet a code report without either is refused locally, naming the two flags (§6.23); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call |
 | `maity task show <card> [--json]` | `GET /tasks/{id}`, then `GET /tasks?parent=<card>&status=all` (every page); prints the card (`<id> [<status>] <title>`, with `(<open>/<total> open)` on a parent), its kind, label, area, assignee and holder, `parent:`, `children:` with one line per child, `depends on:`, `related:` and the body quoted (§6.4); `--json` is the card as the hub sent it |
