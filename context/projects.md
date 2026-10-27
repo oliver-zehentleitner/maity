@@ -297,9 +297,16 @@ rename or a transfer keeps the old full name as an alias that is never
 given away; a request on an alias is served like one on the current
 name. The one-segment API routes are dropped in the same release, hub
 and CLI together, and an older CLI is told `client_outdated` instead of
-being misrouted; badges, the swarm page, the dashboard's `#/p/…` and the
-forge webhook keep their old addresses, because those sit where the hub
-cannot rewrite them.
+being misrouted. That works without guessing because a slug may never be
+one of the words that follow a project in a route, so an old path always
+shows a route word where a new one has a slug; for the same reason the
+dashboard's own route words are reserved as handles. Badges, the swarm
+page, the dashboard's `#/p/…` and the forge webhook keep their old
+addresses, because those sit where the hub cannot rewrite them, and
+answer an unknown or unserved slug exactly as before, so they reveal no
+project. A transfer needs the receiver's consent, and the namespace
+owner cannot be demoted or removed while the project lives under their
+name.
 
 **Reason:** with self-registration on maity.team an instance-wide slug
 would let the first comer own `shop` or `blog` for everyone, the
