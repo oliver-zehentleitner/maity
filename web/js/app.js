@@ -27,8 +27,9 @@ window.Maity = window.Maity || {};
     // One card (#/p/<slug>/tasks/<id>, an id's link, js/ids.js): the board
     // with that card marked; its tab is the board's.
     { route: "tasks", view: "board", label: "Board", tab: false, current: "board", watch: /^task_/, changed: "The board changed." },
-    { route: "agents", label: "Agents", watch: /^(member_|session_|credential_)/, changed: "The agents changed." },
-    { route: "members", label: "Members", watch: /^member_/, changed: "The members changed." },
+    // No tab: the agents are in Members (tsk-7v2snhk002ak); old links lead there.
+    { route: "agents", label: "Agents", tab: false },
+    { route: "members", label: "Members", watch: /^(member_|session_|credential_)/, changed: "The members changed." },
     { route: "org", label: "Organisation", watch: /^member_/, changed: "The organisation changed." },
     { route: "chat", label: "Chat" },
     // Redrawn in place from the feed (js/messages.js).

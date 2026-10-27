@@ -75,7 +75,9 @@ window.Maity = window.Maity || {};
   // args[0]: a member to show (#/p/<slug>/members/<id>, a mention's link):
   // its row is marked and takes the focus.
   M.views.members = async function (ctx, root, args) {
-    const wanted = args && args[0];
+    // "join" asks for the join panel open (#/p/<slug>/members/join).
+    const joinAsked = !!(args && args[0] === "join");
+    const wanted = joinAsked ? null : args && args[0];
     const status = M.statusLine();
     const box = h("div", { class: "members-box" });
     // Rows open for managing stay open across a redraw.
@@ -353,7 +355,7 @@ window.Maity = window.Maity || {};
       // An agent's card is on the Agents view; one's own agent also has a chat.
       const mine = m.kind === "agent" && m.owner_id === ctx.me.id;
       return h("th", { scope: "row", role: "rowheader", "data-label": "Name", tabindex: m.id === wanted ? "-1" : null },
-        h("span", { class: "member-name" }, M.dom.memberRef(ctx, m.id)), h("span", { class: "muted" }, " @" + M.dom.handleOf(ctx, m)),
+        h("span", { class: "member-name" }, M.dom.memberRef(ctx, m.id, { avatar: 20 })), h("span", { class: "muted" }, " @" + M.dom.handleOf(ctx, m)),
         m.kind === "human" && !m.removed_at && m.language
           ? h("p", { class: "muted member-language" }, "Language: " + (m.language === "de" ? "Deutsch" : "English")) : null,
 
@@ -362,11 +364,12 @@ window.Maity = window.Maity || {};
         mine ? h("span", { class: "member-links" }, " · ", h("a", { href: ctx.link("chat", m.id) }, "Chat")) : null);
     }
 
-    function table(kind, list, columns) {
+    // heading: false where the heading stands apart (the agents', with Add).
+    function table(kind, list, columns, heading) {
       const label = kind === "human" ? "Humans" : "Agents";
       const withActions = ctx.canAdmin || list.some(ownAgent);
       const headingId = "members-" + kind;
-      return [h("h3", { id: headingId }, label + " (" + list.length + ")"),
+      return [heading === false ? null : h("h3", { id: headingId }, label + " (" + list.length + ")"),
         h("div", { class: "table-wrap", tabindex: "0", role: "region", "aria-labelledby": headingId },
           h("table", { class: "members", role: "table", "aria-labelledby": headingId },
             h("thead", { role: "rowgroup" }, h("tr", { role: "row" },
@@ -414,11 +417,39 @@ window.Maity = window.Maity || {};
       const creds = { title: "Credentials", cell: (m) => credentialsText(m.credentials) };
       const ktw = { title: "Keep the Why", cell: ktwCell };
       const hasKtw = agents.some((m) => "keep_the_why_unconfirmed" in m);
-      append(clear(box),
-        table("human", humans, [role, presence, joined]),
-        agents.length
-          ? table("agent", agents, [role, owner, presence, joined, paused].concat(hasKtw ? [ktw] : [], hasCreds ? [creds] : []))
-          : [h("h3", null, "Agents (0)"), h("p", { class: "muted" }, "No agents yet. ", ctx.canAdmin ? h("a", { href: ctx.link("join") }, "Join one.") : null)]);
+      append(clear(box), table("human", humans, [role, presence, joined]));
+      agentsHeading.textContent = "Agents (" + agents.length + ")";
+      append(clear(agentsBox), agents.length
+        ? table("agent", agents, [role, owner, presence, joined, paused].concat(hasKtw ? [ktw] : [], hasCreds ? [creds] : []), false)
+        : h("p", { class: "muted" }, "No agents yet.", ctx.canAdmin && M.join ? " Add one: its line is made here." : ""));
+      drawJoins();
+    }
+
+    // Joining (docs/api.md §3.1, js/join.js), for whom may create joins:
+    // Add at the head of the agents' table opens the panel under it; the
+    // open joins stand as seats under the table, the others folded after
+    // the placements. The panel, its form and a line shown once live
+    // outside the redrawn table, so a redraw loses neither.
+    const agentsHeading = h("h3", { id: "members-agent" }, "Agents");
+    const addButton = h("button", { type: "button", class: "primary join-open" }, "+ Add an agent");
+    const agentsBox = h("div", { class: "members-agents" });
+    const seatsBox = h("div", { class: "profiles join-seats" });
+    const earlierBox = h("div", { class: "earlier-box" });
+    let J = null;
+    // How many agents, online, and joins open, under the agents' heading.
+    const countLine = h("p", { class: "muted agents-count" });
+    function drawCount() {
+      const agents = items.filter((m) => m.kind === "agent");
+      const open = J ? J.openCount() : 0;
+      countLine.textContent = agents.length + (agents.length === 1 ? " agent" : " agents") + " · "
+        + agents.filter((m) => m.presence === "online").length + " online"
+        + (J ? " · " + open + (open === 1 ? " open join" : " open joins") : "");
+    }
+    function drawJoins() {
+      drawCount();
+      if (!J) return;
+      append(clear(seatsBox), J.seats());
+      append(clear(earlierBox), J.earlier());
     }
 
     append(root, h("h2", null, "Members"),
@@ -426,6 +457,41 @@ window.Maity = window.Maity || {};
         + (ctx.canAdmin ? " Manage a row to change its role, see and revoke an agent's credentials, edit its briefing, pause it or remove a member."
           : ctx.members.some(ownAgent) ? " Your own agents' Details show their credentials and whether they get your preferences." : "")),
       status.el, box);
+    // The join panel is read beside the list, not before it: the rows and
+    // a member asked for by the URL never wait for the joins.
+    const panelSlot = h("div", { class: "join-panel-slot" });
+    addButton.hidden = true;
+    append(root, h("div", { class: "toolbar agents-head" }, agentsHeading, addButton), countLine, panelSlot, agentsBox, seatsBox);
+    if (ctx.canAdmin && M.join) {
+      M.join.mount(ctx, {
+        changed: drawJoins,
+        opened: (yes) => { addButton.hidden = yes; if (!yes) addButton.focus(); },
+      }).then((mounted) => {
+        J = mounted;
+        addButton.hidden = false;
+        addButton.addEventListener("click", () => J.open(addButton));
+        append(panelSlot, J.panel, J.listStatus.el);
+        drawJoins();
+        // Asked for, or no agent yet: the panel is the way in, open at once.
+        if (joinAsked || !items.some((m) => m.kind === "agent")) J.open(addButton);
+      }, (err) => append(panelSlot, h("p", { class: "send-status failed" }, "Could not read the joins: " + err.message)));
+      // An agent running its line takes its seat: the list is read again,
+      // unless the panel is open; then only the seats move.
+      ctx.onEvents((events) => {
+        if (!J || !events.some((e) => e.kind === "member_joined")) return;
+        if (J.busy()) J.reread();
+        else reload().then(() => redraw(), () => {});
+      });
+    }
+    // Where the agents run (js/placements.js), where the hub has placements.
+    const placementsSlot = h("div", { class: "placements-slot" });
+    append(root, placementsSlot, earlierBox);
+    if (M.placements) {
+      const agentsNow = items.filter((m) => m.kind === "agent");
+      Promise.all(agentsNow.map((m) => (M.agentParts ? M.agentParts.loadCredentials(ctx, m) : Promise.resolve({ list: { items: [] } }))))
+        .then((creds) => M.placements.section(ctx, Object.fromEntries(agentsNow.map((m, i) => [m.id, (creds[i].list && creds[i].list.items) || []]))))
+        .then((placed) => { if (placed) append(placementsSlot, placed); }, () => {});
+    }
     draw();
     // Inviting a person (§3.4), below the members, for a human with members:admin.
     if (M.invite) {
@@ -438,7 +504,8 @@ window.Maity = window.Maity || {};
     // A member asked for by the URL: its row takes the focus once the view is
     // in the page; an id that is no member here is said.
     if (wanted) {
-      const row = Array.from(box.querySelectorAll("tr.member")).find((tr) => tr.getAttribute("data-member") === wanted);
+      const row = Array.from(box.querySelectorAll("tr.member")).concat(Array.from(agentsBox.querySelectorAll("tr.member")))
+        .find((tr) => tr.getAttribute("data-member") === wanted);
       const th = row && row.childNodes[0];
       if (th) window.setTimeout(() => th.focus(), 0);
       else append(status.el, h("span", null, "No member with the id " + wanted + " in this project."));

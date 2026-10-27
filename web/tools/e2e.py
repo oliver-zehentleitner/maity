@@ -417,7 +417,7 @@ def create_project(run: Run, page: Page, name: str, slug: str) -> None:
     page.get_by_label("Name").fill(name)
     expect(page.get_by_label("Slug")).to_have_value(slug)  # proposed from the name
     page.get_by_role("button", name="Create project", exact=True).click()
-    expect(page).to_have_url(re.compile(rf"#/p/{slug}/agents$"))
+    expect(page).to_have_url(re.compile(rf"#/p/{slug}/members$"))
     expect(page.locator("header .project")).to_have_text(name)
 
 
@@ -429,9 +429,9 @@ def join_line(
     display: str = "E2E Agent",
     role: str = "member",
 ) -> tuple[str, str]:
-    """Create a join line in Agents' join panel; a new profile when handle is given."""
-    view_tab(page, "Agents").click()
-    expect(page).to_have_url(re.compile(rf"#/p/{slug}/agents$"))
+    """Create a join line in the join panel on Members; a new profile when handle is given."""
+    view_tab(page, "Members").click()
+    expect(page).to_have_url(re.compile(rf"#/p/{slug}/members$"))
     # A project without agents opens the panel itself; otherwise the title row's
     # button does. Wait for the view to be drawn (its count line comes with the
     # panel and the button) before looking: an instant is_visible() on a view
@@ -439,7 +439,7 @@ def join_line(
     expect(page.locator(".agents-count")).to_be_visible()
     panel = page.locator(".join-panel")
     if not panel.is_visible():
-        page.get_by_role("button", name="+ Join an agent", exact=True).click()
+        page.get_by_role("button", name="+ Add an agent", exact=True).click()
     expect(panel).to_be_visible()
     if handle:
         page.locator("#join-agent").select_option("")  # "A new agent profile…"
@@ -603,9 +603,9 @@ def scenario(run: Run, page: Page) -> None:
     )
     agent_id = re.search(r"agt-[0-9a-z]+", out).group(0)
     print(f"   joined as {agent_id}")
-    view_tab(page, "Agents").click()
-    expect(page).to_have_url(re.compile(r"#/p/e2e-alpha/agents$"))
-    agents = page.locator("main section.view-agents")
+    view_tab(page, "Members").click()
+    expect(page).to_have_url(re.compile(r"#/p/e2e-alpha/members$"))
+    agents = page.locator("main .members-agents")
     expect(agents).to_contain_text("@e2e-agent")
     expect(agents).to_contain_text("member")
     expect(agents).to_contain_text("Online")
@@ -828,7 +828,6 @@ def scenario(run: Run, page: Page) -> None:
     tabs = (
         ("inbox", "Inbox"),
         ("board", "Board"),
-        ("agents", "Agents"),
         ("members", "Members"),
         ("org", "Organisation"),
     )
@@ -853,8 +852,6 @@ def scenario(run: Run, page: Page) -> None:
         # Revoke keeps its label on one line: one line box for its text.
         lines = page.evaluate(ONE_LINE_JS, ".credentials button, .seat-actions button")
         assert all(n == 1 for n in lines), f"{view}: a Revoke label wraps ({lines} lines)"
-        if view == "agents":
-            assert lines, "agents: no Revoke button to measure"
         run.shot(page, f"phone-{view}")
         run.problems = [p for p in run.problems if "/keep-the-why answered 409" not in p]
     # The create form: its preset select has long option labels.
@@ -1161,20 +1158,18 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     expect(page.get_by_role("heading", name="Chat with E2E Agent", exact=True)).to_be_visible()
 
     run.step("pause: the owner pauses the agent; the agent cannot lift it itself")
-    view_tab(page, "Agents").click()
-    agents = page.locator("main section.view-agents")
-    # The pause form is folded behind the card's Actions menu.
-    card = agents.locator("article.profile", has=page.locator(f"#pause-{agent_id}"))
-    card.get_by_role("button", name="Actions", exact=True).click()
-    page.get_by_role("menuitem", name="Pause…", exact=True).click()
-    expect(page.locator(f"#pause-{agent_id}")).to_be_focused()
-    form = card.locator("form.pause")
+    # The pause is in the agent's row on Members (tsk-7v2snhk002ak), once.
+    view_tab(page, "Members").click()
+    agents = page.locator("main .members-agents")
+    agents.get_by_role("button", name="Manage E2E Agent", exact=True).click()
+    form = agents.locator("form.member-pause")
     expect(form).to_contain_text(
         "A pause tells the agent at once and refuses it new work (claims, new cards)"
     )
-    page.locator(f"#pause-{agent_id}").fill("e2e: hold on")
+    page.locator(f"#member-pause-{agent_id}").fill("e2e: hold on")
     form.get_by_role("button", name="Pause", exact=True).click()
-    expect(agents).to_contain_text("by Owner: e2e: hold on")
+    expect(agents).to_contain_text("paused by Owner")
+    expect(agents).to_contain_text("e2e: hold on")
     expect(agents).to_contain_text("The agent was told at once and gets no new work")
     expect(agents.get_by_role("button", name="Clear pause", exact=True)).to_be_visible()
     run.shot(page, "paused")
@@ -1189,14 +1184,13 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
         "membership"
     ]
     page.reload()
-    expect(agents).to_contain_text("by Owner: e2e: hold on")  # still paused after its resume
+    expect(agents).to_contain_text("e2e: hold on")  # still paused after its resume
+    agents.get_by_role("button", name="Manage E2E Agent", exact=True).click()
     agents.get_by_role("button", name="Clear pause", exact=True).click()
-    # Cleared: no Clear pause, and the pause is offered again from the card's Actions menu, folded.
+    # Cleared: no Clear pause, the pause form offered again in the row.
     expect(agents.get_by_role("button", name="Clear pause", exact=True)).to_have_count(0)
-    expect(card.locator("form.pause")).to_be_hidden()
-    card.get_by_role("button", name="Actions", exact=True).click()
-    expect(page.get_by_role("menuitem", name="Pause…", exact=True)).to_be_visible()
-    page.keyboard.press("Escape")
+    expect(agents.locator("form.member-pause")).to_be_visible()
+    agents.get_by_role("button", name="Done managing E2E Agent", exact=True).click()
 
     def own_pause() -> dict | None:
         # The agent's own pause is its instance's (§6.17); the membership's stays clear.
@@ -1324,7 +1318,7 @@ def tiny_png(width: int, height: int, rgb: tuple[int, int, int]) -> bytes:
 def images_step(run: Run, page: Page, alpha: Path) -> None:
     """The project's logo and banner (docs/api.md §11.2) where the hub has them."""
     project = run.api(alpha, "GET", "/projects/e2e-alpha")
-    page.goto(f"{run.base}/#/p/e2e-alpha/agents")
+    page.goto(f"{run.base}/#/p/e2e-alpha/members")
     chip = page.locator("nav.switcher a", has_text="E2E Alpha")
     if "logo" not in project:
         run.step("images: this hub has no logos yet, so the dashboard draws monograms")
@@ -1460,7 +1454,7 @@ def pair_exchange(run: Run, pair_line: str) -> tuple[int, dict, str]:
 
 def runners_step(run: Run, page: Page) -> None:
     """The instance-level Runners view (docs/api.md §15.2, §15.3) against the hub."""
-    page.goto(f"{run.base}/#/p/e2e-alpha/agents")
+    page.goto(f"{run.base}/#/p/e2e-alpha/members")
     # Runners are the person's: in the gear menu, not the project row (tsk-cb6myw32def0).
     expect(page.locator("nav.switcher").get_by_role("link", name="Runners", exact=True)).to_have_count(0)
     page.locator("header").get_by_role("button", name="Settings", exact=True).click()
@@ -1643,7 +1637,7 @@ def ticker_step(run: Run, page: Page) -> None:
     paths = page.request.get(f"{run.base}/api/v1/openapi.json").json().get("paths", {})
     # FastAPI lists the paths under the router prefix; either form counts, as in the CLI.
     has_ticker = "/projects/{slug}/ticker" in paths or "/api/v1/projects/{slug}/ticker" in paths
-    page.goto(f"{run.base}/#/p/e2e-alpha/agents")
+    page.goto(f"{run.base}/#/p/e2e-alpha/members")
     view_tab(page, "Ticker").click()
     expect(page).to_have_url(re.compile(r"#/p/e2e-alpha/ticker$"))
     main = page.locator("main section.view-ticker")
@@ -1679,7 +1673,7 @@ def ticker_step(run: Run, page: Page) -> None:
 
 def overview_step(run: Run, page: Page) -> None:
     """The project at a glance (docs/api.md §6.11): links, members, counts that link on."""
-    page.goto(f"{run.base}/#/p/e2e-alpha/agents")
+    page.goto(f"{run.base}/#/p/e2e-alpha/members")
     view_tab(page, "Overview").click()
     expect(page).to_have_url(re.compile(r"#/p/e2e-alpha/overview$"))
     main = page.locator("main")
@@ -1748,7 +1742,7 @@ def message_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
 
 def project_runners_step(run: Run, page: Page, name: str, attached: bool) -> None:
     """Project → Runners (docs/api.md §15.4): allow and detach a paired runner."""
-    page.goto(f"{run.base}/#/p/e2e-alpha/agents")
+    page.goto(f"{run.base}/#/p/e2e-alpha/members")
     view_tab(page, "Runners").click()
     expect(page).to_have_url(re.compile(r"#/p/e2e-alpha/runners$"))
     view = page.locator("main section.view-runners")
@@ -1826,7 +1820,7 @@ def notifications_step(run: Run, page: Page) -> None:
 def why_step(run: Run, page: Page, alpha: Path) -> None:
     """The Keep the Why export (docs/api.md §11.3) where the hub has it."""
     project = run.api(alpha, "GET", "/projects/e2e-alpha")
-    page.goto(f"{run.base}/#/p/e2e-alpha/agents")
+    page.goto(f"{run.base}/#/p/e2e-alpha/members")
     tab = view_tab(page, "Why")
     if "keep_the_why_export" not in project:
         run.step("why: this hub has no Keep the Why export, so there is no Why tab")
@@ -2023,7 +2017,7 @@ def signing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     if "signing" not in (project.get("policy") or {}):
         run.step("signing: this hub has no signing policy, so the dashboard offers no switch")
         # Agents, not the inbox: the next step reaches the inbox through its tab.
-        page.goto(f"{run.base}/#/p/e2e-alpha/agents")
+        page.goto(f"{run.base}/#/p/e2e-alpha/members")
         project_settings(page)
         expect(page.locator("#state-select")).to_be_visible()
         expect(page.locator("#signing-select")).to_have_count(0)
@@ -2034,8 +2028,10 @@ def signing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     )
     status, _ = bearer_get(run, alpha, "/me")
     assert status == 200, status
-    page.goto(f"{run.base}/#/p/e2e-alpha/agents")
-    expect(page.locator("main section.view-agents")).to_contain_text("(bearer token)")
+    # The credentials are in the agent's row on Members (tsk-7v2snhk002ak).
+    page.goto(f"{run.base}/#/p/e2e-alpha/members")
+    page.locator("main .members-agents").get_by_role("button", name="Manage E2E Agent", exact=True).click()
+    expect(page.locator("main tr.member-manage")).to_contain_text("(bearer token)")
     project_settings(page)
     page.locator("#signing-select").select_option("required")
     impact = page.locator(".signing-impact")
@@ -2106,8 +2102,8 @@ def join_expiry_step(run: Run, page: Page) -> None:
     watch_page(run, second)
     second.clock.install()
     second.goto(f"{run.base}/#/p/e2e-alpha/join")
-    # A direct navigation: the old route lands on Agents with the panel open, the focus in its first field.
-    expect(second).to_have_url(re.compile(r"#/p/e2e-alpha/agents/join$"))
+    # A direct navigation: the old route lands on Members with the panel open, the focus in its first field.
+    expect(second).to_have_url(re.compile(r"#/p/e2e-alpha/members/join$"))
     expect(second.locator("#join-agent")).to_be_focused()
     # A new profile: the existing one is a member here already.
     second.locator("#join-agent").select_option("")
@@ -2334,14 +2330,17 @@ def briefing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     """The briefing (docs/api.md §3, §6.2) where the hub knows it; otherwise nothing offered."""
     members = run.api(alpha, "GET", "/projects/e2e-alpha/members")["items"]
     own = next(m for m in members if m["id"] == agent_id)
-    agents = page.locator("main section.view-agents")
+    # The briefing is in the agent's row on Members (tsk-7v2snhk002ak).
+    agents = page.locator("main .members-agents")
     page.reload()
     expect(agents).to_contain_text("@e2e-agent")
+    agents.get_by_role("button", name="Manage E2E Agent", exact=True).click()
+    expect(agents.locator("tr.member-manage")).to_be_visible()
     if "briefing" not in own:
         run.step("briefing: this hub has none yet, so the dashboard offers none")
         expect(agents.locator(".briefing")).to_have_count(0)
         return
-    run.step("briefing: the owner writes it on the agent's card; the agent's resume carries it")
+    run.step("briefing: the owner writes it in the agent's row; the agent's resume carries it")
     agents.locator(".briefing").get_by_role("button", name=re.compile("briefing$")).click()
     page.locator(f"#briefing-{agent_id}").fill("You test the dashboard. First: the e2e card.")
     page.get_by_role("button", name="Save briefing", exact=True).click()

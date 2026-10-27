@@ -1,4 +1,4 @@
-// Joining an agent, inside the Agents view (js/agents.js): a panel that
+// Joining an agent, inside the Members view (js/members.js): a panel that
 // creates a join for one of the human's agent profiles (or a new one) and
 // shows the paste line once (docs/api.md §3.1); the open joins as seats at
 // the front of the agents' grid; the others folded at the view's end. The
@@ -480,10 +480,9 @@ window.Maity = window.Maity || {};
   }
 
   M.join = { mount };
-  // #/p/<slug>/join, from before joining moved into Agents: the same place, panel open.
+  // #/p/<slug>/join, from before joining moved: Members, the panel open.
   M.views.join = async function (ctx, root) {
-    const there = "#/p/" + encodeURIComponent(ctx.slug) + "/agents/join";
-    if (window.history && window.history.replaceState) window.history.replaceState(null, "", there);
-    await M.views.agents(ctx, root, ["join"]);
+    if (window.history && window.history.replaceState) window.history.replaceState(null, "", ctx.link("members", "join"));
+    await M.views.members(ctx, root, ["join"]);
   };
 })(window.Maity);
