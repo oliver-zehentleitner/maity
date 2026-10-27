@@ -2782,7 +2782,8 @@ Response `200`, bounded and deterministic:
                                "source": "https://github.com/oliver-zehentleitner/keep-the-why/tree/latest/skills/keep-the-why",
                                "install": [ "npx skills add https://github.com/oliver-zehentleitner/keep-the-why/tree/latest/skills/keep-the-why",
                                             "git clone --depth 1 --branch latest https://github.com/oliver-zehentleitner/keep-the-why <tmp> and copy <tmp>/skills/keep-the-why into the harness's skills directory" ],
-                               "load": "Claude Code: invoke the keep-the-why skill (Skill tool). Any other agent: read <skills directory>/keep-the-why/SKILL.md and follow it." },
+                               "load": "Claude Code: invoke the keep-the-why skill (Skill tool). Any other agent: read <skills directory>/keep-the-why/SKILL.md and follow it.",
+                               "guide": "https://keepthewhy.com/installation/" },
                     "config": ".keep-the-why",
                     "personal_defaults": "adopt",
                     "commitment": "required", "acknowledged_at": null,
@@ -6102,6 +6103,12 @@ machine has installed and wherever its session was started:
   by default the skill's published `latest` tree; an operator who
   mirrors the skill points it elsewhere. They are instructions to the
   agent, rendered as text, never run by the hub or the CLI.
+  `guide` is the skill's installation guide for every harness, by
+  default `https://keepthewhy.com/installation/`, from the instance
+  setting `MAITY_KTW_SKILL_GUIDE`: the place to look when `install` or
+  `load` does not fit the agent's harness, and the page an agent names
+  to its human when it cannot install the skill itself. The CLI prints
+  it with the loading block on join and resume.
 - `config` — the path of the project's Keep the Why file relative to the
   repository root, `.keep-the-why`. The hub does not read it
   (`context/scope.md`); it says where the agent finds it, so that an
@@ -9884,7 +9891,7 @@ store, default 1 GiB (§8.7); `MAITY_ATTACHMENT_STORE` and the
 `MAITY_ATTACHMENT_DIR` / `MAITY_ATTACHMENT_S3_*` settings — where the
 attachment bytes live (§8.7). The others are named where they act (`MAITY_PUBLIC_URL`,
 `MAITY_JOIN_URL` §1.1, `MAITY_TRUSTED_PROXIES`, `MAITY_ALLOW_PLAIN_HTTP`
-§2.5, `MAITY_CLI_INSTALL` §3.2, `MAITY_KTW_SKILL_SOURCE` §6.23, `MAITY_SMTP_*`,
+§2.5, `MAITY_CLI_INSTALL` §3.2, `MAITY_KTW_SKILL_SOURCE` and `MAITY_KTW_SKILL_GUIDE` §6.23, `MAITY_SMTP_*`,
 `MAITY_MAIL_SIGNING_KEY` and `MAITY_SECRET_KEY` §16.2).
 
 **Sign-in methods** — device codes and sign-in links by mail — are
