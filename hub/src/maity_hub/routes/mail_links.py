@@ -15,6 +15,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import Connection, select
 
+from maity_hub import clock
 from maity_hub import tables as t
 from maity_hub.deps import engine_of, settings_of
 from maity_hub.notifications import preferences, tokens
@@ -24,6 +25,10 @@ page_router = APIRouter()
 
 _WORDS = {
     "en": {
+        "verify_title": "Confirm your address",
+        "verify_text": "Confirm that Maity may send mail to {address}.",
+        "verify_button": "Confirm",
+        "verify_done": "The address is confirmed.",
         "unsub_title": "Stop these mails",
         "unsub_text": "Stop the {kind} mails from Maity.",
         "unsub_button": "Stop these mails",
@@ -31,6 +36,10 @@ _WORDS = {
         "dead": "This link no longer works.",
     },
     "de": {
+        "verify_title": "Adresse bestätigen",
+        "verify_text": "Bestätige, dass Maity Mails an {address} schicken darf.",
+        "verify_button": "Bestätigen",
+        "verify_done": "Die Adresse ist bestätigt.",
         "unsub_title": "Diese Mails abbestellen",
         "unsub_text": "Die {kind}-Mails von Maity abbestellen.",
         "unsub_button": "Diese Mails abbestellen",
@@ -71,6 +80,42 @@ def _language(conn: Connection, request: Request, token: str) -> str:
 def _dead(words: dict[str, str]) -> HTMLResponse:
     """Invalid, expired or used: one page, `not_found`, never which (§18.6)."""
     return _page(words["dead"], words["dead"], status=404)
+
+
+@page_router.get("/mail/verify/{token}")
+def verify_page(token: str, request: Request) -> HTMLResponse:
+    hub = settings_of(request)
+    with engine_of(request).begin() as conn:
+        words = _WORDS[_language(conn, request, token)]
+        payload = tokens.read(hub.mail.signing_key, token) or {}
+        row = None
+        if payload.get("p") == "verify":
+            row = conn.execute(
+                select(t.notification_settings).where(
+                    t.notification_settings.c.human_id == str(payload.get("h"))
+                )
+            ).first()
+        alive = (
+            row is not None
+            and row.pending_nonce == payload.get("n")
+            and row.pending_address == payload.get("a")
+            and row.pending_expires_at is not None
+            and clock.now() < row.pending_expires_at
+        )
+        if not alive:
+            return _dead(words)
+        text = words["verify_text"].format(address=payload.get("a"))
+        return _page(words["verify_title"], text, button=words["verify_button"])
+
+
+@page_router.post("/mail/verify/{token}")
+def verify_confirm(token: str, request: Request) -> HTMLResponse:
+    hub = settings_of(request)
+    with engine_of(request).begin() as conn:
+        words = _WORDS[_language(conn, request, token)]
+        if not preferences.verify(conn, token, hub.mail.signing_key, hub.public_url):
+            return _dead(words)
+        return _page(words["verify_title"], words["verify_done"])
 
 
 @page_router.get("/mail/unsubscribe/{token}")

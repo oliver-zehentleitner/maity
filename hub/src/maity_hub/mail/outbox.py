@@ -21,6 +21,7 @@ from maity_hub import clock
 from maity_hub import tables as t
 from maity_hub.mail import headers, settings, smtp
 from maity_hub.mail.environment import MailEnvironment
+from maity_hub.notifications import records
 
 log = logging.getLogger(__name__)
 
@@ -170,6 +171,7 @@ def _settle(conn: Connection, row: Any, outcome: smtp.Outcome) -> int:
             update(t.mail_outbox).where(t.mail_outbox.c.id == row.id).values(status="sent")
         )
         _count(conn, row.kind, "sent")
+        _delivered(conn, row)
         return 1
     _count(conn, row.kind, "failed")
     permanent = outcome.smtp_code is not None and outcome.smtp_code >= 500
@@ -177,6 +179,7 @@ def _settle(conn: Connection, row: Any, outcome: smtp.Outcome) -> int:
         conn.execute(
             update(t.mail_outbox).where(t.mail_outbox.c.id == row.id).values(status="failed")
         )
+        _hard_failure(conn, row)
         return 0
     attempts = row.attempts + 1
     if clock.now() - row.created_at >= RETRY_FOR:
@@ -195,7 +198,51 @@ def _settle(conn: Connection, row: Any, outcome: smtp.Outcome) -> int:
     return 0
 
 
+HARD_FAILURES = 3
 KEPT = timedelta(days=7)  # what was sent, failed or dropped, then the row goes
+
+
+def _address_row(conn: Connection, row: Any) -> Any:
+    """The human's settings when the mail went to their address in use, else None: a
+    verification link to a pending address counts against no address."""
+    if row.human_id is None:
+        return None
+    found = conn.execute(
+        select(t.notification_settings)
+        .where(t.notification_settings.c.human_id == row.human_id)
+        .with_for_update()
+    ).first()
+    return found if found is not None and found.address == row.recipient else None
+
+
+def _delivered(conn: Connection, row: Any) -> None:
+    """A delivered mail resets the address's count of hard failures (§18.7)."""
+    found = _address_row(conn, row)
+    if found is not None and found.hard_failures:
+        conn.execute(
+            update(t.notification_settings)
+            .where(t.notification_settings.c.human_id == row.human_id)
+            .values(hard_failures=0)
+        )
+
+
+def _hard_failure(conn: Connection, row: Any) -> None:
+    """A permanent failure at `RCPT TO` or `DATA` counts against the address; the third
+    in a row disables it and tells the human in the dashboard (§18.7)."""
+    found = _address_row(conn, row)
+    if found is None or found.address_status != "verified":
+        return
+    failures = found.hard_failures + 1
+    values: dict[str, Any] = {"hard_failures": failures, "updated_at": clock.now()}
+    if failures >= HARD_FAILURES:
+        values.update(address_status="disabled", disabled_at=clock.now())
+    conn.execute(
+        update(t.notification_settings)
+        .where(t.notification_settings.c.human_id == row.human_id)
+        .values(**values)
+    )
+    if failures >= HARD_FAILURES:
+        records.write(conn, row.human_id, "mail_disabled", {"address": found.address})
 
 
 def forget_old(conn: Connection) -> None:
