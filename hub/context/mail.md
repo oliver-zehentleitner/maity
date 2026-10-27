@@ -120,7 +120,7 @@ like the images worker needs no new process for one replica.
 **Status:** active
 **Evidence:** inferred
 **Source:** the coordinator's agreement on making the mail workers safe for a second process (`maity say`, seq 3405), 2026-10-25; the implementation of tsk-s7rktpfc3ejh, folded into the outbox when it was re-cut, 2026-10-27
-**Revisit when:** a second hub replica runs for good and mail volume makes the unused places of a lost race matter, or a mail is found sent twice after a crash mid-send
+**Revisit when:** a mail is found sent twice after a crash mid-send, or the hour's window should slide instead of roll
 **See:** kubernetes.md — 5e42eb26-9883-49e2-89c0-9fe4e6517c62 — as of 2026-10-25
 
 A process takes a row with one conditional UPDATE, from `waiting` (or a
@@ -129,11 +129,12 @@ lapsed `sending`) to `sending`, with `not_before` set to now plus
 sends it; a process that dies mid-send leaves a claim that lapses, and
 the row is taken again. A retry puts the row back to `waiting`.
 
-The budget of the row's kind is decided after the claim, in a transaction of its
-own: what was sent in the last hour plus the claims of that kind still in flight
-that were taken earlier (by their deadline, then by id; the id of a row says
-nothing about when it was claimed, since a retry falls due late). Over it, a security mail is released (`waiting`, five minutes
-on) and a sign-in answer dropped. The settings are read again before every
+The budget of the row's kind is decided in the same transaction as the claim, under a lock on
+that kind's row in `mail_budget` (`kind`, `window_start`, `admitted`): the hour rolls when it
+has passed, and `admitted` grows by one only below the budget. Over it, a security mail is
+released (`waiting`, five minutes on) and a sign-in or registration mail dropped. A retry is
+not admitted again (it was when it first went out); a claim that lapsed is, which errs on the
+side of the budget. The settings are read again before every
 delivery, so `enabled: false` stops the rest of a pass, and a delivery under way
 runs to its end.
 
@@ -151,8 +152,10 @@ part of the outbox from its first version, not a later change on top.
 - Exactly-once delivery: not possible across a crash between the
   server's `250` and the commit; the claim makes it at-least-once and
   one-at-a-time.
-- Checking the budget before the claim, as the first version did: two workers
-  could each see room for the last place while the first was still in the SMTP
-  conversation and both send (found in review, #478). The earliest claim in
-  flight wins instead; a worker that drops out leaves a place unused until the
-  next pass, which is the safe side of a budget.
+- Checking the budget before the claim, then after it by counting what was sent and what is in
+  flight (the first two versions of #478): two workers could both see room for the last place,
+  once by a commit the other had not yet made, once by ordering the claims by id and then by
+  deadline, which a clock that jumps defeats. A counter that is locked, checked and raised in
+  one transaction depends on no commit and no clock.
+- Counting when a mail is sent: the place would be free again for a mail that fails for good;
+  counting when it is admitted keeps a place used, the strict side of a budget against abuse.

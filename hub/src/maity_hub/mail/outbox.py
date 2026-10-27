@@ -15,7 +15,8 @@ import threading
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Connection, Engine, delete, func, insert, select, update
+from sqlalchemy import Connection, Engine, delete, insert, select, update
+from sqlalchemy.exc import IntegrityError
 
 from maity_hub import clock
 from maity_hub import tables as t
@@ -70,18 +71,6 @@ def enqueue(
     return int(key[0])
 
 
-def _sent_last_hour(conn: Connection, kind: str) -> int:
-    return int(
-        conn.execute(
-            select(func.count()).where(
-                t.mail_delivery.c.kind == kind,
-                t.mail_delivery.c.outcome == "sent",
-                t.mail_delivery.c.at >= clock.now() - timedelta(hours=1),
-            )
-        ).scalar_one()
-    )
-
-
 def _count(conn: Connection, kind: str, outcome: str) -> None:
     conn.execute(insert(t.mail_delivery).values(kind=kind, outcome=outcome, at=clock.now()))
 
@@ -91,10 +80,10 @@ def send_due(engine: Engine, env: MailEnvironment, secret_key: bytes | None) -> 
 
     The settings in effect are read again before every delivery, so `enabled: false` and
     any other change reach the rest of a pass: a delivery under way ends, the rest stays
-    in the queue (§16.2). Each row is claimed first, so of two processes passing over the
-    outbox only one sends it, and the budget of its kind is decided after the claim, with
-    every claim of a lower row still in flight counted as spent: two workers cannot both
-    take the last place of a budget while one of them is in the SMTP conversation."""
+    in the queue (§16.2). A row is claimed and admitted in one transaction: the claim, so
+    of two processes passing over the outbox only one takes it, and the admission, which
+    counts it against the hour's budget of its kind under a lock on that kind's row. No
+    clock and no commit of another worker decides who gets the last place."""
     if _resolved(engine, env, secret_key) is None:
         return 0
     with engine.begin() as conn:
@@ -112,8 +101,12 @@ def send_due(engine: Engine, env: MailEnvironment, secret_key: bytes | None) -> 
         with engine.begin() as conn:
             if not _claim(conn, row.id):
                 continue  # another process took it
-        with engine.begin() as conn:
-            if _over_budget(conn, row, int(resolved.value(BUDGETS[row.kind]))):
+            # A retry was admitted when it first went out; a claim that lapsed is
+            # admitted again, which errs on the side of the budget.
+            attempts = conn.execute(
+                select(t.mail_outbox.c.attempts).where(t.mail_outbox.c.id == row.id)
+            ).scalar_one()
+            if attempts == 0 and not _admit(conn, row.kind, int(resolved.value(BUDGETS[row.kind]))):
                 if row.kind in DROPPED_OVER_BUDGET:
                     _finish(conn, row.id, "dropped")
                     _count(conn, row.kind, "dropped")
@@ -137,28 +130,37 @@ def _resolved(engine: Engine, env: MailEnvironment, secret_key: bytes | None) ->
     return resolved if resolved.complete and resolved.enabled else None
 
 
-def _over_budget(conn: Connection, row: Any, budget: int) -> bool:
-    """Whether the hour's budget of the row's kind is spent: what was sent in the last hour
-    plus the claims of that kind that are in flight and were taken before this one, which
-    will be sent unless they fail. Claims are ordered by when they were taken (their
-    deadline, then the id), not by the id of the row: a retry that falls due late has a low
-    id and a late claim. A claim that lapsed is not counted."""
-    mine = conn.execute(
-        select(t.mail_outbox.c.not_before).where(t.mail_outbox.c.id == row.id)
-    ).scalar_one()
-    earlier = (t.mail_outbox.c.not_before < mine) | (
-        (t.mail_outbox.c.not_before == mine) & (t.mail_outbox.c.id < row.id)
+def _admit(conn: Connection, kind: str, budget: int) -> bool:
+    """Count one mail of `kind` against the hour's budget, if there is room: the kind's row
+    is locked (`FOR UPDATE`; on SQLite the transaction already is), the hour rolls when it
+    has passed, and `admitted` grows by one only below `budget`. Counted when a mail is
+    admitted, not when it is sent: one that then fails for good keeps its place, which is
+    the strict side of a budget against abuse."""
+    now = clock.now()
+    row = conn.execute(
+        select(t.mail_budget).where(t.mail_budget.c.kind == kind).with_for_update()
+    ).first()
+    if row is None:
+        try:
+            with conn.begin_nested():
+                conn.execute(insert(t.mail_budget).values(kind=kind, window_start=now, admitted=0))
+        except IntegrityError:
+            pass  # another worker made it at the same moment
+        row = conn.execute(
+            select(t.mail_budget).where(t.mail_budget.c.kind == kind).with_for_update()
+        ).one()
+    admitted = row.admitted
+    window = row.window_start
+    if now - window >= timedelta(hours=1):
+        window, admitted = now, 0
+    if admitted >= budget:
+        return False
+    conn.execute(
+        update(t.mail_budget)
+        .where(t.mail_budget.c.kind == kind)
+        .values(window_start=window, admitted=admitted + 1)
     )
-    in_flight = conn.execute(
-        select(func.count()).where(
-            t.mail_outbox.c.kind == row.kind,
-            t.mail_outbox.c.status == "sending",
-            t.mail_outbox.c.id != row.id,
-            t.mail_outbox.c.not_before > clock.now(),
-            earlier,
-        )
-    ).scalar_one()
-    return _sent_last_hour(conn, row.kind) + int(in_flight) >= budget
+    return True
 
 
 def _disabled_address(conn: Connection, row: Any) -> bool:
