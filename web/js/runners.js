@@ -17,9 +17,8 @@ window.Maity = window.Maity || {};
   const NAME_PATTERN = M.dom.NAME_RULES.handle.pattern;
   const NAME = M.dom.NAME_RULES.handle.test;
   const NAME_RULE = M.dom.NAME_RULES.handle.text;
-  // Until the CLI is on PyPI it is installed from the repository's cli/,
-  // at its current main; the page says so.
-  const CLI_INSTALL = "pipx install 'git+https://github.com/oliver-zehentleitner/maity.git#subdirectory=cli'";
+  // The CLI as published on PyPI; the runner commands are part of it.
+  const CLI_INSTALL = "pipx install maity";
   const CONFIG_PATH = "~/.config/maity-runner/runner.toml";
 
   // ---- plain words for what a runner advertises (shared with Project → Runners)
@@ -176,8 +175,7 @@ window.Maity = window.Maity || {};
       h("p", null, h("strong", null, "On the machine that should run agents, in a terminal there (not in an agent session):")),
       h("ol", null,
         h("li", null, "Install the Maity CLI:", h("pre", { class: "paste-line" }, CLI_INSTALL), copyButton(() => CLI_INSTALL),
-          h("p", { class: "hint" }, "This installs the repository's current main, which has maity runner pair and maity runner check; "
-            + "maity runner serve and stop-all come with the next runner release, so the runner cannot start agents yet.")),
+          h("p", { class: "hint" }, "This installs the published CLI, which brings maity runner pair, check, serve and stop-all.")),
         config
           ? h("li", null, "Save this configuration as " + CONFIG_PATH + ". It allows the projects you chose and their repositories, "
             + "and one tool, Claude Code; change it as you like.",

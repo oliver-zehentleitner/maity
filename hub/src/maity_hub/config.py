@@ -26,10 +26,8 @@ class ConfigError(ValueError):
     """A setting is present but unusable. The message never contains a credential."""
 
 
-# Until the package is on PyPI; from then on `pipx install maity` (§3.2).
-DEFAULT_CLI_INSTALL = (
-    'pipx install "git+https://github.com/oliver-zehentleitner/maity#subdirectory=cli"'
-)
+# The CLI as published on PyPI (§3.2); a fork points MAITY_CLI_INSTALL at its own.
+DEFAULT_CLI_INSTALL = "pipx install maity"
 
 
 @dataclass(frozen=True)

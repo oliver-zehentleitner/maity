@@ -22,7 +22,7 @@ instead: it covers TLS, backups and upgrades.
 
 ```sh
 pipx install "git+https://github.com/oliver-zehentleitner/maity#subdirectory=hub"
-pipx install "git+https://github.com/oliver-zehentleitner/maity#subdirectory=cli"
+pipx install maity
 ```
 
 This gives you two commands: `maity-hub` (the server and the dashboard)
