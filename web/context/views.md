@@ -1484,3 +1484,29 @@ guess: seqs are the project's, not the chat's, so no guess finds the last
 50. Reading back only: it marks nothing read, so the unread counts
 would never fall. Keeping everything drawn: the DOM of a chat open all
 day grows without bound.
+## The lead is reached by a Lead button beside Chat, not by Chat itself or a strip
+
+**Id:** 0ff66bde-7c26-412a-a856-069b52764910
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish (tsk-g2qe0fyqqmmq, chat 2026-10-27): the chat entry a button like the others, the lead strip gone; and his decision on the form (req-4rpd7vqb6xe3, 2026-10-27): two buttons, Chat to the chat list, a Lead button beside it, one lead opened at once, several listed with a group chat with all leads
+**Revisit when:** the Team page (req-2mwv85k5e1s6) gives the leads a place of their own, or a project names more than one lead by policy
+
+Chat in the header is a button like the bell and always opens every chat.
+The Lead button beside it reaches whom `M.leadChat.targets` names (the
+policy's lead now, one's own proxy; on an older hub one's own admin and
+proxy agents), across every project outside one: one is opened at once,
+several are a menu with, per project with more than one, a group chat
+with all of them (an open one of exactly those people reused). Without
+anyone to reach there is no Lead button. The strip above the tabs and
+the section on All projects are gone.
+
+**Reason:** the unread count on Chat counts every chat; a click on it
+that went to the lead would not lead to what the count says, and the chat
+list would have no way in from the header outside a project.
+
+**Rejected alternative:** Chat as the lead's button, a menu of the leads
+and All chats when there are several (asked as B): a second click to
+every chat, and one button meaning two things. Keeping the strip: it took
+the room above the tabs on every page of a project.

@@ -854,6 +854,7 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
   main { padding: 12px; }
   .project-state { border-inline-start: none; padding-inline-start: 0; flex-wrap: wrap; flex-basis: 100%; }
   .me-name { display: none; }
+  .lead-button-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   /* On a phone the buttons of a form or a row stack, full width. */
   .actions > button, .inline-form > button, .login > button, .join-form > button, .project-form > button,
   .compose > button, .compose-actions > button, .free-text > button, .briefing-form .row > button, .rows-form .row > button,
@@ -998,6 +999,15 @@ a.member-chip:hover { border-color: var(--accent); }
 .bell-box { position: relative; }
 .bell { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; min-height: 32px; min-width: 32px; }
 .bell .icon .icon-fill { fill: currentColor; }
+/* Chat and the bell look like the gear and the profile: buttons, not bare
+   icons (the maintainer's wish, tsk-g2qe0fyqqmmq). */
+a.bell, .menu-button.bell { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); text-decoration: none; }
+a.bell:hover, .menu-button.bell:hover { border-color: var(--accent); }
+.chat-open-failed { margin: 4px 0 8px; }
+/* The Lead button beside Chat: an icon and its word, the word hidden from
+   sight at phone width so the header's buttons keep one row. */
+.lead-button .icon .icon-fill { fill: currentColor; }
+.lead-button { gap: 6px; }
 .bell-panel { position: absolute; inset-inline-end: 0; top: calc(100% + 4px); z-index: 2; width: min(26rem, calc(100vw - 32px));
   max-height: 70vh; overflow-y: auto; padding: 8px 10px; background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius); box-shadow: 0 6px 18px rgb(0 0 0 / 0.15); }
@@ -1080,9 +1090,6 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
   .join-fields, .join-fields .new-agent:not([hidden]) { grid-template-columns: minmax(0, 1fr); }
 }
 
-.lead-chat { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 8px 0; }
-.lead-chat select { max-width: 100%; }
-.lead-projects { margin-bottom: 20px; }
 
 /* Waiting activity follows the request forms without replacing them. */
 .waiting-group { margin-top: 1.5rem; }
