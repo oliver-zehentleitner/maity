@@ -84,7 +84,8 @@ def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     if mine.project.state in CLOSED:
         raise ApiError(409, "project_closed", f"the project is {mine.project.state}")
     rate_key = str(mine.id)
-    attachments.check_rate(rate_key, len(data))
+    received = len(data)  # what the rate was charged: the refund is this, whatever follows
+    attachments.check_rate(rate_key, received)
     kind, width, height = "file", None, None
     kept_type = attachments.file_type(declared)
     try:
@@ -98,15 +99,20 @@ def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
                 "image",
             )
     except ApiError:
-        attachments.give_back(rate_key, len(data))  # nothing was stored: not counted
+        attachments.give_back(rate_key, received)  # nothing was stored: not counted
         raise
     name = attachments.clean_name(raw_name, image_type=sniffed)
     store = blobs.store_of(settings)
     attachment_id = new_id("attachment")
 
     def action(conn: Connection) -> idempotency.Outcome:
+        project = lock_project(conn, membership(conn, caller, slug).project.id)
+        # The decode took time: the right to post and the project's state are read again,
+        # under the lock, right before the insert.
         locked = membership(conn, caller, slug)
-        lock_project(conn, locked.project.id)
+        locked.require("events:post")
+        if project.state in CLOSED:
+            raise ApiError(409, "project_closed", f"the project is {project.state}")
         used = attachments.used(conn, locked.project.id)
         if used + len(data) > settings.attachment_quota:
             raise attachments.quota_error("project", used=used, quota=settings.attachment_quota)
@@ -142,7 +148,7 @@ def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     try:
         return idempotency.run(engine, request, caller, action)
     except BaseException:
-        attachments.give_back(rate_key, len(data))
+        attachments.give_back(rate_key, received)
         raise
 
 

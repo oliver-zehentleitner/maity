@@ -34,7 +34,8 @@ VOLUME = Limiter(1600, RATE_WINDOW)
 
 IMAGE_TYPES = ("image/png", "image/jpeg", "image/webp", "image/gif")
 _TYPE = re.compile(r"^[a-z0-9][a-z0-9!#$&^_.+-]{0,126}/[a-z0-9][a-z0-9!#$&^_.+-]{0,126}$")
-EXTENSION = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp", "image/gif": ".gif"}
+# What a stored image is named by when it has no name: a GIF is stored as PNG.
+EXTENSION = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp", "image/gif": ".png"}
 # Pending uploads show another member's admin these fields only (§8.7).
 HIDDEN = ("name", "type", "kind", "sha256", "width", "height")
 

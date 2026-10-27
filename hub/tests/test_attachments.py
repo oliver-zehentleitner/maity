@@ -11,7 +11,7 @@ import pytest
 from PIL import Image, PngImagePlugin
 from sqlalchemy import Engine, select, update
 
-from maity_hub import attachment_store, attachments, middleware
+from maity_hub import attachment_store, attachments, avatars, middleware
 from maity_hub import tables as t
 from maity_hub.config import ConfigError, Settings
 from maity_hub.ratelimit import Limiter
@@ -391,6 +391,7 @@ def test_a_name_is_cleaned_once_at_upload() -> None:
     assert clean("tab\there:colon‮.txt") == "tabherecolon.txt"
     assert clean("") == "attachment" and clean("...") == "attachment"
     assert clean("", image_type="image/webp") == "attachment.webp"
+    assert clean("..", image_type="image/gif") == "attachment.png"  # stored as PNG
     assert clean("é.txt") == "é.txt"  # NFC
     long = clean("x" * 400 + ".log")
     assert len(long) <= 200 and long.endswith(".log")
@@ -425,3 +426,45 @@ def test_the_settings_stop_the_hub_for_an_unusable_store(tmp_path: Path) -> None
             Settings.from_env({**base, **bad})
     ok = Settings.from_env({**base, "MAITY_ATTACHMENT_DIR": str(tmp_path)})
     assert ok.attachment_dir == tmp_path and ok.attachment_quota == 1024**3
+
+
+def _membership_key(migrated: Engine, who: str) -> str:
+    with migrated.connect() as conn:
+        row = conn.execute(
+            select(t.membership.c.id).where(
+                (t.membership.c.human_id == who) | (t.membership.c.agent_id == who)
+            )
+        ).one()
+    return str(row.id)
+
+
+def test_a_refused_reencoded_image_gives_back_what_it_was_charged(
+    owner: flow.Human, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    big = png((200, 200), compress_level=0)  # far larger than its re-encoded form
+    assert len(big) > 100_000
+    monkeypatch.setattr(attachments, "PENDING_BYTES", 10)
+    refused = put(owner, "big.png", big, "image/png")
+    assert refused.status_code == 409 and refused.json()["error"]["details"]["scope"] == "pending"
+    key = _membership_key(migrated, owner.id)
+    assert len(attachments.UPLOADS._hits.get(key, ())) == 0
+    assert len(attachments.VOLUME._hits.get(key, ())) == 0  # not the re-encoded size's share
+
+
+def test_a_project_closed_during_the_decode_refuses_the_upload(
+    owner: flow.Human, blobs: Path, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = avatars.decode_attachment
+
+    def closing(settings: Settings, data: bytes, content_type: str) -> Any:
+        found = real(settings, data, content_type)
+        with migrated.begin() as conn:  # the project is archived while the image decodes
+            conn.execute(update(t.project).values(state="archived"))
+        return found
+
+    monkeypatch.setattr(avatars, "decode_attachment", closing)
+    refused = put(owner, "late.png", png(), "image/png")
+    assert refused.status_code == 409 and refused.json()["error"]["code"] == "project_closed"
+    with migrated.connect() as conn:
+        assert conn.execute(select(t.attachment)).all() == []
+    assert not list(blobs.glob("*/*"))
