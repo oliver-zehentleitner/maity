@@ -259,11 +259,16 @@ long-lived PyPI token out of the repository's secrets.
 
 **Id:** 31b7d6b3-054c-411d-8f2c-372831b0c773
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the coordinator's notices of 2026-10-23 and 2026-10-24, passing on the maintainer's heads-up that the Claude agents would hit their usage limit
 **Revisit when:** the usage limit has reset, or the budget stops being shared by the Claude agents
 **See:** incidents.md#multi-agent-review-runs-exhausted-the-maintainers-monthly-budget — 1a5e729f-816a-4682-ab8c-a2029aa1ea0a — as of 2026-10-27
+
+**Revisit:** the condition triggered on 2026-10-27: a new team runs on new
+subscriptions, several Claude agents in parallel, on the maintainer's
+instruction (coordinator, 2026-10-27). This is not today's rule; the entry
+stays as the record of the earlier stretch until a person re-checks it.
 
 When the maintainer announced that the Claude-based agents would soon
 hit their usage limit, the coordinator set a working mode for the
