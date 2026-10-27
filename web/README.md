@@ -864,7 +864,7 @@ page reads it and, below the password form, offers what the hub has on: **Have
 a code?** and **Email me a sign-in link**; a hub without the route is not asked
 and offers the password alone.
 - *Sign in another device* (profile menu, `#/account/sign-in-device`) makes a
-  code (`POST /auth/device-codes`) and shows it in two groups (`K7QM-4XPR`), a
+  code (`POST /auth/device-codes`) and shows it in three groups (`K7QM-4XPR-9D2F`), a
   QR of its URL and the time left by the hub's clock, with **Cancel**. Once the
   other device entered it, the approval leads with what the hub saw (the
   address, when), then what the device *claims* ("Says it is Safari on iOS",

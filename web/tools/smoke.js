@@ -3110,8 +3110,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
 
   // Sign-in without a password (§2.6): the code, its QR, the approval by number; the code on the new device; a link by mail.
   const ds = win.Maity.deviceSignIn;
-  expect(ds.normalCode("k7qm-4xpr") === "K7QM4XPR" && ds.normalCode("K7QM 4XPI") === "K7QM4XP1" && ds.normalCode("oooo-llll") === "00001111"
-    && ds.normalCode("K7QM-4XP") === null && ds.normalCode("K7QM-4XPU") === null, "device code: read as the hub reads it (I and L as 1, O as 0), else refused");
+  expect(ds.normalCode("k7qm-4xpr-9d2f") === "K7QM4XPR9D2F" && ds.normalCode("K7QM 4XPR 9D2I") === "K7QM4XPR9D21" && ds.normalCode("oooo-llll-oooo") === "000011110000"
+    && ds.normalCode("K7QM-4XPR-9D2") === null && ds.normalCode("K7QM-4XPR-9D2U") === null && ds.normalCode("K7QM-4XPR") === null,
+    "device code: twelve characters, read as the hub reads it (I and L as 1, O as 0), else refused; the eight of before no longer");
   const qrRows = win.Maity.qr.matrix("https://hub.example.org/#/sign-in/code?c=K7QM4XPR").map((r) => r.map((b) => (b ? 1 : 0)).join("")).join("\n");
   expect(qrRows.split("\n").length === 33 && require("crypto").createHash("sha256").update(qrRows).digest("hex") === "1b941096a98468ba07ea7d475e887cdb49a0aa655d2ec0e0e6cee3b208447dba",
     "qr: the sign-in URL as a version 4 symbol, bit for bit the one checked against an independent encoder");
@@ -3120,17 +3121,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   Object.getPrototypeOf(main).focus = function () { document.activeElement = this; };
   await go("#/p/maity/inbox"); await go("#/account/sign-in-device"); await dsSettle();
   const dsCode = main.querySelector(".device-code");
-  expect(dsCode && text(dsCode).includes("K7QM-4XPR") && dsCode.querySelectorAll("svg").some((sv) => sv.attrs.class === "qr") && text(dsCode).includes("Expires in ") && btn(dsCode, "Cancel"),
-    "device code: Sign in another device shows the code in two groups, its QR and the time left");
+  expect(dsCode && text(dsCode).includes("K7QM-4XPR-9D2F") && dsCode.querySelectorAll("svg").some((sv) => sv.attrs.class === "qr") && text(dsCode).includes("Expires in ") && btn(dsCode, "Cancel"),
+    "device code: Sign in another device shows the code in three groups, its QR and the time left");
   // Any public URL fits a QR (up to 2331 bytes); past that the code and Cancel still stand.
-  expect(win.Maity.qr.matrix("https://" + ["a".repeat(63), "b".repeat(63), "c".repeat(63)].join(".") + ".example.com/#/sign-in/code?c=K7QM4XPR").length === 61,
+  expect(win.Maity.qr.matrix("https://" + ["a".repeat(63), "b".repeat(63), "c".repeat(63)].join(".") + ".example.com/#/sign-in/code?c=K7QM4XPR9D2F").length === 61,
     "qr: a long public URL (three 63-character labels) still fits, as a version 11 symbol");
   const dsPost = win.Maity.api.post;
   win.Maity.api.post = (p, b) => (p === "/auth/device-codes"
     ? dsPost(p, b).then((r) => Object.assign({}, r, { url: "https://hub.example.org/" + "x".repeat(2400) })) : dsPost(p, b));
   await go("#/p/maity/inbox"); await go("#/account/sign-in-device"); await dsSettle();
   const dsLong = main.querySelector(".device-code");
-  expect(dsLong && text(dsLong).includes("K7QM-4XPR") && btn(dsLong, "Cancel") && text(dsLong).includes("No QR code for this hub's address"),
+  expect(dsLong && text(dsLong).includes("K7QM-4XPR-9D2F") && btn(dsLong, "Cancel") && text(dsLong).includes("No QR code for this hub's address"),
     "device code: without a QR the code and Cancel are still shown");
   win.Maity.api.post = dsPost;
   await go("#/p/maity/inbox"); await go("#/account/sign-in-device"); await dsSettle();
@@ -3152,8 +3153,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const dsMade = await win.Maity.api.post("/auth/device-codes", {});
   profileButton().click(); await tick();
   header.querySelectorAll("button.menu-item").find((b) => b.textContent === "Sign out").click(); await dsSettle();
-  win.location.hash = "#/sign-in/code?c=k7qm4xpr"; win.onhashchange(); await dsSettle();
-  expect(byId("device-code") && byId("device-code").value === "K7QM-4XPR" && byId("login-handle"), "device code: the QR's URL opens the login with the code filled in, not sent");
+  win.location.hash = "#/sign-in/code?c=k7qm4xpr9d2f"; win.onhashchange(); await dsSettle();
+  expect(byId("device-code") && byId("device-code").value === "K7QM-4XPR-9D2F" && byId("login-handle"), "device code: the QR's URL opens the login with the code filled in, not sent");
   main.querySelector(".sign-in-code form").dispatch("submit"); await dsSettle();
   const dsWait = main.querySelector(".device-waiting");
   expect(dsWait && text(dsWait).includes("Waiting for approval on your other device") && text(dsWait.querySelector(".match-number")) === "47" && !text(dsWait).includes("Maintainer"),
