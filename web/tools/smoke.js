@@ -4273,6 +4273,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(ovBadge && text(ovBadge).includes("Off: the badge address answers 'not found'.") && !ovBadge.querySelector("img.badge-preview")
     && ovBadge.querySelector(".overview-badge-states li[aria-current=\"true\"]") && text(ovBadge.querySelector(".overview-badge-states li[aria-current=\"true\"]")) === "Off"
     && text(ovBadge.querySelector(".overview-snippet code")).includes("/badge/maity.svg") && btn(ovBadge, "Copy")
+    && ovBadge.querySelector(".overview-snippet code").getAttribute("tabindex") === "0" && ovBadge.querySelector(".overview-snippet code").getAttribute("aria-label")
     && ovBadge.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/p/maity/settings"),
     "overview: the README badge's state, its snippet with Copy, and for an owner the way to change it");
   // The team: per role, member chips (the designer's layout); All members at the head's end.

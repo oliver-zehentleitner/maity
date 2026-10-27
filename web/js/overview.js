@@ -118,7 +118,8 @@ window.Maity = window.Maity || {};
         ? h("p", { class: "muted" }, "Off: the badge address answers 'not found'. Turning it on shows counts publicly, never names.")
         : [h("img", { class: "badge-preview", src: path + "?v=" + encodeURIComponent(ctx.project.rules_version || 0), alt: "The project's badge as the hub serves it" }),
           h("p", { class: "muted" }, "Public at " + path + " · counts only")],
-      h("div", { class: "overview-snippet" }, h("code", null, snippet), copy));
+      // A box that scrolls sideways is reachable by keyboard, and named.
+      h("div", { class: "overview-snippet" }, h("code", { tabindex: "0", role: "region", "aria-label": "Badge snippet for the README" }, snippet), copy));
   }
 
   // The team, per role: one row of member chips each, the counts above.
