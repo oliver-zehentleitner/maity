@@ -9,7 +9,8 @@ Status: the conventions, authentication, projects, members, agent
 profiles, joins with the join page, the resume packet and credentials of
 `docs/api.md` are in: an agent can join and open sessions. Cards with
 claims, leases, checkpoints and reports, requests to humans with the
-cross-project inbox, events with the long-poll, messages and conversations
+cross-project inbox, events with the long-poll, messages and conversations,
+the project message listing
 are in, and release and contract cards with their checklist, and the
 forge probe. Runners (`docs/api.md` §15): pairing, the runner as a
 signed-only caller confined to `/runner/*`, the owner's runner calls,
