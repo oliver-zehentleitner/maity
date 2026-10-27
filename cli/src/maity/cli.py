@@ -637,7 +637,7 @@ def _action(spec: str, body_source: str | None) -> dict[str, Any]:
     if method not in ACTION_METHODS or not target.startswith("/") or " " in target:
         raise UsageError(
             f'--action is "METHOD PATH[?QUERY]", METHOD one of {", ".join(ACTION_METHODS)}, '
-            f'PATH starting with /, e.g. "PATCH /projects/maity/members/agt-b"'
+            f'PATH starting with /, e.g. "PATCH /projects/oliver/maity/members/agt-b"'
         )
     if "#" in target:
         raise UsageError("--action: a path has no fragment")
