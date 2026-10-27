@@ -175,7 +175,10 @@ window.Maity = window.Maity || {};
     const closedProject = ctx.outsider || ["accepted", "archived"].includes(ctx.project.state);
     const el = h("nav", { class: "chat-list-pane", "aria-label": "Conversations" },
       h("div", { class: "toolbar" }, h("h2", null, ctx.outsider ? "Group chats" : "Chat"),
-        closedProject || !groupsServed ? null : h("a", { class: "button small new-group", href: ctx.link("chat", "new") }, "New group chat")),
+        closedProject || !groupsServed ? null : h("a", { class: "button small new-group", href: ctx.link("chat", "new") }, "New group chat"),
+        // A message to the project is talk too (the maintainer's wish,
+        // tsk-r1adgwp0a5dr): it starts here, no longer in the inbox.
+        ctx.outsider ? null : h("a", { class: "button small message-project", href: ctx.link("message") }, "Message the project")),
       none, ul,
       // Not an empty-looking list: a hub before group chats lists none.
       groupsServed ? null : h("p", { class: "muted no-groups" }, "This hub has no group chats yet."),

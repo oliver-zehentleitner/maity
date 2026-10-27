@@ -1557,11 +1557,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "members: a member reads the list without actions; the owner from the members");
   win.Maity.api.get = mGet;
 
-  // Message the project (docs/api.md §8.4): from the inbox, no tab of its own.
+  // Message the project (docs/api.md §8.4): from the Chat tab (tsk-r1adgwp0a5dr), no longer the inbox, no tab of its own.
   await go("#/p/maity/inbox");
-  const msgLink = main.querySelectorAll("a").find((a) => a.textContent === "Message the project");
+  expect(!main.querySelectorAll("a").some((a) => a.textContent === "Message the project"), "message: no longer in the inbox");
+  await go("#/p/maity/chat");
+  const msgLink = main.querySelector(".chat-list-pane").querySelectorAll("a").find((a) => a.textContent === "Message the project");
   expect(msgLink && msgLink.getAttribute("href") === "#/p/maity/message"
-    && !header.querySelectorAll("nav.views a").some((a) => a.textContent === "Message the project"), "message: a link in the inbox, no tab");
+    && !header.querySelectorAll("nav.views a").some((a) => a.textContent === "Message the project"), "message: a link in the Chat tab, no tab");
   const msgPosts = [];
   const mPost0 = win.Maity.api.post;
   win.Maity.api.post = (p, b) => { msgPosts.push([p, b]); return mPost0(p, b); };
