@@ -279,12 +279,16 @@ def port_taken(port: int) -> bool:
 def start_hub(work: Path, logs: Path, port: int) -> subprocess.Popen:
     """Migrate, create the owner and serve; every output goes to logs/hub.log."""
     base = f"http://127.0.0.1:{port}"
+    # A store for attachments (§8.7): without one the hub starts with them off.
+    files = work / "attachments"
+    files.mkdir(exist_ok=True)
     env = dict(
         CLEAN_ENV,
         MAITY_DATABASE_URL=f"sqlite:///{work / 'hub.db'}",
         MAITY_BIND=f"127.0.0.1:{port}",
         MAITY_PUBLIC_URL=base,
         MAITY_WEB_DIR=str(WEB),
+        MAITY_ATTACHMENT_DIR=str(files),
     )
     log_path = logs / "hub.log"
     with open(log_path, "w") as log:  # the hub keeps its own copy of the descriptor
@@ -371,11 +375,12 @@ def watch_page(run: Run, page: Page) -> None:
             return
         # Signed out, the page asks /auth/session first and expects 401.
         # A composer, and Project settings, ask once per page load for the
-        # uploads waiting to be sent (§8.7); a hub without attachments answers 404.
+        # uploads waiting to be sent (§8.7); a hub without attachments answers
+        # 404, one with them off (no store, 409 attachments_not_configured) 409.
         if resp.status >= 400 and not (
             resp.status == 401 and path.startswith("/api/v1/auth/session")
         ) and not (
-            resp.status == 404 and re.match(r"/api/v1/projects/[^/]+/attachments\?status=pending(&uploaded_by=[^&]+)?&limit=200$", path)
+            resp.status in (404, 409) and re.match(r"/api/v1/projects/[^/]+/attachments\?status=pending(&uploaded_by=[^&]+)?&limit=200$", path)
         ):
             run.problems.append(f"{resp.request.method} {path} answered {resp.status}")
 
