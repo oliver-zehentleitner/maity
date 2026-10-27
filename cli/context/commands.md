@@ -486,8 +486,11 @@ candidates are refused, with their global names, unless exactly one of
 them is a human whose current handle it is. Tokens (`all`, `human`,
 `owner`, `role:`, `trust:`, `area:`, `member:`) are never looked up.
 A name that no member has is sent as given for an addressee, and the hub
-answers `not_a_member` as before. `--on-behalf-of` and the placements
-refuse it locally. `maity say` without `--type` compares the stored
+answers `not_a_member` as before. `--on-behalf-of` refuses it locally.
+The placement commands resolve the name against the member list first and
+only then pick that member's placement, because they stop agents. Only a
+name no member has is matched against the placements' own handles, and two
+matches are refused there too. `maity say` without `--type` compares the stored
 owner id first and looks the name up only when that does not match, so
 `maity say <your human's handle>` is the chat as the id is.
 
