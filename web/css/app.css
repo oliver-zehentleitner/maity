@@ -642,8 +642,8 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .conv .count { color: var(--accent); }
 /* As specific as the rule above, after it: the @ is light on its accent background. */
 .conv .mention-count { color: var(--accent-text); }
-.conv-project { grid-area: proj; font-size: 0.8rem; color: var(--muted); overflow-wrap: anywhere; }
-.conv.with-project { grid-template-areas: "av title time" "av sub count" "av prev prev" "av proj proj"; }
+/* The global chat list: the chat's project as a mark after the who line. */
+.conv-project { display: inline-flex; margin-inline-start: 4px; vertical-align: -2px; }
 .conv-sub { grid-area: sub; min-width: 0; font-size: 0.82rem; color: var(--muted); overflow-wrap: anywhere; }
 .conv .preview { grid-area: prev; font-size: 0.85rem; color: var(--muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .conv .preview.draft { font-style: italic; }
@@ -715,7 +715,7 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .msg .meta { display: block; margin-top: 4px; font-size: 0.78rem; color: var(--muted); }
 /* The global chat: the projects an agent is in, as logos after its name. */
 .msg-projects { display: inline-flex; gap: 3px; margin-inline-start: 4px; vertical-align: -2px; }
-.msg-projects .project-mark.small { width: 14px; height: 14px; border-radius: 3px; }
+.msg-projects .project-mark.small, .conv-project .project-mark.small { width: 14px; height: 14px; border-radius: 3px; }
 .msg-project { display: inline-flex; }
 
 .compose { display: grid; gap: 6px; }

@@ -51,8 +51,13 @@ window.Maity = window.Maity || {};
         const pctx = pctxs[x.slug];
         const li = P.listItem(pctx, x.chat, x.key === currentKey ? x.chat.id : null);
         const a = li.querySelector("a.conv");
-        if (a) a.className += " with-project";
-        if (a) append(a, h("span", { class: "conv-project" }, h("span", { class: "visually-hidden" }, ", in "), pctx.project.name || x.slug));
+        // Its project as a 14 px mark after the who line, as a message's
+        // meta has it (the designer's pass on #429), the name on hover and
+        // read out at the row's end.
+        const name = pctx.project.name || x.slug;
+        const who = a && a.querySelector(".conv-sub");
+        if (who) append(who, h("span", { class: "conv-project", title: name }, M.projectMark(x.slug, name, (pctx.projectViews || {})[x.slug], "small")));
+        if (a) append(a, h("span", { class: "visually-hidden" }, ", in " + name));
         append(ul, li);
       });
       none.hidden = all.length > 0 || Object.keys(read).length === 0;

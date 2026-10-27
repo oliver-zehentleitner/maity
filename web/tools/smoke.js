@@ -4697,12 +4697,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/chats"); for (let k = 0; k < 4; k++) await tick();
   const chLinks = main.querySelectorAll(".chat-list a.conv");
   expect(plainTitle() === "Chats · Maity" && main.querySelector(".chat-layout") && !main.querySelector(".chat-layout.open")
-    && chLinks.length === 7 && chLinks.slice(0, 2).every((a) => a.className === "conv unread with-project") && !chLinks.slice(2).some((a) => a.className.includes("unread"))
+    && chLinks.length === 7 && chLinks.slice(0, 2).every((a) => a.className === "conv unread") && !chLinks.slice(2).some((a) => a.className.includes("unread"))
     && chLinks[0].getAttribute("href") === "#/chats/maity/cnv-0007" && text(chLinks[0]).endsWith("in Maity")
     && chLinks[1].getAttribute("href") === "#/chats/maity/agt-a" && text(chLinks[1]).includes("1 unread")
     && chLinks[6].getAttribute("href") === "#/chats/sample/agt-s1" && text(chLinks[6]).endsWith("in Sample shop")
     && text(main).includes("Pick a conversation.") && header.querySelector("a.chat-button").getAttribute("aria-current") === "page",
     "chats: the Chat tab's layout with every project's chats, unread first, then the newest, each with its project");
+  // The project as a mark after the who line, its name on hover (no line of its own).
+  const chMark = (a) => a.querySelector(".conv-sub .conv-project");
+  expect(chLinks.every((a) => chMark(a) && chMark(a).querySelector(".project-mark")) && chMark(chLinks[0]).getAttribute("title") === "Maity"
+    && chMark(chLinks[6]).getAttribute("title") === "Sample shop",
+    "chats: each row's project is a mark after the who line, its name on hover");
   // Opening one keeps the global view: its messages and composer in place, the list beside it, its unread gone.
   const gxGets = [], gxPosts = [];
   const gxGet = win.Maity.api.get, gxGetAll = win.Maity.api.getAll, gxPost = win.Maity.api.post, gxPatch = win.Maity.api.patch;
