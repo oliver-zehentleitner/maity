@@ -891,14 +891,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/p/maity/agents"); for (let k = 0; k < 4; k++) await tick();
 
   // Runners (docs/api.md §15): the instance-level view.
-  const runnersLink = header.querySelectorAll(".switcher a").find((a) => a.textContent === "Runners");
-  expect(runnersLink && runnersLink.getAttribute("href") === "#/runners", "runners: a link beside the projects");
+  // Runners are the person's (tsk-cb6myw32def0): in the gear menu, not beside the projects.
+  expect(!header.querySelectorAll(".switcher a").some((a) => a.textContent === "Runners"), "runners: no link in the projects' row");
+  gearButton().click(); await tick();
+  const runnersLink = gearButton().parentNode.querySelectorAll(".menu-item").find((a) => a.textContent === "Runners");
+  expect(runnersLink && runnersLink.getAttribute("href") === "#/runners", "runners: in the gear menu");
+  gearButton().click(); await tick();
   const rWrites = [];
   const rPost = win.Maity.api.post, rPatch = win.Maity.api.patch, rDel = win.Maity.api.del;
   win.Maity.api.post = (p, b) => { rWrites.push(["POST", p, b]); return rPost(p, b); };
   win.Maity.api.patch = (p, b) => { rWrites.push(["PATCH", p, b]); return rPatch(p, b); };
   win.Maity.api.del = (p) => { rWrites.push(["DELETE", p]); return rDel(p); };
   await go("#/runners"); await tick();
+  gearButton().click(); await tick();
+  const runnersHere = gearButton().parentNode.querySelectorAll(".menu-item").find((a) => a.textContent === "Runners");
+  expect(!runnersLink.getAttribute("aria-current") && runnersHere && runnersHere.getAttribute("aria-current") === "page",
+    "runners: the gear menu marks the page shown");
+  gearButton().click(); await tick();
   const card = (name) => main.querySelectorAll("article.runner").find((a) => a.getAttribute("aria-label") === name);
   expect(plainTitle() === "Runners · Maity" && main.querySelectorAll("article.runner").length === 3, "runners: the view lists the runners");
   const laptop = text(card("home-laptop"));

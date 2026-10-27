@@ -87,12 +87,17 @@ def _count(conn: Connection, kind: str, outcome: str) -> None:
 
 
 def send_due(engine: Engine, env: MailEnvironment, secret_key: bytes | None) -> int:
-    """Send what is due now; returns how many left the hub. Each row is claimed first,
-    so of two processes passing over the outbox only one sends it."""
+    """Send what is due now; returns how many left the hub.
+
+    The settings in effect are read again before every delivery, so `enabled: false` and
+    any other change reach the rest of a pass: a delivery under way ends, the rest stays
+    in the queue (§16.2). Each row is claimed first, so of two processes passing over the
+    outbox only one sends it, and the budget of its kind is decided after the claim, with
+    every claim of a lower row still in flight counted as spent: two workers cannot both
+    take the last place of a budget while one of them is in the SMTP conversation."""
+    if _resolved(engine, env, secret_key) is None:
+        return 0
     with engine.begin() as conn:
-        resolved = settings.resolve(conn, env, secret_key)
-        if not (resolved.complete and resolved.enabled):
-            return 0
         due = conn.execute(
             select(t.mail_outbox)
             .where(_claimable(clock.now()))
@@ -101,27 +106,56 @@ def send_due(engine: Engine, env: MailEnvironment, secret_key: bytes | None) -> 
         ).all()
     sent = 0
     for row in due:
+        resolved = _resolved(engine, env, secret_key)
+        if resolved is None:
+            break
         with engine.begin() as conn:
-            budget = resolved.value(BUDGETS[row.kind])
-            if _sent_last_hour(conn, row.kind) >= budget and row.kind in DROPPED_OVER_BUDGET:
-                if _claim(conn, row.id):
-                    _finish(conn, row.id, "dropped")
-                    _count(conn, row.kind, "dropped")
-                continue
-            if _sent_last_hour(conn, row.kind) >= budget:
-                # Over the budget: security mail waits for the next hour (§16.2).
-                conn.execute(
-                    update(t.mail_outbox)
-                    .where(t.mail_outbox.c.id == row.id, t.mail_outbox.c.status == "waiting")
-                    .values(not_before=clock.now() + timedelta(minutes=5))
-                )
-                continue
             if not _claim(conn, row.id):
                 continue  # another process took it
+        with engine.begin() as conn:
+            if _over_budget(conn, row, int(resolved.value(BUDGETS[row.kind]))):
+                if row.kind in DROPPED_OVER_BUDGET:
+                    _finish(conn, row.id, "dropped")
+                    _count(conn, row.kind, "dropped")
+                else:
+                    # Over the budget: security mail waits for the next hour (§16.2).
+                    _release(conn, row.id, clock.now() + timedelta(minutes=5))
+                continue
         outcome = smtp.send(resolved, _message(resolved, row))
         with engine.begin() as conn:
             sent += _settle(conn, row, outcome)
     return sent
+
+
+def _resolved(engine: Engine, env: MailEnvironment, secret_key: bytes | None) -> Any:
+    """The settings in effect now, or None while mail cannot or must not be sent."""
+    with engine.begin() as conn:
+        resolved = settings.resolve(conn, env, secret_key)
+    return resolved if resolved.complete and resolved.enabled else None
+
+
+def _over_budget(conn: Connection, row: Any, budget: int) -> bool:
+    """Whether the hour's budget of the row's kind is spent: what was sent in the last hour
+    plus the claims of that kind that are in flight and older (a lower id), which will be
+    sent unless they fail. A claim that lapsed is not counted."""
+    in_flight = conn.execute(
+        select(func.count()).where(
+            t.mail_outbox.c.kind == row.kind,
+            t.mail_outbox.c.status == "sending",
+            t.mail_outbox.c.id < row.id,
+            t.mail_outbox.c.not_before > clock.now(),
+        )
+    ).scalar_one()
+    return _sent_last_hour(conn, row.kind) + int(in_flight) >= budget
+
+
+def _release(conn: Connection, row_id: int, not_before: datetime) -> None:
+    """Give a claimed row back to the queue, due again at `not_before`."""
+    conn.execute(
+        update(t.mail_outbox)
+        .where(t.mail_outbox.c.id == row_id, t.mail_outbox.c.status == "sending")
+        .values(status="waiting", not_before=not_before)
+    )
 
 
 # A claim holds a row while it is sent; one that outlives this (the process died

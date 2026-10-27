@@ -15,6 +15,13 @@ first, so a photo is stored as it is seen.
 `draft()` and `thumbnail()` are not used: in Pillow before 13.0 they reached a JPEG heap
 overflow (GHSA-8g5g-8vmr-9782), and the decoder keeps to the plain path.
 
+An attachment's image (docs/api.md §8.7) takes the same path with `attachment` as the
+fourth argument: the same checks and budgets, a larger limit (`FILE_SIDE` on a side and
+`FILE_PIXELS` in all, taken from the header before decoding), GIF as a fourth format, and
+an output that keeps the image's size: EXIF orientation applied, the colour profile
+converted to sRGB, then PNG for PNG and GIF, JPEG (quality 90) for JPEG, WebP (lossless
+when the source was) for WebP, built from raw pixels so nothing else of the input survives.
+
 `avatars.decode` runs this file as its own process (`main`), by path, under `python -I`
 and an empty environment: the operator's memory budget is that process's address-space
 limit, it may write no file, and the time budget is its CPU limit and the parent's
@@ -32,6 +39,10 @@ SIDE = 4096  # at most this many pixels on either side, in the header and decode
 OUT = 256  # the stored image's side, never scaled up
 TEXT_CHUNK, TEXT_TOTAL = 64 * 1024, 256 * 1024  # PNG text, after decompression
 FORMATS = {"image/png": "PNG", "image/jpeg": "JPEG", "image/webp": "WEBP"}
+FILE_SIDE = 8192  # an attachment's image: this many pixels on a side ...
+FILE_PIXELS = 40_000_000  # ... and in all, in the header and decoded
+FILE_FORMATS = {**FORMATS, "image/gif": "GIF"}
+FILE_JPEG_QUALITY = 90
 REFUSED = 3  # the exit code of a refusal; the reason is on stdout
 
 
@@ -104,8 +115,16 @@ def _webp_size(data: bytes) -> tuple[int, int]:
     raise Refused("undecodable", "webp: no frame header")
 
 
+def _gif_size(data: bytes) -> tuple[int, int]:
+    if len(data) < 10 or data[:6] not in (b"GIF87a", b"GIF89a"):
+        raise Refused("undecodable", "gif: no header")
+    return int.from_bytes(data[6:8], "little"), int.from_bytes(data[8:10], "little")
+
+
 def dimensions(data: bytes, content_type: str) -> tuple[int, int]:
     """Width and height as the file's own header states them, read without Pillow."""
+    if content_type == "image/gif":
+        return _gif_size(data)
     if content_type == "image/png":
         if len(data) < 24 or data[12:16] != b"IHDR":
             raise Refused("undecodable", "png: no IHDR first")
@@ -159,6 +178,105 @@ def process(data: bytes, content_type: str) -> bytes:
     return out.getvalue()
 
 
+def webp_lossless(data: bytes) -> bool:
+    """Whether a WebP's (first) image is lossless: a `VP8L` chunk, at the top or in the
+    first animation frame."""
+    kind = data[12:16]
+    if kind == b"VP8L":
+        return True
+    if kind != b"VP8X":
+        return False
+    position = 12
+    end = len(data)
+    while position + 8 <= end:
+        fourcc = data[position : position + 4]
+        size = int.from_bytes(data[position + 4 : position + 8], "little")
+        if fourcc == b"VP8L":
+            return True
+        if fourcc == b"ANMF":  # a 16-byte frame header, then the frame's own chunks
+            position += 8 + 16
+            continue
+        if fourcc == b"VP8 ":
+            return False
+        position += 8 + size + (size & 1)
+    return False
+
+
+# The image modes a profile's colour space describes, as Pillow decodes them.
+PROFILE_MODES = {"RGB": ("RGB", "RGBA"), "CMYK": ("CMYK",), "GRAY": ("L", "LA")}
+
+
+def _to_srgb(image: Any, profile: bytes | None) -> Any:
+    """The image in sRGB (RGB, or RGBA when it had alpha) when it carries a profile that
+    describes its own colour space — RGB, CMYK or grey — converted from the source mode
+    and its profile, before anything flattens it. Any other profile is ignored here and
+    dropped with the rest of the metadata."""
+    if not profile:
+        return image
+    from PIL import ImageCms
+
+    try:
+        source = ImageCms.ImageCmsProfile(io.BytesIO(profile))
+        space = source.profile.xcolor_space.strip()
+        if image.mode not in PROFILE_MODES.get(space, ()):
+            return image
+        alpha = image.getchannel("A") if image.mode in ("RGBA", "LA") else None
+        base = image.convert({"RGBA": "RGB", "LA": "L"}.get(image.mode, image.mode))
+        target = ImageCms.createProfile("sRGB")
+        converted = ImageCms.profileToProfile(base, source, target, outputMode="RGB")
+    except ImageCms.PyCMSError as error:
+        raise Refused("undecodable", f"colour profile: {error}") from None
+    if converted is None:
+        raise Refused("undecodable", "colour profile: no conversion")
+    if alpha is not None:
+        converted.putalpha(alpha)
+    return converted
+
+
+def process_file(data: bytes, content_type: str) -> bytes:
+    """The stored bytes for an attachment's image, or `Refused`. The image keeps its size;
+    PNG and GIF come out as PNG, JPEG as JPEG, WebP as WebP."""
+    width, height = dimensions(data, content_type)
+    if not (0 < width <= FILE_SIDE and 0 < height <= FILE_SIDE and width * height <= FILE_PIXELS):
+        raise Refused("dimensions", f"header says {width}x{height}")
+    if content_type == "image/png" and not _png_text_fits(data):
+        raise Refused("undecodable", "png: a text chunk over its cap")
+    lossless = content_type == "image/webp" and webp_lossless(data)
+
+    from PIL import Image, ImageOps, PngImagePlugin
+
+    PngImagePlugin.MAX_TEXT_CHUNK = TEXT_CHUNK
+    PngImagePlugin.MAX_TEXT_MEMORY = TEXT_TOTAL
+    Image.MAX_IMAGE_PIXELS = FILE_PIXELS
+    image: Any = Image.open(io.BytesIO(data), formats=[FILE_FORMATS[content_type]])
+    if image.size != (width, height):
+        raise Refused("dimensions", f"header {width}x{height}, Pillow {image.size}")
+    image.load()  # the first frame only: no seek, the others are never read
+    if image.size != (width, height):
+        raise Refused("dimensions", f"decoded {image.size}, header {width}x{height}")
+    profile = image.info.get("icc_profile")
+    alpha = image.mode in ("RGBA", "LA", "PA") or "transparency" in image.info
+    image = ImageOps.exif_transpose(image)  # the photo as it is seen
+    if image.mode in ("I;16", "I;16B", "I;16L", "I;16N", "I"):
+        image = image.convert("I").point(lambda value: value * (1 / 256)).convert("L")
+    if image.mode in ("P", "PA"):  # a palette is expanded first, transparency kept
+        image = image.convert("RGBA" if alpha else "RGB")
+    elif image.mode == "1":
+        image = image.convert("L")
+    image = _to_srgb(image, profile)  # from the source mode, before it is flattened
+    keep_alpha = alpha and content_type != "image/jpeg"
+    flat = image.convert("RGBA" if keep_alpha else "RGB")
+    clean = Image.frombytes(flat.mode, flat.size, flat.tobytes())
+    out = io.BytesIO()
+    if content_type == "image/jpeg":
+        clean.save(out, format="JPEG", quality=FILE_JPEG_QUALITY)
+    elif content_type == "image/webp":
+        clean.save(out, format="WEBP", lossless=lossless, quality=FILE_JPEG_QUALITY)
+    else:
+        clean.save(out, format="PNG")
+    return out.getvalue()
+
+
 def _limit(memory: int, seconds: int) -> None:
     """The child's own budgets, set before it reads a byte of the image."""
     if memory > 0:
@@ -170,15 +288,16 @@ def _limit(memory: int, seconds: int) -> None:
 
 
 def main() -> int:
-    """`python -I avatar_decode.py <content type> <memory bytes> <cpu seconds>`: the
-    image on stdin; the stored PNG on stdout and exit 0, or the reason on stdout and
+    """`python -I avatar_decode.py <content type> <memory bytes> <cpu seconds> [attachment]`:
+    the image on stdin; the stored PNG on stdout and exit 0, or the reason on stdout and
     `REFUSED` with a detail for the log on stderr."""
     content_type, memory, seconds = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+    handle = process_file if sys.argv[4:] == ["attachment"] else process
     try:
-        from PIL import Image, ImageOps, PngImagePlugin  # noqa: F401  before the limits
+        from PIL import Image, ImageCms, ImageOps, PngImagePlugin  # noqa: F401  before the limits
 
         _limit(memory, seconds)
-        result = process(sys.stdin.buffer.read(), content_type)
+        result = handle(sys.stdin.buffer.read(), content_type)
     except Refused as refused:
         sys.stdout.write(refused.reason)
         sys.stderr.write(refused.detail[:200])
