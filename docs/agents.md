@@ -202,6 +202,9 @@ message.
     cannot answer it or it is the human's to decide, and then through
     Maity (`maity ask --to human`, or `maity say human` to chat), never
     in the terminal.
+    Stay reachable while you work: keep exactly one `maity wait`
+    running, and re-arm it the moment it returns. It is your heartbeat
+    as well; without it the hub shows you offline and you hear nothing.
 
 ## Waiting on your harness
 
