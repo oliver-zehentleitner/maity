@@ -86,7 +86,10 @@ def _print_json(data: Any) -> None:
 
 
 class Session:
-    """A joined clone: its state directory, its state, and a signing client for its hub."""
+    """A joined clone: its state directory, its state, and a signing client for its hub.
+    `on_request` is this command's `--on-request`, set once by `main` (§2.3)."""
+
+    on_request: str | None = None
 
     def __init__(self, hub_url: str | None = None) -> None:
         self.dir = state.resolve_state_dir()
@@ -103,7 +106,7 @@ class Session:
                 "this clone holds a credential but no hub URL; run `maity resume --hub <url>`"
             )
         key = sign.signing_key(state.read_credential(self.dir))
-        self.client = hub.Client(hub.hub_base(stored), key)
+        self.client = hub.Client(hub.hub_base(stored), key, on_request=Session.on_request)
 
     @property
     def project(self) -> str:
@@ -181,7 +184,7 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
     if (
         not args.json
         and isinstance(slug_for_board, str)
-        and field(packet, "membership", "role") == "admin"
+        and onboarding.is_admin(packet)
         and not field(packet, "membership", "briefing")
         and not field(packet, "membership", "paused")
         and not packet.get("claims")
@@ -568,7 +571,58 @@ def _ask_body(args: argparse.Namespace) -> dict[str, Any]:
     body["priority"] = args.priority
     if args.task:
         body["task_id"] = args.task
+    if args.action is not None:
+        body["action"] = _action(args.action, args.action_body)
+    elif args.action_body is not None:
+        raise UsageError("--action-body goes with --action")
     return body
+
+
+ACTION_METHODS = ("POST", "PUT", "PATCH", "DELETE")
+ACTION_BODY_MAX = 64 * 1024  # §7
+
+
+def _read_bytes(source: str, flag: str) -> bytes:
+    """A file's bytes as they are, or standard input's with `-`."""
+    if source == "-":
+        return sys.stdin.buffer.read()
+    try:
+        return Path(source).read_bytes()
+    except OSError as exc:
+        raise UsageError(f"{flag}: cannot read {source}: {exc.strerror or exc}") from None
+
+
+def _action(spec: str, body_source: str | None) -> dict[str, Any]:
+    """`action: {method, path, query, body}` for a proxy's request for the owner's go on one
+    call (§2.3, §7). The query is put in the order `maity api` signs and sends it, and the
+    body is the file's text exactly, so the later call matches by its bytes' SHA-256."""
+    method, _, target = spec.strip().partition(" ")
+    method, target = method.upper(), target.strip()
+    if method not in ACTION_METHODS or not target.startswith("/") or " " in target:
+        raise UsageError(
+            f'--action is "METHOD PATH[?QUERY]", METHOD one of {", ".join(ACTION_METHODS)}, '
+            f'PATH starting with /, e.g. "PATCH /projects/maity/members/agt-b"'
+        )
+    if "#" in target:
+        raise UsageError("--action: a path has no fragment")
+    path, _, query = target.partition("?")
+    pairs = urllib.parse.parse_qsl(query, keep_blank_values=True)
+    body: str | None = None
+    if body_source is not None:
+        data = _read_bytes(body_source, "--action-body")
+        if len(data) > ACTION_BODY_MAX:
+            raise UsageError("--action-body is at most 64 KiB")
+        try:
+            body = data.decode("utf-8")
+            json.loads(body)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise UsageError("--action-body is not JSON text in UTF-8") from None
+    return {
+        "method": method,
+        "path": path.removeprefix(hub.API),
+        "query": sign.canonical_query(pairs) or None,
+        "body": body,
+    }
 
 
 def cmd_ask(args: argparse.Namespace) -> int:
@@ -1181,7 +1235,9 @@ def cmd_say(args: argparse.Namespace) -> int:
         message = _post_with(session, attach, lambda ids: _chat_post(session, path, text, ids))
         return _done(args, message, f"said in {args.chat} (seq {_field(message, 'seq')})")
     if args.to is None:
-        raise UsageError("say to whom: 'all', 'role:<role>', a member id, 'human', or --chat")
+        raise UsageError(
+            "say to whom: 'all', 'role:<role>', 'trust:admin', a member id, 'human', or --chat"
+        )
     try:
         to = _id(args.to)
     except argparse.ArgumentTypeError as exc:
@@ -1362,19 +1418,25 @@ def cmd_memory(args: argparse.Namespace) -> int:
             print(f"Memory. {onboarding.MEMORY_NOTICE}")
             print("\n".join(onboarding.soul_lines(soul)))
         return EXIT_OK
-    store = "team" if args.list_team else "community" if args.list_community else None
+    store = (
+        "team" if args.list_team
+        else "role" if args.list_role
+        else "community" if args.list_community
+        else None
+    )  # fmt: skip
     items = _memory_entries(session, [("store", store)] if store else [])
     if args.list_json:
         _print_ascii_json(items)
     else:
-        _print_memory(items, f"no {store or 'team or community'} memory")
+        _print_memory(items, f"no {store or 'team, role or community'} memory")
     return EXIT_OK
 
 
 def _memory_flags_after_action(args: argparse.Namespace) -> None:
     """Flags given before `add` or `search` belong to the listing; refused, never dropped."""
-    given = [f for f, on in (("--team", args.list_team), ("--community", args.list_community),
-             ("--soul", args.list_soul), ("--json", args.list_json)) if on]  # fmt: skip
+    given = [f for f, on in (("--team", args.list_team), ("--role", args.list_role),
+             ("--community", args.list_community), ("--soul", args.list_soul),
+             ("--json", args.list_json)) if on]  # fmt: skip
     if given:
         raise UsageError(
             f"{', '.join(given)} before `{args.memory_command}` belongs to the listing; "
@@ -1400,7 +1462,7 @@ def cmd_memory_add(args: argparse.Namespace) -> int:
     _memory_flags_after_action(args)
     session = Session()
     if args.soul is not None:
-        if args.text is not None or args.tag or args.community:
+        if args.text is not None or args.tag or args.community or args.role:
             raise UsageError("--soul FILE takes only --reason")
         if not args.reason:
             raise UsageError("--soul needs --reason: the owner reads why before saying go")
@@ -1426,7 +1488,9 @@ def cmd_memory_add(args: argparse.Namespace) -> int:
     tags = args.tag or []
     if len(tags) > 5 or not all(_TAG.fullmatch(t) for t in tags):
         raise UsageError("up to 5 tags of a-z, 0-9 and -, 1 to 32 characters each")
-    store = "community" if args.community else "team"
+    if args.community and args.role:
+        raise UsageError("--role or --community, not both")
+    store = "community" if args.community else "role" if args.role else "team"
     body: dict[str, Any] = {"store": store, "text": text}
     if tags:
         body["tags"] = tags
@@ -1436,6 +1500,9 @@ def cmd_memory_add(args: argparse.Namespace) -> int:
         line = f"proposed for the community memory; request {rid}"
         return _done(args, answer, line, ascii_json=True)
     added = onboarding.inline(_field(answer, "id"))
+    if store == "role":  # written freely by the role's members (§19.2)
+        role = onboarding.inline(_field(answer, "role") or "your role")
+        return _done(args, answer, f"added {added} to the memory of {role}", ascii_json=True)
     return _done(args, answer, f"added {added} to your team's memory", ascii_json=True)
 
 
@@ -1635,6 +1702,9 @@ def cmd_answer(args: argparse.Namespace) -> int:
     if args.text is not None:
         body["text"] = _text(args.text, "--text")
     session = Session()
+    if args.on_behalf_of is not None:
+        # A proxy records its owner's answer (§2.3); the hub refuses it from anyone else.
+        body["on_behalf_of"] = _member_id(session, args.on_behalf_of)
     path = session.project_path("requests", args.request, "answer")
     request = session.client.call("POST", path, body=body)
     return _done(args, request, f"answered {args.request}; it is {_field(request, 'status')}")
@@ -2427,12 +2497,13 @@ def cmd_release_tick(args: argparse.Namespace) -> int:
 
 def cmd_api(args: argparse.Namespace) -> int:
     body: Any = None
+    data: bytes | None = None
     if args.json is not None:
-        raw = sys.stdin.read() if args.json == "-" else Path(args.json).read_text(encoding="utf-8")
+        data = _read_bytes(args.json, "--json")
         try:
-            body = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise UsageError(f"--json is not valid JSON: {exc.msg}") from exc
+            body = json.loads(data.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise UsageError(f"--json is not valid JSON: {getattr(exc, 'msg', exc)}") from exc
     query: list[tuple[str, str]] = []
     for pair in args.query:
         key, sep, value = pair.partition("=")
@@ -2440,7 +2511,14 @@ def cmd_api(args: argparse.Namespace) -> int:
             raise UsageError(f"--query expects key=value, got {pair!r}")
         query.append((key, value))
     session = Session()
-    result = session.client.call(args.method, args.path, query=query, body=body)
+    if args.on_request is not None and data is not None:
+        # The owner's go names the body by the hash of its bytes (§2.3): sent as read, never
+        # re-serialised, so the bytes `maity ask --action-body` stored are the bytes sent.
+        result = session.client.call(
+            args.method, args.path, query=query, raw=data, content_type="application/json"
+        )
+    else:
+        result = session.client.call(args.method, args.path, query=query, body=body)
     if result is not None:
         _print_json(result)
     return EXIT_OK
@@ -2462,6 +2540,23 @@ def _session_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--harness", help="the agent harness, e.g. 'Claude Code'; remembered")
     p.add_argument("--harness-version", dest="harness_version", help="its version; remembered")
     p.add_argument("--model", help="the model id this session runs on; remembered")
+
+
+def _on_request(value: str) -> str:
+    if not sign.ON_REQUEST_RE.fullmatch(value):
+        raise argparse.ArgumentTypeError(f"{value!r} is not a request id")
+    return value
+
+
+def _on_request_flag(p: argparse.ArgumentParser) -> None:
+    p.add_argument(
+        "--on-request",
+        dest="on_request",
+        type=_on_request,
+        metavar="ID",
+        help="a proxy: the owner's answered go for exactly this call (maity ask --action), "
+        "sent signed as Maity-On-Request on the call's writes",
+    )
 
 
 def _json_flag(p: argparse.ArgumentParser) -> None:
@@ -2629,7 +2724,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--to",
         required=True,
-        help="'human' (the human who owns this agent), 'owner', 'role:<role>', or a member id",
+        help="'human' (the human who owns this agent), 'owner', 'trust:admin', 'role:<role>', "
+        "or a member id",
     )
     p.add_argument(
         "--class",
@@ -2644,6 +2740,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--tried", help="what you tried before asking")
     p.add_argument("--priority", choices=PRIORITIES, default="normal", help="default: normal")
     p.add_argument("--task", type=_id, help="the task id the request belongs to")
+    p.add_argument(
+        "--action",
+        metavar='"METHOD PATH[?QUERY]"',
+        help="a proxy: the one call this go is for, below /api/v1; class decision or consent, "
+        "--to owner, no --option. Make it later with `maity api … --on-request <this request>`",
+    )
+    p.add_argument(
+        "--action-body",
+        dest="action_body",
+        metavar="FILE",
+        help="with --action: the call's JSON body, - for stdin; `maity api --json` must send "
+        "the same file",
+    )
     _json_flag(p)
     p.set_defaults(handler=cmd_ask)
 
@@ -2667,6 +2776,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("card", type=_id, help="the card id")
     _json_flag(p)
+    _on_request_flag(p)
     p.set_defaults(handler=cmd_unclaim)
 
     p = add(
@@ -2690,7 +2800,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = add(
         "say",
         "send a typed message to members, or chat with your human",
-        "Post a message (POST …/events). TO is 'all', 'role:<role>' or a member id, and --type "
+        "Post a message (POST …/events). TO is 'all', 'role:<role>', 'trust:owner', "
+        "'trust:admin' or a member id, and --type "
         "says what it is. TO 'human', or that human's member id without --type, writes into the "
         "chat with the human who owns this agent (POST …/conversations/{you}/messages); "
         "--chat <conversation> writes in any chat you are in, a group chat included. Each "
@@ -2698,7 +2809,9 @@ def build_parser() -> argparse.ArgumentParser:
         "a failed upload sends no message. Status is not a message: the board shows it.",
     )
     p.add_argument(
-        "to", nargs="?", help="'all', 'role:<role>', a member id or 'human'; with --chat the text"
+        "to",
+        nargs="?",
+        help="'all', 'role:<role>', 'trust:admin', a member id or 'human'; with --chat the text",
     )
     p.add_argument("body", nargs="?", help="the message, Markdown; may be empty with --attach")
     p.add_argument("--type", choices=SAY_TYPES, help="required unless TO is your own human")
@@ -2800,6 +2913,8 @@ def build_parser() -> argparse.ArgumentParser:
     which = p.add_mutually_exclusive_group()
     which.add_argument("--team", dest="list_team", action="store_true",
                        help="your team's memory only")  # fmt: skip
+    which.add_argument("--role", dest="list_role", action="store_true",
+                       help="your role's memory only")  # fmt: skip
     which.add_argument("--community", dest="list_community", action="store_true",
                        help="the community memory only")  # fmt: skip
     which.add_argument("--soul", dest="list_soul", action="store_true",
@@ -2808,16 +2923,20 @@ def build_parser() -> argparse.ArgumentParser:
                    help="print the hub's answer as JSON")  # fmt: skip
     p.set_defaults(handler=cmd_memory)
     msub = p.add_subparsers(dest="memory_command", metavar="<action>")
-    r = msub.add_parser("add", help="add a team entry, or propose a community entry or soul",
-                        formatter_class=fmt)  # fmt: skip
+    r = msub.add_parser("add", help="add a team or role entry, or propose a community entry "
+                        "or soul", formatter_class=fmt)  # fmt: skip
     r.add_argument("text", nargs="?", help="the entry, at most 2 KiB")
     r.add_argument("--tag", action="append", help="up to 5, a-z 0-9 -, for search")
+    r.add_argument("--role", action="store_true",
+                   help="add it to your role's memory, shared by every member of the "
+                   "role")  # fmt: skip
     r.add_argument("--community", action="store_true",
                    help="propose it for the community memory; a human with project:admin "
                    "confirms")  # fmt: skip
     r.add_argument("--soul", metavar="FILE", help="propose this Markdown file as your soul")
     r.add_argument("--reason", help="with --soul: why, for your owner")
     _json_flag(r)
+    _on_request_flag(r)
     r.set_defaults(handler=cmd_memory_add)
     r = msub.add_parser("search", help="entries whose text or tag contains TEXT",
                         formatter_class=fmt)  # fmt: skip
@@ -2846,6 +2965,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--status", choices=("all",), help="list: closed takeovers too")
     p.add_argument("--card", type=_id, help="list: only this card's takeovers")
     _json_flag(p)
+    _on_request_flag(p)
     p.set_defaults(handler=cmd_takeover)
 
     p = add(
@@ -2853,11 +2973,18 @@ def build_parser() -> argparse.ArgumentParser:
         "answer a request addressed to you",
         "Answer a request (POST …/requests/{id}/answer) with one of its replies, free text, or "
         "both. Agents answer decision, contract and info requests addressed to them, and any "
-        "request when their role holds requests:answer; never their own.",
+        "request when their trust holds requests:answer; never their own. A proxy decides "
+        "nothing: it relays its owner's answer with --on-behalf-of.",
     )
     p.add_argument("request", type=_id, help="the request id, e.g. req-0012")
     p.add_argument("--reply", help="the id of one of the request's replies")
     p.add_argument("--text", help="a free-text answer, alone or with --reply")
+    p.add_argument(
+        "--on-behalf-of",
+        dest="on_behalf_of",
+        metavar="MEMBER",
+        help="a proxy: record the answer of this owner (id or handle), relayed by you",
+    )
     _json_flag(p)
     p.set_defaults(handler=cmd_answer)
 
@@ -2900,6 +3027,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--release", type=_id, help="the release card id (default: the one in flight)")
     r.add_argument("--undo", action="store_true", help="untick it instead")
     _json_flag(r)
+    _on_request_flag(r)
     r.set_defaults(handler=cmd_release_tick)
 
     p = add(
@@ -2916,6 +3044,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--query", action="append", default=[], metavar="KEY=VALUE", help="query parameter; repeat"
     )
+    _on_request_flag(p)
     p.set_defaults(handler=cmd_api)
 
     runner_commands.add_parser(sub, fmt)
@@ -2985,6 +3114,7 @@ def build_parser() -> argparse.ArgumentParser:
     deployed.add_argument("--version", help="the deployed version")
     r.add_argument("--log-url", dest="log_url", help="the deploy's log, https")
     _json_flag(r)
+    _on_request_flag(r)
     r.set_defaults(handler=cmd_ticker_post)
     for verb, what in (("follow", "follow areas or types: listed and woken"),
                        ("mute", "mute areas or types: not woken"),
@@ -3052,6 +3182,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--status", choices=("proposed", "open"), help="proposed or open")
     r.add_argument("--assign", type=_id, help="assign it on creation (needs tasks:admin)")
     _json_flag(r)
+    _on_request_flag(r)
     r.set_defaults(handler=cmd_task_create)
     r = tsub.add_parser(
         "edit", help="set or clear the parent, add or drop related cards", formatter_class=fmt
@@ -3067,6 +3198,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--unrelated", type=_id, action="append", default=[], help="drop a related card; repeat"
     )
     _json_flag(r)
+    _on_request_flag(r)
     r.set_defaults(handler=cmd_task_edit)
 
     p = add(
@@ -3102,6 +3234,7 @@ def build_parser() -> argparse.ArgumentParser:
                      help="not taken up")  # fmt: skip
     r.add_argument("--reason", help="why, optional")
     _json_flag(r)
+    _on_request_flag(r)
     r.set_defaults(handler=cmd_note_resolve)
 
     p = add(
@@ -3132,6 +3265,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("card", type=_id, help="the card id")
     r.add_argument("link", type=_id, help="the link id, e.g. lnk-0007")
     _json_flag(r)
+    _on_request_flag(r)
     r.set_defaults(handler=cmd_link_remove)
 
     p = add(
@@ -3162,11 +3296,13 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--branch", help="a starting branch")
     r.add_argument("--reason", required=True, help="why this agent should run there")
     _json_flag(r)
+    _on_request_flag(r)
     r.set_defaults(handler=cmd_placement_start)
     r = psub.add_parser("stop", help="stop an agent's placement", formatter_class=fmt)
     r.add_argument("which", help="the placement id, or the agent's handle or id")
     r.add_argument("--grace", type=_grace, metavar="N", help="seconds to park the work (0-900)")
     _json_flag(r)
+    _on_request_flag(r)
     r.set_defaults(handler=cmd_placement_stop)
     r = psub.add_parser("restart", help="restart an agent's placement", formatter_class=fmt)
     r.add_argument("which", help="the placement id, or the agent's handle or id")
@@ -3176,6 +3312,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="with a new credential, after the old one was revoked (§15.6)",
     )
     _json_flag(r)
+    _on_request_flag(r)
     r.set_defaults(handler=cmd_placement_restart)
 
     p = add(
@@ -3272,6 +3409,7 @@ def _pause_note(event: dict[str, Any], member_id: Any) -> str | None:
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     handler: Handler = args.handler
+    Session.on_request = getattr(args, "on_request", None)
     try:
         return handler(args)
     except (

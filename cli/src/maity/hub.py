@@ -385,10 +385,13 @@ def _parse_server_time(value: object) -> float | None:
 @dataclass
 class Client:
     """Signed requests to one hub with one credential (§2.2). Every POST and PATCH that is not
-    exempt carries an `Idempotency-Key`, reused when the same call is retried."""
+    exempt carries an `Idempotency-Key`, reused when the same call is retried. `on_request`
+    goes as the signed `Maity-On-Request` header on every call that writes (§2.3): reads need
+    no go, and a proxy's go names one write."""
 
     base: str
     key: sign.SigningKey
+    on_request: str | None = None
     clock_offset: float = 0.0
     timeout: float = 30.0
     _opener: urllib.request.OpenerDirector = field(default_factory=opener, repr=False)
@@ -486,7 +489,10 @@ class Client:
         reads the successful response."""
         for attempt in (1, 2):
             stamp = int(time.time() + self.clock_offset)
-            signed = sign.sign_headers(self.key, method, full_path, query_string, data, stamp)
+            on_request = self.on_request if method != "GET" else None
+            signed = sign.sign_headers(
+                self.key, method, full_path, query_string, data, stamp, on_request
+            )
             request = urllib.request.Request(url, data=send, method=method)  # noqa: S310
             for name, value in {**headers, **signed}.items():
                 request.add_header(name, value)

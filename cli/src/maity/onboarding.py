@@ -187,8 +187,8 @@ def _who(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
     if me.get("member_id"):
         line += f", member id {inline(me['member_id'])}"
     lines = [line + "."]
-    if ms.get("role"):
-        role = f"Role: {inline(ms['role'])}"
+    if ms.get("trust") or ms.get("role"):
+        role = _trust_role(ms, "Trust: {trust}, role: {role}", "Role: {role}")
         if ms.get("reports_to"):
             role += f", reporting to {_name(ms['reports_to'], names)}"
         lines.append(role)
@@ -383,7 +383,7 @@ def _next_step(packet: dict[str, Any], paused: bool, board_empty: bool = False) 
         return f"Continue {card} from its checkpoint; `maity wait` when nothing is left."
     if assigned:
         return f"`maity claim {inline(assigned[0].get('id'))}`, the card assigned to you."
-    if board_empty and get(packet, "membership", "role") == "admin":
+    if board_empty and is_admin(packet):
         state = get(packet, "project", "state")
         if state in {"accepted", "archived"}:
             return (
@@ -420,9 +420,29 @@ def soul_lines(soul: Any) -> list[str]:
     ]
 
 
+def is_admin(packet: dict[str, Any]) -> bool:
+    """Whether the packet's membership is in the admin team with trust `admin`, which a proxy
+    never is (§2.3); a hub from before trust × role says so with the single role."""
+    ms = _dict(packet.get("membership"))
+    if "trust" not in ms:
+        return ms.get("role") == "admin"
+    return ms.get("trust") == "admin" and ms.get("role") != "proxy"
+
+
+def _trust_role(member: dict[str, Any], both: str, single: str) -> str:
+    """A member's trust and role (§2.3); a hub from before trust × role sends the role only."""
+    if "trust" not in member:
+        return single.format(role=inline(member.get("role")))
+    return both.format(trust=inline(member.get("trust")), role=inline(member.get("role")))
+
+
 def memory_entry_lines(entry: dict[str, Any]) -> list[str]:
-    """One team or community entry: its header, then its text as a quote (§19.2)."""
-    store = "Team memory" if entry.get("store") == "team" else "Community memory"
+    """One team, role or community entry: its header, then its text as a quote (§19.2)."""
+    kind = entry.get("store")
+    if kind == "role":
+        store = f"Role memory ({inline(entry.get('role') or '?')})"
+    else:
+        store = "Team memory" if kind == "team" else "Community memory"
     date = inline(str(entry.get("created_at") or "")[:10] or "?")
     tags = ", ".join(inline(t) for t in entry.get("tags") or [])
     head = (
@@ -445,7 +465,7 @@ def _memory(packet: dict[str, Any]) -> list[str]:
         f"Memory. {inline(memory.get('notice') or MEMORY_NOTICE)}",
         *soul_lines(memory.get("soul")),
     ]
-    for key in ("team", "community"):
+    for key in ("team", "role", "community"):
         store = _dict(memory.get(key))
         for entry in _items(store.get("items")):
             out += memory_entry_lines(entry)
@@ -590,7 +610,7 @@ def render(packet: Any, first: bool = False, board_empty: bool = False) -> str:
                 if isinstance(p.get("member_id"), str)
                 else inline(p.get("handle") or "?")
             )
-            + f" ({inline(p.get('role'))}, {inline(p.get('presence'))})"
+            + f" ({_trust_role(p, '{trust} {role}', '{role}')}, {inline(p.get('presence'))})"
             for p in peers
         )
         out += ["", f"Members: {listed}"]
