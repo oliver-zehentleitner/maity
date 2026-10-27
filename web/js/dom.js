@@ -178,21 +178,53 @@ window.Maity = window.Maity || {};
   // field's form is submitted, or for a field outside one `act` is called;
   // never while `button` (the form's submit button by default) is
   // disabled, so a send on its way is not sent twice.
-  const SEND_KEYS = /Mac|iPhone|iPad/.test((window.navigator && window.navigator.platform) || "") ? "⌘+Enter" : "Ctrl+Enter";
+  //
+  // The keys are named as the keyboard prints them (tsk-00q3ddrh7a1q):
+  // ⌘ on an Apple device, Strg where the page or the browser speaks German,
+  // Ctrl elsewhere.
+  function sendKeysFor(lang, platform, ua) {
+    if (/Mac|iPhone|iPad|iPod/.test(String(platform || "")) || /Macintosh|iPhone|iPad|iPod/.test(String(ua || ""))) return "⌘+Enter";
+    return /^de\b/i.test(String(lang || "")) ? "Strg+Enter" : "Ctrl+Enter";
+  }
+  const nav = window.navigator || {};
+  // dom.js also loads where there is no document (web/tools/starter-configs.js).
+  const root = typeof document !== "undefined" ? document.documentElement : null;
+  const pageLang = (root && root.getAttribute && root.getAttribute("lang")) || "";
+  const SEND_KEYS = sendKeysFor(/^de\b/i.test(pageLang) ? pageLang : nav.language, nav.platform, nav.userAgent);
+  // A device with no keyboard to press them on: touch alone, no hover.
+  const touchOnly = () => !!(window.matchMedia && window.matchMedia("(hover: none) and (pointer: coarse)").matches);
   function formOf(el) {
     for (let x = el.parentNode; x; x = x.parentNode) if (x.tagName === "FORM") return x;
     return null;
+  }
+  const submitOf = (form) => form && Array.from(form.querySelectorAll("button")).find((b) => b.getAttribute("type") === "submit");
+  // The keys right before the button that sends, muted, the two one group
+  // (span.send-with-keys, in the button's place), and in the button's
+  // tooltip, so whoever looks at the button learns them; the label keeps
+  // saying them for a screen reader. Once per button; none on a touch-only
+  // device. The designer's pass on #431: the hint reads as Send's label.
+  function showSendKeys(button) {
+    if (!button || button.getAttribute("data-send-keys") || touchOnly() || !button.parentNode) return;
+    button.setAttribute("data-send-keys", SEND_KEYS);
+    button.setAttribute("aria-keyshortcuts", "Control+Enter Meta+Enter");
+    const said = button.getAttribute("title");
+    button.setAttribute("title", (said ? said + " " : (button.textContent || "").trim() + " ") + "(" + SEND_KEYS + ")");
+    const group = h("span", { class: "send-with-keys" });
+    button.parentNode.insertBefore(group, button);
+    append(group, h("span", { class: "send-keys muted", "aria-hidden": "true" }, SEND_KEYS), button);
   }
   function sendOnCtrlEnter(field, act, button) {
     field.addEventListener("keydown", (e) => {
       if (e.key !== "Enter" || !(e.ctrlKey || e.metaKey) || e.isComposing) return;
       e.preventDefault();
       const form = act ? null : formOf(field);
-      const submit = button || (form && Array.from(form.querySelectorAll("button")).find((b) => b.getAttribute("type") === "submit"));
+      const submit = button || submitOf(form);
       if (submit && submit.disabled) return;
       if (act) act(e);
       else if (form) form.requestSubmit();
     });
+    // The view puts the field and its button on the page after this call.
+    window.setTimeout(() => showSendKeys(button || submitOf(formOf(field))), 0);
     return field;
   }
 
@@ -287,5 +319,5 @@ window.Maity = window.Maity || {};
       title: known ? "Last hub call: " + formatTime(member.last_seen_at) : "No last hub call is available" }, text);
   }
 
-  M.dom = { handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, memberRef, notOnHub, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, withMentions, sniffImage, IMAGE_MAX, SEND_KEYS, sendOnCtrlEnter };
+  M.dom = { handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, memberRef, notOnHub, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, withMentions, sniffImage, IMAGE_MAX, SEND_KEYS, sendKeysFor, showSendKeys, sendOnCtrlEnter };
 })(window.Maity);
