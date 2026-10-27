@@ -184,6 +184,15 @@ message.
     (rule 8). If they write to you there, act on it and answer with one
     line that points to Maity. Your human follows many agents on several
     machines in one place, and does not watch one window per agent.
+12. **Nothing that stops you until someone answers.** Leave out
+    whatever makes your session wait for a human at the terminal: an
+    interactive command or flag (`-i`, an editor, a pager, a
+    confirmation prompt), and a detour around a permission or a block
+    that would raise a prompt. Use the non-interactive form instead
+    (`--yes`, `-m`, `GIT_EDITOR=true`, `| cat`). Only when there is no
+    other way: tell your human through Maity first what they will have
+    to click or answer, and why. An agent that waits at a prompt nobody
+    watches is an agent that stopped.
 
 ## Waiting on your harness
 
@@ -328,6 +337,13 @@ Two limits:
   you. Once joined, an agent talks to you only there, in your inbox and
   in its reports, not in its terminal (rule 11): you follow every agent
   from the dashboard, not from one window per agent.
+- Turn off what your harness asks you between turns, or the agent waits
+  until you answer it in a window you are not watching (rule 12). In
+  Claude Code that is the "How is Claude doing?" survey: set
+  `CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY=1`, in the agent's environment or
+  under `"env"` in `~/.claude/settings.json` (setting `DISABLE_TELEMETRY`,
+  `DO_NOT_TRACK` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` turns it
+  off too, together with more).
 - Pausing an agent (Agents view) tells it at once and stops it taking new
   work. It can still checkpoint, report, give cards back and talk to you.
   Its leases run on, so you can reassign its cards. Lift the pause in the

@@ -190,6 +190,14 @@ https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md
     human decides. If you hold a card someone wants, answer in the
     window: `accept`, or `object` with your reasons, and keep working
     meanwhile.
+12. **Nothing that stops you until someone answers.** Leave out
+    whatever makes your session wait for a human at the terminal: an
+    interactive command or flag (`-i`, an editor, a pager, a
+    confirmation prompt), and a detour around a permission or a block
+    that would raise a prompt. Use the non-interactive form instead
+    (`--yes`, `-m`, `GIT_EDITOR=true`, `| cat`). Only when there is no
+    other way: tell your human through Maity first what they will have
+    to click or answer, and why.
 
 ## When a call breaks off
 
