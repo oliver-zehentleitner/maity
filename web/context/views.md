@@ -725,7 +725,8 @@ a missing feature.
 
 **Id:** d80f865d-5b59-4ad1-8cc2-c1079d13869c
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 621d28a8-36f5-4ebd-a90a-f7d729d7af34
 **Evidence:** confirmed
 **Source:** the maintainer's wish that Join an agent be part of Agents, not a page of its own (tsk-rf6qynscm6px), 2026-10-23; the designer's layout for it, 2026-10-23; the dashboard's implementation, 2026-10-23
 **Revisit when:** joins get a lifecycle of their own beyond open, used, expired, burned and revoked, or the Agents view is split
@@ -1296,7 +1297,8 @@ the maintainer asked for logos, and several names would crowd the line.
 
 **Id:** 0d1a03cd-81e9-4895-af2d-ef8dc54806a6
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 1c00024d-a3a6-49bc-ba2e-704359713aeb
 **Evidence:** confirmed
 **Source:** the designer's pass part 3 on #366/#369 (tsk-w2xnkrwf147m), 2026-10-27: every agent card carried an open Pause form with its hint, which made each card about twice as long
 **Revisit when:** the member page header gets its own Actions menu (the designer's overview handover), so both can share one list
@@ -1499,8 +1501,9 @@ briefing (edited there), whether it gets your preferences if it is
 yours, its credentials with Revoke (read when the row first opens, kept
 across redraws), the pause once, and Remove. Without members:admin a
 human's own agents open as **Details**: credentials and the preferences
-switch, nothing that changes the membership. The join panel and the
-placements follow in a second change, and the Agents page goes then.
+switch, nothing that changes the membership. With the join panel and the
+placements moved too, the Agents page and its cards are gone; see the
+entry on joining in Members.
 
 **Reason:** one row per member, with what may be done to it, is the
 Members tab the Team page decided; nothing a person could see or do on
@@ -1510,6 +1513,7 @@ the Agents page may get lost, an owner without admin rights included.
 to open: their credentials and the preferences switch were theirs on the
 Agents page. Loading every agent's credentials with the list: a call per
 agent on every visit, for rows mostly never opened.
+
 ## The lead is reached by a Lead button beside Chat, not by Chat itself or a strip
 
 **Id:** 0ff66bde-7c26-412a-a856-069b52764910
@@ -1554,3 +1558,31 @@ the projects' row lists projects, and the gear menu holds what is not a
 project's.
 
 **Alternatives:** unknown.
+## Agents are added in Members: Add at the head of the agents' table, open joins as seats under it
+
+**Id:** 621d28a8-36f5-4ebd-a90a-f7d729d7af34
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish to fold the Agents page into Members (tsk-7v2snhk002ak, chat 2026-10-27); the coordinator's cut, whose second PR moves joining and the placements and removes the Agents page, 2026-10-27; the decided Team page's Members tab (context/members.md f0ca2279)
+**Revisit when:** the Team page's Members tab lands, or joins get a lifecycle beyond open, used, expired, burned and revoked
+**See:** views.md#joining-an-agent-happens-in-agents-a-panel-under-the-title-open-joins-as-seats-in-the-grid — d80f865d-5b59-4ad1-8cc2-c1079d13869c — as of 2026-10-27
+
+The agents' heading on Members has **+ Add an agent** (owner and admin),
+which opens the join panel under it: closed by default, open at once in a
+project without agents or at `#/p/<slug>/members/join` (the old
+`…/agents/join` and `…/join` lead there). The panel is read beside the
+list, never before it, so the rows and a member asked for by the URL do
+not wait for the joins. Open joins stand as seats under the agents'
+table, the placements after it, the earlier joins at the end. A count
+line says how many agents, online and open joins there are.
+`#/p/<slug>/agents` shows Members; there is no Agents tab.
+
+**Reason:** an agent is a member; adding one where the members are, and
+seeing its seat next to them, keeps one place for the team, as the Team
+page decided.
+
+**Rejected alternative:** keeping Agents as a tab beside Members: two
+views of the same people, with the actions split between them. Seats
+inside the agents' table as rows: a seat is no member yet, and the table
+is read by the hub's member list.
