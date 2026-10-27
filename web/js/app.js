@@ -221,7 +221,7 @@ window.Maity = window.Maity || {};
     const password = h("input", { id: "login-password", name: "password", type: "password", autocomplete: "current-password", required: true });
     const status = statusLine();
     const form = h("form", {
-      class: "login",
+      class: "login door",
       onsubmit: async (e) => {
         e.preventDefault();
         status.busy("Signing in…");
@@ -1459,6 +1459,7 @@ window.Maity = window.Maity || {};
   }
 
   M.errorBox = errorBox;
+  M.logout = logout;
   M.brandTitle = brandTitle;
   M.statusLine = statusLine;
   M.STATE_LABELS = STATE_LABELS;

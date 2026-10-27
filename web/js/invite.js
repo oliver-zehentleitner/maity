@@ -36,14 +36,17 @@ window.Maity = window.Maity || {};
   async function page(main, header, token) {
     bar(header);
     document.title = "Invitation · Maity";
-    const box = h("article", { class: "invite" });
+    // One centred card, as sign-in and register (the designer's pass part 2):
+    // the three pages are one door.
+    const box = h("article", { class: "invite door" });
     append(clear(main), box);
     let inv;
     try {
       inv = await M.api.get("/invitations/" + encodeURIComponent(token));
     } catch (err) {
       // Unknown, used, expired or revoked: one answer, never which (§3.4).
-      append(box, h("h2", null, "This invitation cannot be used"),
+      append(box, h("span", { class: "door-mark", "aria-hidden": "true" }, "✉"),
+        h("h2", null, "This invitation cannot be used"),
         h("p", null, err.status === 404 ? "It may have expired, been used or been withdrawn. Ask the person who invited you for a new one."
           : "It could not be read: " + (err.message || "an error") + "."),
         h("p", null, h("a", { href: "#/login" }, "Sign in")));
@@ -54,10 +57,12 @@ window.Maity = window.Maity || {};
     document.title = "Join " + inv.project.name + " · Maity";
     append(box,
       h("div", { class: "invite-project" },
-        ownLogo(inv.project.logo_url) ? h("img", { class: "invite-logo", src: inv.project.logo_url, alt: "", width: "48", height: "48" }) : null,
+        ownLogo(inv.project.logo_url) ? h("img", { class: "invite-logo", src: inv.project.logo_url, alt: "", width: "48", height: "48" })
+          : M.projectMark ? M.projectMark(inv.project.slug || inv.project.name, inv.project.name, null, "invite-logo") : null,
         h("h2", null, "Join ", h("span", { class: "invite-name" }, inv.project.name))),
-      h("p", { class: "invite-lead" }, inv.invited_by.display_name + " invites you to join " + inv.project.name + " as " + role + "."),
-      inv.note ? h("blockquote", { class: "invite-note" }, h("p", null, inv.note)) : null,
+      h("p", { class: "invite-lead" }, inv.invited_by.display_name + " invites you to join " + inv.project.name + " as ", h("strong", null, role), "."),
+      inv.note ? [h("blockquote", { class: "invite-note" }, h("p", null, inv.note)),
+        h("p", { class: "muted invite-note-by" }, "— " + inv.invited_by.display_name)] : null,
       h("p", { class: "muted" }, "Valid until " + formatTime(inv.expires_at) + "."
         + (inv.address_bound ? " It is meant for the address it was sent to." : "")));
     const ways = h("div", { class: "invite-ways" });
@@ -66,9 +71,9 @@ window.Maity = window.Maity || {};
     try { me = await signedIn(); } catch (err) { append(ways, h("p", { class: "send-status failed" }, "Could not tell whether you are signed in: " + err.message)); return; }
     if (!me) {
       append(ways,
-        h("p", null, h("a", { class: "button primary", href: M.withNext("#/login", here) }, "Sign in to accept")),
+        h("a", { class: "button primary door-action", href: M.withNext("#/login", here) }, "Sign in to accept"),
         inv.registration === "sign_in_or_register"
-          ? h("p", null, "No account yet? ", h("a", { href: M.withNext("#/register", here) }, "Create one"), " and you come back here.")
+          ? h("p", { class: "door-alt" }, "No account yet? ", h("a", { href: M.withNext("#/register", here) }, "Create one"), " and you come back here.")
           : h("p", { class: "muted" }, "This hub does not create new accounts: sign in with an account you have, or ask " + inv.invited_by.display_name + " for another way in."));
       return;
     }
@@ -80,7 +85,7 @@ window.Maity = window.Maity || {};
     // Signed in: one button, the hub's refusal in its own words (§3.4).
     const status = M.statusLine();
     status.el.setAttribute("tabindex", "-1");
-    const accept = h("button", { type: "button", class: "primary" }, "Join " + inv.project.name + " as " + me.display_name);
+    const accept = h("button", { type: "button", class: "primary door-action" }, "Join " + inv.project.name + " as " + me.display_name);
     accept.addEventListener("click", async () => {
       accept.disabled = true;
       status.busy("Joining…");
@@ -99,7 +104,10 @@ window.Maity = window.Maity || {};
       const open = ways.querySelector("a");
       if (open) open.focus();
     });
-    append(ways, h("p", { class: "muted" }, "Signed in as " + me.display_name + " (@" + me.handle + ")."), accept, status.el);
+    // Who is signed in, as a small row, with a way out when it is someone else.
+    append(ways, h("p", { class: "door-who" }, M.avatar ? M.avatar(me, 24) : null,
+      h("span", { class: "muted" }, "Signed in as " + me.display_name + " · @" + me.handle),
+      M.logout ? h("button", { type: "button", class: "link-button", onclick: () => M.logout() }, "Not you? Sign out") : null), accept, status.el);
   }
 
   // The reason a refusal names, beside the hub's words.

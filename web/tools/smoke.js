@@ -3042,6 +3042,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && ivRegister && ivRegister.getAttribute("href") === "#/register?next=%2F%23%2Finvite%2Fopen-xxxxxxxxxxxxxxxx1"
     && header.querySelector(".theme-menu") && plainTitle() === "Join Maity · Maity",
     "invite: signed out, the invitation and both ways in, each returning to it");
+  // The door (the designer's pass part 2): one centred card; the role in bold, the note a quote with who wrote it,
+  // the logo or its monogram, the action full width.
+  expect(ivPage().classList.contains("door") && text(ivPage().querySelector(".invite-lead strong")) === "member"
+    && text(ivPage().querySelector(".invite-note-by")) === "— Maintainer" && ivPage().querySelector(".invite-project .invite-logo")
+    && ivSignIn.classList.contains("door-action") && thCss.includes(".door { max-width: 28rem; margin: 10vh auto;"),
+    "invite: one centred card, the role in bold, the note a quote signed, the logo, the action full width");
   await go("#/invite/only-xxxxxxxxxxxxxxxx2"); for (let k = 0; k < 4; k++) await tick();
   expect(!ivPage().querySelectorAll("a").some((a) => text(a) === "Create one") && text(ivPage()).includes("This hub does not create new accounts")
     && ivPage().querySelectorAll("a").some((a) => text(a) === "Sign in to accept"), "invite: where the hub does not register, only signing in");

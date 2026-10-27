@@ -779,6 +779,21 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .new-agent { display: grid; gap: 6px; }
 .new-agent[hidden] { display: none; }
 .login { margin: 10vh auto 0; }
+/* The door (the designer's pass part 2): sign-in, register and an
+   invitation as one centred card. */
+.door { max-width: 28rem; margin: 10vh auto; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; display: grid; gap: 12px; box-sizing: border-box; }
+.door h2 { margin: 0; }
+.door .door-action { width: 100%; justify-content: center; text-align: center; box-sizing: border-box; }
+.door-alt { text-align: center; margin: 0; }
+.door-mark { font-size: 2rem; color: var(--muted); }
+.door-who { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; }
+.door-who .link-button { min-height: 0; padding: 0; }
+.invite-project { display: flex; align-items: center; gap: 12px; }
+.invite-logo { width: 48px; height: 48px; border-radius: 10px; flex: none; }
+.project-mark.invite-logo { font-size: 1.1rem; }
+.invite-note { margin: 0; padding-inline-start: 12px; border-inline-start: 3px solid var(--border); }
+.invite-note p { margin: 0; }
+.invite-note-by { margin: -6px 0 0; }
 
 .join-result { margin: 12px 0; }
 .join-result .actions, .pair-steps .actions { margin-top: 8px; }
