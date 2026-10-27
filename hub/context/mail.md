@@ -15,8 +15,8 @@ The admin-set mail values are `mail.*` names in `instance_setting`, the
 sealed SMTP password `mail.smtp_password` in `instance_secret`, and the
 last test `mail.last_test` (persistence.md). The counters of §16.2 count
 rows of `mail_delivery` (budget kind, outcome, time; no address and no
-content) over the last hour; `security_queued` counts the security rows
-still `queued`, however old. The SMTP conversation is `smtplib`, driven
+content) over the last hour; `security_queued` counts the security mail
+still waiting in `mail_outbox`, however old. The SMTP conversation is `smtplib`, driven
 step by step (`maity_hub.mail.smtp`) so that each stage of §16.3 is its
 own exchange, inside one 20-second deadline. `tls: none` with a host
 that is not loopback stops the hub at startup and is refused at stage
@@ -68,3 +68,68 @@ every save would otherwise wipe the last test with an unchanged value.
   the settings check with real deliveries.
 - Clearing `last_test` whenever a connection field is in the body:
   simpler, but every full-form save would drop a still valid result.
+
+## Mail goes through an outbox written in the deciding transaction and sent by a worker thread
+
+**Id:** c77fd991-dc7d-4c37-9971-8f500a91ccf8
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §16.2, §18.5, §18.7; the implementation of tsk-32jx98jzne6z, 2026-10-23, re-cut as the first of four pull requests, 2026-10-27
+**Revisit when:** the hub runs more than one replica for good (the budgets are read per pass, not reserved), or mail volume needs more than one mail at a time
+
+Mail is a row in `mail_outbox`, written in the same transaction as the
+change that causes it. `maity_hub.mail.outbox.Worker` looks every five
+seconds, sends what is due one mail at a time with the settings in
+effect, and records each outcome in `mail_delivery` under the mail's
+budget kind. A security mail over `security_max_per_hour` gets a later
+`not_before` and waits, never dropped. `enabled: false` holds every row.
+A failure at `resolve`, `connect`, `tls`, `auth` or `timeout` is the
+instance's and is retried with backoff for 24 hours; a permanent `5xx`
+at `RCPT TO` or `DATA` fails the row. Sign-in mail over its budget is
+dropped, not delayed, since a late link is useless. A row that left the
+queue is deleted after seven days, so the outbox keeps no lasting record
+of who got what.
+
+**Reason:** a mail decided in a transaction that rolls back must not
+leave, and a request must not wait up to 20 seconds for an SMTP server.
+The budgets need the order and the waiting that a queue gives. A thread
+like the images worker needs no new process for one replica.
+
+**Rejected alternatives:**
+- Sending inside the request: a slow or failing server would hold the
+  admin's or human's request, and a mail could leave for a change that
+  then fails to commit.
+- An in-memory queue: a restart would lose queued security mail, which
+  §16.2 says is never dropped.
+
+## An outbox row is claimed before it is sent; the claim lapses after two minutes
+
+**Id:** 92cf47a5-5206-4552-a493-2255cb3a1e48
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the coordinator's agreement on making the mail workers safe for a second process (`maity say`, seq 3405), 2026-10-25; the implementation of tsk-s7rktpfc3ejh, folded into the outbox when it was re-cut, 2026-10-27
+**Revisit when:** a second hub replica runs for good (then the instance budget needs a reservation across processes), or a mail is found sent twice after a crash mid-send
+**See:** kubernetes.md — 5e42eb26-9883-49e2-89c0-9fe4e6517c62 — as of 2026-10-25
+
+A process takes a row with one conditional UPDATE, from `waiting` (or a
+lapsed `sending`) to `sending`, with `not_before` set to now plus
+`CLAIM_FOR` (two minutes). Only the process whose UPDATE changed the row
+sends it; a process that dies mid-send leaves a claim that lapses, and
+the row is taken again. A retry puts the row back to `waiting`.
+
+**Reason:** the chart keeps one pod with Recreate, but an overlap, a
+manual second process or a future replica must not send mail twice. A
+conditional UPDATE is the claim every engine does the same way, and
+reusing `not_before` as the deadline needs no extra column. Two minutes
+outlasts the 20-second SMTP conversation by a wide margin. The claim is
+part of the outbox from its first version, not a later change on top.
+
+**Rejected alternatives:**
+- `SELECT ... FOR UPDATE SKIP LOCKED`: not on every engine the hub
+  supports in the same form, and the lock would be held across the SMTP
+  conversation.
+- Exactly-once delivery: not possible across a crash between the
+  server's `250` and the commit; the claim makes it at-least-once and
+  one-at-a-time.
