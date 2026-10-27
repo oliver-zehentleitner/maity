@@ -256,7 +256,7 @@ window.Maity = window.Maity || {};
             : err);
           // The limit is the agent owner's rulebook, in the agent's row on Members (§6.18).
           if (err.code === "instance_quota" && agent.id) {
-            append(status.el, " ", h("a", { class: "join-quota-link", href: ctx.link("members", agent.id) },
+            append(status.el, " ", h("a", { class: "join-quota-link", href: ctx.link("members", agent.id, "rulebook") },
               "Raise it in the team's rulebook"));
           }
           // A member the list on screen did not show, a first join the list

@@ -82,6 +82,9 @@ window.Maity = window.Maity || {};
     const box = h("div", { class: "members-box" });
     // Rows open for managing stay open across a redraw.
     const open = new Set();
+    // #/p/<slug>/members/<id>/rulebook (a join's quota refusal): that row open, at its rulebook.
+    const rulebookAsked = !!(wanted && args[1] === "rulebook");
+    if (rulebookAsked) open.add(wanted);
     // member id -> its presence cell, updated in place by the refresh.
     const presenceCells = new Map();
     // focus key -> the element drawn for it, so focus survives a redraw.
@@ -211,7 +214,9 @@ window.Maity = window.Maity || {};
       };
       const distribution = pick("distribution", DISTRIBUTION, t.distribution);
       const wake = pick("wake", WAKE, t.wake);
-      const lead = pick("lead", [["", "none"]].concat(active.map((i) => [i.id, i.label ? i.label + " (#" + i.id + ")" : "#" + i.id])), t.lead_instance || "");
+      // A lead revoked since stays chosen, marked, so saving another field does not clear it.
+      const gone = t.lead_instance && !active.some((i) => i.id === t.lead_instance) ? [[t.lead_instance, "#" + t.lead_instance + " (revoked)"]] : [];
+      const lead = pick("lead", [["", "none"]].concat(active.map((i) => [i.id, i.label ? i.label + " (#" + i.id + ")" : "#" + i.id]), gone), t.lead_instance || "");
       const review = h("input", { id: id("review"), type: "checkbox" });
       review.checked = !!t.review_within_team;
       const error = h("p", { class: "field-error", id: id("error"), role: "alert" });
@@ -591,7 +596,9 @@ window.Maity = window.Maity || {};
       const row = Array.from(box.querySelectorAll("tr.member")).concat(Array.from(agentsBox.querySelectorAll("tr.member")))
         .find((tr) => tr.getAttribute("data-member") === wanted);
       const th = row && row.childNodes[0];
-      if (th) window.setTimeout(() => th.focus(), 0);
+      const at = rulebookAsked ? focusables.get("team-max:" + wanted) : null;
+      if (at) window.setTimeout(() => at.focus(), 0);
+      else if (th) window.setTimeout(() => th.focus(), 0);
       else append(status.el, h("span", null, "No member with the id " + wanted + " in this project."));
     }
     ctx.every(PRESENCE_MS, async () => {

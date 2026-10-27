@@ -387,10 +387,12 @@ too.
    own, the **Team rulebook** (§6.18; nobody else sees it, an admin
    included): at most how many instances (1–16, the active count beside
    it), how cards assigned to the team reach an instance, the lead
-   instance (needed while cards or wakes go to the lead), which instance
-   an event for the team wakes, and whether one instance may review
-   another's work; only what changed is sent. A join refused with
-   `instance_quota` links there. Without
+   instance (needed while cards or wakes go to the lead; one revoked
+   since stays chosen, marked revoked), which instance an event for the
+   team wakes, and whether one instance may review another's work; only
+   what changed is sent. A join refused with `instance_quota` links
+   there (`#/p/<slug>/members/<id>/rulebook`: the row open, at the
+   limit). Without
    members:admin a human's own agents open as **Details** with their
    credentials and the preferences switch.
    **Where they run** (`js/placements.js`, `docs/api.md` §15.5–§15.7),

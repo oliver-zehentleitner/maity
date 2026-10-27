@@ -632,6 +632,27 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.patch = tmPatch;
   // Back to the fixture's rulebook, for the join cases further down.
   await win.Maity.api.patch("/projects/maity/members/agt-c", { team: { max_instances: 3, distribution: "free", lead_instance: null } });
+  // The quota link's route: the row open, the focus on the limit.
+  const tmProto = Object.getPrototypeOf(main), tmFocus = tmProto.focus;
+  tmProto.focus = function () { document.activeElement = this; };
+  await go("#/p/maity/inbox"); await go("#/p/maity/members/agt-c/rulebook"); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  expect(byId("team-max-agt-c") && document.activeElement === byId("team-max-agt-c"), "team: the rulebook route opens the row at the limit");
+  tmProto.focus = tmFocus; document.activeElement = undefined;
+  // A lead revoked since stays chosen, marked; saving the limit alone does not clear it.
+  const tmLeadAll = win.Maity.api.getAll, tmLeadGet = win.Maity.api.get;
+  const tmGoneLead = (r) => Object.assign({}, r, { items: r.items.map((x) => (x.id === "agt-c" ? Object.assign({}, x, { team: Object.assign({}, x.team, { lead_instance: "old1", distribution: "lead" }) }) : x)), next_cursor: null });
+  win.Maity.api.getAll = (p) => (p === "/projects/maity/members" ? tmLeadAll(p).then(tmGoneLead) : tmLeadAll(p));
+  win.Maity.api.get = (p) => (p === "/projects/maity/members" ? tmLeadGet(p).then(tmGoneLead) : tmLeadGet(p));
+  const tmLeadPatches = [];
+  win.Maity.api.patch = (p, b) => { tmLeadPatches.push(b); return Promise.resolve({}); };
+  await go("#/p/maity/inbox"); await go("#/p/maity/members/agt-c/rulebook"); for (let k = 0; k < 4; k++) await tick();
+  const tmLead = byId("team-lead-agt-c");
+  expect(tmLead && tmLead.value === "old1" && tmLead.querySelectorAll("option").some((o) => o.getAttribute("value") === "old1" && o.textContent === "#old1 (revoked)"),
+    "team: a revoked lead stays chosen, marked revoked");
+  byId("team-max-agt-c").value = "5"; main.querySelector("form.member-team").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(tmLeadPatches.length === 1 && JSON.stringify(tmLeadPatches[0]) === JSON.stringify({ team: { max_instances: 5 } }),
+    "team: saving the limit leaves a revoked lead alone " + JSON.stringify(tmLeadPatches[0]));
+  win.Maity.api.patch = tmPatch; win.Maity.api.getAll = tmLeadAll; win.Maity.api.get = tmLeadGet;
   // Another owner's agent: no rulebook, even for an admin.
   const tmOthers = win.Maity.api.getAll;
   const tmOthersGet = win.Maity.api.get;
@@ -2710,7 +2731,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && text(main).includes("No join created: the team has as many instances as its rulebook allows"),
     "join: another instance beyond the team's limit shows the hub's instance_quota as it is");
   const inQuota = main.querySelector("a.join-quota-link");
-  expect(inQuota && inQuota.getAttribute("href") === "#/p/maity/members/agt-b" && text(inQuota) === "Raise it in the team's rulebook",
+  expect(inQuota && inQuota.getAttribute("href") === "#/p/maity/members/agt-b/rulebook" && text(inQuota) === "Raise it in the team's rulebook",
     "join: the quota refusal links to the agent's row, where its owner sets the rulebook");
   inPick("agt-c");
   expect(byId("join-replaces").querySelectorAll("option").map((o) => o.attrs.value).join() === "k3pa" && text(byId("join-quota")) === "1 of 3 instances active.",
