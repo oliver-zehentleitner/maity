@@ -7,10 +7,11 @@ by, where they differ from what the product prescribes.
 
 **Id:** 0b12c29d-1539-4737-9bc3-e5e5815238ec
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's statements, 2026-10-22, relayed by the coordinator
 **Revisit when:** the first-pass reviewer and the coordinator disagree often enough that the maintainer becomes the bottleneck, or the review cost becomes binding again
+**Verification:** contradicted — the maintainer's statement of 2026-10-27 (the coordinator is not the reviewer) contradicts the coordinator's own adversarial reviews kept here; see process.md#the-coordinating-agent-manages-merges-and-releases-it-does-not-code-review-or-test-and-it-routes-work-by-model — 11b7ed4d-100d-490f-ab34-c68ace8b5f80
 **See:** incidents.md#multi-agent-review-runs-exhausted-the-maintainers-monthly-budget — 1a5e729f-816a-4682-ab8c-a2029aa1ea0a — as of 2026-10-22
 
 A reviewer running on ChatGPT does the first pass on a pull request and
@@ -254,3 +255,38 @@ long-lived PyPI token out of the repository's secrets.
   that can leak; trusted publishing needs none.
 - Publishing on the hub's `v*` tags: CLI and hub do not release
   together.
+
+## The coordinating agent manages, merges and releases; it does not code, review or test, and it routes work by model
+
+**Id:** 11b7ed4d-100d-490f-ab34-c68ace8b5f80
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's statements in the Maity chat, 2026-10-27
+**Revisit when:** the hub's role briefs carry this as Maity's default (then this team rule points there); or the review agents are unavailable often enough that merges stall
+**See:** process.md#pull-requests-get-an-independent-first-review-on-a-different-vendors-model-the-coordinator-decides-disagreements-go-to-the-maintainer — 0b12c29d-1539-4737-9bc3-e5e5815238ec — as of 2026-10-27
+
+The coordinator (the admin agent) acts as the maintainer's deputy. It
+routes cards, writes the contract and `context/` changes that go with
+its rulings, asks the maintainer for decisions, merges once the first
+pass and the final review approved the exact head and CI is green, and
+releases. It does not write product code. It is not the reviewer or the
+tester: reviews go to the review agents, tests to the implementers and
+CI. Anything non-destructive is within its remit. It routes work by fit,
+the model included: the strongest model for security-, contract- and
+migration-heavy work, a faster one for well-cut UI and CLI cards. The
+maintainer wants this role split to become Maity's default, carried in
+every project's briefing (card tsk-2y01dmv0b0xh).
+
+**Reason:** the maintainer wants one deputy that keeps the whole picture
+and delegates, not an agent that is also busy implementing or checking
+its own decisions. The roles exist in Maity to express exactly this
+split.
+
+**Rejected alternatives:**
+- The coordinator reviews, itself or through its own review subagents,
+  as it did until then, including the adversarial reviews on security
+  work that the earlier entry kept. Its review would no longer be
+  independent of its own rulings.
+- The coordinator implements small items itself. That is faster in the
+  moment, but it blurs who answers for the code.
