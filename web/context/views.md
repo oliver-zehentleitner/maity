@@ -1461,3 +1461,21 @@ guess: seqs are the project's, not the chat's, so no guess finds the last
 50. Reading back only: it marks nothing read, so the unread counts
 would never fall. Keeping everything drawn: the DOM of a chat open all
 day grows without bound.
+
+## Runners in the gear menu, not in the projects' row
+
+**Id:** a6c7bf3a-9742-4535-ae21-110bd809dc47
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request (tsk-cb6myw32def0), 2026-10-27
+
+The link to `#/runners` sits in the header's gear menu, beside the
+instance administration, and no longer in the row that lists the
+projects. The menu marks it as the page shown.
+
+**Reason:** a runner belongs to the person who runs it, not to a project;
+the projects' row lists projects, and the gear menu holds what is not a
+project's.
+
+**Alternatives:** unknown.
