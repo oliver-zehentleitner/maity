@@ -285,3 +285,28 @@ branches half-done.
 
 **Alternatives:** none were weighed.
 
+## A migration chains on main's head at merge time; the numbers are reservations, and the coordinator sets the merge order
+
+**Id:** 65a9b523-fa1f-4f1f-966c-4f49a2660343
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's notices of 2026-10-23 and 2026-10-25
+**Revisit when:** parallel migration branches stop being a routine problem, or the hub gets a check that finds a diverging head before merge
+
+Several open hub pull requests each carried a migration, numbered in
+advance (0021 to 0027 at first). The rule: a pull request's migration
+has `down_revision` equal to main's alembic head at the moment it merges;
+the numbers are reservations, not an order. When a pull request ahead
+of yours lands, you rebase and re-point `down_revision`; the
+coordinator checks the chain before every merge. Later, with five
+branches waiting on the same head, the coordinator gave an explicit
+merge order: each owner re-points only after the coordinator's ping,
+each step merges only after the previous one is on main, and branches
+without an agreed place follow in the order they are reviewed.
+
+**Reason:** the stated aim was to stop five branches racing for the
+same head.
+
+**Alternatives:** none were weighed.
+
