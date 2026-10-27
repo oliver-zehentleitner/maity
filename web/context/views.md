@@ -1381,3 +1381,83 @@ keyboard prints them are found on it at once.
 Ctrl+Enter"): the button's name for a screen reader and every test of it
 would change, and a narrow composer has less room for it. The tooltip
 alone: it is not seen without a mouse resting on the button.
+
+## The overview leads with what needs the reader; its README badge is shown there and changed in Settings
+
+**Id:** 057e7277-3eba-4267-93d2-c6b74a5e2ff1
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the designer's handover on the overview (#6484, tsk-qse9t2b3a9n8), 2026-10-27: the five panels had equal weight and the one thing to act on (open requests) sat bottom left; the maintainer's wish for a Contract link in the project facts (tsk-yhbmz7mjng7n, step 1), 2026-10-27; the dashboard's implementation, 2026-10-27
+**Revisit when:** the hub serves the contract for reading inside Maity, or the badge can be changed without a logged reason
+
+Three rows: Waiting for you and Board, then Team and Latest reports,
+then Project and README badge. A member in a list is a chip
+(`M.dom.memberChip`), the shared form the member page header will use
+too. The Contract link is `docs/api.md` on the forge at the repository's
+default branch, built only for GitHub and GitLab, whose path shapes are
+known. The badge panel shows the state, the badge and the snippet to
+everyone; an owner or admin is sent to Project settings to change it.
+
+**Reason:** a person opening the overview comes to see whether anything
+waits for them, so that is the first thing, with its action one click
+away. A badge change is a policy change the hub logs with a reason, and
+Settings already asks for it; a second form would duplicate that.
+
+**Rejected alternative:** the designer's radio pills that change the
+badge on the overview: they would need the reason field too, or change a
+logged policy without one. A Contract link guessed for any forge: a
+wrong path shape would be a dead link that looks right.
+## The instance admin area shows one section at a time
+
+**Id:** 4c499cf2-cd9d-4ce1-be8d-639aa32306b6
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the designer's pass part 3 on #371 (tsk-w2xnkrwf147m), 2026-10-27: the admin page was one scroll of about 5,000 px (Statistics, Users, Mail settings, Landing page, Instance information)
+**Revisit when:** a section needs a link of its own (a route per section), or the area grows past one row of buttons
+
+`#/admin` reads every section the hub serves as before, then shows one:
+a row of buttons at the top names them (`aria-pressed` on the shown
+one), and the page opens on the first, Statistics. A section the hub
+turns out not to serve leaves the row with its section. The others stay
+in the page, hidden, so a form half filled in keeps what was typed.
+
+**Reason:** the admin comes for one thing at a time; five long sections
+under each other hid all but the first below the fold.
+
+**Rejected alternative:** a sticky list of anchors over the whole page,
+the designer's other option: the scroll stays 5,000 px, only the jump is
+shorter. A route per section (`#/admin/users`): `#/admin/users` is the
+older Users page already, and links into a section were not asked for.
+
+## A chat opens on its newest page in two requests; older pages on scroll-up
+
+**Id:** fcc59a72-46a0-4741-9d6f-abada05edab6
+**Type:** decision
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's report that chats grow slower and slower (tsk-r1adgwp0a5dr), 2026-10-27, and the rule from the incident of 2026-10-26: no request whose cost grows with history; docs/api.md §9.1 and §9.2 (`before` marks nothing read, `after` marks and delivers, a group chat's window); measured in web/tools/smoke.js on a 2000-message chat: 10 requests and 2000 messages drawn before, 2 and 50 after
+**Revisit when:** the hub can read the newest page and mark it read in one request, or serves the project messages listing (§8.8) the Messages view should page through
+
+Direct and group chats read the newest 50: back with `before=` (the
+list's last message, else the largest integer), then forward from the
+first of them with `after=`, which marks them read and delivered as
+opening a chat always did; in a group chat that forward read keeps to
+the window, so what lies before one joined is offered, not shown.
+Older pages come near the top or with **Show earlier messages**, the
+reader's place kept by the height drawn in front. At the newest, more
+than 300 drawn are cut to 100 and read again on scroll-up. Reading
+along from outside, the 30-second re-read takes the newest page only.
+
+**Reason:** a request whose cost grows with history slows every opening
+of a long chat and, multiplied by readers, loads the hub; two requests
+per opening and one per older page stay the same however long a chat
+grows.
+
+**Rejected alternative:** one forward read from the newest seq minus a
+guess: seqs are the project's, not the chat's, so no guess finds the last
+50. Reading back only: it marks nothing read, so the unread counts
+would never fall. Keeping everything drawn: the DOM of a chat open all
+day grows without bound.

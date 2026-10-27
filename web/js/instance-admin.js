@@ -154,11 +154,31 @@ window.Maity = window.Maity || {};
     append(root, h("h2", null, "Instance administration"));
     if (!ctx.me.instance_admin) { append(root, h("p", null, "Only the instance admin can open this area.")); return; }
     const parts = [["/admin/statistics", "Statistics", (s) => M.statistics.section(ctx, s)], ["/admin/users", "Users", (s) => M.views.adminUsers(ctx, s)], [MAIL, "Mail settings", (s) => mailSection(ctx, s)], ["/admin/settings/landing", "Landing page", (s) => M.landing.section(ctx, s)], ["/health", "Instance information", infoSection]];
+    // One section at a time, picked in a row of buttons at the top (the
+    // designer's pass part 3: the page was one 5,000 px scroll); it opens
+    // on the first, Statistics.
+    const nav = h("nav", { class: "admin-nav", "aria-label": "Sections" });
+    append(root, nav);
+    const shown = [];
     for (const [path, label, load] of parts) {
       if (!await served("GET", path)) continue;
-      const section = h("section", { class: "panel admin-section", "aria-label": label }); append(root, section);
+      const section = h("section", { class: "panel admin-section", "aria-label": label, id: "admin-" + label.toLowerCase().replace(/\W+/g, "-") }); append(root, section);
+      shown.push([label, section]);
       try { await load(section); }
       catch (err) { if (!await missing(err, "GET", path, section)) { const status = M.statusLine(); status.fail(label + " could not be read: ", err); append(section, status.el); } }
     }
+    // A section the hub turned out not to serve has left the page.
+    const present = shown.filter(([, section]) => section.parentNode === root);
+    const buttons = present.map(([label, section]) => h("button", { type: "button", "aria-controls": section.id, "aria-pressed": "false",
+      onclick: () => pick(section) }, label));
+    function pick(chosen) {
+      present.forEach(([, section], i) => {
+        section.hidden = section !== chosen;
+        buttons[i].setAttribute("aria-pressed", String(section === chosen));
+      });
+    }
+    append(nav, buttons);
+    if (present.length) pick(present[0][1]);
+    else nav.remove();
   };
 })(window.Maity);

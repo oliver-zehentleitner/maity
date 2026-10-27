@@ -7,10 +7,11 @@ by, where they differ from what the product prescribes.
 
 **Id:** 0b12c29d-1539-4737-9bc3-e5e5815238ec
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's statements, 2026-10-22, relayed by the coordinator
 **Revisit when:** the first-pass reviewer and the coordinator disagree often enough that the maintainer becomes the bottleneck, or the review cost becomes binding again
+**Verification:** contradicted — the maintainer's statement of 2026-10-27 (the coordinator is not the reviewer) contradicts the coordinator's own adversarial reviews kept here; see process.md#the-coordinating-agent-manages-merges-and-releases-it-does-not-code-review-or-test-and-it-routes-work-by-model — 11b7ed4d-100d-490f-ab34-c68ace8b5f80
 **See:** incidents.md#multi-agent-review-runs-exhausted-the-maintainers-monthly-budget — 1a5e729f-816a-4682-ab8c-a2029aa1ea0a — as of 2026-10-22
 
 A reviewer running on ChatGPT does the first pass on a pull request and
@@ -254,3 +255,98 @@ long-lived PyPI token out of the repository's secrets.
   that can leak; trusted publishing needs none.
 - Publishing on the hub's `v*` tags: CLI and hub do not release
   together.
+
+## The coordinating agent manages, merges and releases; it does not code, review or test, and it routes work by model
+
+**Id:** 11b7ed4d-100d-490f-ab34-c68ace8b5f80
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's statements in the Maity chat, 2026-10-27
+**Revisit when:** the hub's role briefs carry this as Maity's default (then this team rule points there); or the review agents are unavailable often enough that merges stall
+**See:** process.md#pull-requests-get-an-independent-first-review-on-a-different-vendors-model-the-coordinator-decides-disagreements-go-to-the-maintainer — 0b12c29d-1539-4737-9bc3-e5e5815238ec — as of 2026-10-27
+
+The coordinator (the admin agent) acts as the maintainer's deputy. It
+routes cards, writes the contract and `context/` changes that go with
+its rulings, asks the maintainer for decisions, merges once the first
+pass and the final review approved the exact head and CI is green, and
+releases. It does not write product code. It is not the reviewer or the
+tester: reviews go to the review agents, tests to the implementers and
+CI. Anything non-destructive is within its remit. It routes work by fit,
+the model included: the strongest model for security-, contract- and
+migration-heavy work, a faster one for well-cut UI and CLI cards. The
+maintainer wants this role split to become Maity's default, carried in
+every project's briefing (card tsk-2y01dmv0b0xh).
+
+**Reason:** the maintainer wants one deputy that keeps the whole picture
+and delegates, not an agent that is also busy implementing or checking
+its own decisions. The roles exist in Maity to express exactly this
+split.
+
+**Rejected alternatives:**
+- The coordinator reviews, itself or through its own review subagents,
+  as it did until then, including the adversarial reviews on security
+  work that the earlier entry kept. Its review would no longer be
+  independent of its own rulings.
+- The coordinator implements small items itself. That is faster in the
+  moment, but it blurs who answers for the code.
+
+## While the shared Claude budget runs low, the Claude agents work one at a time
+
+**Id:** 31b7d6b3-054c-411d-8f2c-372831b0c773
+**Type:** decision
+**Status:** needs-review
+**Evidence:** confirmed
+**Source:** the coordinator's notices of 2026-10-23 and 2026-10-24, passing on the maintainer's heads-up that the Claude agents would hit their usage limit
+**Revisit when:** the usage limit has reset, or the budget stops being shared by the Claude agents
+**See:** incidents.md#multi-agent-review-runs-exhausted-the-maintainers-monthly-budget — 1a5e729f-816a-4682-ab8c-a2029aa1ea0a — as of 2026-10-27
+
+**Revisit:** the condition triggered on 2026-10-27: a new team runs on new
+subscriptions, several Claude agents in parallel, on the maintainer's
+instruction (coordinator, 2026-10-27). This is not today's rule; the entry
+stays as the record of the earlier stretch until a person re-checks it.
+
+When the maintainer announced that the Claude-based agents would soon
+hit their usage limit, the coordinator set a working mode for the
+stretch until the reset. First, every agent pushes work in progress to
+its branch (without opening a pull request that is not ready), puts a
+checkpoint on its card (done, next, branch, head) and leaves nothing
+half-way that would break main or an open pull request. Then only one
+Claude agent works at a time, in an order the coordinator names (the
+roles that had open work in flight first); the others finish their
+step, report and pause their wait loop until they are named. The agents
+on the other vendor's model (the reviewers and the worker) keep going,
+finish the reviews they hold and send patches to the coordinator
+instead of merging or pushing. The remaining share was stated twice: about 4 % of the
+weekly budget for about 36 hours, later about 3 % for about 22 hours.
+
+**Reason:** the Claude agents draw on one shared budget, and parallel
+work would have used the small remainder in a few hours and left several
+branches half-done.
+
+**Alternatives:** none were weighed.
+
+## A migration chains on main's head at merge time; the numbers are reservations, and the coordinator sets the merge order
+
+**Id:** 65a9b523-fa1f-4f1f-966c-4f49a2660343
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's notices of 2026-10-23 and 2026-10-25
+**Revisit when:** parallel migration branches stop being a routine problem, or the hub gets a check that finds a diverging head before merge
+
+Several open hub pull requests each carried a migration, numbered in
+advance (0021 to 0027 at first). The rule: a pull request's migration
+has `down_revision` equal to main's alembic head at the moment it merges;
+the numbers are reservations, not an order. When a pull request ahead
+of yours lands, you rebase and re-point `down_revision`; the
+coordinator checks the chain before every merge. Later, with five
+branches waiting on the same head, the coordinator gave an explicit
+merge order: each owner re-points only after the coordinator's ping,
+each step merges only after the previous one is on main, and branches
+without an agreed place follow in the order they are reviewed.
+
+**Reason:** the stated aim was to stop five branches racing for the
+same head.
+
+**Alternatives:** none were weighed.

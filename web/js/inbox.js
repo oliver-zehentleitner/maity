@@ -465,7 +465,6 @@ window.Maity = window.Maity || {};
     append(root,
       h("div", { class: "toolbar" },
         h("h2", null, ctx.scope === "all" ? "Waiting for you, all projects" : "Inbox"),
-        ctx.scope === "project" ? h("a", { class: "button-link", href: ctx.link("message") }, "Message the project") : null,
         h("label", { for: "inbox-sort" }, "Sort by"), sortSelect,
         showSelect ? [h("label", { for: "inbox-show" }, "Show"), showSelect] : null,
         projectSelect ? [h("label", { for: "inbox-project" }, "Project"), projectSelect,

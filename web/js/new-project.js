@@ -17,9 +17,12 @@ window.Maity = window.Maity || {};
   const SLUG_PATTERN = M.dom.NAME_RULES.slug.pattern;
   const SLUG = M.dom.NAME_RULES.slug.test;
 
+  // The preset's name is the option; what it means is the hint under the
+  // select, which follows the choice (the designer's pass part 3: a long
+  // option was cut off in the select).
   const PRESETS = [
-    ["hierarchical", "Hierarchical: reviewers move cards to done, admins arbitrate contracts"],
-    ["solo", "Solo: the holder moves its own card to done, the owner arbitrates"],
+    ["hierarchical", "Hierarchical", "Reviewers move cards to done, admins arbitrate contracts."],
+    ["solo", "Solo", "The holder moves its own card to done, the owner arbitrates."],
   ];
 
   // §6.21: the providers, Keep the Why preselected, and the setup options
@@ -107,7 +110,12 @@ window.Maity = window.Maity || {};
     };
     memory.input.addEventListener("change", showOptions);
     const preset = field("project-preset", "Policy preset",
-      h("select", { id: "project-preset" }, PRESETS.map(([value, label]) => h("option", { value }, label))));
+      h("select", { id: "project-preset" }, PRESETS.map(([value, label]) => h("option", { value }, label))), PRESETS[0][2]);
+    const presetHint = preset.nodes[2];
+    preset.input.addEventListener("change", () => {
+      const chosen = PRESETS.find(([value]) => value === preset.input.value);
+      presetHint.textContent = chosen ? chosen[2] : "";
+    });
 
     let slugTyped = false;
     slug.input.addEventListener("input", () => { slugTyped = slug.input.value !== ""; });

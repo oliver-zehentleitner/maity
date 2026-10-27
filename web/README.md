@@ -475,8 +475,13 @@ too.
    follow the same way, with the same **Newest** pill. A redraw of the list
    keeps the keyboard focus on the same chat. On a phone (≤ 720 px) the
    list is one screen and the chat another, with **← Conversations**
-   back; opening a chat there moves the focus to its heading. The history
-   is read to its end (pages of 200, oldest first) and drawn with a separator per day ("Today", "Yesterday", the date), a
+   back; opening a chat there moves the focus to its heading. A chat opens
+   on its newest 50 messages, read in two requests whatever its length
+   (back with `before=`, which marks nothing, then forward from the first
+   of them, which marks them read); older pages come when the reader
+   scrolls near the top, or with **Show earlier messages**, the place
+   kept; at the newest, a tail of more than 300 is let go and read again
+   on scroll-up. The messages are drawn with a separator per day ("Today", "Yesterday", the date), a
    sender's messages within five minutes grouped (the agent's picture and
    name only on the first), and a "New messages" line before what was
    unread when the chat was opened; scrolled up, a **Newest** button (with
@@ -508,9 +513,11 @@ too.
      others. Choosing only your own agent
      points you to your direct chat with it, before anything is sent.
    - **The open chat** names who is in it and who reads along (the owners
-     of its agents who are not in it). It shows the window since you
-     joined, with the unread line. **Show earlier messages** reads what
-     came before, on demand.
+     of its agents who are not in it). It shows the newest page of the
+     window since you joined, with the unread line. **Show earlier
+     messages**, or scrolling near the top, reads what came before, on
+     demand; reading along from outside, the 30-second re-read takes the
+     newest page only.
    - **Writing.** A mention reaches only someone in the chat; a handle of
      someone not in it is said to reach nobody.
    - **Removing.** A human in the chat can remove a message for everyone,
@@ -654,19 +661,32 @@ too.
    here (possible once invitations exist; not in V1) cannot detach it
    from the dashboard although the hub would let them.
 10. **Overview** (`#/p/<slug>/overview`, `docs/api.md` §6.11; its tab is
-    the second, next to the inbox): the project at a glance.
-    - Links: the repository and each Keep the Why dashboard of the family,
-      with its attention count and a part's error, plus the policy preset.
-      A link is used only when it is plain `https`, in a new tab with
+    the second, next to the inbox): the project at a glance, in three
+    rows: what needs you, then the state, then the facts; on a phone one
+    column in the same order. A panel's heading is never a link; its way
+    onward stands at the end of its head row.
+    - **Waiting for you**: the open requests for you as one big number
+      linking to the inbox, **Open the inbox**, the priorities as pills and
+      when the oldest was asked; "Nothing for you · N open for others", or
+      "Nothing waits for an answer".
+    - **Board**: one stacked bar, a segment per column (named for a screen
+      reader), and a legend whose every count links to the board, over the
+      board's 14-day window for done and cancelled.
+    - **Team**: per role, the members as chips (`M.dom.memberChip`: the
+      avatar round for a human, rounded for an agent, a presence dot,
+      `@handle`, name, role, kind and presence in the tooltip), how many
+      humans, agents and online, and **All members**.
+    - **Latest reports**: avatar, card, `@who`, when, the pull request with
+      the state the probe saw as a pill, a mismatch said.
+    - **Project**: the repository, the policy preset, the **Contract**
+      (`docs/api.md` on the forge at the default branch, GitHub and GitLab)
+      and each Keep the Why dashboard of the family as a pill: green, amber
+      with what needs attention, red with why it was not read. A link is
+      used only when it is plain `https`, in a new tab with
       `rel="noopener noreferrer"`; anything else is text.
-    - Members by role, with how many are humans, agents and online.
-    - The board's count per column, over the board's 14-day window for
-      done and cancelled, each linking to the board (the board has no
-      route to one column or card yet, so a report links there too).
-    - Open requests, those for oneself and by priority, linking to the
-      inbox.
-    - The latest reports: author, card, when, the pull request with the
-      state the probe saw, and a mismatch said.
+    - **README badge**: its state (Off, Members, Agents online), the badge
+      as the hub serves it while on, the snippet with **Copy**; an owner or
+      admin changes it in Project settings, where the change takes a reason.
 
     Links and members come from what the header already read. The counts
     come from `GET …/overview`, which is read again on `task_*`,
@@ -1022,7 +1042,8 @@ and falls back to the generated one when the image does not load (a
 organisation and in the chat list.
 
 **Message the project** (`#/p/<slug>/message`, no tab: **Message the
-project** in the inbox's toolbar, and from a chat: an `@name` typed there
+project** in the Chat tab's list beside **New group chat** and in the
+Messages view, no longer in the inbox, and from a chat: an `@name` typed there
 is said to notify nobody, with a link to a project message that has it
 already written) posts a message (`POST /projects/{slug}/events`, `docs/api.md`
 §8.4): to everyone, a role or one member (never oneself), of one of the

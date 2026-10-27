@@ -1557,11 +1557,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "members: a member reads the list without actions; the owner from the members");
   win.Maity.api.get = mGet;
 
-  // Message the project (docs/api.md §8.4): from the inbox, no tab of its own.
+  // Message the project (docs/api.md §8.4): from the Chat tab (tsk-r1adgwp0a5dr), no longer the inbox, no tab of its own.
   await go("#/p/maity/inbox");
-  const msgLink = main.querySelectorAll("a").find((a) => a.textContent === "Message the project");
+  expect(!main.querySelectorAll("a").some((a) => a.textContent === "Message the project"), "message: no longer in the inbox");
+  await go("#/p/maity/chat");
+  const msgLink = main.querySelector(".chat-list-pane").querySelectorAll("a").find((a) => a.textContent === "Message the project");
   expect(msgLink && msgLink.getAttribute("href") === "#/p/maity/message"
-    && !header.querySelectorAll("nav.views a").some((a) => a.textContent === "Message the project"), "message: a link in the inbox, no tab");
+    && !header.querySelectorAll("nav.views a").some((a) => a.textContent === "Message the project"), "message: a link in the Chat tab, no tab");
   const msgPosts = [];
   const mPost0 = win.Maity.api.post;
   win.Maity.api.post = (p, b) => { msgPosts.push([p, b]); return mPost0(p, b); };
@@ -1708,11 +1710,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "contract: opened, the section as Markdown with the short commit, when it was read, and the file on the forge");
   expect(!ctBody().querySelector("a.mention") && !ctBody().querySelector("a.id-ref") && text(ctBody()).includes("Ask @agent-a about tsk-0123456789ab")
     && ctLinks.length === 2, "contract: the repository's text is untrusted: no mention, no id link, only its own link and the forge's");
+  // Refresh is a text button in the line that says what was read; the source's form waits behind Change source.
+  const ctChange = btn(ctBox(), "Change source");
+  expect(btn(ctBody().querySelector(".contract-meta"), "Refresh") && !ctBox().querySelector(".contract-bar")
+    && ctBox().querySelector("form.contract-place").hidden && ctChange && ctChange.getAttribute("aria-expanded") === "false",
+    "contract: Refresh in the meta line, the source's form folded behind Change source");
+  ctChange.click(); await tick();
+  expect(!ctBox().querySelector("form.contract-place").hidden && ctChange.getAttribute("aria-expanded") === "true", "contract: Change source opens the form");
+  ctChange.click(); await tick();
   btn(ctBox(), "Refresh").click(); for (let k = 0; k < 4; k++) await tick();
   expect(ctGets.length === 2, "contract: Refresh reads again");
   win.Maity.api.get = (p) => (p.endsWith("/contract") ? Promise.reject(new win.Maity.api.ApiError("the forge did not answer", 503, p, "probe_unavailable")) : ctGet(p));
   btn(ctBox(), "Refresh").click(); for (let k = 0; k < 4; k++) await tick();
-  expect(!ctBody().querySelector(".contract-text") && text(ctBody()) === "docs/api.md § 8.2 is not shown: the forge did not answer (probe_unavailable).",
+  expect(!ctBody().querySelector(".contract-text") && text(ctBody()) === "docs/api.md § 8.2 is not shown: the forge did not answer (probe_unavailable). Refresh",
     "contract: a failed read shows the place and the hub's code, never the older text");
   win.Maity.api.get = (p) => { if (p.endsWith("/contract")) ctGets.push(p); return ctGet(p); };
   const ctBeforeSave = ctGets.length;
@@ -1720,12 +1730,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(ctPatches.length === 1 && JSON.stringify(ctPatches[0][1]) === JSON.stringify({ contract: { path: "docs/api.md", section: "4.1" } })
     && text(ctBox().querySelector("summary")) === "Contract section: docs/api.md § 4.1", "contract: the section changed by one PATCH, the card drawn anew");
   expect(ctBox().open && ctGets.length === ctBeforeSave + 1, "contract: after a save the panel stays open and reads the new section once");
-  expect(text(ctBody()) === "docs/api.md § 4.1 is not shown: the file has two headings with this number; the hub shows neither (ambiguous_in_file).",
+  expect(text(ctBody()) === "docs/api.md § 4.1 is not shown: the file has two headings with this number; the hub shows neither (ambiguous_in_file). Refresh",
     "contract: ambiguous_in_file said with its code");
   await ctSave("docs/api.md", "9.99"); await ctOpen();
-  expect(text(ctBody()).endsWith("the file has no heading with this number (not_found_in_file)."), "contract: not_found_in_file said with its code");
+  expect(text(ctBody()).endsWith("the file has no heading with this number (not_found_in_file). Refresh"), "contract: not_found_in_file said with its code");
   await ctSave("docs/runner.md", "1"); await ctOpen();
-  expect(text(ctBody()) === "docs/runner.md § 1 is not shown: the hub has no forge token for this repository (probe_not_configured).",
+  expect(text(ctBody()) === "docs/runner.md § 1 is not shown: the hub has no forge token for this repository (probe_not_configured). Refresh",
     "contract: probe_not_configured said with its code");
   await ctSave("docs/api.md", "9.1"); await ctOpen();
   expect(text(ctBody()).includes("Cut at 64 KiB; the whole section is in the file (open it)."), "contract: a cut section says so and links the file");
@@ -2150,33 +2160,53 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Messages of one sender close together are grouped; a day apart, separated; the empty chat says what happens.
   const hGet = win.Maity.api.get;
   const at = (min) => new Date(Date.parse("2026-10-21T10:00:00Z") + min * 60000).toISOString();
-  win.Maity.api.get = (p) => (p.startsWith("/projects/maity/conversations/agt-c/messages?limit=") ? Promise.resolve({ cursor: 5, items: [
+  // A conversation's messages as the hub pages them (docs/api.md §9.1): before= the limit below, after= forward.
+  const convStub = (all, reads) => (p) => {
+    const q = new URLSearchParams(p.split("?")[1] || "");
+    reads.push(p);
+    const limit = Number(q.get("limit") || 200);
+    const items = q.get("before") !== null ? all.filter((m) => m.seq < Number(q.get("before"))).slice(-limit)
+      : all.filter((m) => m.seq > Number(q.get("after") || 0)).slice(0, limit);
+    const earlier = items.length && all.some((m) => m.seq < items[0].seq) ? items[0].seq : null;
+    return Promise.resolve({ items, earlier, cursor: q.get("before") !== null ? 0 : (items.length ? items[items.length - 1].seq : 0) });
+  };
+  const shortReads = [];
+  const shortConv = convStub([
     { id: "e1", seq: 1, conversation_id: "agt-c", from: "agt-c", to: "hum-maintainer", body: "one", sent_at: at(0), delivered_at: at(0) },
     { id: "e2", seq: 2, conversation_id: "agt-c", from: "agt-c", to: "hum-maintainer", body: "two", sent_at: at(2), delivered_at: at(2) },
     { id: "e3", seq: 3, conversation_id: "agt-c", from: "agt-c", to: "hum-maintainer", body: "later", sent_at: at(20), delivered_at: at(20) },
     { id: "e4", seq: 4, conversation_id: "agt-c", from: "agt-c", to: "hum-maintainer", body: "next day", sent_at: at(24 * 60), delivered_at: at(24 * 60) },
-  ] }) : hGet(p));
+  ], shortReads);
+  win.Maity.api.get = (p) => (p.startsWith("/projects/maity/conversations/agt-c/messages?") ? shortConv(p) : hGet(p));
   await go("#/p/maity/chat/agt-c");
   const gl = main.querySelector("ol.messages").childNodes.map((li) => li.className);
   expect(JSON.stringify(gl) === JSON.stringify(["day", "msg in", "msg in grouped", "msg in", "day", "msg in"])
     && !main.querySelectorAll("li.msg")[1].querySelector(".msg-avatar"), "chat: within five minutes grouped without the picture again; a new day separated " + JSON.stringify(gl));
   win.Maity.api.get = hGet;
-  // A history longer than a page is read to its end; the unread line stands before the unread ones there.
+  // A long history (tsk-r1adgwp0a5dr): opening reads the newest page only, in two requests (back, then forward,
+  // which marks it read), whatever the length; older pages come on scroll-up, one at a time, never twice.
+  // Measured on 2000 messages: before, 10 requests and 2000 messages drawn; now 2 requests and 50.
   const longMsg = (seq) => ({ id: "l" + seq, seq, conversation_id: "agt-c", from: "agt-c", to: "hum-maintainer", body: "m" + seq, sent_at: at(seq), delivered_at: at(seq) });
   const longReads = [];
-  win.Maity.api.get = (p) => {
-    if (p.startsWith("/projects/maity/conversations/agt-c/messages?limit=200")) { longReads.push(p); return Promise.resolve({ cursor: 200, items: Array.from({ length: 200 }, (_, i) => longMsg(i + 1)) }); }
-    if (p.startsWith("/projects/maity/conversations/agt-c/messages?after=200&limit=200")) { longReads.push(p); return Promise.resolve({ cursor: 203, items: [201, 202, 203].map(longMsg) }); }
-    return hGet(p);
-  };
+  const longConv = convStub(Array.from({ length: 2000 }, (_, i) => longMsg(i + 1)), longReads);
+  win.Maity.api.get = (p) => (p.startsWith("/projects/maity/conversations/agt-c/messages?") ? longConv(p) : hGet(p));
   const hAll = win.Maity.api.getAll;
   win.Maity.api.getAll = (p) => (p === "/projects/maity/conversations?observed=true"
-    ? hAll(p).then((r) => ({ items: r.items.map((c) => (c.agent_id === "agt-c" ? Object.assign({}, c, { unread: 3 }) : c)), next_cursor: null })) : hAll(p));
+    ? hAll(p).then((r) => ({ items: r.items.map((c) => (c.agent_id === "agt-c" ? Object.assign({}, c, { unread: 3, last_message: { seq: 2000, from: "agt-c", body: "m2000", sent_at: at(2000), redacted: false } }) : c)), next_cursor: null })) : hAll(p));
   await go("#/p/maity/chat/agt-c");
   const histList = main.querySelector("ol.messages");
   const nl = histList.childNodes.findIndex((li) => li.className === "new-line");
-  expect(longReads.length === 2 && histList.querySelectorAll("li.msg").length === 203 && nl > 0
-    && histList.childNodes[nl + 1].attrs["data-seq"] === "201", "chat: the history is read to its end, the unread line before the first unread at the end");
+  expect(longReads.length === 2 && /before=2001&limit=50$/.test(longReads[0]) && /after=1950&limit=50$/.test(longReads[1])
+    && histList.querySelectorAll("li.msg").length === 50 && nl > 0 && histList.childNodes[nl + 1].attrs["data-seq"] === "1998",
+    "chat: a 2000-message chat opens with its newest 50 in two requests, the unread line before the first unread " + JSON.stringify(longReads));
+  // Near the top, the page before; a second scroll while it is read asks nothing more.
+  histList.scrollTop = 0; histList.dispatch("scroll"); histList.dispatch("scroll"); for (let k = 0; k < 4; k++) await tick();
+  expect(longReads.length === 3 && /before=1951&limit=50$/.test(longReads[2]) && histList.querySelectorAll("li.msg").length === 100
+    && histList.querySelectorAll("li.msg")[0].attrs["data-seq"] === "1901" && main.querySelectorAll(".chat-pane .earlier button").length === 1,
+    "chat: scrolled to the top, the 50 before are read once and drawn in front; Show earlier messages stays for a keyboard");
+  btn(main.querySelector(".chat-pane .earlier"), "Show earlier messages").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(longReads.length === 4 && histList.querySelectorAll("li.msg").length === 150, "chat: Show earlier messages reads the next page before");
+  win.Maity.api.get = hGet;
   // The unread count that cannot be read draws no line, and says so.
   win.Maity.api.get = hGet;
   win.Maity.api.getAll = (p) => (p === "/projects/maity/conversations?observed=true" ? Promise.reject(new win.Maity.api.ApiError("down", 500, p, "internal", {})) : hAll(p));
@@ -2296,23 +2326,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = feedStub;
   // A long chat, scrolled up: arriving messages leave the view where it is (Newest, below).
   const nGet2 = win.Maity.api.get;
-  let arriving = [];
-  win.Maity.api.get = (p) => {
-    if (p.startsWith("/projects/maity/conversations/agt-c/messages?limit=200")) return Promise.resolve({ cursor: 203, items: Array.from({ length: 203 }, (_, i) => longMsg(i + 1)).slice(0, 200) });
-    if (p.startsWith("/projects/maity/conversations/agt-c/messages?after=200&limit=200")) return Promise.resolve({ cursor: 203, items: [201, 202, 203].map(longMsg) });
-    if (p.startsWith("/projects/maity/conversations/agt-c/messages?after=")) { const items = arriving; arriving = []; return Promise.resolve({ cursor: 205, items }); }
-    return nGet2(p);
-  };
+  const arrivingAll = Array.from({ length: 203 }, (_, i) => longMsg(i + 1));
+  const arrivingConv = convStub(arrivingAll, []);
+  win.Maity.api.get = (p) => (p.startsWith("/projects/maity/conversations/agt-c/messages?") ? arrivingConv(p) : nGet2(p));
   await go("#/p/maity/chat/agt-c");
   const longList = main.querySelector("ol.messages");
-  // Scrolled up, two messages arrive: the view stays, both are counted; Newest goes down and keeps the focus in the chat.
-  Object.assign(longList, { scrollHeight: 5000, clientHeight: 400, scrollTop: 100 });
+  // Scrolled up (not near the top), two messages arrive: the view stays, both are counted; Newest goes down and keeps the focus in the chat.
+  Object.assign(longList, { scrollHeight: 5000, clientHeight: 400, scrollTop: 300 });
   longList.dispatch("scroll");
-  arriving = [longMsg(204), longMsg(205)];
+  arrivingAll.push(longMsg(204), longMsg(205));
   feed = [{ seq: 204, kind: "message", actor: { member_id: "agt-c" }, payload: { type: "chat", conversation_id: "agt-c" } }];
   await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
   const jumpBtn = main.querySelector(".jump-latest");
-  expect(longList.querySelectorAll("li.msg").length === 205 && longList.scrollTop === 100 && !jumpBtn.hidden && jumpBtn.textContent === "2 new · Newest",
+  expect(longList.querySelectorAll("li.msg").length === 52 && longList.scrollTop === 300 && !jumpBtn.hidden && jumpBtn.textContent === "2 new · Newest",
     "chat: two messages arriving while scrolled up leave the view where it is and count both " + jumpBtn.textContent);
   const jProto = Object.getPrototypeOf(jumpBtn);
   const jFocus = jProto.focus;
@@ -2322,7 +2348,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   jProto.focus = jFocus; document.activeElement = undefined;
   // At the end, a message that arrives is followed, and so is content that grows after it was drawn (an image loading).
   Object.assign(longList, { scrollHeight: 5200, scrollTop: 4800 }); longList.dispatch("scroll");
-  arriving = [longMsg(206)];
+  arrivingAll.push(longMsg(206));
   feed = [{ seq: 206, kind: "message", actor: { member_id: "agt-c" }, payload: { type: "chat", conversation_id: "agt-c" } }];
   await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
   expect(longList.scrollTop === 5200 && main.querySelector(".jump-latest").hidden, "chat: at the end, an arriving message is followed, no pill");
@@ -3199,6 +3225,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && cpNote.parentNode === setupRow("maity_badge").parentNode && !text(byId("project-setup-hint")).includes("badge")
     && main.querySelectorAll("button").find((b) => b.textContent === "Create project").classList.contains("primary"),
     "create: the Maity badge's consequence right under its checkbox; Create project is primary");
+  // The policy select names the presets; what one means is the hint under it, following the choice.
+  expect(byId("project-preset").querySelectorAll("option").map((o) => text(o)).join() === "Hierarchical,Solo"
+    && text(byId("project-preset-hint")).startsWith("Reviewers move cards to done"),
+    "create: the policy options are the presets' names, the hint says what the chosen one means");
+  byId("project-preset").value = "solo"; byId("project-preset").dispatch("change");
+  expect(text(byId("project-preset-hint")).startsWith("The holder moves its own card"), "create: the hint follows the chosen preset");
+  byId("project-preset").value = "hierarchical"; byId("project-preset").dispatch("change");
   // The hub's refusal of an option is said at the options.
   const spPost = win.Maity.api.post;
   win.Maity.api.post = (p, b) => (p === "/projects" ? Promise.reject(new win.Maity.api.ApiError("does not validate", 400, p, "invalid", { fields: { "setup.maity_badge": "not_a_boolean" } })) : spPost(p, b));
@@ -3458,21 +3491,29 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(gcDirect && text(gcDirect).includes("This message was removed by Maintainer: pasted.") && !btn(gcDirect, "Quote"), "direct chat: a removal reaches the open chat too");
   win.Maity.api.get = gcEvGet;
   // A removed message as the hub gives it: body null, with or without redacted.
-  win.Maity.api.get = (p) => (p === "/projects/maity/conversations/cnv-0007/messages?limit=200"
-    ? gcEvGet(p).then((r) => Object.assign({}, r, { items: r.items.map((m, i) => (i === 1 ? Object.assign({}, m, { body: null }) : m)) })) : gcEvGet(p));
+  let gcNullSeq = null;
+  win.Maity.api.get = (p) => (p.startsWith("/projects/maity/conversations/cnv-0007/messages?")
+    ? gcEvGet(p).then((r) => { if (gcNullSeq === null && r.items.length > 1) gcNullSeq = r.items[1].seq;
+      return Object.assign({}, r, { items: r.items.map((m) => (m.seq === gcNullSeq ? Object.assign({}, m, { body: null }) : m)) }); }) : gcEvGet(p));
   await go("#/p/maity/inbox"); await go("#/p/maity/chat/cnv-0007");
   const gcNull = gcList().querySelectorAll("li.msg")[1];
   expect(text(gcNull).includes("This message was removed.") && !btn(gcNull, "Quote") && !btn(gcNull, "Remove"), "group chat: body null reads as removed, nothing to quote or remove");
   // A latecomer with nothing new: said, with the earlier part a button away.
-  win.Maity.api.get = (p) => (p === "/projects/maity/conversations/cnv-0007/messages?limit=200" ? Promise.resolve({ items: [], cursor: null, earlier: 5021 }) : gcEvGet(p));
+  // Before one joined there is history (before= finds it), in the window nothing (after= reads none).
+  win.Maity.api.get = (p) => (p.startsWith("/projects/maity/conversations/cnv-0007/messages?before=")
+    ? Promise.resolve({ items: [{ id: "evt-5020", seq: 5020, conversation_id: "cnv-0007", from: "agt-a", to: "cnv-0007", body: "before you came", sent_at: "2026-10-21T10:00:00Z", mentions: [], attachments: [], redacted: false, redaction: null }], cursor: 0, earlier: null })
+    : p.startsWith("/projects/maity/conversations/cnv-0007/messages?after=") ? Promise.resolve({ items: [], cursor: 5021, earlier: null }) : gcEvGet(p));
   await go("#/p/maity/inbox"); await go("#/p/maity/chat/cnv-0007");
   expect(text(gcList()).includes("Nothing new since you joined.") && btn(main.querySelector(".earlier"), "Show earlier messages"), "group chat: a latecomer with nothing new is told the earlier part is there");
   win.Maity.api.get = gcEvGet;
   // The earlier part, on demand.
   const gcGet = win.Maity.api.get;
   win.Maity.api.get = (p) => {
-    if (p === "/projects/maity/conversations/cnv-0007/messages?limit=200") return gcGet(p).then((r) => Object.assign({}, r, { items: r.items.slice(1), earlier: 5010 }));
-    if (p === "/projects/maity/conversations/cnv-0007/messages?before=5010&limit=50") return Promise.resolve({ items: [{ id: "evt-5001", seq: 5001, conversation_id: "cnv-0007", from: "agt-a", to: "cnv-0007", body: "before you came", sent_at: "2026-10-21T12:00:00Z", mentions: [] }], cursor: 5001, earlier: null });
+    // The window begins after the chat's first message: that one lies before it.
+    if (p.startsWith("/projects/maity/conversations/cnv-0007/messages?after=")) return gcGet(p).then((r) => Object.assign({}, r, { items: r.items.slice(1) }));
+    if (p.startsWith("/projects/maity/conversations/cnv-0007/messages?before=") && !p.includes("before=" + Number.MAX_SAFE_INTEGER)) {
+      return Promise.resolve({ items: [{ id: "evt-5001", seq: 5001, conversation_id: "cnv-0007", from: "agt-a", to: "cnv-0007", body: "before you came", sent_at: "2026-10-21T12:00:00Z", mentions: [] }], cursor: 0, earlier: null });
+    }
     return gcGet(p);
   };
   await go("#/p/maity/inbox"); await go("#/p/maity/chat/cnv-0007");
@@ -3587,32 +3628,54 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (p) => {
     gcOutGets.push(p);
     if (p === "/projects/guestlab/conversations/cnv-0301") return gcOutGet(p).then((v) => Object.assign({}, v, { observers: v.observers.concat(["hum-other"]) }));
-    if (p === "/projects/guestlab/conversations/cnv-0301/messages?limit=200") {
-      return gcOutGet(p).then((r) => Object.assign({}, r, { items: r.items.concat([{ id: "evt-7002", seq: 7002, conversation_id: "cnv-0301", from: "hum-gone", to: "cnv-0301", body: "bye", sent_at: "2026-10-22T09:05:00Z", mentions: [], redacted: false, redaction: null }]) }));
+    if (p.startsWith("/projects/guestlab/conversations/cnv-0301/messages?")) {
+      return gcOutGet(p).then((r) => Object.assign({}, r, { items: r.items.filter((m) => m.seq !== 7002).concat([{ id: "evt-7002", seq: 7002, conversation_id: "cnv-0301", from: "hum-gone", to: "cnv-0301", body: "bye", sent_at: "2026-10-22T09:05:00Z", mentions: [], redacted: false, redaction: null }]) }));
     }
     return gcOutGet(p);
   };
   await go("#/observe/guestlab/cnv-0301");
   expect(text(main.querySelector(".group-observers")).includes("another agent's owner") && !text(main.querySelector(".group-observers")).includes("outside the project")
     && text(main.querySelectorAll(".group-chat li.msg")[1]).includes("someone not in the chat"), "read along: other observers and someone not in the chat named neutrally");
-  // The 30-second re-read pages to the end, and draws again only on a change.
+  // The 30-second re-read reads the newest page only, never the whole history (tsk-r1adgwp0a5dr), and draws again only on a change.
   const gcLong = (seq) => ({ id: "evt-" + seq, seq, conversation_id: "cnv-0301", from: "hum-guest", to: "cnv-0301", body: "m" + seq, sent_at: "2026-10-22T10:00:00Z", mentions: [], redacted: false, redaction: null });
-  let gcLongN = 205;
+  let gcLongN = 2000;
   const gcPages = [];
   win.Maity.api.get = (p) => {
-    if (p === "/projects/guestlab/conversations/cnv-0301/messages?limit=200") { gcPages.push(p); return Promise.resolve({ items: Array.from({ length: 200 }, (_, i) => gcLong(8001 + i)), cursor: 8200, earlier: null }); }
-    if (p === "/projects/guestlab/conversations/cnv-0301/messages?after=8200&limit=200") { gcPages.push(p); return Promise.resolve({ items: Array.from({ length: gcLongN - 200 }, (_, i) => gcLong(8201 + i)), cursor: 8000 + gcLongN }); }
+    if (p.startsWith("/projects/guestlab/conversations/cnv-0301/messages?")) {
+      gcPages.push(p);
+      const all = Array.from({ length: gcLongN }, (_, i) => gcLong(8001 + i));
+      const q = new URLSearchParams(p.split("?")[1]);
+      const items = q.get("before") !== null ? all.filter((m) => m.seq < Number(q.get("before"))).slice(-Number(q.get("limit")))
+        : all.filter((m) => m.seq > Number(q.get("after") || 0)).slice(0, Number(q.get("limit") || 200));
+      return Promise.resolve({ items, cursor: items.length ? items[items.length - 1].seq : 0, earlier: items.length ? items[0].seq : null });
+    }
     return gcOutGet(p);
   };
+  const gcLast = () => { const lis = main.querySelectorAll(".group-chat li.msg"); return lis[lis.length - 1].attrs["data-seq"]; };
   await fireIntervals(); await tick(); await tick(); await tick();
   const gcFirstLi = main.querySelector(".group-chat li.msg");
-  expect(main.querySelectorAll(".group-chat li.msg").length === 205 && gcPages.includes("/projects/guestlab/conversations/cnv-0301/messages?after=8200&limit=200"),
-    "read along: the re-read pages to the end of a chat longer than 200");
+  expect(gcPages.length === 1 && gcPages[0] === "/projects/guestlab/conversations/cnv-0301/messages?before=" + Number.MAX_SAFE_INTEGER + "&limit=50"
+    && gcLast() === "10000" && main.querySelectorAll(".group-chat li.msg").length <= 60,
+    "read along: the re-read of a 2000-message chat is one request for its newest 50 " + JSON.stringify(gcPages));
   await fireIntervals(); await tick(); await tick(); await tick();
-  expect(main.querySelector(".group-chat li.msg") === gcFirstLi, "read along: nothing new, nothing drawn again (the list is a live region)");
-  gcLongN = 206;
+  expect(main.querySelector(".group-chat li.msg") === gcFirstLi && gcPages.length === 2, "read along: nothing new, nothing drawn again (the list is a live region)");
+  gcLongN = 2001;
   await fireIntervals(); await tick(); await tick(); await tick();
-  expect(main.querySelectorAll(".group-chat li.msg").length === 206, "read along: a new message after the 200th shows");
+  expect(gcLast() === "10001", "read along: a new message shows");
+  // More than a page between two re-reads (H on #452): what is shown is let go, the gap read on scroll-up in order.
+  gcLongN = 2101;
+  await fireIntervals(); await tick(); await tick(); await tick();
+  const gcSeqs = () => main.querySelectorAll(".group-chat li.msg").map((li) => Number(li.attrs["data-seq"]));
+  expect(gcSeqs().length === 50 && gcSeqs()[0] === 10052 && gcLast() === "10101" && btn(main.querySelector(".group-chat .earlier"), "Show earlier messages"),
+    "read along: more than a page between re-reads drops what no longer meets it; the gap comes on scroll-up");
+  btn(main.querySelector(".group-chat .earlier"), "Show earlier messages").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(gcSeqs().length === 100 && gcSeqs()[0] === 10002 && gcSeqs().every((x, i, a) => !i || x === a[i - 1] + 1), "read along: the gap is read back in order, nothing missing");
+  // A long tail drawn and the reader at the newest: the re-read lets the oldest go, as an arrival does.
+  for (let n = 0; n < 5; n++) { btn(main.querySelector(".group-chat .earlier"), "Show earlier messages").click(); for (let k = 0; k < 4; k++) await tick(); }
+  const gcList2 = main.querySelector(".group-chat ol.messages");
+  Object.assign(gcList2, { scrollHeight: 9000, clientHeight: 400, scrollTop: 8600 });
+  await fireIntervals(); await tick(); await tick(); await tick();
+  expect(gcSeqs().length === 100 && gcLast() === "10101", "read along: at the newest, a long tail is let go on the re-read too " + gcSeqs().length);
   win.Maity.api.get = (p) => (p.startsWith("/projects/guestlab/conversations/cnv-0301/messages") ? Promise.reject(new win.Maity.api.ApiError("Not found", 404, p, "not_found", {})) : gcOutGet(p));
   await fireIntervals(); await tick(); await tick();
   expect(text(main).includes("You no longer read this chat: your agent left it, or left the project"), "read along: an access that ended is said on the next re-read");
@@ -4250,20 +4313,47 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(whyItems.length >= 2 && whyItems[0].querySelector("a").getAttribute("href") === "https://maity.dev/keep-the-why-dashboard/"
     && text(whyItems[0]).includes("the project · 1 entry needs attention") && text(whyItems[1]).startsWith("hub")
     && text(ovPart("overview-links")).includes("hierarchical"), "overview: each Keep the Why dashboard with its attention, and the policy preset");
-  expect(text(ovPart("overview-members")).includes("owner") && text(ovPart("overview-members")).includes("Maintainer")
-    && ovPart("overview-members").querySelector("a").getAttribute("href") === "#/p/maity/members", "overview: members by role, linking to Members");
+  const ovContract = ovPart("overview-links").querySelectorAll("a").find((a) => text(a) === "docs/api.md");
+  expect(ovContract && ovContract.getAttribute("href") === "https://github.com/oliver-zehentleitner/maity/blob/main/docs/api.md" && ovContract.getAttribute("target") === "_blank",
+    "overview: the contract on the forge at the default branch, beside Keep the Why");
+  // The README badge as it stands: off here, said so, the snippet with Copy; an owner is sent to Settings to change it.
+  const ovBadge = ovPart("overview-badge");
+  expect(ovBadge && text(ovBadge).includes("Off: the badge address answers 'not found'.") && !ovBadge.querySelector("img.badge-preview")
+    && ovBadge.querySelector(".overview-badge-states li[aria-current=\"true\"]") && text(ovBadge.querySelector(".overview-badge-states li[aria-current=\"true\"]")) === "Off"
+    && text(ovBadge.querySelector(".overview-snippet code")).includes("/badge/maity.svg") && btn(ovBadge, "Copy")
+    && ovBadge.querySelector(".overview-snippet code").getAttribute("tabindex") === "0" && ovBadge.querySelector(".overview-snippet code").getAttribute("aria-label")
+    && ovBadge.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/p/maity/settings"),
+    "overview: the README badge's state, its snippet with Copy, and for an owner the way to change it");
+  // The team: per role, member chips (the designer's layout); All members at the head's end.
+  const ovChips = ovPart("overview-members").querySelectorAll("a.member-chip");
+  const ovOwner = ovChips.find((a) => a.getAttribute("data-member") === "hum-maintainer");
+  expect(text(ovPart("overview-members")).includes("owner") && ovOwner && text(ovOwner).includes("@maintainer")
+    && ovOwner.getAttribute("title").startsWith("Maintainer · owner · human · ")
+    && ovOwner.getAttribute("href") === "#/p/maity/members/hum-maintainer" && ovOwner.querySelector(".chip-avatar.human .chip-dot")
+    && ovChips.some((a) => a.querySelector(".chip-avatar.agent"))
+    && ovPart("overview-members").querySelector("a").getAttribute("href") === "#/p/maity/members" && text(ovPart("overview-members").querySelector("a")) === "All members",
+    "overview: the team per role as member chips (name, role, kind and presence in the tooltip), All members at the head's end");
   const ovCounts = ovPart("overview-board").querySelectorAll(".overview-counts li");
   expect(ovCounts.length === 7 && ovCounts.every((li) => li.querySelector("a").getAttribute("href") === "#/p/maity/board")
     && text(ovCounts.find((li) => li.attrs["data-status"] === "in_progress")).startsWith(String(ov.board.counts.in_progress)),
     "overview: every column's count, each linking to the board");
   // The fixtures' requests are answered by now: the count and its empty state.
-  expect(text(ovPart("overview-requests")).includes(String(ov.requests.open))
+  expect((!ov.requests.open || text(ovPart("overview-requests")).includes(String(ov.requests.open)))
     && (ov.requests.open ? text(ovPart("overview-requests")).includes(" for you") : text(ovPart("overview-requests")).includes("Nothing waits for an answer."))
-    && ovPart("overview-requests").querySelector("a").getAttribute("href") === "#/p/maity/inbox", "overview: the open requests, those for oneself, linking to the inbox");
+    && (!ov.requests.open || ovPart("overview-requests").querySelector("a").getAttribute("href") === "#/p/maity/inbox")
+    && text(byId("overview-requests")) === "Waiting for you" && main.querySelector(".overview-row-1").childNodes[0] === ovPart("overview-requests"),
+    "overview: what waits for the reader comes first, linking to the inbox when anything does");
   const ovReport = ovPart("overview-reports").querySelector("li");
-  expect(ovReport && text(ovReport).includes("Agent B") && text(ovReport).includes("tsk-0005")
+  expect(ovReport && text(ovReport).includes("@agent-b") && text(ovReport).includes("tsk-0005")
     && ovReport.querySelectorAll("a").some((a) => a.getAttribute("href") === "https://github.com/oliver-zehentleitner/maity/pull/3") && text(ovReport).includes("PR #3 open"),
     "overview: the latest report with its card, its author and its pull request as the probe saw it");
+  // The layout: three rows in the designer's order; the board as a stacked bar with an accessible name.
+  const ovRows = main.querySelectorAll(".overview-row").map((row) => row.childNodes.filter((x) => x.tagName === "SECTION").map((x) => x.getAttribute("aria-labelledby")).join("+"));
+  const ovBar = ovPart("overview-board").querySelector(".overview-bar");
+  expect(JSON.stringify(ovRows) === JSON.stringify(["overview-requests+overview-board", "overview-members+overview-reports", "overview-links+overview-badge"])
+    && ovBar && ovBar.getAttribute("role") === "img" && ovBar.getAttribute("aria-label").includes(ov.board.counts.in_progress + " in progress")
+    && main.querySelectorAll(".overview-head").every((hd) => !hd.childNodes[0].querySelector("a")),
+    "overview: three rows, what needs you first; the board's bar named for a screen reader; no heading is a link " + JSON.stringify(ovRows));
   // Re-read on a card, a request or the probe; not on anything else; no Reload offered.
   ovFeed = [{ seq: 10100, kind: "member_updated", actor: { member_id: "agt-b" }, payload: {} }];
   await fireIntervals(); await tick(); await tick();
@@ -5684,6 +5774,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const stTiles = () => stBox().querySelectorAll("li.stat-tile").map((li) => text(li));
   expect(stBox() && main.querySelectorAll(".admin-section")[0] === stBox() && stGets[0] === "/admin/statistics?days=30",
     "statistics: the admin area's first section, read for 30 days");
+  // One section at a time, picked in a row of buttons; it opens on Statistics.
+  const adNav = () => main.querySelector("nav.admin-nav");
+  const adSections = () => main.querySelectorAll(".admin-section");
+  expect(adNav() && adNav().querySelectorAll("button").map((b) => b.textContent).join() === adSections().map((x) => x.getAttribute("aria-label")).join()
+    && !stBox().hidden && adSections().slice(1).every((x) => x.hidden) && adNav().querySelectorAll("button")[0].getAttribute("aria-pressed") === "true",
+    "admin: a row of section buttons, Statistics shown, the rest folded");
+  btn(adNav(), "Users").click(); await tick();
+  const adUsers = adSections().find((x) => x.getAttribute("aria-label") === "Users");
+  expect(!adUsers.hidden && stBox().hidden && btn(adNav(), "Users").getAttribute("aria-pressed") === "true", "admin: a button shows its section alone");
+  btn(adNav(), "Statistics").click(); await tick();
   expect(JSON.stringify(stTiles()) === JSON.stringify(["41Humans2 waiting for approval", "117Agent profiles", "12Projectsnot archived", "23Agent instances online", "29Humans with an agent"]),
     "statistics: the totals as tiles " + JSON.stringify(stTiles()));
   expect(stCells("registrations")[0] === "Registrations" && stCells("registrations")[1] === "36" && stCells("registrations")[2] === "3"

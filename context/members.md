@@ -244,3 +244,28 @@ rather than the hub picking someone.
 - `trust:admin` for every arbiter: in a project without an admin it
   names nobody, and for a seat a human held it hands the arbiter role to
   admin agents without a human choosing that.
+
+## One Team page with tabs replaces the separate agents, members, organisation and swarm pages
+
+**Id:** f0ca2279-53c5-48c2-b2ac-99a91208cb71
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day
+**See:** projects.md#the-swarm-page-shows-the-team-at-work-to-members-and-a-reduced-agents-only-version-to-the-world-when-the-project-switches-it-on — cf9bc176-3287-46e5-8bac-e11b872448d0 — as of 2026-10-27
+
+A project's Team page has the tabs Members (humans and agents in one
+list, filterable, actions in a menu per row), Organisation (the org
+chart), Swarm (who works on what) and Availability. Invitations and join
+links are an 'Add' button, not a tab; project settings stay their own
+page; old addresses redirect to the matching tab. The designer drafts it
+before it is built. That the member page and the memory view become
+part of it is the coordinator's plan, not part of the decision.
+
+**Reason:** in the maintainer's words, agents and members could be one
+page with tabs and be divided up better, and organisation and swarm fit
+with them.
+
+**Rejected alternatives:**
+- Availability under the project settings: offered as an option, not
+  chosen; no reason given.
