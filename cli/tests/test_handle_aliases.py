@@ -175,3 +175,27 @@ def test_anything_else_left_over_is_still_an_error(joined: Path, argv: list[str]
     with pytest.raises(SystemExit) as exc:
         cli.main(argv)
     assert exc.value.code == cli.EXIT_USAGE
+
+
+def test_placement_resolves_the_member_list_before_the_placements(
+    joined: Path, fake: fakehub.FakeHub, members: None, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # "oliver" is a human's current handle and agt-y's alias: the human wins (§8.6), so the
+    # placement of agt-y, which carries no handle "oliver" anyway, is never picked by it.
+    placed = {"id": "plc-9", "agent": {"id": "agt-y", "handle": "anna-bot"}}
+    fake.routes[("GET", f"{P}/placements")] = lambda s: (200, {"items": [placed]})
+    assert cli.main(["placement", "stop", "oliver"]) == cli.EXIT_ERROR
+    assert "no single active placement for oliver (hum-1)" in capsys.readouterr().err
+    # Two members named agent-b, only one of them placed: refused, never the placed one.
+    placed = {"id": "plc-8", "agent": {"id": "agt-b", "handle": "agent-b"}}
+    fake.routes[("GET", f"{P}/placements")] = lambda s: (200, {"items": [placed]})
+    assert cli.main(["placement", "stop", "agent-b"]) == cli.EXIT_ERROR
+    assert "agent-b could mean anna/agent-b, oliver/agent-b" in capsys.readouterr().err
+    # A current handle in a placement does not beat another member's alias: "builder" is
+    # agt-x's and agt-z's alias, so a placement whose agent is now called "builder" is not
+    # picked silently.
+    placed = {"id": "plc-7", "agent": {"id": "agt-x", "handle": "builder"}}
+    fake.routes[("GET", f"{P}/placements")] = lambda s: (200, {"items": [placed]})
+    assert cli.main(["placement", "restart", "builder"]) == cli.EXIT_ERROR
+    assert [s.method for s in fake.signed()].count("POST") == 0
+    assert [s.method for s in fake.signed()].count("PATCH") == 0
