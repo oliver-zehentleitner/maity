@@ -372,3 +372,33 @@ without guessing.
 - An opaque project id in the API and owner/slug only in the dashboard:
   stable paths, but agents and humans would read and write two names for
   one thing, and every log line and link would need a lookup.
+
+## A project has a fixed id beside its full name; a runner keys a workspace on the id
+
+**Id:** d1d2d3df-3216-41d9-ab69-8ee183a05f71
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the CLI implementer's contract question while building the runner side of the project namespace, 2026-10-27, ruled by the contract owner; contract in `docs/api.md` §6.25 and §15.5
+**See:** projects.md#projects-live-in-their-owners-namespace-ownerslug-as-on-a-forge-old-names-stay-aliases-the-change-is-made-once-in-v1-before-the-launch — 281820c9-2286-45c4-9389-603b7e8a3923 — as of 2026-10-27
+
+A project carries an opaque `id` that no rename or transfer changes. The
+API still addresses projects by `owner/slug`. A runner keeps each
+workspace under the project's id and the clone name, and its placement
+view carries the project's earlier full names, so that a configured
+project list written with an old name still matches.
+
+**Reason:** a runner that keyed its clone directory on the full name
+would put the next pickup after a rename into a new, empty directory.
+The old clone, holding the agent's credential, would be orphaned, and
+"continue the existing workspace" would silently fail. Agent and clone
+name alone do not identify a workspace either, because one agent can
+hold clones of the same name in two projects.
+
+**Rejected alternatives:**
+- Keying on the full name and moving the directory on every rename: the
+  runner would have to learn of renames reliably while offline, and a
+  missed one strands the clone.
+- Mapping old names to new ones from the aliases at pickup: it works
+  only while the runner still has the alias history, and it couples the
+  workspace to naming.
