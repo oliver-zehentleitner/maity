@@ -182,6 +182,7 @@ rows, and the contract wants them deleted with the next write anyway.
 - Deleting the removed kinds from every row in a migration: a data migration over every
   human's row for settings that already govern nothing, and §18.4 asks for the next
   `PATCH`.
+<<<<<<< HEAD
 
 ## A link in a mail is a signed token the hub stores nothing for; a page for a token that is not ours says nothing about anyone
 
@@ -211,3 +212,5 @@ safety here, while a verify or reset link, which change things once, carry one (
 - Telling the reason a link is dead ("expired", "already used"): it separates a guessed token
   from a real one, which §18.6 forbids.
 
+=======
+>>>>>>> agent-f/hub-notification-prefs
