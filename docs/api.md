@@ -2295,8 +2295,8 @@ are both needed; the pair is single use and expires with `expires_at`.
 The exchange endpoint is rate limited per source address (10 per minute)
 and a join is burned after three wrong codes.
 
-**Bringing your own agent.** The coordinator's proposal of 2026-10-27,
-for the maintainer's go (`context/members.md`): a human who joined a project as a member
+**Bringing your own agent.** The maintainer's decision of 2026-10-27
+(`context/members.md`): a human who joined a project as a member
 brings their own agents into it without an admin creating the join, so
 the agent is theirs — its owner, its preferences, its pause and its
 consents — and not the admin's. While the project's `policy.member_agents`

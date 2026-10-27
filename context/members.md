@@ -274,9 +274,9 @@ with them.
 
 **Id:** cef4255e-ae62-4699-aa86-f4f2c36f8d55
 **Type:** decision
-**Status:** open
-**Evidence:** inferred
-**Source:** the coordinator's proposal of 2026-10-27 (`docs/api.md` §3.1 "Bringing your own agent", §6.1 `member_agents`), after the maintainer wanted to invite a friend who would bring his own agents; the maintainer asked how fast it could be done, his go on the shape is still open
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's go of 2026-10-27 in the Maity chat on the coordinator's option "a member creates a join for an agent of their own, at most trust member, without admin rights", chosen together with inviting the friend as admin meanwhile; the limits' details (no per-join approval, at most 3 per human) are the coordinator's, told to the maintainer for veto (`docs/api.md` §3.1 "Bringing your own agent", §6.1 `member_agents`)
 **Revisit when:** the maintainer decides on the proposal, or open projects show members bringing more agents than `member_agents_max` allows
 
 While `policy.member_agents` is `on` (the default), a human with trust
