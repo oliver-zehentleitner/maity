@@ -255,8 +255,11 @@ window.Maity = window.Maity || {};
     const label = suffix ? (o.text === "handle" ? "@" : "") + handle
       : o.text === "handle" ? (handle ? "@" + handle : name) : (o.text || name);
     const pic = o.avatar && m && M.avatar ? M.avatar(m, o.avatar) : null;
-    if (!m || ctx.outsider || typeof ctx.link !== "function") return h("span", { class: "member-ref plain", title: name }, pic, label, suffix);
-    return h("a", { class: "member-ref", href: ctx.link("members", id), title: name, "data-member": id }, pic, label, suffix);
+    const ref = !m || ctx.outsider || typeof ctx.link !== "function"
+      ? h("span", { class: "member-ref plain", title: name }, pic, label)
+      : h("a", { class: "member-ref", href: ctx.link("members", id), title: name, "data-member": id }, pic, label);
+    // The #id stays outside the link (the designer's pass on #429): it names, it leads nowhere else.
+    return suffix ? h("span", { class: "member-ref-instance" }, ref, suffix) : ref;
   }
   const INSTANCE = /^[2-9a-hjkmnp-z]{4,5}$/; // an instance id (§6.17)
   function instanceOf(x) {

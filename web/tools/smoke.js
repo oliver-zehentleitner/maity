@@ -5190,9 +5190,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "hum-m": { id: "hum-m", kind: "human", handle: "maintainer", display_name: "Maintainer" } }, link: (k, id) => "#/p/maity/" + k + "/" + id, nameOf: (id) => id };
   const inRef = win.Maity.dom.memberRef(inCtx, "agt-b", { instance: { instance: "wqe2", harness: "Claude Code", model: "claude-opus-5-5" } });
   const inSuffix = inRef.querySelector(".member-instance");
-  expect(inRef.tagName === "A" && text(inRef) === "agent-b#wqe2" && inSuffix && inSuffix.classList.contains("muted")
-    && inSuffix.getAttribute("title") === "Instance wqe2 · Claude Code · claude-opus-5-5" && inRef.getAttribute("title") === "Agent B",
-    "instances: an agent is named <handle>#<id>, the id muted with its harness and model as tooltip");
+  const inLink = inRef.querySelector("a.member-ref");
+  expect(text(inRef) === "agent-b#wqe2" && inLink && text(inLink) === "agent-b" && inLink.getAttribute("title") === "Agent B"
+    && inSuffix && inSuffix.parentNode === inRef && inSuffix.classList.contains("muted")
+    && inSuffix.getAttribute("title") === "Instance wqe2 · Claude Code · claude-opus-5-5",
+    "instances: an agent is named <handle>#<id>, the id muted beside the link, harness and model as its tooltip");
   expect(text(win.Maity.dom.memberRef(inCtx, "agt-b", { text: "handle", instance: "k7mq" })) === "@agent-b#k7mq"
     && text(win.Maity.dom.memberRef(inCtx, "hum-m", { instance: "wqe2" })) === "Maintainer"
     && text(win.Maity.dom.memberRef(inCtx, "agt-b", { instance: "<b>x" })) === "Agent B"
