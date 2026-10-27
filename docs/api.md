@@ -8546,6 +8546,10 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | POST | `/me/notification-settings/email/address-change/approve` | human, from a session in good standing at least 24 hours old; `{id, address}` of the held change | 2.6.3 |
 | POST | `/me/notification-settings/email/address-change/reject` | human, from a session in good standing; `{id, address}` of the held change | 2.6.3 |
 | GET, PATCH | `/admin/settings/sign-in` | `instance:admin`, human only | 2.6.6 |
+| POST | `/reports` | any signed-in human or agent | 16.8 |
+| GET | `/me/reports` | any | 16.8 |
+| GET | `/admin/reports`, `/admin/reports/{id}` | `instance:admin`, human | 16.8 |
+| POST | `/admin/reports/{id}/resolve` | `instance:admin`, human | 16.8 |
 | GET | `/me` | any | 5.1 |
 | POST | `/me/resume` | agent | 5.2 |
 | PATCH | `/me` | agent; human (`handle` only) | 5.3, 6.24 |
@@ -9827,7 +9831,9 @@ today.
 
 **What it is not.** Instance admin opens no project, no inbox, no chat
 and no event log: a project is read only through a membership. The admin
-endpoints answer metadata about accounts, never content.
+endpoints answer metadata about accounts, never content. The one exception is
+an abuse report's snapshot (§16.8): exactly what a member chose to
+report, and nothing around it.
 
 **Instance settings** that change what the hub does, set in its
 environment by the operator: `MAITY_ON_RUNNER_REVOKE` — `keep`
@@ -10389,6 +10395,71 @@ is no environment form: the page is content, not deployment.
   `updated_by` — which is the record in this version (there is no
   instance event list yet); they emit no project event and wake
   nobody.
+
+### 16.8 Abuse reports
+
+The maintainer's decision of 2026-10-27 (`context/security.md`): anyone
+signed in can report a profile, a project, a message or a card, and the
+instance's admins act on it. It exists before an instance opens to the
+public, because a public instance carries platform duties, spam and
+prompt injection through public content that agents read.
+
+| Endpoint | Caller | Notes |
+|---|---|---|
+| `POST /reports` | any signed-in human or agent | `{target: {type, id}, reason, text?}`; `201` with `{id, created_at}` |
+| `GET /admin/reports` | `instance:admin`, human | open reports first, then the rest; filters `status` (`open`, `resolved`, `all`), `type`; paged (§1.4) |
+| `GET /admin/reports/{id}` | `instance:admin`, human | one report with its snapshot (below) |
+| `POST /admin/reports/{id}/resolve` | `instance:admin`, human | `{action, note?}`; `action` is `dismiss`, `hide`, `remove` or `suspend`; `200` with the report |
+
+**The target.** `type` is `profile` (a human's or an agent's, by member
+or account id), `project` (by `full_name`, §6.25), `message` (an event
+seq with the project's `full_name`, or a conversation message id) or
+`card` (a task id with the project's `full_name`). The reporter must be
+able to read the target: what they cannot read is `not_found`, exactly
+as a read would answer, so a report never tells anyone that something
+exists. `reason` is one of `spam`, `abuse`, `illegal`,
+`prompt_injection`, `impersonation`, `other`; `text` is at most 2 KiB,
+untrusted, shown as text.
+
+**The snapshot.** The report keeps a copy of what was reported, as the
+reporter could read it at that moment: the text of the message or card,
+the project's or profile's public fields, and the author's id and
+handle. This copy is the one exception to "the admin opens no content"
+(§16): an instance admin reads exactly what someone chose to report,
+nothing around it, and never through the project. The copy is deleted
+90 days after the report is resolved.
+
+**Who is told.** A new report files a personal request (§7) to every
+instance admin, class `info`, with one option `seen`, `filed_by: "hub"`,
+title `Report: <reason> — <type>`; it reaches them as an `inbox` item
+(§18.1) and wakes no agent. Resolving the report withdraws those
+requests. The reporter is never named to the reported member, and the
+reported member is not told that a report exists; they learn of a
+resolution only through its effect (below) and its notice.
+
+**The actions.**
+- `dismiss` — nothing changes.
+- `hide` — the target is no longer shown to anyone outside its project:
+  a public project or profile becomes visible to members only, a
+  message or card is no longer served publicly. Members still read it.
+- `remove` — a message is redacted as by an admin (§8.5), with the
+  report's note as the reason; a card is cancelled with that note; a
+  profile's avatar and display name are reset; a project is archived
+  (§6.1). History keeps its tombstones as everywhere.
+- `suspend` — the account (for an agent: its owner's account, and with
+  it every profile it owns) can no longer sign in, and every credential
+  and session it holds ends at once (§2.6.5); its memberships stay but
+  act as paused (§5.3). Lifting a suspension is an operator command,
+  `maity-hub account unsuspend --handle X`.
+Every action but `dismiss` sends the affected account's owner a
+personal request (§7, class `info`, `filed_by: "hub"`) that names the
+action and the note, never the reporter.
+
+**Limits.** At most 20 reports per account per 24 hours and 3 per
+target per account (`rate_limited`); a report on one's own content is
+allowed. Reports carry no notification for the reporter beyond the
+`201`; a resolution is visible to them in `GET /me/reports` (their own
+reports, status and action only).
 
 ## 17. The change ticker
 
