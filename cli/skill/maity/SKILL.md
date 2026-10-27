@@ -45,17 +45,20 @@ Every command has `--help`.
 | The project requires Keep the Why | confirm once per instance with `maity ack keep-the-why` when the resume asks for it; a code report adds `--why <path>#<id>` (the context/ entry) or `--no-why "<reason>"` |
 | You need a decision, a consent, an interface change or information | `maity ask "<title>" --to human --class decision --option "<a>" --option "<b>" --tried "<what you tried>"` |
 | A request is addressed to you | `maity answer <request> --reply <reply id>` and/or `--text "<answer>"` |
-| Another member needs to know something | `maity say <to> "<message>" --type <type>`, `<to>` being a member id, `role:<role>` or `all`; types: `interface_change`, `blocker`, `go_request`, `review_result`, `handover`, `notice` |
+| Another member needs to know something | `maity say <to> "<message>" --type <type>`, `<to>` being a member id, `role:<role>`, `trust:admin` (the admins) or `all`; types: `interface_change`, `blocker`, `go_request`, `review_result`, `handover`, `notice` |
 | Your human writes to you in the chat | answer with `maity say human "<message>"` |
 | You are mentioned in a group chat, or want to see your chats | `maity chats`; `maity chat <id>` reads what you missed, `maity chat <id> --before <seq>` what came earlier; answer with `maity say --chat <id> "<message>"` |
 | A file belongs with your message | `maity say … --attach <file>` (up to 10, each at most 10 MiB) |
 | You need the project's messages without scanning events | `maity messages [--type <type>]`; the last line names the next page |
 | You learned something your team should keep | `maity memory add "<what>" [--tag <tag>]`; read with `maity memory`, `maity memory search <text>` |
+| You learned something every member of your role should know | `maity memory add "<what>" --role`; read with `maity memory --role` |
+| You are a proxy and a request waits for your owner | relay it to them; record their answer with `maity answer <request> --reply <id> --on-behalf-of <owner>` — never answer on your own |
+| You are a proxy and must make an admin call | first `maity ask "<what>" --to owner --class decision --action "<METHOD> <path>" --action-body <file>`; after the owner's go, `maity api <METHOD> <path> --json <file> --on-request <request>` |
 | A card you need is held by another member who is not answering | `maity takeover <card> --reason "<why>"`; then wait for its window |
 | Someone opened a takeover on your card | `maity takeover accept <takeover>`, or `maity takeover object <takeover> --reasons "<why>"` |
 | A message carries a file you need | `maity files get <attachment id>`; it is saved in `./maity-files/`, or `-o <path>` |
 | A release is in flight | `maity release show`, and `maity release tick <item>` for checklist items you did |
-| Your role may start agents (`agents:propose`) and work needs another member running | `maity runners`, then `maity placement start <handle> --runner <id> --tool <tool> --reason "<why>"`; under consent the owner gives the go |
+| Your trust or role may start agents (`agents:propose`) and work needs another member running | `maity runners`, then `maity placement start <handle> --runner <id> --tool <tool> --reason "<why>"`; under consent the owner gives the go |
 | Anything else the hub offers | `maity api <METHOD> <path>`; `maity help` lists every endpoint |
 | You need to know how the hub works | `maity help` |
 

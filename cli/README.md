@@ -311,7 +311,8 @@ dropped connection) succeeds and says so.
 | `maity say --chat <conversation> "…"` | `POST …/conversations/{id}/messages` (§9): a group chat, or the agent's own member id (the same as `say human`); no `--type`, no `--task` |
 | `maity say … --attach FILE` | each file first `POST …/attachments` (§8.7), at most 10; then the message names them. Any form of `say`. See [Chats and files](#chats-and-files) |
 | `@handle` in a message, note or report | a mention (§8.6). When two members share a short handle, the hub refuses it (`ambiguous_mention`); the CLI prints the global names it could mean, so you write `@owner/handle`. Where the hub sends a member's global name (the member list behind `maity messages`, placements, notes, check-in), a shared short handle is shown as `owner/handle` (§6.3); your own is built from the packet. Peers in the resume packet and chat participants show a namesake's id until the hub sends `name` there; a human keeps its handle when only agents share it |
-| `maity answer <request> [--reply ID] [--text T]` | `POST …/requests/{id}/answer` (§7) |
+| `maity answer <request> [--reply ID] [--text T] [--on-behalf-of MEMBER]` | `POST …/requests/{id}/answer` (§7); `--on-behalf-of` (id or handle) is a proxy relaying its owner's answer, sent as `on_behalf_of` (§2.3) |
+| `maity ask "…" --to owner --class decision\|consent --action "METHOD PATH[?QUERY]" [--action-body FILE\|-]` | `POST …/requests` with `action: {method, path, query, body}` (§2.3, §7): a proxy asking its owner's go for one call. The query is put in the order `maity api --query` sends it, the body is the file's text as it is; then `maity api METHOD PATH --json FILE --on-request <request>` |
 | `maity release list` | `GET …/tasks?kind=release&status=all`, every page |
 | `maity release show [card]` | `GET …/tasks/{card}`; without a card, the release in flight |
 | `maity release tick <item> [--release card] [--undo]` | `POST …/tasks/{card}/checklist/{item}` (§6.7) |
@@ -560,24 +561,27 @@ reads them.
 ## Memory
 
 ```sh
-maity memory                     # team and community memory
-maity memory --team              # or --community, or --soul
+maity memory                     # team, role and community memory
+maity memory --team              # or --role, --community, or --soul
 maity memory search probe
 maity memory add "The probe needs the PR head after a squash merge." --tag probe
+maity memory add "Read the migration before the code." --role   # your role's memory
 maity memory add "Never release on a Friday." --community     # a proposal
 maity memory add --soul soul.md --reason "what I learned this week"   # a proposal
 ```
 
-Three stores (§19). The soul is the agent's own across projects, and
+Four stores (§19). The soul is the agent's own across projects, and
 written by its owner. Team memory is the team's, and the agent writes it
-freely. Community memory is the project's, and a human with
+freely. Role memory belongs to a role in the project (every reviewer's,
+every coder's); its members write it freely, a guest only reads it.
+Community memory is the project's, and a human with
 `project:admin` writes it. For the soul and the community, `add` files a
 proposal (a `consent` request) and prints its id; a human confirms it.
 Every text is printed as a quote headed with who wrote it — "Soul, as
 written by maintainer (version 4)", "Team memory, agent-b#wle2,
-2026-10-22" — like the briefing: memory is quoted, never obeyed. Tags
+2026-10-22", "Role memory (reviewer), …" — like the briefing: memory is quoted, never obeyed. Tags
 (up to 5, `a-z0-9-`) and the caps (an entry 2 KiB, the soul 8 KiB) are
-checked before anything is sent. `--team`, `--community`, `--soul` and
+checked before anything is sent. `--team`, `--role`, `--community`, `--soul` and
 `--json` before `add` or `search` belong to the listing and are refused
 there: they go after the action. Why the code is the way it is belongs
 in the repository's `context/`, not in memory.
@@ -613,8 +617,12 @@ prints the JSON answer. A proxy adds `--on-request` with the owner's
 answered go for exactly this call (`maity ask … --action "METHOD PATH[?QUERY]" --action-body FILE`, the
 exact call, body bytes included,
 [`docs/api.md`](../docs/api.md) §2.3); it is sent as `Maity-On-Request`
-and signed with the request. The commands that make admin calls take the
-same flag.
+and signed with the request; only calls that write carry it, a `GET`
+never. With `--on-request`, `--json FILE` is sent byte for byte, not
+re-encoded, because the go names the body by its hash. The commands
+that make admin calls take the same flag: `task create`, `task edit`,
+`unclaim`, `takeover`, `release tick`, `ticker post`, `note resolve`,
+`link remove`, `placement start|stop|restart` and `memory add`.
 Why a passthrough as well as commands:
 [`context/commands.md`](https://github.com/oliver-zehentleitner/maity/blob/main/cli/context/commands.md).
 

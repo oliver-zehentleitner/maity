@@ -270,16 +270,40 @@ window.Maity = window.Maity || {};
   // display name by default; "handle" for @handle); opts.avatar: a picture
   // of that size before it. A member the project does not list (removed,
   // outside), or a view read from outside the project, gets plain text.
+  // opts.instance: the agent instance that wrote or did it (§6.17), its id
+  // or {instance, harness, model}; the agent is then named
+  // <handle>#<id> (owner/handle#id where two agents share the handle),
+  // the #id muted with the session's harness and model as its tooltip, so
+  // two instances of one agent read apart. A human has no instances.
   function memberRef(ctx, who, opts) {
     const o = opts || {};
     const id = typeof who === "string" ? who : who && (who.member_id || who.id);
     const m = id && ctx.memberById ? ctx.memberById[id] : null;
     const name = (m && m.display_name) || (who && who.display_name) || (id && ctx.nameOf ? ctx.nameOf(id) : id) || "—";
     const handle = (m && handleOf(ctx, m)) || (who && who.handle);
-    const label = o.text === "handle" ? (handle ? "@" + handle : name) : (o.text || name);
+    const inst = instanceOf(o.instance);
+    const agent = !(m && m.kind === "human") && !(who && who.kind === "human");
+    // Without a handle (a reference read across projects carries none) the
+    // name stands before the #id: the instance is said all the same.
+    const suffix = inst && agent ? h("span", { class: "member-instance muted", title: instanceTitle(inst) }, "#" + inst.id) : null;
+    const label = suffix && handle ? (o.text === "handle" ? "@" : "") + handle
+      : o.text === "handle" ? (handle ? "@" + handle : name) : (o.text || name);
     const pic = o.avatar && m && M.avatar ? M.avatar(m, o.avatar) : null;
-    if (!m || ctx.outsider || typeof ctx.link !== "function") return h("span", { class: "member-ref plain", title: name }, pic, label);
-    return h("a", { class: "member-ref", href: ctx.link("members", id), title: name, "data-member": id }, pic, label);
+    const ref = !m || ctx.outsider || typeof ctx.link !== "function"
+      ? h("span", { class: "member-ref plain", title: name }, pic, label)
+      : h("a", { class: "member-ref", href: ctx.link("members", id), title: name, "data-member": id }, pic, label);
+    // The #id stays outside the link (the designer's pass on #429): it names, it leads nowhere else.
+    return suffix ? h("span", { class: "member-ref-instance" }, ref, suffix) : ref;
+  }
+  const INSTANCE = /^[2-9a-hjkmnp-z]{4,5}$/; // an instance id (§6.17)
+  function instanceOf(x) {
+    const src = typeof x === "string" ? { instance: x } : x;
+    const iid = src && src.instance;
+    return typeof iid === "string" && INSTANCE.test(iid) ? { id: iid, harness: src.harness, model: src.model } : null;
+  }
+  function instanceTitle(inst) {
+    const said = [inst.harness, inst.model].filter((x) => typeof x === "string" && x);
+    return "Instance " + inst.id + (said.length ? " · " + said.join(" · ") : "");
   }
 
   const isSilentAgent = (member) => !!member && member.kind === "agent"

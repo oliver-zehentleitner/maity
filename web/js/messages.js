@@ -108,7 +108,7 @@ window.Maity = window.Maity || {};
       return h("li", { class: "pmsg type-" + p.type, "data-seq": String(e.seq) },
         h("div", { class: "pmsg-head" },
           h("span", { class: "badge" }, TYPE_WORDS[p.type] || p.type),
-          h("span", null, " ", M.dom.memberRef(ctx, from), " to ", toWords(ctx, p.to)),
+          h("span", null, " ", M.dom.memberRef(ctx, from, { instance: e.actor }), " to ", toWords(ctx, p.to)),
           p.task_id ? [" · ", h("a", { href: ctx.link("tasks", p.task_id) }, p.task_id)] : null,
           " · ", h("span", { class: "muted" }, formatTime(e.at))),
         p.body ? h("div", { class: "md" }, M.markdown(p.body, M.ids.where(ctx))) : null,
