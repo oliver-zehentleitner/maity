@@ -113,7 +113,9 @@ window.Maity = window.Maity || {};
             try {
               await M.api.del(ctx.base + "/attachments/" + encodeURIComponent(a.id));
             } catch (err) {
-              status.fail("Not removed: ", err);
+              status.fail("Not removed: ", said(err));
+              // Off on the hub: the chooser goes, the line above says why.
+              if (without(err)) { earlier = []; pending.length = 0; draw(); offer(false); el.hidden = false; }
               return;
             }
             earlier = earlier.filter((x) => x !== a);
@@ -145,7 +147,9 @@ window.Maity = window.Maity || {};
             try {
               await M.api.del(ctx.base + "/attachments/" + encodeURIComponent(p.att.id));
             } catch (err) {
-              status.fail("Not removed: ", err);
+              status.fail("Not removed: ", said(err));
+              // Off on the hub: the chooser goes, the line above says why.
+              if (without(err)) { earlier = []; pending.length = 0; draw(); offer(false); el.hidden = false; }
               return;
             }
             pending.splice(pending.indexOf(p), 1);

@@ -3975,6 +3975,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && main.querySelector("label.attach-button").hidden && byId("chat-files").hidden && !main.querySelectorAll(".attach-pending li").length,
     "attachments off: an upload refused with 409 says so and Attach files goes");
   win.Maity.api.getAll = atAll2;
+  // One's upload from before, removed after the hub turned them off: said, the list and the chooser gone.
+  win.Maity.attachments.forget();
+  win.Maity.api.getAll = (p) => (/\/attachments\?status=pending&uploaded_by=/.test(p)
+    ? Promise.resolve({ items: [{ id: "att-old", name: "old.txt", size: 3, type: "text/plain", kind: "file", uploaded_by: "hum-maintainer", message_seq: null }], next_cursor: null })
+    : atAll2(p));
+  await go("#/p/maity/inbox"); await go("#/p/maity/chat/agt-b"); for (let k = 0; k < 6; k++) await tick();
+  const aoOld = main.querySelectorAll(".attach-earlier li").find((li) => text(li).includes("old.txt"));
+  if (aoOld) {
+    btn(aoOld, "Remove").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(text(main.querySelector(".attach")).includes("Not removed: attachments are not set up on this instance")
+      && main.querySelector(".attach-earlier-box").hidden && main.querySelector("label.attach-button").hidden,
+      "attachments off: removing an upload from before says so; the list and Attach files go");
+  } else expect(false, "attachments off: one's upload from before is offered");
+  win.Maity.api.getAll = atAll2;
   // A Delete drawn before the hub said so: refused calmly, the button gone.
   win.Maity.attachments.forget();
   await go("#/p/maity/inbox"); await go("#/p/maity/chat/agt-b");

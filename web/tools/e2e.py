@@ -376,11 +376,12 @@ def watch_page(run: Run, page: Page) -> None:
         # Signed out, the page asks /auth/session first and expects 401.
         # A composer, and Project settings, ask once per page load for the
         # uploads waiting to be sent (§8.7); a hub without attachments answers
-        # 404, one with them off (no store, 409 attachments_not_configured) 409.
+        # 404. One with them off answers 409: never this run's own hub, which
+        # has a store; the attachments step says the case where it happens.
         if resp.status >= 400 and not (
             resp.status == 401 and path.startswith("/api/v1/auth/session")
         ) and not (
-            resp.status in (404, 409) and re.match(r"/api/v1/projects/[^/]+/attachments\?status=pending(&uploaded_by=[^&]+)?&limit=200$", path)
+            resp.status == 404 and re.match(r"/api/v1/projects/[^/]+/attachments\?status=pending(&uploaded_by=[^&]+)?&limit=200$", path)
         ):
             run.problems.append(f"{resp.request.method} {path} answered {resp.status}")
 
@@ -968,6 +969,21 @@ def attachments_step(run: Run, page: Page, agent_id: str) -> None:
         expect(page.locator("form.compose")).to_be_visible()
         expect(page.locator("form.compose .attach")).to_be_hidden()
         expect(page.locator("#chat-files")).to_be_disabled()
+        no_problems(run, "attachments")
+        return
+    # Configured but off (§8.7 "Attachments off"): the route exists, the hub has no
+    # store and answers every attachment call 409 attachments_not_configured. Then the
+    # composer offers no files and no Delete; only those answers, checked by their
+    # code, are no problem.
+    probe = page.request.get(f"{run.base}/api/v1/projects/e2e-alpha/attachments?status=pending&limit=200")
+    if probe.status == 409 and (probe.json().get("error") or {}).get("code") == "attachments_not_configured":
+        run.step("attachments: the hub has them off; the composer offers no Attach files and no Delete")
+        expect(page.locator("form.compose")).to_be_visible()
+        expect(page.locator("form.compose .attach")).to_be_hidden()
+        expect(page.locator("#chat-files")).to_be_disabled()
+        expect(page.locator("li.attach-item button", has_text="Delete")).to_have_count(0)
+        off = re.compile(r"GET /api/v1/projects/[^/]+/attachments\?status=pending(&uploaded_by=[^&]+)?&limit=200 answered 409$")
+        run.problems = [p for p in run.problems if not off.match(p)]
         no_problems(run, "attachments")
         return
     page.locator("#chat-files").set_input_files(
