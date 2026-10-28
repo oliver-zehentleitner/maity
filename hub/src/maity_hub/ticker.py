@@ -430,6 +430,31 @@ def on_release_done(
     )
 
 
+def write_rename(
+    conn: Connection,
+    project_id: str,
+    old: str,
+    new: str,
+    actor: events.Actor | None,
+    by: str | None,
+) -> None:
+    """`<old> is now <new>` (§17.1): a handle's rename (§6.24) or a project's rename or
+    transfer (§6.25). Its audience is `all` alone, so it is listed for every member and
+    wakes nobody; it is written whether the ticker is on or not, since it is no forge
+    source, and has no dedupe key."""
+    write(
+        conn,
+        project_id,
+        kind="rename",
+        text=f"{old} is now {new}",
+        url=None,
+        audience=Audience(),
+        origin="hub",
+        actor=actor,
+        actor_principal=by,
+    )
+
+
 # --- the manual post's audience (§17.6) --------------------------------------------------
 
 

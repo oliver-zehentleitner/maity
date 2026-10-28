@@ -116,6 +116,21 @@ window.Maity = window.Maity || {};
     return fixtureSlugs().find((slug) => fullOf(slug) === full
       || ((fixtures()[slug + "/project.json"] || {}).aliases || []).includes(full)) || null;
   }
+  // §6.25: at most 8 earlier names, and 3 renames and transfers a day.
+  const nameChanges = {};
+  // `full`: the name it would have; taking back one's own earlier name
+  // adds none, so the limit does not stop it (as the hub, #487).
+  function renameCheck(p, path, full) {
+    if ((p.aliases || []).length >= 8 && !(p.aliases || []).includes(full)) fail(409, "alias_limit", "at most 8 earlier names", path, { limit: 8, aliases: p.aliases });
+    const day = (nameChanges[p.id] || []).filter((t) => Date.now() - t < 86400000);
+    if (day.length >= 3) fail(429, "rate_limited", "at most 3 renames and transfers a day", path);
+  }
+  function renamed(p, full) {
+    // A name taken back is current again, no longer an earlier one.
+    p.aliases = (p.aliases || []).filter((x) => x !== full).concat(p.full_name);
+    p.full_name = full;
+    (nameChanges[p.id] = nameChanges[p.id] || []).push(Date.now());
+  }
   // The words that follow a project in a route (§6.25): never a slug.
   const ROUTE_WORDS = ["agents", "attachments", "banner", "contracts", "conversations", "credentials", "events", "forge", "group-chats",
     "invitations", "joins", "jour-fixe", "keep-the-why", "logo", "members", "memory", "messages", "placements", "probe", "releases",
@@ -899,7 +914,8 @@ window.Maity = window.Maity || {};
         if (logo) p.logo = { available: !!logo.available, etag: logo.available ? logo.etag : null };
       });
       data.server_time = nowIso();
-      return data;
+      // A renamed project: its directory stays, its slug is the project's now (§6.25).
+      return Object.assign({}, data, { projects: data.projects.map((p) => Object.assign({}, p, { slug: project(p.slug, "").slug })) });
     }],
     // §18.2: the human's notifications. inbox counts the open requests as
     // /me does; chat and the rest count the unread items of their kind
@@ -1183,7 +1199,7 @@ window.Maity = window.Maity || {};
     // Personal requests (§7) are the human's own, listed here only.
     ["GET", /^\/requests$/, () => ({
       items: me().projects.flatMap((p) => openFor(p.slug).map((r) => Object.assign(
-        { project: { slug: p.slug, full_name: p.full_name, name: p.name, state: project(p.slug, "").state } }, r)))
+        { project: { slug: project(p.slug, "").slug, full_name: p.full_name, name: p.name, state: project(p.slug, "").state } }, r)))
         // A list shows no proposal (§7, §19.4): GET /requests/{id} has it.
         .concat(personalRequests().filter((r) => r.status === "open").map((r) => {
           const listed = Object.assign({}, r);
@@ -1313,6 +1329,21 @@ window.Maity = window.Maity || {};
     }],
     ["PATCH", /^\/projects\/([^/]+)$/, (m, body, path) => {
       const p = project(m[1], path);
+      // §6.25: a rename, by a human owner; the old full name an alias.
+      if ("slug" in body && body.slug !== p.slug) {
+        if (me().member.kind !== "human" || roleIn(m[1]) !== "owner") fail(403, "forbidden", "a project is renamed by a human owner", path, { reason: "humans_only" });
+        const owner = p.full_name.split("/")[0];
+        renameCheck(p, path, owner + "/" + body.slug);
+        if (!SLUG.test(body.slug || "")) fail(400, "invalid", "not a slug", path, { fields: { slug: "string_pattern_mismatch" } });
+        if (ROUTE_WORDS.includes(body.slug)) fail(400, "invalid", "a route word", path, { fields: { slug: "reserved" } });
+        const taken = slugOfFull(owner + "/" + body.slug);
+        if (taken && taken !== m[1]) fail(400, "invalid", "taken", path, { fields: { slug: "taken" } });
+        renamed(p, owner + "/" + body.slug);
+        p.slug = body.slug;
+        // /me's entry keeps the fixture directory as its slug; it answers with the project's.
+        const mine = me().projects.find((x) => x.slug === m[1]);
+        if (mine) mine.full_name = p.full_name;
+      }
       if ("state" in body) {
         if (!body.reason) fail(400, "invalid", "A state change needs a reason", path, { fields: { reason: "required" } });
         p.state = body.state;
@@ -2049,6 +2080,9 @@ window.Maity = window.Maity || {};
         if (!["owner", "admin", "member", "reviewer", "proxy"].includes(body.role)) errors.role = "unknown";
         else if (body.role === "owner" && target.kind !== "human") errors.role = "owner_is_human";
         else if (target.role === "owner" && body.role !== "owner" && all.filter((x) => x.role === "owner").length === 1) errors.role = "last_owner";
+        else if (body.role !== "owner" && (project(m[1], path).owner || {}).id === target.id) {
+          fail(409, "namespace_owner", "the project's namespace owner stays an owner", path, { projects: [fullOf(m[1])] });
+        }
       }
       if ("reports_to" in body && body.reports_to !== null) {
         const boss = all.find((x) => x.id === body.reports_to);
@@ -2090,6 +2124,24 @@ window.Maity = window.Maity || {};
       }
       return target;
     }],
+    // §6.25: the namespace owner hands the project to another human owner, a
+    // consent request to them; the fixture hub files it and answers 202.
+    ["POST", /^\/projects\/([^/]+)\/transfer$/, (m, body, path) => {
+      const p = project(m[1], path);
+      if (me().member.kind !== "human") fail(403, "forbidden", "a project is transferred by a human", path, { reason: "humans_only" });
+      if (!p.owner || p.owner.id !== me().member.id) fail(403, "forbidden", "only the namespace owner transfers the project", path);
+      const to = file(m[1], "members.json", path).items.find((x) => x.id === body.to && x.kind === "human" && x.role === "owner");
+      if (body.to === me().member.id) fail(400, "invalid", "the project is here already", path, { fields: { to: "self" } });
+      if (!to) fail(400, "invalid", "the receiver must be an owner", path, { fields: { to: "not_an_owner" } });
+      renameCheck(p, path, to.handle + "/" + p.slug);
+      const list = file(m[1], "requests.json", path).items;
+      list.filter((r) => r.status === "open" && r.kind === "project_transfer").forEach((r) => { r.status = "withdrawn"; });
+      const req = { id: localId("req"), kind: "project_transfer", class: "consent", status: "open", title: "Take over " + p.full_name + " as " + to.handle + "/" + p.slug,
+        summary: me().member.handle + " asks you to become the namespace owner of " + p.full_name + ".", options: [], replies: [{ id: "go", label: "Go" }, { id: "no", label: "No" }],
+        priority: "normal", to: to.id, asked_by: { member_id: me().member.id, display_name: me().member.display_name }, created_at: nowIso(), while_open: "wait" };
+      list.push(req);
+      return Object.assign({}, req);
+    }],
     ["DELETE", /^\/projects\/([^/]+)\/members\/([^/]+)$/, (m, body, path) => {
       const who = caller(m[1], path);
       if (!who.admin) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
@@ -2098,6 +2150,9 @@ window.Maity = window.Maity || {};
       list.removed = list.removed || [];
       const gone = list.removed.find((x) => x.id === m[2]);
       if (gone) return gone;
+      if ((project(m[1], path).owner || {}).id === m[2]) {
+        fail(409, "namespace_owner", "the project's namespace owner is not removed", path, { projects: [fullOf(m[1])] });
+      }
       const target = member(m[1], m[2], path);
       agentLimits(who.member, target, null, path);
       const consent = consentFor(who.member, "Remove " + target.handle);

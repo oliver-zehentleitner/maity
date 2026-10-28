@@ -227,6 +227,7 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
                 user_agent=request.headers.get("user-agent"),
                 started_at=now,
                 last_seen_at=now,
+                events_at=now,  # a resume counts as a call for events (§5.3)
                 acknowledged_seq=cursor,
                 live=True,
                 env_home=body.environment.home if body.environment else None,

@@ -60,9 +60,11 @@ class Settings:
     attachment_dir: Path | None = None
     attachment_quota: int = 1024 * 1024 * 1024
     # MAITY_DB_POOL_SIZE, MAITY_DB_MAX_OVERFLOW: the server database's connection pool
-    # (SQLAlchemy's defaults, 5 + 10).
-    db_pool_size: int = 5
-    db_max_overflow: int = 10
+    # (16 + 16; SQLAlchemy's own defaults are 5 + 10, hub/context/persistence.md).
+    db_pool_size: int = 16
+    db_max_overflow: int = 16
+    # MAITY_DB_POOL_RECYCLE: seconds after which a pooled connection is replaced; 0 never.
+    db_pool_recycle: int = 1800
     # MAITY_SECRET_KEY: the instance key for secrets stored at rest (§16.2, §17.4);
     # never logged, never in a response, never in the database.
     secret_key: bytes | None = field(default=None, repr=False)
@@ -80,6 +82,9 @@ class Settings:
     # MAITY_REGISTRATION*, MAITY_TERMS_*: what the environment sets for registration
     # (§16.4); None where it leaves the instance admin to decide.
     registration: Any = None
+    # MAITY_SIGN_IN_SECOND_FACTOR: off, optional or required_admins (§2.8.5); None
+    # leaves it to the instance admin.
+    sign_in_second_factor: str | None = None
 
     @property
     def join_host(self) -> str | None:
@@ -124,9 +129,12 @@ class Settings:
             attachment_quota=int(
                 parse_number(env, "MAITY_ATTACHMENT_QUOTA", 1024**3, minimum=1024, maximum=2**50)
             ),
-            db_pool_size=int(parse_number(env, "MAITY_DB_POOL_SIZE", 5, minimum=1, maximum=500)),
+            db_pool_size=int(parse_number(env, "MAITY_DB_POOL_SIZE", 16, minimum=1, maximum=500)),
             db_max_overflow=int(
-                parse_number(env, "MAITY_DB_MAX_OVERFLOW", 10, minimum=0, maximum=500)
+                parse_number(env, "MAITY_DB_MAX_OVERFLOW", 16, minimum=0, maximum=500)
+            ),
+            db_pool_recycle=int(
+                parse_number(env, "MAITY_DB_POOL_RECYCLE", 1800, minimum=0, maximum=86400)
             ),
             secret_key=parse_secret_key(env.get("MAITY_SECRET_KEY", "")),
             mail=parse_mail(env),
@@ -136,6 +144,7 @@ class Settings:
                 env, "MAITY_ON_RUNNER_REVOKE", ("keep", "stop", "stop_floor"), "keep"
             ),
             registration=parse_registration(env),
+            sign_in_second_factor=parse_second_factor(env),
         )
 
 
@@ -271,6 +280,25 @@ def parse_networks(value: str) -> tuple[IPNetwork, ...]:
                 f"MAITY_TRUSTED_PROXIES: {part!r} is not an address or CIDR"
             ) from None
     return tuple(networks)
+
+
+SECOND_FACTOR_POLICIES = ("off", "optional", "required_admins")
+
+
+def parse_second_factor(env: dict[str, str]) -> str | None:
+    """Unset is None. `required_admins` without a usable instance key would hold every
+    admin at an enrolment session that can do nothing, so the hub refuses to start
+    (§2.8.1)."""
+    value = env.get("MAITY_SIGN_IN_SECOND_FACTOR", "").strip()
+    if not value:
+        return None
+    if value not in SECOND_FACTOR_POLICIES:
+        raise ConfigError(
+            f"MAITY_SIGN_IN_SECOND_FACTOR must be off, optional or required_admins, got {value!r}"
+        )
+    if value == "required_admins" and parse_secret_key(env.get("MAITY_SECRET_KEY", "")) is None:
+        raise ConfigError("MAITY_SIGN_IN_SECOND_FACTOR=required_admins needs MAITY_SECRET_KEY")
+    return value
 
 
 def parse_switch(env: dict[str, str], name: str) -> bool | None:

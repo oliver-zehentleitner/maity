@@ -15,6 +15,7 @@ from sqlalchemy import Connection, and_, insert, or_, select, update
 from maity_hub import (
     avatars,
     clock,
+    events,
     idempotency,
     inbox,
     mentions,
@@ -753,6 +754,10 @@ def _unblock(conn: Connection, row: Any) -> None:
     conn.execute(
         update(t.card).where(t.card.c.id == card.id).values(**values, updated_at=clock.now())
     )
+    if values.get("status") == "review":
+        from maity_hub import merged
+
+        merged.returned_to_review(conn, card.id)  # a merge remembered is told now (§6.6)
 
 
 def _self_answer() -> ApiError:
@@ -885,7 +890,13 @@ def answer(
         ticker.on_request_answered(conn, mine.project, _row(conn, row.id), caller.actor(mine.id))
         return idempotency.Outcome(200, "request", row.id, view)
 
-    return idempotency.run(engine_of(request), request, caller, action)
+    try:
+        return idempotency.run(engine_of(request), request, caller, action)
+    except proposals.Stale as stale:
+        # The go no longer applies: the request is withdrawn, and nothing else changes.
+        with events.transaction(engine_of(request)) as conn:
+            close_request(conn, stale.request_id, "withdrawn", None, reason=stale.reason)
+        raise stale.error from None
 
 
 # --- forwarding and claiming (§7) --------------------------------------------------------

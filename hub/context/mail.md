@@ -86,10 +86,26 @@ budget kind. A security mail over `security_max_per_hour` gets a later
 `not_before` and waits, never dropped. `enabled: false` holds every row.
 A failure at `resolve`, `connect`, `tls`, `auth` or `timeout` is the
 instance's and is retried with backoff for 24 hours; a permanent `5xx`
-at `RCPT TO` or `DATA` fails the row. Sign-in mail over its budget is
+at `RCPT TO` or `DATA` fails the row and, when the mail went to the
+human's verified address in use, counts a hard failure against it: the
+third in a row disables the address and writes `mail_disabled` (§18.7), and
+a delivery resets the count. A verification mail to a pending address
+counts against no address. Once disabled, no further mail goes to that
+address: each row is checked against the address as it stands just before its
+delivery, so what was queued earlier and the rest of a batch stop too; only
+the confirmation link of an address being set again passes (the outbox row is
+marked `_purpose: verify`, a mark that is never sent as a header, and goes to
+the pending address): it is the way back. Nothing else follows it while the
+address stays disabled, the link used or not. Sign-in mail over its budget is
 dropped, not delayed, since a late link is useless. A row that left the
-queue is deleted after seven days, so the outbox keeps no lasting record
-of who got what.
+queue loses its text at once, since the text carries the mail's links (a
+confirmation, a sign-in, a registration link), and its headers (the signed
+unsubscribe link is one), and keeps its recipient and subject; the row is
+deleted after seven days, so the outbox keeps no lasting record of who got
+what. A row that left before this change loses its text on the next sweep.
+A row still waiting keeps its text for the seconds it takes to send; a mail
+that keeps failing is dropped on the first failed attempt after 24 hours, so
+the text of a row nobody retries can stay longer.
 
 **Reason:** a mail decided in a transaction that rolls back must not
 leave, and a request must not wait up to 20 seconds for an SMTP server.
@@ -102,6 +118,12 @@ like the images worker needs no new process for one replica.
   then fails to commit.
 - An in-memory queue: a restart would lose queued security mail, which
   §16.2 says is never dropped.
+- Sealing the text with `MAITY_SECRET_KEY` while it waits: the window it
+  would protect is the same one a link is valid for, it would make the
+  outbox depend on a key that is optional, and a row that is out needs no
+  text at all. Clearing the text when the row leaves the queue closes the
+  long exposure (a backup taken a week later) without that dependency
+  (card tsk-ayng0czsxp11, from the review of #489).
 
 ## An outbox row is claimed before it is sent; the claim lapses after two minutes
 
@@ -149,3 +171,36 @@ part of the outbox from its first version, not a later change on top.
   one transaction depends on no commit and no clock.
 - Counting when a mail is sent: the place would be free again for a mail that fails for good;
   counting when it is admitted keeps a place used, the strict side of a budget against abuse.
+
+## A registration's link is a signed token whose nonce is kept only as a hash, in the mail's own transaction
+
+**Id:** a8f3a73c-7af9-4276-841e-3f84b056dedf
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.7.1 (the mail, the token); the implementation of tsk-32jx98jzne6z, part 5a, 2026-10-27
+**Revisit when:** the link page (`/mail/register/{token}`) needs more than the pending id and the nonce, or a pending registration may be mailed twice
+
+`registration_mail.send` runs in the transaction that writes the pending registration. For a
+confirmation link it draws a nonce, stores `sha256(nonce)` in `pending_registration.nonce_hash`
+and puts the nonce itself only in the token (`{i: pending id, p: "register", n: nonce,
+x: expiry}`, signed like every link of §18.6) and so only in the mail. It goes to the outbox
+as `registration` mail on the budget of that name (default 30 an hour; over it the mail is
+dropped, a late link is useless) and carries when, and from which browser, system and address,
+the request came, and nothing else of the person. The note to an address that has an account
+has no token and no link that signs anyone in. Both are in the language of the request's
+`Accept-Language` when the hub has it, else English, and have no unsubscribe part.
+
+**Reason:** the link must prove the mailbox, so it carries a secret the hub itself cannot read
+back out of `pending_registration`: a leaked copy of that table gives no valid link. The mail's
+own row in `mail_outbox` does hold the link until the mail is out, and loses its text then (the
+outbox entry above). Doing it in the same transaction
+as the pending row means a row that rolls back leaves no mail and a mail never names a row that
+is not there. A budget of its own keeps an unauthenticated caller who can trigger these mails
+from using up the security or notification budgets.
+
+**Rejected alternatives:**
+- Storing the nonce: a read of the table would then be enough to complete someone's
+  registration, given the password hash is not.
+- The registration mail on the sign-in budget: the two are triggered by different requests with
+  different limits (§2.7.3 against §2.6.4); one flood would silence the other.

@@ -4,8 +4,12 @@ The token comes from the operator's environment only (`Settings`) and lives in
 one `Forge` object, which the app hands to whoever reads: the probe route, the
 worker, readiness. It is not a process global and never in a `repr`. Nothing a
 project member sets can change where it is sent. Requests go to the fixed API
-host of the forge kind, and a redirect to any other host is refused, so the
-token never leaves for a host the operator did not choose.
+host of the forge kind, and no redirect is followed, so the token never
+leaves for a host the operator did not choose.
+
+The operator's token reads only public repositories (§11.4): it may see the
+operator's own private ones, which no project should see through the probe, so
+every read with it first asks the forge whether the repository is public.
 """
 
 from __future__ import annotations
@@ -14,12 +18,13 @@ import base64
 import hashlib
 import http.client
 import json
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 HOSTS = {"github.com": "github"}  # host -> forge kind
@@ -31,10 +36,28 @@ class ForgeUnavailableError(Exception):
     """The forge did not answer a read (network, timeout, 5xx, rate limit, bad token,
     a repository the token cannot see, an answer of an unexpected shape)."""
 
-    def __init__(self, message: str, status: int | None = None, rate_limited: bool = False) -> None:
+    def __init__(
+        self,
+        message: str,
+        status: int | None = None,
+        rate_limited: bool = False,
+        retry_at: datetime | None = None,
+    ) -> None:
         super().__init__(message)
         self.status = status  # the forge's HTTP status, when it answered with one
         self.rate_limited = rate_limited  # a 403/429 that says "later", not "never"
+        self.retry_at = retry_at  # when the source's budget is there again (§11.4)
+
+
+class NotCoveredError(ForgeUnavailableError):
+    """No source the hub holds may read the repository (§11.4): `reason` is
+    `private_without_grant` (the forge reports it private), `no_grant` (the token
+    cannot see it at all) or `repository_moved` (the forge redirects the read). A
+    read that is refused, not a forge that failed."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(f"no source covers the repository ({reason})")
+        self.reason = reason
 
 
 def kind_of(url: str | None) -> str | None:
@@ -52,8 +75,10 @@ def repository_of(url: str) -> str:
 
 
 class _SameHostOnly(urllib.request.HTTPRedirectHandler):
-    """Follows a redirect only to https://api.github.com on the default port: the
-    Authorization header goes with it, so plain HTTP or another port would leak it."""
+    """Follows no redirect (§11.4). Within https://api.github.com it is a renamed or
+    moved repository: reads stop until a project admin sets the new URL, which the
+    namespace owner then confirms again. Anywhere else it is refused like any failure:
+    the Authorization header would go with it."""
 
     def redirect_request(
         self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str
@@ -65,7 +90,7 @@ class _SameHostOnly(urllib.request.HTTPRedirectHandler):
             port = -1
         if target.scheme != "https" or target.hostname != API_HOST or port not in (None, 443):
             raise ForgeUnavailableError(f"the forge redirected elsewhere ({code})")
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
+        raise NotCoveredError("repository_moved")
 
 
 _opener = urllib.request.build_opener(_SameHostOnly)
@@ -73,6 +98,124 @@ _opener = urllib.request.build_opener(_SameHostOnly)
 
 def _quote(ref: str) -> str:
     return urllib.parse.quote(ref, safe="")
+
+
+# --- the rate limit budget per source (§11.4) ------------------------------------------------
+#
+# Every answer of the forge says how much of the source's hourly budget is left
+# (X-RateLimit-Remaining of X-RateLimit-Limit) and when it is whole again
+# (X-RateLimit-Reset). A spent budget (403/429 with Remaining 0 or a Retry-After)
+# or one under LOW of its limit stops every read with that source until the reset:
+# a read then fails at once, with that time as `retry_at`, and nothing goes out.
+# One budget per token, by its digest (never the token), and one for reads without.
+
+LOW = 0.05  # below this share of the limit left, the rest is kept for the reset
+WAIT_UNKNOWN = 60  # seconds to hold off when a spent budget names no reset
+
+
+@dataclass
+class _Budget:
+    limit: int | None = None
+    remaining: int | None = None  # as the forge last said, never raised within a window
+    reset: float | None = None  # epoch seconds the forge names for the window's end
+    in_flight: int = 0  # reads sent and not answered yet, each counted against `remaining`
+    until: float = 0.0  # epoch seconds before which this source is not read
+
+
+_budgets: dict[str, _Budget] = {}
+_budgets_lock = threading.Lock()
+
+
+def _source(token: str | None) -> str:
+    return hashlib.sha256(token.encode()).hexdigest() if token is not None else ""
+
+
+def _number(headers: Any, name: str) -> float | None:
+    try:
+        value = headers.get(name) if headers is not None else None
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _hold_until(budget: _Budget, now: float) -> float:
+    """Until when a budget at its floor is kept: its window's end, else a while."""
+    return budget.reset if budget.reset is not None and budget.reset > now else now + WAIT_UNKNOWN
+
+
+def _take(source: str) -> datetime | None:
+    """Count one read against the source before it is sent, atomically with the check:
+    readers in parallel may not spend together what the last answer said was left.
+    Returns when the source may be read again, or None with the read counted."""
+    now = time.time()
+    with _budgets_lock:
+        budget = _budgets.setdefault(source, _Budget())
+        if budget.reset is not None and budget.reset <= now:
+            # The window is over: what was left in it says nothing about the new one.
+            budget.remaining, budget.reset = None, None
+        if budget.until <= now and budget.remaining is not None and budget.limit:
+            left = budget.remaining - budget.in_flight
+            if left - 1 < budget.limit * LOW:
+                budget.until = _hold_until(budget, now)
+        if budget.until > now:
+            return datetime.fromtimestamp(budget.until, UTC)
+        budget.in_flight += 1
+        return None
+
+
+def _note(source: str, headers: Any, spent: bool) -> None:
+    """What an answer's headers say about the source's budget; the read it answers is
+    no longer in flight. Answers arrive in any order: within one window (one reset)
+    the lowest `remaining` counts; a later reset is a new window and replaces it; an
+    answer from an earlier window changes nothing of the newer one, except that a
+    Retry-After it carries still holds the source that long."""
+    limit, remaining = (
+        _number(headers, "X-RateLimit-Limit"),
+        _number(headers, "X-RateLimit-Remaining"),
+    )
+    reset, after = _number(headers, "X-RateLimit-Reset"), _number(headers, "Retry-After")
+    now = time.time()
+    with _budgets_lock:
+        budget = _budgets.setdefault(source, _Budget())
+        budget.in_flight = max(0, budget.in_flight - 1)
+        if spent and after is not None:
+            budget.until = max(budget.until, now + after)
+        older = reset is not None and budget.reset is not None and reset < budget.reset
+        if older:
+            return
+        new_window = reset is not None and (budget.reset is None or reset > budget.reset)
+        if limit is not None:
+            budget.limit = int(limit)
+        if new_window:
+            budget.reset = reset
+        if remaining is not None:
+            budget.remaining = (
+                int(remaining)
+                if new_window or budget.remaining is None
+                else min(budget.remaining, int(remaining))
+            )
+        low = (
+            budget.remaining is not None and budget.limit and budget.remaining < budget.limit * LOW
+        )
+        if (spent and after is None) or low:
+            budget.until = max(budget.until, _hold_until(budget, now))
+
+
+def _settled(source: str) -> None:
+    """A read that got no answer with headers (no connection, a timeout): no longer in
+    flight, and nothing learned about the budget."""
+    with _budgets_lock:
+        budget = _budgets.get(source)
+        if budget is not None:
+            budget.in_flight = max(0, budget.in_flight - 1)
+
+
+def retry_at(token: str | None) -> datetime | None:
+    """When the source of `token` may be read again; None while it may now."""
+    with _budgets_lock:
+        budget = _budgets.get(_source(token))
+        until = budget.until if budget is not None else 0.0
+    return datetime.fromtimestamp(until, UTC) if until > time.time() else None
 
 
 # --- how check runs and commit statuses count ------------------------------------------------
@@ -85,6 +228,36 @@ MAX_PAGES = 10  # 1000 check runs; past that the sum is `unknown`
 VISIBILITY_SECONDS = 300
 # (token digest, repository) -> when that token last saw it; the digest, not the token
 _visible: dict[tuple[str, str], float] = {}
+
+PUBLIC_SECONDS = 600  # §11.4: the visibility is read again at most every 10 minutes
+# (token digest, repository) -> (when it was read, None when public or the reason not)
+_public: dict[tuple[str, str], tuple[float, str | None]] = {}
+
+
+def _graphql_refused(found: Any) -> bool:
+    """A GraphQL answer (status 200) that may be a refusal: no repository, or an error
+    that is not a rate limit."""
+    if not isinstance(found, dict):
+        return True
+    errors = found.get("errors") or []
+    if any(not isinstance(e, dict) or e.get("type") != "RATE_LIMITED" for e in errors):
+        return True
+    return not isinstance(found.get("data"), dict) or found["data"].get("repository") is None
+
+
+def _repository_in(path: str, query: dict[str, Any] | None) -> str | None:
+    """The `owner/name` a read is about: from a REST path `/repos/{owner}/{name}/…`
+    or a GraphQL query's variables; None when the read names none."""
+    if query is not None:
+        variables = query.get("variables") or {}
+        owner, name = variables.get("owner"), variables.get("name")
+        if isinstance(owner, str) and isinstance(name, str):
+            return f"{owner}/{name}".lower()
+        return None
+    parts = path.split("?", 1)[0].split("/")
+    if len(parts) >= 4 and parts[0] == "" and parts[1] == "repos" and parts[2] and parts[3]:
+        return f"{parts[2]}/{parts[3]}".lower()
+    return None
 
 
 @dataclass(frozen=True)
@@ -103,9 +276,75 @@ class Forge:
             raise ForgeUnavailableError("no forge token")
         return self._call(path)
 
+    def retry_at(self) -> datetime | None:
+        """When this reader's budget is there again, while it is spent (§11.4)."""
+        return retry_at(self.token)
+
     def _call(self, path: str, query: dict[str, Any] | None = None) -> Any | None:
         """A read on the forge API, with the token when the hub holds one and without it
-        otherwise (a public repository). `query` makes it a GraphQL POST, which only reads."""
+        otherwise (a public repository). `query` makes it a GraphQL POST, which only reads.
+        With the token, only of a repository the forge reports public (`NotCoveredError`
+        otherwise); a read that names no repository is not made with it."""
+        if self.token is not None:
+            repository = _repository_in(path, query)
+            if repository is None:
+                raise ForgeUnavailableError("a read with the forge token names no repository")
+            self._require_public(repository)
+            try:
+                found = self._send(path, query)
+            except ForgeUnavailableError as error:
+                refused = error.status in (401, 403) and not error.rate_limited
+                if refused or isinstance(error, NotCoveredError):
+                    self._forget(repository)
+                raise
+            if found is None or (query is not None and _graphql_refused(found)):
+                self._forget(repository)  # a 404 may be a ref that is not there, or a refusal
+            return found
+        return self._send(path, query)
+
+    def _forget(self, repository: str) -> None:
+        """A refused read (§11.4): the next one asks again whether the repository is public."""
+        key = (hashlib.sha256((self.token or "").encode()).hexdigest(), repository.lower())
+        _public.pop(key, None)
+
+    def _require_public(self, repository: str) -> None:
+        """Raises `NotCoveredError` unless the forge reported the repository public within
+        PUBLIC_SECONDS; a visibility the forge does not answer is `ForgeUnavailableError`
+        and is asked again on the next read."""
+        key = (hashlib.sha256((self.token or "").encode()).hexdigest(), repository)
+        known = _public.get(key)
+        if known is None or time.monotonic() - known[0] >= PUBLIC_SECONDS:
+            try:
+                found = self._send(f"/repos/{repository}")
+            except NotCoveredError as error:  # moved: kept like the other refusals
+                found = error
+            reason: str | None
+            if isinstance(found, NotCoveredError):
+                reason = found.reason
+            elif found is None:
+                reason = "no_grant"
+            elif isinstance(found, dict) and found.get("private") is False:
+                reason = None
+            elif isinstance(found, dict) and found.get("private") is True:
+                reason = "private_without_grant"
+            else:
+                raise ForgeUnavailableError("the forge did not say whether it is public")
+            known = (time.monotonic(), reason)
+            _public[key] = known
+        if known[1] is not None:
+            raise NotCoveredError(known[1])
+
+    def _send(self, path: str, query: dict[str, Any] | None = None) -> Any | None:
+        """The request itself, with no visibility check: only `_call` and the check use it.
+        While the source's budget is spent nothing is sent (§11.4)."""
+        source = _source(self.token)
+        held = _take(source)
+        if held is not None:
+            raise ForgeUnavailableError(
+                "the forge's rate limit is spent until " + held.isoformat(),
+                rate_limited=True,
+                retry_at=held,
+            )
         data = None if query is None else json.dumps(query).encode()
         request = urllib.request.Request(f"https://{API_HOST}{path}", data=data)
         request.add_header("Accept", "application/vnd.github+json")
@@ -115,24 +354,38 @@ class Forge:
         if data is not None:
             request.add_header("Content-Type", "application/json")
         request.add_header("User-Agent", "maity-hub")
+        noted = False  # whether the read's answer already took it out of flight
         try:
             with _opener.open(request, timeout=TIMEOUT) as response:
+                _note(source, getattr(response, "headers", None), spent=False)
+                noted = True
                 return json.loads(response.read())
         except urllib.error.HTTPError as error:
-            if error.code == 404:
-                return None
             headers: Any = error.headers or {}
+            if error.code == 404:
+                _note(source, headers, spent=False)
+                return None
             limited = error.code in (403, 429) and (
                 headers.get("X-RateLimit-Remaining") == "0" or "Retry-After" in headers
             )
+            _note(source, headers, spent=limited)
             raise ForgeUnavailableError(
                 f"the forge answered {error.code}" + (" (rate limit)" if limited else ""),
                 error.code,
                 rate_limited=limited,
+                retry_at=retry_at(self.token) if limited else None,
             ) from None
+        except ForgeUnavailableError:
+            # The redirect guard refuses a redirect (`NotCoveredError` within the API
+            # host): the read is no longer in flight, and it carried no budget headers.
+            if not noted:
+                _settled(source)
+            raise
         except (OSError, ValueError, http.client.HTTPException) as error:
             # A protocol error (IncompleteRead, BadStatusLine, …) is a forge that did not
             # answer, like a timeout; never the error text, which may quote the request.
+            if not noted:
+                _settled(source)
             raise ForgeUnavailableError(
                 f"the forge did not answer: {type(error).__name__}"
             ) from None

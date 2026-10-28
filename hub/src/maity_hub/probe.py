@@ -20,6 +20,7 @@ saw a merge first.
 
 from __future__ import annotations
 
+import itertools
 import logging
 import queue
 import threading
@@ -29,7 +30,7 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, delete, insert, select, update
 
-from maity_hub import clock, forge, releases, ticker
+from maity_hub import clock, forge, merged, releases, ticker
 from maity_hub import tables as t
 from maity_hub.events import emit, lock_project, transaction
 from maity_hub.instances import token
@@ -42,6 +43,21 @@ LINKS = "links"  # a job `(LINKS, project id)`: read that project's card links
 INTERVAL = 300  # seconds between the worker's sweeps
 MERGE_INTERVAL = 120  # seconds between the ticker's merge reads (§17.4)
 REPORT_WINDOW = timedelta(days=1)  # closed cards whose report a sweep still tries to observe
+
+# Each round starts at another project: a round ends at the first read the forge
+# does not answer, so a fixed order would leave the same projects unread each time.
+# One position per kind of round: the sweep and the merge round, due together, must
+# not take turns from one counter (each would start at the same project every time).
+_turns: dict[str, itertools.count[int]] = {}
+_turns_lock = threading.Lock()
+
+
+def _rotated(items: list[Any], kind: str) -> list[Any]:
+    if not items:
+        return items
+    with _turns_lock:
+        shift = next(_turns.setdefault(kind, itertools.count())) % len(items)
+    return items[shift:] + items[:shift]
 
 
 class Observation:
@@ -233,6 +249,8 @@ def observe_report(engine: Engine, fg: forge.Forge, card_id: str, max_age: int =
         if stored == current.report:
             return False
         conn.execute(update(t.card).where(t.card.c.id == card_id).values(report=stored))
+        # A merge closes the loop: told to the done authority, maybe closed (§6.6).
+        merged.observed(conn, card_id, pr.data.get("merge_sha") if pr else None)
         if _seen(current.report) == _seen(stored):
             return True  # only the time moved on: stored, not announced again
         emit(
@@ -322,8 +340,9 @@ def sweep(engine: Engine, fg: forge.Forge, stop: threading.Event | None = None) 
         and card.report.get("observed") is None
         and card.report.get("code") is not False
     ]
-    work += [(observe_release, (engine, fg, project_id)) for project_id in sorted(observable)]
-    work += [(observe_links, (engine, fg, project_id)) for project_id in sorted(observable)]
+    order = _rotated(sorted(observable), "sweep")
+    work += [(observe_release, (engine, fg, project_id)) for project_id in order]
+    work += [(observe_links, (engine, fg, project_id)) for project_id in order]
     for job, args in work:
         if stop is not None and stop.is_set():
             return
@@ -485,7 +504,7 @@ def merge_sweep(engine: Engine, fg: forge.Forge, stop: threading.Event | None = 
                 t.project.c.id.in_(select(t.ticker_source.c.project_id))
             )
         ).all()
-    for row in rows:
+    for row in _rotated(sorted(rows, key=lambda r: r.id), "merges"):
         if stop is not None and stop.is_set():
             return
         if fg.configured_for(row.repository_url) and not _guarded(
@@ -556,6 +575,13 @@ class Worker:
             self._pending_links.add(project_id)
         self.jobs.put((LINKS, project_id))
 
+    def _after(self, seconds: float) -> datetime:
+        """The next round: after the interval, and not before the forge's budget is
+        there again (§11.4); a spent budget would end the round at its first read."""
+        due = clock.now() + timedelta(seconds=seconds)
+        held = self.fg.retry_at()
+        return max(due, held) if held is not None else due
+
     def _run(self) -> None:
         next_sweep = clock.now()
         next_merges = clock.now()
@@ -567,10 +593,10 @@ class Worker:
             except queue.Empty:
                 if clock.now() >= next_merges:
                     _guarded(merge_sweep, self.engine, self.fg, self.stopping)
-                    next_merges = clock.now() + timedelta(seconds=MERGE_INTERVAL)
+                    next_merges = self._after(MERGE_INTERVAL)
                 if clock.now() >= next_sweep:
                     _guarded(sweep, self.engine, self.fg, self.stopping)
-                    next_sweep = clock.now() + timedelta(seconds=self.interval)
+                    next_sweep = self._after(self.interval)
                 continue
             if job is None:
                 return

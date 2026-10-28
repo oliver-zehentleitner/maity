@@ -1,0 +1,28 @@
+# systemd SYSTEM unit (root-owned, /etc/systemd/system/maity-runner.service). The runner
+# runs as its own user, but the unit, the runner files and the hook are not the runner
+# user's to change. Replace <runner-user> and <uid> (see README.md).
+[Unit]
+Description=GitHub Actions runner for the Maity database jobs
+After=network-online.target user@<uid>.service
+Wants=network-online.target
+Requires=user@<uid>.service
+
+[Service]
+User=<runner-user>
+WorkingDirectory=/opt/actions-runner
+# The rootless Docker of the runner user (lingering keeps it running).
+Environment=DOCKER_HOST=unix:///run/user/<uid>/docker.sock
+Environment=ACTIONS_RUNNER_HOOK_JOB_COMPLETED=/opt/maity-runner-hooks/job-completed.sh
+# bin/runsvc.sh is GitHub's entry point for systemd. run.sh copies run-helper.sh.template into its
+# own directory on every start, which a root-owned /opt/actions-runner refuses: the unit would
+# exit at once with status 0 and restart in a loop.
+ExecStart=/opt/actions-runner/bin/runsvc.sh
+Restart=always
+RestartSec=10
+# A restart also ends the processes a job left behind.
+KillMode=control-group
+KillSignal=SIGTERM
+TimeoutStopSec=5min
+
+[Install]
+WantedBy=multi-user.target

@@ -13,7 +13,7 @@ from starlette.concurrency import run_in_threadpool
 
 from maity_hub import avatars, clock, handles
 from maity_hub import tables as t
-from maity_hub.auth import passwords, sessions
+from maity_hub.auth import passwords, second_factor, sessions
 from maity_hub.auth.caller import (
     CSRF_COOKIE,
     SESSION_ABSOLUTE,
@@ -106,6 +106,9 @@ async def login(body: Login, request: Request) -> JSONResponse:
     device = request.cookies.get(sessions.DEVICE_COOKIE)
     user_agent = request.headers.get("user-agent")
 
+    hub = settings_of(request)
+    next_route = sessions.safe_next(body.next)
+
     def run() -> tuple[dict[str, Any], str, str, str | None]:
         with engine.begin() as conn:
             known = handles.human_id_of(conn, body.handle)  # the handle or an alias (§6.24)
@@ -123,20 +126,42 @@ async def login(body: Login, request: Request) -> JSONResponse:
                 raise unauthenticated("handle or password is wrong")
             sessions.forget_expired_addresses(conn)
             end_presented(conn, presented)
-            session_id, csrf, _ = sessions.create(
-                conn, row.id, method="password", address=origin.address, user_agent=user_agent
+            session_id, csrf, _, state = second_factor.begin(
+                conn,
+                hub,
+                row.id,
+                method="password",
+                address=origin.address,
+                user_agent=user_agent,
+                next_route=next_route,
             )
+            if state != "full":
+                # The sign-in is not complete: no member, no device cookie yet (§2.8.2).
+                return pending_answer(state), session_id, csrf, None
             return (
-                human_member(row, avatar_url=avatars.urls(conn, [row.id])[row.id]),
+                {
+                    "member": human_member(row, avatar_url=avatars.urls(conn, [row.id])[row.id]),
+                    "next": next_route,
+                },
                 session_id,
                 csrf,
                 sessions.remember_device(conn, row.id, device),
             )
 
-    member, session_id, csrf, device_value = await run_in_threadpool(run)
-    response = JSONResponse({"member": member, "next": sessions.safe_next(body.next)})
+    answer, session_id, csrf, device_value = await run_in_threadpool(run)
+    response = JSONResponse(answer)
     set_session_cookies(response, request, session_id, csrf, device_value)
     return response
+
+
+def pending_answer(state: str) -> dict[str, Any]:
+    """What a first factor answers when a step is still owed (§2.8.2, §2.8.5)."""
+    if state == "second_factor":
+        return {
+            "second_factor": "required",
+            "expires_in": int(second_factor.SECOND_STEP.total_seconds()),
+        }
+    return {"second_factor": "enrolment_required"}
 
 
 def end_presented(conn: Connection, presented: str | None) -> None:
@@ -168,9 +193,15 @@ def set_session_cookies(
 def logout(request: Request, caller: HumanCaller) -> JSONResponse:
     _require_cookie(caller)
     with engine_of(request).begin() as conn:
+        complete = conn.execute(
+            select(t.human_session.c.sign_in_complete).where(
+                t.human_session.c.id_hash == caller.human_session
+            )
+        ).scalar_one()
         sessions.end_where(conn, t.human_session.c.id_hash == caller.human_session, "logout")
-        member = member_of(conn, caller.principal_id)
-    response = JSONResponse({"member": member})
+        # No member before the sign-in counts (§2.8.2).
+        answer = {"member": member_of(conn, caller.principal_id)} if complete else {}
+    response = JSONResponse(answer)
     _clear_cookies(response, request)
     return response
 
@@ -182,6 +213,7 @@ def change_password(body: PasswordChange, request: Request, caller: HumanCaller)
         raise invalid({"new": "too_short"}, "a password has at least 12 characters")
     address = origin_of(request).address
     with engine_of(request).begin() as conn:
+        second_factor.require_step_up(conn, settings_of(request), caller)  # §2.8.4
         row = conn.execute(select(t.human).where(t.human.c.id == caller.principal_id)).one()
         # A wrong current password counts against the login limit (§2.1).
         limits = ((LOGIN_BY_ADDRESS, address), (LOGIN_BY_HANDLE, row.handle))
@@ -215,6 +247,9 @@ def session(request: Request, caller: HumanCaller) -> JSONResponse:
         row = conn.execute(
             select(t.human_session).where(t.human_session.c.id_hash == caller.human_session)
         ).one()
+        owed = second_factor.session_view(conn, settings_of(request), row)
+        if owed is not None:
+            return JSONResponse(owed)  # no member before the step is done (§2.8.2)
         return JSONResponse(
             {
                 "member": member_of(conn, caller.principal_id),
@@ -319,3 +354,31 @@ def _require_cookie(caller: Caller) -> str:
     if caller.human_session is None:
         raise unauthenticated("this endpoint needs a dashboard session")
     return caller.human_session
+
+
+class Reauthenticate(Strict):
+    password: str = Field(min_length=1, max_length=1024)
+
+
+@router.post("/reauthenticate")
+def reauthenticate(body: Reauthenticate, request: Request, caller: HumanCaller) -> JSONResponse:
+    """The password given again on this session: the proof of §2.8.1 for ten minutes.
+    A wrong one counts against the login limit (§2.1)."""
+    _require_cookie(caller)
+    address = origin_of(request).address
+    with engine_of(request).begin() as conn:
+        handle = conn.execute(
+            select(t.human.c.handle).where(t.human.c.id == caller.principal_id)
+        ).scalar_one()
+        limits = ((LOGIN_BY_ADDRESS, address), (LOGIN_BY_HANDLE, handle))
+        for limiter, key in limits:
+            wait = limiter.blocked(key)
+            if wait:
+                raise rate_limited(wait)
+        try:
+            until = second_factor.reauthenticate(conn, caller, body.password)
+        except ApiError:
+            for limiter, key in limits:
+                limiter.hit(key)
+            raise
+    return JSONResponse({"valid_until": clock.rfc3339(until)})

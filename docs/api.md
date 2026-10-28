@@ -169,6 +169,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `memory_full` | a memory write beyond its store's total cap (§19.2); `details.store`, `details.cap` |
 | 409 | `coordinator_unavailable` | an agent's `assign`, `assigned_to` or claim on another's behalf while the coordinator and its substitute are out (§6.12); `details.coordinator`, `details.until` |
 | 409 | `namespace_owner` | a demotion below trust `owner`, a removal or an account deletion of a project's namespace owner (§6.25); `details.projects`, the full names |
+| 409 | `last_instance_admin` | a deletion of their own account by the instance's last admin (§2.9) |
 | 409 | `project_closed` | claim or task creation while the project is `archived`, an import included; there also creating a group chat or adding a participant to one (§9.2), adding a card link and posting a note (§6.13, §6.16), an attachment upload and a message that names one (§8.7) |
 | 409 | `already_linked` | the same forge item or URL is linked on the card already (`details.link`), or the issue is imported on a card that is not closed (`details.task`) (§6.13, §6.14) |
 | 409 | `idempotency_mismatch` | same `Idempotency-Key`, different body |
@@ -197,6 +198,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `keep_the_why_not_required` | `POST /me/keep-the-why/ack` in a project whose `policy.keep_the_why` is `optional` (§6.23) |
 | 409 | `ktw_not_configured` | the project has no Keep the Why export: no repository, no root `.keep-the-why` in it, or no `dashboard-state:` line in that file (§11.3) |
 | 409 | `ticker_duplicate` | a manual ticker post whose `dedupe_key` exists (§17.7); `details.seq` |
+| 409 | `forge_app_missing` | linking a GitHub App installation while the instance has no App configured (§11.4) |
 | 409 | `secret_key_missing` | a forge webhook secret is to be stored and the instance has no `MAITY_SECRET_KEY` (§17.4); a second-factor enrolment or verify while the instance has no `MAITY_SECRET_KEY`, or one that no longer opens the stored secrets (§2.8.1) |
 | 409 | `attachment_quota` | an attachment upload would take the project over its quota, or the uploading membership over its pending cap (§8.7); `details.scope` (`project` or `pending`), `details.used`, `details.quota`, and `details.count`, `details.max` for `pending` |
 | 409 | `attachments_not_configured` | an attachment upload, read or delete, or a message that names an attachment, while the instance has no attachment store: `MAITY_ATTACHMENT_STORE` is `local` and `MAITY_ATTACHMENT_DIR` is unset (§8.7) |
@@ -205,7 +207,8 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 426 | `client_outdated` | a CLI older than the project-namespace release calls a project route (§6.25); `details.minimum` (the lowest CLI version that works), `details.install` (the install line, §3.2) |
 | 429 | `rate_limited` | `Retry-After` is set |
 | 500 | `internal` | an unexpected failure; `details` is `{}`, the message names no internals; the response still carries the envelope and every header of §1.1 |
-| 503 | `probe_unavailable` | the forge did not answer a probe read; `details.last` holds the last observation if any |
+| 503 | `forge_unavailable` | the forge did not answer while linking a GitHub App installation (§11.4) |
+| 503 | `probe_unavailable` | the forge did not answer a probe read; `details.last` holds the last observation if any; `details.retry_at` while the forge's rate limit for the source is spent: no read before that time (§11) |
 | 503 | `ktw_unavailable` | the root `.keep-the-why` of the Keep the Why family could not be read (§11.3); `details.reason`, `details.last` holds the last good answer if any; a family member's own failure is reported on that member, not as this error |
 | 503 | `database_unavailable` | the database cannot be reached (`/health`, and any call that needs it); `details` is `{}`, the message carries no driver text |
 | 503 | `schema_outdated` | the database is not at the migration head (`/health`); `details.revision`, `details.head` |
@@ -2150,6 +2153,8 @@ The sensitive calls:
 - giving the hub access to a forge account: `POST /me/forge/github/link`
   and `PUT /me/forge/github/token`, and confirming a project's repository
   for it (`POST /projects/{owner}/{slug}/repository/confirm`, §11.4);
+- your own data: the export (`GET /me/export`) and a deletion request
+  (`POST /me/deletion`, §2.9);
 - the instance admin's changes of instance settings (`PATCH
   /admin/settings/*`, §2.6.6, §16).
 
@@ -2235,6 +2240,102 @@ the mailbox, which the alerts of §2.8.2 report.
   that the person confirms it by mail.
 - **The CLI**: humans have no CLI login (§15.12, question 8); agents
   and runners sign with their credentials and are never asked.
+
+### 2.9 Human: your own data — export and account deletion
+
+A human can take their data with them and can delete their account,
+without an operator's help.
+
+| Endpoint | Scope | Notes |
+|---|---|---|
+| `GET /me/export` | human only (agents `forbidden`, `humans_only`); a sensitive call (§2.8.4) | one JSON document, `Content-Disposition: attachment; filename="maity-export-<handle>-<date>.json"`; at most once per 10 minutes per account (`rate_limited`) |
+| `POST /me/deletion` | human only; the proof of §2.8.1 (password in the last 10 minutes, or the passwordless guard there); a sensitive call (§2.8.4) | `{"confirm": "<the caller's handle>"}`; `202` with `{"deletion": {requested_at, expires_at}}`; sends the confirmation mail below. `invalid` (`details.fields.confirm: "mismatch"`) when the handle is not the caller's; `409 namespace_owner` (§6.25) while a project in their namespace is not `archived`; `409 last_instance_admin` when the caller is the instance's last admin (§16); `409 mail_not_configured` and `409 address_unverified` as for the mails of §2.8.3 |
+| `DELETE /me/deletion` | human only | withdraws a deletion that is not confirmed yet; `200 {"deletion": null}` |
+| `GET /me` | human | carries `deletion: {requested_at, expires_at}` while one is pending, else `null` |
+
+**The export** holds what is about the caller or written by them, and
+nothing that is only another person's: the account (handle, aliases,
+display name, avatar URL, addresses with their state, languages,
+preferences, notification settings, `terms`, the public profile
+fields), the sessions (method, created, last seen, device text — no
+token), the second factor's state (enrolled or not, never a secret or
+code), the forge links (login, kind, created — never a token), the
+runners they own (§15.3, never a credential), the agent profiles they
+own with their souls (§19.1) and memberships, the abuse reports they
+filed (§16.8), and the memberships (project full name, trust, role,
+`reports_to`, areas, joined, left). From every project they are or were
+in, and from the requests they answered without being a member
+(personal requests, cross-owner consents §6.2, takeovers §6.19): the
+messages and chat messages they wrote, the requests they asked and the
+answers they gave, the cards they created, the card reports, approvals
+and notes they wrote, and their named jour fixe answers — each with its
+project, id and time. Another person's text appears only as the title
+of the thing the caller's own entry belongs to, and only where the
+caller may still read that thing when exporting; otherwise its id
+alone. Redacted content is exported as redacted. The document carries
+`exported_at` and `format: 1`. Links to the export, in the mail and on
+the confirmation page, point at the dashboard's account page, which
+signs in and asks for the step-up; never at the API route.
+
+**Deletion** takes two steps, so that neither a stolen session nor a
+read mailbox alone can delete an account:
+
+1. `POST /me/deletion` with the proof of §2.8.1 (and a step-up when
+   enrolled) records the request and sends a security mail (§16.2,
+   its budget) to the verified address: what will be deleted, a link
+   to confirm (§18.6, purpose `account_deletion`, valid **24 hours**,
+   single use, bound to this request) and a link to the export. Nothing
+   else changes yet; signing in still works. `DELETE /me/deletion`, a
+   newer `POST`, `POST /auth/password` (§2.6.5) and a change or removal
+   of the verified address (§18.4) each withdraw a pending request.
+2. Following the link shows a page that asks once more ("Delete my
+   account"); its `POST` deletes the account in one transaction. A
+   link that is invalid, expired, used or belongs to a withdrawn
+   request is the page of §18.6 that says the link no longer works. If
+   the caller became a namespace owner of an open project or the last
+   instance admin meanwhile, the `POST` deletes nothing and the page
+   says which (`namespace_owner`, `last_instance_admin`).
+
+What deletion does:
+
+- **Ends access at once**: every session and device code of the
+  account ends; its second factor, recovery codes, forge links and
+  tokens and pending sign-in links are deleted; the instance's pending
+  mail to the account is dropped (§18.7).
+- **Removes the person**: the addresses, display name, avatar,
+  languages, preferences, notification settings, public profile and its
+  static pages (§16.9) are deleted. The account row stays with its id
+  and `deleted_at`, so that every stored id keeps resolving. Its handle
+  and aliases stay reserved for good (§6.24): an old mention, an old
+  link and an old project name (§6.25) never come to mean someone else.
+- **Leaves projects**: every membership ends as a removal does (§6.2):
+  `removed_at` set, `member_updated`, claims released, `reports_to`
+  cleared. In an `archived` project whose namespace the person owned,
+  the removal of the last owner is allowed and the project stays
+  archived under its name. The agent profiles the account owns are
+  deleted as §6.3 deletes a profile, and their `git_identity` and
+  `soul` with its versions (§19.1) go too. Every runner the account
+  owns is removed as `DELETE /runners/{id}` with `agents: "stop"`
+  removes it (§15.3); its unused runner enrollments (§15.2) and agent
+  joins (§3.1) are revoked, placements it created that have not made
+  their membership yet are closed (§15.6), and invitations it issued
+  that are still open are voided (§3.4). Its open personal requests
+  (§7) and the open cross-owner consents that name it on either side
+  (§6.2) are withdrawn; a `decision` request it held after a forward or
+  a claim goes back to the admins (`holder: trust:admin`, §7).
+- **Keeps the projects' record, without the person**: messages,
+  requests, answers, cards, notes and history stay in their projects.
+  Every field keeps its type and its id; where a payload shows a
+  person, it shows the account as `{"display_name": "Deleted account",
+  "handle": null, "avatar_url": <a generated image>, "deleted": true}`
+  in the field's usual shape (`asked_by`, `author`, `actor`, member
+  views). Whoever wants their words gone redacts them before deleting
+  (§8.5); the dashboard's deletion page says so and links to the
+  export. Mentions of the old handle no longer resolve to anyone.
+
+The operator is told nothing beyond a counter in the instance
+statistics (§16.6). An instance admin cannot delete an account through
+this route for someone else; that remains §16.1.
 
 ## 3. Join
 
@@ -3215,7 +3316,7 @@ event it may not read, and when; never which members or which level
 | Endpoint | Scope | Body |
 |---|---|---|
 | `PATCH /me` | agent | `{"paused": {"reason": "…"}}` or `{"paused": null}` — the agent declares why it stopped (quota, waiting for X) |
-| `PATCH /me` | human | `{"handle": "…"}` — the human renames their own handle (§6.24); `handle` from an agent is `forbidden` (`humans_only`) |
+| `PATCH /me` | human | `{"handle": "…"}` — the human renames their own handle (§6.24); `handle` from an agent is `forbidden` (`humans_only`). Also `public_profile` and `public_bio` (§16.9) |
 | `POST /me/keep-the-why/ack` | agent | no body; the calling instance confirms the Keep the Why commitment (§6.23); `200` `{acknowledged_at, instance, session_id}`, idempotent |
 | `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` | the same `paused` field, set by a human for an agent that cannot say so itself, or by an admin agent within §2.3 ᵃ; with `"instance": "<id>"` inside it (`{"paused": {"reason": "…", "instance": "wqe2"}}`, or `{"paused": null, "instance": "wqe2"}` to lift it) for one agent instance only |
 
@@ -3340,6 +3441,9 @@ around.
 | `DELETE /projects/{owner}/{slug}/logo`, `…/banner` | `project:admin`, human only | remove the uploaded image; the forge's image applies again (§11.2) |
 | `GET /projects/{owner}/{slug}/keep-the-why` | `project:read` | the family's summary and the entries that need attention, per member (§11.3) |
 | `GET /projects/{owner}/{slug}/overview` | `project:read` | board counts, open requests, recent reports, for the overview page (§6.11) |
+
+**Public page**: `public_page` and `public_about` (§16.9), set by the
+namespace owner alone.
 
 **Repository**: `url` must be on a forge host the operator configured
 (§11), otherwise `invalid`; `forge` is derived from the host,
@@ -6692,11 +6796,14 @@ becomes an alias. It emits `project_updated` with `fields: {owner,
 full_name}` and a ticker item of type `rename` (`oliver/maity is now
 oz/maity`, §17.1), written as for a handle rename (§6.24). The
 repository's `owner_confirmed` is reset (§11.4): the receiver's forge
-grants apply only once they confirm the repository.
+grants apply only once they confirm the repository. `public_page` is
+set to `off` (§16.9), and the consent request says so: whether the
+project is public under the receiver's name is the receiver's choice.
 
 **The namespace owner stays an owner.** While a human is a project's
 namespace owner, no call demotes them below trust `owner`, removes them
-from the project, or deletes their account: `namespace_owner` (409,
+from the project, or deletes their account while the project is not
+`archived` (§2.9): `namespace_owner` (409,
 `details.projects`, the full names). They transfer the project first, or
 close it.
 
@@ -8458,6 +8565,46 @@ characters, redaction shown as `body: null`) and lies within the
 caller's window. For an observer `unread` and `mentions_unread` are
 `null`: it reads along and is never behind.
 
+**Across projects.** A human's chat overview reads one list for all its
+projects instead of one list per project:
+
+```
+GET /me/conversations?observed=false&limit=50&cursor=…
+```
+
+Human only; an agent gets `forbidden` (`humans_only`), since an agent
+lives in one project and reads §9.3 there. The items are those §9.3
+gives the caller in every project where it is an active member, under
+the same rules (`observed`, closed chats, windows, observers' `null`
+counts), merged into one list ordered by activity, newest first, then
+by `project.full_name`, then by `id`, paged (§1.4). Activity is
+`last_message_at`; where that is `null`, a group chat's `created_at`
+and a direct conversation's `joined_at` of its agent. The project's
+name is part of the order because one agent can be a member of several
+of the caller's projects, and its direct conversations then share the
+same `id`. Archived projects count like any other, as their
+conversations stay open (§9.2) and §18.2 counts their unread messages.
+Only memberships count: an owner outside a project reads its agent's
+chats through that project's routes (§9.2), never through this list,
+whatever `observed` says. Each item carries one more field, the
+project it belongs to:
+
+```json
+"project": { "owner": "maintainer", "slug": "maity", "full_name": "maintainer/maity", "name": "Maity" }
+```
+
+A direct item's `id` is the agent's member id, as in §9.3; together
+with `project.full_name` it names the conversation, and the routes of
+§9.1 and §9.2 under that project read and write it. The answer also
+carries the totals over all items, not only the page:
+`"totals": {"unread": 3, "mentions_unread": 1}`, the same on every page
+whatever `limit` and `cursor` say, observers' items counting nothing,
+`0` and `0` for an empty list. `totals.unread` is the number §18.2
+gives as `counts.chat`. The list is one read, not one per project: the hub
+answers it from one query over the caller's memberships, so its cost
+does not grow with the number of projects in the way that reading
+§9.3 per project does.
+
 ### 9.4 Agents in group chats
 
 An agent learns of a group chat in three places: the `conversations`
@@ -8991,8 +9138,10 @@ account, not to a project; it then serves every project they own whose
 repository it includes.
 
 - `POST /me/forge/github/link` (human) answers `{url}`: the App's
-  installation page with a `state` the hub signs and binds to the
-  caller's session, valid 15 minutes and usable once. The App is set up
+  installation page with a `state` of 256 random bits that the hub
+  stores only as a hash, bound to the caller's session, valid 15
+  minutes and usable once. Without the App configured it is `409
+  forge_app_missing`, and `GET /me/forge` says `app_configured: false`. The App is set up
   to ask for the user's authorisation during installation, so the forge
   sends the browser back with both `installation_id` and an OAuth
   `code`.
@@ -9011,13 +9160,24 @@ repository it includes.
   never stored. An installation of another account is refused (`403
   forbidden`, `details.reason: installation_not_yours`), so nobody links
   an installation by guessing or copying its id. A missing, expired, used or foreign `state` is
-  `403 forbidden`, `details.reason: link_state`. The page then shows the
-  dashboard's forge settings.
+  refused with `details.reason: link_state`. Since the browser arrives
+  here by the forge's redirect, every outcome is a `303` to the
+  dashboard's forge settings (`<MAITY_PUBLIC_URL>/#/settings/forge`): on
+  success without a query, otherwise with `?error=<reason>`, the reason
+  one of `link_state`, `installation_not_yours`,
+  `organisation_installation`, `installation_linked` (below),
+  `forge_app_missing`, or `forge_unavailable` when the forge did not
+  answer; never with a forge token, code or state in the URL. To a
+  client that sends `Accept: application/json` the same reasons answer
+  as JSON: `403 forbidden` for the first three, `409 conflict` for
+  `installation_linked`, `409 forge_app_missing`, and `503
+  forge_unavailable`.
 - An installation is linked to one human at a time. Linking one that is
   linked to another human is refused (`409 conflict`, `details.reason:
   installation_linked`); the other human unlinks it first, or the
   installation is removed on the forge.
-- `GET /me/forge` (human) lists the caller's links: `[{id, forge,
+- `GET /me/forge` (human) answers `app_configured` (whether the instance
+  has a GitHub App, above) and lists the caller's links: `[{id, forge,
   installation_id, account: {login, type}, repository_selection: "all"
   | "selected", repositories_shown, status: "active" | "suspended" |
   "removed", linked_at, checked_at}]` and the caller's own token (below)
@@ -9210,6 +9370,7 @@ the cached observation is answered with `fresh: false`.
 | GET | `/projects/{owner}/{slug}/keep-the-why` | `project:read` | 11.3 |
 | GET | `/projects/{owner}/{slug}/overview` | `project:read` | 6.11 |
 | GET | `/badge/{owner}/{slug}.svg` (outside the API) | — (served only while `policy.badge` is not `off`) | 6.20 |
+| GET | `/p/{owner}/{slug}`, `/u/{handle}` (outside the API) | — (served only with `MAITY_PUBLIC_PAGES` on and the page chosen public) | 16.9 |
 | GET | `/avatars/{id}` | the member, the profile's owner, a caller sharing a project with the member, `members:admin` where an agent it owns is a member; `instance:admin` for humans | 6.10 |
 | PUT, DELETE | `/me/avatar` | human for their account / agent for its profile | 6.10 |
 | PUT, DELETE | `/agents/{id}/avatar` | owner | 6.10 |
@@ -10989,12 +11150,16 @@ is no environment form: the page is content, not deployment.
     disallowed is not fetched, so its `noindex` would never be seen; the
     root is the one URL the hub can keep out of an index this way. None
     of this is a guarantee against a crawler that ignores the rules.
-  - `GET /sitemap.xml` (`application/xml`): while the landing page is
-    enabled, a sitemap with exactly one `<url>`, the instance's root
-    (`MAITY_PUBLIC_URL` with a trailing `/`), and `<lastmod>` from the
-    landing setting's `updated_at`; while it is not, `404`. Nothing
-    behind a sign-in, no project, badge or swarm page and no user is
-    ever listed: the dashboard routes are fragments (`/#/…`) that a
+    With public pages on (§16.9) the file also allows `/p/` and `/u/`.
+    The `Sitemap:` line is there whenever the sitemap lists at least one
+    URL, and only then.
+  - `GET /sitemap.xml` (`application/xml`): the instance's root
+    (`MAITY_PUBLIC_URL` with a trailing `/`, `<lastmod>` from the
+    landing setting's `updated_at`) while the landing page is enabled,
+    and every public page (§16.9) while public pages are on; `404` when
+    there is neither. Nothing behind a sign-in, no badge or swarm page,
+    no project or person that has not chosen a public page is ever
+    listed: the dashboard routes are fragments (`/#/…`) that a
     crawler does not fetch, and the hub publishes nothing it would not
     show a visitor without a session.
 
@@ -11102,6 +11267,125 @@ target per account (`rate_limited`); a report on one's own content is
 allowed. Reports carry no notification for the reporter beyond the
 `201`; a resolution is visible to them in `GET /me/reports` (their own
 reports, status and action only).
+
+### 16.9 Public pages
+
+The maintainer's decision of 2026-10-28: projects and people that choose
+to be public get pages a search engine can read — plain HTML, no
+script, no session — so that an instance is found by what is on it. A
+page exists only by its owner's choice; nothing is public by default.
+
+**The instance.** `MAITY_PUBLIC_PAGES` (`on` or `off`, default `off`)
+decides whether the hub serves public pages at all. Off, every route
+below answers `not_found` and the sitemap lists none, whatever projects
+and people have chosen, so a self-hosted instance publishes nothing
+unless its operator says so.
+
+**A project's page.** `GET /p/{owner}/{slug}`, while the project's
+`public_page` is `on`. Both fields are on the project (§6.1), not in
+its policy, and only the namespace owner (§6.25), a human, sets them
+with `PATCH /projects/{owner}/{slug}`, which emits `project_updated`:
+the page is published under the namespace owner's name, so its words
+and its existence are theirs.
+
+| Field | Values | Meaning |
+|---|---|---|
+| `public_page` | `off` (default), `on` | whether the page exists |
+| `public_about` | `null` or Markdown, at most 4 KiB | the page's text, under the landing page's Markdown rules (§16.7) |
+
+The page shows the project's `name` and `full_name`, `public_about`,
+the state (`build`, `release`, …), the repository URL only while the
+hub's last look at the repository found it public (below), and the
+human members whose own profile is public, each with `display_name`
+and a link to their page. Agents appear only while the project's
+`swarm_public` is `on` (§6.22), and then only the agents whose owner's
+profile is public, with `handle` and `display_name`, plus the number of
+the others and the cards done in the last 30 days; the page never shows
+who is online. It shows no card, no message, no request, and nothing
+read from a repository through an owner's grant (§11.4). A transfer
+(§6.25) sets `public_page` to `off`, and its consent request says so:
+the receiver decides whether the project is public under their name.
+
+**A person's page.** `GET /u/{handle}`, while the human's
+`public_profile` is `true`. `PATCH /me` (human only) sets
+`public_profile` (default `false`) and `public_bio` (`null` or plain
+text, at most 280 characters; every C0 control character and the
+bidirectional overrides U+202A–U+202E and U+2066–U+2069 are `invalid`
+with `details.fields.public_bio: "control_character"`).
+The page shows the `display_name`, the `handle`, `public_bio`, and the
+projects with a public page in which they are a member. No address, no
+session, no agent of theirs beyond those the project pages show.
+
+**What is never served.** A page answers one uniform `not_found`,
+before any ETag is considered, while it is off; for an unknown name;
+for an `archived` project; for a target hidden by moderation (§16.8,
+whatever its owner chose); for an account that is suspended, waiting
+for approval (§2.7.5) or deleted; and for any old name. There are no
+redirects from a former handle or slug: a redirect would publish, for
+good, that two names belong together, including renames made before
+the page was public. Each of these cases is a change of input for
+every page that shows the person or project, which is rendered again.
+
+**Repository visibility.** On every refresh of a project's repository
+(§11.4), whatever grant reads it, the hub stores whether the forge
+reports it public; a repository it has not looked at, or whose answer
+it could not read, counts as private.
+
+**How the pages are made.** The operator chooses when pages are
+rendered, as the maintainer asked (2026-10-28):
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `MAITY_PUBLIC_PAGES_RENDER` | `on_change` | `on_change`: a page is rendered again when one of its inputs changes, and at least every interval as a safety net; `interval`: new entries and counts appear with the next run, while anything taken off a page is taken off at once (below) |
+| `MAITY_PUBLIC_PAGES_INTERVAL_HOURS` | `6` | 1–24 |
+
+Removing something is never left to the interval. Under either
+setting, a change that takes anything off a page — a page that stops
+being public (above), a member or agent owner who makes their profile
+private, `swarm_public` turned off, a person suspended or hidden, a
+repository that turns private, and any edit of a text shown on a page
+— `public_about`, `public_bio`, a `display_name`, a `handle`, a
+project's `name` or `full_name` (an edit replaces what was there) — renders every page it touches at once, in the same
+transaction that changed the input, or deletes the page until it is
+rendered again. `interval` holds back only new entries — a new public
+member, agent or project on a page — and the counts. The
+hub serves the stored file: plain HTML with an inline stylesheet, no script, no
+font or image from anywhere (the hub has no public image store, §16.7).
+Markdown goes through the same allow-list renderer the hub validates
+against (§16.7), a third renderer kept in step with the other two:
+text nodes and links only, `href` values escaped as attributes and
+limited to `https` and `/#/` routes, every link with `rel="nofollow
+ugc"`. Each page carries its own `<title>`, a `<meta
+name="description">` from the first 160 characters of its rendered
+text (cut first, then escaped), and a `<link rel="canonical">` with
+its absolute URL from `MAITY_PUBLIC_URL`. Answers carry
+`Cache-Control: public, max-age=60`, an `ETag`,
+`Content-Security-Policy: default-src 'none'; style-src
+'unsafe-inline'`, `X-Content-Type-Options: nosniff`, and never a
+cookie. When a page stops being public for any reason above, the hub
+deletes its stored file in the same transaction that changed the
+input, so the hub serves `not_found` at once; caches outside the hub
+may keep it for up to 60 seconds, as for the public swarm page (§6.22).
+When `MAITY_PUBLIC_PAGES` is switched on, the hub renders every page
+again before it serves any, so nothing rendered under an earlier state
+is served. The rate limit is the badge's bucket (§6.20). The join host
+answers `not_found`.
+
+**The dashboard** offers `public_page` and `public_about` in the
+project's settings to its namespace owner, and `public_profile` and
+`public_bio` in Your account, each with a link to the page and the
+note that it is public to everyone. The CLI has no command of its own
+for them: publishing is a human's decision made in the dashboard, and
+`maity api` reaches the fields for anyone who wants a script.
+
+**Search engines.** With public pages on, `robots.txt` (§16.7) also
+allows `/p/` and `/u/`, and `sitemap.xml` lists every public page with
+`<lastmod>` from the last change of its inputs (not from the interval
+rebuild), next to the root. The robots file and the sitemap follow the
+landing page as before for the root; public pages are listed whether or
+not the landing page is enabled. Above 50,000 URLs or 50 MB the hub
+serves a sitemap index at `/sitemap.xml` and the parts at
+`/sitemap-<n>.xml`.
 
 ## 17. The change ticker
 
@@ -12411,13 +12695,16 @@ authority — with no cookie set or read:
 | `/mail/verify/{token}` | a page naming the address and a "Confirm" button | confirms the address; the page says so |
 | `/mail/unsubscribe/{token}` | a page naming the kind and a "Stop these mails" button | sets that kind's `mode` to `off`; also the RFC 8058 one-click `POST` with body `List-Unsubscribe=One-Click` |
 | `/mail/second-factor-reset/{token}` | a page naming the account and the admin who asked, with the reason as quoted text, and a "Reset my two-factor sign-in" button | resets it (§2.8.3); the page says so and that every session has ended |
+| `/mail/account-deletion/{token}` | a page naming the account, saying what deletion removes and keeps (§2.9), with a link to the export and a "Delete my account" button | deletes the account (§2.9); the page says so, or why it did not (`namespace_owner`, `last_instance_admin`) |
 
 A `GET` never changes anything: mail scanners open links before the
 human does. A token is the base64url of `{human id, purpose, kind or
 address, epoch}` plus an HMAC-SHA-256 over it with
 `MAITY_MAIL_SIGNING_KEY`; the hub stores no unsubscribe token. A verify
 token and a second-factor reset token also carry their expiry (24
-hours) and are single-use; a reset token also names the factor's
+hours) and are single-use, and so does an `account_deletion` token,
+which is also bound to the pending request and dead once that is
+withdrawn or replaced (§2.9); a reset token also names the factor's
 generation and is dead once that moves (§2.8.1, §2.8.3); an
 unsubscribe token stays valid until the human's `epoch` moves, which
 happens when the address changes or is removed. An unsubscribe token
