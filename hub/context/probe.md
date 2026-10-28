@@ -83,3 +83,28 @@ caller)` before the confirmation is written, plus a test, as for the
 transfer. Until then the confirmation opens nothing: no owner grant (App
 installation, owner token) is read yet, so `owner_confirmed` is only
 stored. The step-up has to be in place before those grants land.
+
+## A link's state is a stored random value, not a signature
+
+**Id:** 6d8bdf23-78c7-49fd-b122-966f127a46d6
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §11.4 (as changed with the contract pull request #524); card tsk-dtpr7zqxhxc2, part 3
+**Revisit when:** links have to start without a database write, for example from a second hub instance that shares no database
+
+`POST /me/forge/github/link` hands the forge a `state` of 256 random
+bits. The hub stores only its hash, bound to the session that started
+the link, valid 15 minutes, and deletes the row when it is used.
+`GET /forge/github/setup` takes the state in its own transaction before
+it asks the forge anything. A state of another human or another session
+is refused and stays usable for the session it belongs to.
+
+**Reason:** "usable once" needs a stored record whatever the state
+looks like. Once that record exists, a signature adds no check that the
+stored hash does not already make, and the hub would need a key for it.
+
+**Rejected alternatives:**
+- A state signed with an instance key (the contract's first wording):
+  it still needs the stored record for single use, and adds a key to
+  manage.

@@ -200,7 +200,7 @@ def parse(env: dict[str, str]) -> GitHubApp | None:
         raise AppConfigError(
             "the GitHub App needs all five settings or none; missing: " + ", ".join(missing)
         )
-    key = values["MAITY_FORGE_GITHUB_APP_PRIVATE_KEY"].replace("\\n", "\n")
+    key = values["MAITY_FORGE_GITHUB_APP_PRIVATE_KEY"].replace("\\n", "\n").strip()
     try:
         _load_key(key)
     except (ValueError, TypeError):
