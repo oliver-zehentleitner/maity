@@ -99,10 +99,13 @@ the pending address): it is the way back. Nothing else follows it while the
 address stays disabled, the link used or not. Sign-in mail over its budget is
 dropped, not delayed, since a late link is useless. A row that left the
 queue loses its text at once, since the text carries the mail's links (a
-confirmation, a sign-in, a registration link), and keeps its recipient and
-subject; the row is deleted after seven days, so the outbox keeps no lasting
-record of who got what. A row still waiting keeps its text, for the seconds
-it takes to send, or up to the 24 hours of its retries.
+confirmation, a sign-in, a registration link), and its headers (the signed
+unsubscribe link is one), and keeps its recipient and subject; the row is
+deleted after seven days, so the outbox keeps no lasting record of who got
+what. A row that left before this change loses its text on the next sweep.
+A row still waiting keeps its text for the seconds it takes to send; a mail
+that keeps failing is dropped on the first failed attempt after 24 hours, so
+the text of a row nobody retries can stay longer.
 
 **Reason:** a mail decided in a transaction that rolls back must not
 leave, and a request must not wait up to 20 seconds for an SMTP server.

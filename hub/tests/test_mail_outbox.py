@@ -7,7 +7,7 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select, update
+from sqlalchemy import Engine, insert, select, update
 
 from maity_hub import clock
 from maity_hub import instance_settings as store
@@ -458,6 +458,10 @@ def _bodies(engine: Engine) -> list[tuple[str, str]]:
     return [(r.status, r.body) for r in rows]
 
 
+def _link_header() -> dict[str, str]:
+    return {"List-Unsubscribe": "<https://hub.example/mail/unsubscribe/token>"}
+
+
 def test_a_mail_that_is_out_keeps_no_text_in_the_table(migrated: Engine) -> None:
     """The text carries the mail's links; a row that left the queue keeps its recipient,
     not the text, and a row still in it keeps the text it still has to send."""
@@ -503,3 +507,56 @@ def test_a_sign_in_mail_dropped_over_its_budget_keeps_no_text(migrated: Engine) 
         queue(conn, "sign_in")
     outbox.send_due(migrated, hub.mail, None)
     assert _bodies(migrated) == [("dropped", "")]
+
+
+def test_a_mail_that_is_out_keeps_no_header_either(migrated: Engine) -> None:
+    """The unsubscribe link of a notification mail is a header with a signed token."""
+    server = FakeSmtp(Script())
+    try:
+        with migrated.begin() as conn:
+            outbox.enqueue(
+                conn,
+                kind="security",
+                to="me@example.org",
+                subject="s",
+                body="b\n",
+                extra_headers=_link_header(),
+            )
+        with migrated.begin() as conn:
+            assert conn.execute(select(t.mail_outbox.c.headers)).scalar() == _link_header()
+        outbox.send_due(migrated, mail_env(server.port).mail, None)
+    finally:
+        server.close()
+    with migrated.begin() as conn:
+        assert conn.execute(select(t.mail_outbox.c.headers)).scalar() == {}
+
+
+def test_the_sweep_empties_the_rows_that_left_before_the_text_went_at_once(
+    migrated: Engine,
+) -> None:
+    with migrated.begin() as conn:
+        for status in ("sent", "failed", "dropped", "waiting", "sending"):
+            conn.execute(
+                insert(t.mail_outbox).values(
+                    kind="security",
+                    recipient="me@example.org",
+                    subject="s",
+                    body="a link\n",
+                    headers=_link_header(),
+                    created_at=clock.now(),
+                    not_before=clock.now(),
+                    attempts=0,
+                    status=status,
+                )
+            )
+    with migrated.begin() as conn:
+        outbox.forget_old(conn)
+    with migrated.begin() as conn:
+        rows = conn.execute(select(t.mail_outbox).order_by(t.mail_outbox.c.id)).all()
+    assert [(r.status, r.body, r.headers) for r in rows] == [
+        ("sent", "", {}),
+        ("failed", "", {}),
+        ("dropped", "", {}),
+        ("waiting", "a link\n", _link_header()),
+        ("sending", "a link\n", _link_header()),
+    ]

@@ -218,10 +218,12 @@ def _claim(conn: Connection, row_id: int) -> bool:
 
 def _finish(conn: Connection, row_id: int, status: str) -> None:
     """The row leaves the queue: it keeps its recipient and subject for the week, but not
-    the text, which carries the mail's links (a leaked table gives no link of a mail
-    that is out)."""
+    the text or the headers, which carry the mail's links (a signed unsubscribe link is
+    a header): a dump of the table holds no link of a mail that is out."""
     conn.execute(
-        update(t.mail_outbox).where(t.mail_outbox.c.id == row_id).values(status=status, body="")
+        update(t.mail_outbox)
+        .where(t.mail_outbox.c.id == row_id)
+        .values(status=status, body="", headers={})
     )
 
 
@@ -317,7 +319,17 @@ def _hard_failure(conn: Connection, row: Any) -> None:
 
 
 def forget_old(conn: Connection) -> None:
-    """Rows that left the queue keep their recipient and subject a week, no longer."""
+    """Rows that left the queue keep their recipient and subject a week, no longer; one
+    that left before it lost its text and headers (before they went at once) loses them
+    here, and a row still in the queue is not touched."""
+    conn.execute(
+        update(t.mail_outbox)
+        .where(
+            t.mail_outbox.c.status.in_(("sent", "failed", "dropped")),
+            t.mail_outbox.c.body != "",
+        )
+        .values(body="", headers={})
+    )
     conn.execute(
         delete(t.mail_outbox).where(
             t.mail_outbox.c.status.in_(("sent", "failed", "dropped")),
