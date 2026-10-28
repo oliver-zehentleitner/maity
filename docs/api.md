@@ -7590,8 +7590,13 @@ The operator chooses the store (§16):
 and no `MAITY_ATTACHMENT_DIR` is a valid way to run, not a broken one:
 the hub starts and everything but attachments works. Every attachment
 call — upload, list, metadata, content, delete — and a message that
-names an attachment answer `409 attachments_not_configured`, ahead of
-any other check. Delete is refused too, since without a store the hub
+names an attachment answer `409 attachments_not_configured`. List,
+metadata, content and delete answer it before any other check, so they
+say nothing about a project or an attachment; an upload answers it after
+the size cap and the membership and `events:post` checks, so a
+non-member still gets `404`, a member without the right `403` and an
+oversized body `413`, none of which tells the caller more than the
+project view already does. Delete is refused too, since without a store the hub
 cannot remove the bytes it would promise to remove; what the store
 holds stays where it is. A message redaction still works and tombstones
 the attachment rows it names; their bytes are removed by the sweep once
@@ -7786,7 +7791,8 @@ does not show what the listing hides.
   message that names attachments, a pending one uploaded before the
   project closed included; deleting an attachment, pending or not, and
   redacting its message (§8.5) stay allowed, so that harmful or private
-  content can still be taken out.
+  content can still be taken out — except that deleting waits while
+  attachments are off (above), for a different cause than the state.
 - Deleting a project deletes every attachment in it, metadata and blobs,
   pending ones included, when the hub has a project deletion (none in V1;
   §2.3 reserves it to humans).
@@ -7840,10 +7846,10 @@ whose bytes do not decode, a text chunk over its cap, a decode over its
 time or memory budget); `payload_too_large` (over 10 MiB);
 `attachment_quota` (`details.scope` `project` or `pending`);
 `rate_limited`; `project_closed` in an `archived` project.
-Every call: `not_found` for a runner credential, then — before any
-other check, so it says nothing about a project or an attachment —
-`attachments_not_configured` while the instance has no attachment
-store (below). `GET`: `not_found` when
+Every call: `not_found` for a runner credential. While the instance has
+no attachment store, `attachments_not_configured`: on `GET` and `DELETE`
+before any other check, on upload after the size cap, membership and
+`events:post` (above). `GET`: `not_found` when
 there is no such attachment, the caller may not read its message, or —
 on `…/content` — it was deleted. `DELETE`: `not_found` as `GET`;
 `forbidden` (`details.reason: humans_only` for an agent,
