@@ -10566,7 +10566,7 @@ is no environment form: the page is content, not deployment.
   - `GET /robots.txt` (`text/plain`): while the landing page is
     enabled, `User-agent: *`, then `Allow:` for the root (`/$`), for
     the dashboard's static files the page loads (`/js/`, `/css/`,
-    `/brand/`, `/fonts/`) and for the public reads the landing page
+    `/brand/`) and for the public reads the landing page
     renders from (`/api/v1/landing$` and `/api/v1/openapi.json$`, by
     which the dashboard learns the route exists), then `Disallow: /`
     and a `Sitemap:` line with the absolute URL of `/sitemap.xml` built
