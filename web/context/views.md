@@ -1027,13 +1027,16 @@ Below 600 px the span beside the logo (the project's name, "Everything
 waiting for you", "Your account", …) is clipped to one pixel by CSS,
 the usual visually hidden pattern; on wider screens it stays as it was.
 The project's mark beside it is not shown there either (`display:
-none`): it is decoration, already hidden from screen readers. Inside a
-project the header then has the same parts as everywhere else.
+none`): it is decoration, already hidden from screen readers. The
+buttons beside the logo are spaced tighter there (gaps, inner padding,
+the counts' padding; the same height), so that with their counts they
+stay in the logo's row at 360 px. Only two counts of three characters
+("99+") at 360 px still wrap, into the two rows it had before.
 
 **Reason:** on a phone the text crowded the menus, and the switcher's
-current tab already names the scope. The mark alone was enough to push
-the buttons into a second row inside a project, where its tab shows the
-same mark. Clipped rather than removed, a
+current tab already names the scope. Inside a project the mark and the
+buttons' spacing pushed the buttons into a second row, which moved the
+whole page down; the tab shows the same mark. Clipped rather than removed, a
 screen reader still reads where the page is.
 
 **Rejected alternative:** `display: none`: it takes the name from

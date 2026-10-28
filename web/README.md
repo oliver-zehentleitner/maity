@@ -55,8 +55,9 @@ click elsewhere closes it. On a phone the name is left out and the menus
 stay on screen; the text beside the logo (the project's name, "Everything
 waiting for you", "Your account", …) is hidden from sight there, since the
 switcher's current tab names it, and stays in the page for a screen reader;
-a project's mark beside the logo is left out there too, so the buttons stay in
-the logo's row inside a project as well.
+a project's mark beside the logo is left out there too, and the buttons are
+spaced tighter, so they stay in the logo's row with their counts, at 360 px
+too.
 
 **Notifications** (`docs/api.md` §18, `js/notify.js`). Where the hub has
 them, `GET /me/notifications?limit=0` gives the counts, per project too
