@@ -455,3 +455,33 @@ def test_a_message_text_never_comes_from_a_redacted_event(
     at(minutes=3)
     run(migrated)
     assert all("secret words" not in r.body for r in outbox_rows(migrated))
+
+
+def test_a_redacted_event_reaches_no_mail_at_all(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    owner, agent = setup(make_client, migrated)
+    owner.patch(S, {"email": {"kinds": {"chat": {"mode": "immediate"}}}})
+    sent = agent.post(
+        f"/projects/maity/conversations/{agent.id}/messages", {"body": "secret words"}
+    ).json()
+    with migrated.begin() as conn:
+        conn.execute(update(t.event).where(t.event.c.seq == sent["seq"]).values(redacted=True))
+    at(minutes=3)
+    run(migrated)
+    assert notifications(migrated) == []
+
+
+def test_a_kind_switched_on_later_mails_what_was_waiting_unread(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    owner, agent = setup(make_client, migrated)
+    owner.patch(S, {"email": {"kinds": {"chat": {"mode": "off"}}}})
+    agent.post(f"/projects/maity/conversations/{agent.id}/messages", {"body": "earlier"})
+    at(minutes=3)
+    run(migrated)  # the pass finds nothing due and rests
+    assert notifications(migrated) == []
+    owner.patch(S, {"email": {"kinds": {"chat": {"mode": "immediate"}}}})
+    at(minutes=6)
+    run(migrated)  # no new event, but the setting moved
+    assert len(notifications(migrated)) == 1

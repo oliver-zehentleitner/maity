@@ -143,13 +143,15 @@ def for_human(
     if row.address_status != "verified" or row.address is None:
         return 0
     state = _state(conn, human_id)
-    # What the bell's long-poll compares before it derives again: unchanged since the last
-    # pass, and nothing left waiting for its hour, means there is nothing to mail, and the
-    # pass costs a few aggregates, not 30 days of the human's projects (§18.2).
-    moved = json.dumps(listing.stamp(conn, human_id), default=str)
+    prefs = preferences.preferences(conn, human_id)["email"]
+    # What the bell's long-poll compares before it derives again, and the human's settings
+    # with it: unchanged since the last pass, and nothing left waiting for its hour, means
+    # there is nothing to mail, and the pass costs a few aggregates, not 30 days of the
+    # human's projects (§18.2). A settings change (a mode turned on, a new address) is a
+    # change too; the old items it frees would otherwise wait for a new event.
+    moved = json.dumps([listing.stamp(conn, human_id), prefs, row.verified_at], default=str)
     if state.stamp == moved and not state.waiting and state.held_since is None:
         return 0
-    prefs = preferences.preferences(conn, human_id)["email"]
     zone = ZoneInfo(prefs["timezone"])
     now = clock.now()
     local = now.astimezone(zone)
@@ -164,6 +166,7 @@ def for_human(
         i
         for i in items.derive(conn, where)
         if not i.read
+        and not i.redacted  # a redacted event reaches no mail at all (§18.5)
         and i.record_type not in NEVER_MAILED
         and key(i) not in sent
         and (since is None or i.at >= since)
