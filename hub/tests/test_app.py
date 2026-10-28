@@ -34,6 +34,7 @@ def test_health_turns_503_when_the_schema_falls_behind(client: TestClient, engin
     assert error["details"] == {"revision": None, "head": head_revision(engine)}
 
 
+@pytest.mark.wheel
 def test_help_is_markdown_and_names_the_api_version(client: TestClient) -> None:
     response = client.get("/api/v1/help")
     assert response.status_code == 200
@@ -42,6 +43,7 @@ def test_help_is_markdown_and_names_the_api_version(client: TestClient) -> None:
     assert f"API version: {API_VERSION} · hub {__version__} · https://hub.example" in response.text
 
 
+@pytest.mark.wheel
 def test_help_keeps_literal_braces(client: TestClient) -> None:
     text = client.get("/api/v1/help").text
     assert "`/api/v1/projects/{project_id}`" in text
@@ -113,6 +115,7 @@ def test_without_a_dashboard_the_api_still_serves(
         assert client.get("/").status_code == 404
 
 
+@pytest.mark.wheel
 def test_the_default_dashboard_is_served(database_url: str, migrated: Engine) -> None:
     """Whatever this runs from, a checkout or the installed wheel (CI's hub-wheel job), the
     hub serves a dashboard without MAITY_WEB_DIR."""

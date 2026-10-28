@@ -406,3 +406,28 @@ nobody can see it.
   so a second way would only add a code path.
 - Leaving it to the agent to tell its lead in a message: the hub would
   still show the old model, and every lead would have to read it.
+
+## The site's sitemap and robots.txt are made at deploy from the pages, not kept in the repository
+
+**Id:** 7e78b0e4-e8b4-4ce2-9a83-f9457153cd5b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's card for the maintainer's need (the Google Search Console wants a sitemap), 2026-10-28; how it is made is the implementer's
+**Revisit when:** the site grows pages that are not `.html` files, or a page should be left out of search results that is not under `brand/` or the dashboard
+
+The pages workflow assembles `site/` from `docs/`, the brand files and the Keep the Why
+dashboard. A last step (`tools/site_sitemap.py`) lists every `.html` file under `site/` as an
+absolute `https://maity.dev/…` URL (a folder's `index.html` is the folder's address), with the
+date of the last commit that touched its source as `lastmod`, and writes `sitemap.xml` and a
+`robots.txt` that allows everything and names the sitemap. The dashboard is left out, since
+it is generated and holds a page for every entry, and so is `brand/`, whose `.html` file is an
+SVG fragment the web app inlines and no page.
+
+**Reason:** a file kept in `docs/` would go stale with the first page added, and the workflow
+already knows what it deploys.
+
+**Rejected alternatives:**
+- A `sitemap.xml` committed to `docs/`: it lists pages by hand and drifts.
+- Listing every `.html` file as the card first said: it would put the brand's loader fragment
+  into the sitemap.
