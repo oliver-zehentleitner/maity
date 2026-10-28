@@ -11,7 +11,7 @@ import pytest
 
 from maity import cli
 
-P = "/api/v1/projects/maity"
+P = "/api/v1/projects/oliver/maity"
 MARKDOWN = "Use `maity wait` and $(not run) here.\n\n```sh\nmaity resume\n```\n"
 
 
