@@ -207,8 +207,10 @@ def downgrade() -> None:
             )
         seen.add(row.slug)
     with op.batch_alter_table("project", schema=None) as batch_op:
+        # The key to the owner first: MySQL and MariaDB keep the unique index on
+        # (owner_id, slug) as the index of that key and refuse to drop it before (1553).
+        batch_op.drop_constraint(op.f("fk_project_owner_id_human"), type_="foreignkey")
         batch_op.drop_constraint("uq_project_owner_slug", type_="unique")
         batch_op.create_unique_constraint(op.f("uq_project_slug"), ["slug"])
-        batch_op.drop_constraint(op.f("fk_project_owner_id_human"), type_="foreignkey")
         batch_op.drop_column("legacy_slug")
         batch_op.drop_column("owner_id")
