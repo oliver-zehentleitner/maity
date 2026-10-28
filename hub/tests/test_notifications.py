@@ -442,11 +442,11 @@ def test_a_group_chat_notifies_its_participants(
     chat = create(owner, someone.id, title="Release go/no-go").json()
     assert say(someone, chat["id"], "ship it?").status_code in (200, 201)
     got = bell(owner)
-    assert got["counts"]["chat"] == 1 and got["by_project"]["maity"]["chat"] == 1
+    assert got["counts"]["chat"] == 1 and got["by_project"]["maintainer/maity"]["chat"] == 1
     item = next(i for i in got["items"] if i["kind"] == "chat")
     assert item["title"] == "Human someone in Release go/no-go"
     assert item["target"] == {"type": "conversation", "id": chat["id"]}
-    assert item["url"] == f"https://hub.example/#/p/maity/chat/{chat['id']}"
+    assert item["url"] == f"https://hub.example/#/maintainer/maity/chat/{chat['id']}"
     marked = owner.post(f"{N}/read", {"ids": [item["id"]]}).json()
     assert marked["counts"]["chat"] == 0
     say(owner, chat["id"], "yes")  # the writer's own message notifies nobody but the others
@@ -521,10 +521,10 @@ def test_a_group_message_redacted_before_it_is_read_counts_as_the_chat_counts_it
     chat = create(owner, someone.id, title="Room").json()
     seq = say(someone, chat["id"], "a secret").json()["seq"]
     assert redact(someone, seq).status_code == 200
-    listed = owner.get("/projects/maity/conversations").json()["items"]
+    listed = owner.get("/projects/maintainer/maity/conversations").json()["items"]
     unread = next(c["unread"] for c in listed if c["id"] == chat["id"])
     got = bell(owner)
     assert got["counts"]["chat"] == unread == 1
-    assert got["by_project"]["maity"]["chat"] == 1
+    assert got["by_project"]["maintainer/maity"]["chat"] == 1
     item = next(i for i in got["items"] if i["kind"] == "chat")
     assert (item["redacted"], item["title"]) == (True, None)
