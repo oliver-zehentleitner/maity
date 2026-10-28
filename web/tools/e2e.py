@@ -97,8 +97,8 @@ class Run:
         # §8.7 "Attachments off": each 409 for the pending uploads as the page got
         # it, judged one by one in no_problems() (a response handler reads no body).
         self.off_answers: list = []
-        # The page's latest API answers, read back when a step fails (api_trace()): what the
-        # hub said is told apart from what the page drew of it.
+        # The page's latest API answers, read back when a step fails (report_failure()): what
+        # the hub said is told apart from what the page drew of it.
         self.recent: collections.deque = collections.deque(maxlen=TRACE_ANSWERS)
 
     def a11y(self, page: Page, view: str) -> None:
@@ -160,21 +160,6 @@ class Run:
             + "\n"
         )
         return [f for f in self.a11y_findings if f["impact"] in AXE_FAIL]
-
-    def api_trace(self) -> str:
-        """The latest API answers with their bodies, newest last. Read here, outside the
-        response handler; a body the browser no longer holds is said so."""
-        lines = []
-        for resp in self.recent:
-            try:
-                body = resp.text()
-            except Exception:
-                body = "(body no longer available)"
-            if len(body) > TRACE_BODY:
-                body = body[:TRACE_BODY] + " …"
-            path = resp.url.split(self.base, 1)[-1]
-            lines.append(f"{resp.request.method} {path} {resp.status} {body}")
-        return "\n".join(lines)
 
     def step(self, text: str) -> None:
         print(f"\n== {text}", flush=True)
@@ -459,6 +444,87 @@ def off_problem(method: str, path: str, status: int, body: object) -> str | None
     return f"{method} {path} answered {status}" + (f" ({code})" if code else "")
 
 
+# What the trace of a failed step may show. It goes to a public artifact and to the Actions log, so
+# it is an allowlist: a path with its token segments and its query removed, the status, and from a
+# JSON body only these keys with scalar values. Nothing else is copied, whatever it holds.
+TRACE_KEYS = {
+    "id", "name", "status", "state", "presence", "listening", "credential_state", "kind", "type",
+    "role", "trust", "removed_at", "revoked_at", "last_seen_at", "revoked_reason",
+}
+# A segment that follows one of these is a token or a code, whatever it looks like.
+TRACE_SECRET_AFTER = {"join", "pair", "invitations", "invitation", "invite", "accept", "reset", "verify", "token"}
+TRACE_WORD = re.compile(r"v[0-9]{1,2}|[a-z][a-z-]{0,23}|[a-z]{2,5}-[a-z0-9]{4,24}")
+TRACE_VALUE = re.compile(r"[A-Za-z0-9 ._:@/+-]{0,60}")
+
+
+def trace_path(path: str) -> str:
+    """The path without its query; a segment is kept only if it is a plain word or an entity id,
+    and never after `join`, `pair` and the like."""
+    kept = []
+    previous = ""
+    for segment in path.split("?", 1)[0].split("/"):
+        masked = previous in TRACE_SECRET_AFTER or (segment and not TRACE_WORD.fullmatch(segment))
+        kept.append("…" if masked and segment else segment)
+        previous = segment
+    return "/".join(kept)
+
+
+def trace_data(value: object, parent: str = "", depth: int = 0) -> object:
+    """`value` reduced to the allowlisted keys with scalar values; the rest is dropped. `code`
+    is kept only inside an `error` (an enrollment's `code` is a secret)."""
+    if depth > 4:
+        return "…"
+    if isinstance(value, dict):
+        out = {}
+        for key, item in value.items():
+            if key in TRACE_KEYS or (key == "code" and parent == "error"):
+                if isinstance(item, (dict, list)):
+                    continue
+                out[key] = trace_scalar(item)
+            elif isinstance(item, (dict, list)):
+                inner = trace_data(item, key, depth + 1)
+                if inner not in ({}, []):
+                    out[key] = inner
+        return out
+    if isinstance(value, list):
+        return [trace_data(item, parent, depth + 1) for item in value[:5]]
+    return None
+
+
+def trace_scalar(item: object) -> object:
+    if isinstance(item, str):
+        return item if TRACE_VALUE.fullmatch(item) and "mty1." not in item else "…"
+    return item if isinstance(item, (bool, int, float)) or item is None else "…"
+
+
+def trace_line(method: str, path: str, status: int, text: str | None) -> str:
+    """One answer: method, safe path, status and the allowlisted part of a JSON body."""
+    try:
+        if not text:
+            raise ValueError("no body")
+        data = trace_data(json.loads(text))
+        shown = json.dumps(data, separators=(",", ":"), sort_keys=True)[:TRACE_BODY]
+    except Exception:  # not JSON, or gone: not copied
+        shown = "(body not shown)"
+    return f"{method} {trace_path(path)} {status} {shown}"
+
+
+def report_failure(answers: list, base: str, artifacts: Path) -> str:
+    """Said when a step fails: the page's latest API answers, to `api-trace.txt` and to stderr.
+    Both get the same text, built only by trace_line()."""
+    lines = []
+    for resp in answers:
+        try:
+            text = resp.text()
+        except Exception:
+            text = None
+        lines.append(trace_line(resp.request.method, resp.url.split(base, 1)[-1], resp.status, text))
+    trace = "\n".join(lines)
+    (artifacts / "api-trace.txt").write_text(trace + "\n")
+    print(f"\nthe page's last API answers (api-trace.txt):\n{trace}", file=sys.stderr)
+    return trace
+
+
 def no_problems(run: Run, where: str) -> None:
     # Each 409 for the pending uploads, judged by its own body, read here
     # outside the response handler.
@@ -595,9 +661,7 @@ def main() -> int:
                 try:
                     scenario(run, page)
                 except Exception:
-                    trace = run.api_trace()
-                    (artifacts / "api-trace.txt").write_text(trace + "\n")
-                    print(f"\nthe page's last API answers (api-trace.txt):\n{trace}", file=sys.stderr)
+                    report_failure(list(run.recent), base, artifacts)
                     raise
                 fixture_views(run, browser)
             finally:

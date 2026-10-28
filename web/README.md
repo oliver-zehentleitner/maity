@@ -1376,9 +1376,12 @@ script starts, and it is stopped by its own PID, also on Ctrl-C; port
 8090 is refused, and a port that another server already answers on is
 refused too. The caller's own `MAITY_*` variables are dropped for the hub
 and the CLI. Option `--headed` shows the browser, `--port` fixes the port.
-When a step fails, the page's last 12 API answers (method, path, status and the start of the body)
-are printed and written to `api-trace.txt` next to the screenshots, so that what the hub said can be
-told from what the page drew of it.
+When a step fails, the page's last 12 API answers are printed and written to `api-trace.txt` next to the
+screenshots, so that what the hub said can be told from what the page drew of it. The trace goes to a
+public artifact and the Actions log, so it is an allowlist: the method, the path without its query and
+without token segments (after `join`, `pair` and the like), the status, and from a JSON body only a few
+keys with scalar values (`id`, `name`, `presence`, `credential_state`, and an error's `code`). Other
+bodies and everything else are not copied (`tools/test_e2e_harness.py` checks it with synthetic secrets).
 
 CI runs it in the `web-e2e` job of `.github/workflows/ci.yml`. It installs
 the headless shell only (`playwright install --only-shell chromium`) and
