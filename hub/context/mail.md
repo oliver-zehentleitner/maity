@@ -98,8 +98,11 @@ marked `_purpose: verify`, a mark that is never sent as a header, and goes to
 the pending address): it is the way back. Nothing else follows it while the
 address stays disabled, the link used or not. Sign-in mail over its budget is
 dropped, not delayed, since a late link is useless. A row that left the
-queue is deleted after seven days, so the outbox keeps no lasting record
-of who got what.
+queue loses its text at once, since the text carries the mail's links (a
+confirmation, a sign-in, a registration link), and keeps its recipient and
+subject; the row is deleted after seven days, so the outbox keeps no lasting
+record of who got what. A row still waiting keeps its text, for the seconds
+it takes to send, or up to the 24 hours of its retries.
 
 **Reason:** a mail decided in a transaction that rolls back must not
 leave, and a request must not wait up to 20 seconds for an SMTP server.
@@ -112,6 +115,12 @@ like the images worker needs no new process for one replica.
   then fails to commit.
 - An in-memory queue: a restart would lose queued security mail, which
   §16.2 says is never dropped.
+- Sealing the text with `MAITY_SECRET_KEY` while it waits: the window it
+  would protect is the same one a link is valid for, it would make the
+  outbox depend on a key that is optional, and a row that is out needs no
+  text at all. Clearing the text when the row leaves the queue closes the
+  long exposure (a backup taken a week later) without that dependency
+  (card tsk-ayng0czsxp11, from the review of #489).
 
 ## An outbox row is claimed before it is sent; the claim lapses after two minutes
 

@@ -217,7 +217,12 @@ def _claim(conn: Connection, row_id: int) -> bool:
 
 
 def _finish(conn: Connection, row_id: int, status: str) -> None:
-    conn.execute(update(t.mail_outbox).where(t.mail_outbox.c.id == row_id).values(status=status))
+    """The row leaves the queue: it keeps its recipient and subject for the week, but not
+    the text, which carries the mail's links (a leaked table gives no link of a mail
+    that is out)."""
+    conn.execute(
+        update(t.mail_outbox).where(t.mail_outbox.c.id == row_id).values(status=status, body="")
+    )
 
 
 def _message(resolved: settings.Resolved, row: Any) -> Any:
@@ -239,25 +244,19 @@ def _message(resolved: settings.Resolved, row: Any) -> Any:
 
 def _settle(conn: Connection, row: Any, outcome: smtp.Outcome) -> int:
     if outcome.ok:
-        conn.execute(
-            update(t.mail_outbox).where(t.mail_outbox.c.id == row.id).values(status="sent")
-        )
+        _finish(conn, row.id, "sent")
         _count(conn, row.kind, "sent")
         _delivered(conn, row)
         return 1
     _count(conn, row.kind, "failed")
     permanent = outcome.smtp_code is not None and outcome.smtp_code >= 500
     if permanent and outcome.stage in ("rcpt_to", "data"):
-        conn.execute(
-            update(t.mail_outbox).where(t.mail_outbox.c.id == row.id).values(status="failed")
-        )
+        _finish(conn, row.id, "failed")
         _hard_failure(conn, row)
         return 0
     attempts = row.attempts + 1
     if clock.now() - row.created_at >= RETRY_FOR:
-        conn.execute(
-            update(t.mail_outbox).where(t.mail_outbox.c.id == row.id).values(status="dropped")
-        )
+        _finish(conn, row.id, "dropped")
         return 0
     backoff = timedelta(minutes=min(60, 2**attempts))
     conn.execute(
@@ -318,7 +317,7 @@ def _hard_failure(conn: Connection, row: Any) -> None:
 
 
 def forget_old(conn: Connection) -> None:
-    """Rows that left the queue keep their recipient and body a week, no longer."""
+    """Rows that left the queue keep their recipient and subject a week, no longer."""
     conn.execute(
         delete(t.mail_outbox).where(
             t.mail_outbox.c.status.in_(("sent", "failed", "dropped")),
