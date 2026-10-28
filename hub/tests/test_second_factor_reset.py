@@ -323,7 +323,7 @@ def test_the_operator_resets_at_once(
 ) -> None:
     admin, grace, _ = world(make_client, migrated, moment)
     before = factor(migrated, grace.id)
-    monkeypatch.setenv("MAITY_DATABASE_URL", str(migrated.url))
+    monkeypatch.setenv("MAITY_DATABASE_URL", migrated.url.render_as_string(hide_password=False))
     assert cli_main(["second-factor", "reset", "--handle", "grace"]) == 0
     assert "reset the second factor of grace" in capsys.readouterr().out
     after = factor(migrated, grace.id)
