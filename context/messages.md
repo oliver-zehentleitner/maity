@@ -272,3 +272,28 @@ when it last read), so it can say so instead of a human finding out.
 - A notification of its own: notifications were narrowed to four kinds
   (2026-10-26); an agent's state reaches its owner as a personal
   request, as an outage does.
+
+## A new instance starts reading at the project's head, not at the first event
+
+**Id:** 3ee1d70a-35d4-41d1-81f9-10fd270cdbb9
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's approval (inbox req-d50jxfs3f7v8), card tsk-9j042h927d8r; contract `docs/api.md` §5.2 `cursor`, §8.3
+
+The first session of an instance — a new one, or one that replaces
+another — starts with its event cursor at the project's current head
+when the client sends no cursor. Existing instances keep their own
+cursor across sessions, and the history stays readable on request.
+
+**Reason:** a rejoin got cursor 115 while the project stood at 6318,
+and `maity wait --batch` replayed thousands of events, 50 per wake:
+over 120 model runs to catch up on what the previous instance had
+handled. The handover and the resume packet carry what a new instance
+needs; the backlog does not.
+
+**Rejected alternatives:**
+- Starting at `0` as before: the replay above.
+- Copying the replaced instance's cursor: a replacement often comes
+  because the old instance stopped mid-way; its cursor says what it
+  read, not what the new one should be woken for.

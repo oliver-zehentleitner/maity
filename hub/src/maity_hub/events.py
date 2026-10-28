@@ -390,6 +390,7 @@ NON_WAKING = frozenset(
         "memory_deleted",
         "soul_changed",
         "request_claimed",  # a claim wakes nobody (§7)
+        "attachment_deleted",  # a deleted file wakes nobody (§8.7)
     }
 )
 

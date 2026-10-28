@@ -25,6 +25,10 @@ TOKEN_PATH = re.compile(r"^/([A-Za-z0-9_-]{22})\Z")
 _DROPPED = {b"cookie", b"authorization"}
 
 
+# The crawlers' two files belong to the public host: the join host does not have them.
+SEO_FILES = frozenset({"/robots.txt", "/sitemap.xml"})
+
+
 def hostname(host: str) -> str:
     """The name in a `Host` header: lower case, without the port and trailing dots."""
     host = host.strip().lower()
@@ -64,6 +68,8 @@ def route(scope: Scope, settings: Settings) -> Response | None:
         state: dict[str, Any] = scope.setdefault("state", {})
         state["join_host"] = True
         return None
+    if method == "GET" and scope.get("path") in SEO_FILES:
+        return error_response(404, "not_found", "no such resource")  # §16.7
     if method == "GET":
         return RedirectResponse(f"{settings.public_url}/", status_code=302)
     return error_response(404, "not_found", "no such resource")
