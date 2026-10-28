@@ -812,7 +812,7 @@ def scenario(run: Run, page: Page) -> None:
     expect(badge).to_contain_text("E2E Alpha")
     expect(badge).to_have_attribute("href", "#/owner/e2e-alpha/inbox")
     expect(entries.nth(0).locator(".entry-head")).to_have_accessible_name(re.compile(r"^E2E Alpha: "))
-    page.locator("#inbox-project").select_option("e2e-beta")
+    page.locator("#inbox-project").select_option(f"{OWNER}/e2e-beta")
     expect(entries).to_have_count(1)
     expect(entries.nth(0)).to_contain_text("E2E Beta")
     page.locator("#inbox-project").select_option("")
@@ -1688,9 +1688,7 @@ def board_order_step(run: Run, page: Page) -> None:
 
 def ticker_step(run: Run, page: Page) -> None:
     """The change ticker (docs/api.md §17): whether the hub has it comes from its machine form, not from a 404."""
-    paths = page.request.get(f"{run.base}/api/v1/openapi.json").json().get("paths", {})
-    # FastAPI lists the paths under the router prefix; either form counts, as in the CLI.
-    has_ticker = "/projects/{owner}/{slug}/ticker" in paths or "/api/v1/projects/{slug}/ticker" in paths
+    has_ticker = hub_serves(run, page, "GET", "/projects/{owner}/{slug}/ticker")
     page.goto(f"{run.base}/#/owner/e2e-alpha/members")
     view_tab(page, "Ticker").click()
     expect(page).to_have_url(re.compile(r"#/owner/e2e-alpha/ticker$"))

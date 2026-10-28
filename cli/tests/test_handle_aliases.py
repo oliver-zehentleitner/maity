@@ -12,7 +12,7 @@ import pytest
 
 from maity import cli, onboarding
 
-P = "/api/v1/projects/maity"
+P = "/api/v1/projects/oliver/maity"
 MEMBERS: list[dict[str, Any]] = [
     {"id": "hum-1", "kind": "human", "handle": "oliver", "aliases": ["oz"]},
     {"id": "hum-2", "kind": "human", "handle": "anna", "aliases": []},

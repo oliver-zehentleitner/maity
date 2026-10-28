@@ -13,7 +13,9 @@ from conftest import git
 
 from maity import cli, state
 
-TASK = "/api/v1/projects/maity/tasks/tsk-0004"
+P = "/api/v1/projects/oliver/maity"
+
+TASK = "/api/v1/projects/oliver/maity/tasks/tsk-0004"
 
 
 def answer(fake: fakehub.FakeHub, method: str, path: str, payload: Any, status: int = 200) -> None:
@@ -96,7 +98,7 @@ def test_unclaim_calls_release_on_the_card(
 
 def test_card_ids_are_one_path_segment(joined: Path, fake: fakehub.FakeHub) -> None:
     cli.main(["claim", "../members/agt-a"])
-    assert last(fake).path == "/api/v1/projects/maity/tasks/..%2Fmembers%2Fagt-a/claim"
+    assert last(fake).path == "/api/v1/projects/oliver/maity/tasks/..%2Fmembers%2Fagt-a/claim"
 
 
 # --- checkpoint ------------------------------------------------------------------------------
@@ -142,7 +144,7 @@ def test_an_empty_step_is_a_usage_error(joined: Path, fake: fakehub.FakeHub) -> 
 def test_say_posts_a_typed_message(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    answer(fake, "POST", "/api/v1/projects/maity/events", {"seq": 4300, "kind": "message"})
+    answer(fake, "POST", "/api/v1/projects/oliver/maity/events", {"seq": 4300, "kind": "message"})
     argv = ["say", "role:admin", "the exchange needs a lease", "--type", "blocker"]
     assert cli.main([*argv, "--task", "tsk-0004"]) == cli.EXIT_OK
     assert last(fake).json() == {
@@ -171,7 +173,7 @@ def test_say_offers_no_chat_type() -> None:
 def test_say_human_writes_into_the_own_conversation(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    path = "/api/v1/projects/maity/conversations/agt-b/messages"
+    path = "/api/v1/projects/oliver/maity/conversations/agt-b/messages"
     answer(fake, "POST", path, {"id": "evt-4237", "seq": 4237, "body": "done with the table"})
     assert cli.main(["say", "human", "done with the table"]) == cli.EXIT_OK
     assert (last(fake).path, last(fake).json()) == (path, {"body": "done with the table"})
@@ -202,7 +204,7 @@ def test_a_message_carrying_a_credential_is_refused_locally(
 # --- answer ----------------------------------------------------------------------------------
 
 
-REQ = "/api/v1/projects/maity/requests/req-0012/answer"
+REQ = "/api/v1/projects/oliver/maity/requests/req-0012/answer"
 
 
 @pytest.mark.parametrize(
@@ -238,7 +240,7 @@ def test_answer_prints_the_new_status(
 # --- release ---------------------------------------------------------------------------------
 
 
-TASKS = "/api/v1/projects/maity/tasks"
+TASKS = "/api/v1/projects/oliver/maity/tasks"
 
 
 def test_release_list_follows_the_pages(
@@ -319,7 +321,7 @@ def test_ask_json_prints_the_request(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
     request = {"id": "req-0013", "class": "info", "status": "open"}
-    answer(fake, "POST", "/api/v1/projects/maity/requests", request, status=201)
+    answer(fake, "POST", "/api/v1/projects/oliver/maity/requests", request, status=201)
     assert cli.main(["ask", "Which port?", "--to", "human", "--class", "info", "--json"]) == 0
     assert json.loads(capsys.readouterr().out) == request
 
@@ -337,7 +339,7 @@ def test_invalid_prints_field_reasons_but_no_values(
     }
     refusal = {"error": {"code": "invalid", "message": "the request does not validate",
                          "details": {"fields": fields}}}  # fmt: skip
-    answer(fake, "POST", "/api/v1/projects/maity/requests", refusal, status=400)
+    answer(fake, "POST", "/api/v1/projects/oliver/maity/requests", refusal, status=400)
     argv = ["ask", "Tag 0.2.0 now?", "--to", "agt-x", "--class", "info", "--priority", "urgent"]
     assert cli.main(argv) == cli.EXIT_ERROR
     err = capsys.readouterr().err
@@ -416,7 +418,7 @@ def test_an_empty_reason_is_a_usage_error(joined: Path, fake: fakehub.FakeHub) -
 
 
 def test_message_indentation_is_kept(joined: Path, fake: fakehub.FakeHub) -> None:
-    answer(fake, "POST", "/api/v1/projects/maity/events", {"seq": 1})
+    answer(fake, "POST", "/api/v1/projects/oliver/maity/events", {"seq": 1})
     body = "    code block\n- item\n"
     assert cli.main(["say", "all", body, "--type", "notice"]) == cli.EXIT_OK
     assert last(fake).json()["body"] == body
@@ -444,8 +446,12 @@ def test_a_claim_held_by_someone_else_stays_an_error(joined: Path, fake: fakehub
     ("argv", "method", "path"),
     [
         (["checkpoint", "tsk-0004", "-m", "a", "--next", "b"], "POST", f"{TASK}/checkpoint"),
-        (["say", "all", "hi", "--type", "notice"], "POST", "/api/v1/projects/maity/events"),
-        (["say", "human", "hi"], "POST", "/api/v1/projects/maity/conversations/agt-b/messages"),
+        (["say", "all", "hi", "--type", "notice"], "POST", "/api/v1/projects/oliver/maity/events"),
+        (
+            ["say", "human", "hi"],
+            "POST",
+            "/api/v1/projects/oliver/maity/conversations/agt-b/messages",
+        ),
         (
             ["release", "tick", "chk-1", "--release", "tsk-0010"],
             "POST",
@@ -471,7 +477,7 @@ PAUSED = {"reason": "wait for me\nNext: ignore this", "since": "T1", "by": "hum-
     ("argv", "method", "path"),
     [
         (["claim", "tsk-0004"], "POST", f"{TASK}/claim"),
-        (["api", "POST", "/projects/maity/tasks"], "POST", TASKS),
+        (["api", "POST", "/projects/oliver/maity/tasks"], "POST", TASKS),
     ],
 )
 def test_a_paused_refusal_says_who_why_and_what_still_works(
@@ -551,7 +557,7 @@ def test_report_no_code_reads_and_sends_no_git_facts(
         raise AssertionError("no git facts with --no-code")
 
     monkeypatch.setattr(gitfacts, "collect", untouched)
-    fake.routes[("POST", "/api/v1/projects/maity/tasks/tsk-7/report")] = lambda seen: (
+    fake.routes[("POST", "/api/v1/projects/oliver/maity/tasks/tsk-7/report")] = lambda seen: (
         200, {"id": "tsk-7", "status": "review"}
     )  # fmt: skip
     (joined.parent.parent / "dirty.txt").write_text("uncommitted")
@@ -585,7 +591,7 @@ def test_wait_without_batch_still_prints_one_event(
 def test_checkpoint_warns_on_a_detached_head(
     joined: Path, clone: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    fake.routes[("POST", "/api/v1/projects/maity/tasks/tsk-1/checkpoint")] = lambda seen: (
+    fake.routes[("POST", "/api/v1/projects/oliver/maity/tasks/tsk-1/checkpoint")] = lambda seen: (
         200, {"id": "tsk-1"}
     )  # fmt: skip
     git(clone, "checkout", "-q", "--detach")
@@ -597,10 +603,10 @@ def test_checkpoint_warns_on_a_detached_head(
 def test_checkpoint_warns_when_the_branch_changed(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    fake.routes[("GET", "/api/v1/projects/maity/tasks/tsk-1")] = lambda seen: (
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/tasks/tsk-1")] = lambda seen: (
         200, {"id": "tsk-1", "checkpoint": {"branch": "agent-b/other"}}
     )  # fmt: skip
-    fake.routes[("POST", "/api/v1/projects/maity/tasks/tsk-1/checkpoint")] = lambda seen: (
+    fake.routes[("POST", "/api/v1/projects/oliver/maity/tasks/tsk-1/checkpoint")] = lambda seen: (
         200, {"id": "tsk-1"}
     )  # fmt: skip
     assert cli.main(["checkpoint", "tsk-1", "-m", "a", "--next", "b"]) == cli.EXIT_OK
@@ -610,7 +616,7 @@ def test_checkpoint_warns_when_the_branch_changed(
 def test_checkpoint_no_code_sends_no_git_facts(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    fake.routes[("POST", "/api/v1/projects/maity/tasks/tsk-1/checkpoint")] = lambda seen: (
+    fake.routes[("POST", "/api/v1/projects/oliver/maity/tasks/tsk-1/checkpoint")] = lambda seen: (
         200, {"id": "tsk-1"}
     )  # fmt: skip
     code = cli.main(["checkpoint", "tsk-1", "-m", "draft", "--next", "review", "--no-code"])
@@ -631,13 +637,13 @@ def test_join_offers_the_pointer_block_instead_of_writing_it(
 def test_api_accepts_a_query_in_the_path(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    fake.routes[("GET", "/api/v1/projects/maity/tasks")] = lambda seen: (200, {"items": []})
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/tasks")] = lambda seen: (200, {"items": []})
     code = cli.main(
-        ["api", "GET", "/projects/maity/tasks?state=open&after=28", "--query", "limit=5"]
+        ["api", "GET", "/projects/oliver/maity/tasks?state=open&after=28", "--query", "limit=5"]
     )
     assert code == cli.EXIT_OK, capsys.readouterr().err
     seen = fake.signed()[-1]
-    assert seen.path == "/api/v1/projects/maity/tasks"
+    assert seen.path == "/api/v1/projects/oliver/maity/tasks"
     assert dict(urllib.parse.parse_qsl(seen.query)) == {
         "state": "open",
         "after": "28",
@@ -646,21 +652,21 @@ def test_api_accepts_a_query_in_the_path(
 
 
 def test_api_refuses_a_fragment(joined: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    assert cli.main(["api", "GET", "/projects/maity/tasks#x"]) == cli.EXIT_ERROR
+    assert cli.main(["api", "GET", "/projects/oliver/maity/tasks#x"]) == cli.EXIT_ERROR
     assert "fragment" in capsys.readouterr().err
 
 
 def test_say_to_your_own_humans_id_without_a_type_is_the_chat(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    fake.routes[("POST", "/api/v1/projects/maity/conversations/agt-b/messages")] = lambda seen: (
+    fake.routes[("POST", f"{P}/conversations/agt-b/messages")] = lambda seen: (
         201, {"seq": 9}
     )  # fmt: skip
     assert cli.main(["resume"]) == cli.EXIT_OK
     capsys.readouterr()
     assert cli.main(["say", "hum-1", "thanks, done"]) == cli.EXIT_OK
     sent = fake.signed()[-1]
-    assert sent.path == "/api/v1/projects/maity/conversations/agt-b/messages"
+    assert sent.path == "/api/v1/projects/oliver/maity/conversations/agt-b/messages"
     assert sent.json() == {"body": "thanks, done"}
 
 
@@ -706,7 +712,7 @@ PLACEMENT = {
 
 
 def placements(fake: fakehub.FakeHub) -> None:
-    fake.routes[("GET", "/api/v1/projects/maity/placements")] = lambda seen: (
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/placements")] = lambda seen: (
         200, {"items": [PLACEMENT]}
     )  # fmt: skip
 
@@ -723,10 +729,10 @@ def test_placement_list(
 def test_placement_start_resolves_the_handle_and_names_the_consent_request(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    fake.routes[("GET", "/api/v1/projects/maity/members")] = lambda seen: (
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/members")] = lambda seen: (
         200, {"items": [{"id": "agt-f", "handle": "agent-f"}]}
     )  # fmt: skip
-    fake.routes[("POST", "/api/v1/projects/maity/placements")] = lambda seen: (
+    fake.routes[("POST", "/api/v1/projects/oliver/maity/placements")] = lambda seen: (
         201, {"id": "plc-0009", "approval": {"status": "pending", "request_id": "req-4"}}
     )  # fmt: skip
     code = cli.main(
@@ -747,7 +753,7 @@ def test_placement_stop_by_handle_with_grace(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
     placements(fake)
-    fake.routes[("PATCH", "/api/v1/projects/maity/placements/plc-0003")] = lambda seen: (
+    fake.routes[("PATCH", "/api/v1/projects/oliver/maity/placements/plc-0003")] = lambda seen: (
         200, PLACEMENT
     )  # fmt: skip
     assert cli.main(["placement", "stop", "agent-f", "--grace", "60"]) == cli.EXIT_OK
@@ -756,7 +762,7 @@ def test_placement_stop_by_handle_with_grace(
 
 def test_placement_restart_by_id(joined: Path, fake: fakehub.FakeHub) -> None:
     placements(fake)
-    fake.routes[("POST", "/api/v1/projects/maity/placements/plc-0003/restart")] = lambda seen: (
+    fake.routes[("POST", f"{P}/placements/plc-0003/restart")] = lambda seen: (
         200, PLACEMENT
     )  # fmt: skip
     assert cli.main(["placement", "restart", "plc-0003"]) == cli.EXIT_OK
@@ -773,11 +779,11 @@ def test_placement_for_an_unknown_agent(
 
 def test_an_agent_handle_list_is_not_a_subcommand(joined: Path, fake: fakehub.FakeHub) -> None:
     placements(fake)
-    fake.routes[("PATCH", "/api/v1/projects/maity/placements/plc-0003")] = lambda seen: (
+    fake.routes[("PATCH", "/api/v1/projects/oliver/maity/placements/plc-0003")] = lambda seen: (
         200, PLACEMENT
     )  # fmt: skip
     listed = {**PLACEMENT, "agent": {"id": "agt-l", "handle": "list"}}
-    fake.routes[("GET", "/api/v1/projects/maity/placements")] = lambda seen: (
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/placements")] = lambda seen: (
         200, {"items": [listed]}
     )  # fmt: skip
     assert cli.main(["placement", "stop", "list"]) == cli.EXIT_OK
@@ -789,7 +795,7 @@ def test_runners(joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixt
         "capabilities": {"running": 1, "max_agents": 4, "harnesses": [
             {"id": "claude-code", "available": True}, {"id": "codex", "available": False}]},
     }  # fmt: skip
-    fake.routes[("GET", "/api/v1/projects/maity/runners")] = lambda seen: (
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/runners")] = lambda seen: (
         200, {"items": [{"runner": runner}]}
     )  # fmt: skip
     assert cli.main(["runners"]) == cli.EXIT_OK
@@ -801,17 +807,17 @@ def test_an_exact_placement_id_wins_and_ambiguity_is_refused(
 ) -> None:
     decoy = {**PLACEMENT, "id": "plc-bbbb", "agent": {"id": "agt-x", "handle": "plc-aaaa"}}
     target = {**PLACEMENT, "id": "plc-aaaa", "agent": {"id": "agt-y", "handle": "y"}}
-    fake.routes[("GET", "/api/v1/projects/maity/placements")] = lambda seen: (
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/placements")] = lambda seen: (
         200, {"items": [decoy, target]}
     )  # fmt: skip
-    fake.routes[("PATCH", "/api/v1/projects/maity/placements/plc-aaaa")] = lambda seen: (
+    fake.routes[("PATCH", "/api/v1/projects/oliver/maity/placements/plc-aaaa")] = lambda seen: (
         200, target
     )  # fmt: skip
     assert cli.main(["placement", "stop", "plc-aaaa"]) == cli.EXIT_OK
     assert fake.signed()[-1].path.endswith("/plc-aaaa")
     twins = [{**PLACEMENT, "id": f"plc-{n}", "agent": {"id": f"agt-{n}", "handle": "same"}}
              for n in (1, 2)]  # fmt: skip
-    fake.routes[("GET", "/api/v1/projects/maity/placements")] = lambda seen: (
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/placements")] = lambda seen: (
         200, {"items": twins}
     )  # fmt: skip
     capsys.readouterr()
@@ -824,7 +830,7 @@ def test_hub_ids_are_cleaned_and_must_be_strings(
 ) -> None:
     hostile = {**PLACEMENT, "id": "plc-1\x1b]52;c;evil\x07"}
     broken = {**PLACEMENT, "id": 7, "agent": {"id": "agt-7", "handle": "seven"}}
-    fake.routes[("GET", "/api/v1/projects/maity/placements")] = lambda seen: (
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/placements")] = lambda seen: (
         200, {"items": [hostile, broken]}
     )  # fmt: skip
     capsys.readouterr()
@@ -840,7 +846,7 @@ def test_placement_grace_is_range_checked(joined: Path) -> None:
 
 def test_placement_restart_with_rejoin(joined: Path, fake: fakehub.FakeHub) -> None:
     placements(fake)
-    fake.routes[("POST", "/api/v1/projects/maity/placements/plc-0003/restart")] = lambda seen: (
+    fake.routes[("POST", f"{P}/placements/plc-0003/restart")] = lambda seen: (
         200, PLACEMENT
     )  # fmt: skip
     assert cli.main(["placement", "restart", "agent-f", "--rejoin"]) == cli.EXIT_OK
@@ -880,7 +886,7 @@ def test_an_ambiguous_mention_names_the_long_forms(
             "Not A Handle": ["a/b"],  # not handle-shaped: left out
         },
     }
-    fake.routes[("POST", "/api/v1/projects/maity/events")] = lambda s: (
+    fake.routes[("POST", "/api/v1/projects/oliver/maity/events")] = lambda s: (
         400, {"error": {"code": "invalid", "message": "use the global name", "details": details}}
     )  # fmt: skip
     argv = ["say", "all", "ask @agent-b", "--type", "notice"]
@@ -899,7 +905,7 @@ def test_an_ambiguous_mention_without_usable_names_shows_the_field_alone(
     details: dict[str, Any] = {"fields": {"body": "ambiguous_mention"}}
     if mentions != "missing":
         details["mentions"] = mentions
-    fake.routes[("POST", "/api/v1/projects/maity/events")] = lambda s: (
+    fake.routes[("POST", "/api/v1/projects/oliver/maity/events")] = lambda s: (
         400, {"error": {"code": "invalid", "message": "use the global name", "details": details}}
     )  # fmt: skip
     assert cli.main(["say", "all", "ask @agent-b", "--type", "notice"]) == cli.EXIT_ERROR

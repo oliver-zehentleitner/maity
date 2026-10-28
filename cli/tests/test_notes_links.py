@@ -11,7 +11,7 @@ import pytest
 
 from maity import cli
 
-BASE = "/api/v1/projects/maity/tasks/tsk-0004"
+BASE = "/api/v1/projects/oliver/maity/tasks/tsk-0004"
 NOTE: dict[str, Any] = {"id": "nte-0031", "task_id": "tsk-0004", "body": "the CLI needs it too",
         "author": {"member_id": "agt-c", "handle": "agent-c", "kind": "agent"},
         "mentions": [], "state": "open", "resolution": None,
@@ -172,7 +172,7 @@ def test_release_list_stops_on_a_cursor_that_comes_back(
         calls.append(seen)
         return 200, {"items": [], "next_cursor": "loop"}
 
-    fake.routes[("GET", "/api/v1/projects/maity/tasks")] = page
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/tasks")] = page
     assert cli.main(["release", "list"]) != cli.EXIT_OK
     assert len(calls) == 2 and "same page cursor twice" in capsys.readouterr().err
 
@@ -194,7 +194,7 @@ NOT_FOUND = (404, {"error": {"code": "not_found", "message": "no such card", "de
     ("openapi", "said"),
     [
         ({"paths": {}}, "this hub does not have card notes yet"),
-        ({"paths": {"/api/v1/projects/{slug}/tasks/{task_id}/notes": {"post": {}}}},
+        ({"paths": {"/api/v1/projects/{owner}/{slug}/tasks/{task_id}/notes": {"post": {}}}},
          "not_found: no such card"),
         ("not json", "not_found: no such card"),
     ],
@@ -209,7 +209,7 @@ def test_a_404_names_a_feature_the_hub_lacks(
     err = capsys.readouterr().err
     assert said in err
     if "does not have" in said:
-        assert "POST /projects/maity/tasks/tsk-0004/notes" in err
+        assert "POST /projects/oliver/maity/tasks/tsk-0004/notes" in err
 
 
 @pytest.mark.parametrize(
@@ -218,9 +218,9 @@ def test_a_404_names_a_feature_the_hub_lacks(
         (["limit", "--until", "3h"], "POST", "/api/v1/me/limit", "usage limits"),
         (["link", "remove", "tsk-0004", "lnk-0007"], "DELETE", f"{BASE}/links/lnk-0007",
          "card links"),
-        (["messages"], "GET", "/api/v1/projects/maity/messages", "project messages"),
-        (["takeover", "list"], "GET", "/api/v1/projects/maity/takeovers", "takeovers"),
-        (["files", "get", "att-0001"], "GET", "/api/v1/projects/maity/attachments/att-0001",
+        (["messages"], "GET", "/api/v1/projects/oliver/maity/messages", "project messages"),
+        (["takeover", "list"], "GET", "/api/v1/projects/oliver/maity/takeovers", "takeovers"),
+        (["files", "get", "att-0001"], "GET", "/api/v1/projects/oliver/maity/attachments/att-0001",
          "attachments"),
     ],
 )  # fmt: skip

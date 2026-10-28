@@ -35,6 +35,8 @@ BINARIES = {"claude-code": "claude", "codex": "codex", "opencode": "opencode", "
             "hermes": "hermes", "kimi": "kimi", "cline": "cline", "omp": "omp"}  # fmt: skip
 MODES = ("interactive", "supervised")
 SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}$")
+# A project as the hub names it (§6.25): the namespace owner's handle and the slug.
+FULL_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}/[a-z0-9][a-z0-9-]{1,62}$")
 # host/owner/name after normalise_repository(), or host/owner/* for a whole owner; no other glob
 REPOSITORY = re.compile(r"^[a-z0-9.-]+(:[0-9]+)?/[A-Za-z0-9._-]+/([A-Za-z0-9._-]+|\*)$")
 
@@ -220,6 +222,21 @@ def _strings(pattern: re.Pattern[str] | None = None, what: str = "") -> Callable
     return check
 
 
+def _projects(values: Any) -> str | None:
+    """Full names only: a slug is unique only within its owner's namespace (§6.25), so a
+    bare `shop` would let every owner's `shop` run here."""
+    if not all(isinstance(v, str) and v for v in values):
+        return "expected a list of non-empty strings"
+    slugs = [v for v in values if SLUG.match(v)]
+    if slugs:
+        return (
+            f"a project is named <owner>/<slug> now: write {', '.join(repr(v) for v in slugs)} "
+            "with its owner's handle, e.g. 'oliver/maity'"
+        )
+    bad = [v for v in values if not FULL_NAME.match(v)]
+    return f"not a project full name: {', '.join(repr(v) for v in bad)}" if bad else None
+
+
 def _one_of(*allowed: str) -> Callable[[Any], str | None]:
     return lambda v: None if v in allowed else f"one of {', '.join(allowed)}"
 
@@ -256,9 +273,7 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
     hub.done()
 
     limits_in = root.table("limits", required=True) or _Reader({}, "limits", [])
-    projects = limits_in.get(
-        "projects", list, [], required=True, check=_strings(SLUG, "a project slug")
-    )
+    projects = limits_in.get("projects", list, [], required=True, check=_projects)
     repositories = limits_in.get("repositories", list, [], required=True, check=_repositories)
     restart = _RESTART
     restart_in = limits_in.table("restart")
