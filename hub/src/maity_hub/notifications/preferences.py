@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import re
 import secrets
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
@@ -309,10 +310,13 @@ def patch(
     mail_ready: bool,
     wrong_password: Any,
     password_blocked: Any,
+    step_up: Callable[[], None],
 ) -> int:
     """Apply a `PATCH`; returns 200, or 202 when an address change is held for approval.
     `wrong_password` counts a mismatched `current_password` against the login limits,
-    and `password_blocked` gives the seconds to wait while they are exhausted."""
+    `password_blocked` gives the seconds to wait while they are exhausted, and `step_up`
+    raises when the caller's session owes the second factor the change of a verified
+    address needs (§2.8.4)."""
     errors: dict[str, str] = {}
     for key in body:
         if key == "kinds" or key in READ_ONLY:
@@ -338,6 +342,7 @@ def patch(
             mail_ready=mail_ready,
             wrong_password=wrong_password,
             password_blocked=password_blocked,
+            step_up=step_up,
         )
         row = row_of(conn, human.id, lock=True)
     # What was stored for a removed kind goes with this write (§18.4).
@@ -434,12 +439,14 @@ def _change_address(
     mail_ready: bool,
     wrong_password: Any,
     password_blocked: Any,
+    step_up: Callable[[], None],
 ) -> int:
     if wanted is not None and not mail_ready:
         raise ApiError(409, "mail_not_configured", "the instance cannot send mail")
     verified = row.address_status in ("verified", "disabled") and row.address is not None
     moves = verified and wanted != row.address
     if moves:
+        step_up()  # changing or removing the verified address is a sensitive call (§2.8.4)
         if human.password_hash is not None:
             if not isinstance(given_password, str) or not given_password:
                 raise invalid({"current_password": "required"})
@@ -672,8 +679,10 @@ def decide_held(
     approve: bool,
     signing_key: bytes | None,
     public_url: str,
+    step_up: Callable[[], None],
 ) -> None:
-    """Approve or reject a held address change (§18.4)."""
+    """Approve or reject a held address change (§18.4); approving is a sensitive call, so
+    `step_up` raises when the session owes the second factor (§2.8.4)."""
     row = row_of(conn, human.id, lock=True)
     held = _held(row)
     confirmed = sessions.confirmed_sessions(conn, human.id)
@@ -688,6 +697,7 @@ def decide_held(
             .values(address_change=None, updated_at=clock.now())
         )
         return
+    step_up()
     if clock.now() - session.created_at < APPROVER_AGE:
         raise _session_forbidden("session_too_new")
     apply_address(
