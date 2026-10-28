@@ -30,6 +30,7 @@ from sqlalchemy import Engine, select, update
 from maity_hub import clock, forge, forge_links, github_app, secretbox
 from maity_hub import tables as t
 from maity_hub.github_app import GitHubApp
+from maity_hub.notifications import records
 
 KEEP_SECONDS = forge.PUBLIC_SECONDS
 
@@ -215,12 +216,20 @@ class ForgeAccess:
         self._token_rejected_owner(owner_id)
 
     def _token_rejected_owner(self, owner_id: str) -> None:
+        """The forge refused the owner's token: `rejected` until it is replaced, and the
+        owner's account record once (§11.4)."""
         with self.engine.begin() as conn:
+            row = conn.execute(
+                select(t.forge_token).where(t.forge_token.c.human_id == owner_id).with_for_update()
+            ).first()
+            if row is None or row.status == "rejected":
+                return
             conn.execute(
                 update(t.forge_token)
                 .where(t.forge_token.c.human_id == owner_id)
                 .values(status="rejected", checked_at=clock.now())
             )
+            records.forge_access_changed(conn, owner_id, "owner_token", "token_rejected", row.login)
 
 
 # project id -> the source the last choice found (§6.1 `probe_via`); a view reads it

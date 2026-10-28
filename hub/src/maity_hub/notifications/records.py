@@ -22,7 +22,10 @@ SECURITY = (
     "email_address_changed",
     "second_factor_changed",
     "second_factor_failed",
+    "forge_access_changed",
 )
+# The forge access changes that are a `security` item; the others are no notification.
+FORGE_ADDED = ("linked", "token_set")
 # Records that are `inbox` items, open until their matter is closed (§18.1).
 INBOX = ("registration_pending", "mail_disabled")
 PERSONAL = (
@@ -64,6 +67,19 @@ def personal_request(conn: Connection, request: Any) -> None:
         request.to_human,
         kind,
         {"request_id": request.id, "project_id": request.project_id, "status": request.status},
+    )
+
+
+def forge_access_changed(
+    conn: Connection, human_id: str, source: str, change: str, login: str | None
+) -> None:
+    """A change of the human's forge access (§11.4): `source` is `app` or `owner_token`.
+    The account login names what was added; never a token."""
+    write(
+        conn,
+        human_id,
+        "forge_access_changed",
+        {"forge": "github", "source": source, "change": change, "login": login},
     )
 
 

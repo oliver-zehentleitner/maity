@@ -9351,7 +9351,8 @@ them alone, never by an instance admin, an agent or a runner. A change
 writes an account record (§18.1) `forge_access_changed` `{forge,
 source: "app" | "owner_token", change: "linked" | "unlinked" |
 "suspended" | "removed" | "token_set" | "token_removed" |
-"token_rejected"}` of that human, which is a `security` item for
+"token_rejected", login}` of that human (`login` is the forge account the
+installation or token is on, which the item's title names; never a token), which is a `security` item for
 `linked` and `token_set` and no notification otherwise.
 
 **Rate limits.** A source's reads count against that source's limit at

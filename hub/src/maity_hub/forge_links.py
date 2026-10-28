@@ -22,6 +22,7 @@ from maity_hub import clock, forge, github_app
 from maity_hub import tables as t
 from maity_hub.github_app import GitHubApp
 from maity_hub.ids import new_id
+from maity_hub.notifications import records
 
 FORGE = "github"
 STATE_TTL = timedelta(minutes=15)
@@ -114,6 +115,7 @@ def link(conn: Connection, human_id: str, found: dict[str, Any]) -> str:
         if existing.human_id != human_id:
             raise LinkError("installation_linked")
         conn.execute(update(t.forge_link).where(t.forge_link.c.id == existing.id).values(columns))
+        records.forge_access_changed(conn, human_id, "app", "linked", columns["account_login"])
         link_id: str = existing.id
         return link_id
     link_id = new_id("forge_link")
@@ -127,6 +129,7 @@ def link(conn: Connection, human_id: str, found: dict[str, Any]) -> str:
             **columns,
         )
     )
+    records.forge_access_changed(conn, human_id, "app", "linked", columns["account_login"])
     return link_id
 
 
@@ -140,6 +143,7 @@ def unlink(conn: Connection, app: GitHubApp | None, human_id: str, link_id: str)
     if row is None:
         return False
     conn.execute(delete(t.forge_link).where(t.forge_link.c.id == link_id))
+    records.forge_access_changed(conn, human_id, "app", "unlinked", row.account_login)
     if app is not None:
         github_app.forget_token(app, row.installation_id)
     return True
@@ -174,11 +178,20 @@ def shown(app: GitHubApp | None, row: Any) -> tuple[list[str], str | None]:
 
 
 def set_status(conn: Connection, link_id: str, status: str) -> None:
+    """The status a mint found; a link that becomes `suspended` or `removed` writes the
+    human's account record (§11.4)."""
+    row = conn.execute(
+        select(t.forge_link).where(t.forge_link.c.id == link_id).with_for_update()
+    ).first()
+    if row is None:
+        return
     conn.execute(
         update(t.forge_link)
         .where(t.forge_link.c.id == link_id)
         .values(status=status, checked_at=clock.now())
     )
+    if status != row.status and status in ("suspended", "removed"):
+        records.forge_access_changed(conn, row.human_id, "app", status, row.account_login)
 
 
 def view(row: Any, repositories: list[str], status: str) -> dict[str, Any]:

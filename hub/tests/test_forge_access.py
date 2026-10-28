@@ -242,6 +242,13 @@ def test_a_rejected_owner_token_falls_back_to_the_operators_token(
     assert raised.value.reason == "token_rejected"
     with migrated.connect() as conn:
         assert conn.execute(select(t.forge_token.c.status)).scalar_one() == "rejected"
+        [record] = conn.execute(
+            select(t.account_record.c.data).where(
+                t.account_record.c.type == "forge_access_changed",
+                t.account_record.c.human_id == owner.id,
+            )
+        ).scalars()
+    assert record["change"] == "token_rejected"
 
 
 @pytest.mark.parametrize("state", ["suspended", "removed"])

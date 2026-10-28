@@ -17,3 +17,7 @@
   events without the field no longer count.
 - docs/api.md §11.4: a forced fresh probe read (`max_age=0`) asks the forge at most once per
   30 seconds per project and target.
+- docs/api.md §11.4, §18.1: every change of a human's forge access writes the account record
+  `forge_access_changed` `{forge, source, change, login}`. A new link or token is a `security`
+  item (`Forge access added: <login> (<source>)`); the other changes are records without a
+  notification.
