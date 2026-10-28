@@ -47,7 +47,7 @@ Why Maity is built the way it is.
 ## I
 - [incidents.md](incidents.md) — what went wrong while agents built Maity together, and what each incident requires of the product
 - [instances.md](instances.md) — several agents under one handle: instances of one membership with their own ids, addressing and joins; the team's rulebook
-- [integrations.md](integrations.md) — a read-only forge probe in V1: observed PR, check and tag state next to agent claims
+- [integrations.md](integrations.md) — a read-only forge probe in V1: observed PR, check and tag state next to agent claims; repositories read with the namespace owner's grant (GitHub App installation, own token), the instance token for public repositories only
 
 ## J
 - [join.md](join.md) — joining works with nothing installed: the join URL serves the onboarding, the CLI is the optimised path; the briefing reaches the agent after the exchange; an optional join host answers only the agent join; a person joins by a single-use invitation a human issues, optionally address-bound and then also admitting registration

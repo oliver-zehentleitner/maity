@@ -136,7 +136,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
-| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on a post, chat change or redaction of an owner outside the project (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1) |
+| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on a post, chat change or redaction of an owner outside the project (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours` and `link_state` when linking a forge installation fails its checks (§11.4) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -157,7 +157,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `alias_limit` | a rename that would give a human or an agent profile a ninth alias (§6.24), or a project rename or transfer that would give the project a ninth (§6.25); `details.limit`, `details.aliases`. Taking an own alias back is never refused with it |
 | 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
-| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4); `details.current_version`, `details.base_version` |
+| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4) |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
 | 409 | `instance_quota` | a join or exchange that would give a membership more active instances than its `team.max_instances` (§6.17, §6.18); `details.max` |
@@ -172,7 +172,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `project_closed` | claim or task creation while the project is `archived`, an import included; there also creating a group chat or adding a participant to one (§9.2), adding a card link and posting a note (§6.13, §6.16), an attachment upload and a message that names one (§8.7) |
 | 409 | `already_linked` | the same forge item or URL is linked on the card already (`details.link`), or the issue is imported on a card that is not closed (`details.task`) (§6.13, §6.14) |
 | 409 | `idempotency_mismatch` | same `Idempotency-Key`, different body |
-| 409 | `probe_not_configured` | the hub holds no forge token for the project's repository (§11); also an import (§6.14) |
+| 409 | `probe_not_configured` | no grant covers the project's repository (§11, §11.4); `details.reason` (`no_grant`, `private_without_grant`, `installation_suspended`, `installation_removed`, `token_rejected`) for `project:admin` only; also an import (§6.14) |
 | 409 | `placement_exists` | a second active placement for a membership, or for (runner, clone) in a project (§15.5); `details.placement` |
 | 409 | `runner_not_attached` | a placement names a runner that is not attached to the project (§15.4) |
 | 409 | `already_attached` | attaching a runner that is attached already, under a new idempotency key (§15.4); `details.attachment` |
@@ -2105,6 +2105,8 @@ The sensitive calls:
   and approving a device code (§2.6.2);
 - transferring a project to another namespace owner (`POST
   /projects/{owner}/{slug}/transfer`, §6.25);
+- giving the hub access to a forge account: `POST /me/forge/github/link`
+  and `PUT /me/forge/github/token` (§11.4);
 - the instance admin's changes of instance settings (`PATCH
   /admin/settings/*`, §2.6.6, §16).
 
@@ -2823,7 +2825,7 @@ Response `200`, bounded and deterministic:
     "slug": "maity", "full_name": "oliver/maity", "name": "Maity",
     "state": "build", "state_note": "…", "state_changed_at": "2026-10-21T09:00:00Z",
     "repository": { "url": "https://github.com/oliver-zehentleitner/maity", "default_branch": "main",
-                    "forge": "github", "probe_configured": true },
+                    "forge": "github", "probe_configured": true, "probe_via": "app" },
     "policy": { "preset": "hierarchical", "claim_policy": "self-claim", "done_authority": "reviewer",
                 "contract_arbiter": "agt-a", "tag_authority": "human", "steward_writes": "cards_only",
                 "lease_seconds": 7200, "signing": "optional" },
@@ -3157,7 +3159,7 @@ around.
   "state_note": "MVP skeletons in progress.",
   "state_changed_at": "2026-10-21T09:00:00Z",
   "repository": { "url": "https://github.com/oliver-zehentleitner/maity", "default_branch": "main",
-                  "forge": "github", "probe_configured": true },
+                  "forge": "github", "probe_configured": true, "probe_via": "app" },
   "logo": { "available": true, "source": "uploaded", "etag": "\"9f2c41d0\"" },
   "banner": { "available": false, "source": null },
   "memory": { "provider": "keep-the-why" },
@@ -3220,7 +3222,9 @@ around.
 
 **Repository**: `url` must be on a forge host the operator configured
 (§11), otherwise `invalid`; `forge` is derived from the host,
-`probe_configured` says whether the hub holds a token for that forge.
+`probe_configured` says whether the hub can read the repository, and
+`probe_via` with which grant (`app`, `owner_token`, `instance`, or
+`null`, §11.4).
 One repository per project in V1.
 
 **Logo** and **banner** say what the dashboard may ask for instead of
@@ -8328,9 +8332,11 @@ Scope `project:read`. The hub's read-only view of the project's forge
 environment only (`MAITY_FORGE_GITHUB_TOKEN`; the host is fixed per forge
 kind, `api.github.com` for GitHub): nothing a project member sets can
 make the hub send its token anywhere else, and `repository.url` must be
-on a configured forge host (§6.1). One token per hub in V1, read-only and
-fine-grained to the repositories the hub probes; its permissions are the
-limit of what any project can observe. The hub caches an observation for
+on a configured forge host (§6.1). Which grant reads a project's
+repository — the namespace owner's GitHub App installation, the owner's
+own token, or this instance token for a public repository only — is
+§11.4; every grant is read-only, and its permissions are the limit of
+what the project can observe. The hub caches an observation for
 `max_age` seconds (default 60, `0` forces a fresh read) and never writes
 to the forge.
 
@@ -8678,6 +8684,152 @@ at the path), `no_state_url` (no `dashboard-state:` line),
 or TLS refused), `timeout`, `http_status` (with `status`),
 `too_large`, `not_json`, `state_json_version` (with `version`), `shape`.
 
+### 11.4 Forge access per owner
+
+The maintainer's decision of 2026-10-28: a project's forge reads use a
+grant from the repository's owner, not only the operator's one token.
+One instance token cannot read the private repositories of the people
+who host projects on an instance, and a token from the operator's own
+account can read the operator's private repositories, which no other
+project should see through the probe. So the hub reads a project's
+repository with the first of these that covers it:
+
+1. **The namespace owner's GitHub App installation** (below). The
+   project's namespace owner (§6.25) has linked an installation of the
+   instance's GitHub App, and the installation includes the repository.
+2. **The namespace owner's own token** (below).
+3. **The instance token** (`MAITY_FORGE_GITHUB_TOKEN`, §11), and only
+   for a repository the forge reports as public. The hub checks
+   `private` on the repository with the instance token before the first
+   read and on every refresh of the repository (at most every 10
+   minutes); a repository that is private, or whose visibility the hub
+   cannot read, is never read with the instance token.
+
+Only the namespace owner's grants count: a grant of another member,
+another `owner` of the project included, is never used for this
+project, so nobody can make the hub read a repository with someone
+else's access by naming it. On a transfer (§6.25) the new namespace
+owner's grants apply from the moment the transfer completes, the old
+owner's from then on not.
+
+The project's `repository` (§6.1) says which source is used:
+`probe_via` is `app`, `owner_token`, `instance` or `null`, and
+`probe_configured` is `true` exactly when `probe_via` is not `null`.
+When no source covers the repository, every read answers
+`probe_not_configured` with `details.reason`: `no_grant` (nothing covers
+it), `private_without_grant` (only the instance token exists and the
+repository is private), `installation_suspended` or
+`installation_removed` (the owner's installation covered it and no
+longer does), `token_rejected` (the owner's token was refused by the
+forge). The reason is shown to `project:admin` only; other readers get
+`probe_not_configured` with `details: {}`.
+
+**What a private repository's data may reach.** What the probe reads
+from a repository it reads with an owner's grant is project data: it
+reaches exactly the readers of the record it lands on (a card's forge
+link, a report's `observed`, a release, a ticker item, §17.3), never a
+page without sign-in. The badge (§6.20), the swarm page and the landing
+page (§16.7) show nothing read from a repository through an owner's
+grant: no title, no branch, no check name, no count derived from them.
+
+**The GitHub App.** The operator registers one GitHub App for the
+instance and configures it in the environment:
+
+| Setting | Meaning |
+|---|---|
+| `MAITY_FORGE_GITHUB_APP_ID` | the App's id |
+| `MAITY_FORGE_GITHUB_APP_SLUG` | the App's URL name, for the installation link |
+| `MAITY_FORGE_GITHUB_APP_PRIVATE_KEY` | the App's private key (PEM), from a Secret, never logged, never in an answer |
+| `MAITY_FORGE_GITHUB_APP_CLIENT_ID`, `MAITY_FORGE_GITHUB_APP_CLIENT_SECRET` | the App's OAuth client, used once per link to confirm who installed it (below); the secret from a Secret |
+
+All five or none: a partial set stops the hub at startup. The App asks
+for read access only — metadata, contents, pull requests, checks,
+commit statuses, deployments, issues — and for no write permission and
+no account permission; the hub never writes to the forge (§11). The
+App's own webhook is not used in v1; the project webhook (§17.4) stays
+as it is.
+
+**Linking an installation.** A human links an installation to their
+account, not to a project; it then serves every project they own whose
+repository it includes.
+
+- `POST /me/forge/github/link` (human) answers `{url}`: the App's
+  installation page with a `state` the hub signs and binds to the
+  caller's session, valid 15 minutes and usable once. The App is set up
+  to ask for the user's authorisation during installation, so the forge
+  sends the browser back with both `installation_id` and an OAuth
+  `code`.
+- `GET /forge/github/setup?installation_id=…&code=…&state=…` (cookie
+  session, the same human whose session the `state` names) completes it.
+  The hub exchanges `code` for a user token, lists the installations that
+  user can access (`GET /user/installations`), and links the
+  installation only when it is among them. The user token is used for
+  this one check and discarded, never stored. An `installation_id` the
+  user cannot access is refused (`403 forbidden`, `details.reason:
+  installation_not_yours`), so nobody links an installation by guessing
+  or copying its id. A missing, expired, used or foreign `state` is
+  `403 forbidden`, `details.reason: link_state`. The page then shows the
+  dashboard's forge settings.
+- An installation is linked to one human at a time. Linking one that is
+  linked to another human is refused (`409 conflict`, `details.reason:
+  installation_linked`); the other human unlinks it first, or the
+  installation is removed on the forge.
+- `GET /me/forge` (human) lists the caller's links: `[{id, forge,
+  installation_id, account: {login, type}, repository_selection: "all"
+  | "selected", repositories_shown, status: "active" | "suspended" |
+  "removed", linked_at, checked_at}]` and the caller's own token (below)
+  as `{configured, login, status: "active" | "rejected", checked_at}`;
+  never a token.
+  `repositories_shown` lists at most 100 full names the installation
+  covers, read with an installation token when the list is requested.
+- Starting a link and storing a token need the step-up (§2.8.4); an
+  unlink and a token's removal do not, since they only take access away.
+- `DELETE /me/forge/github/links/{id}` (human, the linking human)
+  unlinks it. It does not uninstall the App on the forge; the dashboard
+  says so and links to the forge's page.
+
+**Installation tokens** are minted per installation with the App's key
+when a read needs one, held in the hub's memory until 5 minutes before
+they expire (the forge issues them for an hour), and never stored, logged
+or put into an answer. A mint that the forge refuses because the
+installation was suspended or removed sets the link's `status` and the
+reason above; the hub retries a suspended one at most every 10 minutes
+and a removed one never, until it is linked again.
+
+**The owner's own token.** A human may store a token of their own as a
+second source, for a forge setup where an App cannot be installed.
+
+- `PUT /me/forge/github/token` `{token}` (human) checks the token with
+  the forge (`GET /user`) and stores it encrypted with
+  `MAITY_SECRET_KEY` (§17.4). A classic token whose scopes the forge
+  reports include `repo`, `public_repo` or any `write:`/`admin:` scope
+  is refused (`invalid`, `details.fields.token: "write_access"`). The
+  forge does not report a fine-grained token's permissions, so for one
+  the hub cannot check them; the dashboard asks for read-only
+  permissions and says that the hub never writes (§11), which holds
+  whatever the token could do. Without that key it is `409
+  secret_key_missing`. It answers `{configured: true, login}`; the token
+  is never returned.
+- `DELETE /me/forge/github/token` (human) removes it.
+- A token the forge refuses later sets `status: "rejected"` and the
+  reason `token_rejected`; the hub does not try it again until it is replaced.
+- The token is a credential: masked in the request log, in no event,
+  never in an answer.
+
+Both sources are the human's own: their links and token are readable by
+them alone, never by an instance admin, an agent or a runner. A change
+writes an account record (§18.1) `forge_access_changed` `{forge,
+source: "app" | "owner_token", change: "linked" | "unlinked" |
+"suspended" | "removed" | "token_set" | "token_removed" |
+"token_rejected"}` of that human, which is a `security` item for
+`linked` and `token_set` and no notification otherwise.
+
+**Rate limits.** A source's reads count against that source's limit at
+the forge (an installation, the owner's token, the instance token); the
+hub keeps one budget per source and, when the forge says the budget is
+spent, answers `probe_unavailable` for that source's projects until the
+forge's reset time, with `details.retry_at`.
+
 ## 12. Endpoint index
 
 | Method | Path | Scope | § |
@@ -8825,6 +8977,11 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | DELETE | `/admin/registrations/blocks/{address}` | `instance:admin`, human only | 16.4 |
 | POST | `/admin/settings/mail/test` | `instance:admin`, human only | 16.3 |
 | GET | `/me/notifications` | human | 18.2 |
+| GET | `/me/forge` | human | 11.4 |
+| POST | `/me/forge/github/link` | human | 11.4 |
+| DELETE | `/me/forge/github/links/{id}` | human | 11.4 |
+| PUT, DELETE | `/me/forge/github/token` | human | 11.4 |
+| GET | `/forge/github/setup` | human (cookie) | 11.4 |
 | POST | `/me/notifications/read` | human | 18.3 |
 | GET, PATCH | `/me/notification-settings` | human | 18.4 |
 | POST | `/me/notification-settings/email/verify` | human | 18.4 |
@@ -9048,7 +9205,7 @@ table; `docs/architecture.md` §12 points here.
 | `members[]` | gains `capabilities`, `presence`, `joined_at`; `session` gains `model`, `client`, `listening` | presence is computed by the hub, not derived in the browser |
 | `members[].paused` | kept; shape `{reason, since, by}` | who set it matters when a human did |
 | `project.org_model` | `project.policy.preset` plus the policy fields | the org model is a set of fields behind a preset |
-| `project.repository` (string) | an object (`url`, `default_branch`, `forge`, `probe_configured`) | the dashboard shows whether the probe runs |
+| `project.repository` (string) | an object (`url`, `default_branch`, `forge`, `probe_configured`, `probe_via`) | the dashboard shows whether the probe runs |
 | `project` | gains `settings`, `rules_version`, `created_at`; `absence`, `state_note`, `state_changed_at` kept, `absence` stays on the project | one human in V1; per-membership absence is the revisit with invitations |
 | `requests[].kind` (`consent`, `decision`, `question`, `review`) | `class` with `decision`, `consent`, `contract`, `info` | the four classes of the brief; `question` is `decision` when it offers options (req-0010) and `info` when it asks for a fact; `review` is `decision` |
 | `requests[].context.{summary, tried, options}` | top-level `summary`, `tried`, `options` | one level less; the inbox renders the same three things |
@@ -10849,8 +11006,9 @@ the hub reads on its own interval (every 2 minutes) the pull requests
 closed against `default_branch` since the last one it announced, and
 writes an item for each merged one not yet announced (§17.7). For each
 it reads the file list and, when a contract file is among them, that
-file at the merge commit and at the base. The forge token needs no write
-permission: read access to pull requests, contents and deployments. The
+file at the merge commit and at the base. The grant (§11.4) needs no
+write permission: read access to pull requests, contents and
+deployments. The
 first run after `enabled` is switched on starts at that moment and
 announces nothing older.
 
@@ -11364,7 +11522,9 @@ when it is read or sent, from two sources, plus a read flag per human:
 registration (§2.7.5, §16.4) `registration_pending`, written for every
 instance admin, and `registration_approved`, written for the person,
 which is no notification: the person learns of the approval by mail
-and by signing in.
+and by signing in; and with forge access per owner (§11.4)
+`forge_access_changed`, a `security` item for a new link or token and
+no notification otherwise.
 
 **Personal requests** (#162, §7) are requests the hub files to the
 human who owns an agent profile (`to: "profile_owner:<agent id>"`),
@@ -11392,7 +11552,7 @@ class `info` that the hub files and withdraws itself.
 | `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7) and of an unconfirmed Keep the Why commitment (§6.23); the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7) | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `mail_disabled` the human | `<asker> asks: <request title>`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Mail to <address> disabled after 3 failures`, linking to the notification settings |
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or, once #153 lands, from another participant of a group chat (#153, §9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; once #153 lands, a mention in a group chat (#153) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
-| `security` | the account records `session_created` (#169, §2.6.5) and `email_address_changed` (§18.4); `second_factor_changed` and `second_factor_failed` (§2.8) | the human | `New sign-in: <browser> on <os> (<method>)`; `Sign-in address changed`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>` |
+| `security` | the account records `session_created` (#169, §2.6.5) and `email_address_changed` (§18.4); `second_factor_changed` and `second_factor_failed` (§2.8); `forge_access_changed` with `change` `linked` or `token_set` (§11.4) | the human | `New sign-in: <browser> on <os> (<method>)`; `Sign-in address changed`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>`; `Forge access added: <account login> (<source>)` |
 
 The `registration_pending` and `mail_disabled` items ask for an action
 as a request does — approve or reject the registration (§16.4), set
