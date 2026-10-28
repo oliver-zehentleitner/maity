@@ -105,8 +105,8 @@ So the machine is capped, not trusted:
    registration token from that page (Settings → Actions → Runners; valid for an hour).
 3. As root, with every `maity-runner*` service stopped and no container left in the runner user's Docker (stopping a
    service ends the runner but not the service containers of a job it was running; `docker ps` as the runner user
-   must be empty, the script refuses otherwise): `RUNNER_TOKEN=<token> RUNNER_TARBALL=<tarball> install-services.sh`. For each of
-   `sqlite`, `pg` and `maria` it unpacks the runner to `/opt/actions-runner-<type>`, runs `config.sh` **as the
+   must be empty, the script refuses otherwise): `RUNNER_TOKEN=<token> RUNNER_TARBALL=<tarball> install-services.sh`. For each
+   selected instance (default `pg` only; `INSTANCES="sqlite maria"` adds others later) it unpacks the runner to `/opt/actions-runner-<type>`, runs `config.sh` **as the
    runner user** (as root it refuses: "Must not run with sudo"; with `--disableupdate`, because the runner's
    self-update would write into its own directory, which the runner user may not: update by hand, as root, when
    GitHub asks for a newer version), registers it as `maity-vm-<type>` with the label `maity-hub-<type>`, hands the
@@ -118,7 +118,7 @@ So the machine is capped, not trusted:
    The units start `bin/runsvc.sh`, not `run.sh` (which writes into the runner's directory), and use
    `KillMode=control-group`. The hook's output is shown in the job log (step "Complete runner"), which anyone
    can read in a public repository.
-4. For each instance, as root, with no job running (it restarts the service; the script refuses otherwise unless
+4. For each instance, as root, with no job running (it restarts the service if it is running and never starts one; the script refuses otherwise unless
    `FORCE=1`): `RUNNER_DIR=/opt/actions-runner-<type> SERVICE=maity-runner@<type> install-python.sh`. The jobs use
    `actions/setup-python` for 3.12, which has no Python for Debian and would fail; the script installs 3.12 with
    uv as the runner user, puts it in the runner's tool cache where `setup-python` looks first, removes uv's PEP 668
