@@ -77,12 +77,15 @@ After a malicious job the machine is reinstalled; the hook below cannot make it 
 0. **Coming from the single runner of the first version?** First stop it, because the scripts below refuse while
    any runner of the runner user runs: remove the runner in GitHub (Settings → Actions → Runners),
    `systemctl disable --now maity-runner`, delete `/etc/systemd/system/maity-runner.service` and
-   `/opt/actions-runner`, and the repository variable `HUB_RUNNER` (no longer read). A fresh install has nothing to do here.
+   `/opt/actions-runner`, and the repository variable `HUB_RUNNER` (no longer read). Containers a cut-off job left running
+   (`docker ps` as the runner user) hold the ports 5432 and 3306 for good once the runner is gone: remove them. A fresh install has nothing to do here.
 1. Create the user (`<runner-user>`, uid `<uid>`), enable lingering, install rootless Docker
    for it (see above).
 2. Download the runner (Linux x64) from GitHub's "New self-hosted runner" page as a tarball and get a
    registration token from that page (Settings → Actions → Runners; valid for an hour).
-3. As root, with every `maity-runner*` service stopped (the script refuses otherwise): `RUNNER_TOKEN=<token> RUNNER_TARBALL=<tarball> install-services.sh`. For each of
+3. As root, with every `maity-runner*` service stopped and no container left in the runner user's Docker (stopping a
+   service ends the runner but not the service containers of a job it was running; `docker ps` as the runner user
+   must be empty, the script refuses otherwise): `RUNNER_TOKEN=<token> RUNNER_TARBALL=<tarball> install-services.sh`. For each of
    `sqlite`, `pg` and `maria` it unpacks the runner to `/opt/actions-runner-<type>`, runs `config.sh` **as the
    runner user** (as root it refuses: "Must not run with sudo"; with `--disableupdate`, because the runner's
    self-update would write into its own directory, which the runner user may not: update by hand, as root, when

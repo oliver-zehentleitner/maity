@@ -28,6 +28,15 @@ UID_RU=$(id -u "$RU")
 install -m 755 -o root "$HERE/job-completed.sh" /opt/maity-runner-hooks/job-completed.sh
 sed -e "s/<runner-user>/$RU/g" -e "s/<uid>/$UID_RU/g" "$HERE/maity-runner@.service" > /etc/systemd/system/maity-runner@.service
 
+# A service container left running by a job that was cut off when the services stopped (they run under the runner
+# user's Docker, outside the unit's cgroup) would keep 127.0.0.1:5432 or :3306 for good: each registration is new, so
+# no runner knows its label any more. Refuse until none is left.
+left=$(runuser -u "$RU" -- env XDG_RUNTIME_DIR="/run/user/$UID_RU" DOCKER_HOST="unix:///run/user/$UID_RU/docker.sock" docker ps -q 2>/dev/null || true)
+if [ -n "$left" ]; then
+  echo "containers are still running in the Docker of $RU; remove them first (docker rm -f \$(docker ps -q) as $RU) and run again" >&2
+  exit 1
+fi
+
 for t in $INSTANCES; do
   d=/opt/actions-runner-$t
   # Never reuse a directory: one left by a failed run belongs to the runner user and may hold symlinks.
@@ -39,12 +48,15 @@ for t in $INSTANCES; do
   runuser -u "$RU" -- env HOME="$HOME_RU" "$d/config.sh" --url "$URL" --token "$RUNNER_TOKEN" --unattended --disableupdate \
     --name "maity-vm-$t" --labels "$PREFIX-$t" >/dev/null
   chown -R root:root "$d"
-  # Only regular files are handed on: a symlink among the registration files (or a replaced _work) stops the script.
+  # Only regular files are handed on: a symlink among the registration files stops the script.
   for f in .runner .credentials .credentials_rsaparams; do
     [ -f "$d/$f" ] && [ ! -L "$d/$f" ] || { echo "$d/$f is missing or a symlink; stopping, remove $d and run again" >&2; exit 1; }
   done
   chgrp "$RU" "$d/.runner" "$d/.credentials" "$d/.credentials_rsaparams"
   chmod 640 "$d/.runner" "$d/.credentials" "$d/.credentials_rsaparams"
+  # $d is root's now, nothing of the runner user can appear in it any more; whatever _work, _diag and _temp hold (a
+  # symlink among it) is removed, never followed, and they are created again for the runner user.
+  rm -rf "$d/_work" "$d/_diag" "$d/_temp"
   install -d -o "$RU" "$d/_work" "$d/_diag" "$d/_temp"
   rm -f "$d/.path"
   echo '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' > "$d/.path"
