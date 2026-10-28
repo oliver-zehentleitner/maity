@@ -370,3 +370,37 @@ def test_a_plain_403_is_no_spent_budget(opener: FakeOpener) -> None:
         READER._get("/repos/acme/maity")
     assert not error.value.rate_limited and error.value.retry_at is None
     assert READER.retry_at() is None
+
+
+def test_parallel_reads_never_spend_more_than_was_left() -> None:
+    """Reads are counted before they are sent: with 6 of 100 left, one more fits above
+    the 5 % kept; the others wait for the reset instead of going out together."""
+    import time
+
+    source = forge._source(TOKEN)
+    forge._note(source, _limits(6, time.time() + 600, limit=100), spent=False)
+    sent = [forge._take(source) is None for _ in range(8)]
+    assert sent.count(True) == 1
+    assert READER.retry_at() is not None
+
+
+def test_a_late_answer_does_not_raise_what_is_left() -> None:
+    """Answers arrive in any order: within one window the lowest count stands; a later
+    reset starts a new window."""
+    import time
+
+    source = forge._source(TOKEN)
+    reset = time.time() + 600
+    forge._note(source, _limits(2000, reset), spent=False)
+    forge._note(source, _limits(3000, reset), spent=False)  # sent earlier, answered later
+    assert forge._budgets[source].remaining == 2000
+    forge._note(source, _limits(4999, reset + 3600), spent=False)
+    assert forge._budgets[source].remaining == 4999
+
+
+def test_a_read_without_an_answer_is_no_longer_counted(opener: FakeOpener) -> None:
+    source = forge._source(TOKEN)
+    opener.answers["/repos/acme/maity"] = TimeoutError()
+    with pytest.raises(forge.ForgeUnavailableError):
+        READER._get("/repos/acme/maity")
+    assert forge._budgets[source].in_flight == 0

@@ -83,9 +83,13 @@ with Remaining 0 or a Retry-After) or one under 5 % of its limit holds
 every read with that source until the reset: the read fails at once,
 nothing is sent, and the error carries `retry_at`, which `GET …/probe` and
 the contract text answer as `details.retry_at` of `probe_unavailable`.
-The worker schedules its next sweep and merge round no earlier than that
-reset, and each round starts at another project, since a round ends at
-its first unanswered read.
+Each read is counted against the source before it is sent, in the same
+step as the check, so readers in parallel cannot spend together what the
+last answer said was left; answers that arrive out of order only ever
+lower the count within one window. The worker schedules its next sweep
+and merge round no earlier than that reset, and each kind of round
+starts at another project each time, on its own position, since a round
+ends at its first unanswered read.
 
 **Reason:** a spent limit answered every read with an error and the
 worker asked again every interval, spending the next hour's budget at its

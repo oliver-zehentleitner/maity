@@ -99,7 +99,9 @@ WAIT_UNKNOWN = 60  # seconds to hold off when a spent budget names no reset
 @dataclass
 class _Budget:
     limit: int | None = None
-    remaining: int | None = None
+    remaining: int | None = None  # as the forge last said, never raised within a window
+    reset: float | None = None  # epoch seconds the forge names for the window's end
+    in_flight: int = 0  # reads sent and not answered yet, each counted against `remaining`
     until: float = 0.0  # epoch seconds before which this source is not read
 
 
@@ -119,8 +121,35 @@ def _number(headers: Any, name: str) -> float | None:
         return None
 
 
+def _hold_until(budget: _Budget, now: float) -> float:
+    """Until when a budget at its floor is kept: its window's end, else a while."""
+    return budget.reset if budget.reset is not None and budget.reset > now else now + WAIT_UNKNOWN
+
+
+def _take(source: str) -> datetime | None:
+    """Count one read against the source before it is sent, atomically with the check:
+    readers in parallel may not spend together what the last answer said was left.
+    Returns when the source may be read again, or None with the read counted."""
+    now = time.time()
+    with _budgets_lock:
+        budget = _budgets.setdefault(source, _Budget())
+        if budget.reset is not None and budget.reset <= now:
+            # The window is over: what was left in it says nothing about the new one.
+            budget.remaining, budget.reset = None, None
+        if budget.until <= now and budget.remaining is not None and budget.limit:
+            left = budget.remaining - budget.in_flight
+            if left - 1 < budget.limit * LOW:
+                budget.until = _hold_until(budget, now)
+        if budget.until > now:
+            return datetime.fromtimestamp(budget.until, UTC)
+        budget.in_flight += 1
+        return None
+
+
 def _note(source: str, headers: Any, spent: bool) -> None:
-    """What an answer's headers say about the source's budget."""
+    """What an answer's headers say about the source's budget; the read it answers is
+    no longer in flight. Answers arrive in any order, so within one window the lowest
+    `remaining` counts; a later reset is a new window and replaces it."""
     limit, remaining = (
         _number(headers, "X-RateLimit-Limit"),
         _number(headers, "X-RateLimit-Remaining"),
@@ -129,20 +158,34 @@ def _note(source: str, headers: Any, spent: bool) -> None:
     now = time.time()
     with _budgets_lock:
         budget = _budgets.setdefault(source, _Budget())
+        budget.in_flight = max(0, budget.in_flight - 1)
         if limit is not None:
             budget.limit = int(limit)
+        new_window = reset is not None and (budget.reset is None or reset > budget.reset)
+        if reset is not None and new_window:
+            budget.reset = reset
         if remaining is not None:
-            budget.remaining = int(remaining)
+            budget.remaining = (
+                int(remaining)
+                if new_window or budget.remaining is None
+                else min(budget.remaining, int(remaining))
+            )
         low = (
             budget.remaining is not None and budget.limit and budget.remaining < budget.limit * LOW
         )
-        if spent or low:
-            if after is not None:
-                budget.until = max(budget.until, now + after)
-            elif reset is not None and reset > now:
-                budget.until = max(budget.until, reset)
-            elif spent:
-                budget.until = max(budget.until, now + WAIT_UNKNOWN)
+        if spent and after is not None:
+            budget.until = max(budget.until, now + after)
+        elif spent or low:
+            budget.until = max(budget.until, _hold_until(budget, now))
+
+
+def _settled(source: str) -> None:
+    """A read that got no answer with headers (no connection, a timeout): no longer in
+    flight, and nothing learned about the budget."""
+    with _budgets_lock:
+        budget = _budgets.get(source)
+        if budget is not None:
+            budget.in_flight = max(0, budget.in_flight - 1)
 
 
 def retry_at(token: str | None) -> datetime | None:
@@ -190,7 +233,7 @@ class Forge:
         otherwise (a public repository). `query` makes it a GraphQL POST, which only reads.
         While the source's budget is spent nothing is sent (§11.4)."""
         source = _source(self.token)
-        held = retry_at(self.token)
+        held = _take(source)
         if held is not None:
             raise ForgeUnavailableError(
                 "the forge's rate limit is spent until " + held.isoformat(),
@@ -206,9 +249,11 @@ class Forge:
         if data is not None:
             request.add_header("Content-Type", "application/json")
         request.add_header("User-Agent", "maity-hub")
+        noted = False  # whether the read's answer already took it out of flight
         try:
             with _opener.open(request, timeout=TIMEOUT) as response:
                 _note(source, getattr(response, "headers", None), spent=False)
+                noted = True
                 return json.loads(response.read())
         except urllib.error.HTTPError as error:
             headers: Any = error.headers or {}
@@ -228,6 +273,8 @@ class Forge:
         except (OSError, ValueError, http.client.HTTPException) as error:
             # A protocol error (IncompleteRead, BadStatusLine, …) is a forge that did not
             # answer, like a timeout; never the error text, which may quote the request.
+            if not noted:
+                _settled(source)
             raise ForgeUnavailableError(
                 f"the forge did not answer: {type(error).__name__}"
             ) from None

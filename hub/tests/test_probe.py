@@ -605,6 +605,18 @@ def test_the_worker_waits_for_a_spent_budget(monkeypatch: pytest.MonkeyPatch) ->
 
 def test_each_round_starts_at_another_project() -> None:
     """A round ends at its first unanswered read; turning the order spreads the reads."""
-    firsts = {probe._rotated(["a", "b", "c"])[0] for _ in range(3)}
+    probe._turns.clear()
+    firsts = {probe._rotated(["a", "b", "c"], "sweep")[0] for _ in range(3)}
     assert firsts == {"a", "b", "c"}
-    assert probe._rotated([]) == []
+    assert probe._rotated([], "sweep") == []
+
+
+def test_the_sweep_and_the_merge_round_turn_on_their_own() -> None:
+    """Due together after a reset, the two kinds of round each still reach every
+    project: a shared counter would start one of them at the same project each time."""
+    probe._turns.clear()
+    merges, sweeps = [], []
+    for _ in range(4):
+        merges.append(probe._rotated(["a", "b"], "merges")[0])
+        sweeps.append(probe._rotated(["a", "b"], "sweep")[0])
+    assert set(merges) == {"a", "b"} and set(sweeps) == {"a", "b"}

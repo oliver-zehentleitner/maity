@@ -46,13 +46,17 @@ REPORT_WINDOW = timedelta(days=1)  # closed cards whose report a sweep still tri
 
 # Each round starts at another project: a round ends at the first read the forge
 # does not answer, so a fixed order would leave the same projects unread each time.
-_turns = itertools.count()
+# One position per kind of round: the sweep and the merge round, due together, must
+# not take turns from one counter (each would start at the same project every time).
+_turns: dict[str, itertools.count[int]] = {}
+_turns_lock = threading.Lock()
 
 
-def _rotated(items: list[Any]) -> list[Any]:
+def _rotated(items: list[Any], kind: str) -> list[Any]:
     if not items:
         return items
-    shift = next(_turns) % len(items)
+    with _turns_lock:
+        shift = next(_turns.setdefault(kind, itertools.count())) % len(items)
     return items[shift:] + items[:shift]
 
 
@@ -334,7 +338,7 @@ def sweep(engine: Engine, fg: forge.Forge, stop: threading.Event | None = None) 
         and card.report.get("observed") is None
         and card.report.get("code") is not False
     ]
-    order = _rotated(sorted(observable))
+    order = _rotated(sorted(observable), "sweep")
     work += [(observe_release, (engine, fg, project_id)) for project_id in order]
     work += [(observe_links, (engine, fg, project_id)) for project_id in order]
     for job, args in work:
@@ -498,7 +502,7 @@ def merge_sweep(engine: Engine, fg: forge.Forge, stop: threading.Event | None = 
                 t.project.c.id.in_(select(t.ticker_source.c.project_id))
             )
         ).all()
-    for row in _rotated(sorted(rows, key=lambda r: r.id)):
+    for row in _rotated(sorted(rows, key=lambda r: r.id), "merges"):
         if stop is not None and stop.is_set():
             return
         if fg.configured_for(row.repository_url) and not _guarded(
