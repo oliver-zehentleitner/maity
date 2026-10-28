@@ -286,10 +286,10 @@ def test_the_token_never_follows_a_redirect_to_another_host() -> None:
     request = urllib.request.Request("https://api.github.com/repos/a/b")
     with pytest.raises(forge.ForgeUnavailableError):
         handler.redirect_request(request, None, 301, "Moved", {}, "https://evil.example/x")
-    moved = handler.redirect_request(
-        request, None, 301, "Moved", {}, "https://api.github.com/repositories/1"
-    )
-    assert moved.full_url == "https://api.github.com/repositories/1"
+    with pytest.raises(forge.NotCoveredError):  # nor within the API host (§11.4)
+        handler.redirect_request(
+            request, None, 301, "Moved", {}, "https://api.github.com/repositories/1"
+        )
 
 
 # --- reports (§6.6) ------------------------------------------------------------------------

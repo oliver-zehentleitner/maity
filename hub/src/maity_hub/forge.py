@@ -4,8 +4,8 @@ The token comes from the operator's environment only (`Settings`) and lives in
 one `Forge` object, which the app hands to whoever reads: the probe route, the
 worker, readiness. It is not a process global and never in a `repr`. Nothing a
 project member sets can change where it is sent. Requests go to the fixed API
-host of the forge kind, and a redirect to any other host is refused, so the
-token never leaves for a host the operator did not choose.
+host of the forge kind, and no redirect is followed, so the token never
+leaves for a host the operator did not choose.
 
 The operator's token reads only public repositories (§11.4): it may see the
 operator's own private ones, which no project should see through the probe, so
@@ -43,8 +43,9 @@ class ForgeUnavailableError(Exception):
 
 class NotCoveredError(ForgeUnavailableError):
     """No source the hub holds may read the repository (§11.4): `reason` is
-    `private_without_grant` (the forge reports it private) or `no_grant` (the
-    token cannot see it at all). A read that is refused, not a forge that failed."""
+    `private_without_grant` (the forge reports it private), `no_grant` (the token
+    cannot see it at all) or `repository_moved` (the forge redirects the read). A
+    read that is refused, not a forge that failed."""
 
     def __init__(self, reason: str) -> None:
         super().__init__(f"no source covers the repository ({reason})")
@@ -66,8 +67,10 @@ def repository_of(url: str) -> str:
 
 
 class _SameHostOnly(urllib.request.HTTPRedirectHandler):
-    """Follows a redirect only to https://api.github.com on the default port: the
-    Authorization header goes with it, so plain HTTP or another port would leak it."""
+    """Follows no redirect (§11.4). Within https://api.github.com it is a renamed or
+    moved repository: reads stop until a project admin sets the new URL, which the
+    namespace owner then confirms again. Anywhere else it is refused like any failure:
+    the Authorization header would go with it."""
 
     def redirect_request(
         self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str
@@ -79,7 +82,7 @@ class _SameHostOnly(urllib.request.HTTPRedirectHandler):
             port = -1
         if target.scheme != "https" or target.hostname != API_HOST or port not in (None, 443):
             raise ForgeUnavailableError(f"the forge redirected elsewhere ({code})")
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
+        raise NotCoveredError("repository_moved")
 
 
 _opener = urllib.request.build_opener(_SameHostOnly)
@@ -146,7 +149,20 @@ class Forge:
             if repository is None:
                 raise ForgeUnavailableError("a read with the forge token names no repository")
             self._require_public(repository)
+            try:
+                return self._send(path, query)
+            except ForgeUnavailableError as error:
+                # A 404 is often an answer (a ref that is not there): `_missing` asks again.
+                refused = error.status in (401, 403) and not error.rate_limited
+                if refused or isinstance(error, NotCoveredError):
+                    self._forget(repository)
+                raise
         return self._send(path, query)
+
+    def _forget(self, repository: str) -> None:
+        """A refused read (§11.4): the next one asks again whether the repository is public."""
+        key = (hashlib.sha256((self.token or "").encode()).hexdigest(), repository.lower())
+        _public.pop(key, None)
 
     def _require_public(self, repository: str) -> None:
         """Raises `NotCoveredError` unless the forge reported the repository public within
@@ -155,9 +171,15 @@ class Forge:
         key = (hashlib.sha256((self.token or "").encode()).hexdigest(), repository)
         known = _public.get(key)
         if known is None or time.monotonic() - known[0] >= PUBLIC_SECONDS:
-            found = self._send(f"/repos/{repository}")
-            if found is None:
-                reason: str | None = "no_grant"
+            try:
+                found = self._send(f"/repos/{repository}")
+            except NotCoveredError as error:  # moved: kept like the other refusals
+                found = error
+            reason: str | None
+            if isinstance(found, NotCoveredError):
+                reason = found.reason
+            elif found is None:
+                reason = "no_grant"
             elif isinstance(found, dict) and found.get("private") is False:
                 reason = None
             elif isinstance(found, dict) and found.get("private") is True:
@@ -204,11 +226,13 @@ class Forge:
 
     def _missing(self, repository: str) -> None:
         """A 404 for a ref is an answer only when the token can see the repository: GitHub
-        answers 404 for a private repository the token has no access to, too."""
+        answers 404 for a private repository the token has no access to, too. Asking
+        that is also the refusal of §11.4: whether it is public is asked again with it."""
         key = (hashlib.sha256((self.token or "").encode()).hexdigest(), repository)
         seen = _visible.get(key)
         if seen is not None and time.monotonic() - seen < VISIBILITY_SECONDS:
             return
+        self._forget(repository)
         if self._get(f"/repos/{repository}") is None:
             raise ForgeUnavailableError("the repository is not visible to the forge token")
         _visible[key] = time.monotonic()
@@ -454,6 +478,7 @@ class Forge:
             raise ForgeUnavailableError("the forge answered GraphQL with no object")
         repo = (found.get("data") or {}).get("repository")
         if repo is None:
+            self._forget(repository)  # GraphQL's refusal: no repository, an answer of 200
             errors = found.get("errors") or []
             if all(isinstance(e, dict) and e.get("type") == "NOT_FOUND" for e in errors):
                 return None
@@ -488,7 +513,10 @@ class Forge:
         errors = found.get("errors") or []
         if any(not isinstance(e, dict) or e.get("type") != "NOT_FOUND" for e in errors):
             raise ForgeUnavailableError("the forge answered GraphQL with errors")
-        repo = (found.get("data") or {}).get("repository") or {}
+        repo = (found.get("data") or {}).get("repository")
+        if repo is None:
+            self._forget(repository)
+            repo = {}
         answer: dict[int, dict[str, Any] | None] = {}
         for n in numbers:
             item = repo.get(f"n{n}")

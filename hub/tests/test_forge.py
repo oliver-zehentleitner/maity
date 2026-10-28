@@ -152,30 +152,34 @@ def test_a_redirect_leaves_https_api_github_com_only_by_refusal(target: str) -> 
 @pytest.mark.parametrize(
     "target", ["https://api.github.com/repositories/1", "https://api.github.com:443/repositories/1"]
 )
-def test_a_redirect_within_the_api_host_is_followed(target: str) -> None:
+def test_a_redirect_within_the_api_host_is_a_moved_repository_not_followed(target: str) -> None:
+    """§11.4: a renamed or moved repository stops reads until its new URL is set."""
     handler = forge._SameHostOnly()
     request = urllib.request.Request("https://api.github.com/repos/a/b")
-    assert handler.redirect_request(request, None, 301, "Moved", {}, target).full_url == target
+    with pytest.raises(forge.NotCoveredError) as raised:
+        handler.redirect_request(request, None, 301, "Moved", {}, target)
+    assert raised.value.reason == "repository_moved"
 
 
 # --- a repository the token cannot see -----------------------------------------------------
 
 
 def test_a_missing_ref_in_a_visible_repository_is_an_answer(opener: FakeOpener) -> None:
-    opener.answers["/repos/a/b"] = {"full_name": "a/b"}
+    opener.answers["/repos/a/b"] = {"full_name": "a/b", "private": False}
     opener.answers["/repos/a/b/pulls/9"] = None
     opener.answers["/repos/a/b/branches/gone"] = None
     assert READER.pull_request("a/b", 9) == {"number": 9, "found": False}
     assert READER.branch("a/b", "gone")["found"] is False
     visibility = [r for r in opener.requests if r.full_url.endswith("/repos/a/b")]
-    assert len(visibility) == 1  # asked once, then remembered
+    assert len(visibility) == 2  # public (§11.4) and visible, asked once, then remembered
 
 
 def test_a_repository_the_token_cannot_see_is_unavailable_not_missing(opener: FakeOpener) -> None:
     opener.answers["/repos/a/b"] = None
     opener.answers["/repos/a/b/pulls/9"] = None
-    with pytest.raises(forge.ForgeUnavailableError, match="not visible"):
+    with pytest.raises(forge.NotCoveredError) as raised:
         READER.pull_request("a/b", 9)
+    assert raised.value.reason == "no_grant"
 
 
 # --- the operator's token reads public repositories only (§11.4) ---------------------------
@@ -251,6 +255,66 @@ def test_a_repository_turned_private_stops_at_the_next_check(
     with pytest.raises(forge.NotCoveredError):
         READER.branch("a/b", "main")
     assert _paths(seen).count("/repos/a/b") == 2
+
+
+def test_a_moved_repository_is_refused_and_remembered(seen: FakeOpener) -> None:
+    seen.answers["/repos/a/b"] = forge.NotCoveredError("repository_moved")  # the 301
+    for _ in range(2):
+        with pytest.raises(forge.NotCoveredError) as raised:
+            READER.branch("a/b", "main")
+        assert raised.value.reason == "repository_moved"
+    assert _paths(seen) == ["/repos/a/b"]
+
+
+def test_a_read_redirected_after_the_check_asks_again_next_time(seen: FakeOpener) -> None:
+    seen.answers["/repos/a/b"] = {"private": False}
+    seen.answers["/repos/a/b/branches/main"] = forge.NotCoveredError("repository_moved")
+    with pytest.raises(forge.NotCoveredError):
+        READER.branch("a/b", "main")
+    seen.answers["/repos/a/b"] = forge.NotCoveredError("repository_moved")
+    with pytest.raises(forge.NotCoveredError) as raised:
+        READER.branch("a/b", "main")
+    assert raised.value.reason == "repository_moved"
+    assert _paths(seen) == ["/repos/a/b", "/repos/a/b/branches/main", "/repos/a/b"]
+
+
+@pytest.mark.parametrize("refusal", [401, 403, None])  # None: a 404, through `_missing`
+def test_a_refused_read_asks_again_whether_it_is_public(
+    seen: FakeOpener, refusal: int | None
+) -> None:
+    """§11.4: at once after a refusal, not only after 10 minutes."""
+    seen.answers["/repos/a/b"] = {"private": False}
+    seen.answers["/repos/a/b/branches/main"] = {"commit": {"sha": SHA}}
+    READER.branch("a/b", "main")
+    seen.answers["/repos/a/b"] = {"private": True}
+    seen.answers["/repos/a/b/pulls/9"] = refusal
+    with pytest.raises(forge.ForgeUnavailableError):
+        READER.pull_request("a/b", 9)
+    with pytest.raises(forge.NotCoveredError) as raised:
+        READER.branch("a/b", "main")
+    assert raised.value.reason == "private_without_grant"
+    assert _paths(seen).count("/repos/a/b/branches/main") == 1
+
+
+def test_a_rate_limit_is_no_refusal(seen: FakeOpener) -> None:
+    seen.answers["/repos/a/b"] = {"private": False}
+    seen.answers["/repos/a/b/branches/main"] = (403, {"X-RateLimit-Remaining": "0"})
+    with pytest.raises(forge.ForgeUnavailableError) as raised:
+        READER.branch("a/b", "main")
+    assert raised.value.rate_limited
+    seen.answers["/repos/a/b/branches/main"] = {"commit": {"sha": SHA}}
+    READER.branch("a/b", "main")
+    assert _paths(seen).count("/repos/a/b") == 1
+
+
+def test_a_graphql_refusal_asks_again_whether_it_is_public(seen: FakeOpener) -> None:
+    seen.answers["/repos/a/b"] = {"private": False}
+    seen.answers["/graphql"] = {"data": {"repository": None}, "errors": [{"type": "NOT_FOUND"}]}
+    assert READER.items("a/b", [1]) == {1: None}
+    seen.answers["/repos/a/b"] = {"private": True}
+    with pytest.raises(forge.NotCoveredError):
+        READER.items("a/b", [1])
+    assert _paths(seen) == ["/repos/a/b", "/graphql", "/repos/a/b"]
 
 
 def test_a_read_naming_no_repository_is_not_made_with_the_token(seen: FakeOpener) -> None:
@@ -351,8 +415,9 @@ def test_repository_visibility_is_remembered_per_token(opener: FakeOpener) -> No
     other = forge.Forge("another-token")
     other.pull_request("a/b", 9)
     visibility = [r for r in opener.requests if r.full_url.endswith("/repos/a/b")]
-    # each token asked for itself; the other one also whether it is public (§11.4)
-    assert len(visibility) == 3
+    # each token asked for itself: whether it is public (§11.4, the other token also before
+    # its first read) and whether it is visible
+    assert len(visibility) == 5
     assert all(TOKEN not in str(key) for key in [*forge._visible, *forge._public])
 
 
