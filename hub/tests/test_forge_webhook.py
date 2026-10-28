@@ -26,7 +26,7 @@ from tests.test_probe import READER, REPO, TOKEN, FakeGitHub
 from tests.test_ticker_merges import merged, project_id
 
 KEY = os.urandom(32)
-HOOK = "/api/v1/projects/maity/forge/webhook"
+HOOK = "/api/v1/projects/maintainer/maity/forge/webhook"
 
 
 @pytest.fixture(autouse=True)
@@ -56,7 +56,7 @@ def owner(make_client: ClientFactory, migrated: Engine, github: FakeGitHub) -> f
 
 
 def secret(owner: flow.Human) -> str:
-    response = owner.post("/projects/maity/forge/webhook/secret", {})
+    response = owner.post("/projects/maintainer/maity/forge/webhook/secret", {})
     assert response.status_code == 201, response.text
     value: str = response.json()["secret"]
     return value
@@ -102,10 +102,10 @@ def jobs(owner: flow.Human) -> list[Any]:
 def test_the_secret_is_answered_once_and_sealed_at_rest(
     owner: flow.Human, migrated: Engine
 ) -> None:
-    response = owner.post("/projects/maity/forge/webhook/secret", {})
+    response = owner.post("/projects/maintainer/maity/forge/webhook/secret", {})
     body = response.json()
-    assert body["url"] == "https://hub.example/api/v1/projects/maity/forge/webhook"
-    view = owner.get("/projects/maity/forge/webhook").json()
+    assert body["url"] == "https://hub.example/api/v1/projects/maintainer/maity/forge/webhook"
+    view = owner.get("/projects/maintainer/maity/forge/webhook").json()
     assert view["configured"] is True and "secret" not in view
     with migrated.connect() as conn:
         row = conn.execute(select(t.forge_webhook)).one()
@@ -136,7 +136,7 @@ def test_without_the_instance_key_no_secret_is_stored(
     client = make_client(secret_key=None)
     human = flow.human(lambda **_: client, migrated)
     flow.project(human, "maity", repository=REPO)
-    response = human.post("/projects/maity/forge/webhook/secret", {})
+    response = human.post("/projects/maintainer/maity/forge/webhook/secret", {})
     assert (response.status_code, response.json()["error"]["code"]) == (409, "secret_key_missing")
 
 
@@ -144,13 +144,13 @@ def test_an_agent_admin_does_not_manage_the_webhook(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
     agent = flow.agent(make_client, owner, role="admin")
-    assert agent.post("/projects/maity/forge/webhook/secret", {}).status_code == 403
-    assert agent.get("/projects/maity/forge/webhook").status_code == 403
+    assert agent.post("/projects/maintainer/maity/forge/webhook/secret", {}).status_code == 403
+    assert agent.get("/projects/maintainer/maity/forge/webhook").status_code == 403
 
 
 def test_removing_the_secret_refuses_deliveries(owner: flow.Human) -> None:
     key = secret(owner)
-    assert owner.delete("/projects/maity/forge/webhook/secret").status_code == 200
+    assert owner.delete("/projects/maintainer/maity/forge/webhook/secret").status_code == 200
     assert deliver(owner.client, {}, key).status_code == 401
 
 
@@ -176,14 +176,14 @@ def test_a_ping_is_accepted_and_recorded(owner: flow.Human) -> None:
     key = secret(owner)
     response = deliver(owner.client, {"zen": "hi"}, key)
     assert (response.status_code, response.json()) == (202, {})
-    view = owner.get("/projects/maity/forge/webhook").json()
+    view = owner.get("/projects/maintainer/maity/forge/webhook").json()
     assert view["last_result"] == "ok" and view["last_delivery_at"]
 
 
 def test_an_unverified_request_records_nothing(owner: flow.Human) -> None:
     secret(owner)
     deliver(owner.client, {}, "wrong")
-    assert owner.get("/projects/maity/forge/webhook").json()["last_delivery_at"] is None
+    assert owner.get("/projects/maintainer/maity/forge/webhook").json()["last_delivery_at"] is None
 
 
 def test_a_closed_pull_request_makes_the_probe_look_when_the_ticker_is_on(
@@ -193,8 +193,8 @@ def test_a_closed_pull_request_makes_the_probe_look_when_the_ticker_is_on(
     body = {"action": "closed", "pull_request": {"number": 7, "merged": True}}
     assert deliver(owner.client, body, key, "pull_request").status_code == 202
     assert jobs(owner) == [], "the ticker is off: nothing is announced"
-    assert owner.get("/projects/maity/forge/webhook").json()["last_result"] == "ignored"
-    owner.patch("/projects/maity", {"settings": {"ticker": {"enabled": True}}})
+    assert owner.get("/projects/maintainer/maity/forge/webhook").json()["last_result"] == "ignored"
+    owner.patch("/projects/maintainer/maity", {"settings": {"ticker": {"enabled": True}}})
     assert deliver(owner.client, body, key, "pull_request").status_code == 202
     [job] = jobs(owner)
     assert job[0] == "merges" and job[2] == "d-1"
@@ -204,7 +204,7 @@ def test_a_successful_deployment_is_announced_once_to_everyone_waking_no_one(
     owner: flow.Human, github: FakeGitHub, migrated: Engine
 ) -> None:
     key = secret(owner)
-    owner.patch("/projects/maity", {"settings": {"ticker": {"enabled": True}}})
+    owner.patch("/projects/maintainer/maity", {"settings": {"ticker": {"enabled": True}}})
     github.answers["/repos/acme/maity/deployments/42"] = {
         "environment": "production",
         "sha": "1cddc4d" + "0" * 33,
@@ -240,7 +240,7 @@ def test_a_successful_deployment_is_announced_once_to_everyone_waking_no_one(
 def test_a_deployment_the_forge_does_not_call_successful_writes_nothing(
     owner: flow.Human, github: FakeGitHub, migrated: Engine
 ) -> None:
-    owner.patch("/projects/maity", {"settings": {"ticker": {"enabled": True}}})
+    owner.patch("/projects/maintainer/maity", {"settings": {"ticker": {"enabled": True}}})
     github.answers["/repos/acme/maity/deployments/43"] = {"environment": "staging", "sha": "a" * 40}
     github.answers["/repos/acme/maity/deployments/43/statuses?per_page=1"] = [{"state": "failure"}]
     with migrated.connect() as conn:
@@ -323,7 +323,7 @@ def test_a_full_slug_bucket_takes_no_place_of_the_address(
 ) -> None:
     # Refused at once on one slug, the address keeps its places for the others.
     secret(owner)
-    forge_webhook.UNVERIFIED.take("maity|192.0.2.7", 60)
+    forge_webhook.UNVERIFIED.take("maintainer/maity|192.0.2.7", 60)
     assert held(migrated, [HOOK] * 60 + [UNKNOWN]) == ([429] * 60, 1)
 
 
@@ -333,7 +333,10 @@ def test_sixty_verified_deliveries_a_minute_per_project(owner: flow.Human) -> No
         assert deliver(owner.client, {}, key).status_code == 202
     over = deliver(owner.client, {}, key)
     assert (over.status_code, over.json()["error"]["code"]) == (429, "rate_limited")
-    assert owner.get("/projects/maity/forge/webhook").json()["last_result"] == "rate_limited"
+    assert (
+        owner.get("/projects/maintainer/maity/forge/webhook").json()["last_result"]
+        == "rate_limited"
+    )
 
 
 def test_a_body_declared_too_large_or_of_no_length_is_refused_alike(owner: flow.Human) -> None:
@@ -421,7 +424,7 @@ def test_parallel_requests_to_unknown_slugs_read_at_most_sixty_bodies_per_addres
 
 def test_a_body_nested_too_deep_is_invalid(owner: flow.Human) -> None:
     key = secret(owner)
-    owner.patch("/projects/maity", {"settings": {"ticker": {"enabled": True}}})
+    owner.patch("/projects/maintainer/maity", {"settings": {"ticker": {"enabled": True}}})
     raw = b"[" * 100_000 + b"]" * 100_000
     headers = {"X-GitHub-Event": "pull_request", "X-Hub-Signature-256": signature(key, raw)}
     response = owner.client.post(HOOK, content=raw, headers=headers)
@@ -430,21 +433,21 @@ def test_a_body_nested_too_deep_is_invalid(owner: flow.Human) -> None:
 
 def test_an_unrelated_event_is_ignored(owner: flow.Human) -> None:
     key = secret(owner)
-    owner.patch("/projects/maity", {"settings": {"ticker": {"enabled": True}}})
+    owner.patch("/projects/maintainer/maity", {"settings": {"ticker": {"enabled": True}}})
     body = {"action": "closed", "pull_request": {"number": 7}, "deployment": {"id": 4}}
     for event in ("push", "pull_request_review", "deployment"):
         assert deliver(owner.client, body, key, event).status_code == 202
     assert deliver(owner.client, {"action": "opened"}, key, "pull_request").status_code == 202
     assert deliver(owner.client, {"deployment": {"id": "4"}}, key, "deployment_status")
     assert jobs(owner) == []
-    assert owner.get("/projects/maity/forge/webhook").json()["last_result"] == "ignored"
+    assert owner.get("/projects/maintainer/maity/forge/webhook").json()["last_result"] == "ignored"
 
 
 def test_a_signed_body_that_is_not_an_object_is_invalid_in_the_envelope(
     owner: flow.Human,
 ) -> None:
     key = secret(owner)
-    owner.patch("/projects/maity", {"settings": {"ticker": {"enabled": True}}})
+    owner.patch("/projects/maintainer/maity", {"settings": {"ticker": {"enabled": True}}})
     for body in ([1], "text", 7):
         response = deliver(owner.client, body, key, "pull_request")
         assert (response.status_code, response.json()["error"]["code"]) == (400, "invalid")
@@ -468,7 +471,7 @@ def test_two_signature_headers_are_refused(owner: flow.Human) -> None:
 
 def test_a_delivery_id_is_kept_only_in_its_shape(owner: flow.Human) -> None:
     key = secret(owner)
-    owner.patch("/projects/maity", {"settings": {"ticker": {"enabled": True}}})
+    owner.patch("/projects/maintainer/maity", {"settings": {"ticker": {"enabled": True}}})
     body = {"action": "closed", "pull_request": {"number": 7}}
     for given, kept in (
         ("72d3162e-cc78-11e3-81ab-4c9367dc0958", "72d3162e-cc78-11e3-81ab-4c9367dc0958"),
@@ -485,7 +488,7 @@ def test_the_secret_appears_in_no_log(owner: flow.Human, caplog: pytest.LogCaptu
     key = secret(owner)
     deliver(owner.client, {}, key)
     deliver(owner.client, {}, "wrong")
-    owner.get("/projects/maity/forge/webhook")
+    owner.get("/projects/maintainer/maity/forge/webhook")
     assert caplog.records
     assert not [r for r in caplog.records if key in r.getMessage()]
 
@@ -493,7 +496,7 @@ def test_the_secret_appears_in_no_log(owner: flow.Human, caplog: pytest.LogCaptu
 def test_only_the_named_merge_carries_the_delivery(
     owner: flow.Human, github: FakeGitHub, migrated: Engine
 ) -> None:
-    owner.patch("/projects/maity", {"settings": {"ticker": {"enabled": True}}})
+    owner.patch("/projects/maintainer/maity", {"settings": {"ticker": {"enabled": True}}})
     merged(github, 7, [])
     merged(github, 8, [])
     assert probe.announce_merges(migrated, READER, project_id(migrated), "d-1", 7) == 2
@@ -509,7 +512,7 @@ def test_only_the_named_merge_carries_the_delivery(
 def test_a_deployment_out_of_bounds_writes_nothing(
     owner: flow.Human, github: FakeGitHub, migrated: Engine
 ) -> None:
-    owner.patch("/projects/maity", {"settings": {"ticker": {"enabled": True}}})
+    owner.patch("/projects/maintainer/maity", {"settings": {"ticker": {"enabled": True}}})
     ok = [{"state": "success"}]
     cases = {
         50: {"environment": "e" * 65, "sha": "a" * 40},
@@ -535,7 +538,7 @@ def test_a_secret_the_key_does_not_open_counts_as_not_set(
     owner: flow.Human, migrated: Engine, caplog: pytest.LogCaptureFixture
 ) -> None:
     secret(owner)
-    assert owner.get("/projects/maity/forge/webhook").json()["configured"] is True
+    assert owner.get("/projects/maintainer/maity/forge/webhook").json()["configured"] is True
     assert forge_webhook.check_secrets(migrated, KEY) == 0
     assert forge_webhook.check_secrets(migrated, os.urandom(32)) == 1
     assert forge_webhook.check_secrets(migrated, None) == 1
@@ -546,7 +549,7 @@ def test_a_secret_the_key_does_not_open_counts_as_not_set(
                 secret_sealed=secretbox.seal(KEY, forge_webhook.field("prj-other"), b"x")
             )
         )
-    view = owner.get("/projects/maity/forge/webhook").json()
+    view = owner.get("/projects/maintainer/maity/forge/webhook").json()
     assert view["configured"] is False, "a secret copied from another project's row"
 
 

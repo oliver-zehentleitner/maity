@@ -47,7 +47,7 @@ window.Maity = window.Maity || {};
     let from = 0;
     for (const m of s.matchAll(ID)) {
       const href = m[1]
-        ? (slug ? "#/p/" + encodeURIComponent(slug) + "/" + { tsk: "tasks", req: "inbox", agt: "members", hum: "members" }[m[1]] + "/" + m[0] : null)
+        ? (slug ? "#/" + M.api.projectPath(slug) + "/" + { tsk: "tasks", req: "inbox", agt: "members", hum: "members" }[m[1]] + "/" + m[0] : null)
         : (forge ? forge + "/issues/" + m[3] : null);
       if (!href && !m[1]) continue;
       if (m.index > from) out.push(s.slice(from, m.index));

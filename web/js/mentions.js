@@ -1,5 +1,5 @@
 // The @ picker (docs/api.md §8.6): typing @ in a text the hub scans offers
-// the project's members by handle, from GET /projects/{slug}/members, which
+// the project's members by handle, from GET /projects/{owner}/{slug}/members, which
 // the writer may already read. It only helps to type a handle: the hub
 // resolves mentions at write time, and nothing the picker knows is sent.
 "use strict";

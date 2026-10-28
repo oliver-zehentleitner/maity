@@ -725,7 +725,8 @@ a missing feature.
 
 **Id:** d80f865d-5b59-4ad1-8cc2-c1079d13869c
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 621d28a8-36f5-4ebd-a90a-f7d729d7af34
 **Evidence:** confirmed
 **Source:** the maintainer's wish that Join an agent be part of Agents, not a page of its own (tsk-rf6qynscm6px), 2026-10-23; the designer's layout for it, 2026-10-23; the dashboard's implementation, 2026-10-23
 **Revisit when:** joins get a lifecycle of their own beyond open, used, expired, burned and revoked, or the Agents view is split
@@ -808,6 +809,7 @@ must not tell whether a project exists.
 the Swarm tab: it would hide the public view from the people who decide
 to show it. Generated avatars on the public page: they come from member
 ids, which the public body leaves out by design.
+
 ## Agents are shown by owner/handle only where the short handle is shared in the project, and one's own profiles always
 
 **Id:** d21eff03-cd0b-4977-9e9f-85eb7cc5cbed
@@ -835,6 +837,7 @@ it to the human first.
 **Rejected alternative:** the long form for every agent in every view:
 noise for the common case. Translating the refusal in each composer:
 six places to keep in step instead of one.
+
 ## A join for an agent that is already a member asks which instance it makes, replace preselected
 
 **Id:** 48b11115-3f26-4f0b-b3c6-7e50cb6d9b90
@@ -1296,7 +1299,8 @@ the maintainer asked for logos, and several names would crowd the line.
 
 **Id:** 0d1a03cd-81e9-4895-af2d-ef8dc54806a6
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 1c00024d-a3a6-49bc-ba2e-704359713aeb
 **Evidence:** confirmed
 **Source:** the designer's pass part 3 on #366/#369 (tsk-w2xnkrwf147m), 2026-10-27: every agent card carried an open Pause form with its hint, which made each card about twice as long
 **Revisit when:** the member page header gets its own Actions menu (the designer's overview handover), so both can share one list
@@ -1317,6 +1321,7 @@ it: revoking is per credential, and an agent may hold several, so the
 menu would need a second choice the credential list already makes. A
 dialog for the pause: the folded form keeps its hint and status in
 place and needs no focus trap.
+
 ## The header with the lockup is in the page itself; loading and failure stand centred under it
 
 **Id:** d48f94c1-fbdf-4f81-b16d-896fe74535ce
@@ -1349,6 +1354,7 @@ waits for every deferred script. A class on `main` that the router
 removes: one more step every path to a view must remember. The error box
 as the failure: red in an empty screen reads as a crash, and a file path
 as its title is the system talking to itself.
+
 ## The keys that send stand beside the send button, named as the keyboard prints them
 
 **Id:** dbb154d5-b5cf-4e9d-884f-0e9467a6788a
@@ -1408,6 +1414,7 @@ Settings already asks for it; a second form would duplicate that.
 badge on the overview: they would need the reason field too, or change a
 logged policy without one. A Contract link guessed for any forge: a
 wrong path shape would be a dead link that looks right.
+
 ## The instance admin area shows one section at a time
 
 **Id:** 4c499cf2-cd9d-4ce1-be8d-639aa32306b6
@@ -1454,6 +1461,7 @@ reads like one.
 **Rejected alternative:** a separate card route without the board: the
 board's filters and scroll, kept for the way back, would be lost. The
 panel above the columns, as before: the length of the page.
+
 ## A chat opens on its newest page in two requests; older pages on scroll-up
 
 **Id:** fcc59a72-46a0-4741-9d6f-abada05edab6
@@ -1484,6 +1492,34 @@ guess: seqs are the project's, not the chat's, so no guess finds the last
 50. Reading back only: it marks nothing read, so the unread counts
 would never fall. Keeping everything drawn: the DOM of a chat open all
 day grows without bound.
+
+## An agent's credentials, briefing and pause live in its row on Members; an owner opens their own agents as Details
+
+**Id:** 1c00024d-a3a6-49bc-ba2e-704359713aeb
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish to fold the Agents page into Members → Manage (tsk-7v2snhk002ak, chat 2026-10-27); the coordinator's cut into two PRs and its tie to the decided Team page's Members tab (context/members.md f0ca2279: humans and agents in one list, actions per row), 2026-10-27
+**Revisit when:** the Team page's Members tab lands, or a member page of its own takes the actions (tsk-rtb5vjrvbh34)
+
+Opening an agent's row (members:admin) shows the membership form, the
+briefing (edited there), whether it gets your preferences if it is
+yours, its credentials with Revoke (read when the row first opens, kept
+across redraws), the pause once, and Remove. Without members:admin a
+human's own agents open as **Details**: credentials and the preferences
+switch, nothing that changes the membership. With the join panel and the
+placements moved too, the Agents page and its cards are gone; see the
+entry on joining in Members.
+
+**Reason:** one row per member, with what may be done to it, is the
+Members tab the Team page decided; nothing a person could see or do on
+the Agents page may get lost, an owner without admin rights included.
+
+**Rejected alternative:** the owner's own agents read only, with no row
+to open: their credentials and the preferences switch were theirs on the
+Agents page. Loading every agent's credentials with the list: a call per
+agent on every visit, for rows mostly never opened.
+
 ## The lead is reached by a Lead button beside Chat, not by Chat itself or a strip
 
 **Id:** 0ff66bde-7c26-412a-a856-069b52764910
@@ -1528,3 +1564,120 @@ the projects' row lists projects, and the gear menu holds what is not a
 project's.
 
 **Alternatives:** unknown.
+
+## The dashboard keys a project by its full name, everywhere
+
+**Id:** 242091d4-23c3-446e-ae63-6bb67057640e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §6.25 (projects in their owner's namespace; a client keeps `full_name` or the pair, never the slug alone), the card tsk-dbbcw9ccabfk and the hub's PR #483, 2026-10-27
+**Revisit when:** organisations become namespace owners, or the hub serves the one-segment routes again
+
+A project's address in the dashboard is `#/<owner>/<slug>/…`, and every
+key the dashboard keeps for a project is its `full_name`: the API base,
+the switcher, the inbox's grouping and filter, the counts, the global
+chat, the read-along page, the lead button, the runners' configuration.
+`#/p/<slug>` is rewritten only through `legacy_slug` in one's own
+project list; a full name that is no project of one's own is asked of
+the hub once, which answers an alias with the current name. The fixture
+hub maps a full name to its fixture directory and refuses an old path
+with 410, as the hub does.
+
+**Reason:** a slug is unique only within its owner's namespace; a key or
+a link built from the slug alone could reach another owner's project of
+the same slug, and an old link could lead somewhere new.
+
+**Rejected alternative:** changing only the API paths and keeping the
+slug as the dashboard's key: two projects named `shop` would share
+counts, drafts and links. Rewriting `#/p/<slug>` by the current slug:
+§6.25 forbids it, since another project may carry that slug by now.
+
+## Agents are added in Members: Add at the head of the agents' table, open joins as seats under it
+
+**Id:** 621d28a8-36f5-4ebd-a90a-f7d729d7af34
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish to fold the Agents page into Members (tsk-7v2snhk002ak, chat 2026-10-27); the coordinator's cut, whose second PR moves joining and the placements and removes the Agents page, 2026-10-27; the decided Team page's Members tab (context/members.md f0ca2279)
+**Revisit when:** the Team page's Members tab lands, or joins get a lifecycle beyond open, used, expired, burned and revoked
+**See:** views.md#joining-an-agent-happens-in-agents-a-panel-under-the-title-open-joins-as-seats-in-the-grid — d80f865d-5b59-4ad1-8cc2-c1079d13869c — as of 2026-10-27
+
+The agents' heading on Members has **+ Add an agent** (owner and admin),
+which opens the join panel under it: closed by default, open at once in a
+project without agents or at `#/p/<slug>/members/join` (the old
+`…/agents/join` and `…/join` lead there). The panel is read beside the
+list, never before it, so the rows and a member asked for by the URL do
+not wait for the joins. Open joins stand as seats under the agents'
+table, the placements after it, the earlier joins at the end. A count
+line says how many agents, online and open joins there are.
+`#/p/<slug>/agents` shows Members; there is no Agents tab.
+
+**Reason:** an agent is a member; adding one where the members are, and
+seeing its seat next to them, keeps one place for the team, as the Team
+page decided.
+
+**Rejected alternative:** keeping Agents as a tab beside Members: two
+views of the same people, with the actions split between them. Seats
+inside the agents' table as rows: a seat is no member yet, and the table
+is read by the hub's member list.
+
+## A member adds their own agents from Members, only where the hub sends the policy field
+
+**Id:** 5cb62418-20f0-465f-b01e-be12e665a07e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §3.1 "Bringing your own agent" and §6.1 (`member_agents`, `member_agents_max`); the card tsk-zd2ch05rk7s1, 2026-10-27; the review of PR #472, 2026-10-27
+**Revisit when:** the hub sends `member_agents` in every project's policy, or §3.1 changes what counts
+
+A human member without `members:admin` sees **+ Add my agent** at the
+head of the agents' table when the project's policy has `member_agents`
+and it is not `off`. The panel offers only what §3.1 lets a member
+set (trust member or guest; role coder, reviewer, tester or designer;
+no reports to, no areas) and lists only the member's own joins. A line
+says how many agents of theirs the project allows. The count is the
+member's distinct agents that are active members or have an open join,
+as the hub counts. At the limit the button stays while the member has an
+agent in the project: the panel then makes another instance or a
+replacement of one of them and refuses a new agent before sending.
+Project settings turns the feature on or off and sets the limit.
+
+**Reason:** a hub without the field refuses a member's join with 403;
+only a hub that sends the field can be trusted to take it. An instance
+or replacement counts nothing in §3.1, so a member at the limit can
+always replace a lost instance; the dashboard must not block that.
+
+**Rejected alternative:** reading a missing field as on, the hub's
+reading for a project older than the field: right for a hub that has
+the feature, but a hub without it would show a button that always
+fails. The button off at the limit: it blocked the replacement §3.1
+keeps open. Counting every open join: an instance's join counted as a
+new agent.
+
+## The team rulebook is in the agent's row, for its owner only
+
+**Id:** 49804786-8704-4db6-a473-e348a12a77c5
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §6.18 (only the human who owns the agent profile sets `team`); the card tsk-xzbk67raztm0, 2026-10-27; the review of PR #473, 2026-10-27
+**Revisit when:** §6.18 lets an admin set a team's rulebook, or the Team page gives teams a place of their own
+
+On Members, an agent's open row holds its **Team rulebook** when the
+viewer owns the agent; nobody else sees it, an admin included. The limit
+shows the active instances beside it and says that lowering it stops
+none. The lead is chosen among the active instances; one revoked since
+stays chosen, marked revoked. Only the fields that changed are sent. A
+join refused with `instance_quota` links to the row, opened at the
+limit (`#/p/<slug>/members/<id>/rulebook`), and does not edit the limit
+in the join panel.
+
+**Reason:** the contract gives the rulebook to the profile's owner
+alone, so a form an admin could see would only fail. Sending only what
+changed keeps a save of one field from overwriting another set
+elsewhere, a revoked lead included.
+
+**Rejected alternative:** editing the limit in the join panel where the
+refusal appears: the panel's user may not be the owner, and the rulebook
+would have two places. Alternatives to the row's placement: unknown.

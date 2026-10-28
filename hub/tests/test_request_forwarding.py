@@ -30,11 +30,13 @@ def admin_human(make_client: ClientFactory, migrated: Engine, handle: str) -> fl
 
 
 def forward(who: Any, request: dict[str, Any], to: str, **body: Any) -> Any:
-    return who.post(f"/projects/maity/requests/{request['id']}/forward", {"to": to, **body})
+    return who.post(
+        f"/projects/maintainer/maity/requests/{request['id']}/forward", {"to": to, **body}
+    )
 
 
 def claim(who: Any, request: dict[str, Any]) -> Any:
-    return who.post(f"/projects/maity/requests/{request['id']}/claim", {})
+    return who.post(f"/projects/maintainer/maity/requests/{request['id']}/claim", {})
 
 
 def reason(response: Any) -> Any:
@@ -46,7 +48,7 @@ def field(response: Any, name: str) -> Any:
 
 
 def mine(who: Any) -> list[str]:
-    return [r["id"] for r in who.get("/projects/maity/requests?to=me").json()["items"]]
+    return [r["id"] for r in who.get("/projects/maintainer/maity/requests?to=me").json()["items"]]
 
 
 def test_the_holder_forwards_to_an_admin_who_then_answers_alone(

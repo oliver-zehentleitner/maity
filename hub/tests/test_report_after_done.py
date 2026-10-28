@@ -22,7 +22,7 @@ def setup(
     flow.project(owner)
     agent = flow.agent(make_client, owner)
     card = task(owner)
-    agent.post(f"/projects/maity/tasks/{card['id']}/claim", {})
+    agent.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
     body = _report(
         pr_status="found",
         pr={
@@ -32,8 +32,10 @@ def setup(
             "state": "open",
         },
     )
-    assert agent.post(f"/projects/maity/tasks/{card['id']}/report", body).status_code == 200
-    result = owner.patch(f"/projects/maity/tasks/{card['id']}", {"status": "done"})
+    assert (
+        agent.post(f"/projects/maintainer/maity/tasks/{card['id']}/report", body).status_code == 200
+    )
+    result = owner.patch(f"/projects/maintainer/maity/tasks/{card['id']}", {"status": "done"})
     assert result.status_code == 200, result.text
     return owner, agent, result.json(), body
 
@@ -44,7 +46,7 @@ def test_report_after_done_preserves_closure_and_schedules_probe(
     setup: Any, migrated: Engine, done: bool, claimless: bool
 ) -> None:
     owner, agent, card, body = setup
-    path = f"/projects/maity/tasks/{card['id']}"
+    path = f"/projects/maintainer/maity/tasks/{card['id']}"
     if claimless:
         with migrated.begin() as conn:
             conn.execute(
@@ -96,7 +98,7 @@ def test_report_after_done_preserves_closure_and_schedules_probe(
 def test_another_member_is_refused(setup: Any, make_client: ClientFactory, who: str) -> None:
     owner, _, card, body = setup
     caller = owner if who == "owner" else flow.agent(make_client, owner)
-    result = caller.post(f"/projects/maity/tasks/{card['id']}/report", body)
+    result = caller.post(f"/projects/maintainer/maity/tasks/{card['id']}/report", body)
     assert result.headers["Maity-Error"] == "invalid_transition"
 
 
@@ -108,7 +110,7 @@ def test_the_same_pr_is_required(setup: Any, number: int | None) -> None:
         if number
         else {**body, "pr": None, "pr_status": "none"}
     )
-    result = agent.post(f"/projects/maity/tasks/{card['id']}/report", body)
+    result = agent.post(f"/projects/maintainer/maity/tasks/{card['id']}/report", body)
     assert result.headers["Maity-Error"] == "invalid"
 
 
@@ -132,7 +134,7 @@ def test_a_terminal_pr_is_refused(
     }
     with migrated.begin() as conn:
         conn.execute(update(t.card).where(t.card.c.id == card["id"]).values(report=report))
-    result = agent.post(f"/projects/maity/tasks/{card['id']}/report", body)
+    result = agent.post(f"/projects/maintainer/maity/tasks/{card['id']}/report", body)
     assert result.headers["Maity-Error"] == "invalid_transition"
 
 
@@ -144,7 +146,7 @@ def test_a_terminal_card_without_open_pr_is_refused(
     flow.project(owner)
     agent = flow.agent(make_client, owner)
     card = task(owner)
-    path = f"/projects/maity/tasks/{card['id']}"
+    path = f"/projects/maintainer/maity/tasks/{card['id']}"
     agent.post(path + "/claim", {})
     agent.post(path + "/report", _report())
     assert owner.patch(path, {"status": status}).status_code == 200
@@ -155,5 +157,5 @@ def test_cancelled_stays_terminal_even_with_open_pr(setup: Any, migrated: Engine
     _, agent, card, body = setup
     with migrated.begin() as conn:
         conn.execute(update(t.card).where(t.card.c.id == card["id"]).values(status="cancelled"))
-    result = agent.post(f"/projects/maity/tasks/{card['id']}/report", body)
+    result = agent.post(f"/projects/maintainer/maity/tasks/{card['id']}/report", body)
     assert result.headers["Maity-Error"] == "invalid_transition"

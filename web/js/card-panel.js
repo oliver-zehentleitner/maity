@@ -1,4 +1,4 @@
-// A card opened (#/p/<slug>/tasks/<id>): a panel beside the board on a
+// A card opened (#/<owner>/<slug>/tasks/<id>): a panel beside the board on a
 // wide screen and above it, full width, on a phone. It holds the card as
 // the board draws it, controls included, and what the board leaves out:
 // the body (Markdown), the links (§6.13), the open notes with a form to add
@@ -138,8 +138,8 @@ window.Maity = window.Maity || {};
 
     // The parts the hub may not serve yet are left out quietly (§1.6).
     const has = (method, path) => M.api.hubHas(method, path).catch(() => true);
-    has("GET", "/projects/{slug}/tasks/{task_id}/notes").then((ok) => { if (ok) notes(); else append(notesBox, M.dom.notOnHub("This hub has no notes yet.")); });
-    has("GET", "/projects/{slug}/tasks/{task_id}/history").then((ok) => { if (ok) history(); else append(historyBox, M.dom.notOnHub("This hub has no card history yet.")); });
+    has("GET", "/projects/{owner}/{slug}/tasks/{task_id}/notes").then((ok) => { if (ok) notes(); else append(notesBox, M.dom.notOnHub("This hub has no notes yet.")); });
+    has("GET", "/projects/{owner}/{slug}/tasks/{task_id}/history").then((ok) => { if (ok) history(); else append(historyBox, M.dom.notOnHub("This hub has no card history yet.")); });
 
     return {
       el: box,

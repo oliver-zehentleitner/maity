@@ -17,6 +17,7 @@ class Human:
     client: TestClient
     csrf: str
     id: str
+    handle: str = "maintainer"  # the namespace of the projects it creates (§6.25)
 
     def get(self, path: str, **kwargs: Any) -> Any:
         return self.client.get(f"/api/v1{path}", **kwargs)
@@ -73,7 +74,7 @@ def human(make_client: ClientFactory, engine: Engine, handle: str = "maintainer"
     )
     assert response.status_code == 200, response.text
     csrf = client.get("/api/v1/auth/session").json()["csrf_token"]
-    return Human(client, csrf, human_id)
+    return Human(client, csrf, human_id, handle)
 
 
 def project(owner: Human, slug: str = "maity", **body: Any) -> dict[str, Any]:
@@ -85,7 +86,8 @@ def project(owner: Human, slug: str = "maity", **body: Any) -> dict[str, Any]:
 
 def join(owner: Human, slug: str, **body: Any) -> dict[str, Any]:
     body.setdefault("agent", {"handle": f"agent-{_n()}", "display_name": "An agent"})
-    response = owner.post(f"/projects/{slug}/joins", body)
+    name = slug if "/" in slug else f"maintainer/{slug}"  # a full name, or the maintainer's
+    response = owner.post(f"/projects/{name}/joins", body)
     assert response.status_code == 201, response.text
     result: dict[str, Any] = response.json()
     return result

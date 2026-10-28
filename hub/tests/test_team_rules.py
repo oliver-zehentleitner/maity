@@ -25,7 +25,7 @@ def owner(make_client: ClientFactory, migrated: Engine) -> flow.Human:
 
 
 def _team(owner: flow.Human, member_id: str, **team: Any) -> Any:
-    response = owner.patch(f"/projects/maity/members/{member_id}", {"team": team})
+    response = owner.patch(f"/projects/maintainer/maity/members/{member_id}", {"team": team})
     assert response.status_code == 200, response.text
     return response
 
@@ -43,10 +43,11 @@ def _pair(
 
 
 def _assigned(owner: flow.Human, agent: flow.Agent, **body: Any) -> dict[str, Any]:
-    card = owner.post("/projects/maity/tasks", {"title": "A card"})
+    card = owner.post("/projects/maintainer/maity/tasks", {"title": "A card"})
     assert card.status_code == 201, card.text
     response = owner.post(
-        f"/projects/maity/tasks/{card.json()['id']}/assign", {"assignee": agent.id, **body}
+        f"/projects/maintainer/maity/tasks/{card.json()['id']}/assign",
+        {"assignee": agent.id, **body},
     )
     assert response.status_code == 200, response.text
     result: dict[str, Any] = response.json()
@@ -94,11 +95,11 @@ def test_an_assigned_instance_is_the_only_one_to_claim(
     first, second = _pair(make_client, owner, "round_robin")
     card = _assigned(owner, first, instance=second.instance)
     assert card["assigned_instance"] == second.instance
-    refused = first.post(f"/projects/maity/tasks/{card['id']}/claim", {})
+    refused = first.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
     assert refused.status_code == 409, refused.text
     assert refused.json()["error"]["code"] == "instance_assigned"
     assert refused.json()["error"]["details"] == {"assigned_instance": second.instance}
-    claimed = second.post(f"/projects/maity/tasks/{card['id']}/claim", {})
+    claimed = second.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
     assert claimed.status_code == 200 and claimed.json()["claim"]["instance"] == second.instance
 
 
@@ -106,9 +107,10 @@ def test_an_unknown_instance_is_refused_on_assign(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
     agent = flow.agent(make_client, owner)
-    card = owner.post("/projects/maity/tasks", {"title": "A card"}).json()
+    card = owner.post("/projects/maintainer/maity/tasks", {"title": "A card"}).json()
     response = owner.post(
-        f"/projects/maity/tasks/{card['id']}/assign", {"assignee": agent.id, "instance": "zzzz"}
+        f"/projects/maintainer/maity/tasks/{card['id']}/assign",
+        {"assignee": agent.id, "instance": "zzzz"},
     )
     assert response.status_code == 400
     assert response.json()["error"]["details"]["fields"] == {"instance": "not_an_instance"}
@@ -121,7 +123,7 @@ def test_under_lead_the_lead_hands_out_the_teams_cards(
     _team(owner, lead.id, distribution="lead", lead_instance=lead.instance)
     card = _assigned(owner, lead)
     assert card["assigned_instance"] is None
-    path = f"/projects/maity/tasks/{card['id']}"
+    path = f"/projects/maintainer/maity/tasks/{card['id']}"
     refused = other.post(f"{path}/claim", {})
     assert refused.json()["error"]["code"] == "instance_assigned"
     assert refused.json()["error"]["details"] == {"assigned_instance": None}
@@ -130,12 +132,14 @@ def test_under_lead_the_lead_hands_out_the_teams_cards(
     assert handed.status_code == 200, handed.text
     assert other.post(f"{path}/claim", {}).status_code == 200
     # It does not hand out cards beyond its team, nor does a sibling.
-    elsewhere = owner.post("/projects/maity/tasks", {"title": "Another"}).json()
-    response = lead.post(f"/projects/maity/tasks/{elsewhere['id']}/assign", {"assignee": lead.id})
+    elsewhere = owner.post("/projects/maintainer/maity/tasks", {"title": "Another"}).json()
+    response = lead.post(
+        f"/projects/maintainer/maity/tasks/{elsewhere['id']}/assign", {"assignee": lead.id}
+    )
     assert response.status_code == 403
     own = _assigned(owner, lead)
     sibling = other.post(
-        f"/projects/maity/tasks/{own['id']}/assign",
+        f"/projects/maintainer/maity/tasks/{own['id']}/assign",
         {"assignee": lead.id, "instance": other.instance},
     )
     assert sibling.status_code == 403
@@ -147,7 +151,7 @@ def test_under_lead_the_lead_claims_an_unassigned_card_itself(
     lead, _ = _pair(make_client, owner)
     _team(owner, lead.id, distribution="lead", lead_instance=lead.instance)
     card = _assigned(owner, lead)
-    assert lead.post(f"/projects/maity/tasks/{card['id']}/claim", {}).status_code == 200
+    assert lead.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {}).status_code == 200
 
 
 def test_round_robin_takes_turns_and_skips_a_paused_instance(
@@ -158,7 +162,7 @@ def test_round_robin_takes_turns_and_skips_a_paused_instance(
     turns = [_assigned(owner, first)["assigned_instance"] for _ in range(3)]
     assert turns == [first.instance, second.instance, first.instance]
     paused = owner.patch(
-        f"/projects/maity/members/{first.id}",
+        f"/projects/maintainer/maity/members/{first.id}",
         {"paused": {"reason": "quota", "instance": second.instance}},
     )
     assert paused.status_code == 200, paused.text
@@ -171,7 +175,9 @@ def test_a_free_team_leaves_the_card_to_any_instance(
     _, second = _pair(make_client, owner)
     card = _assigned(owner, second)
     assert card["assigned_instance"] is None
-    assert second.post(f"/projects/maity/tasks/{card['id']}/claim", {}).status_code == 200
+    assert (
+        second.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {}).status_code == 200
+    )
 
 
 # --- review within the team ----------------------------------------------------------------
@@ -179,7 +185,7 @@ def test_a_free_team_leaves_the_card_to_any_instance(
 
 def _reported(owner: flow.Human, author: flow.Agent) -> str:
     card = _assigned(owner, author, instance=author.instance)
-    path = f"/projects/maity/tasks/{card['id']}"
+    path = f"/projects/maintainer/maity/tasks/{card['id']}"
     assert author.post(f"{path}/claim", {}).status_code == 200
     report = author.post(f"{path}/report", {"summary": "Done.", "pr_status": "none", "code": False})
     assert report.status_code == 200, report.text
@@ -191,12 +197,14 @@ def _reported(owner: flow.Human, author: flow.Agent) -> str:
 def test_review_within_the_team(
     owner: flow.Human, make_client: ClientFactory, within: bool
 ) -> None:
-    owner.patch("/projects/maity", {"policy": {"done_authority": "admin"}, "reason": "test"})
+    owner.patch(
+        "/projects/maintainer/maity", {"policy": {"done_authority": "admin"}, "reason": "test"}
+    )
     author, reviewer = _pair(make_client, owner, "round_robin", role="admin")
     if within:
         _team(owner, author.id, review_within_team=True)
     card_id = _reported(owner, author)
-    response = reviewer.patch(f"/projects/maity/tasks/{card_id}", {"status": "done"})
+    response = reviewer.patch(f"/projects/maintainer/maity/tasks/{card_id}", {"status": "done"})
     if within:
         assert response.status_code == 200, response.text
         return
@@ -204,7 +212,10 @@ def test_review_within_the_team(
     details = response.json()["error"]["details"]
     assert details == {"reason": "same_team_review", "instance": author.instance}
     # The owner, outside the team, reviews as before.
-    assert owner.patch(f"/projects/maity/tasks/{card_id}", {"status": "done"}).status_code == 200
+    assert (
+        owner.patch(f"/projects/maintainer/maity/tasks/{card_id}", {"status": "done"}).status_code
+        == 200
+    )
 
 
 # --- instance tokens and the team wake -----------------------------------------------------
@@ -229,7 +240,7 @@ def test_an_instance_token_is_read_by_the_team_and_wakes_only_that_instance(
     assert events.readable_by(event, reader, first.id)
     assert events.wakes(event, reader, first.id, first.instance)
     assert not events.wakes(event, reader, first.id, second.instance)
-    items = second.get("/projects/maity/events").json()["items"]
+    items = second.get("/projects/maintainer/maity/events").json()["items"]
     assert card["id"] in {(i["subject"] or {}).get("id") for i in items}
 
 
@@ -261,7 +272,7 @@ def test_without_a_narrowing_team_an_event_records_no_wakes(
     agent = flow.agent(make_client, owner)
     _assigned(owner, agent)
     assert _last(migrated, "task_assigned").wakes is None
-    item = owner.get("/projects/maity/events").json()["items"][-1]
+    item = owner.get("/projects/maintainer/maity/events").json()["items"][-1]
     assert "wakes" not in item
 
 
@@ -270,7 +281,7 @@ def test_next_free_wakes_the_listening_instance_with_the_fewest_claims(
 ) -> None:
     first, second = _pair(make_client, owner)
     busy = _assigned(owner, first)
-    assert first.post(f"/projects/maity/tasks/{busy['id']}/claim", {}).status_code == 200
+    assert first.post(f"/projects/maintainer/maity/tasks/{busy['id']}/claim", {}).status_code == 200
     _team(owner, first.id, wake="next_free")
     _listen(listens, first)
     _listen(listens, second)
@@ -280,7 +291,7 @@ def test_next_free_wakes_the_listening_instance_with_the_fewest_claims(
     reader = _Reader(_membership(migrated, first))
     assert events.wakes(event, reader, first.id, second.instance)
     assert not events.wakes(event, reader, first.id, first.instance)
-    item = owner.get("/projects/maity/events").json()["items"][-1]
+    item = owner.get("/projects/maintainer/maity/events").json()["items"][-1]
     assert item["wakes"] == [f"{first.id}#{second.instance}"]
 
 
@@ -311,7 +322,7 @@ def test_a_paused_instance_takes_no_new_work_while_its_sibling_does(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
     first, second = _pair(make_client, owner)
-    path = f"/projects/maity/members/{first.id}"
+    path = f"/projects/maintainer/maity/members/{first.id}"
     response = owner.patch(path, {"paused": {"reason": "too fast", "instance": first.instance}})
     assert response.status_code == 200, response.text
     view = {i["id"]: i for i in response.json()["instances"]}
@@ -322,13 +333,15 @@ def test_a_paused_instance_takes_no_new_work_while_its_sibling_does(
     announced = _last(migrated, "session_paused")
     assert announced.payload["instance"] == first.instance
     assert f"instance:{first.id}#{first.instance}" in announced.audience
-    card = owner.post("/projects/maity/tasks", {"title": "A card"}).json()
-    refused = first.post(f"/projects/maity/tasks/{card['id']}/claim", {})
+    card = owner.post("/projects/maintainer/maity/tasks", {"title": "A card"}).json()
+    refused = first.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
     assert refused.status_code == 409 and refused.json()["error"]["code"] == "paused"
     assert refused.json()["error"]["details"]["instance"] == first.instance
     own = first.patch("/me", {"paused": None})
     assert own.json()["error"]["details"]["reason"] == "paused_by_human"
-    assert second.post(f"/projects/maity/tasks/{card['id']}/claim", {}).status_code == 200
+    assert (
+        second.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {}).status_code == 200
+    )
     # Not lifted by its resume; lifted with `paused: null` and the instance.
     assert first.resume().json()["membership"]["paused"]["reason"] == "too fast"
     lifted = owner.patch(path, {"paused": None, "instance": first.instance})
@@ -339,7 +352,8 @@ def test_a_paused_instance_takes_no_new_work_while_its_sibling_does(
 def test_instance_goes_with_paused_only(owner: flow.Human, make_client: ClientFactory) -> None:
     agent = flow.agent(make_client, owner)
     response = owner.patch(
-        f"/projects/maity/members/{agent.id}", {"areas": ["hub/"], "instance": agent.instance}
+        f"/projects/maintainer/maity/members/{agent.id}",
+        {"areas": ["hub/"], "instance": agent.instance},
     )
     assert response.status_code == 400
     assert response.json()["error"]["details"]["fields"] == {"instance": "paused_only"}
@@ -351,7 +365,7 @@ def test_a_members_presence_is_the_best_of_its_instances(
     first, second = _pair(make_client, owner)
     _listen(listens, second)
     first.patch("/me", {"paused": {"reason": "waiting"}})
-    view = owner.get(f"/projects/maity/members/{first.id}").json()
+    view = owner.get(f"/projects/maintainer/maity/members/{first.id}").json()
     presences = {i["id"]: i["presence"] for i in view["instances"]}
     assert presences == {first.instance: "paused", second.instance: "online"}
     assert view["presence"] == "online"
@@ -363,14 +377,14 @@ def test_two_instances_in_one_workspace_are_shown_to_the_owner(
     first, second = _pair(make_client, owner)
     for agent in (first, second):
         assert agent.resume(environment={"workspace": WORK}).status_code == 200
-    view = owner.get(f"/projects/maity/members/{first.id}").json()
+    view = owner.get(f"/projects/maintainer/maity/members/{first.id}").json()
     shared = {i["id"]: i["shared_environment"] for i in view["instances"]}
     assert shared == {
         first.instance: [{"instance": second.instance, "level": "workspace"}],
         second.instance: [{"instance": first.instance, "level": "workspace"}],
     }
     assert view["shared_environment"] == []  # between members only (§5.3)
-    peer = first.get(f"/projects/maity/members/{first.id}").json()
+    peer = first.get(f"/projects/maintainer/maity/members/{first.id}").json()
     assert all("shared_environment" not in i for i in peer["instances"])
 
 
@@ -380,7 +394,7 @@ def test_a_message_to_an_instance_address_wakes_that_instance(
     first, second = _pair(make_client, owner)
     address = f"{first.id}#{second.instance}"
     sent = owner.post(
-        "/projects/maity/events",
+        "/projects/maintainer/maity/events",
         {"kind": "message", "type": "notice", "to": address, "body": "Over to you."},
     )
     assert sent.status_code == 201, sent.text
@@ -392,7 +406,7 @@ def test_a_message_to_an_instance_address_wakes_that_instance(
     assert not events.wakes(event, reader, first.id, first.instance)
     assert events.readable_by(event, reader, first.id)
     unknown = owner.post(
-        "/projects/maity/events",
+        "/projects/maintainer/maity/events",
         {"kind": "message", "type": "notice", "to": f"{first.id}#zzzz", "body": "Hm."},
     )
     assert unknown.status_code == 400
@@ -410,7 +424,7 @@ def test_the_lead_never_moves_a_held_card(
     outsider = flow.agent(make_client, owner)
     for holder in (owner, outsider):
         card = _assigned(owner, lead)
-        path = f"/projects/maity/tasks/{card['id']}"
+        path = f"/projects/maintainer/maity/tasks/{card['id']}"
         claimed = holder.post(f"{path}/claim", {})
         assert claimed.status_code == 200, claimed.text
         with migrated.begin() as conn:
@@ -432,7 +446,7 @@ def test_a_held_card_does_not_move_to_a_sibling_by_assign(
 ) -> None:
     first, second = _pair(make_client, owner, "round_robin")
     card = _assigned(owner, first, instance=first.instance)
-    path = f"/projects/maity/tasks/{card['id']}"
+    path = f"/projects/maintainer/maity/tasks/{card['id']}"
     assert first.post(f"{path}/claim", {}).status_code == 200
     with migrated.begin() as conn:
         conn.execute(
@@ -446,13 +460,17 @@ def test_round_robin_applies_on_every_path_that_assigns(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
     first, second = _pair(make_client, owner, "round_robin")
-    created = owner.post("/projects/maity/tasks", {"title": "Made", "assigned_to": first.id})
+    created = owner.post(
+        "/projects/maintainer/maity/tasks", {"title": "Made", "assigned_to": first.id}
+    )
     assert created.json()["assigned_instance"] == first.instance
-    other = owner.post("/projects/maity/tasks", {"title": "Later"}).json()
-    patched = owner.patch(f"/projects/maity/tasks/{other['id']}", {"assigned_to": first.id})
+    other = owner.post("/projects/maintainer/maity/tasks", {"title": "Later"}).json()
+    patched = owner.patch(
+        f"/projects/maintainer/maity/tasks/{other['id']}", {"assigned_to": first.id}
+    )
     assert patched.json()["assigned_instance"] == second.instance
-    owner.patch(f"/projects/maity/members/{first.id}", {"areas": ["hub/"]})
-    found = owner.post("/projects/maity/tasks", {"title": "Found", "area": "hub/"})
+    owner.patch(f"/projects/maintainer/maity/members/{first.id}", {"areas": ["hub/"]})
+    found = owner.post("/projects/maintainer/maity/tasks", {"title": "Found", "area": "hub/"})
     assert found.json()["assigned_to"] == first.id
     assert found.json()["assigned_instance"] == first.instance
 
@@ -477,9 +495,9 @@ def test_round_robin_takes_turns_when_two_instances_share_a_moment(
 
 def test_an_instance_under_free_is_refused(owner: flow.Human, make_client: ClientFactory) -> None:
     first, _ = _pair(make_client, owner)
-    card = owner.post("/projects/maity/tasks", {"title": "A card"}).json()
+    card = owner.post("/projects/maintainer/maity/tasks", {"title": "A card"}).json()
     response = owner.post(
-        f"/projects/maity/tasks/{card['id']}/assign",
+        f"/projects/maintainer/maity/tasks/{card['id']}/assign",
         {"assignee": first.id, "instance": first.instance},
     )
     assert response.status_code == 400
@@ -489,7 +507,9 @@ def test_an_instance_under_free_is_refused(owner: flow.Human, make_client: Clien
 def test_reporting_again_does_not_clear_another_instances_work(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
-    owner.patch("/projects/maity", {"policy": {"done_authority": "admin"}, "reason": "test"})
+    owner.patch(
+        "/projects/maintainer/maity", {"policy": {"done_authority": "admin"}, "reason": "test"}
+    )
     author, reviewer = _pair(make_client, owner, "round_robin", role="admin")
     card_id = _reported(owner, author)
     with migrated.begin() as conn:  # the sibling came to hold it some other way
@@ -499,12 +519,12 @@ def test_reporting_again_does_not_clear_another_instances_work(
             .values(status="in_progress", claim_instance=reviewer.instance)
         )
     again = reviewer.post(
-        f"/projects/maity/tasks/{card_id}/report",
+        f"/projects/maintainer/maity/tasks/{card_id}/report",
         {"summary": "Mine now.", "pr_status": "none", "code": False},
     )
     assert again.status_code == 200, again.text
     assert "reported_instances" not in again.json()["report"]
-    done = reviewer.patch(f"/projects/maity/tasks/{card_id}", {"status": "done"})
+    done = reviewer.patch(f"/projects/maintainer/maity/tasks/{card_id}", {"status": "done"})
     assert done.status_code == 403, done.text
     assert done.json()["error"]["details"] == {
         "reason": "same_team_review",
@@ -519,12 +539,12 @@ def test_an_outsider_does_not_read_an_instance_token(
     outsider = flow.agent(make_client, owner)
     address = f"{first.id}#{second.instance}"
     sent = owner.post(
-        "/projects/maity/events",
+        "/projects/maintainer/maity/events",
         {"kind": "message", "type": "notice", "to": address, "body": "For you."},
     ).json()
-    seen = {i["seq"] for i in outsider.get("/projects/maity/events").json()["items"]}
+    seen = {i["seq"] for i in outsider.get("/projects/maintainer/maity/events").json()["items"]}
     assert sent["seq"] not in seen
-    team = {i["seq"] for i in first.get("/projects/maity/events").json()["items"]}
+    team = {i["seq"] for i in first.get("/projects/maintainer/maity/events").json()["items"]}
     assert sent["seq"] in team
 
 
@@ -532,9 +552,9 @@ def test_the_long_poll_wakes_only_the_addressed_instance(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
     first, second = _pair(make_client, owner)
-    cursor = owner.get("/projects/maity/events").json()["cursor"]
+    cursor = owner.get("/projects/maintainer/maity/events").json()["cursor"]
     owner.post(
-        "/projects/maity/events",
+        "/projects/maintainer/maity/events",
         {
             "kind": "message",
             "type": "notice",
@@ -542,9 +562,9 @@ def test_the_long_poll_wakes_only_the_addressed_instance(
             "body": "Wake up.",
         },
     )
-    woken = second.get(f"/projects/maity/events?after={cursor}&wait=1").json()["items"]
+    woken = second.get(f"/projects/maintainer/maity/events?after={cursor}&wait=1").json()["items"]
     assert [i["payload"]["body"] for i in woken] == ["Wake up."]
-    asleep = first.get(f"/projects/maity/events?after={cursor}&wait=1").json()["items"]
+    asleep = first.get(f"/projects/maintainer/maity/events?after={cursor}&wait=1").json()["items"]
     assert asleep == []
 
 
@@ -569,17 +589,19 @@ def test_removing_the_last_narrowing_team_stops_the_lookup(
 ) -> None:
     first, _ = _pair(make_client, owner)
     _team(owner, first.id, wake="next_free")
-    assert owner.delete(f"/projects/maity/members/{first.id}").status_code == 200
+    assert owner.delete(f"/projects/maintainer/maity/members/{first.id}").status_code == 200
     with migrated.connect() as conn:
         assert conn.execute(select(t.project.c.team_wake)).scalar_one() is False
 
 
 def test_closing_by_report_is_a_review_too(owner: flow.Human, make_client: ClientFactory) -> None:
-    owner.patch("/projects/maity", {"policy": {"done_authority": "admin"}, "reason": "test"})
+    owner.patch(
+        "/projects/maintainer/maity", {"policy": {"done_authority": "admin"}, "reason": "test"}
+    )
     author, lead = _pair(make_client, owner, role="admin")
     _team(owner, author.id, distribution="lead", lead_instance=lead.instance)
     card = _assigned(owner, author)
-    path = f"/projects/maity/tasks/{card['id']}"
+    path = f"/projects/maintainer/maity/tasks/{card['id']}"
     handed = lead.post(f"{path}/assign", {"assignee": author.id, "instance": author.instance})
     assert handed.status_code == 200, handed.text
     assert author.post(f"{path}/claim", {}).status_code == 200
@@ -608,7 +630,7 @@ def test_assigning_to_the_same_team_keeps_its_instance(
     first, _ = _pair(make_client, owner, "round_robin")
     card = _assigned(owner, first)
     chosen = card["assigned_instance"]
-    path = f"/projects/maity/tasks/{card['id']}"
+    path = f"/projects/maintainer/maity/tasks/{card['id']}"
     for _ in range(3):
         again = owner.post(f"{path}/assign", {"assignee": first.id})
         assert again.status_code == 200, again.text

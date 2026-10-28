@@ -16,18 +16,19 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, delete, insert, select
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import clock, longpoll
+from maity_hub import clock, longpoll, namespace
 from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.auth.caller import Caller, session_alive
 from maity_hub.deps import AnyCaller, engine_of, reader_of, settings_of, wait_of
 from maity_hub.errors import forbidden, humans_only, invalid, not_found, unauthenticated
+from maity_hub.namespace import ProjectRoute
 from maity_hub.notifications import items, listing, positions
 from maity_hub.notifications.items import KINDS, REMOVED_KINDS, Item, Scope
 from maity_hub.notifications.positions import Position
 from maity_hub.views import task_view
 
-router = APIRouter()
+router = APIRouter(route_class=ProjectRoute)
 
 LIMIT_DEFAULT, LIMIT_MAX = 20, 50
 IDS_MAX = 200
@@ -228,10 +229,11 @@ def _answer(
 
 
 def _project_ids(conn: Connection, slugs: set[str] | None) -> set[str] | None:
+    """The projects a `projects` filter names by full name (§6.25); an unknown one none."""
     if slugs is None:
         return None
-    rows = conn.execute(select(t.project.c.id).where(t.project.c.slug.in_(list(slugs))))
-    return set(rows.scalars())
+    found = (namespace.resolve(conn, name) for name in slugs)
+    return {project.id for project in found if project is not None}
 
 
 @router.post("/me/notifications/read")
@@ -299,12 +301,12 @@ def _chosen(
 # --- watching a card (§6.4) -----------------------------------------------------------
 
 
-@router.put("/projects/{slug}/tasks/{task_id}/watch")
+@router.put("/projects/{owner}/{slug}/tasks/{task_id}/watch")
 def watch(slug: str, task_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     return _watch(request, caller, slug, task_id, on=True)
 
 
-@router.delete("/projects/{slug}/tasks/{task_id}/watch")
+@router.delete("/projects/{owner}/{slug}/tasks/{task_id}/watch")
 def unwatch(slug: str, task_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     return _watch(request, caller, slug, task_id, on=False)
 

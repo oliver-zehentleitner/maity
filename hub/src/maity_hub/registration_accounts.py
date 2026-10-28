@@ -24,7 +24,7 @@ from typing import Any
 from sqlalchemy import Connection, Engine, delete, func, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock, invitations, registration
+from maity_hub import clock, invitations, namespace, registration
 from maity_hub import tables as t
 from maity_hub.admin import instance_admin_id
 from maity_hub.auth import passwords, sessions
@@ -102,6 +102,8 @@ def check_names(conn: Connection, handle: str, display_name: str) -> dict[str, s
     errors: dict[str, str] = {}
     if not _HANDLE.fullmatch(handle):
         errors["handle"] = "invalid"
+    elif handle in namespace.DASHBOARD_WORDS:  # `#/invite/…` is never a namespace (§6.25)
+        errors["handle"] = "reserved"
     elif conn.execute(select(t.human.c.id).where(t.human.c.handle == handle)).first():
         errors["handle"] = "taken"
     if not 1 <= len(display_name) <= DISPLAY_NAME_MAX or any(

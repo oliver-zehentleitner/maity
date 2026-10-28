@@ -13,7 +13,7 @@ from typing import Any
 
 from sqlalchemy import Connection, func, select
 
-from maity_hub import avatars, clock, events, inbox
+from maity_hub import avatars, clock, events, inbox, namespace
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.notifications import records
@@ -161,6 +161,7 @@ def _classify(
     readable = events.readable_by(row, mine.row, principal, hidden)
     payload = row.payload or {}
     project = mine.project
+    home = look.home
     base: dict[str, Any] = {
         "at": row.at,
         "seq": row.seq,
@@ -182,7 +183,7 @@ def _classify(
             kind="inbox",
             title=_cut(f"{who} {verb}: {request.title}"),
             target={"type": "request", "id": request.id},
-            url=_url(where, f"/#/p/{project.slug}/inbox"),
+            url=_url(where, f"{home}/inbox"),
             **base,
         )
     if row.kind == "message" and readable:
@@ -196,15 +197,15 @@ def _classify(
                 kind="mention" if mentioned else "chat",
                 title=None if row.redacted else _cut(title),
                 target={"type": "conversation", "id": row.conversation_id},
-                url=_url(where, f"/#/p/{project.slug}/chat/{row.conversation_id}"),
+                url=_url(where, f"{home}/chat/{row.conversation_id}"),
                 **base,
             )
         if mentioned and payload.get("type") != "chat":
             return Item(
                 kind="mention",
                 title=None if row.redacted else _cut(f"{writer} mentioned you in {project.name}"),
-                target={"type": "project", "id": project.slug},
-                url=_url(where, f"/#/p/{project.slug}/messages"),
+                target={"type": "project", "id": project.id},
+                url=_url(where, f"{home}/messages"),
                 **base,
             )
         return None
@@ -217,7 +218,7 @@ def _classify(
                 f"{task.get('id')} {task.get('title')}"
             ),
             target={"type": "task", "id": str(task.get("id"))},
-            url=_url(where, f"/#/p/{project.slug}/board?task={task.get('id')}"),
+            url=_url(where, f"{home}/board?task={task.get('id')}"),
             **base,
         )
     return None
@@ -368,7 +369,8 @@ def view(conn: Connection, where: Scope, item: Item) -> dict[str, Any]:
         row = conn.execute(
             select(t.project.c.slug, t.project.c.name).where(t.project.c.id == item.project_id)
         ).one()
-        project = {"slug": row.slug, "name": row.name}
+        full_name = namespace.name_of(conn, item.project_id)
+        project = {"slug": row.slug, "full_name": full_name, "name": row.name}
         if item.record_type == "personal_request_created":
             project["member"] = item.member
     answer: dict[str, Any] = {
@@ -409,6 +411,8 @@ class Lookup:
 
     def __init__(self, conn: Connection, mine: Membership, rows: list[Any]) -> None:
         self.conn = conn
+        # The dashboard's address of the project is `#/<owner>/<slug>` (§6.25).
+        self.home = f"/#/{namespace.full_name(conn, mine.project)}"
         self.request_ids = {r.subject_id for r in rows if r.kind in REQUEST_EVENTS and r.subject_id}
         self.requests = _by_id(conn, t.request, self.request_ids)
         self.member_ids = {r.actor_membership for r in rows if r.actor_membership is not None}

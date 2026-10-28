@@ -18,8 +18,9 @@ from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import invalid, not_found
 from maity_hub.events import transaction
 from maity_hub.models import Strict, markdown
+from maity_hub.namespace import ProjectRoute
 
-router = APIRouter()
+router = APIRouter(route_class=ProjectRoute)
 
 PAGE_DEFAULT, PAGE_MAX = 50, 200
 
@@ -70,7 +71,7 @@ def _outcome(conn: Connection, takeover_id: str, status: int = 200) -> idempoten
     return idempotency.Outcome(status, "takeover", takeover_id, _load(conn, takeover_id))
 
 
-@router.post("/projects/{slug}/tasks/{card_id}/takeover")
+@router.post("/projects/{owner}/{slug}/tasks/{card_id}/takeover")
 def open_takeover(
     slug: str, card_id: str, body: TakeoverIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -92,7 +93,7 @@ def open_takeover(
     return idempotency.run(engine_of(request), request, caller, action)
 
 
-@router.get("/projects/{slug}/takeovers")
+@router.get("/projects/{owner}/{slug}/takeovers")
 def list_takeovers(
     slug: str,
     request: Request,
@@ -127,7 +128,7 @@ def list_takeovers(
     return JSONResponse({"items": items, "next_cursor": next_cursor})
 
 
-@router.get("/projects/{slug}/takeovers/{takeover_id}")
+@router.get("/projects/{owner}/{slug}/takeovers/{takeover_id}")
 def get_takeover(slug: str, takeover_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     with transaction(engine_of(request)) as conn:
         mine = membership(conn, caller, slug)
@@ -135,7 +136,7 @@ def get_takeover(slug: str, takeover_id: str, request: Request, caller: AnyCalle
         return JSONResponse(takeovers.view(conn, _takeover(conn, mine, takeover_id)))
 
 
-@router.post("/projects/{slug}/takeovers/{takeover_id}/respond")
+@router.post("/projects/{owner}/{slug}/takeovers/{takeover_id}/respond")
 def respond(
     slug: str, takeover_id: str, body: RespondIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -159,7 +160,7 @@ def respond(
     return idempotency.run(engine_of(request), request, caller, action)
 
 
-@router.post("/projects/{slug}/takeovers/{takeover_id}/withdraw")
+@router.post("/projects/{owner}/{slug}/takeovers/{takeover_id}/withdraw")
 def withdraw(
     slug: str, takeover_id: str, body: ReasonIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -173,7 +174,7 @@ def withdraw(
     return idempotency.run(engine_of(request), request, caller, action)
 
 
-@router.post("/projects/{slug}/takeovers/{takeover_id}/escalate")
+@router.post("/projects/{owner}/{slug}/takeovers/{takeover_id}/escalate")
 def escalate(
     slug: str, takeover_id: str, body: ReasonIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -187,7 +188,7 @@ def escalate(
     return idempotency.run(engine_of(request), request, caller, action)
 
 
-@router.post("/projects/{slug}/takeovers/{takeover_id}/override")
+@router.post("/projects/{owner}/{slug}/takeovers/{takeover_id}/override")
 def override(
     slug: str, takeover_id: str, body: OverrideIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
