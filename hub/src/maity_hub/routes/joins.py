@@ -65,6 +65,7 @@ class JoinAgent(Strict):
 
 class JoinCreate(Strict):
     agent: JoinAgent
+    trust: str | None = None
     role: str | None = None
     reports_to: str | None = None
     areas: list[str] | None = Field(default=None, max_length=50)
@@ -124,6 +125,8 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
             reports_to=body.reports_to,
             areas=body.areas,
             capabilities=body.capabilities,
+            trust=body.trust,
+            current=(existing.trust, existing.role) if existing else ("member", "coder"),
         )
         if existing is not None:
             # A second clone of a member: a new instance, the membership as it is.
@@ -136,13 +139,18 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
             if differing:
                 raise invalid(differing, "the agent is a member; change its membership instead")
             values = {
+                "trust": existing.trust,
                 "role": existing.role,
                 "reports_to": existing.reports_to,
                 "areas": existing.areas,
                 "capabilities": existing.capabilities,
             }
+        # After the member's own trust and role are in: a new instance of an admin or a
+        # proxy hands out a credential with that trust, which is the owner's to give.
+        _require_owner_for(mine, values)
         _check_instance(conn, body, existing)
-        values.setdefault("role", "member")
+        values.setdefault("trust", "member")
+        values.setdefault("role", "coder")
         values.setdefault("areas", [])
         values.setdefault("capabilities", [])
         token, code = new_token(), new_code()
@@ -155,6 +163,7 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
                 token_hash=digest(token),
                 code_hash=digest(normalise_code(code)),
                 agent_id=agent_id,
+                trust=values["trust"],
                 role=values["role"],
                 reports_to=values.get("reports_to"),
                 areas=values["areas"],
@@ -187,6 +196,18 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
         )
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+def _require_owner_for(mine: Any, values: dict[str, Any]) -> None:
+    """Trust `admin` and the role `proxy` are given only by a caller with trust `owner`
+    (§2.3 "The owner's rights", §3.1)."""
+    if (values.get("trust") == "admin" or values.get("role") == "proxy") and mine.trust != "owner":
+        raise ApiError(
+            403,
+            "forbidden",
+            "only an owner grants trust admin or the role proxy",
+            {"reason": "owner_only"},
+        )
 
 
 def _check_instance(conn: Connection, body: JoinCreate, existing: Any) -> None:
@@ -615,6 +636,7 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
             insert(t.membership).values(
                 project_id=row.project_id,
                 agent_id=agent_id,
+                trust=row.trust,
                 role=row.role,
                 reports_to=_boss_still_here(conn, row.reports_to),
                 areas=row.areas,
@@ -659,7 +681,7 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
                 conn,
                 row.project_id,
                 "credential_revoked",
-                [f"member:{row.agent_id}", "role:owner"],
+                [f"member:{row.agent_id}", "trust:owner"],
                 {"credential_id": old.id, "reason": "replaced", "instance": row.replaces},
                 actor=Actor(membership_id=membership_id, credential_id=credential_id),
                 subject=("credential", old.id),

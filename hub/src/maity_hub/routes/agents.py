@@ -210,7 +210,12 @@ def delete_agent(
         if members and not cascade:
             raise ProfileInUse(
                 [
-                    {"project": f"{m.owner_handle}/{m.slug}", "member_id": agent_id, "role": m.role}
+                    {
+                        "project": f"{m.owner_handle}/{m.slug}",
+                        "member_id": agent_id,
+                        "trust": m.trust,
+                        "role": m.role,
+                    }
                     for m in members
                 ],
                 running,

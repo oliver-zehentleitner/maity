@@ -11,12 +11,14 @@
 # Everything inside the runner user's own paths (its home, `_work/_tool`) is done AS the runner user: a job can leave
 # symlinks there, and root following one would write wherever it points. Root only writes `.path` (root-owned) and
 # restarts the service.
-# Usage: RUNNER_USER=gh-runner RUNNER_HOME=/workspace/gh-runner PYTHON_SERIES=3.12 install-python.sh
+# Usage: RUNNER_DIR=/opt/actions-runner-pg SERVICE=maity-runner@pg [RUNNER_USER=gh-runner] [RUNNER_HOME=...] \
+#        [PYTHON_SERIES=3.12] install-python.sh      (once per runner directory)
 #        (FORCE=1 restarts the service even while a job runs; UV_VERSION pins the uv installer)
 set -euo pipefail
 RU=${RUNNER_USER:-gh-runner}
 HOME_RU=${RUNNER_HOME:-$(getent passwd "$RU" | cut -d: -f6)}
 RUNNER_DIR=${RUNNER_DIR:-/opt/actions-runner}
+SERVICE=${SERVICE:-maity-runner}
 SERIES=${PYTHON_SERIES:-3.12}
 UV_VERSION=${UV_VERSION:-0.13.6}
 TOOL=$RUNNER_DIR/_work/_tool
@@ -40,5 +42,5 @@ as_ru touch "$TOOL/Python/$VER/x64.complete"
 as_ru sh -c 'rm -f "$1"/lib/python3.*/EXTERNALLY-MANAGED' sh "$ROOT"
 as_ru "$TOOL/Python/$VER/x64/bin/python3" -m pip --version
 echo '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' > "$RUNNER_DIR/.path"
-systemctl restart maity-runner
+systemctl restart "$SERVICE"
 echo "done: python $VER is in the tool cache, runner restarted"

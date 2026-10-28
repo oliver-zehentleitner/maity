@@ -45,6 +45,7 @@ from maity_hub.models import Strict, Written, markdown, title
 from maity_hub.namespace import ProjectRoute
 from maity_hub.policy import CLOSED_STATES, REASON_STATES
 from maity_hub.routes.members import AREA
+from maity_hub.scopes import in_admin_team
 from maity_hub.views import (
     human_paused,
     paused,
@@ -301,7 +302,7 @@ def _new_contract(conn: Connection, mine: Membership, body: ContractIn) -> dict[
     arbiter = body.arbiter or mine.project.contract_arbiter
     if arbiter != mine.project.contract_arbiter:
         mine.require("tasks:admin")  # naming another arbiter than the policy's (§6.8)
-    if arbiter != "role:admin":
+    if arbiter != "trust:admin":
         _member_id(conn, mine, arbiter, "contract.arbiter")
     watchers = list(dict.fromkeys(body.watchers))
     for watcher in watchers:
@@ -329,8 +330,8 @@ def _check_contract_place(path: str | None, section: str | None) -> None:
 
 def _is_arbiter(mine: Membership, contract: dict[str, Any]) -> bool:
     arbiter = contract.get("arbiter")
-    if arbiter == "role:admin":
-        return mine.role == "admin"
+    if arbiter == "trust:admin":
+        return in_admin_team(mine.trust, mine.role)
     return bool(arbiter == mine.principal_id)
 
 
@@ -1764,7 +1765,7 @@ def report(
             conn,
             mine.project.id,
             "task_reported",
-            list(dict.fromkeys(targets)) + ["role:reviewer", "role:admin"],
+            list(dict.fromkeys(targets)) + ["role:reviewer", "trust:admin"],
             # The persisted status on both sides, so that a reader tells an entry into
             # review from a refresh (§8.2, §6.22); a blocked card stays blocked.
             {**stored, "status_before": status_before, "status_after": card.status},

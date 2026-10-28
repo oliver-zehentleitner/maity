@@ -139,7 +139,9 @@ invitation = Table(
     metadata,
     _id(primary_key=True),
     _ref("project_id", "project.id", nullable=False),
-    Column("role", String(16), nullable=False),
+    # A built-in role, or a project role of up to 24 characters (#506).
+    Column("role", String(24), nullable=False),
+    Column("trust", String(16), nullable=False),  # with `role`: trust × role (§2.3)
     Column("address", String(254)),
     Column("address_normalized", String(254), index=True),
     Column("note", String(1024)),
@@ -384,7 +386,7 @@ project = Table(
     Column("merged_closes", String(8), nullable=False, server_default="notify"),
     Column("claim_policy", String(32), nullable=False),
     Column("done_authority", String(32), nullable=False),
-    Column("contract_arbiter", String(ID + 8), nullable=False),  # member id or role:admin
+    Column("contract_arbiter", String(ID + 8), nullable=False),  # member id or trust:admin
     Column("tag_authority", String(32), nullable=False),
     Column("steward_writes", String(32), nullable=False),
     Column("lease_seconds", Integer, nullable=False),
@@ -400,7 +402,7 @@ project = Table(
     Column("spawn_consent_by", String(16), nullable=False, server_default="human"),
     # Whose outage gates new assignments by agents, and who stands in for that role
     # alone (§6.1, §6.12); the defaults fill projects made before 0024.
-    Column("coordinator", String(ID + 8), nullable=False, server_default="role:admin"),
+    Column("coordinator", String(ID + 8), nullable=False, server_default="trust:admin"),
     Column("coordinator_substitute", String(ID)),
     # What revoking a runner does to its agents here: keep, stop or inherit (§6.1, §15.3).
     Column("on_runner_revoke", String(16), nullable=False, server_default="inherit"),
@@ -449,7 +451,9 @@ membership = Table(
     _ref("project_id", "project.id", nullable=False),
     _ref("human_id", "human.id"),
     _ref("agent_id", "agent_profile.id"),
-    Column("role", String(16), nullable=False),
+    # A built-in role, or a project role of up to 24 characters (#506).
+    Column("role", String(24), nullable=False),
+    Column("trust", String(16), nullable=False),  # with `role`: trust × role (§2.3)
     _membership_ref("reports_to"),
     Column("areas", JSON_VALUE, nullable=False),
     Column("capabilities", JSON_VALUE, nullable=False),
@@ -568,7 +572,9 @@ join_link = Table(
     _ref("agent_id", "agent_profile.id"),
     Column("new_agent_handle", String(HANDLE)),
     Column("new_agent_display_name", String(TITLE)),
-    Column("role", String(16), nullable=False),
+    # A built-in role, or a project role of up to 24 characters (#506).
+    Column("role", String(24), nullable=False),
+    Column("trust", String(16), nullable=False),  # with `role`: trust × role (§2.3)
     _membership_ref("reports_to"),
     Column("areas", JSON_VALUE, nullable=False),
     Column("capabilities", JSON_VALUE, nullable=False),
@@ -1072,7 +1078,7 @@ request = Table(
     # owns an agent profile, member of the project or not: a personal request (§7).
     Column("to_kind", String(16), nullable=False),  # member, role, owner, profile_owner
     _membership_ref("to_member"),
-    Column("to_role", String(16)),
+    Column("to_role", String(32)),  # the whole token: `trust:admin`, `role:designer` (§2.3)
     _ref("to_profile", "agent_profile.id"),
     _ref("to_human", "human.id"),  # the profile's owner when the hub filed it
     Column("personal", Boolean, nullable=False, server_default=false()),
