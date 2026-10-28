@@ -2664,6 +2664,50 @@ window.Maity = window.Maity || {};
     return sessionCsrf;
   }
 
+  // Trust × role (docs/api.md §2.3) on a dashboard still built on the single
+  // role: until the full UI (tsk-tx9qcehevfnk), every answer is read back
+  // into the single role's names and every body sent is written forward into
+  // trust and role. The hub never sees a single-role name; the page keeps its
+  // rights checks (`role === "owner"`, `"admin"`) and its role lists.
+  const SINGLE_TO_SPLIT = {
+    owner: ["owner", "coder"],
+    admin: ["admin", "coder"],
+    proxy: ["admin", "proxy"],
+    reviewer: ["member", "reviewer"],
+    member: ["member", "coder"],
+  };
+  const TOKEN_FORWARD = { "role:owner": "trust:owner", "role:admin": "trust:admin", "role:member": "role:coder" };
+  const TOKEN_BACK = { "trust:owner": "role:owner", "trust:admin": "role:admin", "role:coder": "role:member" };
+  const TRUSTS = ["owner", "admin", "member", "guest"];
+
+  function singleRole(trust, role) {
+    if (trust === "owner" || trust === "admin") return role === "proxy" ? "proxy" : trust;
+    if (trust === "guest") return "guest";
+    return role === "reviewer" ? "reviewer" : "member";
+  }
+
+  function asSingleRole(value) {
+    if (Array.isArray(value)) return value.map(asSingleRole);
+    if (typeof value === "string") return Object.prototype.hasOwnProperty.call(TOKEN_BACK, value) ? TOKEN_BACK[value] : value;
+    if (!value || typeof value !== "object") return value;
+    const out = {};
+    for (const key of Object.keys(value)) out[key] = asSingleRole(value[key]);
+    if (TRUSTS.includes(out.trust) && typeof out.role === "string") out.role = singleRole(out.trust, out.role);
+    return out;
+  }
+
+  function asTrustAndRole(value) {
+    if (Array.isArray(value)) return value.map(asTrustAndRole);
+    if (typeof value === "string") return Object.prototype.hasOwnProperty.call(TOKEN_FORWARD, value) ? TOKEN_FORWARD[value] : value;
+    if (!value || typeof value !== "object") return value;
+    const out = {};
+    for (const key of Object.keys(value)) out[key] = asTrustAndRole(value[key]);
+    if (!("trust" in out) && Object.prototype.hasOwnProperty.call(SINGLE_TO_SPLIT, out.role)) {
+      [out.trust, out.role] = SINGLE_TO_SPLIT[out.role];
+    }
+    return out;
+  }
+
   // signal: an AbortSignal that cancels the request (a held long-poll the
   // page no longer wants, js/notify.js).
   async function fromApi(method, path, body, raw, signal) {
@@ -2685,7 +2729,7 @@ window.Maity = window.Maity || {};
       init.body = body;
     } else if (body !== undefined) {
       init.headers["Content-Type"] = "application/json";
-      init.body = JSON.stringify(body);
+      init.body = JSON.stringify(asTrustAndRole(body));
     }
     let res;
     try {
@@ -2715,7 +2759,7 @@ window.Maity = window.Maity || {};
       if (code === "csrf_mismatch") detail += " (reload the page to get a fresh token)";
       throw new ApiError(detail || ("HTTP " + res.status), res.status, path, code, details);
     }
-    return res.json();
+    return asSingleRole(await res.json());
   }
 
   let skew = 0;

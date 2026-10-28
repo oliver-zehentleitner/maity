@@ -13,3 +13,7 @@
   profile once and rewrites the stored tokens (event audiences, request addressees and
   forwarding, contract arbiter, coordinator, onboarding, substitutes, card contracts),
   with a downgrade.
+- web: the dashboard reads trust × role into the single role's names at its API
+  boundary and writes trust and role into what it sends, so owners and admins keep their
+  views and the join, invitation and member dialogs send valid values until the full
+  trust × role UI lands.
