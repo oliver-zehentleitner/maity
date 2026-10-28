@@ -515,7 +515,7 @@ window.Maity = window.Maity || {};
   }
 
   M.join = { mount };
-  // #/p/<slug>/join, from before joining moved: Members, the panel open.
+  // #/<owner>/<slug>/join, from before joining moved: Members, the panel open.
   M.views.join = async function (ctx, root) {
     if (window.history && window.history.replaceState) window.history.replaceState(null, "", ctx.link("members", "join"));
     await M.views.members(ctx, root, ["join"]);

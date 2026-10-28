@@ -31,7 +31,7 @@ def load() -> dict:
 
 
 BASE = "http://127.0.0.1:9"
-PENDING = "/api/v1/projects/e2e-alpha/attachments?status=pending&uploaded_by=hum-1&limit=200"
+PENDING = "/api/v1/projects/owner/e2e-alpha/attachments?status=pending&uploaded_by=hum-1&limit=200"
 
 
 class Request:
@@ -81,7 +81,7 @@ def main() -> int:
         ("a 409 without a JSON body is a problem", [Answer(409, None)], 1),
         ("the code on another method is a problem", [Answer(409, "attachments_not_configured", method="POST")], 1),
         ("the code on another path is a problem",
-         [Answer(409, "attachments_not_configured", path="/api/v1/projects/e2e-alpha/attachments?name=a.png")], 1),
+         [Answer(409, "attachments_not_configured", path="/api/v1/projects/owner/e2e-alpha/attachments?name=a.png")], 1),
         ("the code with another status is a problem", [Answer(500, "attachments_not_configured")], 1),
     ]
     failed = 0
