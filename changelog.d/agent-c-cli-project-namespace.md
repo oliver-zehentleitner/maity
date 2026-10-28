@@ -9,3 +9,7 @@
   rename or transfer keeps the clone; a clone recorded before the namespace under its slug is
   taken over in place for the same agent; `limits.projects` takes full names only, matched
   against the current name and `project_aliases`; the status file lists `project_id`
+
+### Fixed
+
+- hub: migration 0060 creates `project_alias` with the `utf8mb4_bin` collation on MariaDB too (the `mariadb_` table options beside the `mysql_` ones); before, MariaDB refused its foreign keys (errno 150)
