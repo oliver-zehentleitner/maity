@@ -73,17 +73,25 @@ After a malicious job the machine is reinstalled; the hook below cannot make it 
    user**, with the registration token from that page (as root it refuses: "Must not run with
    sudo"). The runner's self-update would write into its own directory, which the runner user
    may not; update it by hand, as root, when GitHub asks for a newer version. Then hand the
-   files over: `chown -R root:root /opt/actions-runner`; the runner user still has to read its
-   registration, so `chgrp <runner-user> .runner .credentials .credentials_rsaparams` and
-   `chmod 640` on those three files (a root-owned 0600 `.credentials_rsaparams` stops
-   `run.sh` from starting); finally `install -d -o <runner-user> _work _diag _temp` inside
-   `/opt/actions-runner`.
+   files over: `chown -R root:root /opt/actions-runner`, then `cd /opt/actions-runner`; the
+   runner user still has to read its registration, so `chgrp <runner-user> .runner
+   .credentials .credentials_rsaparams` (this assumes a group of the same name as the user,
+   the default on Debian and Ubuntu; otherwise use the user's primary group) and `chmod 640`
+   on those three files (a root-owned 0600 `.credentials_rsaparams` stops the runner from
+   starting); finally `install -d -o <runner-user> _work _diag _temp`.
 3. Put `job-completed.sh` into `/opt/maity-runner-hooks/` (root-owned, executable) and
    `maity-runner.service` into `/etc/systemd/system/` with `<runner-user>` and `<uid>` filled
-   in, then `systemctl enable --now maity-runner`. The unit uses `KillMode=control-group`.
+   in, then `systemctl enable --now maity-runner`. The unit starts `bin/runsvc.sh`, not `run.sh` (which writes into the runner's directory), and
+   uses `KillMode=control-group`.
    The hook's output is shown in the job log (step "Complete runner"), which anyone can
    read in a public repository.
-4. Set `HUB_RUNNER` to `["self-hosted","maity-hub"]`, and the fork-approval setting above.
+4. Run `install-python.sh` as root, with no job running (it restarts the service; the script refuses
+   otherwise unless `FORCE=1`). The jobs use `actions/setup-python` for 3.12, which has no
+   Python for Debian and would fail; the script installs 3.12 with uv as the runner user, puts it
+   in the runner's tool cache where `setup-python` looks first, removes uv's PEP 668
+   "externally managed" marker from that private copy (without it `pip install` fails in the jobs),
+   replaces the stored `.path` and restarts the service.
+5. Set `HUB_RUNNER` to `["self-hosted","maity-hub"]`, and the fork-approval setting above.
 
 ## Why not an ephemeral runner
 

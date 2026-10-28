@@ -6,7 +6,7 @@ agent sent it) and `merge_told` whether `task_merged` went out for it: once per 
 and caught up when the card returns to `review` with the same report.
 
 Revision ID: 0070
-Revises: 0060
+Revises: 0068
 Create Date: 2026-10-28
 """
 
@@ -16,7 +16,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0070"
-down_revision: str | None = "0060"
+down_revision: str | None = "0068"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

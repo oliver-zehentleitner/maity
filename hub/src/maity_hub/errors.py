@@ -109,7 +109,18 @@ def driver_code(error: Exception) -> str:
 # is kept: the category is chosen from this list and only its name is logged, so a password, a
 # user, a host or a connection string in the text cannot reach the log, whatever escaping it uses.
 _CAUSES: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("dns", ("failed to resolve host", "name or service not known", "temporary failure in name")),
+    (
+        "dns",
+        (
+            "failed to resolve host",
+            "name or service not known",
+            "temporary failure in name",
+            "name resolution",
+            "could not translate host name",
+            "nodename nor servname",
+            "getaddrinfo failed",
+        ),
+    ),
     ("timeout", ("timeout expired", "timed out")),
     ("refused", ("connection refused",)),
     ("unreachable", ("network is unreachable", "no route to host")),
@@ -121,6 +132,15 @@ _CAUSES: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
+def connection_cause(original: BaseException) -> str:
+    """The category (`_CAUSES`) of a failure to connect, from the driver's own exception, or
+    `unclassified`; only the name of the category is ever kept, never the driver's text."""
+    text = str(original).lower()
+    return next(
+        (name for name, phrases in _CAUSES if any(p in text for p in phrases)), "unclassified"
+    )
+
+
 def driver_reason(error: Exception) -> str:
     """Why a connection failed, for the log and never for a client: the original exception's class
     and one category from a fixed list (`_CAUSES`), or `unclassified`. The driver's own text is
@@ -130,12 +150,8 @@ def driver_reason(error: Exception) -> str:
     original = getattr(error, "orig", None)
     if original is None:
         return ""
-    text = str(original).lower()
-    cause = next(
-        (name for name, phrases in _CAUSES if any(p in text for p in phrases)), "unclassified"
-    )
     kind = type(original)
-    return f"{kind.__module__}.{kind.__qualname__} {cause}"
+    return f"{kind.__module__}.{kind.__qualname__} {connection_cause(original)}"
 
 
 def install(app: FastAPI) -> None:

@@ -27,6 +27,7 @@ from maity_hub import (
     forge,
     images,
     longpoll,  # noqa: F401  (subscribes the long-poll to new events)
+    not_listening,
     probe,
     registration_accounts,
     takeovers,
@@ -41,6 +42,7 @@ from maity_hub.mail import outbox
 from maity_hub.mail import settings as mail
 from maity_hub.mail.environment import MailConfigError
 from maity_hub.middleware import HubMiddleware
+from maity_hub.notifications import mailer
 from maity_hub.routes import (
     admin,
     agents,
@@ -86,6 +88,7 @@ from maity_hub.routes import landing as landing_routes
 from maity_hub.routes import me as me_routes
 from maity_hub.routes import probe as probe_routes
 from maity_hub.routes import registration as registration_routes
+from maity_hub.routes import second_factor as second_factor_routes
 from maity_hub.routes import takeovers as takeover_routes
 
 log = logging.getLogger(__name__)
@@ -101,7 +104,12 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     engine = (
         engine
         if engine is not None
-        else make_engine(settings.database_url, settings.db_pool_size, settings.db_max_overflow)
+        else make_engine(
+            settings.database_url,
+            settings.db_pool_size,
+            settings.db_max_overflow,
+            settings.db_pool_recycle,
+        )
     )
 
     @asynccontextmanager
@@ -117,6 +125,11 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
             # A method the environment switched off voids its open codes at once (§2.6.5).
             if not sign_in.device_code_enabled(conn, settings):
                 codes.void_open(conn)
+            # A second factor the environment switched off is told, once (§2.8.5).
+            source = sign_in.resolve(conn, settings)["second_factor"][1]
+            sign_in.note_second_factor(
+                conn, settings, "environment" if source == "env" else "admin"
+            )
         reader = forge.Forge(settings.forge_github_token)
         worker = probe.Worker(engine, reader) if reader.token is not None else None
         _app.state.probe = worker
@@ -129,6 +142,9 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         # Limits end and sessions go away without a request to notice it (§6.12).
         availability_worker = availability.Worker(engine)
         availability_worker.start()
+        # A session that stopped reading is noticed without anybody asking (§5.3).
+        not_listening_worker = not_listening.Worker(engine)
+        not_listening_worker.start()
         registrations_worker = registration_accounts.Worker(engine)
         registrations_worker.start()
         from maity_hub.jourfixe import worker as jour_fixe_worker
@@ -146,7 +162,12 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         sweeper = attachments.Worker(engine, file_store) if file_store is not None else None
         if sweeper is not None:
             sweeper.start()
+        notify_worker = mailer.Worker(
+            engine, settings.mail, settings.secret_key, settings.public_url
+        )
+        notify_worker.start()
         yield
+        notify_worker.stop()
         if sweeper is not None:
             sweeper.stop()
         mail_worker.stop()
@@ -154,6 +175,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         jour_fixe_clock.stop()
         registrations_worker.stop()
         availability_worker.stop()
+        not_listening_worker.stop()
         image_worker.stop()
         if worker is not None:
             worker.stop()
@@ -176,6 +198,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(_api_router(), prefix=prefix)
     app.include_router(auth_routes.router, prefix=prefix)
     app.include_router(device_codes.router, prefix=prefix)
+    app.include_router(second_factor_routes.router, prefix=prefix)
     app.include_router(me_routes.router, prefix=prefix)
     app.include_router(notifications.router, prefix=prefix)
     app.include_router(notification_settings.router, prefix=prefix)

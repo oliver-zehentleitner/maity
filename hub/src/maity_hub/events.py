@@ -448,6 +448,18 @@ def wakes(
         return False
     if row.kind == "task_merged":
         return _merge_wakes(row, membership, principal, instance)
+    if row.kind == "member_not_listening":
+        # The start wakes the member the agent reports to, so it can re-route, and of a
+        # team only the instances its wake rule chose; the end and the copies to the
+        # admins and the owner wake nobody (§5.3, §8.2). Humans are told by the notice.
+        if (
+            (row.payload or {}).get("ended")
+            or membership.agent_id is None
+            or f"member:{principal}" not in (row.audience or [])
+        ):
+            return False
+        chosen = (row.wakes or {}).get(principal)
+        return chosen is None or instance is None or instance in chosen
     if row.kind == "ticker":
         return ticker_read.wakes(row, principal)
     if row.kind in ROUND_THREAD_KINDS and (row.payload or {}).get("jour_fixe"):
