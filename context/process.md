@@ -521,7 +521,8 @@ only from a copy that belongs to the runner, so no system Python is changed.
 The three database jobs run on three runner services of the machine, `maity-runner@sqlite`, `@pg` and `@maria`, each in
 its own directory with its own registration and the label `<prefix>-<type>`. `ci.yml` asks each job for its own label
 through the repository variable `HUB_RUNNER_LABEL` (the prefix); unset, and for forks, the jobs run hosted. Each service
-sets `PYTEST_ARGS=-n 3`, so nine workers share the eight cores.
+sets `PYTEST_ARGS=-n 2` (it was `-n 3` at first, nine workers on eight cores; lowered after the machine went down, see the entry
+on the cap below), so six workers share the eight cores.
 
 **Reason:** one runner takes one job at a time. With every pull request sending three jobs of about twelve minutes each to
 it, nine runs were queued within an hour and the runner was slower per pull request than the hosted ones, which run in

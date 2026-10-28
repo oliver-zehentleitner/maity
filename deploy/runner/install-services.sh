@@ -6,13 +6,13 @@
 # self-hosted runner; the token is valid for an hour and is not printed here).
 # Start with ONE instance (INSTANCES=pg) while someone watches the machine, then add the others (README, "limits").
 # Usage: RUNNER_TOKEN=<token> RUNNER_TARBALL=/root/actions-runner-linux-x64-2.338.0.tar.gz \
-#        [RUNNER_USER=gh-runner] [LABEL_PREFIX=maity-hub] [INSTANCES="sqlite pg maria"] install-services.sh
+#        [RUNNER_USER=gh-runner] [LABEL_PREFIX=maity-hub] [INSTANCES="pg"] install-services.sh
 # Then run install-python.sh for each instance (README.md, step 4) and set the repository variable HUB_RUNNER_LABEL.
 set -euo pipefail
 RU=${RUNNER_USER:-gh-runner}
 HOME_RU=${RUNNER_HOME:-$(getent passwd "$RU" | cut -d: -f6)}
 PREFIX=${LABEL_PREFIX:-maity-hub}
-INSTANCES=${INSTANCES:-sqlite pg maria}
+INSTANCES=${INSTANCES:-pg}   # ONE instance by default; the others are added one at a time, after the caps held (README, "limits")
 URL=${RUNNER_URL:-https://github.com/oliver-zehentleitner/maity}
 : "${RUNNER_TOKEN:?RUNNER_TOKEN is not set}" "${RUNNER_TARBALL:?RUNNER_TARBALL is not set}"
 [ -f "$RUNNER_TARBALL" ] || { echo "no such tarball: $RUNNER_TARBALL" >&2; exit 1; }

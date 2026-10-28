@@ -10,6 +10,9 @@ Requires=user@<uid>.service
 
 [Service]
 User=<runner-user>
+# Into the runner user's slice, where the drop-in user-slice-limits.conf caps everything the user runs; a system service
+# with User= would otherwise sit in system.slice, outside that cap (the sums would be 3 x 150% + 400%).
+Slice=user-<uid>.slice
 WorkingDirectory=/opt/actions-runner-%i
 # The rootless Docker of the runner user (lingering keeps it running); all instances share it.
 Environment=DOCKER_HOST=unix:///run/user/<uid>/docker.sock
