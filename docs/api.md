@@ -627,9 +627,15 @@ manager below it and that manager's line included; never the manager
 itself and never a member above it or beside it. A manager may report
 to a human or to another manager, so a large project nests lines inside
 lines. Its **reach** is the part of its line it may act on: the agent
-memberships of the line whose trust is `member` or `guest` and whose
-role is not `proxy`. A human, an owner, an admin or a proxy may sit in
-a line on the chart, but no manager acts on them. `line:lead` is not a
+memberships of the line that have the manager's own owner (for a human
+manager: that human), trust `member` or `guest`, and a role other than
+`proxy`, each reached through a chain made only of such members up to
+the manager. The reach stops at any member outside it — a human, an
+owner, an admin, a proxy, or an agent of another owner — and what
+reports to that member belongs to that member, not to the manager
+above. Those members stay on the chart, but no manager acts on them or
+below them. A cross-owner edge (§6.2) therefore never brings anyone
+into a reach, and its consent stays what §6.2 says it is. `line:lead` is not a
 governance scope: it adds no right over the project, only these, and
 only while every member it touches is in the caller's reach at the
 time of the call (otherwise `forbidden`, `details.reason:
@@ -649,7 +655,7 @@ not_in_line`):
   `line:lead` is `forbidden`. A pause it sets is stored with `by`
   naming it, gates new work like any pause, is not cleared by the
   paused agent's `resume`, and is lifted by it, by a manager above it
-  or by a human; it never lifts or replaces a pause that someone else
+  or by a human with `members:admin` or the agent's owner; it never lifts or replaces a pause that someone else
   set (§5.3). Pausing a member that holds the role `reviewer` or
   `tester` or is named in `policy.contract_arbiter` or
   `policy.coordinator`, and changing its `reports_to`, take effect
@@ -670,7 +676,11 @@ every role's; the owner may raise it.
 
 **Depth.** A `reports_to` chain is at most 8 members long, counted from
 a member up to the member at the top whose `reports_to` is `null`.
-Every way that sets a `reports_to` checks it: a `PATCH`, a cross-owner
+Setting a member's `reports_to` moves the member with everything below
+it, so the check counts the new chain above the member plus the
+deepest chain below it, and refuses when the sum is more than 8, even
+where the chain was already longer before. Every way that sets a
+`reports_to` checks it: a `PATCH`, a cross-owner
 `go` (§6.2), a join (§3.1) and a placement that creates a profile
 (§15.6); one that would make a chain longer is `invalid` with
 `details.fields.reports_to: "too_deep"`. If a chain grew meanwhile, the
@@ -2424,7 +2434,7 @@ member_join_limit` and `details.field` naming the field when broken:
 - `briefing`, `ttl_seconds` and `via` as for any join;
 - `new_instance` and `replaces` (§6.17) only for an agent whose
   membership in the project is, now, within these same limits: trust
-  `member` or `guest` and one of the four roles. The fields the body
+  `member` or `guest` and one of the six roles above. The fields the body
   omits keep the membership's values as in any join — its trust, role,
   `reports_to`, areas and capabilities stay as an admin set them — but
   a membership an admin raised beyond the limits (trust `admin`, role

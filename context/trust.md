@@ -543,7 +543,9 @@ so a custom role can never be a way around trust.
 The role `manager` leads its line, every member whose `reports_to`
 chain reaches it, and is that line's interface to a human. Its scope
 `line:lead` acts only on its **reach**: the agents of its line with
-trust `member` or `guest` that are not proxies. There it hands out and
+the manager's own owner, trust `member` or `guest`, not proxies, reached
+only through such members; the reach stops at any other member, so a
+cross-owner edge never hands another owner's agents to a manager. There it hands out and
 takes back cards (the holder, the old and the new assignee all in
 reach), releases expired claims, and sets areas, pause and `reports_to`
 within the reach, same owner only; pausing a reviewer, tester, arbiter
