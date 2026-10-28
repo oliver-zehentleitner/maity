@@ -15,6 +15,7 @@ PREFIX=${LABEL_PREFIX:-maity-hub}
 INSTANCES=${INSTANCES:-pg}   # ONE instance by default; the others are added one at a time, after the caps held (README, "limits")
 URL=${RUNNER_URL:-https://github.com/oliver-zehentleitner/maity}
 : "${RUNNER_TOKEN:?RUNNER_TOKEN is not set}" "${RUNNER_TARBALL:?RUNNER_TARBALL is not set}"
+RUNNER_TARBALL=$(realpath -- "$RUNNER_TARBALL")   # resolved before the cd below
 [ -f "$RUNNER_TARBALL" ] || { echo "no such tarball: $RUNNER_TARBALL" >&2; exit 1; }
 # Root works in directories that belong to the runner user for a moment (config.sh runs as that user). A process of that
 # user could leave a symlink there that a root chgrp, chmod or redirect would follow. So no runner of that user may run:
@@ -23,7 +24,8 @@ if pgrep -u "$RU" -f 'Runner\.(Listener|Worker)|runsvc\.sh' >/dev/null; then
   echo "a runner of $RU is running; stop all runner services first: systemctl stop 'maity-runner*'" >&2
   exit 1
 fi
-HERE=$(cd "$(dirname "$0")" && pwd)
+HERE=$(cd "$(dirname "$0")" && pwd)   # before the cd below, so a relative call still finds the files next to it
+cd /   # a neutral directory: uv looks for a config in the current one, which the runner user may not read (/root)
 UID_RU=$(id -u "$RU")
 [ -x /opt/maity-runner-hooks/job-completed.sh ] || install -d -m 755 /opt/maity-runner-hooks
 install -m 755 -o root "$HERE/job-completed.sh" /opt/maity-runner-hooks/job-completed.sh
