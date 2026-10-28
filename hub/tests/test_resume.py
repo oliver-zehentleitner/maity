@@ -61,7 +61,7 @@ def test_the_packet_has_every_part_of_the_contract(
     assert packet["api_version"] == "v1"
     assert set(packet["session"]) == {"id", "started_at", "harness", "model", "client"}
     assert packet["hints"] == {"duty": "self", "wait_timeout": 540}  # Claude Code
-    assert packet["me"]["owner"] == {"id": owner.id, "handle": "maintainer"}
+    assert packet["me"]["owner"] == {"id": owner.id, "handle": "maintainer", "meat_proxy": False}
     assert packet["membership"] == {
         "trust": "member",
         "role": "coder",
@@ -115,6 +115,7 @@ def test_the_packet_has_every_part_of_the_contract(
             "presence": "online",
             "paused": None,
             "covered_by": None,
+            "meat_proxy": False,
         }
     ]
     assert "GET /projects/maintainer/maity/members" in packet["operations"]
