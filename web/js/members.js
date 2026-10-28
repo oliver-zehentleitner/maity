@@ -44,6 +44,10 @@ window.Maity = window.Maity || {};
     if (err.code === "forbidden" && err.details && err.details.reason === "humans_only") {
       return { message: "only a human may make this change" };
     }
+    // §6.25: the person whose namespace holds the project stays its owner.
+    if (err.code === "namespace_owner") {
+      return { message: "the project lives in this person's namespace, so they stay an owner; transfer it to someone else first (Project settings)" };
+    }
     const fields = err.code === "invalid" && err.details && err.details.fields;
     if (!fields) return err;
     const said = Object.entries(fields).map(([f, reason]) => REFUSALS[f + ":" + reason] || f.replace("_", " ") + ": " + reason);

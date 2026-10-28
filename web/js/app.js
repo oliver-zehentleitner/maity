@@ -478,6 +478,9 @@ window.Maity = window.Maity || {};
     }
     if (ctx.canAdmin && ctx.project.settings && "onboarding" in ctx.project.settings) append(panel, onboardingForm(ctx));
     if (ctx.canAdmin && "repository" in ctx.project) append(panel, repositoryForm(ctx));
+    // Its name: rename and transfer, for a human owner where the hub has them (§6.25).
+    const names = M.projectNames && M.projectNames.section(ctx);
+    if (names) append(panel, names);
     // A policy field, humans only (§2.3 ʰ); where the hub knows it (§6.22).
     if (humanAdmin && M.swarm && ctx.project.policy && "swarm_public" in ctx.project.policy) append(panel, M.swarm.settingsForm(ctx, save));
     if ("memory" in ctx.project && M.projectSetup) append(panel, memoryPanel(ctx));

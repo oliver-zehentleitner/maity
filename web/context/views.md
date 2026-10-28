@@ -1681,3 +1681,31 @@ elsewhere, a revoked lead included.
 **Rejected alternative:** editing the limit in the join panel where the
 refusal appears: the panel's user may not be the owner, and the rulebook
 would have two places. Alternatives to the row's placement: unknown.
+
+## A project's name is changed in Project settings; a card outside its project reads with it
+
+**Id:** 9cf859f1-d5e0-420c-9ea3-d633cea94e33
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §6.25 (rename by a human owner, transfer by the namespace owner as a consent request, aliases, card references outside a project); the card tsk-cns4d1d7ht4j from the maintainer's chat; the hub's PR #487, 2026-10-28
+**Revisit when:** the dashboard gets a second-factor prompt (the transfer's step-up), or organisations become namespace owners
+
+Project settings has a **Project name** section for a human owner,
+where the hub's view carries `aliases`: the full name, the earlier ones,
+a rename of the slug that follows the new address, and, for the
+namespace owner, a transfer to another human owner of the project, with
+the request withdrawable from the same place. A step-up the hub asks for
+is said, not entered: the dashboard has no second-factor prompt yet. A
+card's or a request's id reads `<owner>/<slug>/<id>` wherever it is shown
+outside its project (`M.ids.where` says so by the view's scope), written
+by one helper (`M.ids.ref`) and never parsed back.
+
+**Reason:** the name belongs with the project's other settings and to
+the people the contract gives it to; one helper keeps the prefix in one
+place, as the card asked, so a later change of its form is one edit.
+
+**Rejected alternative:** a transfer that names anyone by handle: the
+contract takes only a current owner of the project, so the list offers
+exactly those. Parsing `owner/slug/tsk-…` back into a link: §6.25 makes
+the prefix display only.
