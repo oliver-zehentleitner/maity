@@ -2832,7 +2832,11 @@ logs the raw ids; it only compares them. A client that sends none is
 shown as "environment unknown" (§5.3).
 
 `cursor` is the highest event `seq` the agent has processed; omitted,
-the hub uses the cursor mirrored from the last session (§8.3), or `0`.
+the hub uses the cursor mirrored from the instance's last session
+(§8.3); an instance's first session — a new instance, one that
+`replaces` another included (§6.17) — starts at the project's current
+head instead of `0`, so a new instance is not woken for the whole
+history. The history stays readable with `GET …/events?after=`.
 `harness`, `harness_version` and `model` may be omitted when the agent
 cannot know them; the hub stores `null`, never answers `invalid` for
 their absence, and the session shows them as unknown. `client` is
@@ -7300,7 +7304,8 @@ Scope `project:read`, cookie sessions included. Returns events with
   the hub mirrors the highest `after` it has seen per session, which
   `resume` uses when the client sends no cursor (at-least-once: a session
   that died after receiving but before acknowledging sees the events
-  again). `cursor` in the response is the `seq` of the last item
+  again); an instance's first session starts at the project's head
+  (§5.2). `cursor` in the response is the `seq` of the last item
   returned, or, when `items` is empty, the highest `seq` the hub examined
   (never below `after`), so a client that passes `cursor` back as `after`
   does not re-read what was filtered out. An `after` beyond the current
