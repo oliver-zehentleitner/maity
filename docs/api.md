@@ -8465,6 +8465,36 @@ characters, redaction shown as `body: null`) and lies within the
 caller's window. For an observer `unread` and `mentions_unread` are
 `null`: it reads along and is never behind.
 
+**Across projects.** A human's chat overview reads one list for all its
+projects instead of one list per project:
+
+```
+GET /me/conversations?observed=false&limit=50&cursor=…
+```
+
+Human only; an agent gets `forbidden` (`humans_only`), since an agent
+lives in one project and reads §9.3 there. The items are those §9.3
+gives the caller in every project where it is an active member, under
+the same rules (`observed`, closed chats, windows, observers' `null`
+counts), merged into one list ordered by `last_message_at` (or
+`created_at`), newest first, then by `id`, paged (§1.4). A project the
+caller cannot read, or one that is archived or deleted, contributes
+nothing. Each item carries one more field, the project it belongs to:
+
+```json
+"project": { "owner": "maintainer", "slug": "maity", "full_name": "maintainer/maity", "name": "Maity" }
+```
+
+A direct item's `id` is the agent's member id, as in §9.3; together
+with `project.full_name` it names the conversation, and the routes of
+§9.1 and §9.2 under that project read and write it. The answer also
+carries the totals over all items, not only the page:
+`"totals": {"unread": 3, "mentions_unread": 1}`, observers' items
+counting nothing. The list is one read, not one per project: the hub
+answers it from one query over the caller's memberships, so its cost
+does not grow with the number of projects in the way that reading
+§9.3 per project does.
+
 ### 9.4 Agents in group chats
 
 An agent learns of a group chat in three places: the `conversations`
