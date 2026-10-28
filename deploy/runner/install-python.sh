@@ -32,7 +32,8 @@ fi
 
 [ -x "$HOME_RU/.local/bin/uv" ] || as_ru sh -c "curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh"
 as_ru uv python install "$SERIES"
-PY=$(as_ru uv python find --managed-python "$SERIES")       # .../cpython-3.12.X-linux-x86_64-gnu/bin/python3.12
+PY=$(as_ru uv python find "$SERIES")                       # UV_PYTHON_PREFERENCE=only-managed (in as_ru) limits it to uv-managed Pythons;
+#                                                              # the flag --managed-python cannot be combined with that setting; .../cpython-3.12.X-linux-x86_64-gnu/bin/python3.12
 ROOT=$(as_ru sh -c 'dirname "$(dirname "$(readlink -f "$1")")"' sh "$PY")
 case "$ROOT" in "$HOME_RU"/.local/share/uv/python/*) ;; *) echo "refusing: $ROOT is not a uv-managed Python under $HOME_RU" >&2; exit 1;; esac
 VER=$(as_ru "$PY" -c 'import platform; print(platform.python_version())')
