@@ -3,6 +3,7 @@ the redirect guard, check runs and commit statuses, a repository the token canno
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import http.client
 import io
@@ -304,6 +305,38 @@ def test_a_404_of_any_read_asks_again_whether_it_is_public(seen: FakeOpener) -> 
     with pytest.raises(forge.NotCoveredError):
         READER.file("a/b", "README.md", 1000)
     assert _paths(seen) == ["/repos/a/b", "/repos/a/b/contents/README.md", "/repos/a/b"]
+
+
+@pytest.mark.parametrize("error", ["FORBIDDEN", "NOT_FOUND", None])
+def test_a_graphql_error_asks_again_before_the_next_read(
+    seen: FakeOpener, error: str | None
+) -> None:
+    seen.answers["/repos/a/b"] = {"private": False}
+    seen.answers["/graphql"] = {
+        "data": {"repository": None},
+        "errors": [{"type": error}] if error else [],
+    }
+    with contextlib.suppress(forge.ForgeUnavailableError):  # FORBIDDEN fails the read
+        READER.items("a/b", [1])
+    seen.answers["/repos/a/b"] = {"private": True}
+    seen.answers["/repos/a/b/branches/main"] = {"commit": {"sha": SHA}}
+    with pytest.raises(forge.NotCoveredError):
+        READER.branch("a/b", "main")
+    assert _paths(seen) == ["/repos/a/b", "/graphql", "/repos/a/b"]
+
+
+def test_a_missing_ref_after_a_recent_visibility_still_asks_again(seen: FakeOpener) -> None:
+    """`_missing` remembering visibility does not keep "public": the 404 itself drops it
+    for the next read."""
+    seen.answers["/repos/a/b"] = {"private": False}
+    seen.answers["/repos/a/b/branches/gone"] = None
+    seen.answers["/repos/a/b/branches/main"] = {"commit": {"sha": SHA}}
+    assert READER.branch("a/b", "gone")["found"] is False
+    seen.answers["/repos/a/b"] = {"private": True}
+    assert READER.branch("a/b", "gone")["found"] is False  # within `_missing`'s memory
+    with pytest.raises(forge.NotCoveredError):
+        READER.branch("a/b", "main")
+    assert "/repos/a/b/branches/main" not in _paths(seen)
 
 
 def test_a_rate_limit_is_no_refusal(seen: FakeOpener) -> None:

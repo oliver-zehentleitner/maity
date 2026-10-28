@@ -108,6 +108,17 @@ PUBLIC_SECONDS = 600  # §11.4: the visibility is read again at most every 10 mi
 _public: dict[tuple[str, str], tuple[float, str | None]] = {}
 
 
+def _graphql_refused(found: Any) -> bool:
+    """A GraphQL answer (status 200) that may be a refusal: no repository, or an error
+    that is not a rate limit."""
+    if not isinstance(found, dict):
+        return True
+    errors = found.get("errors") or []
+    if any(not isinstance(e, dict) or e.get("type") != "RATE_LIMITED" for e in errors):
+        return True
+    return not isinstance(found.get("data"), dict) or found["data"].get("repository") is None
+
+
 def _repository_in(path: str, query: dict[str, Any] | None) -> str | None:
     """The `owner/name` a read is about: from a REST path `/repos/{owner}/{name}/…`
     or a GraphQL query's variables; None when the read names none."""
@@ -156,8 +167,8 @@ class Forge:
                 if refused or isinstance(error, NotCoveredError):
                     self._forget(repository)
                 raise
-            if found is None:  # a 404: maybe a ref that is not there, maybe a refusal
-                self._forget(repository)
+            if found is None or (query is not None and _graphql_refused(found)):
+                self._forget(repository)  # a 404 may be a ref that is not there, or a refusal
             return found
         return self._send(path, query)
 
@@ -478,7 +489,6 @@ class Forge:
             raise ForgeUnavailableError("the forge answered GraphQL with no object")
         repo = (found.get("data") or {}).get("repository")
         if repo is None:
-            self._forget(repository)  # GraphQL's refusal: no repository, an answer of 200
             errors = found.get("errors") or []
             if all(isinstance(e, dict) and e.get("type") == "NOT_FOUND" for e in errors):
                 return None
@@ -513,10 +523,7 @@ class Forge:
         errors = found.get("errors") or []
         if any(not isinstance(e, dict) or e.get("type") != "NOT_FOUND" for e in errors):
             raise ForgeUnavailableError("the forge answered GraphQL with errors")
-        repo = (found.get("data") or {}).get("repository")
-        if repo is None:
-            self._forget(repository)
-            repo = {}
+        repo = (found.get("data") or {}).get("repository") or {}
         answer: dict[int, dict[str, Any] | None] = {}
         for n in numbers:
             item = repo.get(f"n{n}")
