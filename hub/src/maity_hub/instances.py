@@ -264,6 +264,12 @@ def views(
                         "id": session.id,
                         "started_at": clock.rfc3339(session.started_at),
                         "listening": is_listening,
+                        # When the 10 minutes ran out, while an episode is open (§5.3).
+                        "not_listening_since": (
+                            clock.rfc3339(session.not_listening_since)
+                            if session.not_listening_since is not None
+                            else None
+                        ),
                     }
                     if session
                     else None

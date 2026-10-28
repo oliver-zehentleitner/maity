@@ -59,8 +59,8 @@ from playwright.sync_api import Page, expect, sync_playwright
 WEB = Path(__file__).resolve().parent.parent
 OWNER = "owner"
 OWNER_PASSWORD = "e2e owner password"
-TIMEOUT_MS = 15_000  # one step in the browser; the feed reads every 5 s
-COUNTS_MS = 25_000  # counts of other projects: /me is re-read every 15 s
+TIMEOUT_MS = 25_000  # one step in the browser; the feed reads every 15 s
+COUNTS_MS = 70_000  # counts of other projects: /me is re-read every 60 s
 WAIT_S = 60  # the agent's `maity wait`
 
 # axe-core, the accessibility engine: the npm package's tarball, pinned by the
@@ -1427,7 +1427,7 @@ def images_step(run: Run, page: Page, alpha: Path) -> None:
             {
                 "name": "banner.png",
                 "mimeType": "image/png",
-                "buffer": tiny_png(600, 150, (122, 63, 196)),
+                "buffer": tiny_png(640, 320, (122, 63, 196)),
             }
         ]
     )
@@ -1509,6 +1509,9 @@ def pair_exchange(run: Run, pair_line: str) -> tuple[int, dict, str]:
 def runners_step(run: Run, page: Page) -> None:
     """The instance-level Runners view (docs/api.md §15.2, §15.3) against the hub."""
     page.goto(f"{run.base}/#/owner/e2e-alpha/members")
+    # A hash-only goto returns before the page renders anew, and that render
+    # replaces the header: a menu opened on the old one is gone mid-click.
+    expect(page.locator("main section.view-members")).to_be_visible()
     # Runners are the person's: in the gear menu, not the project row (tsk-cb6myw32def0).
     expect(page.locator("nav.switcher").get_by_role("link", name="Runners", exact=True)).to_have_count(0)
     page.locator("header").get_by_role("button", name="Settings", exact=True).click()

@@ -234,7 +234,8 @@ nav.switcher a, nav.views a {
 }
 
 nav.switcher a[aria-current="page"], nav.views a[aria-current="page"] { color: var(--text); border-bottom-color: var(--accent); }
-nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); }
+/* A count that appears must not make its row taller: the page below would jump. */
+nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); line-height: 1; }
 
 /* The project switcher: always visible, one chip per project. At its
    right, behind a separator, the project's state and absence; on a narrow
@@ -525,12 +526,16 @@ a.id-ref:hover, a.id-ref:focus-visible { text-decoration: underline; }
 .project-mark.small.monogram { font-size: 0.5rem; }
 .project-label .project-mark { margin-right: 4px; }
 .bar .project-mark { margin-right: -2px; }
-.project-banner { display: block; width: 100%; max-height: 180px; object-fit: cover; border-radius: var(--radius); margin: 0 0 12px; }
+/* A forge's social preview is 2:1 (GitHub: at least 640×320, ideally 1280×640):
+   the banner keeps that shape at every width, at most 960 pixels wide (480 high),
+   centred, so the inbox below stays in sight. It is never cropped, since its text
+   would be cut; an image of another shape gets margins instead. */
+.project-banner { display: block; width: 100%; max-width: 960px; height: auto; aspect-ratio: 2 / 1; object-fit: contain; background: var(--surface-2); border-radius: var(--radius); margin: 0 auto 12px; }
 .images { display: grid; gap: 10px; margin-top: 12px; }
 .image-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; max-width: 32rem; }
 .image-row label { font-size: 0.85rem; color: var(--muted); }
 .image-preview-logo { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; }
-.image-preview-banner { width: 100%; max-height: 120px; object-fit: cover; border-radius: 6px; }
+.image-preview-banner { width: 100%; height: auto; aspect-ratio: 2 / 1; object-fit: contain; background: var(--surface-2); border-radius: 6px; }
 /* Runners (docs/api.md §15). */
 .runners { display: grid; gap: 12px; margin-top: 12px; }
 .runner { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; min-width: 0; overflow-wrap: anywhere; }
@@ -1273,9 +1278,17 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 
 /* At phone width the text beside the logo (the scope line, the project's
    name) is hidden from sight only: the switcher's active tab names it, and
-   a screen reader still reads it. */
+   a screen reader still reads it. The project's mark goes too (it is
+   decoration, hidden from screen readers already). */
 @media (max-width: 600px) {
   .bar > .project { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .bar > .project-mark { display: none; }
+  /* The buttons beside the logo stay in its row with counts on them, at
+     360 px too: tighter spacing, the same touch height. */
+  .bar { gap: 6px; }
+  .me { gap: 3px; }
+  .me .bell, .me .menu-button { padding-inline: 5px; gap: 2px; }
+  .me .bell .count { padding-inline: 3px; min-width: 1.4em; text-align: center; }
 }
 
 /* An opened card (js/card-panel.js): beside the columns on a wide screen,

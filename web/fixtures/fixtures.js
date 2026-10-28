@@ -4963,7 +4963,16 @@ window.MAITY_FIXTURES = {
       "scope": "bug fixes may be released, features wait",
       "until": "2026-10-22T08:00:00Z"
     },
-    "aliases": [],
+    "aliases": [
+      "maintainer/sample-1",
+      "maintainer/sample-2",
+      "maintainer/sample-3",
+      "maintainer/sample-4",
+      "maintainer/sample-5",
+      "maintainer/sample-6",
+      "maintainer/sample-7",
+      "maintainer/sample-old"
+    ],
     "banner": {
       "available": false,
       "source": null

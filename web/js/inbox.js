@@ -131,7 +131,9 @@ window.Maity = window.Maity || {};
   function textAt(ctx, req) {
     const p = ctx.projects.find((x) => x.full_name === req.slug);
     const slug = req.personal && !p ? null : req.slug;
-    return { slug, repository: (p && p.repository && p.repository.url) || (ctx.slug === req.slug ? M.ids.where(ctx).repository : null) };
+    return { slug, repository: (p && p.repository && p.repository.url) || (ctx.slug === req.slug ? M.ids.where(ctx).repository : null),
+      // Across projects (#/all) a card or request reads with its project (§6.25).
+      outside: ctx.scope !== "project" };
   }
 
   function entryBody(ctx, req, names, onAnswer, onLater) {
@@ -155,9 +157,9 @@ window.Maity = window.Maity || {};
       h("dt", null, "Asked"), h("dd", null, formatTime(req.created_at)),
       req.task
         ? [h("dt", null, "Card"), h("dd", null, req.personal
-          ? req.task.id + " — " + req.task.title + " (" + req.task.status.replace("_", " ") + ")"
+          ? M.ids.ref(req.project && req.project.full_name, req.task.id, true) + " — " + req.task.title + " (" + req.task.status.replace("_", " ") + ")"
           : h("a", { href: ctx.projectLink(req.slug, "tasks", req.task.id) },
-            req.task.id + " — " + req.task.title + " (" + req.task.status.replace("_", " ") + ")"))]
+            M.ids.ref(req.slug, req.task.id, ctx.scope !== "project") + " — " + req.task.title + " (" + req.task.status.replace("_", " ") + ")"))]
         : null,
       h("dt", null, "Meanwhile"), h("dd", null, req.while_open === "proceed_provisionally"
         ? "the agent proceeds provisionally"

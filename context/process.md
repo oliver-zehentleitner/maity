@@ -431,3 +431,79 @@ already knows what it deploys.
 - A `sitemap.xml` committed to `docs/`: it lists pages by hand and drifts.
 - Listing every `.html` file as the card first said: it would put the brand's loader fragment
   into the sitemap.
+
+## The database CI jobs may run on the maintainer's machine; a fork's code reaches it only through an approval
+
+**Id:** 405c762c-11a2-4a95-a23b-0b2657a7aa8d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's go and the coordinator's brief (2026-10-28); the coordinator approved the plan; the security review of the pull request (2026-10-28) corrected the first version of this entry
+**Revisit when:** the repository stops being public, a job needs a secret of the repository, or hosted runners get as fast as the machine
+
+`ci.yml` lets `hub-sqlite`, `hub-postgresql` and `hub-mariadb` run on a self-hosted runner
+when the repository variable `HUB_RUNNER` holds its labels; unset, they run on GitHub's
+runners. The runner is a user of its own with rootless Docker, no read access to anything
+else on the machine and a firewall rule against local and internal services (IPv4 and
+IPv6); the runner's files, hook and unit are root-owned under /opt and a system unit, not in
+the runner user's home, where a job could replace them. It is not ephemeral, and a
+job-completed hook tidies containers, images, volumes and the workspace.
+Install steps and the trust boundary: `deploy/runner/README.md`.
+
+The condition in `ci.yml` that sends fork pull requests to the hosted runners is **not** a
+protection: a fork's pull request runs the fork's own `ci.yml` and can name the runner
+itself. The protection is the repository setting that requires approval for every outside
+collaborator's workflow run, and the rule to read `.github/` in the diff before approving.
+"Only code of this repository" means every branch of anyone with push access, agents
+included. After a malicious job the machine is reinstalled; the hook is housekeeping.
+
+**Reason:** the database jobs are the long ones and the machine has more cores than a hosted
+runner; with the suite in parallel they use all of them. The repository is public, so a
+runner that runs fork code next to the project's credentials is the risk; the dedicated
+user, the approval rule and the absence of any secret on the machine bound it. Deleting one
+variable is the fallback.
+
+**Rejected alternatives:**
+- An ephemeral runner (a fresh registration per job): cleaner, but it needs a
+  repository-admin token on the machine to register again, the one secret the machine must
+  not hold.
+- The runner under the account of the agents that work on the machine: that account can
+  reach the production cluster and the maintainer's tokens.
+- Docker through the docker group: the `services:` of the jobs need a Docker API, and that
+  group is root on the machine; rootless Docker gives the API without it.
+- Relying on the `runs-on` condition against forks: the fork controls the workflow file.
+- Running every job on the machine: it runs one job at a time (the services bind host ports);
+  the short jobs gain nothing there.
+
+## The runner gets its Python through uv into the tool cache, and starts through `runsvc.sh`
+
+**Id:** 2bede3db-2d8e-4716-851b-0ecc07cb140d
+**Type:** decision
+**Type:** workaround
+**Status:** active
+**Evidence:** confirmed
+**Source:** the first installation of the self-hosted runner, 2026-10-28 (the service exited at once; setup-python found no Python 3.12; pip refused to install); the review of the installer script
+**Revisit when:** setup-python supports Debian, or the database jobs run in a virtual environment on both runner kinds
+**See:** process.md#the-database-ci-jobs-may-run-on-the-maintainers-machine-a-forks-code-reaches-it-only-through-an-approval — 405c762c-11a2-4a95-a23b-0b2657a7aa8d — as of 2026-10-28
+
+The unit starts `bin/runsvc.sh`, not `run.sh`: `run.sh` copies a helper into its own directory on every start, which
+a root-owned runner directory refuses, and the service then exits with status 0 and restarts in a loop.
+`install-python.sh` gives the machine a Python that `setup-python` finds: uv installs 3.12 as the runner user and it is
+linked into the runner's tool cache (`_work/_tool/Python/<version>/x64`); uv's PEP 668 "externally managed" marker is
+removed from that private copy, because `pip install` in the jobs fails with it; the `.path` the runner stored at
+registration (the PATH of root's shell, with directories the runner user may not enter) is replaced by a plain one.
+Everything inside the runner user's own paths is done as that user: a job can leave symlinks there, and root following one
+would write wherever it points.
+
+**Reason:** `setup-python` knows Ubuntu, macOS and Windows; on Debian it fails with "version 3.12 not found". The tool cache
+is the place it looks first, so the workflow stays the same on hosted and on the self-hosted runner. The marker is removed
+only from a copy that belongs to the runner, so no system Python is changed.
+
+**Rejected alternatives:**
+- The database jobs install into a virtual environment (`python -m venv`): the same on both runner kinds and it leaves the
+  runner's Python untouched, but it changes three jobs and every `make` call; the marker route is documented instead and
+  this stays the revisit.
+- The system Python of the machine: Debian 13 ships 3.13, the hub is tested on 3.12.
+- `pip install --break-system-packages` in the jobs: it would leak a self-hosted special case into the shared workflow.
+- Root creating the links and files in the tool cache: the first version did, and the review showed it follows symlinks a
+  job may have left there.
