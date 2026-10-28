@@ -89,8 +89,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # The tables take their indexes along; MariaDB refuses to drop an index a foreign key
+    # needs first.
     op.drop_table("forge_token")
-    op.drop_index(op.f("ix_forge_link_state_human_id"), table_name="forge_link_state")
     op.drop_table("forge_link_state")
-    op.drop_index(op.f("ix_forge_link_human_id"), table_name="forge_link")
     op.drop_table("forge_link")
