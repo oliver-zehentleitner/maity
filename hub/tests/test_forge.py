@@ -245,7 +245,7 @@ def test_a_repository_turned_private_stops_at_the_next_check(
     seen: FakeOpener, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     now = [1000.0]
-    monkeypatch.setattr(forge.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr("maity_hub.forge.time.monotonic", lambda: now[0])
     seen.answers["/repos/a/b"] = {"private": False}
     seen.answers["/repos/a/b/branches/main"] = {"commit": {"sha": SHA}}
     READER.branch("a/b", "main")
