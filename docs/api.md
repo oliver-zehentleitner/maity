@@ -10561,6 +10561,25 @@ is no environment form: the page is content, not deployment.
   `updated_by` — which is the record in this version (there is no
   instance event list yet); they emit no project event and wake
   nobody.
+- **Search engines.** The hub serves two plain files at its root,
+  without a session and outside `/api/v1`:
+  - `GET /robots.txt` (`text/plain`): while the landing page is
+    enabled, `User-agent: *`, `Allow: /$`, `Disallow: /`, and a
+    `Sitemap:` line with the absolute URL of `/sitemap.xml` built from
+    `MAITY_PUBLIC_URL`; while it is not, `User-agent: *` and
+    `Disallow: /`, so a self-hosted or local instance is not indexed
+    unless its operator gave it a public face.
+  - `GET /sitemap.xml` (`application/xml`): while the landing page is
+    enabled, a sitemap with exactly one `<url>`, the instance's root
+    (`MAITY_PUBLIC_URL` with a trailing `/`), and `<lastmod>` from the
+    landing setting's `updated_at`; while it is not, `404`. Nothing
+    behind a sign-in, no project, badge or swarm page and no user is
+    ever listed: the dashboard routes are fragments (`/#/…`) that a
+    crawler does not fetch, and the hub publishes nothing it would not
+    show a visitor without a session.
+
+  Both are answered with `Cache-Control: public, max-age=3600` and
+  never set a cookie. The join host (§1.1) answers both `not_found`.
 
 ### 16.8 Abuse reports
 
