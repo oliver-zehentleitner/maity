@@ -206,6 +206,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 426 | `client_outdated` | a CLI older than the project-namespace release calls a project route (§6.25); `details.minimum` (the lowest CLI version that works), `details.install` (the install line, §3.2) |
 | 429 | `rate_limited` | `Retry-After` is set |
 | 500 | `internal` | an unexpected failure; `details` is `{}`, the message names no internals; the response still carries the envelope and every header of §1.1 |
+| 503 | `forge_unavailable` | the forge did not answer while linking a GitHub App installation (§11.4) |
 | 503 | `probe_unavailable` | the forge did not answer a probe read; `details.last` holds the last observation if any |
 | 503 | `ktw_unavailable` | the root `.keep-the-why` of the Keep the Why family could not be read (§11.3); `details.reason`, `details.last` holds the last good answer if any; a family member's own failure is reported on that member, not as this error |
 | 503 | `database_unavailable` | the database cannot be reached (`/health`, and any call that needs it); `details` is `{}`, the message carries no driver text |
@@ -9017,11 +9018,15 @@ repository it includes.
   refused with `details.reason: link_state`. Since the browser arrives
   here by the forge's redirect, every outcome is a `303` to the
   dashboard's forge settings (`<MAITY_PUBLIC_URL>/#/settings/forge`): on
-  success without a query, otherwise with `?error=<reason>` (one of the
-  reasons above, `forge_app_missing`, or `forge_unavailable` when the
-  forge did not answer), never with a forge token, code or state in the
-  URL. The same reasons answer `403` or `409` as JSON to a client that
-  sends `Accept: application/json`.
+  success without a query, otherwise with `?error=<reason>`, the reason
+  one of `link_state`, `installation_not_yours`,
+  `organisation_installation`, `installation_linked` (below),
+  `forge_app_missing`, or `forge_unavailable` when the forge did not
+  answer; never with a forge token, code or state in the URL. To a
+  client that sends `Accept: application/json` the same reasons answer
+  as JSON: `403 forbidden` for the first three, `409 conflict` for
+  `installation_linked`, `409 forge_app_missing`, and `503
+  forge_unavailable`.
 - An installation is linked to one human at a time. Linking one that is
   linked to another human is refused (`409 conflict`, `details.reason:
   installation_linked`); the other human unlinks it first, or the
