@@ -1,0 +1,3 @@
+### Added
+
+- hub: a merge closes the loop (docs/api.md §6.6). When the probe first sees a report's pull request merged, with `mismatch` false, on a card in `review`, it emits `task_merged` `{task, pr, merge_sha, done_authority, closed, blocked_by?}` once per report, waking the done authority. A merge seen while the card was elsewhere is told when the card returns to `review` with the same report. The policy `merged_closes` (`notify`, default, or `auto`, set by a human with `project:admin`, kept on a preset change) closes the card itself under `done_authority` `holder` or `admin` when no child, dependency or objection holds it. Migration 0070 adds `project.merged_closes` and the card's `merge_report` and `merge_told`.

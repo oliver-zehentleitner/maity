@@ -380,6 +380,8 @@ project = Table(
     Column("subtasks", String(16), nullable=False, server_default="proposed"),
     # Whether visitors without a session see the swarm page, agents only (§6.22).
     Column("swarm_public", String(8), nullable=False, server_default="off"),
+    # What a merged pull request does to its card in review: notify or auto (§6.6).
+    Column("merged_closes", String(8), nullable=False, server_default="notify"),
     Column("claim_policy", String(32), nullable=False),
     Column("done_authority", String(32), nullable=False),
     Column("contract_arbiter", String(ID + 8), nullable=False),  # member id or role:admin
@@ -950,6 +952,10 @@ card = Table(
     Column("jour_fixe", JSON_VALUE),
     Column("ktw_ref", String(255)),
     Column("report", JSON_VALUE),
+    # A merge of the report's pull request (§6.6): the report it was observed on (a
+    # digest of it as sent) and whether `task_merged` went out for it.
+    Column("merge_report", String(64)),
+    Column("merge_told", Boolean, nullable=False, server_default=false()),
     Column("contract", JSON_VALUE),
     # Releases: the version is unique per project; `release_in_flight` is
     # True on the one release card that is neither done nor cancelled and
