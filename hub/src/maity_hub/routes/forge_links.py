@@ -26,6 +26,7 @@ from maity_hub.models import Strict
 router = APIRouter()
 
 SETTINGS_PAGE = "/#/settings/forge"
+STATE_MAX = 512
 
 
 def _human(caller: Caller) -> tuple[str, str]:
@@ -60,7 +61,9 @@ def setup(
     caller: AnyCaller,
     installation_id: int = Query(ge=1, le=2**53),
     code: str = Query(min_length=1, max_length=512),
-    state: str = Query(min_length=1, max_length=512),
+    # Checked in the flow below: a missing or malformed state is `link_state` like any
+    # other, not a 400 before the reasons apply (§11.4).
+    state: str | None = None,
 ) -> Response:
     """The forge sends the browser back here: every outcome is a 303 to the dashboard's
     forge settings, `?error=<reason>` when the link failed, never a code, state or token
@@ -72,6 +75,8 @@ def setup(
     try:
         if app is None:
             raise forge_links.LinkError("forge_app_missing")
+        if not state or len(state) > STATE_MAX:
+            raise forge_links.LinkError("link_state")
         with engine.begin() as conn:
             forge_links.take_state(conn, state, human_id, session)
         found = forge_links.verify(app, installation_id, code)

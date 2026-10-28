@@ -564,6 +564,53 @@ window.Maity = window.Maity || {};
     const p = c.view.participants.find((x) => x.member_id === memberId);
     return c.items.filter((x) => x.seq > (p ? p.joined_seq : 0));
   }
+  // §9.3 for one project (m[1]: its fixture key), shared by the project's
+  // route and the list across projects.
+  function conversationList(m, path, query) {
+    const all = file(m[1], "conversations.json", path);
+    const members = file(m[1], "members.json", path).items;
+    const preview = (last) => last && { seq: last.seq, from: last.from, body: last.redacted ? null : [...last.body].slice(0, 200).join(""),
+      sent_at: last.sent_at, redacted: !!last.redacted };
+    // §9.2: an owner outside the project sees only the chats its agents are
+    // in, and only with observed=true; no direct chat, nothing else.
+    const outside = !me().projects.some((p) => p.slug === m[1]);
+    // Neither a member nor an agent there: the route does not say the project exists (§9.2).
+    if (outside && !(fixtures()["agents.json"] || { items: [] }).items.some((a) => a.owner_id === me().member.id
+      && (a.memberships || []).some((x) => x.project === fullOf(m[1])))) fail(404, "not_found", "Not found", path);
+    const direct = outside ? [] : Object.keys(all).map((agentId) => {
+      const items = all[agentId].items;
+      const last = items.length ? items[items.length - 1] : null;
+      const agent = members.find((x) => x.id === agentId);
+      return {
+        id: agentId, kind: "direct", agent_id: agentId, title: null, access: "party", closed_at: null,
+        participants: [{ member_id: me().member.id, kind: "human", handle: me().member.handle },
+          { member_id: agentId, kind: "agent", handle: agent ? agent.handle : agentId }],
+        last_message_at: last ? last.sent_at : null,
+        unread: items.filter((x) => x.from === agentId && !x.seen_by_human).length,
+        mentions_unread: 0,
+        // §9: the newest message as a preview, its body cut at 200 code points.
+        last_message: preview(last),
+      };
+    });
+    const groups = Object.values(groupChats(m[1])).map((g) => groupItem(m[1], g, path)).filter(Boolean)
+      .filter((g) => g.access === "participant" || query.get("observed") === "true")
+      .map((g) => {
+        const c = groupChats(m[1])[g.id];
+        const win = windowOf(c, me().member.id);
+        const last = win.length ? win[win.length - 1] : null;
+        const readTo = c.read[me().member.id] || 0;
+        const theirs = win.filter((x) => x.from !== me().member.id && x.seq > readTo);
+        return Object.assign({}, g, {
+          participants: g.participants.map((x) => ({ member_id: x.member_id, kind: x.kind, handle: x.handle })),
+          last_message_at: last ? last.sent_at : null, last_message: preview(last),
+          unread: g.access === "observer" ? null : theirs.length,
+          mentions_unread: g.access === "observer" ? null : theirs.filter((x) => (x.mentions || []).some((mm) => mm.member_id === me().member.id)).length,
+        });
+      });
+    const at = (c) => c.last_message_at || c.created_at || "";
+    return { items: direct.concat(groups).sort((a, b) => (at(b) > at(a) ? 1 : at(b) < at(a) ? -1 : 0)), next_cursor: null };
+  }
+
   // The view as the caller may see it, or null when it may not.
   function groupItem(slug, c, path) {
     const meId = me().member.id;
@@ -1586,6 +1633,7 @@ window.Maity = window.Maity || {};
       "/api/v1/projects/{owner}/{slug}/forge/webhook/secret": { post: {}, delete: {} },
       "/api/v1/projects/{owner}/{slug}/ticker/subscription": { get: {}, patch: {} },
       "/api/v1/projects/{owner}/{slug}/conversations": { get: {}, post: {} },
+      "/api/v1/me/conversations": { get: {} },
       "/api/v1/projects/{owner}/{slug}/attachments": { get: {}, post: {} },
       "/api/v1/requests/{request_id}/answer": { post: {} },
       "/api/v1/auth/device-codes": { post: {} },
@@ -2382,49 +2430,18 @@ window.Maity = window.Maity || {};
     }],
     // §9.3: the direct conversations and the group chats, newest first; with
     // observed=true also the group chats read along as an agent's owner.
-    ["GET", /^\/projects\/([^/]+)\/conversations$/, (m, body, path, query) => {
-      const all = file(m[1], "conversations.json", path);
-      const members = file(m[1], "members.json", path).items;
-      const preview = (last) => last && { seq: last.seq, from: last.from, body: last.redacted ? null : [...last.body].slice(0, 200).join(""),
-        sent_at: last.sent_at, redacted: !!last.redacted };
-      // §9.2: an owner outside the project sees only the chats its agents are
-      // in, and only with observed=true; no direct chat, nothing else.
-      const outside = !me().projects.some((p) => p.slug === m[1]);
-      // Neither a member nor an agent there: the route does not say the project exists (§9.2).
-      if (outside && !(fixtures()["agents.json"] || { items: [] }).items.some((a) => a.owner_id === me().member.id
-        && (a.memberships || []).some((x) => x.project === fullOf(m[1])))) fail(404, "not_found", "Not found", path);
-      const direct = outside ? [] : Object.keys(all).map((agentId) => {
-        const items = all[agentId].items;
-        const last = items.length ? items[items.length - 1] : null;
-        const agent = members.find((x) => x.id === agentId);
-        return {
-          id: agentId, kind: "direct", agent_id: agentId, title: null, access: "party", closed_at: null,
-          participants: [{ member_id: me().member.id, kind: "human", handle: me().member.handle },
-            { member_id: agentId, kind: "agent", handle: agent ? agent.handle : agentId }],
-          last_message_at: last ? last.sent_at : null,
-          unread: items.filter((x) => x.from === agentId && !x.seen_by_human).length,
-          mentions_unread: 0,
-          // §9: the newest message as a preview, its body cut at 200 code points.
-          last_message: preview(last),
-        };
-      });
-      const groups = Object.values(groupChats(m[1])).map((g) => groupItem(m[1], g, path)).filter(Boolean)
-        .filter((g) => g.access === "participant" || query.get("observed") === "true")
-        .map((g) => {
-          const c = groupChats(m[1])[g.id];
-          const win = windowOf(c, me().member.id);
-          const last = win.length ? win[win.length - 1] : null;
-          const readTo = c.read[me().member.id] || 0;
-          const theirs = win.filter((x) => x.from !== me().member.id && x.seq > readTo);
-          return Object.assign({}, g, {
-            participants: g.participants.map((x) => ({ member_id: x.member_id, kind: x.kind, handle: x.handle })),
-            last_message_at: last ? last.sent_at : null, last_message: preview(last),
-            unread: g.access === "observer" ? null : theirs.length,
-            mentions_unread: g.access === "observer" ? null : theirs.filter((x) => (x.mentions || []).some((mm) => mm.member_id === me().member.id)).length,
-          });
-        });
-      const at = (c) => c.last_message_at || c.created_at || "";
-      return { items: direct.concat(groups).sort((a, b) => (at(b) > at(a) ? 1 : at(b) < at(a) ? -1 : 0)), next_cursor: null };
+    ["GET", /^\/projects\/([^/]+)\/conversations$/, (m, body, path, query) => conversationList(m, path, query)],
+    // §9.3 across projects: every project the human is a member of, one list,
+    // newest activity first, then the project's full name, then the id; with
+    // the project on each item and the unread totals over all of them.
+    ["GET", /^\/me\/conversations$/, (m, body, path, query) => {
+      const at = (c) => c.last_message_at || c.created_at || c.joined_at || "";
+      const items = me().projects.flatMap((p) => conversationList([null, p.slug], path, query).items.map((c) => Object.assign({}, c, {
+        project: { owner: p.full_name.split("/")[0], slug: p.slug, full_name: p.full_name, name: p.name } })));
+      items.sort((a, b) => (at(b) > at(a) ? 1 : at(b) < at(a) ? -1 : 0)
+        || a.project.full_name.localeCompare(b.project.full_name) || a.id.localeCompare(b.id));
+      return { items, next_cursor: null,
+        totals: { unread: items.reduce((n, c) => n + (c.unread || 0), 0), mentions_unread: items.reduce((n, c) => n + (c.mentions_unread || 0), 0) } };
     }],
     // §9.2 group chats.
     ["POST", /^\/projects\/([^/]+)\/conversations$/, (m, body, path) => {

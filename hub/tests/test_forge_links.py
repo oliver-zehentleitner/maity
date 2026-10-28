@@ -315,6 +315,27 @@ def test_an_expired_state_is_refused(human: flow.Human, fake: Forge, migrated: E
     assert fake.codes == []
 
 
+@pytest.mark.parametrize("state", [None, "", "s" * 513])
+def test_a_missing_or_malformed_state_is_link_state_in_both_forms(
+    human: flow.Human, fake: Forge, state: str | None
+) -> None:
+    """Refused in the setup's own flow, never by the framework's 400, and before any
+    forge read."""
+    fake.install(7)
+    params: dict[str, Any] = {"installation_id": 7, "code": "c0de"}
+    if state is not None:
+        params["state"] = state
+    url = "/api/v1/forge/github/setup"
+    back = human.client.get(url, params=params, follow_redirects=False)
+    assert (back.status_code, back.headers["location"]) == (303, DONE + "?error=link_state")
+    answer = human.client.get(
+        url, params=params, headers={"Accept": "application/json"}, follow_redirects=False
+    )
+    assert answer.status_code == 403
+    assert answer.json()["error"]["details"] == {"reason": "link_state"}
+    assert fake.codes == [] and links(human) == []
+
+
 @pytest.mark.parametrize(
     ("account_id", "kind", "reason"),
     [
