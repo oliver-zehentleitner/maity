@@ -16,7 +16,7 @@ import pytest
 
 from maity import cli
 
-P = "/api/v1/projects/maity"
+P = "/api/v1/projects/oliver/maity"
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
 GROUP: dict[str, Any] = {
     "id": "cnv-0007", "kind": "group", "title": "Release 0.2 go/no-go",
@@ -526,7 +526,7 @@ def test_files_get_refuses_a_size_beyond_the_ceiling(joined: Path, fake: fakehub
     ("paths", "said"),
     [
         ({}, "this hub does not have group chats yet"),
-        ({"/api/v1/projects/{slug}/conversations": {"get": {}, "post": {}}},
+        ({"/api/v1/projects/{owner}/{slug}/conversations": {"get": {}, "post": {}}},
          "cnv-0009 is not in your conversations"),
     ],
 )  # fmt: skip

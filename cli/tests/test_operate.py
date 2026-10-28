@@ -17,7 +17,7 @@ url = "https://hub.example"
 state_dir = "{root}/st"
 
 [limits]
-projects = ["maity"]
+projects = ["oliver/maity"]
 repositories = ["github.com/oliver-zehentleitner/*"]
 require_local_approval = {approval}
 
@@ -34,7 +34,17 @@ def setup(tmp_path: Path, approval: bool = False) -> Path:
     (tmp_path / "st").mkdir(mode=0o700)
     state.save_state(
         tmp_path / "st",
-        {"pid": 1, "placements": [{"id": "plc-0003", "project": "maity", "agent": "agent-f"}]},
+        {
+            "pid": 1,
+            "placements": [
+                {
+                    "id": "plc-0003",
+                    "project": "oliver/maity",
+                    "project_id": "maity",
+                    "agent": "agent-f",
+                }
+            ],
+        },
         name=serve.STATUS_FILE,
     )
     return path
@@ -131,6 +141,27 @@ def test_gc_lists_and_only_removes_with_yes(
     assert cli.main(["runner", "gc", "--revoked", "--yes", "--config", str(path)]) == 0
     assert not place.path.exists()
     assert str(place.path) not in workspace.records(cfg.state_dir)
+
+
+def test_gc_finds_a_taken_over_clone_after_a_new_placement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = setup(tmp_path)
+    cfg = config.load(path)
+    assert cfg.local is not None
+    place = workspace.locate(cfg.local.workspaces, "maity", "agent-g")
+    place.path.mkdir(parents=True)
+    git(place.path, "init", "-q")
+    workspace.record(cfg.state_dir, place, "agt-g", "plc-0007")  # before the namespace
+    found = workspace.find(cfg.state_dir, cfg.local.workspaces, "prj-7k2m9q",
+                           ["oliver/maity"], "agent-g", {"agt-g"})  # fmt: skip
+    assert found.path == place.path
+    workspace.record(cfg.state_dir, found, "agt-g", "plc-0008")  # a new placement, then revoked
+    monkeypatch.setattr(operate, "credential_revoked", lambda place, as_user: True)
+    monkeypatch.setattr(operate, "_active", lambda cfg: (set(), set()))
+    assert cli.main(["runner", "gc", "--revoked", "--yes", "--config", str(path)]) == 0
+    assert "agent agt-g  credential revoked" in capsys.readouterr().out
+    assert not place.path.exists()
 
 
 def test_gc_runs_no_hook_of_the_clone(tmp_path: Path) -> None:
@@ -324,7 +355,12 @@ def test_a_record_pointing_outside_the_workspaces_is_never_followed(
     important = tmp_path / "operator-home" / "important"
     important.mkdir(parents=True)
     records = workspace.records(cfg.state_dir)
-    records[str(important)] = {"project": "maity", "agent": "agt-z", "placement_id": "plc-9"}
+    records[str(important)] = {
+        "project": "oliver/maity",
+        "project_id": "maity",
+        "agent": "agt-z",
+        "placement_id": "plc-9",
+    }
     state.save_state(cfg.state_dir, records, name=workspace.RECORDS)
     assert cli.main(["runner", "gc", "--revoked", "--yes", "--config", str(path)]) == 0
     assert important.exists()

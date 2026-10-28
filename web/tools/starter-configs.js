@@ -19,13 +19,13 @@ const { runnerStarterConfig: generate, runnerConfigCommand: command } = ctx.wind
 
 const repo = (url) => ({ url });
 const CASES = {
-  "one-project": [{ slug: "maity", repository: repo("https://github.com/oliver-zehentleitner/maity") }],
+  "one-project": [{ slug: "maity", full_name: "maintainer/maity", repository: repo("https://github.com/oliver-zehentleitner/maity") }],
   // A .git suffix, a trailing slash and a host in capitals, as a forge URL may come.
   "two-projects": [
-    { slug: "maity", repository: repo("https://github.com/oliver-zehentleitner/maity.git") },
-    { slug: "sample", repository: repo("https://GitHub.com/Example/sample-shop/") },
+    { slug: "maity", full_name: "maintainer/maity", repository: repo("https://github.com/oliver-zehentleitner/maity.git") },
+    { slug: "sample", full_name: "maintainer/sample", repository: repo("https://GitHub.com/Example/sample-shop/") },
   ],
-  "no-repository": [{ slug: "maity", repository: null }],
+  "no-repository": [{ slug: "maity", full_name: "maintainer/maity", repository: null }],
   "no-project": [],
 };
 
