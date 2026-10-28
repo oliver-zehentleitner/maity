@@ -1,7 +1,8 @@
 name: pages
 
-# The project site at maity.dev (plain files from docs/, no build) and the
-# Keep the Why dashboard at /keep-the-why-dashboard/ on GitHub Pages.
+# The project site at maity.dev (plain files from docs/, no build, with a sitemap.xml and
+# a robots.txt made at deploy) and the Keep the Why dashboard at /keep-the-why-dashboard/
+# on GitHub Pages.
 on:
   push:
     branches: [main]
@@ -47,6 +48,9 @@ jobs:
               ktw-dashboard "$d" --export "site/keep-the-why-dashboard/$d"
             fi
           done
+      # sitemap.xml from the pages above (not the dashboard's entries, not the brand files)
+      # and a robots.txt that names it, for the search engines' consoles.
+      - run: python tools/site_sitemap.py site --docs docs
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: site
