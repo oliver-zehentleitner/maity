@@ -4354,11 +4354,16 @@ the card's `approvals` stay. Every replacement clears `approvals`
   `dependencies_open`, §6.4) and no objection hold is on it (§6.19).
   The move is a change the hub makes on its own (§6.15): no history
   entry; its record is `task_merged` with `closed: true` and the
-  card's status event. When a condition fails the card stays in
+  `task_updated` event with `fields: ["status"]` that every status
+  change emits (§6.15), so the dashboard and the statistics count it
+  like any other move to `done`. When a condition fails the card stays in
   `review` and `task_merged` says `closed: false` with `blocked_by`
   (`dependencies`, `objection`). A merge first observed while the card
   is not in `review` (`blocked` while a request is open, say) is
-  remembered and acted on when the card returns to `review`. A merge
+  remembered with the report it was observed on; when the card returns
+  to `review` the hub emits `task_merged` then, once, and only if that
+  report is still the card's current one with `mismatch` false — a new
+  report in between starts over with its own observation. A merge
   whose head differs from the report's (`mismatch` true) triggers
   nothing: what was merged is not what was reported.
 - A card may be reported more than once; the latest report is on the
