@@ -13,7 +13,7 @@ A slug that is a word following a project in a route, or a human handle that is 
 route word, stops the migration too: the operator renames it first.
 
 Revision ID: 0060
-Revises: 0063
+Revises: 0062
 Create Date: 2026-10-27
 """
 
@@ -24,7 +24,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql
 
 revision: str = "0060"
-down_revision: str | None = "0063"
+down_revision: str | None = "0062"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
