@@ -111,7 +111,7 @@ step "events: each agent waits, its human writes to it, the wait wakes"
 cli_agent="$(grep -o 'agt-[0-9a-z]*' "$work/cli-join.out" | head -1)"
 curl_agent="$(printf '%s' "$curl_join" | json 'd["agent_id"]')"
 cd "$work/clone-cli"
-maity wait --timeout 30 >"$work/cli-wait.out" &
+maity wait --one --timeout 30 >"$work/cli-wait.out" &
 cli_wait=$!
 cd "$work/clone-curl"
 after="$(curl -sS --fail -K "$d/curl.conf" "$hub/api/v1/projects/owner/smoke/events?after=latest" | json 'd["cursor"]')"
@@ -156,7 +156,7 @@ held="$(human -d '{"title":"Pause: held card","area":"/"}' "$hub/api/v1/projects
 spare="$(human -d '{"title":"Pause: spare card","area":"/"}' "$hub/api/v1/projects/owner/smoke/tasks" | json 'd["id"]')"
 maity claim "$held"
 maity resume --json >/dev/null  # the wait starts after everything so far
-maity wait --timeout 30 >"$work/pause-wait.out" 2>"$work/pause-wait.err" &
+maity wait --one --timeout 30 >"$work/pause-wait.out" 2>"$work/pause-wait.err" &
 pause_wait=$!
 sleep 1
 human -o /dev/null -X PATCH -d '{"paused":{"reason":"smoke: hold on"}}' \

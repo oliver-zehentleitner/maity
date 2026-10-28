@@ -85,7 +85,10 @@ def request(conn: Connection, hub: Settings, caller: Any, human_id: str, reason:
     if target is None:
         raise not_found()
     cleaned = reason.strip()
-    if not 1 <= len(cleaned) <= REASON_MAX:
+    # No control character but a line break or a tab (a NUL would also stop a Postgres insert).
+    if not 1 <= len(cleaned) <= REASON_MAX or any(
+        ord(c) < 32 and c not in "\n\t" or ord(c) == 127 for c in cleaned
+    ):
         raise invalid({"reason": "invalid"})
     second_factor.require_step_up(conn, hub, caller)
     if not _mail_ready(conn, hub):

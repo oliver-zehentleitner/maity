@@ -1,4 +1,4 @@
-"""`GET /me` (docs/api.md §5.1)."""
+"""`GET /me` (docs/api.md §5.1) and `GET /me/export` (§2.9)."""
 
 from __future__ import annotations
 
@@ -8,14 +8,21 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, select
 
-from maity_hub import avatars, clock, images, namespace
+from maity_hub import avatars, clock, export, images, namespace
 from maity_hub import tables as t
 from maity_hub.admin import is_instance_admin
+from maity_hub.auth import second_factor
 from maity_hub.auth.caller import Caller
-from maity_hub.deps import AnyCaller, engine_of
+from maity_hub.deps import AnyCaller, engine_of, settings_of
+from maity_hub.errors import forbidden, humans_only, rate_limited
+from maity_hub.ratelimit import Limiter
 from maity_hub.views import agent_member, human_member, owner_handles
 
 router = APIRouter()
+
+# One export per account in 10 minutes (§2.9): the document reads every project the
+# human was ever in, so a loop of it is a load on the hub, not a convenience.
+EXPORTS = Limiter(1, 600)
 
 
 @router.get("/me")
@@ -147,3 +154,34 @@ def open_requests(conn: Connection, membership_id: int) -> int:
         )
     ).all()
     return sum(1 for r in open_rows if inbox.addressed_to(conn, r, mine))
+
+
+@router.get("/me/export")
+def export_own_data(request: Request, caller: AnyCaller) -> JSONResponse:
+    """The caller's own data as one JSON document to save (§2.9).
+
+    A sensitive call (§2.8.4): an enrolled human gives the second factor first."""
+    if caller.kind == "agent":
+        raise humans_only("the export is a human's own")
+    if caller.kind != "human" or caller.human_id is None:
+        raise forbidden(message="the export needs a dashboard session")
+    with engine_of(request).begin() as conn:
+        second_factor.require_step_up(conn, settings_of(request), caller)  # §2.8.4
+    wait, mark = EXPORTS.place(caller.human_id)
+    if wait:
+        raise rate_limited(wait)
+    now = clock.now()
+    try:
+        with engine_of(request).begin() as conn:
+            body = export.build(conn, caller.human_id, now)
+    except BaseException:
+        EXPORTS.release(caller.human_id, mark)  # no document, no attempt spent
+        raise
+    name = export.filename(body["account"]["handle"], now)
+    return JSONResponse(
+        body,
+        headers={
+            "Content-Disposition": f'attachment; filename="{name}"',
+            "Cache-Control": "no-store",
+        },
+    )
