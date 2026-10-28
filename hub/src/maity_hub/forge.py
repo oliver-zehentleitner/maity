@@ -717,10 +717,13 @@ class Forge:
         url = repo.get("openGraphImageUrl")
         return url if isinstance(url, str) else None
 
-    def items(self, repository: str, numbers: list[int]) -> dict[int, dict[str, Any] | None]:
+    def items(
+        self, repository: str, numbers: list[int]
+    ) -> tuple[dict[int, dict[str, Any] | None], bool]:
         """Issues and pull requests of one repository by number, in one GraphQL read (card
         links, §6.13): per number `{type, title, state, merged}`, or None when the forge
-        has no such item or the token cannot read it."""
+        has no such item or the token cannot read it. The second value is whether the same
+        read reported the repository public (§11.4); False when it did not say."""
         if self.refused is not None:
             raise NotCoveredError(self.refused)
         if self.token is None:
@@ -735,7 +738,7 @@ class Forge:
             "/graphql",
             {
                 "query": "query($owner: String!, $name: String!) { repository(owner: $owner, "
-                f"name: $name) {{ {fields} }} }}",
+                f"name: $name) {{ isPrivate {fields} }} }}",
                 "variables": {"owner": owner, "name": name},
             },
         )
@@ -757,7 +760,7 @@ class Forge:
                 "state": str(item.get("state", "")).lower(),
                 "merged": item.get("merged") is True,
             }
-        return answer
+        return answer, repo.get("isPrivate") is False
 
     # --- files on the default branch (docs/api.md §11.3) ------------------------------------
 

@@ -12,3 +12,8 @@
   - A grant reads its project's own repository only.
   - The probe worker also runs on an instance without an operator's token when an App or
     `MAITY_SECRET_KEY` is set.
+- docs/api.md §11.4, §8.2: `link_observed` carries `public`, whether the read reported the
+  repository public. The swarm page counts merged pull requests only from such events; older
+  events without the field no longer count.
+- docs/api.md §11.4: a forced fresh probe read (`max_age=0`) asks the forge at most once per
+  30 seconds per project and target.
