@@ -11,3 +11,11 @@
   - `GET /me/forge` and `DELETE /me/forge/github/links/{id}` list and remove links.
   - Installation tokens are minted with the App's key and live in memory only. Migration
     0073 adds `forge_link` and `forge_link_state`.
+- docs/api.md §11.4: a human's own forge token as the second source.
+  - `PUT /me/forge/github/token` takes only a fine-grained token (`classic_token` otherwise),
+    checks it with the forge and stores it sealed with `MAITY_SECRET_KEY`
+    (`secret_key_missing` without it). It answers `{configured, login}` and never returns the
+    token.
+  - `DELETE /me/forge/github/token` removes it.
+  - `GET /me/forge` shows `{configured, login, status, checked_at}`. Migration 0073 adds
+    `forge_token`.
