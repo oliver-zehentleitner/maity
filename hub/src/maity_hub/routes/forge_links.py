@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse, RedirectResponse, Response
 from pydantic import Field
 
 from maity_hub import forge, forge_links, forge_tokens
+from maity_hub.auth import second_factor
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, engine_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, not_found
@@ -48,6 +49,7 @@ def start_link(request: Request, caller: AnyCaller) -> JSONResponse:
     human_id, session = _human(caller)
     app = _app(request)
     with engine_of(request).begin() as conn:
+        second_factor.require_step_up(conn, settings_of(request), caller)  # §2.8.4
         url = forge_links.start(conn, app, human_id, session)
     return JSONResponse({"url": url})
 
@@ -149,6 +151,8 @@ def put_token(body: TokenIn, request: Request, caller: AnyCaller) -> JSONRespons
     never returned."""
     human_id, _ = _human(caller)
     key = forge_tokens.require_key(settings_of(request).secret_key)
+    with engine_of(request).begin() as conn:  # before the token goes to the forge
+        second_factor.require_step_up(conn, settings_of(request), caller)  # §2.8.4
     try:
         login = forge_tokens.login_of(body.token)
     except forge.ForgeUnavailableError:

@@ -27,6 +27,8 @@ from maity_hub import tables as t
 from maity_hub.config import ConfigError, Settings
 from tests import factory, flow
 from tests.conftest import ClientFactory
+from tests.test_two_factor import Clock, code_now, enrol
+from tests.test_two_factor import moment as moment  # noqa: F401  (the clock fixture)
 
 KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 PEM = KEY.private_bytes(
@@ -519,3 +521,19 @@ def test_an_agent_stores_no_token(
         headers=agent.auth,
     )
     assert refused.status_code == 403 and user_api == []
+
+
+def test_a_link_and_a_token_need_a_recent_factor(
+    human: flow.Human, sealing: None, user_api: list[str], moment: Clock
+) -> None:
+    """Both give the hub access to a forge account (§2.8.4); a stale factor is refused
+    before the token reaches the forge."""
+    secret, _ = enrol(human, moment)
+    moment.move(minutes=11)
+    for refused in (human.post("/me/forge/github/link"), put_token(human, FINE)):
+        assert refused.status_code == 403
+        assert refused.json()["error"]["details"]["reason"] == "step_up_required"
+    assert user_api == []
+    assert human.post("/auth/second-factor/verify", {"code": code_now(secret, moment.at)})
+    assert human.post("/me/forge/github/link").status_code == 200
+    assert put_token(human, FINE).status_code == 200

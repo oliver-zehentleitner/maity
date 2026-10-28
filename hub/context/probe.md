@@ -136,7 +136,8 @@ alternatives: unknown.
 
 **Id:** 0b375b9b-2098-4e55-a461-cccdad6a62d1
 **Type:** workaround
-**Status:** open
+**Status:** superseded
+**Superseded by:** none — the workaround ended: with #471 on `main`, the confirmation, starting a link and storing a token all call `second_factor.require_step_up` (#525)
 **Evidence:** confirmed
 **Source:** `docs/api.md` §2.8.4 and §11.4 (the namespace owner confirms "with the step-up"); card tsk-dtpr7zqxhxc2, part 2
 **Revisit when:** the second-factor pull request #471 (`second_factor.require_step_up`) is on `main`; card tsk-svg6mfthm7xv

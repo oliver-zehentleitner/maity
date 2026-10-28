@@ -19,3 +19,6 @@
   - `DELETE /me/forge/github/token` removes it.
   - `GET /me/forge` shows `{configured, login, status, checked_at}`. Migration 0073 adds
     `forge_token`.
+- docs/api.md §2.8.4: starting a forge link, storing a forge token and confirming a project's
+  repository (`POST /projects/{owner}/{slug}/repository/confirm`) need the second factor within
+  the last 10 minutes (`step_up_required`); a token is refused before it reaches the forge.
