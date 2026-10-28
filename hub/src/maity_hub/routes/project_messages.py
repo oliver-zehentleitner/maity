@@ -125,7 +125,7 @@ def _items(conn: Connection, rows: list[Any], mine: Membership) -> list[dict[str
                 "body": None if row.redacted else payload.get("body"),
                 "sent_at": ts(row.at),
                 "mentions": [] if row.redacted else payload.get("mentions") or [],
-                "attachments": [],  # the contract's shape before attachments land (§8.7)
+                "attachments": [] if row.redacted else payload.get("attachments") or [],
                 "redacted": bool(row.redacted),
                 "redaction": (
                     {"at": tomb.get("at"), "by": tomb.get("by"), "reason": tomb.get("reason")}

@@ -194,3 +194,34 @@ empty answer anyway (§8.3).
   off mid-request instead of answering.
 - Pre-pulling the image before the rollout: the migrate hook already
   pulls the same image, so there was nothing to gain.
+
+## An upgrade with a migration stops the hub first
+
+**Id:** d295eb2a-38ad-4e27-9dfa-524bb0963a24
+**Type:** decision
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** the deploy of 2026-10-28 (migration 0060 failed four times with a deadlock against the serving hub); card tsk-q6t6st3hnhcc
+**Revisit when:** migrations take their locks in a fixed order with a lock timeout and retry, or the chart can stop the hub itself
+**See:** kubernetes.md#migrations-as-a-pre-installpre-upgrade-hook-job-not-an-init-container — eced7109-a606-4549-b2f2-962e7436f8a8 — as of 2026-10-28
+
+`deploy/scripts/helm-upgrade.sh` scales the hub to 0, runs `helm upgrade` (the hook Job migrates alone) and
+scales back to the replicas it had on any exit. A release whose migration touches no busy table may use
+plain `helm upgrade`. A migration that alters `project`, `human`, `membership` or another table every
+request reads or writes is written to run with the hub stopped, and the release notes say so.
+
+**Reason:** the hook Job runs while the old pod still serves. Migration 0060 altered several busy tables,
+deadlocked against the old pod's open transactions on PostgreSQL, and the Job failed on all four attempts;
+the same upgrade went through once the hub was stopped. The old pod answers 503 `schema_outdated` as soon
+as the schema has moved, so stopping it first adds almost no downtime.
+
+**Rejected alternatives:**
+- A `lock_timeout` and a retry in the migration alone: it turns a hang into a failure, but while the hub
+  keeps its transactions open the same conflict comes back on every retry.
+- Moving the migration into an init container: with `Recreate` the old pod is gone by then, but it
+  migrates on every pod start and makes a failed migration an outage (the first entry above).
+- A chart hook that scales the Deployment itself: it needs RBAC in the chart and a second hook to restore
+  the replicas, and a failure between the two would leave the hub at 0; a script with a trap keeps that
+  restore in one place.
+

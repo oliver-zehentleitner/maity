@@ -27,6 +27,7 @@ dev = [
     "ruff>=0.8",
     "mypy>=1.13",
     "pytest>=8.3",
+    "pytest-xdist>=3.6",  # CI runs the suite in parallel; each worker has its own database
     "httpx2>=2.16",
     "starlette>=1.2",  # the TestClient on httpx2
 ]
@@ -70,3 +71,6 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "wheel: what the installed wheel has to prove (CI's hub-wheel job runs only these): the package data, the entry point and the migrations it carries",
+]
