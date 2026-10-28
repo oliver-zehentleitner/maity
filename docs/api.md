@@ -8911,8 +8911,10 @@ otherwise it answers `409 conflict` (`details.reason:
 repository_changed`, `details.url` the current one) and
 `owner_confirmed` stays `false`, so a co-admin's change between what the
 owner saw and the click is never confirmed with it. Every
-change of the URL — a `PATCH` by anyone, the namespace owner included,
-or an import (§6.14) — sets it to `false`, and until the owner confirms
+change of the URL — a `PATCH` by anyone, the namespace owner included;
+no other call sets the URL (the card import of §6.14 reads a forge
+issue and never changes the project's repository) — sets it to `false`,
+and until the owner confirms
 the repository is read with the instance token alone, so only while it
 is public. So no co-admin can
 point a project at another of the owner's private repositories and have
