@@ -480,7 +480,7 @@ they come. **This was me** marks the alert read by its id, the one way
 section, and the mail sign-in banner is shown at the top of every page of
 every other session. The banner stays while the reported session or one
 it approved is active, applies the list's rules to its End, and is built
-again on every 15-second round while a sign-in alert is unread.
+again on every round of the `/me` read while a sign-in alert is unread.
 "Confirmed" is said only when the alert is no longer unread afterwards,
 because the hub answers 200 for an id it skipped; when the list cannot
 be read again the result is said to be unknown. A check each minute
@@ -704,7 +704,7 @@ a listed route is the resource's (a project left, a card gone) and stays
 an error, as does one while the machine form cannot be read. A view that
 needs a missing route shows a muted line in its place (`M.dom.notOnHub`)
 and notes the route (`M.api.absent`, method and path without the query,
-until the next navigation, so a deploy meanwhile is found): the notifications' 15-second count read, the browser
+until the next navigation, so a deploy meanwhile is found): the notifications' count read on the `/me` round, the browser
 notifications' long-poll, the overview's re-reads and the sessions list
 ask no more. A 5xx, a network failure, 401 or 403 is still shown as an
 error.

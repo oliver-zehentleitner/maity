@@ -2691,6 +2691,25 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = bump("sample");
   await fireIntervals(); await tick(); await tick();
   expect(text(main).includes("What waits for you changed") && btn(main, "Reload the list"), "a changed open count offers to reload the list");
+  // A hidden tab asks the hub nothing: no /me, no events; shown again, it catches up once.
+  const hidGets = [];
+  win.Maity.api.get = (p) => { hidGets.push(p); return realGet2(p); };
+  document.visibilityState = "hidden";
+  await fireIntervals(); await tick(); await tick();
+  expect(!hidGets.length, "load: a hidden tab reads neither /me nor the project's events");
+  document.visibilityState = "visible";
+  await fireIntervals(); await tick(); await tick();
+  expect(hidGets.filter((p) => p === "/me").length === 1 && hidGets.some((p) => p.includes("/events?after=")),
+    "load: shown again, the tab reads /me once and the events it missed");
+  const hidAll = win.Maity.api.getAll, hidLists = [];
+  win.Maity.api.getAll = (p) => { hidLists.push(p); return hidAll(p); };
+  await go("#/chats"); for (let k = 0; k < 4; k++) await tick();
+  hidLists.length = 0;
+  document.visibilityState = "hidden";
+  await fireIntervals(); await tick(); await tick();
+  expect(!hidLists.some((p) => p.includes("/conversations")), "load: a hidden tab reads no chat lists");
+  win.Maity.api.getAll = hidAll;
+  delete document.visibilityState;
   win.Maity.api.get = realGet4;
   win.Maity.api.get = realGet2;
   win.Maity.api.get = realGet2;

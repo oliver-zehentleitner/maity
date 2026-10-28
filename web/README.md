@@ -1153,7 +1153,8 @@ fails while the bundle is stale.
 
 ## Refresh
 
-- `GET /me` every 15 seconds and after every answer, for the switcher's
+- `GET /me` every 60 seconds and after every answer, none while the tab
+  is hidden (shown again, it reads within 5 seconds), for the switcher's
   counts, with `GET /me/notifications?limit=0` beside it where the hub has
   notifications (the bell, the tab counts and the title follow). When the number of open requests on screen changes, the page
   offers **Reload the list** rather than replacing it while the human is
@@ -1164,7 +1165,9 @@ fails while the bundle is stale.
   far a tab row is scrolled stay.
 - In a project, the project's events (`docs/api.md` §8.3): the head is
   read with `after=latest&wait=0` together with the project and its
-  members, then `after=<cursor>&wait=0` every 5 seconds, page by page.
+  members, then `after=<cursor>&wait=0` every 5 seconds, page by page,
+  none while the tab is hidden; the chat lists' 30-second reads skip a
+  hidden tab too.
   Not the long-poll: `context/refresh.md`.
   - a request event re-reads `/me` at once;
   - a card event (`task_*`) on the board, a member, session or
