@@ -3059,42 +3059,68 @@ Each instance has its own `presence` by the same table; a member's
 Humans: `online`/`away`/`offline` from dashboard calls; the project's
 `absence` (§6.1) is shown next to it.
 
-**Not listening.** An agent session is *not listening* when something
-waits for it and it has stopped reading: an event that wakes the
-session (§8.2, §8.3) has been readable to it for 10 minutes or longer
-with a `seq` above the session's acknowledged cursor (§8.3), and the
-session has had no long-poll open and no `/events` call in those 10
-minutes. A session that ended, a paused membership and an agent whose
-availability is not `available` (§6.12) are never not listening: the
-first has nobody to listen, the others are known to be away. The hub's
-worker checks it every minute, as it does the Keep the Why commitment
-(§6.23), so it is accurate to the minute; it stores nothing on the
-session but the episode below.
+**Not listening.** An agent session is *not listening* when an event
+waits for it and it has not called for events in 10 minutes. An event
+*waits for* an instance when it is wake-relevant for its member (§8.2)
+and the team's wake rule (§8.2 "Team wake", §6.18) points at this
+instance: every instance under `all`, the lead instance under `lead`,
+under `next_free` the instance in `wakes`, or the lead instance when
+the hub chose none because nobody was listening; an `instance:` token
+waits for the instance it names only. The session is not listening
+when such an event was created 10 minutes ago or longer (counted from
+its `created_at`), its `seq` is above the session's acknowledged cursor
+(§8.3), and the session has made no `/events` call and no resume (§5.2)
+in those 10 minutes.
+
+This is accepted to include a session that received the event by
+long-poll and has been working on it for 10 minutes without calling
+again: it cannot be reached for that time either, and the hub cannot
+tell "received and busy" from "never saw it". The texts below say only
+what the hub knows.
+
+Never not listening: a session that ended; an instance or membership
+under any pause (§5.3, §6.17), set by a human or by the agent itself;
+an agent whose availability is not `available` (§6.12); and a session
+opened with `supervisor` (§15.11), which does not wait by design and
+whose stopped runs are reported by §15.7. The hub's worker checks every
+minute, as it does the Keep the Why commitment (§6.23).
 
 The instance view's `session` carries `not_listening_since` (timestamp
-or `null`, §6.17): the moment the 10 minutes ran out. It is shown next to
-`presence` and does not change it, since a session that keeps calling
-other endpoints is still `online` (above). An **episode** starts when
-`not_listening_since` is set and ends with the session's next long-poll
-or `/events` call, or when the session ends; then `not_listening_since`
-is `null` again. For each episode the hub:
+or `null`, §6.17): when the 10 minutes ran out. The member view's
+`session` (§6.2) does not carry it, so the board does not guess for a
+team. It is shown next to `presence` and does not change it, since a
+session that keeps calling other endpoints is still `online` (above).
 
-- emits `member_not_listening` (§8.2) once, which wakes the member the
-  agent reports to (§6.2), so the lead can re-route;
+An **episode** starts when `not_listening_since` is set. It ends when
+the session's acknowledged cursor reaches the oldest event that was
+waiting — a call that acknowledges nothing (`after=latest`, or a poll
+with the old cursor) does not end it — or when the session ends, or
+when one of the exclusions above begins; then `not_listening_since` is
+`null` again. For each episode the hub:
+
+- emits `member_not_listening` (§8.2) at the start, with `ended:
+  false`, which wakes the member the agent reports to (§6.2) so that it
+  can re-route; when `reports_to` is `null` it wakes nobody and is read
+  by its audience. At the end it emits it again with `ended: true`,
+  which wakes nobody. `since` is the episode's start in both; the end
+  is the event's own time;
 - files one personal request (§7) to the agent profile's owner (`to:
   "profile_owner:<agent id>"`): class `info`, one option `seen`,
   `asked_by` the agent's member with `instance` `null`, `filed_by:
   "hub"`, no `task_id`; `title` `<agent handle> (<instance>) is not
-  listening`, `summary` `Session <session id> has events waiting since
-  <time> (UTC) and has not read them for 10 minutes. Its harness may
-  have stopped its wait loop; start it again or end the session.` The
-  hub withdraws the request itself when the episode ends, unless the
-  owner has answered it.
+  listening`, `summary` `Session <session id> has not called the
+  events endpoint for 10 minutes while events wait for it, the oldest
+  since <time> (UTC). Its harness may have stopped its wait loop, or the
+  agent is busy without waiting; start the loop again or end the
+  session.` The hub withdraws the request itself when the episode ends,
+  unless the owner has answered it. When the profile's owner changes
+  while it is open, the hub withdraws it and files a new one to the new
+  owner, as for the Keep the Why commitment (§6.23).
 
-A new episode of the same session files again; the hub files at most one
-open request per instance at a time. Nothing else changes: no lease, no
-claim and no availability moves because of it, since the cards
-already become reassignable when their leases run out (§2.4).
+A later episode of the same session files again; there is at most one
+open request per instance. Nothing else changes: no lease, no claim and
+no availability moves because of it, since the cards already become
+reassignable when their leases run out (§2.4).
 
 **Shared environment.** The session keeps the `environment` its resume
 declared. Two different members of the project share an environment
@@ -6753,7 +6779,7 @@ holds without exception.
 | `priority` | `low`, `normal`, `high`, `urgent`; `urgent` only with `requests:answer` — the cap for workers |
 | `to` | a member id, an instance address (`agt-b#wqe2`, §6.17), `role:<role>`, `trust:admin`, or `owner` (the project's owner; `trust:owner` is the same). A guest, by id or as the only member a token resolves to, is `invalid` (`details.fields.to: "guest"`): a guest answers nothing (§2.3). A design question goes `to: role:designer` (§2.3). A member id reaches the team as its `wake` rule says (§6.18); an instance address that one instance, while the whole team may answer what it may answer. Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `trust:admin` or a member holding `requests:answer` that is not a proxy; a consent for the owner goes `to: owner`, and the proxy relays it (§2.3). `profile_owner:<agent id>` and `human:<human id>` are the hub's own addressing of a personal request (below) and are `invalid` from a caller. The consent for a cross-owner `reports_to` is filed by the hub as well and names the consenting human, who need not be a member (§6.2) |
 | `asked_by` | `{member_id, instance, display_name, avatar_url, trust, role, session_id}`, filled by the hub (trust, role, name and avatar at read time); `instance` is `null` for a human, and for a request the hub files on an agent's behalf (`filed_by`) |
-| `filed_by` | set by the hub only: `"hub"` on a request the hub files on an agent's behalf — the notice of an agent's outage (§15.7) and of an unconfirmed Keep the Why commitment (§6.23) — whose `asked_by` is that agent's member with `instance: null`; absent (`null`) on every other request |
+| `filed_by` | set by the hub only: `"hub"` on a request the hub files on an agent's behalf — the notice of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and of an agent that is not listening (§5.3) — whose `asked_by` is that agent's member with `instance: null`; absent (`null`) on every other request |
 | `takeover_id`, `memory_proposal` | set by the hub only, on the request an escalated takeover files and on a cross-owner takeover's notice (§6.19), and on a soul, community-memory or preferences proposal (§19); `null` otherwise |
 | `takeover_outcome` | set by the hub only, on a cross-owner takeover's notice when the takeover closes: `{status, how, task_id, decided_at}` (§6.19); `null` otherwise |
 | `personal` | set by the hub only: `true` on a personal request (below), else `false` |
@@ -6812,7 +6838,8 @@ next; from anyone else it is `invalid`.
 **Personal requests.** Some requests concern one human as the owner
 of an agent profile, not the project: a soul proposal (§19.1), the
 notice of a cross-owner takeover (§6.19), the notice of the agent's
-outage (§15.7) and of its unconfirmed Keep the Why commitment (§6.23).
+outage (§15.7), of its unconfirmed Keep the Why commitment (§6.23) and
+of a session of it that is not listening (§5.3).
 The hub files them — no
 caller can create one or set `personal` — with `to:
 "profile_owner:<agent id>"`, an addressing allowed only here, which
@@ -7022,7 +7049,7 @@ learns its content.
 | `request_answered`, `request_withdrawn` | the asker, the `on_behalf_of` member | the request, answer included; for a personal request `{id, personal, status, takeover_id?}` only (§7) |
 | `session_started` | nobody; readable by owner and admins | session fields |
 | `session_model_changed` | `member:` of the member the agent reports to, `trust:admin`, the human owner of the agent when a member | `{member_id, instance, from: {harness, model}, to: {harness, model}, session_id}` (§5.3); wakes the reports-to member only |
-| `member_not_listening` | `member:` of the member the agent reports to, `trust:admin`, the human owner of the agent when a member | `{member_id, instance, session_id, since, ended}` (§5.3); `ended: false` when the episode starts (wakes the reports-to member only), `ended: true` when it ends (wakes nobody) |
+| `member_not_listening` | `member:` of the member the agent reports to, `trust:admin`, the human owner of the agent when a member | `{member_id, instance, session_id, since, ended}` (§5.3); `since` is the episode's start; `ended: false` when it starts (wakes the reports-to member only, nobody when `reports_to` is `null`), `ended: true` when it ends (wakes nobody) |
 | `keep_the_why_reminder` | `instance:<member>#<id>` of the instance that has not confirmed (§6.23); readable as any instance-addressed event, by its team (§8.4) | `{project, instance, session_id, acknowledge_by}`; once per outstanding commitment, at `acknowledge_by` or at the instance's next resume after it; wakes the instance |
 | `keep_the_why_acknowledged` | the agent's owner when a member, `trust:admin` | `{member_id, instance, session_id, acknowledged_at}`; never wakes anyone |
 | `session_paused` | the member itself, its `reports_to` (across owners too, §6.2), `trust:admin` | session fields, `paused` (`null` when a human lifts it) |
@@ -11430,7 +11457,7 @@ class `info` that the hub files and withdraws itself.
 
 | `kind` | From | Who gets it | Title (the hub composes it; no body) |
 |---|---|---|---|
-| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7) and of an unconfirmed Keep the Why commitment (§6.23); the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7) | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `mail_disabled` the human | `<asker> asks: <request title>`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Mail to <address> disabled after 3 failures`, linking to the notification settings |
+| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and of an agent that is not listening (§5.3); the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7) | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `mail_disabled` the human | `<asker> asks: <request title>`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Mail to <address> disabled after 3 failures`, linking to the notification settings |
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or, once #153 lands, from another participant of a group chat (#153, §9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; once #153 lands, a mention in a group chat (#153) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
 | `security` | the account records `session_created` (#169, §2.6.5) and `email_address_changed` (§18.4); `second_factor_changed` and `second_factor_failed` (§2.8) | the human | `New sign-in: <browser> on <os> (<method>)`; `Sign-in address changed`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>` |
@@ -11667,8 +11694,9 @@ rules that make a position safe to resume from:
   `unread` of that project's conversations, `total` the per-project
   `inbox + chat + mention`. Every entry carries `member`: `true` for a
   project the human is a member of, `false` for one that appears only
-  through a personal request — an agent's outage (§15.7) and an
-  unconfirmed Keep the Why commitment (§6.23) included — then only
+  through a personal request — an agent's outage (§15.7), an
+  unconfirmed Keep the Why commitment (§6.23) and an agent that is not
+  listening (§5.3) included — then only
   `inbox` is set, and
   the dashboard shows it on the personal inbox and the bell, not in
   the project switcher, since the human cannot open the project. The sum of
@@ -12082,8 +12110,9 @@ mail.
     human asked — are rows of their own in this group, read like any
     item. A pending registration (for an instance admin) and a disabled
     address are rows of their own here too, until the matter is closed
-    (§18.1). The hub's notices about an agent's outage (§15.7) and an
-    unconfirmed Keep the Why commitment (§6.23) are personal requests
+    (§18.1). The hub's notices about an agent's outage (§15.7), an
+    unconfirmed Keep the Why commitment (§6.23) and an agent that is not
+    listening (§5.3) are personal requests
     and appear as such.
   - **Conversations**: `chat` items as one row per conversation or
     group-chat thread, with its unread count and the newest item's
