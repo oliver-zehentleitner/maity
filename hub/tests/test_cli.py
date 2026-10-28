@@ -18,10 +18,25 @@ def isolated_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.chdir(tmp_path)
 
 
+@pytest.mark.wheel
 def test_migrate_then_report(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["migrate"]) == 0
     assert re.search(r"schema empty -> \d{4}$", capsys.readouterr().out.strip())
     assert Path("maity-hub.db").is_file()
+
+
+@pytest.mark.wheel
+def test_the_installed_entry_point_answers() -> None:
+    """The console script the package declares is on the path and starts the hub's CLI."""
+    import shutil
+    import subprocess
+
+    from maity_hub import __version__
+
+    script = shutil.which("maity-hub")
+    assert script is not None
+    result = subprocess.run([script, "--version"], capture_output=True, text=True, check=True)
+    assert result.stdout.strip() == f"maity-hub {__version__}"
 
 
 def test_serve_refuses_an_unmigrated_database(capsys: pytest.CaptureFixture[str]) -> None:
@@ -190,6 +205,7 @@ def _banner_only(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.parametrize("dashboard", [True, False])
+@pytest.mark.wheel
 def test_serve_says_where_the_dashboard_is(
     dashboard: bool,
     monkeypatch: pytest.MonkeyPatch,

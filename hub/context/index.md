@@ -88,7 +88,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 
 ## T
 - [takeovers.md](takeovers.md) — the window settled lazily and by a worker, alike under the project lock; a takeover from a replaced or removed instance is cancelled
-- [testing.md](testing.md) — CI matrix: full check on SQLite, tests on PostgreSQL 17 and MariaDB 11.4; MariaDB stands in for MySQL; races on two real connections, PostgreSQL and MariaDB only
+- [testing.md](testing.md) — CI matrix: full check on SQLite, tests on PostgreSQL 17 and MariaDB 11.4; MariaDB stands in for MySQL; the suite runs in parallel with a database per worker and the wheel job runs a marked subset; races on two real connections, PostgreSQL and MariaDB only
 - [ticker.md](ticker.md) — a ticker item is an event with its dedupe key in a table of its own; shaped per reader where every event view is made; settings replaced key by key; merges read by the probe from the switch-on moment, sections from the diff; the forge webhook answered in the middleware before its body, only ever a trigger
 
 ## U

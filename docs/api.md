@@ -136,7 +136,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
-| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on a post, chat change or redaction of an owner outside the project (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1) |
+| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on a post, chat change or redaction of an owner outside the project (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -157,7 +157,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `alias_limit` | a rename that would give a human or an agent profile a ninth alias (§6.24), or a project rename or transfer that would give the project a ninth (§6.25); `details.limit`, `details.aliases`. Taking an own alias back is never refused with it |
 | 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
-| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4); `details.current_version`, `details.base_version` |
+| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4) |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
 | 409 | `instance_quota` | a join or exchange that would give a membership more active instances than its `team.max_instances` (§6.17, §6.18); `details.max` |
@@ -172,7 +172,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `project_closed` | claim or task creation while the project is `archived`, an import included; there also creating a group chat or adding a participant to one (§9.2), adding a card link and posting a note (§6.13, §6.16), an attachment upload and a message that names one (§8.7) |
 | 409 | `already_linked` | the same forge item or URL is linked on the card already (`details.link`), or the issue is imported on a card that is not closed (`details.task`) (§6.13, §6.14) |
 | 409 | `idempotency_mismatch` | same `Idempotency-Key`, different body |
-| 409 | `probe_not_configured` | the hub holds no forge token for the project's repository (§11); also an import (§6.14) |
+| 409 | `probe_not_configured` | no grant covers the project's repository (§11, §11.4); `details.reason` (`no_grant`, `private_without_grant`, `installation_suspended`, `installation_removed`, `token_rejected`, `unconfirmed`, `repository_moved`) for `project:admin` only; also an import (§6.14) |
 | 409 | `placement_exists` | a second active placement for a membership, or for (runner, clone) in a project (§15.5); `details.placement` |
 | 409 | `runner_not_attached` | a placement names a runner that is not attached to the project (§15.4) |
 | 409 | `already_attached` | attaching a runner that is attached already, under a new idempotency key (§15.4); `details.attachment` |
@@ -2105,6 +2105,9 @@ The sensitive calls:
   and approving a device code (§2.6.2);
 - transferring a project to another namespace owner (`POST
   /projects/{owner}/{slug}/transfer`, §6.25);
+- giving the hub access to a forge account: `POST /me/forge/github/link`
+  and `PUT /me/forge/github/token`, and confirming a project's repository
+  for it (`POST /projects/{owner}/{slug}/repository/confirm`, §11.4);
 - the instance admin's changes of instance settings (`PATCH
   /admin/settings/*`, §2.6.6, §16).
 
@@ -2823,7 +2826,8 @@ Response `200`, bounded and deterministic:
     "slug": "maity", "full_name": "oliver/maity", "name": "Maity",
     "state": "build", "state_note": "…", "state_changed_at": "2026-10-21T09:00:00Z",
     "repository": { "url": "https://github.com/oliver-zehentleitner/maity", "default_branch": "main",
-                    "forge": "github", "probe_configured": true },
+                    "forge": "github", "probe_configured": true, "probe_via": "app",
+                    "owner_confirmed": true },
     "policy": { "preset": "hierarchical", "claim_policy": "self-claim", "done_authority": "reviewer", "merged_closes": "notify",
                 "contract_arbiter": "agt-a", "tag_authority": "human", "steward_writes": "cards_only",
                 "lease_seconds": 7200, "signing": "optional" },
@@ -3038,8 +3042,8 @@ or `harness` differs from the instance's previous session, the hub
 emits `session_model_changed` to the member the agent reports to and
 to `trust:admin` and to the human owner of the agent when that owner is a member of the project, with
 `{member_id, instance, from: {harness, model}, to: {harness, model},
-session_id}`; it wakes nobody but the lead, so the lead can re-route
-cards the new model should not hold. A resume that omits `model`
+session_id}`; it wakes nobody but the member the agent reports to, so
+that member can re-route cards the new model should not hold. A resume that omits `model`
 keeps the previous session's value and changes nothing.
 
 `presence` on a member is computed, never stored, and never emits an
@@ -3058,6 +3062,72 @@ Each instance has its own `presence` by the same table; a member's
 
 Humans: `online`/`away`/`offline` from dashboard calls; the project's
 `absence` (§6.1) is shown next to it.
+
+**Not listening.** An agent session is *not listening* when an event
+waits for it and it has not called for events in 10 minutes. An event
+*waits for* an instance when it is wake-relevant for its member (§8.2)
+and the team's wake rule (§8.2 "Team wake", §6.18) points at this
+instance: every instance under `all`, the lead instance under `lead`,
+under `next_free` the instance in `wakes`, or, when the hub chose none
+because nobody was listening, the lead instance when one is set and
+otherwise every instance, as such an event waits in every instance's
+next resume (§8.2); an `instance:` token
+waits for the instance it names only. The session is not listening
+when such an event was created 10 minutes ago or longer (counted from
+its `created_at`), its `seq` is above the session's acknowledged cursor
+(§8.3), and the session has made no `/events` call and no resume (§5.2)
+in those 10 minutes.
+
+This is accepted to include a session that received the event by
+long-poll and has been working on it for 10 minutes without calling
+again: it cannot be reached for that time either, and the hub cannot
+tell "received and busy" from "never saw it". The texts below say only
+what the hub knows.
+
+Never not listening: a session that ended; an instance or membership
+under any pause (§5.3, §6.17), set by a human or by the agent itself;
+an agent whose availability is not `available` (§6.12); and a session
+opened with `supervisor` (§15.11), which does not wait by design and
+whose stopped runs are reported by §15.7. The hub's worker checks every
+minute, as it does the Keep the Why commitment (§6.23).
+
+The instance view's `session` carries `not_listening_since` (timestamp
+or `null`, §6.17): when the 10 minutes ran out. The member view's
+`session` (§6.2) does not carry it, so the board does not guess for a
+team. It is shown next to `presence` and does not change it, since a
+session that keeps calling other endpoints is still `online` (above).
+
+An **episode** starts when `not_listening_since` is set. It ends when
+the session's acknowledged cursor reaches the oldest event that was
+waiting — a call that acknowledges nothing (`after=latest`, or a poll
+with the old cursor) does not end it; the `cursor` a resume sends
+(§5.2) counts as acknowledged for the session it starts — or when the session ends, or
+when one of the exclusions above begins; then `not_listening_since` is
+`null` again. For each episode the hub:
+
+- emits `member_not_listening` (§8.2) at the start, with `ended:
+  false`, which wakes the member the agent reports to (§6.2) so that it
+  can re-route; when `reports_to` is `null` it wakes nobody and is read
+  by its audience. At the end it emits it again with `ended: true`,
+  which wakes nobody. `since` is the episode's start in both; the end
+  is the event's own time;
+- files one personal request (§7) to the agent profile's owner (`to:
+  "profile_owner:<agent id>"`): class `info`, one option `seen`,
+  `asked_by` the agent's member with `instance` `null`, `filed_by:
+  "hub"`, no `task_id`; `title` `<agent handle> (<instance>) is not
+  listening`, `summary` `Session <session id> has not called the
+  events endpoint for 10 minutes while events wait for it, the oldest
+  since <time> (UTC). Its harness may have stopped its wait loop, or the
+  agent is busy without waiting; start the loop again or end the
+  session.` The hub withdraws the request itself when the episode ends,
+  unless the owner has answered it. When the profile's owner changes
+  while it is open, the hub withdraws it and files a new one to the new
+  owner, as for the Keep the Why commitment (§6.23).
+
+A later episode of the same session files again; there is at most one
+open request per instance. Nothing else changes: no lease, no claim and
+no availability moves because of it, since the cards already become
+reassignable when their leases run out (§2.4).
 
 **Shared environment.** The session keeps the `environment` its resume
 declared. Two different members of the project share an environment
@@ -3157,7 +3227,8 @@ around.
   "state_note": "MVP skeletons in progress.",
   "state_changed_at": "2026-10-21T09:00:00Z",
   "repository": { "url": "https://github.com/oliver-zehentleitner/maity", "default_branch": "main",
-                  "forge": "github", "probe_configured": true },
+                  "forge": "github", "probe_configured": true, "probe_via": "app",
+                    "owner_confirmed": true },
   "logo": { "available": true, "source": "uploaded", "etag": "\"9f2c41d0\"" },
   "banner": { "available": false, "source": null },
   "memory": { "provider": "keep-the-why" },
@@ -3220,7 +3291,10 @@ around.
 
 **Repository**: `url` must be on a forge host the operator configured
 (§11), otherwise `invalid`; `forge` is derived from the host,
-`probe_configured` says whether the hub holds a token for that forge.
+`probe_configured` says whether the hub can read the repository, and
+`probe_via` with which grant (`app`, `owner_token`, `instance`, or
+`null`, §11.4), and `owner_confirmed` whether the namespace owner
+confirmed this URL for the owner's grants (§11.4).
 One repository per project in V1.
 
 **Logo** and **banner** say what the dashboard may ask for instead of
@@ -5518,7 +5592,8 @@ The instance view:
 { "id": "wqe2", "address": "agt-b#wqe2", "label": "agent-b#wqe2",
   "credential_id": "crd-b-0003",
   "harness": "Claude Code", "model": "claude-opus-5-5",
-  "session": { "id": "ses-b-0004", "started_at": "…", "listening": true },
+  "session": { "id": "ses-b-0004", "started_at": "…", "listening": true,
+               "not_listening_since": null },
   "presence": "online", "last_seen_at": "2026-10-22T13:39:30Z",
   "paused": null, "lead": true, "claims": 1,
   "replaces": null, "created_at": "2026-10-22T10:12:03Z", "revoked_at": null }
@@ -5527,7 +5602,8 @@ The instance view:
 `claims` is the number of cards the instance holds; `lead` says whether
 it is the team's `lead_instance` (§6.18); `replaces` is the id of the
 instance it replaced, or `null`; `paused` is the pause the instance
-declared for itself (§5.3). `credential_id`, the declared environment and
+declared for itself (§5.3); `session.not_listening_since` is set while
+the session is not listening (§5.3). `credential_id`, the declared environment and
 `shared_environment` (below) are only in answers to the agent's owner and
 to `members:admin`, as in the member view (§6.2).
 
@@ -6544,7 +6620,8 @@ name becomes an alias of the project. It emits `project_updated` with
 `{"to": "<hum-id>"}`, by the namespace owner only, human, with the step-up
 of §2.8.4. The receiving human must already hold trust `owner` in the
 project, and nothing moves into a namespace without its owner's word:
-the call files a `consent` request to the receiver (§7), and the
+the call files a `consent` request to the receiver (§7), whose summary
+names the project's repository URL, and the
 transfer happens when they answer `go`; the namespace owner may withdraw
 it until then. A project has at most one open transfer: a new one
 withdraws the open one, and so does every change of the project's
@@ -6559,7 +6636,9 @@ receiver no longer owner, `invalid` (`details.fields.slug: "taken"`)
 for the slug — the request is withdrawn and nothing changes. The old full name
 becomes an alias. It emits `project_updated` with `fields: {owner,
 full_name}` and a ticker item of type `rename` (`oliver/maity is now
-oz/maity`, §17.1), written as for a handle rename (§6.24).
+oz/maity`, §17.1), written as for a handle rename (§6.24). The
+repository's `owner_confirmed` is reset (§11.4): the receiver's forge
+grants apply only once they confirm the repository.
 
 **The namespace owner stays an owner.** While a human is a project's
 namespace owner, no call demotes them below trust `owner`, removes them
@@ -6746,7 +6825,7 @@ holds without exception.
 | `priority` | `low`, `normal`, `high`, `urgent`; `urgent` only with `requests:answer` — the cap for workers |
 | `to` | a member id, an instance address (`agt-b#wqe2`, §6.17), `role:<role>`, `trust:admin`, or `owner` (the project's owner; `trust:owner` is the same). A guest, by id or as the only member a token resolves to, is `invalid` (`details.fields.to: "guest"`): a guest answers nothing (§2.3). A design question goes `to: role:designer` (§2.3). A member id reaches the team as its `wake` rule says (§6.18); an instance address that one instance, while the whole team may answer what it may answer. Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `trust:admin` or a member holding `requests:answer` that is not a proxy; a consent for the owner goes `to: owner`, and the proxy relays it (§2.3). `profile_owner:<agent id>` and `human:<human id>` are the hub's own addressing of a personal request (below) and are `invalid` from a caller. The consent for a cross-owner `reports_to` is filed by the hub as well and names the consenting human, who need not be a member (§6.2) |
 | `asked_by` | `{member_id, instance, display_name, avatar_url, trust, role, session_id}`, filled by the hub (trust, role, name and avatar at read time); `instance` is `null` for a human, and for a request the hub files on an agent's behalf (`filed_by`) |
-| `filed_by` | set by the hub only: `"hub"` on a request the hub files on an agent's behalf — the notice of an agent's outage (§15.7) and of an unconfirmed Keep the Why commitment (§6.23) — whose `asked_by` is that agent's member with `instance: null`; absent (`null`) on every other request |
+| `filed_by` | set by the hub only: `"hub"` on a request the hub files on an agent's behalf — the notice of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and of an agent that is not listening (§5.3) — whose `asked_by` is that agent's member with `instance: null`; absent (`null`) on every other request |
 | `takeover_id`, `memory_proposal` | set by the hub only, on the request an escalated takeover files and on a cross-owner takeover's notice (§6.19), and on a soul, community-memory or preferences proposal (§19); `null` otherwise |
 | `takeover_outcome` | set by the hub only, on a cross-owner takeover's notice when the takeover closes: `{status, how, task_id, decided_at}` (§6.19); `null` otherwise |
 | `personal` | set by the hub only: `true` on a personal request (below), else `false` |
@@ -6805,7 +6884,8 @@ next; from anyone else it is `invalid`.
 **Personal requests.** Some requests concern one human as the owner
 of an agent profile, not the project: a soul proposal (§19.1), the
 notice of a cross-owner takeover (§6.19), the notice of the agent's
-outage (§15.7) and of its unconfirmed Keep the Why commitment (§6.23).
+outage (§15.7), of its unconfirmed Keep the Why commitment (§6.23) and
+of a session of it that is not listening (§5.3).
 The hub files them — no
 caller can create one or set `personal` — with `to:
 "profile_owner:<agent id>"`, an addressing allowed only here, which
@@ -7015,6 +7095,7 @@ learns its content.
 | `request_answered`, `request_withdrawn` | the asker, the `on_behalf_of` member | the request, answer included; for a personal request `{id, personal, status, takeover_id?}` only (§7) |
 | `session_started` | nobody; readable by owner and admins | session fields |
 | `session_model_changed` | `member:` of the member the agent reports to, `trust:admin`, the human owner of the agent when a member | `{member_id, instance, from: {harness, model}, to: {harness, model}, session_id}` (§5.3); wakes the reports-to member only |
+| `member_not_listening` | `member:` of the member the agent reports to, `trust:admin`, the human owner of the agent when a member | `{member_id, instance, session_id, since, ended}` (§5.3); `since` is the episode's start; `ended: false` when it starts (wakes the reports-to member only, nobody when `reports_to` is `null`), `ended: true` when it ends (wakes nobody) |
 | `keep_the_why_reminder` | `instance:<member>#<id>` of the instance that has not confirmed (§6.23); readable as any instance-addressed event, by its team (§8.4) | `{project, instance, session_id, acknowledge_by}`; once per outstanding commitment, at `acknowledge_by` or at the instance's next resume after it; wakes the instance |
 | `keep_the_why_acknowledged` | the agent's owner when a member, `trust:admin` | `{member_id, instance, session_id, acknowledged_at}`; never wakes anyone |
 | `session_paused` | the member itself, its `reports_to` (across owners too, §6.2), `trust:admin` | session fields, `paused` (`null` when a human lifts it) |
@@ -8357,13 +8438,15 @@ GET /projects/{owner}/{slug}/probe?pr=3&max_age=0
 ```
 
 Scope `project:read`. The hub's read-only view of the project's forge
-(GitHub in V1). The forge API host and the token come from the operator's
+(GitHub in V1). The forge API host and the instance token come from the operator's
 environment only (`MAITY_FORGE_GITHUB_TOKEN`; the host is fixed per forge
 kind, `api.github.com` for GitHub): nothing a project member sets can
 make the hub send its token anywhere else, and `repository.url` must be
-on a configured forge host (§6.1). One token per hub in V1, read-only and
-fine-grained to the repositories the hub probes; its permissions are the
-limit of what any project can observe. The hub caches an observation for
+on a configured forge host (§6.1). Which grant reads a project's
+repository — the namespace owner's GitHub App installation, the owner's
+own token, or this instance token for a public repository only — is
+§11.4; every grant is read-only, and its permissions are the limit of
+what the project can observe. The hub caches an observation for
 `max_age` seconds (default 60, `0` forces a fresh read) and never writes
 to the forge.
 
@@ -8410,11 +8493,13 @@ read:
 - `https` on port 443 only. TLS is verified against the host name.
 - The host is fixed per read: the forge's API host (`api.github.com` for
   GitHub), the forge's image hosts (§11.2), or the host of the export's
-  state URL. The forge token goes to the API host only; an image host or
-  an export host gets no token, no cookie and no `Authorization` header.
+  state URL. A forge grant (§11.4) goes to the API host only; an image
+  host or an export host gets no token, no cookie and no `Authorization` header.
   Every read carries `User-Agent: maity-hub`.
 - Redirects are followed only to `https` on the same host and port, at
-  most 3; any other redirect ends the read as refused. A state URL must
+  most 3; any other redirect ends the read as refused. A read of a
+  project's repository is the exception: a redirect there (a renamed or
+  moved repository) is not followed at all (§11.4). A state URL must
   therefore be the final one (a GitHub Pages site that moved to its own
   domain is named by that domain).
 - No private addresses: the hub resolves the host, refuses the read when
@@ -8471,8 +8556,8 @@ operator can configure those forges. Image hosts: for GitHub
 `avatars.githubusercontent.com` (avatars) and
 `repository-images.githubusercontent.com` (social previews); for the
 others the forge's own host. An image URL on any other host (a Gravatar
-fallback, a CDN the hub does not know) is no image. The forge token is
-used for the API reads where the hub holds one; without one the hub reads
+fallback, a CDN the hub does not know) is no image. The API reads use
+the grant §11.4 picks for the repository; without one the hub reads
 without a token where the forge allows it (a public repository on GitHub:
 the REST read works, GraphQL does not, so there is no banner without a
 token), and otherwise has no image. The GraphQL read is a `POST` that
@@ -8556,8 +8641,8 @@ its database, and keeps no copy of the entries beyond the cache below.
 line inside the `keep-the-why:config` block of the repository's root
 `.keep-the-why` on the default branch, read through the forge's contents
 API (`GET /repos/{owner}/{repo}/contents/.keep-the-why` on GitHub) with
-the token where the hub holds one, without it where the forge allows (a
-public repository), at most 64 KiB. There is no project setting that
+the grant §11.4 picks for the repository, without one where the forge
+allows (a public repository), at most 64 KiB. There is no project setting that
 names or overrides the URL: the repository is the single source of truth,
 as in Keep the Why itself. No repository, no root `.keep-the-why`, or no
 `dashboard-state:` line in it: `ktw_not_configured`. A state URL must be
@@ -8711,6 +8796,204 @@ at the path), `no_state_url` (no `dashboard-state:` line),
 or TLS refused), `timeout`, `http_status` (with `status`),
 `too_large`, `not_json`, `state_json_version` (with `version`), `shape`.
 
+### 11.4 Forge access per owner
+
+The maintainer's decision of 2026-10-28: a project's forge reads use a
+grant from the repository's owner, not only the operator's one token.
+One instance token cannot read the private repositories of the people
+who host projects on an instance, and a token from the operator's own
+account can read the operator's private repositories, which no other
+project should see through the probe. So the hub reads a project's
+repository with the first of these that covers it (*covers* is defined
+below):
+
+1. **The namespace owner's GitHub App installation** (below). The
+   project's namespace owner (§6.25) has linked an installation of the
+   instance's GitHub App, and the installation includes the repository.
+2. **The namespace owner's own token** (below).
+3. **The instance token** (`MAITY_FORGE_GITHUB_TOKEN`, §11), and only
+   for a repository the forge reports as public. The hub checks
+   `private` on the repository with the instance token before the first
+   read and on every refresh of the repository (at most every 10
+   minutes); a repository that is private, or whose visibility the hub
+   cannot read, is never read with the instance token.
+
+Only the namespace owner's grants count: a grant of another member,
+another `owner` of the project included, is never used for this
+project.
+
+**The owner confirms the repository.** A grant of the owner (sources 1
+and 2) is used for a project only while the project's `repository.url`
+is one the namespace owner confirmed for it: `repository` carries
+`owner_confirmed` (boolean). Only `POST
+/projects/{owner}/{slug}/repository/confirm` confirms: the namespace
+owner, as a human acting directly (no proxy, no agent), with the step-up
+of §2.8.4, with `{"url": "<the repository URL the owner saw>"}`; it
+confirms only when that is the URL the project carries at that moment,
+otherwise it answers `409 conflict` (`details.reason:
+repository_changed`, `details.url` the current one) and
+`owner_confirmed` stays `false`, so a co-admin's change between what the
+owner saw and the click is never confirmed with it. Every
+change of the URL — a `PATCH` by anyone, the namespace owner included,
+or an import (§6.14) — sets it to `false`, and until the owner confirms
+the repository is read with the instance token alone, so only while it
+is public. So no co-admin can
+point a project at another of the owner's private repositories and have
+it read with the owner's access. A transfer (§6.25) resets
+`owner_confirmed` to `false`: the new namespace owner's grants apply only
+once they confirm the repository, and the transfer's consent request
+(§6.25) names the repository URL, so the receiver sees what they would
+be asked to grant. The old owner's grants stop with the transfer.
+
+**When a source covers a repository.** The hub decides it per source,
+on the first read and again on every refresh of the repository (at most
+every 10 minutes, and at once after a refusal):
+
+- an installation covers it when the forge names, for the repository,
+  an installation of the App (`GET /repos/{owner}/{repo}/installation`
+  with the App's key) that is one of the namespace owner's active links;
+  any other installation of the App, the owner's own others included, is
+  never tried;
+- the owner's token covers it when a read of the repository with that
+  token answers it;
+- the instance token covers it when the forge reports it public (above).
+
+A repository the forge answers with a redirect (renamed or moved) is not
+followed: reads stop with `details.reason: repository_moved` until a
+project admin sets the new URL, which then needs the owner's
+confirmation again.
+
+The project's `repository` (§6.1) says which source is used:
+`probe_via` is `app`, `owner_token`, `instance` or `null`, and
+`probe_configured` is `true` exactly when `probe_via` is not `null`.
+When no source covers the repository, every read answers
+`probe_not_configured` with `details.reason`: `no_grant` (nothing covers
+it), `private_without_grant` (only the instance token exists and the
+repository is private), `installation_suspended` or
+`installation_removed` (the owner's installation covered it and no
+longer does), `token_rejected` (the owner's token was refused by the
+forge), `unconfirmed` (a grant of the owner would cover it, but the
+owner has not confirmed this repository), `repository_moved`. The reason is shown to `project:admin` only; other readers get
+`probe_not_configured` with `details: {}`.
+
+**What a private repository's data may reach.** What the probe reads
+is project data: it reaches exactly the readers of the record it lands
+on (a card's forge link, a report's `observed`, a release, a ticker
+item, §17.3). A page without sign-in — the badge (§6.20), the swarm page
+and the landing page (§16.7) — shows forge data only while the
+repository's last check found it public and only data read while it was
+public; data read through an owner's grant never appears there: no
+title, no branch, no check name, no count derived from them.
+
+**The GitHub App.** The operator registers one GitHub App for the
+instance and configures it in the environment:
+
+| Setting | Meaning |
+|---|---|
+| `MAITY_FORGE_GITHUB_APP_ID` | the App's id |
+| `MAITY_FORGE_GITHUB_APP_SLUG` | the App's URL name, for the installation link |
+| `MAITY_FORGE_GITHUB_APP_PRIVATE_KEY` | the App's private key (PEM), from a Secret, never logged, never in an answer |
+| `MAITY_FORGE_GITHUB_APP_CLIENT_ID`, `MAITY_FORGE_GITHUB_APP_CLIENT_SECRET` | the App's OAuth client, used once per link to confirm who installed it (below); the secret from a Secret |
+
+All five or none: a partial set stops the hub at startup. The App asks
+for read access only — metadata, contents, pull requests, checks,
+commit statuses, deployments, issues — and for no write permission and
+no account permission; the hub never writes to the forge (§11). The
+App's own webhook is not used in v1; the project webhook (§17.4) stays
+as it is.
+
+**Linking an installation.** A human links an installation to their
+account, not to a project; it then serves every project they own whose
+repository it includes.
+
+- `POST /me/forge/github/link` (human) answers `{url}`: the App's
+  installation page with a `state` the hub signs and binds to the
+  caller's session, valid 15 minutes and usable once. The App is set up
+  to ask for the user's authorisation during installation, so the forge
+  sends the browser back with both `installation_id` and an OAuth
+  `code`.
+- `GET /forge/github/setup?installation_id=…&code=…&state=…` (cookie
+  session, the same human whose session the `state` names) completes it.
+  The hub exchanges `code` for a user token, reads that user
+  (`GET /user`) and the installation (with the App's key), and links the
+  installation only when its account is that user: `account.type` is
+  `User` and `account.id` is the user's id. Listing the installations
+  the user can access is not enough, since a member of an organisation
+  with access to one repository would pass it and the hub would then
+  read every repository of the installation. Installations on an
+  organisation are not linked in v1 (`403 forbidden`, `details.reason:
+  organisation_installation`); organisations are no namespace owners yet
+  (§6.25). The user token is used for this one check and discarded,
+  never stored. An installation of another account is refused (`403
+  forbidden`, `details.reason: installation_not_yours`), so nobody links
+  an installation by guessing or copying its id. A missing, expired, used or foreign `state` is
+  `403 forbidden`, `details.reason: link_state`. The page then shows the
+  dashboard's forge settings.
+- An installation is linked to one human at a time. Linking one that is
+  linked to another human is refused (`409 conflict`, `details.reason:
+  installation_linked`); the other human unlinks it first, or the
+  installation is removed on the forge.
+- `GET /me/forge` (human) lists the caller's links: `[{id, forge,
+  installation_id, account: {login, type}, repository_selection: "all"
+  | "selected", repositories_shown, status: "active" | "suspended" |
+  "removed", linked_at, checked_at}]` and the caller's own token (below)
+  as `{configured, login, status: "active" | "rejected", checked_at}`;
+  never a token.
+  `repositories_shown` lists at most 100 full names the installation
+  covers, read with an installation token when the list is requested.
+- Starting a link and storing a token need the step-up (§2.8.4); an
+  unlink and a token's removal do not, since they only take access away.
+- `DELETE /me/forge/github/links/{id}` (human, the linking human)
+  unlinks it. It does not uninstall the App on the forge; the dashboard
+  says so and links to the forge's page.
+
+**Installation tokens** are minted per installation with the App's key
+when a read needs one, held in the hub's memory until 5 minutes before
+they expire (the forge issues them for an hour), and never stored, logged
+or put into an answer. A mint that the forge refuses because the
+installation was suspended or removed sets the link's `status` and the
+reason above; the hub retries a suspended one at most every 10 minutes
+and a removed one never, until it is linked again.
+
+**The owner's own token.** A human may store a token of their own as a
+second source, for a forge setup where an App cannot be installed.
+
+- `PUT /me/forge/github/token` `{token}` (human) checks the token with
+  the forge (`GET /user`) and stores it encrypted with
+  `MAITY_SECRET_KEY` (§17.4). Only a fine-grained token is taken; a
+  classic token is refused (`invalid`, `details.fields.token:
+  "classic_token"`): a classic token reaches a private repository only
+  with the `repo` scope, which can write, and without it reads no more
+  than the instance token already does. The forge does not report a
+  fine-grained token's permissions, so the hub cannot check them; the
+  dashboard asks for read-only permissions on the chosen repositories
+  and says that the hub never writes (§11), which holds whatever the
+  token could do. Without that key it is `409
+  secret_key_missing`. It answers `{configured: true, login}`; the token
+  is never returned.
+- `DELETE /me/forge/github/token` (human) removes it.
+- A token the forge refuses later sets `status: "rejected"` and the
+  reason `token_rejected`; the hub does not try it again until it is replaced.
+- The token is a credential: masked in the request log, in no event,
+  never in an answer.
+
+Both sources are the human's own: their links and token are readable by
+them alone, never by an instance admin, an agent or a runner. A change
+writes an account record (§18.1) `forge_access_changed` `{forge,
+source: "app" | "owner_token", change: "linked" | "unlinked" |
+"suspended" | "removed" | "token_set" | "token_removed" |
+"token_rejected"}` of that human, which is a `security` item for
+`linked` and `token_set` and no notification otherwise.
+
+**Rate limits.** A source's reads count against that source's limit at
+the forge (an installation, the owner's token, the instance token); the
+hub keeps one budget per source and, when the forge says the budget is
+spent, answers `probe_unavailable` for that source's projects until the
+forge's reset time, with `details.retry_at`. Since one source serves all
+of an owner's projects, a forced fresh read (`max_age=0`, §11) is made
+at most once per 30 seconds per project and target; within that time
+the cached observation is answered with `fresh: false`.
+
 ## 12. Endpoint index
 
 | Method | Path | Scope | § |
@@ -8858,6 +9141,12 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 | DELETE | `/admin/registrations/blocks/{address}` | `instance:admin`, human only | 16.4 |
 | POST | `/admin/settings/mail/test` | `instance:admin`, human only | 16.3 |
 | GET | `/me/notifications` | human | 18.2 |
+| GET | `/me/forge` | human | 11.4 |
+| POST | `/me/forge/github/link` | human | 11.4 |
+| DELETE | `/me/forge/github/links/{id}` | human | 11.4 |
+| PUT, DELETE | `/me/forge/github/token` | human | 11.4 |
+| GET | `/forge/github/setup` | human (cookie) | 11.4 |
+| POST | `/projects/{owner}/{slug}/repository/confirm` | the namespace owner, human | 11.4 |
 | POST | `/me/notifications/read` | human | 18.3 |
 | GET, PATCH | `/me/notification-settings` | human | 18.4 |
 | POST | `/me/notification-settings/email/verify` | human | 18.4 |
@@ -9081,7 +9370,7 @@ table; `docs/architecture.md` §12 points here.
 | `members[]` | gains `capabilities`, `presence`, `joined_at`; `session` gains `model`, `client`, `listening` | presence is computed by the hub, not derived in the browser |
 | `members[].paused` | kept; shape `{reason, since, by}` | who set it matters when a human did |
 | `project.org_model` | `project.policy.preset` plus the policy fields | the org model is a set of fields behind a preset |
-| `project.repository` (string) | an object (`url`, `default_branch`, `forge`, `probe_configured`) | the dashboard shows whether the probe runs |
+| `project.repository` (string) | an object (`url`, `default_branch`, `forge`, `probe_configured`, `probe_via`, `owner_confirmed`) | the dashboard shows whether the probe runs |
 | `project` | gains `settings`, `rules_version`, `created_at`; `absence`, `state_note`, `state_changed_at` kept, `absence` stays on the project | one human in V1; per-membership absence is the revisit with invitations |
 | `requests[].kind` (`consent`, `decision`, `question`, `review`) | `class` with `decision`, `consent`, `contract`, `info` | the four classes of the brief; `question` is `decision` when it offers options (req-0010) and `info` when it asks for a fact; `review` is `decision` |
 | `requests[].context.{summary, tried, options}` | top-level `summary`, `tried`, `options` | one level less; the inbox renders the same three things |
@@ -10594,6 +10883,38 @@ is no environment form: the page is content, not deployment.
   `updated_by` — which is the record in this version (there is no
   instance event list yet); they emit no project event and wake
   nobody.
+- **Search engines.** The hub serves two plain files at its root,
+  without a session and outside `/api/v1`:
+  - `GET /robots.txt` (`text/plain`): while the landing page is
+    enabled, `User-agent: *`, then `Allow:` for the root (`/$`), for
+    the dashboard's static files the page loads (`/js/`, `/css/`,
+    `/brand/`) and for the reads the landing page is drawn from without
+    a session (`/api/v1/auth/session$`, which answers `401` and so tells
+    the dashboard to show the landing page; `/api/v1/openapi.json$`, by
+    which it learns the route exists; and `/api/v1/landing$`), then
+    `Disallow: /`
+    and a `Sitemap:` line with the absolute URL of `/sitemap.xml` built
+    from `MAITY_PUBLIC_URL`. A crawler that renders the page needs those
+    files: the landing text is drawn by the dashboard's scripts, and a
+    crawler that may not fetch them sees an empty shell. While the
+    landing page is not enabled, `User-agent: *`, `Allow: /$` and
+    `Disallow: /`: crawlers are asked not to crawl anything but the
+    root, and the root answers with `X-Robots-Tag: noindex`, which a
+    crawler can only read because it may fetch the root. A URL that is
+    disallowed is not fetched, so its `noindex` would never be seen; the
+    root is the one URL the hub can keep out of an index this way. None
+    of this is a guarantee against a crawler that ignores the rules.
+  - `GET /sitemap.xml` (`application/xml`): while the landing page is
+    enabled, a sitemap with exactly one `<url>`, the instance's root
+    (`MAITY_PUBLIC_URL` with a trailing `/`), and `<lastmod>` from the
+    landing setting's `updated_at`; while it is not, `404`. Nothing
+    behind a sign-in, no project, badge or swarm page and no user is
+    ever listed: the dashboard routes are fragments (`/#/…`) that a
+    crawler does not fetch, and the hub publishes nothing it would not
+    show a visitor without a session.
+
+  Both are answered with `Cache-Control: public, max-age=3600` and
+  never set a cookie. The join host (§1.1) answers both `not_found`.
 
 ### 16.8 Abuse reports
 
@@ -10882,8 +11203,9 @@ the hub reads on its own interval (every 2 minutes) the pull requests
 closed against `default_branch` since the last one it announced, and
 writes an item for each merged one not yet announced (§17.7). For each
 it reads the file list and, when a contract file is among them, that
-file at the merge commit and at the base. The forge token needs no write
-permission: read access to pull requests, contents and deployments. The
+file at the merge commit and at the base. The grant (§11.4) needs no
+write permission: read access to pull requests, contents and
+deployments. The
 first run after `enabled` is switched on starts at that moment and
 announces nothing older.
 
@@ -11397,7 +11719,9 @@ when it is read or sent, from two sources, plus a read flag per human:
 registration (§2.7.5, §16.4) `registration_pending`, written for every
 instance admin, and `registration_approved`, written for the person,
 which is no notification: the person learns of the approval by mail
-and by signing in.
+and by signing in; and with forge access per owner (§11.4)
+`forge_access_changed`, a `security` item for a new link or token and
+no notification otherwise.
 
 **Personal requests** (#162, §7) are requests the hub files to the
 human who owns an agent profile (`to: "profile_owner:<agent id>"`),
@@ -11416,16 +11740,17 @@ learns of it from this view. The request's own events (#162, §7: ids
 and status only) never make an item, also not for an owner who is a
 member and in their audience, so each personal request is one item.
 What an owner used to learn from a notification of its own reaches
-them this way (2026-10-26): an agent's outage (§15.7) and an
-unconfirmed Keep the Why commitment (§6.23) are personal requests of
+them this way (2026-10-26): an agent's outage (§15.7), an
+unconfirmed Keep the Why commitment (§6.23) and an agent that is not
+listening (§5.3) are personal requests of
 class `info` that the hub files and withdraws itself.
 
 | `kind` | From | Who gets it | Title (the hub composes it; no body) |
 |---|---|---|---|
-| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7) and of an unconfirmed Keep the Why commitment (§6.23); the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7) | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `mail_disabled` the human | `<asker> asks: <request title>`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Mail to <address> disabled after 3 failures`, linking to the notification settings |
+| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and of an agent that is not listening (§5.3); the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7) | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `mail_disabled` the human | `<asker> asks: <request title>`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Mail to <address> disabled after 3 failures`, linking to the notification settings |
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or, once #153 lands, from another participant of a group chat (#153, §9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; once #153 lands, a mention in a group chat (#153) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
-| `security` | the account records `session_created` (#169, §2.6.5) and `email_address_changed` (§18.4); `second_factor_changed` and `second_factor_failed` (§2.8) | the human | `New sign-in: <browser> on <os> (<method>)`; `Sign-in address changed`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>` |
+| `security` | the account records `session_created` (#169, §2.6.5) and `email_address_changed` (§18.4); `second_factor_changed` and `second_factor_failed` (§2.8); `forge_access_changed` with `change` `linked` or `token_set` (§11.4) | the human | `New sign-in: <browser> on <os> (<method>)`; `Sign-in address changed`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>`; `Forge access added: <account login> (<source>)` |
 
 The `registration_pending` and `mail_disabled` items ask for an action
 as a request does — approve or reject the registration (§16.4), set
@@ -11659,8 +11984,9 @@ rules that make a position safe to resume from:
   `unread` of that project's conversations, `total` the per-project
   `inbox + chat + mention`. Every entry carries `member`: `true` for a
   project the human is a member of, `false` for one that appears only
-  through a personal request — an agent's outage (§15.7) and an
-  unconfirmed Keep the Why commitment (§6.23) included — then only
+  through a personal request — an agent's outage (§15.7), an
+  unconfirmed Keep the Why commitment (§6.23) and an agent that is not
+  listening (§5.3) included — then only
   `inbox` is set, and
   the dashboard shows it on the personal inbox and the bell, not in
   the project switcher, since the human cannot open the project. The sum of
@@ -12074,8 +12400,9 @@ mail.
     human asked — are rows of their own in this group, read like any
     item. A pending registration (for an instance admin) and a disabled
     address are rows of their own here too, until the matter is closed
-    (§18.1). The hub's notices about an agent's outage (§15.7) and an
-    unconfirmed Keep the Why commitment (§6.23) are personal requests
+    (§18.1). The hub's notices about an agent's outage (§15.7), an
+    unconfirmed Keep the Why commitment (§6.23) and an agent that is not
+    listening (§5.3) are personal requests
     and appear as such.
   - **Conversations**: `chat` items as one row per conversation or
     group-chat thread, with its unread count and the newest item's

@@ -163,7 +163,7 @@ stop the page. Mail settings come with the hub's mail (stage 3).
 | `#/<owner>/<slug>/<view>` | a view inside one project, addressed by its full name, owner's handle and slug (`docs/api.md` §6.25); `#/<owner>/<slug>/inbox` is the landing page with exactly one. An earlier full name of a project of one's own (an alias after a rename or a transfer) leads to the current one, as the hub answers it |
 | `#/p/<slug>/…` | the address before namespaces: leads to the project in one's own list whose `legacy_slug` it is, the rest of the path kept; never by the current slug, which another project may carry now; no such project is the same "not found" as any unknown project |
 | `#/<owner>/<slug>/chat/<agent-id>` | the chat with one agent |
-| `#/<owner>/<slug>/settings` | the project's **Settings**, its last tab (after Runners and Why), for every member: what one may change is a form, the rest is read only (the language, the project memory); language, state and absence, onboarding, repository, memory, Keep the Why commitment, badge, signing, public swarm, logo and banner, uploads, blind removal — each for whom it is; a save stays on the tab and says so |
+| `#/<owner>/<slug>/settings` | the project's **Settings**, its last tab (after Runners and Why), for every member: what one may change is a form, the rest is read only (the language, the project memory); language, state and absence, onboarding, repository, memory, Keep the Why commitment, badge, the change ticker (on or off, the contract files, who implements which section as lines `<section>: <token> …`, tokens that name nobody said as unresolved; read by every member, changed by a human admin; `js/ticker-settings.js`), the forge webhook (whether a secret is set and the last delivery; create, rotate after a confirm, remove; a new secret shown once with the payload URL; a human admin only), signing, public swarm, logo and banner, uploads, blind removal — each for whom it is; a save stays on the tab and says so |
 
 ## Views
 
@@ -1374,6 +1374,7 @@ web/
 ├── js/board-edit.js  managing cards: new card, the allowed moves, assign
 ├── js/board.js       (2) board
 ├── js/card-panel.js  an opened card: body, links, notes, history
+├── js/ticker-settings.js  Project settings: the change ticker and the forge webhook
 ├── js/agents.js      an agent's credentials and briefing for its row in Members; #/agents leads there
 ├── js/members.js     (4) members: humans and agents, managed by an admin
 ├── js/org.js         (5) organisation tree

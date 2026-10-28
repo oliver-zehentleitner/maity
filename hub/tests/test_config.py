@@ -67,6 +67,7 @@ def test_an_explicit_public_url_is_never_a_guess() -> None:
     assert (settings.public_url, settings.public_url_guessed) == ("https://hub.example", False)
 
 
+@pytest.mark.wheel
 def test_the_dashboard_default_is_the_checkouts_or_the_packages() -> None:
     web_dir = Settings.from_env({}).web_dir
     if Path(config.__file__).resolve().parent.parent.name == "src":
@@ -99,6 +100,7 @@ def test_an_installed_package_serves_the_dashboard_it_carries(
     assert config.checkout_web_dir() == package / "web"
 
 
+@pytest.mark.wheel
 def test_the_wheel_carries_the_dashboard_from_web() -> None:
     import tomllib
 
