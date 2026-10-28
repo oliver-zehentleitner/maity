@@ -208,3 +208,20 @@ them at one version.
   that can drift apart from the API they call.
 - Pointing `MAITY_WEB_DIR` at a checkout: an extra clone and an
   environment variable in a path meant to take five minutes.
+
+## The image sets MALLOC_ARENA_MAX=2, because the process grew with every request through fragmented arenas
+
+**Id:** a20c28f6-6b1d-48c1-b60e-7fc9191e90df
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** measurements on 2026-10-28 for the card on the hub's growing memory (258 to 419 MiB in five hours on 2 vCPU), with and without the setting, on a real hub process
+**Revisit when:** the hub's memory still grows after a deploy with it, or the image gets another allocator
+**Reason:** a small drift and a lower baseline, at no cost that shows. Against a real hub process (`hub/scripts/measure_arenas.py`, SQLite, 8 CPUs, Python 3.12.3, glibc 2.39, 8 concurrent clients, environment cleaned of `GLIBC_TUNABLES`, `LD_PRELOAD` and `MALLOC_*`, every request answered: 0 failed in all four runs) the process size after the burst of 2,400 requests and then 6,000 more went from 118.0 to 119.7 and from 118.8 to 119.7 MiB with glibc's default, and from 114.8 to 114.9 and from 114.8 to 115.1 MiB with `MALLOC_ARENA_MAX=2`, which also starts 3 to 4 MiB lower; throughput (136 and 138 against 140 and 135 requests a second) and latency (p50 9 to 11 ms; p95 and p99 the same within the noise of two runs each) did not change. That is a drift of about 0.1 to 0.3 KiB a request without the setting and next to none with it. A first probe through the test client had shown about 1 KiB a request; the real hub shows less, so that number was too high and is not used. The measurement is limited: eight clients on eight CPUs against SQLite say nothing certain about a pod with 40 request threads on 2 vCPU and a server database. With 16 clients, 1 to 2 of 2,400 requests were answered `503` in several runs (SQLite makes every transaction wait for the write lock, `BEGIN IMMEDIATE`, and a request can wait past its 5-second limit), with either setting; those runs are marked invalid by the script and not used.
+
+This is not the explanation of the 32 MiB an hour seen in production: that is about 12 KiB a request, a hundred times the drift measured here. The Python heap did not grow either (189 KiB over about 400 requests under `tracemalloc`, nothing standing out), and every in-process structure that grows with input is bounded (the long-poll registry holds one waiter a credential, the rate limiters forget keys past their window, the nonce window holds at most 10,000 entries). What the probes do not exercise is the real network and long-polls, the background workers (forge probe, images, mail, Keep the Why reads) and a server-database driver; the pod's own memory curve and a heap profile from the running hub are what is left.
+
+**Rejected alternatives:**
+- Bounding more caches (LRU or TTL): none of the structures the card names grew in the probe.
+- `jemalloc` in the image: another package in a pinned image for what a setting does.
+- Fewer worker threads: it would cut concurrency for a cost the allocator setting avoids (and the measured throughput did not change).
