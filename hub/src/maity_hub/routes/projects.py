@@ -25,6 +25,7 @@ from maity_hub import (
     policy,
     releases,
     rules,
+    setup_cards,
     ticker,
 )
 from maity_hub import tables as t
@@ -152,6 +153,7 @@ class ProjectCreate(Strict):
     repository: RepositoryIn | None = None
     keep_the_why: bool | None = None
     memory: MemoryIn | None = None
+    setup: Any = None  # parsed by setup_cards.parse, for the reasons §6.21 names
     policy: PolicyIn | None = None
 
 
@@ -160,6 +162,7 @@ class ProjectPatch(Strict):
     repository: RepositoryIn | None = None
     keep_the_why: bool | None = None
     memory: MemoryIn | None = None
+    setup: Any = None
     state: str | None = None
     state_note: str | None = markdown(default=None)
     policy: PolicyIn | None = None
@@ -339,6 +342,9 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
 
     named = _provider(body.keep_the_why, body.memory)
     memory_on = True if named is None else named  # the default provider is keep-the-why (§6.1)
+    setup = setup_cards.parse(body.setup, memory_on)
+    if body.repository is not None:  # refuse a bad repository before anything is written
+        _repository_columns(body.repository)
     words = namespace.app_words(request.app)
     owner_id = caller.human_id
     assert owner_id is not None  # a human caller
@@ -354,6 +360,8 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
         now = clock.now()
         project_id = new_id("project")
         filled = policy.filled("hierarchical", caller.principal_id)
+        if setup["maity_badge"]:  # the creating human's choice, no policy_changed (§6.21)
+            filled["badge"] = "members"
         conn.execute(
             insert(t.project).values(
                 id=project_id,
@@ -363,6 +371,7 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
                 state="build",
                 state_changed_at=now,
                 keep_the_why=memory_on,
+                setup=setup_cards.stored(setup),
                 **_repository_columns(body.repository),
                 **policy.columns(filled),
                 settings={"release_checklist": []},
@@ -411,6 +420,16 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
             subject=("member", caller.principal_id),
         )
         project = _load(conn, project_id)
+        if project.repository_url is not None:
+            setup_cards.create(
+                conn,
+                project,
+                settings_of(request).public_url,
+                owner,
+                caller.actor(owner),
+                reader_of(request),
+            )
+            project = _load(conn, project_id)
         return idempotency.Outcome(201, "project", project_id, _view(conn, project, request))
 
     return idempotency.run(engine_of(request), request, caller, action)
@@ -431,6 +450,8 @@ def patch_project(
     given = body.model_fields_set
 
     def action(conn: Connection) -> idempotency.Outcome:
+        if "setup" in given:
+            raise invalid({"setup": "read_only"}, "the setup options are set at creation only")
         mine = membership(conn, caller, slug)
         # Membership's project snapshot may precede another writer's commit. Merge settings
         # and make policy/event decisions from the current row under the shared project lock.
@@ -539,6 +560,17 @@ def patch_project(
                 ktw.CACHE.forget(project.id)
             # whether the probe can observe it changed
             releases.recheck(conn, project.id, reader_of(request))
+            fresh = _load(conn, project.id)
+            if (
+                project.repository_url is None
+                and fresh.repository_url is not None
+                and fresh.state != "archived"
+                and isinstance(fresh.setup, dict)
+                and fresh.setup.get("cards") is None
+            ):
+                setup_cards.create(
+                    conn, fresh, settings_of(request).public_url, mine.id, actor, reader_of(request)
+                )
         if state_changes:
             now = clock.now()
             conn.execute(

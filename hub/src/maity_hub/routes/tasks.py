@@ -731,6 +731,8 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
         mine.require("tasks:write")
         if body.kind not in cards.KINDS:
             raise invalid({"kind": "unknown"})
+        if body.kind == "setup":
+            raise invalid({"kind": "hub_only"}, "only the hub creates a setup card (§6.21)")
         if body.status not in cards.CREATE_STATUSES:
             raise invalid({"status": "proposed_or_open"})
         if body.release is not None and body.kind != "release":

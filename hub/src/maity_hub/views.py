@@ -130,6 +130,7 @@ def project_view(
         "logo": shown.get("logo", NO_IMAGE),
         "banner": shown.get("banner", NO_IMAGE),
         "memory": memory_of(project),
+        "setup": project.setup,
         "keep_the_why": project.keep_the_why,
         "keep_the_why_export": export,
         "policy": policy.of(project),
