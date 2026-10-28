@@ -8,6 +8,7 @@ body.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -94,6 +95,27 @@ def driver_code(error: Exception) -> str:
     return str(args[0]) if args and isinstance(args[0], int) else ""
 
 
+_DSN = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^\s'\"]*")
+_KEYWORD = re.compile(r"(?i)\b(password|passwd|pwd|secret|token)\s*=\s*(?:'[^']*'|\"[^\"]*\"|\S+)")
+_REASON_LIMIT = 300
+
+
+def driver_reason(error: Exception) -> str:
+    """What the driver says about a connection failure, for the log and never for a client:
+    the original exception's type and its text with every URL (a DSN with credentials) and every
+    `password=...` pair replaced, on one line and cut short. Connection errors name hosts, ports and
+    timeouts; the masking covers the case that a driver ever quotes the connection string."""
+    original = getattr(error, "orig", None)
+    if original is None:
+        return ""
+    text = " ".join(str(original).split())
+    text = _DSN.sub("<url>", text)
+    text = _KEYWORD.sub(lambda m: f"{m.group(1)}=<hidden>", text)
+    if len(text) > _REASON_LIMIT:
+        text = text[:_REASON_LIMIT] + "..."
+    return f"{type(original).__name__}: {text}" if text else type(original).__name__
+
+
 def install(app: FastAPI) -> None:
     @app.exception_handler(ApiError)
     async def _api_error(_request: Request, error: ApiError) -> JSONResponse:
@@ -111,8 +133,14 @@ def install(app: FastAPI) -> None:
     @app.exception_handler(OperationalError)
     @app.exception_handler(InterfaceError)
     async def _database(_request: Request, error: Exception) -> JSONResponse:
-        # Connection-level failures; never the driver's text (§1.3).
-        log.error("database unavailable: %s %s", type(error).__name__, driver_code(error))
+        # Connection-level failures. The client never gets the driver's text (§1.3); the log gets it
+        # masked, because without the cause a burst of these cannot be told apart.
+        log.error(
+            "database unavailable: %s %s %s",
+            type(error).__name__,
+            driver_code(error),
+            driver_reason(error),
+        )
         return error_response(503, "database_unavailable", "the database is unreachable")
 
     @app.exception_handler(StarletteHTTPException)

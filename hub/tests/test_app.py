@@ -124,3 +124,51 @@ def test_the_default_dashboard_is_served(database_url: str, migrated: Engine) ->
         root = client.get("/")
         assert root.status_code == 200 and "<title>" in root.text
         assert client.get("/js/app.js").status_code == 200
+
+
+def test_driver_reason_names_the_cause_and_masks_credentials() -> None:
+    from sqlalchemy.exc import OperationalError
+
+    from maity_hub.errors import driver_reason
+
+    class ConnectionTimeout(Exception):
+        pass
+
+    dsn = "postgresql://maity:s3cret-pw@db.example:5432/maity"
+    error = OperationalError(
+        "SELECT 1",
+        {},
+        ConnectionTimeout(
+            'connection failed: connection to server at "10.0.0.5", port 5432 '
+            "failed: timeout expired\n"
+            f"({dsn}) password=hunter2 user='maity' PASSWORD = 'quoted pw'"
+        ),
+    )
+    reason = driver_reason(error)
+    assert reason.startswith("ConnectionTimeout: connection failed: connection to server at")
+    assert "timeout expired" in reason and "10.0.0.5" in reason  # the cause stays readable
+    for secret in ("s3cret-pw", "hunter2", "quoted pw", dsn):
+        assert secret not in reason
+    assert "\n" not in reason and "<url>" in reason
+    assert len(driver_reason(OperationalError("x", {}, Exception("a" * 5000)))) < 400
+    assert driver_reason(Exception("no orig")) == ""
+
+
+def test_the_database_error_handler_logs_the_cause_not_the_secret(
+    client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    from sqlalchemy.exc import OperationalError
+
+    def broken() -> None:
+        raise OperationalError(
+            "SELECT 1", {}, Exception("failed to resolve host 'db' postgresql://u:pw-in-dsn@db/x")
+        )
+
+    client.app.add_api_route("/api/v1/_broken", broken)  # type: ignore[attr-defined]
+    with caplog.at_level("ERROR", logger="maity_hub.errors"):
+        response = client.get("/api/v1/_broken")
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "database_unavailable"
+    logged = " ".join(record.getMessage() for record in caplog.records)
+    assert "failed to resolve host" in logged and "pw-in-dsn" not in logged
+    assert "pw-in-dsn" not in response.text
