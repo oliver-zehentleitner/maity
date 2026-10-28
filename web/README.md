@@ -1376,13 +1376,16 @@ script starts, and it is stopped by its own PID, also on Ctrl-C; port
 8090 is refused, and a port that another server already answers on is
 refused too. The caller's own `MAITY_*` variables are dropped for the hub
 and the CLI. Option `--headed` shows the browser, `--port` fixes the port.
+When a step fails, the page's last 12 API answers (method, path, status and the start of the body)
+are printed and written to `api-trace.txt` next to the screenshots, so that what the hub said can be
+told from what the page drew of it.
 
 CI runs it in the `web-e2e` job of `.github/workflows/ci.yml`. It installs
 the headless shell only (`playwright install --only-shell chromium`) and
 checks it with `ldd`; only when a library is missing does it install a
 fixed minimal list from apt (`libnss3`, `libnspr4`, `libasound2t64`), and a
 library still missing then fails the job before the test. The job uploads
-the screenshots and `hub.log` as the workflow artifact
+the screenshots, `hub.log` and a failed run's `api-trace.txt` as the workflow artifact
 `web-e2e-screenshots`, also when a step fails.
 
 ## Layout

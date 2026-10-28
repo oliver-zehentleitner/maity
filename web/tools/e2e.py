@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import collections
 import hashlib
 import io
 import json
@@ -61,6 +62,8 @@ OWNER = "owner"
 OWNER_PASSWORD = "e2e owner password"
 TIMEOUT_MS = 25_000  # one step in the browser; the feed reads every 15 s
 COUNTS_MS = 70_000  # counts of other projects: /me is re-read every 60 s
+TRACE_ANSWERS = 12  # the page's latest API answers shown when a step fails
+TRACE_BODY = 1500  # characters of each body
 WAIT_S = 60  # the agent's `maity wait`
 
 # axe-core, the accessibility engine: the npm package's tarball, pinned by the
@@ -94,6 +97,9 @@ class Run:
         # §8.7 "Attachments off": each 409 for the pending uploads as the page got
         # it, judged one by one in no_problems() (a response handler reads no body).
         self.off_answers: list = []
+        # The page's latest API answers, read back when a step fails (api_trace()): what the
+        # hub said is told apart from what the page drew of it.
+        self.recent: collections.deque = collections.deque(maxlen=TRACE_ANSWERS)
 
     def a11y(self, page: Page, view: str) -> None:
         """axe-core on the page as it stands, in each pass; back to 1280 px, light, after."""
@@ -154,6 +160,21 @@ class Run:
             + "\n"
         )
         return [f for f in self.a11y_findings if f["impact"] in AXE_FAIL]
+
+    def api_trace(self) -> str:
+        """The latest API answers with their bodies, newest last. Read here, outside the
+        response handler; a body the browser no longer holds is said so."""
+        lines = []
+        for resp in self.recent:
+            try:
+                body = resp.text()
+            except Exception:
+                body = "(body no longer available)"
+            if len(body) > TRACE_BODY:
+                body = body[:TRACE_BODY] + " …"
+            path = resp.url.split(self.base, 1)[-1]
+            lines.append(f"{resp.request.method} {path} {resp.status} {body}")
+        return "\n".join(lines)
 
     def step(self, text: str) -> None:
         print(f"\n== {text}", flush=True)
@@ -365,6 +386,8 @@ def watch_page(run: Run, page: Page) -> None:
 
     def response(resp) -> None:
         path = resp.url.split(run.base, 1)[-1]
+        if path.startswith("/api/v1/"):
+            run.recent.append(resp)
         # A hub without notifications (docs/api.md §18) answers their read with
         # 404 on every page, and their settings (which the page then no longer
         # asks for); the page goes on without them, and the notifications step
@@ -569,7 +592,13 @@ def main() -> int:
                 expect.set_options(timeout=TIMEOUT_MS)  # expect() has its own 5-s default
                 page = context.new_page()
                 watch_page(run, page)
-                scenario(run, page)
+                try:
+                    scenario(run, page)
+                except Exception:
+                    trace = run.api_trace()
+                    (artifacts / "api-trace.txt").write_text(trace + "\n")
+                    print(f"\nthe page's last API answers (api-trace.txt):\n{trace}", file=sys.stderr)
+                    raise
                 fixture_views(run, browser)
             finally:
                 browser.close()
