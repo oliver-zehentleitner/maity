@@ -215,18 +215,13 @@ them at one version.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** a measurement on 2026-10-28 for the card on the hub's growing memory (258 to 419 MiB in five hours on 2 vCPU): the same request mix, 200 rounds of about 26 requests, with and without the setting
+**Source:** measurements on 2026-10-28 for the card on the hub's growing memory (258 to 419 MiB in five hours on 2 vCPU), with and without the setting, on a real hub process
 **Revisit when:** the hub's memory still grows after a deploy with it, or the image gets another allocator
-**Reason:** the Python heap does not explain the growth (189 KiB over about 400 requests of a mixed load, no structure standing out); the process size does. With glibc's default the process grew from 161.5 to 166.8 MiB over about 5,200 requests, steadily, with a thread pool of up to 40 threads in production it has far more arenas to fragment than the test's few threads; with `MALLOC_ARENA_MAX=2` it went from 145.1 to 145.4 MiB and started 16 MiB lower. Two arenas cost some contention between request threads, which the hub's database-bound requests do not feel.
+**Reason:** a small drift and a lower baseline, at no cost that shows. Against a real hub process (`hub/scripts/measure_arenas.py`, SQLite, 8 CPUs, Python 3.12.3, glibc 2.39, 8 to 16 concurrent clients) the process size after 6,000 requests rose from 118.4 to 119.1 MiB with glibc's default and stayed at 114.6 MiB with `MALLOC_ARENA_MAX=2`, which also starts 4 to 5 MiB lower; throughput (143 to 146 requests a second) and latency (p50 13 ms, p95 and p99 the same within the noise of two runs each) did not change. A first probe through the test client had shown about 1 KiB a request and 16 MiB lower; the real hub shows about 0.1 KiB a request, so that number was too high and is not used.
 
-The measurement does not prove that this is all of the 32 MiB an hour seen in production: it
-reproduced about 1 KiB a request, the card's rate is about 12 KiB a request. What it shows is that
-the request path keeps nothing (every in-process structure of the hub that grows with its input is
-bounded: the long-poll registry holds one waiter a credential, the rate limiters forget keys past
-their window, the nonce window holds at most 10,000 entries), and that allocator growth is real.
-Production tells the rest: ops compares the pod's memory after the deploy with the curve before it.
+This is not the explanation of the 32 MiB an hour seen in production: that is about 12 KiB a request, a hundred times the drift measured here. The Python heap did not grow either (189 KiB over about 400 requests under `tracemalloc`, nothing standing out), and every in-process structure that grows with input is bounded (the long-poll registry holds one waiter a credential, the rate limiters forget keys past their window, the nonce window holds at most 10,000 entries). What the probes do not exercise is the real network and long-polls, the background workers (forge probe, images, mail, Keep the Why reads) and a server-database driver; the pod's own memory curve and a heap profile from the running hub are what is left.
 
 **Rejected alternatives:**
 - Bounding more caches (LRU or TTL): none of the structures the card names grew in the probe.
 - `jemalloc` in the image: another package in a pinned image for what a setting does.
-- Fewer worker threads: it would cut concurrency for a cost the allocator setting avoids.
+- Fewer worker threads: it would cut concurrency for a cost the allocator setting avoids (and the measured throughput did not change).
