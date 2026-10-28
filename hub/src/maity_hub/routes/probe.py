@@ -46,7 +46,9 @@ def read_probe(
         if ref is None:
             continue
         try:
-            observation = probe.observe(engine, fg, project, kind, ref, max_age)
+            observation = probe.observe(
+                engine, fg, project, kind, ref, max_age, floor=probe.FORCED_FLOOR
+            )
         except forge.NotCoveredError as error:
             raise probe_not_configured(
                 error.reason if mine.may("project:admin") else None

@@ -39,6 +39,7 @@ from maity_hub.views import principal_id
 log = logging.getLogger(__name__)
 
 MAX_AGE = 60  # seconds an observation answers a read without asking the forge (§11)
+FORCED_FLOOR = 30  # seconds before a `max_age=0` read asks the forge again (§11.4)
 LINKS = "links"  # a job `(LINKS, project id)`: read that project's card links
 INTERVAL = 300  # seconds between the worker's sweeps
 MERGE_INTERVAL = 120  # seconds between the ticker's merge reads (§17.4)
@@ -104,7 +105,13 @@ def _read(fg: forge.Forge, repository: str, kind: str, ref: str) -> dict[str, An
 
 
 def observe(
-    engine: Engine, fg: forge.Forge, project: Any, kind: str, ref: str, max_age: int = MAX_AGE
+    engine: Engine,
+    fg: forge.Forge,
+    project: Any,
+    kind: str,
+    ref: str,
+    max_age: int = MAX_AGE,
+    floor: int = 0,
 ) -> Observation:
     """The observation of one ref, from the cache when younger than `max_age`.
 
@@ -114,7 +121,9 @@ def observe(
     with engine.connect() as conn:
         row = _cached(conn, project.id, kind, ref)
     now = clock.now()
-    if row is not None and max_age > 0 and now - row.observed_at < timedelta(seconds=max_age):
+    # `floor`: a reader's forced fresh read (`max_age=0`) still waits FORCED_FLOOR, since
+    # one source serves all of an owner's projects and its budget at the forge (§11.4).
+    if row is not None and now - row.observed_at < timedelta(seconds=max(max_age, floor)):
         return Observation(dict(row.data), row.observed_at, fresh=False)
     # The time the read started: a slow read that began before a fast one is the
     # older observation, whenever it ends.
