@@ -6675,6 +6675,52 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(pfPatches[0]) === JSON.stringify(["/projects/maintainer/maity/members/agt-a", { owner_preferences: true }]), "preferences: the switch is saved on the membership at once");
   win.Maity.api.patch = pfPatch;
 
+  // Deleting one's own agent profile (docs/api.md §6.3): in its row on Members, confirmed by its handle; a profile still a
+  // member is deleted with ?cascade=true, after its projects are named. Last, since it ends the fixture's agt-d.
+  const pdDel = win.Maity.api.del, pdSent = [];
+  win.Maity.api.del = (p) => { pdSent.push(p); return pdDel(p); };
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members/agt-d/picture"); for (let k = 0; k < 8; k++) await tick();
+  const pdBox = () => main.querySelector("tr.member-manage .profile-delete-box");
+  const pdIn = () => byId("profile-delete-agt-d");
+  const pdGo = () => btn(pdBox(), "Delete the profile");
+  expect(pdBox() && text(pdBox()).includes("It is a member of maintainer/maity") && text(pdBox()).includes("cannot be undone") && pdGo().disabled,
+    "profile: an own agent's row offers its deletion, naming its projects, the button off until confirmed");
+  pdIn().value = "@agent-x"; pdIn().dispatch("input");
+  expect(pdGo().disabled, "profile: another handle does not confirm");
+  pdIn().value = "@agent-d"; pdIn().dispatch("input");
+  expect(!pdGo().disabled, "profile: its own handle confirms");
+  // One call at a time, for the handle as typed now: the field locked while it runs; after a failure the button
+  // follows what is typed then.
+  let pdRelease = null;
+  win.Maity.api.del = (p) => { pdSent.push(p); return new Promise((resolve, reject) => { pdRelease = () => reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", {})); }); };
+  main.querySelector("tr.member-manage form.profile-delete").dispatch("submit"); await tick();
+  expect(pdIn().disabled && pdGo().disabled, "profile: while the deletion runs, the field is locked and the button off");
+  main.querySelector("tr.member-manage form.profile-delete").dispatch("submit"); await tick();
+  expect(pdSent.length === 1, "profile: a second submit while one runs sends nothing");
+  pdRelease(); for (let k = 0; k < 4; k++) await tick();
+  expect(!pdIn().disabled && !pdGo().disabled && text(pdBox()).includes("Not deleted"), "profile: after a failure the field is free and the button follows the handle typed");
+  pdIn().value = "@wrong"; pdIn().dispatch("input");
+  main.querySelector("tr.member-manage form.profile-delete").dispatch("submit"); await tick();
+  expect(pdGo().disabled && pdSent.length === 1, "profile: another handle typed after a failure deletes nothing");
+  pdIn().value = "@agent-d"; pdIn().dispatch("input");
+  pdSent.length = 0;
+  win.Maity.api.del = (p) => { pdSent.push(p); return pdDel(p); };
+  main.querySelector("tr.member-manage form.profile-delete").dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+  const pdAgents = (await win.Maity.api.getAll("/agents")).items;
+  expect(pdSent[0] === "/agents/agt-d?cascade=true" && !main.querySelectorAll("tr.member").some((tr) => tr.getAttribute("data-member") === "agt-d")
+    && text(main).includes("The profile @agent-d was deleted; its memberships ended.") && !pdAgents.some((a) => a.id === "agt-d"),
+    "profile: deleted with its memberships, the row gone, the profile no longer listed");
+  // The mock as the hub: a profile still in use without cascade is refused, naming where (§6.3).
+  let pdInUse = null;
+  try { await pdDel("/agents/agt-c"); } catch (err) { pdInUse = err; }
+  expect(pdInUse && pdInUse.code === "profile_in_use" && pdInUse.details.memberships[0].project === "maintainer/maity",
+    "profile: the mock refuses a profile in use without cascade, naming the memberships");
+  // On the account, an agent in no project one is in is deleted there the same way.
+  await go("#/account"); for (let k = 0; k < 6; k++) await tick();
+  const pdX = main.querySelectorAll(".picture-list li").find((li) => li.getAttribute("data-agent") === "agt-x");
+  expect(pdX && pdX.querySelector(".profile-delete-box") && text(pdX).includes("guest/guestlab"), "profile: the account offers the deletion of an agent in other projects");
+  win.Maity.api.del = pdDel;
+
   // API mode against a fake hub: CSRF on writes, fail loud without a hub.
   win.location.protocol = "http:";
   const F = JSON.parse(JSON.stringify(ctx.window.MAITY_FIXTURES));
