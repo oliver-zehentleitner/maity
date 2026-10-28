@@ -597,6 +597,21 @@ def patch_project(
             rules_inputs_changed = True
         if new_policy is None and explicit_changes:
             conn.execute(update(t.project).where(t.project.c.id == project.id).values(**explicit))
+            # The view may not move (`optional` under a provider that is off reads the
+            # same), but a human changed the policy: version, event and reason as for any
+            # policy change (§6.1).
+            rules.bump(
+                conn,
+                project,
+                "policy_changed",
+                BROADCAST,
+                {
+                    "old": policy.of(project),
+                    "new": {**policy.of(project), "keep_the_why": explicit["keep_the_why_policy"]},
+                    "reason": body.reason,
+                },
+                actor=actor,
+            )
         if new_policy is not None:
             conn.execute(
                 update(t.project)
