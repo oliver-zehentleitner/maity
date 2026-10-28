@@ -1139,6 +1139,21 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(card("builder")).includes("revoked") && !btn(card("builder"), "Revoke"), "runners: revoked, no second Revoke");
   releaseStale(); await periodic; await tick(); await tick();
   expect(text(card("builder")).includes("revoked") && !btn(card("builder"), "Revoke"), "runners: an older periodic read answering late does not undo the revoke");
+  // A slow periodic read is not overtaken by the next tick: it lands.
+  let releaseSlow = null;
+  win.Maity.api.getAll = (p) => {
+    if (p !== "/runners") return rAll1(p);
+    const renamed = rAll1(p).then((a) => ({ items: a.items.map((r) => (r.id !== "rnr-0003" ? r : Object.assign({}, r, { name: "slow-box" }))), next_cursor: null }));
+    return new Promise((resolve) => { releaseSlow = () => resolve(renamed); });
+  };
+  const rSlowRead = fireIntervals(); await tick();
+  const rFirstRelease = releaseSlow; releaseSlow = null;
+  const rNextTick = fireIntervals(); await tick();
+  expect(releaseSlow === null, "runners: no second periodic read while one is in flight");
+  rFirstRelease(); await rSlowRead; await rNextTick; await tick(); await tick();
+  expect(card("slow-box"), "runners: a slow periodic read still draws once it answers");
+  win.Maity.api.getAll = rAll1;
+  await fireIntervals(); await tick(); await tick();
   btn(card("home-laptop"), "Remove").click(); await tick(); await tick(); await tick();
   expect(!card("home-laptop") && text(main).includes("home-laptop was removed.") && text(main).includes("Agent B · running")
     && text(main).includes("maity runner stop-all"), "runners: removed, with the agents still running that are now the operator's to end");

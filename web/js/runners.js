@@ -406,7 +406,20 @@ window.Maity = window.Maity || {};
     drawRunners(runners.items);
     drawEnrollments(enrollments.items);
     // Presence and capabilities emit no events: re-read them (docs/api.md §15.1).
-    ctx.every(PRESENCE_MS, () => reload().catch((err) => status.fail("Could not refresh: ", err)));
+    // One periodic read at a time: a slow one is not overtaken by the next tick,
+    // which would leave every answer discarded and the page old.
+    let polling = false;
+    ctx.every(PRESENCE_MS, async () => {
+      if (polling) return;
+      polling = true;
+      try {
+        await reload();
+      } catch (err) {
+        status.fail("Could not refresh: ", err);
+      } finally {
+        polling = false;
+      }
+    });
   };
 
   M.runnerStarterConfig = starterConfig;
