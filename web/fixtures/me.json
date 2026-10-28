@@ -12,7 +12,8 @@
       "full_name": "maintainer/maity",
       "name": "Maity",
       "state": "build",
-      "role": "owner",
+      "trust": "owner",
+      "role": "coder",
       "open_requests": 3
     },
     {
@@ -20,7 +21,8 @@
       "full_name": "maintainer/sample",
       "name": "Sample shop",
       "state": "freeze",
-      "role": "owner",
+      "trust": "owner",
+      "role": "coder",
       "open_requests": 1
     }
   ],

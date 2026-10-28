@@ -1828,3 +1828,38 @@ once: a blank page on every navigation, and a jump. Making every view's
 initial read consistent with actions in other instances: one rule per
 view, for a race the inert placeholder removes for all of them.
 
+## Trust and role are shown and chosen as the hub keeps them; what only an owner may grant is not offered to others
+
+**Id:** b71cebbf-56d9-4f65-aef9-cbb4ab5131a1
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §2.3 (trust × role, owner_only, the guest's limits) and the card for the dashboard's part (tsk-tx9qcehevfnk), which replaces the interim mapping at the API boundary, 2026-10-28
+**Revisit when:** a project's own roles (§2.3) get a place in the dashboard, or the hub lets a non-owner grant trust admin
+
+The dashboard reads and sends a membership's `trust` and `role` as the
+hub has them. Every view asks one helper (`js/trust.js`) who governs
+(trust owner or admin, never a proxy, which relays and decides nothing
+itself), who is an owner and who is a guest, and names a
+member as "trust · role". The member form, the invitation and the join
+line each choose trust and role on their own. Trust owner or admin and
+the role proxy are offered only to a caller with trust owner, and proxy
+only together with trust admin; a proxy whose trust changes becomes a
+coder in the same change. An owner's membership is removed only by an
+owner, so no one else is offered it. A guest is never offered as an assignee
+or as whom someone reports to, and a human guest is offered no new
+group chat. The overview groups the team by trust.
+
+**Reason:** trust and role are two separate questions (§2.3): how far
+the project trusts a member, and what the member does. A single name
+could not say "admin reviewer" or "guest coder", and the interim mapping
+lost exactly those. The choices the hub refuses for a non-owner
+(`owner_only`) or for a guest would only lead to a refusal, so they are
+not offered.
+
+**Rejected alternative:** keeping the mapping between single-role names
+and trust and role at the API boundary: it translated every answer and
+body and could not show a guest's role or a reviewer with trust admin.
+Offering every choice and saying the hub's refusal afterwards: a form
+that offers what it will refuse.
+
