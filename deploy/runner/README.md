@@ -40,6 +40,24 @@ the repository setting, and nothing else:
 
 After a malicious job the machine is reinstalled; the hook below cannot make it clean.
 
+## What went wrong the first time, and the limits
+
+The first run of the three services (`-n 3` each, no limits) took the machine down two and a half minutes after the
+three database jobs of one pull request started: the VirtualBox guest on the maintainer's workstation stopped, the
+runners vanished mid-job (the jobs ended as "failure" with `make check` unfinished), and the machine was back after
+a reboot with CI runs still queued on the labels. Memory was not the cause (one job peaked at 5.2 GB of 19.9 GB); nine
+workers, three Docker stacks and three installs on eight vCPUs, nothing else left for the host, are the suspect.
+So the machine is capped, not trusted:
+
+- `maity-runner@.service`: `CPUQuota=150%`, `Nice=10`, `CPUWeight=20`, `IOWeight=20`, `MemoryMax=4G`, no swap,
+  and `PYTEST_ARGS=-n 2`.
+- `user-slice-limits.conf`: one cap for everything the runner user runs, the rootless Docker and its database
+  containers included (the unit's own cap does not reach them, they run under the user's dockerd): at most 4 of 8 cores,
+  low CPU and I/O weight, 8 GB, no swap. `install-services.sh` installs it as a drop-in of `user-<uid>.slice`.
+- **Start with one service**, `INSTANCES=pg`, with `deploy/runner/`'s sampler or `vmstat 5` running on the machine and
+  the maintainer at it; add `sqlite` and `maria` one at a time. If CI runs are queued on a label whose service is
+  stopped, cancel and rerun them (deleting `HUB_RUNNER_LABEL` does not re-route runs that are already queued).
+
 ## What the machine must be
 
 - A user of its own with no `sudo`, no group of the people who work on the machine, and no

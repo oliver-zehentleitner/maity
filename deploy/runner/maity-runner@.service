@@ -15,12 +15,22 @@ WorkingDirectory=/opt/actions-runner-%i
 Environment=DOCKER_HOST=unix:///run/user/<uid>/docker.sock
 Environment=ACTIONS_RUNNER_HOOK_JOB_COMPLETED=/opt/maity-runner-hooks/job-completed.sh
 # xdist workers per job: three jobs run side by side on the machine's cores (steps inherit the runner's environment;
-# hosted runners keep `-n auto`).
-Environment="PYTEST_ARGS=-n 3"
+# hosted runners keep `-n auto`). Two, not three: the first run of three services at `-n 3` took the machine down within
+# minutes (see README, "What went wrong the first time").
+Environment="PYTEST_ARGS=-n 2"
 # bin/runsvc.sh is GitHub's entry point for systemd. run.sh copies run-helper.sh.template into its own
 # directory on every start, which a root-owned runner directory refuses: the unit would exit at once with
 # status 0 and restart in a loop.
 ExecStart=/opt/actions-runner-%i/bin/runsvc.sh
+# The machine is somebody's workstation as well as the runner: CI must never be able to starve it. A cap on the CPU time
+# of the whole instance (the runner, its jobs, the Docker clients; the containers of a rootless Docker run under the
+# user's dockerd, so they are limited by the cap on that daemon's slice, see README), a low priority and a memory ceiling.
+CPUQuota=150%
+Nice=10
+CPUWeight=20
+IOWeight=20
+MemoryMax=4G
+MemorySwapMax=0
 Restart=always
 RestartSec=10
 # A restart also ends the processes a job left behind.

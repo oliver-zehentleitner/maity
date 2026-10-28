@@ -4,6 +4,7 @@
 # unit instance maity-runner@<type>. Needs: the runner user with rootless Docker, the hook in /opt/maity-runner-hooks,
 # the runner package as a tarball, and a registration token from GitHub (Settings → Actions → Runners → New
 # self-hosted runner; the token is valid for an hour and is not printed here).
+# Start with ONE instance (INSTANCES=pg) while someone watches the machine, then add the others (README, "limits").
 # Usage: RUNNER_TOKEN=<token> RUNNER_TARBALL=/root/actions-runner-linux-x64-2.338.0.tar.gz \
 #        [RUNNER_USER=gh-runner] [LABEL_PREFIX=maity-hub] [INSTANCES="sqlite pg maria"] install-services.sh
 # Then run install-python.sh for each instance (README.md, step 4) and set the repository variable HUB_RUNNER_LABEL.
@@ -27,6 +28,9 @@ UID_RU=$(id -u "$RU")
 [ -x /opt/maity-runner-hooks/job-completed.sh ] || install -d -m 755 /opt/maity-runner-hooks
 install -m 755 -o root "$HERE/job-completed.sh" /opt/maity-runner-hooks/job-completed.sh
 sed -e "s/<runner-user>/$RU/g" -e "s/<uid>/$UID_RU/g" "$HERE/maity-runner@.service" > /etc/systemd/system/maity-runner@.service
+# One cap for everything the runner user runs, rootless Docker included (README, "Limits").
+install -d "/etc/systemd/system/user-$UID_RU.slice.d"
+install -m 644 "$HERE/user-slice-limits.conf" "/etc/systemd/system/user-$UID_RU.slice.d/maity-runner-limits.conf"
 
 # A service container left running by a job that was cut off when the services stopped (they run under the runner
 # user's Docker, outside the unit's cgroup) would keep 127.0.0.1:5432 or :3306 for good: each registration is new, so
