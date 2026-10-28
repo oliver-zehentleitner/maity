@@ -99,6 +99,40 @@ window.Maity = window.Maity || {};
     throw new ApiError(message, status, path, code, details);
   }
 
+  // A project's path from its full name (§6.25): `<owner>/<slug>`, each
+  // part encoded, the slash between them kept.
+  const projectPath = (full) => String(full).split("/").map(encodeURIComponent).join("/");
+  // Fixture mode keeps a project in fixtures/<slug>/; its full name is the
+  // project view's, else its owner's handle as the fixtures name it.
+  const FIXTURE_OWNERS = { guestlab: "guest" };
+  const fixtureSlug = (full) => String(full).split("/").pop();
+  function fullOf(slug) {
+    const view = fixtures()[slug + "/project.json"];
+    return (view && view.full_name) || (FIXTURE_OWNERS[slug] || me().member.handle) + "/" + slug;
+  }
+  const fixtureSlugs = () => [...new Set(Object.keys(fixtures()).filter((k) => k.includes("/")).map((k) => k.split("/")[0]))];
+  // The fixture directory a full name (or one of its aliases) names, or null.
+  function slugOfFull(full) {
+    return fixtureSlugs().find((slug) => fullOf(slug) === full
+      || ((fixtures()[slug + "/project.json"] || {}).aliases || []).includes(full)) || null;
+  }
+  // The words that follow a project in a route (§6.25): never a slug.
+  const ROUTE_WORDS = ["agents", "attachments", "banner", "contracts", "conversations", "credentials", "events", "forge", "group-chats",
+    "invitations", "joins", "jour-fixe", "keep-the-why", "logo", "members", "memory", "messages", "placements", "probe", "releases",
+    "requests", "rules", "runners", "swarm", "takeovers", "tasks", "ticker", "transfer"];
+  // /projects/{owner}/{slug}/… reads the fixture of that full name; an old
+  // one-segment path (/projects/maity/tasks) is refused as the hub refuses
+  // it (410), never routed to another project.
+  function namespaced(path, fullPath) {
+    const m = /^\/projects\/([^/]+)(?:\/([^/]+))?(\/.*)?$/.exec(path);
+    if (!m) return path;
+    const first = decodeURIComponent(m[1]);
+    const slug = m[2] ? slugOfFull(first + "/" + decodeURIComponent(m[2])) : null;
+    if (slug) return "/projects/" + slug + (m[3] || "");
+    if (!m[2] || fixtureSlugs().includes(first)) fail(410, "project_path_outdated", "this address of a project is no longer served", fullPath);
+    return fail(404, "not_found", "Not found", fullPath);
+  }
+
   // A project's placements (fixtures/<slug>/placements.json, §15.5), none
   // where the fixture has none; one of them, if the caller may steer it.
   function placementsOf(slug) {
@@ -288,7 +322,7 @@ window.Maity = window.Maity || {};
 
   let attachSerial = 0;
   const activeAttachments = (slug) => runnersFile().attachments
-    .filter((a) => a.project === slug && !a.detached_at)
+    .filter((a) => a.project === fullOf(slug) && !a.detached_at)
     .sort((x, y) => runnerOf(x.runner_id, "").name.localeCompare(runnerOf(y.runner_id, "").name));
   function attachmentView(a) {
     const counts = (runnersFile().active_placements || {})[a.runner_id] || {};
@@ -446,7 +480,14 @@ window.Maity = window.Maity || {};
   }
   const served = (e) => JSON.parse(JSON.stringify(e, (k, v) => (k.startsWith("_") ? undefined : v)));
   // §8.7 in fixture mode: fixtures/<slug>/attachments.json, made on first use.
+  // ?attachments=off is an instance without a store: every attachment call
+  // and a message that names one get 409 attachments_not_configured.
   const ATTACHMENT_MAX = 10 * 1024 * 1024;
+  function attachmentsOn(path) {
+    if (new URLSearchParams(window.location.search).get("attachments") === "off") {
+      fail(409, "attachments_not_configured", "attachments are not set up on this instance", path);
+    }
+  }
   function attachmentsOf(slug) {
     const all = fixtures();
     if (!all[slug + "/attachments.json"]) all[slug + "/attachments.json"] = { items: [] };
@@ -463,6 +504,7 @@ window.Maity = window.Maity || {};
   // The ids a message names, each a pending upload of the poster; bound to it.
   function bindAttachments(slug, ids, seq, path) {
     if (!ids || !ids.length) return [];
+    attachmentsOn(path);
     if (ids.length > 10) fail(400, "invalid", "at most 10 attachments", path, { fields: { attachments: "too_many" } });
     if (["accepted", "archived"].includes(project(slug, path).state)) fail(409, "project_closed", "the project is closed", path);
     const list = attachmentsOf(slug);
@@ -535,7 +577,7 @@ window.Maity = window.Maity || {};
     KINDS.forEach((k) => { counts[k] = 0; });
     const byProject = {};
     const of = (slug) => byProject[slug] || (byProject[slug] = Object.assign({ member: true }, ...KINDS.filter((k) => k !== "security").map((k) => ({ [k]: 0 }))));
-    me().projects.forEach((p) => { const n = openFor(p.slug).length; counts.inbox += n; if (n) of(p.slug).inbox += n; });
+    me().projects.forEach((p) => { const n = openFor(p.slug).length; counts.inbox += n; if (n) of(p.full_name).inbox += n; });
     fixtures()["notifications.json"].items.forEach((x) => {
       // A pending registration or a disabled address counts until the matter
       // is closed, read or not (§18.2).
@@ -544,11 +586,11 @@ window.Maity = window.Maity || {};
       // A personal request of a project one is no member of (§7): counted
       // in inbox, on an entry with member false; the rest come from /me.
       if (x.kind === "inbox") {
-        if (x.project && x.project.member === false) { counts.inbox += 1; of(x.project.slug).inbox += 1; of(x.project.slug).member = false; }
+        if (x.project && x.project.member === false) { counts.inbox += 1; of(x.project.full_name).inbox += 1; of(x.project.full_name).member = false; }
         return;
       }
       counts[x.kind] += 1;
-      if (x.project && x.kind !== "security") of(x.project.slug)[x.kind] += 1;
+      if (x.project && x.kind !== "security") of(x.project.full_name)[x.kind] += 1;
     });
     counts.total = counts.inbox + counts.chat + counts.mention;
     Object.values(byProject).forEach((c) => { c.total = c.inbox + c.chat + c.mention; });
@@ -703,7 +745,7 @@ window.Maity = window.Maity || {};
       const list = invitationsOf(m[1]);
       const token = "fx" + String(list.length + 1).padStart(20, "0");
       const at = nowIso();
-      const made = { id: "inv-f" + String(list.length + 1).padStart(3, "0"), project: m[1], role: want, address: body.address || null, note: body.note || null,
+      const made = { id: "inv-f" + String(list.length + 1).padStart(3, "0"), project: fullOf(m[1]), role: want, address: body.address || null, note: body.note || null,
         created_by: me().member.id, created_at: at, expires_at: new Date(Date.now() + ttl * 1000).toISOString().replace(/\.\d{3}Z$/, "Z"),
         used_at: null, used_by: null, revoked_at: null, voided_at: null };
       list.push(made);
@@ -720,10 +762,10 @@ window.Maity = window.Maity || {};
     }],
     ["POST", /^\/auth\/device-codes$/, (m, body, path) => {
       if (!fixtureSignedIn) fail(401, "unauthenticated", "Not signed in", path);
-      const code = "K7QM4XPR";
+      const code = "K7QM4XPR9D2F";
       deviceSim = { id: "dvc-" + (++deviceSerial), code, status: "waiting", reads: 0, match: 47,
         expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString().replace(/\.\d{3}Z$/, "Z") };
-      return { id: deviceSim.id, code: "K7QM-4XPR", url: window.location.origin + window.location.pathname + "#/sign-in/code?c=" + code, expires_at: deviceSim.expires_at };
+      return { id: deviceSim.id, code: "K7QM-4XPR-9D2F", url: window.location.origin + window.location.pathname + "#/sign-in/code?c=" + code, expires_at: deviceSim.expires_at };
     }],
     ["GET", /^\/auth\/device-codes\/([^/]+)$/, (m, body, path) => {
       const d = deviceOf(m[1], path);
@@ -881,7 +923,7 @@ window.Maity = window.Maity || {};
         return out;
       };
       const items = n.items.filter((x) => (query.get("unread") !== "true" || !x.read)
-        && (!kinds || kinds.includes(x.kind)) && (!projects || (x.project && projects.includes(x.project.slug))));
+        && (!kinds || kinds.includes(x.kind)) && (!projects || (x.project && projects.includes(x.project.full_name))));
       const after = query.get("after");
       const head = headOf(n.items);
       if (after !== null) {
@@ -919,7 +961,7 @@ window.Maity = window.Maity || {};
         }
         if (body.ids ? body.ids.includes(x.id)
           : x.kind !== "security" && !pastOf(x, body.up_to) && (!body.kind || x.kind === body.kind)
-            && (!body.project || (x.project && x.project.slug === body.project))) x.read = true;
+            && (!body.project || (x.project && x.project.full_name === body.project))) x.read = true;
       });
       return notificationCounts();
     }],
@@ -943,12 +985,12 @@ window.Maity = window.Maity || {};
       const page = all.slice(0, limit);
       return { items: page, next_cursor: all.length > limit ? String(page[page.length - 1].version) : null };
     }],
-    ["PUT", /^\/me\/preferences\/projects\/([^/]+)$/, (m, body, path) => {
-      const entry = prefs().projects.find((p) => p.slug === m[1]);
+    ["PUT", /^\/me\/preferences\/projects\/([^/]+)\/([^/]+)$/, (m, body, path) => {
+      const entry = prefs().projects.find((p) => p.full_name === decodeURIComponent(m[1]) + "/" + decodeURIComponent(m[2]));
       if (!entry) fail(404, "not_found", "Not found", path);
       if (typeof body.include !== "boolean") fail(400, "invalid", "include is a boolean", path, { fields: { include: "bool_type" } });
       entry.include = body.include;
-      return { slug: entry.slug, include: entry.include };
+      return { slug: entry.slug, full_name: entry.full_name, include: entry.include };
     }],
     ["GET", /^\/me\/notification-settings$/, () => fixtures()["notifications.json"].settings],
     ["PATCH", /^\/me\/notification-settings$/, (m, body, path) => {
@@ -1054,7 +1096,7 @@ window.Maity = window.Maity || {};
         if (!name || !/^[a-z0-9][a-z0-9-]{1,30}$/.test(name)) fail(400, "invalid", "a runner needs a name", path, { fields: { name: name ? "string_pattern_mismatch" : "missing" } });
         if (runnersFile().items.some((r) => !r.removed_at && r.name === name)) fail(400, "invalid", "you have a runner of that name", path, { fields: { name: "taken" } });
       }
-      const admin = me().projects.filter((p) => p.role === "owner" || p.role === "admin").map((p) => p.slug);
+      const admin = me().projects.filter((p) => p.role === "owner" || p.role === "admin").map((p) => p.full_name);
       (body.attach || []).forEach((slug) => { if (!admin.includes(slug)) fail(403, "forbidden", "members:admin needed in " + slug, path, { scope: "members:admin" }); });
       const id = localId("renr");
       const expires = new Date(Date.now() + ttl * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -1114,22 +1156,22 @@ window.Maity = window.Maity || {};
       if (!r || r.owner_id !== me().member.id) fail(400, "invalid", "attach one of your own runners", path, { fields: { runner_id: "not_yours" } });
       const open = activeAttachments(m[1]).find((a) => a.runner_id === r.id);
       if (open) fail(409, "already_attached", "the runner is attached already", path, { attachment: attachmentView(open) });
-      const a = { id: "ratt-" + String(++attachSerial).padStart(4, "0") + "f", runner_id: r.id, project: m[1],
+      const a = { id: "ratt-" + String(++attachSerial).padStart(4, "0") + "f", runner_id: r.id, project: fullOf(m[1]),
         attached_by: me().member.id, attached_at: nowIso(), detached_at: null };
       runnersFile().attachments.push(a);
-      r.projects = (r.projects || []).concat(m[1]);
+      r.projects = (r.projects || []).concat(fullOf(m[1]));
       return attachmentView(a);
     }],
     ["DELETE", /^\/projects\/([^/]+)\/runners\/([^/]+)$/, (m, body, path) => {
-      const all = runnersFile().attachments.filter((x) => x.project === m[1] && x.runner_id === m[2]);
+      const all = runnersFile().attachments.filter((x) => x.project === fullOf(m[1]) && x.runner_id === m[2]);
       if (!all.length) fail(404, "not_found", "the runner was never attached here", path);
       const a = all.find((x) => !x.detached_at) || all[all.length - 1];
       if (!a.detached_at) {
         a.detached_at = nowIso();
         const r = runnerOf(m[2], path);
-        r.projects = (r.projects || []).filter((s) => s !== m[1]);
+        r.projects = (r.projects || []).filter((s) => s !== fullOf(m[1]));
         const counts = (runnersFile().active_placements || {})[r.id];
-        if (counts) delete counts[m[1]];
+        if (counts) delete counts[fullOf(m[1])];
       }
       return attachmentView(a);
     }],
@@ -1138,7 +1180,7 @@ window.Maity = window.Maity || {};
     // Personal requests (§7) are the human's own, listed here only.
     ["GET", /^\/requests$/, () => ({
       items: me().projects.flatMap((p) => openFor(p.slug).map((r) => Object.assign(
-        { project: { slug: p.slug, name: p.name, state: project(p.slug, "").state } }, r)))
+        { project: { slug: p.slug, full_name: p.full_name, name: p.name, state: project(p.slug, "").state } }, r)))
         // A list shows no proposal (§7, §19.4): GET /requests/{id} has it.
         .concat(personalRequests().filter((r) => r.status === "open").map((r) => {
           const listed = Object.assign({}, r);
@@ -1165,7 +1207,7 @@ window.Maity = window.Maity || {};
         const base = edited ? body.base_version : proposal.base_version;
         if (base !== now) fail(409, "conflict", "the preferences changed", path, { current_version: now, base_version: base });
         if (edited && utf8Bytes(body.markdown) > 8 * 1024) fail(400, "invalid", "over 8 KiB", path, { fields: { markdown: "too_long" } });
-        const agent = { kind: "agent", member_id: req.asked_by.member_id, handle: "agent-a", project: req.project.slug, request_id: req.id };
+        const agent = { kind: "agent", member_id: req.asked_by.member_id, handle: "agent-a", project: req.project.full_name, request_id: req.id };
         const human = { kind: "human", id: me().member.id, handle: me().member.handle };
         const v = edited
           ? writePrefs(body.markdown, human, agent, null)
@@ -1187,7 +1229,9 @@ window.Maity = window.Maity || {};
     ["POST", /^\/projects$/, (m, body, path) => {
       const fields = {};
       if (!SLUG.test(body.slug || "")) fields.slug = "string_pattern_mismatch";
-      else if (fixtures()[body.slug + "/project.json"]) fields.slug = "taken";
+      // §6.25: a slug is never a route word, and taken once in one's namespace.
+      else if (ROUTE_WORDS.includes(body.slug)) fields.slug = "reserved";
+      else if (fixtures()[body.slug + "/project.json"] || slugOfFull(me().member.handle + "/" + body.slug)) fields.slug = "taken";
       if (!body.name || !body.name.trim()) fields.name = "string_too_short";
       const url = body.repository ? String(body.repository.url || "").replace(/\/+$/, "") : null;
       if (url !== null && !/^https:\/\/github\.com\/[^/\s]+\/[^/\s]+$/.test(url)) {
@@ -1209,7 +1253,9 @@ window.Maity = window.Maity || {};
         maity_badge: given.maity_badge === true, cards: null };
       const owner = me().member;
       const created = {
-        slug: body.slug, name: body.name, state: "build", state_note: null, state_changed_at: nowIso(),
+        id: localId("prj"), slug: body.slug, owner: { id: owner.id, handle: owner.handle }, full_name: owner.handle + "/" + body.slug,
+        legacy_slug: null, aliases: [],
+        name: body.name, state: "build", state_note: null, state_changed_at: nowIso(),
         repository: url === null ? null : {
           url, default_branch: body.repository.default_branch || "main", forge: "github", probe_configured: false,
         },
@@ -1232,7 +1278,7 @@ window.Maity = window.Maity || {};
       data[body.slug + "/credentials.json"] = {};
       data[body.slug + "/conversations.json"] = {};
       if (url !== null) makeSetupCards(body.slug, setup, owner.id, url);
-      me().projects.push({ slug: body.slug, name: body.name, state: "build", role: "owner", open_requests: 0 });
+      me().projects.push({ slug: body.slug, full_name: created.full_name, name: body.name, state: "build", role: "owner", open_requests: 0 });
       return created;
     }],
     ["GET", /^\/projects\/([^/]+)$/, (m, body, path) => project(m[1], path)],
@@ -1318,6 +1364,12 @@ window.Maity = window.Maity || {};
           if (body.policy.keep_the_why === "required" && (p.memory || {}).provider === "none") {
             fail(400, "invalid", "no memory provider", path, { fields: { "policy.keep_the_why": "no_memory_provider" } });
           }
+        }
+        if ("member_agents" in body.policy && !["on", "off"].includes(body.policy.member_agents)) {
+          fail(400, "invalid", "unknown member_agents value", path, { fields: { "policy.member_agents": "unknown" } });
+        }
+        if ("member_agents_max" in body.policy && !(Number.isInteger(body.policy.member_agents_max) && body.policy.member_agents_max >= 0 && body.policy.member_agents_max <= 20)) {
+          fail(400, "invalid", "member_agents_max is 0 to 20", path, { fields: { "policy.member_agents_max": "out_of_range" } });
         }
         p.policy = Object.assign({}, p.policy, body.policy);
       }
@@ -1454,9 +1506,13 @@ window.Maity = window.Maity || {};
         // Oldest first, as swarm.py sends them: the window is the last n days.
         totals: Object.assign({}, s.totals, { cards_done_per_day: (s.totals.cards_done_per_day || []).slice(-n) }) });
     }],
-    ["GET", /^\/swarm\/([^/]+)$/, (m, body, path, query) => {
-      const p = fixtures()[m[1] + "/project.json"];
-      const s = fixtures()[m[1] + "/swarm.json"];
+    // §6.25: /swarm/{owner}/{slug}; the old /swarm/{slug} redirects by the
+    // frozen legacy_slug (followed here), answering as an unserved page else.
+    ["GET", /^\/swarm\/([^/]+)(?:\/([^/]+))?$/, (m, body, path, query) => {
+      const slug = m[2] ? slugOfFull(decodeURIComponent(m[1]) + "/" + decodeURIComponent(m[2]))
+        : fixtureSlugs().find((x) => (fixtures()[x + "/project.json"] || {}).legacy_slug === decodeURIComponent(m[1]));
+      const p = slug && fixtures()[slug + "/project.json"];
+      const s = slug && fixtures()[slug + "/swarm.json"];
       if (!p || !s || (p.policy || {}).swarm_public !== "on" || ["accepted", "archived"].includes(p.state)) fail(404, "not_found", "Not found", path);
       const agents = (list) => list.filter((x) => x.kind === "agent");
       const sum = (rows, k) => rows.reduce((a, r) => a + (r[k] || 0), 0);
@@ -1478,25 +1534,25 @@ window.Maity = window.Maity || {};
       "/api/v1/admin/settings/mail": { get: {}, patch: {} },
       "/api/v1/admin/settings/mail/test": { post: {} },
       "/api/v1/health": { get: {} },
-      "/api/v1/projects/{slug}/ticker": { get: {}, post: {} },
-      "/api/v1/projects/{slug}/ticker/subscription": { get: {}, patch: {} },
-      "/api/v1/projects/{slug}/conversations": { get: {}, post: {} },
-      "/api/v1/projects/{slug}/attachments": { get: {}, post: {} },
+      "/api/v1/projects/{owner}/{slug}/ticker": { get: {}, post: {} },
+      "/api/v1/projects/{owner}/{slug}/ticker/subscription": { get: {}, patch: {} },
+      "/api/v1/projects/{owner}/{slug}/conversations": { get: {}, post: {} },
+      "/api/v1/projects/{owner}/{slug}/attachments": { get: {}, post: {} },
       "/api/v1/requests/{request_id}/answer": { post: {} },
       "/api/v1/auth/device-codes": { post: {} },
       "/api/v1/auth/methods": { get: {} },
       "/api/v1/me/preferences": { get: {}, put: {} },
       "/api/v1/requests/{request_id}/withdraw": { post: {} },
-      "/api/v1/projects/{slug}/swarm": { get: {} },
-      "/api/v1/swarm/{slug}": { get: {} },
-      "/api/v1/projects/{slug}/invitations": { get: {}, post: {} },
+      "/api/v1/projects/{owner}/{slug}/swarm": { get: {} },
+      "/api/v1/swarm/{owner}/{slug}": { get: {} },
+      "/api/v1/projects/{owner}/{slug}/invitations": { get: {}, post: {} },
       "/api/v1/invitations/{token}": { get: {} },
       "/api/v1/auth/register": { post: {} },
       "/api/v1/projects": { get: {}, post: { requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/ProjectCreate" } } } } } },
-      "/api/v1/projects/{slug}/tasks/{task_id}/contract": { get: {} },
-      "/api/v1/projects/{slug}/tasks/{task_id}/notes": { get: {}, post: {} },
-      "/api/v1/projects/{slug}/tasks/{task_id}/history": { get: {} },
-      "/api/v1/projects/{slug}/placements": { get: {}, post: {} },
+      "/api/v1/projects/{owner}/{slug}/tasks/{task_id}/contract": { get: {} },
+      "/api/v1/projects/{owner}/{slug}/tasks/{task_id}/notes": { get: {}, post: {} },
+      "/api/v1/projects/{owner}/{slug}/tasks/{task_id}/history": { get: {} },
+      "/api/v1/projects/{owner}/{slug}/placements": { get: {}, post: {} },
     },
     components: { schemas: { ProjectCreate: { properties: {
       slug: {}, name: {}, repository: {}, memory: {}, setup: {}, keep_the_why: {}, policy: {},
@@ -1949,6 +2005,22 @@ window.Maity = window.Maity || {};
         target.owner_preferences = body.owner_preferences;
         return target;
       }
+      // §6.18: the team's rulebook, by the human who owns the agent profile only.
+      if ("team" in body) {
+        const target = member(m[1], m[2], path);
+        if (Object.keys(body).length !== 1) fail(400, "invalid", "set team on its own", path, { fields: { team: "alone" } });
+        if (who.member.kind !== "human" || target.kind !== "agent" || target.owner_id !== who.member.id) fail(403, "forbidden", "the profile's owner only", path, { reason: "humans_only" });
+        const next = Object.assign({ max_instances: 1, distribution: "free", lead_instance: null, wake: "all", review_within_team: false }, target.team || {}, body.team);
+        const errors = {};
+        if (!Number.isInteger(next.max_instances) || next.max_instances < 1 || next.max_instances > 16) errors["team.max_instances"] = "out_of_range";
+        if (!["free", "lead", "round_robin"].includes(next.distribution)) errors["team.distribution"] = "unknown";
+        if (!["all", "lead", "next_free"].includes(next.wake)) errors["team.wake"] = "unknown";
+        if ((next.distribution === "lead" || next.wake === "lead") && !next.lead_instance) errors["team.lead_instance"] = "required";
+        if (next.lead_instance && !(target.instances || []).some((i) => i.id === next.lead_instance && !i.revoked_at)) errors["team.lead_instance"] = "not_an_instance";
+        if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
+        target.team = Object.assign(next, { updated_by: { kind: "human", id: who.member.id, handle: who.member.handle }, updated_at: nowIso() });
+        return target;
+      }
       if (!who.admin) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
       const target = member(m[1], m[2], path);
       agentLimits(who.member, target, body, path);
@@ -2059,6 +2131,25 @@ window.Maity = window.Maity || {};
     }],
     // The join line is made up here and shown once, as the hub would.
     ["POST", /^\/projects\/([^/]+)\/joins$/, (m, body, path) => {
+      // §3.1 "Bringing your own agent": a human with trust member, within the project's limits.
+      if (!["owner", "admin"].includes(roleIn(m[1]))) {
+        const pol = project(m[1], path).policy || {};
+        if (me().member.kind !== "human" || pol.member_agents === "off") fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
+        const limit = (field) => fail(403, "forbidden", "not within the limits of bringing your own agent", path, { reason: "member_join_limit", field });
+        if (body.agent && body.agent.id && !fixtures()["agents.json"].items.some((a) => a.id === body.agent.id && a.owner_id === me().member.id)) limit("agent");
+        if (body.trust && !["member", "guest"].includes(body.trust)) limit("trust");
+        if (body.role && !["coder", "reviewer", "tester", "designer"].includes(body.role)) limit("role");
+        if (body.reports_to && body.reports_to !== me().member.id) limit("reports_to");
+        if ((body.areas || []).length) limit("areas");
+        if ((body.capabilities || []).length) limit("capabilities");
+        if (!body.new_instance && !body.replaces) {
+          const mine = new Set(file(m[1], "members.json", path).items.filter((x) => x.kind === "agent" && x.owner_id === me().member.id && !x.removed_at).map((x) => x.id));
+          file(m[1], "joins.json", path).items.filter((j) => j.created_by === me().member.id && !j.used_at && !j.revoked_at && !j.burned && Date.parse(j.expires_at) > Date.now() && !j.new_instance && !j.replaces)
+            .forEach((j) => mine.add(j.agent_id));
+          const max = pol.member_agents_max === undefined ? 3 : pol.member_agents_max;
+          if (mine.size >= max) fail(403, "forbidden", "you hold as many agents here as the project allows", path, { reason: "member_agents_max", max });
+        }
+      }
       let agentId = body.agent && body.agent.id;
       if (!agentId) {
         if (!body.agent || !body.agent.handle) fail(400, "invalid", "agent needs an id or a handle", path, { fields: { agent: "required" } });
@@ -2103,7 +2194,7 @@ window.Maity = window.Maity || {};
       });
       return {
         id, join_url: url, code: "FIXT-URE0-0000", paste_line: "maity join " + url + " --code FIXT-URE0-0000",
-        agent_id: agentId, project: m[1], expires_at: expires,
+        agent_id: agentId, project: fullOf(m[1]), expires_at: expires,
       };
     }],
     ["DELETE", /^\/projects\/([^/]+)\/joins\/([^/]+)$/, (m, body, path) => {
@@ -2119,6 +2210,7 @@ window.Maity = window.Maity || {};
     }],
     // §8.7 attachments: a raw upload, pending until a message names it.
     ["POST", /^\/projects\/([^/]+)\/attachments$/, (m, body, path, query) => {
+      attachmentsOn(path);
       if (["accepted", "archived"].includes(project(m[1], path).state)) fail(409, "project_closed", "the project is closed", path);
       const name = query.get("name");
       if (!name) fail(400, "invalid", "a name is required", path, { fields: { name: "required" } });
@@ -2151,13 +2243,15 @@ window.Maity = window.Maity || {};
       return att;
     }],
     ["GET", /^\/projects\/([^/]+)\/attachments$/, (m, body, path, query) => {
+      attachmentsOn(path);
       const admin = ["owner", "admin"].includes(roleIn(m[1]));
       const pending = attachmentsOf(m[1]).filter((a) => a.message_seq === null && !a.deleted_at
         && (a.uploaded_by === me().member.id || admin) && (!query.get("uploaded_by") || a.uploaded_by === query.get("uploaded_by")));
       return { items: pending.map((a) => (a.uploaded_by === me().member.id ? Object.assign({}, a) : hiddenUpload(a))), next_cursor: null };
     }],
-    ["GET", /^\/projects\/([^/]+)\/attachments\/([^/]+)$/, (m, body, path) => Object.assign({}, attachmentOf(m[1], m[2], path))],
+    ["GET", /^\/projects\/([^/]+)\/attachments\/([^/]+)$/, (m, body, path) => { attachmentsOn(path); return Object.assign({}, attachmentOf(m[1], m[2], path)); }],
     ["DELETE", /^\/projects\/([^/]+)\/attachments\/([^/]+)$/, (m, body, path) => {
+      attachmentsOn(path);
       const a = attachmentOf(m[1], m[2], path);
       const meId = me().member.id;
       const admin = ["owner", "admin"].includes(roleIn(m[1]));
@@ -2206,7 +2300,7 @@ window.Maity = window.Maity || {};
       const outside = !me().projects.some((p) => p.slug === m[1]);
       // Neither a member nor an agent there: the route does not say the project exists (§9.2).
       if (outside && !(fixtures()["agents.json"] || { items: [] }).items.some((a) => a.owner_id === me().member.id
-        && (a.memberships || []).some((x) => x.project === m[1]))) fail(404, "not_found", "Not found", path);
+        && (a.memberships || []).some((x) => x.project === fullOf(m[1])))) fail(404, "not_found", "Not found", path);
       const direct = outside ? [] : Object.keys(all).map((agentId) => {
         const items = all[agentId].items;
         const last = items.length ? items[items.length - 1] : null;
@@ -2441,15 +2535,17 @@ window.Maity = window.Maity || {};
 
   function fromFixtures(method, fullPath, body) {
     const q = fullPath.indexOf("?");
-    const path = q < 0 ? fullPath : fullPath.slice(0, q);
+    const asked = q < 0 ? fullPath : fullPath.slice(0, q);
     const query = new URLSearchParams(q < 0 ? "" : fullPath.slice(q + 1));
     return loadFixtures().then(() => {
+      let path = asked;
       // The hub serves its machine form and the landing page without a session.
       // Signed out, the fixture hub still answers what a visitor calls, and the
       // device codes, whose other side this one tab plays too.
       if (!fixtureSignedIn && !/^\/auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code|device-codes(\/.*)?)$/.test(path) && path !== "/landing" && path !== "/openapi.json" && !path.startsWith("/swarm/") && !path.startsWith("/invitations/")) {
         fail(401, "unauthenticated", "Not signed in", fullPath);
       }
+      path = namespaced(path, fullPath);
       for (const [verb, pattern, handler] of routes) {
         if (verb !== method) continue;
         const match = pattern.exec(path);
@@ -2688,19 +2784,23 @@ window.Maity = window.Maity || {};
     postRaw: (path, blob, type) => request("POST", path, blob, type),
     // The URL of an attachment's bytes (§8.7): the hub's own path, or in
     // fixture mode the object URL of the file chosen in this tab.
-    attachmentUrl: (slug, id, download) => {
-      if (source === "fixtures") return attachmentBlobs[slug + "/" + id] || null;
-      return API_BASE + "/projects/" + encodeURIComponent(slug) + "/attachments/" + encodeURIComponent(id) + "/content" + (download ? "?download=1" : "");
+    // A project's path segments from its full name (§6.25): `<owner>/<slug>`,
+    // each part encoded, the slash between them kept.
+    projectPath,
+    attachmentUrl: (full, id, download) => {
+      if (source === "fixtures") return attachmentBlobs[fixtureSlug(full) + "/" + id] || null;
+      return API_BASE + "/projects/" + projectPath(full) + "/attachments/" + encodeURIComponent(id) + "/content" + (download ? "?download=1" : "");
     },
     // The URL of a project's logo or banner for an <img>, or null when the
     // project view says there is none: the hub's own path, versioned by the
     // ETag; in fixture mode the image next to the project's JSON, or an upload.
-    imageUrl: (slug, kind, view) => {
+    imageUrl: (full, kind, view) => {
       if (!IMAGE_KINDS.includes(kind) || !view || !view.available) return null;
       if (source === "fixtures") {
+        const slug = fixtureSlug(full);
         return uploaded[slug + "/" + kind] || ("fixtures/" + encodeURIComponent(slug) + "/" + kind + ".png");
       }
-      return API_BASE + "/projects/" + encodeURIComponent(slug) + "/" + kind + "?v=" + encodeURIComponent(view.etag || "");
+      return API_BASE + "/projects/" + projectPath(full) + "/" + kind + "?v=" + encodeURIComponent(view.etag || "");
     },
     patch: (path, body) => request("PATCH", path, body || {}),
     del: (path) => request("DELETE", path),

@@ -35,7 +35,7 @@ def events(engine: Engine, kind: str) -> list[Any]:
 
 
 def link(who: Any, card: dict[str, Any], **body: Any) -> Any:
-    return who.post(f"/projects/maity/tasks/{card['id']}/links", body)
+    return who.post(f"/projects/maintainer/maity/tasks/{card['id']}/links", body)
 
 
 def fields_of(response: Any) -> dict[str, str]:
@@ -45,7 +45,7 @@ def fields_of(response: Any) -> dict[str, str]:
 
 
 def history(who: Any, card: dict[str, Any]) -> list[dict[str, Any]]:
-    response = who.get(f"/projects/maity/tasks/{card['id']}/history")
+    response = who.get(f"/projects/maintainer/maity/tasks/{card['id']}/history")
     assert response.status_code == 200, response.text
     items: list[dict[str, Any]] = response.json()["items"]
     return items
@@ -71,7 +71,7 @@ def test_a_forge_link_is_parsed_by_the_hub_and_changes_the_card(
         "added_by": owner.id,
     }
     assert shown["id"].startswith("lnk-")
-    view = owner.get(f"/projects/maity/tasks/{card['id']}").json()
+    view = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()
     assert view["links"] == [shown]
     updated = events(migrated, "task_updated")[-1]
     entry = history(owner, card)[0]
@@ -160,7 +160,7 @@ def test_who_removes_a_link(owner: flow.Human, make_client: ClientFactory) -> No
     other = flow.agent(make_client, owner)
     card = task(owner)
     added = link(adder, card, kind="url", url="https://example.com/a").json()
-    path = f"/projects/maity/tasks/{card['id']}/links/{added['id']}"
+    path = f"/projects/maintainer/maity/tasks/{card['id']}/links/{added['id']}"
     refused = other.client.delete(f"/api/v1{path}", headers=other.auth)
     assert refused.status_code == 403
     removed = adder.client.delete(f"/api/v1{path}", headers=adder.auth)
@@ -170,24 +170,27 @@ def test_who_removes_a_link(owner: flow.Human, make_client: ClientFactory) -> No
     # The card's creator removes any link on it.
     second = link(adder, card, kind="url", url="https://example.com/b").json()
     assert (
-        owner.delete(f"/projects/maity/tasks/{card['id']}/links/{second['id']}").status_code == 200
+        owner.delete(
+            f"/projects/maintainer/maity/tasks/{card['id']}/links/{second['id']}"
+        ).status_code
+        == 200
     )
-    assert owner.get(f"/projects/maity/tasks/{card['id']}").json()["links"] == []
+    assert owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()["links"] == []
 
 
 def test_a_closed_project_refuses_a_new_link_and_lets_one_go(owner: flow.Human) -> None:
     card = task(owner)
     added = link(owner, card, kind="url", url="https://example.com/a").json()
-    owner.patch("/projects/maity", {"state": "accepted", "reason": "done"})
+    owner.patch("/projects/maintainer/maity", {"state": "accepted", "reason": "done"})
     closed = link(owner, card, kind="url", url="https://example.com/b")
     assert closed.status_code == 409 and closed.json()["error"]["code"] == "project_closed"
-    gone = owner.delete(f"/projects/maity/tasks/{card['id']}/links/{added['id']}")
+    gone = owner.delete(f"/projects/maintainer/maity/tasks/{card['id']}/links/{added['id']}")
     assert gone.status_code == 200
 
 
 def test_a_frozen_project_takes_links_without_a_reason(owner: flow.Human) -> None:
     card = task(owner)
-    owner.patch("/projects/maity", {"state": "freeze", "reason": "release"})
+    owner.patch("/projects/maintainer/maity", {"state": "freeze", "reason": "release"})
     assert link(owner, card, kind="url", url="https://example.com/a").status_code == 201
 
 
@@ -226,7 +229,7 @@ def test_a_patch_writes_one_entry_per_field_and_its_event_names_them(
     other = task(owner)
     card = task(owner, title="Old", body="line one\nline two")
     response = owner.patch(
-        f"/projects/maity/tasks/{card['id']}",
+        f"/projects/maintainer/maity/tasks/{card['id']}",
         {
             "title": "New",
             "body": "line one\nline 2",
@@ -253,7 +256,9 @@ def test_a_patch_writes_one_entry_per_field_and_its_event_names_them(
 
 def test_a_move_is_layout_not_history(owner: flow.Human, migrated: Engine) -> None:
     first, second = task(owner), task(owner)
-    moved = owner.post(f"/projects/maity/tasks/{second['id']}/move", {"before": first["id"]})
+    moved = owner.post(
+        f"/projects/maintainer/maity/tasks/{second['id']}/move", {"before": first["id"]}
+    )
     assert moved.status_code == 200, moved.text
     event = events(migrated, "task_updated")[-1]
     assert event.payload["fields"] == ["rank"] and event.payload["history"] == []
@@ -264,7 +269,9 @@ def test_assigning_is_recorded(owner: flow.Human, make_client: ClientFactory) ->
     agent = flow.agent(make_client, owner)
     card = task(owner)
     assert (
-        owner.post(f"/projects/maity/tasks/{card['id']}/assign", {"assignee": agent.id}).status_code
+        owner.post(
+            f"/projects/maintainer/maity/tasks/{card['id']}/assign", {"assignee": agent.id}
+        ).status_code
         == 200
     )
     entry = history(owner, card)[0]
@@ -274,11 +281,11 @@ def test_assigning_is_recorded(owner: flow.Human, make_client: ClientFactory) ->
 def test_the_history_pages_newest_first(owner: flow.Human) -> None:
     card = task(owner)
     for n in range(3):
-        owner.patch(f"/projects/maity/tasks/{card['id']}", {"title": f"T{n}"})
-    first = owner.get(f"/projects/maity/tasks/{card['id']}/history?limit=2").json()
+        owner.patch(f"/projects/maintainer/maity/tasks/{card['id']}", {"title": f"T{n}"})
+    first = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}/history?limit=2").json()
     assert [e["after"] for e in first["items"]] == ["T2", "T1"]
     rest = owner.get(
-        f"/projects/maity/tasks/{card['id']}/history?limit=2&cursor={first['next_cursor']}"
+        f"/projects/maintainer/maity/tasks/{card['id']}/history?limit=2&cursor={first['next_cursor']}"
     ).json()
     assert [e["field"] for e in rest["items"]] == ["title", "created"]
     assert rest["next_cursor"] is None
@@ -289,9 +296,11 @@ def test_a_human_redacts_a_history_entry_and_the_events_values(
 ) -> None:
     agent = flow.agent(make_client, owner, role="admin")
     card = task(owner)
-    owner.patch(f"/projects/maity/tasks/{card['id']}", {"title": "secret-ish", "label": "fix"})
+    owner.patch(
+        f"/projects/maintainer/maity/tasks/{card['id']}", {"title": "secret-ish", "label": "fix"}
+    )
     entry = next(e for e in history(owner, card) if e["field"] == "title")
-    path = f"/projects/maity/tasks/{card['id']}/history/{entry['id']}/redact"
+    path = f"/projects/maintainer/maity/tasks/{card['id']}/history/{entry['id']}/redact"
     refused = agent.post(path, {"reason": "leak"})
     assert refused.status_code == 403
     assert refused.json()["error"]["details"]["reason"] == "humans_only"
@@ -321,7 +330,7 @@ def test_a_human_redacts_a_history_entry_and_the_events_values(
 
 
 def note(who: Any, card: dict[str, Any], body: str = "a finding") -> Any:
-    return who.post(f"/projects/maity/tasks/{card['id']}/notes", {"body": body})
+    return who.post(f"/projects/maintainer/maity/tasks/{card['id']}/notes", {"body": body})
 
 
 def test_a_note_never_changes_the_card_and_tells_holder_creator_and_mentioned(
@@ -330,7 +339,7 @@ def test_a_note_never_changes_the_card_and_tells_holder_creator_and_mentioned(
     holder = flow.agent(make_client, owner)
     writer = flow.agent(make_client, owner)
     card = task(owner, body="as written")
-    holder.post(f"/projects/maity/tasks/{card['id']}/claim", {})
+    holder.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
     response = note(writer, card, "the CLI needs `--no-code` too, @maintainer")
     assert response.status_code == 201, response.text
     shown = response.json()
@@ -341,7 +350,7 @@ def test_a_note_never_changes_the_card_and_tells_holder_creator_and_mentioned(
         "kind": "agent",
     }
     assert [m["member_id"] for m in shown["mentions"]] == [owner.id]
-    view = owner.get(f"/projects/maity/tasks/{card['id']}").json()
+    view = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()
     assert view["body"] == "as written" and view["notes"] == {"open": 1, "total": 1}
     added = events(migrated, "note_added")[-1]
     assert added.audience == [f"member:{holder.id}", f"member:{owner.id}"]
@@ -356,9 +365,9 @@ def test_the_creator_resolves_a_note_and_the_holder_does_not(
     creator = flow.agent(make_client, owner)
     holder = flow.agent(make_client, owner)
     card = task(creator)
-    holder.post(f"/projects/maity/tasks/{card['id']}/claim", {})
+    holder.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
     posted = note(owner, card).json()
-    path = f"/projects/maity/tasks/{card['id']}/notes/{posted['id']}/resolve"
+    path = f"/projects/maintainer/maity/tasks/{card['id']}/notes/{posted['id']}/resolve"
     assert holder.post(path, {"state": "dismissed"}).status_code == 403
     done = creator.post(path, {"state": "incorporated", "reason": "in the body now"})
     assert done.status_code == 200, done.text
@@ -372,9 +381,9 @@ def test_the_creator_resolves_a_note_and_the_holder_does_not(
         f"member:{holder.id}",
         f"member:{creator.id}",
     ]
-    listed = owner.get(f"/projects/maity/tasks/{card['id']}/notes").json()["items"]
+    listed = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}/notes").json()["items"]
     assert listed == []  # default open
-    everything = owner.get(f"/projects/maity/tasks/{card['id']}/notes?state=all").json()
+    everything = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}/notes?state=all").json()
     assert [n["id"] for n in everything["items"]] == [posted["id"]]
 
 
@@ -384,7 +393,8 @@ def test_a_redacted_note_keeps_its_place_and_its_event_is_redacted(
     card = task(owner)
     posted = note(owner, card, "token: hunter2 @maintainer").json()
     done = owner.post(
-        f"/projects/maity/tasks/{card['id']}/notes/{posted['id']}/redact", {"reason": "secret"}
+        f"/projects/maintainer/maity/tasks/{card['id']}/notes/{posted['id']}/redact",
+        {"reason": "secret"},
     )
     assert done.status_code == 200, done.text
     assert done.json()["body"]["redacted"] is True and done.json()["mentions"] == []
@@ -443,10 +453,11 @@ def test_a_member_posts_at_most_20_notes_in_ten_minutes(owner: flow.Human) -> No
 def test_a_closed_project_refuses_notes_but_lets_them_be_resolved(owner: flow.Human) -> None:
     card = task(owner)
     posted = note(owner, card).json()
-    owner.patch("/projects/maity", {"state": "archived", "reason": "done"})
+    owner.patch("/projects/maintainer/maity", {"state": "archived", "reason": "done"})
     assert note(owner, card).json()["error"]["code"] == "project_closed"
     resolved = owner.post(
-        f"/projects/maity/tasks/{card['id']}/notes/{posted['id']}/resolve", {"state": "dismissed"}
+        f"/projects/maintainer/maity/tasks/{card['id']}/notes/{posted['id']}/resolve",
+        {"state": "dismissed"},
     )
     assert resolved.status_code == 200
 
@@ -454,7 +465,9 @@ def test_a_closed_project_refuses_notes_but_lets_them_be_resolved(owner: flow.Hu
 def test_a_note_is_at_most_4_kib_and_mentions_are_the_hubs(owner: flow.Human) -> None:
     card = task(owner)
     assert fields_of(note(owner, card, "x" * 4097)) == {"body": "too_long"}
-    posted = owner.post(f"/projects/maity/tasks/{card['id']}/notes", {"body": "x", "mentions": []})
+    posted = owner.post(
+        f"/projects/maintainer/maity/tasks/{card['id']}/notes", {"body": "x", "mentions": []}
+    )
     assert fields_of(posted) == {"mentions": "read_only"}
 
 
@@ -477,7 +490,7 @@ def test_the_probe_reads_own_repository_links_in_one_batch(
 ) -> None:
     holder = flow.agent(make_client, owner)
     card = task(owner)
-    holder.post(f"/projects/maity/tasks/{card['id']}/claim", {})
+    holder.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
     issue = link(owner, card, kind="issue", forge_url=ISSUE).json()
     mismatch = link(owner, card, kind="issue", forge_url=f"{REPOSITORY}/issues/7").json()
     pull = link(owner, card, kind="pr", forge_url=PULL).json()
@@ -496,7 +509,7 @@ def test_the_probe_reads_own_repository_links_in_one_batch(
     assert fg.reads == [("oliver-zehentleitner/maity", [7, 41])]  # never the other repository
     shown = {
         lnk["id"]: lnk["observed"]
-        for lnk in owner.get(f"/projects/maity/tasks/{card['id']}").json()["links"]
+        for lnk in owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()["links"]
     }
     assert {k: v for k, v in shown[issue["id"]].items() if k != "observed_at"} == {
         "found": True,
@@ -520,7 +533,7 @@ def test_the_probe_reads_own_repository_links_in_one_batch(
     # A second later the card closes: one more read after that, then never.
     later = datetime.now(UTC) + timedelta(seconds=2)
     clock.set_source(lambda: later)
-    owner.patch(f"/projects/maity/tasks/{card['id']}", {"status": "cancelled"})
+    owner.patch(f"/projects/maintainer/maity/tasks/{card['id']}", {"status": "cancelled"})
     probe.observe_links(migrated, fg, project_id)
     probe.observe_links(migrated, fg, project_id)
     assert len(fg.reads) == 3
@@ -571,7 +584,7 @@ def test_a_replayed_add_and_a_repeated_removal_answer_as_the_first(
 ) -> None:
     agent = flow.agent(make_client, owner)
     card = task(owner)
-    path = f"/api/v1/projects/maity/tasks/{card['id']}/links"
+    path = f"/api/v1/projects/maintainer/maity/tasks/{card['id']}/links"
     keyed = agent.auth | {"Idempotency-Key": "replay-of-a-link-0001"}
     body = {"kind": "url", "url": "https://example.com/a"}
     added = agent.client.post(path, json=body, headers=keyed)
@@ -593,11 +606,12 @@ def test_a_repeated_removal_shows_the_tombstone_once_its_entry_is_redacted(
 ) -> None:
     card = task(owner)
     added = link(owner, card, kind="url", url="https://example.com/secret").json()
-    path = f"/projects/maity/tasks/{card['id']}/links/{added['id']}"
+    path = f"/projects/maintainer/maity/tasks/{card['id']}/links/{added['id']}"
     assert owner.delete(path).status_code == 200
     removal = next(e for e in history(owner, card) if e["field"] == "links" and e["after"] is None)
     owner.post(
-        f"/projects/maity/tasks/{card['id']}/history/{removal['id']}/redact", {"reason": "leak"}
+        f"/projects/maintainer/maity/tasks/{card['id']}/history/{removal['id']}/redact",
+        {"reason": "leak"},
     )
     again = owner.delete(path)
     assert again.status_code == 200 and again.json()["redacted"] is True
@@ -610,7 +624,7 @@ def test_a_link_the_card_was_created_with_is_removed_twice_like_any_other(
     agent = flow.agent(make_client, owner)
     card = task(owner, links=[{"kind": "url", "url": "https://example.com/initial"}])
     [initial] = card["links"]
-    path = f"/api/v1/projects/maity/tasks/{card['id']}/links/{initial['id']}"
+    path = f"/api/v1/projects/maintainer/maity/tasks/{card['id']}/links/{initial['id']}"
     first = agent.client.delete(path, headers=agent.auth)
     assert first.status_code == 403  # not its link, card or admin
     removed = owner.delete(path.removeprefix("/api/v1"))

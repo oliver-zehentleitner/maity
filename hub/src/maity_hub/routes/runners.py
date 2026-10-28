@@ -20,7 +20,7 @@ from sqlalchemy import Connection, and_, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import clock, events, idempotency, paging, placements, runner_revoke
+from maity_hub import clock, events, idempotency, namespace, paging, placements, runner_revoke
 from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.auth import credentials
@@ -32,6 +32,7 @@ from maity_hub.deps import AnyCaller, HumanCaller, engine_of, origin_of, setting
 from maity_hub.errors import ApiError, forbidden, invalid, not_found, rate_limited
 from maity_hub.ids import new_id
 from maity_hub.models import HANDLE_PATTERN, Strict, markdown
+from maity_hub.namespace import ProjectRoute
 from maity_hub.ratelimit import Limiter
 from maity_hub.runners import (
     administers,
@@ -47,8 +48,8 @@ from maity_hub.runners import (
 )
 from maity_hub.scopes import has_scope
 
-router = APIRouter()
-page_router = APIRouter()  # /r/{token}, outside the API prefix
+router = APIRouter(route_class=ProjectRoute)
+page_router = APIRouter(route_class=ProjectRoute)  # /r/{token}, outside the API prefix
 
 TTL_DEFAULT, TTL_MIN, TTL_MAX = 900, 60, 900
 WRONG_CODES_BEFORE_BURN = 3
@@ -469,9 +470,7 @@ def _attach_at_exchange(conn: Connection, row: Any, runner_id: str) -> list[str]
             continue
         _, created = attach(conn, project_id, runner_id, row.created_by)
         if created:
-            slug: str = conn.execute(
-                select(t.project.c.slug).where(t.project.c.id == project_id)
-            ).scalar_one()
+            slug: str = namespace.name_of(conn, project_id)
             attached.append(slug)
     return attached
 
@@ -688,7 +687,7 @@ def remove_runner(
 # --- attachments (§15.4) ---------------------------------------------------------------
 
 
-@router.get("/projects/{slug}/runners")
+@router.get("/projects/{owner}/{slug}/runners")
 def list_project_runners(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
@@ -708,7 +707,7 @@ def list_project_runners(slug: str, request: Request, caller: AnyCaller) -> JSON
         return JSONResponse({"items": items, "next_cursor": None})
 
 
-@router.post("/projects/{slug}/runners")
+@router.post("/projects/{owner}/{slug}/runners")
 def attach_runner(slug: str, body: AttachIn, request: Request, caller: HumanCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
@@ -736,7 +735,7 @@ def attach_runner(slug: str, body: AttachIn, request: Request, caller: HumanCall
     return idempotency.run(engine_of(request), request, caller, action)
 
 
-@router.delete("/projects/{slug}/runners/{runner_id}")
+@router.delete("/projects/{owner}/{slug}/runners/{runner_id}")
 def detach_runner(slug: str, runner_id: str, request: Request, caller: HumanCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)

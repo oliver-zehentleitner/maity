@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import Connection, insert, or_, select, update
 
-from maity_hub import clock, inbox, preferences, ticker
+from maity_hub import clock, inbox, namespace, preferences, ticker
 from maity_hub import tables as t
 from maity_hub.board import history
 from maity_hub.errors import ApiError, invalid
@@ -123,6 +123,9 @@ def submit_report(
             source not in from_statement or from_statement[source]["topic_id"] != p["topic_id"]
         ):
             raise invalid({"proposals": "unknown_statement_proposal"})
+        if source is not None and from_statement[source].get("redaction") is not None:
+            # Redacted before the report: nothing may be derived from the tombstoned text.
+            raise invalid({"proposals": "redacted_statement_proposal"})
         if p.get("topic_id") not in (None, *topic_ids):
             raise invalid({"proposals": "unknown_topic"})
         if p["triage"] == "decided":
@@ -347,7 +350,7 @@ def open_card(
     return card_id
 
 
-def _card_body(round_row: Any, proposal: dict[str, Any]) -> str:
+def card_body(round_row: Any, proposal: dict[str, Any]) -> str:
     line = f"From the jour fixe of {_day(round_row).isoformat()} (round {round_row.id})."
     return f"{proposal['reason']}\n\n{line}" if proposal.get("reason") else line
 
@@ -374,7 +377,7 @@ def _finish(
                 project,
                 marker,
                 proposal["title"],
-                _card_body(round_row, proposal),
+                card_body(round_row, proposal),
                 asker,
                 actor,
                 fg,
@@ -432,7 +435,7 @@ def _ticker(conn: Connection, project: Any, round_row: Any, report: dict[str, An
         project.id,
         kind="jour_fixe",
         text=text,
-        url=f"/#/p/{project.slug}/jour-fixe/{round_row.id}",
+        url=f"/#/{namespace.full_name(conn, project)}/jour-fixe/{round_row.id}",
         audience=ticker.Audience(),
         origin="hub",
         subject=("jour_fixe", round_row.id),
@@ -454,16 +457,15 @@ def settle(
     round_row = _reload(conn, marker["round_id"])
     proposal = next(p for p in round_row.report["proposals"] if p["id"] == marker["proposal_id"])
     project = conn.execute(select(t.project).where(t.project.c.id == request.project_id)).one()
-    open_card(
-        conn,
-        project,
-        dict(marker),
-        proposal["title"],
-        _card_body(round_row, proposal),
-        mine.id,
-        actor,
-        fg,
-    )
+    if proposal["redaction"] is not None:
+        # Redacted before its adoption: the card opens with the placeholders a redaction
+        # leaves on a card, so no text of the proposal comes back (§20.8).
+        from maity_hub.jourfixe.redaction import REDACTED_TEXT, REDACTED_TITLE
+
+        title, body = REDACTED_TITLE, card_body(round_row, {"reason": REDACTED_TEXT})
+    else:
+        title, body = proposal["title"], card_body(round_row, proposal)
+    open_card(conn, project, dict(marker), title, body, mine.id, actor, fg)
 
 
 def handle_deadlines(conn: Connection, project_id: str) -> None:

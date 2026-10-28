@@ -74,18 +74,18 @@ def _file(migrated: Engine, agent: flow.Agent, kind: str = "test") -> str:
             membership_id=row.id,
             project_id=row.project_id,
         )
-        mine = membership(conn, caller, "maity")
+        mine = membership(conn, caller, "maintainer/maity")
         return file_consent(
             conn, mine, caller, "Test it", "why", proposal={"kind": kind, "value": 7}
         )
 
 
 def answer(who: Any, request_id: str, **body: Any) -> Any:
-    return who.post(f"/projects/maity/requests/{request_id}/answer", body)
+    return who.post(f"/projects/maintainer/maity/requests/{request_id}/answer", body)
 
 
 def status(owner: flow.Human, request_id: str) -> str:
-    found: str = owner.get(f"/projects/maity/requests/{request_id}").json()["status"]
+    found: str = owner.get(f"/projects/maintainer/maity/requests/{request_id}").json()["status"]
     return found
 
 
@@ -143,11 +143,13 @@ def test_a_withdrawal_settles_once_and_none_follows_a_go(
 ) -> None:
     admin = flow.agent(make_client, owner, role="admin")
     withdrawn = _file(migrated, admin)
-    admin.post(f"/projects/maity/requests/{withdrawn}/withdraw", {"reason": "no longer"})
+    admin.post(f"/projects/maintainer/maity/requests/{withdrawn}/withdraw", {"reason": "no longer"})
     assert [(s.outcome, s.approver) for s in settled] == [("withdrawn", None)]
     answered = _file(migrated, admin)
     answer(owner, answered, reply_id="go")
-    late = admin.post(f"/projects/maity/requests/{answered}/withdraw", {"reason": "late"})
+    late = admin.post(
+        f"/projects/maintainer/maity/requests/{answered}/withdraw", {"reason": "late"}
+    )
     assert (late.status_code, late.headers["Maity-Error"]) == (409, "request_not_open")
     assert [s.outcome for s in settled] == ["withdrawn", "go"]
 
@@ -157,7 +159,7 @@ def test_the_proposers_removal_withdraws_it(
 ) -> None:
     admin = flow.agent(make_client, owner, role="admin")
     request_id = _file(migrated, admin)
-    removed = owner.delete(f"/projects/maity/members/{admin.id}")
+    removed = owner.delete(f"/projects/maintainer/maity/members/{admin.id}")
     assert removed.status_code == 200, removed.text
     assert status(owner, request_id) == "withdrawn"
     assert [(s.outcome, s.approver) for s in settled] == [("withdrawn", None)]
@@ -171,7 +173,7 @@ def test_a_replayed_answer_settles_once(
 ) -> None:
     request_id = _file(migrated, flow.agent(make_client, owner, role="admin"))
     headers = {"X-CSRF-Token": owner.csrf, "Idempotency-Key": "proposal-replay-0001"}
-    url = f"/api/v1/projects/maity/requests/{request_id}/answer"
+    url = f"/api/v1/projects/maintainer/maity/requests/{request_id}/answer"
     first = owner.client.post(url, json={"reply_id": "go"}, headers=headers)
     again = owner.client.post(url, json={"reply_id": "go"}, headers=headers)
     assert first.status_code == again.status_code == 200
@@ -185,7 +187,7 @@ def test_the_proposal_stays_in_the_hub(
     admin = flow.agent(make_client, owner, role="admin")
     request_id = _file(migrated, admin)
     answered = answer(owner, request_id, reply_id="go").json()
-    shown = [owner.get(f"/projects/maity/requests/{request_id}").json(), answered]
+    shown = [owner.get(f"/projects/maintainer/maity/requests/{request_id}").json(), answered]
     shown += admin.resume().json()["requests"]["answered_since_cursor"]
     with migrated.connect() as conn:
         shown += [
@@ -222,10 +224,10 @@ def test_a_kinds_fields_show_on_the_request_only(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
     request_id = _file(migrated, flow.agent(make_client, owner, role="admin"), "test-admin")
-    view = owner.get(f"/projects/maity/requests/{request_id}").json()
+    view = owner.get(f"/projects/maintainer/maity/requests/{request_id}").json()
     assert view["test_proposal"] == {"value": 7} and "proposal" not in view
     answered = answer(owner, request_id, reply_id="go").json()
-    listed = owner.get("/projects/maity/requests?status=all").json()["items"]
+    listed = owner.get("/projects/maintainer/maity/requests?status=all").json()["items"]
     with migrated.connect() as conn:
         payloads = [
             row.payload
@@ -250,9 +252,11 @@ def test_an_unknown_kind_is_not_filed_and_fails_on_its_request_only(
         )
     failed = answer(owner, request_id, reply_id="go")
     assert (failed.status_code, failed.headers["Maity-Error"]) == (500, "proposal_kind_unknown")
-    withdrawn = admin.post(f"/projects/maity/requests/{request_id}/withdraw", {"reason": "x"})
+    withdrawn = admin.post(
+        f"/projects/maintainer/maity/requests/{request_id}/withdraw", {"reason": "x"}
+    )
     assert withdrawn.status_code == 500
-    assert owner.get("/projects/maity/requests?status=open").status_code == 200
+    assert owner.get("/projects/maintainer/maity/requests?status=open").status_code == 200
     other = flow.agent(make_client, owner, role="admin")
     packet = other.resume()
     assert packet.status_code == 200
@@ -270,7 +274,7 @@ def test_the_proposers_removal_withdraws_an_unknown_kind_without_settling(
             .where(t.request.c.id == request_id)
             .values(proposal={"kind": "gone", "value": 7})
         )
-    removed = owner.delete(f"/projects/maity/members/{admin.id}")
+    removed = owner.delete(f"/projects/maintainer/maity/members/{admin.id}")
     assert removed.status_code == 200, removed.text  # the removal is not held up by it
     with migrated.connect() as conn:
         row = conn.execute(select(t.request).where(t.request.c.id == request_id)).one()
@@ -299,7 +303,7 @@ def test_a_consent_carries_a_placement_or_a_proposal(
             membership_id=row.id,
             project_id=row.project_id,
         )
-        mine = membership(conn, caller, "maity")
+        mine = membership(conn, caller, "maintainer/maity")
         with pytest.raises(ValueError, match="not both"):
             file_consent(
                 conn, mine, caller, "x", "y", placement_id="plc-x", proposal={"kind": "test"}

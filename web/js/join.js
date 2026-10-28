@@ -1,4 +1,4 @@
-// Joining an agent, inside the Agents view (js/agents.js): a panel that
+// Joining an agent, inside the Members view (js/members.js): a panel that
 // creates a join for one of the human's agent profiles (or a new one) and
 // shows the paste line once (docs/api.md §3.1); the open joins as seats at
 // the front of the agents' grid; the others folded at the view's end. The
@@ -23,6 +23,12 @@ window.Maity = window.Maity || {};
   const GRACE_MS = 60000;
 
   const ROLES = ["member", "reviewer", "proxy", "admin"];
+  // A member bringing their own agent (§3.1): these and nothing else; an
+  // admin assigns areas and capabilities later, and the agent reports to them.
+  const MEMBER_ROLES = ["coder", "reviewer", "tester", "designer"];
+  const MEMBER_TRUSTS = ["member", "guest"];
+  const LIMIT_WORDS = { agent: "the agent (only one of your own, or a new one; or its membership was raised by an admin)", trust: "the trust",
+    role: "the role", reports_to: "whom it reports to", areas: "its areas", capabilities: "its capabilities" };
   const BRIEFING_CHARS = 16 * 1024; // docs/api.md §3: 16 KiB, in characters as the hub counts
 
   // A join's state from GET /joins (docs/api.md §3.1), in the hub's order:
@@ -140,7 +146,9 @@ window.Maity = window.Maity || {};
       try { members = (await M.api.getAll(ctx.base + "/members")).items; } catch (ignored) { /* the refusal shown says enough */ }
     }
 
-    const role = h("select", { id: "join-role" }, ROLES.map((r) => h("option", { value: r }, r)));
+    const own = !!hooks.member;
+    const role = h("select", { id: "join-role" }, (own ? MEMBER_ROLES : ROLES).map((r) => h("option", { value: r }, r)));
+    const trust = own ? h("select", { id: "join-trust" }, MEMBER_TRUSTS.map((r) => h("option", { value: r }, r))) : null;
     const reportsTo = h("select", { id: "join-reports" },
       h("option", { value: "" }, "nobody"),
       ctx.members.map((m) => h("option", { value: m.id }, m.display_name)));
@@ -204,6 +212,14 @@ window.Maity = window.Maity || {};
           agent = { handle: handle.value.trim(), display_name: display.value.trim() || handle.value.trim() };
         }
         const member = agent.id ? memberOf(agent.id) : null;
+        // At the member's limit (§3.1) only an instance of an agent already
+        // in the project is made: that counts nothing.
+        if (!member && hooks.full && hooks.full()) {
+          status.fail("No join created: ", { message: "you hold as many agents in this project as it allows; "
+            + "choose one of yours that is a member to start another instance or replace one" });
+          agentSelect.focus();
+          return;
+        }
         const text = member ? "" : briefing.value.trim();
         if ([...text].length > BRIEFING_CHARS) {
           status.fail("No join created: ", { message: "the briefing is longer than 16,384 characters" });
@@ -213,6 +229,8 @@ window.Maity = window.Maity || {};
         const req = member
           ? Object.assign({ agent, ttl_seconds: Number(ttl.value) },
             replaceOne.checked && replaced.value ? { replaces: replaced.value } : { new_instance: true })
+          // One's own agent (§3.1): it reports to its owner by default, no field.
+          : own ? { agent, trust: trust.value, role: role.value, ttl_seconds: Number(ttl.value) }
           : {
             agent,
             role: role.value,
@@ -230,7 +248,17 @@ window.Maity = window.Maity || {};
         } catch (err) {
           const fields = (err.code === "invalid" && err.details && err.details.fields) || {};
           const why = fields.handle;
-          status.fail("No join created: ", why === "taken" ? { message: "you already have an agent with the handle @" + agent.handle } : err);
+          const d = err.details || {};
+          status.fail("No join created: ", why === "taken" ? { message: "you already have an agent with the handle @" + agent.handle }
+            // §3.1's limits for a member, in words, the field named.
+            : d.reason === "member_join_limit" ? { message: "a member may not set this for their own agent: " + (LIMIT_WORDS[d.field] || d.field || "a field") }
+            : d.reason === "member_agents_max" ? { message: "you hold as many agents in this project as it allows (" + d.max + ")" }
+            : err);
+          // The limit is the agent owner's rulebook, in the agent's row on Members (§6.18).
+          if (err.code === "instance_quota" && agent.id) {
+            append(status.el, " ", h("a", { class: "join-quota-link", href: ctx.link("members", agent.id, "rulebook") },
+              "Raise it in the team's rulebook"));
+          }
           // A member the list on screen did not show, a first join the list
           // took for a member's, or an instance revoked meanwhile: read the
           // members again and offer what the hub has.
@@ -284,9 +312,11 @@ window.Maity = window.Maity || {};
         h("div", { class: "field wide" }, h("label", { for: "join-agent" }, "Agent"), agentSelect),
         newFields,
         instanceBox,
+        own ? membershipField(h("div", { class: "field" }, h("label", { for: "join-trust" }, "Trust"), trust)) : null,
         membershipField(h("div", { class: "field" }, h("label", { for: "join-role" }, "Role"), role)),
-        membershipField(h("div", { class: "field" }, h("label", { for: "join-reports" }, "Reports to"), reportsTo)),
-        membershipField(h("div", { class: "field" }, h("label", { for: "join-areas" }, "Areas (comma separated)"), areas)),
+        own ? membershipField(h("p", { class: "hint field wide" }, "It reports to you. An admin gives it areas and capabilities later."))
+          : [membershipField(h("div", { class: "field" }, h("label", { for: "join-reports" }, "Reports to"), reportsTo)),
+            membershipField(h("div", { class: "field" }, h("label", { for: "join-areas" }, "Areas (comma separated)"), areas))],
         h("div", { class: "field" }, h("label", { for: "join-ttl" }, "Valid for"), ttl)),
       // Offered when the hub knows briefings: its member view then has the key.
       ctx.members.some((x) => "briefing" in x)
@@ -301,7 +331,7 @@ window.Maity = window.Maity || {};
     function showForm() { append(clear(body), form); }
     showForm();
     showAgent();
-    append(clear(panel), panelHead(() => close(true)), body);
+    append(clear(panel), panelHead(() => close(true), own), body);
 
     let opener = null;
     function open(from) {
@@ -392,12 +422,14 @@ window.Maity = window.Maity || {};
           h("code", null, j.id), " " + profileName(j.agent_id) + " as " + j.role + " · " + state.text))));
     }
     const openCount = () => { const now = M.api.now(); return joins.items.filter((j) => joinState(j, now).key === "open").length; };
+    // The agents open joins are for: with the active memberships, what §3.1 counts per profile.
+    const openAgents = () => { const now = M.api.now(); return joins.items.filter((j) => joinState(j, now).key === "open").map((j) => j.agent_id); };
 
     shownKey = keyOf(joins, M.api.now());
     // A join that expires while the view is open moves on without a reload.
     ctx.every(EXPIRY_MS, () => { if (keyOf(joins, M.api.now()) !== shownKey) changed(); });
 
-    return { open, close, seats, earlier, openCount, reread };
+    return { open, close, seats, earlier, openCount, openAgents, reread };
   }
 
   // On a page the router has not attached yet (a direct #/agents/join), the
@@ -407,10 +439,10 @@ window.Maity = window.Maity || {};
     else el.focus();
   }
 
-  function panelHead(onClose) {
+  function panelHead(onClose, own) {
     return [
       h("div", { class: "join-head" },
-        h("h3", { id: "join-title" }, "Join an agent"),
+        h("h3", { id: "join-title" }, own ? "Add my agent" : "Add an agent"),
         h("button", { type: "button", class: "icon-button join-close", "aria-label": "Close", title: "Close", onclick: onClose }, "×")),
       h("p", { class: "muted" }, "The agent's session runs wherever you run it; it joins by the line you paste into it."),
     ];
@@ -434,6 +466,8 @@ window.Maity = window.Maity || {};
     async function load() {
       try {
         const [profiles, joins] = await Promise.all([M.api.getAll("/agents"), M.api.getAll(ctx.base + "/joins")]);
+        // A member sees their own joins only, the ones they may revoke (§3.1).
+        if (hooks.member) joins.items = joins.items.filter((j) => j.created_by === ctx.me.id);
         impl = build(ctx, hooks, panel, listStatus, profiles, joins);
         listStatus.done();
         return true;
@@ -449,7 +483,7 @@ window.Maity = window.Maity || {};
             } else retry.disabled = false;
           },
         }, "Try again");
-        append(clear(panel), panelHead(failedClose),
+        append(clear(panel), panelHead(failedClose, !!hooks.member),
           h("p", { class: "error", role: "alert" }, "The joins could not be read: " + (err.message || err.code || "an error")), retry);
         listStatus.fail("The joins could not be read: ", err);
         return false;
@@ -471,6 +505,7 @@ window.Maity = window.Maity || {};
       seats: () => (impl ? impl.seats() : []),
       earlier: () => (impl ? impl.earlier() : null),
       openCount: () => (impl ? impl.openCount() : 0),
+      openAgents: () => (impl ? impl.openAgents() : []),
       // A failed first read keeps its Try again.
       reread: () => (impl ? impl.reread() : Promise.resolve()),
       // An open panel holds a form being filled in or a line shown once: a
@@ -480,10 +515,9 @@ window.Maity = window.Maity || {};
   }
 
   M.join = { mount };
-  // #/p/<slug>/join, from before joining moved into Agents: the same place, panel open.
+  // #/<owner>/<slug>/join, from before joining moved: Members, the panel open.
   M.views.join = async function (ctx, root) {
-    const there = "#/p/" + encodeURIComponent(ctx.slug) + "/agents/join";
-    if (window.history && window.history.replaceState) window.history.replaceState(null, "", there);
-    await M.views.agents(ctx, root, ["join"]);
+    if (window.history && window.history.replaceState) window.history.replaceState(null, "", ctx.link("members", "join"));
+    await M.views.members(ctx, root, ["join"]);
   };
 })(window.Maity);

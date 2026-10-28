@@ -16,7 +16,7 @@ from typing import Any, Literal
 from pydantic import Field
 from sqlalchemy import Connection, func, select, update
 
-from maity_hub import clock
+from maity_hub import clock, namespace
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
@@ -538,7 +538,7 @@ def team_target(
     `owner_preferences`, §19.4), with the caller's own: its agent's owner may call
     without being a member; to anyone else who is no member the project does not exist
     (§2.3)."""
-    project = conn.execute(select(t.project).where(t.project.c.slug == slug)).first()
+    project = namespace.resolve(conn, slug)
     if project is None or caller.kind == "runner":
         raise not_found()
     try:

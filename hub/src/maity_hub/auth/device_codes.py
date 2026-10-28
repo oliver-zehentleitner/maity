@@ -25,7 +25,7 @@ from maity_hub.views import ts
 LIFETIME = timedelta(minutes=5)
 COMPLETE_WITHIN = timedelta(seconds=60)  # after the approval
 ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"  # Crockford's base32
-LENGTH = 8
+LENGTH = 12  # three groups of four as shown (§2.6.2)
 USER_AGENT_MAX = 300
 OPEN = ("waiting", "redeemed", "approved")
 

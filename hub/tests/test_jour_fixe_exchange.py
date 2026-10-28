@@ -50,7 +50,7 @@ def kinds(engine: Engine, kind: str) -> list[Any]:
 
 
 def rounds_path(round_id: str, tail: str = "") -> str:
-    return f"/projects/maity/jour-fixe/rounds/{round_id}{tail}"
+    return f"/projects/maintainer/maity/jour-fixe/rounds/{round_id}{tail}"
 
 
 class Round:
@@ -66,7 +66,9 @@ class Round:
         listen(self.lead)
         listen(self.member)
         owner.get("/me")
-        started = self.lead.post("/projects/maity/jour-fixe/rounds", {"reason": "look back"})
+        started = self.lead.post(
+            "/projects/maintainer/maity/jour-fixe/rounds", {"reason": "look back"}
+        )
         assert started.status_code == 201, started.text
         self.id: str = started.json()["id"]
         self.thread: str = started.json()["conversation_id"]
@@ -112,7 +114,7 @@ def round_(
 
 
 def test_the_round_runs_in_its_own_thread_that_wakes_nobody(round_: Round) -> None:
-    thread = round_.owner.get(f"/projects/maity/conversations/{round_.thread}").json()
+    thread = round_.owner.get(f"/projects/maintainer/maity/conversations/{round_.thread}").json()
     assert thread["kind"] == "group" and thread["created_by"] is None
     assert thread["jour_fixe"] == {"round_id": round_.id}
     assert {p["member_id"] for p in thread["participants"]} == {
@@ -122,7 +124,7 @@ def test_the_round_runs_in_its_own_thread_that_wakes_nobody(round_: Round) -> No
     }
     assert round_.get()["mode"] == "chat"
     direct = round_.owner.post(
-        f"/projects/maity/conversations/{round_.thread}/messages", {"body": "hi"}
+        f"/projects/maintainer/maity/conversations/{round_.thread}/messages", {"body": "hi"}
     )
     assert direct.status_code == 403 and direct.json()["error"]["details"]["reason"] == (
         "round_thread"
@@ -204,7 +206,7 @@ def test_responses_replies_and_the_last_word(round_: Round) -> None:
     assert "step_n" not in closed["posts"][0]
     [done] = kinds(round_.engine, "jour_fixe_exchange_closed")
     assert f"instance:{round_.lead.id}#{round_.lead.instance}" in done.audience
-    thread = round_.owner.get(f"/projects/maity/conversations/{round_.thread}").json()
+    thread = round_.owner.get(f"/projects/maintainer/maity/conversations/{round_.thread}").json()
     assert thread["closed_reason"] == "round_closed"
 
 
@@ -239,7 +241,7 @@ def test_no_statement_in_time_means_no_exchange(round_: Round) -> None:
 
 def test_a_member_who_left_the_thread_is_no_participant_any_more(round_: Round) -> None:
     left = round_.member.client.delete(
-        f"/api/v1/projects/maity/conversations/{round_.thread}/participants/{round_.member.id}",
+        f"/api/v1/projects/maintainer/maity/conversations/{round_.thread}/participants/{round_.member.id}",
         headers=round_.member.auth,
     )
     assert left.status_code == 200, left.text
@@ -264,7 +266,9 @@ def test_an_owner_outside_the_thread_reads_it_along_in_the_events(
     now[0] += timedelta(minutes=5)  # the owner's own calls are long past: not online
     listen(lead)
     listen(member)
-    round_id = lead.post("/projects/maity/jour-fixe/rounds", {"reason": "r"}).json()["id"]
+    round_id = lead.post("/projects/maintainer/maity/jour-fixe/rounds", {"reason": "r"}).json()[
+        "id"
+    ]
     member.post(rounds_path(round_id, "/answers"), {"went_well": "ok"})
     now[0] += STEP
     worker.sweep(migrated)
@@ -272,7 +276,7 @@ def test_an_owner_outside_the_thread_reads_it_along_in_the_events(
     assert lead.post(rounds_path(round_id, "/statement"), statement).status_code == 201
     round_ = owner.get(rounds_path(round_id)).json()
     assert owner.id not in {p["member_id"] for p in round_["participants"]}
-    seen = owner.get("/projects/maity/events?after=0&limit=200").json()["items"]
+    seen = owner.get("/projects/maintainer/maity/events?after=0&limit=200").json()["items"]
     jour_fixe = [e for e in seen if (e.get("payload") or {}).get("jour_fixe")]
     assert {e["kind"] for e in jour_fixe} >= {"conversation_created", "message"}
 
@@ -281,7 +285,9 @@ def test_redacting_a_round_message_tombstones_the_round_copy(round_: Round) -> N
     round_.statement()
     post = round_.post(round_.lead, "response", body="the token is s3cret").json()
     for seq in (round_.get()["statement"]["message_seq"], post["message_seq"]):
-        done = round_.owner.post(f"/projects/maity/events/{seq}/redact", {"reason": "secret"})
+        done = round_.owner.post(
+            f"/projects/maintainer/maity/events/{seq}/redact", {"reason": "secret"}
+        )
         assert done.status_code == 200, done.text
     view = round_.get()
     [shown] = view["posts"]
@@ -295,8 +301,8 @@ def test_redacting_a_round_message_tombstones_the_round_copy(round_: Round) -> N
     # The reason as the message's tombstone shows it (§8.5): an agent never reads it.
     for seen in (
         round_.lead.get(rounds_path(round_.id)).json(),
-        round_.lead.get("/projects/maity/jour-fixe/rounds").json()["items"][0],
-        round_.lead.get("/projects/maity/jour-fixe").json()["current_round"],
+        round_.lead.get("/projects/maintainer/maity/jour-fixe/rounds").json()["items"][0],
+        round_.lead.get("/projects/maintainer/maity/jour-fixe").json()["current_round"],
     ):
         assert seen["posts"][0]["redaction"]["reason"] is None
         assert seen["posts"][0]["redaction"]["by"] == round_.owner.id
@@ -312,7 +318,9 @@ def test_a_replayed_post_shows_no_redaction_reason(round_: Round) -> None:
     first = round_.lead.client.post(path, json=body, headers=headers)
     assert first.status_code == 201, first.text
     seq = first.json()["message_seq"]
-    round_.owner.post(f"/projects/maity/events/{seq}/redact", {"reason": "private reason"})
+    round_.owner.post(
+        f"/projects/maintainer/maity/events/{seq}/redact", {"reason": "private reason"}
+    )
     replay = round_.lead.client.post(path, json=body, headers=headers)
     assert replay.status_code == 201, replay.text
     shown = replay.json()

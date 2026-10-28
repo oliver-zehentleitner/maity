@@ -10,17 +10,18 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, and_, or_, select
 
-from maity_hub import clock, events, group_chats, idempotency, paging, policy, rules
+from maity_hub import clock, events, group_chats, idempotency, namespace, paging, policy, rules
 from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, engine_of, reader_of
 from maity_hub.errors import ApiError, forbidden, invalid, not_found, rate_limited
-from maity_hub.jourfixe import answers, exchange, rounds, schedule, triage, views
+from maity_hub.jourfixe import answers, exchange, redaction, rounds, schedule, triage, views
 from maity_hub.models import Strict
 from maity_hub.models import markdown as text_field
+from maity_hub.namespace import ProjectRoute
 
-router = APIRouter()
+router = APIRouter(route_class=ProjectRoute)
 
 PAGE_DEFAULT, PAGE_MAX = 50, 200
 
@@ -138,9 +139,7 @@ def _round(conn: Connection, project_id: str, round_id: str) -> Any:
 
 def round_view(conn: Connection, round_id: str) -> dict[str, Any]:
     row = conn.execute(select(t.jour_fixe_round).where(t.jour_fixe_round.c.id == round_id)).one()
-    slug = conn.execute(
-        select(t.project.c.slug).where(t.project.c.id == row.project_id)
-    ).scalar_one()
+    slug = namespace.name_of(conn, row.project_id)
     return _views(conn, [row], slug, None)[0]  # a replay: no reader, no reason
 
 
@@ -158,7 +157,7 @@ def moderators_view(conn: Connection, project_id: str) -> dict[str, Any]:
 def _member_now(conn: Connection, project_id: str, request: Request) -> Any:
     """A replay answers only a caller who may read the project now: a removed member
     gets `not_found`, as on any read (as conversations' replays do)."""
-    slug = conn.execute(select(t.project.c.slug).where(t.project.c.id == project_id)).scalar_one()
+    slug = namespace.name_of(conn, project_id)
     mine = membership(conn, request.state.caller, str(slug))
     mine.require("project:read")
     return mine
@@ -201,7 +200,7 @@ def _resolved(conn: Connection, project: Any) -> list[str]:
 # --- the overview and the moderator order ----------------------------------------------------
 
 
-@router.get("/projects/{slug}/jour-fixe")
+@router.get("/projects/{owner}/{slug}/jour-fixe")
 def overview(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
@@ -232,7 +231,7 @@ def overview(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
         )
 
 
-@router.put("/projects/{slug}/jour-fixe/moderators")
+@router.put("/projects/{owner}/{slug}/jour-fixe/moderators")
 def put_moderators(
     slug: str, body: ModeratorsIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -272,7 +271,7 @@ def put_moderators(
 # --- rounds ------------------------------------------------------------------------------------
 
 
-@router.get("/projects/{slug}/jour-fixe/rounds")
+@router.get("/projects/{owner}/{slug}/jour-fixe/rounds")
 def list_rounds(
     slug: str,
     request: Request,
@@ -309,7 +308,7 @@ def list_rounds(
 def _observer_round(conn: Connection, caller: Caller, slug: str, round_id: str) -> dict[str, Any]:
     """An agent's owner outside the project reads a round its agent takes part in, as the
     minimal projection; to anyone else the project does not exist (§20.7)."""
-    project = conn.execute(select(t.project).where(t.project.c.slug == slug)).first()
+    project = namespace.resolve(conn, slug)
     if project is None or caller.kind != "human":
         raise not_found()
     row = conn.execute(
@@ -335,7 +334,7 @@ def _observer_round(conn: Connection, caller: Caller, slug: str, round_id: str) 
     return views.minimal(row, slug, active)
 
 
-@router.get("/projects/{slug}/jour-fixe/rounds/{round_id}")
+@router.get("/projects/{owner}/{slug}/jour-fixe/rounds/{round_id}")
 def get_round(slug: str, round_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
         try:
@@ -349,7 +348,7 @@ def get_round(slug: str, round_id: str, request: Request, caller: AnyCaller) -> 
         return JSONResponse(_views(conn, [row], slug, mine)[0])
 
 
-@router.post("/projects/{slug}/jour-fixe/rounds")
+@router.post("/projects/{owner}/{slug}/jour-fixe/rounds")
 def start(slug: str, body: StartIn, request: Request, caller: AnyCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
@@ -373,7 +372,7 @@ def start(slug: str, body: StartIn, request: Request, caller: AnyCaller) -> JSON
 # --- answers ------------------------------------------------------------------------------------
 
 
-@router.post("/projects/{slug}/jour-fixe/rounds/{round_id}/answers")
+@router.post("/projects/{owner}/{slug}/jour-fixe/rounds/{round_id}/answers")
 def answer(
     slug: str, round_id: str, body: AnswerIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -400,7 +399,7 @@ def answer(
     return idempotency.run(engine_of(request), request, caller, stored)
 
 
-@router.get("/projects/{slug}/jour-fixe/rounds/{round_id}/answers")
+@router.get("/projects/{owner}/{slug}/jour-fixe/rounds/{round_id}/answers")
 def read_answers(
     slug: str,
     round_id: str,
@@ -414,7 +413,7 @@ def read_answers(
         return JSONResponse({"items": answers.listed(conn, row, mine, mine_only)})
 
 
-@router.delete("/projects/{slug}/jour-fixe/rounds/{round_id}/answers/mine")
+@router.delete("/projects/{owner}/{slug}/jour-fixe/rounds/{round_id}/answers/mine")
 def withdraw_answer(slug: str, round_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     # No idempotency record: a withdrawal leaves nothing that names the author (§20.4).
     with events.transaction(engine_of(request)) as conn:
@@ -427,7 +426,7 @@ def withdraw_answer(slug: str, round_id: str, request: Request, caller: AnyCalle
 # --- the statement and the exchange (§20.5) -----------------------------------------------------
 
 
-@router.post("/projects/{slug}/jour-fixe/rounds/{round_id}/statement")
+@router.post("/projects/{owner}/{slug}/jour-fixe/rounds/{round_id}/statement")
 def statement(
     slug: str, round_id: str, body: StatementIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -453,7 +452,7 @@ def _replay_post(conn: Connection, ref: str, request: Request) -> dict[str, Any]
 idempotency.LOADERS["jour_fixe_post"] = _replay_post
 
 
-@router.post("/projects/{slug}/jour-fixe/rounds/{round_id}/posts")
+@router.post("/projects/{owner}/{slug}/jour-fixe/rounds/{round_id}/posts")
 def post(
     slug: str, round_id: str, body: PostIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -468,7 +467,7 @@ def post(
     return idempotency.run(engine_of(request), request, caller, action)
 
 
-@router.post("/projects/{slug}/jour-fixe/rounds/{round_id}/steps")
+@router.post("/projects/{owner}/{slug}/jour-fixe/rounds/{round_id}/steps")
 def further_step(
     slug: str, round_id: str, body: StepIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -503,7 +502,7 @@ def _replay_report(conn: Connection, round_id: str, request: Request) -> dict[st
 idempotency.LOADERS["jour_fixe_report"] = _replay_report
 
 
-@router.post("/projects/{slug}/jour-fixe/rounds/{round_id}/report")
+@router.post("/projects/{owner}/{slug}/jour-fixe/rounds/{round_id}/report")
 def report(
     slug: str, round_id: str, body: ReportIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -517,5 +516,28 @@ def report(
         row = _round(conn, mine.project.id, round_id)
         triage.submit_report(conn, row, mine, body.model_dump(), caller.actor(mine.id), fg)
         return idempotency.Outcome(200, "jour_fixe_report", row.id, report_view(conn, row.id))
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
+# --- redaction (§20.8) ----------------------------------------------------------------------------
+
+
+class RedactIn(Strict):
+    target: str = Field(min_length=1, max_length=64)
+    reason: str = text_field(min_length=1)
+
+
+@router.post("/projects/{owner}/{slug}/jour-fixe/rounds/{round_id}/redact")
+def redact(
+    slug: str, round_id: str, body: RedactIn, request: Request, caller: AnyCaller
+) -> JSONResponse:
+    def action(conn: Connection) -> idempotency.Outcome:
+        events.lock_project(conn, membership(conn, caller, slug).project.id)
+        mine = membership(conn, caller, slug)  # its role as of the lock
+        row = _round(conn, mine.project.id, round_id)
+        redaction.redact(conn, row, mine, body.target, body.reason, caller.actor(mine.id))
+        shown = _views(conn, [_round(conn, mine.project.id, round_id)], slug, mine)[0]
+        return idempotency.Outcome(200, "jour_fixe_round", row.id, shown)
 
     return idempotency.run(engine_of(request), request, caller, action)

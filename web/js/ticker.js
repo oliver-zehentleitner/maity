@@ -1,4 +1,4 @@
-// (12) Ticker (#/p/<slug>/ticker, docs/api.md §17): the project's change
+// (12) Ticker (#/<owner>/<slug>/ticker, docs/api.md §17): the project's change
 // feed — merges, decisions, deploys, releases and notes — newest first,
 // "For me" and "Everything" as two tabs, filtered by type and area, paged
 // with the hub's cursor. An item is its text (plain, never Markdown), its
@@ -73,7 +73,7 @@ window.Maity = window.Maity || {};
   // the listing alone may be a mistyped project).
   async function hubHasTicker() {
     if (hubHas === false) return false;
-    hubHas = await M.api.hubHas("GET", "/projects/{slug}/ticker");
+    hubHas = await M.api.hubHas("GET", "/projects/{owner}/{slug}/ticker");
     return hubHas;
   }
 

@@ -89,6 +89,7 @@ def test_bearer_over_tls_answers_the_agents_me(
     assert body["projects"] == [
         {
             "slug": "maity",
+            "full_name": "maintainer/maity",
             "name": "Project maity",
             "state": "build",
             "role": "member",
@@ -417,7 +418,7 @@ def test_the_long_poll_does_not_renew_leases(agent: factory.Agent, migrated: Eng
     )
     facts = RequestFacts(
         method="GET",
-        raw_path=b"/api/v1/projects/maity/events",
+        raw_path=b"/api/v1/projects/maintainer/maity/events",
         raw_query=b"wait=55",
         headers={"authorization": f"Bearer {agent.value}"},
         cookies={},

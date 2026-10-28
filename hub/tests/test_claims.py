@@ -28,7 +28,7 @@ def owner(make_client: ClientFactory, migrated: Engine) -> flow.Human:
 
 
 def _claim(who: Any, card: dict[str, Any], **body: Any) -> Any:
-    return who.post(f"/projects/maity/tasks/{card['id']}/claim", body)
+    return who.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", body)
 
 
 def _later(seconds: int) -> None:
@@ -89,11 +89,13 @@ def test_a_held_card_says_who_holds_it_even_when_expired(
 
 
 def test_assign_only_projects_hand_cards_out(owner: flow.Human, make_client: ClientFactory) -> None:
-    owner.patch("/projects/maity", {"policy": {"claim_policy": "assign-only"}, "reason": "x"})
+    owner.patch(
+        "/projects/maintainer/maity", {"policy": {"claim_policy": "assign-only"}, "reason": "x"}
+    )
     agent = flow.agent(make_client, owner)
     card = task(owner)
     assert _claim(agent, card).headers["Maity-Error"] == "assign_only"
-    owner.post(f"/projects/maity/tasks/{card['id']}/assign", {"assignee": agent.id})
+    owner.post(f"/projects/maintainer/maity/tasks/{card['id']}/assign", {"assignee": agent.id})
     assert _claim(agent, card).status_code == 200
 
 
@@ -107,7 +109,7 @@ def test_freeze_wants_a_reason_and_closed_refuses(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
     card = task(owner)
-    owner.patch("/projects/maity", {"state": "fixes-only", "reason": "release"})
+    owner.patch("/projects/maintainer/maity", {"state": "fixes-only", "reason": "release"})
     assert _claim(owner, card).json()["error"]["details"]["fields"] == {"reason": "required"}
     assert _claim(owner, card, reason="the regression").status_code == 200
     with migrated.connect() as conn:
@@ -116,7 +118,7 @@ def test_freeze_wants_a_reason_and_closed_refuses(
         ).scalar_one()
     assert (payload["project_state"], payload["reason"]) == ("fixes-only", "the regression")
     other = task(owner, reason="needed")
-    owner.patch("/projects/maity", {"state": "accepted", "reason": "shipped"})
+    owner.patch("/projects/maintainer/maity", {"state": "accepted", "reason": "shipped"})
     assert _claim(owner, other, reason="x").headers["Maity-Error"] == "project_closed"
 
 
@@ -145,7 +147,7 @@ def test_any_call_of_the_holder_renews_and_a_new_session_inherits(
     _claim(agent, card)
     _later(3600)
     agent.get("/me")  # not about the card at all
-    claim = owner.get(f"/projects/maity/tasks/{card['id']}").json()["claim"]
+    claim = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()["claim"]
     expected = (clock.now() + timedelta(seconds=7200)).replace(microsecond=0)
     assert flow_time(claim["lease_until"]) == expected
     new = agent.resume().json()
@@ -162,15 +164,21 @@ def test_the_holder_releases_and_an_admin_only_after_expiry(
     agent = flow.agent(make_client, owner)
     card = task(owner)
     _claim(agent, card)
-    early = owner.post(f"/projects/maity/tasks/{card['id']}/release", {})
+    early = owner.post(f"/projects/maintainer/maity/tasks/{card['id']}/release", {})
     assert early.status_code == 409 and early.headers["Maity-Error"] == "lease_active"
     stranger = flow.agent(make_client, owner)
-    assert stranger.post(f"/projects/maity/tasks/{card['id']}/release", {}).status_code == 403
-    released = agent.post(f"/projects/maity/tasks/{card['id']}/release", {})
+    assert (
+        stranger.post(f"/projects/maintainer/maity/tasks/{card['id']}/release", {}).status_code
+        == 403
+    )
+    released = agent.post(f"/projects/maintainer/maity/tasks/{card['id']}/release", {})
     assert (released.json()["status"], released.json()["claim"]) == ("open", None)
     _claim(agent, card)
     _later(7201)
-    assert owner.post(f"/projects/maity/tasks/{card['id']}/release", {}).json()["claim"] is None
+    assert (
+        owner.post(f"/projects/maintainer/maity/tasks/{card['id']}/release", {}).json()["claim"]
+        is None
+    )
 
 
 def test_assign_moves_an_expired_claim_and_refuses_an_active_one(
@@ -179,10 +187,12 @@ def test_assign_moves_an_expired_claim_and_refuses_an_active_one(
     a, b = flow.agent(make_client, owner), flow.agent(make_client, owner)
     card = task(owner)
     _claim(a, card)
-    active = owner.post(f"/projects/maity/tasks/{card['id']}/assign", {"assignee": b.id})
+    active = owner.post(f"/projects/maintainer/maity/tasks/{card['id']}/assign", {"assignee": b.id})
     assert active.headers["Maity-Error"] == "lease_active"
     _later(7201)
-    moved = owner.post(f"/projects/maity/tasks/{card['id']}/assign", {"assignee": b.id}).json()
+    moved = owner.post(
+        f"/projects/maintainer/maity/tasks/{card['id']}/assign", {"assignee": b.id}
+    ).json()
     assert (moved["assigned_to"], moved["claim"]["holder"], moved["claim"]["expired"]) == (
         b.id,
         b.id,
@@ -194,7 +204,10 @@ def test_assign_moves_an_expired_claim_and_refuses_an_active_one(
     assert f"instance:{a.id}#{a.instance}" in event.audience
     assert f"member:{b.id}" in event.audience
     assert (
-        a.post(f"/projects/maity/tasks/{card['id']}/assign", {"assignee": a.id}).status_code == 403
+        a.post(
+            f"/projects/maintainer/maity/tasks/{card['id']}/assign", {"assignee": a.id}
+        ).status_code
+        == 403
     )
 
 
@@ -227,9 +240,11 @@ def test_a_checkpoint_says_how_it_arrived(
     card = task(owner)
     _claim(agent, card)
     body = {"last_step": "table", "next_step": "endpoint", "branch": "agent-b/x", "head": "d91e294"}
-    bearer = agent.post(f"/projects/maity/tasks/{card['id']}/checkpoint", body).json()
+    bearer = agent.post(f"/projects/maintainer/maity/tasks/{card['id']}/checkpoint", body).json()
     assert bearer["checkpoint"]["verification"] == "bearer"
-    signed = _signed_post(agent, f"/projects/maity/tasks/{card['id']}/checkpoint", body).json()
+    signed = _signed_post(
+        agent, f"/projects/maintainer/maity/tasks/{card['id']}/checkpoint", body
+    ).json()
     assert signed["checkpoint"]["verification"] == "signed"
     assert signed["checkpoint"]["last_step"] == "table" and signed["checkpoint"]["updated_at"]
     with migrated.connect() as conn:
@@ -240,7 +255,7 @@ def test_a_checkpoint_says_how_it_arrived(
         ).first()
     assert event is not None and event.audience == [f"member:{agent.id}"]
     stranger = flow.agent(make_client, owner)
-    refused = stranger.post(f"/projects/maity/tasks/{card['id']}/checkpoint", body)
+    refused = stranger.post(f"/projects/maintainer/maity/tasks/{card['id']}/checkpoint", body)
     assert refused.headers["Maity-Error"] == "not_holder"
 
 
@@ -254,7 +269,9 @@ def test_a_report_moves_the_card_to_review_and_keeps_the_claim(
     sha = "d91e294c" + "0" * 32
     pr = {"number": 7, "url": "https://github.com/a/b/pull/7", "head": sha, "state": "open"}
     response = _signed_post(
-        agent, f"/projects/maity/tasks/{card['id']}/report", _report(pr=pr, pr_status="found")
+        agent,
+        f"/projects/maintainer/maity/tasks/{card['id']}/report",
+        _report(pr=pr, pr_status="found"),
     )
     assert response.status_code == 200, response.text
     body = response.json()
@@ -303,7 +320,9 @@ def test_a_report_must_agree_with_itself(
     agent = flow.agent(make_client, owner)
     card = task(owner)
     _claim(agent, card)
-    response = agent.post(f"/projects/maity/tasks/{card['id']}/report", _report(**overrides))
+    response = agent.post(
+        f"/projects/maintainer/maity/tasks/{card['id']}/report", _report(**overrides)
+    )
     assert field in response.json()["error"]["details"]["fields"]
 
 
@@ -313,18 +332,27 @@ def test_done_with_the_report_needs_done_authority_and_closed_dependencies(
     agent = flow.agent(make_client, owner)
     card = task(owner)
     _claim(agent, card)
-    refused = agent.post(f"/projects/maity/tasks/{card['id']}/report", _report(done=True))
+    refused = agent.post(
+        f"/projects/maintainer/maity/tasks/{card['id']}/report", _report(done=True)
+    )
     assert refused.status_code == 403
     assert (
-        owner.get(f"/projects/maity/tasks/{card['id']}").json()["report"] is None
+        owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()["report"] is None
     )  # nothing stored
-    owner.patch("/projects/maity", {"policy": {"done_authority": "holder"}, "reason": "solo work"})
+    owner.patch(
+        "/projects/maintainer/maity",
+        {"policy": {"done_authority": "holder"}, "reason": "solo work"},
+    )
     dep = task(owner)
-    owner.patch(f"/projects/maity/tasks/{card['id']}", {"depends_on": [dep["id"]]})
-    blocked = agent.post(f"/projects/maity/tasks/{card['id']}/report", _report(done=True))
+    owner.patch(f"/projects/maintainer/maity/tasks/{card['id']}", {"depends_on": [dep["id"]]})
+    blocked = agent.post(
+        f"/projects/maintainer/maity/tasks/{card['id']}/report", _report(done=True)
+    )
     assert blocked.json()["error"]["details"] == {"open": [dep["id"]]}
-    owner.patch(f"/projects/maity/tasks/{dep['id']}", {"status": "cancelled"})
-    done = agent.post(f"/projects/maity/tasks/{card['id']}/report", _report(done=True)).json()
+    owner.patch(f"/projects/maintainer/maity/tasks/{dep['id']}", {"status": "cancelled"})
+    done = agent.post(
+        f"/projects/maintainer/maity/tasks/{card['id']}/report", _report(done=True)
+    ).json()
     assert done["status"] == "done" and done["closed_at"]
 
 
@@ -334,17 +362,23 @@ def test_review_goes_on_by_done_authority(owner: flow.Human, make_client: Client
     reviewer = flow.agent(make_client, owner, role="reviewer")
     card = task(owner)
     _claim(agent, card)
-    agent.post(f"/projects/maity/tasks/{card['id']}/report", _report())
-    holder_done = agent.patch(f"/projects/maity/tasks/{card['id']}", {"status": "done"})
+    agent.post(f"/projects/maintainer/maity/tasks/{card['id']}/report", _report())
+    holder_done = agent.patch(f"/projects/maintainer/maity/tasks/{card['id']}", {"status": "done"})
     assert holder_done.status_code == 403
     assert holder_done.json()["error"]["details"] == {"scope": "tasks:review"}
-    rework = reviewer.patch(f"/projects/maity/tasks/{card['id']}", {"status": "in_progress"})
+    rework = reviewer.patch(
+        f"/projects/maintainer/maity/tasks/{card['id']}", {"status": "in_progress"}
+    )
     assert rework.json()["status"] == "in_progress"
-    more = reviewer.patch(f"/projects/maity/tasks/{card['id']}", {"status": "done", "title": "x"})
+    more = reviewer.patch(
+        f"/projects/maintainer/maity/tasks/{card['id']}", {"status": "done", "title": "x"}
+    )
     assert more.status_code == 403  # anything beyond the status stays the editors'
-    agent.post(f"/projects/maity/tasks/{card['id']}/report", _report())
+    agent.post(f"/projects/maintainer/maity/tasks/{card['id']}/report", _report())
     assert (
-        reviewer.patch(f"/projects/maity/tasks/{card['id']}", {"status": "done"}).json()["status"]
+        reviewer.patch(f"/projects/maintainer/maity/tasks/{card['id']}", {"status": "done"}).json()[
+            "status"
+        ]
         == "done"
     )
 
@@ -353,8 +387,10 @@ def test_a_card_may_be_reported_again(owner: flow.Human, make_client: ClientFact
     agent = flow.agent(make_client, owner)
     card = task(owner)
     _claim(agent, card)
-    agent.post(f"/projects/maity/tasks/{card['id']}/report", _report(summary="first"))
-    again = agent.post(f"/projects/maity/tasks/{card['id']}/report", _report(summary="second"))
+    agent.post(f"/projects/maintainer/maity/tasks/{card['id']}/report", _report(summary="first"))
+    again = agent.post(
+        f"/projects/maintainer/maity/tasks/{card['id']}/report", _report(summary="second")
+    )
     assert again.json()["report"]["summary"] == "second"
 
 
@@ -392,7 +428,8 @@ def test_crossing_dependencies_never_store_a_cycle(
         with ThreadPoolExecutor(max_workers=2) as pool:
             first, second = pool.map(
                 lambda pair: owner.patch(
-                    f"/projects/maity/tasks/{pair[0]['id']}", {"depends_on": [pair[1]["id"]]}
+                    f"/projects/maintainer/maity/tasks/{pair[0]['id']}",
+                    {"depends_on": [pair[1]["id"]]},
                 ),
                 [(a, b), (b, a)],
             )
@@ -416,7 +453,9 @@ def test_a_claim_racing_a_cancel_never_answers_500(
         with ThreadPoolExecutor(max_workers=2) as pool:
             claim_future = pool.submit(_claim, agent, card)
             cancel_future = pool.submit(
-                owner.patch, f"/projects/maity/tasks/{card['id']}", {"status": "cancelled"}
+                owner.patch,
+                f"/projects/maintainer/maity/tasks/{card['id']}",
+                {"status": "cancelled"},
             )
             claimed, cancelled = claim_future.result(), cancel_future.result()
         assert claimed.status_code in (200, 409), claimed.text
@@ -428,7 +467,7 @@ def test_a_human_holders_calls_renew_its_lease(owner: flow.Human) -> None:
     _claim(owner, card)
     _later(3600)
     owner.get("/me")
-    claim = owner.get(f"/projects/maity/tasks/{card['id']}").json()["claim"]
+    claim = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()["claim"]
     expected = (clock.now() + timedelta(seconds=7200)).replace(microsecond=0)
     assert flow_time(claim["lease_until"]) == expected
 
@@ -445,7 +484,7 @@ def test_a_non_member_is_invalid(
     owner: flow.Human, path: str, body: dict[str, Any], field: str
 ) -> None:
     card = task(owner)
-    response = owner.post("/projects/maity" + path.replace("{id}", card["id"]), body)
+    response = owner.post("/projects/maintainer/maity" + path.replace("{id}", card["id"]), body)
     assert response.json()["error"]["details"]["fields"] == {field: "not_a_member"}
 
 
@@ -455,7 +494,9 @@ def test_report_done_without_authority_names_the_scope(
     agent = flow.agent(make_client, owner)
     card = task(owner)
     _claim(agent, card)
-    refused = agent.post(f"/projects/maity/tasks/{card['id']}/report", _report(done=True))
+    refused = agent.post(
+        f"/projects/maintainer/maity/tasks/{card['id']}/report", _report(done=True)
+    )
     assert refused.json()["error"]["details"] == {"scope": "tasks:review"}
 
 
@@ -471,7 +512,7 @@ def test_a_report_without_code_carries_no_git_facts(
     agent = flow.agent(make_client, owner)
     card = task(owner)
     _claim(agent, card)
-    response = agent.post(f"/projects/maity/tasks/{card['id']}/report", NO_CODE)
+    response = agent.post(f"/projects/maintainer/maity/tasks/{card['id']}/report", NO_CODE)
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["status"] == "review"
@@ -502,7 +543,9 @@ def test_a_report_without_code_refuses_git_facts(
     agent = flow.agent(make_client, owner)
     card = task(owner)
     _claim(agent, card)
-    response = agent.post(f"/projects/maity/tasks/{card['id']}/report", {**NO_CODE, **extra})
+    response = agent.post(
+        f"/projects/maintainer/maity/tasks/{card['id']}/report", {**NO_CODE, **extra}
+    )
     assert response.status_code == 400
     assert set(response.json()["error"]["details"]["fields"].values()) == {"not_with_code_false"}
 
@@ -515,7 +558,7 @@ def test_a_report_with_code_still_needs_its_git_facts(
     card = task(owner)
     _claim(agent, card)
     body = {k: v for k, v in _report().items() if k != missing}
-    response = agent.post(f"/projects/maity/tasks/{card['id']}/report", body)
+    response = agent.post(f"/projects/maintainer/maity/tasks/{card['id']}/report", body)
     assert response.json()["error"]["details"]["fields"] == {missing: "required"}
 
 
@@ -527,5 +570,5 @@ def test_the_probe_never_runs_on_a_report_without_code(
     agent = flow.agent(make_client, owner)
     card = task(owner)
     _claim(agent, card)
-    agent.post(f"/projects/maity/tasks/{card['id']}/report", NO_CODE)
+    agent.post(f"/projects/maintainer/maity/tasks/{card['id']}/report", NO_CODE)
     assert probe.observe_report(migrated, forge.Forge("token"), card["id"]) is False
