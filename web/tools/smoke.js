@@ -1275,6 +1275,28 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(trOpts(byId("member-trust-agt-d")) === "member,guest" && !trOpts(byId("member-role-agt-d")).split(",").includes("proxy")
     && trOpts(byId("invite-trust")) === "member,guest",
     "trust: an admin who is no owner is offered neither owner, admin nor proxy, here or for an invitation");
+  // An owner's row offers a non-owner no removal (owner_only, §2.3).
+  await go("#/maintainer/maity/members/hum-maintainer/picture"); for (let k = 0; k < 6; k++) await tick();
+  expect(main.querySelector("tr.member-manage") && !btn(main.querySelector("tr.member-manage"), "Remove from the project"),
+    "trust: an admin who is no owner is offered no removal of an owner");
+  win.Maity.api.get = trGet;
+  // A proxy holds trust admin only: its trust changed, its role becomes coder; and it never governs (§2.3).
+  const trProxy = (r) => Object.assign({}, r, { items: r.items.map((m) => (m.id === "agt-d" ? Object.assign({}, m, { trust: "admin", role: "proxy" }) : m)) });
+  win.Maity.api.getAll = (p) => (p === "/projects/maintainer/maity/members" ? trAll(p).then(trProxy) : trAll(p));
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/members" ? trGet(p).then(trProxy) : trGet(p));
+  trSent.length = 0;
+  win.Maity.api.patch = (p, b) => { trSent.push([p, b]); return Promise.resolve({}); };
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members/agt-d/picture"); for (let k = 0; k < 6; k++) await tick();
+  expect(byId("member-role-agt-d").value === "proxy", "trust: a proxy's row shows its role");
+  byId("member-trust-agt-d").value = "member"; byId("member-trust-agt-d").dispatch("change");
+  expect(byId("member-role-agt-d").value === "coder" && !trOpts(byId("member-role-agt-d")).split(",").includes("proxy"),
+    "trust: a proxy whose trust is no longer admin becomes a coder, proxy no longer offered");
+  main.querySelector("tr.member-manage form.member-edit").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(trSent[0] && trSent[0][1]) === JSON.stringify({ trust: "member", role: "coder" }), "trust: both go out together, as the hub requires");
+  win.Maity.api.getAll = trAll; win.Maity.api.get = trGet; win.Maity.api.patch = trPatch;
+  expect(!win.Maity.trust.governs({ trust: "admin", role: "proxy" }) && !win.Maity.trust.reviews({ trust: "admin", role: "proxy" })
+    && win.Maity.trust.governs({ trust: "admin", role: "reviewer" }) && !win.Maity.trust.reviews({ trust: "guest", role: "reviewer" }),
+    "trust: a proxy never governs; an admin reviewer does; a guest reviewer reviews nothing");
   // A guest creates no group chat (§9.2).
   win.Maity.api.get = (p) => (p === "/me" ? trGet(p).then((m) => { m.projects.find((x) => x.slug === "maity").trust = "guest"; return m; }) : trGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat"); for (let k = 0; k < 6; k++) await tick();

@@ -222,7 +222,9 @@ window.Maity = window.Maity || {};
   // tasks:admin and tasks:review, by the human's trust and role in a project (§2.3).
   const mineIn = (slug) => me().projects.find((p) => p.slug === slug) || {};
   const trustIn = (slug) => mineIn(slug).trust;
-  const tasksAdmin = (slug) => ["owner", "admin"].includes(mineIn(slug).trust);
+  // Trust owner or admin, never a proxy (§2.3, hub/scopes.py).
+  const governing = (x) => !!x && ["owner", "admin"].includes(x.trust) && x.role !== "proxy";
+  const tasksAdmin = (slug) => governing(mineIn(slug));
   const tasksReview = (slug) => tasksAdmin(slug) || (mineIn(slug).trust !== "guest" && mineIn(slug).role === "reviewer");
 
   // A card's PATCH as the hub checks it (hub cards.check_transition).
@@ -363,13 +365,13 @@ window.Maity = window.Maity || {};
   // members:admin in a project: a human owner or admin there (§2.3).
   const membersAdmin = (slug) => {
     const mine = me().projects.find((p) => p.slug === slug);
-    return !!mine && ["owner", "admin"].includes(mine.trust);
+    return governing(mine);
   };
   // Who changes a membership: the signed-in human, or ?as= in fixture mode.
   function caller(slug, path) {
     if (!fixtureAs) return { member: me().member, admin: membersAdmin(slug) };
     const x = member(slug, fixtureAs, path);
-    return { member: x, admin: ["owner", "admin"].includes(x.trust) };
+    return { member: x, admin: governing(x) };
   }
   // §2.3 ᵃ: an admin agent changes only other agents' memberships with trust
   // member or guest, to those trusts and the work roles; capabilities, admin,

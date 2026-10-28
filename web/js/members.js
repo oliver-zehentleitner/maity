@@ -343,7 +343,8 @@ window.Maity = window.Maity || {};
           h("button", { type: "submit" }, "Pause"),
           h("p", { class: "hint" }, words.effect)));
       }
-      parts.push(h("div", { class: "member-remove" }, h("button", {
+      // A member with trust owner is removed only by an owner (owner_only, §2.3).
+      if (!M.trust.owner(m) || ctx.isOwner) parts.push(h("div", { class: "member-remove" }, h("button", {
         type: "button",
         class: "danger",
         onclick: async () => {
@@ -391,12 +392,15 @@ window.Maity = window.Maity || {};
       const trust = keyed("trust:" + m.id, h("select", { id: id("trust") }, trustOffered.map((t) => h("option", { value: t }, t))));
       trust.value = draft.trust !== undefined ? draft.trust : m.trust;
       const role = keyed("role:" + m.id, h("select", { id: id("role") }));
+      // The role proxy goes with trust admin only (proxy_needs_admin): with any
+      // other trust it is not offered, and a proxy whose trust changes becomes a coder.
       const fillRoles = () => {
         const wanted = role.value || (draft.role !== undefined ? draft.role : m.role);
-        const offered = M.trust.ROLES.filter((r) => r !== "proxy" || r === m.role || (ctx.isOwner && trust.value === "admin"));
-        if (m.role && !offered.includes(m.role)) offered.push(m.role);
+        const proxyOk = trust.value === "admin" && (ctx.isOwner || m.role === "proxy");
+        const offered = M.trust.ROLES.filter((r) => r !== "proxy" || proxyOk);
+        if (m.role && m.role !== "proxy" && !offered.includes(m.role)) offered.push(m.role);
         append(clear(role), offered.map((r) => h("option", { value: r }, r)));
-        role.value = offered.includes(wanted) ? wanted : m.role;
+        role.value = offered.includes(wanted) ? wanted : offered.includes(m.role) ? m.role : "coder";
       };
       fillRoles();
       trust.addEventListener("change", () => { keep("trust", trust.value); fillRoles(); });

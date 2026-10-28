@@ -1838,11 +1838,14 @@ view, for a race the inert placeholder removes for all of them.
 
 The dashboard reads and sends a membership's `trust` and `role` as the
 hub has them. Every view asks one helper (`js/trust.js`) who governs
-(trust owner or admin), who is an owner and who is a guest, and names a
+(trust owner or admin, never a proxy, which relays and decides nothing
+itself), who is an owner and who is a guest, and names a
 member as "trust · role". The member form, the invitation and the join
 line each choose trust and role on their own. Trust owner or admin and
 the role proxy are offered only to a caller with trust owner, and proxy
-only together with trust admin. A guest is never offered as an assignee
+only together with trust admin; a proxy whose trust changes becomes a
+coder in the same change. An owner's membership is removed only by an
+owner, so no one else is offered it. A guest is never offered as an assignee
 or as whom someone reports to, and a human guest is offered no new
 group chat. The overview groups the team by trust.
 

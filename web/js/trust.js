@@ -17,8 +17,9 @@ window.Maity = window.Maity || {};
   const MEMBER_ROLES = ["coder", "reviewer", "tester", "designer"];
 
   const trustOf = (x) => (x && x.trust) || null;
-  // Owner and admin hold the governance scopes (members:admin, tasks:admin, …).
-  const governs = (x) => trustOf(x) === "owner" || trustOf(x) === "admin";
+  // Owner and admin hold the governance scopes (members:admin, tasks:admin, …),
+  // never a proxy: it relays and decides nothing itself (§2.3, hub/scopes.py).
+  const governs = (x) => (trustOf(x) === "owner" || trustOf(x) === "admin") && !!x && x.role !== "proxy";
   const owner = (x) => trustOf(x) === "owner";
   const guest = (x) => trustOf(x) === "guest";
   // A project role counts as its base where a built-in role is asked for.
