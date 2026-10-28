@@ -513,7 +513,7 @@ def test_wait_says_plainly_when_this_agent_was_paused(
     _wait_for(fake, event)
     assert cli.main(["wait", "--timeout", "5"]) == cli.EXIT_OK
     out, err = capsys.readouterr()
-    assert json.loads(out)["kind"] == "session_paused"  # stdout stays the event
+    assert json.loads(out)[0]["kind"] == "session_paused"  # stdout stays the events
     assert err.startswith("maity: you were paused by hum-1 since T1: wait for me\\nNext:")
 
 
@@ -579,12 +579,45 @@ def test_wait_batch_prints_every_pending_event_and_moves_the_cursor_past_them(
     assert state.load_state(joined)["cursor"] == 13
 
 
-def test_wait_without_batch_still_prints_one_event(
+def test_wait_prints_every_pending_event_by_default(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A burst costs one request and one wake, not one per event."""
+    fake.events += [{"seq": n, "kind": "task_claimed"} for n in (11, 12)]
+    assert cli.main(["wait", "--timeout", "5"]) == cli.EXIT_OK
+    assert [e["seq"] for e in json.loads(capsys.readouterr().out)] == [11, 12]
+    assert state.load_state(joined)["cursor"] == 12
+    assert len([r for r in fake.signed() if r.path.endswith("/events")]) == 1
+
+
+def test_wait_one_prints_the_first_event_alone(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
     fake.events += [{"seq": n, "kind": "task_claimed"} for n in (11, 12)]
-    assert cli.main(["wait", "--timeout", "5"]) == cli.EXIT_OK
+    assert cli.main(["wait", "--timeout", "5", "--one"]) == cli.EXIT_OK
     assert json.loads(capsys.readouterr().out)["seq"] == 11
+    assert state.load_state(joined)["cursor"] == 11
+
+
+def test_wait_kind_reads_past_other_kinds(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.events += [
+        {"seq": 11, "kind": "ticker"},
+        {"seq": 12, "kind": "message"},
+        {"seq": 13, "kind": "task_claimed"},
+        {"seq": 14, "kind": "message"},
+    ]
+    assert cli.main(["wait", "--timeout", "5", "--kind", "message"]) == cli.EXIT_OK
+    assert [e["seq"] for e in json.loads(capsys.readouterr().out)] == [12, 14]
+    assert state.load_state(joined)["cursor"] == 14
+
+
+def test_wait_kind_acknowledges_what_it_reads_past_and_waits_on(
+    joined: Path, fake: fakehub.FakeHub
+) -> None:
+    fake.events += [{"seq": 11, "kind": "ticker"}]
+    assert cli.main(["wait", "--timeout", "2", "--kind", "message"]) == cli.EXIT_TIMEOUT
     assert state.load_state(joined)["cursor"] == 11
 
 
@@ -859,7 +892,7 @@ def test_wait_keep_cursor_acknowledges_nothing(
     before = state.load_state(joined).get("cursor")
     fake.events.append({"seq": 21, "kind": "message"})
     assert cli.main(["wait", "--timeout", "5", "--keep-cursor"]) == cli.EXIT_OK
-    assert json.loads(capsys.readouterr().out)["seq"] == 21
+    assert [e["seq"] for e in json.loads(capsys.readouterr().out)] == [21]
     assert state.load_state(joined).get("cursor") == before
 
 
@@ -872,7 +905,7 @@ def test_wait_names_the_event_on_stderr_and_keeps_stdout_json(
     )  # fmt: skip
     assert cli.main(["wait", "--timeout", "5"]) == cli.EXIT_OK
     out = capsys.readouterr()
-    assert json.loads(out.out)["seq"] == 31
+    assert [e["seq"] for e in json.loads(out.out)] == [31]
     assert "#31 task_created tsk-9: Fix" in out.err and "\x1b" not in out.err
 
 

@@ -142,7 +142,8 @@ with whoever reads the output.
 
 **Id:** 3728614b-f9b2-43e2-86f6-c38e7c0385bf
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** b8049c3d-c652-421c-a10e-ab7d6d0bec60
 **Evidence:** confirmed
 **Source:** dogfooding on maity.team, 2026-10-22; the coordinator's card on CLI friction; contract row in `docs/api.md` §13
 **Revisit when:** the hub offers server-side filtering of the event stream, or a burst regularly exceeds fifty events
@@ -158,6 +159,38 @@ again for each of the rest, one turn of its harness per event.
 **Rejected alternative:** a `--kinds` filter on the client — the cursor
 would move past the events it skipped, acknowledging events the agent
 never saw.
+
+## `wait` returns every pending event by default, and `--kind` reads past the rest
+
+**Id:** b8049c3d-c652-421c-a10e-ab7d6d0bec60
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** ops on maity.team, 2026-10-28 (8000 `GET /events` in 3 hours, 5594 of them under a second); the lead's decision on card tsk-6ym6q2kymhn8
+**Revisit when:** the hub filters the event stream by kind on the server, or an agent misses an event because `--kind` read past it
+
+`maity wait` with no flag prints every pending event, up to fifty, as one
+JSON array, and moves the cursor past the last of them. `--one` gives the
+earlier output: the first event alone, as an object. `--batch` is still
+accepted and changes nothing. `--kind KIND` (repeatable) returns only
+events of those kinds. It reads past the others and acknowledges them,
+unless `--keep-cursor` is given, and keeps waiting. The runner's loop
+passes `--one`, because it starts one run per event.
+
+**Reason:** an agent's wait loop that looks for one kind ran `maity wait`
+once per event, whatever its kind. An event to `all` with eight agents
+listening became eight short requests, each answered at once. With every
+pending event in one answer and the filter inside `wait`, a burst costs
+one request, and only the wanted kind wakes the agent.
+
+**Rejected alternatives:**
+- Keeping `--batch` opt-in: the loops that cause the load never pass it.
+- No client-side filter, the earlier decision
+  (3728614b-f9b2-43e2-86f6-c38e7c0385bf): it avoided acknowledging events
+  the agent never saw. That risk remains, but it is opt-in now: whoever
+  passes `--kind` decides that the other kinds may go by unread.
+  `maity resume` and the board still show what matters.
+- A server minimum for `wait`: paging and scans need `wait=0`.
 
 ## The ticker's `more:` line repeats `--since` as the time it resolved to
 

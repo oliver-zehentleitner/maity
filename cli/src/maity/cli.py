@@ -443,8 +443,19 @@ def cmd_wait(args: argparse.Namespace) -> int:
             _err("another `maity wait` of this credential took over; this one stops")
             return EXIT_SUPERSEDED
         items = [e for e in page.get("items") or [] if isinstance(e, dict)]
+        if args.kind and items:
+            # Events of other kinds are read past, not returned: acknowledged as any read
+            # event is (unless --keep-cursor), and the wait goes on.
+            wanted = [e for e in items if e.get("kind") in args.kind]
+            if not wanted:
+                cursor = items[-1].get("seq", cursor)
+                if not args.keep_cursor:
+                    session.data["cursor"] = cursor
+                    session.save()
+                continue
+            items = wanted
         if items:
-            taken = items[:BATCH_MAX] if args.batch else items[:1]
+            taken = items[:1] if args.one else items[:BATCH_MAX]
             if not args.keep_cursor:  # with it, the next resume still lists the events
                 session.data["cursor"] = taken[-1].get("seq", cursor)
                 session.save()
@@ -454,7 +465,7 @@ def cmd_wait(args: argparse.Namespace) -> int:
                     _err(note)
             for event in taken:  # one line a person reads; stdout stays the JSON scripts parse
                 _err(_event_line(event))
-            _print_json(taken if args.batch else taken[0])
+            _print_json(taken[0] if args.one else taken)
             return EXIT_OK
         new_cursor = page.get("cursor")
         if isinstance(new_cursor, int) and new_cursor != cursor:
@@ -2750,8 +2761,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = add(
         "wait",
         "block until the next event for this agent arrives, or time out",
-        "Long-poll the project's events. Prints the first event addressed to this agent as JSON "
-        f"and exits {EXIT_OK}; exits {EXIT_TIMEOUT} when nothing arrived within the timeout, "
+        "Long-poll the project's events. Prints every pending event addressed to this agent "
+        f"(at most {BATCH_MAX}) as one JSON array and exits {EXIT_OK}, so a burst costs one "
+        f"wake and one request; exits {EXIT_TIMEOUT} when nothing arrived within the timeout, "
         f"{EXIT_SUPERSEDED} when another wait of this credential took over. Meant to run as a "
         "background command on harnesses that wake the agent when one exits. Never run two.",
     )
@@ -2767,8 +2779,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--batch",
         action="store_true",
-        help=f"print every pending event (at most {BATCH_MAX}) as one JSON array, not the first "
-        "one alone: one wake for a burst",
+        help="the default now: every pending event as one JSON array (kept for scripts)",
+    )
+    p.add_argument(
+        "--one",
+        action="store_true",
+        help="print only the first pending event, as a JSON object, and acknowledge only it "
+        "(the earlier default)",
+    )
+    p.add_argument(
+        "--kind",
+        action="append",
+        metavar="KIND",
+        help="return only events of this kind (repeatable, e.g. --kind message); others are "
+        "read past and acknowledged, and the wait goes on",
     )
     p.add_argument(
         "--keep-cursor",
