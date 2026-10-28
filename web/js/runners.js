@@ -389,8 +389,13 @@ window.Maity = window.Maity || {};
       }
     }
 
+    // The newest read draws: a periodic one still in flight when an action
+    // reloads would otherwise answer last and undo what the action shows.
+    let reads = 0;
     async function reload() {
+      const read = ++reads;
       const [r, e] = await Promise.all([M.api.getAll("/runners"), M.api.getAll("/runners/enrollments")]);
+      if (read !== reads) return;
       drawRunners(r.items);
       drawEnrollments(e.items);
     }

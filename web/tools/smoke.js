@@ -1125,8 +1125,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   card("build-box").querySelector("form.rename").dispatch("submit"); await tick(); await tick(); await tick();
   expect(card("builder") && JSON.stringify(rWrites.find((w) => w[0] === "PATCH" && w[2].name === "builder")) === JSON.stringify(["PATCH", "/runners/rnr-0003", { name: "builder" }]),
     "runners: renamed");
+  // A periodic read still in flight when the revoke reloads answers last: it draws nothing.
+  const rAll1 = win.Maity.api.getAll;
+  let releaseStale = null;
+  win.Maity.api.getAll = (p) => {
+    if (p !== "/runners" || releaseStale) return rAll1(p);
+    const stale = rAll1(p).then((a) => JSON.parse(JSON.stringify(a)));
+    return new Promise((resolve) => { releaseStale = () => resolve(stale); });
+  };
+  const periodic = fireIntervals(); await tick();
+  win.Maity.api.getAll = rAll1;
   btn(card("builder"), "Revoke").click(); await tick(); await tick(); await tick();
   expect(text(card("builder")).includes("revoked") && !btn(card("builder"), "Revoke"), "runners: revoked, no second Revoke");
+  releaseStale(); await periodic; await tick(); await tick();
+  expect(text(card("builder")).includes("revoked") && !btn(card("builder"), "Revoke"), "runners: an older periodic read answering late does not undo the revoke");
   btn(card("home-laptop"), "Remove").click(); await tick(); await tick(); await tick();
   expect(!card("home-laptop") && text(main).includes("home-laptop was removed.") && text(main).includes("Agent B · running")
     && text(main).includes("maity runner stop-all"), "runners: removed, with the agents still running that are now the operator's to end");
