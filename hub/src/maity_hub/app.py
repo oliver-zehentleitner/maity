@@ -53,6 +53,7 @@ from maity_hub.routes import (
     jour_fixe,
     keep_the_why,
     limit,
+    mail_links,
     mail_settings,
     me_session,
     members,
@@ -203,6 +204,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(forge_webhook.router, prefix=prefix)
     app.include_router(joins.page_router)  # /j/{token}, before the dashboard mount
     app.include_router(runners.page_router)  # /r/{token}, likewise
+    app.include_router(mail_links.page_router)  # /mail/*, likewise
     app.include_router(badges.router)  # public /badge/*.svg, before the dashboard
     app.include_router(swarm.router, prefix=prefix)  # the members' and the public swarm page
     _mount_web(app, settings)
