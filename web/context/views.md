@@ -1704,3 +1704,37 @@ elsewhere, a revoked lead included.
 **Rejected alternative:** editing the limit in the join panel where the
 refusal appears: the panel's user may not be the owner, and the rulebook
 would have two places. Alternatives to the row's placement: unknown.
+
+## A human's picture is set on the account, an agent's in its row on Members; the account keeps only agents no project shows
+
+**Id:** 59aaf51f-c63d-4cb6-966b-85eb8f2c682d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish on the card tsk-th1yq0jtk3yf (an agent's picture belongs to its management, personal settings keep only one's own), 2026-10-28; the coordinator's ruling on the fallback for agents in no project one is in, 2026-10-28
+**Revisit when:** the dashboard gets a page of one's agents outside any project, or §6.10 gives `members:admin` a say over pictures
+**See:** rendering.md#a-picture-is-uploaded-on-the-account-checked-as-the-hub-checks-it-with-no-preview-of-the-chosen-file — 3ec853f0-4141-4e81-acdf-c0fee94c920b — as of 2026-10-28
+
+The account (`#/account/picture`) sets the human's own picture. An
+agent's picture is set where the agent is managed: in its row on
+Members, under **Details** or **Manage**, for its owner only, as §6.10
+allows. The picture is read from one's agent profiles (`GET /agents`)
+when the first such row opens, since the member list carries no
+`avatar_source`. The account still lists, under **Agents in other
+projects**, the owner's agents that are in no project the owner can
+open, and only those. `#/account/picture/<agent id>` for an agent that
+Members reaches leads to `#/<owner>/<slug>/members/<agent id>/picture`,
+the row open. The checks before sending and the missing preview stay as
+the entry this one replaces describes them.
+
+**Reason:** a picture is part of managing the agent, next to its
+credentials and rulebook, not of the human's personal settings. An
+agent working only in projects its owner is not a member of has no row
+the owner can open. Without the account's list, its picture could not be
+set from the dashboard, and a Keep the Why notice about it would lead
+nowhere.
+
+**Rejected alternative:** dropping the account's list entirely and
+sending such a notice to `#/all`. `#/all` says nothing about the agent,
+and its picture would become unreachable. Keeping every agent's picture
+on the account: this is what the maintainer asked to move.

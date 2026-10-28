@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from maity_hub import contract_text, forge
 from maity_hub.access import membership
 from maity_hub.deps import AnyCaller, engine_of, reader_of
-from maity_hub.errors import ApiError, invalid
+from maity_hub.errors import ApiError, invalid, probe_not_configured
 from maity_hub.namespace import ProjectRoute
 from maity_hub.routes.tasks import _project_card
 
@@ -35,14 +35,14 @@ def read_contract(slug: str, card_id: str, request: Request, caller: AnyCaller) 
     project = mine.project
     fg = reader_of(request)
     if not fg.configured_for(project.repository_url):
-        raise ApiError(
-            409, "probe_not_configured", "the hub holds no forge token for this repository"
-        )
+        raise probe_not_configured("no_grant" if mine.may("project:admin") else None)
     # Only the project's own repository (§6.13): the card names a path in it, never another.
     repository = forge.repository_of(project.repository_url)
     branch = project.repository_default_branch or "main"
     try:
         shown = contract_text.read(fg, repository, branch, path, section)
+    except forge.NotCoveredError as error:
+        raise probe_not_configured(error.reason if mine.may("project:admin") else None) from None
     except forge.ForgeUnavailableError:
         raise ApiError(503, "probe_unavailable", "the forge did not answer") from None
     except contract_text.ContractTextError as error:

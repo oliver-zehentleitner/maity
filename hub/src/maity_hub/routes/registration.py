@@ -199,10 +199,10 @@ def _store(
 
 
 def _has_account(conn: Connection, normalized: str) -> bool:
-    """Whether the address is an account's verified address (§18.4). Accounts carry no
-    address until the notification settings store them (#280); then this looks there."""
-    del conn, normalized
-    return False
+    """Whether the address is an account's verified address (§18.4)."""
+    from maity_hub.notifications import preferences
+
+    return preferences.has_verified_address(conn, normalized)
 
 
 def lock_address(conn: Connection, normalized: str) -> None:

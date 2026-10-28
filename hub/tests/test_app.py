@@ -124,3 +124,66 @@ def test_the_default_dashboard_is_served(database_url: str, migrated: Engine) ->
         root = client.get("/")
         assert root.status_code == 200 and "<title>" in root.text
         assert client.get("/js/app.js").status_code == 200
+
+
+def test_driver_reason_names_a_category_and_never_the_driver_text() -> None:
+    from sqlalchemy.exc import OperationalError
+
+    from maity_hub.errors import driver_reason
+
+    class ConnectionTimeout(Exception):
+        pass
+
+    cases = {
+        "dns": "failed to resolve host 'db': [Errno -2] Name or service not known",
+        "timeout": 'connection to server at "10.0.0.5", port 5432 failed: timeout expired',
+        "refused": "connection failed: Connection refused",
+        "closed": "consuming input failed: server closed the connection unexpectedly",
+        "no_slots": "FATAL: remaining connection slots are reserved",
+        "unclassified": "something no list knows",
+    }
+    for category, text in cases.items():
+        reason = driver_reason(OperationalError("SELECT 1", {}, ConnectionTimeout(text)))
+        assert reason.endswith(f" {category}"), (category, reason)
+        assert reason.startswith("tests.test_app.") or ".ConnectionTimeout " in reason
+    assert driver_reason(Exception("no orig")) == ""
+
+
+def test_driver_reason_never_carries_the_driver_text() -> None:
+    """Every form in which a driver could quote a credential, however it is escaped or encoded."""
+    from sqlalchemy.exc import OperationalError
+
+    from maity_hub.errors import driver_reason
+
+    texts = [
+        "host=db password='prefix\\'LEAK_MARKER'",
+        "password=prefix\\ LEAK_MARKER",
+        "postgresql://user:prefix'LEAK_MARKER@db/name",
+        "postgresql%3A%2F%2Fuser%3ALEAK_MARKER%40db%2Fname",
+        "{'password': 'LEAK_MARKER'}",
+        "failed to resolve host 'LEAK_MARKER' user=LEAK_MARKER",
+        "timeout expired LEAK_MARKER\n" + "x" * 5000,
+    ]
+    for text in texts:
+        reason = driver_reason(OperationalError("SELECT 1", {}, Exception(text)))
+        assert "LEAK_MARKER" not in reason and "\n" not in reason and len(reason) < 120, reason
+
+
+def test_the_database_error_handler_logs_the_cause_not_the_secret(
+    client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    from sqlalchemy.exc import OperationalError
+
+    def broken() -> None:
+        raise OperationalError(
+            "SELECT 1", {}, Exception("failed to resolve host 'db' postgresql://u:pw-in-dsn@db/x")
+        )
+
+    client.app.add_api_route("/api/v1/_broken", broken)  # type: ignore[attr-defined]
+    with caplog.at_level("ERROR", logger="maity_hub.errors"):
+        response = client.get("/api/v1/_broken")
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "database_unavailable"
+    logged = " ".join(record.getMessage() for record in caplog.records)
+    assert logged.endswith(" dns") and "pw-in-dsn" not in logged
+    assert "pw-in-dsn" not in response.text

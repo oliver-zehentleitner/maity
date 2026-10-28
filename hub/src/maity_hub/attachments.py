@@ -5,14 +5,19 @@ the read rule. The bytes are the blob store's (`attachment_store`); the routes a
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
 import re
+import threading
+import time
 import unicodedata
+from collections.abc import Sequence
 from datetime import timedelta
+from types import SimpleNamespace
 from typing import Any
 from urllib.parse import quote
 
-from sqlalchemy import Connection, func, select, update
+from sqlalchemy import Connection, Engine, delete, func, select, update
 
 from maity_hub import attachment_store, clock, events
 from maity_hub import tables as t
@@ -168,16 +173,36 @@ def quota_error(scope: str, **details: Any) -> ApiError:
     )
 
 
-def message_readable(conn: Connection, mine: Membership, seq: int) -> bool:
+def reader_row(mine: Any) -> Any:
+    """The membership row the read rule takes: a member's own, or for an owner outside the
+    project, who has none, a stand-in that holds no role and no agent."""
+    row = getattr(mine, "row", None)
+    if row is not None:
+        return row
+    return SimpleNamespace(id=-1, role="outsider", agent_id=None, human_id=mine.principal_id)
+
+
+def message_readable(conn: Connection, mine: Any, seq: int) -> bool:
     """Exactly who reads the message reads its attachments (§8.7): the event is read
-    through the one read rule of `GET /events`, and a redacted message has none."""
+    through the one read rule of `GET /events`, and a redacted message has none. An owner
+    outside the project reads only a group chat's message it reads along in (§9.2); the
+    stand-in row must never reach a project message that is addressed to `all`."""
     row = conn.execute(
         select(t.event).where(t.event.c.seq == seq, t.event.c.project_id == mine.project.id)
     ).first()
     if row is None or row.redacted:
         return False
-    hidden = events.hidden_redactions(conn, [row], mine.row)
-    return events.readable_by(row, mine.row, mine.principal_id, hidden)
+    outside = getattr(mine, "row", None) is None
+    if outside:
+        from maity_hub import group_chats
+
+        if not group_chats.is_group(row.conversation_id):
+            return False
+        if group_chats.access(conn, row.conversation_id, mine) != "observer":
+            return False
+    seen = reader_row(mine)
+    hidden = events.hidden_redactions(conn, [row], seen)
+    return events.readable_by(row, seen, mine.principal_id, hidden)
 
 
 def readable(conn: Connection, mine: Membership, row: Any) -> bool:
@@ -273,7 +298,12 @@ def bind(
         row = rows.get(attachment_id)
         if attachment_id in seen:
             problems[attachment_id] = "already_attached"
-        elif row is None or row.uploaded_by != mine.id or row.deleted_at is not None:
+        elif (
+            row is None
+            or row.uploaded_by != mine.id
+            or row.deleted_at is not None
+            or (row.message_seq is None and clock.now() - row.uploaded_at >= PENDING_FOR)
+        ):  # an upload past its 24 hours is as good as gone: the sweep may take it any moment
             problems[attachment_id] = "unknown"
         elif row.message_seq is not None:
             problems[attachment_id] = "already_attached"
@@ -327,3 +357,123 @@ def redact_message(
                 store.delete(key)
 
         events.on_commit(conn, remove)
+
+
+def drop_pending(conn: Connection, membership_id: int) -> None:
+    """A removed member's pending uploads go (§6.2): the rows at once, the bytes with the
+    next sweep, which removes any blob no row names. What the member sent stays."""
+    conn.execute(
+        delete(t.attachment).where(
+            t.attachment.c.uploaded_by == membership_id,
+            t.attachment.c.message_seq.is_(None),
+        )
+    )
+
+
+# --- the sweep (§8.7) ------------------------------------------------------------------------
+
+log = logging.getLogger(__name__)
+SWEEP_EVERY = 300  # seconds between sweeps
+BLOB_GRACE = 600  # a blob younger than this may belong to a transaction still open
+
+
+def expire(
+    engine: Engine, store: attachment_store.LocalStore, candidates: Sequence[Any], cutoff: Any
+) -> int:
+    """Delete the candidates that are still pending and still past the cutoff, each under
+    its project's lock, and remove the bytes of the rows that were deleted, and of no other.
+    A message that named a candidate since it was chosen has bound it: the conditional
+    delete finds nothing and the file stays."""
+    removed = 0
+    for row in candidates:
+        with engine.begin() as conn:
+            events.lock_project(conn, row.project_id)
+            gone = conn.execute(
+                delete(t.attachment).where(
+                    t.attachment.c.id == row.id,
+                    t.attachment.c.message_seq.is_(None),
+                    t.attachment.c.deleted_at.is_(None),
+                    t.attachment.c.uploaded_at < cutoff,
+                )
+            ).rowcount
+        if gone == 1:
+            store.delete(attachment_store.key_of(row.project_id, row.id))
+            removed += 1
+    return removed
+
+
+def remove_stray(engine: Engine, store: attachment_store.LocalStore, key: str) -> bool:
+    """Remove a blob no row names, if it is older than a transaction can be. The project's lock is
+    held from the look at the row to the removal, as an upload holds it from writing the blob to
+    inserting the row: an upload that commits meanwhile cannot lose its file."""
+    project_id, _, attachment_id = key.partition("/")
+    with engine.begin() as conn:
+        events.lock_project(conn, project_id)
+        named = conn.execute(
+            select(t.attachment.c.id).where(t.attachment.c.id == attachment_id)
+        ).first()
+        if named is not None:
+            return False
+        age = store.age(key, time.time())
+        if age is None or age <= BLOB_GRACE:
+            return False
+        store.delete(key)
+    return True
+
+
+def sweep(engine: Engine, store: attachment_store.LocalStore) -> dict[str, int]:
+    """One pass: pending uploads past 24 hours go with their bytes, the bytes of a
+    tombstoned row go if they are still there, and a blob no row names goes once it is
+    older than a transaction can be. Returns what it removed, by kind."""
+    done = {"expired": 0, "tombstoned": 0, "orphans": 0}
+    cutoff = clock.now() - PENDING_FOR
+    with engine.connect() as conn:
+        candidates = conn.execute(
+            select(t.attachment.c.id, t.attachment.c.project_id).where(
+                t.attachment.c.message_seq.is_(None),
+                t.attachment.c.deleted_at.is_(None),
+                t.attachment.c.uploaded_at < cutoff,
+            )
+        ).all()
+        tombstoned = conn.execute(
+            select(t.attachment.c.id, t.attachment.c.project_id).where(
+                t.attachment.c.deleted_at.is_not(None)
+            )
+        ).all()
+    done["expired"] = expire(engine, store, candidates, cutoff)
+    for row in tombstoned:  # a tombstone never comes back: its bytes can go without a lock
+        key = attachment_store.key_of(row.project_id, row.id)
+        if store.age(key, time.time()) is not None:
+            store.delete(key)
+            done["tombstoned"] += 1
+    for project in store.projects():
+        for key in store.keys(project):
+            if remove_stray(engine, store, key):
+                done["orphans"] += 1
+    return done
+
+
+class Worker:
+    """Runs the sweep in the background, one thread per process, when a store is set."""
+
+    def __init__(self, engine: Engine, store: attachment_store.LocalStore) -> None:
+        self.engine = engine
+        self.store = store
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        self._thread = threading.Thread(target=self._run, name="maity-attachments", daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=5)
+
+    def _run(self) -> None:
+        while not self._stop.wait(SWEEP_EVERY):
+            try:
+                sweep(self.engine, self.store)
+            except Exception:
+                log.exception("the attachment sweep failed")

@@ -75,6 +75,17 @@ def not_found() -> ApiError:
     return ApiError(404, "not_found", "no such resource")
 
 
+def probe_not_configured(reason: str | None) -> ApiError:
+    """No source covers the project's repository (§11.4). `reason` only for a
+    `project:admin`; every other reader gets `details: {}`."""
+    return ApiError(
+        409,
+        "probe_not_configured",
+        "no forge access covers this repository",
+        {"reason": reason} if reason is not None else None,
+    )
+
+
 def rate_limited(retry_after: int) -> ApiError:
     return ApiError(
         429,
@@ -94,6 +105,39 @@ def driver_code(error: Exception) -> str:
     return str(args[0]) if args and isinstance(args[0], int) else ""
 
 
+# What a connection failure can be, found by phrases the drivers use. Nothing of the driver's text
+# is kept: the category is chosen from this list and only its name is logged, so a password, a
+# user, a host or a connection string in the text cannot reach the log, whatever escaping it uses.
+_CAUSES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("dns", ("failed to resolve host", "name or service not known", "temporary failure in name")),
+    ("timeout", ("timeout expired", "timed out")),
+    ("refused", ("connection refused",)),
+    ("unreachable", ("network is unreachable", "no route to host")),
+    ("closed", ("server closed the connection", "connection lost", "eof detected", "broken pipe")),
+    ("starting", ("starting up", "shutting down", "recovery mode")),
+    ("no_slots", ("remaining connection slots", "too many clients", "too many connections")),
+    ("auth", ("authentication failed", "access denied")),
+    ("ssl", ("ssl", "tls")),
+)
+
+
+def driver_reason(error: Exception) -> str:
+    """Why a connection failed, for the log and never for a client: the original exception's class
+    and one category from a fixed list (`_CAUSES`), or `unclassified`. The driver's own text is
+    never logged: it can quote the connection string, the user or the password in forms no
+    pattern covers.
+    """
+    original = getattr(error, "orig", None)
+    if original is None:
+        return ""
+    text = str(original).lower()
+    cause = next(
+        (name for name, phrases in _CAUSES if any(p in text for p in phrases)), "unclassified"
+    )
+    kind = type(original)
+    return f"{kind.__module__}.{kind.__qualname__} {cause}"
+
+
 def install(app: FastAPI) -> None:
     @app.exception_handler(ApiError)
     async def _api_error(_request: Request, error: ApiError) -> JSONResponse:
@@ -111,8 +155,14 @@ def install(app: FastAPI) -> None:
     @app.exception_handler(OperationalError)
     @app.exception_handler(InterfaceError)
     async def _database(_request: Request, error: Exception) -> JSONResponse:
-        # Connection-level failures; never the driver's text (§1.3).
-        log.error("database unavailable: %s %s", type(error).__name__, driver_code(error))
+        # Connection-level failures. The client never gets the driver's text (§1.3); the log gets it
+        # masked, because without the cause a burst of these cannot be told apart.
+        log.error(
+            "database unavailable: %s %s %s",
+            type(error).__name__,
+            driver_code(error),
+            driver_reason(error),
+        )
         return error_response(503, "database_unavailable", "the database is unreachable")
 
     @app.exception_handler(StarletteHTTPException)
