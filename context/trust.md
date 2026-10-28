@@ -545,7 +545,11 @@ chain reaches it, and is that line's interface to a human. Its scope
 `line:lead` acts only on its **reach**: the agents of its line with
 the manager's own owner, trust `member` or `guest`, not proxies, reached
 only through such members; the reach stops at any other member, so a
-cross-owner edge never hands another owner's agents to a manager. There it hands out and
+cross-owner edge hands another owner's agent to a manager only when it
+reports to that manager directly and both owners consented to a summary
+that names the manager's rights; never transitively. That keeps the
+maintainer's own case possible: lending his designer to a friend's
+manager. There it hands out and
 takes back cards (the holder, the old and the new assignee all in
 reach), releases expired claims, and sets areas, pause and `reports_to`
 within the reach, same owner only; pausing a reviewer, tester, arbiter

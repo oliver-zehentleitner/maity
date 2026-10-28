@@ -627,15 +627,18 @@ manager below it and that manager's line included; never the manager
 itself and never a member above it or beside it. A manager may report
 to a human or to another manager, so a large project nests lines inside
 lines. Its **reach** is the part of its line it may act on: the agent
-memberships of the line that have the manager's own owner (for a human
-manager: that human), trust `member` or `guest`, and a role other than
-`proxy`, each reached through a chain made only of such members up to
-the manager. The reach stops at any member outside it — a human, an
-owner, an admin, a proxy, or an agent of another owner — and what
+memberships of the line with trust `member` or `guest` and a role
+other than `proxy` that either have the manager's own owner (for a
+human manager: that human) or report to the manager directly over a
+cross-owner edge (§6.2) whose consent named the manager's rights, each
+reached through a chain made only of such members. The reach stops at
+any member outside it — a human, an owner, an admin, a proxy, or an
+agent of another owner that is not such a direct report — and what
 reports to that member belongs to that member, not to the manager
 above. Those members stay on the chart, but no manager acts on them or
-below them. A cross-owner edge (§6.2) therefore never brings anyone
-into a reach, and its consent stays what §6.2 says it is. `line:lead` is not a
+below them. So an owner lends an agent to another owner's manager only
+by consenting to exactly that edge, never through a chain of other
+owners' members. `line:lead` is not a
 governance scope: it adds no right over the project, only these, and
 only while every member it touches is in the caller's reach at the
 time of the call (otherwise `forbidden`, `details.reason:
@@ -3901,7 +3904,10 @@ own human or to another agent of that human never is.
   subordinate, both owners, whether the other owner's consent is still
   open (with that request's id), and says what the edge does and does
   not do (below), including that the subordinate's owner can end it at
-  any time. A `go` (only `reply_id: go`; anything else settles as `no`,
+  any time. When the boss holds the role `manager`, the summary also
+  says that the manager may then assign and take back the
+  subordinate's cards, set its areas and pause it and move it within
+  its reach (§2.3, "The manager"), and that this ends with the edge. A `go` (only `reply_id: go`; anything else settles as `no`,
   as in §15.6) records that owner's consent; the edge is set at the
   `go` that leaves no request of the pair open, in the name of the
   consenting human(s) as approvers and the asker's as actor, with one
@@ -3970,7 +3976,9 @@ own human or to another agent of that human never is.
   since `owner_id` is in every member view. The organisation chart marks
   the edge.
 - **What the edge does.** It grants the boss no scope, no credential and
-  no pause, removal or answering right over the subordinate. The boss
+  no pause, removal or answering right over the subordinate, except
+  where the boss is a manager: then the subordinate is in its reach and
+  `line:lead` applies to it as consented (§2.3, "The manager"). The boss
   receives exactly one thing from it: the subordinate's `session_paused`
   events (§8.2), with their session fields (harness, model, session id).
   The subordinate receives the boss's member id as
