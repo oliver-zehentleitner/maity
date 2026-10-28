@@ -64,12 +64,15 @@ window.Maity = window.Maity || {};
   M.views = M.views || {};
 
   // Counts and the open list are re-read on this interval (docs/api.md
-  // §5.1: /me after an answer and on an interval).
-  const POLL_MS = 15000;
+  // §5.1: /me after an answer and on an interval), only while the tab is
+  // shown; a tab shown again catches up within BACK_MS (context/refresh.md).
+  const POLL_MS = 60000;
+  const BACK_MS = 5000;
+  const hidden = () => document.visibilityState === "hidden";
 
-  // The open project's events are read on this interval, with wait=0; see
-  // context/refresh.md for why not the long-poll.
-  const EVENTS_MS = 5000;
+  // The open project's events are read on this interval, with wait=0, while
+  // the tab is shown; see context/refresh.md for why not the long-poll.
+  const EVENTS_MS = 15000;
   const EVENTS_PAGE = 200;
 
   // Events that change the header of every project view.
@@ -478,6 +481,9 @@ window.Maity = window.Maity || {};
     }
     if (ctx.canAdmin && ctx.project.settings && "onboarding" in ctx.project.settings) append(panel, onboardingForm(ctx));
     if (ctx.canAdmin && "repository" in ctx.project) append(panel, repositoryForm(ctx));
+    // Its name: rename and transfer, for a human owner where the hub has them (§6.25).
+    const names = M.projectNames && M.projectNames.section(ctx);
+    if (names) append(panel, names);
     // A policy field, humans only (§2.3 ʰ); where the hub knows it (§6.22).
     if (humanAdmin && M.swarm && ctx.project.policy && "swarm_public" in ctx.project.policy) append(panel, M.swarm.settingsForm(ctx, save));
     if ("memory" in ctx.project && M.projectSetup) append(panel, memoryPanel(ctx));
@@ -559,7 +565,7 @@ window.Maity = window.Maity || {};
     }
     const box = h("div", { class: "images" }, h("h2", { class: "panel-title" }, "Logo and banner"));
     [["logo", "Logo", "Square; shown next to the project's name everywhere."],
-      ["banner", "Banner", "Wide; shown at the top of the project's inbox."]].forEach(([kind, label, hint]) => {
+      ["banner", "Banner", "2:1, like a forge's social preview (ideally 1280×640); shown at the top of the project's inbox."]].forEach(([kind, label, hint]) => {
       const view = ctx.project[kind] || { available: false, source: null };
       const url = M.api.imageUrl(ctx.slug, kind, view);
       const id = "upload-" + kind;
@@ -1289,7 +1295,11 @@ window.Maity = window.Maity || {};
     }
     const failed = (err) => append(clear(failLine), h("p", { class: "send-status failed" }, "Could not refresh: " + err.message));
     if (notifyError) { append(failLine, h("p", { class: "send-status failed" }, "Could not read your notifications: " + notifyError.message)); notifyError = null; }
-    ctx.every(POLL_MS, () => counts().then(() => clear(failLine), failed));
+    // A hidden tab asks nothing; shown again, it reads what it missed.
+    let missed = false;
+    const poll = () => { missed = false; return counts().then(() => clear(failLine), failed); };
+    ctx.every(POLL_MS, () => { if (hidden()) { missed = true; return null; } return poll(); });
+    ctx.every(BACK_MS, () => (missed && !hidden() ? poll() : null));
     // A changed count is answered by reloading; an answer given here
     // updates what counts as seen.
     ctx.markSeen = () => { seen = openNow(); };
@@ -1305,8 +1315,10 @@ window.Maity = window.Maity || {};
       if (events.some((e) => REQUEST_KINDS.test(e.kind))) counts().catch(failed);
     });
     let reading = false;
-    ctx.every(EVENTS_MS, async () => {
+    let eventsMissed = false;
+    const read = async () => {
       if (reading) return;
+      eventsMissed = false;
       reading = true;
       try {
         await readEvents(ctx);
@@ -1316,7 +1328,11 @@ window.Maity = window.Maity || {};
       } finally {
         reading = false;
       }
-    });
+    };
+    // A hidden tab reads no events; shown again, it reads what it missed
+    // within BACK_MS, from the cursor.
+    ctx.every(EVENTS_MS, () => { if (hidden()) { eventsMissed = true; return null; } return read(); });
+    ctx.every(BACK_MS, () => (eventsMissed && !hidden() ? read() : null));
   }
 
   // Reads every event after the cursor, page by page, and hands them on.
@@ -1373,6 +1389,11 @@ window.Maity = window.Maity || {};
     // deploy, the next navigation asks it again.
     M.api.absent.clear();
     const main = document.getElementById("main");
+    // The view being left stays on screen until the next one is drawn, but
+    // takes no click or key any more: an action there (a Revoke) would be
+    // answered into a view that is gone, while the new one shows what it read
+    // before. Every way out of render() replaces main or renders again.
+    Array.from(main.childNodes).forEach((n) => { if (n.setAttribute) n.setAttribute("inert", ""); });
     let where = { scope: "unknown" };
     let ctx;
     try {

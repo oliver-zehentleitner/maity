@@ -44,6 +44,10 @@ window.Maity = window.Maity || {};
     if (err.code === "forbidden" && err.details && err.details.reason === "humans_only") {
       return { message: "only a human may make this change" };
     }
+    // §6.25: the person whose namespace holds the project stays its owner.
+    if (err.code === "namespace_owner") {
+      return { message: "the project lives in this person's namespace, so they stay an owner; transfer it to someone else first (Project settings)" };
+    }
     const fields = err.code === "invalid" && err.details && err.details.fields;
     if (!fields) return err;
     const said = Object.entries(fields).map(([f, reason]) => REFUSALS[f + ":" + reason] || f.replace("_", " ") + ": " + reason);
@@ -371,8 +375,12 @@ window.Maity = window.Maity || {};
       const id = (what) => "member-" + what + "-" + m.id;
       const draft = edits.get(m.id) || {};
       const keep = (k, v) => { edits.set(m.id, Object.assign(edits.get(m.id) || {}, { [k]: v })); };
+      // The member's own role stays offered even when this page's list lacks it (a
+      // guest under trust × role), so that saving other fields never changes it.
+      const offered = ROLES.filter((r) => r !== "owner" || m.kind === "human");
+      if (m.role && !offered.includes(m.role)) offered.push(m.role);
       const role = keyed("role:" + m.id, h("select", { id: id("role") },
-        ROLES.filter((r) => r !== "owner" || m.kind === "human").map((r) => h("option", { value: r }, r))));
+        offered.map((r) => h("option", { value: r }, r))));
       role.value = draft.role !== undefined ? draft.role : m.role;
       // The current boss stays offered even if it is not in the list read.
       const others = items.filter((x) => x.id !== m.id);

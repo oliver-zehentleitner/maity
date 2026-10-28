@@ -47,8 +47,10 @@ def _capture(monkeypatch: pytest.MonkeyPatch) -> None:
     nothing."""
     real = registration_mail.send
 
-    def capture(conn: Any, *, kind: str, to: str, pending_id: str | None = None) -> None:
-        real(conn, kind=kind, to=to, pending_id=pending_id)
+    def capture(
+        conn: Any, *, kind: str, to: str, pending_id: str | None = None, **more: Any
+    ) -> None:
+        real(conn, kind=kind, to=to, pending_id=pending_id, **more)
         SENT.append(Sent(kind, to, pending_id))
 
     monkeypatch.setattr(registration_mail, "send", capture)

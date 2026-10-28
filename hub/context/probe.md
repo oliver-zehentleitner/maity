@@ -67,6 +67,71 @@ later. The row is the one place every reader passes through.
 - One `probe_observed` per sweep with all changed refs, as before: fewer
   events, but only the sweep could send them.
 
+## A merge closes the loop: remembered on the card per report, told by whoever sees it first
+
+**Id:** f89f3f4d-28b0-4bda-841a-ddafe87ad18f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §6.6 "A merge closes the loop" and §6.1 `merged_closes` (contract #502, the coordinator's card tsk-hkb9qe4xn520, 2026-10-28)
+**Revisit when:** the hub keeps more than one report per card, or the done authority gains values beyond those of §6.4
+
+The card remembers the report a merge was observed on (`merge_report`, a
+digest of the report as the agent sent it) and whether `task_merged` went
+out for it (`merge_told`). The probe, where it stores an observation,
+tells it when the card is in `review`; the two ways back to `review`
+(the status PATCH and the answer that restores a blocked card) tell a
+remembered one, only while that report is still the card's. Under
+`merged_closes: auto` and `done_authority` `holder` or `admin` the
+same step closes the card, unless a child, a dependency or an objection
+holds it. `task_merged` wakes by `done_authority`: the holding instance,
+the reviewer or tester role, or owners and admins; nobody once closed.
+
+**Reason:** "once per report" and "caught up on the return to review"
+must survive a restart and hold whichever path sees the merge first; two
+columns on the card are the smallest state that does, and the digest
+ties the memory to exactly the report it was seen on.
+
+**Rejected alternative:** asking the event log whether `task_merged`
+went out for this report: a search over events on every observation. A
+flag inside the report JSON: the report is shown as stored, so the flag
+would leak into the card view.
+
+## A spent forge budget stops reads until its reset; the worker waits and starts each round elsewhere
+
+**Id:** d4a944d2-5e48-45e4-a93b-f528f43705ed
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-wq0mhep8mzec from the coordinator, 2026-10-28, after the live forge reads ran into GitHub's limit; the contract text in PR #500 (§11.4 "Rate limits": one budget per source, `probe_unavailable` with `details.retry_at` until the reset)
+**Revisit when:** the hub reads with more than one source per owner (a GitHub App installation, owner tokens), or GitHub changes its rate limit headers
+
+Every forge answer's `X-RateLimit-Limit`, `-Remaining` and `-Reset` (and
+`Retry-After`) update one budget per source, keyed by the token's digest
+(a separate one for reads without a token). A spent budget (403 or 429
+with Remaining 0 or a Retry-After) or one under 5 % of its limit holds
+every read with that source until the reset: the read fails at once,
+nothing is sent, and the error carries `retry_at`, which `GET …/probe` and
+the contract text answer as `details.retry_at` of `probe_unavailable`.
+Each read is counted against the source before it is sent, in the same
+step as the check, so readers in parallel cannot spend together what the
+last answer said was left; answers that arrive out of order only ever
+lower the count within one window. The worker schedules its next sweep
+and merge round no earlier than that reset, and each kind of round
+starts at another project each time, on its own position, since a round
+ends at its first unanswered read.
+
+**Reason:** a spent limit answered every read with an error and the
+worker asked again every interval, spending the next hour's budget at its
+first minute; readers were told nothing about when it would work again.
+Keeping the last 5 % leaves room for the reads a person asks for.
+
+**Rejected alternative:** answering from the cache without saying so
+while the budget is spent: the card asks for `probe_unavailable` with
+the time instead of silently stale data. A budget per project: the limit
+is the source's, and every project of an owner reads with it. Other
+alternatives: unknown.
+
 ## Confirming the repository asks for no step-up until the second factor lands
 
 **Id:** 0b375b9b-2098-4e55-a461-cccdad6a62d1

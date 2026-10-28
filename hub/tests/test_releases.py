@@ -334,7 +334,7 @@ def test_a_contract_card_defaults_its_arbiter_and_checks_watchers(
     card = task(owner, kind="contract", contract={"watchers": [agent.id, agent.id]})
     assert card["id"].startswith("ctr-") and card["release"] is None
     assert card["contract"] == {
-        "arbiter": "role:admin",
+        "arbiter": "trust:admin",
         "state": "proposed",
         "watchers": [agent.id],
         "path": "docs/api.md",
@@ -365,7 +365,7 @@ def test_only_the_arbiter_finalises_and_the_watchers_hear(
         403,
         "tasks:admin",
     )
-    assert task(other, kind="contract")["contract"]["arbiter"] == "role:admin"
+    assert task(other, kind="contract")["contract"]["arbiter"] == "trust:admin"
     card = task(owner, kind="contract", contract=named)
     path = f"/projects/maintainer/maity/tasks/{card['id']}"
     refused = other.patch(path, {"contract": {"state": "final"}})

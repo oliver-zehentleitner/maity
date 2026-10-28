@@ -152,10 +152,10 @@ def test_sections_from_the_new_file_and_deleted_lines_from_the_base() -> None:
 
 
 def test_the_longest_key_wins_and_star_takes_the_rest() -> None:
-    mapping = {"8": ["area:hub/"], "8.2": ["area:web/"], "*": ["role:admin"]}
+    mapping = {"8": ["area:hub/"], "8.2": ["area:web/"], "*": ["trust:admin"]}
     assert ticker.implementers(mapping, "8.2.1") == ["area:web/"]
     assert ticker.implementers(mapping, "8.3") == ["area:hub/"]
-    assert ticker.implementers(mapping, "13") == ["role:admin"]
+    assert ticker.implementers(mapping, "13") == ["trust:admin"]
 
 
 # --- announcing --------------------------------------------------------------------------
@@ -205,7 +205,7 @@ def test_a_merge_reaches_area_owners_card_holders_and_the_contracts_implementers
         ],
         team["docs"].id: ["area_owner:docs/"],
         team["cli"].id: ["contract_implementer:13"],
-        team["admin"].id: ["role:admin"],
+        team["admin"].id: ["trust:admin"],
     }
     assert (
         probe.announce_merges(migrated, READER, project_id(migrated)) == 0
@@ -334,7 +334,7 @@ def test_a_renamed_contract_file_is_a_contract_change_and_reaches_both_places(
     assert item["payload"]["contract"] == {"sections": [], "sections_unknown": True}
     by = reasons(item)
     assert "area_owner:docs/" in by[team["docs"].id] and "area_owner:cli/" in by[team["cli"].id]
-    assert by[team["admin"].id] == ["role:admin"]
+    assert by[team["admin"].id] == ["trust:admin"]
 
 
 def test_a_round_that_outlived_a_switch_off_and_on_writes_nothing(

@@ -50,6 +50,7 @@ class MailEnvironment:
     max_per_hour: int | None = None
     security_max_per_hour: int | None = None
     sign_in_max_per_hour: int | None = None
+    registration_max_per_hour: int | None = None
     signing_key: bytes | None = field(default=None, repr=False)
     # MAITY_SMTP_ALLOW_PLAINTEXT: insecure, for a test bench only (§16.2).
     allow_plaintext: bool = False
@@ -142,6 +143,9 @@ def parse(env: dict[str, str]) -> MailEnvironment:
         max_per_hour=_number(env, "MAITY_MAIL_MAX_PER_HOUR", 1, MAX_PER_HOUR),
         security_max_per_hour=_number(env, "MAITY_MAIL_SECURITY_MAX_PER_HOUR", 1, MAX_PER_HOUR),
         sign_in_max_per_hour=_number(env, "MAITY_MAIL_SIGN_IN_MAX_PER_HOUR", 1, MAX_PER_HOUR),
+        registration_max_per_hour=_number(
+            env, "MAITY_MAIL_REGISTRATION_MAX_PER_HOUR", 1, MAX_PER_HOUR
+        ),
         signing_key=_signing_key(env),
         allow_plaintext=_flag(env, "MAITY_SMTP_ALLOW_PLAINTEXT"),
         ca_file=ca_file,

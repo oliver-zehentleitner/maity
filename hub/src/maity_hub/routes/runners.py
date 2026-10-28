@@ -23,7 +23,7 @@ from starlette.concurrency import run_in_threadpool
 from maity_hub import clock, events, idempotency, namespace, paging, placements, runner_revoke
 from maity_hub import tables as t
 from maity_hub.access import membership
-from maity_hub.auth import credentials
+from maity_hub.auth import credentials, second_factor
 from maity_hub.auth.caller import Caller, require_secure_transport
 from maity_hub.auth.leaks import revoke_runner_credential
 from maity_hub.codes import code_matches, digest, new_code, new_token, normalise_code
@@ -201,9 +201,11 @@ def create_enrollment(
     if not TTL_MIN <= body.ttl_seconds <= TTL_MAX:
         raise invalid({"ttl_seconds": "out_of_range"})
     public_url = settings_of(request).public_url
+    hub = settings_of(request)
 
     def action(conn: Connection) -> idempotency.Outcome:
         owner_id = caller.principal_id
+        second_factor.require_step_up(conn, hub, caller)  # mints a credential (§2.8.4)
         if body.runner_id is None:
             if body.name is None:
                 raise invalid({"name": "required"}, "a new runner needs a name")
@@ -534,12 +536,12 @@ def list_runners(request: Request, caller: HumanCaller) -> JSONResponse:
         administered = [
             r.project_id
             for r in conn.execute(
-                select(t.membership.c.project_id, t.membership.c.role).where(
+                select(t.membership.c.project_id, t.membership.c.trust, t.membership.c.role).where(
                     t.membership.c.human_id == caller.principal_id,
                     t.membership.c.active.is_(True),
                 )
             )
-            if has_scope(r.role, "human", "members:admin")
+            if has_scope(r.trust, r.role, "human", "members:admin")
         ]
         attached_there = select(t.runner_attachment.c.runner_id).where(
             t.runner_attachment.c.project_id.in_(administered),

@@ -416,7 +416,8 @@ window.Maity = window.Maity || {};
     const isChat = (e) => e.kind === "message" && e.payload && e.payload.type === "chat";
     if (!given) {
       ctx.onEvents((events) => { if (events.some((e) => isChat(e) || /^conversation_|^event_redacted$/.test(e.kind))) list.refresh(false); });
-      ctx.every(LIST_MS, () => list.refresh(true));
+      // A hidden tab reads no list; the next round after it is shown does.
+      ctx.every(LIST_MS, () => (document.visibilityState === "hidden" ? null : list.refresh(true)));
     }
     // A new group chat, or a group chat the hub lists (§9.2, js/group-chat.js).
     if (args[0] === "new") {

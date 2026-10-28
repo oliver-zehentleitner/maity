@@ -1,0 +1,3 @@
+### Added
+
+- hub: a session that does not read its events is noticed (docs/api.md §5.3 "Not listening"). An episode starts when an event that waits for the instance is 10 minutes old and the session has made no call for events and no resume in that time. It ends when the cursor reaches that event, when the session ends, or when the agent is paused or not available. At both ends the hub emits `member_not_listening`; the start wakes the member the agent reports to. The profile's owner gets one personal `info` request, withdrawn at the end and filed anew when the profile changes hands. The instance view's `session` carries `not_listening_since`. A worker checks every minute; migration 0068 adds the session's columns.

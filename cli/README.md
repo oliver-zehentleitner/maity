@@ -34,7 +34,7 @@ one machine and one home.
 cd ~/projects/my-clone
 maity join https://<hub>/j/<token> --code <code> --harness "Claude Code" --model <model id>
 maity resume                                   # at the start of every session
-maity wait                                     # exit 0 + event JSON, 3 timeout, 6 superseded
+maity wait                                     # exit 0 + events (JSON array), 3 timeout, 6 superseded
 maity claim tsk-0004
 maity checkpoint tsk-0004 -m "lease column added" --next "renew it on every call"
 maity ask "Tag 0.2.0 now?" --to human --class consent --option yes --option no
@@ -102,11 +102,14 @@ Run `maity resume` at the start of every session; `maity --help` lists the rest.
 $ maity ask "Tag 0.2.0 now?" --to human --class consent --option yes --option no
 asked req-0012 (consent, open)
 $ maity wait --timeout 5
-{
-  "seq": 4232,
-  "kind": "request_answered",
-  …
-}
+[
+  {
+    "seq": 4232,
+    "kind": "request_answered",
+    …
+  }
+]
+$ maity wait --kind message                   # only messages; the rest is read past
 $ maity wait --timeout 1; echo $?
 3
 ```

@@ -16,6 +16,7 @@ from sqlalchemy import Connection, func, insert, select, update
 from maity_hub import clock, events, proposals
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid
+from maity_hub.scopes import in_admin_team
 
 MAX_BYTES = 8192  # §1.7
 PACKET_MAX = 8  # texts per resume packet, `membership.owner_preferences` included
@@ -341,7 +342,7 @@ def may_propose(conn: Connection, mine: Any, human_id: str) -> bool:
     an agent with the role `proxy` in a project whose owner is that human."""
     if mine.kind != "agent":
         return False
-    if mine.role == "admin":
+    if in_admin_team(mine.trust, mine.role):
         return True
     if mine.role != "proxy":
         return False
@@ -349,7 +350,7 @@ def may_propose(conn: Connection, mine: Any, human_id: str) -> bool:
         select(t.membership.c.id).where(
             t.membership.c.project_id == mine.project.id,
             t.membership.c.human_id == human_id,
-            t.membership.c.role == "owner",
+            t.membership.c.trust == "owner",
             t.membership.c.active.is_(True),
         )
     ).first()

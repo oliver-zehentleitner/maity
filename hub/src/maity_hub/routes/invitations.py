@@ -31,7 +31,7 @@ from maity_hub.access import membership
 from maity_hub.codes import digest, new_token
 from maity_hub.db import retrying
 from maity_hub.deps import HumanCaller, engine_of, origin_of, settings_of
-from maity_hub.errors import ApiError, forbidden, invalid, not_found, rate_limited
+from maity_hub.errors import ApiError, invalid, not_found, rate_limited
 from maity_hub.events import Actor
 from maity_hub.ids import new_id
 from maity_hub.mail import address
@@ -47,7 +47,8 @@ PAGE_DEFAULT, PAGE_MAX = 50, 200
 
 
 class InvitationIn(Strict):
-    role: Literal["member", "reviewer", "proxy", "admin", "owner"] = "member"
+    trust: Literal["owner", "admin", "member", "guest"] = "member"
+    role: Literal["coder", "reviewer", "tester", "designer", "ops", "proxy"] = "coder"
     address: str | None = None
     ttl_seconds: int = invitations.TTL_DEFAULT
     note: str | None = None
@@ -90,8 +91,15 @@ def create_invitation(
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         mine.require("members:admin")
-        if not invitations.may_issue(body.role, mine.role):
-            raise forbidden(message="only an owner invites an owner or an admin")
+        if body.role == "proxy" and body.trust != "admin":
+            raise invalid({"role": "proxy_needs_admin"}, "a proxy holds trust admin")
+        if not invitations.may_issue(body.trust, body.role, mine.trust, mine.role):
+            raise ApiError(
+                403,
+                "forbidden",
+                "only an owner grants trust owner or admin, or the role proxy",
+                {"reason": "owner_only"},
+            )
         wait = invitations.PER_PROJECT.hit(mine.project.id)
         if wait:
             raise rate_limited(wait)
@@ -103,6 +111,7 @@ def create_invitation(
             insert(t.invitation).values(
                 id=invitation_id,
                 project_id=mine.project.id,
+                trust=body.trust,
                 role=body.role,
                 address=given,
                 address_normalized=registration.normalized(given) if given else None,
@@ -253,6 +262,7 @@ async def invitation_page(token: str, request: Request) -> JSONResponse:
                     "name": project.name,
                     "logo_url": _logo_url(conn, request, project),
                 },
+                "trust": row.trust,
                 "role": row.role,
                 "invited_by": {"display_name": inviter},
                 "note": row.note,
@@ -334,6 +344,7 @@ def _accept(
         insert(t.membership).values(
             project_id=row.project_id,
             human_id=caller.human_id,
+            trust=row.trust,
             role=row.role,
             areas=[],
             capabilities=[],

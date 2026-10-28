@@ -191,3 +191,71 @@ today and whenever the rule changes, instead of by two copies kept equal.
   roles, instance tokens, humans-only kinds, redactions of hidden events).
 - A table of project messages kept beside the log: one more write on every
   post and on every redaction, to speed up a read nobody has measured.
+
+## An episode of not listening lives on the session, checked by a minute worker
+
+**Id:** 0cbc3037-5834-4a6d-b518-ae640fb47046
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §5.3 "Not listening" (contract #498, the maintainer's decision of 2026-10-28); the card tsk-43r1yqwjq3pg from the coordinator, 2026-10-28
+**Revisit when:** the hub runs more than one process (the open long-poll is known in process only), or the contract counts other calls than /events as listening
+
+A session's last call for events (or its resume) is stored as
+`events_at`; `last_seen_at` counts every call and cannot tell. An
+episode is three columns on the session: when the 10 minutes ran out,
+the oldest event that waited, and the notice filed to the profile's
+owner. A worker checks every minute, per session under its project's
+lock: it starts an episode when the oldest event that waits for the
+instance (`events.wakes`, and, where the team's wake rule chose no
+instance, the lead or every instance) is 10 minutes old and the session
+made no call for events in that time, and it ends one when the
+acknowledged cursor reaches that event, the session ends or an exclusion
+begins. A session with an open long-poll is listening. The start of
+`member_not_listening` wakes only an agent the event names by
+`member:`, the reports-to; the end wakes nobody.
+
+**Reason:** the episode must survive restarts and be ended by whoever
+notices first, so it is stored; on the session, since an episode belongs
+to one session and ends with it. A minute's delay to notice the end is
+what the contract's own check interval allows.
+
+**Rejected alternative:** ending the episode inside the /events call that
+acknowledges the event: faster, but that call would then take the
+project lock and file or withdraw requests on the long-poll's hot path;
+the worker keeps the read path cheap. A table of episodes of its own:
+more than one row per session is never needed.
+
+## The conversation list is built for all chats at once, not one chat at a time
+
+**Id:** 0b23275f-9dc4-44fe-8258-bd41cd8408e0
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** tsk-ggza5m1nwtzh; Traefik access log of 2026-10-28 (`GET /projects/O/S/conversations` p95 1.2 s); the local measurement in the pull request
+**Revisit when:** a list needs a count that no grouped query can give, or `GET /me/conversations` needs a different shape than `conversation_list` returns
+
+`GET /projects/{owner}/{slug}/conversations` (and the resume packet's list) built each entry
+with about ten statements and the whole list before it cut a page of 50, so a caller with 30
+chats paid 592 statements, 1.2 s on SQLite with 18,000 messages. `maity_hub.conversation_list`
+reads the same data for all chats in a fixed number of statements: the newest message of
+each chat after its window in one grouped query, the unread count in one grouped query
+joined to the read marks, the stays, owners and people of all rooms in one query each. A
+message is checked for a mention of the caller only when its payload text has a `member_id`
+and the caller's id (a chat message names its addressee in `to`, so the id alone matches
+everything); the exact test stays on the rows read. 38 statements and 0.15 s for the same
+data. The entry for a single chat (`GET .../conversations/{id}`) keeps its own code in
+`routes.conversations`, and `tests/test_conversation_list.py` holds the one-chat-at-a-time
+list as a reference: every caller kind, `observed`, page sizes and cursors give the same
+pages, and the statements stay the same when more chats are added.
+
+**Reason:** the cost was the statements per chat, not the data; building all entries in
+few queries keeps the page cut after the fact simple (the sort is by `_activity`, which
+needs every chat's newest message anyway) and gives `GET /me/conversations` one function to
+call per project. Deriving only the page's chats would have kept ten statements per chat
+for a default page of 50.
+
+**Rejected alternatives:**
+- Building only the entries of the page after sorting by a cheaper key: the key is the newest
+  message of each chat, which is most of the work, and a page of 50 is most callers' whole list.
+- A cache of the list: a read mark, a message or a rename would have to invalidate it.

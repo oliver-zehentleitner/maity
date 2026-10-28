@@ -34,7 +34,7 @@ URL_MAX = 2048
 TOKENS_MAX = 20
 AREAS_MAX = 20
 ENVIRONMENT_MAX = ticker.ENVIRONMENT_MAX
-TOKEN = re.compile(r"^(member|role|area):\S{1,255}$")
+TOKEN = re.compile(r"^(member|role|trust|area):\S{1,255}$")
 
 
 def _https(value: Any) -> bool:
