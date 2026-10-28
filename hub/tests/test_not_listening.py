@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import clock, not_listening
+from maity_hub import clock, events, not_listening
 from maity_hub import tables as t
 from tests import flow
 from tests.conftest import ClientFactory
@@ -300,7 +300,7 @@ def test_the_membership_is_read_again_under_the_projects_lock(
     s = setup
     s.message()
     s.at(11)
-    real = not_listening.lock_project
+    real = events.lock_project
 
     def paused_while_waiting(conn: Any, project_id: str) -> Any:
         conn.execute(
