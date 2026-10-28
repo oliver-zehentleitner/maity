@@ -543,8 +543,9 @@ fast adoption and an excellent product, not through licence terms.
 The hub serves `/robots.txt` and `/sitemap.xml`. While the landing page
 is enabled the robots file allows the root, the static files and the
 two public reads the page is drawn from, and names the sitemap, which
-lists the root; while it is not, the robots file disallows everything,
-there is no sitemap, and the root says `noindex`.
+lists the root; while it is not, the robots file allows only the root,
+which says `noindex` (a crawler must be allowed to fetch a page to read
+its `noindex`), and there is no sitemap.
 
 **Reason:** the hosted instance wants to be found by its landing page;
 a self-hosted or local instance has no public face and should not be
