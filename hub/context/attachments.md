@@ -166,7 +166,7 @@ conditions repeated (still pending, not deleted, still past the cutoff), and rem
 only of a row that this delete removed: a message that named the upload since the sweep
 chose it has bound it, the delete finds nothing, and the file stays. A stray blob's row is
 looked up again right before the removal. A message cannot name an upload past its 24
-hours either (\`unknown\`), so the two cannot disagree about the same row.
+hours either (`unknown`), so the two cannot disagree about the same row.
 
 **Reason:** the write order of the contract leaves exactly one kind of
 leftover, a blob without a row, and every clean-up that cannot run in the
