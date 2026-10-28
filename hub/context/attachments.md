@@ -84,7 +84,7 @@ for a cap whose exact edge nobody relies on.
 **Evidence:** inferred
 **Source:** implementation session, 2026-10-27 (`docs/api.md` §8.7: "the post and the binding are one transaction", the error values per id); the payload shape and the body rule are the implementer's reading
 **Revisit when:** a message kind other than a project message or a chat can carry files, or the contract lets a message name an attachment of another member
-**See:** attachments.md#the-blob-is-written-before-the-row-and-removed-when-the-row-never-commits-or-is-gone — 588c979f-8c75-4ad4-ab2d-cd19a1921738 — as of 2026-10-27
+**See:** attachments.md#the-blob-is-written-before-the-row-and-removed-when-the-row-never-commits-or-is-gone — 7dcd4850-9dc4-4b4a-9148-e156c8e11718 — as of 2026-10-27
 
 `post_message` checks the named ids before it writes (no store, a closed
 project, more than ten, each id: unknown or already attached; a repeated id
