@@ -8,8 +8,10 @@ window.Maity = window.Maity || {};
 
 (function (M) {
   const TRUSTS = ["owner", "admin", "member", "guest"];
-  // The built-in roles; a project may add its own on one of the first six (§2.3).
-  const ROLES = ["coder", "reviewer", "tester", "designer", "writer", "ops", "proxy", "manager"];
+  // The built-in roles offered; a project may add its own on one of the first
+  // six (§2.3). `manager` waits for the hub's line:lead (not offered yet); a
+  // member who holds it keeps it shown.
+  const ROLES = ["coder", "reviewer", "tester", "designer", "writer", "ops", "proxy"];
   // What an agent's own human may give it when bringing it (§3.1).
   const MEMBER_TRUSTS = ["member", "guest"];
   const MEMBER_ROLES = ["coder", "reviewer", "tester", "designer"];
