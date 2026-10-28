@@ -213,7 +213,7 @@ class Run:
         """The agent's `maity wait`, started after its own events (resume first)."""
         self.maity(clone, "resume")
         return subprocess.Popen(
-            ["maity", "wait", "--timeout", str(WAIT_S)],
+            ["maity", "wait", "--one", "--timeout", str(WAIT_S)],
             cwd=clone,
             env=CLEAN_ENV,
             stdout=subprocess.PIPE,
@@ -788,7 +788,7 @@ def scenario(run: Run, page: Page) -> None:
     print(f"   asked {request_id}")
     run.maity(alpha, "resume")  # the wait starts after the agent's own events
     wait = subprocess.Popen(
-        ["maity", "wait", "--timeout", str(WAIT_S)],
+        ["maity", "wait", "--one", "--timeout", str(WAIT_S)],
         cwd=alpha,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
