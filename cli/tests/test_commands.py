@@ -945,3 +945,25 @@ def test_an_ambiguous_mention_without_usable_names_shows_the_field_alone(
     err = capsys.readouterr().err
     assert "body: ambiguous_mention" in err
     assert "could mean" not in err and "long form" not in err
+
+
+def test_wait_kind_is_refused_with_keep_cursor(joined: Path, fake: fakehub.FakeHub) -> None:
+    """Reading past an event asks for `after` beyond it: the hub acknowledges it (§8.3)."""
+    fake.events += [{"seq": 11, "kind": "ticker"}]
+    code = cli.main(["wait", "--timeout", "2", "--kind", "message", "--keep-cursor"])
+    assert code == cli.EXIT_USAGE
+    assert not [r for r in fake.signed() if r.path.endswith("/events")]
+
+
+def test_wait_saves_the_cursor_only_after_printing(
+    joined: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    before = state.load_state(joined).get("cursor")
+    fake.events += [{"seq": n, "kind": "task_claimed"} for n in (11, 12)]
+
+    def stopped(_data: Any) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli, "_print_json", stopped)
+    assert cli.main(["wait", "--timeout", "5"]) == 130  # stopped before anything was printed
+    assert state.load_state(joined).get("cursor") == before

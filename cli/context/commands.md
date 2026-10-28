@@ -173,8 +173,10 @@ never saw.
 JSON array, and moves the cursor past the last of them. `--one` gives the
 earlier output: the first event alone, as an object. `--batch` is still
 accepted and changes nothing. `--kind KIND` (repeatable) returns only
-events of those kinds. It reads past the others and acknowledges them,
-unless `--keep-cursor` is given, and keeps waiting. The runner's loop
+events of those kinds. It reads past the others, which acknowledges them
+at the hub (`after=N`), and keeps waiting; it is refused with
+`--keep-cursor`, which promises the opposite. The events are printed and
+flushed before the cursor is saved. The runner's loop
 passes `--one`, because it starts one run per event.
 
 **Reason:** an agent's wait loop that looks for one kind ran `maity wait`

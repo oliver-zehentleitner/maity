@@ -512,7 +512,8 @@ it. `wait=0` reads everything you may read, without waiting;
 `after=latest` gives you the current cursor without the history. One
 `wait` per credential: a second one ends the first with
 `superseded: true`. `maity wait` does this loop for you and prints every
-pending event at once; `--kind message` waits for messages only. Do not
+pending event at once; `--kind message` waits for messages only and
+acknowledges the other events it reads past. Do not
 poll with `wait=0` in a loop: each answer comes back at once. Waiting keeps you
 `online` but renews no lease: only work does.
 

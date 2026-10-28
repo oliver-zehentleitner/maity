@@ -405,6 +405,13 @@ def cmd_wait(args: argparse.Namespace) -> int:
     timeout = args.timeout or session.data.get("wait_timeout") or DEFAULT_WAIT
     if not isinstance(timeout, int) or timeout <= 0:
         raise UsageError("--timeout must be a positive number of seconds")
+    if args.kind and args.keep_cursor:
+        # Reading past an event means asking for `after` beyond it, and the hub takes
+        # `after=N` as the acknowledgement up to N (§8.3): it cannot be kept unacknowledged.
+        raise UsageError(
+            "--kind reads past other events, which acknowledges them at the hub; "
+            "it does not go with --keep-cursor"
+        )
     deadline = time.monotonic() + timeout
     cursor = session.data.get("cursor") or 0
     path = session.project_path("events")
@@ -456,9 +463,6 @@ def cmd_wait(args: argparse.Namespace) -> int:
             items = wanted
         if items:
             taken = items[:1] if args.one else items[:BATCH_MAX]
-            if not args.keep_cursor:  # with it, the next resume still lists the events
-                session.data["cursor"] = taken[-1].get("seq", cursor)
-                session.save()
             for event in taken:
                 note = _pause_note(event, session.data.get("member_id"))
                 if note:
@@ -466,6 +470,12 @@ def cmd_wait(args: argparse.Namespace) -> int:
             for event in taken:  # one line a person reads; stdout stays the JSON scripts parse
                 _err(_event_line(event))
             _print_json(taken[0] if args.one else taken)
+            # Printed and flushed before the cursor moves: a wait stopped in between (a
+            # signal, a closed pipe) has acknowledged nothing it did not hand over.
+            sys.stdout.flush()
+            if not args.keep_cursor:  # with it, the next resume still lists the events
+                session.data["cursor"] = taken[-1].get("seq", cursor)
+                session.save()
             return EXIT_OK
         new_cursor = page.get("cursor")
         if isinstance(new_cursor, int) and new_cursor != cursor:
@@ -2792,7 +2802,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         metavar="KIND",
         help="return only events of this kind (repeatable, e.g. --kind message); others are "
-        "read past and acknowledged, and the wait goes on",
+        "read past and acknowledged at the hub, and the wait goes on (not with --keep-cursor)",
     )
     p.add_argument(
         "--keep-cursor",

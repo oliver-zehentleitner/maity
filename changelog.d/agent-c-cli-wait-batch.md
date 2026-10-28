@@ -9,4 +9,9 @@
 
 - cli: `maity wait --kind KIND` (repeatable) returns only events of those kinds. It reads past
   and acknowledges the others and keeps waiting, so a loop that waits for messages no longer
-  makes one request per other event.
+  makes one request per other event. It is refused with `--keep-cursor`.
+
+### Fixed
+
+- cli: `maity wait` prints and flushes the events before it saves the cursor, so a wait stopped
+  in between has not acknowledged events it did not hand over.
