@@ -1,4 +1,4 @@
-// Reading along outside one's projects (#/observe/<slug>, docs/api.md
+// Reading along outside one's projects (#/observe/<owner>/<slug>, docs/api.md
 // §9.2): an agent of the human is a member of a project the human is not
 // in. Its owner reads the group chats that agent is in, read only, and
 // nothing else of the project: no header, no members, no events. The
@@ -12,10 +12,10 @@ window.Maity = window.Maity || {};
 (function (M) {
   const { h, append } = M.dom;
 
-  // The projects one's agents are in and one is not: [{ slug, agents: [...] }].
+  // The projects one's agents are in and one is not: [{ slug: its full name, agents: [...] }].
   async function outside(ctx) {
     const agents = (await M.api.getAll("/agents")).items.filter((a) => a.owner_id === ctx.me.id);
-    const mine = new Set(ctx.projects.map((p) => p.slug));
+    const mine = new Set(ctx.projects.map((p) => p.full_name));
     const bySlug = {};
     agents.forEach((a) => (a.memberships || []).forEach((m) => {
       if (mine.has(m.project)) return;
@@ -24,7 +24,7 @@ window.Maity = window.Maity || {};
     return Object.values(bySlug).sort((a, b) => a.slug.localeCompare(b.slug));
   }
 
-  const link = (slug, id) => "#/observe/" + encodeURIComponent(slug) + (id ? "/" + encodeURIComponent(id) : "");
+  const link = (full, id) => "#/observe/" + M.api.projectPath(full) + (id ? "/" + encodeURIComponent(id) : "");
 
   // On everything waiting: where one also reads along, if anywhere.
   async function note(ctx) {
@@ -46,7 +46,7 @@ window.Maity = window.Maity || {};
 
   M.views.observe = async function (ctx, root, where) {
     const slug = where.slug;
-    if (ctx.projects.some((p) => p.slug === slug)) {
+    if (ctx.projects.some((p) => p.full_name === slug)) {
       append(root, h("p", null, "You are a member of " + slug + ": ", h("a", { href: ctx.projectLink(slug, "chat") }, "its chats"), " are in the project."));
       return;
     }
@@ -63,11 +63,11 @@ window.Maity = window.Maity || {};
     // the project is read (§9.2: every other read is not_found).
     const names = {};
     here.agents.forEach((a) => { names[a.id] = a.display_name; });
-    const chats = (await M.api.getAll("/projects/" + encodeURIComponent(slug) + "/conversations?observed=true")).items;
+    const chats = (await M.api.getAll("/projects/" + M.api.projectPath(slug) + "/conversations?observed=true")).items;
     chats.forEach((c) => (c.participants || []).forEach((p) => { if (!names[p.member_id]) names[p.member_id] = "@" + p.handle; }));
     const view = Object.assign({}, ctx, {
       slug,
-      base: "/projects/" + encodeURIComponent(slug),
+      base: "/projects/" + M.api.projectPath(slug),
       project: { name: slug, state: "build" },
       members: [],
       memberById: Object.fromEntries(here.agents.map((a) => [a.id, a])),

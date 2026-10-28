@@ -1,4 +1,4 @@
-// (4) Members (#/p/<slug>/members): everyone in the project, humans and
+// (4) Members (#/<owner>/<slug>/members): everyone in the project, humans and
 // agents, with role, owner, presence, when they joined and whether they are
 // paused (docs/api.md §6.2). With members:admin each row can be managed: the
 // role, an agent's pause, and removal. Where the hub sends them (an admin,
@@ -72,14 +72,19 @@ window.Maity = window.Maity || {};
         : m.last_seen_at && m.presence !== "online" ? h("span", { class: "muted" }, " · seen " + formatAgo(m.last_seen_at)) : null];
   }
 
-  // args[0]: a member to show (#/p/<slug>/members/<id>, a mention's link):
+  // args[0]: a member to show (#/<owner>/<slug>/members/<id>, a mention's link):
   // its row is marked and takes the focus.
   M.views.members = async function (ctx, root, args) {
-    const wanted = args && args[0];
+    // "join" asks for the join panel open (#/<owner>/<slug>/members/join).
+    const joinAsked = !!(args && args[0] === "join");
+    const wanted = joinAsked ? null : args && args[0];
     const status = M.statusLine();
     const box = h("div", { class: "members-box" });
     // Rows open for managing stay open across a redraw.
     const open = new Set();
+    // #/<owner>/<slug>/members/<id>/rulebook (a join's quota refusal): that row open, at its rulebook.
+    const rulebookAsked = !!(wanted && args[1] === "rulebook");
+    if (rulebookAsked) open.add(wanted);
     // member id -> its presence cell, updated in place by the refresh.
     const presenceCells = new Map();
     // focus key -> the element drawn for it, so focus survives a redraw.
@@ -153,10 +158,121 @@ window.Maity = window.Maity || {};
       return isConsent(answer) ? "consent" : true;
     }
 
+    // A row opens for a member admin, and for a human on their own agents
+    // (tsk-7v2snhk002ak): what the Agents page showed them, in one place.
+    const ownAgent = (m) => m.kind === "agent" && ctx.me.kind === "human" && m.owner_id === ctx.me.id;
+    const mayOpen = (m) => ctx.canAdmin || ownAgent(m);
+
+    // An agent's credentials, read when its row first opens and kept across
+    // redraws; a failed read costs that row its list, not the view.
+    const credsOf = new Map();
+    function credentialsPart(m) {
+      const P = M.agentParts;
+      if (!P) return null;
+      const slot = h("div", { class: "member-credentials" });
+      // A revocation reads this row's list again, in place: the row stays
+      // open and the focus goes to the list's heading.
+      const revoked = () => {
+        credsOf.delete(m.id);
+        load(true);
+      };
+      const fill = (got, refocus) => {
+        append(clear(slot), got.error
+          ? h("div", { class: "credentials" }, h("h4", { class: "credentials-title" }, "Credentials"), M.errorBox(got.error))
+          : P.credentials(ctx, m, got.list, revoked));
+        const head = refocus && slot.querySelector(".credentials-title");
+        if (head) { head.setAttribute("tabindex", "-1"); head.focus(); }
+      };
+      function load(refocus) {
+        const known = credsOf.get(m.id);
+        if (known && !known.then) { fill(known, refocus); return; }
+        if (!refocus) append(slot, h("p", { class: "muted" }, "Reading the credentials…"));
+        const reading = known || P.loadCredentials(ctx, m).then((got) => { credsOf.set(m.id, got); return got; });
+        credsOf.set(m.id, reading);
+        reading.then((got) => { if (slot.isConnected !== false) fill(got, refocus); });
+      }
+      load(false);
+      return slot;
+    }
+
+    // The team's rulebook (docs/api.md §6.18, tsk-xzbk67raztm0): for the
+    // human who owns the agent profile only, as the hub allows it; other
+    // viewers see none of it. Only the fields that changed are sent.
+    const DISTRIBUTION = [["free", "Free: any instance claims"], ["lead", "Lead: the lead hands cards out"], ["round_robin", "Round robin: in turn"]];
+    const WAKE = [["all", "All listening instances"], ["lead", "Only the lead"], ["next_free", "The least busy instance"]];
+    function teamForm(m, memberPath) {
+      if (!ownAgent(m) || !("team" in m)) return null;
+      const t = Object.assign({ max_instances: 1, distribution: "free", lead_instance: null, wake: "all", review_within_team: false }, m.team || {});
+      const id = (what) => "team-" + what + "-" + m.id;
+      const active = (m.instances || []).filter((i) => !i.revoked_at);
+      const max = keyed("team-max:" + m.id, h("input", { id: id("max"), type: "number", min: "1", max: "16", step: "1", "aria-describedby": id("max") + "-hint" }));
+      max.value = String(t.max_instances);
+      const pick = (what, list, value) => {
+        const s = h("select", { id: id(what) }, list.map(([v, l]) => h("option", { value: v }, l)));
+        s.value = value;
+        return s;
+      };
+      const distribution = pick("distribution", DISTRIBUTION, t.distribution);
+      const wake = pick("wake", WAKE, t.wake);
+      // A lead revoked since stays chosen, marked, so saving another field does not clear it.
+      const gone = t.lead_instance && !active.some((i) => i.id === t.lead_instance) ? [[t.lead_instance, "#" + t.lead_instance + " (revoked)"]] : [];
+      const lead = pick("lead", [["", "none"]].concat(active.map((i) => [i.id, i.label ? i.label + " (#" + i.id + ")" : "#" + i.id]), gone), t.lead_instance || "");
+      const review = h("input", { id: id("review"), type: "checkbox" });
+      review.checked = !!t.review_within_team;
+      const error = h("p", { class: "field-error", id: id("error"), role: "alert" });
+      const save = h("button", { type: "submit" }, "Save the rulebook");
+      return h("form", {
+        class: "member-team",
+        "aria-labelledby": id("title"),
+        onsubmit: async (e) => {
+          e.preventDefault();
+          error.textContent = "";
+          const n = Number(max.value);
+          if (!Number.isInteger(n) || n < 1 || n > 16) { error.textContent = "At most instances: a whole number from 1 to 16."; max.focus(); return; }
+          if ((distribution.value === "lead" || wake.value === "lead") && !lead.value) {
+            error.textContent = "A lead is needed while cards or wakes go to the lead."; lead.focus(); return;
+          }
+          const want = { max_instances: n, distribution: distribution.value, lead_instance: lead.value || null, wake: wake.value, review_within_team: review.checked };
+          const team = {};
+          Object.keys(want).forEach((k) => { if (want[k] !== t[k]) team[k] = want[k]; });
+          if (!Object.keys(team).length) { status.done(); append(status.el, h("span", { class: "ok" }, "Nothing changed.")); return; }
+          save.disabled = true;
+          await act("Saving the rulebook", "The rulebook of " + m.display_name + " is saved.", () => M.api.patch(memberPath, { team }), "team-max:" + m.id);
+          save.disabled = false;
+        },
+      },
+      h("h4", { id: id("title") }, "Team rulebook"),
+      h("p", { class: "hint" }, "How many instances of your agent may run here and how they share the work. Only you, its owner, set this."),
+      h("label", { for: id("max") }, "At most instances"), max,
+      h("p", { class: "hint", id: id("max") + "-hint" }, active.length + (active.length === 1 ? " instance is" : " instances are") + " active now. Lowering the limit stops none; it refuses new ones."),
+      h("label", { for: id("distribution") }, "Cards assigned to the team"), distribution,
+      h("label", { for: id("lead") }, "Lead instance"), lead,
+      h("label", { for: id("wake") }, "An event for the team wakes"), wake,
+      h("label", { class: "check", for: id("review") }, review, " One instance may review another's work"),
+      error,
+      t.updated_by ? h("p", { class: "muted" }, "Last set by @" + (t.updated_by.handle || t.updated_by.id) + (t.updated_at ? " · " + formatTime(t.updated_at) : "")) : null,
+      h("div", { class: "actions" }, save));
+    }
+
     function manage(m, rowId) {
       const memberPath = ctx.base + "/members/" + encodeURIComponent(m.id);
       const self = m.id === ctx.me.id;
+      // Their own agent's owner, without members:admin: its credentials and
+      // whether it gets their preferences, nothing that changes the membership.
+      if (!ctx.canAdmin) {
+        return h("tr", { class: "member-manage", id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell" },
+          teamForm(m, ctx.base + "/members/" + encodeURIComponent(m.id)),
+          credentialsPart(m),
+          M.preferences && "owner_preferences" in m ? M.preferences.ownerToggle(ctx, m) : null));
+      }
       const parts = [editForm(m, memberPath, self)];
+      if (m.kind === "agent") {
+        // The briefing (§6.2), edited here; where the hub knows briefings.
+        if ("briefing" in m && M.agentParts) parts.push(M.agentParts.briefingControl(ctx, m));
+        if (ownAgent(m) && M.preferences && "owner_preferences" in m) parts.push(M.preferences.ownerToggle(ctx, m));
+        parts.push(teamForm(m, memberPath));
+        parts.push(credentialsPart(m));
+      }
       if (m.kind === "agent") {
         const reasonId = "member-pause-" + m.id;
         const reason = keyed("reason:" + m.id, h("input", { id: reasonId, placeholder: "Why it stops, e.g. quota", autocomplete: "off" }));
@@ -295,12 +411,7 @@ window.Maity = window.Maity || {};
         h("p", { class: "hint", id: id("areas") + "-hint" }, "Repository paths this member owns, comma separated; cards in an area go to its narrowest owner."),
         errors.areas,
         h("fieldset", { class: "member-caps" }, h("legend", null, "Capabilities"),
-          caps.map((c) => h("label", { class: "check", for: c.box.id }, c.box, " " + c.label))),
-        // One briefing editor: on the agent's card.
-        m.kind === "agent" && "briefing" in m
-          ? h("p", { class: "muted member-briefing" }, "The briefing is edited on ", h("a", { href: ctx.link("agents") }, "the agent's card"),
-            m.briefing_by ? " · set by @" + m.briefing_by.handle : "", ".")
-          : null),
+          caps.map((c) => h("label", { class: "check", for: c.box.id }, c.box, " " + c.label)))),
       h("div", { class: "actions" }, save));
     }
 
@@ -308,7 +419,7 @@ window.Maity = window.Maity || {};
       // An agent's card is on the Agents view; one's own agent also has a chat.
       const mine = m.kind === "agent" && m.owner_id === ctx.me.id;
       return h("th", { scope: "row", role: "rowheader", "data-label": "Name", tabindex: m.id === wanted ? "-1" : null },
-        h("span", { class: "member-name" }, M.dom.memberRef(ctx, m.id)), h("span", { class: "muted" }, " @" + M.dom.handleOf(ctx, m)),
+        h("span", { class: "member-name" }, M.dom.memberRef(ctx, m.id, { avatar: 20 })), h("span", { class: "muted" }, " @" + M.dom.handleOf(ctx, m)),
         m.kind === "human" && !m.removed_at && m.language
           ? h("p", { class: "muted member-language" }, "Language: " + (m.language === "de" ? "Deutsch" : "English")) : null,
 
@@ -317,16 +428,18 @@ window.Maity = window.Maity || {};
         mine ? h("span", { class: "member-links" }, " · ", h("a", { href: ctx.link("chat", m.id) }, "Chat")) : null);
     }
 
-    function table(kind, list, columns) {
+    // heading: false where the heading stands apart (the agents', with Add).
+    function table(kind, list, columns, heading) {
       const label = kind === "human" ? "Humans" : "Agents";
+      const withActions = ctx.canAdmin || list.some(ownAgent);
       const headingId = "members-" + kind;
-      return [h("h3", { id: headingId }, label + " (" + list.length + ")"),
+      return [heading === false ? null : h("h3", { id: headingId }, label + " (" + list.length + ")"),
         h("div", { class: "table-wrap", tabindex: "0", role: "region", "aria-labelledby": headingId },
           h("table", { class: "members", role: "table", "aria-labelledby": headingId },
             h("thead", { role: "rowgroup" }, h("tr", { role: "row" },
               h("th", { scope: "col", role: "columnheader" }, "Name"),
               columns.map((c) => h("th", { scope: "col", role: "columnheader" }, c.title)),
-              ctx.canAdmin ? h("th", { scope: "col", role: "columnheader" }, "Actions") : null)),
+              withActions ? h("th", { scope: "col", role: "columnheader" }, "Actions") : null)),
             h("tbody", { role: "rowgroup" }, list.map((m) => {
               const expanded = open.has(m.id);
               const rowId = "member-manage-" + m.id;
@@ -337,17 +450,18 @@ window.Maity = window.Maity || {};
                   if (c.presence) presenceCells.set(m.id, td);
                   return td;
                 }),
-                ctx.canAdmin ? h("td", { class: "member-actions", "data-label": "Actions", role: "cell" }, keyed("manage:" + m.id, h("button", {
+                !withActions ? null : !mayOpen(m) ? h("td", { class: "member-actions", "data-label": "Actions", role: "cell" })
+                  : h("td", { class: "member-actions", "data-label": "Actions", role: "cell" }, keyed("manage:" + m.id, h("button", {
                   type: "button",
                   class: "small",
                   "aria-expanded": expanded ? "true" : "false",
                   "aria-controls": expanded ? rowId : null,
-                  "aria-label": (expanded ? "Done managing " : "Manage ") + m.display_name,
+                  "aria-label": (expanded ? (ctx.canAdmin ? "Done managing " : "Close the details of ") : (ctx.canAdmin ? "Manage " : "Details of ")) + m.display_name,
                   onclick: () => {
                     // Done closes the row and drops its unsaved edits.
-                    if (open.has(m.id)) { open.delete(m.id); edits.delete(m.id); redraw("manage:" + m.id); } else { open.add(m.id); redraw("role:" + m.id); }
+                    if (open.has(m.id)) { open.delete(m.id); edits.delete(m.id); redraw("manage:" + m.id); } else { open.add(m.id); redraw(ctx.canAdmin ? "role:" + m.id : "manage:" + m.id); }
                   },
-                }, expanded ? "Done" : "Manage"))) : null);
+                }, expanded ? "Done" : ctx.canAdmin ? "Manage" : "Details"))));
               return expanded ? [row, manage(m, rowId)] : row;
             }))))];
     }
@@ -367,17 +481,106 @@ window.Maity = window.Maity || {};
       const creds = { title: "Credentials", cell: (m) => credentialsText(m.credentials) };
       const ktw = { title: "Keep the Why", cell: ktwCell };
       const hasKtw = agents.some((m) => "keep_the_why_unconfirmed" in m);
-      append(clear(box),
-        table("human", humans, [role, presence, joined]),
-        agents.length
-          ? table("agent", agents, [role, owner, presence, joined, paused].concat(hasKtw ? [ktw] : [], hasCreds ? [creds] : []))
-          : [h("h3", null, "Agents (0)"), h("p", { class: "muted" }, "No agents yet. ", ctx.canAdmin ? h("a", { href: ctx.link("join") }, "Join one.") : null)]);
+      append(clear(box), table("human", humans, [role, presence, joined]));
+      agentsHeading.textContent = "Agents (" + agents.length + ")";
+      append(clear(agentsBox), agents.length
+        ? table("agent", agents, [role, owner, presence, joined, paused].concat(hasKtw ? [ktw] : [], hasCreds ? [creds] : []), false)
+        : h("p", { class: "muted" }, "No agents yet.", (ctx.canAdmin || memberAdds) && M.join ? " Add one: its line is made here." : ""));
+      drawJoins();
+    }
+
+    // Joining (docs/api.md §3.1, js/join.js), for whom may create joins:
+    // Add at the head of the agents' table opens the panel under it; the
+    // open joins stand as seats under the table, the others folded after
+    // the placements. The panel, its form and a line shown once live
+    // outside the redrawn table, so a redraw loses neither.
+    const agentsHeading = h("h3", { id: "members-agent" }, "Agents");
+    const addButton = h("button", { type: "button", class: "primary join-open" }, !ctx.canAdmin ? "+ Add my agent" : "+ Add an agent");
+    const agentsBox = h("div", { class: "members-agents" });
+    const seatsBox = h("div", { class: "profiles join-seats" });
+    const earlierBox = h("div", { class: "earlier-box" });
+    let J = null;
+    // Bringing one's own agent (§3.1, tsk-zd2ch05rk7s1): a human member
+    // without members:admin adds agents of their own while the project
+    // allows it, up to member_agents_max. Only where the hub sends the
+    // field: a hub without it refuses a member's join.
+    const policy = ctx.project.policy || {};
+    const memberAdds = !ctx.canAdmin && ctx.me.kind === "human" && ctx.role !== "guest" && (ctx.trust || "member") !== "guest"
+      && "member_agents" in policy && policy.member_agents !== "off";
+    const maxOwn = policy.member_agents_max === undefined ? 3 : policy.member_agents_max;
+    // What §3.1 counts: one's distinct agents with an active membership or
+    // an open join; an instance of one already counted adds nothing.
+    const ownMembers = () => items.filter((m) => ownAgent(m) && !m.removed_at);
+    const ownCount = () => new Set(ownMembers().map((m) => m.id).concat(J ? J.openAgents() : [])).size;
+    const limitNote = h("span", { class: "muted member-agents-limit" });
+    // How many agents, online, and joins open, under the agents' heading.
+    const countLine = h("p", { class: "muted agents-count" });
+    function drawCount() {
+      const agents = items.filter((m) => m.kind === "agent");
+      const open = J ? J.openCount() : 0;
+      countLine.textContent = agents.length + (agents.length === 1 ? " agent" : " agents") + " · "
+        + agents.filter((m) => m.presence === "online").length + " online"
+        + (J ? " · " + open + (open === 1 ? (memberAdds ? " open join of yours" : " open join") : (memberAdds ? " open joins of yours" : " open joins")) : "");
+      if (memberAdds) {
+        const n = ownCount();
+        const full = n >= maxOwn;
+        // At the limit the panel still makes an instance of one of them.
+        limitNote.textContent = n + " of " + maxOwn + " agents of yours"
+          + (full ? (ownMembers().length ? " · no new one; another instance or a replacement still" : " · the project allows no more") : "");
+        addButton.disabled = full && !ownMembers().length;
+        addButton.setAttribute("aria-describedby", "member-agents-limit");
+      }
+    }
+    function drawJoins() {
+      drawCount();
+      if (!J) return;
+      append(clear(seatsBox), J.seats());
+      append(clear(earlierBox), J.earlier());
     }
 
     append(root, h("h2", null, "Members"),
       h("p", { class: "muted" }, "Everyone in " + (ctx.project.name || ctx.slug) + ", humans first."
-        + (ctx.canAdmin ? " Manage a row to change its role, pause an agent or remove a member." : "")),
+        + (ctx.canAdmin ? " Manage a row to change its role, see and revoke an agent's credentials, edit its briefing, pause it or remove a member."
+          : ctx.members.some(ownAgent) ? " Your own agents' Details show their credentials and whether they get your preferences." : "")),
       status.el, box);
+    // The join panel is read beside the list, not before it: the rows and
+    // a member asked for by the URL never wait for the joins.
+    const panelSlot = h("div", { class: "join-panel-slot" });
+    addButton.hidden = true;
+    limitNote.id = "member-agents-limit";
+    append(root, h("div", { class: "toolbar agents-head" }, agentsHeading, memberAdds ? limitNote : null, addButton), countLine, panelSlot, agentsBox, seatsBox);
+    if ((ctx.canAdmin || memberAdds) && M.join) {
+      M.join.mount(ctx, {
+        member: memberAdds,
+        full: () => memberAdds && ownCount() >= maxOwn,
+        changed: drawJoins,
+        opened: (yes) => { addButton.hidden = yes; if (!yes) addButton.focus(); },
+      }).then((mounted) => {
+        J = mounted;
+        addButton.hidden = false;
+        addButton.addEventListener("click", () => { if (!addButton.disabled) J.open(addButton); });
+        append(panelSlot, J.panel, J.listStatus.el);
+        drawJoins();
+        // Asked for, or no agent yet: the panel is the way in, open at once.
+        if (joinAsked || (ctx.canAdmin && !items.some((m) => m.kind === "agent"))) J.open(addButton);
+      }, (err) => append(panelSlot, h("p", { class: "send-status failed" }, "Could not read the joins: " + err.message)));
+      // An agent running its line takes its seat: the list is read again,
+      // unless the panel is open; then only the seats move.
+      ctx.onEvents((events) => {
+        if (!J || !events.some((e) => e.kind === "member_joined")) return;
+        if (J.busy()) J.reread();
+        else reload().then(() => redraw(), () => {});
+      });
+    }
+    // Where the agents run (js/placements.js), where the hub has placements.
+    const placementsSlot = h("div", { class: "placements-slot" });
+    append(root, placementsSlot, earlierBox);
+    if (M.placements) {
+      const agentsNow = items.filter((m) => m.kind === "agent");
+      Promise.all(agentsNow.map((m) => (M.agentParts ? M.agentParts.loadCredentials(ctx, m) : Promise.resolve({ list: { items: [] } }))))
+        .then((creds) => M.placements.section(ctx, Object.fromEntries(agentsNow.map((m, i) => [m.id, (creds[i].list && creds[i].list.items) || []]))))
+        .then((placed) => { if (placed) append(placementsSlot, placed); }, () => {});
+    }
     draw();
     // Inviting a person (§3.4), below the members, for a human with members:admin.
     if (M.invite) {
@@ -390,9 +593,12 @@ window.Maity = window.Maity || {};
     // A member asked for by the URL: its row takes the focus once the view is
     // in the page; an id that is no member here is said.
     if (wanted) {
-      const row = Array.from(box.querySelectorAll("tr.member")).find((tr) => tr.getAttribute("data-member") === wanted);
+      const row = Array.from(box.querySelectorAll("tr.member")).concat(Array.from(agentsBox.querySelectorAll("tr.member")))
+        .find((tr) => tr.getAttribute("data-member") === wanted);
       const th = row && row.childNodes[0];
-      if (th) window.setTimeout(() => th.focus(), 0);
+      const at = rulebookAsked ? focusables.get("team-max:" + wanted) : null;
+      if (at) window.setTimeout(() => at.focus(), 0);
+      else if (th) window.setTimeout(() => th.focus(), 0);
       else append(status.el, h("span", null, "No member with the id " + wanted + " in this project."));
     }
     ctx.every(PRESENCE_MS, async () => {

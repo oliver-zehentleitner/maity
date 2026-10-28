@@ -24,18 +24,18 @@ def owner(make_client: ClientFactory, migrated: Engine) -> flow.Human:
 
 
 def _team(owner: flow.Human, member_id: str, **team: Any) -> Any:
-    return owner.patch(f"/projects/maity/members/{member_id}", {"team": team})
+    return owner.patch(f"/projects/maintainer/maity/members/{member_id}", {"team": team})
 
 
 def _second(make_client: ClientFactory, owner: flow.Human, first: flow.Agent) -> flow.Agent:
     """Another instance of `first`'s team, the rulebook raised to make room."""
-    count = len(owner.get(f"/projects/maity/members/{first.id}").json()["instances"])
+    count = len(owner.get(f"/projects/maintainer/maity/members/{first.id}").json()["instances"])
     assert _team(owner, first.id, max_instances=count + 1).status_code == 200
     return flow.agent(make_client, owner, agent={"id": first.id}, new_instance=True)
 
 
 def _card(who: Any) -> str:
-    response = who.post("/projects/maity/tasks", {"title": "A card"})
+    response = who.post("/projects/maintainer/maity/tasks", {"title": "A card"})
     assert response.status_code == 201, response.text
     card_id: str = response.json()["id"]
     return card_id
@@ -56,11 +56,13 @@ def test_the_exchange_gives_the_credential_its_instance_id(
 ) -> None:
     agent = flow.agent(make_client, owner)
     assert INSTANCE_PATTERN.fullmatch(agent.instance) and len(agent.instance) == 4
-    view = owner.get(f"/projects/maity/members/{agent.id}").json()
+    view = owner.get(f"/projects/maintainer/maity/members/{agent.id}").json()
     assert [i["id"] for i in view["instances"]] == [agent.instance]
     assert view["instances"][0]["address"] == f"{agent.id}#{agent.instance}"
     assert view["instances"][0]["credential_id"] == agent.credential_id  # the owner reads it
-    credentials = owner.get(f"/projects/maity/members/{agent.id}/credentials").json()["items"]
+    credentials = owner.get(f"/projects/maintainer/maity/members/{agent.id}/credentials").json()[
+        "items"
+    ]
     assert credentials[0]["instance"] == agent.instance
 
 
@@ -77,17 +79,19 @@ def test_a_member_join_says_which_instance_it_adds(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
     agent = flow.agent(make_client, owner)
-    neither = owner.post("/projects/maity/joins", {"agent": {"id": agent.id}})
+    neither = owner.post("/projects/maintainer/maity/joins", {"agent": {"id": agent.id}})
     assert neither.json()["error"]["details"]["fields"] == {"instance": "required"}
     both = owner.post(
-        "/projects/maity/joins",
+        "/projects/maintainer/maity/joins",
         {"agent": {"id": agent.id}, "new_instance": True, "replaces": agent.instance},
     )
     assert both.json()["error"]["details"]["fields"] == {"instance": "one_of"}
-    unknown = owner.post("/projects/maity/joins", {"agent": {"id": agent.id}, "replaces": "zzzz"})
+    unknown = owner.post(
+        "/projects/maintainer/maity/joins", {"agent": {"id": agent.id}, "replaces": "zzzz"}
+    )
     assert unknown.json()["error"]["details"]["fields"] == {"replaces": "not_an_instance"}
     first = owner.post(
-        "/projects/maity/joins",
+        "/projects/maintainer/maity/joins",
         {"agent": {"handle": "fresh", "display_name": "F"}, "new_instance": True},
     )
     assert first.json()["error"]["details"]["fields"] == {"new_instance": "not_a_member"}
@@ -97,7 +101,9 @@ def test_new_instances_stay_within_max_instances(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
     agent = flow.agent(make_client, owner)
-    over = owner.post("/projects/maity/joins", {"agent": {"id": agent.id}, "new_instance": True})
+    over = owner.post(
+        "/projects/maintainer/maity/joins", {"agent": {"id": agent.id}, "new_instance": True}
+    )
     assert over.status_code == 409
     assert over.json()["error"]["code"] == "instance_quota"
     assert over.json()["error"]["details"] == {"max": 1}
@@ -110,9 +116,9 @@ def test_new_instances_stay_within_max_instances(
     assert refused.status_code == 409 and refused.headers["Maity-Error"] == "instance_quota"
     assert _team(owner, agent.id, max_instances=3).status_code == 200
     assert flow.exchange(make_client(), two).status_code == 201
-    view = owner.get(f"/projects/maity/members/{agent.id}").json()
+    view = owner.get(f"/projects/maintainer/maity/members/{agent.id}").json()
     assert len({i["id"] for i in view["instances"]}) == 3
-    listed = {j["id"]: j for j in owner.get("/projects/maity/joins").json()["items"]}
+    listed = {j["id"]: j for j in owner.get("/projects/maintainer/maity/joins").json()["items"]}
     assert listed[two["id"]]["new_instance"] is True and listed[two["id"]]["instance"]
 
 
@@ -136,24 +142,24 @@ def test_a_card_is_held_by_exactly_one_instance(
     first.resume()
     second.resume()
     card_id = _card(owner)
-    claimed = first.post(f"/projects/maity/tasks/{card_id}/claim", {})
+    claimed = first.post(f"/projects/maintainer/maity/tasks/{card_id}/claim", {})
     assert claimed.status_code == 200, claimed.text
     claim = claimed.json()["claim"]
     assert (claim["holder"], claim["instance"]) == (first.id, first.instance)
     assert claim["address"] == f"{first.id}#{first.instance}"
-    again = second.post(f"/projects/maity/tasks/{card_id}/claim", {})
+    again = second.post(f"/projects/maintainer/maity/tasks/{card_id}/claim", {})
     assert again.json()["error"]["code"] == "already_claimed"
     assert again.json()["error"]["details"]["instance"] == first.instance
     step = {"last_step": "a", "next_step": "b"}
-    sibling = second.post(f"/projects/maity/tasks/{card_id}/checkpoint", step)
+    sibling = second.post(f"/projects/maintainer/maity/tasks/{card_id}/checkpoint", step)
     assert sibling.status_code == 409
     assert sibling.json()["error"]["code"] == "not_holder"
     assert sibling.json()["error"]["details"] == {"instance": first.instance}
-    assert second.post(f"/projects/maity/tasks/{card_id}/release").status_code == 409
-    held = first.post(f"/projects/maity/tasks/{card_id}/checkpoint", step).json()
+    assert second.post(f"/projects/maintainer/maity/tasks/{card_id}/release").status_code == 409
+    held = first.post(f"/projects/maintainer/maity/tasks/{card_id}/checkpoint", step).json()
     assert held["checkpoint"]["instance"] == first.instance
     event = _events(migrated, "task_checkpoint")[-1]
-    view = owner.get("/projects/maity/events", params={"after": event.seq - 1}).json()
+    view = owner.get("/projects/maintainer/maity/events", params={"after": event.seq - 1}).json()
     actors = [e["actor"] for e in view["items"] if e["kind"] == "task_checkpoint"]
     assert actors and actors[0]["instance"] == first.instance
 
@@ -164,18 +170,18 @@ def test_a_sibling_does_not_renew_the_holders_lease(
     first = flow.agent(make_client, owner)
     second = _second(make_client, owner, first)
     card_id = _card(owner)
-    first.post(f"/projects/maity/tasks/{card_id}/claim", {})
+    first.post(f"/projects/maintainer/maity/tasks/{card_id}/claim", {})
     with migrated.begin() as conn:
         conn.execute(
             t.card.update()
             .where(t.card.c.id == card_id)
             .values(lease_until=factory.at("2000-01-01T00:00:00Z"))
         )
-    second.get("/projects/maity/tasks")
+    second.get("/projects/maintainer/maity/tasks")
     with migrated.connect() as conn:
         lease = conn.execute(select(t.card.c.lease_until).where(t.card.c.id == card_id)).scalar()
     assert lease == factory.at("2000-01-01T00:00:00Z")
-    first.get("/projects/maity/tasks")
+    first.get("/projects/maintainer/maity/tasks")
     with migrated.connect() as conn:
         lease = conn.execute(select(t.card.c.lease_until).where(t.card.c.id == card_id)).scalar()
     assert lease is not None and lease > clock.now()
@@ -187,7 +193,7 @@ def test_the_packet_lists_this_instances_claims_and_its_siblings(
     first = flow.agent(make_client, owner)
     second = _second(make_client, owner, first)
     card_id = _card(owner)
-    first.post(f"/projects/maity/tasks/{card_id}/claim", {})
+    first.post(f"/projects/maintainer/maity/tasks/{card_id}/claim", {})
     mine = first.resume().json()
     theirs = second.resume().json()
     assert [c["id"] for c in mine["claims"]] == [card_id]
@@ -213,10 +219,12 @@ def test_an_admin_claim_for_a_team_names_the_instance(
     first = flow.agent(make_client, owner)
     second = _second(make_client, owner, first)
     card_id = _card(owner)
-    open_choice = owner.post(f"/projects/maity/tasks/{card_id}/claim", {"holder": first.id})
+    open_choice = owner.post(
+        f"/projects/maintainer/maity/tasks/{card_id}/claim", {"holder": first.id}
+    )
     assert open_choice.json()["error"]["details"]["fields"] == {"holder": "instance_required"}
     named = owner.post(
-        f"/projects/maity/tasks/{card_id}/claim",
+        f"/projects/maintainer/maity/tasks/{card_id}/claim",
         {"holder": f"{first.id}#{second.instance}"},
     )
     assert named.status_code == 200, named.text
@@ -243,12 +251,13 @@ def test_an_unbound_claim_is_held_by_no_instance(
         lease_until=clock.now(),
     )
     for agent in (first, second):
-        assert agent.get(f"/projects/maity/members/{agent.id}").status_code == 200
+        assert agent.get(f"/projects/maintainer/maity/members/{agent.id}").status_code == 200
         checkpoint = agent.post(
-            f"/projects/maity/tasks/{card_id}/checkpoint", {"last_step": "a", "next_step": "b"}
+            f"/projects/maintainer/maity/tasks/{card_id}/checkpoint",
+            {"last_step": "a", "next_step": "b"},
         )
         assert checkpoint.status_code == 409, checkpoint.text
-    card = owner.get(f"/projects/maity/tasks/{card_id}").json()
+    card = owner.get(f"/projects/maintainer/maity/tasks/{card_id}").json()
     assert card["claim"]["instance"] is None  # no call bound it
 
 
@@ -259,10 +268,10 @@ def test_an_expired_claim_assigned_to_a_team_names_the_instance(
     team = flow.agent(make_client, owner)
     second = _second(make_client, owner, team)
     card_id = _card(owner)
-    assert holder.post(f"/projects/maity/tasks/{card_id}/claim", {}).status_code == 200
+    assert holder.post(f"/projects/maintainer/maity/tasks/{card_id}/claim", {}).status_code == 200
     with migrated.begin() as conn:
         conn.execute(t.card.update().where(t.card.c.id == card_id).values(lease_until=clock.now()))
-    path = f"/projects/maity/tasks/{card_id}/assign"
+    path = f"/projects/maintainer/maity/tasks/{card_id}/assign"
     open_choice = owner.post(path, {"assignee": team.id})
     assert open_choice.status_code == 400
     assert open_choice.json()["error"]["details"]["fields"] == {"instance": "instance_required"}
@@ -299,7 +308,7 @@ def test_a_chat_message_names_the_instance_that_sent_it(
 ) -> None:
     first = flow.agent(make_client, owner)
     second = _second(make_client, owner, first)
-    path = f"/projects/maity/conversations/{first.id}/messages"
+    path = f"/projects/maintainer/maity/conversations/{first.id}/messages"
     for who, body in ((first, "one"), (second, "two"), (owner, "three")):
         assert who.post(path, {"body": body}).status_code == 201
     items = owner.get(path).json()["items"]
@@ -318,14 +327,18 @@ def test_a_request_names_the_instance_that_asked(
     first.resume()
     second.resume()
     for who in (first, second):
-        response = who.post("/projects/maity/requests", {"class": "decision", "title": "Which?"})
+        response = who.post(
+            "/projects/maintainer/maity/requests", {"class": "decision", "title": "Which?"}
+        )
         assert response.status_code == 201, response.text
         assert response.json()["asked_by"]["instance"] == who.instance
-    items = owner.get("/projects/maity/requests").json()["items"]
+    items = owner.get("/projects/maintainer/maity/requests").json()["items"]
     assert sorted(r["asked_by"]["instance"] for r in items) == sorted(
         [first.instance, second.instance]
     )
-    mine = owner.post("/projects/maity/requests", {"class": "decision", "title": "Mine?"})
+    mine = owner.post(
+        "/projects/maintainer/maity/requests", {"class": "decision", "title": "Mine?"}
+    )
     assert mine.status_code == 201, mine.text
     assert mine.json()["asked_by"]["instance"] is None  # a human has no instances
 
@@ -338,13 +351,18 @@ def test_a_replacement_takes_the_claims_and_the_lead(
 ) -> None:
     old = flow.agent(make_client, owner)
     card_id = _card(owner)
-    old.post(f"/projects/maity/tasks/{card_id}/claim", {})
-    old.post(f"/projects/maity/tasks/{card_id}/checkpoint", {"last_step": "a", "next_step": "b"})
+    old.post(f"/projects/maintainer/maity/tasks/{card_id}/claim", {})
+    old.post(
+        f"/projects/maintainer/maity/tasks/{card_id}/checkpoint",
+        {"last_step": "a", "next_step": "b"},
+    )
     assert _team(owner, old.id, lead_instance=old.instance).status_code == 200
     new = flow.agent(make_client, owner, agent={"id": old.id}, replaces=old.instance)
     assert new.instance != old.instance
-    assert old.get("/projects/maity/tasks").headers["Maity-Error"] == "credential_revoked"
-    view = owner.get(f"/projects/maity/members/{old.id}").json()
+    assert (
+        old.get("/projects/maintainer/maity/tasks").headers["Maity-Error"] == "credential_revoked"
+    )
+    view = owner.get(f"/projects/maintainer/maity/members/{old.id}").json()
     assert [i["id"] for i in view["instances"]] == [new.instance]
     assert view["instances"][0]["replaces"] == old.instance
     assert view["team"]["lead_instance"] == new.instance
@@ -367,14 +385,14 @@ def test_revoking_one_instance_leaves_the_others_working(
     second = _second(make_client, owner, first)
     assert _team(owner, first.id, lead_instance=first.instance).status_code == 200
     card_id = _card(owner)
-    first.post(f"/projects/maity/tasks/{card_id}/claim", {})
-    revoked = owner.post(f"/projects/maity/credentials/{first.credential_id}/revoke", {})
+    first.post(f"/projects/maintainer/maity/tasks/{card_id}/claim", {})
+    revoked = owner.post(f"/projects/maintainer/maity/credentials/{first.credential_id}/revoke", {})
     assert revoked.status_code == 200
     assert second.resume().status_code == 200
-    view = owner.get(f"/projects/maity/members/{first.id}").json()
+    view = owner.get(f"/projects/maintainer/maity/members/{first.id}").json()
     assert view["team"]["lead_instance"] is None
     assert [i["id"] for i in view["instances"]] == [second.instance]
-    card = owner.get(f"/projects/maity/tasks/{card_id}").json()
+    card = owner.get(f"/projects/maintainer/maity/tasks/{card_id}").json()
     assert card["claim"]["instance"] == first.instance  # stays with the revoked instance
     updated = _events(migrated, "member_updated")[-1]
     assert updated.payload["changed"] == ["team"]
@@ -387,7 +405,7 @@ def test_removing_the_member_revokes_every_instance(
     second = _second(make_client, owner, first)
     assert _team(owner, first.id, lead_instance=first.instance).status_code == 200
     before = _events(migrated, "member_updated")[-1].seq
-    assert owner.delete(f"/projects/maity/members/{first.id}").status_code == 200
+    assert owner.delete(f"/projects/maintainer/maity/members/{first.id}").status_code == 200
     with migrated.connect() as conn:
         open_ = conn.execute(
             select(t.credential.c.id).where(t.credential.c.revoked_at.is_(None))
@@ -408,13 +426,17 @@ def test_only_the_agents_owner_sets_the_rulebook(
 ) -> None:
     agent = flow.agent(make_client, owner)
     admin_agent = flow.agent(make_client, owner, role="admin")
-    by_agent = admin_agent.patch(f"/projects/maity/members/{agent.id}", {"team": {"wake": "all"}})
+    by_agent = admin_agent.patch(
+        f"/projects/maintainer/maity/members/{agent.id}", {"team": {"wake": "all"}}
+    )
     assert by_agent.status_code == 403
     assert by_agent.json()["error"]["details"]["reason"] == "humans_only"
     # An agent learns it is a human's call before any other check (§2.3).
-    on_a_human = admin_agent.patch(f"/projects/maity/members/{owner.id}", {"team": {"wake": "all"}})
+    on_a_human = admin_agent.patch(
+        f"/projects/maintainer/maity/members/{owner.id}", {"team": {"wake": "all"}}
+    )
     mixed = admin_agent.patch(
-        f"/projects/maity/members/{agent.id}", {"team": {"wake": "all"}, "role": "admin"}
+        f"/projects/maintainer/maity/members/{agent.id}", {"team": {"wake": "all"}, "role": "admin"}
     )
     for refused in (on_a_human, mixed):
         assert refused.status_code == 403, refused.text
@@ -436,11 +458,12 @@ def test_only_the_agents_owner_sets_the_rulebook(
 def test_team_is_set_on_its_own(owner: flow.Human, make_client: ClientFactory) -> None:
     agent = flow.agent(make_client, owner)
     mixed = owner.patch(
-        f"/projects/maity/members/{agent.id}", {"team": {"max_instances": 2}, "role": "admin"}
+        f"/projects/maintainer/maity/members/{agent.id}",
+        {"team": {"max_instances": 2}, "role": "admin"},
     )
     assert mixed.status_code == 400
     assert mixed.json()["error"]["details"]["fields"] == {"team": "alone"}
-    view = owner.get(f"/projects/maity/members/{agent.id}").json()
+    view = owner.get(f"/projects/maintainer/maity/members/{agent.id}").json()
     assert (view["role"], view["team"]["max_instances"]) == ("member", 1)
 
 
@@ -461,11 +484,14 @@ def test_an_owner_who_is_no_member_sets_the_rulebook(
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
     factory.membership(migrated, project_id, "admin", human_id=colleague.id)
     theirs = flow.agent(make_client, colleague, agent={"handle": "theirs", "display_name": "T"})
-    assert owner.delete(f"/projects/maity/members/{colleague.id}").status_code == 200
+    assert owner.delete(f"/projects/maintainer/maity/members/{colleague.id}").status_code == 200
     # Outside the project it sees nothing of it: no member view, no briefing (§1.3).
     outside = _team(colleague, theirs.id, max_instances=2)
     assert outside.status_code == 204 and outside.content == b""
-    assert owner.get(f"/projects/maity/members/{theirs.id}").json()["team"]["max_instances"] == 2
+    assert (
+        owner.get(f"/projects/maintainer/maity/members/{theirs.id}").json()["team"]["max_instances"]
+        == 2
+    )
     stranger = flow.human(make_client, migrated, "stranger")
     assert _team(stranger, theirs.id, max_instances=4).status_code == 404
 
@@ -478,7 +504,7 @@ def test_the_rulebooks_answer_shows_the_briefing_only_to_members_admin(
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
     factory.membership(migrated, project_id, "admin", human_id=colleague.id)
     theirs = flow.agent(make_client, colleague, agent={"handle": "theirs", "display_name": "T"})
-    demoted = owner.patch(f"/projects/maity/members/{colleague.id}", {"role": "member"})
+    demoted = owner.patch(f"/projects/maintainer/maity/members/{colleague.id}", {"role": "member"})
     assert demoted.status_code == 200, demoted.text
     plain = _team(colleague, theirs.id, max_instances=2)
     assert plain.status_code == 200 and "briefing" not in plain.json()
@@ -493,6 +519,7 @@ def test_existing_credentials_become_instances(engine: Engine) -> None:
     migrate(engine, "0013")
     project_id = factory.project(engine)
     human_id = factory.human(engine)
+    factory.membership(engine, project_id, human_id=human_id)  # its namespace owner (0060)
     agent_id = new_id("agent")
     with engine.begin() as conn:
         conn.execute(

@@ -15,7 +15,7 @@ import uvicorn
 from sqlalchemy import exists, insert, inspect, literal, select
 from sqlalchemy.exc import SQLAlchemyError
 
-from maity_hub import __version__, clock, longpoll
+from maity_hub import __version__, clock, longpoll, namespace
 from maity_hub import tables as t
 from maity_hub.app import SchemaNotCurrentError, create_app, require_current_schema
 from maity_hub.auth.passwords import MIN_LENGTH, hash_password
@@ -126,6 +126,8 @@ def _owner_create(
                         EXIT_FAILURE,
                     )
             else:
+                if handle in namespace.DASHBOARD_WORDS:  # never a namespace (§6.25)
+                    return _fail(f"the handle {handle!r} is a dashboard route", EXIT_FAILURE)
                 if conn.execute(select(t.human.c.id).where(t.human.c.handle == handle)).first():
                     return _fail(f"a human with the handle {handle!r} exists", EXIT_FAILURE)
                 conn.execute(insert(t.human).values(**values))

@@ -2,7 +2,7 @@
 // Swarm tab — who is online now and what each holds, the window's counts
 // per member and in all, the cards done per day — with a 7/30/90-day
 // switch. A project whose owner switched `policy.swarm_public` on shows a
-// reduced page to the world at #/s/<slug>: agents only, by their global
+// reduced page to the world at #/s/<owner>/<slug>: agents only, by their global
 // names, counts and presence, no pictures, no card titles. Everything is
 // derived by the hub; the page only draws it.
 "use strict";
@@ -102,7 +102,7 @@ window.Maity = window.Maity || {};
 
   M.views.swarm = async function (ctx, root) {
     let served = true;
-    try { served = await M.api.hubHas("GET", "/projects/{slug}/swarm"); } catch (err) { served = true; }
+    try { served = await M.api.hubHas("GET", "/projects/{owner}/{slug}/swarm"); } catch (err) { served = true; }
     append(root, h("h2", null, "Swarm"));
     if (!served) { append(root, M.dom.notOnHub("This hub has no swarm page yet.")); return; }
     let days = 30;
@@ -130,7 +130,7 @@ window.Maity = window.Maity || {};
         table(s.members || [], t, (r) => memberLink(r.member_id, "@" + (r.name || r.handle))),
         notes(s),
         ctx.project && ctx.project.policy && ctx.project.policy.swarm_public === "on" && !["accepted", "archived"].includes(ctx.project.state)
-          ? h("p", { class: "muted" }, "This project shows a public version of this page: ", h("a", { href: "#/s/" + encodeURIComponent(ctx.slug) }, "#/s/" + ctx.slug), ".")
+          ? h("p", { class: "muted" }, "This project shows a public version of this page: ", h("a", { href: "#/s/" + M.api.projectPath(ctx.slug) }, "#/s/" + ctx.slug), ".")
           : null);
     }
 
@@ -141,13 +141,14 @@ window.Maity = window.Maity || {};
     await load();
   };
 
-  // ---- the public page (#/s/<slug>) -----------------------------------------
+  // ---- the public page (#/s/<owner>/<slug>; the old #/s/<slug> too) ----------
 
   async function publicPage(main, header, slug) {
     // The way on: a member to the project's own tab, anyone else to sign in.
     append(clear(header), h("div", { class: "bar" }, M.brandTitle ? M.brandTitle() : null,
       M.api.source === "fixtures" ? h("span", { class: "source" }, "Fixtures") : null,
-      h("a", { class: "swarm-onward", href: "#/p/" + encodeURIComponent(slug) + "/swarm" }, "Members' view"),
+      // The old address has no owner: its members' view is the old project address, rewritten.
+      h("a", { class: "swarm-onward", href: (slug.includes("/") ? "#/" : "#/p/") + M.api.projectPath(slug) + "/swarm" }, "Members' view"),
       h("a", { class: "swarm-onward", href: "#/login" }, "Sign in"),
       M.themeMenu()));
     const box = h("article", { class: "swarm-public" });
@@ -172,7 +173,7 @@ window.Maity = window.Maity || {};
         table(s.members || [], t, (r) => r.name || r.handle),
         notes(s));
     };
-    const load = loader(status, () => M.api.get("/swarm/" + encodeURIComponent(slug) + "?days=" + days), draw, (err) => {
+    const load = loader(status, () => M.api.get("/swarm/" + M.api.projectPath(slug) + "?days=" + days), draw, (err) => {
       status.done();
       append(clear(box), h("h2", null, "No public swarm here"),
         h("p", null, err.status === 404 ? "This project shows no public swarm page, or there is no such project." : "The page could not be read: " + (err.message || "an error") + "."),

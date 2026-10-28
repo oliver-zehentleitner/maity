@@ -13,7 +13,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, and_, insert, or_, select, update
 
-from maity_hub import clock, idempotency, mentions, paging
+from maity_hub import clock, idempotency, mentions, namespace, paging
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.auth.caller import Caller
@@ -23,10 +23,11 @@ from maity_hub.errors import ApiError, humans_only, invalid, not_found, rate_lim
 from maity_hub.events import emit, on_rollback
 from maity_hub.ids import new_id
 from maity_hub.models import Strict, Written, markdown
+from maity_hub.namespace import ProjectRoute
 from maity_hub.policy import CLOSED_STATES
 from maity_hub.routes.tasks import _locked, _project_card, audience
 
-router = APIRouter()
+router = APIRouter(route_class=ProjectRoute)
 
 PAGE_DEFAULT, PAGE_MAX = 50, 200
 REDACTION_AUDIENCE = ["role:owner", "role:admin"]  # every redaction's notice (§8.5)
@@ -99,7 +100,7 @@ def changed(
 # --- links (§6.13) -------------------------------------------------------------------------
 
 
-@router.post("/projects/{slug}/tasks/{card_id}/links")
+@router.post("/projects/{owner}/{slug}/tasks/{card_id}/links")
 def post_link(
     slug: str, card_id: str, body: links.LinkIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -128,10 +129,9 @@ def observe_soon(request: Request, slug: str, response: JSONResponse) -> None:
     if worker is None or response.status_code != 201:
         return
     with engine_of(request).connect() as conn:
-        project_id = conn.execute(
-            select(t.project.c.id).where(t.project.c.slug == slug)
-        ).scalar_one()
-    worker.links_added(project_id)
+        project = namespace.resolve(conn, slug)
+    if project is not None:
+        worker.links_added(project.id)
 
 
 def load_link(conn: Connection, link_id: str) -> dict[str, Any]:
@@ -158,7 +158,7 @@ idempotency.LOADERS["link"] = idempotency.plain(load_link)
 idempotency.LOADERS["removed_link"] = idempotency.plain(load_removed_link)
 
 
-@router.delete("/projects/{slug}/tasks/{card_id}/links/{link_id}")
+@router.delete("/projects/{owner}/{slug}/tasks/{card_id}/links/{link_id}")
 def delete_link(
     slug: str, card_id: str, link_id: str, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -194,7 +194,7 @@ def delete_link(
 # --- history (§6.15) -----------------------------------------------------------------------
 
 
-@router.get("/projects/{slug}/tasks/{card_id}/history")
+@router.get("/projects/{owner}/{slug}/tasks/{card_id}/history")
 def get_history(
     slug: str,
     card_id: str,
@@ -236,7 +236,7 @@ def _redactor(mine: Membership, caller: Caller) -> None:
     mine.require("events:admin")
 
 
-@router.post("/projects/{slug}/tasks/{card_id}/history/{history_id}/redact")
+@router.post("/projects/{owner}/{slug}/tasks/{card_id}/history/{history_id}/redact")
 def redact_history(
     slug: str, card_id: str, history_id: str, body: RedactIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -303,7 +303,7 @@ def _members(conn: Connection, *membership_ids: int | None) -> list[str]:
     return [f"member:{found[i]}" for i in membership_ids if i is not None]
 
 
-@router.get("/projects/{slug}/tasks/{card_id}/notes")
+@router.get("/projects/{owner}/{slug}/tasks/{card_id}/notes")
 def list_notes(
     slug: str,
     card_id: str,
@@ -341,7 +341,7 @@ def list_notes(
         )
 
 
-@router.post("/projects/{slug}/tasks/{card_id}/notes")
+@router.post("/projects/{owner}/{slug}/tasks/{card_id}/notes")
 def post_note(
     slug: str, card_id: str, body: NoteIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -401,7 +401,7 @@ def post_note(
     return idempotency.run(engine_of(request), request, caller, action)
 
 
-@router.post("/projects/{slug}/tasks/{card_id}/notes/{note_id}/resolve")
+@router.post("/projects/{owner}/{slug}/tasks/{card_id}/notes/{note_id}/resolve")
 def resolve_note(
     slug: str, card_id: str, note_id: str, body: ResolveIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -447,7 +447,7 @@ def resolve_note(
     return idempotency.run(engine_of(request), request, caller, action)
 
 
-@router.post("/projects/{slug}/tasks/{card_id}/notes/{note_id}/redact")
+@router.post("/projects/{owner}/{slug}/tasks/{card_id}/notes/{note_id}/redact")
 def redact_note(
     slug: str, card_id: str, note_id: str, body: RedactIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:

@@ -173,3 +173,111 @@ it refers to, and a review has to name the head it reviewed. Maity's
 completion report carries the head from git, and reviews of a card
 should be tied to the head they saw, so that a crossing like this shows
 instead of costing a review.
+
+## Agents worked for hours without Keep the Why: the instruction to load it was never read
+
+**Id:** c0692bcc-f883-443e-a55c-e280a117cd9d
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** build session, 2026-10-27; the coordinator's own session and the agents' answers to a check the same day
+**See:** projects.md#maity-tells-every-agent-how-to-load-keep-the-why-and-lets-it-adopt-the-projects-personal-defaults — 4859417a-15f0-44c1-821e-cc80f888e34d — as of 2026-10-27
+
+On the day a new team joined, the coordinator and at least one coding
+agent worked for hours without the Keep the Why skill loaded. The
+instruction to load it first lives in `AGENTS.md`. Claude Code reads
+`CLAUDE.md`, and the root `CLAUDE.md` is a personal, ignored file, so a
+clone without one never shows the instruction. The coordinator's
+session had also started outside its clone, its machine had neither the
+skill nor `npx`, and the hub did not enforce Keep the Why: the
+project's flag read false, although it had been ticked at creation, and
+the commitment of the contract was not built. The agents wrote
+`context/` entries anyway, from the format they saw in the repository,
+but without the skill's setup check, its linter run or its rules.
+
+**Learned:** an instruction that lives in one file is only as good as
+every agent's way of reading that file. The contract now says Maity
+hands the skill's install and load instructions to every agent in its
+resume (§6.23, decided the same day). As of this entry the hub does not
+do it yet: its resume still carries only `enabled` and `instruction`.
+Until that is built and verified on the live hub, each Claude Code
+agent keeps a local `CLAUDE.md` that imports `AGENTS.md`, and loads the
+skill as `AGENTS.md` says.
+
+**Rejected alternative:** commit a root `CLAUDE.md` with `@AGENTS.md`.
+The ignore file marks it as personal, so committing it would override
+every developer's own file. That it is meant to be personal is read
+from the ignore file's comment, not confirmed by the maintainer.
+
+## Parallel full test suites on the shared VM took it down twice
+
+**Id:** 998fc76e-6c7b-4791-91de-d04a0d514333
+**Type:** incident
+**Status:** active
+**Evidence:** inferred
+**Source:** the coordinator's notice of 2026-10-23, after two outages of the shared VM that also killed the agents' wait loops and a full-suite run
+**Revisit when:** the agents get hosts of their own, or the VM's memory is sized for parallel suites
+**See:** incidents.md#the-shared-machine-ran-out-of-disk-review-artefacts-filled-it — b1c7bd7d-a497-41ed-97e3-989f63c80a1c — as of 2026-10-27
+
+The shared VM went down twice, and one agent's `maity wait` and its
+local full-suite run died with it. The coordinator named memory pressure
+from several agents running full test suites in parallel as the prime
+suspect; that was not confirmed. The rule since then: no local
+full-suite runs on the VM, only one targeted test file at a time, and
+CI runs the full suite on all three databases.
+
+**Learned:** like the full disk, a shared host is a shared resource that
+parallel work can exhaust; the cause stays inferred, the rule is stated.
+After a reboot every agent re-arms exactly one wait.
+
+## Messages lost their code spans: the shell ran them before `maity` saw the text
+
+**Id:** 5f1597e2-a1d2-416b-af05-44b60854533a
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** project messages of 2026-10-27 (the root cause found by an agent, seq 6523; a message that arrived as `-`, seq 6534 and its resend 6536); build session, 2026-10-27
+
+Agents wrote messages as `maity say <to> "… `code` …"`. Inside double
+quotes the shell runs backtick spans and `$(…)` as command substitution
+before `maity` starts, so the messages arrived with holes where the code
+was, and the sender saw nothing wrong. Two more slips of the same kind
+followed on the same day. The coordinator sent `-` to read a message
+from standard input, a CLI feature that was still in review, so the
+installed CLI sent the single character `-`. An agent writing a file
+through a shell heredoc had an inner `<<'EOF'` example end the outer
+heredoc early.
+
+**Learned:** text with code goes to a command through a file or a quoted
+heredoc with a delimiter it cannot contain, never inline in double
+quotes. With the installed CLI that means a quoted heredoc into a shell
+variable that is then passed quoted. The remediation in the CLI is in
+review (PR #435): free text from standard input (`-`) and files, a
+warning for inline text that looks eaten, and the safe form in the
+pointer block, the skill and `docs/agents.md`. Agents can use it only
+once a CLI with it is released to the index they install from.
+Instructions must not use a flag ahead of that release.
+
+## A rejoined identity on a new machine replayed thousands of old events
+
+**Id:** 48327066-0929-495b-8f2c-e85f55b0878c
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** build session, 2026-10-27; the coordinator's welcome message of the same day, which reported the same at its own join
+
+An agent identity that had worked on another machine joined again on a
+new one with a fresh clone. Its `maity wait` started at the event cursor
+of the identity's earlier sessions, days old, so it first returned events
+from the 22nd: requests long answered and pull requests long merged. The
+agent checked the first one against GitHub, found it merged, and then
+drained about 5000 events in batches to reach the present. The
+coordinator's own fresh instance started at seq 115 of more than 6300
+the same day. The join output itself was about 50 KB, mostly that
+backlog.
+
+**Learned:** for a new instance the old cursor mostly holds history,
+and an agent that does not recognise it as such acts on stale
+instructions. Whether a fresh instance should start near the present
+with a short summary, and how long a join output may be, is not
+decided; it was raised with the coordinator as a possible card.

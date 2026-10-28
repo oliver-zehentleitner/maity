@@ -29,7 +29,9 @@ def setup(make_client: ClientFactory, migrated: Engine) -> tuple[flow.Human, Tes
 
 
 def enable(owner: flow.Human, variant: str = "members") -> Any:
-    response = owner.patch("/projects/maity", {"policy": {"badge": variant}, "reason": "README"})
+    response = owner.patch(
+        "/projects/maintainer/maity", {"policy": {"badge": variant}, "reason": "README"}
+    )
     assert response.status_code == 200, response.text
     return response
 
@@ -47,7 +49,7 @@ def test_every_preset_starts_private(
     owner, public, _ = setup
     created = flow.project(owner, f"p-{preset}", policy={"preset": preset})
     assert created["policy"]["badge"] == "off"
-    response = public.get(f"/badge/p-{preset}.svg")
+    response = public.get(f"/badge/maintainer/p-{preset}.svg")
     assert response.status_code == 404 and response.json()["error"]["code"] == "not_found"
     assert response.headers["cache-control"] == "no-store"
 
@@ -56,22 +58,33 @@ def test_policy_requires_human_admin_and_reason(
     setup: tuple[flow.Human, TestClient, str], make_client: ClientFactory
 ) -> None:
     owner, public, _ = setup
-    assert owner.patch("/projects/maity", {"policy": {"badge": "members"}}).status_code == 400
-    assert public.get("/badge/maity.svg").status_code == 404
+    assert (
+        owner.patch("/projects/maintainer/maity", {"policy": {"badge": "members"}}).status_code
+        == 400
+    )
+    assert public.get("/badge/maintainer/maity.svg").status_code == 404
     admin = flow.agent(make_client, owner, role="admin")
-    refused = admin.patch("/projects/maity", {"policy": {"badge": "members"}, "reason": "README"})
+    refused = admin.patch(
+        "/projects/maintainer/maity", {"policy": {"badge": "members"}, "reason": "README"}
+    )
     assert refused.status_code == 403
-    unknown = owner.patch("/projects/maity", {"policy": {"badge": "names"}, "reason": "README"})
+    unknown = owner.patch(
+        "/projects/maintainer/maity", {"policy": {"badge": "names"}, "reason": "README"}
+    )
     assert unknown.status_code == 400
     assert unknown.json()["error"]["details"]["fields"] == {"policy.badge": "unknown"}
-    before = owner.get("/projects/maity").json()["rules_version"]
+    before = owner.get("/projects/maintainer/maity").json()["rules_version"]
     assert enable(owner).json()["rules_version"] == before + 1
-    events = owner.get("/projects/maity/events", params={"after": 0, "limit": 100}).json()["items"]
+    events = owner.get(
+        "/projects/maintainer/maity/events", params={"after": 0, "limit": 100}
+    ).json()["items"]
     event = [e for e in events if e["kind"] == "policy_changed"][-1]
     assert event["payload"]["old"]["badge"] == "off"
     assert event["payload"]["new"]["badge"] == "members"
     assert event["payload"]["reason"] == "README"
-    changed = owner.patch("/projects/maity", {"policy": {"preset": "pool"}, "reason": "Preset"})
+    changed = owner.patch(
+        "/projects/maintainer/maity", {"policy": {"preset": "pool"}, "reason": "Preset"}
+    )
     assert changed.json()["policy"]["badge"] == "members"
 
 
@@ -81,8 +94,8 @@ def test_hidden_badges_never_validate_a_cache(
 ) -> None:
     owner, public, project_id = setup
     enable(owner)
-    etag = public.get("/badge/maity.svg").headers["etag"]
-    path = "/badge/maity.svg"
+    etag = public.get("/badge/maintainer/maity.svg").headers["etag"]
+    path = "/badge/maintainer/maity.svg"
     with migrated.begin() as conn:
         if state == "off":
             conn.execute(update(t.project).where(t.project.c.id == project_id).values(badge="off"))
@@ -113,7 +126,7 @@ def test_active_counts_and_no_private_text(
             .values(active=None)
         )
     enable(owner)
-    response = public.get("/badge/maity.svg")
+    response = public.get("/badge/maintainer/maity.svg")
     assert value(response) == "2 humans · 1 agent"
     for private in ("Private project name", "private-human", owner.id, removed.agent_id):
         assert private not in response.text
@@ -123,7 +136,7 @@ def test_active_counts_and_no_private_text(
     assert response.headers["cache-control"] == "public, max-age=60"
     assert response.headers["x-content-type-options"] == "nosniff"
     assert "set-cookie" not in response.headers
-    assert public.get("/api/v1/badge/maity.svg").status_code == 404
+    assert public.get("/api/v1/badge/maintainer/maity.svg").status_code == 404
 
 
 def test_online_uses_canonical_presence(
@@ -150,22 +163,22 @@ def test_online_uses_canonical_presence(
             .values(last_seen_at=clock.now())
         )
     enable(owner, "agents_online")
-    response = public.get("/badge/maity.svg")
+    response = public.get("/badge/maintainer/maity.svg")
     assert value(response) == "0 agents online" and 'fill="#5e6670"' in response.text
     assert "<style" not in response.text
     offline_etag = response.headers["etag"]
     listening.opened(recent.session_id or "")
     try:
-        response = public.get("/badge/maity.svg")
+        response = public.get("/badge/maintainer/maity.svg")
         assert value(response) == "1 agent online" and 'fill="#1a7f37"' in response.text
         assert "<style" in response.text and "<script" not in response.text
         assert response.headers["etag"] != offline_etag
         animated_etag = response.headers["etag"]
-        cached = public.get("/badge/maity.svg", headers={"If-None-Match": animated_etag})
+        cached = public.get("/badge/maintainer/maity.svg", headers={"If-None-Match": animated_etag})
         assert cached.status_code == 304 and cached.content == b""
     finally:
         listening.closed(recent.session_id or "")
-    resting = public.get("/badge/maity.svg", headers={"If-None-Match": animated_etag})
+    resting = public.get("/badge/maintainer/maity.svg", headers={"If-None-Match": animated_etag})
     assert resting.status_code == 200 and "<style" not in resting.text
     assert resting.headers["etag"] == offline_etag
 
@@ -175,16 +188,16 @@ def test_value_etag_and_revalidation(
 ) -> None:
     owner, public, project_id = setup
     enable(owner)
-    etag = public.get("/badge/maity.svg").headers["etag"]
-    assert public.get("/badge/maity.svg").headers["etag"] == etag
+    etag = public.get("/badge/maintainer/maity.svg").headers["etag"]
+    assert public.get("/badge/maintainer/maity.svg").headers["etag"] == etag
     for candidate in (etag, f'"other", W/{etag}', "*"):
-        cached = public.get("/badge/maity.svg", headers={"If-None-Match": candidate})
+        cached = public.get("/badge/maintainer/maity.svg", headers={"If-None-Match": candidate})
         assert cached.status_code == 304 and cached.content == b""
         assert cached.headers["etag"] == etag
         assert cached.headers["cache-control"] == "public, max-age=60"
         assert cached.headers["x-content-type-options"] == "nosniff"
     factory.agent(migrated, project_id, owner.id)
-    changed = public.get("/badge/maity.svg", headers={"If-None-Match": etag})
+    changed = public.get("/badge/maintainer/maity.svg", headers={"If-None-Match": etag})
     assert changed.status_code == 200 and changed.headers["etag"] != etag
 
 
@@ -192,8 +205,8 @@ def test_separate_source_rate_bucket(setup: tuple[flow.Human, TestClient, str]) 
     owner, public, _ = setup
     enable(owner)
     for _ in range(60):
-        assert public.get("/badge/maity.svg").status_code == 200
-    limited = public.get("/badge/maity.svg")
+        assert public.get("/badge/maintainer/maity.svg").status_code == 200
+    limited = public.get("/badge/maintainer/maity.svg")
     assert limited.status_code == 429 and int(limited.headers["retry-after"]) > 0
     assert limited.headers["cache-control"] == "no-store"
     assert auth.LOGIN_BY_ADDRESS.blocked("203.0.113.7") == 0
@@ -207,7 +220,7 @@ def test_join_host_redirects_instead_of_serving(
     owner, _, _ = setup
     enable(owner)
     client = make_client(base_url="https://join.example", join_url="https://join.example")
-    response = client.get("/badge/maity.svg", follow_redirects=False)
+    response = client.get("/badge/maintainer/maity.svg", follow_redirects=False)
     assert response.status_code == 302 and response.headers["cache-control"] == "no-store"
 
 
@@ -253,6 +266,8 @@ def test_xml_escaping() -> None:
 def test_migration_backfills_existing_projects(engine: Engine) -> None:
     db.migrate(engine, "0025")
     project_id = factory.project(engine)
+    # The namespace migration (0060) needs a human owner for every project (§6.25).
+    factory.membership(engine, project_id, human_id=factory.human(engine, "creator"))
     db.migrate(engine)
     with engine.connect() as conn:
         assert (
@@ -303,7 +318,7 @@ def test_online_team_is_one_member(
             )
         )
     enable(owner, "agents_online")
-    assert value(public.get("/badge/maity.svg")) == "1 agent online"
+    assert value(public.get("/badge/maintainer/maity.svg")) == "1 agent online"
 
 
 @pytest.mark.parametrize(

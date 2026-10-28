@@ -292,7 +292,12 @@ project = Table(
     "project",
     metadata,
     _id(primary_key=True),
-    Column("slug", String(HANDLE), nullable=False, unique=True),
+    # The namespace owner, a human, and the slug: unique together, with the project's
+    # aliases (§6.25). `legacy_slug` is the slug at the namespace migration, frozen, for the
+    # addresses outside the API that predate it; null for every later project.
+    _ref("owner_id", "human.id", nullable=False),
+    Column("slug", String(HANDLE), nullable=False),
+    Column("legacy_slug", String(HANDLE)),
     Column("name", String(TITLE), nullable=False),
     Column("state", String(16), nullable=False),
     Column("state_note", MARKDOWN_TEXT),
@@ -347,6 +352,22 @@ project = Table(
     # does writing an event look for the instances it wakes.
     Column("team_wake", Boolean, nullable=False, server_default=false()),
     Column("created_at", UtcDateTime, nullable=False),
+    UniqueConstraint("owner_id", "slug", name="uq_project_owner_slug"),
+    **MYSQL_TABLE,
+)
+
+# A full name a project gave up by a rename or a transfer (§6.25): the namespace owner's id
+# at that time and the slug. Never released, never given to another project, so an old
+# address cannot lead somewhere else.
+project_alias = Table(
+    "project_alias",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    _ref("project_id", "project.id", nullable=False),
+    _ref("owner_id", "human.id", nullable=False),
+    Column("slug", String(HANDLE), nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    UniqueConstraint("owner_id", "slug", name="uq_project_alias_owner_slug"),
     **MYSQL_TABLE,
 )
 
@@ -850,6 +871,8 @@ card = Table(
     Column("checkpoint", JSON_VALUE),
     # No foreign key: request.task_id points back here.
     Column("blocked_by_request", String(ID)),
+    # The hub opened it for an adopted jour fixe proposal: `{round_id, proposal_id}` (§20.6).
+    Column("jour_fixe", JSON_VALUE),
     Column("ktw_ref", String(255)),
     Column("report", JSON_VALUE),
     Column("contract", JSON_VALUE),
@@ -989,6 +1012,8 @@ request = Table(
     Column("proposal", JSON_VALUE),
     # The takeover an escalation or a takeover notice belongs to (§6.19); hub only.
     _ref("takeover_id", "takeover.id", index=True),
+    # A decision the hub filed for a jour fixe proposal: `{round_id, proposal_id}` (§20.6).
+    Column("jour_fixe", JSON_VALUE),
     Column("while_open", String(32), nullable=False),
     Column("needs_in_session", JSON_VALUE),
     Column("ktw_ref", String(255)),
@@ -1283,6 +1308,36 @@ avatar_image = Table(
     **MYSQL_TABLE,
 )
 
+# A file a message carries (docs/api.md §8.7). The bytes are in the blob store under a
+# key made from the project and the id, never in this table. `message_seq` is null while
+# the upload is pending (no message names it yet); a deletion keeps the row as a
+# tombstone (`deleted_at`) and removes the blob.
+attachment = Table(
+    "attachment",
+    metadata,
+    _id(primary_key=True),
+    _ref("project_id", "project.id", nullable=False),
+    _membership_ref("uploaded_by", nullable=False),
+    Column("name", String(255), nullable=False),
+    Column("size", BIG_ID, nullable=False),
+    Column("type", String(255), nullable=False),
+    Column("kind", String(8), nullable=False),  # image, file
+    Column("sha256", String(64), nullable=False),
+    Column("width", Integer),
+    Column("height", Integer),
+    Column("uploaded_at", UtcDateTime, nullable=False),
+    # The event of the message that names it; no foreign key, as for other event refs.
+    Column("message_seq", BIG_ID),
+    Column("deleted_at", UtcDateTime),
+    Column("deleted_by", String(ID)),
+    Column("deleted_reason", String(16)),  # deleted, redacted
+    CheckConstraint("kind IN ('image', 'file')", name="kind"),
+    Index("ix_attachment_project_pending", "project_id", "message_seq", "uploaded_at"),
+    Index("ix_attachment_uploaded_by", "uploaded_by", "message_seq"),
+    Index("ix_attachment_message_seq", "message_seq"),
+    **MYSQL_TABLE,
+)
+
 # A project's logo and banner (docs/api.md §11.2): what a project admin uploaded, and
 # the forge's image as the hub last read it. A forge row without `data` records that
 # the forge had none at `checked_at`; an upload always has data.
@@ -1426,6 +1481,42 @@ mail_delivery = Table(
     Column("at", UtcDateTime, nullable=False),
     Index("ix_mail_delivery_at", "at"),
     sqlite_autoincrement=True,
+    **MYSQL_TABLE,
+)
+
+# Mail waiting for the worker (docs/api.md §16.2, §18.5, §18.7): written in the
+# transaction that decides it. `kind` is the budget kind. `not_before` is when the row is
+# next due, and while it is `sending` the deadline of the claim. A row that left the
+# queue (sent, failed, dropped) is deleted after seven days.
+mail_outbox = Table(
+    "mail_outbox",
+    metadata,
+    Column("id", BIG_ID, primary_key=True, autoincrement=True),
+    Column("kind", String(16), nullable=False),
+    _ref("human_id", "human.id", nullable=True),
+    Column("recipient", String(254), nullable=False),
+    Column("subject", String(255), nullable=False),
+    Column("body", Text, nullable=False),
+    Column("headers", JSON_VALUE, nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("not_before", UtcDateTime, nullable=False),
+    Column("attempts", Integer, nullable=False),
+    Column("status", String(16), nullable=False),  # waiting sending sent failed dropped
+    Index("ix_mail_outbox_due", "status", "not_before"),
+    sqlite_autoincrement=True,
+    **MYSQL_TABLE,
+)
+
+# The admissions of the hour, per budget kind (docs/api.md §16.2): one row a kind, locked
+# for the check and the admission together, so of any number of workers exactly the ones the
+# budget has room for are admitted. `window_start` is when the hour began; it rolls when an
+# hour has passed. Counted when a mail is admitted, not when it is sent.
+mail_budget = Table(
+    "mail_budget",
+    metadata,
+    Column("kind", String(16), primary_key=True),
+    Column("window_start", UtcDateTime, nullable=False),
+    Column("admitted", Integer, nullable=False),
     **MYSQL_TABLE,
 )
 

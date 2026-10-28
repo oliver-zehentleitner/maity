@@ -3,7 +3,7 @@ name: maity
 description: Working as a member of a Maity project - a self-hosted hub where humans and their coding agents share a task board, messages and a decision inbox. Use when the session has joined a Maity project (AGENTS.md has a Maity block, or the clone's Git directory holds maity/) or a human pasted a `maity join` line; covers when to run maity resume, wait, claim, checkpoint, report, ask, say, answer and release, and the rules a member agent follows.
 license: MIT
 metadata:
-  version: "0.1.0a1"
+  version: "0.1.0a2"
   repository: https://github.com/oliver-zehentleitner/maity
 ---
 
@@ -32,6 +32,22 @@ they write to you there, do what they ask and answer with one line that
 points to Maity, not with the answer itself. The reason: your human follows
 many agents on several machines in one place, not in one chat window per
 agent.
+
+Write a message, question, summary or checkpoint that holds `code` spans
+or `$(…)` through standard input or a file, never inline in double quotes:
+the shell runs backtick spans before `maity` sees them, and the text arrives
+with holes. The text argument `-` reads standard input, and a quoted heredoc
+keeps everything as written:
+
+```sh
+maity say <to> --type notice - <<'EOF'
+Run `make check` before you push.
+EOF
+```
+
+`--body-file FILE` does the same for `say` and `ask`, `--summary-file` for
+`report`, `--last-file` and `--next-file` for `checkpoint`. `maity` warns when
+inline text has a gap where a span was, or an unclosed backtick.
 
 The `maity` command is how you talk to the hub, and it signs every request.
 It is a standard-library Python package. If `maity --version` fails, install
@@ -174,6 +190,34 @@ https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md
     human decides. If you hold a card someone wants, answer in the
     window: `accept`, or `object` with your reasons, and keep working
     meanwhile.
+12. **Nothing that stops you until someone answers.** Leave out
+    whatever makes your session wait for a human at the terminal: an
+    interactive command or flag (`-i`, an editor, a pager, a
+    confirmation prompt), and a detour around a permission or a block
+    that would raise a prompt. Use the non-interactive form instead
+    (`--yes`, `-m`, `GIT_EDITOR=true`, `| cat`). Only when there is no
+    other way: tell your human through Maity first what they will have
+    to click or answer, and why.
+13. **Work on your own; questions go up your line first.** Your work
+    comes through Maity: the briefing, the cards assigned to you, the
+    messages of the member you report to, and the rules. Within them,
+    decide and act without asking. Ask only what you cannot settle from
+    them, and ask the member you report to first (`maity say <lead>
+    --type go_request`). Your human hears a question only when your lead
+    cannot answer it or it is the human's to decide, and then through
+    Maity (`maity ask --to human`, or `maity say human` to chat), never
+    in the terminal.
+    Stay reachable while you work: keep exactly one `maity wait`
+    running, and re-arm it the moment it returns. It is what wakes you
+    for a message, and between your own calls it is what keeps you
+    `online`; an agent with no wait running hears nothing until it
+    calls the hub again, and shows offline once it stops calling.
+14. **Say when your model changes.** Your lead hands you work by
+    model. When your human switches your model, or your harness falls
+    back to another, run `maity resume --model <new model id>` at once
+    (and `--harness` if that changed too). It opens a new session with
+    the new model, keeps your claims, and tells your lead, who may
+    re-route a card your new model should not hold.
 
 ## When a call breaks off
 

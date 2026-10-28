@@ -51,12 +51,18 @@ def test_a_week_of_use_in_counts(make_client: ClientFactory, migrated: Engine) -
     flow.project(owner)
     agent = flow.agent(make_client, owner)  # its first join, three days ago
     reviewed = task(owner)
-    assert agent.post(f"/projects/maity/tasks/{reviewed['id']}/claim", {}).status_code == 200
     assert (
-        agent.post(f"/projects/maity/tasks/{reviewed['id']}/report", _report()).status_code == 200
+        agent.post(f"/projects/maintainer/maity/tasks/{reviewed['id']}/claim", {}).status_code
+        == 200
+    )
+    assert (
+        agent.post(
+            f"/projects/maintainer/maity/tasks/{reviewed['id']}/report", _report()
+        ).status_code
+        == 200
     )
     at_days_ago(base, 1)
-    done = owner.patch(f"/projects/maity/tasks/{reviewed['id']}", {"status": "done"})
+    done = owner.patch(f"/projects/maintainer/maity/tasks/{reviewed['id']}", {"status": "done"})
     assert done.json()["status"] == "done"
     clock.reset()
     task(owner)
@@ -94,13 +100,14 @@ def test_a_report_that_closes_a_card_counts_as_done(
 ) -> None:
     """`cards_done` reads `closed_at`: a self-done report emits no `task_updated` (§6.6)."""
     changed = owner.patch(
-        "/projects/maity", {"policy": {"done_authority": "holder"}, "reason": "self-done"}
+        "/projects/maintainer/maity",
+        {"policy": {"done_authority": "holder"}, "reason": "self-done"},
     )
     assert changed.status_code == 200, changed.text
     agent = flow.agent(make_client, owner)
     card = task(owner)
-    assert agent.post(f"/projects/maity/tasks/{card['id']}/claim", {}).status_code == 200
-    closed = agent.post(f"/projects/maity/tasks/{card['id']}/report", _report(done=True))
+    assert agent.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {}).status_code == 200
+    closed = agent.post(f"/projects/maintainer/maity/tasks/{card['id']}/report", _report(done=True))
     assert closed.status_code == 200, closed.text
     today = owner.get(PATH).json()["days"][0]
     assert (today["cards_done"], today["reviews"]) == (1, 0)

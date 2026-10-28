@@ -131,7 +131,7 @@ def _report(**overrides: Any) -> dict[str, Any]:
 
 
 def test_without_a_token_the_probe_is_not_configured(owner: flow.Human) -> None:
-    response = owner.get("/projects/maity/probe?pr=3")
+    response = owner.get("/projects/maintainer/maity/probe?pr=3")
     assert (response.status_code, response.json()["error"]["code"]) == (
         409,
         "probe_not_configured",
@@ -140,7 +140,7 @@ def test_without_a_token_the_probe_is_not_configured(owner: flow.Human) -> None:
 
 def test_a_pull_request_read_has_the_contract_shape(owner: flow.Human, github: FakeGitHub) -> None:
     github.pull(3)
-    body = owner.get("/projects/maity/probe?pr=3").json()
+    body = owner.get("/projects/maintainer/maity/probe?pr=3").json()
     assert (body["forge"], body["repository"], body["fresh"]) == ("github", "acme/maity", True)
     assert (body["branch"], body["tag"]) == (None, None)
     assert body["pr"] == {
@@ -167,11 +167,11 @@ def test_a_pull_request_read_has_the_contract_shape(owner: flow.Human, github: F
 
 def test_an_observation_is_cached_for_max_age(owner: flow.Human, github: FakeGitHub) -> None:
     github.pull(3)
-    first = owner.get("/projects/maity/probe?pr=3").json()
-    cached = owner.get("/projects/maity/probe?pr=3").json()
+    first = owner.get("/projects/maintainer/maity/probe?pr=3").json()
+    cached = owner.get("/projects/maintainer/maity/probe?pr=3").json()
     assert cached["fresh"] is False and cached["observed_at"] == first["observed_at"]
     assert len(github.calls) == 3  # the pull request, its check runs, its statuses
-    forced = owner.get("/projects/maity/probe?pr=3&max_age=0").json()
+    forced = owner.get("/projects/maintainer/maity/probe?pr=3&max_age=0").json()
     assert forced["fresh"] is True and len(github.calls) == 6
 
 
@@ -184,17 +184,17 @@ def test_merged_conflicting_branch_and_tag(owner: flow.Human, github: FakeGitHub
         "object": {"sha": "a" * 40, "type": "tag"}
     }
     github.answers[f"/repos/acme/maity/git/tags/{'a' * 40}"] = {"object": {"sha": SHA}}
-    merged = owner.get("/projects/maity/probe?pr=4").json()["pr"]
+    merged = owner.get("/projects/maintainer/maity/probe?pr=4").json()["pr"]
     assert (merged["state"], merged["mergeable"], merged["merge_sha"]) == ("merged", None, "f" * 40)
-    conflicting = owner.get("/projects/maity/probe?pr=5").json()["pr"]
+    conflicting = owner.get("/projects/maintainer/maity/probe?pr=5").json()["pr"]
     assert (conflicting["mergeable"], conflicting["checks"]) == ("conflicting", "none")
-    body = owner.get("/projects/maity/probe?branch=agent-b/probe&tag=v0.1.0").json()
+    body = owner.get("/projects/maintainer/maity/probe?branch=agent-b/probe&tag=v0.1.0").json()
     assert body["branch"] == {"name": "agent-b/probe", "head_sha": OTHER, "found": True}
     assert body["tag"]["sha"] == SHA and body["tag"]["found"] is True
     # The tag carries its own time (§11); the answer's is the oldest of its reads, and the
     # branch and the tag are read one after the other, maybe in different seconds.
     assert body["observed_at"] <= body["tag"]["observed_at"]
-    missing = owner.get("/projects/maity/probe?branch=gone").json()["branch"]
+    missing = owner.get("/projects/maintainer/maity/probe?branch=gone").json()["branch"]
     assert missing == {"name": "gone", "head_sha": None, "found": False}
 
 
@@ -202,21 +202,24 @@ def test_an_unanswering_forge_is_probe_unavailable_with_the_last_observation(
     owner: flow.Human, github: FakeGitHub
 ) -> None:
     github.answers["/repos/acme/maity/pulls/9"] = forge.ForgeUnavailableError("503")
-    first = owner.get("/projects/maity/probe?pr=9")
+    first = owner.get("/projects/maintainer/maity/probe?pr=9")
     assert (first.status_code, first.json()["error"]["code"]) == (503, "probe_unavailable")
     assert first.json()["error"]["details"] == {}
     github.pull(9)
-    owner.get("/projects/maity/probe?pr=9")
+    owner.get("/projects/maintainer/maity/probe?pr=9")
     github.answers["/repos/acme/maity/pulls/9"] = forge.ForgeUnavailableError("503")
-    again = owner.get("/projects/maity/probe?pr=9&max_age=0").json()["error"]
+    again = owner.get("/projects/maintainer/maity/probe?pr=9&max_age=0").json()["error"]
     assert again["details"]["last"]["head_sha"] == SHA
     assert again["details"]["last"]["observed_at"] is not None
 
 
 def test_a_probe_read_needs_a_ref(owner: flow.Human, github: FakeGitHub) -> None:
-    response = owner.get("/projects/maity/probe")
+    response = owner.get("/projects/maintainer/maity/probe")
     assert response.json()["error"]["details"]["fields"] == {"pr": "one_of_pr_branch_tag"}
-    assert owner.get("/projects/maity/probe?branch=a%20b").json()["error"]["code"] == "invalid"
+    assert (
+        owner.get("/projects/maintainer/maity/probe?branch=a%20b").json()["error"]["code"]
+        == "invalid"
+    )
 
 
 def test_an_agent_reads_the_probe_with_project_read(
@@ -224,7 +227,7 @@ def test_an_agent_reads_the_probe_with_project_read(
 ) -> None:
     agent = flow.agent(make_client, owner)
     github.pull(3)
-    assert agent.get("/projects/maity/probe?pr=3").json()["pr"]["number"] == 3
+    assert agent.get("/projects/maintainer/maity/probe?pr=3").json()["pr"]["number"] == 3
 
 
 # --- the forge client ----------------------------------------------------------------------
@@ -262,9 +265,9 @@ def test_the_token_never_follows_a_redirect_to_another_host() -> None:
 
 def _reported_card(owner: flow.Human, make_client: ClientFactory, **report: Any) -> tuple[Any, str]:
     agent = flow.agent(make_client, owner)
-    card = owner.post("/projects/maity/tasks", {"title": "A card"}).json()
-    assert agent.post(f"/projects/maity/tasks/{card['id']}/claim", {}).status_code == 200
-    stored = agent.post(f"/projects/maity/tasks/{card['id']}/report", _report(**report))
+    card = owner.post("/projects/maintainer/maity/tasks", {"title": "A card"}).json()
+    assert agent.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {}).status_code == 200
+    stored = agent.post(f"/projects/maintainer/maity/tasks/{card['id']}/report", _report(**report))
     assert stored.status_code == 200, stored.text
     assert stored.json()["report"]["observed"] is None  # never awaited inside the write
     return agent, card["id"]
@@ -277,7 +280,7 @@ def test_the_probe_fills_a_report(
     github.branch("agent-b/probe")
     agent, card_id = _reported_card(owner, make_client)
     assert probe.observe_report(migrated, READER, card_id) is True
-    report = owner.get(f"/projects/maity/tasks/{card_id}").json()["report"]
+    report = owner.get(f"/projects/maintainer/maity/tasks/{card_id}").json()["report"]
     assert report["mismatch"] is False
     observed = report["observed"]
     assert (observed["pr_state"], observed["pr_head_sha"], observed["checks"]) == (
@@ -299,7 +302,10 @@ def test_a_head_the_forge_does_not_show_is_a_mismatch(
     github.branch("agent-b/probe")
     _, card_id = _reported_card(owner, make_client)
     probe.observe_report(migrated, READER, card_id)
-    assert owner.get(f"/projects/maity/tasks/{card_id}").json()["report"]["mismatch"] is True
+    assert (
+        owner.get(f"/projects/maintainer/maity/tasks/{card_id}").json()["report"]["mismatch"]
+        is True
+    )
 
 
 def test_a_pull_request_the_forge_does_not_have_is_a_mismatch(
@@ -309,7 +315,7 @@ def test_a_pull_request_the_forge_does_not_have_is_a_mismatch(
     github.branch("agent-b/probe")
     _, card_id = _reported_card(owner, make_client)
     probe.observe_report(migrated, READER, card_id)
-    report = owner.get(f"/projects/maity/tasks/{card_id}").json()["report"]
+    report = owner.get(f"/projects/maintainer/maity/tasks/{card_id}").json()["report"]
     assert (report["mismatch"], report["observed"]["pr_state"]) == (True, None)
     assert report["observed"]["branch_head_sha"] == SHA
 
@@ -320,7 +326,7 @@ def test_a_deleted_branch_is_no_mismatch(
     github.pull(7, merged=True)
     _, card_id = _reported_card(owner, make_client)
     probe.observe_report(migrated, READER, card_id)
-    report = owner.get(f"/projects/maity/tasks/{card_id}").json()["report"]
+    report = owner.get(f"/projects/maintainer/maity/tasks/{card_id}").json()["report"]
     assert (report["mismatch"], report["observed"]["branch_head_sha"]) == (False, None)
     assert report["observed"]["pr_state"] == "merged"
 
@@ -331,11 +337,17 @@ def test_a_failing_probe_leaves_the_report_for_the_next_round(
     github.answers["/repos/acme/maity/branches/agent-b%2Fprobe"] = forge.ForgeUnavailableError("x")
     _, card_id = _reported_card(owner, make_client)
     probe.sweep(migrated, READER)  # logged, not raised
-    assert owner.get(f"/projects/maity/tasks/{card_id}").json()["report"]["observed"] is None
+    assert (
+        owner.get(f"/projects/maintainer/maity/tasks/{card_id}").json()["report"]["observed"]
+        is None
+    )
     github.branch("agent-b/probe")
     github.pull(7)
     probe.sweep(migrated, READER)
-    assert owner.get(f"/projects/maity/tasks/{card_id}").json()["report"]["observed"] is not None
+    assert (
+        owner.get(f"/projects/maintainer/maity/tasks/{card_id}").json()["report"]["observed"]
+        is not None
+    )
 
 
 def test_the_worker_probes_right_after_a_report(
@@ -352,12 +364,12 @@ def test_the_worker_probes_right_after_a_report(
     human = flow.human(with_token, migrated)
     flow.project(human, "maity", repository=REPO)
     agent = flow.agent(with_token, human)
-    card = human.post("/projects/maity/tasks", {"title": "A card"}).json()
-    agent.post(f"/projects/maity/tasks/{card['id']}/claim", {})
-    agent.post(f"/projects/maity/tasks/{card['id']}/report", _report())
+    card = human.post("/projects/maintainer/maity/tasks", {"title": "A card"}).json()
+    agent.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
+    agent.post(f"/projects/maintainer/maity/tasks/{card['id']}/report", _report())
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
-        report = human.get(f"/projects/maity/tasks/{card['id']}").json()["report"]
+        report = human.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()["report"]
         if report["observed"] is not None:
             break
         time.sleep(0.05)
@@ -371,11 +383,11 @@ def test_the_release_is_refreshed_and_turns_ready(
     owner: flow.Human, migrated: Engine, github: FakeGitHub
 ) -> None:
     release = owner.post(
-        "/projects/maity/tasks",
+        "/projects/maintainer/maity/tasks",
         {"title": "0.1.0", "kind": "release", "release": {"version": "0.1.0"}},
     ).json()
     owner.patch(
-        f"/projects/maity/tasks/{release['id']}",
+        f"/projects/maintainer/maity/tasks/{release['id']}",
         {"release": {"pull_requests_typed": [{"number": 1}]}},
     )
     github.pull(1)
@@ -383,14 +395,16 @@ def test_the_release_is_refreshed_and_turns_ready(
     project_id = _project(migrated).id
     assert len(_events(migrated, "release_ready")) == 1  # empty at creation, so ready
     assert probe.observe_release(migrated, READER, project_id) is True
-    view = owner.get(f"/projects/maity/tasks/{release['id']}").json()["release"]
+    view = owner.get(f"/projects/maintainer/maity/tasks/{release['id']}").json()["release"]
     assert view["readiness"]["blocking"] == [{"reason": "pr_open", "pr": 1}]
     assert view["tag"]["found"] is False and view["tag"]["observed_at"] is not None
     events = _events(migrated, "probe_observed")  # one per changed ref
     assert [set(e.payload["observations"]) for e in events] == [{"pr:1"}, {"tag:v0.1.0"}]
     github.pull(1, merged=True)
     assert probe.observe_release(migrated, READER, project_id, max_age=0) is True
-    assert owner.get(f"/projects/maity/tasks/{release['id']}").json()["release"]["readiness"] == {
+    assert owner.get(f"/projects/maintainer/maity/tasks/{release['id']}").json()["release"][
+        "readiness"
+    ] == {
         "ready": True,
         "blocking": [],
     }
@@ -407,11 +421,11 @@ def test_whoever_sees_the_merge_first_announces_it(
     """GET /probe reads the merge before the worker does: the release card still
     gets its probe_observed, and release_ready comes at once, not a sweep later."""
     release = owner.post(
-        "/projects/maity/tasks",
+        "/projects/maintainer/maity/tasks",
         {"title": "0.1.0", "kind": "release", "release": {"version": "0.1.0"}},
     ).json()
     owner.patch(
-        f"/projects/maity/tasks/{release['id']}",
+        f"/projects/maintainer/maity/tasks/{release['id']}",
         {"release": {"pull_requests_typed": [{"number": 1}]}},
     )
     github.pull(1)
@@ -421,7 +435,7 @@ def test_whoever_sees_the_merge_first_announces_it(
     before = len(_events(migrated, "probe_observed"))
     ready_before = len(_events(migrated, "release_ready"))
     github.pull(1, merged=True)
-    seen = owner.get("/projects/maity/probe?pr=1&max_age=0").json()["pr"]
+    seen = owner.get("/projects/maintainer/maity/probe?pr=1&max_age=0").json()["pr"]
     assert seen["state"] == "merged"
     events = _events(migrated, "probe_observed")
     assert len(events) == before + 1
@@ -443,9 +457,9 @@ def test_a_repository_the_token_cannot_see_leaves_the_report_unverified(
     _, card_id = _reported_card(owner, make_client)
     with pytest.raises(forge.ForgeUnavailableError):
         probe.observe_report(migrated, READER, card_id)
-    report = owner.get(f"/projects/maity/tasks/{card_id}").json()["report"]
+    report = owner.get(f"/projects/maintainer/maity/tasks/{card_id}").json()["report"]
     assert (report["observed"], report["mismatch"]) == (None, None)  # never a false mismatch
-    answer = owner.get("/projects/maity/probe?pr=7")
+    answer = owner.get("/projects/maintainer/maity/probe?pr=7")
     assert (answer.status_code, answer.headers["Maity-Error"]) == (503, "probe_unavailable")
 
 
@@ -453,7 +467,7 @@ def test_an_answer_of_another_shape_is_unavailable_not_a_crash(
     owner: flow.Human, github: FakeGitHub
 ) -> None:
     github.answers["/repos/acme/maity/pulls/3"] = {"state": "open"}  # no head, no base
-    answer = owner.get("/projects/maity/probe?pr=3")
+    answer = owner.get("/projects/maintainer/maity/probe?pr=3")
     assert (answer.status_code, answer.headers["Maity-Error"]) == (503, "probe_unavailable")
 
 
@@ -481,7 +495,7 @@ def test_a_report_replaced_within_the_same_second_keeps_its_own_verdict(
 
     monkeypatch.setattr(probe, "observe", a_second_report_arrives)
     assert probe.observe_report(migrated, READER, card_id) is False
-    report = owner.get(f"/projects/maity/tasks/{card_id}").json()["report"]
+    report = owner.get(f"/projects/maintainer/maity/tasks/{card_id}").json()["report"]
     assert (report["head"], report["observed"]) == (OTHER, None)
 
 
@@ -524,11 +538,11 @@ def test_a_new_repository_starts_without_the_old_observations(
     owner: flow.Human, migrated: Engine, github: FakeGitHub
 ) -> None:
     github.pull(3)
-    owner.get("/projects/maity/probe?pr=3")
+    owner.get("/projects/maintainer/maity/probe?pr=3")
     with migrated.connect() as conn:
         assert conn.execute(select(t.forge_observation)).all()
     moved = owner.patch(
-        "/projects/maity", {"repository": {"url": "https://github.com/acme/maity-next"}}
+        "/projects/maintainer/maity", {"repository": {"url": "https://github.com/acme/maity-next"}}
     )
     assert moved.status_code == 200, moved.text
     with migrated.connect() as conn:

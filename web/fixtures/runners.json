@@ -73,8 +73,8 @@
           }
         ],
         "projects": [
-          "maity",
-          "sample"
+          "maintainer/maity",
+          "maintainer/sample"
         ],
         "repositories": [
           "github.com/oliver-zehentleitner/*"
@@ -83,7 +83,7 @@
         "reported_at": "2026-10-22T13:40:00Z"
       },
       "projects": [
-        "maity"
+        "maintainer/maity"
       ],
       "created_at": "2026-10-22T13:31:00Z",
       "updated_at": "2026-10-22T13:31:00Z",
@@ -157,7 +157,7 @@
           }
         ],
         "projects": [
-          "sample"
+          "maintainer/sample"
         ],
         "repositories": [
           "github.com/example/*"
@@ -243,7 +243,7 @@
           }
         ],
         "projects": [
-          "maity"
+          "maintainer/maity"
         ],
         "repositories": [
           "github.com/oliver-zehentleitner/maity"
@@ -252,7 +252,7 @@
         "reported_at": "2026-10-21T19:30:00Z"
       },
       "projects": [
-        "maity"
+        "maintainer/maity"
       ],
       "created_at": "2026-10-21T19:00:00Z",
       "updated_at": "2026-10-21T20:10:00Z",
@@ -276,14 +276,14 @@
   },
   "active_placements": {
     "rnr-0002": {
-      "maity": 1
+      "maintainer/maity": 1
     }
   },
   "attachments": [
     {
       "id": "ratt-0001",
       "runner_id": "rnr-0002",
-      "project": "maity",
+      "project": "maintainer/maity",
       "attached_by": "hum-maintainer",
       "attached_at": "2026-10-22T13:31:05Z",
       "detached_at": null
@@ -291,7 +291,7 @@
     {
       "id": "ratt-0002",
       "runner_id": "rnr-0004",
-      "project": "maity",
+      "project": "maintainer/maity",
       "attached_by": "hum-maintainer",
       "attached_at": "2026-10-20T09:12:00Z",
       "detached_at": null

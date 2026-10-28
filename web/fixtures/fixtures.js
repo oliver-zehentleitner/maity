@@ -817,7 +817,7 @@ window.MAITY_FIXTURES = {
         "id": "agt-a",
         "memberships": [
           {
-            "project": "maity",
+            "project": "maintainer/maity",
             "role": "admin"
           }
         ],
@@ -832,7 +832,7 @@ window.MAITY_FIXTURES = {
         "id": "agt-b",
         "memberships": [
           {
-            "project": "maity",
+            "project": "maintainer/maity",
             "role": "member"
           }
         ],
@@ -847,7 +847,7 @@ window.MAITY_FIXTURES = {
         "id": "agt-c",
         "memberships": [
           {
-            "project": "maity",
+            "project": "maintainer/maity",
             "role": "member"
           }
         ],
@@ -862,7 +862,7 @@ window.MAITY_FIXTURES = {
         "id": "agt-d",
         "memberships": [
           {
-            "project": "maity",
+            "project": "maintainer/maity",
             "role": "member"
           }
         ],
@@ -877,7 +877,7 @@ window.MAITY_FIXTURES = {
         "id": "agt-r",
         "memberships": [
           {
-            "project": "maity",
+            "project": "maintainer/maity",
             "role": "reviewer"
           }
         ],
@@ -892,7 +892,7 @@ window.MAITY_FIXTURES = {
         "id": "agt-s1",
         "memberships": [
           {
-            "project": "sample",
+            "project": "maintainer/sample",
             "role": "member"
           }
         ],
@@ -907,7 +907,7 @@ window.MAITY_FIXTURES = {
         "id": "agt-x",
         "memberships": [
           {
-            "project": "guestlab",
+            "project": "guest/guestlab",
             "role": "member"
           }
         ],
@@ -1020,6 +1020,7 @@ window.MAITY_FIXTURES = {
         },
         "note": null,
         "project": {
+          "full_name": "maintainer/sample",
           "name": "Sample shop",
           "slug": "sample"
         },
@@ -1034,6 +1035,7 @@ window.MAITY_FIXTURES = {
         },
         "note": null,
         "project": {
+          "full_name": "maintainer/maity",
           "name": "Maity",
           "slug": "maity"
         },
@@ -1048,6 +1050,7 @@ window.MAITY_FIXTURES = {
         },
         "note": null,
         "project": {
+          "full_name": "maintainer/maity",
           "name": "Maity",
           "slug": "maity"
         },
@@ -1062,6 +1065,7 @@ window.MAITY_FIXTURES = {
         },
         "note": null,
         "project": {
+          "full_name": "maintainer/maity",
           "name": "Maity",
           "slug": "maity"
         },
@@ -1076,6 +1080,7 @@ window.MAITY_FIXTURES = {
         },
         "note": null,
         "project": {
+          "full_name": "maintainer/maity",
           "name": "Maity",
           "slug": "maity"
         },
@@ -1090,6 +1095,7 @@ window.MAITY_FIXTURES = {
         },
         "note": "You review the web side; D will brief you.",
         "project": {
+          "full_name": "maintainer/maity",
           "name": "Maity",
           "slug": "maity"
         },
@@ -1104,6 +1110,7 @@ window.MAITY_FIXTURES = {
         },
         "note": null,
         "project": {
+          "full_name": "maintainer/maity",
           "name": "Maity",
           "slug": "maity"
         },
@@ -1118,6 +1125,7 @@ window.MAITY_FIXTURES = {
         },
         "note": null,
         "project": {
+          "full_name": "maintainer/maity",
           "name": "Maity",
           "slug": "maity"
         },
@@ -1633,7 +1641,7 @@ window.MAITY_FIXTURES = {
         "expires_at": "2030-01-01T09:00:00Z",
         "id": "inv-0003",
         "note": "Web reviews.",
-        "project": "maity",
+        "project": "maintainer/maity",
         "revoked_at": null,
         "role": "reviewer",
         "used_at": null,
@@ -1647,7 +1655,7 @@ window.MAITY_FIXTURES = {
         "expires_at": "2026-10-24T09:00:00Z",
         "id": "inv-0002",
         "note": null,
-        "project": "maity",
+        "project": "maintainer/maity",
         "revoked_at": null,
         "role": "member",
         "used_at": "2026-10-23T10:00:00Z",
@@ -1661,7 +1669,7 @@ window.MAITY_FIXTURES = {
         "expires_at": "2030-01-01T08:00:00Z",
         "id": "inv-0004",
         "note": null,
-        "project": "maity",
+        "project": "maintainer/maity",
         "revoked_at": null,
         "role": "admin",
         "used_at": null,
@@ -1675,7 +1683,7 @@ window.MAITY_FIXTURES = {
         "expires_at": "2026-10-23T09:00:00Z",
         "id": "inv-0001",
         "note": null,
-        "project": "maity",
+        "project": "maintainer/maity",
         "revoked_at": "2026-10-22T11:00:00Z",
         "role": "admin",
         "used_at": null,
@@ -2136,7 +2144,7 @@ window.MAITY_FIXTURES = {
         "logs_hint": "maity runner logs plc-0001",
         "mode": "interactive",
         "model": "opus",
-        "project": "maity",
+        "project": "maintainer/maity",
         "proposed_by": null,
         "rejoin": false,
         "reported": {
@@ -2194,7 +2202,7 @@ window.MAITY_FIXTURES = {
         "id": "plc-0002",
         "mode": "supervised",
         "model": null,
-        "project": "maity",
+        "project": "maintainer/maity",
         "proposed_by": null,
         "rejoin": false,
         "reported": {
@@ -2251,7 +2259,7 @@ window.MAITY_FIXTURES = {
         "id": "plc-0003",
         "mode": "supervised",
         "model": null,
-        "project": "maity",
+        "project": "maintainer/maity",
         "proposed_by": null,
         "rejoin": false,
         "reported": {
@@ -2308,7 +2316,7 @@ window.MAITY_FIXTURES = {
         "id": "plc-0004",
         "mode": "interactive",
         "model": null,
-        "project": "maity",
+        "project": "maintainer/maity",
         "proposed_by": "agt-a",
         "rejoin": false,
         "reported": null,
@@ -2332,12 +2340,15 @@ window.MAITY_FIXTURES = {
   },
   "maity/project.json": {
     "absence": null,
+    "aliases": [],
     "banner": {
       "available": true,
       "etag": "\"u-banner-1\"",
       "source": "uploaded"
     },
     "created_at": "2026-10-21T07:50:00Z",
+    "full_name": "maintainer/maity",
+    "id": "prj-maity0000001",
     "keep_the_why": true,
     "keep_the_why_export": {
       "error": null,
@@ -2472,6 +2483,7 @@ window.MAITY_FIXTURES = {
         }
       }
     },
+    "legacy_slug": "maity",
     "logo": {
       "available": true,
       "etag": "\"f-logo-1\"",
@@ -2481,6 +2493,10 @@ window.MAITY_FIXTURES = {
       "provider": "keep-the-why"
     },
     "name": "Maity",
+    "owner": {
+      "handle": "maintainer",
+      "id": "hum-maintainer"
+    },
     "policy": {
       "badge": "off",
       "claim_policy": "self-claim",
@@ -2488,6 +2504,8 @@ window.MAITY_FIXTURES = {
       "done_authority": "reviewer",
       "keep_the_why": "required",
       "lease_seconds": 7200,
+      "member_agents": "on",
+      "member_agents_max": 3,
       "preset": "hierarchical",
       "signing": "optional",
       "steward_writes": "cards_only",
@@ -4166,6 +4184,7 @@ window.MAITY_FIXTURES = {
     },
     "projects": [
       {
+        "full_name": "maintainer/maity",
         "name": "Maity",
         "open_requests": 3,
         "role": "owner",
@@ -4173,6 +4192,7 @@ window.MAITY_FIXTURES = {
         "state": "build"
       },
       {
+        "full_name": "maintainer/sample",
         "name": "Sample shop",
         "open_requests": 1,
         "role": "owner",
@@ -4227,6 +4247,7 @@ window.MAITY_FIXTURES = {
         "id": "ntf-4239",
         "kind": "mention",
         "project": {
+          "full_name": "maintainer/maity",
           "name": "Maity",
           "slug": "maity"
         },
@@ -4238,7 +4259,7 @@ window.MAITY_FIXTURES = {
           "type": "task"
         },
         "title": "Agent B mentioned you in tsk-0004 Hub: credential exchange and storage",
-        "url": "https://maity.team/#/p/maity/board?task=tsk-0004"
+        "url": "https://maity.team/#/maintainer/maity/board?task=tsk-0004"
       },
       {
         "_text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
@@ -4251,6 +4272,7 @@ window.MAITY_FIXTURES = {
         "id": "ntf-4237",
         "kind": "chat",
         "project": {
+          "full_name": "maintainer/maity",
           "name": "Maity",
           "slug": "maity"
         },
@@ -4262,7 +4284,7 @@ window.MAITY_FIXTURES = {
           "type": "conversation"
         },
         "title": "Agent A in agent-a",
-        "url": "https://maity.team/#/p/maity/chat/agt-a"
+        "url": "https://maity.team/#/maintainer/maity/chat/agt-a"
       },
       {
         "actor": {
@@ -4274,6 +4296,7 @@ window.MAITY_FIXTURES = {
         "id": "ntf-acr-6",
         "kind": "inbox",
         "project": {
+          "full_name": "lv/lasteverlm",
           "member": false,
           "name": "lasteverLM",
           "slug": "lasteverlm"
@@ -4298,6 +4321,7 @@ window.MAITY_FIXTURES = {
         "id": "ntf-4235",
         "kind": "inbox",
         "project": {
+          "full_name": "maintainer/sample",
           "name": "Sample shop",
           "slug": "sample"
         },
@@ -4309,7 +4333,7 @@ window.MAITY_FIXTURES = {
           "type": "request"
         },
         "title": "Shop Dev asks: Which payment provider?",
-        "url": "https://maity.team/#/p/sample/inbox"
+        "url": "https://maity.team/#/maintainer/sample/inbox"
       }
     ],
     "settings": {
@@ -4369,6 +4393,7 @@ window.MAITY_FIXTURES = {
         "personal": true,
         "priority": "normal",
         "project": {
+          "full_name": "ada/elsewhere",
           "name": "Elsewhere",
           "slug": "elsewhere",
           "state": "build"
@@ -4414,6 +4439,7 @@ window.MAITY_FIXTURES = {
         "personal": true,
         "priority": "normal",
         "project": {
+          "full_name": "maintainer/maity",
           "name": "Maity",
           "slug": "maity",
           "state": "build"
@@ -4456,10 +4482,12 @@ window.MAITY_FIXTURES = {
     },
     "projects": [
       {
+        "full_name": "maintainer/maity",
         "include": true,
         "slug": "maity"
       },
       {
+        "full_name": "maintainer/sample",
         "include": false,
         "slug": "sample"
       }
@@ -4509,7 +4537,7 @@ window.MAITY_FIXTURES = {
   "runners.json": {
     "active_placements": {
       "rnr-0002": {
-        "maity": 1
+        "maintainer/maity": 1
       }
     },
     "attachments": [
@@ -4518,7 +4546,7 @@ window.MAITY_FIXTURES = {
         "attached_by": "hum-maintainer",
         "detached_at": null,
         "id": "ratt-0001",
-        "project": "maity",
+        "project": "maintainer/maity",
         "runner_id": "rnr-0002"
       },
       {
@@ -4526,7 +4554,7 @@ window.MAITY_FIXTURES = {
         "attached_by": "hum-maintainer",
         "detached_at": null,
         "id": "ratt-0002",
-        "project": "maity",
+        "project": "maintainer/maity",
         "runner_id": "rnr-0004"
       }
     ],
@@ -4574,8 +4602,8 @@ window.MAITY_FIXTURES = {
           ],
           "max_agents": 4,
           "projects": [
-            "maity",
-            "sample"
+            "maintainer/maity",
+            "maintainer/sample"
           ],
           "reported_at": "2026-10-22T13:40:00Z",
           "repositories": [
@@ -4614,7 +4642,7 @@ window.MAITY_FIXTURES = {
         "owner_id": "hum-maintainer",
         "presence": "online",
         "projects": [
-          "maity"
+          "maintainer/maity"
         ],
         "removed_at": null,
         "updated_at": "2026-10-22T13:31:00Z",
@@ -4646,7 +4674,7 @@ window.MAITY_FIXTURES = {
           ],
           "max_agents": 4,
           "projects": [
-            "sample"
+            "maintainer/sample"
           ],
           "reported_at": "2026-10-22T12:00:00Z",
           "repositories": [
@@ -4744,7 +4772,7 @@ window.MAITY_FIXTURES = {
           ],
           "max_agents": 8,
           "projects": [
-            "maity"
+            "maintainer/maity"
           ],
           "reported_at": "2026-10-21T19:30:00Z",
           "repositories": [
@@ -4783,7 +4811,7 @@ window.MAITY_FIXTURES = {
         "owner_id": "hum-maintainer",
         "presence": "offline",
         "projects": [
-          "maity"
+          "maintainer/maity"
         ],
         "removed_at": null,
         "updated_at": "2026-10-21T20:10:00Z",
@@ -4910,13 +4938,17 @@ window.MAITY_FIXTURES = {
       "scope": "bug fixes may be released, features wait",
       "until": "2026-10-22T08:00:00Z"
     },
+    "aliases": [],
     "banner": {
       "available": false,
       "source": null
     },
     "created_at": "2026-09-02T10:00:00Z",
+    "full_name": "maintainer/sample",
+    "id": "prj-sample000001",
     "keep_the_why": false,
     "keep_the_why_export": null,
+    "legacy_slug": "sample",
     "logo": {
       "available": false,
       "source": null
@@ -4925,6 +4957,10 @@ window.MAITY_FIXTURES = {
       "provider": "none"
     },
     "name": "Sample shop",
+    "owner": {
+      "handle": "maintainer",
+      "id": "hum-maintainer"
+    },
     "policy": {
       "badge": "members",
       "claim_policy": "self-claim",

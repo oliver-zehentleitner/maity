@@ -1,9 +1,10 @@
-// Message the project (#/p/<slug>/message): a message to everyone, a role
+// Message the project (#/<owner>/<slug>/message): a message to everyone, a role
 // or one member (docs/api.md §8.4), of one of the hub's types, optionally
 // about a card. Its body is scanned by the hub: a mention draws the member
 // into the message's audience and pings them (§8.6); the dashboard never
-// sends a mentions list. Opened from the inbox, and with an @name already
-// in it from a chat, where a mention notifies nobody.
+// sends a mentions list. Opened from the Chat tab and the Messages view,
+// and with an @name already in it from a chat, where a mention notifies
+// nobody.
 "use strict";
 
 window.Maity = window.Maity || {};

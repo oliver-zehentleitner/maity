@@ -131,7 +131,7 @@ window.Maity = window.Maity || {};
       "url = " + q(hubUrl),
       "",
       "[limits]",
-      "projects = [" + projects.map((p) => q(p.slug)).join(", ") + "]" + (projects.length ? "" : "   # none chosen: it starts nothing until you add one"),
+      "projects = [" + projects.map((p) => q(p.full_name)).join(", ") + "]" + (projects.length ? "" : "   # none chosen: it starts nothing until you add one"),
       "repositories = [" + repos.map(q).join(", ") + "]",
       "",
       "[backend]",
@@ -198,8 +198,8 @@ window.Maity = window.Maity || {};
       M.api.getAll("/runners/enrollments"),
       M.api.get("/projects"),
     ]);
-    const admin = new Set(ctx.projects.filter((p) => p.role === "owner" || p.role === "admin").map((p) => p.slug));
-    const adminProjects = (projects.items || []).filter((p) => admin.has(p.slug));
+    const admin = new Set(ctx.projects.filter((p) => p.role === "owner" || p.role === "admin").map((p) => p.full_name));
+    const adminProjects = (projects.items || []).filter((p) => admin.has(p.full_name));
     const status = M.statusLine();
     const list = h("div", { class: "runners" });
     const pending = h("div", { class: "enrollments" });
@@ -327,7 +327,7 @@ window.Maity = window.Maity || {};
         [[900, "15 minutes"], [600, "10 minutes"], [300, "5 minutes"]].map(([v, l]) => h("option", { value: String(v) }, l)));
       ttl.value = "900";
       const boxes = adminProjects.map((p) => {
-        const box = h("input", { type: "checkbox", id: "pair-attach-" + p.slug });
+        const box = h("input", { type: "checkbox", id: "pair-attach-" + p.full_name.replace("/", "-") });
         box.checked = true;
         return { p, box };
       });
@@ -337,8 +337,8 @@ window.Maity = window.Maity || {};
           e.preventDefault();
           const n = name.value.trim();
           if (!NAME.test(n)) { status.fail("No pairing line: ", { message: "the name: " + NAME_RULE }); name.focus(); return; }
-          const attach = boxes.filter((b) => b.box.checked).map((b) => b.p.slug);
-          const chosen = adminProjects.filter((p) => attach.includes(p.slug));
+          const attach = boxes.filter((b) => b.box.checked).map((b) => b.p.full_name);
+          const chosen = adminProjects.filter((p) => attach.includes(p.full_name));
           // A hub before attachments (docs/api.md §15.4) refuses `attach`: pair
           // without it, and say where the runner is allowed instead.
           let note = null;

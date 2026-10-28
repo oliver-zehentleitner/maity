@@ -63,8 +63,10 @@ def test_its_events_reach_the_owner_only_and_no_project_route_shows_it(setup: Se
     ]
     assert created["audience"] == [f"member:{setup.owner.id}"]
     for who in (setup.owner, setup.agent):
-        assert who.get(f"/projects/maity/requests/{notice['id']}").status_code == 404
-        answered = who.post(f"/projects/maity/requests/{notice['id']}/answer", {"reply_id": "seen"})
+        assert who.get(f"/projects/maintainer/maity/requests/{notice['id']}").status_code == 404
+        answered = who.post(
+            f"/projects/maintainer/maity/requests/{notice['id']}/answer", {"reply_id": "seen"}
+        )
         assert answered.status_code == 404
 
 
@@ -102,21 +104,21 @@ def test_seen_closes_the_notice_not_the_outage(setup: Setup) -> None:
 def test_a_stop_ends_the_outage(setup: Setup) -> None:
     body = placed(setup)
     report(setup, body, 1, state="failed", reason="crash_loop")
-    setup.owner.patch(f"/projects/maity/placements/{body['id']}", {"desired": "stopped"})
+    setup.owner.patch(f"/projects/maintainer/maity/placements/{body['id']}", {"desired": "stopped"})
     assert [n["status"] for n in notices(setup)] == ["withdrawn"]
 
 
 def test_a_delete_ends_the_outage(setup: Setup) -> None:
     body = placed(setup)
     report(setup, body, 1, state="failed", reason="crash_loop")
-    setup.owner.delete(f"/projects/maity/placements/{body['id']}")
+    setup.owner.delete(f"/projects/maintainer/maity/placements/{body['id']}")
     assert [n["status"] for n in notices(setup)] == ["withdrawn"]
 
 
 def test_a_report_the_stop_asked_for_opens_nothing(setup: Setup) -> None:
     body = placed(setup)
     report(setup, body, 1)
-    setup.owner.patch(f"/projects/maity/placements/{body['id']}", {"desired": "stopped"})
+    setup.owner.patch(f"/projects/maintainer/maity/placements/{body['id']}", {"desired": "stopped"})
     stopping = {**body, "generation": body["generation"] + 1}
     report(setup, stopping, 2, state="failed", reason="crash_loop")
     assert notices(setup) == []
@@ -124,7 +126,7 @@ def test_a_report_the_stop_asked_for_opens_nothing(setup: Setup) -> None:
 
 def test_an_older_generation_opens_nothing(setup: Setup) -> None:
     body = placed(setup)
-    setup.owner.post(f"/projects/maity/placements/{body['id']}/restart", {})
+    setup.owner.post(f"/projects/maintainer/maity/placements/{body['id']}/restart", {})
     report(setup, body, 1, state="failed", reason="crash_loop")  # generation 1 of 2
     assert notices(setup) == []
 
@@ -132,7 +134,7 @@ def test_an_older_generation_opens_nothing(setup: Setup) -> None:
 def test_archiving_the_project_ends_the_outage(setup: Setup) -> None:
     body = placed(setup)
     report(setup, body, 1, state="failed", reason="crash_loop")
-    setup.owner.patch("/projects/maity", {"state": "archived", "reason": "done"})
+    setup.owner.patch("/projects/maintainer/maity", {"state": "archived", "reason": "done"})
     assert [n["status"] for n in notices(setup)] == ["withdrawn"]
 
 
@@ -143,7 +145,7 @@ def test_the_agent_never_reads_its_own_notice(setup: Setup) -> None:
     assert notice["id"] not in setup.agent.resume().text
     setup.owner.post(f"/requests/{notice['id']}/answer", {"reply_id": "seen"})
     assert notice["id"] not in setup.agent.resume().text  # nor the owner's answer
-    listed = setup.agent.get("/projects/maity/requests", params={"status": "all"}).json()
+    listed = setup.agent.get("/projects/maintainer/maity/requests", params={"status": "all"}).json()
     assert notice["id"] not in [r["id"] for r in listed["items"]]
 
 
@@ -152,7 +154,7 @@ def test_the_project_route_withdraws_nothing(setup: Setup) -> None:
     report(setup, body, 1, state="failed", reason="crash_loop")
     [notice] = notices(setup)
     for who in (setup.owner, setup.agent):
-        refused = who.post(f"/projects/maity/requests/{notice['id']}/withdraw", {})
+        refused = who.post(f"/projects/maintainer/maity/requests/{notice['id']}/withdraw", {})
         assert refused.status_code == 404
     assert [n["status"] for n in notices(setup)] == ["open"]
 
@@ -169,10 +171,12 @@ def test_the_owners_withdraw_closes_the_notice_not_the_outage(setup: Setup) -> N
 def test_after_a_stop_a_run_and_a_failure_open_a_new_outage(setup: Setup) -> None:
     body = placed(setup)
     report(setup, body, 1, state="failed", reason="crash_loop")
-    stopped = setup.owner.patch(f"/projects/maity/placements/{body['id']}", {"desired": "stopped"})
+    stopped = setup.owner.patch(
+        f"/projects/maintainer/maity/placements/{body['id']}", {"desired": "stopped"}
+    )
     assert [n["status"] for n in notices(setup)] == ["withdrawn"]
     started = setup.owner.patch(
-        f"/projects/maity/placements/{body['id']}", {"desired": "running"}
+        f"/projects/maintainer/maity/placements/{body['id']}", {"desired": "running"}
     ).json()
     assert started["generation"] >= stopped.json()["generation"]
     report(setup, started, 2, state="running")

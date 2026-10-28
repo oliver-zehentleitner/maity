@@ -509,6 +509,10 @@ a.id-ref:hover, a.id-ref:focus-visible { text-decoration: underline; }
 .pause { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 8px; }
 .pause input { flex: 1 1 10rem; }
 .pause .hint { flex: 1 1 100%; }
+.pause[hidden] { display: none; }
+/* An agent card's Actions menu, at the header's end (the designer's pass part 3). */
+.profile header .menu-box { margin-inline-start: auto; }
+.menu-button.agent-actions { font-size: 0.85rem; padding: 4px 10px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); }
 .hint { margin: 0; font-size: 0.8rem; color: var(--muted); }
 .flag .hint { display: block; margin-top: 4px; }
 .briefing { margin-top: 10px; }
@@ -587,6 +591,10 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .members .member-actions { text-align: right; white-space: nowrap; }
 .member-manage td { background: var(--surface); }
 .member-manage .member-edit { margin: 4px 0 8px; }
+/* The team's rulebook, for the agent's owner (§6.18). */
+.member-team { display: grid; grid-template-columns: max-content minmax(0, 26rem); gap: 6px 12px; align-items: center; margin: 8px 0; }
+.member-team h4, .member-team > .hint, .member-team > .muted, .member-team > .field-error, .member-team > .actions, .member-team > label.check { grid-column: 1 / -1; margin: 0; }
+@media (max-width: 600px) { .member-team { grid-template-columns: minmax(0, 1fr); } }
 .member-manage .member-pause, .member-manage .member-remove { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0; }
 .member-manage .hint { flex-basis: 100%; margin: 0; }
 .member-manage label { font-size: 0.85rem; color: var(--muted); }
@@ -718,10 +726,14 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .md .md-h2 { font-size: 1rem; }
 .md .md-h3 { font-size: 0.95rem; }
 .md-deep, .md-real-href { color: var(--muted); }
+/* Copy sits inside the block, at its top right (the designer's pass part 1). */
 .md-code-box { margin: 6px 0; }
+.md-code-frame { position: relative; }
 /* The bar sits above the code, so it never covers the first line. */
-.md-code-bar { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-bottom: 2px; }
-.md-code { margin: 0; padding: 8px 10px; overflow-x: auto; background: var(--surface-2); border-radius: 4px; font-size: 0.85rem; }
+.md-code-bar { position: absolute; top: 6px; inset-inline-end: 6px; display: flex; align-items: center; gap: 8px; z-index: 1; }
+/* A row of its own for language and Copy at the block's top, so no line of
+   code, however long, ever runs under them (H on #456). */
+.md-code { margin: 0; padding: 36px 10px 8px; overflow-x: auto; background: var(--surface-2); border-radius: 4px; font-size: 0.85rem; }
 .md-code code { background: none; padding: 0; }
 .md-lang { font-size: 0.72rem; color: var(--muted); }
 .md-invisible { margin: 0 0 4px; font-size: 0.8rem; }
@@ -775,6 +787,21 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .new-agent { display: grid; gap: 6px; }
 .new-agent[hidden] { display: none; }
 .login { margin: 10vh auto 0; }
+/* The door (the designer's pass part 2): sign-in, register and an
+   invitation as one centred card. */
+.door { max-width: 28rem; margin: 10vh auto; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; display: grid; gap: 12px; box-sizing: border-box; }
+.door h2 { margin: 0; }
+.door .door-action { width: 100%; justify-content: center; text-align: center; box-sizing: border-box; }
+.door-alt { text-align: center; margin: 0; }
+.door-mark { font-size: 2rem; color: var(--muted); }
+.door-who { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; }
+.door-who .link-button { min-height: 0; padding: 0; }
+.invite-project { display: flex; align-items: center; gap: 12px; }
+.invite-logo { width: 48px; height: 48px; border-radius: 10px; flex: none; }
+.project-mark.invite-logo { font-size: 1.1rem; }
+.invite-note { margin: 0; padding-inline-start: 12px; border-inline-start: 3px solid var(--border); }
+.invite-note p { margin: 0; }
+.invite-note-by { margin: -6px 0 0; }
 
 .join-result { margin: 12px 0; }
 .join-result .actions, .pair-steps .actions { margin-top: 8px; }
@@ -829,8 +856,9 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
 
 @media (max-width: 600px) {
   main { padding: 12px; }
-  .project-state { border-inline-start: none; padding-inline-start: 0; flex-wrap: wrap; }
+  .project-state { border-inline-start: none; padding-inline-start: 0; flex-wrap: wrap; flex-basis: 100%; }
   .me-name { display: none; }
+  .lead-button-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   /* On a phone the buttons of a form or a row stack, full width. */
   .actions > button, .inline-form > button, .login > button, .join-form > button, .project-form > button,
   .compose > button, .compose-actions > button, .free-text > button, .briefing-form .row > button, .rows-form .row > button,
@@ -857,16 +885,84 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
 .picture-controls input[type="file"] { max-width: 100%; }
 .picture-list { list-style: none; padding: 0; margin: 0; }
 .picture-name { margin: 12px 0 4px; font-size: 0.95rem; }
-/* The project at a glance (js/overview.js). */
-.overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); gap: 12px; }
-.overview-part { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; min-width: 0; }
-.overview-part h3 { display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px; font-size: 1rem; }
+/* The project at a glance (js/overview.js), as the designer laid it out
+   (#6484): what needs you, then the state, then the facts, in three rows;
+   on a phone one column in the same order. */
+.overview { display: grid; gap: 16px; }
+.overview-row { display: grid; gap: 16px; min-width: 0; }
+.overview-row-1, .overview-row-3 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); }
+.overview-row-2 { display: flex; flex-wrap: wrap; align-items: flex-start; }
+.overview-team { flex: 2 1 480px; }
+.overview-latest { flex: 1 1 300px; }
+.overview-part { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; min-width: 0; display: grid; gap: 10px; align-content: start; }
+.overview-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.overview-head h3 { margin: 0; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 600; }
+.overview-onward { margin-inline-start: auto; font-size: 0.88rem; }
 .overview-part .facts { margin: 0; }
-.overview-why, .overview-reports { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
-.overview-reports li { overflow-wrap: anywhere; }
-.overview-counts { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr)); gap: 6px; }
-.overview-counts a { display: block; padding: 4px 6px; border-radius: 4px; background: var(--surface-2); text-decoration: none; }
-.overview-counts .n { font-weight: 600; font-variant-numeric: tabular-nums; }
+.overview-part p { margin: 0; }
+/* Waiting for you: one big number, the inbox at the right edge. */
+.overview-waiting { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.overview-waiting .button { margin-inline-start: auto; }
+.overview-big { color: var(--text); text-decoration: none; }
+.overview-big .big { font-size: 2.2rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
+a.button { display: inline-flex; align-items: center; padding: 6px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); color: var(--text); text-decoration: none; }
+a.button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.overview-prios { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 0.88rem; }
+.pill.prio-pill::before { display: none; }
+.prio-pill-high { color: var(--high); border-color: var(--high); }
+/* Board: a stacked bar, one segment per column, and its legend. */
+.overview-bar { display: flex; gap: 2px; height: 10px; border-radius: 999px; overflow: hidden; }
+.overview-seg { min-width: 4px; }
+.seg-proposed { background: var(--seat); }
+.seg-open { background: var(--accent); }
+.seg-in_progress { background: var(--ok); }
+.seg-blocked { background: var(--bad); }
+.seg-review { background: var(--warn); }
+.seg-done { background: color-mix(in srgb, var(--ok) 45%, var(--surface)); }
+.seg-cancelled { background: var(--border); }
+.overview-counts { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 6px; }
+.overview-counts a { display: flex; align-items: center; gap: 6px; padding: 2px 0; text-decoration: none; color: var(--text); }
+.overview-counts .n { font-weight: 700; font-variant-numeric: tabular-nums; }
+.overview-swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; order: -1; }
+.overview-part .hint { font-size: 0.75rem; }
+/* Team: per role, a muted name column and the member chips. */
+.overview-roles { display: grid; gap: 8px; }
+.overview-role { display: grid; grid-template-columns: 6.5rem 1fr; gap: 8px; align-items: start; }
+.overview-role-name { padding-top: 6px; font-size: 0.85rem; }
+.overview-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Latest reports: an avatar column, the card, then who, when and the pull request. */
+.overview-reports { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.overview-reports li { display: grid; grid-template-columns: 22px 1fr; gap: 8px; overflow-wrap: anywhere; }
+.overview-report-meta { font-size: 0.8rem; margin-top: 2px; }
+.pr-state { font-size: 0.75rem; padding: 0 8px; }
+.pill.pr-state::before { display: none; }
+.pr-merged { color: var(--ok); }
+.pr-closed { color: var(--bad); }
+/* Project: Keep the Why parts as pills with a dot. */
+.overview-why { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+a.pill { text-decoration: none; }
+.overview-why .pill-warn { background: var(--flag-bg); }
+/* README badge: its state as pills, the preview, the snippet with Copy. */
+.overview-badge-states { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.pill-on { color: var(--accent); border-color: var(--accent); }
+.overview-snippet { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.overview-snippet code { flex: 1 1 auto; min-width: 0; overflow-x: auto; white-space: nowrap; padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); font-size: 0.8rem; }
+@media (max-width: 600px) {
+  .overview-role { grid-template-columns: 1fr; }
+  .overview-role-name { padding-top: 0; }
+}
+
+/* A member as a chip (dom.js memberChip): a pill, the avatar's shape by
+   kind, a presence dot on it, then @handle. */
+.member-chip { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px 0 4px; border-radius: 999px;
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text); text-decoration: none; font-size: 0.88rem; }
+a.member-chip:hover { border-color: var(--accent); }
+.chip-avatar { position: relative; display: inline-flex; width: 22px; height: 22px; flex: none; }
+.chip-avatar > img, .chip-avatar > svg { width: 22px; height: 22px; border-radius: 50%; overflow: hidden; }
+.chip-avatar.agent > img, .chip-avatar.agent > svg { border-radius: 5px; }
+.chip-dot { position: absolute; right: -2px; bottom: -2px; width: 9px; height: 9px; border-radius: 50%; background: var(--seat); box-shadow: 0 0 0 2px var(--surface-2); }
+.chip-dot.presence-online { background: var(--ok); }
+.chip-dot.presence-paused { background: var(--warn); }
 
 /* Group chats (js/group-chat.js). */
 .chat-list-pane .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -907,6 +1003,15 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
 .bell-box { position: relative; }
 .bell { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; min-height: 32px; min-width: 32px; }
 .bell .icon .icon-fill { fill: currentColor; }
+/* Chat and the bell look like the gear and the profile: buttons, not bare
+   icons (the maintainer's wish, tsk-g2qe0fyqqmmq). */
+a.bell, .menu-button.bell { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); text-decoration: none; }
+a.bell:hover, .menu-button.bell:hover { border-color: var(--accent); }
+.chat-open-failed { margin: 4px 0 8px; }
+/* The Lead button beside Chat: an icon and its word, the word hidden from
+   sight at phone width so the header's buttons keep one row. */
+.lead-button .icon .icon-fill { fill: currentColor; }
+.lead-button { gap: 6px; }
 .bell-panel { position: absolute; inset-inline-end: 0; top: calc(100% + 4px); z-index: 2; width: min(26rem, calc(100vw - 32px));
   max-height: 70vh; overflow-y: auto; padding: 8px 10px; background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius); box-shadow: 0 6px 18px rgb(0 0 0 / 0.15); }
@@ -989,9 +1094,6 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
   .join-fields, .join-fields .new-agent:not([hidden]) { grid-template-columns: minmax(0, 1fr); }
 }
 
-.lead-chat { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 8px 0; }
-.lead-chat select { max-width: 100%; }
-.lead-projects { margin-bottom: 20px; }
 
 /* Waiting activity follows the request forms without replacing them. */
 .waiting-group { margin-top: 1.5rem; }
@@ -1059,7 +1161,14 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* A contract card's section from the repository (js/contract-panel.js, §6.8). */
 .contract-section { margin-top: 6px; border-top: 1px solid var(--border); padding-top: 6px; min-width: 0; }
 .contract-section summary { cursor: pointer; font-size: 0.85rem; }
-.contract-bar { display: flex; justify-content: flex-end; margin: 4px 0; }
+/* Refresh and Change source are small text buttons (the designer's pass part 3). */
+.contract-meta .link-button, .contract-unresolved .link-button { padding: 0; min-height: 0; font-size: inherit; }
+.contract-change-row { margin: 4px 0 0; font-size: 0.85rem; }
+.contract-place[hidden] { display: none; }
+/* The admin area's sections, one at a time (the designer's pass part 3). */
+.admin-nav { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }
+.admin-nav button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.admin-section[hidden] { display: none; }
 /* At most 16rem, so a long section never pushes the card's action row off
    screen (the designer's pass part 3). A shadow at the bottom says there
    is more, only while there is: a cover scrolling with the content
@@ -1103,10 +1212,24 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .placement .facts { margin: 0; }
 .placement-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .placement-consent, .placement-waiting { color: var(--muted); }
+/* The reported state as a pill with a dot (the designer's pass part 3). */
+.pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 1px 10px; border: 1px solid var(--border); font-size: 0.88rem; }
+.pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
+.pill-ok { color: var(--ok); }
+.pill-bad { color: var(--bad); border-color: var(--bad); }
+.pill-warn { color: var(--warn); border-color: var(--warn); }
+.pill-idle { color: var(--muted); }
+/* A runner command in a box that scrolls, with Copy beside it. */
+.placement-hints { display: grid; gap: 4px; }
+.placement-command { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 0.85rem; }
+.placement-command code { flex: 1 1 auto; min-width: 0; overflow-x: auto; white-space: nowrap; padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); }
 /* The instance's landing page (js/landing.js, §16.7): the face of the
    instance, with room; the large lockup in the theme's pair. */
 .landing { max-width: 44rem; margin: 32px auto 48px; display: grid; gap: 16px; }
-.landing-lockup img { display: block; width: min(320px, 80vw); height: auto; }
+.landing-lockup { margin: 0; }
+.landing-lockup img { display: block; width: min(240px, 70vw); height: auto; }
+/* The landing page's header: the theme menu and Sign in at the right edge. */
+.landing-bar { justify-content: flex-end; }
 .landing-lockup .brand-dark { display: none; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .landing-lockup .brand-light { display: none; }
@@ -1114,8 +1237,9 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 }
 :root[data-theme="dark"] .landing-lockup .brand-light { display: none; }
 :root[data-theme="dark"] .landing-lockup .brand-dark { display: block; }
-.landing-title { font-size: clamp(1.6rem, 5vw, 2.4rem); line-height: 1.15; margin: 0; }
+.landing-title { font-size: clamp(1.6rem, 5vw, 2.4rem); line-height: 1.15; margin: 0; text-wrap: balance; letter-spacing: -0.02em; }
 .landing-body { font-size: 1.05rem; line-height: 1.6; }
+.landing-body h2 { font-size: 1.25rem; margin: 24px 0 4px; }
 .landing-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; margin: 8px 0 0; }
 .landing-cta { font-size: 1.05rem; padding: 10px 20px; }
 .landing-preview { border: 1px dashed var(--border); border-radius: 6px; padding: 0 16px; }
@@ -1160,10 +1284,15 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .board-body.has-panel > .columns { flex: 1 1 auto; min-width: 0; }
 .card-panel { flex: 0 0 min(30rem, 42%); position: sticky; top: 8px; max-height: calc(100vh - 16px); overflow-y: auto;
   border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); padding: 12px 16px; }
+/* Wide: a fixed side panel, the columns keep their width and scroll beside it. */
+@media (min-width: 1100px) { .card-panel { flex-basis: min(32rem, 40vw); } }
 .card-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.card-panel-head .panel-title { margin: 0; font-size: 1rem; }
-.card-panel .card { margin: 8px 0; }
-.card-panel h3 { font-size: 0.95rem; margin: 16px 0 6px; }
+.card-panel .panel-title { margin: 6px 0 0; font-size: 1.15rem; }
+/* The panel is the card: no frame inside the frame, no second id, no second title. */
+.card-panel .card { margin: 4px 0 8px; border: none; padding: 0; background: none; }
+.card-panel .card > header .card-id, .card-panel .card > h3 { display: none; }
+/* One style for the panel's section headings. */
+.card-panel h3, .card-panel h4 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 16px 0 6px; font-weight: 600; }
 .card-note-list, .card-history-list, .card-links { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
 .card-note-list li p { margin: 0; }
 .card-history-list li { overflow-wrap: anywhere; font-size: 0.9rem; }
@@ -1176,6 +1305,10 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
   .board-body.has-panel { flex-direction: column-reverse; }
   .card-panel { position: static; flex-basis: auto; width: 100%; max-height: none; box-sizing: border-box; }
 }
+/* A phone: the open card is a page of its own; Close goes back to the board at the card. */
+@media (max-width: 600px) {
+  .board-body.has-panel > .columns { display: none; }
+}
 
 /* Subtasks on a card (js/board.js): folded under the parent, a toggle with the counts. */
 .subtasks { margin-top: 6px; }
@@ -1183,7 +1316,7 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .subtask-list li { overflow-wrap: anywhere; }
 .subtask-list li.met { color: var(--muted); }
 .subtask-list li.wanted { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
-.subtask-status { font-size: 0.8rem; color: var(--muted); }
+.subtask-status { font-size: 0.8rem; color: var(--muted); display: inline-block; min-width: 4.5em; }
 .card-parent { margin: 4px 0; font-size: 0.85rem; }
 .card-family { display: grid; gap: 8px; margin-top: 8px; }
 .card-family-form { display: grid; gap: 6px; }

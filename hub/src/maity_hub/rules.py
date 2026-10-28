@@ -12,6 +12,7 @@ from typing import Any
 
 from sqlalchemy import Connection, update
 
+from maity_hub import namespace
 from maity_hub import tables as t
 from maity_hub.events import Actor, emit, lock_project
 
@@ -151,7 +152,7 @@ def bump(
             else {"version": version, **payload}
         ),
         actor=actor,
-        subject=subject or ("project", project.slug),
+        subject=subject or ("project", namespace.full_name(conn, project)),
     )
     conn.execute(
         update(t.project)

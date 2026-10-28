@@ -15,6 +15,7 @@ from maity_hub import (
     contract_text,
     forge,
     mentions,
+    namespace,
     onboarding,
     policy,
     ticker_read,
@@ -102,14 +103,20 @@ def project_language(project: Any) -> str:
 def project_view(
     project: Any,
     settings: Settings,
+    owner_handle: str,
     shown: dict[str, Any] | None = None,
     export: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """`shown` is what `images.views` says the project shows as logo and banner, `export`
-    the Keep the Why export as `ktw.export_for_view` holds it."""
+    """`owner_handle` is the namespace owner's current handle (§6.25), `shown` what
+    `images.views` says the project shows as logo and banner, `export` the Keep the Why
+    export as `ktw.export_for_view` holds it."""
     shown = shown or {}
     return {
+        "id": project.id,
+        "owner": {"id": project.owner_id, "handle": owner_handle},
+        "full_name": f"{owner_handle}/{project.slug}",
         "slug": project.slug,
+        "legacy_slug": project.legacy_slug,
         "name": project.name,
         "state": project.state,
         "state_note": project.state_note,
@@ -326,6 +333,7 @@ def member_views(
         if project_ids
         else {}
     )
+    names = namespace.full_names(conn, project_ids)
     from maity_hub import briefings  # briefings formats with this module's helpers
 
     briefed = {r.id: r for r in rows if (briefing(r) if callable(briefing) else briefing)}
@@ -376,7 +384,11 @@ def member_views(
                 "presence": shown_presence,
                 "paused": paused(row),
                 "availability": availability.view(
-                    row, shown_presence, humans.get(row.human_id), projects[row.project_id]
+                    row,
+                    shown_presence,
+                    humans.get(row.human_id),
+                    projects[row.project_id],
+                    project_name=names[row.project_id],
                 ),
                 "availability_policy": availability.policy_of(row),
                 # Cover by a substitute is not built yet (§6.12).
@@ -480,12 +492,13 @@ def agent_view(
     """The agent profile (§6.3), for its owner; `picture` from `avatars.states` when a
     list has looked them up together."""
     memberships = conn.execute(
-        select(t.project.c.slug, t.membership.c.role)
+        select(t.project.c.id, t.project.c.slug, t.membership.c.role)
         .join(t.project, t.project.c.id == t.membership.c.project_id)
         .where(t.membership.c.agent_id == row.id, t.membership.c.active.is_(True))
         .order_by(t.project.c.slug)
     ).all()
     owner_handle = owner_handles(conn, [row.owner_id])[row.owner_id]
+    names = namespace.full_names(conn, [m.id for m in memberships])
     return {
         "id": row.id,
         "handle": row.handle,
@@ -495,7 +508,9 @@ def agent_view(
         **(picture if picture is not None else avatars.state(conn, row.id)),
         "owner_id": row.owner_id,
         "git_identity": git_identity(row),
-        "memberships": [{"project": m.slug, "role": m.role} for m in memberships],
+        "memberships": [
+            {"project": names[m.id], "role": m.role} for m in memberships
+        ],  # full names (§6.25)
         "created_at": ts(row.created_at),
         "deleted_at": ts(row.deleted_at),  # a tombstone: handle and name kept (§6.3)
     }
@@ -668,6 +683,7 @@ def _task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[
                 "children": children[row.id],
                 "blocked_by_request": row.blocked_by_request,
                 "ktw_ref": row.ktw_ref,
+                "jour_fixe": row.jour_fixe,
                 "report": row.report,
                 "release": _release(conn, row, fg, release_tags),
                 "contract": view_contract(row.contract) if row.contract is not None else None,
