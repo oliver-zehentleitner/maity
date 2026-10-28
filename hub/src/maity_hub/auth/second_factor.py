@@ -92,7 +92,7 @@ def owns_a_project(conn: Connection, human_id: str) -> bool:
     found = conn.execute(
         select(t.membership.c.id).where(
             t.membership.c.human_id == human_id,
-            t.membership.c.role == "owner",
+            t.membership.c.trust == "owner",
             t.membership.c.removed_at.is_(None),
         )
     ).first()

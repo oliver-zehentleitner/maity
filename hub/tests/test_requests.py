@@ -105,7 +105,8 @@ def test_a_request_has_the_contract_shape_and_goes_to_the_agents_human(
         "member_id": agent.id,
         "display_name": "Agent B",
         "avatar_url": None,
-        "role": "member",
+        "trust": "member",
+        "role": "coder",
         "session_id": session,
         "instance": agent.instance,  # the instance that asked (§7, §6.17)
     }
@@ -170,7 +171,7 @@ def test_a_consent_goes_only_to_a_role_that_may_answer_it(
     refused = ask(worker, **{"class": "consent", "to": reviewer.id})
     assert refused.json()["error"]["details"]["fields"] == {"to": "cannot_answer_consent"}
     assert ask(worker, **{"class": "consent", "to": "role:reviewer"}).status_code == 400
-    for to in ("owner", "role:admin", "role:proxy", owner.id):
+    for to in ("owner", "trust:admin", "role:proxy", owner.id):
         assert ask(worker, **{"class": "consent", "to": to}).status_code == 201, to
 
 
@@ -182,7 +183,7 @@ def test_a_contract_request_goes_to_the_arbiter(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
     agent = flow.agent(make_client, owner)
-    assert asked(agent, **{"class": "contract"})["to"] == "role:admin"
+    assert asked(agent, **{"class": "contract"})["to"] == "trust:admin"
 
 
 def test_on_behalf_of_needs_requests_answer(owner: flow.Human, make_client: ClientFactory) -> None:
@@ -276,7 +277,7 @@ def test_the_inbox_defaults_to_open_requests_addressed_to_me(
 ) -> None:
     agent = flow.agent(make_client, owner)
     mine = asked(agent)  # to the owner, its human
-    asked(agent, to="role:admin")  # not mine
+    asked(agent, to="trust:admin")  # not mine
     done = asked(agent)
     answer(owner, done, text="x")
     items = owner.get("/projects/maintainer/maity/requests").json()["items"]
@@ -422,7 +423,7 @@ def test_nobody_answers_its_own_request(owner: flow.Human, make_client: ClientFa
     worker = flow.agent(make_client, owner)
     dead = ask(admin, on_behalf_of=worker.id, to=worker.id)  # could never be answered
     assert dead.json()["error"]["details"]["fields"] == {"on_behalf_of": "is_the_addressee"}
-    filed = asked(admin, on_behalf_of=worker.id, to="role:member")  # worker holds the role
+    filed = asked(admin, on_behalf_of=worker.id, to="role:coder")  # worker holds the role
     assert answer(worker, filed, text="x").headers["Maity-Error"] == "self_answer"
 
 

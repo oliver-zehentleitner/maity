@@ -40,7 +40,7 @@ csrf="$(curl -sS --fail -b "$jar" "$hub/api/v1/auth/session" | json 'd["csrf_tok
 human() { curl -sS --fail -b "$jar" -H "X-CSRF-Token: $csrf" -H 'Content-Type: application/json' "$@"; }
 human -o /dev/null -d '{"slug":"smoke","name":"Smoke test"}' "$hub/api/v1/projects"
 join_for() {
-    human -d "{\"agent\":{\"handle\":\"$1\",\"display_name\":\"$1\"},\"role\":\"member\",\"areas\":[\"$1/\"]}" \
+    human -d "{\"agent\":{\"handle\":\"$1\",\"display_name\":\"$1\"},\"trust\":\"member\",\"role\":\"coder\",\"areas\":[\"$1/\"]}" \
         "$hub/api/v1/projects/owner/smoke/joins"
 }
 curl_join="$(join_for curl-agent)"

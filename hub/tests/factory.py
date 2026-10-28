@@ -67,7 +67,7 @@ def project(engine: Engine, slug: str | None = None, **values: Any) -> str:
         "policy_preset": "hierarchical",
         "claim_policy": "self-claim",
         "done_authority": "reviewer",
-        "contract_arbiter": "role:admin",
+        "contract_arbiter": "trust:admin",
         "tag_authority": "human",
         "steward_writes": "cards_only",
         "lease_seconds": 7200,
@@ -80,15 +80,38 @@ def project(engine: Engine, slug: str | None = None, **values: Any) -> str:
     return project_id
 
 
-def membership(engine: Engine, project_id: str, role: str = "owner", **principal: str) -> int:
+# The single role's names, as most tests still say them, to trust × role (§2.3); a role
+# of the new model passes through with trust `member`, unless `trust` is given.
+SINGLE_ROLE = {
+    "owner": ("owner", "coder"),
+    "admin": ("admin", "coder"),
+    "proxy": ("admin", "proxy"),
+    "reviewer": ("member", "reviewer"),
+    "member": ("member", "coder"),
+    "guest": ("guest", "coder"),
+}
+
+
+def trust_and_role(role: str, trust: str | None = None) -> tuple[str, str]:
+    if trust is not None:
+        return trust, role
+    return SINGLE_ROLE.get(role, ("member", role))
+
+
+def membership(
+    engine: Engine, project_id: str, role: str = "owner", trust: str | None = None, **principal: str
+) -> int:
+    values: dict[str, Any] = {"role": role}  # before 0067, the single role (§2.3)
+    if "trust" in {c["name"] for c in inspect(engine).get_columns("membership")}:
+        values["trust"], values["role"] = trust_and_role(role, trust)
     with engine.begin() as conn:
         result = conn.execute(
             insert(t.membership).values(
                 project_id=project_id,
-                role=role,
                 areas=["/"],
                 capabilities=[],
                 joined_at=clock.now(),
+                **values,
                 **principal,
             )
         )
@@ -125,6 +148,7 @@ def agent(
     owner_id: str,
     role: str = "member",
     *,
+    trust: str | None = None,
     with_session: bool = True,
     instance: str = "wle2",
 ) -> Agent:
@@ -139,7 +163,7 @@ def agent(
                 created_at=clock.now(),
             )
         )
-    membership_id = membership(engine, project_id, role, agent_id=agent_id)
+    membership_id = membership(engine, project_id, role, trust, agent_id=agent_id)
     credential_id = new_id("credential")
     value, verifier = credentials.issue(credential_id)
     session_id = new_id("session") if with_session else None

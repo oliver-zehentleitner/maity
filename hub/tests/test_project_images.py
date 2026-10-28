@@ -249,7 +249,8 @@ def test_project_updated_wakes_nobody(owner: flow.Human, migrated: Engine) -> No
 
     class Reader:
         id = -1
-        role = "member"
+        trust = "member"
+        role = "coder"
 
     assert events.readable_by(event, Reader(), "agt-x")
     assert not events.wakes(event, Reader(), "agt-x")

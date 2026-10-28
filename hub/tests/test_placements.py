@@ -222,7 +222,8 @@ def test_a_new_profile_is_held_by_its_handle(setup: Setup) -> None:
     body = placed(
         setup,
         agent={"handle": "agent-f", "display_name": "Agent F"},
-        role="member",
+        trust="member",
+        role="coder",
         briefing="You own the Runners view.",
     )
     assert body["agent"] == {
@@ -243,8 +244,11 @@ def test_a_new_profile_is_held_by_its_handle(setup: Setup) -> None:
     ]
     taken = place(setup, agent={"handle": handle, "display_name": "x"})
     assert taken.json()["error"]["details"]["fields"] == {"handle": "taken"}
-    with_fields = place(setup, role="admin")
-    assert with_fields.json()["error"]["details"]["fields"] == {"role": "not_with_agent_id"}
+    with_fields = place(setup, trust="admin", role="coder")
+    assert with_fields.json()["error"]["details"]["fields"] == {
+        "trust": "not_with_agent_id",
+        "role": "not_with_agent_id",
+    }
 
 
 def test_the_quota_the_closed_project_and_the_revoked_runner(

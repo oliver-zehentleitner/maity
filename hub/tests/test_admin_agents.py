@@ -50,11 +50,11 @@ def test_an_admin_agent_manages_a_member_agent(
     body = changed.json()
     assert (body["areas"], body["reports_to"], body["role"]) == (["web/"], boss.id, "reviewer")
     [event] = events_of(migrated, "member_changed_by_agent")
-    assert event.audience == ["role:owner"]
+    assert event.audience == ["trust:owner"]
     assert event.payload == {
         "member_id": member.id,
         "change": "role",
-        "old": "member",
+        "old": "coder",
         "new": "reviewer",
         "actor": admin.id,
     }
@@ -70,7 +70,7 @@ def test_no_agent_touches_a_humans_membership(
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
     factory.membership(migrated, project_id, "admin", human_id=second.id)
     for target in (owner.id, second.id):
-        for body in ({"role": "member"}, {"areas": ["x/"]}, {"paused": {"reason": "x"}}):
+        for body in ({"trust": "member"}, {"areas": ["x/"]}, {"paused": {"reason": "x"}}):
             refused = patch(agent, target, body)
             assert (refused.status_code, reason(refused)) == (403, "humans_only"), body
         removed = agent.client.delete(
@@ -104,8 +104,8 @@ def test_no_agent_changes_what_humans_decide(
     [
         ({"capabilities": ["tag"]}, "humans_only"),
         ({"role": "proxy"}, "humans_only"),
-        ({"role": "admin"}, "humans_only"),
-        ({"role": "owner"}, "humans_only"),
+        ({"trust": "admin"}, "humans_only"),
+        ({"trust": "owner"}, "humans_only"),
     ],
 )
 def test_an_admin_agent_sets_no_humans_lever(
@@ -134,11 +134,11 @@ def test_a_reviewers_role_change_waits_for_the_owners_go(
 ) -> None:
     admin = flow.agent(make_client, owner, role="admin")
     reviewer = flow.agent(make_client, owner, role="reviewer")
-    waiting = patch(admin, reviewer.id, {"role": "member", "areas": ["docs/"]})
+    waiting = patch(admin, reviewer.id, {"role": "coder", "areas": ["docs/"]})
     assert waiting.status_code == 202, waiting.text
     request = waiting.json()
     assert (request["class"], request["status"]) == ("consent", "open")
-    assert request["title"].startswith("Change ") and request["title"].endswith(" to member")
+    assert request["title"].startswith("Change ") and request["title"].endswith(" to member coder")
     unchanged = owner.get(f"/projects/maintainer/maity/members/{reviewer.id}").json()
     assert (unchanged["role"], unchanged["areas"]) == ("reviewer", [])  # the whole PATCH waits
     other = flow.agent(make_client, owner, role="admin")
@@ -151,7 +151,7 @@ def test_a_reviewers_role_change_waits_for_the_owners_go(
     )
     assert go.status_code == 200, go.text
     applied = owner.get(f"/projects/maintainer/maity/members/{reviewer.id}").json()
-    assert (applied["role"], applied["areas"]) == ("member", ["docs/"])
+    assert (applied["role"], applied["areas"]) == ("coder", ["docs/"])
     [event] = events_of(migrated, "member_changed_by_agent")
     assert (event.payload["actor"], event.payload["request_id"]) == (admin.id, request["id"])
     assert event.actor_membership is not None  # the agent, not the approving human
@@ -235,14 +235,18 @@ def test_a_go_applies_only_what_is_still_allowed(
 ) -> None:
     admin = flow.agent(make_client, owner, role="admin")
     reviewer = flow.agent(make_client, owner, role="reviewer")
-    first = patch(admin, reviewer.id, {"role": "member"}).json()["id"]
-    owner.patch(f"/projects/maintainer/maity/members/{reviewer.id}", {"role": "proxy"})
+    first = patch(admin, reviewer.id, {"role": "coder"}).json()["id"]
+    owner.patch(
+        f"/projects/maintainer/maity/members/{reviewer.id}", {"trust": "admin", "role": "proxy"}
+    )
     refused = owner.post(f"/projects/maintainer/maity/requests/{first}/answer", {"reply_id": "go"})
     assert (refused.status_code, refused.headers["Maity-Error"]) == (409, "target_role_changed")
     assert owner.get(f"/projects/maintainer/maity/requests/{first}").json()["status"] == "open"
-    owner.patch(f"/projects/maintainer/maity/members/{reviewer.id}", {"role": "reviewer"})
-    second = patch(admin, reviewer.id, {"role": "member"}).json()["id"]
-    owner.patch(f"/projects/maintainer/maity/members/{admin.id}", {"role": "member"})
+    owner.patch(
+        f"/projects/maintainer/maity/members/{reviewer.id}", {"trust": "member", "role": "reviewer"}
+    )
+    second = patch(admin, reviewer.id, {"role": "coder"}).json()["id"]
+    owner.patch(f"/projects/maintainer/maity/members/{admin.id}", {"trust": "member"})
     refused = owner.post(f"/projects/maintainer/maity/requests/{second}/answer", {"reply_id": "go"})
     assert (refused.status_code, refused.headers["Maity-Error"]) == (409, "proposer_not_admin")
     assert (
@@ -259,7 +263,7 @@ def test_only_a_human_with_members_admin_gives_the_go(
     factory.membership(migrated, project_id, "proxy", human_id=proxy.id)
     admin = flow.agent(make_client, owner, role="admin")
     reviewer = flow.agent(make_client, owner, role="reviewer")
-    request_id = patch(admin, reviewer.id, {"role": "member"}).json()["id"]
+    request_id = patch(admin, reviewer.id, {"role": "coder"}).json()["id"]
     refused = proxy.post(
         f"/projects/maintainer/maity/requests/{request_id}/answer", {"reply_id": "go"}
     )
@@ -290,7 +294,7 @@ def test_a_go_refuses_a_cycle_made_meanwhile(owner: flow.Human, make_client: Cli
     admin = flow.agent(make_client, owner, role="admin")
     reviewer = flow.agent(make_client, owner, role="reviewer")
     other = flow.agent(make_client, owner)
-    waiting = patch(admin, reviewer.id, {"role": "member", "reports_to": other.id})
+    waiting = patch(admin, reviewer.id, {"role": "coder", "reports_to": other.id})
     assert waiting.status_code == 202, waiting.text
     owner.patch(f"/projects/maintainer/maity/members/{other.id}", {"reports_to": reviewer.id})
     go = owner.post(

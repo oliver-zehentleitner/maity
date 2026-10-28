@@ -311,7 +311,11 @@ def _packet(
     rules_block: dict[str, Any] = {"version": project.rules_version, "changed": changed}
     if changed or body.supervisor is not None:  # the supervised duty is in every packet
         rules_block["markdown"] = rules.generate(
-            project, mine.role, arbiter_text(conn, project), supervised=body.supervisor is not None
+            project,
+            mine.trust,
+            mine.role,
+            arbiter_text(conn, project),
+            supervised=body.supervisor is not None,
         )
     members = conn.execute(
         select(t.membership).where(
@@ -329,6 +333,7 @@ def _packet(
                     "kind": view["kind"],
                     "handle": view["handle"],
                     **({"name": view["name"]} if "name" in view else {}),  # agents (§6.3)
+                    "trust": view["trust"],
                     "role": view["role"],
                     "areas": view["areas"],
                     "presence": view["presence"],
@@ -367,7 +372,7 @@ def _packet(
         for view in instances.views(conn, [mine.row], {agent.id: agent.handle}).get(mine.id, [])
         if view["id"] != caller.instance
     ]
-    scopes = listed_scopes(mine.role, "agent")
+    scopes = listed_scopes(mine.trust, mine.role, "agent")
     # Below the rules, never a permission (§19.4); the owner's text once, here or there.
     preferences_block, owner_preferences = preferences.packet(conn, mine, cursor)
     written = briefings.writers(conn, {mine.row.briefing_by} if mine.row.briefing_by else set())
@@ -401,6 +406,7 @@ def _packet(
             "git_identity": git_identity(agent),
         },
         "membership": {
+            "trust": mine.trust,
             "role": mine.role,
             "reports_to": principal_id(conn, mine.row.reports_to),
             "areas": mine.row.areas,
@@ -450,7 +456,9 @@ def _packet(
         },
         "conversations": conversation_packet(conn, mine, caller),
         "peers": peers,
-        "operations": operations(project, mine.role, namespace.full_name(conn, project)),
+        "operations": operations(
+            project, mine.trust, mine.role, namespace.full_name(conn, project)
+        ),
     }
 
 
@@ -523,10 +531,10 @@ def _requests_block(conn: Connection, mine: Membership, cursor: int) -> dict[str
     }
 
 
-def operations(project: Any, role: str, full_name: str) -> list[str]:
+def operations(project: Any, trust: str, role: str, full_name: str) -> list[str]:
     allowed = []
     for method, path, scope in OPERATIONS:
-        if scope is not None and scope not in listed_scopes(role, "agent"):
+        if scope is not None and scope not in listed_scopes(trust, role, "agent"):
             continue
         if project.state in CLOSED_STATES and (
             path.endswith("/claim") or (method == "POST" and path.endswith("/tasks"))

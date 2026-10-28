@@ -55,7 +55,7 @@ def revoke_agent(conn: Connection, credential_id: str, by: str | None) -> None:
         conn,
         member.project_id,
         "credential_revoked",
-        [f"member:{member.agent_id}", "role:owner"],
+        [f"member:{member.agent_id}", "trust:owner"],
         {"credential_id": credential_id, "reason": REASON},
         actor=human_actor(conn, member.project_id, by),
         subject=("credential", credential_id),

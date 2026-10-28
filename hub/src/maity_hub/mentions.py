@@ -138,7 +138,8 @@ def candidates(text: str) -> list[Candidate]:
         if after < len(text) and _NOT_AFTER.match(text[after]):
             continue
         if owner is None and (
-            handle in GROUP_WORDS or (handle == "role" and text[after : after + 1] == ":")
+            handle in GROUP_WORDS
+            or (handle in ("role", "trust") and text[after : after + 1] == ":")
         ):
             continue
         inside = bisect_right(starts, at) - 1

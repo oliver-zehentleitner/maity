@@ -320,7 +320,7 @@ def test_a_human_redacts_a_history_entry_and_the_events_values(
     notice = events(migrated, "event_redacted")
     assert len(notice) == 1
     assert notice[0].payload == {"history_id": entry["id"], "task_id": card["id"], "reason": "leak"}
-    assert notice[0].audience == ["role:owner", "role:admin"]
+    assert notice[0].audience == ["trust:owner", "trust:admin"]
     # Again: answered as it is, no second notice.
     assert owner.post(path, {"reason": "again"}).json()["before"]["reason"] == "leak"
     assert len(events(migrated, "event_redacted")) == 1

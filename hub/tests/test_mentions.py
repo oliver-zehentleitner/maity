@@ -41,7 +41,7 @@ def agent_named(
         ("oliver@example.org", []),
         ("a/@b-c", []),
         ("@agent-bX", []),
-        ("@all @here @everyone @owner @role:admin", []),
+        ("@all @here @everyone @owner @trust:admin", []),
         ("`@agent-b` and @agent-c", ["agent-c"]),
         ("``x ` @agent-b ``", []),
         ("```\n@agent-b\n```\n@agent-c", ["agent-c"]),
