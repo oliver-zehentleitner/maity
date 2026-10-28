@@ -566,8 +566,9 @@ project roles on that base: a project role on `reviewer` is woken by
 store (§19, `store: "role"`) does not: a project role keeps its own
 entries under its own name. A role that a membership, an open join or
 invitation, an open card's `needs`, an open request's `to`, an entry in
-a `substitutes` list or the role memory store still names cannot be
-removed (`409 conflict`, `details.reason: role_in_use`,
+a `substitutes` list or a live entry of the role memory store (a deleted
+entry keeps its role name as history and blocks nothing) still names
+cannot be removed (`409 conflict`, `details.reason: role_in_use`,
 `details.uses`); there is no rename —
 add the new name, move the members, remove the old one. A `PUT` emits
 `policy_changed` with `fields: ["roles"]`.
