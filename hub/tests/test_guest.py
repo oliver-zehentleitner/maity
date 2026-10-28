@@ -103,3 +103,37 @@ def test_a_human_guest_creates_no_group_chat(
     factory.membership(migrated, project_id, "coder", trust="guest", human_id=visitor.id)
     created = visitor.post(f"{PROJECT}/conversations", {"participants": [owner.id]})
     assert created.status_code == 403
+
+
+def test_a_guest_holds_no_claim_an_admin_gives(owner: flow.Human, guest: flow.Agent) -> None:
+    card = _card(owner)
+    for holder in (guest.id, f"{guest.id}#{guest.instance}"):
+        refused = owner.post(f"{PROJECT}/tasks/{card}/claim", {"holder": holder})
+        _invalid(refused, "holder")
+
+
+def test_a_newcomer_never_checks_in_with_a_guest(
+    owner: flow.Human, guest: flow.Agent, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The guest is the only reviewer: `role:reviewer` falls back past it to the owner; a
+    reviewer who is no guest is found; an id stored before its member became a guest
+    resolves to nobody."""
+    settings = {"onboarding": {"check_in_with": "role:reviewer"}}
+    assert owner.patch(PROJECT, {"settings": settings}).status_code == 200
+    newcomer = flow.agent(make_client, owner)
+
+    def checks_in_with() -> Any:
+        return (newcomer.resume().json().get("onboarding") or {}).get("check_in_with")
+
+    assert checks_in_with()["member_id"] == owner.id
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    assert checks_in_with()["member_id"] == reviewer.id
+    coder = flow.agent(make_client, owner)
+    by_id = {"onboarding": {"check_in_with": coder.id}}
+    assert owner.patch(PROJECT, {"settings": by_id}).status_code == 200
+    with migrated.begin() as conn:
+        conn.execute(
+            t.membership.update().where(t.membership.c.agent_id == coder.id).values(trust="guest")
+        )
+    found = checks_in_with()
+    assert found is None or found["member_id"] != coder.id

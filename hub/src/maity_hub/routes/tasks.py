@@ -1151,7 +1151,7 @@ def claim(
         ):
             mine.require("tasks:admin")
             principal, named = instances.split_address(body.holder)
-            holder_id = _member_id(conn, mine, principal, "holder")
+            holder_id = _target_id(conn, mine, principal, "holder")  # never a guest (§2.3)
             holder_row = conn.execute(
                 select(t.membership).where(t.membership.c.id == holder_id)
             ).one()

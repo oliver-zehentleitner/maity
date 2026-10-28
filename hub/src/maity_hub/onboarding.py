@@ -75,7 +75,9 @@ def target(conn: Connection, project: Any) -> Any | None:
     token = settings(project).get("check_in_with")
     if not token:
         return None
-    rows = members(conn, project.id)
+    # A guest is never whom a newcomer checks in with (§2.3): not by token, not by a
+    # stored id, not as the coordinator or the owner fallback.
+    rows = [row for row in members(conn, project.id) if row.trust != "guest"]
     ordered = sorted(rows, key=lambda row: (row.handle, principal(row)))
     if token != "coordinator":
         if token.startswith(("role:", "trust:")):
