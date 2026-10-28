@@ -171,7 +171,7 @@ def main() -> int:
         latencies = []
         for i in range(args.rounds):
             wait = subprocess.Popen(
-                ["maity", "wait", "--timeout", "30"], cwd=clone, stdout=subprocess.PIPE, text=True
+                ["maity", "wait", "--one", "--timeout", "30"], cwd=clone, stdout=subprocess.PIPE, text=True
             )
             time.sleep(0.6)  # let it reach the hub and start holding
             committed = chat(agent_id, f"round {i}")
@@ -189,7 +189,7 @@ def main() -> int:
 
         # 2. a second wait of the same credential supersedes the first
         first = subprocess.Popen(
-            ["maity", "wait", "--timeout", "30"],
+            ["maity", "wait", "--one", "--timeout", "30"],
             cwd=clone,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -197,7 +197,7 @@ def main() -> int:
         )
         time.sleep(1.0)
         second = subprocess.Popen(
-            ["maity", "wait", "--timeout", "30"], cwd=clone, stdout=subprocess.PIPE, text=True
+            ["maity", "wait", "--one", "--timeout", "30"], cwd=clone, stdout=subprocess.PIPE, text=True
         )
         first_out, first_err = first.communicate(timeout=15)
         time.sleep(0.5)
@@ -219,7 +219,7 @@ def main() -> int:
         state["hub"] = proxied
         state_file.write_text(json.dumps(state))
         wait = subprocess.Popen(
-            ["maity", "wait", "--timeout", "30"],
+            ["maity", "wait", "--one", "--timeout", "30"],
             cwd=clone_p,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
