@@ -207,7 +207,7 @@ def _no_background_ktw_reads(monkeypatch: pytest.MonkeyPatch) -> None:
 def _fresh_process_state() -> Iterator[None]:
     """In-process state (limits, nonces, clock, the forge's repository visibility)
     must not leak between tests."""
-    from maity_hub import availability, clock, forge, images, ktw, mentions
+    from maity_hub import availability, clock, forge, images, ktw, mentions, not_listening
     from maity_hub.auth import caller
     from maity_hub.auth.credentials import NonceWindow
     from maity_hub.board import notes
@@ -233,6 +233,7 @@ def _fresh_process_state() -> Iterator[None]:
     # Tests run the availability sweep themselves; a worker's sweep in the middle of a
     # slow test would write to its database unasked.
     availability.INTERVAL = 24 * 3600.0
+    not_listening.INTERVAL = 24 * 3600.0
     from maity_hub.jourfixe import worker as jour_fixe_worker
 
     jour_fixe_worker.INTERVAL = 24 * 3600.0
