@@ -107,7 +107,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index(op.f("ix_second_factor_reset_human_id"), table_name="second_factor_reset")
+    # The table goes with its index; on MariaDB the index cannot be dropped alone while
+    # the foreign key on `human_id` still uses it.
     op.drop_table("second_factor_reset")
     op.drop_table("recovery_code")
     op.drop_table("second_factor")
