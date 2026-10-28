@@ -2686,26 +2686,41 @@ window.Maity = window.Maity || {};
     return role === "reviewer" ? "reviewer" : "member";
   }
 
-  function asSingleRole(value) {
-    if (Array.isArray(value)) return value.map(asSingleRole);
-    if (typeof value === "string") return Object.prototype.hasOwnProperty.call(TOKEN_BACK, value) ? TOKEN_BACK[value] : value;
+  // The fields that hold a `role:`/`trust:` token (§7, §8.2, §6.1, §6.12, §17.3):
+  // only these are translated, never free text such as a message's body.
+  const TOKEN_KEYS = new Set([
+    "to", "holder", "audience", "check_in_with", "contract_arbiter", "coordinator",
+    "arbiter", "substitutes", "contract_implementers", "readers",
+  ]);
+
+  function translate(value, tokens, roles, key, inTokens) {
+    if (Array.isArray(value)) return value.map((v) => translate(v, tokens, roles, key, inTokens));
+    if (typeof value === "string") {
+      return inTokens && Object.prototype.hasOwnProperty.call(tokens, value) ? tokens[value] : value;
+    }
     if (!value || typeof value !== "object") return value;
     const out = {};
-    for (const key of Object.keys(value)) out[key] = asSingleRole(value[key]);
-    if (TRUSTS.includes(out.trust) && typeof out.role === "string") out.role = singleRole(out.trust, out.role);
+    for (const k of Object.keys(value)) {
+      // Under contract_implementers every value is a list of tokens, whatever its key.
+      const tokenField = TOKEN_KEYS.has(k) || (inTokens && key === "contract_implementers");
+      out[k] = translate(value[k], tokens, roles, k, tokenField);
+    }
+    roles(out);
     return out;
   }
 
+  function asSingleRole(value) {
+    return translate(value, TOKEN_BACK, (out) => {
+      if (TRUSTS.includes(out.trust) && typeof out.role === "string") out.role = singleRole(out.trust, out.role);
+    }, null, false);
+  }
+
   function asTrustAndRole(value) {
-    if (Array.isArray(value)) return value.map(asTrustAndRole);
-    if (typeof value === "string") return Object.prototype.hasOwnProperty.call(TOKEN_FORWARD, value) ? TOKEN_FORWARD[value] : value;
-    if (!value || typeof value !== "object") return value;
-    const out = {};
-    for (const key of Object.keys(value)) out[key] = asTrustAndRole(value[key]);
-    if (!("trust" in out) && Object.prototype.hasOwnProperty.call(SINGLE_TO_SPLIT, out.role)) {
-      [out.trust, out.role] = SINGLE_TO_SPLIT[out.role];
-    }
-    return out;
+    return translate(value, TOKEN_FORWARD, (out) => {
+      if (!("trust" in out) && Object.prototype.hasOwnProperty.call(SINGLE_TO_SPLIT, out.role)) {
+        [out.trust, out.role] = SINGLE_TO_SPLIT[out.role];
+      }
+    }, null, false);
   }
 
   // signal: an AbortSignal that cancels the request (a held long-poll the
