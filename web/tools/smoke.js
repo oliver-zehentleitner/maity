@@ -3162,6 +3162,33 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "password: a wrong current one is put next to its field");
   win.Maity.api.post = realPost5;
 
+  // Renaming a handle (docs/api.md §6.24): one's own and one's agents'.
+  const hdPatches = [];
+  const realPatch6 = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { hdPatches.push([p, b]); return realPatch6(p, b); };
+  const hdForms = () => main.querySelectorAll("form.handle-form");
+  const hdRename = async (i, value) => { hdForms()[i].querySelector("input").value = value; hdForms()[i].dispatch("submit"); for (let k = 0; k < 4; k++) await tick(); };
+  expect(hdForms().length >= 2 && text(main).includes("A handle you give up stays as an alias") && text(main).includes("@a-old"), "handles: an editor for one's own handle and one per agent, the aliases shown");
+  await hdRename(0, "Bad_Handle");
+  expect(!hdPatches.length && text(main.querySelector(".handle-form .error")).includes("lower-case letters"), "handles: a handle with the wrong syntax is refused locally");
+  await hdRename(0, "oliver");
+  expect(hdPatches.length === 1 && hdPatches[0][0] === "/me" && text(main.querySelector(".handle-form .error")).startsWith("Taken"), "handles: taken, as the hub says it");
+  await hdRename(0, "boss");
+  expect(hdPatches[1] && hdPatches[1][0] === "/me" && JSON.stringify(hdPatches[1][1]) === JSON.stringify({ handle: "boss" }), "handles: a rename is PATCH /me {handle}");
+  expect(text(main).includes("@boss") && text(main).includes("@maintainer") && text(main).includes("the old handle stays as an alias"), "handles: the new handle shows and the old one is an alias");
+  await hdRename(2, "bee"); await hdRename(2, "agent-b");
+  expect(hdPatches[hdPatches.length - 2][0] === "/agents/agt-b" && text(main).includes("an old alias taken back"), "handles: an agent's rename is PATCH /agents/{id}, an alias can be taken back");
+  await hdRename(0, "second"); await hdRename(0, "maintainer");
+  expect(text(main).includes("an old alias taken back") && text(main).includes("Aliases: @boss, @second"), "handles: the own old handle taken back leaves the aliases");
+  await hdRename(0, "boss");
+  expect(text(main.querySelector(".handle-form .error")).includes("Three renames in 24 hours"), "handles: the fourth rename within a day is rate limited");
+  win.Maity.api.patch = realPatch6;
+  const aliasCtx = { memberById: { "agt-b": { handle: "b-new", aliases: ["agent-b"] } } };
+  const aliasMention = (t, len, ctx) => win.Maity.dom.withMentions(t, [{ member_id: "agt-b", handle: "b-new", name: "maintainer/b-new", field: "body", offset: 0, length: len }], "body", (id) => "#/m/" + id, null, ctx);
+  expect(aliasMention("@agent-b hi", 8, aliasCtx)[0].getAttribute && aliasMention("@agent-b hi", 8, aliasCtx)[0].getAttribute("href") === "#/m/agt-b", "mentions: a mention typed as an alias of the member is a link");
+  expect(typeof aliasMention("@agent-b hi", 8, null)[0] === "string" && typeof aliasMention("@other hi", 6, aliasCtx)[0] === "string", "mentions: without the alias, or with another name, it stays text");
+  expect(aliasMention("@old-owner/agent-b hi", 18, aliasCtx)[0].getAttribute("href") === "#/m/agt-b", "mentions: owner/alias is a link as well");
+
   // Pictures (docs/api.md §6.10): one's own and one's agents', on the account.
   const avCalls = [];
   win.Maity.api.putImage = (p, blob, type) => { avCalls.push(["PUT", p, type]); return realPut(p, blob, type); };

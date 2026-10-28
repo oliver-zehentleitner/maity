@@ -128,13 +128,27 @@ window.Maity = window.Maity || {};
       text: "Lowercase letters, digits and -, 2–63 characters, starting with a letter or digit." },
   };
 
+  // Whether `said` is "@" + one of the member's aliases (§6.24), or
+  // "@<owner or owner alias>/<handle or alias>"; the stored mention says who
+  // is meant, the aliases only say that the typed name is one of theirs.
+  function aliasSaid(ctx, x, said, suffix) {
+    const m = ctx && ctx.memberById ? ctx.memberById[x.member_id] : null;
+    if (!m || !m.aliases || !m.aliases.length || !said.startsWith("@") || (suffix && !said.endsWith(suffix))) return false;
+    const typed = said.slice(1, suffix ? said.length - suffix.length : said.length);
+    const own = [m.handle].concat(m.aliases);
+    const slash = typed.indexOf("/");
+    return slash < 0 ? m.aliases.indexOf(typed) >= 0 : own.indexOf(typed.slice(slash + 1)) >= 0 && typed.slice(0, slash).length > 0;
+  }
+
   // A scanned text with its stored mentions (docs/api.md §8.6) as text
   // nodes and member links. Offsets and lengths count code points; only the
   // stored ones for this field are links, and only where the text there is
   // "@" + the stored handle; nothing the writer typed becomes a member link.
   // `at` (M.ids.where): the project the text belongs to, for the ids in
-  // the text between mentions as links (js/ids.js).
-  function withMentions(text, mentions, field, hrefOf, at) {
+  // the text between mentions as links (js/ids.js). `ctx` (optional): the
+  // member views it knows; a mention typed as an alias of the member (§6.24),
+  // alone or after an owner or an owner's alias, is a link as well.
+  function withMentions(text, mentions, field, hrefOf, at, ctx) {
     const chars = Array.from(String(text || ""));
     const marks = (mentions || [])
       .filter((x) => x && x.field === field && Number.isInteger(x.offset) && Number.isInteger(x.length) && x.length > 1)
@@ -148,7 +162,7 @@ window.Maity = window.Maity || {};
       // The hub stores a long mention (§8.6) with the whole @owner/handle,
       // and an instance mention with its #id after either form.
       const suffix = x.instance ? "#" + x.instance : "";
-      if (said !== "@" + x.handle + suffix && !(x.name && said === "@" + x.name + suffix)) return;
+      if (said !== "@" + x.handle + suffix && !(x.name && said === "@" + x.name + suffix) && !aliasSaid(ctx, x, said, suffix)) return;
       if (x.offset > from) out.push(...plain(chars.slice(from, x.offset).join("")));
       // No href: a mention named where its member cannot be opened. An
       // instance mention links to the member; the instance is in the title.

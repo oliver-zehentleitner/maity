@@ -1321,3 +1321,8 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .card-family { display: grid; gap: 8px; margin-top: 8px; }
 .card-family-form { display: grid; gap: 6px; }
 .card-family-form button[type="submit"] { justify-self: start; }
+
+/* Renaming a handle (js/handles.js, docs/api.md §6.24). */
+.handle-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0.4rem 0; }
+.handle-form .error { flex-basis: 100%; margin: 0; }
+.handle-at { color: var(--muted, inherit); }

@@ -249,7 +249,7 @@ window.Maity = window.Maity || {};
       : "not observed by the hub";
     return h("div", { class: "report" + (r.mismatch ? " mismatch" : "") },
       h("span", { class: "label" }, "Report " + formatAgo(r.reported_at) + " (" + r.verification + ")"),
-      h("p", { class: "pre" }, M.dom.withMentions(r.summary, r.mentions, "summary", (id) => ctx.link("members", id), M.ids.where(ctx))),
+      h("p", { class: "pre" }, M.dom.withMentions(r.summary, r.mentions, "summary", (id) => ctx.link("members", id), M.ids.where(ctx), ctx)),
       h("p", { class: "muted" }, pr + " · " + observed),
       r.mismatch ? h("p", { class: "flag" }, "The observed head differs from the reported one.") : null,
       whyLine(ctx, r));

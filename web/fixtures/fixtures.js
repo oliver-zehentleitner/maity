@@ -810,6 +810,9 @@ window.MAITY_FIXTURES = {
   "agents.json": {
     "items": [
       {
+        "aliases": [
+          "a-old"
+        ],
         "created_at": "2026-10-21T07:50:00Z",
         "display_name": "Agent A",
         "git_identity": null,
@@ -825,6 +828,7 @@ window.MAITY_FIXTURES = {
         "owner_id": "hum-maintainer"
       },
       {
+        "aliases": [],
         "created_at": "2026-10-21T10:10:00Z",
         "display_name": "Agent B",
         "git_identity": null,
@@ -840,6 +844,7 @@ window.MAITY_FIXTURES = {
         "owner_id": "hum-maintainer"
       },
       {
+        "aliases": [],
         "created_at": "2026-10-21T09:38:00Z",
         "display_name": "Agent C",
         "git_identity": null,
@@ -855,6 +860,7 @@ window.MAITY_FIXTURES = {
         "owner_id": "hum-maintainer"
       },
       {
+        "aliases": [],
         "created_at": "2026-10-21T12:58:00Z",
         "display_name": "Agent D",
         "git_identity": null,
@@ -4194,6 +4200,7 @@ window.MAITY_FIXTURES = {
   },
   "me.json": {
     "member": {
+      "aliases": [],
       "display_name": "Maintainer",
       "handle": "maintainer",
       "id": "hum-maintainer",

@@ -167,7 +167,7 @@ window.Maity = window.Maity || {};
     // Mentions link to the member in the request's own project (docs/api.md §8.6).
     // A personal request's project may be one the human is not in: no links there.
     const memberHref = (id) => (req.personal ? null : ctx.projectLink(req.slug, "members", id));
-    const said = (field, text, mentions) => M.dom.withMentions(text, mentions, field, memberHref, at);
+    const said = (field, text, mentions) => M.dom.withMentions(text, mentions, field, memberHref, at, ctx);
     if (req.summary) append(body, h("p", { class: "summary pre" }, said("summary", req.summary, req.mentions)));
     if (req.tried) append(body, h("h3", { class: "sub" }, "What it tried"), h("p", { class: "pre" }, said("tried", req.tried, req.mentions)));
     if (req.options && req.options.length) {

@@ -405,6 +405,30 @@ window.Maity = window.Maity || {};
     if (!agent || agent.owner_id !== me().member.id) fail(404, "not_found", "Not found", path);
     return agent.id;
   };
+  // §6.24 in fixture mode: the check and the effects of a rename of `who`. The
+  // renames of the last 24 hours are counted per id, three at most.
+  const renames = {};
+  function rename(who, wanted, path, owner) {
+    if (typeof wanted !== "string" || !/^[a-z0-9][a-z0-9-]{1,30}$/.test(wanted)) fail(400, "invalid", "handle", path, { fields: { handle: "format" } });
+    if (wanted === who.handle) return who;
+    const aliases = who.aliases || [];
+    const others = [me().member].concat((fixtures()["agents.json"] || { items: [] }).items).filter((x) => x.id !== who.id);
+    if (others.some((x) => x.handle === wanted || (x.aliases || []).indexOf(wanted) >= 0) || ["oliver", "oz"].indexOf(wanted) >= 0) {
+      fail(400, "invalid", "handle", path, { fields: { handle: "taken" } });
+    }
+    const back = aliases.indexOf(wanted) >= 0;
+    if (!back && aliases.length >= 8) fail(409, "alias_limit", "alias limit", path, { limit: 8, aliases: aliases.slice() });
+    const now = Date.now();
+    renames[who.id] = (renames[who.id] || []).filter((t) => now - t < 86400000);
+    if (renames[who.id].length >= 3) fail(429, "rate_limited", "too many renames", path);
+    renames[who.id].push(now);
+    who.aliases = aliases.filter((a) => a !== wanted).concat([who.handle]);
+    who.handle = wanted;
+    // The global name is computed (§6.3): an agent's own rename and its owner's both change it.
+    if (owner) who.name = owner.handle + "/" + wanted;
+    else ((fixtures()["agents.json"] || { items: [] }).items).filter((a) => a.owner_id === who.id).forEach((a) => { a.name = wanted + "/" + a.handle; });
+    return who;
+  }
   function eventsOf(slug) {
     const all = fixtures();
     if (!all[slug + "/events.json"]) all[slug + "/events.json"] = { items: [] };
@@ -1297,6 +1321,18 @@ window.Maity = window.Maity || {};
       imageSerial += 1;
       p[m[2]] = { available: true, source: "uploaded", etag: "\"up" + imageSerial + "\"" };
       return { [m[2]]: p[m[2]] };
+    }],
+    // §6.24: a rename gives the handle up as an alias. In fixture mode the handles and
+    // aliases of the signed-in human and their agents, and two reserved ones, are taken.
+    ["PATCH", /^\/me$/, (m, body, path) => {
+      if ("handle" in body) return rename(me().member, body.handle, path, null);
+      return me().member;
+    }],
+    ["PATCH", /^\/agents\/([^/]+)$/, (m, body, path) => {
+      const agent = (fixtures()["agents.json"] || { items: [] }).items.find((a) => a.id === m[1]);
+      if (!agent || agent.owner_id !== me().member.id) fail(404, "not_found", "Not found", path);
+      if ("handle" in body) rename(agent, body.handle, path, me().member);
+      return agent;
     }],
     ["PUT", /^\/me\/avatar$/, avatarRoute(() => me().member.id)],
     ["DELETE", /^\/me\/avatar$/, avatarRoute(() => me().member.id)],
