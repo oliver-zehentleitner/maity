@@ -12,7 +12,8 @@ from urllib.parse import urlsplit
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
-from maity_hub import secretbox
+from maity_hub import github_app, secretbox
+from maity_hub.github_app import GitHubApp
 from maity_hub.mail import environment as mail_environment
 from maity_hub.mail.environment import MailEnvironment
 
@@ -43,6 +44,9 @@ class Settings:
     allow_plain_http: bool = False
     # Never logged, never in a response; only whether it is set is shown (§11).
     forge_github_token: str | None = field(default=None, repr=False)
+    # MAITY_FORGE_GITHUB_APP_*: the instance's GitHub App, all five settings or none
+    # (§11.4); its key and client secret never in a repr.
+    github_app: GitHubApp | None = field(default=None, repr=False)
     # MAITY_JOIN_URL: a second hostname that serves the agent join only (§1.1).
     join_url: str | None = None
     # MAITY_CLI_INSTALL: the one line that installs the CLI, wherever the hub tells an
@@ -107,6 +111,7 @@ class Settings:
             web_dir_required=bool(web_dir_env),
             trusted_proxies=parse_networks(env.get("MAITY_TRUSTED_PROXIES", "")),
             forge_github_token=env.get("MAITY_FORGE_GITHUB_TOKEN") or None,
+            github_app=parse_github_app(env),
             allow_plain_http=parse_flag(
                 env.get("MAITY_ALLOW_PLAIN_HTTP", ""), "MAITY_ALLOW_PLAIN_HTTP"
             ),
@@ -137,6 +142,14 @@ class Settings:
             ),
             registration=parse_registration(env),
         )
+
+
+def parse_github_app(env: dict[str, str]) -> GitHubApp | None:
+    """All five App settings or none: a partial set stops the hub (§11.4)."""
+    try:
+        return github_app.parse(env)
+    except github_app.AppConfigError as error:
+        raise ConfigError(str(error)) from None
 
 
 def parse_attachment_store(env: dict[str, str]) -> str:

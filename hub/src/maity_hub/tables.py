@@ -1616,3 +1616,35 @@ card_watch = Table(
     PrimaryKeyConstraint("card_id", "membership_id"),
     **MYSQL_TABLE,
 )
+
+# A human's link to an installation of the instance's GitHub App (docs/api.md §11.4):
+# one human at a time per installation. The installation's tokens are never stored.
+forge_link = Table(
+    "forge_link",
+    metadata,
+    _id(primary_key=True),
+    _ref("human_id", "human.id", nullable=False, index=True),
+    Column("forge", String(16), nullable=False),
+    Column("installation_id", BIG_ID, nullable=False),
+    Column("account_id", BIG_ID, nullable=False),
+    Column("account_login", String(HANDLE), nullable=False),
+    Column("account_type", String(16), nullable=False),
+    Column("repository_selection", String(16), nullable=False),  # all, selected
+    Column("status", String(16), nullable=False),  # active, suspended, removed
+    Column("linked_at", UtcDateTime, nullable=False),
+    Column("checked_at", UtcDateTime, nullable=False),
+    UniqueConstraint("forge", "installation_id"),
+    **MYSQL_TABLE,
+)
+
+# A link the human started and has not completed: the `state` handed to the forge, kept
+# as its hash, bound to the session that started it, valid 15 minutes, used once (§11.4).
+forge_link_state = Table(
+    "forge_link_state",
+    metadata,
+    Column("state_hash", String(HEX_SHA256), primary_key=True),
+    _ref("human_id", "human.id", nullable=False, index=True),
+    Column("session_hash", String(HEX_SHA256), nullable=False),
+    Column("expires_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
