@@ -40,6 +40,7 @@ CHOICES = {
     "badge": ("off", "members", "agents_online"),
     "subtasks": ("proposed", "direct"),
     "swarm_public": ("off", "on"),
+    "merged_closes": ("notify", "auto"),
 }
 LEASE_MIN, LEASE_MAX, LEASE_DEFAULT = 600, 86400, 7200
 MAX_PLACEMENTS_DEFAULT, MAX_PLACEMENTS_MAX = 8, 1000
@@ -73,6 +74,7 @@ KEPT_ON_PRESET = (
     "jour_fixe",
     "jour_fixe_moderators",
     "takeover_window_minutes",
+    "merged_closes",
 )
 
 
@@ -91,6 +93,7 @@ def filled(preset: str, owner_id: str) -> dict[str, Any]:
         "jour_fixe": None,
         "jour_fixe_moderators": None,
         "takeover_window_minutes": WINDOW_DEFAULT,
+        "merged_closes": "notify",
     }
     if preset == "solo":
         policy["contract_arbiter"] = owner_id
@@ -117,6 +120,7 @@ def of(project: Any) -> dict[str, Any]:
         "badge": getattr(project, "badge", "off"),
         "subtasks": getattr(project, "subtasks", "proposed"),
         "swarm_public": getattr(project, "swarm_public", "off"),
+        "merged_closes": getattr(project, "merged_closes", "notify"),
         "jour_fixe": project.jour_fixe,
         "jour_fixe_moderators": project.jour_fixe_moderators,
         "takeover_window_minutes": project.takeover_window_minutes,
@@ -143,6 +147,7 @@ def columns(policy: dict[str, Any]) -> dict[str, Any]:
         "badge": policy["badge"],
         "subtasks": policy["subtasks"],
         "swarm_public": policy["swarm_public"],
+        "merged_closes": policy["merged_closes"],
         "jour_fixe": policy["jour_fixe"],
         "jour_fixe_moderators": policy["jour_fixe_moderators"],
         "takeover_window_minutes": policy["takeover_window_minutes"],

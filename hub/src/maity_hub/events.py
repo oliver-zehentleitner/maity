@@ -445,6 +445,8 @@ def wakes(
     sender's own) is still `all`."""
     if row.kind in NON_WAKING:
         return False
+    if row.kind == "task_merged":
+        return _merge_wakes(row, membership, principal, instance)
     if row.kind == "ticker":
         return ticker_read.wakes(row, principal)
     if row.kind in ROUND_THREAD_KINDS and (row.payload or {}).get("jour_fixe"):
@@ -482,6 +484,30 @@ def wakes(
         return False
     chosen = (row.wakes or {}).get(principal)
     return chosen is None or instance is None or instance in chosen
+
+
+# Who may move a card to done by `done_authority` (§6.4), by role, beside the holder.
+_DONE_ROLES = {
+    "reviewer": ("reviewer",),
+    "tester": ("tester",),
+    "reviewer_and_tester": ("reviewer", "tester"),
+}
+
+
+def _merge_wakes(row: Any, membership: Any, principal: str, instance: str | None) -> bool:
+    """§6.6: `task_merged` wakes the done authority only, and nobody once the hub closed
+    the card itself."""
+    payload = row.payload or {}
+    if payload.get("closed"):
+        return False
+    authority = payload.get("done_authority")
+    audience = row.audience or []
+    if authority == "holder":
+        own = instance is not None and f"instance:{principal}#{instance}" in audience
+        return own or f"member:{principal}" in audience
+    if authority == "admin":
+        return membership.role in SEE_ALL_ROLES
+    return membership.role in _DONE_ROLES.get(str(authority), ())
 
 
 def _group_chat(row: Any) -> bool:

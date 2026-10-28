@@ -29,7 +29,7 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, delete, insert, select, update
 
-from maity_hub import clock, forge, releases, ticker
+from maity_hub import clock, forge, merged, releases, ticker
 from maity_hub import tables as t
 from maity_hub.events import emit, lock_project, transaction
 from maity_hub.instances import token
@@ -233,6 +233,8 @@ def observe_report(engine: Engine, fg: forge.Forge, card_id: str, max_age: int =
         if stored == current.report:
             return False
         conn.execute(update(t.card).where(t.card.c.id == card_id).values(report=stored))
+        # A merge closes the loop: told to the done authority, maybe closed (§6.6).
+        merged.observed(conn, card_id, pr.data.get("merge_sha") if pr else None)
         if _seen(current.report) == _seen(stored):
             return True  # only the time moved on: stored, not announced again
         emit(

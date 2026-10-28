@@ -67,6 +67,7 @@ class PolicyIn(Strict):
     badge: str | None = None
     subtasks: str | None = None
     swarm_public: str | None = None
+    merged_closes: str | None = None
     jour_fixe: dict[str, Any] | None = None  # replaced as a whole (§20.1)
     jour_fixe_moderators: list[str] | None = None
     takeover_window_minutes: int | None = None
@@ -597,6 +598,7 @@ HUMANS_ONLY_POLICY = {
     "tag_authority",
     "on_runner_revoke",
     "spawn_requests",
+    "merged_closes",  # set by a human with project:admin (§6.1)
 }
 
 

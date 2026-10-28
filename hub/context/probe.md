@@ -66,3 +66,33 @@ later. The row is the one place every reader passes through.
   for the next sweep after a `GET /probe` had seen the merge.
 - One `probe_observed` per sweep with all changed refs, as before: fewer
   events, but only the sweep could send them.
+
+## A merge closes the loop: remembered on the card per report, told by whoever sees it first
+
+**Id:** f89f3f4d-28b0-4bda-841a-ddafe87ad18f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §6.6 "A merge closes the loop" and §6.1 `merged_closes` (contract #502, the coordinator's card tsk-hkb9qe4xn520, 2026-10-28)
+**Revisit when:** the hub keeps more than one report per card, or the done authority gains values beyond those of §6.4
+
+The card remembers the report a merge was observed on (`merge_report`, a
+digest of the report as the agent sent it) and whether `task_merged` went
+out for it (`merge_told`). The probe, where it stores an observation,
+tells it when the card is in `review`; the two ways back to `review`
+(the status PATCH and the answer that restores a blocked card) tell a
+remembered one, only while that report is still the card's. Under
+`merged_closes: auto` and `done_authority` `holder` or `admin` the
+same step closes the card, unless a child, a dependency or an objection
+holds it. `task_merged` wakes by `done_authority`: the holding instance,
+the reviewer or tester role, or owners and admins; nobody once closed.
+
+**Reason:** "once per report" and "caught up on the return to review"
+must survive a restart and hold whichever path sees the merge first; two
+columns on the card are the smallest state that does, and the digest
+ties the memory to exactly the report it was seen on.
+
+**Rejected alternative:** asking the event log whether `task_merged`
+went out for this report: a search over events on every observation. A
+flag inside the report JSON: the report is shown as stored, so the flag
+would leak into the card view.

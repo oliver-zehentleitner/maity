@@ -753,6 +753,10 @@ def _unblock(conn: Connection, row: Any) -> None:
     conn.execute(
         update(t.card).where(t.card.c.id == card.id).values(**values, updated_at=clock.now())
     )
+    if values.get("status") == "review":
+        from maity_hub import merged
+
+        merged.returned_to_review(conn, card.id)  # a merge remembered is told now (§6.6)
 
 
 def _self_answer() -> ApiError:
