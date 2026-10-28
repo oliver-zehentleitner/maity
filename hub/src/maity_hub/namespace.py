@@ -210,7 +210,12 @@ def full_names(conn: Connection, project_ids: Iterable[str]) -> dict[str, str]:
 
 def taken(conn: Connection, owner_id: str, slug: str, project_id: str | None = None) -> bool:
     """Whether `slug` is the current name or an alias of a project in `owner_id`'s namespace,
-    other than `project_id` (which may take back its own alias, §6.25)."""
+    other than `project_id` (which may take back its own alias, §6.25).
+
+    Every caller is about to claim the slug, so the namespace owner's row is locked first:
+    a project's slug and an alias live in two tables, and no constraint keeps a create of
+    `s` from racing a rename away from `s`, which writes `s` as an alias."""
+    conn.execute(select(t.human.c.id).where(t.human.c.id == owner_id).with_for_update()).first()
     current = conn.execute(
         select(t.project.c.id).where(t.project.c.owner_id == owner_id, t.project.c.slug == slug)
     ).scalar()

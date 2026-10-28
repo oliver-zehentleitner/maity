@@ -182,3 +182,61 @@ counting from it needs no migration.
   row and removes one, so the count would miss changes.
 - A counter column or a table of changes: a migration and a second record
   of what the log holds.
+
+## Claiming a slug locks the namespace owner's row
+
+**Id:** 40bb824a-6d56-405e-bca1-5bae5600ecdc
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** review of the rename and transfer pull request (a create racing a rename); `docs/api.md` §6.25 "a full name belongs to one project, for good"
+**Revisit when:** names and aliases move into one table with one unique index, or projects get an owner other than a human
+
+`namespace.taken` locks the namespace owner's `human` row (`FOR UPDATE`)
+before it looks. Every caller is about to claim the slug: a create, a
+rename's `check_change`, and a transfer's `go`. Claims in one namespace
+therefore run one after another.
+
+**Reason:** a project's slug is unique per owner by `uq_project_owner_slug`,
+and an alias is unique by its own index. Nothing ties the two together. A
+create of `s` that checked before a rename away from `s` committed could
+otherwise commit beside the alias `s`, and the old name would then resolve
+to a different project.
+
+**Rejected alternatives:**
+- One constraint across both tables: SQL has no unique index spanning two
+  tables, and a shared name table would be a migration of every project.
+- Checking again just before the alias insert: without a lock the second
+  check races in the same way.
+
+## A transfer asks for no step-up until the second factor lands
+
+**Id:** ab5aa0b9-37cf-4d45-abe4-96b1326747e4
+**Type:** workaround
+**Status:** open
+**Evidence:** confirmed
+**Source:** `docs/api.md` §6.25 and the endpoint table (the namespace owner transfers "human, with the step-up"); review of the rename and transfer pull request
+**Revisit when:** the second-factor pull request (`second_factor.require_step_up`) is on `main`
+
+`POST /projects/{owner}/{slug}/transfer` does not call a step-up yet: the
+hub this landed on has no second factor. Whichever of the two pull requests
+merges second adds `second_factor.require_step_up(conn, hub, caller)` to the
+transfer route before `transfer(...)`, plus a test. Until then a stolen
+session of a namespace owner can file a transfer, which still needs the
+receiver's `go`.
+
+## A human membership that ends checks the namespace owner
+
+**Id:** 035104e6-f041-4d9e-9813-163671458358
+**Type:** constraint
+**Status:** active
+**Evidence:** inferred
+**Source:** `hub/src/maity_hub/routes/members.py` (demotion and removal); review of the rename and transfer pull request
+**Revisit when:** a route deletes a human account or ends a human's membership in another way
+
+A project's namespace owner must stay one of its owners (§6.25). Today a
+human's owner membership ends or drops in two places, the demotion by
+`PATCH` and the removal by `DELETE` in `routes/members.py`, and both call
+`namespace_owner_of` after the last-owner checks. A route added later that
+deletes a human account, or ends a membership any other way, has to call it
+too. Otherwise a project keeps a namespace owner who is no longer in it.
