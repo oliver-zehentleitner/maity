@@ -3038,8 +3038,8 @@ or `harness` differs from the instance's previous session, the hub
 emits `session_model_changed` to the member the agent reports to and
 to `trust:admin` and to the human owner of the agent when that owner is a member of the project, with
 `{member_id, instance, from: {harness, model}, to: {harness, model},
-session_id}`; it wakes nobody but the lead, so the lead can re-route
-cards the new model should not hold. A resume that omits `model`
+session_id}`; it wakes nobody but the member the agent reports to, so
+that member can re-route cards the new model should not hold. A resume that omits `model`
 keeps the previous session's value and changes nothing.
 
 `presence` on a member is computed, never stored, and never emits an
