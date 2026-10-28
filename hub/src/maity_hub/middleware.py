@@ -22,7 +22,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.routing import Match
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from maity_hub import clock, events, forge_webhook, join_host, namespace, net
+from maity_hub import clock, events, forge_webhook, join_host, landing, namespace, net
 from maity_hub.auth import credentials
 from maity_hub.auth.leaks import revoke_leaked
 from maity_hub.config import Settings
@@ -56,6 +56,8 @@ ROUTE_CACHE = frozenset({b"private, max-age=21600", b"private, no-cache"})
 PUBLIC_PATHS = re.compile(
     r"/badge/(?:[^/]+/)?[^/]+\.svg|/api/v1/swarm/(?:[^/]+/)?[^/]+|/api/v1/landing"
 )
+# The two plain files a crawler asks for (§16.7), cached for an hour.
+SEO_PATHS = re.compile(r"/robots\.txt|/sitemap\.xml")
 
 
 class HubMiddleware:
@@ -63,6 +65,14 @@ class HubMiddleware:
         self.app = app
         self.settings = settings
         self.engine = engine
+
+    def _landing_off(self) -> bool:
+        """Whether the landing page is not enabled; an unreadable setting counts as off."""
+        try:
+            with self.engine.connect() as conn:
+                return not landing.stored(conn)["enabled"]
+        except Exception:
+            return True
 
     async def _outdated(self, scope: Scope, receive: Receive, send: Send) -> None:
         agent = dict(scope.get("headers") or []).get(b"user-agent", b"").decode("latin-1")
@@ -80,12 +90,22 @@ class HubMiddleware:
         # Decided before anything is logged: the log masks every path there (§1.1).
         on_join_host = join_host.is_join_host(scope, self.settings)
         scope["state"]["on_join_host"] = on_join_host
-        public = (
+        path = scope.get("path", "")
+        public: bytes | None = None
+        if not on_join_host and scope.get("method") == "GET":
+            if PUBLIC_PATHS.fullmatch(path):
+                public = b"public, max-age=60"
+            elif SEO_PATHS.fullmatch(path):
+                public = b"public, max-age=3600"  # robots.txt and sitemap.xml (§16.7)
+        # While the landing page is not enabled, the root asks to be kept out of an index; a
+        # crawler can read it only because robots.txt lets it fetch the root (§16.7).
+        noindex = (
             not on_join_host
-            and scope.get("method") == "GET"
-            and bool(PUBLIC_PATHS.fullmatch(scope.get("path", "")))
+            and scope.get("method") in ("GET", "HEAD")
+            and path == "/"
+            and await run_in_threadpool(self._landing_off)
         )
-        send = _with_headers(send, public=public)
+        send = _with_headers(send, public=public, noindex=noindex)
 
         if not on_join_host and forge_webhook.matches(scope):
             # Signed, not authenticated, and limited before its body is read (§17.4).
@@ -297,11 +317,14 @@ async def _image_too_large(scope: Scope, receive: Receive, send: Send) -> None:
     access.info("%s %s %s", scope.get("method"), _logged_path(scope), 400)
 
 
-def _with_headers(send: Send, *, public: bool = False) -> Send:
+def _with_headers(send: Send, *, public: bytes | None = None, noindex: bool = False) -> Send:
+    """`public` is the one caching a successful answer of this path may choose."""
+
     async def wrapped(message: MutableMapping[str, Any]) -> None:
         if message["type"] == "http.response.start":
             given = message.get("headers", [])
-            headers = [(k, v) for k, v in given if k.lower() not in _SET]
+            dropped = _SET | {b"x-robots-tag"} if noindex else _SET
+            headers = [(k, v) for k, v in given if k.lower() not in dropped]
             content_type = next((v for k, v in given if k.lower() == b"content-type"), b"")
             # Every answer is no-store, except the caching a route may choose from
             # ROUTE_CACHE: the logo, banner and avatars, revalidated by ETag (§1.1, §11.2,
@@ -309,7 +332,7 @@ def _with_headers(send: Send, *, public: bool = False) -> Send:
             # may choose public caching (§6.20, §6.22, §16.7).
             chosen = next((v for k, v in given if k.lower() == b"cache-control"), None)
             public_cache = (
-                public and message["status"] in (200, 304) and chosen == b"public, max-age=60"
+                public is not None and message["status"] in (200, 304) and chosen == public
             )
             cache = chosen if chosen in ROUTE_CACHE or public_cache else b"no-store"
             headers += [
@@ -319,6 +342,8 @@ def _with_headers(send: Send, *, public: bool = False) -> Send:
             ]
             if content_type.startswith(b"text/html"):
                 headers.append((b"content-security-policy", CSP.encode()))
+            if noindex:
+                headers.append((b"x-robots-tag", b"noindex"))
             message["headers"] = headers
         await send(message)
 
