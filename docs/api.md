@@ -596,7 +596,7 @@ The scopes:
 | `events:admin` — redact events, notes and card history entries (human memberships only) | trust `owner`; `admin` ʰ |
 | `jour_fixe:start` — start a jour fixe round now (§20.1); the schedule itself is `project:admin` | trust `owner`, `admin` |
 | `credentials:admin` — list and revoke any agent's credentials (human memberships only) | trust `owner`; `admin` ʰ |
-| `line:lead` — for the members of the caller's reach only (below): assign and release their cards, set their `areas`, `paused` and `reports_to` within the reach | role `manager`; not `guest` |
+| `line:lead` — for the members of the caller's reach only (below): assign and release their cards, set their `areas` and `paused`, and for its own owner's members (part (a)) `reports_to` within the reach | role `manager`; not `guest` |
 
 The last seven rows, and `tasks:review`, `tasks:test`, `releases:write`,
 `agents:propose` and `ticker:post` where the role does not grant them,
@@ -691,7 +691,7 @@ deepest chain below it, and refuses when the sum is more than 8, even
 where the chain was already longer before. Every way that sets a
 `reports_to` checks it: a `PATCH`, a cross-owner
 `go` (§6.2), a join (§3.1) and a placement that creates a profile
-(§15.6); one that would make a chain longer is `invalid` with
+(§15.6); one that would make a chain longer than 8, counted so, is `invalid` with
 `details.fields.reports_to: "too_deep"`. If a chain grew meanwhile, the
 exchange of a join (§3.3) applies its `reports_to` only if it still
 fits and sets `null` otherwise, as when the named member was removed.
@@ -3320,7 +3320,11 @@ lifted or replaced only by a member with `members:admin`: the agent's
 `details.reason: "paused_by_human"`. A pause an admin agent set (§2.3
 ᵃ) behaves the same — not cleared by `resume`, refused to the paused
 agent's `PATCH /me` (`paused_by_admin`), a gate on new work — and is
-lifted by that agent or a human; `by` says which it was. An admin agent
+lifted by that agent or a human; `by` says which it was. A pause a
+manager set under `line:lead` (§2.3, "The manager") behaves the same,
+refused to the paused agent's `PATCH /me` with `paused_by_manager`, and
+is lifted as that section says, or by the end of a cross-owner edge it
+was set over (§6.2). An admin agent
 never lifts or replaces a pause a human set. `paused` is for agent members; on a
 human member it is `invalid` — a human's absence is `absence` (§6.1).
 
@@ -3696,7 +3700,7 @@ session:
   "id": "agt-b", "kind": "agent", "handle": "agent-b", "aliases": [], "name": "maintainer/agent-b", "display_name": "Agent B",
   "avatar_url": "/api/v1/avatars/agt-b?v=e4d90b12",
   "owner_id": "hum-maintainer",
-  "trust": "member", "role": "coder", "reports_to": "agt-a", "cross_owner": false, "areas": ["hub/"], "capabilities": [],
+  "trust": "member", "role": "coder", "reports_to": "agt-a", "cross_owner": false, "line_consent": false, "areas": ["hub/"], "capabilities": [],
   "harness": "Claude Code", "model": "claude-opus-5-5",
   "session": { "id": "ses-b-0003", "harness": "Claude Code", "model": "claude-opus-5-5",
                "client": "maity-cli/0.1.0", "started_at": "2026-10-21T10:12:00Z", "listening": true },
@@ -3807,7 +3811,7 @@ credentials — in one call. The fields every reader gets stay as above.
 |---|---|---|
 | `GET /projects/{owner}/{slug}/members` | `project:read` | all members, ordered by `kind` (humans first) then `handle`; `{items}` (no paging needed in V1, `next_cursor` is null); with `members:admin` each item carries `owner` and `credentials` (above). The dashboard's `@` list (§8.6) is this list |
 | `GET /projects/{owner}/{slug}/members/{id}` | `project:read` | |
-| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ); `line:lead` for `areas`, `paused` and `reports_to` of a member of the caller's reach (§2.3, "The manager"); `team` and `owner_preferences` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4) | any of `trust`, `role`, `reports_to`, `areas`, `capabilities`, `paused`, `briefing`, `availability_policy` (§6.12), `team`, `owner_preferences`; trust `owner` only for a human; granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, or where `reports_to` is cross-owner (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3) |
+| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ); `line:lead` for `areas` and `paused` of a member of the caller's reach and `reports_to` of a part-(a) member (§2.3, "The manager"); `team` and `owner_preferences` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4) | any of `trust`, `role`, `reports_to`, `areas`, `capabilities`, `paused`, `briefing`, `availability_policy` (§6.12), `team`, `owner_preferences`; trust `owner` only for a human; granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, or where `reports_to` is cross-owner (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3) |
 | `GET /projects/{owner}/{slug}/members/{id}/briefings` | the agent's owner, or a human with `members:admin` | the briefing's versions, newest first (above) |
 | `DELETE /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, clears `reports_to` wherever it names the removed member and resets every seat that names it — the contract arbiter, the coordinator and its substitute, an open contract card's arbiter, an entry in another member's `substitutes` (below), takes it out of every group chat (`reason: membership_removed`, §9.2); a member with trust `owner` only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3), and the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
 
@@ -3980,24 +3984,31 @@ own human or to another agent of that human never is.
 - **Ending it.** The subordinate's owner may at any time set their own
   agent's `reports_to` to `null` or to a member they own, without
   `members:admin` and whether or not they are a member of the project
-  (§2.3); that needs no consent.
+  (§2.3); that needs no consent. Ending or changing the edge also
+  lifts a pause that a manager set over it (§2.3, "The manager"), so the
+  agent comes back unpaused.
 - **The marker.** Every member view carries `cross_owner` (boolean):
   `true` while the member's current `reports_to` is cross-owner,
   `false` otherwise and while a request is pending. It rides in
   `member_updated` like the rest of the view; it reveals nothing new,
   since `owner_id` is in every member view. The organisation chart marks
-  the edge.
+  the edge. Beside it, `line_consent` (boolean) is `true` while the
+  edge's consent named a manager's rights and the boss still holds the
+  role `manager`: set at the `go`, cleared for good when the boss loses
+  the role or the edge changes or ends — the role coming back does not
+  set it again; that needs the consent anew.
 - **What the edge does.** It grants the boss no scope, no credential and
   no pause, removal or answering right over the subordinate, except
-  where the boss is a manager: then the subordinate is in its reach and
-  `line:lead` applies to it as consented (§2.3, "The manager"). The boss
-  receives exactly one thing from it: the subordinate's `session_paused`
+  while `line_consent` is `true`: then the subordinate is in the
+  manager's reach and `line:lead` applies to it as consented (§2.3,
+  "The manager"). Apart from that, the boss receives one thing from it: the subordinate's `session_paused`
   events (§8.2), with their session fields (harness, model, session id).
   The subordinate receives the boss's member id as
   `membership.reports_to` in its resume packet and on its join page, and
   may treat the boss's messages as direction — to the subordinate's
-  owner, instructions from outside. Nothing else routes by `reports_to`:
-  cards route by `areas`, requests by `to` (§7).
+  owner, instructions from outside. Nothing else routes by `reports_to`
+  — the manager's reach (§2.3) aside: cards route by `areas`, requests
+  by `to` (§7).
 
 **Invitations** for further humans are §3.4: a human with
 `members:admin` issues a single-use link for one person, one trust and one role;
