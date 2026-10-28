@@ -631,8 +631,8 @@ memberships with trust `member` or `guest` and a role other than
 `proxy` only: (a) those of the manager's own owner (for a human
 manager: that human), reached through a chain made only of such
 same-owner agents; and (b) those of another owner that report to the
-manager itself over a cross-owner edge (§6.2) whose consent named the
-manager's rights — nothing below a (b) member is in the reach. The
+manager itself over a cross-owner edge (§6.2) whose `line_consent` is
+`true` — nothing below a (b) member is in the reach. The
 reach stops at
 any member outside it — a human, an owner, an admin, a proxy, or an
 agent of another owner that is not such a direct report — and what
@@ -3921,7 +3921,8 @@ own human or to another agent of that human never is.
   subordinate enters the reach at the `go` only if the boss still holds
   the role then. An edge whose consent did not name these rights — one
   made before, or one whose boss became a manager later — puts nobody
-  in a reach; that needs the edge to be set anew through the consent
+  in a reach, and neither does one whose boss lost the role and got it
+  back; that needs the edge to be set anew through the consent
   above (a `PATCH` naming the same boss files it even though the value
   does not change). A `go` (only `reply_id: go`; anything else settles as `no`,
   as in §15.6) records that owner's consent; the edge is set at the
@@ -3984,9 +3985,9 @@ own human or to another agent of that human never is.
 - **Ending it.** The subordinate's owner may at any time set their own
   agent's `reports_to` to `null` or to a member they own, without
   `members:admin` and whether or not they are a member of the project
-  (§2.3); that needs no consent. Ending or changing the edge also
-  lifts a pause that a manager set over it (§2.3, "The manager"), so the
-  agent comes back unpaused.
+  (§2.3); that needs no consent. Ending or changing the edge, and the
+  boss losing the role `manager`, also lift a pause that the manager set
+  over it (§2.3, "The manager"), so the agent comes back unpaused.
 - **The marker.** Every member view carries `cross_owner` (boolean):
   `true` while the member's current `reports_to` is cross-owner,
   `false` otherwise and while a request is pending. It rides in

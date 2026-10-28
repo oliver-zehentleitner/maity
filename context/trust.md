@@ -549,7 +549,12 @@ cross-owner edge hands another owner's agent to a manager only when it
 reports to that manager directly and both owners consented to a summary
 that names the manager's rights; never transitively. That keeps the
 maintainer's own case possible: lending his designer to a friend's
-manager. There it hands out and
+manager. The lent edge is marked (`line_consent`) and loses its power for
+good when the boss loses the role or the edge changes; the role coming
+back does not restore it, because the owner consented to a manager at
+that moment, not to whoever holds the role later. Ending the edge or
+the role lifts a pause the manager set, so a lent agent always comes
+back usable. There it hands out and
 takes back cards (the holder, the old and the new assignee all in
 reach), releases expired claims, and sets areas, pause and `reports_to`
 within the reach, same owner only; pausing a reviewer, tester, arbiter
