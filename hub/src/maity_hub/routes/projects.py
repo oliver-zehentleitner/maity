@@ -51,6 +51,10 @@ class RepositoryIn(Strict):
     default_branch: str = Field(default="main", min_length=1, max_length=255)
 
 
+class RepositoryConfirmIn(Strict):
+    url: str = Field(min_length=1, max_length=255)
+
+
 class PolicyIn(Strict):
     preset: str | None = None
     claim_policy: str | None = None
@@ -450,7 +454,11 @@ def patch_project(
             values["name"] = body.name
             rules_inputs_changed = True
         if "repository" in given:
-            values.update(_repository_columns(body.repository))
+            columns = _repository_columns(body.repository)
+            values.update(columns)
+            if columns["repository_url"] != project.repository_url:
+                # The owner confirmed the old URL, not this one, whoever changes it (§11.4).
+                values["repository_owner_confirmed"] = False
         if "settings" in given and body.settings is not None:
             # §6.1: merged by top-level key. A key named replaces its whole value (nested
             # objects are not merged), `null` removes it so it reads as its default, and a
@@ -649,6 +657,42 @@ def transfer_project(
         mine = replace(mine, project=lock_project(conn, mine.project.id))
         request_id = project_names.transfer(conn, mine, caller, body.to)
         return idempotency.Outcome(202, "request", request_id, load_request(conn, request_id))
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
+@router.post("/projects/{owner}/{slug}/repository/confirm")
+def confirm_repository(
+    slug: str, body: RepositoryConfirmIn, request: Request, caller: AnyCaller
+) -> JSONResponse:
+    """The namespace owner confirms the project's repository for their own forge grants
+    (§11.4): only the URL they saw, and only while the project still carries it."""
+
+    def action(conn: Connection) -> idempotency.Outcome:
+        mine = membership(conn, caller, slug)
+        mine = replace(mine, project=lock_project(conn, mine.project.id))
+        project = mine.project
+        if mine.kind != "human":
+            raise humans_only("only the namespace owner confirms the repository")
+        if mine.row.human_id != project.owner_id:
+            raise forbidden(message="only the project's namespace owner confirms its repository")
+        if project.repository_url is None or body.url.rstrip("/") != project.repository_url:
+            # A co-admin's change between what the owner saw and the click is never
+            # confirmed with it.
+            raise ApiError(
+                409,
+                "conflict",
+                "the project's repository is not the one confirmed",
+                {"reason": "repository_changed", "url": project.repository_url},
+            )
+        conn.execute(
+            update(t.project)
+            .where(t.project.c.id == project.id)
+            .values(repository_owner_confirmed=True)
+        )
+        return idempotency.Outcome(
+            200, "project", project.id, _view(conn, _load(conn, project.id), request)
+        )
 
     return idempotency.run(engine_of(request), request, caller, action)
 

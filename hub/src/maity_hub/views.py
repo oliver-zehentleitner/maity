@@ -79,6 +79,7 @@ def repository(project: Any, settings: Settings) -> dict[str, Any] | None:
         "probe_configured": forge.Forge(settings.forge_github_token).configured_for(
             project.repository_url
         ),
+        "owner_confirmed": bool(project.repository_owner_confirmed),
     }
 
 

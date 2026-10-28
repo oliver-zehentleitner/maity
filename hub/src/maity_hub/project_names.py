@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import Connection, select
+from sqlalchemy import Connection, select, update
 
 from maity_hub import events, inbox, namespace, proposals, ticker
 from maity_hub import tables as t
@@ -140,13 +140,25 @@ def transfer(conn: Connection, mine: Membership, caller: Caller, to: str) -> str
         mine.id,
         "consent",
         f"Take over {full} as {handle}/{project.slug}",
-        f"{mine.principal_id} asks you to become the namespace owner of {full}.",
+        _summary(mine.principal_id, full, project.repository_url),
         proposal,
         to=inbox.Addressee("member", member=receiver.id),
         options=[],
         while_open="wait",
         actor=actor,
     )
+
+
+def _summary(asker: str, full: str, repository_url: str | None) -> str:
+    """The consent request's text. It names the repository, so the receiver sees what
+    confirming it for their own forge access would grant (§11.4)."""
+    text = f"{asker} asks you to become the namespace owner of {full}."
+    if repository_url is not None:
+        text += (
+            f" Its repository is {repository_url}; your forge access applies to it"
+            " only once you confirm it."
+        )
+    return text
 
 
 def _stale(request_id: str, message: str) -> proposals.Stale:
@@ -172,6 +184,13 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
         raise proposals.Stale(taken, request.id, "the slug is taken in the receiver's namespace")
     namespace.check_change(conn, project, proposal["to"], project.slug)
     namespace.move(conn, project, proposal["to"], project.slug)
+    # The old owner confirmed the repository for their grants; the new owner's apply
+    # only once they confirm it themselves (§11.4).
+    conn.execute(
+        update(t.project)
+        .where(t.project.c.id == project.id)
+        .values(repository_owner_confirmed=False)
+    )
     owner = namespace.owner_of(
         conn, conn.execute(select(t.project).where(t.project.c.id == project.id)).one()
     )
