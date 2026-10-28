@@ -12,7 +12,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select, update
+from sqlalchemy import Engine, delete, select, update
 
 from maity_hub import attachment_store, attachments, clock, events
 from maity_hub import tables as t
@@ -59,6 +59,13 @@ def upload(who: Any, name: str = "f.txt", data: bytes = b"data") -> str:
     done = put(who, name, data)
     assert done.status_code == 201, done.text
     return str(done.json()["id"])
+
+
+def send_raw(who: Any, to: str, ids: list[str]) -> Any:
+    return who.post(
+        "/projects/maintainer/maity/events",
+        {"kind": "message", "type": "notice", "to": to, "body": "files", "attachments": ids},
+    )
 
 
 def send(who: Any, to: str, ids: list[str]) -> dict[str, Any]:
@@ -304,3 +311,57 @@ def test_naming_an_attachment_a_second_message_took_meanwhile_refuses_the_post(
     assert refused.value.details["fields"]["attachments"] == {named: "unknown"}
     with migrated.connect() as conn:
         assert conn.execute(select(t.attachment.c.message_seq)).scalar() == first["seq"]
+
+
+def test_the_sweep_leaves_a_candidate_a_message_bound_since_it_was_chosen(
+    stored: ClientFactory, owner: flow.Human, blobs: Path, migrated: Engine
+) -> None:
+    agent = flow.agent(stored, owner)
+    store = attachment_store.LocalStore(blobs)
+    taken, idle = upload(agent, "taken.txt", b"sent"), upload(agent, "idle.txt", b"idle")
+    with migrated.begin() as conn:
+        conn.execute(update(t.attachment).values(uploaded_at=clock.now() - timedelta(hours=25)))
+        candidates = conn.execute(
+            select(t.attachment.c.id, t.attachment.c.project_id)
+        ).all()  # both look expired when the sweep chooses
+    with migrated.begin() as conn:  # then a message names one of them, before the delete
+        conn.execute(update(t.attachment).where(t.attachment.c.id == taken).values(message_seq=1))
+    cutoff = clock.now() - timedelta(hours=24)
+    assert attachments.expire(migrated, store, candidates, cutoff) == 1
+    with migrated.connect() as conn:
+        left = set(conn.execute(select(t.attachment.c.id)).scalars())
+    assert left == {taken}  # the bound one kept its row ...
+    assert sorted(p.name for p in blobs.glob("*/*")) == [taken]  # ... and its bytes
+    assert idle not in left
+
+
+def test_a_blob_whose_row_appeared_after_the_sweep_looked_is_kept(
+    stored: ClientFactory, owner: flow.Human, blobs: Path, migrated: Engine
+) -> None:
+    agent = flow.agent(stored, owner)
+    named = upload(agent, "late.txt", b"late")
+    store = attachment_store.LocalStore(blobs)
+    [blob] = blobs.glob("*/*")
+    long_ago = time.time() - attachments.BLOB_GRACE - 60
+    os.utime(blob, (long_ago, long_ago))  # old enough to be a stray, but a row names it
+    key = f"{blob.parent.name}/{named}"
+    assert attachments.remove_stray(migrated, store, key) is False
+    assert blob.exists()
+    with migrated.begin() as conn:
+        conn.execute(delete(t.attachment))
+    assert attachments.remove_stray(migrated, store, key) is True  # no row, old: a stray
+    assert not blob.exists()
+
+
+def test_an_upload_past_its_24_hours_cannot_be_named_any_more(
+    stored: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    agent = flow.agent(stored, owner)
+    stale = upload(agent, "stale.txt")
+    with migrated.begin() as conn:
+        conn.execute(update(t.attachment).values(uploaded_at=clock.now() - timedelta(hours=25)))
+    refused = send_raw(agent, owner.id, [stale])
+    assert refused.status_code == 400
+    assert refused.json()["error"]["details"]["fields"]["attachments"] == {stale: "unknown"}
+    with migrated.connect() as conn:
+        assert conn.execute(select(t.attachment.c.message_seq)).scalar() is None

@@ -11,6 +11,7 @@ import re
 import threading
 import time
 import unicodedata
+from collections.abc import Sequence
 from datetime import timedelta
 from types import SimpleNamespace
 from typing import Any
@@ -297,7 +298,12 @@ def bind(
         row = rows.get(attachment_id)
         if attachment_id in seen:
             problems[attachment_id] = "already_attached"
-        elif row is None or row.uploaded_by != mine.id or row.deleted_at is not None:
+        elif (
+            row is None
+            or row.uploaded_by != mine.id
+            or row.deleted_at is not None
+            or (row.message_seq is None and clock.now() - row.uploaded_at >= PENDING_FOR)
+        ):  # an upload past its 24 hours is as good as gone: the sweep may take it any moment
             problems[attachment_id] = "unknown"
         elif row.message_seq is not None:
             problems[attachment_id] = "already_attached"
@@ -371,49 +377,76 @@ SWEEP_EVERY = 300  # seconds between sweeps
 BLOB_GRACE = 600  # a blob younger than this may belong to a transaction still open
 
 
+def expire(
+    engine: Engine, store: attachment_store.LocalStore, candidates: Sequence[Any], cutoff: Any
+) -> int:
+    """Delete the candidates that are still pending and still past the cutoff, each under
+    its project's lock, and remove the bytes of the rows that were deleted, and of no other.
+    A message that named a candidate since it was chosen has bound it: the conditional
+    delete finds nothing and the file stays."""
+    removed = 0
+    for row in candidates:
+        with engine.begin() as conn:
+            events.lock_project(conn, row.project_id)
+            gone = conn.execute(
+                delete(t.attachment).where(
+                    t.attachment.c.id == row.id,
+                    t.attachment.c.message_seq.is_(None),
+                    t.attachment.c.deleted_at.is_(None),
+                    t.attachment.c.uploaded_at < cutoff,
+                )
+            ).rowcount
+        if gone == 1:
+            store.delete(attachment_store.key_of(row.project_id, row.id))
+            removed += 1
+    return removed
+
+
+def remove_stray(engine: Engine, store: attachment_store.LocalStore, key: str) -> bool:
+    """Remove a blob no row names, if it is older than a transaction can be; the row is looked
+    up again right before, so an upload that committed since the sweep began keeps its file."""
+    attachment_id = key.partition("/")[2]
+    with engine.connect() as conn:
+        named = conn.execute(
+            select(t.attachment.c.id).where(t.attachment.c.id == attachment_id)
+        ).first()
+    if named is not None:
+        return False
+    age = store.age(key, time.time())
+    if age is None or age <= BLOB_GRACE:
+        return False
+    store.delete(key)
+    return True
+
+
 def sweep(engine: Engine, store: attachment_store.LocalStore) -> dict[str, int]:
     """One pass: pending uploads past 24 hours go with their bytes, the bytes of a
     tombstoned row go if they are still there, and a blob no row names goes once it is
     older than a transaction can be. Returns what it removed, by kind."""
     done = {"expired": 0, "tombstoned": 0, "orphans": 0}
     cutoff = clock.now() - PENDING_FOR
-    with engine.begin() as conn:
-        expired = conn.execute(
+    with engine.connect() as conn:
+        candidates = conn.execute(
             select(t.attachment.c.id, t.attachment.c.project_id).where(
                 t.attachment.c.message_seq.is_(None),
                 t.attachment.c.deleted_at.is_(None),
                 t.attachment.c.uploaded_at < cutoff,
             )
         ).all()
-        if expired:
-            conn.execute(delete(t.attachment).where(t.attachment.c.id.in_([r.id for r in expired])))
-    for row in expired:
-        store.delete(attachment_store.key_of(row.project_id, row.id))
-        done["expired"] += 1
-    with engine.connect() as conn:
         tombstoned = conn.execute(
             select(t.attachment.c.id, t.attachment.c.project_id).where(
                 t.attachment.c.deleted_at.is_not(None)
             )
         ).all()
-    for row in tombstoned:
+    done["expired"] = expire(engine, store, candidates, cutoff)
+    for row in tombstoned:  # a tombstone never comes back: its bytes can go without a lock
         key = attachment_store.key_of(row.project_id, row.id)
         if store.age(key, time.time()) is not None:
             store.delete(key)
             done["tombstoned"] += 1
     for project in store.projects():
-        with engine.connect() as conn:
-            known = set(
-                conn.execute(
-                    select(t.attachment.c.id).where(t.attachment.c.project_id == project)
-                ).scalars()
-            )
         for key in store.keys(project):
-            if key.partition("/")[2] in known:
-                continue
-            age = store.age(key, time.time())
-            if age is not None and age > BLOB_GRACE:
-                store.delete(key)
+            if remove_stray(engine, store, key):
                 done["orphans"] += 1
     return done
 
