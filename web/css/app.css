@@ -527,9 +527,10 @@ a.id-ref:hover, a.id-ref:focus-visible { text-decoration: underline; }
 .project-label .project-mark { margin-right: 4px; }
 .bar .project-mark { margin-right: -2px; }
 /* A forge's social preview is 2:1 (GitHub: at least 640×320, ideally 1280×640):
-   the banner keeps that shape at every width. It is never cropped, since its text
+   the banner keeps that shape at every width, at most 960 pixels wide (480 high),
+   centred, so the inbox below stays in sight. It is never cropped, since its text
    would be cut; an image of another shape gets margins instead. */
-.project-banner { display: block; width: 100%; height: auto; aspect-ratio: 2 / 1; object-fit: contain; background: var(--surface-2); border-radius: var(--radius); margin: 0 0 12px; }
+.project-banner { display: block; width: 100%; max-width: 960px; height: auto; aspect-ratio: 2 / 1; object-fit: contain; background: var(--surface-2); border-radius: var(--radius); margin: 0 auto 12px; }
 .images { display: grid; gap: 10px; margin-top: 12px; }
 .image-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; max-width: 32rem; }
 .image-row label { font-size: 0.85rem; color: var(--muted); }
