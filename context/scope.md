@@ -541,9 +541,10 @@ fast adoption and an excellent product, not through licence terms.
 **Revisit when:** public projects or discovery pages come (later stage in this file), which would add public URLs worth listing
 
 The hub serves `/robots.txt` and `/sitemap.xml`. While the landing page
-is enabled the robots file allows the root alone and names the sitemap,
-which lists that one URL; while it is not, the robots file disallows
-everything and there is no sitemap.
+is enabled the robots file allows the root, the static files and the
+two public reads the page is drawn from, and names the sitemap, which
+lists the root; while it is not, the robots file disallows everything,
+there is no sitemap, and the root says `noindex`.
 
 **Reason:** the hosted instance wants to be found by its landing page;
 a self-hosted or local instance has no public face and should not be
@@ -553,6 +554,8 @@ Everything else the hub serves is behind a sign-in or is a fragment
 route a crawler does not fetch.
 
 **Rejected alternatives:**
+- Allowing the root alone: the landing page is drawn by scripts from a
+  public read; a crawler barred from both sees an empty page.
 - A static `robots.txt` and `sitemap.xml` in the repository: they would
   invite indexing of every self-hosted instance, or none of them.
 - Listing badges or swarm pages: they are per project and belong to the

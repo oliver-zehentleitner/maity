@@ -10564,11 +10564,20 @@ is no environment form: the page is content, not deployment.
 - **Search engines.** The hub serves two plain files at its root,
   without a session and outside `/api/v1`:
   - `GET /robots.txt` (`text/plain`): while the landing page is
-    enabled, `User-agent: *`, `Allow: /$`, `Disallow: /`, and a
-    `Sitemap:` line with the absolute URL of `/sitemap.xml` built from
-    `MAITY_PUBLIC_URL`; while it is not, `User-agent: *` and
-    `Disallow: /`, so a self-hosted or local instance is not indexed
-    unless its operator gave it a public face.
+    enabled, `User-agent: *`, then `Allow:` for the root (`/$`), for
+    the dashboard's static files the page loads (`/js/`, `/css/`,
+    `/brand/`, `/fonts/`) and for the public reads the landing page
+    renders from (`/api/v1/landing$` and `/api/v1/openapi.json$`, by
+    which the dashboard learns the route exists), then `Disallow: /`
+    and a `Sitemap:` line with the absolute URL of `/sitemap.xml` built
+    from `MAITY_PUBLIC_URL`. A crawler that renders the page needs those
+    files: the landing text is drawn by the dashboard's scripts, and a
+    crawler that may not fetch them sees an empty shell. While the
+    landing page is not enabled, `User-agent: *` and `Disallow: /`,
+    which asks crawlers not to crawl the instance at all; it does not
+    keep a URL out of an index that finds it linked elsewhere, so the
+    dashboard's root also answers with `X-Robots-Tag: noindex` while
+    the landing page is not enabled.
   - `GET /sitemap.xml` (`application/xml`): while the landing page is
     enabled, a sitemap with exactly one `<url>`, the instance's root
     (`MAITY_PUBLIC_URL` with a trailing `/`), and `<lastmod>` from the
