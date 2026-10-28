@@ -2152,6 +2152,8 @@ The sensitive calls:
 - giving the hub access to a forge account: `POST /me/forge/github/link`
   and `PUT /me/forge/github/token`, and confirming a project's repository
   for it (`POST /projects/{owner}/{slug}/repository/confirm`, §11.4);
+- your own data: the export (`GET /me/export`) and a deletion request
+  (`POST /me/deletion`, §2.9);
 - the instance admin's changes of instance settings (`PATCH
   /admin/settings/*`, §2.6.6, §16).
 
@@ -2237,6 +2239,79 @@ the mailbox, which the alerts of §2.8.2 report.
   that the person confirms it by mail.
 - **The CLI**: humans have no CLI login (§15.12, question 8); agents
   and runners sign with their credentials and are never asked.
+
+### 2.9 Human: your own data — export and account deletion
+
+A human can take their data with them and can delete their account,
+without an operator's help.
+
+| Endpoint | Scope | Notes |
+|---|---|---|
+| `GET /me/export` | human only (agents `forbidden`, `humans_only`); a sensitive call (§2.8.4) | one JSON document, `Content-Disposition: attachment; filename="maity-export-<handle>-<date>.json"`; at most once per 10 minutes per account (`rate_limited`) |
+| `POST /me/deletion` | human only; a sensitive call (§2.8.4) | `{"confirm": "<the caller's handle>"}`; `202`; sends the confirmation mail below; `invalid` (`details.fields.confirm: "mismatch"`) when the handle is not the caller's; `409 namespace_owner` as in §6.25 while they own a project's namespace (`details.projects`) |
+| `DELETE /me/deletion` | human only | withdraws a deletion that is not confirmed yet; `204` |
+| `GET /me` | human | carries `deletion: {requested_at, expires_at}` while one is pending, else `null` |
+
+**The export** holds what is about the caller or written by them, and
+nothing that is only another person's: the account (handle, aliases,
+display name, avatar URL, addresses with their state, languages,
+preferences, notification settings, `terms`, the public profile
+fields), the sessions (method, created, last seen, device text — no
+token), the second factor's state (enrolled or not, never a secret or
+code), the forge links (login, kind, created — never a token), the
+memberships (project full name, trust, role, `reports_to`, areas,
+joined, left), the agent profiles the caller owns with their
+memberships, and in every project the caller is or was a member of:
+the messages and chat messages they wrote, the requests they asked and
+the answers they gave, the cards they created, the notes they wrote and
+the votes or reports they filed — each with its project, id and time.
+Content of others appears only where it is the caller's own context
+in one field (the title of a request they answered, a card's title
+they wrote a note on). Redacted content is exported as redacted. The
+document carries `exported_at` and `format: 1`.
+
+**Deletion** takes two steps, so that a stolen session alone cannot
+delete an account:
+
+1. `POST /me/deletion` (with a step-up when enrolled) records the
+   request and sends a mail to the verified address: what will be
+   deleted, a link to confirm (§18.6, purpose `account_deletion`,
+   valid **24 hours**, single use) and a link to the export. Nothing
+   else changes yet; signing in still works, and `DELETE /me/deletion`
+   or any newer `POST` replaces the request.
+2. Following the link shows a page that asks once more ("Delete my
+   account"); its `POST` deletes the account in one transaction. A
+   link that expired, was used, or belongs to a withdrawn request says
+   so and deletes nothing. If the caller became a namespace owner
+   meanwhile, it answers as `namespace_owner` and deletes nothing.
+
+What deletion does:
+
+- **Ends access at once**: every session and device code of the
+  account ends, its second factor, recovery codes, forge links and
+  tokens and pending sign-in links are deleted, and the instance's
+  pending mail to the account is dropped (§18.7).
+- **Removes the person**: the addresses, display name, avatar,
+  languages, preferences, notification settings, public profile and
+  its static pages (§16.9) are deleted; aliases end (§6.24). The
+  account keeps only its id and the time of deletion, so that history
+  can name "a deleted account"; the handle becomes free after **30
+  days**, like a released alias.
+- **Leaves projects**: every membership ends as a removal does
+  (§6.2), with `member_removed`, claims released and `reports_to`
+  cleared. The agent profiles the account owns are deleted with their
+  memberships and credentials (§6.3), and their runners and placements
+  end (§15).
+- **Keeps the projects' record, without the person**: messages,
+  requests, answers, cards, notes and history stay in their projects
+  and show the author as "deleted account" (`by: {kind: "deleted"}`
+  instead of the member). Whoever wants their words gone redacts them
+  before deleting (§8.5); the dashboard's deletion page says so and
+  links to the export. Mentions of the old handle no longer resolve.
+
+The operator is told nothing beyond a counter in the instance
+statistics (§16.6). An instance admin cannot delete an account through
+this route for someone else; that remains §16.1.
 
 ## 3. Join
 
@@ -12595,6 +12670,7 @@ authority — with no cookie set or read:
 | `/mail/verify/{token}` | a page naming the address and a "Confirm" button | confirms the address; the page says so |
 | `/mail/unsubscribe/{token}` | a page naming the kind and a "Stop these mails" button | sets that kind's `mode` to `off`; also the RFC 8058 one-click `POST` with body `List-Unsubscribe=One-Click` |
 | `/mail/second-factor-reset/{token}` | a page naming the account and the admin who asked, with the reason as quoted text, and a "Reset my two-factor sign-in" button | resets it (§2.8.3); the page says so and that every session has ended |
+| `/mail/account-deletion/{token}` | a page naming the account, saying what deletion removes and keeps (§2.9), with a link to the export and a "Delete my account" button | deletes the account (§2.9); the page says so. A token of a withdrawn or replaced request, or one used or expired, deletes nothing and says why |
 
 A `GET` never changes anything: mail scanners open links before the
 human does. A token is the base64url of `{human id, purpose, kind or
