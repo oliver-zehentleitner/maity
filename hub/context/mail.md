@@ -159,3 +159,36 @@ part of the outbox from its first version, not a later change on top.
   one transaction depends on no commit and no clock.
 - Counting when a mail is sent: the place would be free again for a mail that fails for good;
   counting when it is admitted keeps a place used, the strict side of a budget against abuse.
+
+## A registration's link is a signed token whose nonce is kept only as a hash, in the mail's own transaction
+
+**Id:** a8f3a73c-7af9-4276-841e-3f84b056dedf
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.7.1 (the mail, the token); the implementation of tsk-32jx98jzne6z, part 5a, 2026-10-27
+**Revisit when:** the link page (`/mail/register/{token}`) needs more than the pending id and the nonce, or a pending registration may be mailed twice
+
+`registration_mail.send` runs in the transaction that writes the pending registration. For a
+confirmation link it draws a nonce, stores `sha256(nonce)` in `pending_registration.nonce_hash`
+and puts the nonce itself only in the token (`{i: pending id, p: "register", n: nonce,
+x: expiry}`, signed like every link of §18.6) and so only in the mail. It goes to the outbox
+as `registration` mail on the budget of that name (default 30 an hour; over it the mail is
+dropped, a late link is useless) and carries when, and from which browser, system and address,
+the request came, and nothing else of the person. The note to an address that has an account
+has no token and no link that signs anyone in. Both are in the language of the request's
+`Accept-Language` when the hub has it, else English, and have no unsubscribe part.
+
+**Reason:** the link must prove the mailbox, so it carries a secret the hub itself cannot read
+back out of `pending_registration`: a leaked copy of that table gives no valid link. The mail's
+own row in `mail_outbox` does hold the link until the mail is out, and loses its text then (the
+outbox entry above). Doing it in the same transaction
+as the pending row means a row that rolls back leaves no mail and a mail never names a row that
+is not there. A budget of its own keeps an unauthenticated caller who can trigger these mails
+from using up the security or notification budgets.
+
+**Rejected alternatives:**
+- Storing the nonce: a read of the table would then be enough to complete someone's
+  registration, given the password hash is not.
+- The registration mail on the sign-in budget: the two are triggered by different requests with
+  different limits (§2.7.3 against §2.6.4); one flood would silence the other.
