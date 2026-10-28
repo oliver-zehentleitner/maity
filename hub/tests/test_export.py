@@ -215,3 +215,37 @@ def test_a_project_they_left(owner: flow.Human, colleague: flow.Human) -> None:
     assert noted["body"] == "Written while a member" and noted["id"] == written["id"]
     # The card is no longer theirs to read: its id alone.
     assert noted["card"] == {"id": theirs["id"], "title": None}
+
+
+def test_what_the_hub_built_from_others_words_stays_out(
+    owner: flow.Human, colleague: flow.Human, migrated: Engine
+) -> None:
+    """A jour fixe decision filed in the caller's name and a card a jour fixe adopted
+    carry another person's words (§20.6); a withdrawal reason is its withdrawer's."""
+    built = created(colleague.post(f"{PROJECT}/requests", {"class": "decision", "title": "JF"}))
+    withdrawn = created(
+        colleague.post(f"{PROJECT}/requests", {"class": "decision", "title": "Pulled"})
+    )
+    adopted = card(colleague, "Proposer's title", "Proposer's text")
+    with migrated.begin() as conn:
+        conn.execute(
+            t.request.update()
+            .where(t.request.c.id == built["id"])
+            .values(jour_fixe={"round_id": "jfr-x", "proposal_id": "p1"})
+        )
+        conn.execute(
+            t.request.update()
+            .where(t.request.c.id == withdrawn["id"])
+            .values(status="withdrawn", withdrawn_at=clock.now(), withdraw_reason="An admin's word")
+        )
+        conn.execute(
+            t.card.update().where(t.card.c.id == adopted["id"]).values(jour_fixe={"round": "jfr-x"})
+        )
+    body = export(colleague).json()
+    asked = {r["id"]: r for r in body["requests_asked"]}
+    assert built["id"] not in asked
+    assert (
+        asked[withdrawn["id"]]["withdrawn_at"] and asked[withdrawn["id"]]["withdraw_reason"] is None
+    )
+    [made] = [c for c in body["cards_created"] if c["id"] == adopted["id"]]
+    assert made["as_created"] is None

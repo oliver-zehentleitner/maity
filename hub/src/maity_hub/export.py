@@ -8,12 +8,13 @@ exported as redacted: the tombstone's time and redactor, its reason only when th
 caller redacted it themselves.
 
 Never in it: a password hash, a session's cookie value or CSRF token, a credential or
-its verifier, a join or enrollment token, a code hash, a nonce. Every section is built
-from named columns for that reason; nothing copies a whole row.
+its verifier, a join or enrollment token, a code hash, a nonce, a second factor's secret
+or recovery code. What the document shows is picked field by field; where a row is read
+whole for the hub's own read rules (`inbox.may_read`), only named fields leave it.
 
 Not in this hub yet, so not in the export: handle aliases (§6.24), languages, the public
-profile (§16.9), the second factor (§2.8), forge links (§11.4), abuse reports (§16.8) and
-card approvals (§6.4, `reviewer_and_tester`).
+profile (§16.9), forge links (§11.4), abuse reports (§16.8) and card approvals (§6.4,
+`reviewer_and_tester`).
 """
 
 from __future__ import annotations
@@ -108,6 +109,7 @@ class _Titles:
         self.readers = readers
         self._cards: dict[str, Any] = {}
         self._requests: dict[str, Any] = {}
+        self._conversations: dict[tuple[str, str], str | None] = {}
 
     def load_cards(self, card_ids: Iterable[str | None]) -> None:
         wanted = {i for i in card_ids if i and i not in self._cards}
@@ -150,13 +152,16 @@ class _Titles:
         or reads it along (§9.2)."""
         if not group_chats.is_group(conversation_id):
             return {"id": conversation_id, "title": None}
-        mine = self.readers.get(project_id)
-        title = None
-        if mine is not None and group_chats.access(self.conn, conversation_id, mine):
-            title = self.conn.execute(
-                select(t.conversation.c.title).where(t.conversation.c.id == conversation_id)
-            ).scalar()
-        return {"id": conversation_id, "title": title}
+        key = (project_id, conversation_id)
+        if key not in self._conversations:  # one read per chat, however many messages
+            mine = self.readers.get(project_id)
+            title = None
+            if mine is not None and group_chats.access(self.conn, conversation_id, mine):
+                title = self.conn.execute(
+                    select(t.conversation.c.title).where(t.conversation.c.id == conversation_id)
+                ).scalar()
+            self._conversations[key] = title
+        return {"id": conversation_id, "title": self._conversations[key]}
 
 
 # --- the account -----------------------------------------------------------------------
@@ -244,8 +249,11 @@ def _sessions(conn: Connection, human_id: str) -> list[dict[str, Any]]:
             t.human_session.c.ended_at,
             t.human_session.c.ended_by,
         )
-        .where(t.human_session.c.human_id == human_id)
-        .order_by(t.human_session.c.created_at, t.human_session.c.public_id)
+        # A sign-in still owing its second step is no session yet (§2.8.2).
+        .where(
+            t.human_session.c.human_id == human_id,
+            t.human_session.c.sign_in_complete.is_(True),
+        ).order_by(t.human_session.c.created_at, t.human_session.c.public_id)
     ).all()
     return [
         {
@@ -521,11 +529,16 @@ def _requests_asked(
             select(*_REQUEST_COLUMNS).where(
                 t.request.c.project_id.in_(chunk),
                 t.request.c.asked_by.in_(my_ids),
-                # What the hub files on someone's behalf is not their writing (§7).
+                # What the hub files on someone's behalf is not their writing (§7), nor
+                # is what it builds from others' words: a takeover's escalation carries the
+                # other party's objection (§6.19), a jour fixe decision a proposal (§20.6).
                 t.request.c.filed_by.is_(None),
+                t.request.c.takeover_id.is_(None),
+                t.request.c.jour_fixe.is_(None),
             )
         ).all()
     rows.sort(key=lambda r: (r.created_at, r.id))
+    withdrawn_by_me = _withdrawn_by(conn, [r.id for r in rows if r.withdrawn_at], my_ids)
     titles.load_cards(row.task_id for row in rows)
     return [
         {
@@ -543,10 +556,27 @@ def _requests_asked(
             # The answer is the answerer's text: only that and when it came.
             "answered_at": ts(row.answered_at),
             "withdrawn_at": ts(row.withdrawn_at),
-            "withdraw_reason": row.withdraw_reason,
+            # Whoever withdrew wrote the reason: the caller's own only (§2.9).
+            "withdraw_reason": row.withdraw_reason if row.id in withdrawn_by_me else None,
         }
         for row in rows
     ]
+
+
+def _withdrawn_by(conn: Connection, request_ids: list[str], my_ids: set[int]) -> set[str]:
+    """The requests among `request_ids` whose withdrawal was the caller's own."""
+    found: set[str] = set()
+    for chunk in _chunks(request_ids):
+        found |= set(
+            conn.execute(
+                select(t.event.c.subject_id).where(
+                    t.event.c.kind == "request_withdrawn",
+                    t.event.c.subject_id.in_(chunk),
+                    t.event.c.actor_membership.in_(my_ids),
+                )
+            ).scalars()
+        )
+    return found
 
 
 def _answers(conn: Connection, human_id: str, my_ids: set[int]) -> list[Any]:
@@ -606,6 +636,7 @@ def _cards_created(
                 t.card.c.kind,
                 t.card.c.status,
                 t.card.c.created_at,
+                t.card.c.jour_fixe,
             ).where(t.card.c.project_id.in_(chunk), t.card.c.created_by.in_(my_ids))
         ).all()
     rows.sort(key=lambda r: (r.created_at, r.id))
@@ -625,7 +656,8 @@ def _cards_created(
     for row in rows:
         entry = created.get(row.id)
         written: dict[str, Any] | None
-        if entry is None:
+        # A card a jour fixe adopted carries the proposer's words, not the caller's (§20.6).
+        if entry is None or row.jour_fixe is not None:
             written = None
         elif entry.redacted:
             written = {"redacted": True, "redaction": _redaction(entry.redaction, titles.human_id)}
