@@ -74,3 +74,9 @@ def store_of(settings: Settings) -> LocalStore:
             "this hub has no attachment store: the operator sets MAITY_ATTACHMENT_DIR",
         )
     return LocalStore(settings.attachment_dir)
+
+
+def optional_store(settings: Settings) -> LocalStore | None:
+    """The configured store, or None where attachments are switched off: for the code
+    that removes bytes when it can and has nothing to remove when it cannot."""
+    return LocalStore(settings.attachment_dir) if settings.attachment_dir is not None else None

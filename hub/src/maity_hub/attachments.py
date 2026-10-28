@@ -12,12 +12,13 @@ from datetime import timedelta
 from typing import Any
 from urllib.parse import quote
 
-from sqlalchemy import Connection, func, select
+from sqlalchemy import Connection, func, select, update
 
-from maity_hub import events
+from maity_hub import attachment_store, clock, events
 from maity_hub import tables as t
 from maity_hub.access import Membership
-from maity_hub.errors import ApiError, rate_limited
+from maity_hub.config import Settings
+from maity_hub.errors import ApiError, invalid, rate_limited
 from maity_hub.ratelimit import Limiter
 from maity_hub.views import principal_ids, ts
 
@@ -220,3 +221,109 @@ def view(conn: Connection, rows: list[Any], *, whole: bool = True) -> list[dict[
             item |= dict.fromkeys(HIDDEN)
         shown.append(item)
     return shown
+
+
+MESSAGE_MAX = 10  # attachments one message may name (§1.7)
+CLOSED = ("accepted", "archived")
+
+
+def meta(row: Any) -> dict[str, Any]:
+    """What a message carries of an attachment: metadata only, never content or a URL."""
+    return {
+        "id": row.id,
+        "name": row.name,
+        "size": row.size,
+        "type": row.type,
+        "kind": row.kind,
+        "width": row.width,
+        "height": row.height,
+    }
+
+
+def bind(
+    conn: Connection, mine: Membership, ids: list[str], settings: Settings | None
+) -> list[Any]:
+    """The pending uploads of the posting membership a message names, in the order named
+    (§8.7), or the refusal: `attachments_not_configured` with no store, `project_closed`,
+    `too_many`, and per id `unknown` (not a pending upload of the poster in this project,
+    deleted ones and other members' alike) or `already_attached`."""
+    if not ids:
+        return []
+    if settings is None or settings.attachment_dir is None:
+        raise ApiError(
+            409,
+            "attachments_not_configured",
+            "this hub has no attachment store: the operator sets MAITY_ATTACHMENT_DIR",
+        )
+    if mine.project.state in CLOSED:
+        raise ApiError(409, "project_closed", f"the project is {mine.project.state}")
+    if len(ids) > MESSAGE_MAX:
+        raise invalid({"attachments": "too_many"})
+    rows = {
+        r.id: r
+        for r in conn.execute(
+            select(t.attachment).where(
+                t.attachment.c.id.in_(ids), t.attachment.c.project_id == mine.project.id
+            )
+        )
+    }
+    problems: dict[str, str] = {}
+    seen: set[str] = set()
+    for attachment_id in ids:
+        row = rows.get(attachment_id)
+        if attachment_id in seen:
+            problems[attachment_id] = "already_attached"
+        elif row is None or row.uploaded_by != mine.id or row.deleted_at is not None:
+            problems[attachment_id] = "unknown"
+        elif row.message_seq is not None:
+            problems[attachment_id] = "already_attached"
+        seen.add(attachment_id)
+    if problems:
+        raise invalid({"attachments": problems}, "some attachments cannot be named")
+    return [rows[i] for i in ids]
+
+
+def attach(conn: Connection, rows: list[Any], seq: int) -> None:
+    """Bind the uploads to the message just written, in its transaction; one that was
+    taken or deleted meanwhile refuses the whole post."""
+    if not rows:
+        return
+    done = conn.execute(
+        update(t.attachment)
+        .where(
+            t.attachment.c.id.in_([r.id for r in rows]),
+            t.attachment.c.message_seq.is_(None),
+            t.attachment.c.deleted_at.is_(None),
+        )
+        .values(message_seq=seq)
+    ).rowcount
+    if done != len(rows):
+        raise invalid({"attachments": dict.fromkeys((r.id for r in rows), "unknown")})
+
+
+def redact_message(
+    conn: Connection, seq: int, by: str, store: attachment_store.LocalStore | None
+) -> None:
+    """A redacted message has no attachments (§8.7, §8.5): the rows become tombstones in the
+    redaction's transaction, `deleted_reason` `redacted`, and the bytes go once it commits.
+    The `event_redacted` event covers them: no `attachment_deleted` is emitted."""
+    rows = conn.execute(
+        select(t.attachment).where(
+            t.attachment.c.message_seq == seq, t.attachment.c.deleted_at.is_(None)
+        )
+    ).all()
+    if not rows:
+        return
+    conn.execute(
+        update(t.attachment)
+        .where(t.attachment.c.id.in_([r.id for r in rows]))
+        .values(deleted_at=clock.now(), deleted_by=by, deleted_reason="redacted")
+    )
+    if store is not None:
+        keys = [attachment_store.key_of(r.project_id, r.id) for r in rows]
+
+        def remove() -> None:
+            for key in keys:
+                store.delete(key)
+
+        events.on_commit(conn, remove)

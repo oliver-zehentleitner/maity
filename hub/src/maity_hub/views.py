@@ -107,11 +107,13 @@ def project_view(
     shown: dict[str, Any] | None = None,
     export: dict[str, Any] | None = None,
     aliases: list[str] | None = None,
+    stored: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     """`owner_handle` is the namespace owner's current handle (§6.25), `shown` what
     `images.views` says the project shows as logo and banner, `export` the Keep the Why
     export as `ktw.export_for_view` holds it, `aliases` the former full names, oldest
-    first."""
+    first, `stored` the attachments `{used, quota}` for a caller with `project:admin`
+    (§8.7) and None for anyone else."""
     shown = shown or {}
     return {
         "id": project.id,
@@ -129,6 +131,7 @@ def project_view(
         "banner": shown.get("banner", NO_IMAGE),
         "keep_the_why": project.keep_the_why,
         "keep_the_why_export": export,
+        "attachments": stored,
         "policy": policy.of(project),
         "absence": absence(project),
         "settings": {
