@@ -106,21 +106,30 @@ window.Maity = window.Maity || {};
     const where = (who.memberships || []).map((x) => x.project);
     const typed = h("input", { id, autocomplete: "off", spellcheck: "false", placeholder: "@" + who.handle });
     const go = h("button", { type: "submit", class: "danger" }, "Delete the profile");
-    go.disabled = true;
-    typed.addEventListener("input", () => { go.disabled = typed.value.trim().replace(/^@/, "") !== who.handle; });
+    // One deletion at a time, and only for the handle as it is typed now: the
+    // field is locked while the call runs, and the button follows the field.
+    let busy = false;
+    const confirmed = () => typed.value.trim().replace(/^@/, "") === who.handle;
+    const settle = () => { go.disabled = busy || !confirmed(); };
+    settle();
+    typed.addEventListener("input", settle);
     const form = h("form", {
       class: "profile-delete inline-form",
       onsubmit: async (e) => {
         e.preventDefault();
-        if (go.disabled) return;
-        go.disabled = true;
+        if (busy || !confirmed()) return;
+        busy = true;
+        typed.disabled = true;
+        settle();
         status.busy("Deleting…");
         try {
           const answer = await M.api.del("/agents/" + encodeURIComponent(who.id) + (where.length ? "?cascade=true" : ""));
           status.done();
           done(answer, "The profile @" + who.handle + " was deleted" + (where.length ? "; its memberships ended." : "."));
         } catch (err) {
-          go.disabled = false;
+          busy = false;
+          typed.disabled = false;
+          settle();
           const inUse = err.code === "profile_in_use" && err.details && err.details.memberships;
           status.fail("Not deleted: ", inUse ? { message: "it is still a member of " + err.details.memberships.map((x) => x.project).join(", ") + "; read the page again" } : err);
         }

@@ -6610,6 +6610,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(pdGo().disabled, "profile: another handle does not confirm");
   pdIn().value = "@agent-d"; pdIn().dispatch("input");
   expect(!pdGo().disabled, "profile: its own handle confirms");
+  // One call at a time, for the handle as typed now: the field locked while it runs; after a failure the button
+  // follows what is typed then.
+  let pdRelease = null;
+  win.Maity.api.del = (p) => { pdSent.push(p); return new Promise((resolve, reject) => { pdRelease = () => reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", {})); }); };
+  main.querySelector("tr.member-manage form.profile-delete").dispatch("submit"); await tick();
+  expect(pdIn().disabled && pdGo().disabled, "profile: while the deletion runs, the field is locked and the button off");
+  main.querySelector("tr.member-manage form.profile-delete").dispatch("submit"); await tick();
+  expect(pdSent.length === 1, "profile: a second submit while one runs sends nothing");
+  pdRelease(); for (let k = 0; k < 4; k++) await tick();
+  expect(!pdIn().disabled && !pdGo().disabled && text(pdBox()).includes("Not deleted"), "profile: after a failure the field is free and the button follows the handle typed");
+  pdIn().value = "@wrong"; pdIn().dispatch("input");
+  main.querySelector("tr.member-manage form.profile-delete").dispatch("submit"); await tick();
+  expect(pdGo().disabled && pdSent.length === 1, "profile: another handle typed after a failure deletes nothing");
+  pdIn().value = "@agent-d"; pdIn().dispatch("input");
+  pdSent.length = 0;
+  win.Maity.api.del = (p) => { pdSent.push(p); return pdDel(p); };
   main.querySelector("tr.member-manage form.profile-delete").dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
   const pdAgents = (await win.Maity.api.getAll("/agents")).items;
   expect(pdSent[0] === "/agents/agt-d?cascade=true" && !main.querySelectorAll("tr.member").some((tr) => tr.getAttribute("data-member") === "agt-d")
