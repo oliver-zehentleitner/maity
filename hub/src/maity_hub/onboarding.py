@@ -108,8 +108,12 @@ def validate(conn: Connection, project: Any, body: OnboardingIn) -> None:
     if token.startswith(("role:", "trust:")):
         if not token_known(token):
             raise invalid({field: "unknown_role"})
-    elif not any(principal(row) == token for row in members(conn, project.id)):
-        raise invalid({field: "not_a_member"})
+    else:
+        found = [row for row in members(conn, project.id) if principal(row) == token]
+        if not found:
+            raise invalid({field: "not_a_member"})
+        if found[0].trust == "guest":  # a guest is never a target (§2.3)
+            raise invalid({field: "guest"})
 
 
 def replace_setting(

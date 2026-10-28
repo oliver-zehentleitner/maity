@@ -486,6 +486,8 @@ def create_group(slug: str, body: GroupIn, request: Request, caller: AnyCaller) 
         mine = membership(conn, caller, slug)  # as of the lock
         if mine.kind != "human":  # the hub's jour fixe thread is no route (§20.5)
             raise humans_only("only a human creates a group chat")
+        if mine.trust == "guest":  # a guest chats where it is invited (§2.3, §9.2)
+            raise forbidden("events:post", "a guest creates no group chat")
         conversation_id = group_chats.create(
             conn,
             mine.project,

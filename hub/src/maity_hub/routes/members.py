@@ -157,11 +157,14 @@ def validate_assignment(
             errors["role"] = "proxy_needs_admin"
     if reports_to is not None:
         try:
-            values["reports_to"] = member_row(conn, project_id, reports_to).id
+            boss = member_row(conn, project_id, reports_to)
         except ApiError:
             errors["reports_to"] = "not_a_member"
         else:
-            if member is not None and member in chain(conn, values["reports_to"]):
+            values["reports_to"] = boss.id
+            if boss.trust == "guest":  # a guest is never a target (§2.3)
+                errors["reports_to"] = "guest"
+            elif member is not None and member in chain(conn, values["reports_to"]):
                 errors["reports_to"] = "cycle"
     if areas is not None:
         if any(not AREA.fullmatch(a) or a.startswith("..") or "/../" in f"/{a}/" for a in areas):

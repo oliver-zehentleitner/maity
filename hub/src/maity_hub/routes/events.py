@@ -505,7 +505,8 @@ def post_event(slug: str, body: MessageIn, request: Request, caller: AnyCaller) 
             if body.type == "chat"
             else membership(conn, caller, slug)
         )
-        mine.require("events:post")
+        if not (body.type == "chat" and mine.trust == "guest"):
+            mine.require("events:post")  # a guest chats in its conversations only (§2.3)
         view = post_message(conn, mine, caller, body, settings_of(request))
         return idempotency.Outcome(201, "event", str(view["seq"]), view)
 
