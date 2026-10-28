@@ -159,7 +159,7 @@ stop the page. Mail settings come with the hub's mail (stage 3).
 | `#/admin/users` | compatibility route for the searchable user list |
 | `#/sign-in/code?c=…` | the login page with a device code filled in: the URL in the QR of Sign in another device; sent only on the human's tap |
 | `#/account/sign-in-device` | Sign in another device (`docs/api.md` §2.6.2): the code, its QR, the time left, then the approval; from the profile menu |
-| `#/account` | the signed-in human's account: name, handle, their picture and their agents' pictures (`#/account/picture` starts there), their preferences (`#/account/preferences` starts there), browser notifications (`#/account/notifications` starts there; the bell links to it), the theme (`#/account/theme` starts there), the sessions (`#/account/sessions` starts there; a sign-in alert links to it), **Change password**; from the profile menu |
+| `#/account` | the signed-in human's account: name, handle, their picture and the pictures of their agents in no project of theirs (`#/account/picture` starts there), their preferences (`#/account/preferences` starts there), browser notifications (`#/account/notifications` starts there; the bell links to it), the theme (`#/account/theme` starts there), the sessions (`#/account/sessions` starts there; a sign-in alert links to it), **Change password**; from the profile menu |
 | `#/<owner>/<slug>/<view>` | a view inside one project, addressed by its full name, owner's handle and slug (`docs/api.md` §6.25); `#/<owner>/<slug>/inbox` is the landing page with exactly one. An earlier full name of a project of one's own (an alias after a rename or a transfer) leads to the current one, as the hub answers it |
 | `#/p/<slug>/…` | the address before namespaces: leads to the project in one's own list whose `legacy_slug` it is, the rest of the path kept; never by the current slug, which another project may carry now; no such project is the same "not found" as any unknown project |
 | `#/<owner>/<slug>/chat/<agent-id>` | the chat with one agent |
@@ -395,7 +395,8 @@ too.
    there (`#/<owner>/<slug>/members/<id>/rulebook`: the row open, at the
    limit). Without
    members:admin a human's own agents open as **Details** with their
-   credentials and the preferences switch.
+   picture, credentials and the preferences switch; with it, **Manage**
+   shows one's own agent's picture too.
    **Where they run** (`js/placements.js`, `docs/api.md` §15.5–§15.7),
    in Members after the agents' table where the hub has placements: one row per
    active placement — the agent, the runner (and target), harness, model
@@ -856,8 +857,13 @@ card.
 **Pictures** (`#/account/picture`, `docs/api.md` §6.10). The account
 shows the human's picture as it shows now, where it comes from (uploaded,
 the linked forge account, or generated from the member id), an upload and,
-for an upload, **Remove the upload**; below it the same for each of the
-human's agent profiles (`GET /agents`, `PUT`/`DELETE /agents/{id}/avatar`).
+for an upload, **Remove the upload**. An agent's picture is set in its row
+on Members (**Details** or **Manage**, for its owner;
+`#/<owner>/<slug>/members/<id>/picture` opens the row), read from
+`GET /agents`, set with `PUT`/`DELETE /agents/{id}/avatar`. The account
+keeps the same, under **Agents in other projects**, only for the owner's
+agents in no project the owner can open; `#/account/picture/<agent id>`
+for any other agent leads to its row.
 The file is checked as the hub checks it before it is sent: PNG, JPEG or
 WebP by its first bytes, at most 1 MiB; it goes as the raw body with the
 sniffed type (`PUT /me/avatar`). The hub's refusals (`dimensions`,

@@ -431,3 +431,46 @@ already knows what it deploys.
 - A `sitemap.xml` committed to `docs/`: it lists pages by hand and drifts.
 - Listing every `.html` file as the card first said: it would put the brand's loader fragment
   into the sitemap.
+
+## The database CI jobs may run on the maintainer's machine; a fork's code reaches it only through an approval
+
+**Id:** 405c762c-11a2-4a95-a23b-0b2657a7aa8d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's go and the coordinator's brief (2026-10-28); the coordinator approved the plan; the security review of the pull request (2026-10-28) corrected the first version of this entry
+**Revisit when:** the repository stops being public, a job needs a secret of the repository, or hosted runners get as fast as the machine
+
+`ci.yml` lets `hub-sqlite`, `hub-postgresql` and `hub-mariadb` run on a self-hosted runner
+when the repository variable `HUB_RUNNER` holds its labels; unset, they run on GitHub's
+runners. The runner is a user of its own with rootless Docker, no read access to anything
+else on the machine and a firewall rule against local and internal services (IPv4 and
+IPv6); the runner's files, hook and unit are root-owned under /opt and a system unit, not in
+the runner user's home, where a job could replace them. It is not ephemeral, and a
+job-completed hook tidies containers, images, volumes and the workspace.
+Install steps and the trust boundary: `deploy/runner/README.md`.
+
+The condition in `ci.yml` that sends fork pull requests to the hosted runners is **not** a
+protection: a fork's pull request runs the fork's own `ci.yml` and can name the runner
+itself. The protection is the repository setting that requires approval for every outside
+collaborator's workflow run, and the rule to read `.github/` in the diff before approving.
+"Only code of this repository" means every branch of anyone with push access, agents
+included. After a malicious job the machine is reinstalled; the hook is housekeeping.
+
+**Reason:** the database jobs are the long ones and the machine has more cores than a hosted
+runner; with the suite in parallel they use all of them. The repository is public, so a
+runner that runs fork code next to the project's credentials is the risk; the dedicated
+user, the approval rule and the absence of any secret on the machine bound it. Deleting one
+variable is the fallback.
+
+**Rejected alternatives:**
+- An ephemeral runner (a fresh registration per job): cleaner, but it needs a
+  repository-admin token on the machine to register again, the one secret the machine must
+  not hold.
+- The runner under the account of the agents that work on the machine: that account can
+  reach the production cluster and the maintainer's tokens.
+- Docker through the docker group: the `services:` of the jobs need a Docker API, and that
+  group is root on the machine; rootless Docker gives the API without it.
+- Relying on the `runs-on` condition against forks: the fork controls the workflow file.
+- Running every job on the machine: it runs one job at a time (the services bind host ports);
+  the short jobs gain nothing there.

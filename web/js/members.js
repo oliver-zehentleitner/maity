@@ -84,7 +84,9 @@ window.Maity = window.Maity || {};
     const open = new Set();
     // #/<owner>/<slug>/members/<id>/rulebook (a join's quota refusal): that row open, at its rulebook.
     const rulebookAsked = !!(wanted && args[1] === "rulebook");
-    if (rulebookAsked) open.add(wanted);
+    // #/<owner>/<slug>/members/<id>/picture: the account's link to an agent's picture.
+    const pictureAsked = !!(wanted && args[1] === "picture");
+    if (rulebookAsked || pictureAsked) open.add(wanted);
     // member id -> its presence cell, updated in place by the refresh.
     const presenceCells = new Map();
     // focus key -> the element drawn for it, so focus survives a redraw.
@@ -195,6 +197,36 @@ window.Maity = window.Maity || {};
       return slot;
     }
 
+    // One's own agent's picture (§6.10: the profile's owner sets it). The
+    // member list has no avatar_source, one's agent profiles have: read once
+    // when the first such row opens, kept across redraws.
+    const profileOf = new Map();
+    let profiles = null;
+    const ownProfile = (id) => {
+      profiles = profiles || M.api.getAll("/agents").then((r) => r.items);
+      return profiles.then((items) => items.find((a) => a.id === id) || {});
+    };
+    function picturePart(m) {
+      if (!ownAgent(m) || !M.pictureEditor) return null;
+      const slot = h("div", { class: "member-picture" });
+      const changed = (answer, words) => {
+        profileOf.set(m.id, Object.assign({}, profileOf.get(m.id), answer));
+        act("Changing the picture", words, () => Promise.resolve(answer), null);
+      };
+      const fill = (profile) => append(clear(slot), h("h4", { class: "member-picture-title" }, "Picture"),
+        profile.error ? M.errorBox(profile.error)
+          : M.pictureEditor(Object.assign({}, m, profile), "/agents/" + encodeURIComponent(m.id) + "/avatar", false, changed));
+      const known = profileOf.get(m.id);
+      if (known && !known.then) { fill(known); return slot; }
+      append(slot, h("p", { class: "muted" }, "Reading the picture…"));
+      const reading = known || ownProfile(m.id)
+        .then((a) => ({ avatar_url: a.avatar_url, avatar_source: a.avatar_source }), (error) => ({ error }))
+        .then((got) => { profileOf.set(m.id, got); return got; });
+      profileOf.set(m.id, reading);
+      reading.then((got) => { if (slot.isConnected !== false) fill(got); });
+      return slot;
+    }
+
     // The team's rulebook (docs/api.md §6.18, tsk-xzbk67raztm0): for the
     // human who owns the agent profile only, as the hub allows it; other
     // viewers see none of it. Only the fields that changed are sent.
@@ -261,6 +293,7 @@ window.Maity = window.Maity || {};
       // whether it gets their preferences, nothing that changes the membership.
       if (!ctx.canAdmin) {
         return h("tr", { class: "member-manage", id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell" },
+          picturePart(m),
           teamForm(m, ctx.base + "/members/" + encodeURIComponent(m.id)),
           credentialsPart(m),
           M.preferences && "owner_preferences" in m ? M.preferences.ownerToggle(ctx, m) : null));
@@ -270,6 +303,7 @@ window.Maity = window.Maity || {};
         // The briefing (§6.2), edited here; where the hub knows briefings.
         if ("briefing" in m && M.agentParts) parts.push(M.agentParts.briefingControl(ctx, m));
         if (ownAgent(m) && M.preferences && "owner_preferences" in m) parts.push(M.preferences.ownerToggle(ctx, m));
+        parts.push(picturePart(m));
         parts.push(teamForm(m, memberPath));
         parts.push(credentialsPart(m));
       }
