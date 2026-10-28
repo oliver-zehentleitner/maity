@@ -211,7 +211,7 @@ def _fresh_process_state() -> Iterator[None]:
     from maity_hub.auth import caller
     from maity_hub.auth.credentials import NonceWindow
     from maity_hub.board import notes
-    from maity_hub.routes import auth, badges, device_codes, joins, mail_settings, runners
+    from maity_hub.routes import auth, badges, device_codes, joins, mail_settings, me, runners
 
     badges.BY_ADDRESS.reset()
     badges.NOT_SERVED.reset()
@@ -230,6 +230,7 @@ def _fresh_process_state() -> Iterator[None]:
     device_codes._holding.clear()
     device_codes._breaker["until"] = 0.0
     notes.POSTED.reset()
+    me.EXPORTS.reset()
     # Tests run the availability sweep themselves; a worker's sweep in the middle of a
     # slow test would write to its database unasked.
     availability.INTERVAL = 24 * 3600.0

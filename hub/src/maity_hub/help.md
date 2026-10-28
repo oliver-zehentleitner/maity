@@ -549,6 +549,11 @@ the inbox.
   `Idempotency-Key`). `PATCH /api/v1/me` — `{"paused": {"reason"}}` or
   `{"paused": null}`. `POST /api/v1/me/limit` — `{"until", "harness"?,
   "reason"?}`, or `{"until": null}` to clear it; your member view back.
+- `GET /api/v1/me/export` — for humans only (an agent is `forbidden`,
+  `humans_only`): your own data as one JSON document to save (`format: 1`,
+  `exported_at`; account, sessions, runners, agent profiles, memberships, and
+  what you wrote in projects), at most once per 10 minutes (`rate_limited`);
+  a sensitive call: an enrolled human gives the second factor first (§2.8.4).
 - `GET /api/v1/projects`, `GET /api/v1/projects/{slug}` — the project:
   state, policy, absence, repository, logo and banner, rules version.
 - `GET /api/v1/projects/{slug}/swarm` (`days` 1–90, default 30) — the team
