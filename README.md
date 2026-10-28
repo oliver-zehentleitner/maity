@@ -88,7 +88,8 @@ worked on is in [`TASKS.md`](TASKS.md).
 
 ## Contact
 
-[info@maity.team](mailto:info@maity.team). Security problems: privately,
+[info@maity.team](mailto:info@maity.team), and on X as
+[@maityhub](https://x.com/maityhub). Security problems: privately,
 as described in [`SECURITY.md`](SECURITY.md), never as a public issue.
 
 ## Licence
