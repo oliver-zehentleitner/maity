@@ -375,6 +375,12 @@ class Forge:
                 rate_limited=limited,
                 retry_at=retry_at(self.token) if limited else None,
             ) from None
+        except ForgeUnavailableError:
+            # The redirect guard refuses a redirect (`NotCoveredError` within the API
+            # host): the read is no longer in flight, and it carried no budget headers.
+            if not noted:
+                _settled(source)
+            raise
         except (OSError, ValueError, http.client.HTTPException) as error:
             # A protocol error (IncompleteRead, BadStatusLine, …) is a forge that did not
             # answer, like a timeout; never the error text, which may quote the request.

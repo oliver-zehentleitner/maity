@@ -279,6 +279,22 @@ def test_a_read_redirected_after_the_check_asks_again_next_time(seen: FakeOpener
     assert _paths(seen) == ["/repos/a/b", "/repos/a/b/branches/main", "/repos/a/b"]
 
 
+@pytest.mark.parametrize(
+    "target", ["https://api.github.com/repositories/1/branches/main", "https://evil.example/x"]
+)
+def test_a_refused_redirect_leaves_no_read_in_flight(target: str, opener: FakeOpener) -> None:
+    """The redirect guard raises from inside the opener: the read it ends is no longer
+    counted against the budget (§11.4), or the reserve would stay held for good."""
+
+    def redirected(request: urllib.request.Request, timeout: float) -> Any:
+        forge._SameHostOnly().redirect_request(request, None, 301, "Moved", {}, target)
+
+    opener.open = redirected  # type: ignore[method-assign]
+    with pytest.raises(forge.ForgeUnavailableError):
+        READER._get("/repos/a/b/branches/main")
+    assert forge._budgets[forge._source(TOKEN)].in_flight == 0
+
+
 @pytest.mark.parametrize("refusal", [401, 403, None])  # None: a 404
 def test_a_refused_read_asks_again_whether_it_is_public(
     seen: FakeOpener, refusal: int | None
