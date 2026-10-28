@@ -584,6 +584,12 @@ agent_session = Table(
     # `maity-runner/<version>` when a runner supervises the session (§15.11): its
     # long-poll wakes on a narrower set, and its rules say so.
     Column("supervisor", String(80)),
+    # Not listening (§5.3): the last call for events or the resume (`last_seen_at` counts
+    # every call); an episode's start, the oldest event that waited, and its notice.
+    Column("events_at", UtcDateTime),
+    Column("not_listening_since", UtcDateTime),
+    Column("not_listening_seq", BIG_ID),
+    Column("not_listening_request_id", String(ID)),
     UniqueConstraint("credential_id", "live", name="uq_agent_session_one_live"),
     CheckConstraint("live IS NOT FALSE", name="live_true_or_null"),
     **MYSQL_TABLE,

@@ -25,6 +25,7 @@ from maity_hub import (
     forge,
     images,
     longpoll,  # noqa: F401  (subscribes the long-poll to new events)
+    not_listening,
     probe,
     registration_accounts,
     takeovers,
@@ -124,6 +125,9 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         # Limits end and sessions go away without a request to notice it (§6.12).
         availability_worker = availability.Worker(engine)
         availability_worker.start()
+        # A session that stopped reading is noticed without anybody asking (§5.3).
+        not_listening_worker = not_listening.Worker(engine)
+        not_listening_worker.start()
         registrations_worker = registration_accounts.Worker(engine)
         registrations_worker.start()
         from maity_hub.jourfixe import worker as jour_fixe_worker
@@ -142,6 +146,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         jour_fixe_clock.stop()
         registrations_worker.stop()
         availability_worker.stop()
+        not_listening_worker.stop()
         image_worker.stop()
         if worker is not None:
             worker.stop()

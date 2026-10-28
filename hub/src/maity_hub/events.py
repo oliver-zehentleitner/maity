@@ -445,6 +445,14 @@ def wakes(
     sender's own) is still `all`."""
     if row.kind in NON_WAKING:
         return False
+    if row.kind == "member_not_listening":
+        # The start wakes the member the agent reports to, so it can re-route; the end
+        # and the owner's copy wake nobody (§5.3, §8.2). Humans are told by the notice.
+        return (
+            not (row.payload or {}).get("ended")
+            and membership.agent_id is not None
+            and f"member:{principal}" in (row.audience or [])
+        )
     if row.kind == "ticker":
         return ticker_read.wakes(row, principal)
     if row.kind in ROUND_THREAD_KINDS and (row.payload or {}).get("jour_fixe"):
