@@ -1378,10 +1378,12 @@ refused too. The caller's own `MAITY_*` variables are dropped for the hub
 and the CLI. Option `--headed` shows the browser, `--port` fixes the port.
 When a step fails, the page's last 12 API answers are printed and written to `api-trace.txt` next to the
 screenshots, so that what the hub said can be told from what the page drew of it. The trace goes to a
-public artifact and the Actions log, so it is an allowlist: the method, the path without its query and
-without token segments (after `join`, `pair` and the like), the status, and from a JSON body only a few
-keys with scalar values (`id`, `name`, `presence`, `credential_state`, and an error's `code`). Other
-bodies and everything else are not copied (`tools/test_e2e_harness.py` checks it with synthetic secrets).
+public artifact and the Actions log, so every part is a closed set, not a pattern: the method, the
+route with only its known static words (every other segment, whatever its spelling, shown as `{}`),
+the status, and from a JSON body only an entity id with a known prefix, `credential_state`,
+`presence`, `state` and an error's `code`, each only with a listed value (anything else shown as `?`).
+Other keys, names, free text and non-JSON bodies are not copied (`tools/test_e2e_harness.py` checks it
+with synthetic secrets, including unknown routes, re-cased and percent-encoded segments).
 
 CI runs it in the `web-e2e` job of `.github/workflows/ci.yml`. It installs
 the headless shell only (`playwright install --only-shell chromium`) and

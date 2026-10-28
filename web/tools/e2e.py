@@ -445,56 +445,52 @@ def off_problem(method: str, path: str, status: int, body: object) -> str | None
 
 
 # What the trace of a failed step may show. It goes to a public artifact and to the Actions log, so
-# it is an allowlist: a path with its token segments and its query removed, the status, and from a
-# JSON body only these keys with scalar values. Nothing else is copied, whatever it holds.
-TRACE_KEYS = {
-    "id", "name", "status", "state", "presence", "listening", "credential_state", "kind", "type",
-    "role", "trust", "removed_at", "revoked_at", "last_seen_at", "revoked_reason",
+# every part is a closed set: a path keeps only the static route words below and shows every other
+# segment (ids, tokens, codes, slugs, in any spelling) as `{}`; a body shows only the listed fields,
+# each only with a value from its set, anything else as `?`. Nothing is copied by its shape.
+TRACE_ROUTE = {
+    "api", "v1", "me", "runners", "enrollments", "revoke", "pair", "join", "projects", "agents",
+    "humans", "members", "tasks", "messages", "events", "attachments", "notifications", "invitations",
 }
-# A segment that follows one of these is a token or a code, whatever it looks like.
-TRACE_SECRET_AFTER = {"join", "pair", "invitations", "invitation", "invite", "accept", "reset", "verify", "token"}
-TRACE_WORD = re.compile(r"v[0-9]{1,2}|[a-z][a-z-]{0,23}|[a-z]{2,5}-[a-z0-9]{4,24}")
-TRACE_VALUE = re.compile(r"[A-Za-z0-9 ._:@/+-]{0,60}")
+TRACE_ENUMS = {
+    "credential_state": {"active", "revoked", "none", "pending", "expired"},
+    "presence": {"online", "offline", "listening", "away", "busy"},
+    "state": {"active", "revoked", "pending", "expired", "used", "removed"},
+}
+TRACE_CODES = {
+    "forbidden", "not_found", "conflict", "unauthenticated", "unauthorized", "revoked", "rate_limited",
+    "validation_error", "attachments_not_configured",
+}
+TRACE_ID = re.compile(r"(rnr|enr|agt|hum|prj|org)-[a-z0-9]{6,24}")
 
 
 def trace_path(path: str) -> str:
-    """The path without its query; a segment is kept only if it is a plain word or an entity id,
-    and never after `join`, `pair` and the like."""
-    kept = []
-    previous = ""
-    for segment in path.split("?", 1)[0].split("/"):
-        masked = previous in TRACE_SECRET_AFTER or (segment and not TRACE_WORD.fullmatch(segment))
-        kept.append("…" if masked and segment else segment)
-        previous = segment
-    return "/".join(kept)
+    """The route without its query: static route words as they are, every other segment as `{}`."""
+    parts = path.split("?", 1)[0].split("/")
+    return "/".join(p if p in TRACE_ROUTE or not p else "{}" for p in parts)
 
 
-def trace_data(value: object, parent: str = "", depth: int = 0) -> object:
-    """`value` reduced to the allowlisted keys with scalar values; the rest is dropped. `code`
-    is kept only inside an `error` (an enrollment's `code` is a secret)."""
-    if depth > 4:
-        return "…"
-    if isinstance(value, dict):
-        out = {}
-        for key, item in value.items():
-            if key in TRACE_KEYS or (key == "code" and parent == "error"):
-                if isinstance(item, (dict, list)):
-                    continue
-                out[key] = trace_scalar(item)
-            elif isinstance(item, (dict, list)):
-                inner = trace_data(item, key, depth + 1)
-                if inner not in ({}, []):
-                    out[key] = inner
-        return out
-    if isinstance(value, list):
-        return [trace_data(item, parent, depth + 1) for item in value[:5]]
-    return None
-
-
-def trace_scalar(item: object) -> object:
-    if isinstance(item, str):
-        return item if TRACE_VALUE.fullmatch(item) and "mty1." not in item else "…"
-    return item if isinstance(item, (bool, int, float)) or item is None else "…"
+def trace_data(value: object) -> object:
+    """What of a JSON body may be shown: for the object or each of its `items`, the `id` (only a
+    known prefix), `credential_state`, `presence` and `state` (only listed values); for an error,
+    its `code` (only a listed one). Every other key and value is dropped."""
+    if isinstance(value, dict) and isinstance(value.get("items"), list):
+        return [trace_data(item) for item in value["items"][:5]]
+    if not isinstance(value, dict):
+        return None
+    out: dict = {}
+    item_id = value.get("id")
+    if isinstance(item_id, str):
+        out["id"] = item_id if TRACE_ID.fullmatch(item_id) else "?"
+    for key, allowed in TRACE_ENUMS.items():
+        if key in value:
+            shown = value[key]
+            out[key] = shown if isinstance(shown, str) and shown in allowed else "?"
+    error = value.get("error")
+    if isinstance(error, dict) and "code" in error:
+        code = error["code"]
+        out["error"] = {"code": code if isinstance(code, str) and code in TRACE_CODES else "?"}
+    return out
 
 
 def trace_line(method: str, path: str, status: int, text: str | None) -> str:

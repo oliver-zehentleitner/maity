@@ -17,8 +17,8 @@ from pathlib import Path
 SOURCE = Path(__file__).with_name("e2e.py")
 WANTED = {
     "PENDING_UPLOADS", "off_problem", "no_problems",
-    "TRACE_BODY", "TRACE_KEYS", "TRACE_SECRET_AFTER", "TRACE_WORD", "TRACE_VALUE",
-    "trace_path", "trace_data", "trace_scalar", "trace_line", "report_failure",
+    "TRACE_BODY", "TRACE_ROUTE", "TRACE_ENUMS", "TRACE_CODES", "TRACE_ID",
+    "trace_path", "trace_data", "trace_line", "report_failure",
 }
 
 
@@ -94,7 +94,7 @@ class Raw:
 
 
 # Synthetic markers that must never reach the trace, by where they sit.
-SECRETS = ["JOINTOKENabc123", "PAIRTOKENxyz789", "QUERYTOKENq1", "CODE-AAAA-BBBB", "CREDmty1.rcrd-SECRET", "NESTEDsecret42", "PLAINTEXTsecret"]
+SECRETS = ["lowercasesecret", "secret-deadbeef", "TEST-CODE-ONLY", "JOINTOKENabc123", "PAIRTOKENxyz789", "QUERYTOKENq1", "CODE-AAAA-BBBB", "CREDmty1.rcrd-SECRET", "NESTEDsecret42", "PLAINTEXTsecret"]
 
 
 def trace_cases(ns: dict) -> int:
@@ -117,6 +117,13 @@ def trace_cases(ns: dict) -> int:
         Raw("GET", "/api/v1/me", 403, json.dumps({"error": {"code": "forbidden", "message": "PLAINTEXTsecret"}})),
         Raw("GET", "/api/v1/me/notifications", 200, "PLAINTEXTsecret"),
         Raw("GET", "/api/v1/gone", 200, None),
+        Raw("GET", "/api/v1/unknown/secret-deadbeef", 200, None),
+        Raw("GET", "/api/v1/JOIN/lowercasesecret", 200, None),
+        Raw("GET", "/api/v1/%6aoin/lowercasesecret", 200, None),
+        Raw("GET", "/api/v1/join/%4AOIN-lowercasesecret", 200, json.dumps(
+            {"name": "https://h/join/lowercasesecret", "lowercasesecret": {"state": "active"},
+             "state": "lowercasesecret", "id": "lowercasesecret",
+             "error": {"code": "TEST-CODE-ONLY"}})),
     ]
     with tempfile.TemporaryDirectory() as tmp:
         out, err = io.StringIO(), io.StringIO()
@@ -128,9 +135,11 @@ def trace_cases(ns: dict) -> int:
         check(f"no secret reaches {target}", not leaked, leaked)
     lines = trace.splitlines()
     check("one line per answer", len(lines) == len(answers), len(lines))
-    check("a token path is masked, the query is dropped", lines[0].startswith("GET /api/v1/join/… 200") and "?" not in lines[2].split(" ")[1], lines[:3])
+    check("a token path is masked, the query is dropped", lines[0].startswith("GET /api/v1/join/{} 200") and "?" not in lines[2].split(" ")[1], lines[:3])
+    check("an unknown or re-spelled route shows no segment", all(l.split(" ")[1].replace("{}", "").strip("/").count("secret") == 0 for l in lines[7:]) and lines[7].startswith("GET /api/v1/{}/{} 200") and lines[8].startswith("GET /api/v1/{}/{} 200"), lines[7:])
     check("the runner's state is kept", '"credential_state":"active"' in lines[2] and '"presence":"offline"' in lines[2] and "rnr-abc123def" in lines[2], lines[2])
-    check("a nested secret is dropped, a nested allowed key is kept", '"state":"ok"' in lines[2] and "NESTED" not in lines[2], lines[2])
+    check("a nested secret and any other key are dropped", "NESTED" not in lines[2] and "extra" not in lines[2] and "credential\"" not in lines[2], lines[2])
+    check("an unlisted value or code is shown as ?", '"state":"?"' in lines[10] and '"id":"?"' in lines[10] and '"code":"?"' in lines[10] and "name" not in lines[10], lines[10])
     check("an error keeps its code, not its message", '"code":"forbidden"' in lines[4] and "message" not in lines[4], lines[4])
     check("an enrollment keeps no code", '"code"' not in lines[3], lines[3])
     check("a body that is not JSON, or gone, is not shown", lines[1].endswith("(body not shown)") and lines[5].endswith("(body not shown)") and lines[6].endswith("(body not shown)"), lines)
