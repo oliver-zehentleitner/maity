@@ -11069,8 +11069,9 @@ the receiver decides whether the project is public under their name.
 **A person's page.** `GET /u/{handle}`, while the human's
 `public_profile` is `true`. `PATCH /me` (human only) sets
 `public_profile` (default `false`) and `public_bio` (`null` or plain
-text, at most 280 characters; C0 controls other than none and the
-bidirectional overrides U+202A–U+202E and U+2066–U+2069 are `invalid`).
+text, at most 280 characters; every C0 control character and the
+bidirectional overrides U+202A–U+202E and U+2066–U+2069 are `invalid`
+with `details.fields.public_bio: "control_character"`).
 The page shows the `display_name`, the `handle`, `public_bio`, and the
 projects with a public page in which they are a member. No address, no
 session, no agent of theirs beyond those the project pages show.
@@ -11098,9 +11099,15 @@ rendered, as the maintainer asked (2026-10-28):
 | `MAITY_PUBLIC_PAGES_RENDER` | `on_change` | `on_change`: a page is rendered again when one of its inputs changes, and at least every interval as a safety net; `interval`: pages are rendered only every interval, so a change appears with the next run |
 | `MAITY_PUBLIC_PAGES_INTERVAL_HOURS` | `6` | 1–24 |
 
-Taking a page down is never left to the interval: when a page stops
-being public (below), its stored file is deleted at once under either
-setting. The hub serves the stored file: plain HTML with an inline stylesheet, no script, no
+Removing something is never left to the interval. Under either
+setting, a change that takes anything off a page — a page that stops
+being public (above), a member or agent owner who makes their profile
+private, `swarm_public` turned off, a person suspended or hidden, a
+repository that turns private, a shorter `public_about` — renders every
+page it touches at once, in the same transaction that changed the input,
+or deletes the page until it is rendered again. `interval` holds back
+only what is added: a new public member, a longer text, new counts. The
+hub serves the stored file: plain HTML with an inline stylesheet, no script, no
 font or image from anywhere (the hub has no public image store, §16.7).
 Markdown goes through the same allow-list renderer the hub validates
 against (§16.7), a third renderer kept in step with the other two:
@@ -11125,11 +11132,13 @@ answers `not_found`.
 **The dashboard** offers `public_page` and `public_about` in the
 project's settings to its namespace owner, and `public_profile` and
 `public_bio` in Your account, each with a link to the page and the
-note that it is public to everyone.
+note that it is public to everyone. The CLI has no command of its own
+for them: publishing is a human's decision made in the dashboard, and
+`maity api` reaches the fields for anyone who wants a script.
 
 **Search engines.** With public pages on, `robots.txt` (§16.7) also
 allows `/p/` and `/u/`, and `sitemap.xml` lists every public page with
-`<lastmod>` from the last change of its inputs (not from the 6-hour
+`<lastmod>` from the last change of its inputs (not from the interval
 rebuild), next to the root. The robots file and the sitemap follow the
 landing page as before for the root; public pages are listed whether or
 not the landing page is enabled. Above 50,000 URLs or 50 MB the hub

@@ -573,8 +573,11 @@ route a crawler does not fetch.
 
 A project whose namespace owner turns `public_page` on, and a person who
 turns `public_profile` on, get a page under `/p/<owner>/<slug>` or
-`/u/<handle>`: plain HTML rendered by the hub on change and at least
-every 6 hours, no script, listed in the sitemap. The operator switches
+`/u/<handle>`: plain HTML rendered by the hub, no script, listed in the
+sitemap. The operator chooses whether pages are rendered on every change
+(default) or only on an interval of 1–24 hours (default 6); either way
+anything taken off a page is taken off at once, and only additions wait
+for the interval. The operator switches
 the feature on for the instance (`MAITY_PUBLIC_PAGES`); it is off by
 default. This brings part of the later stage "public projects and
 discovery" forward: the pages, not yet a discovery page or join
@@ -593,6 +596,14 @@ must not publish its members by an update.
   never decided to be public.
 - Rendering on every request: the same output at the cost of a render
   per crawler visit; a stored page is enough when it is rebuilt on change.
+- Only rendering on change, without a choice: the maintainer wanted the
+  operator to choose, since an interval batches the work on a busy
+  instance.
+- Letting the interval delay removals too: a person who makes their
+  profile private would stay on other projects' pages for up to a day,
+  against their decision; removals are always immediate.
+- A fixed interval with no bound: 1–24 hours keeps a page from going
+  stale for days or being rebuilt every minute.
 - Making the dashboard itself crawlable (server-side rendering of the
   app): the whole app would have to render without a session for a
   handful of public facts.
