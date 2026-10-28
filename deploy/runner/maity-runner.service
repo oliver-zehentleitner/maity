@@ -1,0 +1,20 @@
+# systemd USER unit of the runner user (loginctl enable-linger <user>); install as
+# ~/.config/systemd/user/maity-runner.service, then: systemctl --user enable --now maity-runner
+[Unit]
+Description=GitHub Actions runner for the Maity database jobs
+After=docker.service network-online.target
+Wants=docker.service
+
+[Service]
+WorkingDirectory=%h/actions-runner
+Environment=DOCKER_HOST=unix://%t/docker.sock
+Environment=ACTIONS_RUNNER_HOOK_JOB_COMPLETED=%h/actions-runner/job-completed.sh
+ExecStart=%h/actions-runner/run.sh
+Restart=always
+RestartSec=10
+KillMode=process
+KillSignal=SIGTERM
+TimeoutStopSec=5min
+
+[Install]
+WantedBy=default.target
