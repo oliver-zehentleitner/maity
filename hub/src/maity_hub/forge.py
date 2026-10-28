@@ -150,13 +150,15 @@ class Forge:
                 raise ForgeUnavailableError("a read with the forge token names no repository")
             self._require_public(repository)
             try:
-                return self._send(path, query)
+                found = self._send(path, query)
             except ForgeUnavailableError as error:
-                # A 404 is often an answer (a ref that is not there): `_missing` asks again.
                 refused = error.status in (401, 403) and not error.rate_limited
                 if refused or isinstance(error, NotCoveredError):
                     self._forget(repository)
                 raise
+            if found is None:  # a 404: maybe a ref that is not there, maybe a refusal
+                self._forget(repository)
+            return found
         return self._send(path, query)
 
     def _forget(self, repository: str) -> None:
@@ -226,13 +228,11 @@ class Forge:
 
     def _missing(self, repository: str) -> None:
         """A 404 for a ref is an answer only when the token can see the repository: GitHub
-        answers 404 for a private repository the token has no access to, too. Asking
-        that is also the refusal of §11.4: whether it is public is asked again with it."""
+        answers 404 for a private repository the token has no access to, too."""
         key = (hashlib.sha256((self.token or "").encode()).hexdigest(), repository)
         seen = _visible.get(key)
         if seen is not None and time.monotonic() - seen < VISIBILITY_SECONDS:
             return
-        self._forget(repository)
         if self._get(f"/repos/{repository}") is None:
             raise ForgeUnavailableError("the repository is not visible to the forge token")
         _visible[key] = time.monotonic()

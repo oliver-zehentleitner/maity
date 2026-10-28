@@ -278,7 +278,7 @@ def test_a_read_redirected_after_the_check_asks_again_next_time(seen: FakeOpener
     assert _paths(seen) == ["/repos/a/b", "/repos/a/b/branches/main", "/repos/a/b"]
 
 
-@pytest.mark.parametrize("refusal", [401, 403, None])  # None: a 404, through `_missing`
+@pytest.mark.parametrize("refusal", [401, 403, None])  # None: a 404
 def test_a_refused_read_asks_again_whether_it_is_public(
     seen: FakeOpener, refusal: int | None
 ) -> None:
@@ -294,6 +294,16 @@ def test_a_refused_read_asks_again_whether_it_is_public(
         READER.branch("a/b", "main")
     assert raised.value.reason == "private_without_grant"
     assert _paths(seen).count("/repos/a/b/branches/main") == 1
+
+
+def test_a_404_of_any_read_asks_again_whether_it_is_public(seen: FakeOpener) -> None:
+    seen.answers["/repos/a/b"] = {"private": False}
+    seen.answers["/repos/a/b/contents/README.md"] = None
+    assert READER.file("a/b", "README.md", 1000) is None
+    seen.answers["/repos/a/b"] = {"private": True}
+    with pytest.raises(forge.NotCoveredError):
+        READER.file("a/b", "README.md", 1000)
+    assert _paths(seen) == ["/repos/a/b", "/repos/a/b/contents/README.md", "/repos/a/b"]
 
 
 def test_a_rate_limit_is_no_refusal(seen: FakeOpener) -> None:

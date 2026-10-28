@@ -84,10 +84,10 @@ names no repository is not made with the token. The answer is kept for
 10 minutes per token and repository, a refusal included. A visibility
 the forge does not give is not kept, and the next read asks again.
 A read the forge refuses drops a kept "public" at once: a 401 or a 403
-that is no rate limit, a redirect, or a GraphQL answer without the
-repository. A 404 is often an answer (a ref that is not there), so it
-drops nothing by itself. `_missing` asks again instead, as part of
-checking that the repository is still visible.
+that is no rate limit, a 404, a redirect, or a GraphQL answer without
+the repository. A 404 is often only a ref that is not there, but it
+cannot be told apart from a refusal, so the next read asks again. That
+costs one extra request.
 
 **Reason:** the probe worker, the ticker, the images, the Keep the Why
 walk, card links and contract texts all read through `Forge`. A check
