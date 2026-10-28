@@ -38,6 +38,19 @@ class Settlement:
     reply_id: str | None = None
 
 
+class Stale(Exception):
+    """Raised by a kind's `settle` on a `go` that no longer applies and must withdraw its
+    request (§6.25's `transfer_stale`): the answer's transaction rolls back, then the
+    answering route withdraws the request in a transaction of its own and answers
+    `error`, so that nothing else changes."""
+
+    def __init__(self, error: ApiError, request_id: str, reason: str) -> None:
+        super().__init__(error.message)
+        self.error = error
+        self.request_id = request_id
+        self.reason = reason
+
+
 # A kind's own rule on who answers, beyond the scope: a `details.reason` for a caller it
 # refuses (`party_to_takeover`, `admin_team_only`), None for one it lets answer.
 Predicate = Callable[[Connection, Any, Any], str | None]

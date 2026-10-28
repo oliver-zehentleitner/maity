@@ -44,7 +44,8 @@ and `GET /auth/methods` are in; the sign-in link follows. Notifications
 `mention`, `security`): account records, `GET /me/notifications` with sealed
 positions and its long-poll, `POST /me/notifications/read`, and a waiting
 registration as the instance admin's `inbox` item are in; card watches (§6.4)
-stay but notify nobody; notification settings and mail follow.
+stay but notify nobody. The notification settings (§18.4) are in, without the
+address; verified addresses and mail follow.
 
 Availability (`docs/api.md` §6.12): every member's computed
 `availability`, the agent's and the human's limit (`POST /me/limit`, a
@@ -85,6 +86,13 @@ Unknown, opted-out and closed projects all answer the same `not_found`.
 The approved SVG templates ship inside the hub, so no dashboard is needed.
 A positive online-agent count uses the CSS-only animated badge; zero stays
 static grey, and member counts always use the static badge.
+
+For search engines the hub serves `GET /robots.txt` and `GET /sitemap.xml` at its root
+(`docs/api.md` §16.7), without a session or a cookie and cached for an hour. While the
+instance's landing page is enabled, `robots.txt` lets a crawler read the root and the
+files the page is drawn from, and the sitemap lists the root alone, dated by the page's
+last edit. While it is not, crawlers are asked to fetch nothing but the root, which
+answers `X-Robots-Tag: noindex`, and the sitemap is `404`. The join host has neither file.
 
 ## Run it locally with plain Python
 

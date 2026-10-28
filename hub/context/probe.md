@@ -67,6 +67,23 @@ later. The row is the one place every reader passes through.
 - One `probe_observed` per sweep with all changed refs, as before: fewer
   events, but only the sweep could send them.
 
+## Confirming the repository asks for no step-up until the second factor lands
+
+**Id:** 0b375b9b-2098-4e55-a461-cccdad6a62d1
+**Type:** workaround
+**Status:** open
+**Evidence:** confirmed
+**Source:** `docs/api.md` §2.8.4 and §11.4 (the namespace owner confirms "with the step-up"); card tsk-dtpr7zqxhxc2, part 2
+**Revisit when:** the second-factor pull request #471 (`second_factor.require_step_up`) is on `main`; card tsk-svg6mfthm7xv
+
+`POST /projects/{owner}/{slug}/repository/confirm` does not call a step-up
+yet, because the hub it landed on has no second factor. Whichever of the two
+pull requests merges second adds `second_factor.require_step_up(conn, hub,
+caller)` before the confirmation is written, plus a test, as for the
+transfer. Until then the confirmation opens nothing: no owner grant (App
+installation, owner token) is read yet, so `owner_confirmed` is only
+stored. The step-up has to be in place before those grants land.
+
 ## The public-only check sits in the one place every read with the token passes
 
 **Id:** a91a5a3d-a29a-4c9e-9721-d01d89aeacd2
