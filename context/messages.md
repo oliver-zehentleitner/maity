@@ -249,7 +249,8 @@ do not change.
 
 **Reason:** rule 13 already tells every agent to keep one wait running,
 and still several agents stopped overnight: some harnesses do not wake
-an agent when its background wait ends, and the waits ended often. The
+an agent when its background wait ends, so a wait that times out
+normally after its 9 minutes leaves the agent idle. The
 owner noticed only by looking and had to nudge each agent by hand. The
 hub already knows both facts it needs (what waits for a session, and
 when it last read), so it can say so instead of a human finding out.
