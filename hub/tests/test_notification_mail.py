@@ -13,6 +13,7 @@ from maity_hub import tables as t
 from maity_hub.notifications import mailer
 from tests import factory, flow
 from tests.conftest import ClientFactory
+from tests.smtpfake import FakeSmtp, Script
 from tests.test_notification_address import S, mail_env, outbox_rows, verified
 
 PUBLIC = "https://hub.example"
@@ -488,3 +489,29 @@ def test_a_kind_switched_on_later_mails_what_was_waiting_unread(
     at(minutes=6)
     run(migrated)  # no new event, but the setting moved
     assert len(notifications(migrated)) == 1
+
+
+def test_the_unsubscribe_link_of_a_notification_mail_leaves_with_the_mail(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    from maity_hub.mail import outbox
+
+    owner, agent = setup(make_client, migrated)
+    owner.patch(S, {"email": {"kinds": {"inbox": {"mode": "immediate"}}}})
+    ask(agent)
+    at(minutes=3)
+    run(migrated)
+    before = [r for r in outbox_rows(migrated) if r.status == "waiting"]
+    assert before and all("List-Unsubscribe" in r.headers for r in before)
+    earlier = {r.id for r in outbox_rows(migrated) if r.status == "sent"}  # the set-up's
+    server = FakeSmtp(Script())  # takes one mail: the rest stays in the queue
+    try:
+        outbox.send_due(migrated, mail_env(server.port).mail, None)
+    finally:
+        server.close()
+    rows = outbox_rows(migrated)
+    out = [r for r in rows if r.status == "sent" and r.id not in earlier]
+    assert out and all((r.body, r.headers) == ("", {}) for r in out)
+    assert b"List-Unsubscribe" in server.record.data  # it did go out with the header
+    rest = [r for r in rows if r.status == "waiting"]
+    assert all(r.body and "List-Unsubscribe" in r.headers for r in rest)
