@@ -127,15 +127,19 @@ def run_setting(arenas: str, threads: int, requests: int, grow: int, phases: int
             _, errors[f"growth {phase + 1}"], _ = burst(grow // 4, 4)
             growth.append(rss_mib(server.pid))
         ordered = sorted(latencies)
+
+        def percentile(share: float) -> float | None:
+            return ordered[max(0, int(len(ordered) * share) - 1)] * 1000 if ordered else None
+
         return {
             "arenas": arenas,
             "rss_before_mib": before,
             "rss_after_mib": after,
             "wall_s": wall,
             "per_s": len(latencies) / wall,
-            "p50_ms": statistics.median(ordered) * 1000,
-            "p95_ms": ordered[int(len(ordered) * 0.95) - 1] * 1000,
-            "p99_ms": ordered[int(len(ordered) * 0.99) - 1] * 1000,
+            "p50_ms": statistics.median(ordered) * 1000 if ordered else None,
+            "p95_ms": percentile(0.95),
+            "p99_ms": percentile(0.99),
             "n": len(latencies),
             "growth": growth,
             "errors": errors,
@@ -165,12 +169,16 @@ def main() -> int:
     for arenas in args.arenas:
         r = run_setting(arenas, args.threads, args.requests, args.grow, args.phases)
         failed = sum(len(kinds) for kinds in r["errors"].values())
+
+        def ms(value: float | None) -> str:
+            return "n/a" if value is None else f"{value:.0f} ms"
+
         print(
             f"arenas={r['arenas']:>7}  "
             f"rss {r['rss_before_mib']:.1f} -> {r['rss_after_mib']:.1f} MiB  "
             f"{r['n']} requests in {r['wall_s']:.1f}s = {r['per_s']:.0f}/s  "
-            f"latency p50 {r['p50_ms']:.0f} ms, p95 {r['p95_ms']:.0f} ms, "
-            f"p99 {r['p99_ms']:.0f} ms  failed: {failed}",
+            f"latency p50 {ms(r['p50_ms'])}, p95 {ms(r['p95_ms'])}, "
+            f"p99 {ms(r['p99_ms'])}  failed: {failed}",
             flush=True,
         )
         if args.grow:
