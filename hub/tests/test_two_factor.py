@@ -296,8 +296,24 @@ def test_a_join_needs_a_recent_factor(
     flow.project(human)
     enrol(human, moment)
     moment.move(minutes=11)
-    refused = human.post("/projects/maity/joins", {"agent": {"handle": "agent-a"}})
+    refused = human.post("/projects/maintainer/maity/joins", {"agent": {"handle": "agent-a"}})
     assert refused.json()["error"]["details"]["reason"] == "step_up_required"
+
+
+def test_the_registration_and_landing_settings_need_a_recent_factor(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    admin = signed_in(make_client, migrated)
+    secret, _ = enrol(admin, moment)
+    moment.move(minutes=11)
+    for path, body in (
+        ("/admin/settings/registration", {"mode": "closed"}),
+        ("/admin/settings/landing", {"headline": "Hello"}),
+    ):
+        refused = admin.patch(path, body)
+        assert refused.status_code == 403, path
+        assert refused.json()["error"]["details"]["reason"] == "step_up_required", path
+    assert admin.post("/auth/second-factor/verify", {"code": code_now(secret, moment.at)})
 
 
 # --- turning it off ----------------------------------------------------------------------

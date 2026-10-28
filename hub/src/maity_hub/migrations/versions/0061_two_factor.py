@@ -10,7 +10,7 @@ second step was given, and the login's `next`; `ended_by` grows for the two new
 reasons (`second_factor_disabled`, `second_factor_reset`).
 
 Revision ID: 0061
-Revises: 0063
+Revises: 0060
 Create Date: 2026-10-25
 """
 
@@ -22,7 +22,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql
 
 revision: str = "0061"
-down_revision: str | None = "0063"
+down_revision = "0060"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
