@@ -1463,6 +1463,42 @@ mail_delivery = Table(
     **MYSQL_TABLE,
 )
 
+# Mail waiting for the worker (docs/api.md §16.2, §18.5, §18.7): written in the
+# transaction that decides it. `kind` is the budget kind. `not_before` is when the row is
+# next due, and while it is `sending` the deadline of the claim. A row that left the
+# queue (sent, failed, dropped) is deleted after seven days.
+mail_outbox = Table(
+    "mail_outbox",
+    metadata,
+    Column("id", BIG_ID, primary_key=True, autoincrement=True),
+    Column("kind", String(16), nullable=False),
+    _ref("human_id", "human.id", nullable=True),
+    Column("recipient", String(254), nullable=False),
+    Column("subject", String(255), nullable=False),
+    Column("body", Text, nullable=False),
+    Column("headers", JSON_VALUE, nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("not_before", UtcDateTime, nullable=False),
+    Column("attempts", Integer, nullable=False),
+    Column("status", String(16), nullable=False),  # waiting sending sent failed dropped
+    Index("ix_mail_outbox_due", "status", "not_before"),
+    sqlite_autoincrement=True,
+    **MYSQL_TABLE,
+)
+
+# The admissions of the hour, per budget kind (docs/api.md §16.2): one row a kind, locked
+# for the check and the admission together, so of any number of workers exactly the ones the
+# budget has room for are admitted. `window_start` is when the hour began; it rolls when an
+# hour has passed. Counted when a mail is admitted, not when it is sent.
+mail_budget = Table(
+    "mail_budget",
+    metadata,
+    Column("kind", String(16), primary_key=True),
+    Column("window_start", UtcDateTime, nullable=False),
+    Column("admitted", Integer, nullable=False),
+    **MYSQL_TABLE,
+)
+
 # --- notifications (docs/api.md §18, §6.4) -------------------------------------------
 #
 # Account records: audit records about one human's own account (sign-ins, ended

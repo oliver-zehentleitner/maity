@@ -179,7 +179,7 @@ def view(conn: Connection, resolved: Resolved) -> dict[str, Any]:
 
 def counters(conn: Connection) -> dict[str, int]:
     """The mail of the last hour by budget kind and outcome (§16.2). `security_queued`
-    is what waits now, however old."""
+    is the security mail waiting in the outbox now, however old."""
     since = clock.now() - timedelta(hours=1)
     rows = conn.execute(
         select(t.mail_delivery.c.kind, t.mail_delivery.c.outcome, func.count())
@@ -189,8 +189,11 @@ def counters(conn: Connection) -> dict[str, int]:
     recent = {(kind, outcome): int(count) for kind, outcome, count in rows}
     queued = conn.execute(
         select(func.count())
-        .select_from(t.mail_delivery)
-        .where(t.mail_delivery.c.kind == "security", t.mail_delivery.c.outcome == "queued")
+        .select_from(t.mail_outbox)
+        .where(
+            t.mail_outbox.c.kind == "security",
+            t.mail_outbox.c.status.in_(("waiting", "sending")),
+        )
     ).scalar_one()
     return {
         "sent_last_hour": recent.get(("notification", "sent"), 0),
