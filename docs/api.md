@@ -11090,9 +11090,17 @@ every page that shows the person or project, which is rendered again.
 reports it public; a repository it has not looked at, or whose answer
 it could not read, counts as private.
 
-**How the pages are made.** The hub renders each page to static HTML
-when one of its inputs changes and at least every 6 hours, and serves
-the stored file: plain HTML with an inline stylesheet, no script, no
+**How the pages are made.** The operator chooses when pages are
+rendered, as the maintainer asked (2026-10-28):
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `MAITY_PUBLIC_PAGES_RENDER` | `on_change` | `on_change`: a page is rendered again when one of its inputs changes, and at least every interval as a safety net; `interval`: pages are rendered only every interval, so a change appears with the next run |
+| `MAITY_PUBLIC_PAGES_INTERVAL_HOURS` | `6` | 1–24 |
+
+Taking a page down is never left to the interval: when a page stops
+being public (below), its stored file is deleted at once under either
+setting. The hub serves the stored file: plain HTML with an inline stylesheet, no script, no
 font or image from anywhere (the hub has no public image store, §16.7).
 Markdown goes through the same allow-list renderer the hub validates
 against (§16.7), a third renderer kept in step with the other two:
