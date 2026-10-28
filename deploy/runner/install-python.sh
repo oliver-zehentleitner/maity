@@ -42,5 +42,5 @@ as_ru touch "$TOOL/Python/$VER/x64.complete"
 as_ru sh -c 'rm -f "$1"/lib/python3.*/EXTERNALLY-MANAGED' sh "$ROOT"
 as_ru "$TOOL/Python/$VER/x64/bin/python3" -m pip --version
 echo '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' > "$RUNNER_DIR/.path"
-systemctl restart "$SERVICE"
-echo "done: python $VER is in the tool cache, runner restarted"
+systemctl try-restart "$SERVICE"   # restarts a running service only; starting is a deliberate step (README)
+echo "done: python $VER is in the tool cache (a running $SERVICE was restarted)"
