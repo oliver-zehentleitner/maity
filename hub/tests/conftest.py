@@ -13,12 +13,12 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, create_engine, text
+from sqlalchemy import Engine, create_engine, inspect, text
 from sqlalchemy.engine import make_url
 
 from maity_hub.app import create_app
 from maity_hub.config import Settings, normalize_database_url
-from maity_hub.db import downgrade, make_engine, migrate
+from maity_hub.db import current_revision, downgrade, head_revision, make_engine, migrate
 
 
 @pytest.fixture(scope="session")
@@ -82,12 +82,50 @@ def _migrated_sqlite_file(
     return template
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _leave_the_server_database_empty(_server_database_url: str | None) -> Iterator[None]:
+    """A server database is shared with whoever runs next: after the session it is empty
+    again, as every test used to leave it."""
+    yield
+    if _server_database_url:
+        engine = make_engine(_server_database_url)
+        downgrade(engine)
+        engine.dispose()
+
+
+def _empty_the_tables(engine: Engine) -> None:
+    """Delete every row of a server database at head, keeping the schema and the revision."""
+    tables = [t for t in inspect(engine).get_table_names() if t != "alembic_version"]
+    with engine.begin() as connection:
+        if engine.dialect.name == "postgresql":
+            quoted = ", ".join(f'"{t}"' for t in tables)
+            connection.execute(text(f"TRUNCATE {quoted} RESTART IDENTITY CASCADE"))
+        else:
+            connection.execute(text("SET FOREIGN_KEY_CHECKS = 0"))
+            for table in tables:
+                connection.execute(text(f"TRUNCATE TABLE `{table}`"))
+            connection.execute(text("SET FOREIGN_KEY_CHECKS = 1"))
+
+
 @pytest.fixture
-def engine(database_url: str) -> Iterator[Engine]:
+def engine(database_url: str, request: pytest.FixtureRequest) -> Iterator[Engine]:
+    """An empty schema; for a test that also asks for `migrated` or `client`, the schema at
+    head with no rows. On a server database that second state is kept from one test to the
+    next and only emptied, because replaying every revision per test is what made the suite
+    take an hour; a test that needs no schema gets it downgraded."""
     engine = make_engine(database_url)
-    downgrade(engine)  # a shared server database may hold a previous run's schema
+    on_server = engine.dialect.name != "sqlite"
+    keeps_schema = on_server and bool({"migrated", "client"} & set(request.fixturenames))
+    if keeps_schema:
+        if current_revision(engine) == head_revision(engine):
+            _empty_the_tables(engine)
+        else:
+            downgrade(engine)  # a shared server database may hold a previous run's schema
+            migrate(engine)
+    else:
+        downgrade(engine)
     yield engine
-    if engine.dialect.name != "sqlite":  # a SQLite file goes with the test's tmp_path
+    if on_server and not keeps_schema:
         downgrade(engine)
     engine.dispose()
 
