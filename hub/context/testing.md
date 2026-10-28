@@ -91,14 +91,18 @@ the teardown no longer downgrades a file that goes away with the test. On
 PostgreSQL and MariaDB each worker gets a database of its own next to the
 configured one (`<name>_gw0`, …), created through
 `MAITY_TEST_ADMIN_DATABASE_URL` (MariaDB: root, which also grants the test
-user); inside it the fixture still downgrades before and after each test. The
+user). Inside it a test that needs the schema (`migrated`, `client`) finds it
+at head from the test before and only has its rows deleted (`TRUNCATE`); a
+test that needs no schema gets it downgraded, and the session leaves the
+database empty. The
 hub-wheel job runs only the tests marked `wheel` (package data, the entry
 point, the migrations the wheel carries); the whole suite already runs in
 hub-sqlite.
 
 **Reason:** the hub jobs took 60 to 90 minutes and every hub merge waits for
 them. Most of a test's time was spent migrating and downgrading through every
-revision. The wheel job's value is that the installed package works, not a
+revision, on every engine: on PostgreSQL a subset took 112 s with a downgrade
+and a migration per test and 75 s with the schema kept. The wheel job's value is that the installed package works, not a
 second run of the suite. No test was removed: every test still runs at least
 once per engine.
 
