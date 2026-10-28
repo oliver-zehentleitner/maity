@@ -626,12 +626,14 @@ chart rather than the project. Its **line** is every member whose
 manager below it and that manager's line included; never the manager
 itself and never a member above it or beside it. A manager may report
 to a human or to another manager, so a large project nests lines inside
-lines. Its **reach** is the part of its line it may act on: the agent
-memberships of the line with trust `member` or `guest` and a role
-other than `proxy` that either have the manager's own owner (for a
-human manager: that human) or report to the manager directly over a
-cross-owner edge (§6.2) whose consent named the manager's rights, each
-reached through a chain made only of such members. The reach stops at
+lines. Its **reach** is the part of its line it may act on, agent
+memberships with trust `member` or `guest` and a role other than
+`proxy` only: (a) those of the manager's own owner (for a human
+manager: that human), reached through a chain made only of such
+same-owner agents; and (b) those of another owner that report to the
+manager itself over a cross-owner edge (§6.2) whose consent named the
+manager's rights — nothing below a (b) member is in the reach. The
+reach stops at
 any member outside it — a human, an owner, an admin, a proxy, or an
 agent of another owner that is not such a direct report — and what
 reports to that member belongs to that member, not to the manager
@@ -651,15 +653,19 @@ not_in_line`):
   reach; `assigned_to: null` takes a card back to nobody. It also
   releases an expired claim held in its reach;
 - `PATCH …/members/{id}` of a member in its reach with `areas`,
-  `paused` and `reports_to`. The new `reports_to` is the manager or a
-  member of its reach and has the same owner as the target, so nobody
-  leaves the reach this way and no cross-owner edge (§6.2) is made
-  under `line:lead`; any other field from a caller holding only
+  `paused` and, for an (a) member only, `reports_to`. The new
+  `reports_to` is the manager or another (a) member of its reach, so
+  nobody leaves the reach this way and no cross-owner edge (§6.2) is
+  made under `line:lead`; an (b) member's `reports_to` stays the
+  consented edge; any other field from a caller holding only
   `line:lead` is `forbidden`. A pause it sets is stored with `by`
   naming it, gates new work like any pause, is not cleared by the
   paused agent's `resume`, and is lifted by it, by a manager above it
-  or by a human with `members:admin` or the agent's owner; it never lifts or replaces a pause that someone else
-  set (§5.3). Pausing a member that holds the role `reviewer` or
+  whose reach includes the agent, by an admin agent within ᵃ, or by a
+  human with `members:admin` or the agent's owner. A manager never
+  lifts or replaces a pause set by a human, an admin or a manager
+  outside its reach; a manager above may lift one set by a manager in
+  its reach (§5.3). Pausing a member that holds the role `reviewer` or
   `tester` or is named in `policy.contract_arbiter` or
   `policy.coordinator`, and changing its `reports_to`, take effect
   only on a human's `go`, as for an admin agent under ᵃ: the call
@@ -3904,10 +3910,16 @@ own human or to another agent of that human never is.
   subordinate, both owners, whether the other owner's consent is still
   open (with that request's id), and says what the edge does and does
   not do (below), including that the subordinate's owner can end it at
-  any time. When the boss holds the role `manager`, the summary also
-  says that the manager may then assign and take back the
-  subordinate's cards, set its areas and pause it and move it within
-  its reach (§2.3, "The manager"), and that this ends with the edge. A `go` (only `reply_id: go`; anything else settles as `no`,
+  any time. When the boss holds the role `manager` at the time the
+  request is filed, the summary also says that the manager may then
+  assign and take back the subordinate's cards, set its areas and
+  pause it (§2.3, "The manager"), and that this ends with the edge; the
+  subordinate enters the reach at the `go` only if the boss still holds
+  the role then. An edge whose consent did not name these rights — one
+  made before, or one whose boss became a manager later — puts nobody
+  in a reach; that needs the edge to be set anew through the consent
+  above (a `PATCH` naming the same boss files it even though the value
+  does not change). A `go` (only `reply_id: go`; anything else settles as `no`,
   as in §15.6) records that owner's consent; the edge is set at the
   `go` that leaves no request of the pair open, in the name of the
   consenting human(s) as approvers and the asker's as actor, with one
