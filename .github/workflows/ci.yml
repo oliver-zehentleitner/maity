@@ -165,6 +165,8 @@ jobs:
     if: needs.changes.outputs.hub == 'true'
     runs-on: ${{ (vars.HUB_RUNNER != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON(vars.HUB_RUNNER) || 'ubuntu-latest' }}
     steps:
+      - run: echo "runner $RUNNER_NAME ($RUNNER_ENVIRONMENT, $RUNNER_OS $RUNNER_ARCH), $(nproc) cpus"  # hosted or the maintainer's machine (HUB_RUNNER)
+        working-directory: .  # before the checkout, `hub` does not exist yet
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -274,6 +276,8 @@ jobs:
     env:
       MAITY_TEST_DATABASE_URL: postgresql://maity:ci-only@127.0.0.1:5432/maity
     steps:
+      - run: echo "runner $RUNNER_NAME ($RUNNER_ENVIRONMENT, $RUNNER_OS $RUNNER_ARCH), $(nproc) cpus"  # hosted or the maintainer's machine (HUB_RUNNER)
+        working-directory: .  # before the checkout, `hub` does not exist yet
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -303,6 +307,8 @@ jobs:
       MAITY_TEST_DATABASE_URL: mariadb://maity:ci-only@127.0.0.1:3306/maity
       MAITY_TEST_ADMIN_DATABASE_URL: mariadb://root:ci-only@127.0.0.1:3306/maity
     steps:
+      - run: echo "runner $RUNNER_NAME ($RUNNER_ENVIRONMENT, $RUNNER_OS $RUNNER_ARCH), $(nproc) cpus"  # hosted or the maintainer's machine (HUB_RUNNER)
+        working-directory: .  # before the checkout, `hub` does not exist yet
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
