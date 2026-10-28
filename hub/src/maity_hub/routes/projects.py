@@ -24,6 +24,7 @@ from maity_hub import (
     onboarding,
     placements,
     policy,
+    project_names,
     releases,
     rules,
     ticker,
@@ -131,6 +132,7 @@ class ProjectCreate(Strict):
 
 
 class ProjectPatch(Strict):
+    slug: str | None = Field(default=None, pattern=SLUG_PATTERN)  # a rename (§6.25)
     name: str | None = title(default=None)
     repository: RepositoryIn | None = None
     keep_the_why: bool | None = None
@@ -279,12 +281,14 @@ def _stored(conn: Connection, project: Any, request: Request) -> dict[str, int] 
 def _view(conn: Connection, project: Any, request: Request) -> dict[str, Any]:
     shown = images.views(conn, [project.id])[project.id]
     owner = namespace.owner_of(conn, project)["handle"]
+    aliases = namespace.aliases_of(conn, project.id)
     return project_view(
         project,
         settings_of(request),
         owner,
         shown,
         _export(project, request),
+        aliases,
         _stored(conn, project, request),
     )
 
@@ -310,6 +314,7 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
         rows = conn.execute(query.order_by(t.project.c.slug)).all()
         shown = images.views(conn, [r.id for r in rows])
         names = namespace.full_names(conn, [r.id for r in rows])
+        aliases = namespace.aliases_by(conn, [r.id for r in rows])
         return JSONResponse(
             {
                 "items": [
@@ -319,6 +324,7 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
                         names[r.id].split("/")[0],
                         shown[r.id],
                         _export(r, request),
+                        aliases[r.id],
                         _stored(conn, r, request),
                     )
                     for r in rows
@@ -420,6 +426,7 @@ def patch_project(
     slug: str, body: ProjectPatch, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     given = body.model_fields_set
+    words = namespace.app_words(request.app)
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
@@ -430,6 +437,11 @@ def patch_project(
         _authorise_patch(mine, body, given)
         project = mine.project
         actor = caller.actor(mine.id)
+        # A rename first, so that every event below names the project by its new full name.
+        renamed = "slug" in given and body.slug is not None
+        if renamed and project_names.rename(conn, mine, str(body.slug), words, actor):
+            project = _load(conn, project.id)
+            mine = replace(mine, project=project)
         owner_id = _owner_id(conn, project.id)
         values: dict[str, Any] = {}
         rules_inputs_changed = False
@@ -620,6 +632,27 @@ def patch_project(
     return idempotency.run(engine_of(request), request, caller, action)
 
 
+class TransferIn(Strict):
+    to: str = Field(min_length=1, max_length=40)
+
+
+@router.post("/projects/{owner}/{slug}/transfer")
+def transfer_project(
+    slug: str, body: TransferIn, request: Request, caller: AnyCaller
+) -> JSONResponse:
+    """File the transfer to another namespace owner (§6.25): a consent request to the
+    receiver, 202 with the request; the move happens on their `go`."""
+    from maity_hub.routes.requests import load_request
+
+    def action(conn: Connection) -> idempotency.Outcome:
+        mine = membership(conn, caller, slug)
+        mine = replace(mine, project=lock_project(conn, mine.project.id))
+        request_id = project_names.transfer(conn, mine, caller, body.to)
+        return idempotency.Outcome(202, "request", request_id, load_request(conn, request_id))
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
 # Fields that govern what humans decide: no agent changes them, whatever its role (§2.3).
 HUMANS_ONLY_POLICY = {
     "swarm_public",  # it shows the agents and their owners to the world (§6.22)
@@ -635,6 +668,8 @@ def _refuse_for_agents(mine: Membership, body: Any, given: set[str]) -> None:
     """`humans_only` for what §2.3 lists as no agent's, before any other check."""
     if mine.kind != "agent":
         return
+    if "slug" in given:
+        raise humans_only("a project is renamed by a human")
     if body.settings is not None and "language" in body.settings.model_fields_set:
         raise humans_only("the project's language is set by a human")
     policy = body.policy.model_fields_set if "policy" in given and body.policy else set()

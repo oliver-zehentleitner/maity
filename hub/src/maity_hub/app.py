@@ -57,6 +57,7 @@ from maity_hub.routes import (
     me_session,
     members,
     memory,
+    notification_settings,
     notifications,
     placements,
     preferences,
@@ -166,6 +167,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(device_codes.router, prefix=prefix)
     app.include_router(me_routes.router, prefix=prefix)
     app.include_router(notifications.router, prefix=prefix)
+    app.include_router(notification_settings.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)
     app.include_router(registration_routes.router, prefix=prefix)
     app.include_router(invitation_routes.router, prefix=prefix)
