@@ -542,3 +542,30 @@ shared Docker, removes only what is stopped, unused or old, never a running job'
 - A random host port for the service containers: it would need the jobs' connection URLs to follow, a change in the shared
   workflow for the self-hosted case only.
 
+
+## The runner is capped, and it starts with one service
+
+**Id:** a35df240-f14b-4468-8ab2-23b447a08175
+**Type:** incident
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the first run of the three runner services, 2026-10-28 (the machine went down two and a half minutes after three jobs started; memory sampler, job timestamps and the boot log agree on the time); the coordinator's decision that evening
+**Revisit when:** a test with the caps (one service first, someone watching) runs without a stall, or the CI moves to a machine that is not a workstation
+**See:** process.md#one-runner-service-per-database-job-type-a-label-each-three-workers-per-job — c2713d54-e602-42a3-8636-693ff3fd2c0b — as of 2026-10-29
+
+Every runner service carries `CPUQuota=150%`, `Nice=10`, low CPU and I/O weight, `MemoryMax=4G` and `-n 2`; the runner user's whole
+slice, rootless Docker included, is capped at 4 of 8 cores and 8 GB without swap. The three services are started one at a time,
+with the maintainer at the machine and a sampler running.
+
+**Reason:** the first run of three uncapped services (nine workers, three database containers, three installs on eight vCPUs)
+was followed within minutes by the stop of the machine, a VirtualBox guest on the maintainer's workstation, and by the loss of
+three jobs. Memory was not it (one job peaked at 5.2 GB of 19.9 GB). That the cause is CPU starvation of the host is an
+inference: the guest's own logs of the crashed boot cannot be read, and earlier crashes happened without CI. The caps make the
+next test survivable whichever it is. The machine does other work: a second crash costs the agents their ops.
+
+**Rejected alternatives:**
+- A lower `-n` alone: it does not bound the database containers or three installs running at once.
+- A cap on the units only: the containers of a rootless Docker run under the user's dockerd, outside the units' cgroups.
+- Running the three services unattended after the first green test: a green test on a quiet machine says little about the
+  load of several pull requests at once.
