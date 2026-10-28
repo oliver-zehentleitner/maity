@@ -1427,7 +1427,7 @@ def images_step(run: Run, page: Page, alpha: Path) -> None:
             {
                 "name": "banner.png",
                 "mimeType": "image/png",
-                "buffer": tiny_png(600, 150, (122, 63, 196)),
+                "buffer": tiny_png(640, 320, (122, 63, 196)),
             }
         ]
     )

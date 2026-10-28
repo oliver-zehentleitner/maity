@@ -1766,3 +1766,31 @@ nowhere.
 sending such a notice to `#/all`. `#/all` says nothing about the agent,
 and its picture would become unreachable. Keeping every agent's picture
 on the account: this is what the maintainer asked to move.
+
+## The project banner is shown at 2:1, the shape of a forge's social preview
+
+**Id:** c2e9d1e8-f7b5-46fd-8c93-9ea04ff52042
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish on the card tsk-4jhn5xeypjjb (the banner had the wrong height; GitHub asks for at least 640×320, ideally 1280×640) and his follow-up (never crop: the Keep the Why banner's text was cut); the coordinator's cap at 960 pixels, 2026-10-28
+**Revisit when:** the 960-pixel cap is too small or too large for the inbox below, or a forge's preview has another shape
+
+The banner on the project's inbox, and its preview in Project settings,
+are as wide as their column, at most 960 pixels (the banner centred),
+and half as high (`aspect-ratio: 2 / 1`).
+The image is never cropped (`object-fit: contain`): one of another shape
+is shown whole, with margins in the surface colour. There is no fixed
+height; the cap keeps the inbox below in sight on a wide screen, where
+the full width made the banner the whole first screenful.
+
+**Reason:** a project's banner is mostly the repository's social preview,
+which GitHub defines at 2:1. The same shape shows it whole at every
+width. A preview often carries text, such as the Keep the Why banner, and
+cropping makes that unreadable, so margins are preferred.
+
+**Rejected alternative:** the fixed 180-pixel strip it had: at desktop
+width it cut a 2:1 preview to about 6.5:1, showing only a stripe of it.
+Filling the 2:1 box by cropping (`object-fit: cover`): a banner of
+another shape lost the text at its edges.
+

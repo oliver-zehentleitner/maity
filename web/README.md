@@ -1000,7 +1000,10 @@ least 5.2:1), chosen by the slug. The mark is decorative next to the
 project's visible name (`alt=""`, `aria-hidden`); a monogram cannot be the
 tab's icon (the hub's CSP allows no `data:` or `blob:` images), so that
 tab keeps the browser's default. The banner, where the project has one,
-heads the project's inbox. In **Project settings** a human with
+heads the project's inbox at the full width, at most 960 pixels, and 2:1, the shape of a
+forge's social preview (GitHub: at least 640×320, ideally 1280×640). It
+is never cropped, so its text stays readable: an image of another shape
+is shown whole, with margins. In **Project settings** a human with
 `project:admin` sees what shows now and where it comes from (uploaded or
 the repository's forge), uploads a logo or a banner (PNG, JPEG or WebP,
 at most 1 MiB; the type is read from the file's first bytes, as the hub

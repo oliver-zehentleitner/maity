@@ -565,7 +565,7 @@ window.Maity = window.Maity || {};
     }
     const box = h("div", { class: "images" }, h("h2", { class: "panel-title" }, "Logo and banner"));
     [["logo", "Logo", "Square; shown next to the project's name everywhere."],
-      ["banner", "Banner", "Wide; shown at the top of the project's inbox."]].forEach(([kind, label, hint]) => {
+      ["banner", "Banner", "2:1, like a forge's social preview (ideally 1280×640); shown at the top of the project's inbox."]].forEach(([kind, label, hint]) => {
       const view = ctx.project[kind] || { available: false, source: null };
       const url = M.api.imageUrl(ctx.slug, kind, view);
       const id = "upload-" + kind;
