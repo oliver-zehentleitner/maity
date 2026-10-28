@@ -65,6 +65,7 @@ def test_a_human_sees_every_membership_with_its_open_requests(
         "avatar_url": None,
         "avatar_source": None,
         "instance_admin": True,  # the earliest human (§16)
+        "meat_proxy": False,  # §5.2
         "account_status": "active",  # §2.7.5
         "terms": None,  # made by the operator: nothing accepted (§2.7.2)
         "limit": None,  # no limit declared (§6.12)

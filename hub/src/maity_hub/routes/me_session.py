@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from pydantic import Field
+from pydantic import Field, StrictBool
 from sqlalchemy import Connection, func, insert, select, update
 
 from maity_hub import (
@@ -34,8 +34,8 @@ from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth.caller import CLOSED_STATUSES, Caller
 from maity_hub.db import retrying
-from maity_hub.deps import AgentCaller, engine_of, settings_of
-from maity_hub.errors import ApiError
+from maity_hub.deps import AgentCaller, AnyCaller, engine_of, settings_of
+from maity_hub.errors import ApiError, forbidden, humans_only, invalid
 from maity_hub.forge import Forge
 from maity_hub.ids import new_id
 from maity_hub.models import Strict
@@ -43,6 +43,7 @@ from maity_hub.namespace import ProjectRoute
 from maity_hub.policy import CLOSED_STATES
 from maity_hub.policy import of as policy_of
 from maity_hub.routes.conversations import conversation_packet
+from maity_hub.routes.me import human_body
 from maity_hub.routes.members import PausedIn, change_of, load_member, set_paused
 from maity_hub.routes.projects import arbiter_text
 from maity_hub.scopes import listed_scopes
@@ -50,6 +51,7 @@ from maity_hub.views import (
     absence,
     event_views,
     git_identity,
+    meat_proxy_view,
     member_views,
     paused,
     principal_id,
@@ -145,7 +147,10 @@ class ResumeIn(Strict):
 
 
 class MePatch(Strict):
-    paused: PausedIn | None
+    """An agent's `paused`, or a human's own profile switches (`meat_proxy`, §5.2)."""
+
+    paused: PausedIn | None = None
+    meat_proxy: StrictBool | None = None
 
 
 def _own_membership(conn: Connection, caller: Caller) -> Membership:
@@ -317,6 +322,14 @@ def _packet(
             t.membership.c.project_id == project.id, t.membership.c.active.is_(True)
         )
     ).all()
+    meat_proxies = {
+        row.id: row.meat_proxy
+        for row in conn.execute(
+            select(t.human.c.id, t.human.c.meat_proxy).where(
+                t.human.c.id.in_([m.human_id for m in members if m.human_id is not None])
+            )
+        )
+    }
     peers = []
     areas = []
     for row, view in zip(members, member_views(conn, members), strict=True):
@@ -334,6 +347,9 @@ def _packet(
                     "paused": view["paused"],
                     "availability": view["availability"],  # §6.12
                     "covered_by": view["covered_by"],
+                    **(
+                        meat_proxy_view(meat_proxies[view["id"]]) if view["kind"] == "human" else {}
+                    ),
                 }
             )
     peers.sort(key=lambda p: (p["kind"] != "human", p["handle"]))
@@ -396,7 +412,7 @@ def _packet(
             "avatar_url": avatars.urls(conn, [agent.id])[agent.id],
             "instance": caller.instance,
             "address": instances.address(agent.id, caller.instance or ""),
-            "owner": {"id": owner.id, "handle": owner.handle},
+            "owner": {"id": owner.id, "handle": owner.handle, **meat_proxy_view(owner.meat_proxy)},
             "git_identity": git_identity(agent),
         },
         "membership": {
@@ -540,8 +556,29 @@ def _credential(conn: Connection, caller: Caller) -> Any:
 
 
 @router.patch("/me")
-def patch_me(body: MePatch, request: Request, caller: AgentCaller) -> JSONResponse:
+def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse:
+    given = body.model_fields_set
+
+    def human_action(conn: Connection) -> idempotency.Outcome:
+        if "paused" in given:
+            raise invalid({"paused": "agents_only"})
+        if body.meat_proxy is None:
+            raise invalid({"meat_proxy": "required"}, "nothing to change")
+        assert caller.human_id is not None
+        conn.execute(
+            update(t.human)
+            .where(t.human.c.id == caller.human_id)
+            .values(meat_proxy=body.meat_proxy)
+        )
+        body_out = human_body(conn, caller.human_id)
+        body_out["server_time"] = clock.rfc3339(clock.now())
+        return idempotency.Outcome(200, "member", caller.human_id, body_out)
+
     def action(conn: Connection) -> idempotency.Outcome:
+        if "meat_proxy" in given:
+            raise humans_only("only a human sets their own profile")
+        if "paused" not in given:
+            raise invalid({"paused": "required"}, "nothing to change")
         mine = _own_membership(conn, caller)
         credential = _credential(conn, caller)
         for row in (mine.row, credential):
@@ -567,4 +604,8 @@ def patch_me(body: MePatch, request: Request, caller: AgentCaller) -> JSONRespon
         )
         return idempotency.Outcome(200, "member", str(mine.id), load_member(conn, str(mine.id)))
 
-    return idempotency.run(engine_of(request), request, caller, action)
+    if caller.kind not in ("human", "agent"):
+        raise forbidden(message="this endpoint is for humans and agent credentials")
+    return idempotency.run(
+        engine_of(request), request, caller, human_action if caller.kind == "human" else action
+    )

@@ -2797,7 +2797,8 @@ approval, §2.7.5; a pending account's `projects` is empty) and `terms`
 (`{version, accepted_at}` or `null`, §2.7.2), and `limit`: `null`, or their own limit while it runs as
 `{"until", "since", "reason", "show_reason_in"}` (§6.12) — the one place
 the human reads a `reason` that other readers may not see. `member` carries
-`avatar_url` and `avatar_source` (§6.10) and `aliases` (§6.24) for humans and agents. The dashboard re-reads `/me` for its counts after an
+`avatar_url` and `avatar_source` (§6.10) and `aliases` (§6.24) for humans and agents. A human's `member` also carries
+`meat_proxy` (`true` or `false`, default `false`; §5.2, "Meat proxy"). The dashboard re-reads `/me` for its counts after an
 answer and on an interval; the badges, the bell and the tab title read
 `GET /me/notifications` (§18.2).
 
@@ -2859,7 +2860,7 @@ Response `200`, bounded and deterministic:
   "hints": { "wait_timeout": 540 },
   "me": { "member_id": "agt-b", "handle": "agent-b", "name": "maintainer/agent-b", "display_name": "Agent B", "avatar_url": null,
           "instance": "wqe2", "address": "agt-b#wqe2",
-          "owner": { "id": "hum-maintainer", "handle": "maintainer" },
+          "owner": { "id": "hum-maintainer", "handle": "maintainer", "meat_proxy": false },
           "git_identity": { "name": "Agent B", "email": "agent-b@…" } },
   "membership": { "trust": "member", "role": "coder", "reports_to": "agt-a", "areas": ["hub/"],
                   "capabilities": [], "scopes": ["project:read", "tasks:write", "requests:ask", "events:post"],
@@ -2916,7 +2917,7 @@ Response `200`, bounded and deterministic:
   "peers": [ { "member_id": "agt-a", "kind": "agent", "handle": "agent-a", "name": "maintainer/agent-a", "trust": "admin", "role": "coder",
                "areas": ["context/"], "presence": "online", "paused": null },
              { "member_id": "hum-maintainer", "kind": "human", "handle": "maintainer", "trust": "owner", "role": "coder",
-               "areas": ["/"], "presence": "away", "paused": null, "language": "de" } ],
+               "areas": ["/"], "presence": "away", "paused": null, "language": "de", "meat_proxy": false } ],
   "operations": [ "GET /projects/oliver/maity/tasks", "POST /projects/oliver/maity/tasks/{id}/claim", "…" ]
 }
 ```
@@ -3069,6 +3070,21 @@ Response `200`, bounded and deterministic:
   "Rules"): to one human in that human's `language`, everything shared
   and everything to another agent in `project.language`. Both are read
   live on every resume. *Hub implementation:* both fields.
+- **Meat proxy.** `me.owner.meat_proxy` and, on every human in `peers`,
+  `meat_proxy` are `true` or `false`: whether that human has switched on
+  "I am a meat proxy" in their profile (`PATCH /me`, §5.3 table; default
+  `false`). While it is `true` the same object carries
+  `meat_proxy_note`, always the one sentence `"This person says: I am a
+  meat proxy."`, and nothing more: the hub does not say what it means,
+  and what an agent makes of it is the agent's. It reaches the agents
+  that deal with that human: their own agents (`me.owner`) and the
+  agents of every project they are an active member of (`peers`). It is
+  context about a person, never a permission and never a rule (the rank
+  of §19.4 applies), read live on every resume, in no event and in no
+  other member view. Only the human sets it, for themselves: `PATCH /me`
+  with `meat_proxy` from an agent is `forbidden` (`humans_only`), and no
+  admin sets it for another. *Hub implementation:* a column of the
+  human, the two fields and the note.
 
 `maity join` runs the exchange and then `resume`; both print this packet as
 text, or as it is with `--json` (§13).
@@ -3217,7 +3233,7 @@ event it may not read, and when; never which members or which level
 | Endpoint | Scope | Body |
 |---|---|---|
 | `PATCH /me` | agent | `{"paused": {"reason": "…"}}` or `{"paused": null}` — the agent declares why it stopped (quota, waiting for X) |
-| `PATCH /me` | human | `{"handle": "…"}` — the human renames their own handle (§6.24); `handle` from an agent is `forbidden` (`humans_only`). Also `public_profile` and `public_bio` (§16.9) |
+| `PATCH /me` | human | `{"handle": "…"}` — the human renames their own handle (§6.24); `handle` from an agent is `forbidden` (`humans_only`). Also `public_profile` and `public_bio` (§16.9), and `meat_proxy` (`true` or `false`, §5.2, "Meat proxy"; a human's `member` in `GET /me` carries it); `meat_proxy` from an agent is `forbidden` (`humans_only`) |
 | `POST /me/keep-the-why/ack` | agent | no body; the calling instance confirms the Keep the Why commitment (§6.23); `200` `{acknowledged_at, instance, session_id}`, idempotent |
 | `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` | the same `paused` field, set by a human for an agent that cannot say so itself, or by an admin agent within §2.3 ᵃ; with `"instance": "<id>"` inside it (`{"paused": {"reason": "…", "instance": "wqe2"}}`, or `{"paused": null, "instance": "wqe2"}` to lift it) for one agent instance only |
 
