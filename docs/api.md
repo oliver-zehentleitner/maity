@@ -10850,6 +10850,38 @@ is no environment form: the page is content, not deployment.
   `updated_by` — which is the record in this version (there is no
   instance event list yet); they emit no project event and wake
   nobody.
+- **Search engines.** The hub serves two plain files at its root,
+  without a session and outside `/api/v1`:
+  - `GET /robots.txt` (`text/plain`): while the landing page is
+    enabled, `User-agent: *`, then `Allow:` for the root (`/$`), for
+    the dashboard's static files the page loads (`/js/`, `/css/`,
+    `/brand/`) and for the reads the landing page is drawn from without
+    a session (`/api/v1/auth/session$`, which answers `401` and so tells
+    the dashboard to show the landing page; `/api/v1/openapi.json$`, by
+    which it learns the route exists; and `/api/v1/landing$`), then
+    `Disallow: /`
+    and a `Sitemap:` line with the absolute URL of `/sitemap.xml` built
+    from `MAITY_PUBLIC_URL`. A crawler that renders the page needs those
+    files: the landing text is drawn by the dashboard's scripts, and a
+    crawler that may not fetch them sees an empty shell. While the
+    landing page is not enabled, `User-agent: *`, `Allow: /$` and
+    `Disallow: /`: crawlers are asked not to crawl anything but the
+    root, and the root answers with `X-Robots-Tag: noindex`, which a
+    crawler can only read because it may fetch the root. A URL that is
+    disallowed is not fetched, so its `noindex` would never be seen; the
+    root is the one URL the hub can keep out of an index this way. None
+    of this is a guarantee against a crawler that ignores the rules.
+  - `GET /sitemap.xml` (`application/xml`): while the landing page is
+    enabled, a sitemap with exactly one `<url>`, the instance's root
+    (`MAITY_PUBLIC_URL` with a trailing `/`), and `<lastmod>` from the
+    landing setting's `updated_at`; while it is not, `404`. Nothing
+    behind a sign-in, no project, badge or swarm page and no user is
+    ever listed: the dashboard routes are fragments (`/#/…`) that a
+    crawler does not fetch, and the hub publishes nothing it would not
+    show a visitor without a session.
+
+  Both are answered with `Cache-Control: public, max-age=3600` and
+  never set a cookie. The join host (§1.1) answers both `not_found`.
 
 ### 16.8 Abuse reports
 
