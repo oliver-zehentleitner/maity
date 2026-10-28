@@ -272,8 +272,14 @@ not ship yet (`hub/context/kubernetes.md`).
   `deploy/scripts/helm-upgrade.sh -f values.yaml [helm arguments]` scales the
   Deployment to 0, runs `helm upgrade` (the hook migrates alone), and scales
   back to the replicas it had on any exit, a failed upgrade and Ctrl-C
-  included. `DUMP_CRONJOB=<cronjob>` takes a dump job first. A release whose
-  migration touches no busy table can use plain `helm upgrade`.
+  included. Helm only starts once the hub's pods are verifiably gone; a failed
+  scale-down or pods still there after `STOP_TIMEOUT` end the script first.
+  The exit status is Helm's own when the upgrade failed, 3 when scaling back
+  failed, 4 when the hub did not become ready, 0 only when everything worked.
+  `DUMP_CRONJOB=<cronjob>` takes a dump job first, and
+  `deploy/scripts/test-helm-upgrade.sh` runs the failure paths against stub
+  `kubectl` and `helm`. A release whose migration touches no busy table can
+  use plain `helm upgrade`.
 - **Rollback.** There is no schema downgrade: `maity-hub` has `serve`,
   `migrate` and `owner`, and the hook runs only on install and upgrade.
   `helm rollback` to a hub version with an older schema starts that version
