@@ -54,7 +54,10 @@ menu; Escape closes it and puts the focus back on its button; Tab or a
 click elsewhere closes it. On a phone the name is left out and the menus
 stay on screen; the text beside the logo (the project's name, "Everything
 waiting for you", "Your account", …) is hidden from sight there, since the
-switcher's current tab names it, and stays in the page for a screen reader.
+switcher's current tab names it, and stays in the page for a screen reader;
+a project's mark beside the logo is left out there too, and the buttons are
+spaced tighter, so they stay in the logo's row with their counts, at 360 px
+too.
 
 **Notifications** (`docs/api.md` §18, `js/notify.js`). Where the hub has
 them, `GET /me/notifications?limit=0` gives the counts, per project too
@@ -1000,7 +1003,10 @@ least 5.2:1), chosen by the slug. The mark is decorative next to the
 project's visible name (`alt=""`, `aria-hidden`); a monogram cannot be the
 tab's icon (the hub's CSP allows no `data:` or `blob:` images), so that
 tab keeps the browser's default. The banner, where the project has one,
-heads the project's inbox. In **Project settings** a human with
+heads the project's inbox at the full width, at most 960 pixels, and 2:1, the shape of a
+forge's social preview (GitHub: at least 640×320, ideally 1280×640). It
+is never cropped, so its text stays readable: an image of another shape
+is shown whole, with margins. In **Project settings** a human with
 `project:admin` sees what shows now and where it comes from (uploaded or
 the repository's forge), uploads a logo or a banner (PNG, JPEG or WebP,
 at most 1 MiB; the type is read from the file's first bytes, as the hub
@@ -1176,7 +1182,8 @@ fails while the bundle is stale.
 
 ## Refresh
 
-- `GET /me` every 15 seconds and after every answer, for the switcher's
+- `GET /me` every 60 seconds and after every answer, none while the tab
+  is hidden (shown again, it reads within 5 seconds), for the switcher's
   counts, with `GET /me/notifications?limit=0` beside it where the hub has
   notifications (the bell, the tab counts and the title follow). When the number of open requests on screen changes, the page
   offers **Reload the list** rather than replacing it while the human is
@@ -1187,7 +1194,9 @@ fails while the bundle is stale.
   far a tab row is scrolled stay.
 - In a project, the project's events (`docs/api.md` §8.3): the head is
   read with `after=latest&wait=0` together with the project and its
-  members, then `after=<cursor>&wait=0` every 5 seconds, page by page.
+  members, then `after=<cursor>&wait=0` every 15 seconds, page by page,
+  none while the tab is hidden (shown again, it reads within 5 seconds); the chat lists' 30-second reads skip a
+  hidden tab too.
   Not the long-poll: `context/refresh.md`.
   - a request event re-reads `/me` at once;
   - a card event (`task_*`) on the board, a member, session or
@@ -1367,13 +1376,21 @@ script starts, and it is stopped by its own PID, also on Ctrl-C; port
 8090 is refused, and a port that another server already answers on is
 refused too. The caller's own `MAITY_*` variables are dropped for the hub
 and the CLI. Option `--headed` shows the browser, `--port` fixes the port.
+When a step fails, the page's last 12 API answers are printed and written to `api-trace.txt` next to the
+screenshots, so that what the hub said can be told from what the page drew of it. The trace goes to a
+public artifact and the Actions log, so every part is a closed set, not a pattern: the method, the
+route with only its known static words (every other segment, whatever its spelling, shown as `{}`),
+the status, and from a JSON body only an entity id with a known prefix, `credential_state`,
+`presence`, `state` and an error's `code`, each only with a listed value (anything else shown as `?`).
+Other keys, names, free text and non-JSON bodies are not copied (`tools/test_e2e_harness.py` checks it
+with synthetic secrets, including unknown routes, re-cased and percent-encoded segments).
 
 CI runs it in the `web-e2e` job of `.github/workflows/ci.yml`. It installs
 the headless shell only (`playwright install --only-shell chromium`) and
 checks it with `ldd`; only when a library is missing does it install a
 fixed minimal list from apt (`libnss3`, `libnspr4`, `libasound2t64`), and a
 library still missing then fails the job before the test. The job uploads
-the screenshots and `hub.log` as the workflow artifact
+the screenshots, `hub.log` and a failed run's `api-trace.txt` as the workflow artifact
 `web-e2e-screenshots`, also when a step fails.
 
 ## Layout

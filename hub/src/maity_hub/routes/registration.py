@@ -29,7 +29,7 @@ from maity_hub import (
 )
 from maity_hub import tables as t
 from maity_hub.admin import instance_admin_id
-from maity_hub.auth import passwords
+from maity_hub.auth import passwords, second_factor
 from maity_hub.auth.caller import require_secure_transport
 from maity_hub.deps import HumanCaller, engine_of, origin_of, settings_of
 from maity_hub.errors import ApiError, forbidden, invalid, not_found, rate_limited
@@ -174,7 +174,9 @@ def _store(
             registration.DROPPED.add()
             return
         if _has_account(conn, normalized):
-            registration_mail.send(conn, kind="already_registered", to=given)
+            registration_mail.send(
+                conn, kind="already_registered", to=given, language=language, hub=hub
+            )
             return
         lock_address(conn, normalized)
         _void_earlier(conn, normalized, source, now)
@@ -195,7 +197,7 @@ def _store(
                 expires_at=now + registration.PENDING_FOR,
             )
         )
-        registration_mail.send(conn, kind="register_link", to=given, pending_id=pending_id)
+        registration_mail.send(conn, kind="register_link", to=given, pending_id=pending_id, hub=hub)
 
 
 def _has_account(conn: Connection, normalized: str) -> bool:
@@ -274,6 +276,7 @@ def patch_settings(
 ) -> JSONResponse:
     with engine_of(request).begin() as conn:
         _require_admin(conn, caller)
+        second_factor.require_step_up(conn, settings_of(request), caller)  # §2.8.4
         ready = registration.mail_ready(conn, settings_of(request))
         registration.patch(conn, _environment(request), ready, body, caller.principal_id)
         return JSONResponse(registration.view(conn, _resolved(conn, settings_of(request))))

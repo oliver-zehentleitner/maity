@@ -480,7 +480,7 @@ they come. **This was me** marks the alert read by its id, the one way
 section, and the mail sign-in banner is shown at the top of every page of
 every other session. The banner stays while the reported session or one
 it approved is active, applies the list's rules to its End, and is built
-again on every 15-second round while a sign-in alert is unread.
+again on every round of the `/me` read while a sign-in alert is unread.
 "Confirmed" is said only when the alert is no longer unread afterwards,
 because the hub answers 200 for an id it skipped; when the list cannot
 be read again the result is said to be unknown. A check each minute
@@ -704,7 +704,7 @@ a listed route is the resource's (a project left, a card gone) and stays
 an error, as does one while the machine form cannot be read. A view that
 needs a missing route shows a muted line in its place (`M.dom.notOnHub`)
 and notes the route (`M.api.absent`, method and path without the query,
-until the next navigation, so a deploy meanwhile is found): the notifications' 15-second count read, the browser
+until the next navigation, so a deploy meanwhile is found): the notifications' count read on the `/me` round, the browser
 notifications' long-poll, the overview's re-reads and the sessions list
 ask no more. A 5xx, a network failure, 401 or 403 is still shown as an
 error.
@@ -1020,15 +1020,23 @@ and the instruction asked for none.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's instruction of 2026-10-25, from a phone screenshot of the cross-project inbox; the dashboard's implementation, 2026-10-25
+**Source:** the maintainer's instruction of 2026-10-25, from a phone screenshot of the cross-project inbox; the dashboard's implementation, 2026-10-25; the project's mark added after his phone screenshots of 2026-10-28 (inside a project the buttons wrapped to a second row)
 **Revisit when:** the switcher stops naming the current scope, or the header gets a second line on phones
 
 Below 600 px the span beside the logo (the project's name, "Everything
 waiting for you", "Your account", …) is clipped to one pixel by CSS,
 the usual visually hidden pattern; on wider screens it stays as it was.
+The project's mark beside it is not shown there either (`display:
+none`): it is decoration, already hidden from screen readers. The
+buttons beside the logo are spaced tighter there (gaps, inner padding,
+the counts' padding; the same height), so that with their counts they
+stay in the logo's row at 360 px. Only two counts of three characters
+("99+") at 360 px still wrap, into the two rows it had before.
 
 **Reason:** on a phone the text crowded the menus, and the switcher's
-current tab already names the scope. Clipped rather than removed, a
+current tab already names the scope. Inside a project the mark and the
+buttons' spacing pushed the buttons into a second row, which moved the
+whole page down; the tab shows the same mark. Clipped rather than removed, a
 screen reader still reads where the page is.
 
 **Rejected alternative:** `display: none`: it takes the name from
@@ -1766,3 +1774,56 @@ nowhere.
 sending such a notice to `#/all`. `#/all` says nothing about the agent,
 and its picture would become unreachable. Keeping every agent's picture
 on the account: this is what the maintainer asked to move.
+
+## The project banner is shown at 2:1, the shape of a forge's social preview
+
+**Id:** c2e9d1e8-f7b5-46fd-8c93-9ea04ff52042
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish on the card tsk-4jhn5xeypjjb (the banner had the wrong height; GitHub asks for at least 640×320, ideally 1280×640) and his follow-up (never crop: the Keep the Why banner's text was cut); the coordinator's cap at 960 pixels, 2026-10-28
+**Revisit when:** the 960-pixel cap is too small or too large for the inbox below, or a forge's preview has another shape
+
+The banner on the project's inbox, and its preview in Project settings,
+are as wide as their column, at most 960 pixels (the banner centred),
+and half as high (`aspect-ratio: 2 / 1`).
+The image is never cropped (`object-fit: contain`): one of another shape
+is shown whole, with margins in the surface colour. There is no fixed
+height; the cap keeps the inbox below in sight on a wide screen, where
+the full width made the banner the whole first screenful.
+
+**Reason:** a project's banner is mostly the repository's social preview,
+which GitHub defines at 2:1. The same shape shows it whole at every
+width. A preview often carries text, such as the Keep the Why banner, and
+cropping makes that unreadable, so margins are preferred.
+
+**Rejected alternative:** the fixed 180-pixel strip it had: at desktop
+width it cut a 2:1 preview to about 6.5:1, showing only a stripe of it.
+Filling the 2:1 box by cropping (`object-fit: cover`): a banner of
+another shape lost the text at its edges.
+
+## The view being left is inert until the next one is drawn
+
+**Id:** 1d888f69-9233-40b4-b9f3-cd679825ef82
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the runner flake of web-e2e (tsk-q1xrpaahtah0, runs 40718638353 and 40721945466) and the reviewer's reproduction with ordinary clicks and Back on PR #551, 2026-10-28
+**Revisit when:** views are mounted before their data is read, or a view is kept across navigations
+
+A navigation renders the next view off screen and mounts it when its
+data is read; until then the view being left stays shown. From the start
+of the render it is `inert`: no click, key or focus reaches it.
+
+**Reason:** an action in the old view (a Revoke) was answered into that
+view, which then disappeared, while the new view showed what it had read
+before the action, as if nothing had happened. The page alone was wrong,
+the hub had revoked. Inert keeps the old view as a visual placeholder
+without letting it start anything.
+
+**Rejected alternative:** waiting in the end-to-end test only: it hid a
+real case (a click during a slow navigation). Clearing the old view at
+once: a blank page on every navigation, and a jump. Making every view's
+initial read consistent with actions in other instances: one rule per
+view, for a race the inert placeholder removes for all of them.
+

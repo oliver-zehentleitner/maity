@@ -270,9 +270,9 @@ def may_read(conn: Connection, caller: Any, owner_id: str) -> bool:
     elif is_instance_admin(conn, me):
         return True
     my_projects = {
-        row.project_id: row.role
+        row.project_id: (row.trust, row.role)
         for row in conn.execute(
-            select(t.membership.c.project_id, t.membership.c.role).where(
+            select(t.membership.c.project_id, t.membership.c.trust, t.membership.c.role).where(
                 t.membership.c.human_id == me, t.membership.c.active.is_(True)
             )
         )
@@ -282,7 +282,9 @@ def may_read(conn: Connection, caller: Any, owner_id: str) -> bool:
     if owner_id.startswith("hum-"):
         # The owner of an agent is shown to admins only (§6.2), and so is their picture.
         admin_of = {
-            p for p, role in my_projects.items() if has_scope(role, "human", "members:admin")
+            p
+            for p, (trust, role) in my_projects.items()
+            if has_scope(trust, role, "human", "members:admin")
         }
         agents_in = set(
             conn.execute(

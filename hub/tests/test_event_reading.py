@@ -36,7 +36,7 @@ def test_a_read_returns_the_readable_events_and_a_cursor(
 ) -> None:
     agent = flow.agent(make_client, owner)
     say(owner, agent.id, "for you")
-    say(owner, "role:admin", "not for you")
+    say(owner, "trust:admin", "not for you")
     body = agent.get("/projects/maintainer/maity/events?after=0").json()
     assert set(body) == {"items", "cursor", "server_time", "superseded"}
     kinds = [(e["kind"], e["payload"].get("body")) for e in body["items"]]
@@ -109,7 +109,7 @@ def test_a_long_poll_is_not_woken_by_its_own_echo_or_the_admin_view(
     cursor = owner.get("/projects/maintainer/maity/events?after=latest").json()["cursor"]
     agent = flow.agent(make_client, owner)
     other = flow.agent(make_client, owner)
-    say(owner, "role:owner", "my own echo")
+    say(owner, "trust:owner", "my own echo")
     say(agent, other.id, "between agents")  # the owner may read it, but it is not addressed to it
     start = time.monotonic()
     body = owner.get(f"/projects/maintainer/maity/events?after={cursor}&wait=2").json()

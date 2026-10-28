@@ -12,7 +12,8 @@ from sqlalchemy import Connection
 
 from maity_hub import landing
 from maity_hub.admin import instance_admin_id
-from maity_hub.deps import HumanCaller, engine_of
+from maity_hub.auth import second_factor
+from maity_hub.deps import HumanCaller, engine_of, settings_of
 from maity_hub.errors import forbidden
 
 router = APIRouter()
@@ -40,6 +41,7 @@ def patch_landing_settings(
 ) -> JSONResponse:
     with engine_of(request).begin() as conn:
         _require_admin(conn, caller)
+        second_factor.require_step_up(conn, settings_of(request), caller)  # §2.8.4
         landing.lock(conn)  # before the read: the edit decides on the setting as locked
         after = landing.check(body, landing.stored(conn))
         landing.save(conn, after, caller.principal_id)

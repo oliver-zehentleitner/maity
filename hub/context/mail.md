@@ -98,8 +98,14 @@ marked `_purpose: verify`, a mark that is never sent as a header, and goes to
 the pending address): it is the way back. Nothing else follows it while the
 address stays disabled, the link used or not. Sign-in mail over its budget is
 dropped, not delayed, since a late link is useless. A row that left the
-queue is deleted after seven days, so the outbox keeps no lasting record
-of who got what.
+queue loses its text at once, since the text carries the mail's links (a
+confirmation, a sign-in, a registration link), and its headers (the signed
+unsubscribe link is one), and keeps its recipient and subject; the row is
+deleted after seven days, so the outbox keeps no lasting record of who got
+what. A row that left before this change loses its text on the next sweep.
+A row still waiting keeps its text for the seconds it takes to send; a mail
+that keeps failing is dropped on the first failed attempt after 24 hours, so
+the text of a row nobody retries can stay longer.
 
 **Reason:** a mail decided in a transaction that rolls back must not
 leave, and a request must not wait up to 20 seconds for an SMTP server.
@@ -112,6 +118,12 @@ like the images worker needs no new process for one replica.
   then fails to commit.
 - An in-memory queue: a restart would lose queued security mail, which
   §16.2 says is never dropped.
+- Sealing the text with `MAITY_SECRET_KEY` while it waits: the window it
+  would protect is the same one a link is valid for, it would make the
+  outbox depend on a key that is optional, and a row that is out needs no
+  text at all. Clearing the text when the row leaves the queue closes the
+  long exposure (a backup taken a week later) without that dependency
+  (card tsk-ayng0czsxp11, from the review of #489).
 
 ## An outbox row is claimed before it is sent; the claim lapses after two minutes
 
@@ -159,3 +171,78 @@ part of the outbox from its first version, not a later change on top.
   one transaction depends on no commit and no clock.
 - Counting when a mail is sent: the place would be free again for a mail that fails for good;
   counting when it is admitted keeps a place used, the strict side of a budget against abuse.
+
+## A registration's link is a signed token whose nonce is kept only as a hash, in the mail's own transaction
+
+**Id:** a8f3a73c-7af9-4276-841e-3f84b056dedf
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.7.1 (the mail, the token); the implementation of tsk-32jx98jzne6z, part 5a, 2026-10-27
+**Revisit when:** the link page (`/mail/register/{token}`) needs more than the pending id and the nonce, or a pending registration may be mailed twice
+
+`registration_mail.send` runs in the transaction that writes the pending registration. For a
+confirmation link it draws a nonce, stores `sha256(nonce)` in `pending_registration.nonce_hash`
+and puts the nonce itself only in the token (`{i: pending id, p: "register", n: nonce,
+x: expiry}`, signed like every link of §18.6) and so only in the mail. It goes to the outbox
+as `registration` mail on the budget of that name (default 30 an hour; over it the mail is
+dropped, a late link is useless) and carries when, and from which browser, system and address,
+the request came, and nothing else of the person. The note to an address that has an account
+has no token and no link that signs anyone in. Both are in the language of the request's
+`Accept-Language` when the hub has it, else English, and have no unsubscribe part.
+
+**Reason:** the link must prove the mailbox, so it carries a secret the hub itself cannot read
+back out of `pending_registration`: a leaked copy of that table gives no valid link. The mail's
+own row in `mail_outbox` does hold the link until the mail is out, and loses its text then (the
+outbox entry above). Doing it in the same transaction
+as the pending row means a row that rolls back leaves no mail and a mail never names a row that
+is not there. A budget of its own keeps an unauthenticated caller who can trigger these mails
+from using up the security or notification budgets.
+
+**Rejected alternatives:**
+- Storing the nonce: a read of the table would then be enough to complete someone's
+  registration, given the password hash is not.
+- The registration mail on the sign-in budget: the two are triggered by different requests with
+  different limits (§2.7.3 against §2.6.4); one flood would silence the other.
+
+## The registration's link page is a router of its own, and answers each refusal with the status of what refused
+
+**Id:** 5c1d7e0a-2b64-4f0e-9a38-71d0b6f4c2e9
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.7.1 steps 5 and 6, §2.7.2, §2.7.3, §18.6; the implementation of tsk-sbxts7s5990v, part 5b, 2026-10-28
+**Revisit when:** the sign-in link page (§2.6.3) lands and the two form cookies want one helper, or the dashboard takes over the form
+
+`routes/register_page.py` serves `GET` and `POST /mail/register/{token}`; `routes/mail_links.py`
+stays the pages that set and read no cookie. The `GET` sets only `maity_form` (a random value,
+`Path=/mail/register`, `HttpOnly`, `SameSite=Strict`, ten minutes) and puts the same value in a
+hidden field; the `POST` needs both to match and a `Sec-Fetch-Site` of exactly `same-origin`, so a
+request that does not say where it comes from is refused as well (the rule of §2.6.3's sign-in
+page). The terms version the person saw travels in a hidden field the hub signs with the
+registration's nonce, so a version from another registration, or a forged one, counts as none
+seen and asks for a fresh confirmation. The completion itself is `registration_accounts.complete`
+unchanged; the page maps its result to a status: a form error or wrong password `400`,
+terms that changed `409`, registration closed since the mail `403`, the hourly cap `503`, a link
+that no longer works `404` and one page for every reason. Every `POST` counts against the login
+limit of its source address (§2.7.3 shares them). The pages carry `Referrer-Policy: no-referrer`
+and `Cache-Control: no-store`, the request log masks the token, and the cookies are set only on
+success, the way the login sets them, with the form cookie removed. The completion is a sign-in
+like the login: the browser's earlier session ends (§2.6.5), the new session is made by
+`sessions.create` (its account record, `last_login_at`, the password given as `password_at`), and
+the device cookie is set; `method: "register"` counts as signed in by password for the good
+standing, since the password was given at the completion. The terms version is asked first, so
+terms set or changed while the page was open say so before any other error.
+
+**Reason:** a page that sets a cookie and reads a form is not the page of a link that must set and
+read none, so mixing them would loosen the contract of §18.6 for the unsubscribe and verify
+pages. Binding the terms version to the nonce makes the signed field useless on another
+registration. Statuses that tell a browser, a proxy and a test what happened cost nothing here:
+the person sees the same words either way, and only a person who proved the mailbox and the
+password sees an error that depends on an account (a taken handle).
+
+**Rejected alternatives:**
+- One `POST` that answers JSON for the dashboard to render: §2.7.1 puts the page outside the API
+  and the link must work from a mail on any device, with no script.
+- Accepting a `POST` without `Sec-Fetch-Site`: an older browser could then be made to submit the
+  form from another site; the cookie alone is a second guard, not a reason to drop the first.

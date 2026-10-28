@@ -206,7 +206,7 @@ def test_a_go_after_the_receiver_stopped_being_owner_is_stale(
     owner: flow.Human, anna: flow.Human
 ) -> None:
     request = transfer(owner, anna.id).json()
-    demoted = owner.patch(f"/projects/maintainer/maity/members/{anna.id}", {"role": "admin"})
+    demoted = owner.patch(f"/projects/maintainer/maity/members/{anna.id}", {"trust": "admin"})
     assert demoted.status_code == 200, demoted.text
     stale = answer(anna, "maintainer/maity", request["id"])
     assert error(stale) == (409, "invalid_transition", {"reason": "transfer_stale"})
@@ -232,12 +232,12 @@ def test_the_namespace_owner_is_neither_demoted_nor_removed(
     owner: flow.Human, anna: flow.Human
 ) -> None:
     path = f"/projects/maintainer/maity/members/{owner.id}"
-    demoted = anna.patch(path, {"role": "admin"})
+    demoted = anna.patch(path, {"trust": "admin"})
     assert error(demoted) == (409, "namespace_owner", {"projects": ["maintainer/maity"]})
     removed = anna.delete(path)
     assert error(removed) == (409, "namespace_owner", {"projects": ["maintainer/maity"]})
     # Another owner is: the last-owner rule alone holds for them.
     assert (
-        owner.patch(f"/projects/maintainer/maity/members/{anna.id}", {"role": "admin"}).status_code
+        owner.patch(f"/projects/maintainer/maity/members/{anna.id}", {"trust": "admin"}).status_code
         == 200
     )

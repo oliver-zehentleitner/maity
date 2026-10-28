@@ -240,3 +240,32 @@ asked, without losing track of what was decided.
   maintainer asked for a discussion inside the request instead.
 - Leaving the thread open for follow-ups after the decision: offered as
   an option, not chosen; no reason given.
+
+## The chat overview reads one list across projects
+
+**Id:** 245dc8b2-945d-4c4a-a29c-989b4140661d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's report that the dashboard feels slow, above all the chat, 2026-10-28; the web owner's measurement that `#/chats` reads `GET …/conversations` once per project each round, p95 7.8 s
+**See:** chat.md#group-chats-beside-the-private-agent-chat-created-by-humans-waking-agents-only-by-mention — c1af6c8f-9d69-4afe-b233-fa8f437faaa6 — as of 2026-10-28
+
+A human's chat overview gets its own route, `GET /me/conversations`,
+that merges the §9.3 lists of all the human's projects into one paged
+list, newest activity first, each item naming its project, with the
+unread totals of all items. The project routes stay the place to read
+and write a conversation; agents keep the per-project list, since an
+agent lives in one project.
+
+**Reason:** the overview's cost grew with the number of projects, one
+request per project per refresh, and the slowest of them set the pace
+of the whole page. One query over the caller's memberships answers it
+in a single round trip.
+
+**Rejected alternatives:**
+- Reading the project lists in parallel in the browser: fewer seconds
+  of waiting, but the same number of requests on the hub, which was
+  the load problem in the first place.
+- Caching the per-project lists in the browser and refreshing them less
+  often: new messages would show late, which is what the overview is
+  for.

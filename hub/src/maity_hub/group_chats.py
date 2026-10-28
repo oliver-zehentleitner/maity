@@ -167,7 +167,7 @@ def access(conn: Connection, conversation_id: str, mine: Any) -> str | None:
         return "participant"
     if mine.kind == "human" and mine.principal_id in observers(conn, current):
         return "observer"
-    if mine.kind == "human" and mine.role == "owner" and _round_of(conn, conversation_id):
+    if mine.kind == "human" and mine.trust == "owner" and _round_of(conn, conversation_id):
         return "observer"  # every project owner reads a round's thread along (§20.5)
     return None
 
@@ -540,7 +540,7 @@ def _announce(
     """`conversation_created`/`_updated` to the participants after the change and whoever
     it removed (§8.2); a conversation's event, so no see-all reaches it."""
     current = stays(conn, conversation.id)
-    readers = ["role:owner"] if conversation.hub_thread else []  # they read along (§20.5)
+    readers = ["trust:owner"] if conversation.hub_thread else []  # they read along (§20.5)
     emit(
         conn,
         conversation.project_id,

@@ -63,7 +63,8 @@ def test_the_packet_has_every_part_of_the_contract(
     assert packet["hints"] == {"duty": "self", "wait_timeout": 540}  # Claude Code
     assert packet["me"]["owner"] == {"id": owner.id, "handle": "maintainer", "meat_proxy": False}
     assert packet["membership"] == {
-        "role": "member",
+        "trust": "member",
+        "role": "coder",
         "reports_to": owner.id,
         "areas": ["hub/"],
         "capabilities": [],
@@ -108,7 +109,8 @@ def test_the_packet_has_every_part_of_the_contract(
             "member_id": owner.id,
             "kind": "human",
             "handle": "maintainer",
-            "role": "owner",
+            "trust": "owner",
+            "role": "coder",
             "areas": ["/"],
             "presence": "online",
             "paused": None,

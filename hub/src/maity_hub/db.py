@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import random
 import time
 from collections.abc import Callable
@@ -15,6 +16,10 @@ from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from sqlalchemy import Engine, MetaData, create_engine, event
 from sqlalchemy.exc import DBAPIError, OperationalError
+
+from maity_hub.errors import connection_cause
+
+log = logging.getLogger(__name__)
 
 # Explicit constraint names, so that migrations can address constraints by
 # name on every engine (MySQL and SQLite generate their own otherwise).
@@ -30,9 +35,34 @@ metadata = MetaData(
 
 
 CONNECT_TIMEOUT_SECONDS = 5
+# A name that did not resolve is tried once more after this pause (and as much again, at
+# random): the cluster's DNS answers in bursts and a second try mostly gets through.
+RESOLVE_PAUSE_SECONDS = 0.25
+# A pooled connection older than this is replaced when it is next taken (30 minutes): it bounds the
+# age of a connection, whatever sits between the hub and the server. A dead one is found by
+# `pool_pre_ping`, which tests every connection as it is taken.
+POOL_RECYCLE_SECONDS = 1800
 
 
-def make_engine(url: str, pool_size: int = 5, max_overflow: int = 10) -> Engine:
+def connect_once_more_on_dns[T](connect: Callable[..., T], args: Any, kwargs: Any) -> T:
+    """`connect(*args, **kwargs)`; if the host name does not resolve, once more after a short
+    pause. Any other failure, and a second failure, go on to the caller as they are."""
+    try:
+        return connect(*args, **kwargs)
+    except Exception as error:
+        if connection_cause(error) != "dns":
+            raise
+    log.warning("database host did not resolve; trying once more")
+    time.sleep(RESOLVE_PAUSE_SECONDS * (1 + random.random()))
+    return connect(*args, **kwargs)
+
+
+def make_engine(
+    url: str,
+    pool_size: int = 16,
+    max_overflow: int = 16,
+    pool_recycle: int = POOL_RECYCLE_SECONDS,
+) -> Engine:
     # hide_parameters: a failing statement's error never carries the values.
     kwargs: dict[str, Any] = {"pool_pre_ping": True, "hide_parameters": True}
     if url.startswith("sqlite"):
@@ -46,7 +76,18 @@ def make_engine(url: str, pool_size: int = 5, max_overflow: int = 10) -> Engine:
         # Fail fast on an unreachable server instead of waiting for TCP's own timeout.
         kwargs["connect_args"] = {"connect_timeout": CONNECT_TIMEOUT_SECONDS}
         kwargs["pool_size"], kwargs["max_overflow"] = pool_size, max_overflow
+        # Connections are kept and reused, the most recently used first, so that the few that
+        # a quiet hub needs stay warm and the rest age out; a new connection is a name lookup
+        # and a handshake (hub/context/persistence.md).
+        kwargs["pool_use_lifo"] = True
+        kwargs["pool_recycle"] = pool_recycle if pool_recycle > 0 else -1
     engine = create_engine(url, **kwargs)
+    if not url.startswith("sqlite"):
+
+        @event.listens_for(engine, "do_connect")
+        def _connect(dialect: Any, _record: Any, cargs: Any, cparams: Any) -> Any:
+            return connect_once_more_on_dns(dialect.loaded_dbapi.connect, cargs, cparams)
+
     if engine.dialect.name == "sqlite":
         event.listen(engine, "connect", _sqlite_pragmas)
         event.listen(engine, "begin", _sqlite_begin_immediate)

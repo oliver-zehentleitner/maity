@@ -18,6 +18,10 @@ window.Maity = window.Maity || {};
 (function (M) {
   const { h, append, clear } = M.dom;
   const SETTLE_MS = 400;
+  // No project feed here: the notification counts say a chat changed. They
+  // are read this often while the view is shown, as the /me round did before
+  // it went to 60 seconds (context/refresh.md).
+  const NOTICE_MS = 15000;
   const chatLink = (full, id) => "#/chats" + (id ? "/" + M.api.projectPath(full) + "/" + encodeURIComponent(id) : "");
 
   // Unread first, then the newest, then by title; the open one counts as read.
@@ -164,7 +168,11 @@ window.Maity = window.Maity || {};
     const nudge = () => { window.clearTimeout(settle); settle = window.setTimeout(() => run(false), SETTLE_MS); };
     const unsubscribe = M.notify.state.available ? M.notify.subscribe(nudge) : () => {};
     ctx.onDispose(() => { disposed = true; window.clearTimeout(settle); unsubscribe(); });
-    ctx.every(M.chatParts.LIST_MS, () => run(true));
+    // Every project's chats each round: none while the tab is hidden.
+    ctx.every(M.chatParts.LIST_MS, () => (document.visibilityState === "hidden" ? null : run(true)));
+    if (M.notify.state.available) {
+      ctx.every(NOTICE_MS, () => (document.visibilityState === "hidden" ? null : M.notify.read().catch(() => null)));
+    }
 
     if (!open || !pctx) {
       append(root, h("div", { class: "chat-layout" + (open ? " open" : "") }, list.el,

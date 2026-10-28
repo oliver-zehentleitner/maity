@@ -24,6 +24,7 @@ from maity_hub.errors import ApiError, invalid, not_found
 from maity_hub.events import Actor, emit
 from maity_hub.ids import new_instance_id
 from maity_hub.models import Strict
+from maity_hub.scopes import tokens_of
 
 INSTANCE_PATTERN = re.compile(r"[2-9a-hjkmnp-z]{4,5}")
 MAX_INSTANCES = 16
@@ -264,6 +265,12 @@ def views(
                         "id": session.id,
                         "started_at": clock.rfc3339(session.started_at),
                         "listening": is_listening,
+                        # When the 10 minutes ran out, while an episode is open (§5.3).
+                        "not_listening_since": (
+                            clock.rfc3339(session.not_listening_since)
+                            if session.not_listening_since is not None
+                            else None
+                        ),
                     }
                     if session
                     else None
@@ -451,7 +458,7 @@ def team_wakes(
             )
         )
         if m.id != actor_membership
-        and (f"member:{m.agent_id}" in audience or f"role:{m.role}" in audience)
+        and (f"member:{m.agent_id}" in audience or bool(tokens_of(m.trust, m.role) & set(audience)))
     ]
     if not teams:
         return None
