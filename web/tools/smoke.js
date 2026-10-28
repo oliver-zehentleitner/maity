@@ -5372,6 +5372,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(chLinks.every((a) => chMark(a) && chMark(a).querySelector(".project-mark")) && chMark(chLinks[0]).getAttribute("title") === "Maity"
     && chMark(chLinks[6]).getAttribute("title") === "Sample shop",
     "chats: each row's project is a mark after the who line, its name on hover");
+  // One read across projects (§9.3, GET /me/conversations), not one per project; a hub without it is read project by project.
+  const mcReads = [];
+  const mcGetAll = win.Maity.api.getAll, mcMissing = win.Maity.api.missingRoute;
+  win.Maity.api.getAll = (p) => { mcReads.push(p); return mcGetAll(p); };
+  await go("#/all"); await go("#/chats"); for (let k = 0; k < 4; k++) await tick();
+  expect(mcReads.filter((p) => p === "/me/conversations?observed=true").length === 1 && !mcReads.some((p) => /^\/projects\/.+\/conversations\?/.test(p))
+    && main.querySelectorAll(".chat-list a.conv").length === 7,
+    "chats: one read across projects lists every project's chats");
+  mcReads.length = 0;
+  win.Maity.api.getAll = (p) => { mcReads.push(p); return p.startsWith("/me/conversations") ? Promise.reject(new win.Maity.api.ApiError("Not found", 404, p, "not_found")) : mcGetAll(p); };
+  win.Maity.api.missingRoute = (err, method, path) => Promise.resolve(path === "/me/conversations" || mcMissing(err, method, path));
+  await go("#/all"); await go("#/chats"); for (let k = 0; k < 6; k++) await tick();
+  expect(mcReads.filter((p) => /^\/projects\/.+\/conversations\?observed=true$/.test(p)).length === 2 && main.querySelectorAll(".chat-list a.conv").length === 7
+    && !main.querySelector(".chat-list-pane .send-status.failed"),
+    "chats: a hub without the list across projects is read project by project");
+  win.Maity.api.getAll = mcGetAll; win.Maity.api.missingRoute = mcMissing; win.Maity.api.forgetRoutes();
+  await go("#/all"); await go("#/chats"); for (let k = 0; k < 4; k++) await tick();
   // Opening one keeps the global view: its messages and composer in place, the list beside it, its unread gone.
   const gxGets = [], gxPosts = [];
   const gxGet = win.Maity.api.get, gxGetAll = win.Maity.api.getAll, gxPost = win.Maity.api.post, gxPatch = win.Maity.api.patch;
