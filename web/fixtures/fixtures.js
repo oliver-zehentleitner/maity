@@ -4231,6 +4231,7 @@ window.MAITY_FIXTURES = {
   },
   "me.json": {
     "member": {
+      "deletion": null,
       "display_name": "Maintainer",
       "handle": "maintainer",
       "id": "hum-maintainer",

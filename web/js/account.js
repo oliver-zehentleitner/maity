@@ -1,7 +1,8 @@
 // The signed-in human's account (#/account): who they are, their picture
 // and the pictures of their agents no project of theirs shows
 // (#/account/picture, docs/api.md §6.10), their
-// preferences (#/account/preferences, js/preferences.js), and
+// preferences (#/account/preferences, js/preferences.js), your data
+// (#/account/data, js/your-data.js), and
 // changing the password (§2.1, POST /auth/password). A password change
 // ends every other session of this human; this one stays signed in.
 "use strict";
@@ -225,6 +226,8 @@ window.Maity = window.Maity || {};
     const meatProxy = await meatProxySection(ctx);
     const notify = M.notifySettings ? await M.notifySettings(ctx) : null;
     const sessions = M.sessions ? await M.sessions.section(ctx) : null;
+    // Your data (§2.9): the export and the deletion of the account.
+    const yourData = M.yourData ? M.yourData.section(ctx) : null;
     const preferences = M.preferences ? await M.preferences.section(ctx) : null;
     // The theme (js/theme.js): signed in, it is chosen here, not in the
     // header (the maintainer's instruction). Per browser, as before: what
@@ -258,6 +261,7 @@ window.Maity = window.Maity || {};
       preferences ? preferences.el : null,
       notify ? notify.el : null,
       sessions ? sessions.el : null,
+      yourData ? yourData.el : null,
       h("h3", null, "Change password"),
       h("p", { class: "muted" }, "Changing it signs out every other browser and device where you are signed in."),
       form);
@@ -274,5 +278,7 @@ window.Maity = window.Maity || {};
     if (preferences && args && args[0] === "preferences") window.setTimeout(() => preferences.heading.focus(), 0);
     // #/account/sessions (a sign-in alert's link) starts at the sessions.
     if (sessions && args && args[0] === "sessions") window.setTimeout(() => sessions.heading.focus(), 0);
+    // #/account/data (the mail's link to the export, §2.9) starts at Your data.
+    if (yourData && args && args[0] === "data") window.setTimeout(() => yourData.heading.focus(), 0);
   };
 })(window.Maity);

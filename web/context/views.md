@@ -1863,3 +1863,31 @@ body and could not show a guest's role or a reviewer with trust admin.
 Offering every choice and saying the hub's refusal afterwards: a form
 that offers what it will refuse.
 
+## A sensitive call asks for the password or a code where it stands, then is made again
+
+**Id:** bddf61cb-f6a0-4290-891f-2f3b3006946d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §2.8.1 (the proof: the password in the last 10 minutes, `reauthentication_required`) and §2.8.4 (the step-up, `step_up_required`, "the dashboard asks for a code and repeats the call"); the coordinator's card for Your data (§2.9), 2026-10-28
+**Revisit when:** the hub tells in advance which calls will need a proof, or the dashboard gets a dialog layer of its own
+
+A sensitive call goes through `M.stepUp.run` (`js/step-up.js`). It
+makes the call. When the hub refuses with `reauthentication_required`
+or `step_up_required`, it asks for the password or a code in a slot of
+the section that made the call, proves it (`POST /auth/reauthenticate`,
+`POST /auth/second-factor/verify`, a recovery code too) and makes the
+call again, at most three times. A wrong answer is said there and asked
+again. Cancel ends quietly.
+
+**Reason:** the hub, not the page, knows whether the password was given
+in the last 10 minutes and whether the human is enrolled, so asking
+only after its refusal never asks for nothing. The question stands next
+to the button that caused it. Your data is the first user; the other
+sensitive calls (§2.8.4) can take the same helper.
+
+**Rejected alternative:** asking for the password before every
+sensitive call: needless right after a sign-in, and wrong for a
+passwordless account. A modal dialog: the dashboard has none, and a
+slot in place keeps the focus and the context where the human was.
+

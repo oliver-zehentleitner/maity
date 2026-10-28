@@ -1079,6 +1079,34 @@ window.Maity = window.Maity || {};
       if ("meat_proxy" in body) me().member.meat_proxy = body.meat_proxy;
       return Object.assign({}, me().member);
     }],
+    // §2.9 Your data: the export, and a deletion request withdrawn or asked again.
+    // The fixture hub needs no proof: the step-up is the smoke test's to answer.
+    ["GET", /^\/me\/export$/, (m, body, path) => {
+      if (me().member.kind !== "human") fail(403, "forbidden", "a human's own data", path, { reason: "humans_only" });
+      const at = nowIso();
+      return { format: 1, exported_at: at, account: { handle: me().member.handle, display_name: me().member.display_name },
+        memberships: me().projects.map((p) => ({ project: p.full_name, trust: p.trust, role: p.role })) };
+    }],
+    ["POST", /^\/me\/deletion$/, (m, body, path) => {
+      if (me().member.kind !== "human") fail(403, "forbidden", "a human's own account", path, { reason: "humans_only" });
+      if (body.confirm !== me().member.handle) fail(400, "invalid", "the request does not validate", path, { fields: { confirm: "mismatch" } });
+      const at = new Date();
+      me().member.deletion = { requested_at: at.toISOString().replace(/\.\d{3}Z$/, "Z"),
+        expires_at: new Date(at.getTime() + 86400000).toISOString().replace(/\.\d{3}Z$/, "Z") };
+      return { deletion: me().member.deletion };
+    }],
+    ["DELETE", /^\/me\/deletion$/, () => {
+      me().member.deletion = null;
+      return { deletion: null };
+    }],
+    ["POST", /^\/auth\/reauthenticate$/, (m, body, path) => {
+      if (body.password !== "correct horse") fail(400, "invalid", "the request does not validate", path, { fields: { password: "mismatch" } });
+      return { valid_until: new Date(Date.now() + 600000).toISOString().replace(/\.\d{3}Z$/, "Z") };
+    }],
+    ["POST", /^\/auth\/second-factor\/verify$/, (m, body, path) => {
+      if (body.code !== "123456" && body.recovery_code !== "abcde-fghij") fail(400, "code_invalid", "the code is not valid", path);
+      return { valid_until: new Date(Date.now() + 600000).toISOString().replace(/\.\d{3}Z$/, "Z") };
+    }],
     ["PATCH", /^\/me\/notification-settings$/, (m, body, path) => {
       const set = fixtures()["notifications.json"].settings;
       if (body.email && "language" in body.email) {
