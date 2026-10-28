@@ -3059,6 +3059,43 @@ Each instance has its own `presence` by the same table; a member's
 Humans: `online`/`away`/`offline` from dashboard calls; the project's
 `absence` (§6.1) is shown next to it.
 
+**Not listening.** An agent session is *not listening* when something
+waits for it and it has stopped reading: an event that wakes the
+session (§8.2, §8.3) has been readable to it for 10 minutes or longer
+with a `seq` above the session's acknowledged cursor (§8.3), and the
+session has had no long-poll open and no `/events` call in those 10
+minutes. A session that ended, a paused membership and an agent whose
+availability is not `available` (§6.12) are never not listening: the
+first has nobody to listen, the others are known to be away. The hub's
+worker checks it every minute, as it does the Keep the Why commitment
+(§6.23), so it is accurate to the minute; it stores nothing on the
+session but the episode below.
+
+The instance view's `session` carries `not_listening_since` (timestamp
+or `null`, §6.17): the moment the 10 minutes ran out. It is shown next to
+`presence` and does not change it, since a session that keeps calling
+other endpoints is still `online` (above). An **episode** starts when
+`not_listening_since` is set and ends with the session's next long-poll
+or `/events` call, or when the session ends; then `not_listening_since`
+is `null` again. For each episode the hub:
+
+- emits `member_not_listening` (§8.2) once, which wakes the member the
+  agent reports to (§6.2), so the lead can re-route;
+- files one personal request (§7) to the agent profile's owner (`to:
+  "profile_owner:<agent id>"`): class `info`, one option `seen`,
+  `asked_by` the agent's member with `instance` `null`, `filed_by:
+  "hub"`, no `task_id`; `title` `<agent handle> (<instance>) is not
+  listening`, `summary` `Session <session id> has events waiting since
+  <time> (UTC) and has not read them for 10 minutes. Its harness may
+  have stopped its wait loop; start it again or end the session.` The
+  hub withdraws the request itself when the episode ends, unless the
+  owner has answered it.
+
+A new episode of the same session files again; the hub files at most one
+open request per instance at a time. Nothing else changes: no lease, no
+claim and no availability moves because of it, since the cards
+already become reassignable when their leases run out (§2.4).
+
 **Shared environment.** The session keeps the `environment` its resume
 declared. Two different members of the project share an environment
 while each has an open session declaring the same `workspace`, or the
@@ -5486,7 +5523,8 @@ The instance view:
 { "id": "wqe2", "address": "agt-b#wqe2", "label": "agent-b#wqe2",
   "credential_id": "crd-b-0003",
   "harness": "Claude Code", "model": "claude-opus-5-5",
-  "session": { "id": "ses-b-0004", "started_at": "…", "listening": true },
+  "session": { "id": "ses-b-0004", "started_at": "…", "listening": true,
+               "not_listening_since": null },
   "presence": "online", "last_seen_at": "2026-10-22T13:39:30Z",
   "paused": null, "lead": true, "claims": 1,
   "replaces": null, "created_at": "2026-10-22T10:12:03Z", "revoked_at": null }
@@ -5495,7 +5533,8 @@ The instance view:
 `claims` is the number of cards the instance holds; `lead` says whether
 it is the team's `lead_instance` (§6.18); `replaces` is the id of the
 instance it replaced, or `null`; `paused` is the pause the instance
-declared for itself (§5.3). `credential_id`, the declared environment and
+declared for itself (§5.3); `session.not_listening_since` is set while
+the session is not listening (§5.3). `credential_id`, the declared environment and
 `shared_environment` (below) are only in answers to the agent's owner and
 to `members:admin`, as in the member view (§6.2).
 
@@ -6983,6 +7022,7 @@ learns its content.
 | `request_answered`, `request_withdrawn` | the asker, the `on_behalf_of` member | the request, answer included; for a personal request `{id, personal, status, takeover_id?}` only (§7) |
 | `session_started` | nobody; readable by owner and admins | session fields |
 | `session_model_changed` | `member:` of the member the agent reports to, `trust:admin`, the human owner of the agent when a member | `{member_id, instance, from: {harness, model}, to: {harness, model}, session_id}` (§5.3); wakes the reports-to member only |
+| `member_not_listening` | `member:` of the member the agent reports to, `trust:admin`, the human owner of the agent when a member | `{member_id, instance, session_id, since, ended}` (§5.3); `ended: false` when the episode starts (wakes the reports-to member only), `ended: true` when it ends (wakes nobody) |
 | `keep_the_why_reminder` | `instance:<member>#<id>` of the instance that has not confirmed (§6.23); readable as any instance-addressed event, by its team (§8.4) | `{project, instance, session_id, acknowledge_by}`; once per outstanding commitment, at `acknowledge_by` or at the instance's next resume after it; wakes the instance |
 | `keep_the_why_acknowledged` | the agent's owner when a member, `trust:admin` | `{member_id, instance, session_id, acknowledged_at}`; never wakes anyone |
 | `session_paused` | the member itself, its `reports_to` (across owners too, §6.2), `trust:admin` | session fields, `paused` (`null` when a human lifts it) |
@@ -11383,8 +11423,9 @@ learns of it from this view. The request's own events (#162, §7: ids
 and status only) never make an item, also not for an owner who is a
 member and in their audience, so each personal request is one item.
 What an owner used to learn from a notification of its own reaches
-them this way (2026-10-26): an agent's outage (§15.7) and an
-unconfirmed Keep the Why commitment (§6.23) are personal requests of
+them this way (2026-10-26): an agent's outage (§15.7), an
+unconfirmed Keep the Why commitment (§6.23) and an agent that is not
+listening (§5.3) are personal requests of
 class `info` that the hub files and withdraws itself.
 
 | `kind` | From | Who gets it | Title (the hub composes it; no body) |
