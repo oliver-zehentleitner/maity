@@ -12,7 +12,7 @@ Environment=ACTIONS_RUNNER_HOOK_JOB_COMPLETED=%h/actions-runner/job-completed.sh
 ExecStart=%h/actions-runner/run.sh
 Restart=always
 RestartSec=10
-KillMode=process
+KillMode=control-group
 KillSignal=SIGTERM
 TimeoutStopSec=5min
 
