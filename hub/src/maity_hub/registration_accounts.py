@@ -350,6 +350,7 @@ def remove(conn: Connection, row: Any, status: str, by: str | None, reason: str 
     conn.execute(delete(t.human_session).where(t.human_session.c.human_id == row.human_id))
     conn.execute(delete(t.forge_link_state).where(t.forge_link_state.c.human_id == row.human_id))
     conn.execute(delete(t.forge_link).where(t.forge_link.c.human_id == row.human_id))
+    conn.execute(delete(t.forge_token).where(t.forge_token.c.human_id == row.human_id))
     conn.execute(delete(t.human).where(t.human.c.id == row.human_id))
     block(conn, row.address_normalized, now + BLOCK_FOR)
     conn.execute(

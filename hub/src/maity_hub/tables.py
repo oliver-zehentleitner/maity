@@ -1648,3 +1648,18 @@ forge_link_state = Table(
     Column("expires_at", UtcDateTime, nullable=False),
     **MYSQL_TABLE,
 )
+
+# A human's own forge token, the second source after the App (docs/api.md §11.4):
+# fine-grained only, sealed with MAITY_SECRET_KEY (`secretbox`), never in an answer.
+forge_token = Table(
+    "forge_token",
+    metadata,
+    _ref("human_id", "human.id", primary_key=True),
+    Column("forge", String(16), nullable=False),
+    Column("login", String(HANDLE), nullable=False),
+    Column("token_sealed", LargeBinary, nullable=False),
+    Column("status", String(16), nullable=False),  # active, rejected
+    Column("set_at", UtcDateTime, nullable=False),
+    Column("checked_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)

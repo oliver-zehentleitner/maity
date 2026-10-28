@@ -22,7 +22,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from sqlalchemy import Engine, select, update
 
-from maity_hub import clock, forge, github_app
+from maity_hub import clock, forge, github_app, secretbox
 from maity_hub import tables as t
 from maity_hub.config import ConfigError, Settings
 from tests import factory, flow
@@ -164,6 +164,8 @@ def test_a_refused_mint_names_the_installation_gone(
 
 @pytest.fixture
 def settings(settings: Settings, request: pytest.FixtureRequest) -> Settings:
+    if "sealing" in request.fixturenames:
+        settings = replace(settings, secret_key=SEALING_KEY)
     if "no_app" in request.fixturenames:
         return settings
     return replace(settings, github_app=APP)
@@ -427,3 +429,92 @@ def test_a_forge_that_does_not_answer_goes_back_with_the_reason(
     location = setup(human, 7, start(human))
     assert location == DONE + "?error=forge_unavailable"
     assert "c0de" not in location
+
+
+# --- the human's own token -------------------------------------------------------------------
+
+FINE = "github_pat_11AAAA_secret_value_never_printed"
+SEALING_KEY = secretbox.parse_key(base64.b64encode(b"k" * 32).decode())
+
+
+@pytest.fixture
+def sealing() -> None:
+    """The instance has a MAITY_SECRET_KEY."""
+
+
+@pytest.fixture
+def user_api(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """`GET /user` with the token: answers for FINE, refuses anything else."""
+    seen: list[str] = []
+
+    def call(path: str, authorization: str, post: bool = False) -> Any:
+        seen.append(path)
+        if authorization != f"Bearer {FINE}":
+            raise forge.ForgeUnavailableError("the forge answered 401", 401)
+        return {"id": 42, "login": "maintainer-gh"}
+
+    monkeypatch.setattr(github_app, "_call", call)
+    return seen
+
+
+def put_token(who: flow.Human, token: str) -> Any:
+    return who.client.put(
+        "/api/v1/me/forge/github/token", json={"token": token}, headers={"X-CSRF-Token": who.csrf}
+    )
+
+
+def test_a_fine_grained_token_is_checked_sealed_and_never_shown(
+    human: flow.Human, migrated: Engine, sealing: None, user_api: list[str]
+) -> None:
+    stored = put_token(human, FINE)
+    assert stored.status_code == 200, stored.text
+    assert stored.json() == {"configured": True, "login": "maintainer-gh"}
+    assert user_api == ["/user"]
+    body = human.get("/me/forge").json()
+    assert {k: body["token"][k] for k in ("configured", "login", "status")} == {
+        "configured": True,
+        "login": "maintainer-gh",
+        "status": "active",
+    }
+    assert FINE not in json.dumps(body)
+    with migrated.connect() as conn:
+        sealed = conn.execute(select(t.forge_token.c.token_sealed)).scalar_one()
+    assert FINE.encode() not in sealed
+    assert SEALING_KEY is not None
+    assert secretbox.open_sealed(SEALING_KEY, f"forge_token:{human.id}", sealed) == FINE.encode()
+    assert human.delete("/me/forge/github/token").status_code == 204
+    assert human.get("/me/forge").json()["token"]["configured"] is False
+    assert human.delete("/me/forge/github/token").status_code == 404
+
+
+@pytest.mark.parametrize(
+    ("token", "reason"),
+    [("ghp_classic_token_value", "classic_token"), ("github_pat_refused", "rejected")],
+)
+def test_a_classic_or_refused_token_is_not_taken(
+    human: flow.Human, sealing: None, user_api: list[str], token: str, reason: str
+) -> None:
+    refused = put_token(human, token)
+    assert refused.status_code == 400
+    assert refused.json()["error"]["details"] == {"fields": {"token": reason}}
+    assert token not in refused.text
+    assert human.get("/me/forge").json()["token"]["configured"] is False
+
+
+def test_without_the_secret_key_no_token_is_stored(human: flow.Human, user_api: list[str]) -> None:
+    refused = put_token(human, FINE)
+    assert (refused.status_code, refused.json()["error"]["code"]) == (409, "secret_key_missing")
+    assert user_api == []
+
+
+def test_an_agent_stores_no_token(
+    human: flow.Human, make_client: ClientFactory, sealing: None, user_api: list[str]
+) -> None:
+    flow.project(human, "maity")
+    agent = flow.agent(make_client, human)
+    refused = agent.client.put(
+        "/api/v1/me/forge/github/token",
+        json={"token": FINE},
+        headers=agent.auth,
+    )
+    assert refused.status_code == 403 and user_api == []

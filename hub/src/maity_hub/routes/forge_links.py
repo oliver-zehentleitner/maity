@@ -13,12 +13,14 @@ from urllib.parse import urlencode
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
+from pydantic import Field
 
-from maity_hub import forge, forge_links
+from maity_hub import forge, forge_links, forge_tokens
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, engine_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, not_found
 from maity_hub.github_app import GitHubApp
+from maity_hub.models import Strict
 
 router = APIRouter()
 
@@ -110,6 +112,8 @@ def list_links(request: Request, caller: AnyCaller) -> JSONResponse:
     engine = engine_of(request)
     with engine.connect() as conn:
         rows = forge_links.rows(conn, human_id)
+    with engine.connect() as conn:
+        token = forge_tokens.view(conn, human_id)
     links: list[dict[str, Any]] = []
     for row in rows:
         repositories, gone = forge_links.shown(app, row)
@@ -121,7 +125,7 @@ def list_links(request: Request, caller: AnyCaller) -> JSONResponse:
         {
             "app_configured": app is not None,
             "links": links,
-            "token": {"configured": False, "login": None, "status": None, "checked_at": None},
+            "token": token,
         }
     )
 
@@ -131,5 +135,33 @@ def delete_link(link_id: str, request: Request, caller: AnyCaller) -> Response:
     human_id, _ = _human(caller)
     with engine_of(request).begin() as conn:
         if not forge_links.unlink(conn, settings_of(request).github_app, human_id, link_id):
+            raise not_found()
+    return Response(status_code=204)
+
+
+class TokenIn(Strict):
+    token: str = Field(min_length=1, max_length=255, repr=False)
+
+
+@router.put("/me/forge/github/token")
+def put_token(body: TokenIn, request: Request, caller: AnyCaller) -> JSONResponse:
+    """Store the human's own fine-grained token, checked with the forge first; it is
+    never returned."""
+    human_id, _ = _human(caller)
+    key = forge_tokens.require_key(settings_of(request).secret_key)
+    try:
+        login = forge_tokens.login_of(body.token)
+    except forge.ForgeUnavailableError:
+        raise ApiError(503, "forge_unavailable", "the forge did not answer") from None
+    with engine_of(request).begin() as conn:
+        forge_tokens.store(conn, key, human_id, body.token, login)
+    return JSONResponse({"configured": True, "login": login})
+
+
+@router.delete("/me/forge/github/token")
+def delete_token(request: Request, caller: AnyCaller) -> Response:
+    human_id, _ = _human(caller)
+    with engine_of(request).begin() as conn:
+        if not forge_tokens.remove(conn, human_id):
             raise not_found()
     return Response(status_code=204)
