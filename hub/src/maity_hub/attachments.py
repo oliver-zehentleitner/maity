@@ -403,19 +403,21 @@ def expire(
 
 
 def remove_stray(engine: Engine, store: attachment_store.LocalStore, key: str) -> bool:
-    """Remove a blob no row names, if it is older than a transaction can be; the row is looked
-    up again right before, so an upload that committed since the sweep began keeps its file."""
-    attachment_id = key.partition("/")[2]
-    with engine.connect() as conn:
+    """Remove a blob no row names, if it is older than a transaction can be. The project's lock is
+    held from the look at the row to the removal, as an upload holds it from writing the blob to
+    inserting the row: an upload that commits meanwhile cannot lose its file."""
+    project_id, _, attachment_id = key.partition("/")
+    with engine.begin() as conn:
+        events.lock_project(conn, project_id)
         named = conn.execute(
             select(t.attachment.c.id).where(t.attachment.c.id == attachment_id)
         ).first()
-    if named is not None:
-        return False
-    age = store.age(key, time.time())
-    if age is None or age <= BLOB_GRACE:
-        return False
-    store.delete(key)
+        if named is not None:
+            return False
+        age = store.age(key, time.time())
+        if age is None or age <= BLOB_GRACE:
+            return False
+        store.delete(key)
     return True
 
 

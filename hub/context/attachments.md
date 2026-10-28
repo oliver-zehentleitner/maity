@@ -164,8 +164,8 @@ their bytes go by this last rule.
 The sweep takes the project's lock for each expired candidate and deletes it with its
 conditions repeated (still pending, not deleted, still past the cutoff), and removes the bytes
 only of a row that this delete removed: a message that named the upload since the sweep
-chose it has bound it, the delete finds nothing, and the file stays. A stray blob's row is
-looked up again right before the removal. A message cannot name an upload past its 24
+chose it has bound it, the delete finds nothing, and the file stays. A stray blob is removed under the project's lock, held from the look at its row
+to the unlink, as an upload holds it from writing the blob to inserting the row. A message cannot name an upload past its 24
 hours either (`unknown`), so the two cannot disagree about the same row.
 
 **Reason:** the write order of the contract leaves exactly one kind of

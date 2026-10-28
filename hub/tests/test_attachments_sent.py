@@ -365,3 +365,39 @@ def test_an_upload_past_its_24_hours_cannot_be_named_any_more(
     assert refused.json()["error"]["details"]["fields"]["attachments"] == {stale: "unknown"}
     with migrated.connect() as conn:
         assert conn.execute(select(t.attachment.c.message_seq)).scalar() is None
+
+
+def test_a_stray_is_removed_under_the_project_lock_from_the_look_at_the_row_to_the_unlink(
+    stored: ClientFactory,
+    owner: flow.Human,
+    blobs: Path,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = attachment_store.LocalStore(blobs)
+    with migrated.connect() as conn:
+        project = conn.execute(select(t.project.c.id)).scalar_one()
+    key = attachment_store.key_of(project, "att-stray-locked")
+    store.put(key, b"stray")
+    long_ago = time.time() - attachments.BLOB_GRACE - 60
+    os.utime(blobs / project / "att-stray-locked", (long_ago, long_ago))
+    seen: list[str] = []
+    real_lock, real_age, real_delete = events.lock_project, store.age, store.delete
+
+    def lock(conn: Any, project_id: str) -> Any:
+        seen.append(f"lock {project_id}")
+        return real_lock(conn, project_id)
+
+    def age(key_: str, now: float) -> float | None:
+        seen.append("age")
+        return real_age(key_, now)
+
+    def delete_(key_: str) -> None:
+        seen.append("delete")
+        real_delete(key_)
+
+    monkeypatch.setattr(events, "lock_project", lock)
+    monkeypatch.setattr(store, "age", age)
+    monkeypatch.setattr(store, "delete", delete_)
+    assert attachments.remove_stray(migrated, store, key) is True
+    assert seen == [f"lock {project}", "age", "delete"]  # the lock first, the unlink inside it
