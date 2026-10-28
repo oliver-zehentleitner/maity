@@ -66,13 +66,19 @@ def _admin_human(mine: Membership) -> bool:
 # --- upload --------------------------------------------------------------------------------
 
 
+def _require_post(mine: Any) -> None:
+    """`events:post`, or a guest's: it sends attachments with its chat (§2.3, §8.7)."""
+    if mine.trust != "guest":
+        mine.require("events:post")
+
+
 @router.post("/projects/{owner}/{slug}/attachments")
 def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     engine = engine_of(request)
     settings = settings_of(request)
     with engine.begin() as conn:
         mine = membership(conn, caller, slug)
-        mine.require("events:post")
+        _require_post(mine)
         blobs.store_of(settings)  # unconfigured: refused before the body is looked at
     replayed = idempotency.replay_first(engine, request, caller)
     if replayed is not None:  # a repeat is the stored answer: no decode, no count
@@ -114,7 +120,7 @@ def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
         # The decode took time: the right to post and the project's state are read again,
         # under the lock, right before the insert.
         locked = membership(conn, caller, slug)
-        locked.require("events:post")
+        _require_post(locked)
         if project.state in CLOSED:
             raise ApiError(409, "project_closed", f"the project is {project.state}")
         used = attachments.used(conn, locked.project.id)
@@ -281,7 +287,7 @@ def delete_attachment(
             return _delete_sent(conn, mine, caller, row, store)
         if isinstance(mine, Outsider):
             raise not_found()
-        mine.require("events:post")
+        _require_post(mine)
         own = row.uploaded_by == mine.id
         if not own and not _admin_human(mine):
             if mine.kind == "agent" and in_admin_team(mine.trust, mine.role):

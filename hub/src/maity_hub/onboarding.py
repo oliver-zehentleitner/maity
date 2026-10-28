@@ -75,7 +75,9 @@ def target(conn: Connection, project: Any) -> Any | None:
     token = settings(project).get("check_in_with")
     if not token:
         return None
-    rows = members(conn, project.id)
+    # A guest is never whom a newcomer checks in with (§2.3): not by token, not by a
+    # stored id, not as the coordinator or the owner fallback.
+    rows = [row for row in members(conn, project.id) if row.trust != "guest"]
     ordered = sorted(rows, key=lambda row: (row.handle, principal(row)))
     if token != "coordinator":
         if token.startswith(("role:", "trust:")):
@@ -108,8 +110,12 @@ def validate(conn: Connection, project: Any, body: OnboardingIn) -> None:
     if token.startswith(("role:", "trust:")):
         if not token_known(token):
             raise invalid({field: "unknown_role"})
-    elif not any(principal(row) == token for row in members(conn, project.id)):
-        raise invalid({field: "not_a_member"})
+    else:
+        found = [row for row in members(conn, project.id) if principal(row) == token]
+        if not found:
+            raise invalid({field: "not_a_member"})
+        if found[0].trust == "guest":  # a guest is never a target (§2.3)
+            raise invalid({field: "guest"})
 
 
 def replace_setting(

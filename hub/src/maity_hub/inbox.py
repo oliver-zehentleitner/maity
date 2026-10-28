@@ -141,6 +141,8 @@ def may_answer(conn: Connection, request: Any, mine: Membership) -> bool:
     `POST /requests/{id}/answer` (§7)."""
     if request.personal or not proposals.known(request):
         return False
+    if mine.trust == "guest":  # answers none, whatever reaches it (§2.3 "Guest")
+        return False
     if needs_a_human(request, mine) is not None:
         return False
     if proposals.refusal(conn, request, mine) is not None:  # the kind's own rule

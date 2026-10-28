@@ -21,6 +21,12 @@ def owner(make_client: ClientFactory, migrated: Engine) -> flow.Human:
     return owner
 
 
+def _project_id(engine: Engine) -> str:
+    with engine.connect() as conn:
+        project_id: str = conn.execute(select(t.project.c.id)).scalar_one()
+    return project_id
+
+
 def _last(engine: Engine, kind: str) -> Any:
     with engine.connect() as conn:
         return conn.execute(
@@ -147,6 +153,33 @@ def test_the_last_owner_stays(owner: flow.Human) -> None:
     assert demote.json()["error"]["details"]["fields"] == {"trust": "last_owner"}
     remove = owner.delete(f"/projects/maintainer/maity/members/{owner.id}")
     assert remove.json()["error"]["details"]["fields"] == {"member": "last_owner"}
+
+
+def test_only_an_owner_grants_admin_or_proxy_and_touches_an_owner(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§2.3 "The owner's rights": a human with trust admin manages members, but never
+    grants trust owner or admin or the role proxy, nor lowers or removes an owner."""
+    project_id = _project_id(migrated)
+    admin = flow.human(make_client, migrated, "deputy")
+    factory.membership(migrated, project_id, "admin", human_id=admin.id)
+    co_owner = flow.human(make_client, migrated, "partner")
+    factory.membership(migrated, project_id, "owner", human_id=co_owner.id)
+    agent = flow.agent(make_client, owner)
+    path = "/projects/maintainer/maity/members"
+
+    def refused(response: Any) -> None:
+        assert response.status_code == 403, response.text
+        assert response.json()["error"]["details"] == {"reason": "owner_only"}
+
+    refused(admin.patch(f"{path}/{agent.id}", {"trust": "admin"}))
+    refused(admin.patch(f"{path}/{agent.id}", {"trust": "admin", "role": "proxy"}))
+    refused(admin.patch(f"{path}/{co_owner.id}", {"trust": "admin"}))
+    refused(admin.delete(f"{path}/{co_owner.id}"))
+    # Below admin it manages as before; the owner may do all of it.
+    assert admin.patch(f"{path}/{agent.id}", {"role": "reviewer"}).status_code == 200
+    assert owner.patch(f"{path}/{agent.id}", {"trust": "admin"}).status_code == 200
+    assert owner.patch(f"{path}/{co_owner.id}", {"trust": "admin"}).status_code == 200
 
 
 def test_members_admin_beyond_admin_agents_is_for_human_memberships(

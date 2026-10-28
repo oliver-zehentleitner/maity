@@ -350,7 +350,8 @@ def post_note(
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
-        mine.require("tasks:write")
+        if mine.trust != "guest":  # a guest comments with notes, whatever its role (§2.3)
+            mine.require("tasks:write")
         mine = _locked(conn, mine)
         card = _card(conn, mine, card_id)
         _refuse_closed(mine)

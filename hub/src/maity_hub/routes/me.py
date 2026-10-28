@@ -58,6 +58,7 @@ def human_body(conn: Connection, human_id: str) -> dict[str, Any]:
             **human_member(human, avatar_url=None),
             **avatars.state(conn, human.id),
             "instance_admin": is_instance_admin(conn, human.id),
+            "meat_proxy": human.meat_proxy,
             "account_status": human.account_status,
             "terms": (
                 {

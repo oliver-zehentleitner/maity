@@ -1,7 +1,7 @@
 """The e2e harness's own judgement of answers, without a browser or a hub.
 
 e2e.py imports Playwright at the top; this reads only the parts it tests out of
-the file's syntax tree (PENDING_UPLOADS, off_problem, no_problems) and runs them
+the file's syntax tree (PENDING_UPLOADS, off_problem, no_problems, BEFORE_CHAT_LIST) and runs them
 on stand-in answers. Python standard library only: python3 web/tools/test_e2e_harness.py
 """
 
@@ -16,7 +16,7 @@ from pathlib import Path
 
 SOURCE = Path(__file__).with_name("e2e.py")
 WANTED = {
-    "PENDING_UPLOADS", "off_problem", "no_problems",
+    "PENDING_UPLOADS", "off_problem", "no_problems", "BEFORE_CHAT_LIST",
     "TRACE_BODY", "TRACE_ROUTE", "TRACE_ENUMS", "TRACE_CODES", "TRACE_ID",
     "trace_path", "trace_data", "trace_line", "report_failure",
 }
@@ -159,6 +159,11 @@ def main() -> int:
         ("the code on another path is a problem",
          [Answer(409, "attachments_not_configured", path="/api/v1/projects/owner/e2e-alpha/attachments?name=a.png")], 1),
         ("the code with another status is a problem", [Answer(500, "attachments_not_configured")], 1),
+        ("a hub without the chat list across projects is no problem",
+         [Answer(404, "not_found", path="/api/v1/me/conversations?observed=true&limit=200")], 0),
+        ("another status of the chat list is a problem",
+         [Answer(500, "internal", path="/api/v1/me/conversations?observed=true&limit=200")], 1),
+        ("a 404 of another route is a problem", [Answer(404, "not_found", path="/api/v1/me/notifications?limit=0")], 1),
     ]
     failed = 0
     for name, answers, want in cases:

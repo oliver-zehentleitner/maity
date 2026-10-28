@@ -155,6 +155,12 @@ def observers(conn: Connection, current: list[Any]) -> list[str]:
             )
         ).all()
     )
+    return observers_of(current, owners)
+
+
+def observers_of(current: list[Any], owners: dict[str, str]) -> list[str]:
+    """`observers` from the owners of the agents already read (agent id → owner id)."""
+    agents = [s.agent_id for s in current if s.agent_id]
     inside = {s.human_id for s in current if s.human_id}
     return list(dict.fromkeys(owners[a] for a in agents if owners[a] not in inside))
 

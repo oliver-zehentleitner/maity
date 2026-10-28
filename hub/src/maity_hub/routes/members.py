@@ -157,11 +157,14 @@ def validate_assignment(
             errors["role"] = "proxy_needs_admin"
     if reports_to is not None:
         try:
-            values["reports_to"] = member_row(conn, project_id, reports_to).id
+            boss = member_row(conn, project_id, reports_to)
         except ApiError:
             errors["reports_to"] = "not_a_member"
         else:
-            if member is not None and member in chain(conn, values["reports_to"]):
+            values["reports_to"] = boss.id
+            if boss.trust == "guest":  # a guest is never a target (§2.3)
+                errors["reports_to"] = "guest"
+            elif member is not None and member in chain(conn, values["reports_to"]):
                 errors["reports_to"] = "cycle"
     if areas is not None:
         if any(not AREA.fullmatch(a) or a.startswith("..") or "/../" in f"/{a}/" for a in areas):
@@ -188,6 +191,25 @@ def chain(conn: Connection, membership_id: int) -> set[int]:
             )
         ).scalar()
     return seen
+
+
+def owner_only(message: str) -> ApiError:
+    return ApiError(403, "forbidden", message, {"reason": "owner_only"})
+
+
+def _require_owner_for_change(mine: Membership, target: Any, values: dict[str, Any]) -> None:
+    """Only a caller with trust `owner` grants trust `owner` or `admin` or the role `proxy`,
+    and lowers an owner's trust (§2.3 "The owner's rights")."""
+    if mine.trust == "owner":
+        return
+    trust, role = values.get("trust", target.trust), values.get("role", target.role)
+    grants = (trust in ("owner", "admin") and trust != target.trust) or (
+        role == "proxy" and role != target.role
+    )
+    if grants:
+        raise owner_only("only an owner grants trust owner or admin, or the role proxy")
+    if target.trust == "owner" and trust != "owner":
+        raise owner_only("only an owner lowers an owner's trust")
 
 
 def _owners(conn: Connection, project_id: str) -> int:
@@ -418,6 +440,7 @@ def patch_member(
             values["briefing"] = body.briefing or None
         if new_policy is not None and new_policy != availability.policy_of(target):
             values["availability_policy"] = new_policy
+        _require_owner_for_change(mine, target, values)
         demotes = values.get("trust", "owner") != "owner" and target.trust == "owner"
         if demotes and _owners(conn, mine.project.id) <= 1:
             raise invalid({"trust": "last_owner"}, "the last owner cannot be demoted")
@@ -678,6 +701,8 @@ def remove_member(slug: str, member_id: str, request: Request, caller: AnyCaller
             # An admin agent never removes on the call: the owner gives the go (§2.3 ᵃ).
             request_id = admin_agents.propose(conn, mine, caller, target, {"action": "remove"})
             return idempotency.Outcome(202, "request", request_id, _request(conn, request_id))
+        if target.trust == "owner" and mine.trust != "owner":
+            raise owner_only("only an owner removes an owner")
         if target.trust == "owner" and _owners(conn, mine.project.id) <= 1:
             raise invalid({"member": "last_owner"}, "the last owner cannot be removed")
         if target.human_id is not None:  # the namespace owner stays a member (§6.25)

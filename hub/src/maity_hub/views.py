@@ -42,6 +42,15 @@ def human_member(row: Any, *, avatar_url: str | None) -> dict[str, Any]:
     }
 
 
+MEAT_PROXY_NOTE = "This person says: I am a meat proxy."
+
+
+def meat_proxy_view(on: bool) -> dict[str, Any]:
+    """The resume packet's two fields (docs/api.md §5.2, "Meat proxy"): the flag, and while it is on
+    the one fixed sentence and nothing that says what it means."""
+    return {"meat_proxy": on, **({"meat_proxy_note": MEAT_PROXY_NOTE} if on else {})}
+
+
 def owner_handles(conn: Connection, owner_ids: Iterable[str]) -> dict[str, str]:
     """Per human id its handle: the first half of an agent's global name (§6.3)."""
     ids = set(owner_ids)
