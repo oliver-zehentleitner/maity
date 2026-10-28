@@ -208,3 +208,25 @@ them at one version.
   that can drift apart from the API they call.
 - Pointing `MAITY_WEB_DIR` at a checkout: an extra clone and an
   environment variable in a path meant to take five minutes.
+
+## The image sets MALLOC_ARENA_MAX=2, because the process grew with every request through fragmented arenas
+
+**Id:** a20c28f6-6b1d-48c1-b60e-7fc9191e90df
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** a measurement on 2026-10-28 for the card on the hub's growing memory (258 to 419 MiB in five hours on 2 vCPU): the same request mix, 200 rounds of about 26 requests, with and without the setting
+**Revisit when:** the hub's memory still grows after a deploy with it, or the image gets another allocator
+**Reason:** the Python heap does not explain the growth (189 KiB over about 400 requests of a mixed load, no structure standing out); the process size does. With glibc's default the process grew from 161.5 to 166.8 MiB over about 5,200 requests, steadily, with a thread pool of up to 40 threads in production it has far more arenas to fragment than the test's few threads; with `MALLOC_ARENA_MAX=2` it went from 145.1 to 145.4 MiB and started 16 MiB lower. Two arenas cost some contention between request threads, which the hub's database-bound requests do not feel.
+
+The measurement does not prove that this is all of the 32 MiB an hour seen in production: it
+reproduced about 1 KiB a request, the card's rate is about 12 KiB a request. What it shows is that
+the request path keeps nothing (every in-process structure of the hub that grows with its input is
+bounded: the long-poll registry holds one waiter a credential, the rate limiters forget keys past
+their window, the nonce window holds at most 10,000 entries), and that allocator growth is real.
+Production tells the rest: ops compares the pod's memory after the deploy with the curve before it.
+
+**Rejected alternatives:**
+- Bounding more caches (LRU or TTL): none of the structures the card names grew in the probe.
+- `jemalloc` in the image: another package in a pinned image for what a setting does.
+- Fewer worker threads: it would cut concurrency for a cost the allocator setting avoids.
