@@ -55,6 +55,11 @@ After a malicious job the machine is reinstalled; the hook below cannot make it 
   `iptables -A OUTPUT -m owner --uid-owner <uid> -d 127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16 -j REJECT`
   and `ip6tables -A OUTPUT -m owner --uid-owner <uid> -d ::1/128,fc00::/7,fe80::/10 -j REJECT`,
   with the loopback ports of its own Docker services allowed first.
+- Lingering keeps the runner user's systemd user manager running. `KillMode=control-group`
+  does nothing against a process a job starts there (`systemd-run --user`, a unit under
+  `~/.config/systemd/user`): it lives outside the unit's cgroup, under the same uid, and can
+  read the environment of later jobs. That is one more reason for "reinstall after a malicious
+  job", and lingering is there only for the rootless Docker.
 - The tool cache (Python from `setup-python`) is kept between jobs and is writable for the
   runner user: a job can replace it for the later ones. That is part of the boundary above.
 
@@ -63,12 +68,16 @@ After a malicious job the machine is reinstalled; the hook below cannot make it 
 1. Create the user (`<runner-user>`, uid `<uid>`), enable lingering, install rootless Docker
    for it (see above).
 2. On GitHub: Settings → Actions → Runners → New self-hosted runner (Linux x64). As root,
-   unpack it to `/opt/actions-runner` and run `config.sh --url <repo> --labels maity-hub
-   --unattended --disableupdate` with the registration token from that page. The runner's
-   self-update would write into its own directory, which the runner user may not; update it
-   by hand, as root, when GitHub asks for a newer version. Then `chown -R root:root
-   /opt/actions-runner` and `chown <runner-user> /opt/actions-runner/_work
-   /opt/actions-runner/_diag /opt/actions-runner/_temp` (create them if missing).
+   unpack it to `/opt/actions-runner` and `chown -R <runner-user> /opt/actions-runner`. Run
+   `config.sh --url <repo> --labels maity-hub --unattended --disableupdate` **as the runner
+   user**, with the registration token from that page (as root it refuses: "Must not run with
+   sudo"). The runner's self-update would write into its own directory, which the runner user
+   may not; update it by hand, as root, when GitHub asks for a newer version. Then hand the
+   files over: `chown -R root:root /opt/actions-runner`; the runner user still has to read its
+   registration, so `chgrp <runner-user> .runner .credentials .credentials_rsaparams` and
+   `chmod 640` on those three files (a root-owned 0600 `.credentials_rsaparams` stops
+   `run.sh` from starting); finally `install -d -o <runner-user> _work _diag _temp` inside
+   `/opt/actions-runner`.
 3. Put `job-completed.sh` into `/opt/maity-runner-hooks/` (root-owned, executable) and
    `maity-runner.service` into `/etc/systemd/system/` with `<runner-user>` and `<uid>` filled
    in, then `systemctl enable --now maity-runner`. The unit uses `KillMode=control-group`.
