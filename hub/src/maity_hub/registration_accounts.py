@@ -39,6 +39,9 @@ REASON_MAX = 1024
 PENDING_PAGE = "/#/pending"
 # A `registration_lock` key no address can be (it has no `@`): the instance-wide budget.
 BUDGET_LOCK = "*new-accounts-per-hour*"
+# The tables with a `human_id` that a removed pending account leaves alone: its decision
+# stays with the registration, and a pending account holds no membership.
+KEPT_FOR_THE_RECORD = ("account_registration", "membership")
 _HANDLE = re.compile(HANDLE_PATTERN)
 log = logging.getLogger(__name__)
 
@@ -329,9 +332,12 @@ def remove(conn: Connection, row: Any, status: str, by: str | None, reason: str 
     a rejection (`by`, `reason`) or an expiry (§2.7.5). The row keeps the decision and
     the reason, no longer the address or where the request came from."""
     now = clock.now()
-    # What the account's first sign-in left (§2.6.5): its sessions, its record, its device.
-    for table in (t.human_session, t.account_record, t.human_device):
-        conn.execute(delete(table).where(table.c.human_id == row.human_id))
+    # What the account itself has made, whatever the table: its sessions, records, devices,
+    # its settings row (which holds the address's claim), the mail waiting for it and the
+    # state of the notification mail. A pending account holds no project or membership.
+    for table in t.human.metadata.tables.values():  # unsorted: no order among them
+        if table.name not in KEPT_FOR_THE_RECORD and "human_id" in table.c:
+            conn.execute(delete(table).where(table.c.human_id == row.human_id))
     conn.execute(delete(t.human).where(t.human.c.id == row.human_id))
     block(conn, row.address_normalized, now + BLOCK_FOR)
     conn.execute(

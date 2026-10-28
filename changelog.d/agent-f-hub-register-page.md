@@ -11,4 +11,5 @@
 - hub: the registration's sign-in is made like the login's: the browser's earlier session
   ends, the session has its account record and the password given at the completion
   (`method: "register"` counts as signed in by password), the device cookie is set, and a
-  rejected or expired pending account takes its account records and devices with it.
+  rejected or expired pending account takes everything with it that is keyed to it (sessions,
+  records, devices, its notification settings and the address claim, mail state and waiting mail).

@@ -556,6 +556,58 @@ def test_the_admin_lists_and_approves(
     assert [i["id"] for i in admin.get(ADMIN).json()["items"]] == [second.human_id]
 
 
+def test_a_really_completed_account_is_rejected_with_everything_it_made(
+    admin: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """No `claims` stand-in: the completion claims the address in `notification_settings`
+    as it does for real, the account's mail state exists, and the rejection removes all
+    of it and frees the address."""
+    from maity_hub.mail import outbox
+
+    done, _ = pending_account(make_client, migrated)
+    with migrated.begin() as conn:
+        held = conn.execute(
+            select(t.notification_settings.c.address_normalized).where(
+                t.notification_settings.c.human_id == done.human_id
+            )
+        ).scalar_one()
+        assert held == "ada@example.com"
+        conn.execute(
+            t.notification_mail_state.insert().values(
+                human_id=done.human_id, stamp="x", waiting=False
+            )
+        )
+        conn.execute(
+            t.mail_item_sent.insert().values(
+                human_id=done.human_id, item="e:1", mailed_at=clock.now()
+            )
+        )
+        outbox.enqueue(
+            conn, kind="security", to="ada@example.com", subject="s", body="b\n",
+            human_id=done.human_id,
+        )  # fmt: skip
+    rejected = admin.post(f"{ADMIN}/{done.human_id}/reject", {"reason": "No."})
+    assert rejected.status_code == 200, rejected.text
+    assert human(migrated, done.human_id) is None
+    with migrated.connect() as conn:
+        for table in (
+            t.notification_settings,
+            t.notification_mail_state,
+            t.mail_item_sent,
+            t.mail_outbox,
+            t.account_record,
+            t.human_session,
+        ):
+            left = conn.execute(select(table).where(table.c.human_id == done.human_id)).all()
+            assert left == [], table.name
+        decision = conn.execute(
+            select(t.account_registration.c.status).where(
+                t.account_registration.c.human_id == done.human_id
+            )
+        ).scalar_one()
+    assert decision == "rejected"
+
+
 def test_the_admin_rejects_with_a_reason(
     admin: flow.Human, make_client: ClientFactory, migrated: Engine, claims: dict[str, str]
 ) -> None:

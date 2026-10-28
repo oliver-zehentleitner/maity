@@ -366,7 +366,10 @@ def test_a_form_value_that_is_not_ascii_is_refused_not_a_server_error(
     assert refused.status_code == 403 and humans(migrated) == []
     client.cookies.clear()
     body["form"] = form_of(page)["form"]
-    raw = {**SAME, "cookie": "maity_form=ünïcode".encode()}  # a browser may send any byte
+    raw: dict[str, Any] = {
+        **SAME,
+        "cookie": "maity_form=ünïcode".encode(),
+    }  # a browser may send any byte
     again = client.post(link, data=body, headers=raw, follow_redirects=False)
     assert again.status_code == 403 and humans(migrated) == []
 
