@@ -75,6 +75,17 @@ def not_found() -> ApiError:
     return ApiError(404, "not_found", "no such resource")
 
 
+def probe_not_configured(reason: str | None) -> ApiError:
+    """No source covers the project's repository (§11.4). `reason` only for a
+    `project:admin`; every other reader gets `details: {}`."""
+    return ApiError(
+        409,
+        "probe_not_configured",
+        "no forge access covers this repository",
+        {"reason": reason} if reason is not None else None,
+    )
+
+
 def rate_limited(retry_after: int) -> ApiError:
     return ApiError(
         429,

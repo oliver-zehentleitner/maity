@@ -3,9 +3,11 @@ the redirect guard, check runs and commit statuses, a repository the token canno
 
 from __future__ import annotations
 
+import hashlib
 import http.client
 import io
 import json
+import time
 import urllib.error
 import urllib.request
 from typing import Any
@@ -46,9 +48,29 @@ READER = forge.Forge(TOKEN)
 
 @pytest.fixture
 def opener(monkeypatch: pytest.MonkeyPatch) -> FakeOpener:
+    """The reads below are about `a/b`, which the forge reported public a moment ago: the
+    visibility check itself has its own tests (`seen`)."""
     fake = FakeOpener()
     monkeypatch.setattr(forge, "_opener", fake)
+    monkeypatch.setattr(forge, "_public", {(_digest(TOKEN), "a/b"): (time.monotonic(), None)})
     return fake
+
+
+@pytest.fixture
+def seen(monkeypatch: pytest.MonkeyPatch) -> FakeOpener:
+    """A fake forge with no visibility known yet."""
+    fake = FakeOpener()
+    monkeypatch.setattr(forge, "_opener", fake)
+    monkeypatch.setattr(forge, "_public", {})
+    return fake
+
+
+def _digest(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _paths(opener: FakeOpener) -> list[str]:
+    return [r.full_url.removeprefix(f"https://{forge.API_HOST}") for r in opener.requests]
 
 
 # --- _get ----------------------------------------------------------------------------------
@@ -156,6 +178,95 @@ def test_a_repository_the_token_cannot_see_is_unavailable_not_missing(opener: Fa
         READER.pull_request("a/b", 9)
 
 
+# --- the operator's token reads public repositories only (§11.4) ---------------------------
+
+
+def test_a_public_repository_is_read_after_one_visibility_check(seen: FakeOpener) -> None:
+    seen.answers["/repos/a/b"] = {"full_name": "a/b", "private": False}
+    seen.answers["/repos/a/b/branches/main"] = {"commit": {"sha": SHA}}
+    assert READER.branch("a/b", "main")["head_sha"] == SHA
+    assert READER.branch("a/b", "main")["head_sha"] == SHA
+    assert _paths(seen) == ["/repos/a/b", "/repos/a/b/branches/main", "/repos/a/b/branches/main"]
+
+
+@pytest.mark.parametrize(
+    ("answer", "reason"), [({"private": True}, "private_without_grant"), (None, "no_grant")]
+)
+def test_a_private_or_invisible_repository_is_never_read_with_the_token(
+    seen: FakeOpener, answer: Any, reason: str
+) -> None:
+    seen.answers["/repos/a/b"] = answer
+    seen.answers["/repos/a/b/branches/main"] = {"commit": {"sha": SHA}}
+    for _ in range(2):
+        with pytest.raises(forge.NotCoveredError) as raised:
+            READER.branch("a/b", "main")
+        assert raised.value.reason == reason
+    assert _paths(seen) == ["/repos/a/b"]  # the answer is remembered, the read never made
+
+
+def test_every_kind_of_read_is_checked_graphql_included(seen: FakeOpener) -> None:
+    seen.answers["/repos/a/b"] = {"private": True}
+    with pytest.raises(forge.NotCoveredError):
+        READER.items("a/b", [1])
+    with pytest.raises(forge.NotCoveredError):
+        READER.social_preview("a/b")
+    with pytest.raises(forge.NotCoveredError):
+        READER.file("a/b", "README.md", 1000)
+    with pytest.raises(forge.NotCoveredError):
+        READER.owner_avatar("a/b")
+    assert _paths(seen) == ["/repos/a/b"]
+
+
+def test_the_check_is_per_repository_whatever_the_case(seen: FakeOpener) -> None:
+    seen.answers["/repos/a/b"] = {"private": False}
+    seen.answers["/repos/A/B/branches/main"] = {"commit": {"sha": SHA}}
+    READER.branch("A/B", "main")
+    assert _paths(seen) == ["/repos/a/b", "/repos/A/B/branches/main"]
+
+
+def test_a_visibility_the_forge_does_not_give_is_asked_again(seen: FakeOpener) -> None:
+    seen.answers["/repos/a/b"] = {"full_name": "a/b"}  # no `private`
+    seen.answers["/repos/a/b/branches/main"] = {"commit": {"sha": SHA}}
+    with pytest.raises(forge.ForgeUnavailableError) as raised:
+        READER.branch("a/b", "main")
+    assert not isinstance(raised.value, forge.NotCoveredError)
+    seen.answers["/repos/a/b"] = 502
+    with pytest.raises(forge.ForgeUnavailableError):
+        READER.branch("a/b", "main")
+    assert _paths(seen) == ["/repos/a/b", "/repos/a/b"]
+
+
+def test_a_repository_turned_private_stops_at_the_next_check(
+    seen: FakeOpener, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = [1000.0]
+    monkeypatch.setattr(forge.time, "monotonic", lambda: now[0])
+    seen.answers["/repos/a/b"] = {"private": False}
+    seen.answers["/repos/a/b/branches/main"] = {"commit": {"sha": SHA}}
+    READER.branch("a/b", "main")
+    seen.answers["/repos/a/b"] = {"private": True}
+    now[0] += forge.PUBLIC_SECONDS - 1
+    READER.branch("a/b", "main")  # within the 10 minutes: not asked again
+    now[0] += 1
+    with pytest.raises(forge.NotCoveredError):
+        READER.branch("a/b", "main")
+    assert _paths(seen).count("/repos/a/b") == 2
+
+
+def test_a_read_naming_no_repository_is_not_made_with_the_token(seen: FakeOpener) -> None:
+    with pytest.raises(forge.ForgeUnavailableError):
+        READER._call("/user")
+    with pytest.raises(forge.ForgeUnavailableError):
+        READER._call("/graphql", {"query": "{ viewer { login } }"})
+    assert seen.requests == []
+
+
+def test_without_a_token_no_visibility_is_asked(seen: FakeOpener) -> None:
+    seen.answers["/repos/a/b/contents/README.md"] = None
+    assert forge.Forge(None).file("a/b", "README.md", 1000) is None
+    assert _paths(seen) == ["/repos/a/b/contents/README.md"]
+
+
 # --- checks ----------------------------------------------------------------------------------
 
 
@@ -234,14 +345,15 @@ def test_a_rate_limit_on_checks_is_no_answer_not_a_missing_permission(
 
 
 def test_repository_visibility_is_remembered_per_token(opener: FakeOpener) -> None:
-    opener.answers["/repos/a/b"] = {"full_name": "a/b"}
+    opener.answers["/repos/a/b"] = {"full_name": "a/b", "private": False}
     opener.answers["/repos/a/b/pulls/9"] = None
     READER.pull_request("a/b", 9)
     other = forge.Forge("another-token")
     other.pull_request("a/b", 9)
     visibility = [r for r in opener.requests if r.full_url.endswith("/repos/a/b")]
-    assert len(visibility) == 2  # each token asked once for itself
-    assert all(TOKEN not in str(key) for key in forge._visible)
+    # each token asked for itself; the other one also whether it is public (§11.4)
+    assert len(visibility) == 3
+    assert all(TOKEN not in str(key) for key in [*forge._visible, *forge._public])
 
 
 # --- the logo (§11.2) -----------------------------------------------------------------------

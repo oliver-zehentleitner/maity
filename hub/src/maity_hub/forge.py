@@ -6,6 +6,10 @@ worker, readiness. It is not a process global and never in a `repr`. Nothing a
 project member sets can change where it is sent. Requests go to the fixed API
 host of the forge kind, and a redirect to any other host is refused, so the
 token never leaves for a host the operator did not choose.
+
+The operator's token reads only public repositories (§11.4): it may see the
+operator's own private ones, which no project should see through the probe, so
+every read with it first asks the forge whether the repository is public.
 """
 
 from __future__ import annotations
@@ -35,6 +39,16 @@ class ForgeUnavailableError(Exception):
         super().__init__(message)
         self.status = status  # the forge's HTTP status, when it answered with one
         self.rate_limited = rate_limited  # a 403/429 that says "later", not "never"
+
+
+class NotCoveredError(ForgeUnavailableError):
+    """No source the hub holds may read the repository (§11.4): `reason` is
+    `private_without_grant` (the forge reports it private) or `no_grant` (the
+    token cannot see it at all). A read that is refused, not a forge that failed."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(f"no source covers the repository ({reason})")
+        self.reason = reason
 
 
 def kind_of(url: str | None) -> str | None:
@@ -86,6 +100,25 @@ VISIBILITY_SECONDS = 300
 # (token digest, repository) -> when that token last saw it; the digest, not the token
 _visible: dict[tuple[str, str], float] = {}
 
+PUBLIC_SECONDS = 600  # §11.4: the visibility is read again at most every 10 minutes
+# (token digest, repository) -> (when it was read, None when public or the reason not)
+_public: dict[tuple[str, str], tuple[float, str | None]] = {}
+
+
+def _repository_in(path: str, query: dict[str, Any] | None) -> str | None:
+    """The `owner/name` a read is about: from a REST path `/repos/{owner}/{name}/…`
+    or a GraphQL query's variables; None when the read names none."""
+    if query is not None:
+        variables = query.get("variables") or {}
+        owner, name = variables.get("owner"), variables.get("name")
+        if isinstance(owner, str) and isinstance(name, str):
+            return f"{owner}/{name}".lower()
+        return None
+    parts = path.split("?", 1)[0].split("/")
+    if len(parts) >= 4 and parts[0] == "" and parts[1] == "repos" and parts[2] and parts[3]:
+        return f"{parts[2]}/{parts[3]}".lower()
+    return None
+
 
 @dataclass(frozen=True)
 class Forge:
@@ -105,7 +138,39 @@ class Forge:
 
     def _call(self, path: str, query: dict[str, Any] | None = None) -> Any | None:
         """A read on the forge API, with the token when the hub holds one and without it
-        otherwise (a public repository). `query` makes it a GraphQL POST, which only reads."""
+        otherwise (a public repository). `query` makes it a GraphQL POST, which only reads.
+        With the token, only of a repository the forge reports public (`NotCoveredError`
+        otherwise); a read that names no repository is not made with it."""
+        if self.token is not None:
+            repository = _repository_in(path, query)
+            if repository is None:
+                raise ForgeUnavailableError("a read with the forge token names no repository")
+            self._require_public(repository)
+        return self._send(path, query)
+
+    def _require_public(self, repository: str) -> None:
+        """Raises `NotCoveredError` unless the forge reported the repository public within
+        PUBLIC_SECONDS; a visibility the forge does not answer is `ForgeUnavailableError`
+        and is asked again on the next read."""
+        key = (hashlib.sha256((self.token or "").encode()).hexdigest(), repository)
+        known = _public.get(key)
+        if known is None or time.monotonic() - known[0] >= PUBLIC_SECONDS:
+            found = self._send(f"/repos/{repository}")
+            if found is None:
+                reason: str | None = "no_grant"
+            elif isinstance(found, dict) and found.get("private") is False:
+                reason = None
+            elif isinstance(found, dict) and found.get("private") is True:
+                reason = "private_without_grant"
+            else:
+                raise ForgeUnavailableError("the forge did not say whether it is public")
+            known = (time.monotonic(), reason)
+            _public[key] = known
+        if known[1] is not None:
+            raise NotCoveredError(known[1])
+
+    def _send(self, path: str, query: dict[str, Any] | None = None) -> Any | None:
+        """The request itself, with no visibility check: only `_call` and the check use it."""
         data = None if query is None else json.dumps(query).encode()
         request = urllib.request.Request(f"https://{API_HOST}{path}", data=data)
         request.add_header("Accept", "application/vnd.github+json")

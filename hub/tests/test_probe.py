@@ -22,6 +22,7 @@ SHA = "d91e294c" + "0" * 32
 OTHER = "e" * 40
 TOKEN = "test-token"
 READER = forge.Forge(TOKEN)  # what the app builds from the settings
+REAL_GET = forge.Forge._get
 
 
 class FakeGitHub:
@@ -228,6 +229,37 @@ def test_an_agent_reads_the_probe_with_project_read(
     agent = flow.agent(make_client, owner)
     github.pull(3)
     assert agent.get("/projects/maintainer/maity/probe?pr=3").json()["pr"]["number"] == 3
+
+
+@pytest.mark.parametrize(
+    ("answer", "reason"), [(True, "private_without_grant"), (None, "no_grant")]
+)
+def test_a_private_repository_is_not_configured_and_only_an_admin_sees_why(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    github: FakeGitHub,
+    monkeypatch: pytest.MonkeyPatch,
+    answer: bool | None,
+    reason: str,
+) -> None:
+    """§11.4: the instance token reads public repositories only."""
+    agent = flow.agent(make_client, owner)
+    sent: list[str] = []
+
+    def send(_self: forge.Forge, path: str, query: Any = None) -> Any:
+        sent.append(path)
+        return None if answer is None else {"private": answer}
+
+    monkeypatch.setattr(forge.Forge, "_get", REAL_GET)
+    monkeypatch.setattr(forge.Forge, "_send", send)
+    monkeypatch.setattr(forge, "_public", {})
+    refused = owner.get("/projects/maintainer/maity/probe?pr=3")
+    assert refused.status_code == 409
+    assert refused.json()["error"]["code"] == "probe_not_configured"
+    assert refused.json()["error"]["details"] == {"reason": reason}
+    hidden = agent.get("/projects/maintainer/maity/probe?pr=3").json()["error"]
+    assert (hidden["code"], hidden["details"]) == ("probe_not_configured", {})
+    assert sent == ["/repos/acme/maity"]
 
 
 # --- the forge client ----------------------------------------------------------------------
