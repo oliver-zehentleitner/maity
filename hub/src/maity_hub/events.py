@@ -496,18 +496,25 @@ _DONE_ROLES = {
 
 def _merge_wakes(row: Any, membership: Any, principal: str, instance: str | None) -> bool:
     """§6.6: `task_merged` wakes the done authority only, and nobody once the hub closed
-    the card itself."""
+    the card itself; within it, a team's wake rule (`row.wakes`) still picks the
+    instances, and the holding instance named directly stays exact."""
     payload = row.payload or {}
     if payload.get("closed"):
         return False
     authority = payload.get("done_authority")
     audience = row.audience or []
     if authority == "holder":
-        own = instance is not None and f"instance:{principal}#{instance}" in audience
-        return own or f"member:{principal}" in audience
-    if authority == "admin":
-        return membership.role in SEE_ALL_ROLES
-    return membership.role in _DONE_ROLES.get(str(authority), ())
+        if instance is not None and f"instance:{principal}#{instance}" in audience:
+            return True
+        allowed = f"member:{principal}" in audience
+    elif authority == "admin":
+        allowed = membership.role in SEE_ALL_ROLES
+    else:
+        allowed = membership.role in _DONE_ROLES.get(str(authority), ())
+    if not allowed:
+        return False
+    chosen = (row.wakes or {}).get(principal)
+    return chosen is None or instance is None or instance in chosen
 
 
 def _group_chat(row: Any) -> bool:

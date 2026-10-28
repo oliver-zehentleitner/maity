@@ -155,6 +155,35 @@ def _tell(conn: Connection, card_id: str, merge_sha: str | None) -> None:
             },
             subject=("task", card.id),
         )
+        if card.parent is not None:
+            _touch_parent(conn, card.parent, project.state)
+
+
+def _touch_parent(conn: Connection, parent_id: str, state: str) -> None:
+    """A child's status change reaches its parent as `task_updated` with `children`
+    (§6.4 Child cards), as when an agent closes the child."""
+    from maity_hub.routes.tasks import audience as card_audience
+
+    conn.execute(update(t.card).where(t.card.c.id == parent_id).values(updated_at=clock.now()))
+    parent = conn.execute(select(t.card).where(t.card.c.id == parent_id)).one()
+    children = {"open": 0, "total": 0}
+    for (status,) in conn.execute(select(t.card.c.status).where(t.card.c.parent == parent_id)):
+        children["total"] += 1
+        children["open"] += status not in ("done", "cancelled")
+    emit(
+        conn,
+        parent.project_id,
+        "task_updated",
+        card_audience(conn, parent),
+        {
+            "id": parent_id,
+            "fields": ["children"],
+            "children": children,
+            "history": [],
+            "project_state": state,
+        },
+        subject=("task", parent_id),
+    )
 
 
 def _close(conn: Connection, card: Any) -> None:

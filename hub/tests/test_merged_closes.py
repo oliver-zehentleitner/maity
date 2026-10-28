@@ -128,6 +128,27 @@ def test_an_open_child_keeps_the_card_in_review_and_says_so(
     assert _card(owner, card_id)["status"] == "review"
 
 
+def test_closing_a_child_tells_its_parent(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """§6.4 Child cards: the hub closing a child is a status change like any other, so the
+    parent hears `task_updated` with its `children` counts."""
+    _policy(owner, done_authority="holder", merged_closes="auto")
+    github.pull(7, merged=True)
+    parent = owner.post(f"{BASE}/tasks", {"title": "The parent"}).json()
+    child = owner.post(f"{BASE}/tasks", {"title": "The child", "parent": parent["id"]}).json()
+    agent = flow.agent(make_client, owner)
+    assert agent.post(f"{BASE}/tasks/{child['id']}/claim", {}).status_code == 200
+    stored = agent.post(f"{BASE}/tasks/{child['id']}/report", _report())
+    assert stored.status_code == 200, stored.text
+    probe.observe_report(migrated, READER, child["id"])
+    assert _card(owner, child["id"])["status"] == "done"
+    told = [e for e in _events(migrated, "task_updated") if e.payload.get("id") == parent["id"]]
+    assert told[-1].payload["fields"] == ["children"]
+    assert told[-1].payload["children"] == {"open": 0, "total": 1}
+    assert _card(owner, parent["id"])["children"] == {"open": 0, "total": 1}
+
+
 def test_a_mismatched_merge_triggers_nothing(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
 ) -> None:
@@ -202,3 +223,21 @@ def test_it_wakes_the_done_authority_only_and_nobody_once_closed() -> None:
     assert events.wakes(holder_row, holder, "agt-h", instance="ab12")
     assert not events.wakes(holder_row, reviewer, "agt-r", instance="cd34")
     assert events.wakes(row("admin", False), admin, "hum-a")
+
+
+def test_a_team_wake_rule_still_picks_the_instances() -> None:
+    """Within the done authority, `row.wakes` narrows to the chosen instances (§5.3)."""
+    from types import SimpleNamespace
+
+    row = SimpleNamespace(
+        kind="task_merged",
+        payload={"done_authority": "reviewer", "closed": False},
+        audience=["role:reviewer", "trust:admin"],
+        actor_membership=None,
+        actor_credential_id=None,
+        conversation_id=None,
+        wakes={"agt-r": ["lead"]},
+    )
+    reviewer = SimpleNamespace(id=1, agent_id="agt-r", role="reviewer")
+    assert events.wakes(row, reviewer, "agt-r", instance="lead")
+    assert not events.wakes(row, reviewer, "agt-r", instance="other")
