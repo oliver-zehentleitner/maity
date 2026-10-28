@@ -3025,6 +3025,23 @@ instances can have three open at once. It carries `harness`, `harness_version`, 
 right now), `cursor`. Every event the session causes records its harness
 and model, so organisation models can be compared later.
 
+**A model change is a new session.** The work is handed out by model
+(the coordinator routes security, contract and migration work to the
+strongest model and well-cut cards to a faster one), so the hub must
+know which model an instance runs on now, not at its first resume. An
+agent whose model changes mid-session — its human switched it, or the
+harness fell back to another — resumes at once with the new one
+(`maity resume --model <id>`): the resume closes the old session and
+opens one with the new `model`, the instance's claims carry over as on
+any resume (§6.5), and nothing else changes. When a resume's `model`
+or `harness` differs from the instance's previous session, the hub
+emits `session_model_changed` to the member the agent reports to and
+to `trust:admin` and to the human owner of the agent when that owner is a member of the project, with
+`{member_id, instance, from: {harness, model}, to: {harness, model},
+session_id}`; it wakes nobody but the lead, so the lead can re-route
+cards the new model should not hold. A resume that omits `model`
+keeps the previous session's value and changes nothing.
+
 `presence` on a member is computed, never stored, and never emits an
 event:
 
@@ -3133,6 +3150,7 @@ around.
   "owner": { "id": "hum-mebxvnc20qeg", "handle": "oliver" },
   "full_name": "oliver/maity",
   "legacy_slug": "maity",
+  "aliases": [],
   "name": "Maity",
   "state": "build",
   "released_at": null,
@@ -6521,7 +6539,9 @@ close it.
 pair of the namespace owner's id at that time and the slug — to the
 project's `aliases` (oldest first, at most **8**, `alias_limit` as in
 §6.24; renames and transfers together at most 3 per 24 hours per
-project, `rate_limited`). An alias is never released, not even when the
+project, `rate_limited`). The project view (§6.1) lists them as
+`aliases`: each alias as a full name `<handle>/<slug>` with that owner's
+current handle, oldest first, `[]` for a project with no aliases. An alias is never released, not even when the
 project is closed, and is never given to another project, so an old link
 can never lead somewhere else. A namespace owner's handle rename (§6.24) needs no
 alias of its own: the owner's handle aliases already resolve, so
@@ -6962,6 +6982,7 @@ learns its content.
 | `request_created` | the addressee(s): `to` resolved to `member:`, `role:` or `trust:`, and `role:proxy` when `to` is `owner` (the relay, §2.3); for a personal request the asking instance and the addressed owner as `member:` when a member (§7) | the request; for a personal request `{id, personal, status, takeover_id?}` only |
 | `request_answered`, `request_withdrawn` | the asker, the `on_behalf_of` member | the request, answer included; for a personal request `{id, personal, status, takeover_id?}` only (§7) |
 | `session_started` | nobody; readable by owner and admins | session fields |
+| `session_model_changed` | `member:` of the member the agent reports to, `trust:admin`, the human owner of the agent when a member | `{member_id, instance, from: {harness, model}, to: {harness, model}, session_id}` (§5.3); wakes the reports-to member only |
 | `keep_the_why_reminder` | `instance:<member>#<id>` of the instance that has not confirmed (§6.23); readable as any instance-addressed event, by its team (§8.4) | `{project, instance, session_id, acknowledge_by}`; once per outstanding commitment, at `acknowledge_by` or at the instance's next resume after it; wakes the instance |
 | `keep_the_why_acknowledged` | the agent's owner when a member, `trust:admin` | `{member_id, instance, session_id, acknowledged_at}`; never wakes anyone |
 | `session_paused` | the member itself, its `reports_to` (across owners too, §6.2), `trust:admin` | session fields, `paused` (`null` when a human lifts it) |

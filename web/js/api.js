@@ -446,7 +446,14 @@ window.Maity = window.Maity || {};
   }
   const served = (e) => JSON.parse(JSON.stringify(e, (k, v) => (k.startsWith("_") ? undefined : v)));
   // §8.7 in fixture mode: fixtures/<slug>/attachments.json, made on first use.
+  // ?attachments=off is an instance without a store: every attachment call
+  // and a message that names one get 409 attachments_not_configured.
   const ATTACHMENT_MAX = 10 * 1024 * 1024;
+  function attachmentsOn(path) {
+    if (new URLSearchParams(window.location.search).get("attachments") === "off") {
+      fail(409, "attachments_not_configured", "attachments are not set up on this instance", path);
+    }
+  }
   function attachmentsOf(slug) {
     const all = fixtures();
     if (!all[slug + "/attachments.json"]) all[slug + "/attachments.json"] = { items: [] };
@@ -463,6 +470,7 @@ window.Maity = window.Maity || {};
   // The ids a message names, each a pending upload of the poster; bound to it.
   function bindAttachments(slug, ids, seq, path) {
     if (!ids || !ids.length) return [];
+    attachmentsOn(path);
     if (ids.length > 10) fail(400, "invalid", "at most 10 attachments", path, { fields: { attachments: "too_many" } });
     if (["accepted", "archived"].includes(project(slug, path).state)) fail(409, "project_closed", "the project is closed", path);
     const list = attachmentsOf(slug);
@@ -720,10 +728,10 @@ window.Maity = window.Maity || {};
     }],
     ["POST", /^\/auth\/device-codes$/, (m, body, path) => {
       if (!fixtureSignedIn) fail(401, "unauthenticated", "Not signed in", path);
-      const code = "K7QM4XPR";
+      const code = "K7QM4XPR9D2F";
       deviceSim = { id: "dvc-" + (++deviceSerial), code, status: "waiting", reads: 0, match: 47,
         expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString().replace(/\.\d{3}Z$/, "Z") };
-      return { id: deviceSim.id, code: "K7QM-4XPR", url: window.location.origin + window.location.pathname + "#/sign-in/code?c=" + code, expires_at: deviceSim.expires_at };
+      return { id: deviceSim.id, code: "K7QM-4XPR-9D2F", url: window.location.origin + window.location.pathname + "#/sign-in/code?c=" + code, expires_at: deviceSim.expires_at };
     }],
     ["GET", /^\/auth\/device-codes\/([^/]+)$/, (m, body, path) => {
       const d = deviceOf(m[1], path);
@@ -1318,6 +1326,12 @@ window.Maity = window.Maity || {};
           if (body.policy.keep_the_why === "required" && (p.memory || {}).provider === "none") {
             fail(400, "invalid", "no memory provider", path, { fields: { "policy.keep_the_why": "no_memory_provider" } });
           }
+        }
+        if ("member_agents" in body.policy && !["on", "off"].includes(body.policy.member_agents)) {
+          fail(400, "invalid", "unknown member_agents value", path, { fields: { "policy.member_agents": "unknown" } });
+        }
+        if ("member_agents_max" in body.policy && !(Number.isInteger(body.policy.member_agents_max) && body.policy.member_agents_max >= 0 && body.policy.member_agents_max <= 20)) {
+          fail(400, "invalid", "member_agents_max is 0 to 20", path, { fields: { "policy.member_agents_max": "out_of_range" } });
         }
         p.policy = Object.assign({}, p.policy, body.policy);
       }
@@ -1949,6 +1963,22 @@ window.Maity = window.Maity || {};
         target.owner_preferences = body.owner_preferences;
         return target;
       }
+      // §6.18: the team's rulebook, by the human who owns the agent profile only.
+      if ("team" in body) {
+        const target = member(m[1], m[2], path);
+        if (Object.keys(body).length !== 1) fail(400, "invalid", "set team on its own", path, { fields: { team: "alone" } });
+        if (who.member.kind !== "human" || target.kind !== "agent" || target.owner_id !== who.member.id) fail(403, "forbidden", "the profile's owner only", path, { reason: "humans_only" });
+        const next = Object.assign({ max_instances: 1, distribution: "free", lead_instance: null, wake: "all", review_within_team: false }, target.team || {}, body.team);
+        const errors = {};
+        if (!Number.isInteger(next.max_instances) || next.max_instances < 1 || next.max_instances > 16) errors["team.max_instances"] = "out_of_range";
+        if (!["free", "lead", "round_robin"].includes(next.distribution)) errors["team.distribution"] = "unknown";
+        if (!["all", "lead", "next_free"].includes(next.wake)) errors["team.wake"] = "unknown";
+        if ((next.distribution === "lead" || next.wake === "lead") && !next.lead_instance) errors["team.lead_instance"] = "required";
+        if (next.lead_instance && !(target.instances || []).some((i) => i.id === next.lead_instance && !i.revoked_at)) errors["team.lead_instance"] = "not_an_instance";
+        if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
+        target.team = Object.assign(next, { updated_by: { kind: "human", id: who.member.id, handle: who.member.handle }, updated_at: nowIso() });
+        return target;
+      }
       if (!who.admin) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
       const target = member(m[1], m[2], path);
       agentLimits(who.member, target, body, path);
@@ -2059,6 +2089,25 @@ window.Maity = window.Maity || {};
     }],
     // The join line is made up here and shown once, as the hub would.
     ["POST", /^\/projects\/([^/]+)\/joins$/, (m, body, path) => {
+      // §3.1 "Bringing your own agent": a human with trust member, within the project's limits.
+      if (!["owner", "admin"].includes(roleIn(m[1]))) {
+        const pol = project(m[1], path).policy || {};
+        if (me().member.kind !== "human" || pol.member_agents === "off") fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
+        const limit = (field) => fail(403, "forbidden", "not within the limits of bringing your own agent", path, { reason: "member_join_limit", field });
+        if (body.agent && body.agent.id && !fixtures()["agents.json"].items.some((a) => a.id === body.agent.id && a.owner_id === me().member.id)) limit("agent");
+        if (body.trust && !["member", "guest"].includes(body.trust)) limit("trust");
+        if (body.role && !["coder", "reviewer", "tester", "designer"].includes(body.role)) limit("role");
+        if (body.reports_to && body.reports_to !== me().member.id) limit("reports_to");
+        if ((body.areas || []).length) limit("areas");
+        if ((body.capabilities || []).length) limit("capabilities");
+        if (!body.new_instance && !body.replaces) {
+          const mine = new Set(file(m[1], "members.json", path).items.filter((x) => x.kind === "agent" && x.owner_id === me().member.id && !x.removed_at).map((x) => x.id));
+          file(m[1], "joins.json", path).items.filter((j) => j.created_by === me().member.id && !j.used_at && !j.revoked_at && !j.burned && Date.parse(j.expires_at) > Date.now() && !j.new_instance && !j.replaces)
+            .forEach((j) => mine.add(j.agent_id));
+          const max = pol.member_agents_max === undefined ? 3 : pol.member_agents_max;
+          if (mine.size >= max) fail(403, "forbidden", "you hold as many agents here as the project allows", path, { reason: "member_agents_max", max });
+        }
+      }
       let agentId = body.agent && body.agent.id;
       if (!agentId) {
         if (!body.agent || !body.agent.handle) fail(400, "invalid", "agent needs an id or a handle", path, { fields: { agent: "required" } });
@@ -2119,6 +2168,7 @@ window.Maity = window.Maity || {};
     }],
     // §8.7 attachments: a raw upload, pending until a message names it.
     ["POST", /^\/projects\/([^/]+)\/attachments$/, (m, body, path, query) => {
+      attachmentsOn(path);
       if (["accepted", "archived"].includes(project(m[1], path).state)) fail(409, "project_closed", "the project is closed", path);
       const name = query.get("name");
       if (!name) fail(400, "invalid", "a name is required", path, { fields: { name: "required" } });
@@ -2151,13 +2201,15 @@ window.Maity = window.Maity || {};
       return att;
     }],
     ["GET", /^\/projects\/([^/]+)\/attachments$/, (m, body, path, query) => {
+      attachmentsOn(path);
       const admin = ["owner", "admin"].includes(roleIn(m[1]));
       const pending = attachmentsOf(m[1]).filter((a) => a.message_seq === null && !a.deleted_at
         && (a.uploaded_by === me().member.id || admin) && (!query.get("uploaded_by") || a.uploaded_by === query.get("uploaded_by")));
       return { items: pending.map((a) => (a.uploaded_by === me().member.id ? Object.assign({}, a) : hiddenUpload(a))), next_cursor: null };
     }],
-    ["GET", /^\/projects\/([^/]+)\/attachments\/([^/]+)$/, (m, body, path) => Object.assign({}, attachmentOf(m[1], m[2], path))],
+    ["GET", /^\/projects\/([^/]+)\/attachments\/([^/]+)$/, (m, body, path) => { attachmentsOn(path); return Object.assign({}, attachmentOf(m[1], m[2], path)); }],
     ["DELETE", /^\/projects\/([^/]+)\/attachments\/([^/]+)$/, (m, body, path) => {
+      attachmentsOn(path);
       const a = attachmentOf(m[1], m[2], path);
       const meId = me().member.id;
       const admin = ["owner", "admin"].includes(roleIn(m[1]));

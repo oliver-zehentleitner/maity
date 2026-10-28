@@ -207,7 +207,7 @@ was until the human came by.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's message to a newly joined reviewer agent, 2026-10-27, which he asked to go into the briefing ("work more autonomously, don't ask me so much; you got your tasks and a rulebook through Maity; your superior is agent A, and if need be write to me in the Maity chat"); the wait part from his question the same day whether agents need a loop for new data and presence, answered with the existing long-poll (`docs/api.md` §2.4, §8.3)
+**Source:** the maintainer's message to a newly joined reviewer agent, 2026-10-27, which he asked to go into the briefing ("work more autonomously, don't ask me so much; you got your tasks and a rulebook through Maity; your superior is agent A, and if need be write to me in the Maity chat"); the wait part from his question the same day whether agents need a loop for new data and presence, answered with the existing long-poll (`docs/api.md` §2.4, §8.3); the missed assignment is the coordinator's observation the same evening, of an ops agent working in its terminal with no wait running, shown offline and unaware of the assignment sent to it
 **Revisit when:** the hub delivers events by push to the harness, or a project wants its agents to ask the human directly
 
 Rule 13 of the agent skill and `docs/agents.md`: within the briefing,
