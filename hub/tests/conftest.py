@@ -1,26 +1,61 @@
 """Fixtures. `MAITY_TEST_DATABASE_URL` points the suite at PostgreSQL or
-MariaDB; without it every test gets its own SQLite file."""
+MariaDB; without it every test gets its own SQLite file. Under pytest-xdist each
+worker gets a database of its own on that server (`<name>_gw0`, `<name>_gw1`, …),
+created through `MAITY_TEST_ADMIN_DATABASE_URL` (default: the same URL)."""
 
 from __future__ import annotations
 
 import os
+import shutil
 from collections.abc import Callable, Iterator
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine
+from sqlalchemy import Engine, create_engine, inspect, text
+from sqlalchemy.engine import make_url
 
 from maity_hub.app import create_app
 from maity_hub.config import Settings, normalize_database_url
-from maity_hub.db import downgrade, make_engine, migrate
+from maity_hub.db import current_revision, downgrade, head_revision, make_engine, migrate
+
+
+@pytest.fixture(scope="session")
+def _server_database_url(worker_id: str) -> str | None:
+    """The PostgreSQL or MariaDB database this process runs against, or None for SQLite.
+    A parallel worker gets its own database next to the configured one, so the workers
+    never see each other's tables."""
+    configured = os.environ.get("MAITY_TEST_DATABASE_URL")
+    if not configured:
+        return None
+    url = make_url(normalize_database_url(configured))
+    if worker_id == "master":
+        return url.render_as_string(hide_password=False)
+    name = f"{url.database}_{worker_id}"
+    admin_configured = os.environ.get("MAITY_TEST_ADMIN_DATABASE_URL", configured)
+    admin_url = make_url(normalize_database_url(admin_configured))
+    admin = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+    try:
+        with admin.connect() as connection:
+            if url.get_backend_name() == "postgresql":
+                exists = connection.execute(
+                    text("SELECT 1 FROM pg_database WHERE datname = :name"), {"name": name}
+                ).first()
+                if not exists:
+                    connection.execute(text(f'CREATE DATABASE "{name}"'))
+            else:
+                connection.execute(text(f"CREATE DATABASE IF NOT EXISTS `{name}`"))
+                if admin_url.username != url.username:
+                    connection.execute(text(f"GRANT ALL ON `{name}`.* TO '{url.username}'@'%'"))
+    finally:
+        admin.dispose()
+    return url.set(database=name).render_as_string(hide_password=False)
 
 
 @pytest.fixture
-def database_url(tmp_path: Path) -> str:
-    url = os.environ.get("MAITY_TEST_DATABASE_URL")
-    return normalize_database_url(url) if url else f"sqlite:///{tmp_path / 'hub.db'}"
+def database_url(tmp_path: Path, _server_database_url: str | None) -> str:
+    return _server_database_url or f"sqlite:///{tmp_path / 'hub.db'}"
 
 
 @pytest.fixture(autouse=True)
@@ -32,13 +67,77 @@ def _no_background_mail(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(outbox.Worker, "start", lambda self: None)
 
 
+@pytest.fixture(scope="session")
+def _migrated_sqlite_file(
+    tmp_path_factory: pytest.TempPathFactory, _server_database_url: str | None
+) -> Path | None:
+    """SQLite only: the schema at head, migrated once per process and copied into each
+    test that wants a migrated database, instead of replaying every revision again."""
+    if _server_database_url:
+        return None
+    template = tmp_path_factory.mktemp("template") / "hub.db"
+    template_engine = make_engine(f"sqlite:///{template}")
+    migrate(template_engine)
+    template_engine.dispose()
+    return template
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _leave_the_server_database_empty(_server_database_url: str | None) -> Iterator[None]:
+    """A server database is shared with whoever runs next: after the session it is empty
+    again, as every test used to leave it."""
+    yield
+    if _server_database_url:
+        engine = make_engine(_server_database_url)
+        downgrade(engine)
+        engine.dispose()
+
+
+def _empty_the_tables(engine: Engine) -> None:
+    """Delete every row of a server database at head, keeping the schema and the revision."""
+    tables = [t for t in inspect(engine).get_table_names() if t != "alembic_version"]
+    with engine.begin() as connection:
+        if engine.dialect.name == "postgresql":
+            quoted = ", ".join(f'"{t}"' for t in tables)
+            connection.execute(text(f"TRUNCATE {quoted} RESTART IDENTITY CASCADE"))
+        else:
+            connection.execute(text("SET FOREIGN_KEY_CHECKS = 0"))
+            for table in tables:
+                connection.execute(text(f"TRUNCATE TABLE `{table}`"))
+            connection.execute(text("SET FOREIGN_KEY_CHECKS = 1"))
+
+
 @pytest.fixture
-def engine(database_url: str) -> Iterator[Engine]:
+def engine(database_url: str, request: pytest.FixtureRequest) -> Iterator[Engine]:
+    """An empty schema; for a test that also asks for `migrated` or `client`, the schema at
+    head with no rows. On a server database that second state is kept from one test to the
+    next and only emptied, because replaying every revision per test is what made the suite
+    take an hour; a test that needs no schema gets it downgraded."""
     engine = make_engine(database_url)
-    downgrade(engine)  # a shared server database may hold a previous run's schema
+    on_server = engine.dialect.name != "sqlite"
+    keeps_schema = on_server and bool({"migrated", "client"} & set(request.fixturenames))
+    if keeps_schema:
+        if current_revision(engine) == head_revision(engine):
+            _empty_the_tables(engine)
+        else:
+            downgrade(engine)  # a shared server database may hold a previous run's schema
+            migrate(engine)
+    else:
+        downgrade(engine)
     yield engine
-    downgrade(engine)
+    if on_server and not keeps_schema:
+        downgrade(engine)
     engine.dispose()
+
+
+def migrate_fast(engine: Engine, template: Path | None) -> None:
+    """`migrate`, except that an empty SQLite file is replaced by the template. The engine
+    stays the same object; its pooled connections are dropped so the next one opens the copy."""
+    if template is None or engine.dialect.name != "sqlite" or engine.url.database is None:
+        migrate(engine)
+        return
+    engine.dispose()
+    shutil.copyfile(template, engine.url.database)
 
 
 @pytest.fixture
@@ -61,8 +160,10 @@ def settings(database_url: str, web_dir: Path) -> Settings:
 
 
 @pytest.fixture
-def client(settings: Settings, engine: Engine) -> Iterator[TestClient]:
-    migrate(engine)
+def client(
+    settings: Settings, engine: Engine, _migrated_sqlite_file: Path | None
+) -> Iterator[TestClient]:
+    migrate_fast(engine, _migrated_sqlite_file)
     with TestClient(create_app(settings, engine)) as client:
         yield client
 
@@ -150,8 +251,8 @@ def _fresh_process_state() -> Iterator[None]:
 
 
 @pytest.fixture
-def migrated(engine: Engine) -> Engine:
-    migrate(engine)
+def migrated(engine: Engine, _migrated_sqlite_file: Path | None) -> Engine:
+    migrate_fast(engine, _migrated_sqlite_file)
     return engine
 
 

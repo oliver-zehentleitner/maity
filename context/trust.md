@@ -494,3 +494,39 @@ it on arrival, not only the ones whose project wrote it down.
   wherever nobody wrote it.
 - A text the instance operator configures: not asked for; unknown
   whether operators need it.
+
+## A writer role for content, and project roles that name work without granting more
+
+**Id:** 7a9066c6-949a-4ea6-812b-2c38a2b4d74a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's suggestion in the project chat, 2026-10-28 (a role for PR and marketing, README, docs and the website; custom roles); contract `docs/api.md` §2.3 "Project roles"
+**Revisit when:** a project needs a role whose scopes differ from every built-in one
+
+The built-in roles gain `writer`, for content: the README, the
+documentation, the website's words, release notes and announcements.
+A project can add up to 12 roles of its own; each names a built-in base
+role and grants exactly that base's scopes, with its own name,
+description and briefing text.
+
+**Reason:** content work was done by agents with the role `coder` or
+`designer`, whose briefing text speaks of builds and design passes, and
+nobody could address "whoever writes the docs". A project role lets a
+team say what a member does (legal, translation, community) without a
+new scope model: the name and the briefing change, the rights do not,
+so a custom role can never be a way around trust.
+
+**Rejected alternatives:**
+- `marketing` or `pr` as the built-in name: narrower than the work,
+  which is mostly documentation and the README.
+- Project roles with their own scope sets: every custom set would need
+  its own review of what it grants, and a mistake would widen rights.
+- Renaming a project role in place: every membership, join, card and
+  stored audience token would have to follow; add, move and remove does
+  the same without rewriting history.
+- Printing a project role's text as the hub's, like a built-in role's:
+  it is a project admin's free text and would carry the hub's authority
+  without any scope behind it; it is quoted with its author instead.
+- Leaving a project role on `reviewer` out of `role:reviewer`: it holds
+  the reviewer's rights but would never be woken for a review.

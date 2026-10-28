@@ -154,3 +154,31 @@ with the same 601 items. A test keeps the count flat as events grow.
 
 **Reason:** the smallest change that removes the per-event cost while keeping the rules in
 one place. Evidence is inferred: measured locally, production to confirm.
+
+## Notification settings store only what the human changed; the defaults fill the rest on read
+
+**Id:** 3e9a6b69-7715-4ce3-8c9d-a9194fbf9500
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §18.4; the implementation of tsk-32jx98jzne6z, part 2a of the re-cut of #280, 2026-10-27
+**Revisit when:** a default changes in a way existing humans must not receive, or the settings need a field the merge cannot express (a list)
+
+`notification_settings.preferences` holds the browser and mail preferences as one JSON
+value with only the keys the human set; `preferences._merged` lays it over the defaults
+key by key on every read. A human who never changed anything has no row: a `GET` shows
+the defaults and writes nothing, the first `PATCH` makes the row. A kind removed on
+2026-10-26 (§18.1) is skipped when the value is read, and `PATCH` rewrites the stored
+value without it, as §18.4 says.
+
+**Reason:** a default that changes later (a new kind, another `daily_at`) reaches every
+human who did not choose otherwise, and a human's choice never has to be told apart from
+a copy of an old default. Dropping removed kinds on read needs no migration over the
+rows, and the contract wants them deleted with the next write anyway.
+
+**Rejected alternatives:**
+- Storing the full value at the first read: later defaults would reach nobody who had
+  opened the settings once, and a `GET` would write.
+- Deleting the removed kinds from every row in a migration: a data migration over every
+  human's row for settings that already govern nothing, and §18.4 asks for the next
+  `PATCH`.

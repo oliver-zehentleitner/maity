@@ -530,3 +530,89 @@ fast adoption and an excellent product, not through licence terms.
   as a service, it only requires publishing changes. The coordinator had
   recommended MIT plus a registered trademark and a contributor
   agreement; the trademark is a separate open reminder.
+
+## Only an instance with a landing page invites search engines, and only to its root
+
+**Id:** 4f798011-3707-4fe7-a825-ad2575d6f395
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request in the project chat, 2026-10-28 (a sitemap for maity.team and maity.dev for the search console); contract `docs/api.md` §16.7 "Search engines"
+**Revisit when:** public projects or discovery pages come (later stage in this file), which would add public URLs worth listing
+
+The hub serves `/robots.txt` and `/sitemap.xml`. While the landing page
+is enabled the robots file allows the root, the static files and the
+two public reads the page is drawn from, and names the sitemap, which
+lists the root; while it is not, the robots file allows only the root,
+which says `noindex` (a crawler must be allowed to fetch a page to read
+its `noindex`), and there is no sitemap.
+
+**Reason:** the hosted instance wants to be found by its landing page;
+a self-hosted or local instance has no public face and should not be
+indexed by default. The landing setting already says which of the two
+an instance is, so it decides this too, without a second switch.
+Everything else the hub serves is behind a sign-in or is a fragment
+route a crawler does not fetch.
+
+**Rejected alternatives:**
+- Allowing the root alone: the landing page is drawn by scripts from a
+  public read; a crawler barred from both sees an empty page.
+- A static `robots.txt` and `sitemap.xml` in the repository: they would
+  invite indexing of every self-hosted instance, or none of them.
+- Listing badges or swarm pages: they are per project and belong to the
+  project's owner, not to the instance's public face.
+
+## Public pages are static HTML, chosen by their owner, and the instance's operator must allow them
+
+**Id:** 2571d046-a270-4680-b50a-dc4e9ad60f19
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision in the inbox, 2026-10-28 (public projects and users indexed by search engines; "without JavaScript, could even be static, rebuilt every few hours"); contract `docs/api.md` §16.9
+**See:** scope.md#only-an-instance-with-a-landing-page-invites-search-engines-and-only-to-its-root — 4f798011-3707-4fe7-a825-ad2575d6f395 — as of 2026-10-28
+
+A project whose namespace owner turns `public_page` on, and a person who
+turns `public_profile` on, get a page under `/p/<owner>/<slug>` or
+`/u/<handle>`: plain HTML rendered by the hub, no script, listed in the
+sitemap. The operator chooses whether pages are rendered on every change
+(default) or only on an interval of 1–24 hours (default 6); either way
+anything taken off a page, any edit of a shown text included, is taken
+off at once, and only new entries and counts wait for the interval. The operator switches
+the feature on for the instance (`MAITY_PUBLIC_PAGES`); it is off by
+default. This brings part of the later stage "public projects and
+discovery" forward: the pages, not yet a discovery page or join
+requests.
+
+**Reason:** the hosted instance should be found by the projects and
+people on it, and the dashboard cannot be indexed: it is drawn by
+scripts under fragment routes. A static page per public project and
+person is what a crawler reads best and costs the hub one render per
+change. Being public is a choice about one's own data, so it is the
+owner's alone and off until chosen; an operator of a private instance
+must not publish its members by an update.
+
+**Rejected alternatives:**
+- Public by default with an opt-out: publishes people and projects who
+  never decided to be public.
+- Rendering on every request: the same output at the cost of a render
+  per crawler visit; a stored page is enough when it is rebuilt on change.
+- Only rendering on change, without a choice: the maintainer wanted the
+  operator to choose, since an interval batches the work on a busy
+  instance.
+- Letting the interval delay removals too: a person who makes their
+  profile private would stay on other projects' pages for up to a day,
+  against their decision; removals are always immediate.
+- A fixed interval with no bound: 1–24 hours keeps a page from going
+  stale for days or being rebuilt every minute.
+- Making the dashboard itself crawlable (server-side rendering of the
+  app): the whole app would have to render without a session for a
+  handful of public facts.
+- Any co-owner turning a project's page on or writing its text: the
+  page is published under the namespace owner's name, so the namespace
+  owner decides; a transfer turns it off for the same reason.
+- Redirecting a former handle or slug to the public page: it would
+  publish for good that two names belong together.
+- Listing every agent of a public project: agents of other owners and
+  their activity would be published by someone else's choice; they show
+  only with the project's `swarm_public` and their owner's public
+  profile, the rest as a number.
