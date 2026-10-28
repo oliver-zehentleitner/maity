@@ -208,3 +208,37 @@ stored hash does not already make, and the hub would need a key for it.
 - A state signed with an instance key (the contract's first wording):
   it still needs the stored record for single use, and adds a key to
   manage.
+
+## A project's source is chosen per project, and a grant is bound to its repository
+
+**Id:** a5b07f08-306e-4f33-8643-8b59af50dd71
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-10-28 (card tsk-dtpr7zqxhxc2, part 5a)
+**Revisit when:** organisations become namespace owners (§6.25), or one repository serves projects of several owners with different grants and that needs one shared read
+
+`Forge.for_project` chooses the reader of one project (`forge_access.py`).
+Every place that reads calls it with the project it reads for: the probe,
+reports, releases, the ticker, deploys, card links, images, Keep the Why
+and contract texts. A grant's reader carries the one repository it was
+chosen for. A read of any other repository goes out without a token
+(public only), and a GraphQL read of another repository is refused. The
+choice is kept for at most 10 minutes. Its key is everything it depends
+on: the URL, the owner, the confirmation, the owner's links and token,
+and the operator's token. A change of any of them, or a refused read,
+chooses again.
+
+**Reason:** the same repository URL can be set on projects of different
+namespace owners. A choice keyed by the repository would let one owner's
+grant read for another owner's project. That is the leak §11.4 exists to
+prevent.
+
+**Rejected alternatives:**
+- One resolver per repository inside `Forge._call`: no call site would
+  need to change, but the project, and with it the owner whose grant
+  counts, would be lost.
+- Choosing inside the views (for `probe_via`): a view holds a database
+  connection, and the choice would ask the forge. The view shows the
+  last choice instead (`forge_access.probe_via`), and before any
+  choice the operator's token if there is one.

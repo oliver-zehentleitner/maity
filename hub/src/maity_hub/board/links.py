@@ -327,6 +327,7 @@ def observe(engine: Engine, fg: forge.Forge, project_id: str) -> int:
             return 0
         own = forge.repository_of(project.repository_url).lower()
         wanted = [r for r in due(conn, project_id) if (r.repository or "").lower() == own]
+    fg = fg.for_project(project_id)  # the source that covers this project (§11.4)
     reads = 0
     for start in range(0, len(wanted), BATCH):
         batch = wanted[start : start + BATCH]

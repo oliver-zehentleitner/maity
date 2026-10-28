@@ -66,6 +66,7 @@ def test_a_created_project_has_the_contract_shape(owner: flow.Human) -> None:
         "default_branch": "main",
         "forge": "github",
         "probe_configured": False,
+        "probe_via": None,
         "owner_confirmed": False,
     }
     assert body["policy"] == {

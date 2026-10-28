@@ -262,16 +262,47 @@ def _repository_in(path: str, query: dict[str, Any] | None) -> str | None:
 
 @dataclass(frozen=True)
 class Forge:
-    """The hub's access to its forge: the token, and the reads made with it."""
+    """The hub's access to its forge: the token, and the reads made with it.
+
+    The app builds one with the operator's token, which reads public repositories only.
+    `for_project` turns it into the reader of one project (§11.4): the namespace owner's
+    grant when one covers the project's repository (`granted`, bound to that repository
+    alone), the operator's token otherwise, or a reader that refuses every read with the
+    reason (`refused`)."""
 
     token: str | None = field(default=None, repr=False)
+    granted: str | None = None  # `app` or `owner_token`: the token is the owner's grant
+    repository: str | None = None  # the one repository a grant reads, lower case
+    refused: str | None = None  # the reason every read is refused with
+    project_id: str | None = None
+    # With the operator's token: the reason to give when the repository is not public,
+    # when the owner's grants say more (`unconfirmed`, `token_rejected`, …).
+    owner_reason: str | None = None
+    access: Any = field(default=None, repr=False, compare=False)
+
+    @property
+    def via(self) -> str | None:
+        """Which source reads (§11.4): `app`, `owner_token`, `instance`, or None."""
+        if self.refused is not None or self.token is None:
+            return None
+        return self.granted or "instance"
+
+    def for_project(self, project_id: str) -> Forge:
+        """The reader of this project; itself when the hub knows no grants (tests, or a
+        reader already bound to a project)."""
+        if self.access is None or self.project_id is not None:
+            return self
+        reader: Forge = self.access.reader(project_id, self)
+        return reader
 
     def configured_for(self, url: str | None) -> bool:
-        """Whether the hub can observe this repository: a known forge and a token for it."""
-        return kind_of(url) == "github" and self.token is not None
+        """Whether the hub can observe this repository: a known forge and a source for it."""
+        return kind_of(url) == "github" and self.token is not None and self.refused is None
 
     def _get(self, path: str) -> Any | None:
         """GET on the forge API; `None` for 404, `ForgeUnavailableError` for anything else."""
+        if self.refused is not None:
+            raise NotCoveredError(self.refused)
         if self.token is None:
             raise ForgeUnavailableError("no forge token")
         return self._call(path)
@@ -285,11 +316,22 @@ class Forge:
         otherwise (a public repository). `query` makes it a GraphQL POST, which only reads.
         With the token, only of a repository the forge reports public (`NotCoveredError`
         otherwise); a read that names no repository is not made with it."""
+        if self.refused is not None:
+            raise NotCoveredError(self.refused)
+        if self.token is not None and self.granted is not None:
+            return self._call_granted(path, query)
         if self.token is not None:
             repository = _repository_in(path, query)
             if repository is None:
                 raise ForgeUnavailableError("a read with the forge token names no repository")
-            self._require_public(repository)
+            try:
+                self._require_public(repository)
+            except NotCoveredError as error:
+                if self.access is not None and self.project_id is not None:
+                    self.access.not_covered(self.project_id)
+                if self.owner_reason is not None and error.reason != "repository_moved":
+                    raise NotCoveredError(self.owner_reason) from None
+                raise
             try:
                 found = self._send(path, query)
             except ForgeUnavailableError as error:
@@ -301,6 +343,30 @@ class Forge:
                 self._forget(repository)  # a 404 may be a ref that is not there, or a refusal
             return found
         return self._send(path, query)
+
+    def _call_granted(self, path: str, query: dict[str, Any] | None) -> Any | None:
+        """A read with the namespace owner's grant: only of the project's own repository.
+        A refusal makes the project choose its source again on the next read."""
+        if _repository_in(path, query) != self.repository:
+            # Another repository (a Keep the Why family's member elsewhere): never with the
+            # owner's grant; without a token, so only a public one answers.
+            if query is not None:
+                raise NotCoveredError("no_grant")
+            return Forge(None)._send(path, query)
+        try:
+            found = self._send(path, query)
+        except ForgeUnavailableError as error:
+            refused = error.status in (401, 403) and not error.rate_limited
+            if refused or isinstance(error, NotCoveredError):
+                self._refused_grant(error)
+            raise
+        if found is None or (query is not None and _graphql_refused(found)):
+            self._refused_grant(None)
+        return found
+
+    def _refused_grant(self, error: ForgeUnavailableError | None) -> None:
+        if self.access is not None and self.project_id is not None:
+            self.access.refused(self, error)
 
     def _forget(self, repository: str) -> None:
         """A refused read (§11.4): the next one asks again whether the repository is public."""
@@ -655,6 +721,8 @@ class Forge:
         """Issues and pull requests of one repository by number, in one GraphQL read (card
         links, §6.13): per number `{type, title, state, merged}`, or None when the forge
         has no such item or the token cannot read it."""
+        if self.refused is not None:
+            raise NotCoveredError(self.refused)
         if self.token is None:
             raise ForgeUnavailableError("no forge token")
         owner, name = repository.split("/", 1)
