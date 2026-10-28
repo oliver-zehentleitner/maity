@@ -576,8 +576,8 @@ turns `public_profile` on, get a page under `/p/<owner>/<slug>` or
 `/u/<handle>`: plain HTML rendered by the hub, no script, listed in the
 sitemap. The operator chooses whether pages are rendered on every change
 (default) or only on an interval of 1–24 hours (default 6); either way
-anything taken off a page is taken off at once, and only additions wait
-for the interval. The operator switches
+anything taken off a page, any edit of a shown text included, is taken
+off at once, and only new entries and counts wait for the interval. The operator switches
 the feature on for the instance (`MAITY_PUBLIC_PAGES`); it is off by
 default. This brings part of the later stage "public projects and
 discovery" forward: the pages, not yet a discovery page or join

@@ -11103,10 +11103,12 @@ Removing something is never left to the interval. Under either
 setting, a change that takes anything off a page — a page that stops
 being public (above), a member or agent owner who makes their profile
 private, `swarm_public` turned off, a person suspended or hidden, a
-repository that turns private, a shorter `public_about` — renders every
-page it touches at once, in the same transaction that changed the input,
-or deletes the page until it is rendered again. `interval` holds back
-only what is added: a new public member, a longer text, new counts. The
+repository that turns private, and any edit of `public_about`,
+`public_bio` or a `display_name` shown on a page (an edit replaces what
+was there) — renders every page it touches at once, in the same
+transaction that changed the input, or deletes the page until it is
+rendered again. `interval` holds back only new entries — a new public
+member, agent or project on a page — and the counts. The
 hub serves the stored file: plain HTML with an inline stylesheet, no script, no
 font or image from anywhere (the hub has no public image store, §16.7).
 Markdown goes through the same allow-list renderer the hub validates
