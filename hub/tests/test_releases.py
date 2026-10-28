@@ -557,6 +557,7 @@ def test_a_report_that_closes_a_ready_release_announces_it_and_frees_the_slot(
         "branch": "main",
         "remote_head": SHA,
         "pr_status": "none",
+        "why": {"none": "a release, nothing to keep"},  # §6.23
         "done": True,
     }
     refused = releaser.post(f"/projects/maintainer/maity/tasks/{card['id']}/report", report)

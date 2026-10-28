@@ -150,3 +150,13 @@ wait for the next sweep, at most a minute.
   missed one leaves the owner with a request about something that is over.
 - Remind at the next resume only: an agent that is already working would never
   hear of its deadline.
+
+## The why on a report is validated by the hub in code, and only its shape is checked
+
+- Id: ktw-report-why
+- Type: decision
+- Status: active
+- Evidence: inferred
+- Source: docs/api.md §6.23
+
+`why` on a code report is validated in `_check_why` rather than in the request model: pydantic's error types are not the reasons the contract names (`malformed`, `not_for_no_code`, `required`). The hub checks the shape (one of `ref` as `<path>.md#<id>` with a relative path, or `none` with at least 10 characters) and the policy's presence rule; it does not read the file, because the repository is not the hub's to read yet and the review is the gate that the entry exists. Alternative not taken: refusing a `ref` the hub cannot resolve, which would need the probe to read `pr.head` and fail reports whenever GitHub is slow.
