@@ -59,8 +59,8 @@ from playwright.sync_api import Page, expect, sync_playwright
 WEB = Path(__file__).resolve().parent.parent
 OWNER = "owner"
 OWNER_PASSWORD = "e2e owner password"
-TIMEOUT_MS = 15_000  # one step in the browser; the feed reads every 5 s
-COUNTS_MS = 25_000  # counts of other projects: /me is re-read every 15 s
+TIMEOUT_MS = 25_000  # one step in the browser; the feed reads every 15 s
+COUNTS_MS = 70_000  # counts of other projects: /me is re-read every 60 s
 WAIT_S = 60  # the agent's `maity wait`
 
 # axe-core, the accessibility engine: the npm package's tarball, pinned by the

@@ -187,7 +187,9 @@ project's and `#/chats`). The project's events are read every 15 seconds
 instead of 5. A tab shown again after a skipped `/me` round or event read
 reads it within 5 seconds, once; the events from the cursor. Its chat
 lists catch up at the next 30-second round. Actions and events still
-re-read `/me` at once.
+re-read `/me` at once. `#/chats`, which has no project feed, reads the
+notification counts (`/me/notifications?limit=0`, not `/me`) every 15
+seconds while it is shown: a reply in the open chat comes in by them.
 
 **Reason:** the 15-second round in every open tab was a large share of
 the hub's load: each round with an unread sign-in alert also read the

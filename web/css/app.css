@@ -234,7 +234,8 @@ nav.switcher a, nav.views a {
 }
 
 nav.switcher a[aria-current="page"], nav.views a[aria-current="page"] { color: var(--text); border-bottom-color: var(--accent); }
-nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); }
+/* A count that appears must not make its row taller: the page below would jump. */
+nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); line-height: 1; }
 
 /* The project switcher: always visible, one chip per project. At its
    right, behind a separator, the project's state and absence; on a narrow
