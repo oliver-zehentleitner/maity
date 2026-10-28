@@ -183,7 +183,10 @@ def test_the_pool_size_comes_from_the_environment() -> None:
     found = Settings.from_env({**base, "MAITY_DB_POOL_SIZE": "8", "MAITY_DB_MAX_OVERFLOW": "0"})
     assert (found.db_pool_size, found.db_max_overflow) == (8, 0)
     default = Settings.from_env(base)
-    assert (default.db_pool_size, default.db_max_overflow) == (5, 10)  # SQLAlchemy's
+    assert (default.db_pool_size, default.db_max_overflow) == (
+        16,
+        16,
+    )  # not SQLAlchemy's 5 + 10 (hub/context/persistence.md)
     with pytest.raises(ConfigError):
         Settings.from_env({**base, "MAITY_DB_POOL_SIZE": "0"})
     engine = make_engine("postgresql+psycopg://hub@db.invalid/maity", 8, 2)

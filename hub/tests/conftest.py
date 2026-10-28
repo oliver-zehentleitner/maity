@@ -63,8 +63,10 @@ def _no_background_mail(monkeypatch: pytest.MonkeyPatch) -> None:
     """The app's mail worker would send the outbox behind a test's back; tests drive
     `outbox.send_due` themselves."""
     from maity_hub.mail import outbox
+    from maity_hub.notifications import mailer
 
     monkeypatch.setattr(outbox.Worker, "start", lambda self: None)
+    monkeypatch.setattr(mailer.Worker, "start", lambda self: None)
 
 
 @pytest.fixture(scope="session")
@@ -235,8 +237,14 @@ def _fresh_process_state() -> Iterator[None]:
     from maity_hub.jourfixe import worker as jour_fixe_worker
 
     jour_fixe_worker.INTERVAL = 24 * 3600.0
+    from maity_hub.auth import second_factor
+
+    second_factor.WRONG_BY_HUMAN.reset()
+    second_factor.ENROLMENTS_BY_HUMAN.reset()
+    second_factor._wrong_in_session.clear()
     caller.NONCES = NonceWindow()
     forge._visible.clear()
+    forge._budgets.clear()
     images.reset()
     ktw.CACHE.clear()
     yield

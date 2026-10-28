@@ -279,6 +279,22 @@ def test_a_read_redirected_after_the_check_asks_again_next_time(seen: FakeOpener
     assert _paths(seen) == ["/repos/a/b", "/repos/a/b/branches/main", "/repos/a/b"]
 
 
+@pytest.mark.parametrize(
+    "target", ["https://api.github.com/repositories/1/branches/main", "https://evil.example/x"]
+)
+def test_a_refused_redirect_leaves_no_read_in_flight(target: str, opener: FakeOpener) -> None:
+    """The redirect guard raises from inside the opener: the read it ends is no longer
+    counted against the budget (§11.4), or the reserve would stay held for good."""
+
+    def redirected(request: urllib.request.Request, timeout: float) -> Any:
+        forge._SameHostOnly().redirect_request(request, None, 301, "Moved", {}, target)
+
+    opener.open = redirected  # type: ignore[method-assign]
+    with pytest.raises(forge.ForgeUnavailableError):
+        READER._get("/repos/a/b/branches/main")
+    assert forge._budgets[forge._source(TOKEN)].in_flight == 0
+
+
 @pytest.mark.parametrize("refusal", [401, 403, None])  # None: a 404
 def test_a_refused_read_asks_again_whether_it_is_public(
     seen: FakeOpener, refusal: int | None
@@ -345,6 +361,7 @@ def test_a_rate_limit_is_no_refusal(seen: FakeOpener) -> None:
     with pytest.raises(forge.ForgeUnavailableError) as raised:
         READER.branch("a/b", "main")
     assert raised.value.rate_limited
+    forge._budgets.clear()  # the rate limit's reset passed: the source is read again
     seen.answers["/repos/a/b/branches/main"] = {"commit": {"sha": SHA}}
     READER.branch("a/b", "main")
     assert _paths(seen).count("/repos/a/b") == 1
@@ -481,3 +498,177 @@ def test_the_owners_avatar_is_a_logo_only_for_an_organization(
 ) -> None:
     opener.answers["/repos/a/b"] = {"full_name": "a/b", "owner": owner}
     assert READER.owner_avatar("a/b") == expected
+
+
+# --- the rate limit budget per source (§11.4) ------------------------------------------------
+
+
+class Answered(io.BytesIO):
+    """A 200 with the forge's rate limit headers."""
+
+    def __init__(self, body: Any, headers: dict[str, str]) -> None:
+        super().__init__(json.dumps(body).encode())
+        self.headers = headers
+
+
+def _limits(remaining: int, reset: float, limit: int = 5000) -> dict[str, str]:
+    return {"X-RateLimit-Limit": str(limit), "X-RateLimit-Remaining": str(remaining),
+            "X-RateLimit-Reset": str(int(reset))}  # fmt: skip
+
+
+def test_a_spent_budget_stops_reads_until_the_reset_and_says_when(opener: FakeOpener) -> None:
+    import time
+
+    reset = time.time() + 600
+    opener.answers["/repos/acme/maity"] = (403, _limits(0, reset))
+    with pytest.raises(forge.ForgeUnavailableError) as first:
+        READER._get("/repos/acme/maity")
+    assert first.value.rate_limited and first.value.retry_at is not None
+    assert abs(first.value.retry_at.timestamp() - int(reset)) < 1
+    sent = len(opener.requests)
+    with pytest.raises(forge.ForgeUnavailableError) as second:
+        READER._get("/repos/acme/other")
+    assert second.value.retry_at == first.value.retry_at
+    assert len(opener.requests) == sent  # nothing went out while the budget is spent
+    assert READER.retry_at() == first.value.retry_at
+
+
+def test_a_budget_under_five_percent_is_kept_for_the_reset(
+    opener: FakeOpener, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import time
+
+    reset = time.time() + 900
+    answers = iter(
+        [Answered({"ok": 1}, _limits(249, reset)), Answered({"ok": 2}, _limits(240, reset))]
+    )
+    monkeypatch.setattr(
+        forge, "_opener", type("O", (), {"open": lambda _s, r, timeout: next(answers)})()
+    )
+    assert READER._get("/repos/a/b") == {"ok": 1}  # 249 of 5000 is under 5 %
+    with pytest.raises(forge.ForgeUnavailableError) as held:
+        READER._get("/repos/a/b")
+    assert held.value.rate_limited and held.value.status is None
+
+
+def test_a_budget_above_five_percent_reads_on(
+    opener: FakeOpener, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import time
+
+    answers = iter([Answered({"ok": 1}, _limits(251, time.time() + 900)), Answered({"ok": 2}, {})])
+    monkeypatch.setattr(
+        forge, "_opener", type("O", (), {"open": lambda _s, r, timeout: next(answers)})()
+    )
+    assert READER._get("/repos/a/b") == {"ok": 1}
+    assert READER._get("/repos/a/b") == {"ok": 2}
+    assert READER.retry_at() is None
+
+
+def test_a_retry_after_holds_that_long(opener: FakeOpener) -> None:
+    import time
+
+    opener.answers["/repos/a/b"] = (429, {"Retry-After": "120"})
+    with pytest.raises(forge.ForgeUnavailableError) as error:
+        READER._get("/repos/a/b")
+    assert error.value.rate_limited and error.value.retry_at is not None
+    assert 110 < error.value.retry_at.timestamp() - time.time() <= 121
+
+
+def test_the_budget_is_per_token(opener: FakeOpener) -> None:
+    import time
+
+    opener.answers["/repos/a/b"] = (403, _limits(0, time.time() + 600))
+    with pytest.raises(forge.ForgeUnavailableError):
+        READER._get("/repos/a/b")
+    other = forge.Forge("ghp_another_owners_token")
+    opener.answers["/repos/a/b"] = {"name": "maity", "private": False}  # its own visibility check
+    assert other._get("/repos/a/b") == {"name": "maity", "private": False}
+    assert other.retry_at() is None and READER.retry_at() is not None
+
+
+def test_after_the_reset_the_source_is_read_again(
+    opener: FakeOpener, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import time
+    import types
+
+    now = time.time()
+    opener.answers["/repos/a/b"] = (403, _limits(0, now + 60))
+    with pytest.raises(forge.ForgeUnavailableError):
+        READER._get("/repos/a/b")
+    monkeypatch.setattr(
+        forge, "time", types.SimpleNamespace(time=lambda: now + 61, monotonic=time.monotonic)
+    )
+    opener.answers["/repos/a/b"] = {"name": "maity"}
+    assert READER._get("/repos/a/b") == {"name": "maity"}
+
+
+def test_a_plain_403_is_no_spent_budget(opener: FakeOpener) -> None:
+    opener.answers["/repos/a/b"] = (403, {"X-RateLimit-Remaining": "4000"})
+    with pytest.raises(forge.ForgeUnavailableError) as error:
+        READER._get("/repos/a/b")
+    assert not error.value.rate_limited and error.value.retry_at is None
+    assert READER.retry_at() is None
+
+
+def test_parallel_reads_never_spend_more_than_was_left() -> None:
+    """Reads are counted before they are sent: with 6 of 100 left, one more fits above
+    the 5 % kept; the others wait for the reset instead of going out together."""
+    import time
+
+    source = forge._source(TOKEN)
+    forge._note(source, _limits(6, time.time() + 600, limit=100), spent=False)
+    sent = [forge._take(source) is None for _ in range(8)]
+    assert sent.count(True) == 1
+    assert READER.retry_at() is not None
+
+
+def test_a_late_answer_does_not_raise_what_is_left() -> None:
+    """Answers arrive in any order: within one window the lowest count stands; a later
+    reset starts a new window."""
+    import time
+
+    source = forge._source(TOKEN)
+    reset = time.time() + 600
+    forge._note(source, _limits(2000, reset), spent=False)
+    forge._note(source, _limits(3000, reset), spent=False)  # sent earlier, answered later
+    assert forge._budgets[source].remaining == 2000
+    forge._note(source, _limits(4999, reset + 3600), spent=False)
+    assert forge._budgets[source].remaining == 4999
+
+
+def test_a_read_without_an_answer_is_no_longer_counted(opener: FakeOpener) -> None:
+    source = forge._source(TOKEN)
+    opener.answers["/repos/acme/maity"] = TimeoutError()
+    with pytest.raises(forge.ForgeUnavailableError):
+        READER._get("/repos/acme/maity")
+    assert forge._budgets[source].in_flight == 0
+
+
+def test_a_late_answer_from_an_earlier_window_leaves_the_new_one_alone() -> None:
+    """Across the reset: a 403 with Remaining 0 from the hour that ended, answered
+    after the new hour's first answer, neither lowers the new budget nor holds it."""
+    import time
+
+    source = forge._source(TOKEN)
+    now = time.time()
+    forge._note(source, _limits(4999, now + 3600), spent=False)
+    forge._note(source, _limits(0, now - 1), spent=True)
+    assert forge._budgets[source].remaining == 4999
+    assert forge._budgets[source].reset == int(now + 3600)
+    assert READER.retry_at() is None
+    assert forge._take(source) is None  # the new hour is read
+
+
+def test_a_retry_after_from_an_earlier_window_still_holds() -> None:
+    import time
+
+    source = forge._source(TOKEN)
+    now = time.time()
+    forge._note(source, _limits(4999, now + 3600), spent=False)
+    late = {**_limits(0, now - 1), "Retry-After": "30"}
+    forge._note(source, late, spent=True)
+    held = READER.retry_at()
+    assert held is not None and 20 < held.timestamp() - time.time() <= 31
+    assert forge._budgets[source].remaining == 4999

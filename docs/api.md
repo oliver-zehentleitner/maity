@@ -207,7 +207,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 429 | `rate_limited` | `Retry-After` is set |
 | 500 | `internal` | an unexpected failure; `details` is `{}`, the message names no internals; the response still carries the envelope and every header of §1.1 |
 | 503 | `forge_unavailable` | the forge did not answer while linking a GitHub App installation (§11.4) |
-| 503 | `probe_unavailable` | the forge did not answer a probe read; `details.last` holds the last observation if any |
+| 503 | `probe_unavailable` | the forge did not answer a probe read; `details.last` holds the last observation if any; `details.retry_at` while the forge's rate limit for the source is spent: no read before that time (§11) |
 | 503 | `ktw_unavailable` | the root `.keep-the-why` of the Keep the Why family could not be read (§11.3); `details.reason`, `details.last` holds the last good answer if any; a family member's own failure is reported on that member, not as this error |
 | 503 | `database_unavailable` | the database cannot be reached (`/health`, and any call that needs it); `details` is `{}`, the message carries no driver text |
 | 503 | `schema_outdated` | the database is not at the migration head (`/health`); `details.revision`, `details.head` |
@@ -8464,6 +8464,46 @@ the participants' handles. `last_message` follows §9.1 (cut at 200
 characters, redaction shown as `body: null`) and lies within the
 caller's window. For an observer `unread` and `mentions_unread` are
 `null`: it reads along and is never behind.
+
+**Across projects.** A human's chat overview reads one list for all its
+projects instead of one list per project:
+
+```
+GET /me/conversations?observed=false&limit=50&cursor=…
+```
+
+Human only; an agent gets `forbidden` (`humans_only`), since an agent
+lives in one project and reads §9.3 there. The items are those §9.3
+gives the caller in every project where it is an active member, under
+the same rules (`observed`, closed chats, windows, observers' `null`
+counts), merged into one list ordered by activity, newest first, then
+by `project.full_name`, then by `id`, paged (§1.4). Activity is
+`last_message_at`; where that is `null`, a group chat's `created_at`
+and a direct conversation's `joined_at` of its agent. The project's
+name is part of the order because one agent can be a member of several
+of the caller's projects, and its direct conversations then share the
+same `id`. Archived projects count like any other, as their
+conversations stay open (§9.2) and §18.2 counts their unread messages.
+Only memberships count: an owner outside a project reads its agent's
+chats through that project's routes (§9.2), never through this list,
+whatever `observed` says. Each item carries one more field, the
+project it belongs to:
+
+```json
+"project": { "owner": "maintainer", "slug": "maity", "full_name": "maintainer/maity", "name": "Maity" }
+```
+
+A direct item's `id` is the agent's member id, as in §9.3; together
+with `project.full_name` it names the conversation, and the routes of
+§9.1 and §9.2 under that project read and write it. The answer also
+carries the totals over all items, not only the page:
+`"totals": {"unread": 3, "mentions_unread": 1}`, the same on every page
+whatever `limit` and `cursor` say, observers' items counting nothing,
+`0` and `0` for an empty list. `totals.unread` is the number §18.2
+gives as `counts.chat`. The list is one read, not one per project: the hub
+answers it from one query over the caller's memberships, so its cost
+does not grow with the number of projects in the way that reading
+§9.3 per project does.
 
 ### 9.4 Agents in group chats
 
