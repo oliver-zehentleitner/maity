@@ -525,3 +525,8 @@ so a custom role can never be a way around trust.
 - Renaming a project role in place: every membership, join, card and
   stored audience token would have to follow; add, move and remove does
   the same without rewriting history.
+- Printing a project role's text as the hub's, like a built-in role's:
+  it is a project admin's free text and would carry the hub's authority
+  without any scope behind it; it is quoted with its author instead.
+- Leaving a project role on `reviewer` out of `role:reviewer`: it holds
+  the reviewer's rights but would never be woken for a review.
