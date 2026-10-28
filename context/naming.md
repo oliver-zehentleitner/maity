@@ -7,9 +7,11 @@
 **Status:** active
 **Evidence:** confirmed
 **Source:** naming conversation with the maintainer, 2026-10-21
+**See:** naming.md#the-project-does-not-tell-readers-how-to-hear-or-pronounce-the-name — 4245c857-a586-455b-86a8-cea24e492236 — as of 2026-10-28
 
 The project, its repository, its package name and its domains (maity.dev,
-maity.team) are "Maity": a coined word that reads like *matey* — a mate, a
+maity.team) are "Maity" (how it reads, below, is the maintainers' record,
+not something told to readers): a coined word that reads like *matey* — a mate, a
 team member — with "ai" inside it, and pronounced that way. It is not a
 person's name and has no prior meaning in software; the package name was
 free on PyPI and npm at the time of the decision.
@@ -25,6 +27,29 @@ attribute, so it combines naturally (Maity hub, Maity CLI).
 **Rejected alternatives:** several, dropped for name collisions or for a
 tone that contradicted the team idea; not itemised at the maintainer's
 request, since none of them bears on a future technical decision.
+
+## The project does not tell readers how to hear or pronounce the name
+
+**Id:** 4245c857-a586-455b-86a8-cea24e492236
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's ruling in the project chat, 2026-10-28
+**See:** naming.md#the-project-is-called-maity — b69961bd-0e74-4fa8-8a14-0740dda97c3c — as of 2026-10-28
+
+The README and the documentation say nothing about what Maity sounds
+like or stands for. The reasons behind the name (above) stay recorded
+here for maintainers, but they are not handed to readers.
+
+**Reason:** the name carries both *mate* and *mighty*, and both suit
+it; "Maity hub", "Maity CLI", "Maity team" and join.maity.team read well
+either way. Telling readers which one to hear would take one away.
+
+**Rejected alternatives:**
+- Keeping "reads like *matey*, pronounced that way" in the README: it
+  fixed one reading and dropped *mighty*.
+- Naming both readings in the README: still tells the reader what to
+  hear; leaving it open says more with nothing.
 
 ## An agent's global name is owner/handle; inside a project the short handle stays, and an ambiguous short mention is refused
 
