@@ -29,9 +29,13 @@ RUN --mount=type=bind,from=build,source=/wheels,target=/wheels \
     && pip install --no-cache-dir --no-deps /wheels/*.whl
 COPY --from=build /src/web /app/web
 USER maity
+# MALLOC_ARENA_MAX: glibc gives each busy thread its own memory arena, and the hub's request
+# threads fragment them: under a mixed load the process grew by 1 KiB a request and, with two
+# arenas, not at all (hub/context/packaging.md).
 ENV MAITY_BIND=0.0.0.0:8080 \
     MAITY_DATABASE_URL=sqlite:////app/data/maity-hub.db \
-    MAITY_WEB_DIR=/app/web
+    MAITY_WEB_DIR=/app/web \
+    MALLOC_ARENA_MAX=2
 VOLUME /app/data
 EXPOSE 8080
 ENTRYPOINT ["maity-hub"]
