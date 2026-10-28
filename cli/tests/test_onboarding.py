@@ -31,7 +31,13 @@ def packet(**overrides: Any) -> dict[str, Any]:
             "paused": None,
             "briefing": BRIEFING,
         },
-        "project": {"slug": "maity", "name": "Maity", "state": "build", "absence": None},
+        "project": {
+            "slug": "maity",
+            "full_name": "oliver/maity",
+            "name": "Maity",
+            "state": "build",
+            "absence": None,
+        },
         "rules": {"version": 7, "changed": True, "markdown": "# Rules for Maity\n\nBe kind."},
         "keep_the_why": {"enabled": True, "instruction": "Load the keep-the-why skill."},
         "claims": [],
@@ -64,7 +70,7 @@ def test_identity_project_rules_and_next_step() -> None:
     assert "Role: member, reporting to agent-a" in text
     assert "Areas you own: hub/" in text
     assert "Your human: maintainer" in text
-    assert "Project: Maity (maity), state build" in text
+    assert "Project: Maity (oliver/maity), state build" in text
     assert "Rules (version 7), read them before you work:\n> # Rules for Maity" in text
     assert "Keep the Why: Load the keep-the-why skill." in text
     assert "Members: agent-a [agt-a] (admin, online)" in text
@@ -278,7 +284,10 @@ def test_a_long_message_is_cut_with_a_pointer() -> None:
     message = {"seq": 50, "kind": "message", "payload": payload}
     text = onboarding.render(packet(events={"items": [message], "cursor": 50}))
     assert "  > line 39\n" in text and "line 40" not in text
-    assert "… (cut, 60 more lines: `maity api GET /projects/maity/events --query after=49" in text
+    assert (
+        "… (cut, 60 more lines: `maity api GET /projects/oliver/maity/events --query after=49"
+        in text
+    )
 
 
 def test_the_events_section_is_capped() -> None:

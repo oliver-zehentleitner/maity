@@ -47,7 +47,7 @@ def test_wait_recovers_with_same_cursor(
             return status, {"error": {"code": "internal", "message": "unavailable"}}
         return 200, {"items": [{"seq": 18, "kind": "message"}], "cursor": 18}
 
-    fake.routes[("GET", "/api/v1/projects/maity/events")] = response
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/events")] = response
     assert cli.main(["wait", "--timeout", "60"]) == cli.EXIT_OK
     captured = capsys.readouterr()
     assert json.loads(captured.out)["seq"] == 18
@@ -64,7 +64,7 @@ def test_wait_outage_stops_at_deadline(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     state.save_state(joined, {**state.load_state(joined), "cursor": 17})
-    fake.routes[("GET", "/api/v1/projects/maity/events")] = lambda seen: (503, "unavailable")
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/events")] = lambda seen: (503, "unavailable")
     assert cli.main(["wait", "--timeout", "75"]) == cli.EXIT_TIMEOUT
     assert clock.sleeps == [2, 4, 8, 16, 30, 15]
     assert clock.now == 75
@@ -81,7 +81,7 @@ def test_wait_does_not_retry_client_errors(
     clock: Clock,
     status: int,
 ) -> None:
-    fake.routes[("GET", "/api/v1/projects/maity/events")] = lambda seen: (
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/events")] = lambda seen: (
         status,
         {"error": {"code": "denied", "message": "denied"}},
     )
@@ -108,7 +108,7 @@ def test_success_resets_backoff_and_retries_latest_cursor(
         calls.append(seen.query)
         return next(replies)
 
-    fake.routes[("GET", "/api/v1/projects/maity/events")] = response
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/events")] = response
     assert cli.main(["wait", "--timeout", "60", "--keep-cursor"]) == cli.EXIT_OK
     assert clock.sleeps == [2, 1, 2]
     assert all("after=0&" in query for query in calls[:2])

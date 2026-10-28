@@ -71,7 +71,7 @@ def test_ask_rejects_unknown_class() -> None:
 
 
 def test_api_uppercases_the_method() -> None:
-    assert parse("api", "post", "/projects/maity/tasks").method == "POST"
+    assert parse("api", "post", "/projects/oliver/maity/tasks").method == "POST"
 
 
 @pytest.mark.parametrize(
@@ -306,7 +306,7 @@ def test_wait_ends_on_time_when_the_hub_stops_answering(
         release.wait(30)
         return 200, {"items": [], "cursor": 0}
 
-    fake.routes[("GET", "/api/v1/projects/maity/events")] = hang
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/events")] = hang
     started = time.monotonic()
     try:
         assert cli.main(["wait", "--timeout", "3"]) == cli.EXIT_TIMEOUT
@@ -318,7 +318,7 @@ def test_wait_ends_on_time_when_the_hub_stops_answering(
 def test_wait_exits_6_when_superseded(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    fake.routes[("GET", "/api/v1/projects/maity/events")] = lambda s: (
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/events")] = lambda s: (
         200,
         {"items": [], "cursor": 0, "superseded": True},
     )
@@ -344,7 +344,7 @@ def test_report_sends_the_facts(
         bin_dir,
         json.dumps([{"number": 12, "headRefOid": head, "state": "OPEN", "url": "https://x/12"}]),
     )
-    fake.routes[("POST", "/api/v1/projects/maity/tasks/tsk-0004/report")] = lambda s: (
+    fake.routes[("POST", "/api/v1/projects/oliver/maity/tasks/tsk-0004/report")] = lambda s: (
         200,
         {"id": "tsk-0004", "status": "review"},
     )
@@ -374,7 +374,7 @@ def test_report_after_the_merge_deleted_the_branch(
         bin_dir,
         json.dumps([{"number": 12, "headRefOid": head, "state": "MERGED", "url": "https://x/12"}]),
     )
-    fake.routes[("POST", "/api/v1/projects/maity/tasks/T/report")] = lambda s: (200, {})
+    fake.routes[("POST", "/api/v1/projects/oliver/maity/tasks/T/report")] = lambda s: (200, {})
     assert cli.main(["report", "--task", "T", "--summary", "s"]) == cli.EXIT_OK
     body = fake.signed()[-1].json()
     assert body["remote_head"] == body["head"] == head  # the merged pull request's head
@@ -382,7 +382,7 @@ def test_report_after_the_merge_deleted_the_branch(
 
 
 def test_report_without_gh_says_unknown(joined: Path, fake: fakehub.FakeHub) -> None:
-    fake.routes[("POST", "/api/v1/projects/maity/tasks/T/report")] = lambda s: (200, {})
+    fake.routes[("POST", "/api/v1/projects/oliver/maity/tasks/T/report")] = lambda s: (200, {})
     assert cli.main(["report", "--task", "T", "--summary", "s"]) == cli.EXIT_OK
     body = fake.signed()[-1].json()
     assert body["pr"] is None and body["pr_status"] == "unknown"
@@ -398,7 +398,7 @@ def test_report_refuses_before_sending(joined: Path, fake: fakehub.FakeHub) -> N
 def test_ask_builds_the_request(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    fake.routes[("POST", "/api/v1/projects/maity/requests")] = lambda s: (
+    fake.routes[("POST", "/api/v1/projects/oliver/maity/requests")] = lambda s: (
         201,
         {"id": "req-0012", "class": "decision", "status": "open"},
     )
@@ -419,7 +419,7 @@ def test_ask_builds_the_request(
 
 
 def test_ask_to_a_role_sets_to(joined: Path, fake: fakehub.FakeHub) -> None:
-    fake.routes[("POST", "/api/v1/projects/maity/requests")] = lambda s: (201, {"id": "r"})
+    fake.routes[("POST", "/api/v1/projects/oliver/maity/requests")] = lambda s: (201, {"id": "r"})
     assert cli.main(["ask", "Which port?", "--to", "role:admin", "--class", "info"]) == 0
     assert fake.signed()[-1].json()["to"] == "role:admin"
 
@@ -453,21 +453,21 @@ def test_a_credential_in_a_body_is_refused_locally(
 def test_api_passthrough_is_signed_and_idempotent(
     joined: Path, fake: fakehub.FakeHub, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    fake.routes[("POST", "/api/v1/projects/maity/tasks/tsk-1/claim")] = lambda s: (
+    fake.routes[("POST", "/api/v1/projects/oliver/maity/tasks/tsk-1/claim")] = lambda s: (
         200,
         {"id": "tsk-1", "status": "in_progress", "echo": s.json()},
     )
     body = tmp_path / "claim.json"
     body.write_text('{"reason": "fix"}')
-    args = ["api", "POST", "/projects/maity/tasks/tsk-1/claim", "--json", str(body)]
+    args = ["api", "POST", "/projects/oliver/maity/tasks/tsk-1/claim", "--json", str(body)]
     assert cli.main(args) == cli.EXIT_OK
     assert json.loads(capsys.readouterr().out)["echo"] == {"reason": "fix"}
     assert len(fake.signed()[-1].headers["idempotency-key"]) >= 16
 
 
 def test_api_query_is_signed(joined: Path, fake: fakehub.FakeHub) -> None:
-    fake.routes[("GET", "/api/v1/projects/maity/tasks")] = lambda s: (200, {"items": []})
-    args = ["api", "GET", "/projects/maity/tasks", "--query", "status=open,review",
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/tasks")] = lambda s: (200, {"items": []})
+    args = ["api", "GET", "/projects/oliver/maity/tasks", "--query", "status=open,review",
             "--query", "limit=200"]  # fmt: skip
     assert cli.main(args) == cli.EXIT_OK
     assert fake.signed()[-1].query == "limit=200&status=open%2Creview"
@@ -488,7 +488,7 @@ def test_no_command_prints_the_credential(
         ["wait", "--timeout", "1"],
         ["ask", "q", "--to", "human", "--class", "info"],
         ["report", "--task", "T", "--summary", "s"],
-        ["api", "GET", "/projects/maity/nothing"],
+        ["api", "GET", "/projects/oliver/maity/nothing"],
     ):
         cli.main(argv)
         assert fakehub.SECRET not in output(capsys), argv

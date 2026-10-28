@@ -41,7 +41,7 @@ human() { curl -sS --fail -b "$jar" -H "X-CSRF-Token: $csrf" -H 'Content-Type: a
 human -o /dev/null -d '{"slug":"smoke","name":"Smoke test"}' "$hub/api/v1/projects"
 join_for() {
     human -d "{\"agent\":{\"handle\":\"$1\",\"display_name\":\"$1\"},\"role\":\"member\",\"areas\":[\"$1/\"]}" \
-        "$hub/api/v1/projects/smoke/joins"
+        "$hub/api/v1/projects/owner/smoke/joins"
 }
 curl_join="$(join_for curl-agent)"
 cli_join="$(join_for cli-agent)"
@@ -80,7 +80,7 @@ url="$(printf '%s' "$cli_join" | json 'd["join_url"]')"
 code="$(printf '%s' "$cli_join" | json 'd["code"]')"
 git init -q "$work/clone-cli" && cd "$work/clone-cli"
 maity join "$url" --code "$code" --harness smoke --model none --no-pointer >"$work/cli-join.out" 2>&1
-grep -q '^joined smoke as agt-' "$work/cli-join.out"
+grep -q '^joined owner/smoke as agt-' "$work/cli-join.out"
 maity resume --json | json '"resumed as " + d["me"]["handle"] + ", session " + d["session"]["id"]'
 
 step "requests: each agent asks its human, the human answers"
@@ -89,14 +89,14 @@ cd "$work/clone-curl"
 d="$(git rev-parse --git-common-dir)/maity"
 curl -sS --fail -K "$d/curl.conf" -X POST -H 'Content-Type: application/json' -H "Idempotency-Key: $(key)" \
     -d '{"class":"decision","title":"Which hash?","options":[{"id":"a","label":"A"},{"id":"b","label":"B"}]}' \
-    "$hub/api/v1/projects/smoke/requests" | json '"curl agent asked " + d["id"] + " to " + d["to"]'
+    "$hub/api/v1/projects/owner/smoke/requests" | json '"curl agent asked " + d["id"] + " to " + d["to"]'
 cd "$work/clone-cli"
 maity ask "Tag 0.1.0 now?" --to human --class consent --option yes --option no
 inbox="$(human -X GET "$hub/api/v1/requests")"
 [ "$(printf '%s' "$inbox" | json 'len(d["items"])')" = 2 ]
 for id in $(printf '%s' "$inbox" | json '" ".join(r["id"] for r in d["items"])'); do
     reply="$(printf '%s' "$inbox" | json "next(r['replies'][0]['id'] for r in d['items'] if r['id'] == '$id')")"
-    human -o /dev/null -d "{\"reply_id\":\"$reply\"}" "$hub/api/v1/projects/smoke/requests/$id/answer"
+    human -o /dev/null -d "{\"reply_id\":\"$reply\"}" "$hub/api/v1/projects/owner/smoke/requests/$id/answer"
 done
 maity resume --json | json '"cli agent got " + str(len(d["requests"]["answered_since_cursor"])) + " answer(s)"' \
     | tee "$work/cli-answers"
@@ -114,53 +114,53 @@ cd "$work/clone-cli"
 maity wait --timeout 30 >"$work/cli-wait.out" &
 cli_wait=$!
 cd "$work/clone-curl"
-after="$(curl -sS --fail -K "$d/curl.conf" "$hub/api/v1/projects/smoke/events?after=latest" | json 'd["cursor"]')"
-curl -sS --fail -K "$d/curl.conf" "$hub/api/v1/projects/smoke/events?after=$after&wait=30" >"$work/curl-wait.out" &
+after="$(curl -sS --fail -K "$d/curl.conf" "$hub/api/v1/projects/owner/smoke/events?after=latest" | json 'd["cursor"]')"
+curl -sS --fail -K "$d/curl.conf" "$hub/api/v1/projects/owner/smoke/events?after=$after&wait=30" >"$work/curl-wait.out" &
 curl_wait=$!
 sleep 1
-human -o /dev/null -d '{"body":"how far are you?"}' "$hub/api/v1/projects/smoke/conversations/$cli_agent/messages"
-human -o /dev/null -d '{"body":"and you?"}' "$hub/api/v1/projects/smoke/conversations/$curl_agent/messages"
+human -o /dev/null -d '{"body":"how far are you?"}' "$hub/api/v1/projects/owner/smoke/conversations/$cli_agent/messages"
+human -o /dev/null -d '{"body":"and you?"}' "$hub/api/v1/projects/owner/smoke/conversations/$curl_agent/messages"
 wait "$cli_wait"
 wait "$curl_wait"
 json '"cli agent woke on: " + d["payload"]["body"]' <"$work/cli-wait.out" | tee "$work/cli-woke"
 grep -q "how far are you" "$work/cli-woke"
 json '"curl agent woke on: " + d["items"][0]["payload"]["body"]' <"$work/curl-wait.out" | tee "$work/curl-woke"
 grep -q "and you" "$work/curl-woke"
-human -X GET "$hub/api/v1/projects/smoke/conversations/$cli_agent/messages" \
+human -X GET "$hub/api/v1/projects/owner/smoke/conversations/$cli_agent/messages" \
     | json '"delivered: " + str(d["items"][-1]["delivered_at"] is not None)' | grep -q "delivered: True"
 
 step "releases and contracts: the curl agent holds a release, the cli agent finalises a contract as its arbiter"
 human -o /dev/null -X PATCH -d '{"settings":{"release_checklist":["CHANGELOG has a section"]}}' \
-    "$hub/api/v1/projects/smoke"
+    "$hub/api/v1/projects/owner/smoke"
 rel="$(human -d '{"kind":"release","title":"0.1.0","release":{"version":"0.1.0"}}' \
-    "$hub/api/v1/projects/smoke/tasks" | json 'd["id"]')"
+    "$hub/api/v1/projects/owner/smoke/tasks" | json 'd["id"]')"
 cd "$work/clone-curl"
 curl -sS --fail -K "$d/curl.conf" -X POST -H 'Content-Type: application/json' -H "Idempotency-Key: $(key)" \
-    -d '{}' -o /dev/null "$hub/api/v1/projects/smoke/tasks/$rel/claim"
+    -d '{}' -o /dev/null "$hub/api/v1/projects/owner/smoke/tasks/$rel/claim"
 curl -sS --fail -K "$d/curl.conf" -X POST -H 'Content-Type: application/json' -H "Idempotency-Key: $(key)" \
-    -d '{"done":true}' "$hub/api/v1/projects/smoke/tasks/$rel/checklist/chk-1" \
+    -d '{"done":true}' "$hub/api/v1/projects/owner/smoke/tasks/$rel/checklist/chk-1" \
     | json '"release " + d["release"]["version"] + ": checklist done " + str(d["release"]["checklist"][0]["done"]) + ", blocking " + ",".join(b["reason"] for b in d["release"]["readiness"]["blocking"])' \
     | tee "$work/release"
 grep -q "done True, blocking probe_not_configured$" "$work/release"
 ctr="$(printf '{"title":"Shape of /probe","kind":"contract","contract":{"arbiter":"%s","watchers":["%s"]}}' \
-    "$cli_agent" "$curl_agent" | human -d @- "$hub/api/v1/projects/smoke/tasks" | json 'd["id"]')"
+    "$cli_agent" "$curl_agent" | human -d @- "$hub/api/v1/projects/owner/smoke/tasks" | json 'd["id"]')"
 cd "$work/clone-cli"
-printf '{"contract":{"state":"final"}}' | maity api PATCH "/projects/smoke/tasks/$ctr" --json - \
+printf '{"contract":{"state":"final"}}' | maity api PATCH "/projects/owner/smoke/tasks/$ctr" --json - \
     | json '"contract " + d["id"] + " is " + d["contract"]["state"]' | tee "$work/final"
 grep -q "is final$" "$work/final"
 
 step "pause: the human pauses the cli agent; it is told, takes no new work, and can still park its card"
 cd "$work/clone-cli"
 git -c user.name=smoke -c user.email=smoke@example.org commit -q --allow-empty -m "smoke"
-held="$(human -d '{"title":"Pause: held card","area":"/"}' "$hub/api/v1/projects/smoke/tasks" | json 'd["id"]')"
-spare="$(human -d '{"title":"Pause: spare card","area":"/"}' "$hub/api/v1/projects/smoke/tasks" | json 'd["id"]')"
+held="$(human -d '{"title":"Pause: held card","area":"/"}' "$hub/api/v1/projects/owner/smoke/tasks" | json 'd["id"]')"
+spare="$(human -d '{"title":"Pause: spare card","area":"/"}' "$hub/api/v1/projects/owner/smoke/tasks" | json 'd["id"]')"
 maity claim "$held"
 maity resume --json >/dev/null  # the wait starts after everything so far
 maity wait --timeout 30 >"$work/pause-wait.out" 2>"$work/pause-wait.err" &
 pause_wait=$!
 sleep 1
 human -o /dev/null -X PATCH -d '{"paused":{"reason":"smoke: hold on"}}' \
-    "$hub/api/v1/projects/smoke/members/$cli_agent"
+    "$hub/api/v1/projects/owner/smoke/members/$cli_agent"
 wait "$pause_wait"
 grep -q '^maity: you were paused by .*: smoke: hold on' "$work/pause-wait.err"
 json '"cli agent woke on: " + d["kind"]' <"$work/pause-wait.out" | tee "$work/pause-woke"
@@ -172,17 +172,17 @@ fi
 cat "$work/pause-claim.out"
 grep -q '^maity: refused: you are paused by .*: smoke: hold on' "$work/pause-claim.out"
 maity checkpoint "$held" -m "paused mid-way" --next "continue after the pause"
-human -o /dev/null -X PATCH -d '{"paused":null}' "$hub/api/v1/projects/smoke/members/$cli_agent"
+human -o /dev/null -X PATCH -d '{"paused":null}' "$hub/api/v1/projects/owner/smoke/members/$cli_agent"
 maity claim "$spare"
 
 step "probe: without a forge token both agents get probe_not_configured"
 cd "$work/clone-curl"
-code="$(curl -sS -o "$work/probe-curl" -w '%{http_code}' -K "$d/curl.conf" "$hub/api/v1/projects/smoke/probe?pr=1")"
+code="$(curl -sS -o "$work/probe-curl" -w '%{http_code}' -K "$d/curl.conf" "$hub/api/v1/projects/owner/smoke/probe?pr=1")"
 [ "$code" = 409 ]
 json '"curl agent: " + d["error"]["code"]' <"$work/probe-curl" | tee "$work/probe"
 grep -q "probe_not_configured$" "$work/probe"
 cd "$work/clone-cli"
-if maity api GET /projects/smoke/probe --query pr=1 >"$work/probe-cli" 2>&1; then
+if maity api GET /projects/owner/smoke/probe --query pr=1 >"$work/probe-cli" 2>&1; then
     echo "smoke: maity api answered a probe without a token" >&2; exit 1
 fi
 grep -q probe_not_configured "$work/probe-cli"
@@ -190,7 +190,7 @@ echo "cli agent: probe_not_configured"
 
 step "signing required: the curl agent's bearer call is refused, the cli agent signs and goes on"
 human -o /dev/null -X PATCH -d '{"policy":{"signing":"required"},"reason":"agents sign from now on"}' \
-    "$hub/api/v1/projects/smoke"
+    "$hub/api/v1/projects/owner/smoke"
 cd "$work/clone-curl"
 code="$(curl -sS -o "$work/signing-curl" -w '%{http_code}' -K "$d/curl.conf" "$hub/api/v1/me")"
 [ "$code" = 403 ]
@@ -200,6 +200,6 @@ cd "$work/clone-cli"
 maity api GET /me | json '"cli agent, signed: " + d["member"]["handle"]'
 
 step "human: both agents are members"
-human "$hub/api/v1/projects/smoke/members" -X GET \
+human "$hub/api/v1/projects/owner/smoke/members" -X GET \
     | json '", ".join(m["handle"] + "/" + m["presence"] for m in d["items"])'
 printf '\nsmoke: both join paths worked, both agents got their answers, woke on a message, worked a release and a contract, the cli agent was paused and resumed, asked the probe, and signing was enforced\n'

@@ -14,11 +14,13 @@ EMPTY_SHA = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
 
 def test_canonical_string_follows_the_contract_line_by_line() -> None:
-    text = sign.canonical_string("get", "/api/v1/projects/maity/events", "after=1", "17", "n", b"")
+    text = sign.canonical_string(
+        "get", "/api/v1/projects/oliver/maity/events", "after=1", "17", "n", b""
+    )
     assert text.split("\n") == [
         "MAITY-HMAC-V1",
         "GET",
-        "/api/v1/projects/maity/events",
+        "/api/v1/projects/oliver/maity/events",
         "after=1",
         "17",
         "n",
