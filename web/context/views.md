@@ -1802,3 +1802,28 @@ width it cut a 2:1 preview to about 6.5:1, showing only a stripe of it.
 Filling the 2:1 box by cropping (`object-fit: cover`): a banner of
 another shape lost the text at its edges.
 
+## The view being left is inert until the next one is drawn
+
+**Id:** 1d888f69-9233-40b4-b9f3-cd679825ef82
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the runner flake of web-e2e (tsk-q1xrpaahtah0, runs 40718638353 and 40721945466) and the reviewer's reproduction with ordinary clicks and Back on PR #551, 2026-10-28
+**Revisit when:** views are mounted before their data is read, or a view is kept across navigations
+
+A navigation renders the next view off screen and mounts it when its
+data is read; until then the view being left stays shown. From the start
+of the render it is `inert`: no click, key or focus reaches it.
+
+**Reason:** an action in the old view (a Revoke) was answered into that
+view, which then disappeared, while the new view showed what it had read
+before the action, as if nothing had happened. The page alone was wrong,
+the hub had revoked. Inert keeps the old view as a visual placeholder
+without letting it start anything.
+
+**Rejected alternative:** waiting in the end-to-end test only: it hid a
+real case (a click during a slow navigation). Clearing the old view at
+once: a blank page on every navigation, and a jump. Making every view's
+initial read consistent with actions in other instances: one rule per
+view, for a race the inert placeholder removes for all of them.
+

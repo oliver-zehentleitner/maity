@@ -1231,6 +1231,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main).includes("No runner yet. A runner is a small service on your machine that starts agents for you.") && byId("pair-name"),
     "runners: the empty state, with the pairing form");
   win.Maity.api.getAll = realAll2;
+  // Leaving a view: until the next one is drawn, the old one stays on screen but takes no
+  // click (inert), so an action there cannot be answered into a view that is gone.
+  const lvGet = win.Maity.api.get;
+  let lvRelease = null;
+  win.Maity.api.get = (p) => (p === "/auth/session" && !lvRelease ? new Promise((resolve) => { lvRelease = () => resolve(lvGet(p)); }) : lvGet(p));
+  const lvOld = main.querySelector("section.view-runners");
+  win.location.hash = "#/all"; win.onhashchange(); await tick();
+  expect(lvOld && lvOld.parentNode === main && lvOld.getAttribute("inert") === "", "navigation: the view being left stays shown but is inert until the next is drawn");
+  win.Maity.api.get = lvGet;
+  lvRelease(); for (let k = 0; k < 6; k++) await tick();
+  const lvNew = main.querySelector("section.view-all");
+  expect(lvNew && lvNew.getAttribute("inert") === undefined && !main.querySelector("section.view-runners"), "navigation: the view drawn next takes clicks again");
   await go("#/maintainer/maity/inbox");
 
   // Why: the Keep the Why export (docs/api.md §11.3), from the published maity.dev family.

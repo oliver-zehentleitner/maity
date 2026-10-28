@@ -1389,6 +1389,11 @@ window.Maity = window.Maity || {};
     // deploy, the next navigation asks it again.
     M.api.absent.clear();
     const main = document.getElementById("main");
+    // The view being left stays on screen until the next one is drawn, but
+    // takes no click or key any more: an action there (a Revoke) would be
+    // answered into a view that is gone, while the new one shows what it read
+    // before. Every way out of render() replaces main or renders again.
+    Array.from(main.childNodes).forEach((n) => { if (n.setAttribute) n.setAttribute("inert", ""); });
     let where = { scope: "unknown" };
     let ctx;
     try {
