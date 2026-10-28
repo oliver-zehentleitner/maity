@@ -46,6 +46,69 @@ def deleted_person() -> dict[str, Any]:
     return {"display_name": DELETED_NAME, "handle": None, "avatar_url": None, "deleted": True}
 
 
+def _person_id(value: dict[str, Any]) -> str | None:
+    """The human a stored person object names, or None: a member view (`id` with `kind:
+    human`), or an object with a human's `member_id` that shows a name or a handle
+    (`asked_by`, `on_behalf_of`, a mention, a history or chat participant)."""
+    if value.get("kind") == "human" and isinstance(value.get("id"), str):
+        return str(value["id"])
+    member = value.get("member_id")
+    if (
+        isinstance(member, str)
+        and member.startswith("hum-")
+        and ("display_name" in value or "handle" in value)
+    ):
+        return member
+    return None
+
+
+def _person_ids(value: Any, found: set[str]) -> None:
+    if isinstance(value, dict):
+        named = _person_id(value)
+        if named is not None:
+            found.add(named)
+        for inner in value.values():
+            _person_ids(inner, found)
+    elif isinstance(value, list):
+        for inner in value:
+            _person_ids(inner, found)
+
+
+def _without_deleted(value: Any, gone: set[str]) -> Any:
+    if isinstance(value, list):
+        return [_without_deleted(inner, gone) for inner in value]
+    if not isinstance(value, dict):
+        return value
+    shaped = {key: _without_deleted(inner, gone) for key, inner in value.items()}
+    if _person_id(value) in gone:
+        if "display_name" in value:
+            shaped.update(deleted_person())
+        else:  # a handle-only reference: no name to replace
+            shaped.update(handle=None, deleted=True)
+    return shaped
+
+
+def shape_deleted(conn: Connection, values: Sequence[Any]) -> list[Any]:
+    """`values` (stored JSON: event payloads, a request's `needs_in_session`, mentions)
+    with every person object of a deleted account in the deleted shape (§2.9), at read
+    time: the stored rows stay as written (the log is append-only), ids, types and free
+    text unchanged. One query for the lot; without a deleted account among them the
+    values come back as they are."""
+    found: set[str] = set()
+    for value in values:
+        _person_ids(value, found)
+    if not found:
+        return list(values)
+    gone = set(
+        conn.execute(
+            select(t.human.c.id).where(t.human.c.id.in_(found), t.human.c.deleted_at.is_not(None))
+        ).scalars()
+    )
+    if not gone:
+        return list(values)
+    return [_without_deleted(value, gone) for value in values]
+
+
 def human_member(row: Any, *, avatar_url: str | None) -> dict[str, Any]:
     """`avatar_url` is the caller's to look up (`avatars.urls`), so a list costs one query."""
     if deleted(row):
@@ -877,6 +940,11 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
                 "redacted": row.redacted,
             }
         )
+    # A deleted account in a stored payload is shown as one, for every reader (§2.9).
+    for view, payload in zip(
+        views, shape_deleted(conn, [v["payload"] for v in views]), strict=True
+    ):
+        view["payload"] = payload
     return views
 
 

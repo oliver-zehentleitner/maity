@@ -38,7 +38,7 @@ from maity_hub.namespace import ProjectRoute
 from maity_hub.notifications import records
 from maity_hub.replies import replies
 from maity_hub.scopes import tokens_of
-from maity_hub.views import deleted, deleted_person, principal_id, ts
+from maity_hub.views import deleted, deleted_person, principal_id, shape_deleted, ts
 
 log = logging.getLogger(__name__)
 router = APIRouter(route_class=ProjectRoute)
@@ -153,6 +153,9 @@ def _with_avatar(conn: Connection, needs: dict[str, Any] | None) -> dict[str, An
     if needs is None:
         return None
     member_id = needs["member_id"]
+    [shaped] = shape_deleted(conn, [needs])  # a deleted account as one (§2.9)
+    if shaped.get("deleted"):
+        return dict(shaped)
     return {**needs, "avatar_url": avatars.urls(conn, [member_id])[member_id]}
 
 

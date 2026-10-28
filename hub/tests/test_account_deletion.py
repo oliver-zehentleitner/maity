@@ -4,6 +4,7 @@ in one transaction."""
 
 from __future__ import annotations
 
+import contextvars
 import re
 from datetime import timedelta
 from typing import Any
@@ -14,6 +15,7 @@ from sqlalchemy.exc import IntegrityError
 
 from maity_hub import account_deletion, clock
 from maity_hub import tables as t
+from maity_hub.events import lock_project
 from maity_hub.middleware import _TOKEN_PATHS
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -522,3 +524,210 @@ def test_the_deletion_is_one_transaction(
     monkeypatch.undo()
     assert press(pat, token).status_code == 200  # the link still works, and now deletes
     assert deleted_at(migrated, pat.id) is not None
+
+
+# --- review of #561: old payloads, tombstoned profiles, mail rows, the late write -----------------
+
+
+def persons_of(value: Any, human_id: str, found: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Every object in `value` that names `human_id` as a person."""
+    if isinstance(value, dict):
+        if value.get("member_id") == human_id or (
+            value.get("id") == human_id and value.get("kind") == "human"
+        ):
+            found.append(value)
+        for inner in value.values():
+            persons_of(inner, human_id, found)
+    elif isinstance(value, list):
+        for inner in value:
+            persons_of(inner, human_id, found)
+    return found
+
+
+def test_old_event_payloads_show_the_deleted_account(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    admin_first(migrated, moment)
+    owner = flow.human(make_client, migrated)
+    flow.project(owner)
+    pat = person(make_client, migrated, moment)
+    invited = owner.post("/projects/maintainer/maity/invitations", {})
+    token = invited.json()["url"].rsplit("/", 1)[1]
+    assert pat.post(f"/invitations/{token}/accept").status_code == 201  # member_joined
+    asked(pat)  # request_created, asked_by pat
+    to_pat = asked(owner, to=pat.id)
+    answered = pat.post(
+        f"/projects/maintainer/maity/requests/{to_pat['id']}/answer", {"text": "Do it."}
+    )
+    assert answered.status_code == 200, answered.text
+    before = owner.get("/projects/maintainer/maity/events?after=0").json()
+    assert "Human pat" in str(before)  # what was stored then
+    assert press(pat, requested(pat, migrated)).status_code == 200
+    events = owner.get("/projects/maintainer/maity/events?after=0").json()
+    assert "Human pat" not in str(events)
+    items = events.get("events", events.get("items", []))
+    kinds = {e["kind"] for e in items}
+    assert {"member_joined", "request_created", "request_answered"} <= kinds
+    # Objects that show the person (a name or a handle); an actor's bare id stays.
+    shown = [p for p in persons_of(items, pat.id, []) if "display_name" in p or "handle" in p]
+    assert shown and all(p.get("deleted") is True for p in shown), [
+        p for p in shown if not p.get("deleted")
+    ]
+    for p in shown:
+        if "display_name" in p:
+            assert (p["display_name"], p["handle"], p["avatar_url"]) == (
+                "Deleted account",
+                None,
+                None,
+            )
+    created = next(
+        e
+        for e in items
+        if e["kind"] == "request_created" and e["payload"]["asked_by"]["member_id"] == pat.id
+    )
+    assert created["payload"]["title"] == "Which?"  # free text unchanged
+    # The stored rows stay as they were written: only the reading is shaped.
+    with migrated.connect() as conn:
+        stored = conn.execute(select(t.event.c.payload)).scalars().all()
+    assert "Human pat" in str(stored)
+
+
+def test_tombstoned_profiles_lose_git_identity_and_soul(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    created = pat.post(
+        "/agents",
+        {
+            "handle": "early",
+            "display_name": "Early",
+            "git_identity": {"name": "Early", "email": "early@example.org"},
+        },
+    )
+    assert created.status_code == 201, created.text
+    agent_id = created.json()["id"]
+    with migrated.begin() as conn:
+        conn.execute(
+            insert(t.soul).values(
+                agent_id=agent_id, markdown="who I am", version=1, by_kind="human",
+                by_id=pat.id, updated_at=moment.at,
+            )  # fmt: skip
+        )
+        conn.execute(
+            insert(t.soul_version).values(
+                agent_id=agent_id, version=1, markdown="who I am", by_kind="human",
+                by_id=pat.id, at=moment.at,
+            )  # fmt: skip
+        )
+    gone = pat.client.delete(
+        f"/api/v1/agents/{agent_id}?cascade=true", headers={"X-CSRF-Token": pat.csrf}
+    )
+    assert gone.status_code == 200
+    assert press(pat, requested(pat, migrated)).status_code == 200
+    with migrated.connect() as conn:
+        profile = conn.execute(
+            select(t.agent_profile).where(t.agent_profile.c.id == agent_id)
+        ).one()
+        assert (profile.git_name, profile.git_email) == (None, None)
+        for table in (t.soul, t.soul_version):
+            assert not conn.execute(select(table).where(table.c.agent_id == agent_id)).first()
+
+
+def test_no_mail_row_keeps_the_address(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    with migrated.begin() as conn:
+        for status in ("waiting", "sent", "failed"):
+            conn.execute(
+                insert(t.mail_outbox).values(
+                    kind="notification", human_id=pat.id, recipient="pat@example.org",
+                    subject="[Maity] pat", body="Hello pat", headers={"X": "pat"},
+                    created_at=moment.at, not_before=moment.at, attempts=0, status=status,
+                )  # fmt: skip
+            )
+        # A mail to the address that names no account (an invitation's).
+        conn.execute(
+            insert(t.mail_outbox).values(
+                kind="security", human_id=None, recipient=" Pat@Example.org",
+                subject="Invited", body="pat@example.org", headers={}, created_at=moment.at,
+                not_before=moment.at, attempts=0, status="sent",
+            )  # fmt: skip
+        )
+    assert press(pat, requested(pat, migrated)).status_code == 200
+    with migrated.connect() as conn:
+        for table in (t.mail_outbox, t.mail_delivery, t.pending_registration, t.invitation):
+            for row in conn.execute(select(table)).all():
+                assert "pat@example.org" not in str(tuple(row)).lower(), (table.name, row)
+        statuses = conn.execute(select(t.mail_outbox.c.status)).scalars().all()
+    assert "sent" in statuses and "failed" in statuses  # the counters' metadata stays
+
+
+def test_a_write_held_past_its_authentication_is_refused_after_the_deletion(
+    make_client: ClientFactory, migrated: Engine, moment: Clock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The reviewer's race: POST /agents is authenticated, the account is deleted, then
+    the write runs. It must not commit."""
+    from maity_hub import events, idempotency
+    from maity_hub.deps import settings_of
+
+    admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    token = requested(pat, migrated)
+    original = idempotency.run
+
+    def held(engine: Engine, request: Any, caller: Any, action: Any) -> Any:
+        # Between the authentication and the write: the link is pressed now, as its own
+        # request (no caller bound, as on the link's page).
+        def press_link() -> None:
+            with events.transaction(engine) as conn:
+                assert account_deletion.confirm(conn, settings_of(request), token) == "deleted"
+
+        contextvars.Context().run(press_link)
+        return original(engine, request, caller, action)
+
+    monkeypatch.setattr(idempotency, "run", held)
+    late = pat.post(
+        "/agents",
+        {
+            "handle": "late-agent",
+            "display_name": "Late",
+            "git_identity": {"name": "Late", "email": "late@example.org"},
+        },
+    )
+    assert late.status_code == 401, late.text
+    monkeypatch.undo()
+    assert deleted_at(migrated, pat.id) is not None
+    with migrated.connect() as conn:
+        assert not conn.execute(
+            select(t.agent_profile).where(t.agent_profile.c.handle == "late-agent")
+        ).first()
+
+
+def test_a_reopen_racing_the_confirmation_is_seen(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """A reopen of an archived project in the namespace holds the project's lock; the
+    confirmation's re-check waits for it and then refuses (PostgreSQL, MariaDB)."""
+    from tests.concurrency import finished, race, waiting
+
+    admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    flow.project(pat, "own")
+    with migrated.begin() as conn:
+        conn.execute(update(t.project).values(state="archived"))
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    token = requested(pat, migrated)
+    hub = mail_env()
+    with race(migrated) as r:
+        reopen, deletion = r.first, r.second
+        lock_project(reopen, project_id)
+        reopen.execute(update(t.project).where(t.project.c.id == project_id).values(state="build"))
+        step = r.run(deletion, lambda: account_deletion.confirm(deletion, hub, token))
+        assert waiting(step)  # blocked on the project's lock
+        reopen.commit()
+        assert finished(step) == "namespace_owner"
+        deletion.rollback()
+    assert deleted_at(migrated, pat.id) is None

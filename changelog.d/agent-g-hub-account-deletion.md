@@ -18,6 +18,16 @@
   "avatar_url": null, "deleted": true}` in member views, `asked_by`, a human event actor, a
   history entry's actor and a chat participant; `GET /admin/statistics` counts
   `totals.humans_deleted`, and `GET /admin/users` no longer lists a deleted account.
+- hub: a deleted account in stored event payloads (`asked_by`, member views in
+  `member_joined`/`member_updated`, mentions, `needs_in_session`) is shown in the deleted
+  shape when read; the stored rows stay as written.
+- hub: no write of a deleted account commits: a human caller's writing transaction re-reads
+  the account under a shared lock at its commit and is refused (`unauthenticated`) once it is
+  deleted, so a call authenticated before the deletion cannot create anything after it.
+- hub: the deletion also clears the git identity and soul of profiles deleted earlier, every
+  mail row of the account or to its addresses (recipient, subject, text, headers, whatever the
+  status), pending registrations of its addresses, the address on an invitation it used, and
+  the browser and system text of its sessions and device codes.
 - hub: migration 0076, `human.deleted_at` and the table `account_deletion`.
 
 ### Changed

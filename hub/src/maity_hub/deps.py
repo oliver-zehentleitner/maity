@@ -8,7 +8,7 @@ from fastapi import Depends, Request
 from sqlalchemy import Connection, Engine, select
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import events, namespace, runner_revoke
+from maity_hub import events, namespace, runner_revoke, write_guard
 from maity_hub import tables as t
 from maity_hub.auth import second_factor, sessions
 from maity_hub.auth.caller import Caller, RequestFacts, authenticate
@@ -95,6 +95,8 @@ async def _resolve(request: Request, renew_leases: bool) -> Caller:
         await run_in_threadpool(_end_session, engine, ended)
         raise unauthenticated("the sign-in has to start again") from None
     request.state.caller = caller
+    if caller.kind == "human" and caller.human_id is not None:
+        write_guard.bind(caller.human_id)  # its writes commit only while it exists (§2.9)
     return caller
 
 

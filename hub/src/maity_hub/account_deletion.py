@@ -26,7 +26,7 @@ import secrets
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import Connection, delete, insert, select, update
+from sqlalchemy import Connection, delete, func, insert, select, update
 
 from maity_hub import clock, invitations, namespace, placements
 from maity_hub import tables as t
@@ -36,6 +36,7 @@ from maity_hub.auth.caller import Caller
 from maity_hub.config import Settings
 from maity_hub.errors import ApiError, invalid
 from maity_hub.events import Actor, lock_project
+from maity_hub.mail import address as addresses
 from maity_hub.mail import outbox
 from maity_hub.mail import settings as mail_settings
 from maity_hub.notifications import tokens
@@ -110,6 +111,18 @@ def blocker(conn: Connection, human_id: str) -> ApiError | None:
             "the instance's last admin cannot delete the account",
         )
     return None
+
+
+def _lock_namespace(conn: Connection, human_id: str) -> None:
+    """`lock_project` on every project in the human's namespace, in a stable order."""
+    for project_id in (
+        conn.execute(
+            select(t.project.c.id).where(t.project.c.owner_id == human_id).order_by(t.project.c.id)
+        )
+        .scalars()
+        .all()
+    ):
+        lock_project(conn, project_id)
 
 
 def _verified_address(conn: Connection, human_id: str) -> str | None:
@@ -248,6 +261,9 @@ def confirm(conn: Connection, hub: Settings, token: str) -> str | None:
     row = _alive(conn, hub.mail.signing_key, token, lock=True)
     if row is None:
         return None
+    # The namespace's projects under their locks before the re-check: a state change
+    # takes the same lock, so a reopen commits first (and this refuses) or waits.
+    _lock_namespace(conn, human.id)
     refusal = blocker(conn, human.id)
     if refusal is not None:
         return refusal.code
@@ -332,26 +348,34 @@ def delete_account(conn: Connection, hub: Settings, human_id: str) -> None:
             invitations.void(conn, invitation, HUB)
     # A held decision goes back to the admins while its membership still names it.
     _return_held(conn, human_id)
-    # Its agent profiles, as §6.3 deletes one with `cascade`, with their git identity and
-    # their soul and its versions (§19.1).
-    for agent_id in _ids(
+    # Its agent profiles, as §6.3 deletes one with `cascade` (§19.1).
+    owned = _ids(
         conn,
         select(t.agent_profile.c.id)
-        .where(t.agent_profile.c.owner_id == human_id, t.agent_profile.c.deleted_at.is_(None))
+        .where(t.agent_profile.c.owner_id == human_id)
         .order_by(t.agent_profile.c.id)
         .with_for_update(),
+    )
+    for agent_id in _ids(
+        conn,
+        select(t.agent_profile.c.id).where(
+            t.agent_profile.c.id.in_(owned), t.agent_profile.c.deleted_at.is_(None)
+        ),
     ):
         delete_profile(
             conn, agent_id, actor_in=lambda _project_id: HUB, by=human_id, credential_id=None,
             via=None,
         )  # fmt: skip
+    # Every profile's git identity and soul with its versions go, the tombstones of
+    # profiles deleted before included: §6.3 keeps those, the account's deletion not.
+    if owned:
         conn.execute(
             update(t.agent_profile)
-            .where(t.agent_profile.c.id == agent_id)
+            .where(t.agent_profile.c.id.in_(owned))
             .values(git_name=None, git_email=None)
         )
-        conn.execute(delete(t.soul_version).where(t.soul_version.c.agent_id == agent_id))
-        conn.execute(delete(t.soul).where(t.soul.c.agent_id == agent_id))
+        conn.execute(delete(t.soul_version).where(t.soul_version.c.agent_id.in_(owned)))
+        conn.execute(delete(t.soul).where(t.soul.c.agent_id.in_(owned)))
     _leave_projects(conn, human_id)
     # The personal requests last, once removing the profiles cannot file another.
     _withdraw_personal(conn, human_id)
@@ -442,13 +466,26 @@ def _end_access(conn: Connection, human_id: str) -> None:
     conn.execute(delete(t.second_factor_reset).where(t.second_factor_reset.c.human_id == human_id))
     conn.execute(delete(t.second_factor).where(t.second_factor.c.human_id == human_id))
     conn.execute(delete(t.human_device).where(t.human_device.c.human_id == human_id))
+    # What the sessions and device codes said about the browser goes with them; the
+    # addresses went when each ended (`sessions.end_where`).
+    conn.execute(
+        update(t.human_session)
+        .where(t.human_session.c.human_id == human_id)
+        .values(browser=None, os=None, ip=None, source=None, next=None)
+    )
+    conn.execute(
+        update(t.device_code)
+        .where(t.device_code.c.human_id == human_id)
+        .values(ip=None, user_agent=None, browser=None, os=None, next=None)
+    )
+    # Pending mail to the account is dropped (§18.7).
     conn.execute(
         update(t.mail_outbox)
         .where(
             t.mail_outbox.c.human_id == human_id,
             t.mail_outbox.c.status.in_(("waiting", "sending")),
         )
-        .values(status="dropped", body="", headers={})
+        .values(status="dropped")
     )
 
 
@@ -458,6 +495,7 @@ def _remove_person(conn: Connection, human_id: str) -> None:
     (set first, with the name), its handle taken for good (§2.9). The hub has no
     public profile or static pages of a human yet (§16.9), and no handle aliases
     (§6.24)."""
+    _forget_mail(conn, human_id, _addresses(conn, human_id))
     for table in (
         t.notification_settings,  # the address, the language, the mail settings
         t.preferences_version,
@@ -479,4 +517,50 @@ def _remove_person(conn: Connection, human_id: str) -> None:
         update(t.human)
         .where(t.human.c.id == human_id)
         .values(limit_until=None, limit_since=None, limit_reason=None, limit_show_reason_in=None)
+    )
+
+
+def _addresses(conn: Connection, human_id: str) -> set[str]:
+    """Every address the hub holds for the account, normalized: the verified one, one
+    waiting for its link, a held change, the registration's."""
+    found: set[str] = set()
+    settings = conn.execute(
+        select(t.notification_settings).where(t.notification_settings.c.human_id == human_id)
+    ).first()
+    if settings is not None:
+        held = (settings.address_change or {}).get("address")
+        found.update(a for a in (settings.address, settings.pending_address, held) if a)
+    registered = conn.execute(
+        select(t.account_registration.c.address).where(
+            t.account_registration.c.human_id == human_id
+        )
+    ).scalar()
+    if registered:
+        found.add(registered)
+    return {addresses.normalized(a) for a in found}
+
+
+def _forget_mail(conn: Connection, human_id: str, known: set[str]) -> None:
+    """No mail row keeps the person (§2.9): every outbox row of the account, and every
+    row sent to one of its addresses (an invitation, a registration's link), loses its
+    recipient, subject, text and headers, whatever its status; kind, status, times and
+    attempts stay for the counters. `mail_delivery` holds no address. Pending
+    registrations of those addresses go, and so does the address on an invitation the
+    account used: it was bound to this person."""
+    mine = t.mail_outbox.c.human_id == human_id
+    if known:
+        mine = mine | func.lower(func.trim(t.mail_outbox.c.recipient)).in_(known)
+    conn.execute(
+        update(t.mail_outbox).where(mine).values(recipient="", subject="", body="", headers={})
+    )
+    if known:
+        conn.execute(
+            delete(t.pending_registration).where(
+                t.pending_registration.c.address_normalized.in_(known)
+            )
+        )
+    conn.execute(
+        update(t.invitation)
+        .where(t.invitation.c.used_by == human_id, t.invitation.c.address.is_not(None))
+        .values(address=None, address_normalized=None)
     )

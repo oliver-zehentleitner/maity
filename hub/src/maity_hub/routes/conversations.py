@@ -41,7 +41,7 @@ from maity_hub.routes.events import (
     remember_read,
     writer,
 )
-from maity_hub.views import principal_id, sees_chat_reasons, ts
+from maity_hub.views import principal_id, sees_chat_reasons, shape_deleted, ts
 
 router = APIRouter(route_class=ProjectRoute)
 
@@ -171,9 +171,10 @@ def message_views(conn: Connection, rows: list[Any], reader: Any = None) -> list
     )
     # A message from an agent names its instance (§9, §6.17); a human's has none.
     instance_of = instances.instances_of(conn, [r.actor_credential_id for r in rows])
+    # A deleted account among the mentions is shown as one (§2.9).
+    payloads = shape_deleted(conn, [r.payload or {} for r in rows])
     views = []
-    for row in rows:
-        payload = row.payload or {}
+    for row, payload in zip(rows, payloads, strict=True):
         group = group_chats.is_group(row.conversation_id)
         view: dict[str, Any] = {
             "id": f"evt-{row.seq}",

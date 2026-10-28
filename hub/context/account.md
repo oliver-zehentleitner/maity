@@ -35,7 +35,8 @@ each, in the transaction of the call that causes them.
 
 **Id:** 8983161c-2c93-416b-aa98-8b8fd9a65102
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 33449ea0-6edd-4265-9817-b3c2c29d86e0
 **Evidence:** confirmed
 **Source:** implementation session, 2026-10-28 (account deletion, contract #545)
 **Revisit when:** a removal it reuses starts its own transaction, or event payloads become rewritable beyond redaction
@@ -67,6 +68,68 @@ participants) show the deleted shape.
 **Rejected alternative:** a background job that deletes step by step: a
 crash in the middle would leave an account half deleted, which §2.9 rules
 out.
+
+## The deletion reuses the removals in one transaction; a deleted person in stored JSON is shaped at read time
+
+**Id:** 33449ea0-6edd-4265-9817-b3c2c29d86e0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session, 2026-10-28; review of #561 (the coordinator's ruling that old payloads must not show the person)
+**Revisit when:** a removal it reuses starts its own transaction, or a new reader shows stored event JSON without `views.event_views`
+**See:** account.md#the-deletion-reuses-the-removals-on-one-connection-and-marks-the-account-first — 8983161c-2c93-416b-aa98-8b8fd9a65102 — as of 2026-10-28
+
+The deletion itself is unchanged from the superseded entry: one
+`events.transaction`, the existing removals on its connection, the hub as
+actor, the account row marked first. What changed is the old payloads:
+`views.shape_deleted` rewrites, at read time, every person object of a
+deleted account in stored JSON — a member view (`id` with `kind: human`),
+or an object with a human's `member_id` and a name or handle (`asked_by`,
+`on_behalf_of`, mentions, history and chat participants) — into the
+deleted shape, keeping ids, types and free text. It runs once over all
+payloads of a page in `event_views`, the message listings and a request's
+`needs_in_session`, with one query for the deleted accounts among them.
+
+**Reason:** §2.9 says a payload shows a deleted account as one; the
+append-only log constrains what is stored, not what is delivered. Shaping
+in the read path keeps the log untouched and covers every old event at
+once.
+
+**Rejected alternatives:**
+- Leave old payloads as written (the superseded entry's known limit):
+  refused in review, the person stays identifiable to every member.
+- Rewrite the stored payloads at deletion, like a redaction: touches every
+  event of every project the person was in, and breaks the rule that only
+  a redaction changes a stored payload.
+
+## No write of a deleted account commits: the check is at the commit
+
+**Id:** a96c2553-eac1-4ee1-b1d7-573c45e581a9
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** review of #561 (a write held between authentication and its transaction committed after the deletion)
+**Revisit when:** a human caller writes through a path that is not this engine, or the deletion stops locking the account row first
+
+`write_guard` hooks the engine: once a request's human caller is
+authenticated (`deps._resolve` binds its id in a context variable), every
+transaction of that request that wrote re-reads the human row with a
+shared lock right before it commits, and refuses with `unauthenticated`
+when the account is deleted. The deletion locks the row `FOR UPDATE`
+first, so a write either commits before it (and is removed with the rest)
+or waits and is refused.
+
+**Reason:** a call authenticates in its own transaction and writes in
+later ones; a check per route, or in `idempotency.run` alone, leaves every
+route that opens its own transaction open to the race. The commit is the
+one place every write passes, whichever route or helper made it.
+
+**Rejected alternatives:**
+- A check in `idempotency.run`: many writes (`engine.begin()` in routes,
+  the address, sessions) do not pass through it.
+- Also refusing when the calling session ended: a logout ends its own
+  session in the transaction being checked; the deletion sets `deleted_at`
+  in the same transaction that ends every session, so the account decides.
 
 ## The operator's counter is derived from `deleted_at`, nothing is stored
 
