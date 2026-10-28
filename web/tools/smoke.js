@@ -3295,6 +3295,25 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "password: a wrong current one is put next to its field");
   win.Maity.api.post = realPost5;
 
+  // Meat proxy (docs/api.md §5.2): the human's own switch on the account, PATCH /me; the page says the one sentence agents read.
+  const mpPatch = win.Maity.api.patch, mpSent = [];
+  win.Maity.api.patch = (p, b) => { mpSent.push([p, b]); return mpPatch(p, b); };
+  await go("#/account"); for (let k = 0; k < 4; k++) await tick();
+  expect(byId("meat-proxy") && !byId("meat-proxy").checked && text(main).includes("This person says: I am a meat proxy."),
+    "meat proxy: the account offers the switch, off, and says what agents read");
+  byId("meat-proxy").checked = true; byId("meat-proxy").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(mpSent[0]) === JSON.stringify(["/me", { meat_proxy: true }]) && byId("meat-proxy").checked
+    && text(main).includes("Saved: your agents and the agents of your projects are told"), "meat proxy: switched on with PATCH /me, said so");
+  win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("x", 500, "/me", "internal"));
+  byId("meat-proxy").checked = false; byId("meat-proxy").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+  expect(byId("meat-proxy").checked && text(main).includes("Not saved"), "meat proxy: a failed change is said and the switch goes back");
+  win.Maity.api.patch = mpPatch;
+  await mpPatch("/me", { meat_proxy: false });
+  const mpBody = win.Maity.api.hubBody;
+  win.Maity.api.hubBody = () => Promise.resolve(new Set());
+  await go("#/account"); for (let k = 0; k < 4; k++) await tick();
+  expect(!byId("meat-proxy"), "meat proxy: no switch on a hub whose machine form does not name it");
+  win.Maity.api.hubBody = mpBody;
   // Pictures (docs/api.md §6.10): one's own on the account, an agent's in its row on Members;
   // the account keeps only the agents no project of one's own shows (tsk-th1yq0jtk3yf).
   const avCalls = [];
