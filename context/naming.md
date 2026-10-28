@@ -7,10 +7,11 @@
 **Status:** active
 **Evidence:** confirmed
 **Source:** naming conversation with the maintainer, 2026-10-21
-**See:** naming.md#the-project-does-not-tell-readers-how-to-hear-or-pronounce-the-name — 4245c857-a586-455b-86a8-cea24e492236 — as of 2026-10-28 (the reading below is the maintainers' record, not something told to readers)
+**See:** naming.md#the-project-does-not-tell-readers-how-to-hear-or-pronounce-the-name — 4245c857-a586-455b-86a8-cea24e492236 — as of 2026-10-28
 
 The project, its repository, its package name and its domains (maity.dev,
-maity.team) are "Maity": a coined word that reads like *matey* — a mate, a
+maity.team) are "Maity" (how it reads, below, is the maintainers' record,
+not something told to readers): a coined word that reads like *matey* — a mate, a
 team member — with "ai" inside it, and pronounced that way. It is not a
 person's name and has no prior meaning in software; the package name was
 free on PyPI and npm at the time of the decision.
