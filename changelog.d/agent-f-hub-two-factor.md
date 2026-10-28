@@ -16,7 +16,7 @@
 - hub: step-up — the password change, the factor's own changes, joins,
   runner enrollments, device-code approvals and the instance settings
   (`/admin/settings/mail`, `sign-in`, `registration`, `landing`) need the
-  factor within ten minutes. The project transfer (#487) calls
+  factor within ten minutes. The project transfer (#494, card tsk-svg6mfthm7xv) calls
   `second_factor.require_step_up` when it lands.
 - hub: not in this change: the admin's reset of someone's factor
   (§2.8.3: route, confirmation mail, `maity-hub second-factor reset`).

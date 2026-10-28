@@ -232,7 +232,7 @@ Three choices of the implementation that the contract leaves open:
 
 - **Enrolment is a derived state.** A session stores `full`,
   `second_factor` or `enrolment`, but whether a full session must enrol
-  (`required_admins` for an admin or owner, or after a reset) is
+  (`required_admins` for an admin or owner, or, once the reset lands, after a reset) is
   computed on every call in the gate (`auth.second_factor.gate`, run in
   `deps._resolve` before any route). So a session the human held when
   the policy was switched on, or when they became an owner, is held at
