@@ -31,8 +31,25 @@ def ts(moment: datetime | None) -> str | None:
     return clock.rfc3339(moment) if moment is not None else None
 
 
+DELETED_NAME = "Deleted account"
+
+
+def deleted(row: Any) -> bool:
+    """Whether a human row is a deleted account (§2.9)."""
+    return getattr(row, "deleted_at", None) is not None
+
+
+def deleted_person() -> dict[str, Any]:
+    """What a payload shows of a deleted account where it shows a person (§2.9), merged
+    into the field's usual shape: no handle, the generated avatar (`avatar_url: null`
+    makes the client draw it, §6.10)."""
+    return {"display_name": DELETED_NAME, "handle": None, "avatar_url": None, "deleted": True}
+
+
 def human_member(row: Any, *, avatar_url: str | None) -> dict[str, Any]:
     """`avatar_url` is the caller's to look up (`avatars.urls`), so a list costs one query."""
+    if deleted(row):
+        return {"id": row.id, "kind": "human", **deleted_person()}
     return {
         "id": row.id,
         "kind": "human",
@@ -456,12 +473,16 @@ def _owners(conn: Connection, agents: dict[str, Any]) -> dict[str, dict[str, Any
         return {}
     pictures = avatars.urls(conn, owner_ids)
     humans = {
-        h.id: {
-            "id": h.id,
-            "handle": h.handle,
-            "display_name": h.display_name,
-            "avatar_url": pictures[h.id],
-        }
+        h.id: (
+            {"id": h.id, **deleted_person()}
+            if deleted(h)
+            else {
+                "id": h.id,
+                "handle": h.handle,
+                "display_name": h.display_name,
+                "avatar_url": pictures[h.id],
+            }
+        )
         for h in conn.execute(select(t.human).where(t.human.c.id.in_(owner_ids)))
     }
     return {agent_id: humans[a.owner_id] for agent_id, a in agents.items()}
@@ -764,12 +785,15 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
         conn, (r.actor_credential_id for r in rows if r.actor_membership is not None)
     )
     human_ids = {r.actor_human_id for r in rows if r.actor_human_id is not None}
-    human_handles = (
-        dict(
-            conn.execute(
-                select(t.human.c.id, t.human.c.handle).where(t.human.c.id.in_(human_ids))
-            ).all()
-        )
+    human_rows = (
+        {
+            h.id: h
+            for h in conn.execute(
+                select(t.human.c.id, t.human.c.handle, t.human.c.deleted_at).where(
+                    t.human.c.id.in_(human_ids)
+                )
+            )
+        }
         if human_ids
         else {}
     )
@@ -808,12 +832,15 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
                 "model": row.actor_model,
             }
         elif row.actor_human_id is not None:  # §8.1
+            who = human_rows.get(row.actor_human_id)
             actor = {
                 "kind": "human",
                 "id": row.actor_human_id,
-                "handle": human_handles.get(row.actor_human_id),
+                "handle": who.handle if who is not None else None,
                 "via": row.actor_via,
             }
+            if who is not None and deleted(who):
+                actor.update(deleted_person())
         elif row.actor_runner_id is not None:  # §15.10
             actor = {
                 "kind": "runner",

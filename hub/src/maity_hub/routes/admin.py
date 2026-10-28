@@ -36,7 +36,8 @@ def list_users(
             raise forbidden("instance:admin")
         if disabled is True:  # no account is disabled before the accounts design (§16.1)
             return JSONResponse({"items": [], "next_cursor": None})
-        query = select(t.human)
+        # A deleted account is not listed: the operator learns only the count (§2.9, §16.6).
+        query = select(t.human).where(t.human.c.deleted_at.is_(None))
         if cursor is not None:
             if not cursor:
                 raise invalid({"cursor": "invalid"})

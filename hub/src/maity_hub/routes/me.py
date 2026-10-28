@@ -6,13 +6,16 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
+from pydantic import Field
 from sqlalchemy import Connection, select
 
-from maity_hub import avatars, clock, images, namespace
+from maity_hub import account_deletion, avatars, clock, events, images, namespace
 from maity_hub import tables as t
 from maity_hub.admin import is_instance_admin
 from maity_hub.auth.caller import Caller
-from maity_hub.deps import AnyCaller, engine_of
+from maity_hub.deps import AnyCaller, engine_of, settings_of
+from maity_hub.errors import humans_only, unauthenticated
+from maity_hub.models import Strict
 from maity_hub.views import agent_member, human_member, owner_handles
 
 router = APIRouter()
@@ -66,7 +69,39 @@ def human_body(conn: Connection, human_id: str) -> dict[str, Any]:
         },
         # A pending account is a member of nothing (§2.7.5).
         "projects": _human_projects(conn, human.id) if human.account_status == "active" else [],
+        # A deletion waiting for its confirmation by mail (§2.9).
+        "deletion": account_deletion.view(account_deletion.pending(conn, human.id)),
     }
+
+
+class DeletionIn(Strict):
+    confirm: str = Field(max_length=256)
+
+
+def _deleting_human(caller: Caller) -> None:
+    """Your own account, from a dashboard session (§2.9); an agent never."""
+    if caller.kind == "agent":
+        raise humans_only("deleting an account is a human's own")
+    if caller.kind != "human" or caller.human_session is None:
+        raise unauthenticated("this endpoint needs a dashboard session")
+
+
+@router.post("/me/deletion")
+def request_deletion(body: DeletionIn, request: Request, caller: AnyCaller) -> JSONResponse:
+    """Step one of deleting the account (§2.9): records the request and mails the link."""
+    _deleting_human(caller)
+    with events.transaction(engine_of(request)) as conn:
+        answer = account_deletion.request(conn, settings_of(request), caller, body.confirm)
+    return JSONResponse({"deletion": answer}, status_code=202)
+
+
+@router.delete("/me/deletion")
+def withdraw_deletion(request: Request, caller: AnyCaller) -> JSONResponse:
+    """Withdraws a deletion that is not confirmed yet; nothing pending answers the same."""
+    _deleting_human(caller)
+    with engine_of(request).begin() as conn:
+        account_deletion.withdraw(conn, caller.principal_id, "deletion_withdrawn")
+    return JSONResponse({"deletion": None})
 
 
 def limit_view(human: Any) -> dict[str, Any] | None:

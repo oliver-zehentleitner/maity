@@ -140,6 +140,9 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
     row = conn.execute(select(t.human_session).where(t.human_session.c.id_hash == id_hash)).first()
     if row is None or row.ended_at is not None or not session_alive(row, now):
         raise unauthenticated("the session has ended or expired")
+    deleted = conn.execute(select(t.human.c.deleted_at).where(t.human.c.id == row.human_id))
+    if deleted.scalar() is not None:  # a deleted account calls nothing (§2.9)
+        raise unauthenticated("the session has ended or expired")
     if facts.method in UNSAFE_METHODS:
         token = facts.headers.get(CSRF_HEADER, "")
         if not hmac.compare_digest(token.encode(), row.csrf_token.encode()):

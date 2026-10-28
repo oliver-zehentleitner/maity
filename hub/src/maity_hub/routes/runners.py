@@ -645,45 +645,47 @@ def remove_runner(
     def action(conn: Connection) -> idempotency.Outcome:
         row = _own_runner(conn, caller, runner_id, lock=True)
         if row.removed_at is None:
-            now = clock.now()
-            # Each project's rule first, while the runner is still attached: under stop
-            # its agents' credentials go too (§15.3); every placement closes either way.
-            applied = runner_revoke.apply(
-                conn,
-                runner_id,
-                agents=agents,
-                instance_rule=instance_rule,
-                removing=True,
-                by=caller.principal_id,
-            )
-            placements.runner_removed(conn, runner_id, caller.principal_id)
-            live = live_credential_id(conn, runner_id)
-            if live is not None:
-                revoke_runner_credential(
-                    conn, live, "runner_removed", by=caller.principal_id, applied=applied
-                )
-            for project_id in attached_project_ids(conn, runner_id):
-                detach(conn, project_id, runner_id, caller.principal_id)
-            # An open re-pair would bring the removed runner back.
-            conn.execute(
-                update(t.runner_enrollment)
-                .where(
-                    t.runner_enrollment.c.runner_id == runner_id,
-                    t.runner_enrollment.c.used_at.is_(None),
-                    t.runner_enrollment.c.revoked_at.is_(None),
-                )
-                .values(revoked_at=now)
-            )
-            conn.execute(
-                update(t.runner)
-                .where(t.runner.c.id == runner_id)
-                .values(removed_at=now, updated_at=now, active=None)
+            remove(
+                conn, runner_id, agents=agents, instance_rule=instance_rule, by=caller.principal_id
             )
         return idempotency.Outcome(
             200, "runner_removal", runner_id, _load_removal(conn, runner_id, request)
         )
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+def remove(conn: Connection, runner_id: str, *, agents: str, instance_rule: str, by: str) -> None:
+    """Remove a runner as `DELETE /runners/{id}` does (§15.3), on the authority of `by`,
+    its owner; the caller has locked the runner row and checked that it is not removed.
+    Shared with the deletion of the owner's account (§2.9), which passes `agents: stop`."""
+    now = clock.now()
+    # Each project's rule first, while the runner is still attached: under stop its
+    # agents' credentials go too (§15.3); every placement closes either way.
+    applied = runner_revoke.apply(
+        conn, runner_id, agents=agents, instance_rule=instance_rule, removing=True, by=by
+    )
+    placements.runner_removed(conn, runner_id, by)
+    live = live_credential_id(conn, runner_id)
+    if live is not None:
+        revoke_runner_credential(conn, live, "runner_removed", by=by, applied=applied)
+    for project_id in attached_project_ids(conn, runner_id):
+        detach(conn, project_id, runner_id, by)
+    # An open re-pair would bring the removed runner back.
+    conn.execute(
+        update(t.runner_enrollment)
+        .where(
+            t.runner_enrollment.c.runner_id == runner_id,
+            t.runner_enrollment.c.used_at.is_(None),
+            t.runner_enrollment.c.revoked_at.is_(None),
+        )
+        .values(revoked_at=now)
+    )
+    conn.execute(
+        update(t.runner)
+        .where(t.runner.c.id == runner_id)
+        .values(removed_at=now, updated_at=now, active=None)
+    )
 
 
 # --- attachments (§15.4) ---------------------------------------------------------------

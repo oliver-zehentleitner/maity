@@ -5,7 +5,8 @@ from __future__ import annotations
 import base64
 import json
 import logging
-from typing import Any, Literal
+from types import SimpleNamespace
+from typing import Any, Literal, cast
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
@@ -37,7 +38,7 @@ from maity_hub.namespace import ProjectRoute
 from maity_hub.notifications import records
 from maity_hub.replies import replies
 from maity_hub.scopes import tokens_of
-from maity_hub.views import principal_id, ts
+from maity_hub.views import deleted, deleted_person, principal_id, ts
 
 log = logging.getLogger(__name__)
 router = APIRouter(route_class=ProjectRoute)
@@ -109,9 +110,18 @@ def _person(conn: Connection, membership_id: int | None, session_id: str | None)
             select(t.agent_profile.c.display_name).where(t.agent_profile.c.id == row.agent_id)
         ).scalar()
     else:
-        name = conn.execute(
-            select(t.human.c.display_name).where(t.human.c.id == row.human_id)
-        ).scalar()
+        human = conn.execute(
+            select(t.human.c.display_name, t.human.c.deleted_at).where(t.human.c.id == row.human_id)
+        ).one()
+        if deleted(human):  # §2.9: the field's shape, without the person
+            return {
+                "member_id": row.human_id,
+                **deleted_person(),
+                "trust": row.trust,
+                "role": row.role,
+                "session_id": session_id,
+            }
+        name = human.display_name
     member_id = row.agent_id or row.human_id
     return {
         "member_id": member_id,
@@ -1167,6 +1177,39 @@ def withdraw(
         return idempotency.Outcome(200, "request", row.id, view)
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+def return_to_pool(conn: Connection, request_id: str, by: str, reason: str) -> None:
+    """Give an open `decision` request its holder can no longer hold back to the admins
+    (`holder: trust:admin`, §7), from inside the hub: a step `opened` in `forwarding` and
+    `request_forwarded`, as a forward to the pool would write, with the hub as actor."""
+    row = _row(conn, request_id)
+    if row.status != "open" or row.holder_member is None:
+        return
+    project = lock_project(conn, row.project_id)
+    steps = _step(conn, row, "opened", "trust:admin", by, reason)
+    conn.execute(
+        update(t.request)
+        .where(t.request.c.id == row.id)
+        .values(
+            holder_member=None,
+            holder_pool=True,
+            forwarding=steps,
+            changed_by_credential=None,
+            changed_via=None,
+        )
+    )
+    after = _row(conn, row.id)
+    view = request_view(conn, after)
+    where = cast(Membership, SimpleNamespace(project=project))  # only the project is read
+    emit(
+        conn,
+        row.project_id,
+        "request_forwarded",
+        _forwarding_audience(conn, where, row, after),
+        {**view, "step": steps[-1]},
+        subject=("request", row.id),
+    )
 
 
 def close_request(
