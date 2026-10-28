@@ -100,3 +100,21 @@ def test_the_same_url_with_another_branch_keeps_it(owner: flow.Human) -> None:
     owner.post(CONFIRM, {"url": URL})
     owner.patch("/projects/maintainer/maity", {"repository": {"url": URL, "default_branch": "dev"}})
     assert confirmed(owner) is True
+
+
+def test_a_transfer_takes_the_confirmation_back_and_names_the_repository(
+    owner: flow.Human, anna: flow.Human
+) -> None:
+    owner.post(CONFIRM, {"url": URL})
+    filed = owner.post("/projects/maintainer/maity/transfer", {"to": anna.id})
+    assert filed.status_code == 202, filed.text
+    assert URL in filed.json()["summary"]
+    done = anna.post(
+        f"/projects/maintainer/maity/requests/{filed.json()['id']}/answer", {"reply_id": "go"}
+    )
+    assert done.status_code == 200, done.text
+    assert anna.get("/projects/anna/maity").json()["repository"]["owner_confirmed"] is False
+    # The old owner's confirmation is gone and theirs no longer counts.
+    status, code, _ = error(owner.post("/projects/anna/maity/repository/confirm", {"url": URL}))
+    assert (status, code) == (403, "forbidden")
+    assert anna.post("/projects/anna/maity/repository/confirm", {"url": URL}).status_code == 200
