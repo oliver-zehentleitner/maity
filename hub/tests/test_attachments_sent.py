@@ -21,7 +21,7 @@ from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_attachments import put
 
-BASE = "/projects/maity/conversations"
+BASE = "/projects/maintainer/maity/conversations"
 
 
 @pytest.fixture(autouse=True)
@@ -63,7 +63,7 @@ def upload(who: Any, name: str = "f.txt", data: bytes = b"data") -> str:
 
 def send(who: Any, to: str, ids: list[str]) -> dict[str, Any]:
     done = who.post(
-        "/projects/maity/events",
+        "/projects/maintainer/maity/events",
         {"kind": "message", "type": "notice", "to": to, "body": "files", "attachments": ids},
     )
     assert done.status_code == 201, done.text
@@ -72,7 +72,7 @@ def send(who: Any, to: str, ids: list[str]) -> dict[str, Any]:
 
 
 def drop(who: Any, attachment_id: str) -> Any:
-    path = f"/api/v1/projects/maity/attachments/{attachment_id}"
+    path = f"/api/v1/projects/maintainer/maity/attachments/{attachment_id}"
     if isinstance(who, flow.Human):
         return who.client.delete(path, headers={"X-CSRF-Token": who.csrf})
     return who.client.delete(path, headers={**who.auth, **who.key()})
@@ -95,7 +95,7 @@ def test_the_sender_deletes_what_it_sent_and_the_row_stays_as_a_tombstone(
     assert body["deleted_reason"] == "deleted" and body["deleted_by"] == agent.id
     assert body["deleted_at"] and body["name"] == "log.txt"  # the tombstone keeps the metadata
     assert not list(blobs.glob("*/*"))
-    path = f"/projects/maity/attachments/{named}"
+    path = f"/projects/maintainer/maity/attachments/{named}"
     assert reader.get(path).json()["deleted_reason"] == "deleted"  # readers see the tombstone
     assert reader.get(f"{path}/content").status_code == 404
     [notice] = events_of(migrated, "attachment_deleted")
@@ -166,7 +166,7 @@ def test_in_a_group_chat_a_human_participant_deletes_and_an_observer_does_not(
     named = upload(agent, "shared.txt")
     posted = agent.post(f"{BASE}/{chat['id']}/messages", {"body": "see", "attachments": [named]})
     assert posted.status_code == 201, posted.text
-    assert other.get(f"/projects/maity/attachments/{named}").status_code == 200
+    assert other.get(f"/projects/maintainer/maity/attachments/{named}").status_code == 200
     gone = drop(other, named)  # a human in the chat now
     assert gone.status_code == 200 and gone.json()["deleted_reason"] == "deleted"
     [notice] = events_of(migrated, "attachment_deleted")
@@ -222,7 +222,7 @@ def test_removing_a_member_drops_its_pending_uploads_and_keeps_what_it_sent(
     agent = flow.agent(stored, owner)
     pending, sent_one = upload(agent, "p.txt"), upload(agent, "s.txt")
     send(agent, owner.id, [sent_one])
-    assert owner.delete(f"/projects/maity/members/{agent.id}").status_code == 200
+    assert owner.delete(f"/projects/maintainer/maity/members/{agent.id}").status_code == 200
     with migrated.connect() as conn:
         rows = {r.id: r for r in conn.execute(select(t.attachment))}
     assert pending not in rows and sent_one in rows
@@ -245,12 +245,14 @@ def test_a_download_that_loses_the_race_with_a_redaction_is_not_found_not_a_fail
 
     def redacted_meanwhile(self: Any, key: str) -> bytes | None:
         # The redaction commits between the read of the row and the read of the bytes.
-        done = owner.post(f"/projects/maity/events/{sent['seq']}/redact", {"reason": "x"})
+        done = owner.post(
+            f"/projects/maintainer/maity/events/{sent['seq']}/redact", {"reason": "x"}
+        )
         assert done.status_code == 200, done.text
         return real(self, key)
 
     monkeypatch.setattr(attachment_store.LocalStore, "get", redacted_meanwhile)
-    answer = owner.get(f"/projects/maity/attachments/{named}/content")
+    answer = owner.get(f"/projects/maintainer/maity/attachments/{named}/content")
     assert answer.status_code == 404, answer.text
     assert answer.json()["error"]["code"] == "not_found"
 
@@ -261,7 +263,7 @@ def test_a_missing_blob_of_a_live_attachment_is_still_a_failure(
     named = upload(owner, "gone.txt", b"bytes")
     [blob] = blobs.glob("*/*")
     blob.unlink()  # the row says it is there; the bytes are not
-    answer = owner.get(f"/projects/maity/attachments/{named}/content")
+    answer = owner.get(f"/projects/maintainer/maity/attachments/{named}/content")
     assert answer.status_code == 500 and answer.json()["error"]["code"] == "internal"
 
 
@@ -278,13 +280,15 @@ def test_redacting_a_group_chat_message_tombstones_its_attachments(
     named = upload(agent, "shared.txt", b"shared")
     posted = agent.post(f"{BASE}/{chat['id']}/messages", {"body": "see", "attachments": [named]})
     assert posted.status_code == 201, posted.text
-    done = other.post(f"/projects/maity/events/{posted.json()['seq']}/redact", {"reason": "x"})
+    done = other.post(
+        f"/projects/maintainer/maity/events/{posted.json()['seq']}/redact", {"reason": "x"}
+    )
     assert done.status_code == 200, done.text  # a human in the chat redacts there
     with migrated.connect() as conn:
         row = conn.execute(select(t.attachment)).one()
     assert row.deleted_reason == "redacted" and row.deleted_by == other.id
     assert not list(blobs.glob("*/*"))
-    assert agent.get(f"/projects/maity/attachments/{named}").status_code == 404
+    assert agent.get(f"/projects/maintainer/maity/attachments/{named}").status_code == 404
 
 
 def test_naming_an_attachment_a_second_message_took_meanwhile_refuses_the_post(
