@@ -265,3 +265,28 @@ def test_a_new_owner_gets_the_notice_instead(setup: Setup) -> None:
         ("withdrawn", False),
     ]
     assert s.session().not_listening_request_id is not None
+
+
+def test_the_start_wakes_only_the_instances_the_bosss_team_rule_chose() -> None:
+    """A reports-to agent whose team wakes its lead only: the start wakes the lead,
+    not a sibling; the end wakes neither (§5.3, §8.2 "Team wake")."""
+    from types import SimpleNamespace
+
+    from maity_hub import events
+
+    boss = SimpleNamespace(id=7, agent_id="agt-boss", role="member", lead_instance="lead")
+    start = SimpleNamespace(
+        kind="member_not_listening",
+        payload={"ended": False},
+        audience=["member:agt-boss", "trust:admin"],
+        wakes={"agt-boss": ["lead"]},
+        actor_membership=None,
+        actor_credential_id=None,
+        conversation_id=None,
+    )
+    assert events.wakes(start, boss, "agt-boss", instance="lead")
+    assert not events.wakes(start, boss, "agt-boss", instance="other")
+    end = SimpleNamespace(**{**vars(start), "payload": {"ended": True}})
+    assert not events.wakes(end, boss, "agt-boss", instance="lead")
+    admin = SimpleNamespace(id=8, agent_id="agt-admin", role="admin", lead_instance=None)
+    assert not events.wakes(start, admin, "agt-admin", instance="x")  # trust:admin only reads
