@@ -154,3 +154,89 @@ with the same 601 items. A test keeps the count flat as events grow.
 
 **Reason:** the smallest change that removes the per-event cost while keeping the rules in
 one place. Evidence is inferred: measured locally, production to confirm.
+
+## Notification settings store only what the human changed; the defaults fill the rest on read
+
+**Id:** 3e9a6b69-7715-4ce3-8c9d-a9194fbf9500
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §18.4; the implementation of tsk-32jx98jzne6z, part 2a of the re-cut of #280, 2026-10-27
+**Revisit when:** a default changes in a way existing humans must not receive, or the settings need a field the merge cannot express (a list)
+
+`notification_settings.preferences` holds the browser and mail preferences as one JSON
+value with only the keys the human set; `preferences._merged` lays it over the defaults
+key by key on every read. A human who never changed anything has no row: a `GET` shows
+the defaults and writes nothing, the first `PATCH` makes the row. A kind removed on
+2026-10-26 (§18.1) is skipped when the value is read, and `PATCH` rewrites the stored
+value without it, as §18.4 says.
+
+**Reason:** a default that changes later (a new kind, another `daily_at`) reaches every
+human who did not choose otherwise, and a human's choice never has to be told apart from
+a copy of an old default. Dropping removed kinds on read needs no migration over the
+rows, and the contract wants them deleted with the next write anyway.
+
+**Rejected alternatives:**
+- Storing the full value at the first read: later defaults would reach nobody who had
+  opened the settings once, and a `GET` would write.
+- Deleting the removed kinds from every row in a migration: a data migration over every
+  human's row for settings that already govern nothing, and §18.4 asks for the next
+  `PATCH`.
+
+## A link in a mail is a signed token the hub stores nothing for; a page for a token that is not ours says nothing about anyone
+
+**Id:** aaf1d325-deae-4409-9014-4927505d414e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §18.6; the implementation of tsk-32jx98jzne6z, part 2b of the re-cut of #280, 2026-10-27
+**Revisit when:** a link must be used once only (the unsubscribe token has no nonce, so a mail can be replayed until the address changes), or the signing key is rotated
+
+A token is the base64url of a JSON object with sorted keys and an HMAC-SHA-256 over it with
+the instance's `MAITY_MAIL_SIGNING_KEY` (`notifications.tokens`); it is read only when
+the key exists, the length is under 1024, the MAC matches in constant time and the payload is
+an object. The unsubscribe token carries `{human, purpose, kind, epoch}` and nothing is stored
+for it: it works until the human's `epoch` moves. The pages (`routes/mail_links.py`) answer
+`not_found` with one text for every reason, and take the human's language only from a token
+the hub signed itself, else English.
+
+**Reason:** nothing to store or clean up for a link that may sit in a mailbox for years, and
+the page of a forged token must not tell a stranger which handle or language an id has.
+A repeated unsubscribe is harmless (the kind is off already), so a nonce would buy no
+safety here, while a verify or reset link, which change things once, carry one (§18.6).
+
+**Rejected alternatives:**
+- A stored unsubscribe token per mail: a table that only grows, for a link whose second use
+  does nothing.
+- Telling the reason a link is dead ("expired", "already used"): it separates a guessed token
+  from a real one, which §18.6 forbids.
+
+## One account per address: a unique normalized column, claimed under a row of `address_lock`
+
+**Id:** ea46fd15-c3f9-49a6-bece-44f472471aed
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §18.4 and §2.7.1; the implementation of tsk-32jx98jzne6z, part 3 of the re-cut of #280, 2026-10-27
+**Revisit when:** the hub runs more than one replica on an engine whose row lock differs from the three the tests run on
+
+`notification_settings.address_normalized` holds the verified address trimmed and
+lower-cased, under a unique constraint. Verifying an address first locks the address's row
+in `address_lock` (inserted if absent, then `SELECT ... FOR UPDATE`), checks that no other
+account holds it, and writes it. A link for an address another account claimed meanwhile is
+the dead-link page and changes nothing. Removing the address clears the column, which frees
+the address. Setting a pending address claims nothing. A registration's completion claims
+its address the same way (`preferences.claim_verified`, called by
+`registration_accounts.claim_address`), under the same lock; the loser makes no account.
+
+**Reason:** the contract asks for a unique constraint as the guard and a lock that
+verification, address change and registration share. A lock row per address serializes
+exactly the contenders for one address, and the constraint still catches anything that
+skips the lock. Until this claim existed, no registration could complete (the stand-in
+answered `False` and failed closed).
+
+**Rejected alternatives:**
+- The unique constraint alone, catching the violation: it works, but the contract names the
+  shared lock, and registration needs it to void the other pending registrations in the same
+  transaction.
+- A lock on the human's row: it would not serialize two accounts racing for one address.

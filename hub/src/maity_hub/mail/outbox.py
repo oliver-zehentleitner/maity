@@ -22,6 +22,7 @@ from maity_hub import clock
 from maity_hub import tables as t
 from maity_hub.mail import headers, settings, smtp
 from maity_hub.mail.environment import MailEnvironment
+from maity_hub.notifications import records
 
 log = logging.getLogger(__name__)
 
@@ -100,6 +101,9 @@ def send_due(engine: Engine, env: MailEnvironment, secret_key: bytes | None) -> 
         with engine.begin() as conn:
             if not _claim(conn, row.id):
                 continue  # another process took it
+            if _disabled_address(conn, row):
+                _finish(conn, row.id, "dropped")  # no further mail to it (§18.7)
+                continue
             # A retry was admitted when it first went out; a claim that lapsed is
             # admitted again, which errs on the side of the budget.
             attempts = conn.execute(
@@ -159,6 +163,29 @@ def _admit(conn: Connection, kind: str, budget: int) -> bool:
     return True
 
 
+def _disabled_address(conn: Connection, row: Any) -> bool:
+    """Whether the mail goes to a human's address that three hard failures disabled, as
+    it stands now (§18.7): decided before each delivery, so what was queued earlier and
+    the rest of a batch after the third failure stop too. Only the confirmation link of
+    the address being set again passes (it is marked `_purpose: verify` and goes to the
+    pending address): it is the way back, and nothing else follows it while the address
+    stays disabled, the link used or not."""
+    if row.human_id is None:
+        return False
+    found = conn.execute(
+        select(t.notification_settings).where(t.notification_settings.c.human_id == row.human_id)
+    ).first()
+    return (
+        found is not None
+        and found.address_status == "disabled"
+        and found.address == row.recipient
+        and not (
+            (row.headers or {}).get("_purpose") == "verify"
+            and found.pending_address == row.recipient
+        )
+    )
+
+
 def _release(conn: Connection, row_id: int, not_before: datetime) -> None:
     """Give a claimed row back to the queue, due again at `not_before`."""
     conn.execute(
@@ -205,7 +232,8 @@ def _message(resolved: settings.Resolved, row: Any) -> Any:
         reply_to=resolved.value("reply_to"),
     )
     for name, value in (row.headers or {}).items():
-        mail[name] = headers.clean(str(value))
+        if not name.startswith("_"):  # a mark for the hub's own use, never a header
+            mail[name] = headers.clean(str(value))
     return mail
 
 
@@ -215,6 +243,7 @@ def _settle(conn: Connection, row: Any, outcome: smtp.Outcome) -> int:
             update(t.mail_outbox).where(t.mail_outbox.c.id == row.id).values(status="sent")
         )
         _count(conn, row.kind, "sent")
+        _delivered(conn, row)
         return 1
     _count(conn, row.kind, "failed")
     permanent = outcome.smtp_code is not None and outcome.smtp_code >= 500
@@ -222,6 +251,7 @@ def _settle(conn: Connection, row: Any, outcome: smtp.Outcome) -> int:
         conn.execute(
             update(t.mail_outbox).where(t.mail_outbox.c.id == row.id).values(status="failed")
         )
+        _hard_failure(conn, row)
         return 0
     attempts = row.attempts + 1
     if clock.now() - row.created_at >= RETRY_FOR:
@@ -240,7 +270,51 @@ def _settle(conn: Connection, row: Any, outcome: smtp.Outcome) -> int:
     return 0
 
 
+HARD_FAILURES = 3
 KEPT = timedelta(days=7)  # what was sent, failed or dropped, then the row goes
+
+
+def _address_row(conn: Connection, row: Any) -> Any:
+    """The human's settings when the mail went to their address in use, else None: a
+    verification link to a pending address counts against no address."""
+    if row.human_id is None:
+        return None
+    found = conn.execute(
+        select(t.notification_settings)
+        .where(t.notification_settings.c.human_id == row.human_id)
+        .with_for_update()
+    ).first()
+    return found if found is not None and found.address == row.recipient else None
+
+
+def _delivered(conn: Connection, row: Any) -> None:
+    """A delivered mail resets the address's count of hard failures (§18.7)."""
+    found = _address_row(conn, row)
+    if found is not None and found.hard_failures:
+        conn.execute(
+            update(t.notification_settings)
+            .where(t.notification_settings.c.human_id == row.human_id)
+            .values(hard_failures=0)
+        )
+
+
+def _hard_failure(conn: Connection, row: Any) -> None:
+    """A permanent failure at `RCPT TO` or `DATA` counts against the address; the third
+    in a row disables it and tells the human in the dashboard (§18.7)."""
+    found = _address_row(conn, row)
+    if found is None or found.address_status != "verified":
+        return
+    failures = found.hard_failures + 1
+    values: dict[str, Any] = {"hard_failures": failures, "updated_at": clock.now()}
+    if failures >= HARD_FAILURES:
+        values.update(address_status="disabled", disabled_at=clock.now())
+    conn.execute(
+        update(t.notification_settings)
+        .where(t.notification_settings.c.human_id == row.human_id)
+        .values(**values)
+    )
+    if failures >= HARD_FAILURES:
+        records.write(conn, row.human_id, "mail_disabled", {"address": found.address})
 
 
 def forget_old(conn: Connection) -> None:

@@ -41,6 +41,7 @@ def test_a_created_project_has_the_contract_shape(owner: flow.Human) -> None:
         "owner",
         "full_name",
         "slug",
+        "aliases",
         "legacy_slug",
         "name",
         "state",
@@ -53,6 +54,7 @@ def test_a_created_project_has_the_contract_shape(owner: flow.Human) -> None:
         "setup",
         "keep_the_why",
         "keep_the_why_export",
+        "attachments",
         "policy",
         "absence",
         "settings",
@@ -66,6 +68,7 @@ def test_a_created_project_has_the_contract_shape(owner: flow.Human) -> None:
         "default_branch": "main",
         "forge": "github",
         "probe_configured": False,
+        "owner_confirmed": False,
     }
     assert body["policy"] == {
         "preset": "hierarchical",

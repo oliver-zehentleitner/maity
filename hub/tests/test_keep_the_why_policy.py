@@ -187,3 +187,23 @@ def test_no_agent_changes_the_keep_the_why_policy(
         )
         assert response.status_code == 403, response.text
         assert response.json()["error"]["details"] == {"scope": "project:admin"}
+
+
+def test_a_set_policy_that_does_not_move_the_view_is_still_a_policy_change(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    from sqlalchemy import select
+
+    from maity_hub import tables as t
+
+    flow.project(owner, "bare", keep_the_why=False)
+    before = owner.get("/projects/maintainer/bare").json()["rules_version"]
+    done = _patch(owner, "bare", {"policy": {"keep_the_why": "optional"}, "reason": "own"})
+    assert done.status_code == 200, done.text
+    assert done.json()["rules_version"] == before + 1
+    with migrated.connect() as conn:
+        event = conn.execute(
+            select(t.event).where(t.event.c.kind == "policy_changed").order_by(t.event.c.seq.desc())
+        ).first()
+    assert event is not None and event.payload["reason"] == "own"
+    assert event.payload["new"]["keep_the_why"] == "optional"

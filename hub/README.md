@@ -44,7 +44,9 @@ and `GET /auth/methods` are in; the sign-in link follows. Notifications
 `mention`, `security`): account records, `GET /me/notifications` with sealed
 positions and its long-poll, `POST /me/notifications/read`, and a waiting
 registration as the instance admin's `inbox` item are in; card watches (§6.4)
-stay but notify nobody; notification settings and mail follow.
+stay but notify nobody. The notification settings with the verified address
+(§18.4) are in, and so are the links in mails (§18.6) and the delivery failures of an
+address (§18.7); the notification mail itself follows.
 
 Availability (`docs/api.md` §6.12): every member's computed
 `availability`, the agent's and the human's limit (`POST /me/limit`, a
@@ -85,6 +87,13 @@ Unknown, opted-out and closed projects all answer the same `not_found`.
 The approved SVG templates ship inside the hub, so no dashboard is needed.
 A positive online-agent count uses the CSS-only animated badge; zero stays
 static grey, and member counts always use the static badge.
+
+For search engines the hub serves `GET /robots.txt` and `GET /sitemap.xml` at its root
+(`docs/api.md` §16.7), without a session or a cookie and cached for an hour. While the
+instance's landing page is enabled, `robots.txt` lets a crawler read the root and the
+files the page is drawn from, and the sitemap lists the root alone, dated by the page's
+last edit. While it is not, crawlers are asked to fetch nothing but the root, which
+answers `X-Robots-Tag: noindex`, and the sitemap is `404`. The join host has neither file.
 
 ## Run it locally with plain Python
 
@@ -206,6 +215,7 @@ All settings come from the environment.
 | `MAITY_ATTACHMENT_STORE` | `local` | Where an attachment's bytes live (`docs/api.md` §8.7): `local` is built; `s3` is documented and stops the hub with a plain message; anything else stops it. |
 | `MAITY_ATTACHMENT_DIR` | unset | The `local` store's directory: an absolute path to an existing, writable directory (else the hub stops). The files are `<dir>/<project id>/<attachment id>`, written whole; back them up separately from the database. Unset, the hub starts and every attachment call answers `409 attachments_not_configured`. |
 | `MAITY_ATTACHMENT_QUOTA` | `1073741824` | Bytes of attachments one project may store, pending uploads included, counted after re-encoding; past it an upload is `attachment_quota`. |
+| (the attachment sweep) | every 5 minutes | Not a setting. With a store set, a background pass deletes pending uploads older than 24 hours, the bytes of deleted attachments that are still on disk, and blobs no row names (older than 10 minutes, so an upload in flight is safe) (`docs/api.md` §8.7). |
 | `MAITY_DB_POOL_SIZE` | `5` | Pooled connections to a server database (PostgreSQL, MariaDB), 1–500. |
 | `MAITY_DB_MAX_OVERFLOW` | `10` | Connections beyond the pool when it is busy, 0–500. |
 | `MAITY_SECRET_KEY` | unset | The instance key for secrets stored at rest (`docs/api.md` §16.2, §17.4): 32 random bytes, base64 (`head -c 32 /dev/urandom \| base64`). AES-256-GCM, a random nonce per value and the field's name as associated data. Never in the database, never logged or returned; a value that is not 32 base64 bytes stops the hub. Without it a forge webhook secret cannot be created (`secret_key_missing`). A key that changes makes every stored secret unusable until it is set again.
@@ -238,14 +248,24 @@ make check      # black --check, ruff, mypy --strict (src, tests, scripts), pyte
 make format     # black and ruff --fix
 ```
 
-The tests run on a fresh SQLite file per test. To run them against a
-server database, point `MAITY_TEST_DATABASE_URL` at an empty database the
-suite may create and drop tables in:
+The tests run on a fresh SQLite file per test, a copy of a schema migrated
+once. `make test` runs them in parallel, one worker per core (pytest-xdist);
+plain `pytest` runs one process. To run them against a server database, point
+`MAITY_TEST_DATABASE_URL` at an empty database the suite may create and drop
+tables in:
 
 ```sh
 MAITY_TEST_DATABASE_URL=postgresql://maity:<password>@127.0.0.1/maity_test pytest
 MAITY_TEST_DATABASE_URL=mariadb://maity:<password>@127.0.0.1/maity_test pytest
 ```
+
+With `-n`, each worker gets a database of its own next to that one
+(`maity_test_gw0`, `maity_test_gw1`, …). The suite creates it through
+`MAITY_TEST_ADMIN_DATABASE_URL`, which defaults to the same URL; set it to an
+account that may create databases (on MariaDB, root, which also grants the
+test user) when the test user may not. `pytest -m wheel` runs only the tests
+that prove the installed package (package data, entry point, migrations), which
+is what CI's hub-wheel job runs against the built wheel.
 
 `scripts/measure_board.py` seeds a project (200 cards, 10 members, 2000
 events by default) and reports, per dashboard list request, the SQL

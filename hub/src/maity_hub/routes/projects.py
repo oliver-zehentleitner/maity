@@ -14,6 +14,7 @@ from pydantic_core import PydanticCustomError
 from sqlalchemy import Connection, delete, insert, select, update
 
 from maity_hub import (
+    attachments,
     availability,
     clock,
     idempotency,
@@ -23,6 +24,7 @@ from maity_hub import (
     onboarding,
     placements,
     policy,
+    project_names,
     releases,
     rules,
     setup_cards,
@@ -48,6 +50,10 @@ ABSENCE_AHEAD = timedelta(days=90)  # an absence cannot hold the owner's cover o
 class RepositoryIn(Strict):
     url: str = Field(min_length=1, max_length=255)
     default_branch: str = Field(default="main", min_length=1, max_length=255)
+
+
+class RepositoryConfirmIn(Strict):
+    url: str = Field(min_length=1, max_length=255)
 
 
 class PolicyIn(Strict):
@@ -158,6 +164,7 @@ class ProjectCreate(Strict):
 
 
 class ProjectPatch(Strict):
+    slug: str | None = Field(default=None, pattern=SLUG_PATTERN)  # a rename (§6.25)
     name: str | None = title(default=None)
     repository: RepositoryIn | None = None
     keep_the_why: bool | None = None
@@ -297,10 +304,37 @@ def _export(project: Any, request: Request) -> dict[str, Any] | None:
     return ktw.export_for_view(reader_of(request), project.id, project.repository_url)
 
 
+def _stored(conn: Connection, project: Any, request: Request) -> dict[str, int] | None:
+    """The project's attachment bytes against its quota, for a caller with `project:admin`
+    in it (§8.7); anyone else gets None."""
+    caller = getattr(request.state, "caller", None)
+    if caller is None:
+        return None
+    try:
+        mine = membership(conn, caller, namespace.full_name(conn, project))
+    except ApiError:
+        return None
+    if not mine.may("project:admin"):
+        return None
+    return {
+        "used": attachments.used(conn, project.id),
+        "quota": settings_of(request).attachment_quota,
+    }
+
+
 def _view(conn: Connection, project: Any, request: Request) -> dict[str, Any]:
     shown = images.views(conn, [project.id])[project.id]
     owner = namespace.owner_of(conn, project)["handle"]
-    return project_view(project, settings_of(request), owner, shown, _export(project, request))
+    aliases = namespace.aliases_of(conn, project.id)
+    return project_view(
+        project,
+        settings_of(request),
+        owner,
+        shown,
+        _export(project, request),
+        aliases,
+        _stored(conn, project, request),
+    )
 
 
 def load_project(conn: Connection, project_id: str, request: Request) -> dict[str, Any]:
@@ -324,11 +358,18 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
         rows = conn.execute(query.order_by(t.project.c.slug)).all()
         shown = images.views(conn, [r.id for r in rows])
         names = namespace.full_names(conn, [r.id for r in rows])
+        aliases = namespace.aliases_by(conn, [r.id for r in rows])
         return JSONResponse(
             {
                 "items": [
                     project_view(
-                        r, settings, names[r.id].split("/")[0], shown[r.id], _export(r, request)
+                        r,
+                        settings,
+                        names[r.id].split("/")[0],
+                        shown[r.id],
+                        _export(r, request),
+                        aliases[r.id],
+                        _stored(conn, r, request),
                     )
                     for r in rows
                 ],
@@ -448,6 +489,7 @@ def patch_project(
     slug: str, body: ProjectPatch, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     given = body.model_fields_set
+    words = namespace.app_words(request.app)
 
     def action(conn: Connection) -> idempotency.Outcome:
         if "setup" in given:
@@ -460,6 +502,11 @@ def patch_project(
         _authorise_patch(mine, body, given)
         project = mine.project
         actor = caller.actor(mine.id)
+        # A rename first, so that every event below names the project by its new full name.
+        renamed = "slug" in given and body.slug is not None
+        if renamed and project_names.rename(conn, mine, str(body.slug), words, actor):
+            project = _load(conn, project.id)
+            mine = replace(mine, project=project)
         owner_id = _owner_id(conn, project.id)
         values: dict[str, Any] = {}
         rules_inputs_changed = False
@@ -468,7 +515,11 @@ def patch_project(
             values["name"] = body.name
             rules_inputs_changed = True
         if "repository" in given:
-            values.update(_repository_columns(body.repository))
+            columns = _repository_columns(body.repository)
+            values.update(columns)
+            if columns["repository_url"] != project.repository_url:
+                # The owner confirmed the old URL, not this one, whoever changes it (§11.4).
+                values["repository_owner_confirmed"] = False
         if "settings" in given and body.settings is not None:
             # §6.1: merged by top-level key. A key named replaces its whole value (nested
             # objects are not merged), `null` removes it so it reads as its default, and a
@@ -597,6 +648,21 @@ def patch_project(
             rules_inputs_changed = True
         if new_policy is None and explicit_changes:
             conn.execute(update(t.project).where(t.project.c.id == project.id).values(**explicit))
+            # The view may not move (`optional` under a provider that is off reads the
+            # same), but a human changed the policy: version, event and reason as for any
+            # policy change (§6.1).
+            rules.bump(
+                conn,
+                project,
+                "policy_changed",
+                BROADCAST,
+                {
+                    "old": policy.of(project),
+                    "new": {**policy.of(project), "keep_the_why": explicit["keep_the_why_policy"]},
+                    "reason": body.reason,
+                },
+                actor=actor,
+            )
         if new_policy is not None:
             conn.execute(
                 update(t.project)
@@ -678,6 +744,63 @@ def patch_project(
     return idempotency.run(engine_of(request), request, caller, action)
 
 
+class TransferIn(Strict):
+    to: str = Field(min_length=1, max_length=40)
+
+
+@router.post("/projects/{owner}/{slug}/transfer")
+def transfer_project(
+    slug: str, body: TransferIn, request: Request, caller: AnyCaller
+) -> JSONResponse:
+    """File the transfer to another namespace owner (§6.25): a consent request to the
+    receiver, 202 with the request; the move happens on their `go`."""
+    from maity_hub.routes.requests import load_request
+
+    def action(conn: Connection) -> idempotency.Outcome:
+        mine = membership(conn, caller, slug)
+        mine = replace(mine, project=lock_project(conn, mine.project.id))
+        request_id = project_names.transfer(conn, mine, caller, body.to)
+        return idempotency.Outcome(202, "request", request_id, load_request(conn, request_id))
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
+@router.post("/projects/{owner}/{slug}/repository/confirm")
+def confirm_repository(
+    slug: str, body: RepositoryConfirmIn, request: Request, caller: AnyCaller
+) -> JSONResponse:
+    """The namespace owner confirms the project's repository for their own forge grants
+    (§11.4): only the URL they saw, and only while the project still carries it."""
+
+    def action(conn: Connection) -> idempotency.Outcome:
+        mine = membership(conn, caller, slug)
+        mine = replace(mine, project=lock_project(conn, mine.project.id))
+        project = mine.project
+        if mine.kind != "human":
+            raise humans_only("only the namespace owner confirms the repository")
+        if mine.row.human_id != project.owner_id:
+            raise forbidden(message="only the project's namespace owner confirms its repository")
+        if project.repository_url is None or body.url.rstrip("/") != project.repository_url:
+            # A co-admin's change between what the owner saw and the click is never
+            # confirmed with it.
+            raise ApiError(
+                409,
+                "conflict",
+                "the project's repository is not the one confirmed",
+                {"reason": "repository_changed", "url": project.repository_url},
+            )
+        conn.execute(
+            update(t.project)
+            .where(t.project.c.id == project.id)
+            .values(repository_owner_confirmed=True)
+        )
+        return idempotency.Outcome(
+            200, "project", project.id, _view(conn, _load(conn, project.id), request)
+        )
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
 # Fields that govern what humans decide: no agent changes them, whatever its role (§2.3).
 HUMANS_ONLY_POLICY = {
     "swarm_public",  # it shows the agents and their owners to the world (§6.22)
@@ -693,6 +816,8 @@ def _refuse_for_agents(mine: Membership, body: Any, given: set[str]) -> None:
     """`humans_only` for what §2.3 lists as no agent's, before any other check."""
     if mine.kind != "agent":
         return
+    if "slug" in given:
+        raise humans_only("a project is renamed by a human")
     if body.settings is not None and "language" in body.settings.model_fields_set:
         raise humans_only("the project's language is set by a human")
     policy = body.policy.model_fields_set if "policy" in given and body.policy else set()

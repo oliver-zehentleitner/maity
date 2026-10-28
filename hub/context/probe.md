@@ -66,3 +66,54 @@ later. The row is the one place every reader passes through.
   for the next sweep after a `GET /probe` had seen the merge.
 - One `probe_observed` per sweep with all changed refs, as before: fewer
   events, but only the sweep could send them.
+
+## Confirming the repository asks for no step-up until the second factor lands
+
+**Id:** 0b375b9b-2098-4e55-a461-cccdad6a62d1
+**Type:** workaround
+**Status:** open
+**Evidence:** confirmed
+**Source:** `docs/api.md` §2.8.4 and §11.4 (the namespace owner confirms "with the step-up"); card tsk-dtpr7zqxhxc2, part 2
+**Revisit when:** the second-factor pull request #471 (`second_factor.require_step_up`) is on `main`; card tsk-svg6mfthm7xv
+
+`POST /projects/{owner}/{slug}/repository/confirm` does not call a step-up
+yet, because the hub it landed on has no second factor. Whichever of the two
+pull requests merges second adds `second_factor.require_step_up(conn, hub,
+caller)` before the confirmation is written, plus a test, as for the
+transfer. Until then the confirmation opens nothing: no owner grant (App
+installation, owner token) is read yet, so `owner_confirmed` is only
+stored. The step-up has to be in place before those grants land.
+
+## The public-only check sits in the one place every read with the token passes
+
+**Id:** a91a5a3d-a29a-4c9e-9721-d01d89aeacd2
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-10-28 (card tsk-dtpr7zqxhxc2, part 1)
+**Revisit when:** the owner's grants (§11.4: App installation, owner token) land and a read picks its source before it is made
+
+The operator's token reads only repositories the forge reports public
+(docs/api.md §11.4). `Forge._call` checks this before every request it
+makes with the token. It takes the repository from the request itself:
+the `/repos/{owner}/{name}` path, or the GraphQL variables. A read that
+names no repository is not made with the token. The answer is kept for
+10 minutes per token and repository, a refusal included. A visibility
+the forge does not give is not kept, and the next read asks again.
+A read the forge refuses drops a kept "public" at once: a 401 or a 403
+that is no rate limit, a 404, a redirect, or a GraphQL answer without
+the repository or with an error that is no rate limit. A 404 is often
+only a ref that is not there, but it cannot be told apart from a
+refusal, so the next read asks again. That costs one extra request.
+
+**Reason:** the probe worker, the ticker, the images, the Keep the Why
+walk, card links and contract texts all read through `Forge`. A check
+in the request path covers each of them, and any read added later. A
+check per method or per route would have to be repeated in each one,
+and a single forgotten one would read a private repository.
+
+**Rejected alternatives:**
+- A check in the routes before the read: the workers read without a
+  route, so they would not be covered.
+- A check in each `Forge` method: correct today, but a new method that
+  forgets it reads with the token unchecked.
