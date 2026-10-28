@@ -444,8 +444,10 @@ already knows what it deploys.
 `ci.yml` lets `hub-sqlite`, `hub-postgresql` and `hub-mariadb` run on a self-hosted runner
 when the repository variable `HUB_RUNNER` holds its labels; unset, they run on GitHub's
 runners. The runner is a user of its own with rootless Docker, no read access to anything
-else on the machine and a firewall rule against local and internal services; it is not
-ephemeral, and a job-completed hook tidies containers, images, volumes and the workspace.
+else on the machine and a firewall rule against local and internal services (IPv4 and
+IPv6); the runner's files, hook and unit are root-owned under /opt and a system unit, not in
+the runner user's home, where a job could replace them. It is not ephemeral, and a
+job-completed hook tidies containers, images, volumes and the workspace.
 Install steps and the trust boundary: `deploy/runner/README.md`.
 
 The condition in `ci.yml` that sends fork pull requests to the hosted runners is **not** a
