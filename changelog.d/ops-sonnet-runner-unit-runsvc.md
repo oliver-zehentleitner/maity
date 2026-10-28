@@ -6,3 +6,5 @@
   it assumes.
 - ci: the three database jobs print the runner's name, environment and CPU count first, so a log
   shows whether a run was hosted or on the maintainer's machine.
+- ci: `deploy/runner/install-python.sh` gives the self-hosted runner a Python 3.12 that
+  `setup-python` finds (it has none for Debian), without the PEP 668 marker and with a plain `.path`.

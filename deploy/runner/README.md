@@ -85,7 +85,12 @@ After a malicious job the machine is reinstalled; the hook below cannot make it 
    uses `KillMode=control-group`.
    The hook's output is shown in the job log (step "Complete runner"), which anyone can
    read in a public repository.
-4. Set `HUB_RUNNER` to `["self-hosted","maity-hub"]`, and the fork-approval setting above.
+4. Run `install-python.sh` as root. The jobs use `actions/setup-python` for 3.12, which has no
+   Python for Debian and would fail; the script installs 3.12 with uv as the runner user, puts it
+   in the runner's tool cache where `setup-python` looks first, removes uv's PEP 668
+   "externally managed" marker from that private copy (without it `pip install` fails in the jobs),
+   replaces the stored `.path` and restarts the service.
+5. Set `HUB_RUNNER` to `["self-hosted","maity-hub"]`, and the fork-approval setting above.
 
 ## Why not an ephemeral runner
 
