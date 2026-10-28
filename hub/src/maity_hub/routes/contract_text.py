@@ -1,4 +1,4 @@
-"""`GET /projects/{slug}/tasks/{id}/contract` (docs/api.md §6.8)."""
+"""`GET /projects/{owner}/{slug}/tasks/{id}/contract` (docs/api.md §6.8)."""
 
 from __future__ import annotations
 
@@ -9,16 +9,17 @@ from maity_hub import contract_text, forge
 from maity_hub.access import membership
 from maity_hub.deps import AnyCaller, engine_of, reader_of
 from maity_hub.errors import ApiError, invalid
+from maity_hub.namespace import ProjectRoute
 from maity_hub.routes.tasks import _project_card
 
-router = APIRouter()
+router = APIRouter(route_class=ProjectRoute)
 
 
 def _nothing(field: str, reason: str, message: str) -> ApiError:
     return ApiError(404, "not_found", message, {"fields": {field: reason}})
 
 
-@router.get("/projects/{slug}/tasks/{card_id}/contract")
+@router.get("/projects/{owner}/{slug}/tasks/{card_id}/contract")
 def read_contract(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)

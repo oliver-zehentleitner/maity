@@ -4,7 +4,7 @@ import shutil
 from importlib.resources import files
 from pathlib import Path
 
-from sqlalchemy import Engine
+from sqlalchemy import Engine, Insert
 
 from maity_hub.db import create_revision, current_revision, downgrade, head_revision, migrate
 
@@ -109,3 +109,74 @@ def test_the_profile_delete_downgrade_restores_one_handle_per_owner(engine: Engi
             "INSERT INTO agent_profile (id, owner_id, handle, display_name, created_at) "
             "VALUES ('agt-4', 'hum-o', 'same', 'Same', '2026-10-23 00:00:00')"
         )
+
+
+def _namespace_rows(engine: Engine) -> dict[str, str]:
+    """Humans a, b and c, and a project `shop` whose first owner (a) left: before the
+    namespace it has no owner column; returns the ids."""
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import update
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    migrate(engine)
+    ids = {h: factory.human(engine, h) for h in ("a", "b", "c")}
+    ids["shop"] = factory.project(engine, "shop", owner_id=ids["a"])
+    start = datetime(2026, 10, 1, tzinfo=UTC)
+    with engine.begin() as conn:
+        for n, (who, active) in enumerate((("a", None), ("b", True), ("c", True))):
+            conn.execute(
+                insert_membership(ids["shop"], ids[who], start + timedelta(days=n), active)
+            )
+    downgrade(engine, "0055")
+    with engine.begin() as conn:  # a limit as the old schema stored it: slugs
+        conn.execute(update(t.human).where(t.human.c.id == ids["b"]).values(
+            limit_show_reason_in=["shop", "gone"]))  # fmt: skip
+    return ids
+
+
+def insert_membership(project_id: str, human_id: str, joined: object, active: object) -> Insert:
+    from sqlalchemy import insert
+
+    from maity_hub import tables as t
+
+    return insert(t.membership).values(
+        project_id=project_id, human_id=human_id, role="owner", areas=["/"], capabilities=[],
+        joined_at=joined, active=active,
+    )  # fmt: skip
+
+
+def test_the_namespace_owner_is_the_oldest_active_owner(engine: Engine) -> None:
+    """0060: the creator left, so the next oldest active owner holds the namespace; the
+    slug is kept as `legacy_slug`; a limit's `show_reason_in` names full names."""
+    from sqlalchemy import select
+
+    from maity_hub import tables as t
+
+    ids = _namespace_rows(engine)
+    migrate(engine)
+    with engine.connect() as conn:
+        project = conn.execute(select(t.project).where(t.project.c.id == ids["shop"])).one()
+        shown = conn.execute(
+            select(t.human.c.limit_show_reason_in).where(t.human.c.id == ids["b"])
+        ).scalar()
+    assert (project.owner_id, project.legacy_slug) == (ids["b"], "shop")
+    assert shown == ["b/shop"]
+
+
+def test_the_namespace_migration_stops_on_a_project_without_an_active_human_owner(
+    engine: Engine,
+) -> None:
+    import pytest
+    from sqlalchemy import update
+
+    from maity_hub import tables as t
+
+    _namespace_rows(engine)
+    with engine.begin() as conn:
+        conn.execute(update(t.membership).values(active=None))
+    with pytest.raises(Exception, match="no human with an active owner membership in: shop"):
+        migrate(engine)
+    assert current_revision(engine) == "0055"

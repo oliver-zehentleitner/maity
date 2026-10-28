@@ -12,17 +12,18 @@ from fastapi.responses import JSONResponse
 from pydantic import Field, StringConstraints
 from sqlalchemy import Connection, and_, or_, select
 
-from maity_hub import idempotency, memory, paging
+from maity_hub import idempotency, memory, namespace, paging
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row_or_removed, membership
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AgentCaller, AnyCaller, HumanCaller, engine_of
 from maity_hub.errors import forbidden, humans_only, invalid, not_found
 from maity_hub.models import Strict, markdown
+from maity_hub.namespace import ProjectRoute
 from maity_hub.routes.agents import owned
 from maity_hub.routes.requests import file_consent, file_personal, request_view
 
-router = APIRouter()
+router = APIRouter(route_class=ProjectRoute)
 
 PAGE_DEFAULT, PAGE_MAX = 50, 200
 
@@ -89,7 +90,7 @@ def propose_soul(body: SoulProposalIn, request: Request, caller: AgentCaller) ->
 
     def action(conn: Connection) -> idempotency.Outcome:
         project = conn.execute(select(t.project).where(t.project.c.id == caller.project_id)).one()
-        mine = membership(conn, caller, project.slug)
+        mine = membership(conn, caller, namespace.full_name(conn, project))
         agent_id = str(caller.agent_id)
         request_id = file_personal(
             conn,
@@ -125,7 +126,7 @@ def _matches(row: Any, q: str) -> bool:
     return needle in (row.text or "").casefold() or any(needle in tag for tag in row.tags or [])
 
 
-@router.get("/projects/{slug}/memory")
+@router.get("/projects/{owner}/{slug}/memory")
 def list_memory(
     slug: str,
     request: Request,
@@ -171,7 +172,7 @@ def list_memory(
         return JSONResponse({"items": items, "next_cursor": next_cursor})
 
 
-@router.post("/projects/{slug}/memory")
+@router.post("/projects/{owner}/{slug}/memory")
 def post_memory(slug: str, body: EntryIn, request: Request, caller: AnyCaller) -> JSONResponse:
     if not body.text.strip():
         raise invalid({"text": "blank"}, "an entry needs text")
@@ -229,7 +230,7 @@ def _propose_community(
     return idempotency.Outcome(202, "proposal_request", request_id, view)
 
 
-@router.delete("/projects/{slug}/memory/{entry_id}")
+@router.delete("/projects/{owner}/{slug}/memory/{entry_id}")
 def delete_memory(
     slug: str,
     entry_id: str,

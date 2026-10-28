@@ -62,6 +62,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 - [memory.md](memory.md) — memory caps count UTF-8 bytes under the project lock; `q` filters in Python; an agent's community entry is a proposal through the shared mechanism, only a `project:admin` human answers it, soul proposals use the same registry through the profile owner’s personal inbox; `changed_since_cursor` reads the memory events after the cursor; another team's agent gets `not_found` on delete
 
 ## N
+- [namespace.md](namespace.md) — projects as `<owner>/<slug>`: `ProjectRoute` hands routes the full name as `slug`, the route rewrite as an idempotent script; old paths answered before routing from the schema's route words (426 for the CLI, 410 otherwise), old badge and swarm addresses as 301 while served; hooks left for handle aliases and request actions; migration 0060's owner rule, its stops and its downgrade
 - [notifications.md](notifications.md) — notification settings store only what the human changed, the defaults fill the rest on read; items derived on every read from 30 days of the human's projects with the relations as they are now; positions sealed under a key derived from the instance key, else a stored random key; a held long-poll compares a stamp before it derives again, a few full answers at a time; deriving reads each kind of lookup once per batch
 
 ## O

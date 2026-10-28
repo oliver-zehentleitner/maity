@@ -12,7 +12,17 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, and_, insert, or_, select, update
 
-from maity_hub import avatars, clock, idempotency, inbox, mentions, placements, proposals, ticker
+from maity_hub import (
+    avatars,
+    clock,
+    idempotency,
+    inbox,
+    mentions,
+    namespace,
+    placements,
+    proposals,
+    ticker,
+)
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
@@ -22,12 +32,13 @@ from maity_hub.events import Actor, emit, lock_project
 from maity_hub.ids import new_id
 from maity_hub.jourfixe import triage as jour_fixe_triage
 from maity_hub.models import Strict, Written, markdown, title
+from maity_hub.namespace import ProjectRoute
 from maity_hub.notifications import records
 from maity_hub.replies import replies
 from maity_hub.views import principal_id, ts
 
 log = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(route_class=ProjectRoute)
 
 PAGE_DEFAULT, PAGE_MAX = 50, 200
 SORTS = ("priority", "date", "agent")
@@ -323,7 +334,7 @@ def _validate(body: RequestCreate, mine: Membership) -> None:
         raise invalid(errors)
 
 
-@router.post("/projects/{slug}/requests")
+@router.post("/projects/{owner}/{slug}/requests")
 def create_request(
     slug: str, body: RequestCreate, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -620,7 +631,7 @@ def _check_sort(sort: str) -> None:
         raise invalid({"sort": "unknown"})
 
 
-@router.get("/projects/{slug}/requests")
+@router.get("/projects/{owner}/{slug}/requests")
 def list_requests(
     slug: str,
     request: Request,
@@ -666,7 +677,7 @@ def list_all_requests(
         ).all()
         views: list[dict[str, Any]] = []
         for project in projects:
-            mine = membership(conn, caller, project.slug)
+            mine = membership(conn, caller, namespace.full_name(conn, project))
             if not mine.may("project:read"):
                 continue
             try:
@@ -675,7 +686,12 @@ def list_all_requests(
                 if error.code == "invalid" and "to" in error.details.get("fields", {}):
                     continue  # that member is not in this project
                 raise
-            inline = {"slug": project.slug, "name": project.name, "state": project.state}
+            inline = {
+                "slug": project.slug,
+                "full_name": namespace.full_name(conn, project),
+                "name": project.name,
+                "state": project.state,
+            }
             views += [
                 {**_with_handle(conn, r, request_view(conn, r)), "project": inline} for r in rows
             ]
@@ -687,7 +703,7 @@ def list_all_requests(
         return JSONResponse(_page(_sorted(views, sort), sort, limit, cursor))
 
 
-@router.get("/projects/{slug}/requests/{request_id}")
+@router.get("/projects/{owner}/{slug}/requests/{request_id}")
 def get_request(slug: str, request_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
@@ -778,7 +794,7 @@ def _refuse_unless_open(row: Any) -> None:
         )
 
 
-@router.post("/projects/{slug}/requests/{request_id}/answer")
+@router.post("/projects/{owner}/{slug}/requests/{request_id}/answer")
 def answer(
     slug: str, request_id: str, body: AnswerIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -976,7 +992,7 @@ def _open_decision(conn: Connection, mine: Membership, request_id: str) -> Any:
     return row
 
 
-@router.post("/projects/{slug}/requests/{request_id}/forward")
+@router.post("/projects/{owner}/{slug}/requests/{request_id}/forward")
 def forward(
     slug: str, request_id: str, body: ForwardIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -1036,7 +1052,7 @@ def forward(
     return idempotency.run(engine_of(request), request, caller, action)
 
 
-@router.post("/projects/{slug}/requests/{request_id}/claim")
+@router.post("/projects/{owner}/{slug}/requests/{request_id}/claim")
 def claim(slug: str, request_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         mine = _locked_member(conn, caller, slug)
@@ -1097,7 +1113,7 @@ def _talk_allowed(conn: Connection, row: Any, caller: Caller) -> str:
     raise invalid({"talk": "only_the_owner_of_the_agent"}, "only the agent's own human can talk")
 
 
-@router.post("/projects/{slug}/requests/{request_id}/withdraw")
+@router.post("/projects/{owner}/{slug}/requests/{request_id}/withdraw")
 def withdraw(
     slug: str, request_id: str, body: WithdrawIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -1526,7 +1542,12 @@ def _personal(conn: Connection, caller: Caller, request_id: str) -> Any:
 
 def _project_inline(conn: Connection, project_id: str) -> dict[str, Any]:
     project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
-    return {"slug": project.slug, "name": project.name, "state": project.state}
+    return {
+        "slug": project.slug,
+        "full_name": namespace.full_name(conn, project),
+        "name": project.name,
+        "state": project.state,
+    }
 
 
 @router.get("/requests/{request_id}")

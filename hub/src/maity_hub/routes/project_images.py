@@ -1,8 +1,8 @@
-"""`/projects/{slug}/logo` and `/projects/{slug}/banner` (docs/api.md §11.2).
+"""`/projects/{owner}/{slug}/logo` and `/projects/{owner}/{slug}/banner` (docs/api.md §11.2).
 
 `GET` serves the image the project shows (an upload, else the forge's) from the hub's
 own origin, revalidated by `ETag`. `PUT` and `DELETE` are a project admin's upload,
-human only. The paths are spelled out per kind, so that no `/projects/{slug}/{kind}`
+human only. The paths are spelled out per kind, so that no `/projects/{owner}/{slug}/{kind}`
 route shadows the other project routes.
 """
 
@@ -19,8 +19,9 @@ from maity_hub import forge, idempotency, images
 from maity_hub.access import membership
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of
 from maity_hub.errors import ApiError, invalid, not_found
+from maity_hub.namespace import ProjectRoute
 
-router = APIRouter()
+router = APIRouter(route_class=ProjectRoute)
 
 
 def _matches(header: str | None, tag: str) -> bool:
@@ -106,6 +107,8 @@ def _delete(kind: str) -> Callable[..., JSONResponse]:
 
 for _kind in images.KINDS:
     idempotency.LOADERS[f"project_{_kind}"] = _state_loader(_kind)
-    router.add_api_route(f"/projects/{{slug}}/{_kind}", _get(_kind), methods=["GET"])
-    router.add_api_route(f"/projects/{{slug}}/{_kind}", _put(_kind), methods=["PUT"])
-    router.add_api_route(f"/projects/{{slug}}/{_kind}", _delete(_kind), methods=["DELETE"])
+    router.add_api_route(f"/projects/{{owner}}/{{slug}}/{_kind}", _get(_kind), methods=["GET"])
+    router.add_api_route(f"/projects/{{owner}}/{{slug}}/{_kind}", _put(_kind), methods=["PUT"])
+    router.add_api_route(
+        f"/projects/{{owner}}/{{slug}}/{_kind}", _delete(_kind), methods=["DELETE"]
+    )

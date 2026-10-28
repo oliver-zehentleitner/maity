@@ -1,4 +1,4 @@
-"""`GET /projects/{slug}/messages` (docs/api.md §8.8): the project's messages as one listing.
+"""`GET /projects/{owner}/{slug}/messages` (docs/api.md §8.8): the project's messages, listed.
 
 The readable set of `GET /events` (§8.2), restricted to the `message` events that belong to
 no conversation. The conversation is read off the event row, which survives a redaction, so
@@ -18,10 +18,11 @@ from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import invalid
+from maity_hub.namespace import ProjectRoute
 from maity_hub.routes.events import MESSAGE_TYPES, PAGE_DEFAULT, PAGE_MAX
 from maity_hub.views import _without_reason, principal_ids, ts
 
-router = APIRouter()
+router = APIRouter(route_class=ProjectRoute)
 
 SEQ_MAX = paging.SEQ_MAX
 LISTED_TYPES = tuple(kind for kind in MESSAGE_TYPES if kind != "chat")
@@ -136,7 +137,7 @@ def _items(conn: Connection, rows: list[Any], mine: Membership) -> list[dict[str
     return items
 
 
-@router.get("/projects/{slug}/messages")
+@router.get("/projects/{owner}/{slug}/messages")
 def read_project_messages(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     limit = _limit(request)
     after, before = _seq(request, "after"), _seq(request, "before")

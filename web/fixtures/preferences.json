@@ -27,7 +27,7 @@
     }
   ],
   "projects": [
-    { "slug": "maity", "include": true },
-    { "slug": "sample", "include": false }
+    { "slug": "maity", "full_name": "maintainer/maity", "include": true },
+    { "slug": "sample", "full_name": "maintainer/sample", "include": false }
   ]
 }

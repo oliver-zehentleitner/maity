@@ -198,7 +198,7 @@ window.Maity = window.Maity || {};
     }
     if (hubWithout) offer(false);
     else {
-      M.api.hubHas("POST", "/projects/{slug}/attachments").catch(() => true).then((yes) => {
+      M.api.hubHas("POST", "/projects/{owner}/{slug}/attachments").catch(() => true).then((yes) => {
         offer(yes && !hubWithout);
         if (yes) loadEarlier();
       });

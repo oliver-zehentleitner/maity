@@ -9,6 +9,7 @@
   "projects": [
     {
       "slug": "maity",
+      "full_name": "maintainer/maity",
       "name": "Maity",
       "state": "build",
       "role": "owner",
@@ -16,6 +17,7 @@
     },
     {
       "slug": "sample",
+      "full_name": "maintainer/sample",
       "name": "Sample shop",
       "state": "freeze",
       "role": "owner",

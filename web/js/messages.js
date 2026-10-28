@@ -1,4 +1,4 @@
-// (11) Messages (#/p/<slug>/messages): the project's messages the reader
+// (11) Messages (#/<owner>/<slug>/messages): the project's messages the reader
 // may see (docs/api.md §8.4, every type but chat), newest first, by type:
 // who wrote to whom, about which card, the text as Markdown, the members
 // it mentions as links, and its files (§8.7). The uploader or an admin

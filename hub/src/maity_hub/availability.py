@@ -135,10 +135,17 @@ def _since(row: Any, found: dict[str, Any], unknown: datetime) -> datetime:
 
 
 def view(
-    row: Any, presence: str, human: Any | None, project: Any, *, own: bool = False
+    row: Any,
+    presence: str,
+    human: Any | None,
+    project: Any,
+    *,
+    own: bool = False,
+    project_name: str | None = None,
 ) -> dict[str, Any]:
     """`availability` of a member view. A human's `reason` only in a project its limit
-    names in `show_reason_in`, or to the human itself (`own`, `GET /me`)."""
+    names in `show_reason_in` by its full name `project_name` (§6.25), or to the human
+    itself (`own`, `GET /me`)."""
     now = clock.now()
     found = computed(row, presence, human, project, now)
     shown: dict[str, Any] = {
@@ -152,7 +159,9 @@ def view(
     if row.agent_id is not None:
         shown["harness"] = found.get("harness")
         shown["reason"] = found.get("reason")
-    elif found.get("reason") is not None and (own or project.slug in found["show_reason_in"]):
+    elif found.get("reason") is not None and (
+        own or (project_name is not None and project_name in found["show_reason_in"])
+    ):
         shown["reason"] = found["reason"]
     return shown
 

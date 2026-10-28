@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import Connection, insert, or_, select, update
 
-from maity_hub import clock, inbox, preferences, ticker
+from maity_hub import clock, inbox, namespace, preferences, ticker
 from maity_hub import tables as t
 from maity_hub.board import history
 from maity_hub.errors import ApiError, invalid
@@ -435,7 +435,7 @@ def _ticker(conn: Connection, project: Any, round_row: Any, report: dict[str, An
         project.id,
         kind="jour_fixe",
         text=text,
-        url=f"/#/p/{project.slug}/jour-fixe/{round_row.id}",
+        url=f"/#/{namespace.full_name(conn, project)}/jour-fixe/{round_row.id}",
         audience=ticker.Audience(),
         origin="hub",
         subject=("jour_fixe", round_row.id),

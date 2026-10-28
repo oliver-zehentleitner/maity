@@ -15,7 +15,7 @@ from tests import factory, flow
 from tests.concurrency import finished, race, waiting
 from tests.conftest import ClientFactory
 
-BASE = "/projects/maity/tasks"
+BASE = "/projects/maintainer/maity/tasks"
 
 
 @pytest.fixture
@@ -49,16 +49,18 @@ def proposed(response: Any) -> None:
 
 @pytest.mark.parametrize("preset", policy.PRESETS)
 def test_default_and_preset_preservation(owner: flow.Human, preset: str) -> None:
-    assert owner.get("/projects/maity").json()["policy"]["subtasks"] == "proposed"
+    assert owner.get("/projects/maintainer/maity").json()["policy"]["subtasks"] == "proposed"
     assert (
         flow.project(owner, f"p-{preset}", policy={"preset": preset})["policy"]["subtasks"]
         == "proposed"
     )
     response = owner.patch(
-        "/projects/maity", {"policy": {"subtasks": "direct"}, "reason": "trusted team"}
+        "/projects/maintainer/maity", {"policy": {"subtasks": "direct"}, "reason": "trusted team"}
     )
     assert response.status_code == 200
-    response = owner.patch("/projects/maity", {"policy": {"preset": preset}, "reason": "preset"})
+    response = owner.patch(
+        "/projects/maintainer/maity", {"policy": {"preset": preset}, "reason": "preset"}
+    )
     assert response.json()["policy"]["subtasks"] == "direct"
 
 
@@ -91,7 +93,7 @@ def test_direct_policy_uses_ordinary_card_rights(
     member = flow.agent(make_client, owner)
     assert (
         owner.patch(
-            "/projects/maity", {"policy": {"subtasks": "direct"}, "reason": "trusted"}
+            "/projects/maintainer/maity", {"policy": {"subtasks": "direct"}, "reason": "trusted"}
         ).status_code
         == 200
     )
@@ -140,7 +142,7 @@ def test_closed_parent_takes_no_new_child_but_keeps_existing_children(
 
 def test_parent_and_related_stay_inside_the_project(owner: flow.Human) -> None:
     flow.project(owner, "other")
-    foreign = owner.post("/projects/other/tasks", {"title": "foreign"}).json()["id"]
+    foreign = owner.post("/projects/maintainer/other/tasks", {"title": "foreign"}).json()["id"]
     for field, value in (("parent", foreign), ("related", [foreign])):
         invalid(owner.post(BASE, {"title": "no", field: value}), field, "unknown_task")
 
@@ -197,7 +199,7 @@ def test_filter_counts_and_parent_events(owner: flow.Human, migrated: Engine) ->
             select(t.event.c.seq).order_by(t.event.c.seq.desc()).limit(1)
         ).scalar_one()
     assert owner.patch(path(child), {"parent": new["id"]}).status_code == 200
-    events = owner.get(f"/projects/maity/events?after={before}").json()["items"]
+    events = owner.get(f"/projects/maintainer/maity/events?after={before}").json()["items"]
     updates = [e for e in events if e["kind"] == "task_updated"]
     counts = {
         e["payload"]["id"]: e["payload"]["children"]
@@ -258,7 +260,7 @@ def test_migration_preserves_existing_projects_with_proposed_policy(engine: Engi
 def test_report_done_has_the_child_gate_and_announces_parent_counts(owner: flow.Human) -> None:
     assert (
         owner.patch(
-            "/projects/maity", {"policy": {"done_authority": "holder"}, "reason": "test"}
+            "/projects/maintainer/maity", {"policy": {"done_authority": "holder"}, "reason": "test"}
         ).status_code
         == 200
     )
@@ -301,7 +303,7 @@ def test_related_mirror_events_and_computed_children_are_read_only(
             select(t.event.c.seq).order_by(t.event.c.seq.desc()).limit(1)
         ).scalar_one()
     assert owner.patch(path(first), {"related": [second["id"]]}).status_code == 200
-    items = owner.get(f"/projects/maity/events?after={before}").json()["items"]
+    items = owner.get(f"/projects/maintainer/maity/events?after={before}").json()["items"]
     mirrored = {
         e["payload"]["id"]: e["payload"]["related"]
         for e in items

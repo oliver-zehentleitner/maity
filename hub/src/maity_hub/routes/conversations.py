@@ -17,13 +17,14 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, func, select
 
-from maity_hub import events, group_chats, idempotency, instances, paging
+from maity_hub import events, group_chats, idempotency, instances, namespace, paging
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.models import Strict, Written, markdown, title
+from maity_hub.namespace import ProjectRoute
 from maity_hub.routes.events import (
     MessageIn,
     chat_parties,
@@ -33,7 +34,7 @@ from maity_hub.routes.events import (
 )
 from maity_hub.views import principal_id, sees_chat_reasons, ts
 
-router = APIRouter()
+router = APIRouter(route_class=ProjectRoute)
 
 PAGE_DEFAULT, PAGE_MAX = 50, 200
 SEQ_MAX = 2**63 - 1
@@ -80,7 +81,7 @@ def outsider(conn: Connection, caller: Caller, slug: str) -> Outsider | None:
     """The caller as an owner outside the project, or None."""
     if caller.kind != "human" or caller.human_id is None:
         return None
-    project = conn.execute(select(t.project).where(t.project.c.slug == slug)).first()
+    project = namespace.resolve(conn, slug)
     if project is None:
         return None
     agent = conn.execute(
@@ -414,7 +415,7 @@ def _owned_agents(conn: Connection, mine: Membership, caller: Caller) -> list[st
     )
 
 
-@router.get("/projects/{slug}/conversations")
+@router.get("/projects/{owner}/{slug}/conversations")
 def list_conversations(
     slug: str,
     request: Request,
@@ -464,7 +465,7 @@ def conversation_packet(conn: Connection, mine: Membership, caller: Caller) -> l
 # --- group chats (§9.2) --------------------------------------------------------------------
 
 
-@router.post("/projects/{slug}/conversations")
+@router.post("/projects/{owner}/{slug}/conversations")
 def create_group(slug: str, body: GroupIn, request: Request, caller: AnyCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         # No chat to read along in yet: an owner outside gets not_found here (§9.2).
@@ -505,7 +506,7 @@ def _load(conn: Connection, mine: Membership, conversation_id: str) -> dict[str,
 def _load_for_caller(conn: Connection, conversation_id: str, request: Request) -> dict[str, Any]:
     """A replay shows the chat to the caller as it is now."""
     row = conn.execute(select(t.conversation).where(t.conversation.c.id == conversation_id)).one()
-    slug = conn.execute(select(t.project.c.slug).where(t.project.c.id == row.project_id)).scalar()
+    slug = namespace.name_of(conn, row.project_id)
     mine = membership(conn, request.state.caller, str(slug))
     found = group_chats.access(conn, conversation_id, mine)
     if found is None:  # a replay shows nothing the caller may no longer read (as #271)
@@ -516,7 +517,7 @@ def _load_for_caller(conn: Connection, conversation_id: str, request: Request) -
 idempotency.LOADERS["conversation"] = _load_for_caller
 
 
-@router.get("/projects/{slug}/conversations/{conversation_id}")
+@router.get("/projects/{owner}/{slug}/conversations/{conversation_id}")
 def get_conversation(
     slug: str, conversation_id: str, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -546,7 +547,7 @@ def _manager(conn: Connection, mine: Membership, conversation_id: str) -> Any:
     return group
 
 
-@router.patch("/projects/{slug}/conversations/{conversation_id}")
+@router.patch("/projects/{owner}/{slug}/conversations/{conversation_id}")
 def patch_conversation(
     slug: str, conversation_id: str, body: GroupPatch, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -561,7 +562,7 @@ def patch_conversation(
     return idempotency.run(engine_of(request), request, caller, action)
 
 
-@router.post("/projects/{slug}/conversations/{conversation_id}/participants")
+@router.post("/projects/{owner}/{slug}/conversations/{conversation_id}/participants")
 def add_participant(
     slug: str, conversation_id: str, body: ParticipantIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -576,7 +577,7 @@ def add_participant(
     return idempotency.run(engine_of(request), request, caller, action)
 
 
-@router.delete("/projects/{slug}/conversations/{conversation_id}/participants/{member_id}")
+@router.delete("/projects/{owner}/{slug}/conversations/{conversation_id}/participants/{member_id}")
 def remove_participant(
     slug: str, conversation_id: str, member_id: str, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -633,7 +634,7 @@ idempotency.LOADERS["participation"] = idempotency.plain(_load_participation)
 # --- messages (§9.1, §9.2) ---------------------------------------------------------------
 
 
-@router.get("/projects/{slug}/conversations/{conversation_id}/messages")
+@router.get("/projects/{owner}/{slug}/conversations/{conversation_id}/messages")
 def read_messages(
     slug: str,
     conversation_id: str,
@@ -703,7 +704,7 @@ def load_message(conn: Connection, seq: str) -> dict[str, Any]:
 idempotency.LOADERS["message"] = idempotency.plain(load_message)
 
 
-@router.post("/projects/{slug}/conversations/{conversation_id}/messages")
+@router.post("/projects/{owner}/{slug}/conversations/{conversation_id}/messages")
 def send_message(
     slug: str, conversation_id: str, body: ChatIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:

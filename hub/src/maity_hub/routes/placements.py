@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import ColumnElement, Connection, select
 
-from maity_hub import events, idempotency
+from maity_hub import events, idempotency, namespace
 from maity_hub import placements as pl
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
@@ -25,13 +25,14 @@ from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import ApiError, forbidden, invalid, not_found
 from maity_hub.models import HANDLE_PATTERN, Strict, markdown, title
+from maity_hub.namespace import ProjectRoute
 from maity_hub.policy import CLOSED_STATES, REASON_STATES
 from maity_hub.routes.members import validate_assignment
 from maity_hub.routes.requests import file_consent
 from maity_hub.runners import active_attachment, live_credential_id
 from maity_hub.views import event_views
 
-router = APIRouter()
+router = APIRouter(route_class=ProjectRoute)
 
 CLONE_PATTERN = r"^[a-z0-9][a-z0-9-]{0,62}$"
 NOT_NULLABLE = frozenset({"desired", "harness", "mode", "stop_grace_seconds"})
@@ -120,9 +121,7 @@ def _view(conn: Connection, mine: Membership, placement: Any) -> dict[str, Any]:
 
 def _load(conn: Connection, placement_id: str, request: Request) -> dict[str, Any]:
     placement = pl.row(conn, placement_id)
-    slug = conn.execute(
-        select(t.project.c.slug).where(t.project.c.id == placement.project_id)
-    ).scalar_one()
+    slug = namespace.name_of(conn, placement.project_id)
     caller: Caller = request.state.caller
     return _view(conn, membership(conn, caller, slug), placement)
 
@@ -190,7 +189,7 @@ def _exists(conn: Connection, *conditions: Any) -> None:
 # --- reading ----------------------------------------------------------------------------------
 
 
-@router.get("/projects/{slug}/placements")
+@router.get("/projects/{owner}/{slug}/placements")
 def list_placements(
     slug: str, request: Request, caller: AnyCaller, closed: bool = False
 ) -> JSONResponse:
@@ -212,7 +211,7 @@ def list_placements(
         return JSONResponse({"items": views, "next_cursor": None})
 
 
-@router.get("/projects/{slug}/placements/{placement_id}")
+@router.get("/projects/{owner}/{slug}/placements/{placement_id}")
 def get_placement(
     slug: str, placement_id: str, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -222,7 +221,7 @@ def get_placement(
         return JSONResponse(_view(conn, mine, _placement(conn, mine, placement_id)))
 
 
-@router.get("/projects/{slug}/placements/{placement_id}/reports")
+@router.get("/projects/{owner}/{slug}/placements/{placement_id}/reports")
 def placement_reports(
     slug: str,
     placement_id: str,
@@ -254,7 +253,7 @@ def placement_reports(
 # --- creating -------------------------------------------------------------------------------
 
 
-@router.post("/projects/{slug}/placements")
+@router.post("/projects/{owner}/{slug}/placements")
 def create_placement(
     slug: str, body: PlacementCreate, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -440,7 +439,7 @@ def _file(
 # --- changing -------------------------------------------------------------------------------
 
 
-@router.patch("/projects/{slug}/placements/{placement_id}")
+@router.patch("/projects/{owner}/{slug}/placements/{placement_id}")
 def patch_placement(
     slug: str, placement_id: str, body: PlacementPatch, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -531,7 +530,7 @@ def _settle_by_right(
     return pl.approve(conn, placement, actor, by)
 
 
-@router.post("/projects/{slug}/placements/{placement_id}/restart")
+@router.post("/projects/{owner}/{slug}/placements/{placement_id}/restart")
 def restart_placement(
     slug: str, placement_id: str, request: Request, caller: AnyCaller, body: RestartIn | None = None
 ) -> JSONResponse:
@@ -571,7 +570,7 @@ def restart_placement(
     return idempotency.run(engine_of(request), request, caller, action)
 
 
-@router.delete("/projects/{slug}/placements/{placement_id}")
+@router.delete("/projects/{owner}/{slug}/placements/{placement_id}")
 def delete_placement(
     slug: str, placement_id: str, request: Request, caller: AnyCaller
 ) -> JSONResponse:

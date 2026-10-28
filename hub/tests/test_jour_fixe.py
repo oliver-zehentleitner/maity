@@ -52,7 +52,7 @@ def events(engine: Engine, kind: str) -> list[Any]:
 
 
 def start(who: Any) -> Any:
-    return who.post("/projects/maity/jour-fixe/rounds", {"reason": "let us look back"})
+    return who.post("/projects/maintainer/maity/jour-fixe/rounds", {"reason": "let us look back"})
 
 
 def team(owner: flow.Human, make_client: ClientFactory) -> tuple[flow.Agent, flow.Agent]:
@@ -64,7 +64,7 @@ def team(owner: flow.Human, make_client: ClientFactory) -> tuple[flow.Agent, flo
 
 
 def answer(who: Any, round_id: str, **body: Any) -> Any:
-    return who.post(f"/projects/maity/jour-fixe/rounds/{round_id}/answers", body)
+    return who.post(f"/projects/maintainer/maity/jour-fixe/rounds/{round_id}/answers", body)
 
 
 # --- the schedule (§20.1) ------------------------------------------------------------------------
@@ -105,19 +105,25 @@ def answer(who: Any, round_id: str, **body: Any) -> Any:
 def test_the_schedule_the_contract_refuses_is_invalid(
     owner: flow.Human, change: dict[str, Any], fields: dict[str, str]
 ) -> None:
-    response = owner.patch("/projects/maity", {"policy": {"jour_fixe": change}, "reason": "t"})
+    response = owner.patch(
+        "/projects/maintainer/maity", {"policy": {"jour_fixe": change}, "reason": "t"}
+    )
     assert response.status_code == 400, response.text
     assert response.json()["error"]["details"]["fields"] == fields
 
 
 def test_a_schedule_is_stored_whole_and_kept_by_a_preset(owner: flow.Human) -> None:
-    response = owner.patch("/projects/maity", {"policy": {"jour_fixe": DAILY}, "reason": "t"})
+    response = owner.patch(
+        "/projects/maintainer/maity", {"policy": {"jour_fixe": DAILY}, "reason": "t"}
+    )
     assert response.status_code == 200, response.text
     stored = response.json()["policy"]["jour_fixe"]
     assert stored["answer_window_minutes"] == 120 and stored["moderator"] == "admin_agent"
-    kept = owner.patch("/projects/maity", {"policy": {"preset": "solo"}, "reason": "t"}).json()
+    kept = owner.patch(
+        "/projects/maintainer/maity", {"policy": {"preset": "solo"}, "reason": "t"}
+    ).json()
     assert kept["policy"]["jour_fixe"] == stored
-    overview = owner.get("/projects/maity/jour-fixe").json()
+    overview = owner.get("/projects/maintainer/maity/jour-fixe").json()
     assert overview["policy"] == stored and overview["next_at"] is not None
 
 
@@ -143,7 +149,7 @@ def test_a_manual_start_invites_the_present_and_asks_once(
     [opened] = events(migrated, "jour_fixe_opened")
     assert f"instance:{member.id}#{member.instance}" in opened.audience
     assert f"member:{owner.id}" in opened.audience and "role:owner" in opened.audience
-    woken = member.get(f"/projects/maity/events?after={opened.seq - 1}&wait=1").json()
+    woken = member.get(f"/projects/maintainer/maity/events?after={opened.seq - 1}&wait=1").json()
     assert [e["kind"] for e in woken["items"]][:1] == ["jour_fixe_opened"]  # its instance
     assert "Your answer goes to the moderator only." in opened.payload["questions"]
     assert "3. What would help" in opened.payload["questions"]
@@ -221,7 +227,7 @@ def test_named_and_anonymous_answers_and_who_reads_them(
     assert again.status_code == 409 and again.json()["error"]["code"] == "jour_fixe_answered"
     empty = answer(lead, round_id, went_well="  ")
     assert empty.json()["error"]["details"]["fields"] == {"answer": "empty"}
-    path = f"/projects/maity/jour-fixe/rounds/{round_id}/answers"
+    path = f"/projects/maintainer/maity/jour-fixe/rounds/{round_id}/answers"
     seen = lead.get(path).json()["items"]  # the moderator
     assert len(seen) == 2
     assert all("author" not in a for a in seen if a["anonymous"])
@@ -239,7 +245,8 @@ def test_an_anonymous_answer_withdrawn_leaves_nothing_but_the_tag(
     round_id = start(lead).json()["id"]
     answer(member, round_id, went_badly="secret-ish", anonymous=True)
     gone = member.client.delete(
-        f"/api/v1/projects/maity/jour-fixe/rounds/{round_id}/answers/mine", headers=member.auth
+        f"/api/v1/projects/maintainer/maity/jour-fixe/rounds/{round_id}/answers/mine",
+        headers=member.auth,
     )
     assert gone.status_code == 200 and gone.json() == {"round_id": round_id, "withdrawn": True}
     with migrated.connect() as conn:
@@ -277,7 +284,7 @@ def test_at_the_window_close_the_key_and_tags_die_and_the_moderator_is_woken(
     round_id = start(lead).json()["id"]
     answer(member, round_id, went_well="ok", anonymous=True)
     now[0] += timedelta(minutes=121)
-    path = f"/projects/maity/jour-fixe/rounds/{round_id}/answers?mine=true"
+    path = f"/projects/maintainer/maity/jour-fixe/rounds/{round_id}/answers?mine=true"
     assert member.get(path).json()["items"] == []  # past the deadline, before the sweep
     worker.sweep(migrated)
     with migrated.connect() as conn:
@@ -332,8 +339,10 @@ def test_the_schedule_opens_skips_and_records_a_missed_slot(
     lead, member = team(owner, make_client)
     # UTC: a day later is the same wall-clock time, whatever DST does in Vienna.
     daily_utc = {**DAILY, "timezone": "UTC"}
-    owner.patch("/projects/maity", {"policy": {"jour_fixe": daily_utc}, "reason": "t"})
-    next_at = datetime.fromisoformat(owner.get("/projects/maity/jour-fixe").json()["next_at"])
+    owner.patch("/projects/maintainer/maity", {"policy": {"jour_fixe": daily_utc}, "reason": "t"})
+    next_at = datetime.fromisoformat(
+        owner.get("/projects/maintainer/maity/jour-fixe").json()["next_at"]
+    )
     now[0] = next_at + timedelta(seconds=30)
     lead.get("/me")
     member.get("/me")
@@ -366,7 +375,7 @@ def test_admin_agents_order_themselves(owner: flow.Human, make_client: ClientFac
     first = flow.agent(make_client, owner, role="admin")
     second = flow.agent(make_client, owner, role="admin")
     member = flow.agent(make_client, owner)
-    path = "/projects/maity/jour-fixe/moderators"
+    path = "/projects/maintainer/maity/jour-fixe/moderators"
     set_ = second.client.put(
         f"/api/v1{path}",
         json={"order": [second.id], "reason": "I have time"},
@@ -398,12 +407,12 @@ def test_an_agents_owner_outside_the_project_reads_the_minimal_round(
             .values(owner_id=outsider.id)
         )
     round_id = start(lead).json()["id"]
-    seen = outsider.get(f"/projects/maity/jour-fixe/rounds/{round_id}")
+    seen = outsider.get(f"/projects/maintainer/maity/jour-fixe/rounds/{round_id}")
     assert seen.status_code == 200, seen.text
     shown = seen.json()
     for hidden in ("invited", "absent", "config", "moderator", "answers_received", "steps"):
         assert hidden not in shown
-    assert outsider.get("/projects/maity/jour-fixe").status_code == 404
+    assert outsider.get("/projects/maintainer/maity/jour-fixe").status_code == 404
 
 
 # --- the series on the wall clock (§20.1) ------------------------------------------------------
@@ -471,10 +480,10 @@ def test_a_replay_answers_only_a_member(
     factory.membership(migrated, project_id, "admin", human_id=other.id)
     other.get("/me")
     headers = {"X-CSRF-Token": other.csrf, "Idempotency-Key": "jour-fixe-start-replay-1"}
-    path = "/api/v1/projects/maity/jour-fixe/rounds"
+    path = "/api/v1/projects/maintainer/maity/jour-fixe/rounds"
     first = other.client.post(path, json={"reason": "r"}, headers=headers)
     assert first.status_code == 201, first.text
-    removed = owner.delete(f"/projects/maity/members/{other.id}")
+    removed = owner.delete(f"/projects/maintainer/maity/members/{other.id}")
     assert removed.status_code == 200, removed.text
     replay = other.client.post(path, json={"reason": "r"}, headers=headers)
     assert replay.status_code == 404, replay.text  # no way around access (§1.5)

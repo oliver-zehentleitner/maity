@@ -21,7 +21,7 @@ def owner(make_client: ClientFactory, migrated: Engine) -> flow.Human:
 
 
 def patch(who: Any, member_id: str, body: dict[str, Any]) -> Any:
-    return who.patch(f"/projects/maity/members/{member_id}", body)
+    return who.patch(f"/projects/maintainer/maity/members/{member_id}", body)
 
 
 def events_of(engine: Engine, kind: str) -> list[Any]:
@@ -74,7 +74,7 @@ def test_no_agent_touches_a_humans_membership(
             refused = patch(agent, target, body)
             assert (refused.status_code, reason(refused)) == (403, "humans_only"), body
         removed = agent.client.delete(
-            f"/api/v1/projects/maity/members/{target}", headers=agent.auth | agent.key()
+            f"/api/v1/projects/maintainer/maity/members/{target}", headers=agent.auth | agent.key()
         )
         assert (removed.status_code, reason(removed)) == (403, "humans_only")
 
@@ -95,7 +95,7 @@ def test_no_agent_changes_what_humans_decide(
     owner: flow.Human, make_client: ClientFactory, role: str, body: dict[str, Any]
 ) -> None:
     agent = flow.agent(make_client, owner, role=role)
-    refused = agent.patch("/projects/maity", body)
+    refused = agent.patch("/projects/maintainer/maity", body)
     assert (refused.status_code, reason(refused)) == (403, "humans_only")
 
 
@@ -139,14 +139,18 @@ def test_a_reviewers_role_change_waits_for_the_owners_go(
     request = waiting.json()
     assert (request["class"], request["status"]) == ("consent", "open")
     assert request["title"].startswith("Change ") and request["title"].endswith(" to member")
-    unchanged = owner.get(f"/projects/maity/members/{reviewer.id}").json()
+    unchanged = owner.get(f"/projects/maintainer/maity/members/{reviewer.id}").json()
     assert (unchanged["role"], unchanged["areas"]) == ("reviewer", [])  # the whole PATCH waits
     other = flow.agent(make_client, owner, role="admin")
-    by_agent = other.post(f"/projects/maity/requests/{request['id']}/answer", {"reply_id": "go"})
+    by_agent = other.post(
+        f"/projects/maintainer/maity/requests/{request['id']}/answer", {"reply_id": "go"}
+    )
     assert (by_agent.status_code, reason(by_agent)) == (403, "humans_only")
-    go = owner.post(f"/projects/maity/requests/{request['id']}/answer", {"reply_id": "go"})
+    go = owner.post(
+        f"/projects/maintainer/maity/requests/{request['id']}/answer", {"reply_id": "go"}
+    )
     assert go.status_code == 200, go.text
-    applied = owner.get(f"/projects/maity/members/{reviewer.id}").json()
+    applied = owner.get(f"/projects/maintainer/maity/members/{reviewer.id}").json()
     assert (applied["role"], applied["areas"]) == ("member", ["docs/"])
     [event] = events_of(migrated, "member_changed_by_agent")
     assert (event.payload["actor"], event.payload["request_id"]) == (admin.id, request["id"])
@@ -158,14 +162,16 @@ def test_no_changes_nothing(owner: flow.Human, make_client: ClientFactory) -> No
     reviewer = flow.agent(make_client, owner, role="reviewer")
     request = patch(admin, reviewer.id, {"paused": {"reason": "quota"}}).json()
     assert request["title"].startswith("Pause ")
-    owner.post(f"/projects/maity/requests/{request['id']}/answer", {"reply_id": "no"})
-    assert owner.get(f"/projects/maity/members/{reviewer.id}").json()["paused"] is None
+    owner.post(f"/projects/maintainer/maity/requests/{request['id']}/answer", {"reply_id": "no"})
+    assert owner.get(f"/projects/maintainer/maity/members/{reviewer.id}").json()["paused"] is None
 
 
 def test_the_arbiters_role_waits_too(owner: flow.Human, make_client: ClientFactory) -> None:
     admin = flow.agent(make_client, owner, role="admin")
     arbiter = flow.agent(make_client, owner)
-    owner.patch("/projects/maity", {"policy": {"contract_arbiter": arbiter.id}, "reason": "x"})
+    owner.patch(
+        "/projects/maintainer/maity", {"policy": {"contract_arbiter": arbiter.id}, "reason": "x"}
+    )
     assert patch(admin, arbiter.id, {"role": "reviewer"}).status_code == 202
     assert patch(admin, arbiter.id, {"areas": ["cli/"]}).status_code == 200  # no consent
 
@@ -176,13 +182,13 @@ def test_a_removal_always_waits_and_is_done_on_go(
     admin = flow.agent(make_client, owner, role="admin")
     member = flow.agent(make_client, owner)
     waiting = admin.client.delete(
-        f"/api/v1/projects/maity/members/{member.id}", headers=admin.auth | admin.key()
+        f"/api/v1/projects/maintainer/maity/members/{member.id}", headers=admin.auth | admin.key()
     )
     assert waiting.status_code == 202, waiting.text
     request = waiting.json()
     assert request["title"].startswith("Remove ")
     assert member.get("/me").status_code == 200  # still a member until the go
-    owner.post(f"/projects/maity/requests/{request['id']}/answer", {"reply_id": "go"})
+    owner.post(f"/projects/maintainer/maity/requests/{request['id']}/answer", {"reply_id": "go"})
     assert member.get("/me").headers["Maity-Error"] == "credential_revoked"
     with migrated.connect() as conn:
         revoked = conn.execute(
@@ -199,13 +205,16 @@ def test_an_admin_agents_pause_and_a_humans(owner: flow.Human, make_client: Clie
     paused = patch(admin, member.id, {"paused": {"reason": "too many cards"}})
     assert paused.json()["paused"]["by"] == admin.id
     member.resume()  # an admin agent's pause outlasts the paused agent's resume
-    assert owner.get(f"/projects/maity/members/{member.id}").json()["paused"] is not None
+    assert owner.get(f"/projects/maintainer/maity/members/{member.id}").json()["paused"] is not None
     assert patch(admin, member.id, {"paused": None}).json()["paused"] is None  # its own: lifted
-    owner.patch(f"/projects/maity/members/{member.id}", {"paused": {"reason": "mine"}})
+    owner.patch(f"/projects/maintainer/maity/members/{member.id}", {"paused": {"reason": "mine"}})
     for body in ({"paused": None}, {"paused": {"reason": "other"}}):
         refused = patch(admin, member.id, body)
         assert (refused.status_code, reason(refused)) == (403, "humans_only")
-    assert owner.get(f"/projects/maity/members/{member.id}").json()["paused"]["by"] == owner.id
+    assert (
+        owner.get(f"/projects/maintainer/maity/members/{member.id}").json()["paused"]["by"]
+        == owner.id
+    )
 
 
 def test_the_packet_lists_the_limited_scope_and_its_operations(
@@ -215,10 +224,10 @@ def test_the_packet_lists_the_limited_scope_and_its_operations(
     member = flow.agent(make_client, owner)
     admin_packet = admin.resume().json()
     assert "members:admin" in admin_packet["membership"]["scopes"]
-    assert "PATCH /projects/maity/members/{id}" in admin_packet["operations"]
+    assert "PATCH /projects/maintainer/maity/members/{id}" in admin_packet["operations"]
     member_packet = member.resume().json()
     assert "members:admin" not in member_packet["membership"]["scopes"]
-    assert "PATCH /projects/maity/members/{id}" not in member_packet["operations"]
+    assert "PATCH /projects/maintainer/maity/members/{id}" not in member_packet["operations"]
 
 
 def test_a_go_applies_only_what_is_still_allowed(
@@ -227,16 +236,18 @@ def test_a_go_applies_only_what_is_still_allowed(
     admin = flow.agent(make_client, owner, role="admin")
     reviewer = flow.agent(make_client, owner, role="reviewer")
     first = patch(admin, reviewer.id, {"role": "member"}).json()["id"]
-    owner.patch(f"/projects/maity/members/{reviewer.id}", {"role": "proxy"})
-    refused = owner.post(f"/projects/maity/requests/{first}/answer", {"reply_id": "go"})
+    owner.patch(f"/projects/maintainer/maity/members/{reviewer.id}", {"role": "proxy"})
+    refused = owner.post(f"/projects/maintainer/maity/requests/{first}/answer", {"reply_id": "go"})
     assert (refused.status_code, refused.headers["Maity-Error"]) == (409, "target_role_changed")
-    assert owner.get(f"/projects/maity/requests/{first}").json()["status"] == "open"
-    owner.patch(f"/projects/maity/members/{reviewer.id}", {"role": "reviewer"})
+    assert owner.get(f"/projects/maintainer/maity/requests/{first}").json()["status"] == "open"
+    owner.patch(f"/projects/maintainer/maity/members/{reviewer.id}", {"role": "reviewer"})
     second = patch(admin, reviewer.id, {"role": "member"}).json()["id"]
-    owner.patch(f"/projects/maity/members/{admin.id}", {"role": "member"})
-    refused = owner.post(f"/projects/maity/requests/{second}/answer", {"reply_id": "go"})
+    owner.patch(f"/projects/maintainer/maity/members/{admin.id}", {"role": "member"})
+    refused = owner.post(f"/projects/maintainer/maity/requests/{second}/answer", {"reply_id": "go"})
     assert (refused.status_code, refused.headers["Maity-Error"]) == (409, "proposer_not_admin")
-    assert owner.get(f"/projects/maity/members/{reviewer.id}").json()["role"] == "reviewer"
+    assert (
+        owner.get(f"/projects/maintainer/maity/members/{reviewer.id}").json()["role"] == "reviewer"
+    )
 
 
 def test_only_a_human_with_members_admin_gives_the_go(
@@ -249,7 +260,9 @@ def test_only_a_human_with_members_admin_gives_the_go(
     admin = flow.agent(make_client, owner, role="admin")
     reviewer = flow.agent(make_client, owner, role="reviewer")
     request_id = patch(admin, reviewer.id, {"role": "member"}).json()["id"]
-    refused = proxy.post(f"/projects/maity/requests/{request_id}/answer", {"reply_id": "go"})
+    refused = proxy.post(
+        f"/projects/maintainer/maity/requests/{request_id}/answer", {"reply_id": "go"}
+    )
     assert (refused.status_code, refused.json()["error"]["details"]) == (
         403,
         {"scope": "members:admin"},
@@ -264,10 +277,12 @@ def test_a_go_never_touches_a_pause_a_human_set_meanwhile(
     reviewer = flow.agent(make_client, owner, role="reviewer")
     waiting = patch(admin, reviewer.id, {"paused": pause})
     assert waiting.status_code == 202, waiting.text
-    owner.patch(f"/projects/maity/members/{reviewer.id}", {"paused": {"reason": "mine"}})
-    go = owner.post(f"/projects/maity/requests/{waiting.json()['id']}/answer", {"reply_id": "go"})
+    owner.patch(f"/projects/maintainer/maity/members/{reviewer.id}", {"paused": {"reason": "mine"}})
+    go = owner.post(
+        f"/projects/maintainer/maity/requests/{waiting.json()['id']}/answer", {"reply_id": "go"}
+    )
     assert (go.status_code, go.headers["Maity-Error"]) == (409, "pause_changed")
-    paused = owner.get(f"/projects/maity/members/{reviewer.id}").json()["paused"]
+    paused = owner.get(f"/projects/maintainer/maity/members/{reviewer.id}").json()["paused"]
     assert (paused["by"], paused["reason"]) == (owner.id, "mine")
 
 
@@ -277,10 +292,14 @@ def test_a_go_refuses_a_cycle_made_meanwhile(owner: flow.Human, make_client: Cli
     other = flow.agent(make_client, owner)
     waiting = patch(admin, reviewer.id, {"role": "member", "reports_to": other.id})
     assert waiting.status_code == 202, waiting.text
-    owner.patch(f"/projects/maity/members/{other.id}", {"reports_to": reviewer.id})
-    go = owner.post(f"/projects/maity/requests/{waiting.json()['id']}/answer", {"reply_id": "go"})
+    owner.patch(f"/projects/maintainer/maity/members/{other.id}", {"reports_to": reviewer.id})
+    go = owner.post(
+        f"/projects/maintainer/maity/requests/{waiting.json()['id']}/answer", {"reply_id": "go"}
+    )
     assert go.json()["error"]["details"]["fields"] == {"reports_to": "cycle"}
-    assert owner.get(f"/projects/maity/members/{reviewer.id}").json()["reports_to"] is None
+    assert (
+        owner.get(f"/projects/maintainer/maity/members/{reviewer.id}").json()["reports_to"] is None
+    )
 
 
 def test_an_admin_agent_lifts_no_other_agents_pause(
@@ -309,10 +328,11 @@ def test_an_admin_agent_removes_no_one_but_member_and_reviewer_agents(
     }[target]
     if target == "removed_peer_admin":
         owner.client.delete(
-            f"/api/v1/projects/maity/members/{other.id}", headers={"X-CSRF-Token": owner.csrf}
+            f"/api/v1/projects/maintainer/maity/members/{other.id}",
+            headers={"X-CSRF-Token": owner.csrf},
         )
     refused = admin.client.delete(
-        f"/api/v1/projects/maity/members/{other.id}", headers=admin.auth | admin.key()
+        f"/api/v1/projects/maintainer/maity/members/{other.id}", headers=admin.auth | admin.key()
     )
     assert refused.status_code == 403, refused.text
     assert "secret" not in refused.text

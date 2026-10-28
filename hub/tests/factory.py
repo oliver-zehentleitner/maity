@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
-from sqlalchemy import Engine, insert
+from sqlalchemy import Engine, insert, inspect, select
 
 from maity_hub import clock
 from maity_hub import tables as t
@@ -19,8 +19,14 @@ _HASH = hash_password(PASSWORD)  # scrypt is slow on purpose; hash once per run
 
 
 def human(engine: Engine, handle: str | None = None) -> str:
+    """A human row. `maintainer` is the one `project` may have made already as the namespace
+    owner (§6.25): asked for again, it is that human."""
     human_id = new_id("human")
     with engine.begin() as conn:
+        if handle == "maintainer":
+            found = conn.execute(select(t.human.c.id).where(t.human.c.handle == handle)).scalar()
+            if isinstance(found, str):
+                return found
         conn.execute(
             insert(t.human).values(
                 id=human_id,
@@ -33,8 +39,24 @@ def human(engine: Engine, handle: str | None = None) -> str:
     return human_id
 
 
+def _namespaced(engine: Engine) -> bool:
+    """Whether the database is at a revision with the project namespace (§6.25)."""
+    return any(c["name"] == "owner_id" for c in inspect(engine).get_columns("project"))
+
+
+def _maintainer(engine: Engine) -> str:
+    with engine.begin() as conn:
+        found = conn.execute(select(t.human.c.id).where(t.human.c.handle == "maintainer")).scalar()
+    return found if isinstance(found, str) else human(engine, "maintainer")
+
+
 def project(engine: Engine, slug: str | None = None, **values: Any) -> str:
+    """A project row. Its namespace owner (§6.25) is `owner_id` when given, else the human
+    `maintainer`, made here when missing: the owner `tests/flow.py` creates projects with,
+    so that a test's paths are `/projects/maintainer/<slug>` either way."""
     project_id = new_id("project")
+    if "owner_id" not in values and _namespaced(engine):
+        values = {**values, "owner_id": _maintainer(engine)}
     row: dict[str, Any] = {
         "id": project_id,
         "slug": slug or project_id,
