@@ -4,11 +4,13 @@ import shutil
 from importlib.resources import files
 from pathlib import Path
 
+import pytest
 from sqlalchemy import Engine, Insert
 
 from maity_hub.db import create_revision, current_revision, downgrade, head_revision, migrate
 
 
+@pytest.mark.wheel
 def test_migrate_reaches_head_and_is_idempotent(engine: Engine) -> None:
     assert current_revision(engine) is None
     migrate(engine)
@@ -17,6 +19,7 @@ def test_migrate_reaches_head_and_is_idempotent(engine: Engine) -> None:
     assert current_revision(engine) == head_revision(engine)
 
 
+@pytest.mark.wheel
 def test_every_migration_downgrades(engine: Engine) -> None:
     migrate(engine)
     downgrade(engine)

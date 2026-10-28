@@ -238,14 +238,24 @@ make check      # black --check, ruff, mypy --strict (src, tests, scripts), pyte
 make format     # black and ruff --fix
 ```
 
-The tests run on a fresh SQLite file per test. To run them against a
-server database, point `MAITY_TEST_DATABASE_URL` at an empty database the
-suite may create and drop tables in:
+The tests run on a fresh SQLite file per test, a copy of a schema migrated
+once. `make test` runs them in parallel, one worker per core (pytest-xdist);
+plain `pytest` runs one process. To run them against a server database, point
+`MAITY_TEST_DATABASE_URL` at an empty database the suite may create and drop
+tables in:
 
 ```sh
 MAITY_TEST_DATABASE_URL=postgresql://maity:<password>@127.0.0.1/maity_test pytest
 MAITY_TEST_DATABASE_URL=mariadb://maity:<password>@127.0.0.1/maity_test pytest
 ```
+
+With `-n`, each worker gets a database of its own next to that one
+(`maity_test_gw0`, `maity_test_gw1`, …). The suite creates it through
+`MAITY_TEST_ADMIN_DATABASE_URL`, which defaults to the same URL; set it to an
+account that may create databases (on MariaDB, root, which also grants the
+test user) when the test user may not. `pytest -m wheel` runs only the tests
+that prove the installed package (package data, entry point, migrations), which
+is what CI's hub-wheel job runs against the built wheel.
 
 `scripts/measure_board.py` seeds a project (200 cards, 10 members, 2000
 events by default) and reports, per dashboard list request, the SQL
