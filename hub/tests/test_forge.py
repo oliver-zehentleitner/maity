@@ -404,3 +404,31 @@ def test_a_read_without_an_answer_is_no_longer_counted(opener: FakeOpener) -> No
     with pytest.raises(forge.ForgeUnavailableError):
         READER._get("/repos/acme/maity")
     assert forge._budgets[source].in_flight == 0
+
+
+def test_a_late_answer_from_an_earlier_window_leaves_the_new_one_alone() -> None:
+    """Across the reset: a 403 with Remaining 0 from the hour that ended, answered
+    after the new hour's first answer, neither lowers the new budget nor holds it."""
+    import time
+
+    source = forge._source(TOKEN)
+    now = time.time()
+    forge._note(source, _limits(4999, now + 3600), spent=False)
+    forge._note(source, _limits(0, now - 1), spent=True)
+    assert forge._budgets[source].remaining == 4999
+    assert forge._budgets[source].reset == int(now + 3600)
+    assert READER.retry_at() is None
+    assert forge._take(source) is None  # the new hour is read
+
+
+def test_a_retry_after_from_an_earlier_window_still_holds() -> None:
+    import time
+
+    source = forge._source(TOKEN)
+    now = time.time()
+    forge._note(source, _limits(4999, now + 3600), spent=False)
+    late = {**_limits(0, now - 1), "Retry-After": "30"}
+    forge._note(source, late, spent=True)
+    held = READER.retry_at()
+    assert held is not None and 20 < held.timestamp() - time.time() <= 31
+    assert forge._budgets[source].remaining == 4999

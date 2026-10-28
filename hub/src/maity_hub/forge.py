@@ -148,8 +148,10 @@ def _take(source: str) -> datetime | None:
 
 def _note(source: str, headers: Any, spent: bool) -> None:
     """What an answer's headers say about the source's budget; the read it answers is
-    no longer in flight. Answers arrive in any order, so within one window the lowest
-    `remaining` counts; a later reset is a new window and replaces it."""
+    no longer in flight. Answers arrive in any order: within one window (one reset)
+    the lowest `remaining` counts; a later reset is a new window and replaces it; an
+    answer from an earlier window changes nothing of the newer one, except that a
+    Retry-After it carries still holds the source that long."""
     limit, remaining = (
         _number(headers, "X-RateLimit-Limit"),
         _number(headers, "X-RateLimit-Remaining"),
@@ -159,10 +161,15 @@ def _note(source: str, headers: Any, spent: bool) -> None:
     with _budgets_lock:
         budget = _budgets.setdefault(source, _Budget())
         budget.in_flight = max(0, budget.in_flight - 1)
+        if spent and after is not None:
+            budget.until = max(budget.until, now + after)
+        older = reset is not None and budget.reset is not None and reset < budget.reset
+        if older:
+            return
+        new_window = reset is not None and (budget.reset is None or reset > budget.reset)
         if limit is not None:
             budget.limit = int(limit)
-        new_window = reset is not None and (budget.reset is None or reset > budget.reset)
-        if reset is not None and new_window:
+        if new_window:
             budget.reset = reset
         if remaining is not None:
             budget.remaining = (
@@ -173,9 +180,7 @@ def _note(source: str, headers: Any, spent: bool) -> None:
         low = (
             budget.remaining is not None and budget.limit and budget.remaining < budget.limit * LOW
         )
-        if spent and after is not None:
-            budget.until = max(budget.until, now + after)
-        elif spent or low:
+        if (spent and after is None) or low:
             budget.until = max(budget.until, _hold_until(budget, now))
 
 
