@@ -1,4 +1,6 @@
 ### Fixed
 
-- web: the end-to-end run waits for `#/all` before it opens Runners again, so
-  its Revoke can no longer land on the Runners view from before the reload.
+- web: while the next view is read and drawn, the one being left takes no
+  click or key (`inert`); a Revoke there no longer leaves the new view
+  showing the runner as active. The end-to-end run also waits for `#/all`
+  before it opens Runners again.
