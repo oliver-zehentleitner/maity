@@ -8725,7 +8725,12 @@ is one the namespace owner confirmed for it: `repository` carries
 `owner_confirmed` (boolean). Only `POST
 /projects/{owner}/{slug}/repository/confirm` confirms: the namespace
 owner, as a human acting directly (no proxy, no agent), with the step-up
-of §2.8.4; it confirms the URL the project carries at that moment. Every
+of §2.8.4, with `{"url": "<the repository URL the owner saw>"}`; it
+confirms only when that is the URL the project carries at that moment,
+otherwise it answers `409 conflict` (`details.reason:
+repository_changed`, `details.url` the current one) and
+`owner_confirmed` stays `false`, so a co-admin's change between what the
+owner saw and the click is never confirmed with it. Every
 change of the URL — a `PATCH` by anyone, the namespace owner included,
 or an import (§6.14) — sets it to `false`, and until the owner confirms
 the repository is read with the instance token alone, so only while it
