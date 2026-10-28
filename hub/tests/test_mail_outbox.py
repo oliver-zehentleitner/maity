@@ -450,3 +450,56 @@ def test_a_mail_that_fails_for_good_keeps_its_place(migrated: Engine) -> None:
     with migrated.begin() as conn:
         statuses = [r.status for r in conn.execute(select(t.mail_outbox).order_by("id"))]
     assert statuses == ["failed", "waiting"]  # the second finds the place used
+
+
+def _bodies(engine: Engine) -> list[tuple[str, str]]:
+    with engine.begin() as conn:
+        rows = conn.execute(select(t.mail_outbox).order_by(t.mail_outbox.c.id)).all()
+    return [(r.status, r.body) for r in rows]
+
+
+def test_a_mail_that_is_out_keeps_no_text_in_the_table(migrated: Engine) -> None:
+    """The text carries the mail's links; a row that left the queue keeps its recipient,
+    not the text, and a row still in it keeps the text it still has to send."""
+    server = FakeSmtp(Script())
+    try:
+        with migrated.begin() as conn:
+            queue(conn)
+        assert _bodies(migrated) == [("waiting", "b\n")]
+        outbox.send_due(migrated, mail_env(server.port).mail, None)
+        assert _bodies(migrated) == [("sent", "")]
+    finally:
+        server.close()
+    refusing = FakeSmtp(Script(rcpt_reply="550 5.1.1 no such user"))
+    try:
+        with migrated.begin() as conn:
+            queue(conn)
+        outbox.send_due(migrated, mail_env(refusing.port).mail, None)
+    finally:
+        refusing.close()
+    assert _bodies(migrated)[-1] == ("failed", "")
+
+
+def test_a_retried_mail_keeps_its_text_until_it_is_dropped(migrated: Engine) -> None:
+    hub = mail_env(1)  # nothing listens: the instance's failure, retried
+    with migrated.begin() as conn:
+        row = queue(conn)
+    outbox.send_due(migrated, hub.mail, None)
+    assert _bodies(migrated) == [("waiting", "b\n")]
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.mail_outbox)
+            .where(t.mail_outbox.c.id == row)
+            .values(created_at=clock.now() - timedelta(hours=25), not_before=clock.now())
+        )
+    outbox.send_due(migrated, hub.mail, None)
+    assert _bodies(migrated) == [("dropped", "")]
+
+
+def test_a_sign_in_mail_dropped_over_its_budget_keeps_no_text(migrated: Engine) -> None:
+    hub = mail_env(1)
+    with migrated.begin() as conn:
+        spent(conn, "sign_in", admitted=10_000)
+        queue(conn, "sign_in")
+    outbox.send_due(migrated, hub.mail, None)
+    assert _bodies(migrated) == [("dropped", "")]
