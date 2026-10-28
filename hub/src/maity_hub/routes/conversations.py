@@ -361,12 +361,11 @@ def list_conversations(
         mine = _reader(conn, caller, slug)
         items = []
         if isinstance(mine, Membership):
-            items = conversation_list.direct_entries(
-                conn, mine, caller, _owned_agents(conn, mine, caller)
-            )
-            items += conversation_list.group_entries(conn, mine, observed)
+            owned = conversation_list.owned_agents(conn, [mine], caller)
+            items = conversation_list.direct_entries(conn, [mine], caller, owned)
+            items += conversation_list.group_entries(conn, [mine], observed)
         elif observed:  # an owner outside: exactly its agents' chats, on request (§9.2)
-            items = conversation_list.group_entries(conn, mine, True)
+            items = conversation_list.group_entries(conn, [mine], True)
         items.sort(key=lambda i: (i["_activity"], i["id"]), reverse=True)
         bound = paging.scope(observed=observed)
         if cursor is not None:
@@ -379,8 +378,70 @@ def list_conversations(
             else None
         )
         for item in page:
-            del item["_activity"]
+            del item["_activity"], item["_project"]
         return JSONResponse({"items": page, "next_cursor": next_cursor})
+
+
+@router.get("/me/conversations")
+def list_my_conversations(
+    request: Request,
+    caller: AnyCaller,
+    observed: bool = False,
+    limit: int = Query(default=PAGE_DEFAULT, ge=1, le=PAGE_MAX),
+    cursor: str | None = None,
+) -> JSONResponse:
+    """The conversations the human has in every project it is an active member of, as
+    one list, newest activity first, then by project name and id (§9.3, "Across
+    projects")."""
+    if caller.kind == "agent":
+        raise humans_only("the chat overview across projects is for humans")
+    if caller.kind != "human" or caller.human_id is None:
+        raise forbidden()
+    with engine_of(request).begin() as conn:
+        mines = conversation_list.memberships(conn, caller.human_id)
+        owned = conversation_list.owned_agents(conn, mines, caller)
+        items = conversation_list.direct_entries(conn, mines, caller, owned)
+        items += conversation_list.group_entries(conn, mines, observed)
+        names = namespace.full_names(conn, [i["_project"] for i in items])
+        by_project = {m.project.id: m.project for m in mines}
+        for item in items:
+            item["_name"] = names[item["_project"]]
+        # Newest first; where the moment is the same, by project name and id.
+        items.sort(key=lambda i: (i["_name"], i["id"]))
+        items.sort(key=lambda i: i["_activity"], reverse=True)
+        counted = [i for i in items if i["unread"] is not None]
+        totals = {
+            "unread": sum(i["unread"] for i in counted),
+            "mentions_unread": sum(i["mentions_unread"] for i in counted),
+        }
+        bound = paging.scope(me=True, observed=observed)
+        if cursor is not None:
+            at, after = paging.uncursor(cursor, bound)
+            name, _, after_id = after.partition("\x1f")
+            items = [
+                i
+                for i in items
+                if i["_activity"] < at
+                or (i["_activity"] == at and (i["_name"], i["id"]) > (name, after_id))
+            ]
+        page = items[:limit]
+        next_cursor = (
+            paging.cursor(page[-1]["_activity"], f"{page[-1]['_name']}\x1f{page[-1]['id']}", bound)
+            if len(items) > limit
+            else None
+        )
+        for item in page:
+            full_name = item.pop("_name")
+            project = by_project[item["_project"]]
+            owner, _, slug = full_name.partition("/")
+            item["project"] = {
+                "owner": owner,
+                "slug": slug,
+                "full_name": full_name,
+                "name": project.name,
+            }
+            del item["_activity"], item["_project"]
+        return JSONResponse({"items": page, "next_cursor": next_cursor, "totals": totals})
 
 
 PACKET_CONVERSATIONS = 50  # in the resume packet (§5.2)
@@ -390,8 +451,9 @@ PACKET_FIELDS = ("id", "kind", "title", "unread", "mentions_unread", "last_messa
 def conversation_packet(conn: Connection, mine: Membership, caller: Caller) -> list[dict[str, Any]]:
     """`conversations` of the resume packet: the agent's direct one and its group chats,
     newest activity first, at most 50, with the list's counts (§5.2, §9.3)."""
-    items = conversation_list.direct_entries(conn, mine, caller, _owned_agents(conn, mine, caller))
-    items += conversation_list.group_entries(conn, mine, False)
+    owned = conversation_list.owned_agents(conn, [mine], caller)
+    items = conversation_list.direct_entries(conn, [mine], caller, owned)
+    items += conversation_list.group_entries(conn, [mine], False)
     items.sort(key=lambda i: (i["_activity"], i["id"]), reverse=True)
     return [{k: i[k] for k in PACKET_FIELDS} for i in items[:PACKET_CONVERSATIONS]]
 
