@@ -38,29 +38,42 @@ After a malicious job the machine is reinstalled; the hook below cannot make it 
 - A user of its own with no `sudo`, no group of the people who work on the machine, and no
   read access to their homes (`sudo -u <runner-user> ls /home/<other>` must fail). No
   deploy keys, kubeconfig or tokens of the project anywhere that user can read.
-- The runner's files (`~/actions-runner` with `run.sh`, the hook, the registration files
-  `.runner` and `.credentials*`, and the user unit) are owned by another user and only
-  readable for the runner user; the runner user owns just `_work`, `_diag`, `_temp` and its
-  Docker data. A job that can rewrite the hook or `run.sh` takes over every later job.
+- The runner lives outside the runner user's home and is owned by root:
+  `/opt/actions-runner` (with `run.sh`, `bin/`, the registration files `.runner` and
+  `.credentials*`), the hook in `/opt/maity-runner-hooks/` (not inside the runner's own
+  directory, which GitHub's documentation advises against), and the unit in
+  `/etc/systemd/system/`. The runner user owns only `/opt/actions-runner/_work`, `_diag` and
+  `_temp` (and its Docker data under its home). A job that could rewrite the hook, `run.sh` or
+  the unit would take over every later job, and in the runner user's own home it could
+  rename a directory and put its own in the place, or override a user unit through its own
+  systemd manager. That is why the unit is a system unit with `User=<runner-user>`.
 - Rootless Docker for that user (`dockerd-rootless-setuptool.sh install`): the jobs'
   `services:` (PostgreSQL, MariaDB) need a Docker API, and the Docker group would be root.
   The services bind to `127.0.0.1` only, with their images pinned by digest in `ci.yml`.
 - A firewall rule per user that keeps the runner user away from local services and the
-  internal network, for example `iptables -A OUTPUT -m owner --uid-owner <runner-user>
-  -d 127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16 -j REJECT` (with the loopback
-  ports of its own Docker services allowed first).
+  internal network, IPv4 and IPv6, for example
+  `iptables -A OUTPUT -m owner --uid-owner <uid> -d 127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16 -j REJECT`
+  and `ip6tables -A OUTPUT -m owner --uid-owner <uid> -d ::1/128,fc00::/7,fe80::/10 -j REJECT`,
+  with the loopback ports of its own Docker services allowed first.
 - The tool cache (Python from `setup-python`) is kept between jobs and is writable for the
   runner user: a job can replace it for the later ones. That is part of the boundary above.
 
 ## Install
 
-1. Create the user, enable lingering, install rootless Docker (see above).
-2. On GitHub: Settings → Actions → Runners → New self-hosted runner (Linux x64). Unpack it
-   to `~/actions-runner` and run `config.sh --url <repo> --labels maity-hub --unattended`
-   with the registration token from that page, then hand the files over as described above.
-3. Copy `job-completed.sh` and `maity-runner.service` from here to `~/actions-runner/` and
-   `~/.config/systemd/user/`, then `systemctl --user enable --now maity-runner`. The unit
-   uses `KillMode=control-group`, so a restart also ends processes a job left behind.
+1. Create the user (`<runner-user>`, uid `<uid>`), enable lingering, install rootless Docker
+   for it (see above).
+2. On GitHub: Settings → Actions → Runners → New self-hosted runner (Linux x64). As root,
+   unpack it to `/opt/actions-runner` and run `config.sh --url <repo> --labels maity-hub
+   --unattended --disableupdate` with the registration token from that page. The runner's
+   self-update would write into its own directory, which the runner user may not; update it
+   by hand, as root, when GitHub asks for a newer version. Then `chown -R root:root
+   /opt/actions-runner` and `chown <runner-user> /opt/actions-runner/_work
+   /opt/actions-runner/_diag /opt/actions-runner/_temp` (create them if missing).
+3. Put `job-completed.sh` into `/opt/maity-runner-hooks/` (root-owned, executable) and
+   `maity-runner.service` into `/etc/systemd/system/` with `<runner-user>` and `<uid>` filled
+   in, then `systemctl enable --now maity-runner`. The unit uses `KillMode=control-group`.
+   The hook's output is shown in the job log (step "Complete runner"), which anyone can
+   read in a public repository.
 4. Set `HUB_RUNNER` to `["self-hosted","maity-hub"]`, and the fork-approval setting above.
 
 ## Why not an ephemeral runner

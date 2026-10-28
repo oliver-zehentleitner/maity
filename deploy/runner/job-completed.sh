@@ -1,7 +1,9 @@
 #!/bin/bash
 # ACTIONS_RUNNER_HOOK_JOB_COMPLETED: tidy up after a job. This is housekeeping, not a
 # boundary: a job runs as the runner user and can leave things this script does not reach
-# (see README.md). Failures go to stderr, i.e. the journal of the user unit.
+# (see README.md). Install it OUTSIDE the runner's directory (/opt/maity-runner-hooks/).
+# Its output lands in the job's log, the step "Complete runner", which is public in a
+# public repository: it prints only what is safe to publish.
 # Runs as the runner's own user; its Docker is the rootless one of that user.
 : "${RUNNER_WORKSPACE:?RUNNER_WORKSPACE not set, nothing cleaned}"
 : "${RUNNER_TEMP:?RUNNER_TEMP not set, nothing cleaned}"

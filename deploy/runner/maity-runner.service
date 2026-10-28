@@ -1,20 +1,25 @@
-# systemd USER unit of the runner user (loginctl enable-linger <user>); install as
-# ~/.config/systemd/user/maity-runner.service, then: systemctl --user enable --now maity-runner
+# systemd SYSTEM unit (root-owned, /etc/systemd/system/maity-runner.service). The runner
+# runs as its own user, but the unit, the runner files and the hook are not the runner
+# user's to change. Replace <runner-user> and <uid> (see README.md).
 [Unit]
 Description=GitHub Actions runner for the Maity database jobs
-After=docker.service network-online.target
-Wants=docker.service
+After=network-online.target user@<uid>.service
+Wants=network-online.target
+Requires=user@<uid>.service
 
 [Service]
-WorkingDirectory=%h/actions-runner
-Environment=DOCKER_HOST=unix://%t/docker.sock
-Environment=ACTIONS_RUNNER_HOOK_JOB_COMPLETED=%h/actions-runner/job-completed.sh
-ExecStart=%h/actions-runner/run.sh
+User=<runner-user>
+WorkingDirectory=/opt/actions-runner
+# The rootless Docker of the runner user (lingering keeps it running).
+Environment=DOCKER_HOST=unix:///run/user/<uid>/docker.sock
+Environment=ACTIONS_RUNNER_HOOK_JOB_COMPLETED=/opt/maity-runner-hooks/job-completed.sh
+ExecStart=/opt/actions-runner/run.sh
 Restart=always
 RestartSec=10
+# A restart also ends the processes a job left behind.
 KillMode=control-group
 KillSignal=SIGTERM
 TimeoutStopSec=5min
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
