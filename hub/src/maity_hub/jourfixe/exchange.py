@@ -130,7 +130,7 @@ def _post_message(
     """One message in the round's thread, to its participants; it wakes nobody."""
     conversation = group_chats.find(conn, round_row.project_id, round_row.conversation_id)
     # The participants, and every human owner, who reads along (§20.5).
-    audience = [*group_chats.audience(group_chats.stays(conn, conversation.id)), "role:owner"]
+    audience = [*group_chats.audience(group_chats.stays(conn, conversation.id)), "trust:owner"]
     payload = {
         "type": "chat",
         "to": conversation.id,
@@ -510,7 +510,7 @@ def _close_exchange(conn: Connection, round_row: Any, steps: list[dict[str, Any]
         "jour_fixe_exchange_closed",
         [
             *rounds.wake_now(conn, round_row.project_id, round_row.moderator["member_id"]),
-            "role:owner",
+            "trust:owner",
         ],
         {"round_id": round_row.id, "report_due_at": clock.rfc3339(due)},
         subject=("jour_fixe", round_row.id),

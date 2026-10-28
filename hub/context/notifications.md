@@ -182,3 +182,168 @@ rows, and the contract wants them deleted with the next write anyway.
 - Deleting the removed kinds from every row in a migration: a data migration over every
   human's row for settings that already govern nothing, and §18.4 asks for the next
   `PATCH`.
+
+## A link in a mail is a signed token the hub stores nothing for; a page for a token that is not ours says nothing about anyone
+
+**Id:** aaf1d325-deae-4409-9014-4927505d414e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §18.6; the implementation of tsk-32jx98jzne6z, part 2b of the re-cut of #280, 2026-10-27
+**Revisit when:** a link must be used once only (the unsubscribe token has no nonce, so a mail can be replayed until the address changes), or the signing key is rotated
+
+A token is the base64url of a JSON object with sorted keys and an HMAC-SHA-256 over it with
+the instance's `MAITY_MAIL_SIGNING_KEY` (`notifications.tokens`); it is read only when
+the key exists, the length is under 1024, the MAC matches in constant time and the payload is
+an object. The unsubscribe token carries `{human, purpose, kind, epoch}` and nothing is stored
+for it: it works until the human's `epoch` moves. The pages (`routes/mail_links.py`) answer
+`not_found` with one text for every reason, and take the human's language only from a token
+the hub signed itself, else English.
+
+**Reason:** nothing to store or clean up for a link that may sit in a mailbox for years, and
+the page of a forged token must not tell a stranger which handle or language an id has.
+A repeated unsubscribe is harmless (the kind is off already), so a nonce would buy no
+safety here, while a verify or reset link, which change things once, carry one (§18.6).
+
+**Rejected alternatives:**
+- A stored unsubscribe token per mail: a table that only grows, for a link whose second use
+  does nothing.
+- Telling the reason a link is dead ("expired", "already used"): it separates a guessed token
+  from a real one, which §18.6 forbids.
+
+## One account per address: a unique normalized column, claimed under a row of `address_lock`
+
+**Id:** ea46fd15-c3f9-49a6-bece-44f472471aed
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §18.4 and §2.7.1; the implementation of tsk-32jx98jzne6z, part 3 of the re-cut of #280, 2026-10-27
+**Revisit when:** the hub runs more than one replica on an engine whose row lock differs from the three the tests run on
+
+`notification_settings.address_normalized` holds the verified address trimmed and
+lower-cased, under a unique constraint. Verifying an address first locks the address's row
+in `address_lock` (inserted if absent, then `SELECT ... FOR UPDATE`), checks that no other
+account holds it, and writes it. A link for an address another account claimed meanwhile is
+the dead-link page and changes nothing. Removing the address clears the column, which frees
+the address. Setting a pending address claims nothing. A registration's completion claims
+its address the same way (`preferences.claim_verified`, called by
+`registration_accounts.claim_address`), under the same lock; the loser makes no account.
+
+**Reason:** the contract asks for a unique constraint as the guard and a lock that
+verification, address change and registration share. A lock row per address serializes
+exactly the contenders for one address, and the constraint still catches anything that
+skips the lock. Until this claim existed, no registration could complete (the stand-in
+answered `False` and failed closed).
+
+**Rejected alternatives:**
+- The unique constraint alone, catching the violation: it works, but the contract names the
+  shared lock, and registration needs it to void the other pending registrations in the same
+  transaction.
+- A lock on the human's row: it would not serialize two accounts racing for one address.
+
+## Notification mail is planned per human once a minute from the derived items, each item mailed once; a human whose notifications did not move is not derived again
+
+**Id:** de75f59b-21f5-4a26-8ab4-9819c23c6228
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §18.4, §18.5, §2.6.5; the implementation of tsk-32jx98jzne6z, part 4 of the re-cut of #280, 2026-10-27; the incident of 2026-10-26 (a per-call cost that grew with history)
+**Revisit when:** many humans make one pass longer than a minute, or the bell gets a cheaper way to say that nothing moved than `listing.stamp`
+
+`maity_hub.notifications.mailer` runs once a minute. For each human with a verified address
+it first reads `listing.stamp` (a few aggregates, the one the bell's long-poll compares).
+If it equals the stamp of the last pass, no item was left waiting for its hour or day
+(`notification_mail_state.waiting`) and the human is not held over the budget, the pass
+ends there. Otherwise it derives the unread items as the bell does and keeps those not yet
+in `mail_item_sent` and not older than the address's `verified_at`; the open matters
+`registration_pending` and `mail_disabled` are never mailed (§18.5). A new sign-in goes out
+at once as a security mail. Outside quiet hours, `immediate` items go out together once the
+oldest is two minutes old, unless ten notification mails left in the past hour; then they
+join the hour's digest. `hourly` and `daily` digests go out when the full hour or `daily_at`
+(in the human's time zone) has passed since the last one, recorded in
+`notification_mail_state`. A human's first pass only starts those two clocks. When the
+notification mail of the past hour, sent or waiting, reaches the instance's `max_per_hour`,
+nothing is queued for the human; their items stay pending and the first pass with room again
+sends everything due in one mail (§18.5, "merged into each human's next mail"). A kind set
+to `off` leaves nothing waiting, so it never keeps a human's passes deriving. The text of a
+`chat` or `mention` message, where the human asked for it, is read from the event, never
+from a redacted one.
+
+**Reason:** deriving from the same items as the bell keeps a mail from ever saying more than
+the human may read at the moment it is built (§18.5, freshness). A row per mailed item is the
+simplest guard against sending twice across passes and restarts. Starting from `verified_at`
+keeps a newly confirmed address from receiving a month of backlog. The stamp is what the
+bell already trusts to say that an answer cannot have changed; reusing it means a pass for a
+human who did nothing costs a few aggregate reads and not thirty days of every project, which
+the incident of 2026-10-26 showed does not scale.
+
+**Rejected alternatives:**
+- Mailing from event hooks at write time: the readability check would be the event's, not
+  the mail's, and quiet hours and digests would need a queue anyway.
+- Deriving every verified human on every pass, as the first version did: simple, but a cost
+  per minute that grows with the humans' histories, the shape the incident was about.
+- Letting mails over the instance budget wait in the outbox: simpler, but it can mean two
+  mails where §18.5 asks for one (the first version, changed before review).
+
+## Changing or removing the verified address, and approving a held change, take the step-up the caller gives in
+
+**Id:** b4c0e7a3-61d8-4f29-9a5e-0d83f7b1c2e6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.8.4; the card tsk-9z1m4tcz1e98 (the follow-up of the review of #471), 2026-10-28
+**Revisit when:** another operation on the address becomes sensitive, or the held change moves to a place where `second_factor.require_step_up` cannot be given as a callable
+
+`preferences.patch` and `preferences.decide_held` take a `step_up` callable that the routes fill
+with `second_factor.require_step_up(conn, hub, caller)`. It is called where the change is known to
+move a verified address (`_change_address`: the address is verified, or disabled, and the wanted one
+differs, a removal included), and for the approval of a held change, first, so a refusal changes
+nothing and counts no wrong password. Rejecting a held change asks for nothing: it only
+withholds a change and §2.8.4 names the approval. Setting the first address, sending the same one
+again and every other setting are not sensitive. A human who is not enrolled is never asked (that
+is `require_step_up`'s own rule). The parameter has no default, so a caller that forgets it does not
+compile in the type check.
+
+**Reason:** the address is what a mailed reset and a mailed link are proved by, so whoever can move
+it with a stolen session can take the account's mail; the second factor is the one thing that
+session does not hold. The check lives where the change is decided rather than at the route because
+only there is it known that the address moves (a request with the same address does not). The
+callable keeps `preferences` free of the caller and the hub settings.
+
+**Rejected alternatives:**
+- A step-up on every `PATCH /me/notification-settings`: it would ask for the factor to switch a
+  mail mode, which §2.8.4 does not list.
+- Asking only on approval of the held change and on the removal: a change with the password from a
+  full session is the main way an address moves, and it is the first thing §2.8.4 lists.
+
+## A change of the second factor and wrong second-factor codes are security items, each mailed on its own
+
+**Id:** 3e9a6f12-8c47-4b05-a1d3-52c7e0b9f8a6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.8.1, §18.1 (the `security` row), §18.5; the implementation of #380, part 3, 2026-10-28
+**Revisit when:** a third kind of security record needs a mail (the list in `mailer.SECURITY_MAIL` and the titles in `items._two_factor_title` are the places), or the security mail of a sign-in and of these records should share one builder
+
+The account records `second_factor_changed` and `second_factor_failed` (`records.SECURITY`)
+become `security` items with the titles of §18.1 (`items._two_factor_title`; a `change` this
+hub does not know reads "Two-factor sign-in changed", never a guess), and the mail pass sends each
+of them as a security mail of its own, as it does a new sign-in: not batched, not held by quiet
+hours, one mail per item (`mail_item_sent`), only while the human's `security` mode is
+`immediate`, with the subject `[Maity] <title>`, the time, the link to Profile → Security and the
+unsubscribe line of the `security` kind. The bell confirms them like the other security items
+(`listing._may_mark`: from a session in good standing that is older than the item). The mail
+carries no code, no secret and no link that changes anything.
+
+**Reason:** the contract says every change of the factor "sends the security mail of §18.5" and
+that security mail is never batched, so the digest path (`_send`) is the wrong one; the sign-in
+alert already has the shape (one item, one mail, its own budget), and the two-factor mail reuses
+it with a different body. Keeping the title as the subject and the body's first line means a
+reader sees what happened without opening the dashboard, which is what these mails are for.
+
+**Rejected alternatives:**
+- Putting these items in the digest like `inbox` items: a change a human did not make would then
+  wait for an hour or a day to be told.
+- One generic security-mail builder for the sign-in and these records: the sign-in's body
+  carries method, browser, system and address and the others do not, so a shared builder would be
+  a switch inside; two short functions are clearer.

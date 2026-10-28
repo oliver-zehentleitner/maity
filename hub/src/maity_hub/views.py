@@ -42,6 +42,15 @@ def human_member(row: Any, *, avatar_url: str | None) -> dict[str, Any]:
     }
 
 
+MEAT_PROXY_NOTE = "This person says: I am a meat proxy."
+
+
+def meat_proxy_view(on: bool) -> dict[str, Any]:
+    """The resume packet's two fields (docs/api.md §5.2, "Meat proxy"): the flag, and while it is on
+    the one fixed sentence and nothing that says what it means."""
+    return {"meat_proxy": on, **({"meat_proxy_note": MEAT_PROXY_NOTE} if on else {})}
+
+
 def owner_handles(conn: Connection, owner_ids: Iterable[str]) -> dict[str, str]:
     """Per human id its handle: the first half of an agent's global name (§6.3)."""
     ids = set(owner_ids)
@@ -79,6 +88,7 @@ def repository(project: Any, settings: Settings) -> dict[str, Any] | None:
         "probe_configured": forge.Forge(settings.forge_github_token).configured_for(
             project.repository_url
         ),
+        "owner_confirmed": bool(project.repository_owner_confirmed),
     }
 
 
@@ -106,16 +116,21 @@ def project_view(
     owner_handle: str,
     shown: dict[str, Any] | None = None,
     export: dict[str, Any] | None = None,
+    aliases: list[str] | None = None,
+    stored: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     """`owner_handle` is the namespace owner's current handle (§6.25), `shown` what
     `images.views` says the project shows as logo and banner, `export` the Keep the Why
-    export as `ktw.export_for_view` holds it."""
+    export as `ktw.export_for_view` holds it, `aliases` the former full names, oldest
+    first, `stored` the attachments `{used, quota}` for a caller with `project:admin`
+    (§8.7) and None for anyone else."""
     shown = shown or {}
     return {
         "id": project.id,
         "owner": {"id": project.owner_id, "handle": owner_handle},
         "full_name": f"{owner_handle}/{project.slug}",
         "slug": project.slug,
+        "aliases": aliases or [],
         "legacy_slug": project.legacy_slug,
         "name": project.name,
         "state": project.state,
@@ -126,6 +141,7 @@ def project_view(
         "banner": shown.get("banner", NO_IMAGE),
         "keep_the_why": project.keep_the_why,
         "keep_the_why_export": export,
+        "attachments": stored,
         "policy": policy.of(project),
         "absence": absence(project),
         "settings": {
@@ -351,6 +367,7 @@ def member_views(
         )
         view: dict[str, Any] = {
             **head,
+            "trust": row.trust,
             "role": row.role,
             "reports_to": principals.get(row.reports_to) if row.reports_to is not None else None,
             "areas": row.areas,
@@ -492,7 +509,7 @@ def agent_view(
     """The agent profile (§6.3), for its owner; `picture` from `avatars.states` when a
     list has looked them up together."""
     memberships = conn.execute(
-        select(t.project.c.id, t.project.c.slug, t.membership.c.role)
+        select(t.project.c.id, t.project.c.slug, t.membership.c.trust, t.membership.c.role)
         .join(t.project, t.project.c.id == t.membership.c.project_id)
         .where(t.membership.c.agent_id == row.id, t.membership.c.active.is_(True))
         .order_by(t.project.c.slug)
@@ -509,7 +526,7 @@ def agent_view(
         "owner_id": row.owner_id,
         "git_identity": git_identity(row),
         "memberships": [
-            {"project": names[m.id], "role": m.role} for m in memberships
+            {"project": names[m.id], "trust": m.trust, "role": m.role} for m in memberships
         ],  # full names (§6.25)
         "created_at": ts(row.created_at),
         "deleted_at": ts(row.deleted_at),  # a tombstone: handle and name kept (§6.3)
@@ -561,6 +578,7 @@ def join_view(conn: Connection, row: Any) -> dict[str, Any]:
     return {
         "id": row.id,
         "agent_id": row.agent_id,
+        "trust": row.trust,
         "role": row.role,
         "created_by": row.created_by,
         "created_at": ts(row.created_at),
@@ -705,7 +723,7 @@ def event_view(conn: Connection, row: Any) -> dict[str, Any]:
 def sees_reasons(reader: Any) -> bool:
     """A redaction's reason reaches the human owners and admins (§8.5); the redactor
     reads its own reason in any case."""
-    return reader is not None and reader.kind == "human" and reader.role in ("owner", "admin")
+    return reader is not None and reader.kind == "human" and reader.trust in ("owner", "admin")
 
 
 def sees_chat_reasons(reader: Any, group_readers: set[str] | None = None) -> bool:

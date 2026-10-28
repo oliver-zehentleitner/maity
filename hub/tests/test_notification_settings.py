@@ -125,14 +125,6 @@ def test_the_settings_are_per_human(make_client: ClientFactory, migrated: Engine
     assert second.get(S).json()["email"]["language"] == "en"
 
 
-def test_the_address_cannot_be_set_yet(make_client: ClientFactory, migrated: Engine) -> None:
-    owner = signed_in(make_client, migrated)
-    refused = owner.patch(S, {"email": {"address": "me@example.org"}})
-    assert refused.status_code == 400
-    assert refused.json()["error"]["details"]["fields"] == {"email.address": "not_available"}
-    assert owner.get(S).json()["email"]["address"] is None
-
-
 def test_kinds_removed_on_2026_10_26_are_dropped_on_read_and_deleted_on_patch(
     make_client: ClientFactory, migrated: Engine
 ) -> None:

@@ -34,7 +34,7 @@ URL_MAX = 2048
 TOKENS_MAX = 20
 AREAS_MAX = 20
 ENVIRONMENT_MAX = ticker.ENVIRONMENT_MAX
-TOKEN = re.compile(r"^(member|role|area):\S{1,255}$")
+TOKEN = re.compile(r"^(member|role|trust|area):\S{1,255}$")
 
 
 def _https(value: Any) -> bool:
@@ -71,7 +71,7 @@ def _check(conn: Connection, mine: Membership, body: PostIn) -> Any:
     kind = body.type
     if kind is None:
         errors["type"] = "required"
-    elif kind in ("merge", "decision"):
+    elif kind in ("merge", "decision", "rename"):
         errors["type"] = "not_for_type"
     elif kind not in ("note", "deploy", "release"):
         errors["type"] = "invalid"

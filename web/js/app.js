@@ -64,12 +64,15 @@ window.Maity = window.Maity || {};
   M.views = M.views || {};
 
   // Counts and the open list are re-read on this interval (docs/api.md
-  // §5.1: /me after an answer and on an interval).
-  const POLL_MS = 15000;
+  // §5.1: /me after an answer and on an interval), only while the tab is
+  // shown; a tab shown again catches up within BACK_MS (context/refresh.md).
+  const POLL_MS = 60000;
+  const BACK_MS = 5000;
+  const hidden = () => document.visibilityState === "hidden";
 
-  // The open project's events are read on this interval, with wait=0; see
-  // context/refresh.md for why not the long-poll.
-  const EVENTS_MS = 5000;
+  // The open project's events are read on this interval, with wait=0, while
+  // the tab is shown; see context/refresh.md for why not the long-poll.
+  const EVENTS_MS = 15000;
   const EVENTS_PAGE = 200;
 
   // Events that change the header of every project view.
@@ -387,8 +390,10 @@ window.Maity = window.Maity || {};
     const status = statusLine();
     const briefing = h("textarea", { id: "onboarding-briefing", rows: "6", "aria-describedby": "onboarding-hint" }, current.briefing || "");
     const choices = [{ value: "", label: "No check-in" }, { value: "coordinator", label: "Coordinator" }]
-      .concat(["owner", "admin", "member", "reviewer", "proxy"].map((role) => ({ value: "role:" + role, label: "Role: " + role })))
-      .concat(ctx.members.filter((m) => !m.removed_at).map((m) => ({ value: m.id, label: "Member: @" + M.dom.handleOf(ctx, m) + " (" + m.kind + ")" })));
+      // §6.1: trust:owner, trust:admin or a role; never a guest (§2.3).
+      .concat(["owner", "admin"].map((trust) => ({ value: "trust:" + trust, label: "Trust: every " + trust })))
+      .concat(M.trust.ROLES.map((role) => ({ value: "role:" + role, label: "Role: every " + role })))
+      .concat(ctx.members.filter((m) => !m.removed_at && !M.trust.guest(m)).map((m) => ({ value: m.id, label: "Member: @" + M.dom.handleOf(ctx, m) + " (" + m.kind + ")" })));
     if (current.check_in_with && !choices.some((c) => c.value === current.check_in_with)) {
       choices.push({ value: current.check_in_with, label: "Unavailable member: " + current.check_in_with });
     }
@@ -478,6 +483,9 @@ window.Maity = window.Maity || {};
     }
     if (ctx.canAdmin && ctx.project.settings && "onboarding" in ctx.project.settings) append(panel, onboardingForm(ctx));
     if (ctx.canAdmin && "repository" in ctx.project) append(panel, repositoryForm(ctx));
+    // Its name: rename and transfer, for a human owner where the hub has them (§6.25).
+    const names = M.projectNames && M.projectNames.section(ctx);
+    if (names) append(panel, names);
     // A policy field, humans only (§2.3 ʰ); where the hub knows it (§6.22).
     if (humanAdmin && M.swarm && ctx.project.policy && "swarm_public" in ctx.project.policy) append(panel, M.swarm.settingsForm(ctx, save));
     if ("memory" in ctx.project && M.projectSetup) append(panel, memoryPanel(ctx));
@@ -559,7 +567,7 @@ window.Maity = window.Maity || {};
     }
     const box = h("div", { class: "images" }, h("h2", { class: "panel-title" }, "Logo and banner"));
     [["logo", "Logo", "Square; shown next to the project's name everywhere."],
-      ["banner", "Banner", "Wide; shown at the top of the project's inbox."]].forEach(([kind, label, hint]) => {
+      ["banner", "Banner", "2:1, like a forge's social preview (ideally 1280×640); shown at the top of the project's inbox."]].forEach(([kind, label, hint]) => {
       const view = ctx.project[kind] || { available: false, source: null };
       const url = M.api.imageUrl(ctx.slug, kind, view);
       const id = "upload-" + kind;
@@ -1193,11 +1201,12 @@ window.Maity = window.Maity || {};
       throw new M.api.ApiError("You are not a member of the project " + where.slug, 404, "/me", "not_found");
     }
     ctx.slug = where.slug;
+    // Trust × role (docs/api.md §2.3): owner and admin hold project:admin and
+    // members:admin for a human; absence is the owner's alone.
+    ctx.trust = mine.trust;
     ctx.role = mine.role;
-    // A human's owner and admin memberships hold project:admin and
-    // members:admin (docs/api.md §2.3); absence is the owner's alone.
-    ctx.canAdmin = mine.role === "owner" || mine.role === "admin";
-    ctx.isOwner = mine.role === "owner";
+    ctx.canAdmin = M.trust.governs(mine);
+    ctx.isOwner = M.trust.owner(mine);
     ctx.base = "/projects/" + M.api.projectPath(where.slug);
     ctx.link = (view, ...rest) => projectLink(where.slug, view, ...rest);
     // The event head is read before the view's data, so that nothing that
@@ -1221,7 +1230,7 @@ window.Maity = window.Maity || {};
     const mine = ctx.projects.find((p) => p.full_name === slug);
     if (!mine) throw new M.api.ApiError("You are not a member of the project " + slug, 404, "/me", "not_found");
     const pctx = Object.assign({}, ctx, {
-      slug, role: mine.role, canAdmin: mine.role === "owner" || mine.role === "admin", isOwner: mine.role === "owner",
+      slug, trust: mine.trust, role: mine.role, canAdmin: M.trust.governs(mine), isOwner: M.trust.owner(mine),
       base: "/projects/" + M.api.projectPath(slug), listeners: [], outsider: false,
     });
     pctx.onEvents = (fn) => { pctx.listeners.push(fn); };
@@ -1289,7 +1298,11 @@ window.Maity = window.Maity || {};
     }
     const failed = (err) => append(clear(failLine), h("p", { class: "send-status failed" }, "Could not refresh: " + err.message));
     if (notifyError) { append(failLine, h("p", { class: "send-status failed" }, "Could not read your notifications: " + notifyError.message)); notifyError = null; }
-    ctx.every(POLL_MS, () => counts().then(() => clear(failLine), failed));
+    // A hidden tab asks nothing; shown again, it reads what it missed.
+    let missed = false;
+    const poll = () => { missed = false; return counts().then(() => clear(failLine), failed); };
+    ctx.every(POLL_MS, () => { if (hidden()) { missed = true; return null; } return poll(); });
+    ctx.every(BACK_MS, () => (missed && !hidden() ? poll() : null));
     // A changed count is answered by reloading; an answer given here
     // updates what counts as seen.
     ctx.markSeen = () => { seen = openNow(); };
@@ -1305,8 +1318,10 @@ window.Maity = window.Maity || {};
       if (events.some((e) => REQUEST_KINDS.test(e.kind))) counts().catch(failed);
     });
     let reading = false;
-    ctx.every(EVENTS_MS, async () => {
+    let eventsMissed = false;
+    const read = async () => {
       if (reading) return;
+      eventsMissed = false;
       reading = true;
       try {
         await readEvents(ctx);
@@ -1316,7 +1331,11 @@ window.Maity = window.Maity || {};
       } finally {
         reading = false;
       }
-    });
+    };
+    // A hidden tab reads no events; shown again, it reads what it missed
+    // within BACK_MS, from the cursor.
+    ctx.every(EVENTS_MS, () => { if (hidden()) { eventsMissed = true; return null; } return read(); });
+    ctx.every(BACK_MS, () => (eventsMissed && !hidden() ? read() : null));
   }
 
   // Reads every event after the cursor, page by page, and hands them on.
@@ -1373,6 +1392,11 @@ window.Maity = window.Maity || {};
     // deploy, the next navigation asks it again.
     M.api.absent.clear();
     const main = document.getElementById("main");
+    // The view being left stays on screen until the next one is drawn, but
+    // takes no click or key any more: an action there (a Revoke) would be
+    // answered into a view that is gone, while the new one shows what it read
+    // before. Every way out of render() replaces main or renders again.
+    Array.from(main.childNodes).forEach((n) => { if (n.setAttribute) n.setAttribute("inert", ""); });
     let where = { scope: "unknown" };
     let ctx;
     try {

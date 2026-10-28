@@ -18,6 +18,10 @@ window.Maity = window.Maity || {};
 (function (M) {
   const { h, append, clear } = M.dom;
   const SETTLE_MS = 400;
+  // No project feed here: the notification counts say a chat changed. They
+  // are read this often while the view is shown, as the /me round did before
+  // it went to 60 seconds (context/refresh.md).
+  const NOTICE_MS = 15000;
   const chatLink = (full, id) => "#/chats" + (id ? "/" + M.api.projectPath(full) + "/" + encodeURIComponent(id) : "");
 
   // Unread first, then the newest, then by title; the open one counts as read.
@@ -67,23 +71,49 @@ window.Maity = window.Maity || {};
         if (again) again.focus();
       }
     };
-    async function readAll() {
+    // A project's items as the list shows them, with one's own agents
+    // that have no conversation yet.
+    function take(slug, items) {
+      const pctx = pctxs[slug];
+      const byAgent = {};
+      const groups = [];
+      // A hub before group chats lists direct items without a kind.
+      items.forEach((c) => { if ((c.kind || "direct") === "direct") byAgent[c.agent_id || c.id] = c; else groups.push(c); });
+      const mine = pctx.members.filter((m) => m.kind === "agent" && m.owner_id === pctx.me.id);
+      read[slug] = { chats: P.chatsOf(pctx, mine, byAgent, groups), groups };
+    }
+    // One read across projects (docs/api.md §9.3, GET /me/conversations);
+    // a hub without it is read project by project, as before.
+    async function readOnce() {
+      if (M.api.absent.has("GET", "/me/conversations")) return false;
+      let list;
+      try {
+        list = await M.api.getAll("/me/conversations?observed=true");
+      } catch (err) {
+        if (await M.api.missingRoute(err, "GET", "/me/conversations")) { M.api.absent.note("GET", "/me/conversations"); return false; }
+        append(clear(failed), h("p", { class: "send-status failed" }, "Your chats could not be read: " + err.message));
+        return true;
+      }
+      const bySlug = {};
+      list.items.forEach((c) => { const slug = c.project && c.project.full_name; (bySlug[slug] = bySlug[slug] || []).push(c); });
+      Object.keys(pctxs).forEach((slug) => take(slug, bySlug[slug] || []));
+      clear(failed);
+      return true;
+    }
+    async function readEach() {
       const problems = [];
       await Promise.all(Object.keys(pctxs).map(async (slug) => {
         const pctx = pctxs[slug];
         try {
-          const list = await M.api.getAll(pctx.base + "/conversations?observed=true");
-          const byAgent = {};
-          const groups = [];
-          // A hub before group chats lists direct items without a kind.
-          list.items.forEach((c) => { if ((c.kind || "direct") === "direct") byAgent[c.agent_id || c.id] = c; else groups.push(c); });
-          const mine = pctx.members.filter((m) => m.kind === "agent" && m.owner_id === pctx.me.id);
-          read[slug] = { chats: P.chatsOf(pctx, mine, byAgent, groups), groups };
+          take(slug, (await M.api.getAll(pctx.base + "/conversations?observed=true")).items);
         } catch (err) {
           problems.push(h("p", { class: "send-status failed" }, "The chats of " + (pctx.project.name || slug) + " could not be read: " + err.message));
         }
       }));
       append(clear(failed), problems);
+    }
+    async function readAll() {
+      if (!(await readOnce())) await readEach();
       draw();
       status.done();
     }
@@ -164,7 +194,11 @@ window.Maity = window.Maity || {};
     const nudge = () => { window.clearTimeout(settle); settle = window.setTimeout(() => run(false), SETTLE_MS); };
     const unsubscribe = M.notify.state.available ? M.notify.subscribe(nudge) : () => {};
     ctx.onDispose(() => { disposed = true; window.clearTimeout(settle); unsubscribe(); });
-    ctx.every(M.chatParts.LIST_MS, () => run(true));
+    // Every project's chats each round: none while the tab is hidden.
+    ctx.every(M.chatParts.LIST_MS, () => (document.visibilityState === "hidden" ? null : run(true)));
+    if (M.notify.state.available) {
+      ctx.every(NOTICE_MS, () => (document.visibilityState === "hidden" ? null : M.notify.read().catch(() => null)));
+    }
 
     if (!open || !pctx) {
       append(root, h("div", { class: "chat-layout" + (open ? " open" : "") }, list.el,

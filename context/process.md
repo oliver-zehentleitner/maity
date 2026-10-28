@@ -431,3 +431,142 @@ already knows what it deploys.
 - A `sitemap.xml` committed to `docs/`: it lists pages by hand and drifts.
 - Listing every `.html` file as the card first said: it would put the brand's loader fragment
   into the sitemap.
+
+## The database CI jobs may run on the maintainer's machine; a fork's code reaches it only through an approval
+
+**Id:** 405c762c-11a2-4a95-a23b-0b2657a7aa8d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's go and the coordinator's brief (2026-10-28); the coordinator approved the plan; the security review of the pull request (2026-10-28) corrected the first version of this entry
+**Revisit when:** the repository stops being public, a job needs a secret of the repository, or hosted runners get as fast as the machine
+
+`ci.yml` lets `hub-sqlite`, `hub-postgresql` and `hub-mariadb` run on a self-hosted runner
+when the repository variable `HUB_RUNNER_LABEL` holds a label prefix (one runner service per job type, see below); unset, they run on GitHub's
+runners. The runner is a user of its own with rootless Docker, no read access to anything
+else on the machine and a firewall rule against local and internal services (IPv4 and
+IPv6); the runner's files, hook and unit are root-owned under /opt and a system unit, not in
+the runner user's home, where a job could replace them. It is not ephemeral, and a
+job-completed hook tidies containers, images, volumes and the workspace.
+Install steps and the trust boundary: `deploy/runner/README.md`.
+
+The condition in `ci.yml` that sends fork pull requests to the hosted runners is **not** a
+protection: a fork's pull request runs the fork's own `ci.yml` and can name the runner
+itself. The protection is the repository setting that requires approval for every outside
+collaborator's workflow run, and the rule to read `.github/` in the diff before approving.
+"Only code of this repository" means every branch of anyone with push access, agents
+included. After a malicious job the machine is reinstalled; the hook is housekeeping.
+
+**Reason:** the database jobs are the long ones and the machine has more cores than a hosted
+runner; with the suite in parallel they use all of them. The repository is public, so a
+runner that runs fork code next to the project's credentials is the risk; the dedicated
+user, the approval rule and the absence of any secret on the machine bound it. Deleting one
+variable is the fallback.
+
+**Rejected alternatives:**
+- An ephemeral runner (a fresh registration per job): cleaner, but it needs a
+  repository-admin token on the machine to register again, the one secret the machine must
+  not hold.
+- The runner under the account of the agents that work on the machine: that account can
+  reach the production cluster and the maintainer's tokens.
+- Docker through the docker group: the `services:` of the jobs need a Docker API, and that
+  group is root on the machine; rootless Docker gives the API without it.
+- Relying on the `runs-on` condition against forks: the fork controls the workflow file.
+- Running every job on the machine: it runs one job at a time (the services bind host ports);
+  the short jobs gain nothing there.
+
+## The runner gets its Python through uv into the tool cache, and starts through `runsvc.sh`
+
+**Id:** 2bede3db-2d8e-4716-851b-0ecc07cb140d
+**Type:** decision
+**Type:** workaround
+**Status:** active
+**Evidence:** confirmed
+**Source:** the first installation of the self-hosted runner, 2026-10-28 (the service exited at once; setup-python found no Python 3.12; pip refused to install); the review of the installer script
+**Revisit when:** setup-python supports Debian, or the database jobs run in a virtual environment on both runner kinds
+**See:** process.md#the-database-ci-jobs-may-run-on-the-maintainers-machine-a-forks-code-reaches-it-only-through-an-approval — 405c762c-11a2-4a95-a23b-0b2657a7aa8d — as of 2026-10-28
+
+The unit starts `bin/runsvc.sh`, not `run.sh`: `run.sh` copies a helper into its own directory on every start, which
+a root-owned runner directory refuses, and the service then exits with status 0 and restarts in a loop.
+`install-python.sh` gives the machine a Python that `setup-python` finds: uv installs 3.12 as the runner user and it is
+linked into the runner's tool cache (`_work/_tool/Python/<version>/x64`); uv's PEP 668 "externally managed" marker is
+removed from that private copy, because `pip install` in the jobs fails with it; the `.path` the runner stored at
+registration (the PATH of root's shell, with directories the runner user may not enter) is replaced by a plain one.
+Everything inside the runner user's own paths is done as that user: a job can leave symlinks there, and root following one
+would write wherever it points.
+
+**Reason:** `setup-python` knows Ubuntu, macOS and Windows; on Debian it fails with "version 3.12 not found". The tool cache
+is the place it looks first, so the workflow stays the same on hosted and on the self-hosted runner. The marker is removed
+only from a copy that belongs to the runner, so no system Python is changed.
+
+**Rejected alternatives:**
+- The database jobs install into a virtual environment (`python -m venv`): the same on both runner kinds and it leaves the
+  runner's Python untouched, but it changes three jobs and every `make` call; the marker route is documented instead and
+  this stays the revisit.
+- The system Python of the machine: Debian 13 ships 3.13, the hub is tested on 3.12.
+- `pip install --break-system-packages` in the jobs: it would leak a self-hosted special case into the shared workflow.
+- Root creating the links and files in the tool cache: the first version did, and the review showed it follows symlinks a
+  job may have left there.
+
+## One runner service per database job type, a label each, three workers per job
+
+**Id:** c2713d54-e602-42a3-8636-693ff3fd2c0b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the first measurements on the self-hosted runner, 2026-10-28 (one Postgres job 11 min 57 s on the machine against about 22 on a hosted runner; nine CI runs queued behind the single runner); the coordinator's go and conditions
+**Revisit when:** the machine's memory or cores change, or hosted runners get as fast as it
+**See:** process.md#the-database-ci-jobs-may-run-on-the-maintainers-machine-a-forks-code-reaches-it-only-through-an-approval — 405c762c-11a2-4a95-a23b-0b2657a7aa8d — as of 2026-10-28
+
+The three database jobs run on three runner services of the machine, `maity-runner@sqlite`, `@pg` and `@maria`, each in
+its own directory with its own registration and the label `<prefix>-<type>`. `ci.yml` asks each job for its own label
+through the repository variable `HUB_RUNNER_LABEL` (the prefix); unset, and for forks, the jobs run hosted. Each service
+sets `PYTEST_ARGS=-n 2` (it was `-n 3` at first, nine workers on eight cores; lowered after the machine went down, see the entry
+on the cap below), so six workers share the eight cores.
+
+**Reason:** one runner takes one job at a time. With every pull request sending three jobs of about twelve minutes each to
+it, nine runs were queued within an hour and the runner was slower per pull request than the hosted ones, which run in
+parallel. A pool of identical runners would fix the queue but let two Postgres jobs run at once, both binding the host
+port 5432 for their service container; a label per job type keeps the ports apart by construction and still lets the three
+jobs of one pull request run side by side. Memory carried it: one job at eight workers peaked at 5.2 GB of 19.9 GB with
+swap unused.
+
+**Trade-off, stated:** the three services run as one user with one rootless Docker. A job can therefore also read and change the
+jobs running at the same time on the other instances (their `GITHUB_TOKEN` in `/proc/<pid>/environ`, their `_work`). The
+boundary stays "the repository's own code only, reinstall after a malicious job"; one user and one Docker per instance would
+close it at the price of three users, three daemons and three times the disk for images. The cleanup hook, which runs in that
+shared Docker, removes only what is stopped, unused or old, never a running job's containers.
+
+**Rejected alternatives:**
+- One runner for everything, as installed first: a queue of hours as soon as several pull requests are open.
+- Several identical runners: the port 5432 and 3306 collision between two jobs of the same type.
+- A random host port for the service containers: it would need the jobs' connection URLs to follow, a change in the shared
+  workflow for the self-hosted case only.
+
+
+## The runner is capped, and it starts with one service
+
+**Id:** a35df240-f14b-4468-8ab2-23b447a08175
+**Type:** incident
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the first run of the three runner services, 2026-10-28 (the machine went down two and a half minutes after three jobs started; memory sampler, job timestamps and the boot log agree on the time); the coordinator's decision that evening
+**Revisit when:** a test with the caps (one service first, someone watching) runs without a stall, or the CI moves to a machine that is not a workstation
+**See:** process.md#one-runner-service-per-database-job-type-a-label-each-three-workers-per-job — c2713d54-e602-42a3-8636-693ff3fd2c0b — as of 2026-10-29
+
+Every runner service carries `CPUQuota=150%`, `Nice=10`, low CPU and I/O weight, `MemoryMax=4G` and `-n 2`; the runner user's whole
+slice, rootless Docker included, is capped at 4 of 8 cores and 8 GB without swap. The three services are started one at a time,
+with the maintainer at the machine and a sampler running.
+
+**Reason:** the first run of three uncapped services (nine workers, three database containers, three installs on eight vCPUs)
+was followed within minutes by the stop of the machine, a VirtualBox guest on the maintainer's workstation, and by the loss of
+three jobs. Memory was not it (one job peaked at 5.2 GB of 19.9 GB). That the cause is CPU starvation of the host is an
+inference: the guest's own logs of the crashed boot cannot be read, and earlier crashes happened without CI. The caps make the
+next test survivable whichever it is. The machine does other work: a second crash costs the agents their ops.
+
+**Rejected alternatives:**
+- A lower `-n` alone: it does not bound the database containers or three installs running at once.
+- A cap on the units only: the containers of a rootless Docker run under the user's dockerd, outside the units' cgroups.
+- Running the three services unattended after the first green test: a green test on a quiet machine says little about the
+  load of several pull requests at once.

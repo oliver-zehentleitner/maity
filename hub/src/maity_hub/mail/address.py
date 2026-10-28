@@ -10,6 +10,12 @@ single recipient; nothing ever parses a list out of it.
 from __future__ import annotations
 
 import re
+from typing import Any
+
+from sqlalchemy import insert, select
+from sqlalchemy.exc import IntegrityError
+
+from maity_hub import tables as t
 
 MAX_ADDRESS = 254
 MAX_LOCAL = 64
@@ -35,3 +41,24 @@ def valid(value: object) -> bool:
         return False
     labels = domain.split(".")
     return len(labels) >= 2 and all(LABEL.fullmatch(label) for label in labels)
+
+
+def normalized(value: str) -> str:
+    """The form one account per address compares: trimmed and lower-cased (§2.6.3,
+    §18.4)."""
+    return value.strip().lower()
+
+
+def lock(conn: Any, value: str) -> None:
+    """The per-address lock that verifying, changing and registering an address take
+    (§18.4, §2.7.1): the address's row in `address_lock`, made if absent, then locked
+    until commit."""
+    key = normalized(value)
+    try:
+        with conn.begin_nested():
+            conn.execute(insert(t.address_lock).values(address=key))
+    except IntegrityError:
+        pass  # it exists; lock it below
+    conn.execute(
+        select(t.address_lock.c.address).where(t.address_lock.c.address == key).with_for_update()
+    )

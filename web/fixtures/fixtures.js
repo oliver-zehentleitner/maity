@@ -818,7 +818,8 @@ window.MAITY_FIXTURES = {
         "memberships": [
           {
             "project": "maintainer/maity",
-            "role": "admin"
+            "role": "coder",
+            "trust": "admin"
           }
         ],
         "name": "maintainer/agent-a",
@@ -833,7 +834,8 @@ window.MAITY_FIXTURES = {
         "memberships": [
           {
             "project": "maintainer/maity",
-            "role": "member"
+            "role": "coder",
+            "trust": "member"
           }
         ],
         "name": "maintainer/agent-b",
@@ -848,7 +850,8 @@ window.MAITY_FIXTURES = {
         "memberships": [
           {
             "project": "maintainer/maity",
-            "role": "member"
+            "role": "coder",
+            "trust": "member"
           }
         ],
         "name": "maintainer/agent-c",
@@ -863,7 +866,8 @@ window.MAITY_FIXTURES = {
         "memberships": [
           {
             "project": "maintainer/maity",
-            "role": "member"
+            "role": "coder",
+            "trust": "member"
           }
         ],
         "name": "maintainer/agent-d",
@@ -878,7 +882,8 @@ window.MAITY_FIXTURES = {
         "memberships": [
           {
             "project": "maintainer/maity",
-            "role": "reviewer"
+            "role": "reviewer",
+            "trust": "member"
           }
         ],
         "name": "maintainer/reviewer",
@@ -893,7 +898,8 @@ window.MAITY_FIXTURES = {
         "memberships": [
           {
             "project": "maintainer/sample",
-            "role": "member"
+            "role": "coder",
+            "trust": "member"
           }
         ],
         "name": "maintainer/shop-dev",
@@ -908,7 +914,8 @@ window.MAITY_FIXTURES = {
         "memberships": [
           {
             "project": "guest/guestlab",
-            "role": "member"
+            "role": "coder",
+            "trust": "member"
           }
         ],
         "name": "maintainer/spare",
@@ -992,7 +999,8 @@ window.MAITY_FIXTURES = {
         "kind": "human",
         "presence": "online",
         "reports_to": null,
-        "role": "owner"
+        "role": "coder",
+        "trust": "owner"
       },
       {
         "areas": [],
@@ -1005,7 +1013,8 @@ window.MAITY_FIXTURES = {
         "owner_id": "hum-maintainer",
         "presence": "offline",
         "reports_to": "hum-guest",
-        "role": "member"
+        "role": "coder",
+        "trust": "member"
       }
     ],
     "next_cursor": null
@@ -1025,7 +1034,8 @@ window.MAITY_FIXTURES = {
           "slug": "sample"
         },
         "registration": "sign_in_or_register",
-        "role": "member"
+        "role": "coder",
+        "trust": "member"
       },
       "closed-xxxxxxxxxxxxxx7": {
         "address_bound": false,
@@ -1040,7 +1050,8 @@ window.MAITY_FIXTURES = {
           "slug": "maity"
         },
         "registration": "sign_in_only",
-        "role": "member"
+        "role": "coder",
+        "trust": "member"
       },
       "member-xxxxxxxxxxxxxx5": {
         "address_bound": false,
@@ -1055,7 +1066,8 @@ window.MAITY_FIXTURES = {
           "slug": "maity"
         },
         "registration": "sign_in_or_register",
-        "role": "member"
+        "role": "coder",
+        "trust": "member"
       },
       "mismatch-xxxxxxxxxxxx4": {
         "address_bound": true,
@@ -1070,7 +1082,8 @@ window.MAITY_FIXTURES = {
           "slug": "maity"
         },
         "registration": "sign_in_or_register",
-        "role": "member"
+        "role": "coder",
+        "trust": "member"
       },
       "only-xxxxxxxxxxxxxxxx2": {
         "address_bound": false,
@@ -1085,7 +1098,8 @@ window.MAITY_FIXTURES = {
           "slug": "maity"
         },
         "registration": "sign_in_only",
-        "role": "reviewer"
+        "role": "reviewer",
+        "trust": "member"
       },
       "open-xxxxxxxxxxxxxxxx1": {
         "address_bound": false,
@@ -1100,7 +1114,8 @@ window.MAITY_FIXTURES = {
           "slug": "maity"
         },
         "registration": "sign_in_or_register",
-        "role": "member"
+        "role": "coder",
+        "trust": "member"
       },
       "pending-xxxxxxxxxxxxx8": {
         "address_bound": false,
@@ -1115,7 +1130,8 @@ window.MAITY_FIXTURES = {
           "slug": "maity"
         },
         "registration": "sign_in_or_register",
-        "role": "member"
+        "role": "coder",
+        "trust": "member"
       },
       "void-xxxxxxxxxxxxxxxx6": {
         "address_bound": false,
@@ -1130,7 +1146,8 @@ window.MAITY_FIXTURES = {
           "slug": "maity"
         },
         "registration": "sign_in_only",
-        "role": "admin"
+        "role": "coder",
+        "trust": "admin"
       }
     },
     "refusals": {
@@ -1484,7 +1501,7 @@ window.MAITY_FIXTURES = {
         },
         "at": "2026-10-22T11:15:00Z",
         "audience": [
-          "role:owner"
+          "trust:owner"
         ],
         "kind": "message",
         "payload": {
@@ -1493,7 +1510,7 @@ window.MAITY_FIXTURES = {
           "conversation_id": null,
           "mentions": [],
           "task_id": null,
-          "to": "role:owner",
+          "to": "trust:owner",
           "type": "blocker"
         },
         "redacted": false,
@@ -1644,6 +1661,7 @@ window.MAITY_FIXTURES = {
         "project": "maintainer/maity",
         "revoked_at": null,
         "role": "reviewer",
+        "trust": "member",
         "used_at": null,
         "used_by": null,
         "voided_at": null
@@ -1657,7 +1675,8 @@ window.MAITY_FIXTURES = {
         "note": null,
         "project": "maintainer/maity",
         "revoked_at": null,
-        "role": "member",
+        "role": "coder",
+        "trust": "member",
         "used_at": "2026-10-23T10:00:00Z",
         "used_by": "hum-guest",
         "voided_at": null
@@ -1671,7 +1690,8 @@ window.MAITY_FIXTURES = {
         "note": null,
         "project": "maintainer/maity",
         "revoked_at": null,
-        "role": "admin",
+        "role": "coder",
+        "trust": "admin",
         "used_at": null,
         "used_by": null,
         "voided_at": "2026-10-24T08:30:00Z"
@@ -1685,7 +1705,8 @@ window.MAITY_FIXTURES = {
         "note": null,
         "project": "maintainer/maity",
         "revoked_at": "2026-10-22T11:00:00Z",
-        "role": "admin",
+        "role": "coder",
+        "trust": "admin",
         "used_at": null,
         "used_by": null,
         "voided_at": null
@@ -1702,7 +1723,8 @@ window.MAITY_FIXTURES = {
         "expires_in_seconds": 900,
         "id": "join-0010",
         "revoked_at": null,
-        "role": "member",
+        "role": "coder",
+        "trust": "member",
         "used_at": null
       },
       {
@@ -1713,7 +1735,8 @@ window.MAITY_FIXTURES = {
         "expires_at": "2026-10-21T08:15:00Z",
         "id": "join-0009",
         "revoked_at": null,
-        "role": "member",
+        "role": "coder",
+        "trust": "member",
         "used_at": null
       },
       {
@@ -1724,7 +1747,8 @@ window.MAITY_FIXTURES = {
         "expires_at": "2026-10-20T20:15:00Z",
         "id": "join-0008",
         "revoked_at": null,
-        "role": "member",
+        "role": "coder",
+        "trust": "member",
         "used_at": null
       },
       {
@@ -1735,7 +1759,8 @@ window.MAITY_FIXTURES = {
         "expires_at": "2026-10-20T19:15:00Z",
         "id": "join-0007",
         "revoked_at": "2026-10-20T19:03:00Z",
-        "role": "admin",
+        "role": "coder",
+        "trust": "admin",
         "used_at": null
       },
       {
@@ -1747,6 +1772,7 @@ window.MAITY_FIXTURES = {
         "id": "join-0006",
         "revoked_at": null,
         "role": "reviewer",
+        "trust": "member",
         "used_at": "2026-10-20T18:02:00Z"
       }
     ],
@@ -1919,7 +1945,8 @@ window.MAITY_FIXTURES = {
         "paused": null,
         "presence": "online",
         "reports_to": null,
-        "role": "owner"
+        "role": "coder",
+        "trust": "owner"
       },
       {
         "areas": [
@@ -1944,7 +1971,7 @@ window.MAITY_FIXTURES = {
         "paused": null,
         "presence": "online",
         "reports_to": "hum-maintainer",
-        "role": "admin",
+        "role": "coder",
         "session": {
           "client": "maity-cli/0.1.0",
           "harness": "Claude Code",
@@ -1952,7 +1979,8 @@ window.MAITY_FIXTURES = {
           "listening": true,
           "model": "claude-opus-5-5",
           "started_at": "2026-10-21T07:55:00Z"
-        }
+        },
+        "trust": "admin"
       },
       {
         "areas": [
@@ -1994,7 +2022,7 @@ window.MAITY_FIXTURES = {
         "paused": null,
         "presence": "online",
         "reports_to": "agt-a",
-        "role": "member",
+        "role": "coder",
         "session": {
           "client": "maity-cli/0.1.0",
           "harness": "Claude Code",
@@ -2009,7 +2037,8 @@ window.MAITY_FIXTURES = {
           "max_instances": 1,
           "review_within_team": false,
           "wake": "all"
-        }
+        },
+        "trust": "member"
       },
       {
         "areas": [
@@ -2055,7 +2084,7 @@ window.MAITY_FIXTURES = {
         },
         "presence": "paused",
         "reports_to": "agt-a",
-        "role": "member",
+        "role": "coder",
         "session": null,
         "team": {
           "distribution": "free",
@@ -2063,7 +2092,8 @@ window.MAITY_FIXTURES = {
           "max_instances": 3,
           "review_within_team": false,
           "wake": "all"
-        }
+        },
+        "trust": "member"
       },
       {
         "areas": [
@@ -2084,7 +2114,7 @@ window.MAITY_FIXTURES = {
         "paused": null,
         "presence": "online",
         "reports_to": null,
-        "role": "member",
+        "role": "coder",
         "session": {
           "client": "maity-cli/0.1.0",
           "harness": "Claude Code",
@@ -2092,7 +2122,8 @@ window.MAITY_FIXTURES = {
           "listening": false,
           "model": "claude-opus-5-5",
           "started_at": "2026-10-21T13:00:00Z"
-        }
+        },
+        "trust": "member"
       },
       {
         "areas": [],
@@ -2112,7 +2143,8 @@ window.MAITY_FIXTURES = {
         "presence": "offline",
         "reports_to": "agt-a",
         "role": "reviewer",
-        "session": null
+        "session": null,
+        "trust": "member"
       }
     ],
     "next_cursor": null
@@ -2560,8 +2592,9 @@ window.MAITY_FIXTURES = {
         "asked_by": {
           "display_name": "Agent B",
           "member_id": "agt-b",
-          "role": "member",
-          "session_id": "ses-b-0003"
+          "role": "coder",
+          "session_id": "ses-b-0003",
+          "trust": "member"
         },
         "class": "consent",
         "created_at": "2026-10-21T13:20:00Z",
@@ -2611,8 +2644,9 @@ window.MAITY_FIXTURES = {
         "asked_by": {
           "display_name": "Agent A",
           "member_id": "agt-a",
-          "role": "admin",
-          "session_id": "ses-a-0007"
+          "role": "coder",
+          "session_id": "ses-a-0007",
+          "trust": "admin"
         },
         "class": "consent",
         "created_at": "2026-10-21T12:48:00Z",
@@ -2629,7 +2663,8 @@ window.MAITY_FIXTURES = {
           "display_name": "Reviewer",
           "member_id": "agt-r",
           "role": "reviewer",
-          "session_id": null
+          "session_id": null,
+          "trust": "member"
         },
         "options": [],
         "priority": "normal",
@@ -2658,8 +2693,9 @@ window.MAITY_FIXTURES = {
         "asked_by": {
           "display_name": "Agent C",
           "member_id": "agt-c",
-          "role": "member",
-          "session_id": null
+          "role": "coder",
+          "session_id": null,
+          "trust": "member"
         },
         "class": "decision",
         "created_at": "2026-10-21T11:30:00Z",
@@ -2735,8 +2771,9 @@ window.MAITY_FIXTURES = {
         "asked_by": {
           "display_name": "Agent D",
           "member_id": "agt-d",
-          "role": "member",
-          "session_id": "ses-d-0001"
+          "role": "coder",
+          "session_id": "ses-d-0001",
+          "trust": "member"
         },
         "class": "decision",
         "created_at": "2026-10-21T10:05:00Z",
@@ -3842,7 +3879,7 @@ window.MAITY_FIXTURES = {
               "wake": true,
               "why": [
                 "contract_implementer:13",
-                "role:admin"
+                "trust:admin"
               ]
             }
           ],
@@ -4198,24 +4235,27 @@ window.MAITY_FIXTURES = {
       "handle": "maintainer",
       "id": "hum-maintainer",
       "instance_admin": true,
-      "kind": "human"
+      "kind": "human",
+      "meat_proxy": false
     },
     "projects": [
       {
         "full_name": "maintainer/maity",
         "name": "Maity",
         "open_requests": 3,
-        "role": "owner",
+        "role": "coder",
         "slug": "maity",
-        "state": "build"
+        "state": "build",
+        "trust": "owner"
       },
       {
         "full_name": "maintainer/sample",
         "name": "Sample shop",
         "open_requests": 1,
-        "role": "owner",
+        "role": "coder",
         "slug": "sample",
-        "state": "freeze"
+        "state": "freeze",
+        "trust": "owner"
       }
     ],
     "server_time": "2026-10-21T13:42:00Z"
@@ -4398,8 +4438,9 @@ window.MAITY_FIXTURES = {
         "asked_by": {
           "display_name": "Agent Q",
           "member_id": "agt-q",
-          "role": "member",
-          "session_id": null
+          "role": "coder",
+          "session_id": null,
+          "trust": "member"
         },
         "class": "consent",
         "created_at": "2026-10-23T05:40:00Z",
@@ -4437,8 +4478,9 @@ window.MAITY_FIXTURES = {
         "asked_by": {
           "display_name": "Agent A",
           "member_id": "agt-a",
-          "role": "admin",
-          "session_id": null
+          "role": "coder",
+          "session_id": null,
+          "trust": "admin"
         },
         "class": "consent",
         "created_at": "2026-10-24T07:10:00Z",
@@ -4897,7 +4939,8 @@ window.MAITY_FIXTURES = {
         "paused": null,
         "presence": "online",
         "reports_to": null,
-        "role": "owner"
+        "role": "coder",
+        "trust": "owner"
       },
       {
         "areas": [
@@ -4917,7 +4960,7 @@ window.MAITY_FIXTURES = {
         "paused": null,
         "presence": "online",
         "reports_to": null,
-        "role": "member",
+        "role": "coder",
         "session": {
           "client": "curl/8.10.1",
           "harness": "OpenCode",
@@ -4925,7 +4968,8 @@ window.MAITY_FIXTURES = {
           "listening": true,
           "model": "unknown",
           "started_at": "2026-10-21T08:30:00Z"
-        }
+        },
+        "trust": "member"
       },
       {
         "areas": [
@@ -4945,8 +4989,9 @@ window.MAITY_FIXTURES = {
         "paused": null,
         "presence": "offline",
         "reports_to": null,
-        "role": "member",
-        "session": null
+        "role": "coder",
+        "session": null,
+        "trust": "member"
       }
     ],
     "next_cursor": null
@@ -4956,7 +5001,16 @@ window.MAITY_FIXTURES = {
       "scope": "bug fixes may be released, features wait",
       "until": "2026-10-22T08:00:00Z"
     },
-    "aliases": [],
+    "aliases": [
+      "maintainer/sample-1",
+      "maintainer/sample-2",
+      "maintainer/sample-3",
+      "maintainer/sample-4",
+      "maintainer/sample-5",
+      "maintainer/sample-6",
+      "maintainer/sample-7",
+      "maintainer/sample-old"
+    ],
     "banner": {
       "available": false,
       "source": null
@@ -5021,8 +5075,9 @@ window.MAITY_FIXTURES = {
         "asked_by": {
           "display_name": "Shop Dev",
           "member_id": "agt-s1",
-          "role": "member",
-          "session_id": "ses-s1-0042"
+          "role": "coder",
+          "session_id": "ses-s1-0042",
+          "trust": "member"
         },
         "class": "consent",
         "created_at": "2026-10-21T13:05:00Z",
@@ -5149,7 +5204,7 @@ window.MAITY_FIXTURES = {
         "claim": null,
         "closed_at": null,
         "contract": {
-          "arbiter": "role:admin",
+          "arbiter": "trust:admin",
           "state": "final",
           "watchers": [
             "agt-s1"

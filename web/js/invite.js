@@ -9,7 +9,6 @@ window.Maity = window.Maity || {};
 
 (function (M) {
   const { h, append, clear, formatTime } = M.dom;
-  const ROLE_WORDS = { member: "member", reviewer: "reviewer", proxy: "proxy", admin: "admin", owner: "owner" };
 
   // The bar of a page without a project: the lockup and the theme.
   function bar(header, extra) {
@@ -52,7 +51,7 @@ window.Maity = window.Maity || {};
         h("p", null, h("a", { href: "#/login" }, "Sign in")));
       return;
     }
-    const role = ROLE_WORDS[inv.role] || inv.role;
+    const role = M.trust.words(inv);
     const here = "#/invite/" + encodeURIComponent(token);
     document.title = "Join " + inv.project.name + " · Maity";
     append(box,
@@ -136,9 +135,20 @@ window.Maity = window.Maity || {};
     const issued = h("div", { class: "invite-issued" });
     const status = M.statusLine();
     status.el.setAttribute("tabindex", "-1");
-    const roles = (ctx.isOwner ? ["member", "reviewer", "proxy", "admin", "owner"] : ["member", "reviewer", "proxy"]);
-    const role = h("select", { id: "invite-role" }, roles.map((r) => h("option", { value: r }, r)));
-    role.value = "member";
+    // Trust owner or admin, and the role proxy, only from an owner (owner_only, §2.3);
+    // proxy only with trust admin (§3.4).
+    const trusts = ctx.isOwner ? M.trust.TRUSTS : ["member", "guest"];
+    const trust = h("select", { id: "invite-trust" }, trusts.map((r) => h("option", { value: r }, r)));
+    trust.value = "member";
+    const role = h("select", { id: "invite-role" });
+    const roles = () => {
+      const wanted = role.value || "coder";
+      const offered = M.trust.ROLES.filter((r) => r !== "proxy" || (ctx.isOwner && trust.value === "admin"));
+      append(clear(role), offered.map((r) => h("option", { value: r }, r)));
+      role.value = offered.includes(wanted) ? wanted : "coder";
+    };
+    trust.addEventListener("change", roles);
+    roles();
     const address = h("input", { id: "invite-address", type: "email", autocomplete: "off", placeholder: "Optional: only this address may accept" });
     const ttl = h("select", { id: "invite-ttl" }, TTLS.map(([v, l]) => h("option", { value: String(v) }, l)));
     ttl.value = "86400";
@@ -148,7 +158,7 @@ window.Maity = window.Maity || {};
       class: "invite-form inline-form",
       onsubmit: async (e) => {
         e.preventDefault();
-        const body = { role: role.value, ttl_seconds: Number(ttl.value) };
+        const body = { trust: trust.value, role: role.value, ttl_seconds: Number(ttl.value) };
         if (address.value.trim()) body.address = address.value.trim();
         if (note.value.trim()) body.note = note.value.trim();
         // The hub counts the note in UTF-8 bytes (§3.4, 1 KiB), not characters.
@@ -175,6 +185,7 @@ window.Maity = window.Maity || {};
         await list();
       },
     },
+    h("label", { for: "invite-trust" }, "Trust"), trust,
     h("label", { for: "invite-role" }, "Role"), role,
     h("label", { for: "invite-address" }, "Address"), address,
     h("label", { for: "invite-ttl" }, "Valid for"), ttl,
@@ -209,7 +220,7 @@ window.Maity = window.Maity || {};
           const state = stateOf(x);
           return h("li", { class: "invite-item invite-" + state, "data-invitation": x.id },
             h("span", { class: "invite-state" }, state), " ",
-            h("span", null, x.role + (x.address ? " for " + x.address : " for whoever has the link")),
+            h("span", null, M.trust.words(x) + (x.address ? " for " + x.address : " for whoever has the link")),
             h("span", { class: "muted" }, " · by " + ctx.nameOf(x.created_by) + " · "
               + (state === "open" ? "until " + formatTime(x.expires_at) : formatTime(x.used_at || x.revoked_at || x.voided_at || x.expires_at))),
             state === "open" ? h("button", { type: "button", class: "small", "data-focus": "revoke:" + x.id, onclick: async (e) => {

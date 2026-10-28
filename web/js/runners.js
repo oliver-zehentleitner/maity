@@ -198,7 +198,7 @@ window.Maity = window.Maity || {};
       M.api.getAll("/runners/enrollments"),
       M.api.get("/projects"),
     ]);
-    const admin = new Set(ctx.projects.filter((p) => p.role === "owner" || p.role === "admin").map((p) => p.full_name));
+    const admin = new Set(ctx.projects.filter((p) => M.trust.governs(p)).map((p) => p.full_name));
     const adminProjects = (projects.items || []).filter((p) => admin.has(p.full_name));
     const status = M.statusLine();
     const list = h("div", { class: "runners" });
@@ -389,8 +389,13 @@ window.Maity = window.Maity || {};
       }
     }
 
+    // The newest read draws: a periodic one still in flight when an action
+    // reloads would otherwise answer last and undo what the action shows.
+    let reads = 0;
     async function reload() {
+      const read = ++reads;
       const [r, e] = await Promise.all([M.api.getAll("/runners"), M.api.getAll("/runners/enrollments")]);
+      if (read !== reads) return;
       drawRunners(r.items);
       drawEnrollments(e.items);
     }
@@ -401,7 +406,20 @@ window.Maity = window.Maity || {};
     drawRunners(runners.items);
     drawEnrollments(enrollments.items);
     // Presence and capabilities emit no events: re-read them (docs/api.md §15.1).
-    ctx.every(PRESENCE_MS, () => reload().catch((err) => status.fail("Could not refresh: ", err)));
+    // One periodic read at a time: a slow one is not overtaken by the next tick,
+    // which would leave every answer discarded and the page old.
+    let polling = false;
+    ctx.every(PRESENCE_MS, async () => {
+      if (polling) return;
+      polling = true;
+      try {
+        await reload();
+      } catch (err) {
+        status.fail("Could not refresh: ", err);
+      } finally {
+        polling = false;
+      }
+    });
   };
 
   M.runnerStarterConfig = starterConfig;

@@ -3,9 +3,12 @@ the redirect guard, check runs and commit statuses, a repository the token canno
 
 from __future__ import annotations
 
+import contextlib
+import hashlib
 import http.client
 import io
 import json
+import time
 import urllib.error
 import urllib.request
 from typing import Any
@@ -46,9 +49,29 @@ READER = forge.Forge(TOKEN)
 
 @pytest.fixture
 def opener(monkeypatch: pytest.MonkeyPatch) -> FakeOpener:
+    """The reads below are about `a/b`, which the forge reported public a moment ago: the
+    visibility check itself has its own tests (`seen`)."""
     fake = FakeOpener()
     monkeypatch.setattr(forge, "_opener", fake)
+    monkeypatch.setattr(forge, "_public", {(_digest(TOKEN), "a/b"): (time.monotonic(), None)})
     return fake
+
+
+@pytest.fixture
+def seen(monkeypatch: pytest.MonkeyPatch) -> FakeOpener:
+    """A fake forge with no visibility known yet."""
+    fake = FakeOpener()
+    monkeypatch.setattr(forge, "_opener", fake)
+    monkeypatch.setattr(forge, "_public", {})
+    return fake
+
+
+def _digest(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _paths(opener: FakeOpener) -> list[str]:
+    return [r.full_url.removeprefix(f"https://{forge.API_HOST}") for r in opener.requests]
 
 
 # --- _get ----------------------------------------------------------------------------------
@@ -130,30 +153,242 @@ def test_a_redirect_leaves_https_api_github_com_only_by_refusal(target: str) -> 
 @pytest.mark.parametrize(
     "target", ["https://api.github.com/repositories/1", "https://api.github.com:443/repositories/1"]
 )
-def test_a_redirect_within_the_api_host_is_followed(target: str) -> None:
+def test_a_redirect_within_the_api_host_is_a_moved_repository_not_followed(target: str) -> None:
+    """§11.4: a renamed or moved repository stops reads until its new URL is set."""
     handler = forge._SameHostOnly()
     request = urllib.request.Request("https://api.github.com/repos/a/b")
-    assert handler.redirect_request(request, None, 301, "Moved", {}, target).full_url == target
+    with pytest.raises(forge.NotCoveredError) as raised:
+        handler.redirect_request(request, None, 301, "Moved", {}, target)
+    assert raised.value.reason == "repository_moved"
 
 
 # --- a repository the token cannot see -----------------------------------------------------
 
 
 def test_a_missing_ref_in_a_visible_repository_is_an_answer(opener: FakeOpener) -> None:
-    opener.answers["/repos/a/b"] = {"full_name": "a/b"}
+    opener.answers["/repos/a/b"] = {"full_name": "a/b", "private": False}
     opener.answers["/repos/a/b/pulls/9"] = None
     opener.answers["/repos/a/b/branches/gone"] = None
     assert READER.pull_request("a/b", 9) == {"number": 9, "found": False}
     assert READER.branch("a/b", "gone")["found"] is False
     visibility = [r for r in opener.requests if r.full_url.endswith("/repos/a/b")]
-    assert len(visibility) == 1  # asked once, then remembered
+    assert len(visibility) == 2  # public (§11.4) and visible, asked once, then remembered
 
 
 def test_a_repository_the_token_cannot_see_is_unavailable_not_missing(opener: FakeOpener) -> None:
     opener.answers["/repos/a/b"] = None
     opener.answers["/repos/a/b/pulls/9"] = None
-    with pytest.raises(forge.ForgeUnavailableError, match="not visible"):
+    with pytest.raises(forge.NotCoveredError) as raised:
         READER.pull_request("a/b", 9)
+    assert raised.value.reason == "no_grant"
+
+
+# --- the operator's token reads public repositories only (§11.4) ---------------------------
+
+
+def test_a_public_repository_is_read_after_one_visibility_check(seen: FakeOpener) -> None:
+    seen.answers["/repos/a/b"] = {"full_name": "a/b", "private": False}
+    seen.answers["/repos/a/b/branches/main"] = {"commit": {"sha": SHA}}
+    assert READER.branch("a/b", "main")["head_sha"] == SHA
+    assert READER.branch("a/b", "main")["head_sha"] == SHA
+    assert _paths(seen) == ["/repos/a/b", "/repos/a/b/branches/main", "/repos/a/b/branches/main"]
+
+
+@pytest.mark.parametrize(
+    ("answer", "reason"), [({"private": True}, "private_without_grant"), (None, "no_grant")]
+)
+def test_a_private_or_invisible_repository_is_never_read_with_the_token(
+    seen: FakeOpener, answer: Any, reason: str
+) -> None:
+    seen.answers["/repos/a/b"] = answer
+    seen.answers["/repos/a/b/branches/main"] = {"commit": {"sha": SHA}}
+    for _ in range(2):
+        with pytest.raises(forge.NotCoveredError) as raised:
+            READER.branch("a/b", "main")
+        assert raised.value.reason == reason
+    assert _paths(seen) == ["/repos/a/b"]  # the answer is remembered, the read never made
+
+
+def test_every_kind_of_read_is_checked_graphql_included(seen: FakeOpener) -> None:
+    seen.answers["/repos/a/b"] = {"private": True}
+    with pytest.raises(forge.NotCoveredError):
+        READER.items("a/b", [1])
+    with pytest.raises(forge.NotCoveredError):
+        READER.social_preview("a/b")
+    with pytest.raises(forge.NotCoveredError):
+        READER.file("a/b", "README.md", 1000)
+    with pytest.raises(forge.NotCoveredError):
+        READER.owner_avatar("a/b")
+    assert _paths(seen) == ["/repos/a/b"]
+
+
+def test_the_check_is_per_repository_whatever_the_case(seen: FakeOpener) -> None:
+    seen.answers["/repos/a/b"] = {"private": False}
+    seen.answers["/repos/A/B/branches/main"] = {"commit": {"sha": SHA}}
+    READER.branch("A/B", "main")
+    assert _paths(seen) == ["/repos/a/b", "/repos/A/B/branches/main"]
+
+
+def test_a_visibility_the_forge_does_not_give_is_asked_again(seen: FakeOpener) -> None:
+    seen.answers["/repos/a/b"] = {"full_name": "a/b"}  # no `private`
+    seen.answers["/repos/a/b/branches/main"] = {"commit": {"sha": SHA}}
+    with pytest.raises(forge.ForgeUnavailableError) as raised:
+        READER.branch("a/b", "main")
+    assert not isinstance(raised.value, forge.NotCoveredError)
+    seen.answers["/repos/a/b"] = 502
+    with pytest.raises(forge.ForgeUnavailableError):
+        READER.branch("a/b", "main")
+    assert _paths(seen) == ["/repos/a/b", "/repos/a/b"]
+
+
+def test_a_repository_turned_private_stops_at_the_next_check(
+    seen: FakeOpener, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = [1000.0]
+    monkeypatch.setattr("maity_hub.forge.time.monotonic", lambda: now[0])
+    seen.answers["/repos/a/b"] = {"private": False}
+    seen.answers["/repos/a/b/branches/main"] = {"commit": {"sha": SHA}}
+    READER.branch("a/b", "main")
+    seen.answers["/repos/a/b"] = {"private": True}
+    now[0] += forge.PUBLIC_SECONDS - 1
+    READER.branch("a/b", "main")  # within the 10 minutes: not asked again
+    now[0] += 1
+    with pytest.raises(forge.NotCoveredError):
+        READER.branch("a/b", "main")
+    assert _paths(seen).count("/repos/a/b") == 2
+
+
+def test_a_moved_repository_is_refused_and_remembered(seen: FakeOpener) -> None:
+    seen.answers["/repos/a/b"] = forge.NotCoveredError("repository_moved")  # the 301
+    for _ in range(2):
+        with pytest.raises(forge.NotCoveredError) as raised:
+            READER.branch("a/b", "main")
+        assert raised.value.reason == "repository_moved"
+    assert _paths(seen) == ["/repos/a/b"]
+
+
+def test_a_read_redirected_after_the_check_asks_again_next_time(seen: FakeOpener) -> None:
+    seen.answers["/repos/a/b"] = {"private": False}
+    seen.answers["/repos/a/b/branches/main"] = forge.NotCoveredError("repository_moved")
+    with pytest.raises(forge.NotCoveredError):
+        READER.branch("a/b", "main")
+    seen.answers["/repos/a/b"] = forge.NotCoveredError("repository_moved")
+    with pytest.raises(forge.NotCoveredError) as raised:
+        READER.branch("a/b", "main")
+    assert raised.value.reason == "repository_moved"
+    assert _paths(seen) == ["/repos/a/b", "/repos/a/b/branches/main", "/repos/a/b"]
+
+
+@pytest.mark.parametrize(
+    "target", ["https://api.github.com/repositories/1/branches/main", "https://evil.example/x"]
+)
+def test_a_refused_redirect_leaves_no_read_in_flight(target: str, opener: FakeOpener) -> None:
+    """The redirect guard raises from inside the opener: the read it ends is no longer
+    counted against the budget (§11.4), or the reserve would stay held for good."""
+
+    def redirected(request: urllib.request.Request, timeout: float) -> Any:
+        forge._SameHostOnly().redirect_request(request, None, 301, "Moved", {}, target)
+
+    opener.open = redirected  # type: ignore[method-assign]
+    with pytest.raises(forge.ForgeUnavailableError):
+        READER._get("/repos/a/b/branches/main")
+    assert forge._budgets[forge._source(TOKEN)].in_flight == 0
+
+
+@pytest.mark.parametrize("refusal", [401, 403, None])  # None: a 404
+def test_a_refused_read_asks_again_whether_it_is_public(
+    seen: FakeOpener, refusal: int | None
+) -> None:
+    """§11.4: at once after a refusal, not only after 10 minutes."""
+    seen.answers["/repos/a/b"] = {"private": False}
+    seen.answers["/repos/a/b/branches/main"] = {"commit": {"sha": SHA}}
+    READER.branch("a/b", "main")
+    seen.answers["/repos/a/b"] = {"private": True}
+    seen.answers["/repos/a/b/pulls/9"] = refusal
+    with pytest.raises(forge.ForgeUnavailableError):
+        READER.pull_request("a/b", 9)
+    with pytest.raises(forge.NotCoveredError) as raised:
+        READER.branch("a/b", "main")
+    assert raised.value.reason == "private_without_grant"
+    assert _paths(seen).count("/repos/a/b/branches/main") == 1
+
+
+def test_a_404_of_any_read_asks_again_whether_it_is_public(seen: FakeOpener) -> None:
+    seen.answers["/repos/a/b"] = {"private": False}
+    seen.answers["/repos/a/b/contents/README.md"] = None
+    assert READER.file("a/b", "README.md", 1000) is None
+    seen.answers["/repos/a/b"] = {"private": True}
+    with pytest.raises(forge.NotCoveredError):
+        READER.file("a/b", "README.md", 1000)
+    assert _paths(seen) == ["/repos/a/b", "/repos/a/b/contents/README.md", "/repos/a/b"]
+
+
+@pytest.mark.parametrize("error", ["FORBIDDEN", "NOT_FOUND", None])
+def test_a_graphql_error_asks_again_before_the_next_read(
+    seen: FakeOpener, error: str | None
+) -> None:
+    seen.answers["/repos/a/b"] = {"private": False}
+    seen.answers["/graphql"] = {
+        "data": {"repository": None},
+        "errors": [{"type": error}] if error else [],
+    }
+    with contextlib.suppress(forge.ForgeUnavailableError):  # FORBIDDEN fails the read
+        READER.items("a/b", [1])
+    seen.answers["/repos/a/b"] = {"private": True}
+    seen.answers["/repos/a/b/branches/main"] = {"commit": {"sha": SHA}}
+    with pytest.raises(forge.NotCoveredError):
+        READER.branch("a/b", "main")
+    assert _paths(seen) == ["/repos/a/b", "/graphql", "/repos/a/b"]
+
+
+def test_a_missing_ref_after_a_recent_visibility_still_asks_again(seen: FakeOpener) -> None:
+    """`_missing` remembering visibility does not keep "public": the 404 itself drops it
+    for the next read."""
+    seen.answers["/repos/a/b"] = {"private": False}
+    seen.answers["/repos/a/b/branches/gone"] = None
+    seen.answers["/repos/a/b/branches/main"] = {"commit": {"sha": SHA}}
+    assert READER.branch("a/b", "gone")["found"] is False
+    seen.answers["/repos/a/b"] = {"private": True}
+    assert READER.branch("a/b", "gone")["found"] is False  # within `_missing`'s memory
+    with pytest.raises(forge.NotCoveredError):
+        READER.branch("a/b", "main")
+    assert "/repos/a/b/branches/main" not in _paths(seen)
+
+
+def test_a_rate_limit_is_no_refusal(seen: FakeOpener) -> None:
+    seen.answers["/repos/a/b"] = {"private": False}
+    seen.answers["/repos/a/b/branches/main"] = (403, {"X-RateLimit-Remaining": "0"})
+    with pytest.raises(forge.ForgeUnavailableError) as raised:
+        READER.branch("a/b", "main")
+    assert raised.value.rate_limited
+    forge._budgets.clear()  # the rate limit's reset passed: the source is read again
+    seen.answers["/repos/a/b/branches/main"] = {"commit": {"sha": SHA}}
+    READER.branch("a/b", "main")
+    assert _paths(seen).count("/repos/a/b") == 1
+
+
+def test_a_graphql_refusal_asks_again_whether_it_is_public(seen: FakeOpener) -> None:
+    seen.answers["/repos/a/b"] = {"private": False}
+    seen.answers["/graphql"] = {"data": {"repository": None}, "errors": [{"type": "NOT_FOUND"}]}
+    assert READER.items("a/b", [1]) == {1: None}
+    seen.answers["/repos/a/b"] = {"private": True}
+    with pytest.raises(forge.NotCoveredError):
+        READER.items("a/b", [1])
+    assert _paths(seen) == ["/repos/a/b", "/graphql", "/repos/a/b"]
+
+
+def test_a_read_naming_no_repository_is_not_made_with_the_token(seen: FakeOpener) -> None:
+    with pytest.raises(forge.ForgeUnavailableError):
+        READER._call("/user")
+    with pytest.raises(forge.ForgeUnavailableError):
+        READER._call("/graphql", {"query": "{ viewer { login } }"})
+    assert seen.requests == []
+
+
+def test_without_a_token_no_visibility_is_asked(seen: FakeOpener) -> None:
+    seen.answers["/repos/a/b/contents/README.md"] = None
+    assert forge.Forge(None).file("a/b", "README.md", 1000) is None
+    assert _paths(seen) == ["/repos/a/b/contents/README.md"]
 
 
 # --- checks ----------------------------------------------------------------------------------
@@ -234,14 +469,16 @@ def test_a_rate_limit_on_checks_is_no_answer_not_a_missing_permission(
 
 
 def test_repository_visibility_is_remembered_per_token(opener: FakeOpener) -> None:
-    opener.answers["/repos/a/b"] = {"full_name": "a/b"}
+    opener.answers["/repos/a/b"] = {"full_name": "a/b", "private": False}
     opener.answers["/repos/a/b/pulls/9"] = None
     READER.pull_request("a/b", 9)
     other = forge.Forge("another-token")
     other.pull_request("a/b", 9)
     visibility = [r for r in opener.requests if r.full_url.endswith("/repos/a/b")]
-    assert len(visibility) == 2  # each token asked once for itself
-    assert all(TOKEN not in str(key) for key in forge._visible)
+    # each token asked for itself: whether it is public (§11.4, the other token also before
+    # its first read) and whether it is visible
+    assert len(visibility) == 5
+    assert all(TOKEN not in str(key) for key in [*forge._visible, *forge._public])
 
 
 # --- the logo (§11.2) -----------------------------------------------------------------------
@@ -261,3 +498,177 @@ def test_the_owners_avatar_is_a_logo_only_for_an_organization(
 ) -> None:
     opener.answers["/repos/a/b"] = {"full_name": "a/b", "owner": owner}
     assert READER.owner_avatar("a/b") == expected
+
+
+# --- the rate limit budget per source (§11.4) ------------------------------------------------
+
+
+class Answered(io.BytesIO):
+    """A 200 with the forge's rate limit headers."""
+
+    def __init__(self, body: Any, headers: dict[str, str]) -> None:
+        super().__init__(json.dumps(body).encode())
+        self.headers = headers
+
+
+def _limits(remaining: int, reset: float, limit: int = 5000) -> dict[str, str]:
+    return {"X-RateLimit-Limit": str(limit), "X-RateLimit-Remaining": str(remaining),
+            "X-RateLimit-Reset": str(int(reset))}  # fmt: skip
+
+
+def test_a_spent_budget_stops_reads_until_the_reset_and_says_when(opener: FakeOpener) -> None:
+    import time
+
+    reset = time.time() + 600
+    opener.answers["/repos/acme/maity"] = (403, _limits(0, reset))
+    with pytest.raises(forge.ForgeUnavailableError) as first:
+        READER._get("/repos/acme/maity")
+    assert first.value.rate_limited and first.value.retry_at is not None
+    assert abs(first.value.retry_at.timestamp() - int(reset)) < 1
+    sent = len(opener.requests)
+    with pytest.raises(forge.ForgeUnavailableError) as second:
+        READER._get("/repos/acme/other")
+    assert second.value.retry_at == first.value.retry_at
+    assert len(opener.requests) == sent  # nothing went out while the budget is spent
+    assert READER.retry_at() == first.value.retry_at
+
+
+def test_a_budget_under_five_percent_is_kept_for_the_reset(
+    opener: FakeOpener, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import time
+
+    reset = time.time() + 900
+    answers = iter(
+        [Answered({"ok": 1}, _limits(249, reset)), Answered({"ok": 2}, _limits(240, reset))]
+    )
+    monkeypatch.setattr(
+        forge, "_opener", type("O", (), {"open": lambda _s, r, timeout: next(answers)})()
+    )
+    assert READER._get("/repos/a/b") == {"ok": 1}  # 249 of 5000 is under 5 %
+    with pytest.raises(forge.ForgeUnavailableError) as held:
+        READER._get("/repos/a/b")
+    assert held.value.rate_limited and held.value.status is None
+
+
+def test_a_budget_above_five_percent_reads_on(
+    opener: FakeOpener, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import time
+
+    answers = iter([Answered({"ok": 1}, _limits(251, time.time() + 900)), Answered({"ok": 2}, {})])
+    monkeypatch.setattr(
+        forge, "_opener", type("O", (), {"open": lambda _s, r, timeout: next(answers)})()
+    )
+    assert READER._get("/repos/a/b") == {"ok": 1}
+    assert READER._get("/repos/a/b") == {"ok": 2}
+    assert READER.retry_at() is None
+
+
+def test_a_retry_after_holds_that_long(opener: FakeOpener) -> None:
+    import time
+
+    opener.answers["/repos/a/b"] = (429, {"Retry-After": "120"})
+    with pytest.raises(forge.ForgeUnavailableError) as error:
+        READER._get("/repos/a/b")
+    assert error.value.rate_limited and error.value.retry_at is not None
+    assert 110 < error.value.retry_at.timestamp() - time.time() <= 121
+
+
+def test_the_budget_is_per_token(opener: FakeOpener) -> None:
+    import time
+
+    opener.answers["/repos/a/b"] = (403, _limits(0, time.time() + 600))
+    with pytest.raises(forge.ForgeUnavailableError):
+        READER._get("/repos/a/b")
+    other = forge.Forge("ghp_another_owners_token")
+    opener.answers["/repos/a/b"] = {"name": "maity", "private": False}  # its own visibility check
+    assert other._get("/repos/a/b") == {"name": "maity", "private": False}
+    assert other.retry_at() is None and READER.retry_at() is not None
+
+
+def test_after_the_reset_the_source_is_read_again(
+    opener: FakeOpener, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import time
+    import types
+
+    now = time.time()
+    opener.answers["/repos/a/b"] = (403, _limits(0, now + 60))
+    with pytest.raises(forge.ForgeUnavailableError):
+        READER._get("/repos/a/b")
+    monkeypatch.setattr(
+        forge, "time", types.SimpleNamespace(time=lambda: now + 61, monotonic=time.monotonic)
+    )
+    opener.answers["/repos/a/b"] = {"name": "maity"}
+    assert READER._get("/repos/a/b") == {"name": "maity"}
+
+
+def test_a_plain_403_is_no_spent_budget(opener: FakeOpener) -> None:
+    opener.answers["/repos/a/b"] = (403, {"X-RateLimit-Remaining": "4000"})
+    with pytest.raises(forge.ForgeUnavailableError) as error:
+        READER._get("/repos/a/b")
+    assert not error.value.rate_limited and error.value.retry_at is None
+    assert READER.retry_at() is None
+
+
+def test_parallel_reads_never_spend_more_than_was_left() -> None:
+    """Reads are counted before they are sent: with 6 of 100 left, one more fits above
+    the 5 % kept; the others wait for the reset instead of going out together."""
+    import time
+
+    source = forge._source(TOKEN)
+    forge._note(source, _limits(6, time.time() + 600, limit=100), spent=False)
+    sent = [forge._take(source) is None for _ in range(8)]
+    assert sent.count(True) == 1
+    assert READER.retry_at() is not None
+
+
+def test_a_late_answer_does_not_raise_what_is_left() -> None:
+    """Answers arrive in any order: within one window the lowest count stands; a later
+    reset starts a new window."""
+    import time
+
+    source = forge._source(TOKEN)
+    reset = time.time() + 600
+    forge._note(source, _limits(2000, reset), spent=False)
+    forge._note(source, _limits(3000, reset), spent=False)  # sent earlier, answered later
+    assert forge._budgets[source].remaining == 2000
+    forge._note(source, _limits(4999, reset + 3600), spent=False)
+    assert forge._budgets[source].remaining == 4999
+
+
+def test_a_read_without_an_answer_is_no_longer_counted(opener: FakeOpener) -> None:
+    source = forge._source(TOKEN)
+    opener.answers["/repos/acme/maity"] = TimeoutError()
+    with pytest.raises(forge.ForgeUnavailableError):
+        READER._get("/repos/acme/maity")
+    assert forge._budgets[source].in_flight == 0
+
+
+def test_a_late_answer_from_an_earlier_window_leaves_the_new_one_alone() -> None:
+    """Across the reset: a 403 with Remaining 0 from the hour that ended, answered
+    after the new hour's first answer, neither lowers the new budget nor holds it."""
+    import time
+
+    source = forge._source(TOKEN)
+    now = time.time()
+    forge._note(source, _limits(4999, now + 3600), spent=False)
+    forge._note(source, _limits(0, now - 1), spent=True)
+    assert forge._budgets[source].remaining == 4999
+    assert forge._budgets[source].reset == int(now + 3600)
+    assert READER.retry_at() is None
+    assert forge._take(source) is None  # the new hour is read
+
+
+def test_a_retry_after_from_an_earlier_window_still_holds() -> None:
+    import time
+
+    source = forge._source(TOKEN)
+    now = time.time()
+    forge._note(source, _limits(4999, now + 3600), spent=False)
+    late = {**_limits(0, now - 1), "Retry-After": "30"}
+    forge._note(source, late, spent=True)
+    held = READER.retry_at()
+    assert held is not None and 20 < held.timestamp() - time.time() <= 31
+    assert forge._budgets[source].remaining == 4999

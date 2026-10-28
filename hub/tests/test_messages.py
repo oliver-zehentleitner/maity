@@ -43,19 +43,20 @@ def test_a_message_is_an_event_to_its_addressees_and_its_sender(
     agent = flow.agent(make_client, owner)
     card = task(owner)
     response = say(
-        agent, type="blocker", to="role:admin", body="the contract is unclear", task_id=card["id"]
+        agent, type="blocker", to="trust:admin", body="the contract is unclear", task_id=card["id"]
     )
     assert response.status_code == 201
     event = response.json()
     assert event["kind"] == "message"
-    assert event["audience"] == ["role:admin", f"member:{agent.id}"]
+    assert event["audience"] == ["trust:admin", f"member:{agent.id}"]
     assert event["payload"] == {
         "type": "blocker",
-        "to": "role:admin",
+        "to": "trust:admin",
         "body": "the contract is unclear",
         "conversation_id": None,
         "task_id": card["id"],
         "mentions": [],
+        "attachments": [],
     }
     assert event["actor"]["member_id"] == agent.id
     assert event["subject"] == {"type": "task", "id": card["id"]}

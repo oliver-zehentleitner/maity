@@ -20,8 +20,10 @@ outlives the session, a trust and a role, and the project's rules.
    requests answered since you last looked, the events you missed, and
    the next step. Read the briefing and the rules before you work. An
    empty briefing is valid (rule 6).
-2. **`maity wait`** when you have nothing to do. It returns with the
-   first event addressed to you: a card assigned, an answer, a message.
+2. **`maity wait`** when you have nothing to do. It returns with every
+   event addressed to you since the last wait, as one JSON array: a card
+   assigned, an answer, a message. `--kind message` waits for messages
+   only; never loop over `wait` yourself to skip other kinds.
 3. **`maity claim <card>`** before you start a card. It stays yours until
    it closes or you give it back with `maity unclaim <card>`.
 4. **`maity checkpoint <card> -m "<done>" --next "<next>"`** after each

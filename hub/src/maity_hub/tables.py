@@ -23,6 +23,7 @@ from __future__ import annotations
 from typing import Any
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     Column,
@@ -98,6 +99,8 @@ human = Table(
     Column("limit_since", UtcDateTime),
     Column("limit_reason", MARKDOWN_TEXT),
     Column("limit_show_reason_in", JSON_VALUE),  # the slugs whose member view shows the reason
+    # "I am a meat proxy" (docs/api.md §5.2): the human's own switch.
+    Column("meat_proxy", Boolean, nullable=False, server_default=false()),
     # `active`, or `pending` while a registration waits for the operator (§2.7.5).
     Column("account_status", String(16), nullable=False, server_default="active"),
     Column("registered_at", UtcDateTime),  # set only for an account made by registration
@@ -138,7 +141,9 @@ invitation = Table(
     metadata,
     _id(primary_key=True),
     _ref("project_id", "project.id", nullable=False),
-    Column("role", String(16), nullable=False),
+    # A built-in role, or a project role of up to 24 characters (#506).
+    Column("role", String(24), nullable=False),
+    Column("trust", String(16), nullable=False),  # with `role`: trust × role (§2.3)
     Column("address", String(254)),
     Column("address_normalized", String(254), index=True),
     Column("note", String(1024)),
@@ -239,7 +244,72 @@ human_session = Table(
     Column("os", String(64)),
     Column("ip", String(64)),
     Column("approved_by", String(ID)),
-    Column("ended_by", String(16)),
+    Column("ended_by", String(32)),
+    # Two-factor sign-in (docs/api.md §2.8): `full`, `second_factor` (the first factor is
+    # done, the code is not) or `enrolment` (the policy wants a factor first);
+    # `sign_in_complete` is false until the second step makes the sign-in count;
+    # `password_at` and `second_factor_at` are when this session last gave either
+    # (the proof of §2.8.1, the step-up of §2.8.4); `second_factor` how the sign-in's
+    # second step was given (`totp`, `recovery_code`), None without one; `next` is the
+    # login's `next`, kept until the second step answers it.
+    Column("state", String(16), nullable=False, server_default="full"),
+    Column("sign_in_complete", Boolean, nullable=False, server_default=true()),
+    Column("password_at", UtcDateTime),
+    Column("second_factor_at", UtcDateTime),
+    Column("second_factor", String(16)),
+    Column("next", String(512)),
+    **MYSQL_TABLE,
+)
+
+# A human's second factor (docs/api.md §2.8.1). The row outlives the factor: it carries
+# the generation every enrolment, confirmation, turning off, reset, new set of recovery
+# codes and recovery-code use moves, which reset links name. `secret` is the TOTP
+# secret sealed with MAITY_SECRET_KEY, None while not enrolled; `pending_*` is an
+# enrolment started and not yet confirmed, bound to the session that started it;
+# `last_step` the newest TOTP step accepted, so a code is accepted once.
+second_factor = Table(
+    "second_factor",
+    metadata,
+    _ref("human_id", "human.id", primary_key=True),
+    Column("secret", LargeBinary),
+    Column("enrolled_at", UtcDateTime),
+    Column("last_step", BigInteger),
+    Column("last_used_at", UtcDateTime),
+    Column("pending_secret", LargeBinary),
+    Column("pending_session", String(HEX_SHA256)),
+    Column("pending_expires_at", UtcDateTime),
+    Column("generation", Integer, nullable=False, server_default="0"),
+    # After a reset the next sign-in enrols first, whatever the policy (§2.8.3).
+    Column("reset_required", Boolean, nullable=False, server_default=false()),
+    **MYSQL_TABLE,
+)
+
+# Ten recovery codes per enrolled human, each an HMAC-SHA-256 under MAITY_SECRET_KEY
+# (a database copy alone opens none), each usable once (§2.8.1).
+recovery_code = Table(
+    "recovery_code",
+    metadata,
+    _ref("human_id", "human.id"),
+    Column("code_hash", String(HEX_SHA256), nullable=False),
+    Column("used_at", UtcDateTime),
+    PrimaryKeyConstraint("human_id", "code_hash"),
+    **MYSQL_TABLE,
+)
+
+# An instance admin's request to reset a human's second factor, confirmed by the human
+# through a mailed link (§2.8.3). `id` is the sha256 of the link's nonce; the link also
+# names `generation`, and a link whose generation is no longer the human's is dead.
+second_factor_reset = Table(
+    "second_factor_reset",
+    metadata,
+    Column("id", String(HEX_SHA256), primary_key=True),
+    _ref("human_id", "human.id", nullable=False, index=True),
+    Column("generation", Integer, nullable=False),
+    _ref("requested_by", "human.id", nullable=False),
+    Column("reason", Text, nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("expires_at", UtcDateTime, nullable=False),
+    Column("used_at", UtcDateTime),
     **MYSQL_TABLE,
 )
 
@@ -304,6 +374,9 @@ project = Table(
     Column("state_changed_at", UtcDateTime, nullable=False),
     Column("repository_url", String(255)),
     Column("repository_default_branch", String(255)),
+    # Whether the namespace owner confirmed this URL for their own forge grants (§11.4);
+    # every change of the URL and every transfer sets it back.
+    Column("repository_owner_confirmed", Boolean, nullable=False, server_default=false()),
     Column("keep_the_why", Boolean, nullable=False),
     # The policy (docs/api.md §6.1); its history is in the events.
     Column("policy_preset", String(32), nullable=False),
@@ -311,9 +384,11 @@ project = Table(
     Column("subtasks", String(16), nullable=False, server_default="proposed"),
     # Whether visitors without a session see the swarm page, agents only (§6.22).
     Column("swarm_public", String(8), nullable=False, server_default="off"),
+    # What a merged pull request does to its card in review: notify or auto (§6.6).
+    Column("merged_closes", String(8), nullable=False, server_default="notify"),
     Column("claim_policy", String(32), nullable=False),
     Column("done_authority", String(32), nullable=False),
-    Column("contract_arbiter", String(ID + 8), nullable=False),  # member id or role:admin
+    Column("contract_arbiter", String(ID + 8), nullable=False),  # member id or trust:admin
     Column("tag_authority", String(32), nullable=False),
     Column("steward_writes", String(32), nullable=False),
     Column("lease_seconds", Integer, nullable=False),
@@ -329,7 +404,7 @@ project = Table(
     Column("spawn_consent_by", String(16), nullable=False, server_default="human"),
     # Whose outage gates new assignments by agents, and who stands in for that role
     # alone (§6.1, §6.12); the defaults fill projects made before 0024.
-    Column("coordinator", String(ID + 8), nullable=False, server_default="role:admin"),
+    Column("coordinator", String(ID + 8), nullable=False, server_default="trust:admin"),
     Column("coordinator_substitute", String(ID)),
     # What revoking a runner does to its agents here: keep, stop or inherit (§6.1, §15.3).
     Column("on_runner_revoke", String(16), nullable=False, server_default="inherit"),
@@ -378,7 +453,9 @@ membership = Table(
     _ref("project_id", "project.id", nullable=False),
     _ref("human_id", "human.id"),
     _ref("agent_id", "agent_profile.id"),
-    Column("role", String(16), nullable=False),
+    # A built-in role, or a project role of up to 24 characters (#506).
+    Column("role", String(24), nullable=False),
+    Column("trust", String(16), nullable=False),  # with `role`: trust × role (§2.3)
     _membership_ref("reports_to"),
     Column("areas", JSON_VALUE, nullable=False),
     Column("capabilities", JSON_VALUE, nullable=False),
@@ -497,7 +574,9 @@ join_link = Table(
     _ref("agent_id", "agent_profile.id"),
     Column("new_agent_handle", String(HANDLE)),
     Column("new_agent_display_name", String(TITLE)),
-    Column("role", String(16), nullable=False),
+    # A built-in role, or a project role of up to 24 characters (#506).
+    Column("role", String(24), nullable=False),
+    Column("trust", String(16), nullable=False),  # with `role`: trust × role (§2.3)
     _membership_ref("reports_to"),
     Column("areas", JSON_VALUE, nullable=False),
     Column("capabilities", JSON_VALUE, nullable=False),
@@ -584,6 +663,12 @@ agent_session = Table(
     # `maity-runner/<version>` when a runner supervises the session (§15.11): its
     # long-poll wakes on a narrower set, and its rules say so.
     Column("supervisor", String(80)),
+    # Not listening (§5.3): the last call for events or the resume (`last_seen_at` counts
+    # every call); an episode's start, the oldest event that waited, and its notice.
+    Column("events_at", UtcDateTime),
+    Column("not_listening_since", UtcDateTime),
+    Column("not_listening_seq", BIG_ID),
+    Column("not_listening_request_id", String(ID)),
     UniqueConstraint("credential_id", "live", name="uq_agent_session_one_live"),
     CheckConstraint("live IS NOT FALSE", name="live_true_or_null"),
     **MYSQL_TABLE,
@@ -875,6 +960,10 @@ card = Table(
     Column("jour_fixe", JSON_VALUE),
     Column("ktw_ref", String(255)),
     Column("report", JSON_VALUE),
+    # A merge of the report's pull request (§6.6): the report it was observed on (a
+    # digest of it as sent) and whether `task_merged` went out for it.
+    Column("merge_report", String(64)),
+    Column("merge_told", Boolean, nullable=False, server_default=false()),
     Column("contract", JSON_VALUE),
     # Releases: the version is unique per project; `release_in_flight` is
     # True on the one release card that is neither done nor cancelled and
@@ -991,7 +1080,7 @@ request = Table(
     # owns an agent profile, member of the project or not: a personal request (§7).
     Column("to_kind", String(16), nullable=False),  # member, role, owner, profile_owner
     _membership_ref("to_member"),
-    Column("to_role", String(16)),
+    Column("to_role", String(32)),  # the whole token: `trust:admin`, `role:designer` (§2.3)
     _ref("to_profile", "agent_profile.id"),
     _ref("to_human", "human.id"),  # the profile's owner when the hub filed it
     Column("personal", Boolean, nullable=False, server_default=false()),
@@ -1553,6 +1642,32 @@ mail_budget = Table(
     Column("kind", String(16), primary_key=True),
     Column("window_start", UtcDateTime, nullable=False),
     Column("admitted", Integer, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# What notification mail already carried (docs/api.md §18.5): one row per human and item
+# (`e:<seq>` or `r:<n>`), so an item goes out once, and when each human's last hourly and
+# daily digest left. `stamp` is what `listing.stamp` read at the last pass and `waiting`
+# whether an item was left for its hour or day: with both unchanged a pass derives nothing.
+mail_item_sent = Table(
+    "mail_item_sent",
+    metadata,
+    _ref("human_id", "human.id", nullable=False),
+    Column("item", String(40), nullable=False),
+    Column("mailed_at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("human_id", "item"),
+    **MYSQL_TABLE,
+)
+
+notification_mail_state = Table(
+    "notification_mail_state",
+    metadata,
+    _ref("human_id", "human.id", primary_key=True),
+    Column("hourly_at", UtcDateTime),
+    Column("daily_at", UtcDateTime),
+    Column("held_since", UtcDateTime),  # held over the instance budget (§18.5)
+    Column("stamp", Text),
+    Column("waiting", Boolean, nullable=False, server_default=false()),
     **MYSQL_TABLE,
 )
 

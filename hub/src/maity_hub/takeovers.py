@@ -26,6 +26,7 @@ from maity_hub.auth.caller import Caller
 from maity_hub.errors import ApiError, forbidden, invalid
 from maity_hub.events import Actor, emit, lock_project, transaction
 from maity_hub.ids import new_id
+from maity_hub.scopes import in_admin_team
 
 log = logging.getLogger(__name__)
 
@@ -359,7 +360,7 @@ def _closed(conn: Connection, row: Any, actor: Actor | None) -> None:
         close_request(conn, row.request_id, "withdrawn", actor, reason=f"takeover_{how}")
     audience = [*_parties(conn, row), *_creator(conn, row.task_id)]
     if row.request_id is not None or row.override is not None:
-        audience.append("role:admin")
+        audience.append("trust:admin")
     emit(
         conn,
         row.project_id,
@@ -463,7 +464,7 @@ def withdraw(
 def admin_team(mine: Membership, row: Any) -> bool:
     """The members with the role `admin` and the `owner`, never a `proxy`, and never a
     party: `from`, `to` and the requester, all instances of them (§6.19)."""
-    if mine.role not in ("admin", "owner"):
+    if not in_admin_team(mine.trust, mine.role):
         return False
     return mine.id not in (row.from_member, row.to_member, row.requested_by)
 
@@ -494,7 +495,7 @@ def override(conn: Connection, mine: Membership, caller: Caller, row: Any, reaso
         conn,
         row.project_id,
         "takeover_overridden",
-        list(dict.fromkeys([*_parties(conn, row), "role:admin", "role:owner"])),
+        list(dict.fromkeys([*_parties(conn, row), "trust:admin", "trust:owner"])),
         {**view(conn, row), "override": record},
         actor=actor,
         subject=("task", row.task_id),
@@ -568,7 +569,7 @@ REPLIES = [
 def escalate(
     conn: Connection, row: Any, actor: Actor | None, *, by: str | None, reason: str | None
 ) -> bool:
-    """Move a disputed takeover to the admin team: a `decision` request to `role:admin`
+    """Move a disputed takeover to the admin team: a `decision` request to `trust:admin`
     with `transfer` and `keep`, the holder working on meanwhile. False when it was not
     `objected` any more."""
     from maity_hub import inbox
@@ -590,7 +591,7 @@ def escalate(
         f"Takeover of {row.task_id}: transfer or keep?",
         reason or row.reason,
         {"kind": "takeover_escalation", "takeover_id": row.id},
-        to=inbox.Addressee("role", role="admin"),
+        to=inbox.Addressee("role", role="trust:admin"),
         options=REPLIES,
         while_open="proceed_provisionally",
         actor=actor,
@@ -604,7 +605,7 @@ def escalate(
         conn,
         row.project_id,
         "takeover_escalated",
-        list(dict.fromkeys([*_parties(conn, escalated), "role:admin", "role:owner"])),
+        list(dict.fromkeys([*_parties(conn, escalated), "trust:admin", "trust:owner"])),
         {**view(conn, escalated), "by": by},
         actor=actor,
         subject=("task", row.task_id),

@@ -35,7 +35,8 @@ def test_a_join_answers_the_paste_line_once(owner: flow.Human) -> None:
         "/projects/maintainer/maity/joins",
         {
             "agent": {"handle": "agent-b", "display_name": "Agent B"},
-            "role": "member",
+            "trust": "member",
+            "role": "coder",
             "areas": ["hub/"],
             "capabilities": [],
             "ttl_seconds": 900,
@@ -64,6 +65,7 @@ def test_a_join_answers_the_paste_line_once(owner: flow.Human) -> None:
     assert set(listed[0]) == {
         "id",
         "agent_id",
+        "trust",
         "role",
         "created_by",
         "created_at",
@@ -123,11 +125,11 @@ def test_a_join_for_an_existing_member_keeps_the_membership(
     first = flow.agent(make_client, owner, role="member", areas=["hub/"])
     differing = owner.post(
         "/projects/maintainer/maity/joins",
-        {"agent": {"id": first.id}, "role": "admin", "areas": ["web/"], "capabilities": []},
+        {"agent": {"id": first.id}, "trust": "admin", "areas": ["web/"], "capabilities": []},
     )
     assert differing.status_code == 400
     assert differing.json()["error"]["details"]["fields"] == {
-        "role": "differs_from_membership",
+        "trust": "differs_from_membership",
         "areas": "differs_from_membership",
     }
     owner.patch(f"/projects/maintainer/maity/members/{first.id}", {"team": {"max_instances": 2}})
@@ -140,7 +142,10 @@ def test_a_join_for_an_existing_member_keeps_the_membership(
         memberships = conn.execute(
             select(t.membership).where(t.membership.c.agent_id == first.id)
         ).all()
-    assert len(memberships) == 1 and memberships[0].role == "member"
+    assert len(memberships) == 1 and (memberships[0].trust, memberships[0].role) == (
+        "member",
+        "coder",
+    )
 
 
 def test_delete_revokes_an_unused_join_and_refuses_a_spent_one(
@@ -384,3 +389,26 @@ def test_areas_are_plain_paths(owner: flow.Human, area: str) -> None:
 
 def test_ordinary_areas_are_fine(owner: flow.Human) -> None:
     flow.join(owner, "maity", areas=["/", "hub/", "context/", "docs/api.md", "web/js/app.js"])
+
+
+def test_a_new_instance_of_an_admin_agent_is_the_owners_to_give(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """A join that leaves trust and role out takes the member's own: for an agent the
+    owner raised to trust `admin`, that is a credential with trust admin, which only an
+    owner hands out, even to the agent's own human (§2.3 "The owner's rights")."""
+    from tests import factory
+
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    deputy = flow.human(make_client, migrated, "deputy")
+    factory.membership(migrated, project_id, "admin", human_id=deputy.id)
+    agent = flow.agent(make_client, deputy, "maintainer/maity")
+    members = "/projects/maintainer/maity/members"
+    assert owner.patch(f"{members}/{agent.id}", {"trust": "admin"}).status_code == 200
+    deputy.patch(f"{members}/{agent.id}", {"team": {"max_instances": 3}})
+    refused = deputy.post(
+        "/projects/maintainer/maity/joins", {"agent": {"id": agent.id}, "new_instance": True}
+    )
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"] == {"reason": "owner_only"}

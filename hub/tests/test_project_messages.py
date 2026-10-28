@@ -74,7 +74,7 @@ def test_a_member_lists_what_it_can_read_through_events(
     to_all = say(owner, "all")
     to_agent = say(owner, agent.id)
     say(owner, other.id)  # another member's
-    say(owner, "role:admin")  # not the agent's role
+    say(owner, "trust:admin")  # not the agent's role
     sent = say(agent, owner.id)
     assert seqs(listed(agent)) == [sent, to_agent, to_all]
     on_events = agent.get("/projects/maintainer/maity/events?after=0").json()["items"]
@@ -251,3 +251,37 @@ def test_the_edge_seqs_are_valid_cursors_and_a_huge_one_is_refused_over_http(
     huge = listed(owner, f"?cursor={paging.seq_cursor(2**100, bound)}")
     assert huge.status_code == 400
     assert huge.json()["error"]["details"]["fields"] == {"cursor": "invalid"}
+
+
+def test_a_message_lists_the_attachments_it_names_and_a_tombstone_none(
+    make_client: ClientFactory, migrated: Engine, tmp_path: Any
+) -> None:
+    store = tmp_path / "blobs"
+    store.mkdir()
+    owner = flow.human(lambda **kw: make_client(attachment_dir=store, **kw), migrated)
+    flow.project(owner, "maity")
+    agent = flow.agent(lambda **kw: make_client(attachment_dir=store, **kw), owner)
+    sent = agent.client.post(
+        "/api/v1/projects/maintainer/maity/attachments?name=log.txt",
+        content=b"log",
+        headers={"Content-Type": "text/plain", **agent.auth, **agent.key()},
+    ).json()
+    done = agent.post(
+        "/projects/maintainer/maity/events",
+        {
+            "kind": "message",
+            "type": "notice",
+            "to": "all",
+            "body": "see",
+            "attachments": [sent["id"]],
+        },
+    )
+    assert done.status_code == 201, done.text
+    item = listed(owner).json()["items"][0]
+    assert [a["id"] for a in item["attachments"]] == [sent["id"]]
+    assert set(item["attachments"][0]) == {"id", "name", "size", "type", "kind", "width", "height"}
+    redacted = owner.post(
+        f"/projects/maintainer/maity/events/{done.json()['seq']}/redact", {"reason": "x"}
+    )
+    assert redacted.status_code == 200
+    assert listed(owner).json()["items"][0]["attachments"] == []

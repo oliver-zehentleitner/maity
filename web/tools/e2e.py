@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import collections
 import hashlib
 import io
 import json
@@ -59,8 +60,10 @@ from playwright.sync_api import Page, expect, sync_playwright
 WEB = Path(__file__).resolve().parent.parent
 OWNER = "owner"
 OWNER_PASSWORD = "e2e owner password"
-TIMEOUT_MS = 15_000  # one step in the browser; the feed reads every 5 s
-COUNTS_MS = 25_000  # counts of other projects: /me is re-read every 15 s
+TIMEOUT_MS = 25_000  # one step in the browser; the feed reads every 15 s
+COUNTS_MS = 70_000  # counts of other projects: /me is re-read every 60 s
+TRACE_ANSWERS = 12  # the page's latest API answers shown when a step fails
+TRACE_BODY = 1500  # characters of each body
 WAIT_S = 60  # the agent's `maity wait`
 
 # axe-core, the accessibility engine: the npm package's tarball, pinned by the
@@ -94,6 +97,9 @@ class Run:
         # §8.7 "Attachments off": each 409 for the pending uploads as the page got
         # it, judged one by one in no_problems() (a response handler reads no body).
         self.off_answers: list = []
+        # The page's latest API answers, read back when a step fails (report_failure()): what
+        # the hub said is told apart from what the page drew of it.
+        self.recent: collections.deque = collections.deque(maxlen=TRACE_ANSWERS)
 
     def a11y(self, page: Page, view: str) -> None:
         """axe-core on the page as it stands, in each pass; back to 1280 px, light, after."""
@@ -207,7 +213,7 @@ class Run:
         """The agent's `maity wait`, started after its own events (resume first)."""
         self.maity(clone, "resume")
         return subprocess.Popen(
-            ["maity", "wait", "--timeout", str(WAIT_S)],
+            ["maity", "wait", "--one", "--timeout", str(WAIT_S)],
             cwd=clone,
             env=CLEAN_ENV,
             stdout=subprocess.PIPE,
@@ -365,6 +371,8 @@ def watch_page(run: Run, page: Page) -> None:
 
     def response(resp) -> None:
         path = resp.url.split(run.base, 1)[-1]
+        if path.startswith("/api/v1/"):
+            run.recent.append(resp)
         # A hub without notifications (docs/api.md §18) answers their read with
         # 404 on every page, and their settings (which the page then no longer
         # asks for); the page goes on without them, and the notifications step
@@ -436,6 +444,86 @@ def off_problem(method: str, path: str, status: int, body: object) -> str | None
     return f"{method} {path} answered {status}" + (f" ({code})" if code else "")
 
 
+# What the trace of a failed step may show. It goes to a public artifact and to the Actions log, so
+# every part is a closed set: a path keeps only the static route words below and shows every other
+# segment (ids, tokens, codes, slugs, in any spelling) as `{}`; a body shows only the listed fields,
+# each only with a value from its set, anything else as `?`. Nothing is copied by its shape.
+TRACE_ROUTE = {
+    "api", "v1", "me", "runners", "enrollments", "revoke", "pair", "join", "projects", "agents",
+    "humans", "members", "tasks", "messages", "events", "attachments", "notifications", "invitations",
+}
+TRACE_ENUMS = {
+    "credential_state": {"active", "revoked", "none", "pending", "expired"},
+    "presence": {"online", "offline", "listening", "away", "busy"},
+    "state": {"active", "revoked", "pending", "expired", "used", "removed"},
+}
+TRACE_CODES = {
+    "forbidden", "not_found", "conflict", "unauthenticated", "unauthorized", "revoked", "rate_limited",
+    "validation_error", "attachments_not_configured",
+}
+TRACE_ID = re.compile(r"(rnr|enr|agt|hum|prj|org)-[a-z0-9]{6,24}")
+
+
+def trace_path(path: str) -> str:
+    """The route without its query: static route words as they are, every other segment as `{}`."""
+    parts = path.split("?", 1)[0].split("/")
+    return "/".join(p if p in TRACE_ROUTE or not p else "{}" for p in parts)
+
+
+def trace_data(value: object) -> object:
+    """What of a JSON body may be shown: for the object or each of its `items`, the `id` (only a
+    known prefix), `credential_state`, `presence` and `state` (only listed values); for an error,
+    its `code` (only a listed one). Every other key and value is dropped."""
+    if isinstance(value, dict) and isinstance(value.get("items"), list):
+        return [trace_data(item) for item in value["items"][:5]]
+    if not isinstance(value, dict):
+        return None
+    out: dict = {}
+    item_id = value.get("id")
+    if isinstance(item_id, str):
+        out["id"] = item_id if TRACE_ID.fullmatch(item_id) else "?"
+    for key, allowed in TRACE_ENUMS.items():
+        if key in value:
+            shown = value[key]
+            out[key] = shown if isinstance(shown, str) and shown in allowed else "?"
+    error = value.get("error")
+    if isinstance(error, dict) and "code" in error:
+        code = error["code"]
+        out["error"] = {"code": code if isinstance(code, str) and code in TRACE_CODES else "?"}
+    return out
+
+
+def trace_line(method: str, path: str, status: int, text: str | None) -> str:
+    """One answer: method, safe path, status and the allowlisted part of a JSON body."""
+    try:
+        if not text:
+            raise ValueError("no body")
+        data = trace_data(json.loads(text))
+        shown = json.dumps(data, separators=(",", ":"), sort_keys=True)[:TRACE_BODY]
+    except Exception:  # not JSON, or gone: not copied
+        shown = "(body not shown)"
+    return f"{method} {trace_path(path)} {status} {shown}"
+
+
+def report_failure(answers: list, base: str, artifacts: Path) -> str:
+    """Said when a step fails: the page's latest API answers, to `api-trace.txt` and to stderr.
+    Both get the same text, built only by trace_line()."""
+    lines = []
+    for resp in answers:
+        try:
+            text = resp.text()
+        except Exception:
+            text = None
+        lines.append(trace_line(resp.request.method, resp.url.split(base, 1)[-1], resp.status, text))
+    trace = "\n".join(lines)
+    (artifacts / "api-trace.txt").write_text(trace + "\n")
+    print(f"\nthe page's last API answers (api-trace.txt):\n{trace}", file=sys.stderr)
+    return trace
+
+
+BEFORE_CHAT_LIST = re.compile(r"GET /api/v1/me/conversations\?\S* answered 404( \(not_found\))?$")
+
+
 def no_problems(run: Run, where: str) -> None:
     # Each 409 for the pending uploads, judged by its own body, read here
     # outside the response handler.
@@ -448,6 +536,9 @@ def no_problems(run: Run, where: str) -> None:
         problem = off_problem(resp.request.method, resp.url.split(run.base, 1)[-1], resp.status, body)
         if problem:
             run.problems.append(problem)
+    # A hub before the chat list across projects (§9.3) answers it 404 wherever
+    # #/chats is open; the page then reads each project's list, as before.
+    run.problems = [p for p in run.problems if not BEFORE_CHAT_LIST.match(p)]
     if run.problems:
         raise AssertionError(f"{where}:\n  " + "\n  ".join(run.problems))
 
@@ -467,7 +558,7 @@ def join_line(
     slug: str,
     handle: str | None,
     display: str = "E2E Agent",
-    role: str = "member",
+    role: str = "coder",
 ) -> tuple[str, str]:
     """Create a join line in the join panel on Members; a new profile when handle is given."""
     view_tab(page, "Members").click()
@@ -569,7 +660,11 @@ def main() -> int:
                 expect.set_options(timeout=TIMEOUT_MS)  # expect() has its own 5-s default
                 page = context.new_page()
                 watch_page(run, page)
-                scenario(run, page)
+                try:
+                    scenario(run, page)
+                except Exception:
+                    report_failure(list(run.recent), base, artifacts)
+                    raise
                 fixture_views(run, browser)
             finally:
                 browser.close()
@@ -699,7 +794,7 @@ def scenario(run: Run, page: Page) -> None:
     print(f"   asked {request_id}")
     run.maity(alpha, "resume")  # the wait starts after the agent's own events
     wait = subprocess.Popen(
-        ["maity", "wait", "--timeout", str(WAIT_S)],
+        ["maity", "wait", "--one", "--timeout", str(WAIT_S)],
         cwd=alpha,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -1427,7 +1522,7 @@ def images_step(run: Run, page: Page, alpha: Path) -> None:
             {
                 "name": "banner.png",
                 "mimeType": "image/png",
-                "buffer": tiny_png(600, 150, (122, 63, 196)),
+                "buffer": tiny_png(640, 320, (122, 63, 196)),
             }
         ]
     )
@@ -1509,6 +1604,9 @@ def pair_exchange(run: Run, pair_line: str) -> tuple[int, dict, str]:
 def runners_step(run: Run, page: Page) -> None:
     """The instance-level Runners view (docs/api.md §15.2, §15.3) against the hub."""
     page.goto(f"{run.base}/#/owner/e2e-alpha/members")
+    # A hash-only goto returns before the page renders anew, and that render
+    # replaces the header: a menu opened on the old one is gone mid-click.
+    expect(page.locator("main section.view-members")).to_be_visible()
     # Runners are the person's: in the gear menu, not the project row (tsk-cb6myw32def0).
     expect(page.locator("nav.switcher").get_by_role("link", name="Runners", exact=True)).to_have_count(0)
     page.locator("header").get_by_role("button", name="Settings", exact=True).click()
@@ -1576,6 +1674,10 @@ def runners_step(run: Run, page: Page) -> None:
     status, headers2, _ = pair_exchange(run, repair)
     assert status == 201 and headers2["maity-runner-id"] == headers["maity-runner-id"], headers2
     page.goto(f"{run.base}/#/all")
+    # A hash change only: the Runners view from before (already showing the new
+    # credential) stays until #/all is drawn. Without this wait the Revoke below can
+    # land on that old view, while the new one draws a read from before the revoke.
+    expect(page.locator("main section.view-all")).to_be_visible()
     page.goto(f"{run.base}/#/runners")
     card = page.locator("article.runner", has=page.get_by_role("heading", name="e2e-renamed"))
     expect(card).to_contain_text(headers2["maity-credential-id"])  # the old one was replaced
@@ -2205,7 +2307,7 @@ def invitations_step(run: Run, page: Page) -> None:
         watch_page(run, guest)
         guest.goto(f"{run.base}/#/invite/{token}")
         card = guest.locator("article.invite")
-        expect(card).to_contain_text("Owner invites you to join E2E Alpha as reviewer.")
+        expect(card).to_contain_text("Owner invites you to join E2E Alpha as member · reviewer.")
         expect(card.locator(".invite-note")).to_have_text("Welcome to the e2e project.")
         # A closed hub and no address: signing in is the one way in.
         expect(card.get_by_role("link", name="Create one", exact=True)).to_have_count(0)
@@ -2254,15 +2356,15 @@ def members_step(run: Run, page: Page) -> None:
     run.a11y(page, "members")
     row.get_by_role("button", name="Manage E2E Agent").click()
     manage = page.locator("tr.member-manage")
-    manage.locator("select").first.select_option("reviewer")
+    manage.locator("select[id^=member-role-]").select_option("reviewer")
     manage.get_by_role("button", name="Save changes", exact=True).click()
     expect(row.locator("td").nth(0)).to_contain_text("reviewer")
     run.shot(page, "members")
-    manage.locator("select").first.select_option("member")
+    manage.locator("select[id^=member-role-]").select_option("coder")
     manage.get_by_role("button", name="Save changes", exact=True).click()
-    expect(row.locator("td").nth(0)).to_contain_text("member")
+    expect(row.locator("td").nth(0)).to_contain_text("member · coder")
     # Reports to: the agent under the owner, at once in the organisation.
-    manage.locator("select").nth(1).select_option(label="Owner (@owner)")
+    manage.locator("select[id^=member-reports-]").select_option(label="Owner (@owner)")
     manage.get_by_role("button", name="Save changes", exact=True).click()
     expect(page.locator("main section.view-members > .send-status")).to_contain_text("Saved for E2E Agent: reports to.")
     view_tab(page, "Organisation").click()
@@ -2272,12 +2374,12 @@ def members_step(run: Run, page: Page) -> None:
     # The owner reporting to the agent would close a circle: refused before it is sent.
     humans.get_by_role("button", name="Manage Owner").click()
     owner_manage = page.locator("tr.member-manage")
-    owner_manage.locator("select").nth(1).select_option(label="E2E Agent (@e2e-agent)")
+    owner_manage.locator("select[id^=member-reports-]").select_option(label="E2E Agent (@e2e-agent)")
     owner_manage.get_by_role("button", name="Save changes", exact=True).click()
     expect(page.locator("main section.view-members > .send-status")).to_contain_text("That would close a circle")
     humans.get_by_role("button", name="Done managing Owner").click()
     row.get_by_role("button", name="Manage E2E Agent").click()
-    manage.locator("select").nth(1).select_option("")
+    manage.locator("select[id^=member-reports-]").select_option("")
     manage.get_by_role("button", name="Save changes", exact=True).click()
     expect(page.locator("main section.view-members > .send-status")).to_contain_text("Saved for E2E Agent: reports to.")
     # On a phone each row is a card: Manage and Remove are on screen, not in a sideways scroll.

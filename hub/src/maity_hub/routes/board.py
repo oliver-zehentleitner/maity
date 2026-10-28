@@ -30,7 +30,7 @@ from maity_hub.routes.tasks import _locked, _project_card, audience
 router = APIRouter(route_class=ProjectRoute)
 
 PAGE_DEFAULT, PAGE_MAX = 50, 200
-REDACTION_AUDIENCE = ["role:owner", "role:admin"]  # every redaction's notice (§8.5)
+REDACTION_AUDIENCE = ["trust:owner", "trust:admin"]  # every redaction's notice (§8.5)
 
 
 class NoteIn(Written):
@@ -350,7 +350,8 @@ def post_note(
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
-        mine.require("tasks:write")
+        if mine.trust != "guest":  # a guest comments with notes, whatever its role (§2.3)
+            mine.require("tasks:write")
         mine = _locked(conn, mine)
         card = _card(conn, mine, card_id)
         _refuse_closed(mine)

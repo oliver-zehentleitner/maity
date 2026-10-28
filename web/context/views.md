@@ -480,7 +480,7 @@ they come. **This was me** marks the alert read by its id, the one way
 section, and the mail sign-in banner is shown at the top of every page of
 every other session. The banner stays while the reported session or one
 it approved is active, applies the list's rules to its End, and is built
-again on every 15-second round while a sign-in alert is unread.
+again on every round of the `/me` read while a sign-in alert is unread.
 "Confirmed" is said only when the alert is no longer unread afterwards,
 because the hub answers 200 for an id it skipped; when the list cannot
 be read again the result is said to be unknown. A check each minute
@@ -704,7 +704,7 @@ a listed route is the resource's (a project left, a card gone) and stays
 an error, as does one while the machine form cannot be read. A view that
 needs a missing route shows a muted line in its place (`M.dom.notOnHub`)
 and notes the route (`M.api.absent`, method and path without the query,
-until the next navigation, so a deploy meanwhile is found): the notifications' 15-second count read, the browser
+until the next navigation, so a deploy meanwhile is found): the notifications' count read on the `/me` round, the browser
 notifications' long-poll, the overview's re-reads and the sessions list
 ask no more. A 5xx, a network failure, 401 or 403 is still shown as an
 error.
@@ -1020,15 +1020,23 @@ and the instruction asked for none.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's instruction of 2026-10-25, from a phone screenshot of the cross-project inbox; the dashboard's implementation, 2026-10-25
+**Source:** the maintainer's instruction of 2026-10-25, from a phone screenshot of the cross-project inbox; the dashboard's implementation, 2026-10-25; the project's mark added after his phone screenshots of 2026-10-28 (inside a project the buttons wrapped to a second row)
 **Revisit when:** the switcher stops naming the current scope, or the header gets a second line on phones
 
 Below 600 px the span beside the logo (the project's name, "Everything
 waiting for you", "Your account", …) is clipped to one pixel by CSS,
 the usual visually hidden pattern; on wider screens it stays as it was.
+The project's mark beside it is not shown there either (`display:
+none`): it is decoration, already hidden from screen readers. The
+buttons beside the logo are spaced tighter there (gaps, inner padding,
+the counts' padding; the same height), so that with their counts they
+stay in the logo's row at 360 px. Only two counts of three characters
+("99+") at 360 px still wrap, into the two rows it had before.
 
 **Reason:** on a phone the text crowded the menus, and the switcher's
-current tab already names the scope. Clipped rather than removed, a
+current tab already names the scope. Inside a project the mark and the
+buttons' spacing pushed the buttons into a second row, which moved the
+whole page down; the tab shows the same mark. Clipped rather than removed, a
 screen reader still reads where the page is.
 
 **Rejected alternative:** `display: none`: it takes the name from
@@ -1179,15 +1187,16 @@ review with an open child would hide nothing, the common case.
 **Type:** incident
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's card for the global chat (tsk-z8z8cg56y00s), 2026-10-26, after that day's incident of an events long-poll multiplied by open tabs; the dashboard's implementation, 2026-10-26
-**Revisit when:** the hub offers a cross-project conversation list or a per-user chat stream, or the notifications stream stops reporting chat messages
+**Source:** the maintainer's card for the global chat (tsk-z8z8cg56y00s), 2026-10-26, after that day's incident of an events long-poll multiplied by open tabs; the dashboard's implementation, 2026-10-26; the list across projects (§9.3, GET /me/conversations) read once instead of per project, 2026-10-28
+**Revisit when:** the hub offers a per-user chat stream, or the notifications stream stops reporting chat messages
 
 `#/chats` shows every project's chats in the Chat tab's layout and opens
 one in place with chat.js's own pane, in that project's context. It opens
 no events long-poll: the notifications stream (js/notify.js), which every
 signed-in page reads anyway, says that something changed; the global view
-then reads each project's conversation list once a burst has settled
-(0.4 s), and the open conversation fetches what came after its last
+then reads its conversations once a burst has settled (0.4 s): in one
+read across projects (`GET /me/conversations`, §9.3) where the hub has
+it, and each project's list on a hub without it. The open conversation fetches what came after its last
 message, as its project's feed would have made it, and reads its newest
 page and (for a group chat) itself again, to take over what the stream
 cannot name: a removal, a deleted file, a rename, a change of who is in it
@@ -1704,3 +1713,180 @@ elsewhere, a revoked lead included.
 **Rejected alternative:** editing the limit in the join panel where the
 refusal appears: the panel's user may not be the owner, and the rulebook
 would have two places. Alternatives to the row's placement: unknown.
+
+## A project's name is changed in Project settings; a card outside its project reads with it
+
+**Id:** 9cf859f1-d5e0-420c-9ea3-d633cea94e33
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §6.25 (rename by a human owner, transfer by the namespace owner as a consent request, aliases, card references outside a project); the card tsk-cns4d1d7ht4j from the maintainer's chat; the hub's PR #487, 2026-10-28
+**Revisit when:** the dashboard gets a second-factor prompt (the transfer's step-up), or organisations become namespace owners
+
+Project settings has a **Project name** section for a human owner,
+where the hub's view carries `aliases`: the full name, the earlier ones,
+a rename of the slug that follows the new address, and, for the
+namespace owner, a transfer to another human owner of the project, with
+the request withdrawable from the same place. A step-up the hub asks for
+is said, not entered: the dashboard has no second-factor prompt yet. A
+card's or a request's id reads `<owner>/<slug>/<id>` wherever it is shown
+outside its project (`M.ids.where` says so by the view's scope), written
+by one helper (`M.ids.ref`) and never parsed back.
+
+**Reason:** the name belongs with the project's other settings and to
+the people the contract gives it to; one helper keeps the prefix in one
+place, as the card asked, so a later change of its form is one edit.
+
+**Rejected alternative:** a transfer that names anyone by handle: the
+contract takes only a current owner of the project, so the list offers
+exactly those. Parsing `owner/slug/tsk-…` back into a link: §6.25 makes
+the prefix display only.
+
+## A human's picture is set on the account, an agent's in its row on Members; the account keeps only agents no project shows
+
+**Id:** 59aaf51f-c63d-4cb6-966b-85eb8f2c682d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish on the card tsk-th1yq0jtk3yf (an agent's picture belongs to its management, personal settings keep only one's own), 2026-10-28; the coordinator's ruling on the fallback for agents in no project one is in, 2026-10-28
+**Revisit when:** the dashboard gets a page of one's agents outside any project, or §6.10 gives `members:admin` a say over pictures
+**See:** rendering.md#a-picture-is-uploaded-on-the-account-checked-as-the-hub-checks-it-with-no-preview-of-the-chosen-file — 3ec853f0-4141-4e81-acdf-c0fee94c920b — as of 2026-10-28
+
+The account (`#/account/picture`) sets the human's own picture. An
+agent's picture is set where the agent is managed: in its row on
+Members, under **Details** or **Manage**, for its owner only, as §6.10
+allows. The picture is read from one's agent profiles (`GET /agents`)
+when the first such row opens, since the member list carries no
+`avatar_source`. The account still lists, under **Agents in other
+projects**, the owner's agents that are in no project the owner can
+open, and only those. `#/account/picture/<agent id>` for an agent that
+Members reaches leads to `#/<owner>/<slug>/members/<agent id>/picture`,
+the row open. The checks before sending and the missing preview stay as
+the entry this one replaces describes them.
+
+**Reason:** a picture is part of managing the agent, next to its
+credentials and rulebook, not of the human's personal settings. An
+agent working only in projects its owner is not a member of has no row
+the owner can open. Without the account's list, its picture could not be
+set from the dashboard, and a Keep the Why notice about it would lead
+nowhere.
+
+**Rejected alternative:** dropping the account's list entirely and
+sending such a notice to `#/all`. `#/all` says nothing about the agent,
+and its picture would become unreachable. Keeping every agent's picture
+on the account: this is what the maintainer asked to move.
+
+## The project banner is shown at 2:1, the shape of a forge's social preview
+
+**Id:** c2e9d1e8-f7b5-46fd-8c93-9ea04ff52042
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish on the card tsk-4jhn5xeypjjb (the banner had the wrong height; GitHub asks for at least 640×320, ideally 1280×640) and his follow-up (never crop: the Keep the Why banner's text was cut); the coordinator's cap at 960 pixels, 2026-10-28
+**Revisit when:** the 960-pixel cap is too small or too large for the inbox below, or a forge's preview has another shape
+
+The banner on the project's inbox, and its preview in Project settings,
+are as wide as their column, at most 960 pixels (the banner centred),
+and half as high (`aspect-ratio: 2 / 1`).
+The image is never cropped (`object-fit: contain`): one of another shape
+is shown whole, with margins in the surface colour. There is no fixed
+height; the cap keeps the inbox below in sight on a wide screen, where
+the full width made the banner the whole first screenful.
+
+**Reason:** a project's banner is mostly the repository's social preview,
+which GitHub defines at 2:1. The same shape shows it whole at every
+width. A preview often carries text, such as the Keep the Why banner, and
+cropping makes that unreadable, so margins are preferred.
+
+**Rejected alternative:** the fixed 180-pixel strip it had: at desktop
+width it cut a 2:1 preview to about 6.5:1, showing only a stripe of it.
+Filling the 2:1 box by cropping (`object-fit: cover`): a banner of
+another shape lost the text at its edges.
+
+## The view being left is inert until the next one is drawn
+
+**Id:** 1d888f69-9233-40b4-b9f3-cd679825ef82
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the runner flake of web-e2e (tsk-q1xrpaahtah0, runs 40718638353 and 40721945466) and the reviewer's reproduction with ordinary clicks and Back on PR #551, 2026-10-28
+**Revisit when:** views are mounted before their data is read, or a view is kept across navigations
+
+A navigation renders the next view off screen and mounts it when its
+data is read; until then the view being left stays shown. From the start
+of the render it is `inert`: no click, key or focus reaches it.
+
+**Reason:** an action in the old view (a Revoke) was answered into that
+view, which then disappeared, while the new view showed what it had read
+before the action, as if nothing had happened. The page alone was wrong,
+the hub had revoked. Inert keeps the old view as a visual placeholder
+without letting it start anything.
+
+**Rejected alternative:** waiting in the end-to-end test only: it hid a
+real case (a click during a slow navigation). Clearing the old view at
+once: a blank page on every navigation, and a jump. Making every view's
+initial read consistent with actions in other instances: one rule per
+view, for a race the inert placeholder removes for all of them.
+
+## An agent profile is deleted where it is managed, confirmed by its handle, its projects named first
+
+**Id:** 7929359f-6af1-415e-b6e6-a55dd40ca27c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish on the card tsk-g1yz7rhaptqk (profiles deletable, with a confirmation by typing the handle and what happens), 2026-10-28; docs/api.md §6.3 (`profile_in_use`, `?cascade=true`, the tombstone)
+**Revisit when:** the hub offers an undo or a grace period for a deleted profile, or deletion moves to a page of one's agents outside any project
+
+The owner deletes a profile in its row on Members, beside its picture,
+and on the account for an agent in no project of the owner's. The page
+first names every project the profile is a member of and what deleting
+it ends there (credentials, claims, placements), then enables the button
+only once the handle is typed. A profile that is still a member
+somewhere goes out with `?cascade=true`; one in no project, without.
+
+**Reason:** a deletion cannot be undone, and in a project it ends a
+working membership. Typing the handle makes it a deliberate act for this
+very profile, and the named projects say what it costs before, not after.
+In a Members row the profile is always a member, so the cascade is the
+only deletion that can succeed there.
+
+**Rejected alternative:** a plain `DELETE` first and a second
+confirmation on `profile_in_use`: two dialogs for what the page can say
+at once. A browser `confirm()`: it names neither the projects nor the
+handle, and is clicked away too easily.
+
+## Trust and role are shown and chosen as the hub keeps them; what only an owner may grant is not offered to others
+
+**Id:** b71cebbf-56d9-4f65-aef9-cbb4ab5131a1
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §2.3 (trust × role, owner_only, the guest's limits) and the card for the dashboard's part (tsk-tx9qcehevfnk), which replaces the interim mapping at the API boundary, 2026-10-28
+**Revisit when:** a project's own roles (§2.3) get a place in the dashboard, or the hub lets a non-owner grant trust admin
+
+The dashboard reads and sends a membership's `trust` and `role` as the
+hub has them. Every view asks one helper (`js/trust.js`) who governs
+(trust owner or admin, never a proxy, which relays and decides nothing
+itself), who is an owner and who is a guest, and names a
+member as "trust · role". The member form, the invitation and the join
+line each choose trust and role on their own. Trust owner or admin and
+the role proxy are offered only to a caller with trust owner, and proxy
+only together with trust admin; a proxy whose trust changes becomes a
+coder in the same change. An owner's membership is removed only by an
+owner, so no one else is offered it. A guest is never offered as an assignee
+or as whom someone reports to, and a human guest is offered no new
+group chat. The overview groups the team by trust.
+
+**Reason:** trust and role are two separate questions (§2.3): how far
+the project trusts a member, and what the member does. A single name
+could not say "admin reviewer" or "guest coder", and the interim mapping
+lost exactly those. The choices the hub refuses for a non-owner
+(`owner_only`) or for a guest would only lead to a refusal, so they are
+not offered.
+
+**Rejected alternative:** keeping the mapping between single-role names
+and trust and role at the API boundary: it translated every answer and
+body and could not show a guest's role or a reviewer with trust admin.
+Offering every choice and saying the hub's refusal afterwards: a form
+that offers what it will refuse.
+

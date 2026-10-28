@@ -63,6 +63,7 @@ window.Maity = window.Maity || {};
     if (!to) return null;
     if (to === "owner") return "the project's owner";
     if (to.startsWith("role:")) return "role " + to.slice(5);
+    if (to.startsWith("trust:")) return "trust " + to.slice(6);
     if (to === ctx.me.id) return "you";
     if (to.startsWith("profile_owner:")) return "you, as the agent's owner";
     return ref(ctx, req, { member_id: to, display_name: ctx.nameOf ? ctx.nameOf(to) : to });
@@ -122,7 +123,7 @@ window.Maity = window.Maity || {};
   }
 
   function who(ctx, req, person) {
-    return [ref(ctx, req, person), " · " + person.role + (person.session_id ? " · session " + person.session_id : "")];
+    return [ref(ctx, req, person), " · " + M.trust.words(person) + (person.session_id ? " · session " + person.session_id : "")];
   }
 
   // The project a request's text belongs to, for its ids as links
@@ -131,7 +132,9 @@ window.Maity = window.Maity || {};
   function textAt(ctx, req) {
     const p = ctx.projects.find((x) => x.full_name === req.slug);
     const slug = req.personal && !p ? null : req.slug;
-    return { slug, repository: (p && p.repository && p.repository.url) || (ctx.slug === req.slug ? M.ids.where(ctx).repository : null) };
+    return { slug, repository: (p && p.repository && p.repository.url) || (ctx.slug === req.slug ? M.ids.where(ctx).repository : null),
+      // Across projects (#/all) a card or request reads with its project (§6.25).
+      outside: ctx.scope !== "project" };
   }
 
   function entryBody(ctx, req, names, onAnswer, onLater) {
@@ -155,9 +158,9 @@ window.Maity = window.Maity || {};
       h("dt", null, "Asked"), h("dd", null, formatTime(req.created_at)),
       req.task
         ? [h("dt", null, "Card"), h("dd", null, req.personal
-          ? req.task.id + " — " + req.task.title + " (" + req.task.status.replace("_", " ") + ")"
+          ? M.ids.ref(req.project && req.project.full_name, req.task.id, true) + " — " + req.task.title + " (" + req.task.status.replace("_", " ") + ")"
           : h("a", { href: ctx.projectLink(req.slug, "tasks", req.task.id) },
-            req.task.id + " — " + req.task.title + " (" + req.task.status.replace("_", " ") + ")"))]
+            M.ids.ref(req.slug, req.task.id, ctx.scope !== "project") + " — " + req.task.title + " (" + req.task.status.replace("_", " ") + ")"))]
         : null,
       h("dt", null, "Meanwhile"), h("dd", null, req.while_open === "proceed_provisionally"
         ? "the agent proceeds provisionally"
