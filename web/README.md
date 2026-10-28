@@ -212,7 +212,9 @@ the member in Members, and `#123` the project repository's issue or pull
 request on GitHub (in a new tab; only for a GitHub repository). An id is
 linked by its shape alone, never looked up: a page it opens says when it
 holds no such thing. The link's text is the id as written, and no mention
-is made. In Markdown (messages, chats) ids in code spans and fenced code
+is made; outside the id's project (the global chat, `#/all`) a card's
+or request's reads `<owner>/<slug>/tsk-…` (`docs/api.md` §6.25, display
+only, `M.ids.ref` the one place that writes it). In Markdown (messages, chats) ids in code spans and fenced code
 stay plain; the other texts are not Markdown, so backticks there are just
 characters and an id between them still links. A text read along from
 outside a project (`#/observe`) links no id, as it links no member. In
@@ -1009,6 +1011,21 @@ slash, and says the hub's `not_a_configured_forge` at the field. A
 change or a removal is confirmed first, because the probe, the Keep the
 Why dashboard and the runners' new clones all follow the repository.
 
+**Project name** (`docs/api.md` §6.25, `js/project-names.js`) is in the
+same panel for a human owner, where the hub's project view has
+`aliases`: the full name and the earlier ones, which still lead here.
+**Rename** changes the slug (`PATCH /projects/{owner}/{slug}` `{slug}`),
+asks first and follows the new address; the hub's `taken`, `reserved`,
+`alias_limit` (at most 8 earlier names) and `rate_limited` (3 renames
+and transfers a day) are said in words. **Transfer**, for the namespace
+owner only, asks another human owner of the project to take it over
+(`POST …/transfer`, a consent request in their inbox; the project moves
+on their go) and offers to withdraw the request; without another owner
+it says to make one first, and a step-up the hub asks for is said. In
+Members, demoting or removing the namespace owner is refused with
+`namespace_owner`, said with the way out. The ticker names a `rename`
+item as such.
+
 **Agent signing** (`policy.signing`, `docs/api.md` §2.2, §6.1) is in the
 same panel for owner and admin, where the hub's policy has the field:
 optional or required, with a reason. Before it becomes required, the
@@ -1403,6 +1420,7 @@ web/
 ├── tools/smoke.js    make smoke
 ├── tools/starter-configs.js  the starter configurations, as JSON
 ├── tools/starter_configs.py  make starter-configs
+├── js/project-names.js  Project settings: the project's name, rename and transfer
 ├── tools/e2e.py      make e2e: the browser end-to-end test
 ├── tools/test_e2e_harness.py  make check: e2e.py's judgement of answers, read from its syntax tree
 └── context/          why the dashboard is built this way (Keep the Why)

@@ -421,6 +421,73 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   try { await win.Maity.api.get("/projects/maity/tasks"); } catch (err) { nsOld = err; }
   expect(nsOld && nsOld.status === 410 && nsOld.code === "project_path_outdated", "namespace: the fixture hub refuses an old project path with 410");
   expect(win.Maity.api.projectPath("ma int/ma ity") === "ma%20int/ma%20ity", "namespace: a full name's path keeps its one slash, each part encoded");
+  // Outside its project a card or request id carries the project (§6.25, tsk-cns4d1d7ht4j); inside it stands alone.
+  const nsIdText = (at) => win.Maity.dom.h("p", null, win.Maity.ids.link("see tsk-0123456789ab and agt-0123456789ab", at)).querySelectorAll("a").map((a) => a.textContent + "=" + a.getAttribute("href")).join(" ");
+  expect(nsIdText({ slug: "maintainer/maity", outside: true }) === "maintainer/maity/tsk-0123456789ab=#/maintainer/maity/tasks/tsk-0123456789ab agt-0123456789ab=#/maintainer/maity/members/agt-0123456789ab"
+    && nsIdText({ slug: "maintainer/maity" }) === "tsk-0123456789ab=#/maintainer/maity/tasks/tsk-0123456789ab agt-0123456789ab=#/maintainer/maity/members/agt-0123456789ab",
+    "namespace: a card id outside its project reads with the project's full name, inside alone; a member id never");
+  expect(win.Maity.ids.where({ scope: "chats", slug: "maintainer/maity", project: {} }).outside && !win.Maity.ids.where({ scope: "project", slug: "maintainer/maity", project: {} }).outside,
+    "namespace: the global chat is outside a project, a project's own view is not");
+  await go("#/all"); await nsSettle();
+  const nsAllRefs = main.querySelectorAll("a.id-ref").filter((a) => /tsk-|req-/.test(a.textContent));
+  expect(nsAllRefs.every((a) => /^maintainer\/(maity|sample)\/(tsk|req)-/.test(a.textContent)),
+    "namespace: across projects a card or request id in a text reads with its project " + nsAllRefs.map((a) => a.textContent).join());
+  // Project settings: the name, a rename by a human owner, the old name kept as an earlier one.
+  await go("#/maintainer/maity/inbox"); await projectSettings();
+  const nsNames = () => main.querySelector(".project-names");
+  expect(nsNames() && text(nsNames()).includes("This project is maintainer/maity.") && !nsNames().querySelector(".project-aliases")
+    && byId("project-rename").value === "maity", "namespace: settings name the project, its slug ready to rename");
+  byId("project-rename").value = "tasks"; nsNames().querySelector("form.project-rename").dispatch("submit"); await nsSettle();
+  expect(text(nsNames()).includes("part of the dashboard's addresses") && byId("project-rename").getAttribute("aria-invalid") === "true",
+    "namespace: a route word is refused next to the field");
+  // The shim fires no hashchange for an assigned hash: followed here as a browser would.
+  byId("project-rename").value = "maity-hub"; nsNames().querySelector("form.project-rename").dispatch("submit"); await nsSettle(); await go(win.location.hash); await nsSettle();
+  expect(win.location.hash === "#/maintainer/maity-hub/settings" && nsNames() && text(nsNames()).includes("This project is maintainer/maity-hub.")
+    && text(nsNames().querySelector(".project-aliases")).includes("maintainer/maity"), "namespace: renamed, the page follows the new name, the old one listed as earlier");
+  await go("#/maintainer/maity/board"); await nsSettle();
+  expect(win.location.hash === "#/maintainer/maity-hub/board", "namespace: the old name still leads to the project");
+  // Taken back: the old name is current again.
+  await projectSettings();
+  byId("project-rename").value = "maity"; nsNames().querySelector("form.project-rename").dispatch("submit"); await nsSettle(); await go(win.location.hash); await nsSettle();
+  expect(win.location.hash === "#/maintainer/maity/settings" && text(nsNames().querySelector(".project-aliases")).includes("maintainer/maity-hub")
+    && !text(nsNames().querySelector(".project-aliases")).includes("maintainer/maity,"), "namespace: a name taken back is current again");
+  // At 8 earlier names a new one is refused, taking back one's own is not (as the hub, #487).
+  let nsFull = null;
+  try { await win.Maity.api.patch("/projects/maintainer/sample", { slug: "sample-new" }); } catch (err) { nsFull = err; }
+  const nsBack = await win.Maity.api.patch("/projects/maintainer/sample", { slug: "sample-old" });
+  const nsHome = await win.Maity.api.patch("/projects/maintainer/sample-old", { slug: "sample" });
+  expect(nsFull && nsFull.code === "alias_limit" && nsBack.full_name === "maintainer/sample-old" && nsBack.aliases.length === 8
+    && nsHome.full_name === "maintainer/sample" && nsHome.aliases.length === 8 && !nsHome.aliases.includes("maintainer/sample"),
+    "namespace: at the alias limit a new name is refused, an earlier one of its own taken back");
+  // Transfer: only to another human owner; without one the way is said.
+  expect(nsNames().querySelector(".project-transfer") && text(nsNames().querySelector(".project-transfer")).includes("make them an owner of it first"),
+    "namespace: without another owner the transfer says what comes first");
+  const nsGetT = win.Maity.api.get, nsPostT = win.Maity.api.post;
+  const nsAnna = { id: "hum-anna", kind: "human", handle: "anna", display_name: "Anna", role: "owner", areas: [], capabilities: [], presence: "offline" };
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/members" ? nsGetT(p).then((r) => Object.assign({}, r, { items: r.items.concat([nsAnna]) })) : nsGetT(p));
+  const nsTransfers = [];
+  win.Maity.api.post = (p, b) => {
+    if (p.endsWith("/transfer")) { nsTransfers.push([p, b]); return nsTransfers.length === 1 ? Promise.resolve({ id: "req-tr01", class: "consent", status: "open" })
+      : Promise.reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", { reason: "step_up_required" })); }
+    if (/\/requests\/req-tr01\/withdraw$/.test(p)) { nsTransfers.push([p, b]); return Promise.resolve({ id: "req-tr01", status: "withdrawn" }); }
+    return nsPostT(p, b);
+  };
+  await go("#/maintainer/maity/inbox"); await projectSettings();
+  const nsTr = () => nsNames().querySelector("form.project-transfer");
+  expect(nsTr() && byId("project-transfer-to").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "hum-anna", "namespace: the transfer offers the other human owners");
+  nsTr().dispatch("submit"); await nsSettle();
+  expect(JSON.stringify(nsTransfers[0]) === JSON.stringify(["/projects/maintainer/maity/transfer", { to: "hum-anna" }]) && text(nsTr()).includes("moves when they accept"),
+    "namespace: a transfer asks the receiver, the move waits for their go");
+  btn(nsTr(), "Withdraw the request").click(); await nsSettle();
+  expect(nsTransfers[1][0] === "/projects/maintainer/maity/requests/req-tr01/withdraw" && text(nsTr()).includes("Withdrawn."), "namespace: the request is withdrawn from where it was made");
+  nsTr().dispatch("submit"); await nsSettle();
+  expect(text(nsTr()).includes("Not asked: the hub asks for your second factor first"), "namespace: a step-up the hub asks for is said");
+  win.Maity.api.get = nsGetT; win.Maity.api.post = nsPostT;
+  // The hub's limits in words; the namespace owner stays an owner.
+  const nsSaid = win.Maity.projectNames.said;
+  expect(nsSaid({ code: "alias_limit", details: { limit: 8 } }).message.includes("8 earlier names") && nsSaid({ code: "rate_limited" }).message.includes("3 renames and transfers a day")
+    && nsSaid({ code: "invalid", details: { fields: { slug: "taken" } } }, "anna").message.includes("@anna has a project of that name"),
+    "namespace: the limits of names said in words");
   expect(throws(() => win.Maity.dom.h("a", { href: "javascript:alert(1)" })), "h() refuses a javascript: href");
   expect(throws(() => win.Maity.dom.h("a", { onclick: "alert(1)" })), "h() refuses a string handler");
 
@@ -1484,6 +1551,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   main.querySelector("tr.member-manage form.member-edit").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(text(main).includes("Saving failed: The project's last owner cannot be demoted or removed.") && text(mRow("Maintainer")).includes("owner"),
     "members: the last owner is not demoted, said in words");
+  // §6.25: the project's namespace owner stays an owner, said with where to go instead.
+  const noPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => (p === "/projects/maintainer/maity/members/hum-maintainer"
+    ? Promise.reject(new win.Maity.api.ApiError("x", 409, p, "namespace_owner", { projects: ["maintainer/maity"] })) : noPatch(p, b));
+  main.querySelector("tr.member-manage form.member-edit").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main).includes("Saving failed: the project lives in this person's namespace, so they stay an owner; transfer it to someone else first"),
+    "members: the namespace owner is not demoted, said with the way out");
+  win.Maity.api.patch = noPatch;
   btn(mRow("Maintainer"), "Done").click(); await tick();
   btn(mRow("Reviewer"), "Manage").click(); await tick();
   expect(main.querySelector("tr.member-manage select").querySelectorAll("option").every((o) => o.attrs.value !== "owner"), "members: an agent is never offered owner");
