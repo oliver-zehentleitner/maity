@@ -2856,7 +2856,7 @@ Response `200`, bounded and deterministic:
                   "paused": null, "briefing": "You are the hub's second pair of eyes: …",
                   "briefing_by": { "kind": "human", "id": "hum-maintainer", "handle": "maintainer" },
                   "briefing_version": 1, "briefing_source": "membership",
-                  "guide": { "trust": "You are a full member of the team: …", "role": "You build: …" },
+                  "guide": { "trust": "You are a full member of the team: …", "role": "You build: …", "guide_by": null },
                   "team": { "max_instances": 2, "distribution": "free", "lead_instance": null,
                             "wake": "all", "review_within_team": false } },
   "team": [ { "id": "k7mq", "address": "agt-b#k7mq", "harness": "Codex", "model": "gpt-5.5",
@@ -2978,9 +2978,12 @@ Response `200`, bounded and deterministic:
   its own, and once the membership gets one (a join or a `PATCH`), that
   one wins.
 - `membership.guide` says what this agent's trust and role mean in
-  practice — the same texts on every instance and in every project,
-  written into the hub, not set by a project or an owner (the
-  maintainer's decision of 2026-10-27, `context/trust.md`). `trust` is
+  practice. For the trusts and the built-in roles these are the same
+  texts on every instance and in every project, written into the hub,
+  not set by a project or an owner (the maintainer's decision of
+  2026-10-27, `context/trust.md`); for a project role (§2.3) `role` is
+  the text a project admin set, and `guide_by` names who (the human's
+  handle; `null` for a built-in role). `trust` is
   the text for the membership's trust, `role` the one for its role;
   the briefing says what to do in this project, the guide what the
   position is. A change of trust or role changes the guide on the next
