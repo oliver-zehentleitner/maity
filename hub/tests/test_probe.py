@@ -22,6 +22,7 @@ SHA = "d91e294c" + "0" * 32
 OTHER = "e" * 40
 TOKEN = "test-token"
 READER = forge.Forge(TOKEN)  # what the app builds from the settings
+REAL_GET = forge.Forge._get
 
 
 class FakeGitHub:
@@ -230,6 +231,37 @@ def test_an_agent_reads_the_probe_with_project_read(
     assert agent.get("/projects/maintainer/maity/probe?pr=3").json()["pr"]["number"] == 3
 
 
+@pytest.mark.parametrize(
+    ("answer", "reason"), [(True, "private_without_grant"), (None, "no_grant")]
+)
+def test_a_private_repository_is_not_configured_and_only_an_admin_sees_why(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    github: FakeGitHub,
+    monkeypatch: pytest.MonkeyPatch,
+    answer: bool | None,
+    reason: str,
+) -> None:
+    """§11.4: the instance token reads public repositories only."""
+    agent = flow.agent(make_client, owner)
+    sent: list[str] = []
+
+    def send(_self: forge.Forge, path: str, query: Any = None) -> Any:
+        sent.append(path)
+        return None if answer is None else {"private": answer}
+
+    monkeypatch.setattr(forge.Forge, "_get", REAL_GET)
+    monkeypatch.setattr(forge.Forge, "_send", send)
+    monkeypatch.setattr(forge, "_public", {})
+    refused = owner.get("/projects/maintainer/maity/probe?pr=3")
+    assert refused.status_code == 409
+    assert refused.json()["error"]["code"] == "probe_not_configured"
+    assert refused.json()["error"]["details"] == {"reason": reason}
+    hidden = agent.get("/projects/maintainer/maity/probe?pr=3").json()["error"]
+    assert (hidden["code"], hidden["details"]) == ("probe_not_configured", {})
+    assert sent == ["/repos/acme/maity"]
+
+
 # --- the forge client ----------------------------------------------------------------------
 
 
@@ -254,10 +286,10 @@ def test_the_token_never_follows_a_redirect_to_another_host() -> None:
     request = urllib.request.Request("https://api.github.com/repos/a/b")
     with pytest.raises(forge.ForgeUnavailableError):
         handler.redirect_request(request, None, 301, "Moved", {}, "https://evil.example/x")
-    moved = handler.redirect_request(
-        request, None, 301, "Moved", {}, "https://api.github.com/repositories/1"
-    )
-    assert moved.full_url == "https://api.github.com/repositories/1"
+    with pytest.raises(forge.NotCoveredError):  # nor within the API host (§11.4)
+        handler.redirect_request(
+            request, None, 301, "Moved", {}, "https://api.github.com/repositories/1"
+        )
 
 
 # --- reports (§6.6) ------------------------------------------------------------------------

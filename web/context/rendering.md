@@ -136,7 +136,8 @@ before — code and lists from agents were unreadable.
 
 **Id:** 3ec853f0-4141-4e81-acdf-c0fee94c920b
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 59aaf51f-c63d-4cb6-966b-85eb8f2c682d
 **Evidence:** inferred
 **Source:** the coordinator's card for the avatar upload (tsk-j4r5xbq5jp27) and docs/api.md §6.10, 2026-10-22; the dashboard's implementation, 2026-10-22
 **Revisit when:** the hub's CSP allows `blob:` images, the accounts design gives linked forge accounts their own screen, or project admins get a say over pictures

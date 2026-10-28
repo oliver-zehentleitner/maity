@@ -527,3 +527,30 @@ reader.
   of settings could serve it by mistake.
 - The SMTP password from the environment or a file only: contradicts
   §16.2, which lets the admin of a single local install set it.
+
+## A database error is logged with a category of its cause, never with the driver's text
+
+**Id:** 79c93ec6-d67e-4a0a-8d82-041409b1fd92
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the burst of `database_unavailable` answers on maity.team, 2026-10-28, whose cause the log did not show; the coordinator's go; the review of the first version, which found credentials leaking through the masking
+**Revisit when:** a logging pipeline masks secrets itself, or a failure that matters keeps landing in `unclassified`
+
+The handler for `OperationalError` and `InterfaceError` logs the original exception's class and one category
+from a fixed list in `errors.py` (`dns`, `timeout`, `refused`, `unreachable`, `closed`, `starting`, `no_slots`,
+`auth`, `ssl`, otherwise `unclassified`), chosen by phrases the drivers use. None of the driver's text is
+logged. The answer to the client is unchanged: 503 `database_unavailable`, no driver text (docs/api.md §1.3).
+
+**Reason:** the log used to say only `database unavailable: OperationalError`. Over a hundred of them in
+45 minutes could not be told apart (a DNS failure, a connect timeout, a refused connection), and a cause
+guessed from the few that carried a traceback was wrong for the rest. A category tells them apart. The first
+version logged the driver's text with URLs and `password=` pairs masked; the review showed passwords leaking
+through valid libpq escapes, an apostrophe in a URL's user info, and an encoded URL, so no pattern can be
+trusted with text that may quote a credential.
+
+**Rejected alternatives:**
+- Log the driver text as it is, or masked by patterns: it can quote the connection string with the password,
+  and the masking missed real forms (tried, reverted).
+- Keep the code only (the SQLSTATE or number): psycopg's connection errors have neither.
+- Put the cause into the response: that is the leak §1.3 forbids, and a client cannot act on it.
