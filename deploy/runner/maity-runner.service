@@ -13,7 +13,10 @@ WorkingDirectory=/opt/actions-runner
 # The rootless Docker of the runner user (lingering keeps it running).
 Environment=DOCKER_HOST=unix:///run/user/<uid>/docker.sock
 Environment=ACTIONS_RUNNER_HOOK_JOB_COMPLETED=/opt/maity-runner-hooks/job-completed.sh
-ExecStart=/opt/actions-runner/run.sh
+# bin/runsvc.sh is GitHub's entry point for systemd. run.sh copies run-helper.sh.template into its
+# own directory on every start, which a root-owned /opt/actions-runner refuses: the unit would
+# exit at once with status 0 and restart in a loop.
+ExecStart=/opt/actions-runner/bin/runsvc.sh
 Restart=always
 RestartSec=10
 # A restart also ends the processes a job left behind.
