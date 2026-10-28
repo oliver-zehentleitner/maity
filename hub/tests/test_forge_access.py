@@ -12,7 +12,7 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, insert, select
+from sqlalchemy import Engine, insert, select, update
 
 from maity_hub import clock, forge, forge_access, github_app, probe, secretbox
 from maity_hub import tables as t
@@ -249,6 +249,96 @@ def test_a_rejected_owner_token_falls_back_to_the_operators_token(
             )
         ).scalars()
     assert record["change"] == "token_rejected"
+
+
+def _replace_token(engine: Engine, human_id: str, value: str) -> None:
+    """The owner stores a new token: sealed anew, active again."""
+    assert KEY is not None
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.forge_token)
+            .where(t.forge_token.c.human_id == human_id)
+            .values(
+                token_sealed=secretbox.seal(KEY, f"forge_token:{human_id}", value.encode()),
+                status="active",
+            )
+        )
+
+
+def _token_state(engine: Engine, human_id: str) -> tuple[str, int]:
+    """The token's status and how many `token_rejected` records its owner has."""
+    with engine.connect() as conn:
+        status = conn.execute(
+            select(t.forge_token.c.status).where(t.forge_token.c.human_id == human_id)
+        ).scalar_one()
+        records = conn.execute(
+            select(t.account_record.c.data).where(
+                t.account_record.c.type == "forge_access_changed",
+                t.account_record.c.human_id == human_id,
+            )
+        ).scalars()
+        return status, sum(1 for r in records if r["change"] == "token_rejected")
+
+
+def test_a_refusal_of_a_replaced_token_leaves_the_new_one_alone(
+    owner: flow.Human, migrated: Engine, fake: FakeForge
+) -> None:
+    """A read still under way with the old token is refused after the owner stored a
+    new one: the new token stays active, no record, and the next choice uses it."""
+    fake.installation = None
+    _token(migrated, owner.id)
+    _confirm(owner)
+    reader = _reader(migrated)
+    assert reader.via == "owner_token"
+    _replace_token(migrated, owner.id, "github_pat_new_one")
+    fake.owner_token_status = 401  # the old token, revoked at the forge
+    with pytest.raises(forge.ForgeUnavailableError):
+        reader.branch(REPO, "main")
+    assert _token_state(migrated, owner.id) == ("active", 0)
+    again = _reader(migrated)
+    assert (again.via, again.token) == ("owner_token", "github_pat_new_one")
+
+
+def test_a_token_replaced_during_the_choice_is_not_marked(
+    owner: flow.Human, migrated: Engine, fake: FakeForge
+) -> None:
+    """The choice read the token, the owner replaced it, then the forge refused the
+    old one: the choice falls back and the new token stays active."""
+    fake.installation = None
+    _token(migrated, owner.id)
+    _confirm(owner)
+    send = fake.send
+
+    def replaced_then_refused(fg: forge.Forge, path: str, query: Any = None) -> Any:
+        if fg.token == OWNER_TOKEN:
+            _replace_token(migrated, owner.id, "github_pat_new_one")
+            raise forge.ForgeUnavailableError("refused", 401)
+        return send(fg, path, query)
+
+    fake.send = replaced_then_refused  # type: ignore[method-assign]
+    assert _reader(migrated).via == "instance"
+    assert _token_state(migrated, owner.id) == ("active", 0)
+
+
+def test_a_refusal_after_a_transfer_marks_the_grant_it_was_read_with(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, fake: FakeForge
+) -> None:
+    """The project moved to another owner while a read with the former owner's token
+    was under way: the refusal marks the former owner's token, never the new owner's."""
+    fake.installation = None
+    _token(migrated, owner.id)
+    _confirm(owner)
+    reader = _reader(migrated)
+    assert reader.via == "owner_token"
+    anna = flow.human(make_client, migrated, "anna")
+    _token(migrated, anna.id)
+    with migrated.begin() as conn:
+        conn.execute(update(t.project).values(owner_id=anna.id))
+    fake.owner_token_status = 401
+    with pytest.raises(forge.ForgeUnavailableError):
+        reader.branch(REPO, "main")
+    assert _token_state(migrated, owner.id) == ("rejected", 1)
+    assert _token_state(migrated, anna.id) == ("active", 0)
 
 
 @pytest.mark.parametrize("state", ["suspended", "removed"])

@@ -278,6 +278,9 @@ class Forge:
     # With the operator's token: the reason to give when the repository is not public,
     # when the owner's grants say more (`unconfirmed`, `token_rejected`, …).
     owner_reason: str | None = None
+    # Which grant exactly: its owner and a digest of the sealed token, so a refusal marks
+    # that token and no later one, nor another owner's after a transfer (§11.4).
+    grant: tuple[str, str] | None = field(default=None, repr=False)
     access: Any = field(default=None, repr=False, compare=False)
 
     @property

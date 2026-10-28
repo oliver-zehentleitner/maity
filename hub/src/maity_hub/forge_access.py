@@ -91,8 +91,9 @@ class ForgeAccess:
             return
         with self._lock:
             self._chosen.pop(reader.project_id, None)
-        if reader.granted == "owner_token" and error is not None and error.status == 401:
-            self._token_rejected(reader.project_id)
+        refused_token = error is not None and error.status == 401
+        if reader.granted == "owner_token" and refused_token and reader.grant is not None:
+            self._token_rejected_owner(*reader.grant)
 
     # --- the choice ----------------------------------------------------------------------
 
@@ -134,7 +135,8 @@ class ForgeAccess:
                 return self._bound(base, project_id, repository, "app", via_app)
             via_token, token_reason = self._by_token(facts, repository)
             if via_token is not None:
-                return self._bound(base, project_id, repository, "owner_token", via_token)
+                grant = (facts.owner_id, _digest(facts.token[2])) if facts.token else None
+                return self._bound(base, project_id, repository, "owner_token", via_token, grant)
             owner_reason = owner_reason or token_reason
         elif has_grant:
             owner_reason = "unconfirmed"
@@ -187,7 +189,7 @@ class ForgeAccess:
             found = probe._send(f"/repos/{repository}")
         except forge.ForgeUnavailableError as error:
             if error.status == 401:
-                self._token_rejected_owner(facts.owner_id)
+                self._token_rejected_owner(facts.owner_id, _digest(sealed))
                 return None, "token_rejected"
             if isinstance(error, forge.NotCoveredError) or (
                 error.status == 403 and not error.rate_limited
@@ -197,10 +199,21 @@ class ForgeAccess:
         return (token, None) if found is not None else (None, None)
 
     def _bound(
-        self, base: forge.Forge, project_id: str, repository: str, granted: str, token: str
+        self,
+        base: forge.Forge,
+        project_id: str,
+        repository: str,
+        granted: str,
+        token: str,
+        grant: tuple[str, str] | None = None,
     ) -> forge.Forge:
         return forge.Forge(
-            token, granted=granted, repository=repository, project_id=project_id, access=self
+            token,
+            granted=granted,
+            repository=repository,
+            project_id=project_id,
+            grant=grant,
+            access=self,
         )
 
     def _refusing(self, base: forge.Forge, project_id: str, reason: str) -> forge.Forge:
@@ -208,28 +221,29 @@ class ForgeAccess:
 
     # --- a token the forge refused ---------------------------------------------------------
 
-    def _token_rejected(self, project_id: str) -> None:
-        with self.engine.connect() as conn:
-            owner_id = conn.execute(
-                select(t.project.c.owner_id).where(t.project.c.id == project_id)
-            ).scalar_one()
-        self._token_rejected_owner(owner_id)
-
-    def _token_rejected_owner(self, owner_id: str) -> None:
-        """The forge refused the owner's token: `rejected` until it is replaced, and the
-        owner's account record once (§11.4)."""
+    def _token_rejected_owner(self, owner_id: str, sealed_digest: str) -> None:
+        """The forge refused this owner's token: `rejected` until it is replaced, and the
+        owner's account record once (§11.4). Only the very token that was refused: one
+        replaced since, or the token of whoever owns the project now, stays as it is."""
         with self.engine.begin() as conn:
             row = conn.execute(
                 select(t.forge_token).where(t.forge_token.c.human_id == owner_id).with_for_update()
             ).first()
             if row is None or row.status == "rejected":
                 return
+            if _digest(row.token_sealed) != sealed_digest:
+                return  # replaced while the refused read was under way
             conn.execute(
                 update(t.forge_token)
                 .where(t.forge_token.c.human_id == owner_id)
                 .values(status="rejected", checked_at=clock.now())
             )
             records.forge_access_changed(conn, owner_id, "owner_token", "token_rejected", row.login)
+
+
+def _digest(sealed: bytes) -> str:
+    """Names one stored token without holding it: a replacement is sealed anew."""
+    return hashlib.sha256(sealed).hexdigest()
 
 
 # project id -> the source the last choice found (§6.1 `probe_via`); a view reads it
