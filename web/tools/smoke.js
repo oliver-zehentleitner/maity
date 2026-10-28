@@ -3331,6 +3331,33 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(aliasMention("@agent-b hi", 8, aliasCtx)[0].getAttribute && aliasMention("@agent-b hi", 8, aliasCtx)[0].getAttribute("href") === "#/m/agt-b", "mentions: a mention typed as an alias of the member is a link");
   expect(typeof aliasMention("@agent-b hi", 8, null)[0] === "string" && typeof aliasMention("@other hi", 6, aliasCtx)[0] === "string", "mentions: without the alias, or with another name, it stays text");
   expect(aliasMention("@old-owner/agent-b hi", 18, aliasCtx)[0].getAttribute("href") === "#/m/agt-b", "mentions: owner/alias is a link as well");
+  // After a rename of the owner only, the old owner before the current handle is still the member (§8.6).
+  const ownerOnly = { memberById: { "agt-b": { handle: "b-new", aliases: [] } } };
+  expect(aliasMention("@old-owner/b-new hi", 16, ownerOnly)[0].getAttribute("href") === "#/m/agt-b"
+    && aliasMention("@old-owner/b-new hi", 16, null)[0].getAttribute("href") === "#/m/agt-b",
+    "mentions: an old owner before the current handle is a link, without aliases of the member's own");
+  // Across projects (#/all) the request's own project's members give the aliases.
+  const alGetAll = win.Maity.api.getAll;
+  const alReads = [];
+  win.Maity.api.getAll = (p) => {
+    alReads.push(p);
+    if (p === "/requests") {
+      return alGetAll(p).then((r) => {
+        const one = r.items.find((x) => !x.personal && x.project && x.project.full_name === "maintainer/sample");
+        return { items: [Object.assign({}, one, { summary: "@shop-old knows it.",
+          mentions: [{ member_id: "agt-s2", handle: "shop-dev", name: "maintainer/shop-dev", field: "summary", offset: 0, length: 9 }] })], next_cursor: null };
+      });
+    }
+    if (p === "/projects/maintainer/sample/members") {
+      return alGetAll(p).then((r) => ({ items: r.items.map((m) => (m.id === "agt-s2" ? Object.assign({}, m, { aliases: ["shop-old"] }) : m)), next_cursor: null }));
+    }
+    return alGetAll(p);
+  };
+  await go("#/all"); for (let k = 0; k < 12; k++) await tick(); await new Promise((r) => setTimeout(r, 20)); for (let k = 0; k < 12; k++) await tick();
+  const alLink = main.querySelector("li.entry.current .summary a.mention");
+  expect(alLink && text(alLink) === "@shop-old" && alLink.getAttribute("href") === "#/maintainer/sample/members/agt-s2",
+    "mentions: across projects an alias in a request's text is a link, from its project's members");
+  win.Maity.api.getAll = alGetAll;
 
   // Pictures (docs/api.md §6.10): one's own on the account, an agent's in its row on Members;
   // the account keeps only the agents no project of one's own shows (tsk-th1yq0jtk3yf).

@@ -130,14 +130,17 @@ window.Maity = window.Maity || {};
 
   // Whether `said` is "@" + one of the member's aliases (§6.24), or
   // "@<owner or owner alias>/<handle or alias>"; the stored mention says who
-  // is meant, the aliases only say that the typed name is one of theirs.
+  // is meant, the aliases only say that the typed name is one of theirs. An
+  // owner's old handle before the member's current one needs no alias of the
+  // member's own (§8.6): after a rename of the owner only, it is still them.
   function aliasSaid(ctx, x, said, suffix) {
+    if (!said.startsWith("@") || (suffix && !said.endsWith(suffix))) return false;
     const m = ctx && ctx.memberById ? ctx.memberById[x.member_id] : null;
-    if (!m || !m.aliases || !m.aliases.length || !said.startsWith("@") || (suffix && !said.endsWith(suffix))) return false;
+    const aliases = (m && m.aliases) || [];
     const typed = said.slice(1, suffix ? said.length - suffix.length : said.length);
-    const own = [m.handle].concat(m.aliases);
+    const own = [x.handle].concat(m ? [m.handle] : [], aliases);
     const slash = typed.indexOf("/");
-    return slash < 0 ? m.aliases.indexOf(typed) >= 0 : own.indexOf(typed.slice(slash + 1)) >= 0 && typed.slice(0, slash).length > 0;
+    return slash < 0 ? aliases.indexOf(typed) >= 0 : own.indexOf(typed.slice(slash + 1)) >= 0 && typed.slice(0, slash).length > 0;
   }
 
   // A scanned text with its stored mentions (docs/api.md §8.6) as text

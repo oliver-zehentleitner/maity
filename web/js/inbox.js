@@ -136,6 +136,16 @@ window.Maity = window.Maity || {};
       outside: ctx.scope !== "project" };
   }
 
+  // A project's members as a mention context, read once per view and project.
+  function membersOf(ctx, slug) {
+    ctx.membersOfProject = ctx.membersOfProject || {};
+    if (!ctx.membersOfProject[slug]) {
+      ctx.membersOfProject[slug] = M.api.getAll("/projects/" + M.api.projectPath(slug) + "/members")
+        .then((r) => ({ memberById: Object.fromEntries(r.items.map((m) => [m.id, m])) }), () => null);
+    }
+    return ctx.membersOfProject[slug];
+  }
+
   function entryBody(ctx, req, names, onAnswer, onLater) {
     const body = h("div", { class: "entry-body" });
     const at = textAt(ctx, req);
@@ -169,9 +179,22 @@ window.Maity = window.Maity || {};
     // Mentions link to the member in the request's own project (docs/api.md §8.6).
     // A personal request's project may be one the human is not in: no links there.
     const memberHref = (id) => (req.personal ? null : ctx.projectLink(req.slug, "members", id));
-    const said = (field, text, mentions) => M.dom.withMentions(text, mentions, field, memberHref, at, ctx);
-    if (req.summary) append(body, h("p", { class: "summary pre" }, said("summary", req.summary, req.mentions)));
-    if (req.tried) append(body, h("h3", { class: "sub" }, "What it tried"), h("p", { class: "pre" }, said("tried", req.tried, req.mentions)));
+    const said = (field, text, mentions, known) => M.dom.withMentions(text, mentions, field, memberHref, at, known || ctx);
+    const summary = req.summary ? h("p", { class: "summary pre" }, said("summary", req.summary, req.mentions)) : null;
+    const tried = req.tried ? h("p", { class: "pre" }, said("tried", req.tried, req.mentions)) : null;
+    if (summary) append(body, summary);
+    if (tried) append(body, h("h3", { class: "sub" }, "What it tried"), tried);
+    // Across projects (#/all) a mention typed as a member's alias needs that
+    // project's members (§6.24): read once per project when an entry opens,
+    // then the texts are drawn again. Not for a personal request, nor for a
+    // project the human is not in.
+    if (ctx.scope === "all" && !req.personal && (summary || tried) && ctx.projects.some((p) => p.full_name === req.slug)) {
+      membersOf(ctx, req.slug).then((known) => {
+        if (!known) return;
+        if (summary) append(clear(summary), said("summary", req.summary, req.mentions, known));
+        if (tried) append(clear(tried), said("tried", req.tried, req.mentions, known));
+      });
+    }
     if (req.options && req.options.length) {
       append(body, h("h3", { class: "sub" }, "Options it sees"),
         h("ul", { class: "options" }, req.options.map((o) =>
