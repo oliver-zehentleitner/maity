@@ -38,10 +38,14 @@ A project's forge reads use the first grant that covers its repository:
 the namespace owner's linked installation of the instance's GitHub App,
 then the owner's own stored token, then the instance token, and that
 one only for a repository the forge reports as public. Only the
-namespace owner's grants count for a project. Linking an installation
-checks, with the installing user's one-time OAuth authorisation, that
-the user can access it. Data read through an owner's grant reaches
-project readers only, never a page without sign-in.
+namespace owner's grants count for a project, and only for a
+repository URL the owner confirmed for it; a co-admin's change or a
+transfer resets that. Linking an installation checks, with the
+installing user's one-time OAuth authorisation, that the installation's
+account is that user (organisation installations wait for organisation
+namespaces). The owner's token must be fine-grained. Data read through
+an owner's grant reaches project readers only, never a page without
+sign-in.
 
 **Reason:** one instance token cannot read the private repositories of
 the people who host projects on an instance, and a token from the
@@ -62,7 +66,15 @@ instance grows.
 - An OAuth App acting as the user: its `repo` scope is read and write
   on every repository the user can reach, far more than the probe needs.
 - Trusting the `installation_id` the forge sends back to the setup URL:
-  anyone can send any id; the check against the user's own installations
-  is what binds an installation to the human who installed it.
+  anyone can send any id.
+- Checking only that the user can access the installation (the user's
+  installation list): a member of an organisation with access to one
+  repository would pass and the hub would read every repository of the
+  installation. The installation's account must be the user.
+- Using the owner's grant for whatever URL the project names: a co-admin
+  could point the project at another private repository of the owner;
+  the owner confirms the URL instead.
+- Accepting classic tokens: without `repo` they read only public
+  repositories, and `repo` can write.
 - Using any project member's grant: a member could make the hub read a
   repository with someone else's access by naming it in a project.
