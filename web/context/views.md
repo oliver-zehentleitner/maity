@@ -1187,15 +1187,16 @@ review with an open child would hide nothing, the common case.
 **Type:** incident
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's card for the global chat (tsk-z8z8cg56y00s), 2026-10-26, after that day's incident of an events long-poll multiplied by open tabs; the dashboard's implementation, 2026-10-26
-**Revisit when:** the hub offers a cross-project conversation list or a per-user chat stream, or the notifications stream stops reporting chat messages
+**Source:** the maintainer's card for the global chat (tsk-z8z8cg56y00s), 2026-10-26, after that day's incident of an events long-poll multiplied by open tabs; the dashboard's implementation, 2026-10-26; the list across projects (§9.3, GET /me/conversations) read once instead of per project, 2026-10-28
+**Revisit when:** the hub offers a per-user chat stream, or the notifications stream stops reporting chat messages
 
 `#/chats` shows every project's chats in the Chat tab's layout and opens
 one in place with chat.js's own pane, in that project's context. It opens
 no events long-poll: the notifications stream (js/notify.js), which every
 signed-in page reads anyway, says that something changed; the global view
-then reads each project's conversation list once a burst has settled
-(0.4 s), and the open conversation fetches what came after its last
+then reads its conversations once a burst has settled (0.4 s): in one
+read across projects (`GET /me/conversations`, §9.3) where the hub has
+it, and each project's list on a hub without it. The open conversation fetches what came after its last
 message, as its project's feed would have made it, and reads its newest
 page and (for a group chat) itself again, to take over what the stream
 cannot name: a removal, a deleted file, a rename, a change of who is in it
