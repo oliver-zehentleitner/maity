@@ -63,7 +63,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 
 ## N
 - [namespace.md](namespace.md) — projects as `<owner>/<slug>`: `ProjectRoute` hands routes the full name as `slug`, the route rewrite as an idempotent script; old paths answered before routing from the schema's route words (426 for the CLI, 410 otherwise), old badge and swarm addresses as 301 while served; hooks left for handle aliases and request actions; migration 0060's owner rule, its stops and its downgrade
-- [notifications.md](notifications.md) — items derived on every read from 30 days of the human's projects with the relations as they are now; positions sealed under a key derived from the instance key, else a stored random key; a held long-poll compares a stamp before it derives again, a few full answers at a time; deriving reads each kind of lookup once per batch
+- [notifications.md](notifications.md) — notification settings store only what the human changed, the defaults fill the rest on read; items derived on every read from 30 days of the human's projects with the relations as they are now; positions sealed under a key derived from the instance key, else a stored random key; a held long-poll compares a stamp before it derives again, a few full answers at a time; deriving reads each kind of lookup once per batch
 
 ## O
 - [outbound.md](outbound.md) — reads whose host comes from data resolve once and connect to the checked address; `routable()` beyond `is_global`; seams instead of a TLS server in tests
