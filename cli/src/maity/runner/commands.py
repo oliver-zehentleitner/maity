@@ -735,11 +735,11 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
     r = runner_cmd(
         "workspace",
         "record an existing clone for an agent",
-        "`maity runner workspace claim <project>/<clone> --agent <id>`: record a clone made by "
+        "`maity runner workspace claim <project id>/<clone> --agent <id>`: record a clone made by "
         "hand, or one left after a lost state directory, so the runner may use it.",
     )
     r.add_argument("action", choices=("claim",))
-    r.add_argument("where", help="<project>/<clone>")
+    r.add_argument("where", help="<project id>/<clone>, the project id as the hub names it (prj-…)")
     r.add_argument("--agent", required=True, help="the agent's member id")
     r.add_argument("--placement", help="the placement id, when one exists")
     r.add_argument("--force", action="store_true", help="record it again")

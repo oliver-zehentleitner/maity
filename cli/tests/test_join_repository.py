@@ -49,7 +49,12 @@ def test_no_remote_and_no_clone_do_not_block(clone: Path, tmp_path: Path) -> Non
 def _packet(role: str = "member") -> dict[str, Any]:
     return packet(
         membership={"role": role, "briefing": None},
-        project={"slug": "maity", "name": "Maity", "repository": {"url": EXPECTED}},
+        project={
+            "slug": "maity",
+            "full_name": "oliver/maity",
+            "name": "Maity",
+            "repository": {"url": EXPECTED},
+        },
     )
 
 
@@ -82,7 +87,7 @@ def test_empty_board_hint_only_for_admins(
     hint: bool,
 ) -> None:
     fake.routes[("POST", "/api/v1/me/resume")] = lambda _: (200, _packet(role))
-    fake.routes[("GET", "/api/v1/projects/maity/tasks")] = lambda _: (200, {"items": items})
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/tasks")] = lambda _: (200, {"items": items})
     assert cli.main(["resume"]) == 0
     out = capsys.readouterr().out
     assert ("As an admin you run the board" in out) is hint
@@ -101,7 +106,7 @@ def test_unknown_board_does_not_claim_empty(
     status: int,
 ) -> None:
     fake.routes[("POST", "/api/v1/me/resume")] = lambda _: (200, _packet("admin"))
-    fake.routes[("GET", "/api/v1/projects/maity/tasks")] = lambda _: (status, body)
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/tasks")] = lambda _: (status, body)
     assert cli.main(["resume"]) == 0
     assert "board is empty" not in capsys.readouterr().out
 
@@ -140,7 +145,7 @@ def test_closed_empty_board_asks_about_reopening(
     p = _packet("admin")
     p["project"]["state"] = state
     fake.routes[("POST", "/api/v1/me/resume")] = lambda _: (200, p)
-    fake.routes[("GET", "/api/v1/projects/maity/tasks")] = lambda _: (200, {"items": []})
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/tasks")] = lambda _: (200, {"items": []})
     assert cli.main(["resume"]) == 0
     text = capsys.readouterr().out
     assert f"project is {state}" in text

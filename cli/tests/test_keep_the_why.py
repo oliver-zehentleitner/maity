@@ -13,7 +13,7 @@ from test_onboarding import packet
 
 from maity import cli, onboarding, state
 
-REPORT = "/api/v1/projects/maity/tasks/T/report"
+REPORT = "/api/v1/projects/oliver/maity/tasks/T/report"
 ACK = "/api/v1/me/keep-the-why/ack"
 REQUIRED = {
     "enabled": True, "instruction": "Load the keep-the-why skill.", "commitment": "required",

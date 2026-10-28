@@ -111,9 +111,23 @@ def test_the_profile_delete_downgrade_restores_one_handle_per_owner(engine: Engi
         )
 
 
+def _before_namespace(engine: Engine) -> str:
+    """The revision 0060 builds on. Read from the chain, not written down: 0060 is
+    re-chained whenever a migration lands before it."""
+    from alembic.script import ScriptDirectory
+
+    from maity_hub.db import alembic_config
+
+    down = ScriptDirectory.from_config(alembic_config(engine)).get_revision("0060").down_revision
+    assert isinstance(down, str)
+    return down
+
+
 def _namespace_rows(engine: Engine) -> dict[str, str]:
-    """Humans a, b and c, and a project `shop` whose first owner (a) left: before the
-    namespace it has no owner column; returns the ids."""
+    """Humans a, b and c, and a project `shop` whose first owner (a) left: just before the
+    namespace, without its owner column; returns the ids. Only 0060 is undone, so a run
+    that stops in 0060 ends on the same revision on every database (MySQL and MariaDB
+    commit each revision's DDL as it goes, SQLite and PostgreSQL roll back the run)."""
     from datetime import UTC, datetime, timedelta
 
     from sqlalchemy import update
@@ -130,7 +144,7 @@ def _namespace_rows(engine: Engine) -> dict[str, str]:
             conn.execute(
                 insert_membership(ids["shop"], ids[who], start + timedelta(days=n), active)
             )
-    downgrade(engine, "0055")
+    downgrade(engine, _before_namespace(engine))
     with engine.begin() as conn:  # a limit as the old schema stored it: slugs
         conn.execute(update(t.human).where(t.human.c.id == ids["b"]).values(
             limit_show_reason_in=["shop", "gone"]))  # fmt: skip
@@ -179,4 +193,5 @@ def test_the_namespace_migration_stops_on_a_project_without_an_active_human_owne
         conn.execute(update(t.membership).values(active=None))
     with pytest.raises(Exception, match="no human with an active owner membership in: shop"):
         migrate(engine)
-    assert current_revision(engine) == "0055"
+    # 0060 checks before it changes anything, so a stop leaves no half schema.
+    assert current_revision(engine) == _before_namespace(engine)
