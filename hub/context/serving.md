@@ -151,3 +151,32 @@ The fields refuse C0 control characters other than tab, newline and carriage
 return (`control_character`). Without them a valid page escapes to at most
 three times its size (`\u00e9` for a two-byte character, two `\uXXXX` for a
 four-byte one), and 256 KiB holds every valid page.
+
+## robots.txt and sitemap.xml are routes before the dashboard mount, and the root's noindex is added by the middleware
+
+**Id:** 63f7fc07-a672-4ece-bcb4-0feff7e16d2b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-10-28 (`docs/api.md` §16.7, Search engines, contract #504); the way to serve them is the implementer's
+**Revisit when:** the dashboard is served by something other than the hub, or the root needs more headers than `noindex`
+
+`routes/seo.py` answers `/robots.txt` and `/sitemap.xml` from the landing setting, as a router
+included before the dashboard mount, outside `/api/v1`, like the badge. The middleware lets
+them choose `public, max-age=3600`, the one caching it permits besides the landing page's 60
+seconds: the exception is now the cache value a path may choose, and no longer a flag, so a
+path cannot ask for the other path's. The root's `X-Robots-Tag: noindex` while the landing
+page is not enabled is added by the middleware too, on `GET` and `HEAD` of `/` only, because
+the root is a static file the dashboard mount serves and no route of the hub; the setting
+is read per request, and an unreadable setting counts as off. The join host answers both
+files `not_found`, in `join_host.route`, before its redirect.
+
+**Reason:** the dashboard's mount would otherwise answer `/robots.txt` from the web
+directory (or with its 404), and the root's header must follow a setting an admin changes
+without a restart.
+
+**Rejected alternatives:**
+- Static files in the web directory: they would not follow the landing setting or
+  `MAITY_PUBLIC_URL`.
+- A `noindex` meta tag in `index.html`: the dashboard's page is also the signed-in page, and
+  a header is what a crawler reads without rendering.
