@@ -290,3 +290,26 @@ def test_the_start_wakes_only_the_instances_the_bosss_team_rule_chose() -> None:
     assert not events.wakes(end, boss, "agt-boss", instance="lead")
     admin = SimpleNamespace(id=8, agent_id="agt-admin", role="admin", lead_instance=None)
     assert not events.wakes(start, admin, "agt-admin", instance="x")  # trust:admin only reads
+
+
+def test_the_membership_is_read_again_under_the_projects_lock(
+    setup: Setup, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Whoever held the lock may have paused the agent meanwhile: the check sees that
+    and starts no episode."""
+    s = setup
+    s.message()
+    s.at(11)
+    real = not_listening.lock_project
+
+    def paused_while_waiting(conn: Any, project_id: str) -> Any:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == s.agent.id)
+            .values(paused_since=clock.now(), paused_reason="meanwhile")
+        )
+        return real(conn, project_id)
+
+    monkeypatch.setattr(not_listening, "lock_project", paused_while_waiting)
+    s.sweep()
+    assert s.session().not_listening_since is None and s.events() == [] and s.notices() == []

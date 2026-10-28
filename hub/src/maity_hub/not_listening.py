@@ -219,6 +219,11 @@ def check(engine: Engine, session_id: str) -> None:
             select(t.membership).where(t.membership.c.id == session.membership_id)
         ).one()
         lock_project(conn, member.project_id)
+        # Read again under the lock: whoever held it may have paused the agent, changed
+        # its availability, its team's wake rule or its reports-to meanwhile.
+        member = conn.execute(
+            select(t.membership).where(t.membership.c.id == session.membership_id)
+        ).one()
         session = conn.execute(
             select(t.agent_session).where(t.agent_session.c.id == session_id)
         ).one()
