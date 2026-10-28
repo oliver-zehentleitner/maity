@@ -77,7 +77,11 @@ def _before(
     conn: Any, cursor: Any, statement: str, params: Any, context: Any, executemany: bool
 ) -> None:
     human_id = _HUMAN.get()
-    if human_id is None or conn.info.get(_HELD) or not locking(statement):
+    if human_id is None or conn.info.get(_HELD):
+        return
+    # Taken before the first savepoint too: a lock taken inside a savepoint is given up
+    # when that savepoint rolls back (PostgreSQL), and the flag would not know it.
+    if not (locking(statement) or statement.lstrip()[:9].upper() == "SAVEPOINT"):
         return
     conn.info[_HELD] = True  # set first: the check's own statements pass through here
     hold(conn, human_id)

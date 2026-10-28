@@ -814,6 +814,42 @@ def test_the_account_lock_comes_before_any_other_lock_of_a_human_write(
     assert guarded >= 2  # the profile's and the project's transactions
 
 
+def test_the_account_lock_is_taken_outside_any_savepoint(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """A transaction that opens a savepoint before its first lock takes `account_lock`
+    before the SAVEPOINT, so a rolled-back savepoint cannot give the lock up."""
+    from sqlalchemy import event, insert, update
+
+    from maity_hub import write_guard
+    from maity_hub.errors import ApiError
+
+    admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    seen: list[str] = []
+
+    def statement(conn: Any, cursor: Any, text: str, *args: Any) -> None:
+        seen.append(text)
+
+    event.listen(migrated, "before_cursor_execute", statement)
+    token = write_guard._HUMAN.set(pat.id)
+    try:
+        with migrated.begin() as conn:
+            try:
+                with conn.begin_nested():
+                    conn.execute(insert(t.account_lock).values(human_id=pat.id))  # a duplicate
+            except Exception:
+                pass  # the savepoint rolls back, as a helper's caught IntegrityError does
+            conn.execute(update(t.human).where(t.human.c.id == pat.id).values(display_name="Pat"))
+    except ApiError:
+        raise
+    finally:
+        write_guard._HUMAN.reset(token)
+        event.remove(migrated, "before_cursor_execute", statement)
+    savepoint = next(i for i, s in enumerate(seen) if s.upper().startswith("SAVEPOINT"))
+    assert any("FROM account_lock" in s for s in seen[:savepoint]), seen
+
+
 def test_a_profile_delete_racing_the_deletion_does_not_deadlock(
     make_client: ClientFactory, migrated: Engine, moment: Clock
 ) -> None:
