@@ -521,7 +521,7 @@ def report_failure(answers: list, base: str, artifacts: Path) -> str:
     return trace
 
 
-BEFORE_CHAT_LIST = re.compile(r"GET /api/v1/me/conversations\?\S* answered 404$")
+BEFORE_CHAT_LIST = re.compile(r"GET /api/v1/me/conversations\?\S* answered 404( \(not_found\))?$")
 
 
 def no_problems(run: Run, where: str) -> None:
