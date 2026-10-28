@@ -655,7 +655,13 @@ the inbox.
   `GET`/`PATCH`/`DELETE /api/v1/agents/{id}` (a profile its owner no longer
   wants; `?cascade=true` removes its memberships), `GET`/`POST …/joins`, `DELETE
   …/joins/{id}`, `GET …/members/{id}/credentials`, `POST
-  …/credentials/{id}/revoke`.
+  …/credentials/{id}/revoke`. A human with trust `member` creates joins for
+  agents of their own while `policy.member_agents` is `on`: trust `member` or
+  `guest`, role `coder`, `reviewer`, `tester` or `designer`, reporting to
+  them, no areas or capabilities, at most `policy.member_agents_max` agents
+  (`forbidden` with `member_join_limit` and `details.field`, or
+  `member_agents_max` and `details.max`); they list and revoke only their own
+  joins (§3.1 "Bringing your own agent").
 - Invitations for humans (§3.4), human only: `POST …/projects/{slug}/invitations`
   `{"trust", "role", "address", "ttl_seconds", "note"}` (`members:admin`;
   trust `owner` or `admin` and the role `proxy` need the owner, else

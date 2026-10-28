@@ -386,6 +386,10 @@ project = Table(
     Column("swarm_public", String(8), nullable=False, server_default="off"),
     # What a merged pull request does to its card in review: notify or auto (§6.6).
     Column("merged_closes", String(8), nullable=False, server_default="notify"),
+    # Whether a human with trust member creates joins for agents of their own, and how
+    # many (§3.1 "Bringing your own agent", §6.1).
+    Column("member_agents", String(8), nullable=False, server_default="on"),
+    Column("member_agents_max", Integer, nullable=False, server_default="3"),
     Column("claim_policy", String(32), nullable=False),
     Column("done_authority", String(32), nullable=False),
     Column("contract_arbiter", String(ID + 8), nullable=False),  # member id or trust:admin
@@ -589,6 +593,9 @@ join_link = Table(
     Column("replaces", String(INSTANCE)),
     Column("instance", String(INSTANCE)),
     _ref("created_by", "human.id", nullable=False),
+    # Created under "Bringing your own agent" (§3.1) rather than `members:admin`: the
+    # exchange checks the creator and the limits again for such a join only (§3.3).
+    Column("member_rule", Boolean, nullable=False, server_default=false()),
     Column("created_at", UtcDateTime, nullable=False),
     Column("expires_at", UtcDateTime, nullable=False),
     Column("used_at", UtcDateTime),

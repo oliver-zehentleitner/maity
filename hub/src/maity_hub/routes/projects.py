@@ -78,6 +78,8 @@ class PolicyIn(Strict):
     jour_fixe: dict[str, Any] | None = None  # replaced as a whole (§20.1)
     jour_fixe_moderators: list[str] | None = None
     takeover_window_minutes: int | None = None
+    member_agents: str | None = None
+    member_agents_max: int | None = None
 
 
 class AbsenceIn(Strict):
@@ -197,6 +199,10 @@ def _apply_policy(
         if not 0 <= change.max_placements <= policy.MAX_PLACEMENTS_MAX:
             errors["policy.max_placements"] = "out_of_range"
         proposed["max_placements"] = change.max_placements
+    if change.member_agents_max is not None:
+        if not 0 <= change.member_agents_max <= policy.MEMBER_AGENTS_MAX_MAX:
+            errors["policy.member_agents_max"] = "out_of_range"
+        proposed["member_agents_max"] = change.member_agents_max
     if change.on_runner_revoke == "keep" and instance_rule == "stop_floor":
         # The operator made stop a floor (§15.3, §16): no project keeps its agents.
         errors["policy.on_runner_revoke"] = "stop_floor"
@@ -718,6 +724,8 @@ HUMANS_ONLY_POLICY = {
     "on_runner_revoke",
     "spawn_requests",
     "merged_closes",  # set by a human with project:admin (§6.1)
+    "member_agents",  # who may bring agents into the project (§3.1, §6.1)
+    "member_agents_max",
 }
 
 
