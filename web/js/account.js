@@ -96,6 +96,45 @@ window.Maity = window.Maity || {};
   // Members opens one's own agent with its picture (tsk-th1yq0jtk3yf).
   M.pictureEditor = pictureEditor;
 
+  // §5.2 "Meat proxy": the human's own switch (PATCH /me). The hub tells the
+  // agents that deal with them the one sentence below and nothing more; the
+  // page says exactly that. Where the hub's machine form does not name the
+  // field there is no switch; a machine form that cannot be read keeps it.
+  const MEAT_PROXY_NOTE = "This person says: I am a meat proxy.";
+  async function meatProxySection(ctx) {
+    if (ctx.me.kind !== "human") return null;
+    const offered = await M.api.hubBody("PATCH", "/me").then((fields) => fields.has("meat_proxy"), () => true);
+    if (!offered) return null;
+    const status = M.statusLine();
+    const box = h("input", { type: "checkbox", id: "meat-proxy", "aria-describedby": "meat-proxy-hint" });
+    box.checked = !!ctx.me.meat_proxy;
+    box.addEventListener("change", async () => {
+      const want = box.checked;
+      box.disabled = true;
+      status.busy("Saving…");
+      try {
+        const answer = await M.api.patch("/me", { meat_proxy: want });
+        ctx.me.meat_proxy = answer && "meat_proxy" in answer ? answer.meat_proxy : want;
+        box.checked = !!ctx.me.meat_proxy;
+        status.done();
+        append(status.el, h("span", { class: "ok" }, ctx.me.meat_proxy
+          ? "Saved: your agents and the agents of your projects are told \"" + MEAT_PROXY_NOTE + "\""
+          : "Saved: they are no longer told."));
+      } catch (err) {
+        box.checked = !want;
+        status.fail("Not saved: ", err);
+      } finally {
+        box.disabled = false;
+      }
+    });
+    return h("section", { class: "meat-proxy" },
+      h("h3", null, "Meat proxy"),
+      h("label", { class: "check", for: "meat-proxy" }, box, " I am a meat proxy"),
+      h("p", { class: "hint", id: "meat-proxy-hint" }, "While this is on, your own agents and the agents of every project you are a member of read \""
+        + MEAT_PROXY_NOTE + "\" when they resume. That is all they are told: the hub does not say what it means."),
+      status.el);
+  }
+
   // Set by a change; the next drawing of the view says it.
   let pictureNote = null;
 
@@ -183,6 +222,7 @@ window.Maity = window.Maity || {};
       return;
     }
     const agents = mine && mine.filter((a) => !reachable(a));
+    const meatProxy = await meatProxySection(ctx);
     const notify = M.notifySettings ? await M.notifySettings(ctx) : null;
     const sessions = M.sessions ? await M.sessions.section(ctx) : null;
     const preferences = M.preferences ? await M.preferences.section(ctx) : null;
@@ -213,6 +253,7 @@ window.Maity = window.Maity || {};
         h("ul", { class: "picture-list" }, agents.map((a) => h("li", { class: wantedAgent === a.id ? "wanted" : null, "data-agent": a.id },
           h("h4", { class: "picture-name", tabindex: wantedAgent === a.id ? "-1" : null }, a.display_name, h("span", { class: "muted" }, " @" + (a.name || a.handle))),
           pictureEditor(a, "/agents/" + encodeURIComponent(a.id) + "/avatar", false, changed))))] : null,
+      meatProxy,
       themeBox ? [themeHeading, h("p", { class: "muted" }, "Kept in this browser only: another browser or device has its own. System follows the light or dark setting of your device."), themeBox] : null,
       preferences ? preferences.el : null,
       notify ? notify.el : null,

@@ -1072,6 +1072,13 @@ window.Maity = window.Maity || {};
       return { slug: entry.slug, full_name: entry.full_name, include: entry.include };
     }],
     ["GET", /^\/me\/notification-settings$/, () => fixtures()["notifications.json"].settings],
+    // §5.2 "Meat proxy": the human's own switch, a boolean; nobody sets it for another.
+    ["PATCH", /^\/me$/, (m, body, path) => {
+      if (me().member.kind !== "human") fail(403, "forbidden", "a human's own change", path, { reason: "humans_only" });
+      if ("meat_proxy" in body && typeof body.meat_proxy !== "boolean") fail(400, "invalid", "the request does not validate", path, { fields: { meat_proxy: "type" } });
+      if ("meat_proxy" in body) me().member.meat_proxy = body.meat_proxy;
+      return Object.assign({}, me().member);
+    }],
     ["PATCH", /^\/me\/notification-settings$/, (m, body, path) => {
       const set = fixtures()["notifications.json"].settings;
       if (body.email && "language" in body.email) {
@@ -1647,6 +1654,7 @@ window.Maity = window.Maity || {};
       "/api/v1/projects/{owner}/{slug}/ticker/subscription": { get: {}, patch: {} },
       "/api/v1/projects/{owner}/{slug}/conversations": { get: {}, post: {} },
       "/api/v1/me/conversations": { get: {} },
+      "/api/v1/me": { get: {}, patch: { requestBody: { content: { "application/json": { schema: { properties: { meat_proxy: {} } } } } } } },
       "/api/v1/projects/{owner}/{slug}/attachments": { get: {}, post: {} },
       "/api/v1/requests/{request_id}/answer": { post: {} },
       "/api/v1/auth/device-codes": { post: {} },

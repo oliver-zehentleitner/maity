@@ -4235,7 +4235,8 @@ window.MAITY_FIXTURES = {
       "handle": "maintainer",
       "id": "hum-maintainer",
       "instance_admin": true,
-      "kind": "human"
+      "kind": "human",
+      "meat_proxy": false
     },
     "projects": [
       {
