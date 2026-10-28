@@ -12,7 +12,7 @@ import pytest
 
 from maity import cli, onboarding
 
-P = "/api/v1/projects/maity"
+P = "/api/v1/projects/oliver/maity"
 TAKEOVER: dict[str, Any] = {
     "id": "tko-0003", "task_id": "tsk-0004",
     "from": {"member_id": "agt-b", "instance": "wle2"},

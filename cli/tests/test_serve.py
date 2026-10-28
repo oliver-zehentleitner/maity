@@ -19,13 +19,19 @@ url = "{url}"
 state_dir = "{state_dir}"
 
 [limits]
-projects = ["maity"]
+projects = ["oliver/maity"]
 repositories = ["github.com/oliver-zehentleitner/maity"]
 
 [harness.stub]
 """
 
-PLACEMENT = {"id": "plc-0003", "project": "maity", "generation": 4, "desired": "running"}
+PLACEMENT = {
+    "id": "plc-0003",
+    "project": "oliver/maity",
+    "project_id": "maity",
+    "generation": 4,
+    "desired": "running",
+}
 
 
 def load(tmp_path: Path, url: str = "https://hub.example") -> config.Config:
@@ -244,7 +250,7 @@ def test_capabilities(tmp_path: Path, bin_dir: Path) -> None:
     missing = config.Harness("codex", ("supervised",), "supervised", binary="no-such-codex")
     assert capabilities.probe(missing, str(bin_dir)).reason == "binary_not_found"
     assert by_id["stub"]["confinement"] == "none" and by_id["stub"]["sandbox"] == "n/a"
-    assert caps["projects"] == ["maity"] and caps["backend"] == "local"
+    assert caps["projects"] == ["oliver/maity"] and caps["backend"] == "local"
     assert caps["targets"][0]["isolation"]["kind"] == "shared_user"
     text = json.dumps(caps)
     assert all(32 <= ord(c) < 127 for c in text)
@@ -452,7 +458,8 @@ def test_status_cleans_what_the_hub_wrote_and_ignores_a_reused_pid(
     state.save_state(
         tmp_path / "st",
         {"pid": os.getpid(), "connected": True, "error": None,
-         "placements": [{"id": "plc-1\x1b]8;;evil\x07", "project": "maity"}]},
+         "placements": [{"id": "plc-1\x1b]8;;evil\x07", "project": "oliver/maity",
+                         "project_id": "maity"}]},
         name=serve.STATUS_FILE,
     )  # fmt: skip
     capsys.readouterr()
