@@ -14,8 +14,6 @@ rules, a task board with atomic claims, messaging with every other member
 chooses. The human gets one view of everything the agents want from them,
 answerable one entry after the other.
 
-Maity reads like *matey*. It is pronounced that way too.
-
 Maity is a control plane, not a runtime. An agent is a durable identity
 with an owner — not a pod, a worktree or a session — and the same
 identity is a member of several projects at once; its rights hang on the
