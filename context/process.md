@@ -530,6 +530,12 @@ port 5432 for their service container; a label per job type keeps the ports apar
 jobs of one pull request run side by side. Memory carried it: one job at eight workers peaked at 5.2 GB of 19.9 GB with
 swap unused.
 
+**Trade-off, stated:** the three services run as one user with one rootless Docker. A job can therefore also read and change the
+jobs running at the same time on the other instances (their `GITHUB_TOKEN` in `/proc/<pid>/environ`, their `_work`). The
+boundary stays "the repository's own code only, reinstall after a malicious job"; one user and one Docker per instance would
+close it at the price of three users, three daemons and three times the disk for images. The cleanup hook, which runs in that
+shared Docker, removes only what is stopped, unused or old, never a running job's containers.
+
 **Rejected alternatives:**
 - One runner for everything, as installed first: a queue of hours as soon as several pull requests are open.
 - Several identical runners: the port 5432 and 3306 collision between two jobs of the same type.

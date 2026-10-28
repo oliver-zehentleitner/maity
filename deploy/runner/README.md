@@ -26,7 +26,7 @@ runner of its own type: `hub-sqlite` for `[self-hosted, maity-hub-sqlite]`, `hub
 
 **The condition in `ci.yml` is not a protection against a fork.** A pull request from a
 fork runs the `ci.yml` of the fork's merge commit; the fork can write
-`runs-on: [self-hosted, maity-hub]` itself. What keeps a fork's code off the machine is
+`runs-on: [self-hosted, maity-hub-pg]` itself. What keeps a fork's code off the machine is
 the repository setting, and nothing else:
 
 - Settings → Actions → General → "Fork pull request workflows": **require approval for all
@@ -46,10 +46,10 @@ After a malicious job the machine is reinstalled; the hook below cannot make it 
   read access to their homes (`sudo -u <runner-user> ls /home/<other>` must fail). No
   deploy keys, kubeconfig or tokens of the project anywhere that user can read.
 - The runner lives outside the runner user's home and is owned by root:
-  `/opt/actions-runner` (with `run.sh`, `bin/`, the registration files `.runner` and
-  `.credentials*`), the hook in `/opt/maity-runner-hooks/` (not inside the runner's own
+  `/opt/actions-runner-<type>` (with `run.sh`, `bin/`, the registration files `.runner` and
+  `.credentials*`; one directory per runner instance), the hook in `/opt/maity-runner-hooks/` (not inside the runner's own
   directory, which GitHub's documentation advises against), and the unit in
-  `/etc/systemd/system/`. The runner user owns only `/opt/actions-runner/_work`, `_diag` and
+  `/etc/systemd/system/`. The runner user owns only `/opt/actions-runner-<type>/_work`, `_diag` and
   `_temp` (and its Docker data under its home). A job that could rewrite the hook, `run.sh` or
   the unit would take over every later job, and in the runner user's own home it could
   rename a directory and put its own in the place, or override a user unit through its own
@@ -65,18 +65,24 @@ After a malicious job the machine is reinstalled; the hook below cannot make it 
 - Lingering keeps the runner user's systemd user manager running. `KillMode=control-group`
   does nothing against a process a job starts there (`systemd-run --user`, a unit under
   `~/.config/systemd/user`): it lives outside the unit's cgroup, under the same uid, and can
-  read the environment of later jobs. That is one more reason for "reinstall after a malicious
+  read the environment of later jobs, and of the jobs running at the same time on the other
+  runner instances (`/proc/<pid>/environ` with their `GITHUB_TOKEN`, their `_work` and `_tool` under
+  `/opt/actions-runner-<other>`: the three services share one uid and one Docker). That is one more reason for "reinstall after a malicious
   job", and lingering is there only for the rootless Docker.
 - The tool cache (Python from `setup-python`) is kept between jobs and is writable for the
   runner user: a job can replace it for the later ones. That is part of the boundary above.
 
 ## Install
 
+0. **Coming from the single runner of the first version?** First stop it, because the scripts below refuse while
+   any runner of the runner user runs: remove the runner in GitHub (Settings → Actions → Runners),
+   `systemctl disable --now maity-runner`, delete `/etc/systemd/system/maity-runner.service` and
+   `/opt/actions-runner`, and the repository variable `HUB_RUNNER` (no longer read). A fresh install has nothing to do here.
 1. Create the user (`<runner-user>`, uid `<uid>`), enable lingering, install rootless Docker
    for it (see above).
 2. Download the runner (Linux x64) from GitHub's "New self-hosted runner" page as a tarball and get a
    registration token from that page (Settings → Actions → Runners; valid for an hour).
-3. As root, with no job running: `RUNNER_TOKEN=<token> RUNNER_TARBALL=<tarball> install-services.sh`. For each of
+3. As root, with every `maity-runner*` service stopped (the script refuses otherwise): `RUNNER_TOKEN=<token> RUNNER_TARBALL=<tarball> install-services.sh`. For each of
    `sqlite`, `pg` and `maria` it unpacks the runner to `/opt/actions-runner-<type>`, runs `config.sh` **as the
    runner user** (as root it refuses: "Must not run with sudo"; with `--disableupdate`, because the runner's
    self-update would write into its own directory, which the runner user may not: update by hand, as root, when
@@ -98,10 +104,6 @@ After a malicious job the machine is reinstalled; the hook below cannot make it 
 5. `systemctl enable --now maity-runner@sqlite maity-runner@pg maity-runner@maria`; GitHub shows the three
    runners as Idle.
 6. Set the fork-approval setting above, then `HUB_RUNNER_LABEL` to `maity-hub`.
-
-Moving from the single runner of the first version: remove the runner in GitHub (Settings → Actions →
-Runners), `systemctl disable --now maity-runner`, delete `/etc/systemd/system/maity-runner.service` and
-`/opt/actions-runner`, and `HUB_RUNNER` (the old variable, no longer read).
 
 ## Why not an ephemeral runner
 
