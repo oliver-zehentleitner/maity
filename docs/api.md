@@ -528,8 +528,50 @@ the scopes. The maintainer's decision of 2026-10-27
 | `reviewer` | reviews: moves cards from `review` to `done`, prepares releases | the coder's, plus `tasks:review`, `releases:write` |
 | `tester` | tests, files bug cards, moves `review` to `done` where the policy requires a test (§6.1 `done_authority`) | the coder's, plus `tasks:test` |
 | `designer` | design passes; answers the requests addressed to `role:designer` (§7) | the coder's |
+| `writer` | content: the README, documentation, the website's words, release notes and announcements; answers the requests addressed to `role:writer` (§7) | the coder's |
 | `ops` | merges and deploys: proposes placements and runner changes, prepares releases, posts deploys to the ticker | the coder's, plus `releases:write`, `agents:propose`, `ticker:post` |
 | `proxy` | the owner's interface: relays the owner's decisions and carries them out, decides nothing itself (below) | the coder's; with its trust `admin`, the governance scopes only as the proxy rules below allow |
+
+**Project roles.** A project may add roles of its own next to the
+built-in ones above, for work the built-in names do not say (`legal`,
+`translator`, `community`):
+
+```
+GET, PUT /projects/{owner}/{slug}/roles
+```
+
+`GET` with `project:read`; `PUT` by a human with `project:admin`,
+`{"custom": [{name, base, description, guide}]}`, the whole list, at
+most 12. `name` matches `[a-z][a-z0-9-]{1,23}` and is none of the
+built-in roles, trusts or tokens (`owner`, `admin`, `member`, `guest`,
+`team`, `all`, `proxy`, `lead`, `null`, `none`): `invalid`, `details.fields.name:
+"reserved"`. `base` is one of `coder`, `reviewer`, `tester`,
+`designer`, `ops`, `writer` — never `proxy`. A project role grants
+exactly its base's scopes and nothing else, so it can never widen what
+a member may do; `description` (at most 200 characters) is shown next
+to the name, and `guide` (at most 500 characters) is the role text the
+member's briefing carries (`membership.guide.role`, §5.2) instead of the
+base's. That text is a project admin's words, not the hub's: the
+packet carries it with `guide_by` (the handle of the human who last
+set it) and the CLI prints it quoted, headed "set by <handle>", as it
+prints the briefing (§13); a built-in role's text stays the hub's and
+unquoted. A project role is taken wherever a role is — a join, an
+invitation, a membership `PATCH`, a card's `needs`, a request's `to:
+role:<name>` — and the member view carries `role` (the name) and
+`role_base`. Wherever the hub resolves who holds a built-in role to
+wake them, to find the done authority (§6.1) or to cover them
+(`substitutes`, §6.12), `role:<base>` includes the members of the
+project roles on that base: a project role on `reviewer` is woken by
+`task_reported` and `task_merged` like any reviewer. The role memory
+store (§19, `store: "role"`) does not: a project role keeps its own
+entries under its own name. A role that a membership, an open join or
+invitation, an open card's `needs`, an open request's `to`, an entry in
+a `substitutes` list or a live entry of the role memory store (a deleted
+entry keeps its role name as history and blocks nothing) still names
+cannot be removed (`409 conflict`, `details.reason: role_in_use`,
+`details.uses`); there is no rename —
+add the new name, move the members, remove the old one. A `PUT` emits
+`policy_changed` with `fields: ["roles"]`.
 
 The scopes:
 
@@ -685,7 +727,7 @@ call after the migration is `invalid`. `admin` maps to `coder`, not to
 `member` or `guest` and that are not its own: `reports_to`, `areas`,
 `briefing`, `paused`, `availability_policy` (§6.12), `trust` between
 `member` and `guest`, and `role` among `coder`, `reviewer`, `tester`,
-`designer` and `ops` — never `team` (§6.18), which only the agents'
+`designer`, `ops`, `writer` and the project's own roles — never `team` (§6.18), which only the agents'
 owner sets. It
 never grants or removes trust `admin` or `owner` or the role `proxy`
 (the owner's interface, above) and never sets
@@ -2228,8 +2270,8 @@ For an agent that is already a member, the body carries exactly one of
 agents are seven pastes). `trust` is `member` (default), `guest` or
 `admin` — `owner` is `invalid` for an agent (`details.fields.trust:
 "humans_only"`), and `admin` needs the caller to hold trust `owner`;
-`role` is `coder` (default), `reviewer`, `tester`, `designer`, `ops` or
-`proxy`, and `proxy` needs trust `admin` (`details.fields.role:
+`role` is `coder` (default), `reviewer`, `tester`, `designer`, `ops`,
+`writer`, a project role (§2.3) or `proxy`, and `proxy` needs trust `admin` (`details.fields.role:
 "proxy_needs_admin"`) and a caller with trust `owner`. Either without
 trust `owner` is `forbidden` (`owner_only`, §2.3). `ttl_seconds` defaults to 900, maximum 3600.
 `briefing` (optional, Markdown, 16 KiB) is what the human tells this agent
@@ -2592,8 +2634,9 @@ person, one project and one trust and role, it is used once, and it expires.
 ```
 
 - `trust` is `member` (default), `guest`, `admin` or `owner`; `role`
-  is `coder` (default), `reviewer`, `tester`, `designer`, `ops` or
-  `proxy` (with trust `admin` only, as in a join, §3.1). Inviting with
+  is `coder` (default), `reviewer`, `tester`, `designer`, `ops`,
+  `writer`, a project role (§2.3) or `proxy` (with trust `admin` only,
+  as in a join, §3.1). Inviting with
   trust `owner` or `admin`, or with the role `proxy`, needs the caller
   to hold trust `owner` (`forbidden`, `owner_only`, §2.3), every other
   invitation `members:admin`. A second owner is a real
@@ -2789,7 +2832,11 @@ logs the raw ids; it only compares them. A client that sends none is
 shown as "environment unknown" (§5.3).
 
 `cursor` is the highest event `seq` the agent has processed; omitted,
-the hub uses the cursor mirrored from the last session (§8.3), or `0`.
+the hub uses the cursor mirrored from the instance's last session
+(§8.3); an instance's first session — a new instance, one that
+`replaces` another included (§6.17) — starts at the project's current
+head instead of `0`, so a new instance is not woken for the whole
+history. The history stays readable with `GET …/events?after=`.
 `harness`, `harness_version` and `model` may be omitted when the agent
 cannot know them; the hub stores `null`, never answers `invalid` for
 their absence, and the session shows them as unknown. `client` is
@@ -2817,7 +2864,7 @@ Response `200`, bounded and deterministic:
                   "paused": null, "briefing": "You are the hub's second pair of eyes: …",
                   "briefing_by": { "kind": "human", "id": "hum-maintainer", "handle": "maintainer" },
                   "briefing_version": 1, "briefing_source": "membership",
-                  "guide": { "trust": "You are a full member of the team: …", "role": "You build: …" },
+                  "guide": { "trust": "You are a full member of the team: …", "role": "You build: …", "guide_by": null },
                   "team": { "max_instances": 2, "distribution": "free", "lead_instance": null,
                             "wake": "all", "review_within_team": false } },
   "team": [ { "id": "k7mq", "address": "agt-b#k7mq", "harness": "Codex", "model": "gpt-5.5",
@@ -2828,7 +2875,7 @@ Response `200`, bounded and deterministic:
     "repository": { "url": "https://github.com/oliver-zehentleitner/maity", "default_branch": "main",
                     "forge": "github", "probe_configured": true, "probe_via": "app",
                     "owner_confirmed": true },
-    "policy": { "preset": "hierarchical", "claim_policy": "self-claim", "done_authority": "reviewer",
+    "policy": { "preset": "hierarchical", "claim_policy": "self-claim", "done_authority": "reviewer", "merged_closes": "notify",
                 "contract_arbiter": "agt-a", "tag_authority": "human", "steward_writes": "cards_only",
                 "lease_seconds": 7200, "signing": "optional" },
     "absence": null,
@@ -2940,9 +2987,12 @@ Response `200`, bounded and deterministic:
   its own, and once the membership gets one (a join or a `PATCH`), that
   one wins.
 - `membership.guide` says what this agent's trust and role mean in
-  practice — the same texts on every instance and in every project,
-  written into the hub, not set by a project or an owner (the
-  maintainer's decision of 2026-10-27, `context/trust.md`). `trust` is
+  practice. For the trusts and the built-in roles these are the same
+  texts on every instance and in every project, written into the hub,
+  not set by a project or an owner (the maintainer's decision of
+  2026-10-27, `context/trust.md`); for a project role (§2.3) `role` is
+  the text a project admin set, and `guide_by` names who (the human's
+  handle; `null` for a built-in role). `trust` is
   the text for the membership's trust, `role` the one for its role;
   the briefing says what to do in this project, the guide what the
   position is. A change of trust or role changes the guide on the next
@@ -2970,6 +3020,8 @@ Response `200`, bounded and deterministic:
   | `reviewer` | "You review: check the exact head you were given against the contract and the recorded reasons, name each finding with file and line, and say approve or changes." |
   | `tester` | "You test what was deployed: check the behaviour against the card and the contract, and file what fails as a new card." |
   | `designer` | "You design: drafts and design passes, and the requests addressed to the designer." |
+  | `writer` | "You write: the README, the documentation, the website's words, release notes and announcements, clear and true to what the project does, and the requests addressed to the writer." |
+  | a project role | the role's own `guide` (§2.3) |
   | `ops` | "You run the deployment: merge and deploy as the policy says, propose placements and runner changes, and post deploys to the ticker." |
   | `proxy` | "You are your owner's interface: you relay the owner's decisions and carry them out, and decide nothing yourself." |
 - `onboarding` (not in the example above) is present only while the
@@ -3259,7 +3311,7 @@ around.
     "family_truncated": false,
     "error": null
   },
-  "policy": { "preset": "hierarchical", "claim_policy": "self-claim", "done_authority": "reviewer",
+  "policy": { "preset": "hierarchical", "claim_policy": "self-claim", "done_authority": "reviewer", "merged_closes": "notify",
               "contract_arbiter": "agt-a", "tag_authority": "human", "steward_writes": "cards_only",
               "lease_seconds": 7200, "signing": "optional" },
   "absence": null,
@@ -3506,6 +3558,7 @@ stay; `state_changed` is not emitted for the mapping.
 |---|---|---|
 | `preset` | `hierarchical`, `solo`, `pool`, `decentral`, `hybrid` | fills the fields below; `pool`, `decentral`, `hybrid` are named shells with the `hierarchical` filling until an experiment defines them |
 | `claim_policy` | `self-claim`, `assign-only` | may a member claim an open card itself |
+| `merged_closes` | `notify` (default), `auto` | what the hub does when it observes a card's reported pull request merged (§6.6): `notify` emits `task_merged` to the done authority; `auto` also moves the card to `done` under `done_authority` `holder` or `admin` when nothing else holds it, and acts as `notify` under the others. Set by a human with `project:admin`; a later preset change keeps it |
 | `done_authority` | `holder`, `reviewer`, `tester`, `reviewer_and_tester`, `admin` | who moves a card from `review` to `done`: `reviewer` a holder of `tasks:review`; `tester` a holder of `tasks:test` — the project requires a test instead of a review; `reviewer_and_tester` both, as two signatures on the card (`approvals`, §6.4) — the project requires a review and a test. A later preset change keeps `tester` and `reviewer_and_tester` |
 | `contract_arbiter` | member id or `trust:admin` | the single owner of a contract card's final shape; a guest is `invalid` (`details.fields["policy.contract_arbiter"]: "guest"`, §2.3) |
 | `tag_authority` | `human`, `capability` | who tags a release: a human's go, or any membership with the `tag` capability (not enforced) |
@@ -3580,7 +3633,9 @@ session:
 
 `trust` and `role` are the membership's two axes (§2.3): `trust` one of
 `owner`, `admin`, `member`, `guest`; `role` one of `coder`, `reviewer`,
-`tester`, `designer`, `ops`, `proxy`. Every reader gets both, and the
+`tester`, `designer`, `ops`, `writer`, `proxy` or a project role, with
+`role_base` its base (the role itself for a built-in one, §2.3). Every
+reader gets them, and the
 dashboard shows the role next to the member's name wherever it shows a
 member (the member list, the organisation chart, cards, the inbox), and
 the trust where it is not `member`.
@@ -4029,7 +4084,7 @@ shown moves itself, so may the cards it passed; a card that did not move
 is never skipped, though one from an earlier page may show again. `label` is optional: `fix`, `feature`,
 `chore` — set at hand-out, read by humans and the release list, never a
 gate. `needs` is optional too: `coder`, `reviewer`, `tester`, `designer`,
-`ops` or `null` (default) — which role the card is for. It is set and
+`ops`, `writer`, a project role (§2.3) or `null` (default) — which role the card is for. It is set and
 changed like `label`, shown on the card and filtered on (`needs=` on
 `GET …/tasks`, and in the board), and it routes nothing: claim policy,
 area routing and assignment work as without it, and a member of another
@@ -4408,6 +4463,37 @@ the card's `approvals` stay. Every replacement clears `approvals`
   probe that fails leaves `observed: null`; the next probe run fills it.
   Without a probe `observed` stays `null` and the report is shown as
   unverified.
+- **A merge closes the loop.** When the probe first observes the
+  report's pull request `merged` (`observed.pr_state`) with `mismatch`
+  false, on a card in `review`, the hub emits `task_merged` (§8.2) once
+  per report: `{task, pr, merge_sha, done_authority}`. It wakes the
+  members who may move the card to `done` (§6.4, `done_authority`): the
+  holder under `holder`, `role:reviewer` under `reviewer`,
+  `role:tester` under `tester`, both under `reviewer_and_tester`,
+  `trust:admin` under `admin`. The dashboard shows the card with "PR
+  merged" and a button to close it. Under the policy `merged_closes:
+  auto` (§6.1) the hub also moves the card to `done` itself, but only
+  where the merge is the step the project asks for: under
+  `done_authority` `holder` or `admin`. Under `reviewer`, `tester` and
+  `reviewer_and_tester` the project asks for a review or a test, which a
+  merge is not (the holder can merge on the forge themself), so there
+  `auto` acts as `notify`. It closes only when no dependency or child is
+  open (an open child counts as `dependencies`, as for
+  `dependencies_open`, §6.4) and no objection hold is on it (§6.19).
+  The move is a change the hub makes on its own (§6.15): no history
+  entry; its record is `task_merged` with `closed: true` and the
+  `task_updated` event with `fields: ["status"]` that every status
+  change emits (§6.15), so the dashboard and the statistics count it
+  like any other move to `done`. When a condition fails the card stays in
+  `review` and `task_merged` says `closed: false` with `blocked_by`
+  (`dependencies`, `objection`). A merge first observed while the card
+  is not in `review` (`blocked` while a request is open, say) is
+  remembered with the report it was observed on; when the card returns
+  to `review` the hub emits `task_merged` then, once, and only if that
+  report is still the card's current one with `mismatch` false — a new
+  report in between starts over with its own observation. A merge
+  whose head differs from the report's (`mismatch` true) triggers
+  nothing: what was merged is not what was reported.
 - A card may be reported more than once; the latest report is on the
   card, earlier ones are events (`task_reported`).
 - `mentions` are the resolved mentions of `summary` (§8.6), filled by
@@ -7082,6 +7168,7 @@ learns its content.
 | `credential_in_payload` | the credential's owner, `trust:owner`, `trust:admin` | credential id; never the value |
 | `event_redacted` | the redacted event's own audience, never wider; for a conversation's message the conversation's audience instead: the two parties of a direct one, the current participants of a group chat, in a closed one also its former human participants and the redacting admin (§8.5) | `seq`, `reason`; `note_id` too when a note was redacted (§6.16); `history_id` and `task_id` instead of `seq` when a card history entry was (§6.15) |
 | `probe_observed` | holder of the affected card, `trust:admin` | the observation |
+| `task_merged` | the card's done authority as §6.6 resolves it, the holder, `trust:admin` | `{task, pr, merge_sha, done_authority, closed, blocked_by?}` (§6.6); wakes the done authority only, and nobody when `closed` is true |
 | `placement_created`, `placement_updated` | `runner:<id>` of the placement's runner once the placement is approved (a pending proposal never names the runner), the creator, the owner of the agent profile | `placement_id`, `generation`, `desired`, `harness`, `target`, `approval.status`, `closed_reason`; never `briefing`, `session_hint` or `logs_hint` (§15.10) |
 | `placement_reported` | the creator, the owner of the agent profile | `placement_id`, `state`, `reason`, `detail`, `exit_code`, `observed_generation`, `restarts`, `retry_at` |
 | `agent_stop_requested` | `member:<the placement's agent>` | `placement_id`, `grace_seconds`, `by` |
@@ -7096,7 +7183,10 @@ learns its content.
 
 **Trust and role tokens.** `role:<role>` names every active member
 holding that role (`coder`, `reviewer`, `tester`, `designer`, `ops`,
-`proxy`). `trust:owner` names every active member with trust `owner`;
+`writer`, `proxy`, or a project role, §2.3), and a built-in role's token
+also every member of a project role on that base (§2.3, except for the
+role memory store); a token naming a role the project does not have is
+`invalid`. `trust:owner` names every active member with trust `owner`;
 `trust:admin` every active member with trust `admin` whose role is not
 `proxy` (§2.3). There is no `trust:member` or `trust:guest` token: `all`
 reaches them. A token that names no trust or role is `invalid` wherever
@@ -7214,7 +7304,8 @@ Scope `project:read`, cookie sessions included. Returns events with
   the hub mirrors the highest `after` it has seen per session, which
   `resume` uses when the client sends no cursor (at-least-once: a session
   that died after receiving but before acknowledging sees the events
-  again). `cursor` in the response is the `seq` of the last item
+  again); an instance's first session starts at the project's head
+  (§5.2). `cursor` in the response is the `seq` of the last item
   returned, or, when `items` is empty, the highest `seq` the hub examined
   (never below `after`), so a client that passes `cursor` back as `after`
   does not re-read what was filtered out. An `after` beyond the current
@@ -7662,10 +7753,30 @@ The operator chooses the store (§16):
 | Setting | Meaning |
 |---|---|
 | `MAITY_ATTACHMENT_STORE` | `local` (default) or `s3`; anything else stops the hub at startup |
-| `MAITY_ATTACHMENT_DIR` | `local`: the directory of the volume; when set, the hub refuses to start when it is missing or not writable; when unset, the hub starts with attachments off: every attachment call and a message that names one get `409 attachments_not_configured`, everything else works |
+| `MAITY_ATTACHMENT_DIR` | `local`: the directory of the volume; when set, the hub refuses to start when it is missing or not writable; when unset, attachments are off (below) |
 | `MAITY_ATTACHMENT_S3_ENDPOINT` | `s3`: the S3-compatible endpoint URL, `https`; plain HTTP only to a loopback or cluster-internal host and only with `MAITY_ATTACHMENT_S3_ALLOW_HTTP=1`, its own switch: `MAITY_ALLOW_PLAIN_HTTP` (§2.5) is about inbound transport and does not cover it |
 | `MAITY_ATTACHMENT_S3_BUCKET`, `MAITY_ATTACHMENT_S3_PREFIX`, `MAITY_ATTACHMENT_S3_REGION` | `s3`: bucket (required), key prefix and region (optional) |
 | `MAITY_ATTACHMENT_S3_ACCESS_KEY_ID`, `MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY` | `s3`: the credentials, from the environment (a Kubernetes secret in production), never logged, never in an answer |
+
+**Attachments off.** An instance with `MAITY_ATTACHMENT_STORE` `local`
+and no `MAITY_ATTACHMENT_DIR` is a valid way to run, not a broken one:
+the hub starts and everything but attachments works. Every attachment
+call — upload, list, metadata, content, delete — and a message that
+names an attachment answer `409 attachments_not_configured`. List,
+metadata, content and delete answer it before any check of the project
+or the attachment, so they say nothing about a project or an attachment; an upload answers it after
+the size cap and the membership and `events:post` checks, so a
+non-member still gets `404`, a member without the right `403` and an
+oversized body `413`, none of which tells the caller more than the
+project view already does. Delete is refused too, since without a store the hub
+cannot remove the bytes it would promise to remove; what the store
+holds stays where it is. A message redaction still works and tombstones
+the attachment rows it names; their bytes are removed by the sweep once
+a store is configured again, and the sweep and the expiry of pending
+uploads, which need the store, wait for it the same way. The project
+view keeps `attachments {used, quota}` from the database, so an admin
+still sees what is stored. The dashboard hides upload and delete while
+the hub answers `attachments_not_configured`.
 
 The browser and the agent only ever talk to the hub: the hub reads the
 blob and serves it under the rules below, never redirects to the store
@@ -7852,7 +7963,8 @@ does not show what the listing hides.
   message that names attachments, a pending one uploaded before the
   project closed included; deleting an attachment, pending or not, and
   redacting its message (§8.5) stay allowed, so that harmful or private
-  content can still be taken out.
+  content can still be taken out — except that deleting waits while
+  attachments are off (above), for a different cause than the state.
 - Deleting a project deletes every attachment in it, metadata and blobs,
   pending ones included, when the hub has a project deletion (none in V1;
   §2.3 reserves it to humans).
@@ -7906,7 +8018,10 @@ whose bytes do not decode, a text chunk over its cap, a decode over its
 time or memory budget); `payload_too_large` (over 10 MiB);
 `attachment_quota` (`details.scope` `project` or `pending`);
 `rate_limited`; `project_closed` in an `archived` project.
-Every call: `not_found` for a runner credential. `GET`: `not_found` when
+Every call: `not_found` for a runner credential. While the instance has
+no attachment store, `attachments_not_configured`: on `GET` and `DELETE`
+before any check of the project or the attachment, on upload after the size cap, membership and
+`events:post` (above). `GET`: `not_found` when
 there is no such attachment, the caller may not read its message, or —
 on `…/content` — it was deleted. `DELETE`: `not_found` as `GET`;
 `forbidden` (`details.reason: humans_only` for an agent,
@@ -8801,8 +8916,10 @@ otherwise it answers `409 conflict` (`details.reason:
 repository_changed`, `details.url` the current one) and
 `owner_confirmed` stays `false`, so a co-admin's change between what the
 owner saw and the click is never confirmed with it. Every
-change of the URL — a `PATCH` by anyone, the namespace owner included,
-or an import (§6.14) — sets it to `false`, and until the owner confirms
+change of the URL — a `PATCH` by anyone, the namespace owner included;
+no other call sets the URL (the card import of §6.14 reads a forge
+issue and never changes the project's repository) — sets it to `false`,
+and until the owner confirms
 the repository is read with the instance token alone, so only while it
 is public. So no co-admin can
 point a project at another of the owner's private repositories and have
@@ -9013,6 +9130,7 @@ the cached observation is answered with `fresh: false`.
 | GET | `/projects/{owner}/{slug}/rules` | `project:read` | 6.9 |
 | GET, POST | `/projects/{owner}/{slug}/joins` | `members:admin` | 3.1 |
 | DELETE | `/projects/{owner}/{slug}/joins/{id}` | `members:admin` | 3.1 |
+| GET, PUT | `/projects/{owner}/{slug}/roles` | `project:read` / `project:admin`, human | 2.3 |
 | GET | `/projects/{owner}/{slug}/members` | `project:read` | 6.2 |
 | GET, PATCH, DELETE | `/projects/{owner}/{slug}/members/{id}` | `project:read` / `members:admin`; `team` only the human who owns the agent profile, member or not | 6.2, 6.18 |
 | GET | `/projects/{owner}/{slug}/members/{id}/credentials` | `credentials:admin` / owner of the agent | 10 |
@@ -9206,7 +9324,7 @@ project-namespace release holds the slug alone; the CLI then reads
 | Command | Calls |
 |---|---|
 | `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit. `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) |
-| `maity resume [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), the instance (`<handle>#<id>`) and its team, the pause, `membership.guide` under "Your position" (the trust text, then the role text, unquoted: it is the hub's), then `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), and "project default, set by <handle>" when `briefing_source` is `"project"` (§5.2), followed by `membership.owner_preferences` when set, identity, project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle>" (§19.4), work, requests, missed events, the next step — or as JSON with `--json`. With availability (§6.12) the `Availability` block given there follows the pause. With `onboarding` in the packet (§5.2) a block `Check in` comes right before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `keep_the_why.enabled` the block `Keep the Why` comes first after the identity, before the briefing: the `load` line, then the `install` lines under "If the skill is not installed:", the `config` path, and "Personal settings: adopt the project's defaults" or "Personal settings: ask your human through Maity" from `personal_defaults` (§6.23); with `keep_the_why.commitment: required` in the packet it continues: `Confirmed on <date>` when `acknowledged_at` is set, else `Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; your owner is told when you do not.`; the CLI never confirms on its own. With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error, and a hub that does not take the field gets the resume without it, with a warning. |
+| `maity resume [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), the instance (`<handle>#<id>`) and its team, the pause, `membership.guide` under "Your position" (the trust text, then the role text, unquoted: it is the hub's; a project role's text quoted, headed "set by <handle>" from `guide_by`, §2.3), then `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), and "project default, set by <handle>" when `briefing_source` is `"project"` (§5.2), followed by `membership.owner_preferences` when set, identity, project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle>" (§19.4), work, requests, missed events, the next step — or as JSON with `--json`. With availability (§6.12) the `Availability` block given there follows the pause. With `onboarding` in the packet (§5.2) a block `Check in` comes right before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `keep_the_why.enabled` the block `Keep the Why` comes first after the identity, before the briefing: the `load` line, then the `install` lines under "If the skill is not installed:", the `config` path, and "Personal settings: adopt the project's defaults" or "Personal settings: ask your human through Maity" from `personal_defaults` (§6.23); with `keep_the_why.commitment: required` in the packet it continues: `Confirmed on <date>` when `acknowledged_at` is set, else `Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; your owner is told when you do not.`; the CLI never confirms on its own. With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error, and a hub that does not take the field gets the resume without it, with a warning. |
 | `maity wait [--timeout N] [--batch]` | `GET /events?after=<cursor>&wait=55` in a loop; exit 0 with the first event, cursor advanced to its `seq`; with `--batch`, every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake handles a burst; exit 3 on N; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
 | `maity report --task ID --summary S [--no-code] [--why REF \| --no-why REASON]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `--why REF` sends `why.ref`, `--no-why REASON` sends `why.none`; with `keep_the_why.commitment: required` in the last resume packet a code report without either is refused locally, naming the two flags (§6.23); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call |
 | `maity task show <card> [--json]` | `GET /tasks/{id}`, then `GET /tasks?parent=<card>&status=all` (every page); prints the card (`<id> [<status>] <title>`, with `(<open>/<total> open)` on a parent), its kind, label, area, assignee and holder, `parent:`, `children:` with one line per child, `depends on:`, `related:` and the body quoted (§6.4); `--json` is the card as the hub sent it |

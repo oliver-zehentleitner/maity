@@ -71,7 +71,7 @@ def _check(conn: Connection, mine: Membership, body: PostIn) -> Any:
     kind = body.type
     if kind is None:
         errors["type"] = "required"
-    elif kind in ("merge", "decision"):
+    elif kind in ("merge", "decision", "rename"):
         errors["type"] = "not_for_type"
     elif kind not in ("note", "deploy", "release"):
         errors["type"] = "invalid"
