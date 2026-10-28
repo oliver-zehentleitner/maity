@@ -129,14 +129,34 @@ def test_completion_makes_an_active_account_and_signs_it_in(
     assert complete(migrated, settings, row.id).kind == "gone"  # used: as if it never was
 
 
-def test_without_the_address_store_nothing_is_created(
+def test_the_account_holds_its_address_as_verified(
     admin: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
-    """The claim fails closed until #280 stores verified addresses (§2.7.1)."""
+    """The completion writes the address through the notification settings' store
+    (§18.4), not through a stand-in."""
+    from maity_hub.notifications import preferences
+
     settings = settings_for(MAITY_REGISTRATION_APPROVAL="automatic")
     row = requested(make_client, migrated, settings)
+    done = complete(migrated, settings, row.id)
+    assert done.kind == "created"
+    with migrated.begin() as conn:
+        view = preferences.view(conn, done.human_id, True)["email"]
+        assert preferences.has_verified_address(conn, "ada@example.com") is True
+    assert (view["address"], view["address_status"]) == ("ada@example.com", "verified")
+
+
+def test_a_taken_address_makes_no_account(
+    admin: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    from maity_hub.notifications import preferences
+
+    settings = settings_for(MAITY_REGISTRATION_APPROVAL="automatic")
+    row = requested(make_client, migrated, settings)
+    holder = flow.human(make_client, migrated, "holder")
+    with migrated.begin() as conn:
+        assert preferences.claim_verified(conn, "ada@example.com", holder.id)
     assert complete(migrated, settings, row.id).kind == "gone"
-    assert human(migrated, "x") is None
     with migrated.connect() as conn:
         assert conn.execute(select(t.human).where(t.human.c.handle == "ada")).first() is None
     assert pending(migrated)[0].voided_at is not None
