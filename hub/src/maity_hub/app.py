@@ -101,7 +101,12 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     engine = (
         engine
         if engine is not None
-        else make_engine(settings.database_url, settings.db_pool_size, settings.db_max_overflow)
+        else make_engine(
+            settings.database_url,
+            settings.db_pool_size,
+            settings.db_max_overflow,
+            settings.db_pool_recycle,
+        )
     )
 
     @asynccontextmanager

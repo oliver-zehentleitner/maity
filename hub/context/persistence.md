@@ -554,3 +554,28 @@ trusted with text that may quote a credential.
   and the masking missed real forms (tried, reverted).
 - Keep the code only (the SQLSTATE or number): psycopg's connection errors have neither.
 - Put the cause into the response: that is the leak §1.3 forbids, and a client cannot act on it.
+
+## The pool keeps connections warm, and a host name that does not resolve is tried once more
+
+**Id:** 3b5f0c52-6d1e-4c7a-9a43-1e8d7f2a9b64
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** ops finding on maity.team, 2026-10-28: 107 `database_unavailable` answers in 45 minutes, all category `dns`, on a node at its CPU limit
+**Revisit when:** the database sits behind a pooler or a local resolver cache, or a `dns` warning shows up in the log regularly
+
+For a server database the pool is 16 connections plus 16 overflow (was 5 + 10), it hands out the most recently
+used connection first (`pool_use_lifo`), and it replaces a connection older than 30 minutes
+(`MAITY_DB_POOL_RECYCLE`, `0` turns it off). A connect that fails with the `dns` category (`errors.connection_cause`)
+is tried once more after 0.25–0.5 s; every other failure, and a second DNS failure, goes on as before.
+
+**Reason:** every new connection is a name lookup and a handshake. On a saturated one-vCPU node the cluster's
+DNS answered in bursts, and the old pool of 5 opened and closed connections under a burst of requests, so each
+burst was a burst of lookups. Reusing connections removes most lookups; the single retry covers the rest, and
+a lookup that fails twice in half a second is a real outage that should be answered 503 at once. The cause is
+inferred from the log categories, not reproduced.
+
+**Rejected alternatives:**
+- Retry without limit or with long back-off: it holds a request thread while the database is really down.
+- A DNS cache inside the hub: the address can change with the database's failover, and a stale cache would turn a blip into an outage.
+- A connection pooler (pgbouncer): one more component to run for a problem that reuse mostly solves.

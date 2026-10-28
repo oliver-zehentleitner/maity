@@ -61,8 +61,10 @@ class Settings:
     attachment_quota: int = 1024 * 1024 * 1024
     # MAITY_DB_POOL_SIZE, MAITY_DB_MAX_OVERFLOW: the server database's connection pool
     # (SQLAlchemy's defaults, 5 + 10).
-    db_pool_size: int = 5
-    db_max_overflow: int = 10
+    db_pool_size: int = 16
+    db_max_overflow: int = 16
+    # MAITY_DB_POOL_RECYCLE: seconds after which a pooled connection is replaced; 0 never.
+    db_pool_recycle: int = 1800
     # MAITY_SECRET_KEY: the instance key for secrets stored at rest (§16.2, §17.4);
     # never logged, never in a response, never in the database.
     secret_key: bytes | None = field(default=None, repr=False)
@@ -124,9 +126,12 @@ class Settings:
             attachment_quota=int(
                 parse_number(env, "MAITY_ATTACHMENT_QUOTA", 1024**3, minimum=1024, maximum=2**50)
             ),
-            db_pool_size=int(parse_number(env, "MAITY_DB_POOL_SIZE", 5, minimum=1, maximum=500)),
+            db_pool_size=int(parse_number(env, "MAITY_DB_POOL_SIZE", 16, minimum=1, maximum=500)),
             db_max_overflow=int(
-                parse_number(env, "MAITY_DB_MAX_OVERFLOW", 10, minimum=0, maximum=500)
+                parse_number(env, "MAITY_DB_MAX_OVERFLOW", 16, minimum=0, maximum=500)
+            ),
+            db_pool_recycle=int(
+                parse_number(env, "MAITY_DB_POOL_RECYCLE", 1800, minimum=0, maximum=86400)
             ),
             secret_key=parse_secret_key(env.get("MAITY_SECRET_KEY", "")),
             mail=parse_mail(env),
