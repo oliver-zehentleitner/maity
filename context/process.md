@@ -442,7 +442,7 @@ already knows what it deploys.
 **Revisit when:** the repository stops being public, a job needs a secret of the repository, or hosted runners get as fast as the machine
 
 `ci.yml` lets `hub-sqlite`, `hub-postgresql` and `hub-mariadb` run on a self-hosted runner
-when the repository variable `HUB_RUNNER` holds its labels; unset, they run on GitHub's
+when the repository variable `HUB_RUNNER_LABEL` holds a label prefix (one runner service per job type, see below); unset, they run on GitHub's
 runners. The runner is a user of its own with rootless Docker, no read access to anything
 else on the machine and a firewall rule against local and internal services (IPv4 and
 IPv6); the runner's files, hook and unit are root-owned under /opt and a system unit, not in
@@ -507,3 +507,32 @@ only from a copy that belongs to the runner, so no system Python is changed.
 - `pip install --break-system-packages` in the jobs: it would leak a self-hosted special case into the shared workflow.
 - Root creating the links and files in the tool cache: the first version did, and the review showed it follows symlinks a
   job may have left there.
+
+## One runner service per database job type, a label each, three workers per job
+
+**Id:** c2713d54-e602-42a3-8636-693ff3fd2c0b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the first measurements on the self-hosted runner, 2026-10-28 (one Postgres job 11 min 57 s on the machine against about 22 on a hosted runner; nine CI runs queued behind the single runner); the coordinator's go and conditions
+**Revisit when:** the machine's memory or cores change, or hosted runners get as fast as it
+**See:** process.md#the-database-ci-jobs-may-run-on-the-maintainers-machine-a-forks-code-reaches-it-only-through-an-approval — 405c762c-11a2-4a95-a23b-0b2657a7aa8d — as of 2026-10-28
+
+The three database jobs run on three runner services of the machine, `maity-runner@sqlite`, `@pg` and `@maria`, each in
+its own directory with its own registration and the label `<prefix>-<type>`. `ci.yml` asks each job for its own label
+through the repository variable `HUB_RUNNER_LABEL` (the prefix); unset, and for forks, the jobs run hosted. Each service
+sets `PYTEST_ARGS=-n 3`, so nine workers share the eight cores.
+
+**Reason:** one runner takes one job at a time. With every pull request sending three jobs of about twelve minutes each to
+it, nine runs were queued within an hour and the runner was slower per pull request than the hosted ones, which run in
+parallel. A pool of identical runners would fix the queue but let two Postgres jobs run at once, both binding the host
+port 5432 for their service container; a label per job type keeps the ports apart by construction and still lets the three
+jobs of one pull request run side by side. Memory carried it: one job at eight workers peaked at 5.2 GB of 19.9 GB with
+swap unused.
+
+**Rejected alternatives:**
+- One runner for everything, as installed first: a queue of hours as soon as several pull requests are open.
+- Several identical runners: the port 5432 and 3306 collision between two jobs of the same type.
+- A random host port for the service containers: it would need the jobs' connection URLs to follow, a change in the shared
+  workflow for the self-hosted case only.
+
