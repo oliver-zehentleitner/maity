@@ -290,7 +290,7 @@ def test_the_probe_fills_a_report(
     )
     assert observed["branch_head_sha"] == SHA and observed["observed_at"] is not None
     [event] = _events(migrated, "probe_observed")
-    assert event.audience == [f"instance:{agent.id}#{agent.instance}", "role:admin"]  # the holder
+    assert event.audience == [f"instance:{agent.id}#{agent.instance}", "trust:admin"]  # the holder
     assert event.payload == {"task": card_id, "observed": observed, "mismatch": False}
     assert probe.observe_report(migrated, READER, card_id, max_age=60) is False  # nothing new
 

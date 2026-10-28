@@ -1,7 +1,7 @@
 """Invitations for humans (docs/api.md §3.4): what an invitation is, when it admits, and
 who hears of it.
 
-An invitation is for one person, one project and one role; it is used once and it
+An invitation is for one person, one project, one trust and one role; it is used once and it
 expires. Whether it still admits — open, its project not closed, its issuer still
 holding the authority it needs — is one predicate, used by the page, by accepting and by
 registration (§2.7.1), so the three never disagree.
@@ -27,7 +27,8 @@ LISTED_FOR = timedelta(days=30)  # a used, revoked, voided or expired one stays 
 PER_PROJECT = Limiter(20, 3600)  # issued per project per hour (§3.4)
 KINDS = ("invitation_created", "invitation_revoked", "invitation_voided", "invitation_used")
 # Only the owner invites to these: the roles that themselves invite (§3.4).
-OWNER_ROLES = ("owner", "admin")
+# What only a caller with trust `owner` grants (§2.3 "The owner's rights").
+OWNER_TRUSTS = ("owner", "admin")
 
 
 def state(row: Any, now: datetime | None = None) -> str:
@@ -48,6 +49,7 @@ def view(row: Any, project_slug: str, url: str | None = None) -> dict[str, Any]:
     found = {
         "id": row.id,
         "project": project_slug,
+        "trust": row.trust,
         "role": row.role,
         "address": row.address,
         "note": row.note,
@@ -68,23 +70,24 @@ def _ts(value: datetime | None) -> str | None:
     return clock.rfc3339(value) if value is not None else None
 
 
-def may_issue(role: str, issuer_role: str) -> bool:
-    """`owner` and `admin` need the issuer to hold `owner`; the others `members:admin`."""
-    if role in OWNER_ROLES:
-        return issuer_role == "owner"
-    return has_scope(issuer_role, "human", "members:admin")
+def may_issue(trust: str, role: str, issuer_trust: str, issuer_role: str) -> bool:
+    """Trust `owner` or `admin`, and the role `proxy`, need the issuer to hold trust
+    `owner`; the others `members:admin`."""
+    if trust in OWNER_TRUSTS or role == "proxy":
+        return issuer_trust == "owner"
+    return has_scope(issuer_trust, issuer_role, "human", "members:admin")
 
 
 def issuer_holds(conn: Connection, row: Any) -> bool:
     """Whether the issuer is still an active human member with the authority it needs."""
-    role = conn.execute(
-        select(t.membership.c.role).where(
+    issuer = conn.execute(
+        select(t.membership.c.trust, t.membership.c.role).where(
             t.membership.c.project_id == row.project_id,
             t.membership.c.human_id == row.created_by,
             t.membership.c.active.is_(True),
         )
-    ).scalar()
-    return role is not None and may_issue(row.role, role)
+    ).first()
+    return issuer is not None and may_issue(row.trust, row.role, issuer.trust, issuer.role)
 
 
 def admits(conn: Connection, row: Any, project: Any, now: datetime | None = None) -> bool:
@@ -145,7 +148,7 @@ def audience(conn: Connection, project_id: str, *also: str) -> list[str]:
         .where(
             t.membership.c.project_id == project_id,
             t.membership.c.human_id.is_not(None),
-            t.membership.c.role.in_(("owner", "admin")),
+            t.membership.c.trust.in_(("owner", "admin")),
             t.membership.c.active.is_(True),
         )
         .order_by(t.membership.c.joined_at)
@@ -162,7 +165,12 @@ def announce(conn: Connection, kind: str, row: Any, actor: Actor, *also: str) ->
         row.project_id,
         kind,
         audience(conn, row.project_id, *also),
-        {"id": row.id, "role": row.role, "address_bound": row.address is not None},
+        {
+            "id": row.id,
+            "trust": row.trust,
+            "role": row.role,
+            "address_bound": row.address is not None,
+        },
         actor=actor,
         subject=("invitation", row.id),
     )

@@ -122,7 +122,7 @@ def readers_see_all(round_row: Any, mine: Any) -> bool:
     """The moderator and humans with `owner` or `admin` read every answer (§20.3)."""
     if mine.principal_id == round_row.moderator["member_id"]:
         return True
-    return mine.kind == "human" and mine.role in ("owner", "admin")
+    return mine.kind == "human" and mine.trust in ("owner", "admin")
 
 
 def listed(conn: Connection, round_row: Any, mine: Any, only_mine: bool) -> list[dict[str, Any]]:

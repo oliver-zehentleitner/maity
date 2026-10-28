@@ -303,10 +303,10 @@ def post_message(
         to = body.to
         if to == "all":
             target = "all"
-        elif to.startswith("role:"):
-            from maity_hub.scopes import ROLES
+        elif to.startswith(("role:", "trust:")):
+            from maity_hub.scopes import token_known
 
-            if to.removeprefix("role:") not in ROLES:
+            if not token_known(to):
                 raise invalid({"to": "unknown_role"})
             target = to
         else:
@@ -349,7 +349,7 @@ def post_message(
             if not (
                 "all" in audience
                 or token in audience
-                or f"role:{roles[m['member_id']]}" in audience
+                or bool(roles[m["member_id"]] & set(audience))
             ):
                 pinged[token] = m["member_id"]
         mentions.charge(conn, mine.id, len({m for m in pinged.values() if m != me}))
@@ -432,18 +432,25 @@ def remember_read(conn: Connection, reader: int, conversation_id: str, seq: int)
             pass
 
 
-def _roles(conn: Connection, project_id: str, principals: list[str]) -> dict[str, str]:
-    """The role of each mentioned member, to tell who `to` already reaches."""
+def _roles(conn: Connection, project_id: str, principals: list[str]) -> dict[str, set[str]]:
+    """The tokens of each mentioned member, to tell who `to` already reaches."""
+    from maity_hub.scopes import tokens_of
+
     if not principals:
         return {}
     rows = conn.execute(
-        select(t.membership.c.agent_id, t.membership.c.human_id, t.membership.c.role).where(
+        select(
+            t.membership.c.agent_id,
+            t.membership.c.human_id,
+            t.membership.c.trust,
+            t.membership.c.role,
+        ).where(
             t.membership.c.project_id == project_id,
             t.membership.c.active.is_(True),
             t.membership.c.agent_id.in_(principals) | t.membership.c.human_id.in_(principals),
         )
     ).all()
-    return {(r.agent_id or r.human_id): r.role for r in rows}
+    return {(r.agent_id or r.human_id): tokens_of(r.trust, r.role) for r in rows}
 
 
 def writer(

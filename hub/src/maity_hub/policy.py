@@ -12,7 +12,7 @@ PRESETS = ("hierarchical", "solo", "pool", "decentral", "hybrid")
 _HIERARCHICAL = {
     "claim_policy": "self-claim",
     "done_authority": "reviewer",
-    "contract_arbiter": "role:admin",
+    "contract_arbiter": "trust:admin",
     "tag_authority": "human",
     "steward_writes": "cards_only",
     "signing": "optional",
@@ -82,7 +82,7 @@ def filled(preset: str, owner_id: str) -> dict[str, Any]:
         **_FILLINGS[preset],
         "lease_seconds": LEASE_DEFAULT,
         "max_placements": MAX_PLACEMENTS_DEFAULT,
-        "coordinator": "role:admin",
+        "coordinator": "trust:admin",
         "coordinator_substitute": None,
         "on_runner_revoke": "inherit",
         "badge": "off",

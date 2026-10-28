@@ -213,7 +213,7 @@ def list_pending(slug: str, request: Request, caller: AnyCaller) -> JSONResponse
         mine.require("project:read")
         everyone = _admin_human(mine)
         if narrowed not in (None, mine.principal_id) and not everyone:
-            if mine.kind == "agent" and mine.role in ("owner", "admin"):
+            if mine.kind == "agent" and mine.trust in ("owner", "admin"):
                 raise humans_only("an agent never reads another member's pending uploads")
             raise forbidden("members:admin")
         query = select(t.attachment).where(
@@ -270,7 +270,7 @@ def delete_attachment(
             raise not_found()
         own = row.uploaded_by == mine.id
         if not own and not _admin_human(mine):
-            if mine.kind == "agent" and mine.role in ("owner", "admin"):
+            if mine.kind == "agent" and mine.trust in ("owner", "admin"):
                 raise humans_only("an agent deletes only what it sent")
             raise not_found()  # another member's pending upload does not exist for it
         # A pending upload leaves no tombstone and no event; the bytes go once the row is.

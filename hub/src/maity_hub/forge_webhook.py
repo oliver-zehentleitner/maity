@@ -368,7 +368,7 @@ def _changed(conn: Connection, project_id: str, action: str, actor: events.Actor
         conn,
         project_id,
         "forge_webhook_changed",
-        ["role:owner", "role:admin"],
+        ["trust:owner", "trust:admin"],
         {"action": action, "by": by},
         actor=actor,
     )

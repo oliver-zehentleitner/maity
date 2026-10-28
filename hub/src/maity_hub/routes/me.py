@@ -79,13 +79,16 @@ def limit_view(human: Any) -> dict[str, Any] | None:
     }
 
 
-def _project_row(project: Any, role: str, shown: dict[str, Any], full_name: str) -> dict[str, Any]:
+def _project_row(
+    project: Any, trust: str, role: str, shown: dict[str, Any], full_name: str
+) -> dict[str, Any]:
     logo = shown["logo"]
     return {
         "slug": project.slug,
         "full_name": full_name,
         "name": project.name,
         "state": project.state,
+        "trust": trust,
         "role": role,
         # A project switcher shows each project's image without reading every project.
         "logo": {"available": logo["available"], "etag": logo.get("etag")},
@@ -96,6 +99,7 @@ def _human_projects(conn: Connection, human_id: str) -> list[dict[str, Any]]:
     rows = conn.execute(
         select(
             t.membership.c.id,
+            t.membership.c.trust,
             t.membership.c.role,
             t.project.c.id.label("project_id"),
             t.project.c.slug,
@@ -110,8 +114,8 @@ def _human_projects(conn: Connection, human_id: str) -> list[dict[str, Any]]:
     names = namespace.full_names(conn, [row.project_id for row in rows])
     return [
         {
-            **_project_row(row, row.role, shown[row.project_id], names[row.project_id]),
-            "open_requests": open_requests(conn, row.id, row.role),
+            **_project_row(row, row.trust, row.role, shown[row.project_id], names[row.project_id]),
+            "open_requests": open_requests(conn, row.id),
         }
         for row in rows
     ]
@@ -119,15 +123,15 @@ def _human_projects(conn: Connection, human_id: str) -> list[dict[str, Any]]:
 
 def _agent_project(conn: Connection, caller: Caller) -> list[dict[str, Any]]:
     row = conn.execute(
-        select(t.membership.c.role, t.project)
+        select(t.membership.c.trust, t.membership.c.role, t.project)
         .join(t.project, t.project.c.id == t.membership.c.project_id)
         .where(t.membership.c.id == caller.membership_id)
     ).one()
     shown = images.views(conn, [row.id])[row.id]
-    return [_project_row(row, row.role, shown, namespace.name_of(conn, row.id))]
+    return [_project_row(row, row.trust, row.role, shown, namespace.name_of(conn, row.id))]
 
 
-def open_requests(conn: Connection, membership_id: int, role: str) -> int:
+def open_requests(conn: Connection, membership_id: int) -> int:
     """Open requests addressed to this membership: `GET …/requests` with `to=me` (§7),
     through the listing's own rule so that the two cannot drift."""
     from maity_hub import inbox

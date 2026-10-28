@@ -46,6 +46,7 @@ def test_the_member_view_has_the_contract_shape(
         "display_name",
         "avatar_url",  # null: no picture uploaded (§6.10)
         "owner_id",
+        "trust",
         "role",
         "reports_to",
         "areas",
@@ -125,8 +126,10 @@ def test_a_role_change_is_a_rules_bump(
 @pytest.mark.parametrize(
     ("body", "fields"),
     [
-        ({"role": "owner"}, {"role": "owner_is_human"}),
+        ({"trust": "owner"}, {"trust": "humans_only"}),
+        ({"trust": "boss"}, {"trust": "unknown"}),
         ({"role": "boss"}, {"role": "unknown"}),
+        ({"role": "member"}, {"role": "unknown"}),  # the old single role is gone (§2.3)
         ({"reports_to": "agt-nobody"}, {"reports_to": "not_a_member"}),
         ({"capabilities": ["deploy"]}, {"capabilities": "unknown"}),
     ],
@@ -140,8 +143,8 @@ def test_member_changes_are_checked(
 
 
 def test_the_last_owner_stays(owner: flow.Human) -> None:
-    demote = owner.patch(f"/projects/maintainer/maity/members/{owner.id}", {"role": "admin"})
-    assert demote.json()["error"]["details"]["fields"] == {"role": "last_owner"}
+    demote = owner.patch(f"/projects/maintainer/maity/members/{owner.id}", {"trust": "admin"})
+    assert demote.json()["error"]["details"]["fields"] == {"trust": "last_owner"}
     remove = owner.delete(f"/projects/maintainer/maity/members/{owner.id}")
     assert remove.json()["error"]["details"]["fields"] == {"member": "last_owner"}
 
@@ -172,7 +175,7 @@ def test_a_pause_set_by_a_human_tells_reports_to_and_admins(
     assert response.json()["presence"] == "paused"
     event = _last(migrated, "session_paused")
     # The member itself first: its long-poll wakes (§5.3).
-    assert event.audience == [f"member:{agent.id}", f"member:{owner.id}", "role:admin"]
+    assert event.audience == [f"member:{agent.id}", f"member:{owner.id}", "trust:admin"]
     agent.resume()  # a human's pause survives the agent's resume
     assert (
         owner.get(f"/projects/maintainer/maity/members/{agent.id}").json()["paused"]["reason"]
@@ -319,7 +322,7 @@ def test_revoking_a_credential_ends_its_session_and_is_announced(
         None,
     )
     event = _last(migrated, "credential_revoked")
-    assert event.audience == [f"member:{agent.id}", "role:owner"]
+    assert event.audience == [f"member:{agent.id}", "trust:owner"]
     assert agent.get("/me").headers["Maity-Error"] == "credential_revoked"
     items = owner.get(f"/projects/maintainer/maity/members/{agent.id}/credentials").json()["items"]
     assert items[0]["revoked_at"]  # revoked ones stay listed

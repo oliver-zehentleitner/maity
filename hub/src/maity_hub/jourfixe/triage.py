@@ -24,6 +24,7 @@ from maity_hub.forge import Forge
 from maity_hub.ids import new_id
 from maity_hub.jourfixe.answers import refused
 from maity_hub.policy import CLOSED_STATES, REASON_STATES
+from maity_hub.scopes import in_admin_team
 
 FINDINGS_MAX, PROPOSALS_MAX = 50, 20  # §1.7
 # §1.7, in bytes of UTF-8: a finding (also one the hub builds), the summary, a reason.
@@ -63,10 +64,10 @@ def _membership_of(conn: Connection, project_id: str, member_id: str) -> Any:
 
 
 def may_decide(mine: Any) -> bool:
-    """An agent with the role `admin`, or a human `owner` or `admin` (§20.6)."""
+    """An admin agent, or a human with trust `owner` or `admin` (§20.6)."""
     if mine.kind == "agent":
-        return bool(mine.role == "admin")
-    return mine.role in ("owner", "admin")
+        return in_admin_team(mine.trust, mine.role)
+    return bool(mine.trust in ("owner", "admin"))
 
 
 def _basis_errors(conn: Connection, mine: Any, basis: dict[str, Any]) -> dict[str, str]:
@@ -284,7 +285,7 @@ def _file_request(
         conn,
         round_row.project_id,
         "request_created",
-        [f"member:{owner.human_id}"] if owner else ["role:owner"],
+        [f"member:{owner.human_id}"] if owner else ["trust:owner"],
         load_request(conn, request_id),
         actor=actor,
         subject=("request", request_id),

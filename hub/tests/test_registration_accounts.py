@@ -451,7 +451,7 @@ def test_an_issuer_demoted_during_completion_ends_the_registration(
     def demote(conn: Any) -> None:
         events.lock_project(conn, project_id(migrated))  # as a member change takes it
         conn.execute(
-            update(t.membership).where(t.membership.c.human_id == issuer.id).values(role="member")
+            update(t.membership).where(t.membership.c.human_id == issuer.id).values(trust="member")
         )
 
     assert _held(migrated, demote, lambda: complete(migrated, closed, row.id).kind) == "closed"

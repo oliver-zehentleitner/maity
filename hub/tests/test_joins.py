@@ -35,7 +35,8 @@ def test_a_join_answers_the_paste_line_once(owner: flow.Human) -> None:
         "/projects/maintainer/maity/joins",
         {
             "agent": {"handle": "agent-b", "display_name": "Agent B"},
-            "role": "member",
+            "trust": "member",
+            "role": "coder",
             "areas": ["hub/"],
             "capabilities": [],
             "ttl_seconds": 900,
@@ -64,6 +65,7 @@ def test_a_join_answers_the_paste_line_once(owner: flow.Human) -> None:
     assert set(listed[0]) == {
         "id",
         "agent_id",
+        "trust",
         "role",
         "created_by",
         "created_at",
@@ -123,11 +125,11 @@ def test_a_join_for_an_existing_member_keeps_the_membership(
     first = flow.agent(make_client, owner, role="member", areas=["hub/"])
     differing = owner.post(
         "/projects/maintainer/maity/joins",
-        {"agent": {"id": first.id}, "role": "admin", "areas": ["web/"], "capabilities": []},
+        {"agent": {"id": first.id}, "trust": "admin", "areas": ["web/"], "capabilities": []},
     )
     assert differing.status_code == 400
     assert differing.json()["error"]["details"]["fields"] == {
-        "role": "differs_from_membership",
+        "trust": "differs_from_membership",
         "areas": "differs_from_membership",
     }
     owner.patch(f"/projects/maintainer/maity/members/{first.id}", {"team": {"max_instances": 2}})
@@ -140,7 +142,10 @@ def test_a_join_for_an_existing_member_keeps_the_membership(
         memberships = conn.execute(
             select(t.membership).where(t.membership.c.agent_id == first.id)
         ).all()
-    assert len(memberships) == 1 and memberships[0].role == "member"
+    assert len(memberships) == 1 and (memberships[0].trust, memberships[0].role) == (
+        "member",
+        "coder",
+    )
 
 
 def test_delete_revokes_an_unused_join_and_refuses_a_spent_one(

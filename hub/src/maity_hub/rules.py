@@ -48,17 +48,28 @@ _STEWARD = {
     "cards_only": "The Keep the Why steward opens cards for the owners of `context/` entries.",
     "self": "The Keep the Why steward may write `context/` entries itself.",
 }
-_ROLE = {
+# Trust × role (§2.3): how far the project trusts you, then what you do.
+_TRUST = {
     "owner": "You own the project: you answer requests and decide its state and policy.",
     "admin": (
         "You are an admin: you run the board, assign and release cards, manage releases "
         "and answer requests of every class."
     ),
-    "proxy": "You are a proxy: you answer requests on the owner's behalf.",
-    "reviewer": "You are a reviewer: you check reported cards and move them on.",
-    "member": (
-        "You are a member: you claim cards, report your work and ask when a decision is "
-        "not yours."
+    "member": "You are a member: you ask when a decision is not yours.",
+    "guest": (
+        "You are a guest: you read the project, post notes on cards and chat in the "
+        "conversations you are in; you claim nothing and file no request."
+    ),
+}
+_ROLE = {
+    "coder": "Your role is coder: you claim cards, build, checkpoint and report your work.",
+    "reviewer": "Your role is reviewer: you check reported cards and move them on.",
+    "tester": "Your role is tester: you test reported cards and file bug cards.",
+    "designer": "Your role is designer: you make design passes and answer design questions.",
+    "ops": "Your role is ops: you merge and deploy, propose placements and post deploys.",
+    "proxy": (
+        "Your role is proxy: you relay requests to the owner and record the owner's "
+        "answers; you decide nothing yourself."
     ),
 }
 
@@ -80,7 +91,7 @@ SUPERVISED = (
 )
 
 
-def generate(project: Any, role: str, arbiter: str, *, supervised: bool = False) -> str:
+def generate(project: Any, trust: str, role: str, arbiter: str, *, supervised: bool = False) -> str:
     """The rules document for one member of `project`; `supervised` for a session a
     runner supervises (§15.11)."""
     lines = [f"# Rules for {project.name}", "", f"Rules version {project.rules_version}.", ""]
@@ -104,6 +115,7 @@ def generate(project: Any, role: str, arbiter: str, *, supervised: bool = False)
         "",
         "## Your role",
         "",
+        _TRUST.get(trust, f"Your trust is {trust}."),
         _ROLE.get(role, f"Your role is {role}."),
         "",
         "## Group chats",

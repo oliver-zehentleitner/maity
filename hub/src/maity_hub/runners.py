@@ -83,14 +83,14 @@ def _membership_id(conn: Connection, project_id: str, human_id: str) -> int | No
 
 def administers(conn: Connection, project_id: str, human_id: str) -> bool:
     """`members:admin` in the project, read now (an enrollment's `attach` is checked twice)."""
-    role = conn.execute(
-        select(t.membership.c.role).where(
+    row = conn.execute(
+        select(t.membership.c.trust, t.membership.c.role).where(
             t.membership.c.project_id == project_id,
             t.membership.c.human_id == human_id,
             t.membership.c.active.is_(True),
         )
-    ).scalar()
-    return role is not None and has_scope(role, "human", "members:admin")
+    ).first()
+    return row is not None and has_scope(row.trust, row.role, "human", "members:admin")
 
 
 def presence(row: Any, is_listening: bool) -> str:
@@ -307,7 +307,7 @@ def _announce(
         conn,
         project_id,
         kind,
-        [audience(runner_id), "role:owner"],
+        [audience(runner_id), "trust:owner"],
         {"runner_id": runner_id, "attachment_id": attachment_id, "project": slug},
         actor=human_actor(conn, project_id, by),
         subject=("runner", runner_id),

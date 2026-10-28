@@ -74,7 +74,7 @@ def test_a_member_lists_what_it_can_read_through_events(
     to_all = say(owner, "all")
     to_agent = say(owner, agent.id)
     say(owner, other.id)  # another member's
-    say(owner, "role:admin")  # not the agent's role
+    say(owner, "trust:admin")  # not the agent's role
     sent = say(agent, owner.id)
     assert seqs(listed(agent)) == [sent, to_agent, to_all]
     on_events = agent.get("/projects/maintainer/maity/events?after=0").json()["items"]

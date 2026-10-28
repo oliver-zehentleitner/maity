@@ -280,7 +280,7 @@ def _answer_readers(conn: Connection, round_row: Any, row: Any) -> list[str]:
             t.membership.c.project_id == round_row.project_id,
             t.membership.c.active.is_(True),
             t.membership.c.human_id.isnot(None),
-            t.membership.c.role.in_(("owner", "admin")),
+            t.membership.c.trust.in_(("owner", "admin")),
         )
     ).scalars()
     tokens = [f"member:{round_row.moderator['member_id']}", *(f"member:{h}" for h in humans)]
@@ -311,7 +311,7 @@ def _redact_answer(
         allowed = (
             moderator
             or (human and mine.may("events:admin"))
-            or (human and mine.role in ("owner", "admin") and not answers.window_open(round_row))
+            or (human and mine.trust in ("owner", "admin") and not answers.window_open(round_row))
         )
     else:
         allowed = moderator or (human and (own or mine.may("events:admin")))

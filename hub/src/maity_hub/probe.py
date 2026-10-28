@@ -179,7 +179,7 @@ def _project(engine: Engine, project_id: str) -> Any:
 def _audience(conn: Connection, card: Any) -> list[str]:
     holder = principal_id(conn, card.claim_holder)
     # The holding instance, which the observation wakes; its team reads it (§8.2).
-    return [*([token(holder, card.claim_instance)] if holder else []), "role:admin"]
+    return [*([token(holder, card.claim_instance)] if holder else []), "trust:admin"]
 
 
 # --- reports (§6.6) ---------------------------------------------------------------------------
