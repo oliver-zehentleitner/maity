@@ -39,8 +39,8 @@ the namespace owner's linked installation of the instance's GitHub App,
 then the owner's own stored token, then the instance token, and that
 one only for a repository the forge reports as public. Only the
 namespace owner's grants count for a project, and only for a
-repository URL the owner confirmed for it; a co-admin's change or a
-transfer resets that. Linking an installation checks, with the
+repository URL the owner confirmed for it with an explicit call under
+step-up; every URL change and a transfer reset that. Linking an installation checks, with the
 installing user's one-time OAuth authorisation, that the installation's
 account is that user (organisation installations wait for organisation
 namespaces). The owner's token must be fine-grained. Data read through

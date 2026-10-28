@@ -172,7 +172,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `project_closed` | claim or task creation while the project is `archived`, an import included; there also creating a group chat or adding a participant to one (§9.2), adding a card link and posting a note (§6.13, §6.16), an attachment upload and a message that names one (§8.7) |
 | 409 | `already_linked` | the same forge item or URL is linked on the card already (`details.link`), or the issue is imported on a card that is not closed (`details.task`) (§6.13, §6.14) |
 | 409 | `idempotency_mismatch` | same `Idempotency-Key`, different body |
-| 409 | `probe_not_configured` | no grant covers the project's repository (§11, §11.4); `details.reason` (`no_grant`, `private_without_grant`, `installation_suspended`, `installation_removed`, `token_rejected`) for `project:admin` only; also an import (§6.14) |
+| 409 | `probe_not_configured` | no grant covers the project's repository (§11, §11.4); `details.reason` (`no_grant`, `private_without_grant`, `installation_suspended`, `installation_removed`, `token_rejected`, `unconfirmed`, `repository_moved`) for `project:admin` only; also an import (§6.14) |
 | 409 | `placement_exists` | a second active placement for a membership, or for (runner, clone) in a project (§15.5); `details.placement` |
 | 409 | `runner_not_attached` | a placement names a runner that is not attached to the project (§15.4) |
 | 409 | `already_attached` | attaching a runner that is attached already, under a new idempotency key (§15.4); `details.attachment` |
@@ -8394,7 +8394,9 @@ read:
   host or an export host gets no token, no cookie and no `Authorization` header.
   Every read carries `User-Agent: maity-hub`.
 - Redirects are followed only to `https` on the same host and port, at
-  most 3; any other redirect ends the read as refused. A state URL must
+  most 3; any other redirect ends the read as refused. A read of a
+  project's repository is the exception: a redirect there (a renamed or
+  moved repository) is not followed at all (§11.4). A state URL must
   therefore be the final one (a GitHub Pages site that moved to its own
   domain is named by that domain).
 - No private addresses: the hub resolves the host, refuses the read when
@@ -8720,13 +8722,14 @@ project.
 **The owner confirms the repository.** A grant of the owner (sources 1
 and 2) is used for a project only while the project's `repository.url`
 is one the namespace owner confirmed for it: `repository` carries
-`owner_confirmed` (boolean). Setting `repository` by the namespace owner
-confirms it; any other change of the URL — by another member with
-`project:admin`, or by anyone through an import (§6.14) — leaves it
-unconfirmed, and until the owner confirms (`POST
-/projects/{owner}/{slug}/repository/confirm`, the namespace owner only,
-human, with the step-up of §2.8.4) the repository is read with the
-instance token alone, so only while it is public. So no co-admin can
+`owner_confirmed` (boolean). Only `POST
+/projects/{owner}/{slug}/repository/confirm` confirms: the namespace
+owner, as a human acting directly (no proxy, no agent), with the step-up
+of §2.8.4; it confirms the URL the project carries at that moment. Every
+change of the URL — a `PATCH` by anyone, the namespace owner included,
+or an import (§6.14) — sets it to `false`, and until the owner confirms
+the repository is read with the instance token alone, so only while it
+is public. So no co-admin can
 point a project at another of the owner's private repositories and have
 it read with the owner's access. A transfer (§6.25) resets
 `owner_confirmed` to `false`: the new namespace owner's grants apply only
