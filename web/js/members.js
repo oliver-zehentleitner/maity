@@ -219,12 +219,18 @@ window.Maity = window.Maity || {};
       };
       const fill = (profile) => append(clear(slot), h("h4", { class: "member-picture-title" }, "Picture"),
         profile.error ? M.errorBox(profile.error)
-          : M.pictureEditor(Object.assign({}, m, profile), "/agents/" + encodeURIComponent(m.id) + "/avatar", false, changed));
+          : M.pictureEditor(Object.assign({}, m, profile), "/agents/" + encodeURIComponent(m.id) + "/avatar", false, changed),
+        // Deleting the profile (§6.3): its owner only, as the picture.
+        !profile.error && M.profileDelete ? M.profileDelete(Object.assign({}, m, profile), (answer, words) => {
+          open.delete(m.id);
+          profileOf.delete(m.id);
+          act("Deleting", words, () => Promise.resolve(answer), null);
+        }) : null);
       const known = profileOf.get(m.id);
       if (known && !known.then) { fill(known); return slot; }
       append(slot, h("p", { class: "muted" }, "Reading the picture…"));
       const reading = known || ownProfile(m.id)
-        .then((a) => ({ avatar_url: a.avatar_url, avatar_source: a.avatar_source }), (error) => ({ error }))
+        .then((a) => ({ avatar_url: a.avatar_url, avatar_source: a.avatar_source, handle: a.handle || m.handle, memberships: a.memberships || [] }), (error) => ({ error }))
         .then((got) => { profileOf.set(m.id, got); return got; });
       profileOf.set(m.id, reading);
       reading.then((got) => { if (slot.isConnected !== false) fill(got); });

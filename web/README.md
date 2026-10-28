@@ -868,7 +868,11 @@ on Members (**Details** or **Manage**, for its owner;
 `GET /agents`, set with `PUT`/`DELETE /agents/{id}/avatar`. The account
 keeps the same, under **Agents in other projects**, only for the owner's
 agents in no project the owner can open; `#/account/picture/<agent id>`
-for any other agent leads to its row.
+for any other agent leads to its row. In the same places the owner
+deletes the profile (`DELETE /agents/{id}`, §6.3): the page names the
+projects it is a member of and what ending those memberships means, the
+button works once its handle is typed, and a profile still in a project is
+deleted with `?cascade=true`.
 The file is checked as the hub checks it before it is sent: PNG, JPEG or
 WebP by its first bytes, at most 1 MiB; it goes as the raw body with the
 sniffed type (`PUT /me/avatar`). The hub's refusals (`dimensions`,

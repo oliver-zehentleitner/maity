@@ -96,6 +96,47 @@ window.Maity = window.Maity || {};
   // Members opens one's own agent with its picture (tsk-th1yq0jtk3yf).
   M.pictureEditor = pictureEditor;
 
+  // Deleting one's own agent profile (docs/api.md §6.3), confirmed by typing
+  // its handle. A profile that is still a member somewhere is deleted with
+  // ?cascade=true, which ends those memberships; the projects are named first.
+  // who: the profile as GET /agents has it; done(tombstone, words).
+  function profileDelete(who, done) {
+    const status = M.statusLine();
+    const id = "profile-delete-" + who.id;
+    const where = (who.memberships || []).map((x) => x.project);
+    const typed = h("input", { id, autocomplete: "off", spellcheck: "false", placeholder: "@" + who.handle });
+    const go = h("button", { type: "submit", class: "danger" }, "Delete the profile");
+    go.disabled = true;
+    typed.addEventListener("input", () => { go.disabled = typed.value.trim().replace(/^@/, "") !== who.handle; });
+    const form = h("form", {
+      class: "profile-delete inline-form",
+      onsubmit: async (e) => {
+        e.preventDefault();
+        if (go.disabled) return;
+        go.disabled = true;
+        status.busy("Deleting…");
+        try {
+          const answer = await M.api.del("/agents/" + encodeURIComponent(who.id) + (where.length ? "?cascade=true" : ""));
+          status.done();
+          done(answer, "The profile @" + who.handle + " was deleted" + (where.length ? "; its memberships ended." : "."));
+        } catch (err) {
+          go.disabled = false;
+          const inUse = err.code === "profile_in_use" && err.details && err.details.memberships;
+          status.fail("Not deleted: ", inUse ? { message: "it is still a member of " + err.details.memberships.map((x) => x.project).join(", ") + "; read the page again" } : err);
+        }
+      },
+    },
+    h("label", { for: id }, "Type @" + who.handle + " to delete it"), typed, go, status.el);
+    return h("div", { class: "profile-delete-box" },
+      h("h4", { class: "profile-delete-title" }, "Delete this profile"),
+      h("p", { class: "hint" }, where.length
+        ? "It is a member of " + where.join(", ") + ". Deleting it ends those memberships: their credentials are revoked, the cards it claimed are "
+          + "released and its placements stop. The handle is free again at once. This cannot be undone."
+        : "It is in no project. Deleting it frees the handle at once. This cannot be undone."),
+      form);
+  }
+  M.profileDelete = profileDelete;
+
   // Set by a change; the next drawing of the view says it.
   let pictureNote = null;
 
@@ -212,7 +253,8 @@ window.Maity = window.Maity || {};
         // in a project one is not in) marks that agent and starts there.
         h("ul", { class: "picture-list" }, agents.map((a) => h("li", { class: wantedAgent === a.id ? "wanted" : null, "data-agent": a.id },
           h("h4", { class: "picture-name", tabindex: wantedAgent === a.id ? "-1" : null }, a.display_name, h("span", { class: "muted" }, " @" + (a.name || a.handle))),
-          pictureEditor(a, "/agents/" + encodeURIComponent(a.id) + "/avatar", false, changed))))] : null,
+          pictureEditor(a, "/agents/" + encodeURIComponent(a.id) + "/avatar", false, changed),
+          profileDelete(a, changed))))] : null,
       themeBox ? [themeHeading, h("p", { class: "muted" }, "Kept in this browser only: another browser or device has its own. System follows the light or dark setting of your device."), themeBox] : null,
       preferences ? preferences.el : null,
       notify ? notify.el : null,

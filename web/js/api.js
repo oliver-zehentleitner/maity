@@ -1078,7 +1078,39 @@ window.Maity = window.Maity || {};
       });
       return set;
     }],
-    ["GET", /^\/agents$/, () => fixtures()["agents.json"]],
+    // A deleted profile (tombstone) is never listed (§6.3).
+    ["GET", /^\/agents$/, () => Object.assign({}, fixtures()["agents.json"], { items: fixtures()["agents.json"].items.filter((a) => !a.deleted_at) })],
+    // §6.3: the owner deletes a profile. In use (an active membership) only with
+    // ?cascade=true, which ends every membership as DELETE …/members/{id} does;
+    // then a tombstone with deleted_at, no avatar, no memberships. Again: 200 as it is.
+    ["DELETE", /^\/agents\/([^/]+)$/, (m, body, path, query) => {
+      const agent = (fixtures()["agents.json"] || { items: [] }).items.find((a) => a.id === m[1]);
+      if (!agent || agent.owner_id !== me().member.id || me().member.kind !== "human") fail(404, "not_found", "Not found", path);
+      if (agent.deleted_at) return agent;
+      const memberships = (agent.memberships || []).map((x) => {
+        const key = fixtureSlugs().find((k) => fullOf(k) === x.project);
+        return { key, project: x.project, member_id: agent.id, trust: x.trust, role: x.role };
+      });
+      if (memberships.length && !(query && query.get("cascade") === "true")) {
+        fail(409, "profile_in_use", "the profile is in use", path, { memberships: memberships.map(({ key, ...rest }) => rest), placements: [] });
+      }
+      const at = nowIso();
+      memberships.forEach(({ key }) => {
+        if (!key || !fixtures()[key + "/members.json"]) return;
+        const list = file(key, "members.json", path);
+        const target = list.items.find((x) => x.id === agent.id);
+        if (!target) return;
+        ((fixtures()[key + "/credentials.json"] || {})[target.id] || { items: [] }).items.forEach((c) => {
+          if (!c.revoked_at) { c.revoked_at = at; c.revoked_by = me().member.id; c.revoked_reason = "member_removed"; c.session_id = null; }
+        });
+        (fixtures()[key + "/tasks.json"] || { items: [] }).items.forEach((t) => { if (t.claim && t.claim.holder === target.id) t.claim = null; });
+        list.items = list.items.filter((x) => x !== target);
+        list.items.forEach((x) => { if (x.reports_to === target.id) x.reports_to = null; });
+        list.removed = (list.removed || []).concat(Object.assign({}, target, { removed_at: at }));
+      });
+      Object.assign(agent, { deleted_at: at, memberships: [], avatar_url: null, avatar_source: null });
+      return agent;
+    }],
     ["GET", /^\/health$/, () => ({ status: "ok", version: "fixture", api: "v1", database: { reachable: true, revision: "fixture-head", head: "fixture-head" } })],
     ["GET", /^\/admin\/settings\/mail$/, (m, body, path) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);

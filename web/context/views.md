@@ -1828,3 +1828,30 @@ once: a blank page on every navigation, and a jump. Making every view's
 initial read consistent with actions in other instances: one rule per
 view, for a race the inert placeholder removes for all of them.
 
+## An agent profile is deleted where it is managed, confirmed by its handle, its projects named first
+
+**Id:** 7929359f-6af1-415e-b6e6-a55dd40ca27c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish on the card tsk-g1yz7rhaptqk (profiles deletable, with a confirmation by typing the handle and what happens), 2026-10-28; docs/api.md §6.3 (`profile_in_use`, `?cascade=true`, the tombstone)
+**Revisit when:** the hub offers an undo or a grace period for a deleted profile, or deletion moves to a page of one's agents outside any project
+
+The owner deletes a profile in its row on Members, beside its picture,
+and on the account for an agent in no project of the owner's. The page
+first names every project the profile is a member of and what deleting
+it ends there (credentials, claims, placements), then enables the button
+only once the handle is typed. A profile that is still a member
+somewhere goes out with `?cascade=true`; one in no project, without.
+
+**Reason:** a deletion cannot be undone, and in a project it ends a
+working membership. Typing the handle makes it a deliberate act for this
+very profile, and the named projects say what it costs before, not after.
+In a Members row the profile is always a member, so the cascade is the
+only deletion that can succeed there.
+
+**Rejected alternative:** a plain `DELETE` first and a second
+confirmation on `profile_in_use`: two dialogs for what the page can say
+at once. A browser `confirm()`: it names neither the projects nor the
+handle, and is clicked away too easily.
+
