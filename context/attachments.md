@@ -164,7 +164,7 @@ hub's entry (**See:** `hub/context/attachments.md`, e188f028-5494-4c51-8328-cf36
 At contract level two things follow from it: delete answers `409
 attachments_not_configured` like every other attachment call, and the
 order differs by call. List, metadata, content and delete answer it
-before any other check; the upload answers it after the size cap,
+before any check of the project or the attachment; the upload answers it after the size cap,
 membership and `events:post`.
 
 **Reason:** without a store the hub cannot remove the bytes a delete
@@ -174,8 +174,8 @@ reveals nothing: a non-member gets the same `404` as for any project,
 and a member learns nothing the project view does not already show.
 
 **Rejected alternatives:**
-- Answering the upload with `409` before membership too, as the first
-  wording of this follow-up said: would move a check in the hub for no
+- Answering the upload with `409` before its membership and
+  `events:post` checks as well: would move a check in the hub for no
   gain in what the caller learns.
 - Allowing delete while attachments are off, as metadata only: the
   bytes would stay on a volume the hub no longer knows, behind a delete

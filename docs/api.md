@@ -7591,8 +7591,8 @@ and no `MAITY_ATTACHMENT_DIR` is a valid way to run, not a broken one:
 the hub starts and everything but attachments works. Every attachment
 call — upload, list, metadata, content, delete — and a message that
 names an attachment answer `409 attachments_not_configured`. List,
-metadata, content and delete answer it before any other check, so they
-say nothing about a project or an attachment; an upload answers it after
+metadata, content and delete answer it before any check of the project
+or the attachment, so they say nothing about a project or an attachment; an upload answers it after
 the size cap and the membership and `events:post` checks, so a
 non-member still gets `404`, a member without the right `403` and an
 oversized body `413`, none of which tells the caller more than the
@@ -7848,7 +7848,7 @@ time or memory budget); `payload_too_large` (over 10 MiB);
 `rate_limited`; `project_closed` in an `archived` project.
 Every call: `not_found` for a runner credential. While the instance has
 no attachment store, `attachments_not_configured`: on `GET` and `DELETE`
-before any other check, on upload after the size cap, membership and
+before any check of the project or the attachment, on upload after the size cap, membership and
 `events:post` (above). `GET`: `not_found` when
 there is no such attachment, the caller may not read its message, or —
 on `…/content` — it was deleted. `DELETE`: `not_found` as `GET`;
