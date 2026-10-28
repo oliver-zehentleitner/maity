@@ -69,7 +69,11 @@ When the probe first sees a card's reported pull request merged (and
 the merge is what was reported), the hub emits `task_merged`, which
 wakes whoever may move the card to `done`. Under the policy
 `merged_closes: auto` it also moves the card to `done` itself, but only
-when no dependency, objection hold or missing approval keeps it.
+where the project's done authority is the holder or an admin, and only
+when no dependency or objection hold keeps it. Where the project asks
+for a review or a test, a merge is not one, so `auto` only notifies. A
+move by the hub is no history entry, so the instance statistic
+`reviews` does not count it; it counts in `cards_done`.
 
 **Reason:** on 2026-10-28, 17 of 36 cards in `review` had a pull request
 that was long merged. Reviews ran through messages and the forge, and
@@ -81,6 +85,9 @@ the merge through the probe; it only has to say so.
 - Closing on every observed merge without conditions: would skip an
   open objection, a missing test approval or an open child card, which
   the done rules exist for.
+- Letting `auto` close under `reviewer` or `tester`: the holder can
+  merge on the forge themself, so the merge would replace the review or
+  test the project asked for.
 - A request in the inbox per merge: one per card is noise for a team
   that merges many small pull requests; an event that wakes the right
   members and a button do the same.
