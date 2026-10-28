@@ -37,6 +37,14 @@ window.Maity = window.Maity || {};
     return { map, errors };
   }
 
+  // An area contains a path as the hub reads it (hub/ticker.py contains, §6.2):
+  // `/` every path; `hub` and `hub/` the same directory; `hub` not `hubris`.
+  function contains(area, path) {
+    if (area === "/") return true;
+    const bare = area.replace(/\/+$/, "");
+    return path === bare || path.replace(/\/+$/, "") === bare || path.startsWith(bare + "/");
+  }
+
   // A token that names nobody now (§17.3: the view shows it as unresolved).
   function unresolved(ctx, token) {
     const [kind, value] = [token.slice(0, token.indexOf(":")), token.slice(token.indexOf(":") + 1)];
@@ -44,7 +52,7 @@ window.Maity = window.Maity || {};
     if (kind === "member") return !members.some((m) => m.id === value);
     if (kind === "role") return !members.some((m) => m.role === value) || !ROLES.includes(value);
     if (kind === "trust") return !TRUSTS.includes(value);
-    if (kind === "area") return !members.some((m) => (m.areas || []).some((a) => value.startsWith(a)));
+    if (kind === "area") return !members.some((m) => (m.areas || []).some((a) => contains(a, value)));
     return true;
   }
 
@@ -111,28 +119,35 @@ window.Maity = window.Maity || {};
       busy = true;
       try { await fn(); } finally { busy = false; }
     }
+    // A secret just made, from the POST's own answer: shown whatever the read
+    // after it does, since it is shown only now and a rotation already
+    // ended the old one. Kept in the page only, never stored.
+    function secretBlock(shown) {
+      const copy = h("button", { type: "button", class: "small" }, "Copy the secret");
+      copy.addEventListener("click", async () => {
+        try { await navigator.clipboard.writeText(shown.secret); copy.textContent = "Copied"; } catch (err) { copy.textContent = "Copy failed: select it"; }
+      });
+      return h("div", { class: "webhook-secret", role: "status" },
+        h("p", { class: "flag" }, "Shown only now. Enter it at the forge: payload URL as below, content type application/json, this secret."),
+        h("p", null, "Payload URL: ", h("code", null, shown.url)),
+        h("p", null, "Secret: ", h("code", { class: "webhook-secret-value" }, shown.secret), " ", copy));
+    }
     async function draw(shown) {
       let w;
       try {
         w = await M.api.get(path);
       } catch (err) {
-        append(clear(body), h("p", { class: "send-status failed" }, "The webhook could not be read: " + err.message));
+        const again = h("button", { type: "button", class: "small" }, "Read it again");
+        again.addEventListener("click", () => draw(shown));
+        append(clear(body), h("p", { class: "send-status failed" }, "The webhook could not be read: " + err.message, " ", again),
+          shown ? secretBlock(shown) : null);
         return;
       }
       clear(body);
       append(body, h("dl", { class: "facts" },
         h("dt", null, "Secret"), h("dd", null, w.configured ? "set" + (w.rotated_at ? ", rotated " + formatTime(w.rotated_at) : w.created_at ? " " + formatTime(w.created_at) : "") : "none"),
         h("dt", null, "Last delivery"), h("dd", null, w.last_delivery_at ? formatTime(w.last_delivery_at) + (w.last_result ? " · " + w.last_result : "") : "none yet")));
-      if (shown) {
-        const copy = h("button", { type: "button", class: "small" }, "Copy the secret");
-        copy.addEventListener("click", async () => {
-          try { await navigator.clipboard.writeText(shown.secret); copy.textContent = "Copied"; } catch (err) { copy.textContent = "Copy failed: select it"; }
-        });
-        append(body, h("div", { class: "webhook-secret", role: "status" },
-          h("p", { class: "flag" }, "Shown only now. Enter it at the forge: payload URL as below, content type application/json, this secret."),
-          h("p", null, "Payload URL: ", h("code", null, shown.url)),
-          h("p", null, "Secret: ", h("code", { class: "webhook-secret-value" }, shown.secret), " ", copy)));
-      }
+      if (shown) append(body, secretBlock(shown));
       const make = h("button", { type: "button", class: "primary" }, w.configured ? "Rotate the secret" : "Create a secret");
       make.addEventListener("click", () => act(async () => {
         if (w.configured && !window.confirm("Rotate the secret? The current one stops working at once; deliveries fail until the forge has the new one.")) return;
@@ -161,5 +176,5 @@ window.Maity = window.Maity || {};
     return box;
   }
 
-  M.tickerSettings = { tickerForm, webhookPanel, parseImplementers };
+  M.tickerSettings = { tickerForm, webhookPanel, parseImplementers, contains };
 })(window.Maity);

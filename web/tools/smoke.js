@@ -1001,6 +1001,26 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(whBox(), "Remove the secret").click(); for (let k = 0; k < 6; k++) await tick();
   expect(btn(whBox(), "Create a secret") && !whBox().querySelector(".webhook-secret-value"), "webhook: removed, none set again");
   win.confirm = whConfirm;
+  // Made, but the read after it fails: the secret from the POST is still shown, once.
+  const whGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/forge/webhook" && whGetFail ? Promise.reject(new win.Maity.api.ApiError("down", 503, p, "internal", {})) : whGet(p));
+  let whGetFail = true;
+  btn(whBox(), "Create a secret").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(text(whBox()).includes("The webhook could not be read") && whBox().querySelector(".webhook-secret-value")
+    && /^whsec_/.test(text(whBox().querySelector(".webhook-secret-value"))) && btn(whBox(), "Read it again"),
+    "webhook: a made secret is shown even when the read after it fails");
+  whGetFail = false;
+  const whKept = text(whBox().querySelector(".webhook-secret-value"));
+  btn(whBox(), "Read it again").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(text(whBox().querySelector(".webhook-secret-value")) === whKept && btn(whBox(), "Rotate the secret"), "webhook: read again, the same secret still shown");
+  win.Maity.api.get = whGet;
+  win.confirm = () => true;
+  btn(whBox(), "Remove the secret").click(); for (let k = 0; k < 6; k++) await tick();
+  win.confirm = whConfirm;
+  // An area token resolves as the hub resolves it (hub/ticker.py contains).
+  const tsC = win.Maity.tickerSettings.contains;
+  expect(tsC("/", "hub/") && tsC("hub", "hub/") && tsC("hub/", "hub") && tsC("hub/", "hub/src") && !tsC("hub", "hubris") && !tsC("hub/src", "hub"),
+    "ticker settings: an area contains a path as the hub reads it");
   await go("#/maintainer/maity/inbox");
 
   // Runners (docs/api.md §15): the instance-level view.
