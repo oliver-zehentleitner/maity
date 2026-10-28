@@ -216,7 +216,7 @@ to a different project.
 **Status:** open
 **Evidence:** confirmed
 **Source:** `docs/api.md` §6.25 and the endpoint table (the namespace owner transfers "human, with the step-up"); review of the rename and transfer pull request
-**Revisit when:** the second-factor pull request (`second_factor.require_step_up`) is on `main`
+**Revisit when:** the second-factor pull request #471 (`second_factor.require_step_up`) is on `main`; card tsk-svg6mfthm7xv
 
 `POST /projects/{owner}/{slug}/transfer` does not call a step-up yet: the
 hub this landed on has no second factor. Whichever of the two pull requests
