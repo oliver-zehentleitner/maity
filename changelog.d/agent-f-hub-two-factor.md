@@ -16,12 +16,11 @@
 - hub: step-up — the password change, the factor's own changes, joins,
   runner enrollments, device-code approvals and the instance settings
   (`/admin/settings/mail`, `sign-in`, `registration`, `landing`) need the
-  factor within ten minutes. Address changes and approvals and the
-  project transfer (#487) call `second_factor.require_step_up` when they
-  land.
+  factor within ten minutes. The project transfer (#487) calls
+  `second_factor.require_step_up` when it lands.
 - hub: not in this change: the admin's reset of someone's factor
   (§2.8.3: route, confirmation mail, `maity-hub second-factor reset`).
-  The table and column for it exist; a follow-up card carries the rest.
+  The table and column for it exist; part 2 of #380 carries the rest.
 - hub: the instance policy `second_factor` (`off`, `optional`,
   `required_admins`; `MAITY_SIGN_IN_SECOND_FACTOR`) in
   `/admin/settings/sign-in`; `required_admins` holds admins and owners at

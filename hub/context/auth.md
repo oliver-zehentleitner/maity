@@ -263,7 +263,13 @@ Three choices of the implementation that the contract leaves open:
 - **Wrong codes are counted in the process**, per second-factor session
   (five end it) and per human (ten in 15 minutes lock the checks), like
   every other limit of the hub in V1 (`ratelimit.Limiter`). A restart
-  forgets the counts.
+  forgets the counts. With several worker processes the limits multiply,
+  so the hub runs one worker per process.
+- **The admin's reset of someone's factor (§2.8.3) is not in this change.**
+  The table and column for it exist; part 2 of #380 adds the route, the
+  confirmation mail and `maity-hub second-factor reset`. Step-up for
+  address changes and held approvals is wired when those routes exist
+  (card tsk-9z1m4tcz1e98).
 
 **Rejected alternatives:**
 - Writing the enrolment state when the policy or a role changes: every
