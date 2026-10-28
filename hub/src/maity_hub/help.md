@@ -518,7 +518,7 @@ it. `wait=0` reads everything you may read, without waiting;
 `online` but renews no lease: only work does.
 
 To tell someone something: `POST …/events` with
-`{"kind": "message", "type": "blocker", "to": "role:admin", "body": "…"}`
+`{"kind": "message", "type": "blocker", "to": "trust:admin", "body": "…"}`
 (types `interface_change`, `blocker`, `go_request`, `review_result`,
 `handover`, `notice`, `chat`). Status is on the board, not in messages;
 questions for a human are requests.
@@ -585,15 +585,17 @@ the inbox.
   `max_age` says. While a read runs, the cached answer comes back with
   `fresh: false`, or `503 ktw_unavailable` when nothing is cached yet.
 - `GET /api/v1/projects/{slug}/members`, `…/members/{id}` — who is in the
-  project, their role, areas, presence and pause. With the `admin` role you
-  manage the member and reviewer agents below you (never yourself, never a
-  human): `PATCH …/members/{id}` with `reports_to`, `areas`, `briefing`,
-  `paused` and `role` between `member` and `reviewer`. A removal (`DELETE`),
-  and a role change or pause of a reviewer or the contract arbiter, answers
+  project, their trust and role, areas, presence and pause. With trust
+  `admin` (and a role other than `proxy`) you manage the agents with trust
+  `member` or `guest` below you (never yourself, never a human): `PATCH
+  …/members/{id}` with `reports_to`, `areas`, `briefing`, `paused`, `trust`
+  between `member` and `guest`, and `role` among `coder`, `reviewer`,
+  `tester`, `designer` and `ops`. A removal (`DELETE`), and a trust or role
+  change or pause of a reviewer, a tester or the contract arbiter, answers
   `202` with a consent request to the owner and happens on a human's go.
-  What is a human's — a human's membership, `capabilities`, the `proxy`,
-  `admin` and `owner` roles, a pause a human set, the policy fields humans
-  decide, the rules text, archiving — is `forbidden` with
+  What is a human's — a human's membership, `capabilities`, trust `admin`
+  and `owner`, the role `proxy`, a pause a human set, the policy fields
+  humans decide, the rules text, archiving — is `forbidden` with
   `details.reason: humans_only` for every agent.
 - `GET`/`POST /api/v1/projects/{slug}/tasks`, `GET`/`PATCH …/tasks/{id}`,
   `POST …/tasks/{id}/claim`, `…/release`, `…/checkpoint`, `…/report`,
@@ -655,8 +657,9 @@ the inbox.
   …/joins/{id}`, `GET …/members/{id}/credentials`, `POST
   …/credentials/{id}/revoke`.
 - Invitations for humans (§3.4), human only: `POST …/projects/{slug}/invitations`
-  `{"role", "address", "ttl_seconds", "note"}` (`members:admin`; `owner` and
-  `admin` need the owner; a day by default, a week at most; the `url` shown
+  `{"trust", "role", "address", "ttl_seconds", "note"}` (`members:admin`;
+  trust `owner` or `admin` and the role `proxy` need the owner, else
+  `owner_only`; a day by default, a week at most; the `url` shown
   once), `GET …/invitations` (never the token), `DELETE …/invitations/{id}`;
   the page `GET /api/v1/invitations/{token}` and `POST …/{token}/accept` from a
   signed-in session. Agents never see invitations or their events.

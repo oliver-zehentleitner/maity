@@ -176,6 +176,7 @@ def test_a_human_without_a_password_needs_an_old_session(
         human = SimpleNamespace(id=owner.id, handle="maintainer", password_hash=None)
         status = preferences.patch(
             conn,
+            step_up=lambda: None,
             human=human,
             session=session,
             body={"email": {"address": "new@example.org"}},
@@ -190,18 +191,18 @@ def test_a_human_without_a_password_needs_an_old_session(
         assert change["address"] == "new@example.org" and change["id"].startswith("adc-")
         with pytest.raises(ApiError) as too_new:
             preferences.decide_held(
-                conn, human=human, session=session, change_id=change["id"],
+                conn, step_up=lambda: None, human=human, session=session, change_id=change["id"],
                 address=change["address"], approve=True, signing_key=None, public_url="",
             )  # fmt: skip
         assert too_new.value.details == {"reason": "session_too_new"}
         with pytest.raises(ApiError) as wrong:
             preferences.decide_held(
-                conn, human=human, session=session, change_id="adc-other",
+                conn, step_up=lambda: None, human=human, session=session, change_id="adc-other",
                 address=change["address"], approve=False, signing_key=None, public_url="",
             )  # fmt: skip
         assert wrong.value.code == "conflict"
         preferences.decide_held(
-            conn, human=human, session=session, change_id=change["id"],
+            conn, step_up=lambda: None, human=human, session=session, change_id=change["id"],
             address=change["address"], approve=False, signing_key=None, public_url="",
         )  # fmt: skip
         assert "address_change" not in preferences.view(conn, owner.id, True)["email"]
@@ -295,7 +296,7 @@ def test_only_a_session_in_good_standing_decides_or_replaces_a_held_change(
         strong = conn.execute(select(t.human_session)).first()
         kwargs: dict[str, Any] = dict(
             signing_key=hub.mail.signing_key, public_url="https://hub.example", mail_ready=True,
-            wrong_password=lambda: None, password_blocked=lambda: 0,
+            wrong_password=lambda: None, password_blocked=lambda: 0, step_up=lambda: None,
         )  # fmt: skip
         assert preferences.patch(
             conn, human=human, session=strong, body={"email": {"address": "a@example.org"}},
@@ -312,6 +313,7 @@ def test_only_a_session_in_good_standing_decides_or_replaces_a_held_change(
             preferences.decide_held(
                 conn, human=human, session=weak, change_id=change["id"],
                 address=change["address"], approve=True, signing_key=None, public_url="",
+                step_up=lambda: None,
             )  # fmt: skip
         assert decided.value.details == {"reason": "not_in_good_standing"}
 

@@ -30,7 +30,7 @@ from maity_hub.routes.tasks import _locked, _project_card, audience
 router = APIRouter(route_class=ProjectRoute)
 
 PAGE_DEFAULT, PAGE_MAX = 50, 200
-REDACTION_AUDIENCE = ["role:owner", "role:admin"]  # every redaction's notice (§8.5)
+REDACTION_AUDIENCE = ["trust:owner", "trust:admin"]  # every redaction's notice (§8.5)
 
 
 class NoteIn(Written):

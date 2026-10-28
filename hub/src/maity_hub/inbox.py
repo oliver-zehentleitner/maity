@@ -13,7 +13,7 @@ from sqlalchemy import Connection, select
 from maity_hub import proposals
 from maity_hub import tables as t
 from maity_hub.access import Membership
-from maity_hub.scopes import ROLES, has_scope
+from maity_hub.scopes import has_scope, token_known, tokens_of
 
 CLASSES = ("decision", "consent", "contract", "info")
 PRIORITIES = ("low", "normal", "high", "urgent")
@@ -21,15 +21,15 @@ PRIORITY_RANK = {p: i for i, p in enumerate(reversed(PRIORITIES))}  # urgent fir
 WHILE_OPEN = ("wait", "proceed_provisionally")
 STATUSES = ("open", "answered", "withdrawn")
 MAX_OPTIONS = 8
-# `to` of a consent: a role or member that holds requests:answer (§7).
-CONSENT_ROLES = ("admin", "proxy")
+# `to` of a consent: a token or member that holds requests:answer (§7), the proxy as relay.
+CONSENT_TOKENS = ("trust:owner", "trust:admin", "role:proxy")
 
 
 @dataclass(frozen=True)
 class Addressee:
     kind: str  # member, role, owner, profile_owner, human
     member: int | None = None
-    role: str | None = None
+    role: str | None = None  # role: the whole token, `trust:admin` or `role:designer`
     profile: str | None = None  # profile_owner: the agent profile whose owner is meant
     human: str | None = None  # human: the human asked in person (§19.4)
 
@@ -41,7 +41,7 @@ class Addressee:
         if self.kind == "human":
             return f"human:{self.human}"
         if self.kind == "role":
-            return f"role:{self.role}"
+            return str(self.role)
         from maity_hub.views import principal_id
 
         member = principal_id(conn, self.member)
@@ -58,7 +58,7 @@ def owner_membership(conn: Connection, project_id: str) -> Any:
         select(t.membership)
         .where(
             t.membership.c.project_id == project_id,
-            t.membership.c.role == "owner",
+            t.membership.c.trust == "owner",
             t.membership.c.active.is_(True),
         )
         .order_by(t.membership.c.joined_at, t.membership.c.id)
@@ -79,7 +79,7 @@ def addressed_to(conn: Connection, request: Any, mine: Membership) -> bool:
     if request.holder_member is not None:
         return bool(request.holder_member == mine.id)
     if request.holder_pool:
-        return mine.role == "admin"
+        return "trust:admin" in tokens_of(mine.trust, mine.role)
     return originally_addressed(conn, request, mine)
 
 
@@ -91,8 +91,8 @@ def originally_addressed(conn: Connection, request: Any, mine: Membership) -> bo
     if request.to_kind == "member":
         return bool(request.to_member == mine.id)
     if request.to_kind == "owner":
-        return mine.role == "owner"
-    return bool(request.to_role == mine.role)
+        return mine.trust == "owner"
+    return request.to_role in tokens_of(mine.trust, mine.role)
 
 
 def is_asker(request: Any, mine: Membership) -> bool:
@@ -163,14 +163,15 @@ def consent_target_ok(conn: Connection, project_id: str, to: Addressee) -> bool:
     if to.kind == "owner":
         return True
     if to.kind == "role":
-        return to.role in CONSENT_ROLES or to.role == "owner"
+        return to.role in CONSENT_TOKENS
     row = conn.execute(select(t.membership).where(t.membership.c.id == to.member)).one()
     kind = "agent" if row.agent_id else "human"
-    return has_scope(row.role, kind, "requests:answer")
+    return has_scope(row.trust, row.role, kind, "requests:answer")
 
 
-def valid_role(role: str) -> bool:
-    return role in ROLES
+def valid_token(token: str) -> bool:
+    """`trust:owner`, `trust:admin` or `role:<role>`; an old token is not (§2.3)."""
+    return token_known(token)
 
 
 def humans_only(request: Any) -> bool:

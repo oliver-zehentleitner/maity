@@ -2664,6 +2664,65 @@ window.Maity = window.Maity || {};
     return sessionCsrf;
   }
 
+  // Trust × role (docs/api.md §2.3) on a dashboard still built on the single
+  // role: until the full UI (tsk-tx9qcehevfnk), every answer is read back
+  // into the single role's names and every body sent is written forward into
+  // trust and role. The hub never sees a single-role name; the page keeps its
+  // rights checks (`role === "owner"`, `"admin"`) and its role lists.
+  const SINGLE_TO_SPLIT = {
+    owner: ["owner", "coder"],
+    admin: ["admin", "coder"],
+    proxy: ["admin", "proxy"],
+    reviewer: ["member", "reviewer"],
+    member: ["member", "coder"],
+  };
+  const TOKEN_FORWARD = { "role:owner": "trust:owner", "role:admin": "trust:admin", "role:member": "role:coder" };
+  const TOKEN_BACK = { "trust:owner": "role:owner", "trust:admin": "role:admin", "role:coder": "role:member" };
+  const TRUSTS = ["owner", "admin", "member", "guest"];
+
+  function singleRole(trust, role) {
+    if (trust === "owner" || trust === "admin") return role === "proxy" ? "proxy" : trust;
+    if (trust === "guest") return "guest";
+    return role === "reviewer" ? "reviewer" : "member";
+  }
+
+  // The fields that hold a `role:`/`trust:` token (§7, §8.2, §6.1, §6.12, §17.3):
+  // only these are translated, never free text such as a message's body.
+  const TOKEN_KEYS = new Set([
+    "to", "holder", "audience", "check_in_with", "contract_arbiter", "coordinator",
+    "arbiter", "substitutes", "contract_implementers", "readers",
+  ]);
+
+  function translate(value, tokens, roles, key, inTokens) {
+    if (Array.isArray(value)) return value.map((v) => translate(v, tokens, roles, key, inTokens));
+    if (typeof value === "string") {
+      return inTokens && Object.prototype.hasOwnProperty.call(tokens, value) ? tokens[value] : value;
+    }
+    if (!value || typeof value !== "object") return value;
+    const out = {};
+    for (const k of Object.keys(value)) {
+      // Under contract_implementers every value is a list of tokens, whatever its key.
+      const tokenField = TOKEN_KEYS.has(k) || (inTokens && key === "contract_implementers");
+      out[k] = translate(value[k], tokens, roles, k, tokenField);
+    }
+    roles(out);
+    return out;
+  }
+
+  function asSingleRole(value) {
+    return translate(value, TOKEN_BACK, (out) => {
+      if (TRUSTS.includes(out.trust) && typeof out.role === "string") out.role = singleRole(out.trust, out.role);
+    }, null, false);
+  }
+
+  function asTrustAndRole(value) {
+    return translate(value, TOKEN_FORWARD, (out) => {
+      if (!("trust" in out) && Object.prototype.hasOwnProperty.call(SINGLE_TO_SPLIT, out.role)) {
+        [out.trust, out.role] = SINGLE_TO_SPLIT[out.role];
+      }
+    }, null, false);
+  }
+
   // signal: an AbortSignal that cancels the request (a held long-poll the
   // page no longer wants, js/notify.js).
   async function fromApi(method, path, body, raw, signal) {
@@ -2685,7 +2744,7 @@ window.Maity = window.Maity || {};
       init.body = body;
     } else if (body !== undefined) {
       init.headers["Content-Type"] = "application/json";
-      init.body = JSON.stringify(body);
+      init.body = JSON.stringify(asTrustAndRole(body));
     }
     let res;
     try {
@@ -2715,7 +2774,7 @@ window.Maity = window.Maity || {};
       if (code === "csrf_mismatch") detail += " (reload the page to get a fresh token)";
       throw new ApiError(detail || ("HTTP " + res.status), res.status, path, code, details);
     }
-    return res.json();
+    return asSingleRole(await res.json());
   }
 
   let skew = 0;

@@ -154,8 +154,8 @@ def test_a_real_credential_in_a_payload_is_revoked_and_reported(
         assert live is None
         events = conn.execute(select(t.event).order_by(t.event.c.seq)).all()
     assert [e.kind for e in events] == ["credential_revoked", "credential_in_payload"]
-    assert events[0].audience == [f"member:{agent.agent_id}", "role:owner"]
-    assert events[1].audience == [f"member:{owner}", "role:owner", "role:admin"]
+    assert events[0].audience == [f"member:{agent.agent_id}", "trust:owner"]
+    assert events[1].audience == [f"member:{owner}", "trust:owner", "trust:admin"]
     secret = agent.value.split(".")[2]
     for event in events:
         assert secret not in str(event.payload)

@@ -285,6 +285,37 @@ the incident of 2026-10-26 showed does not scale.
 - Letting mails over the instance budget wait in the outbox: simpler, but it can mean two
   mails where §18.5 asks for one (the first version, changed before review).
 
+## Changing or removing the verified address, and approving a held change, take the step-up the caller gives in
+
+**Id:** b4c0e7a3-61d8-4f29-9a5e-0d83f7b1c2e6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.8.4; the card tsk-9z1m4tcz1e98 (the follow-up of the review of #471), 2026-10-28
+**Revisit when:** another operation on the address becomes sensitive, or the held change moves to a place where `second_factor.require_step_up` cannot be given as a callable
+
+`preferences.patch` and `preferences.decide_held` take a `step_up` callable that the routes fill
+with `second_factor.require_step_up(conn, hub, caller)`. It is called where the change is known to
+move a verified address (`_change_address`: the address is verified, or disabled, and the wanted one
+differs, a removal included), and for the approval of a held change, first, so a refusal changes
+nothing and counts no wrong password. Rejecting a held change asks for nothing: it only
+withholds a change and §2.8.4 names the approval. Setting the first address, sending the same one
+again and every other setting are not sensitive. A human who is not enrolled is never asked (that
+is `require_step_up`'s own rule). The parameter has no default, so a caller that forgets it does not
+compile in the type check.
+
+**Reason:** the address is what a mailed reset and a mailed link are proved by, so whoever can move
+it with a stolen session can take the account's mail; the second factor is the one thing that
+session does not hold. The check lives where the change is decided rather than at the route because
+only there is it known that the address moves (a request with the same address does not). The
+callable keeps `preferences` free of the caller and the hub settings.
+
+**Rejected alternatives:**
+- A step-up on every `PATCH /me/notification-settings`: it would ask for the factor to switch a
+  mail mode, which §2.8.4 does not list.
+- Asking only on approval of the held change and on the removal: a change with the password from a
+  full session is the main way an address moves, and it is the first thing §2.8.4 lists.
+
 ## A change of the second factor and wrong second-factor codes are security items, each mailed on its own
 
 **Id:** 3e9a6f12-8c47-4b05-a1d3-52c7e0b9f8a6

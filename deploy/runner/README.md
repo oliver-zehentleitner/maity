@@ -6,20 +6,27 @@ of the maintainer's instead of a GitHub-hosted runner. Everything else stays hos
 
 ## Which runner a job gets
 
-`ci.yml` reads the repository variable `HUB_RUNNER` (Settings → Secrets and variables →
-Actions → Variables): the runner labels as JSON, for example
-`["self-hosted","maity-hub"]`.
+`ci.yml` reads the repository variable `HUB_RUNNER_LABEL` (Settings → Secrets and variables →
+Actions → Variables): a label prefix, for example `maity-hub`. Each database job then asks for one
+runner of its own type: `hub-sqlite` for `[self-hosted, maity-hub-sqlite]`, `hub-postgresql` for
+`maity-hub-pg`, `hub-mariadb` for `maity-hub-maria`.
 
-- Variable unset or empty: GitHub-hosted (`ubuntu-latest`). **Deleting the variable is the
-  whole fallback**, no commit needed.
-- Set: pushes to `main` and pull requests from this repository use the runner; the
-  condition sends pull requests from forks to the hosted runners.
+- **One runner service per job type**, so the three jobs of a pull request run side by side, and two
+  pull requests queue only per type. A pool of identical runners would let two Postgres jobs run at
+  once, both binding the host port 5432 for their service container (`ports: 127.0.0.1:5432`).
+- Each service sets `PYTEST_ARGS=-n 3` in its unit: three workers per job, nine on the machine's
+  eight cores. Hosted runners keep `-n auto`.
+- Variable unset or empty: GitHub-hosted (`ubuntu-latest`). **Deleting the variable is the whole
+  fallback**, no commit needed. Runs already queued for a self-hosted label keep it, so cancel and
+  rerun them after deleting the variable.
+- Set: pushes to `main` and pull requests from this repository use the runners; the condition sends
+  pull requests from forks to the hosted runners.
 
 ## The trust boundary, stated honestly
 
 **The condition in `ci.yml` is not a protection against a fork.** A pull request from a
 fork runs the `ci.yml` of the fork's merge commit; the fork can write
-`runs-on: [self-hosted, maity-hub]` itself. What keeps a fork's code off the machine is
+`runs-on: [self-hosted, maity-hub-pg]` itself. What keeps a fork's code off the machine is
 the repository setting, and nothing else:
 
 - Settings → Actions → General → "Fork pull request workflows": **require approval for all
@@ -39,10 +46,10 @@ After a malicious job the machine is reinstalled; the hook below cannot make it 
   read access to their homes (`sudo -u <runner-user> ls /home/<other>` must fail). No
   deploy keys, kubeconfig or tokens of the project anywhere that user can read.
 - The runner lives outside the runner user's home and is owned by root:
-  `/opt/actions-runner` (with `run.sh`, `bin/`, the registration files `.runner` and
-  `.credentials*`), the hook in `/opt/maity-runner-hooks/` (not inside the runner's own
+  `/opt/actions-runner-<type>` (with `run.sh`, `bin/`, the registration files `.runner` and
+  `.credentials*`; one directory per runner instance), the hook in `/opt/maity-runner-hooks/` (not inside the runner's own
   directory, which GitHub's documentation advises against), and the unit in
-  `/etc/systemd/system/`. The runner user owns only `/opt/actions-runner/_work`, `_diag` and
+  `/etc/systemd/system/`. The runner user owns only `/opt/actions-runner-<type>/_work`, `_diag` and
   `_temp` (and its Docker data under its home). A job that could rewrite the hook, `run.sh` or
   the unit would take over every later job, and in the runner user's own home it could
   rename a directory and put its own in the place, or override a user unit through its own
@@ -58,40 +65,48 @@ After a malicious job the machine is reinstalled; the hook below cannot make it 
 - Lingering keeps the runner user's systemd user manager running. `KillMode=control-group`
   does nothing against a process a job starts there (`systemd-run --user`, a unit under
   `~/.config/systemd/user`): it lives outside the unit's cgroup, under the same uid, and can
-  read the environment of later jobs. That is one more reason for "reinstall after a malicious
+  read the environment of later jobs, and of the jobs running at the same time on the other
+  runner instances (`/proc/<pid>/environ` with their `GITHUB_TOKEN`, their `_work` and `_tool` under
+  `/opt/actions-runner-<other>`: the three services share one uid and one Docker). That is one more reason for "reinstall after a malicious
   job", and lingering is there only for the rootless Docker.
 - The tool cache (Python from `setup-python`) is kept between jobs and is writable for the
   runner user: a job can replace it for the later ones. That is part of the boundary above.
 
 ## Install
 
+0. **Coming from the single runner of the first version?** First stop it, because the scripts below refuse while
+   any runner of the runner user runs: remove the runner in GitHub (Settings → Actions → Runners),
+   `systemctl disable --now maity-runner`, delete `/etc/systemd/system/maity-runner.service` and
+   `/opt/actions-runner`, and the repository variable `HUB_RUNNER` (no longer read). Containers a cut-off job left running
+   (`docker ps` as the runner user) hold the ports 5432 and 3306 for good once the runner is gone: remove them. A fresh install has nothing to do here.
 1. Create the user (`<runner-user>`, uid `<uid>`), enable lingering, install rootless Docker
    for it (see above).
-2. On GitHub: Settings → Actions → Runners → New self-hosted runner (Linux x64). As root,
-   unpack it to `/opt/actions-runner` and `chown -R <runner-user> /opt/actions-runner`. Run
-   `config.sh --url <repo> --labels maity-hub --unattended --disableupdate` **as the runner
-   user**, with the registration token from that page (as root it refuses: "Must not run with
-   sudo"). The runner's self-update would write into its own directory, which the runner user
-   may not; update it by hand, as root, when GitHub asks for a newer version. Then hand the
-   files over: `chown -R root:root /opt/actions-runner`, then `cd /opt/actions-runner`; the
-   runner user still has to read its registration, so `chgrp <runner-user> .runner
-   .credentials .credentials_rsaparams` (this assumes a group of the same name as the user,
-   the default on Debian and Ubuntu; otherwise use the user's primary group) and `chmod 640`
-   on those three files (a root-owned 0600 `.credentials_rsaparams` stops the runner from
-   starting); finally `install -d -o <runner-user> _work _diag _temp`.
-3. Put `job-completed.sh` into `/opt/maity-runner-hooks/` (root-owned, executable) and
-   `maity-runner.service` into `/etc/systemd/system/` with `<runner-user>` and `<uid>` filled
-   in, then `systemctl enable --now maity-runner`. The unit starts `bin/runsvc.sh`, not `run.sh` (which writes into the runner's directory), and
-   uses `KillMode=control-group`.
-   The hook's output is shown in the job log (step "Complete runner"), which anyone can
-   read in a public repository.
-4. Run `install-python.sh` as root, with no job running (it restarts the service; the script refuses
-   otherwise unless `FORCE=1`). The jobs use `actions/setup-python` for 3.12, which has no
-   Python for Debian and would fail; the script installs 3.12 with uv as the runner user, puts it
-   in the runner's tool cache where `setup-python` looks first, removes uv's PEP 668
-   "externally managed" marker from that private copy (without it `pip install` fails in the jobs),
-   replaces the stored `.path` and restarts the service.
-5. Set `HUB_RUNNER` to `["self-hosted","maity-hub"]`, and the fork-approval setting above.
+2. Download the runner (Linux x64) from GitHub's "New self-hosted runner" page as a tarball and get a
+   registration token from that page (Settings → Actions → Runners; valid for an hour).
+3. As root, with every `maity-runner*` service stopped and no container left in the runner user's Docker (stopping a
+   service ends the runner but not the service containers of a job it was running; `docker ps` as the runner user
+   must be empty, the script refuses otherwise): `RUNNER_TOKEN=<token> RUNNER_TARBALL=<tarball> install-services.sh`. For each of
+   `sqlite`, `pg` and `maria` it unpacks the runner to `/opt/actions-runner-<type>`, runs `config.sh` **as the
+   runner user** (as root it refuses: "Must not run with sudo"; with `--disableupdate`, because the runner's
+   self-update would write into its own directory, which the runner user may not: update by hand, as root, when
+   GitHub asks for a newer version), registers it as `maity-vm-<type>` with the label `maity-hub-<type>`, hands the
+   files to root, and lets the runner user read only its registration (`chgrp <runner-user>` and `chmod 640` on
+   `.runner`, `.credentials`, `.credentials_rsaparams`: a root-owned 0600 `.credentials_rsaparams` stops the
+   runner from starting; the `chgrp` assumes a group named like the user, the default on Debian and Ubuntu).
+   `_work`, `_diag` and `_temp` belong to the runner user. It also installs `job-completed.sh` into
+   `/opt/maity-runner-hooks/` (root-owned) and the template unit `maity-runner@.service`.
+   The units start `bin/runsvc.sh`, not `run.sh` (which writes into the runner's directory), and use
+   `KillMode=control-group`. The hook's output is shown in the job log (step "Complete runner"), which anyone
+   can read in a public repository.
+4. For each instance, as root, with no job running (it restarts the service; the script refuses otherwise unless
+   `FORCE=1`): `RUNNER_DIR=/opt/actions-runner-<type> SERVICE=maity-runner@<type> install-python.sh`. The jobs use
+   `actions/setup-python` for 3.12, which has no Python for Debian and would fail; the script installs 3.12 with
+   uv as the runner user, puts it in the runner's tool cache where `setup-python` looks first, removes uv's PEP 668
+   "externally managed" marker from that private copy (without it `pip install` fails in the jobs), and replaces
+   the stored `.path`.
+5. `systemctl enable --now maity-runner@sqlite maity-runner@pg maity-runner@maria`; GitHub shows the three
+   runners as Idle.
+6. Set the fork-approval setting above, then `HUB_RUNNER_LABEL` to `maity-hub`.
 
 ## Why not an ephemeral runner
 
@@ -100,4 +115,5 @@ to fetch a new registration each time. That token is the one secret the machine 
 hold. `job-completed.sh` instead removes every container, volume, image, the build cache
 and the job's workspace after each job. That is tidying, not isolation.
 
-One job at a time: the services bind the host ports 5432 and 3306.
+One job at a time per runner, and one runner per job type: the services bind the host ports 5432 (Postgres) and
+3306 (MariaDB).
