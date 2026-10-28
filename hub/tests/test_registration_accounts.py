@@ -227,10 +227,14 @@ def test_the_names_and_the_terms(
     row = requested(make_client, migrated, settings)
     taken = complete(migrated, settings, row.id, handle="maintainer", terms_seen="2026-10")
     assert (taken.kind, taken.fields) == ("invalid", {"handle": "taken", "terms": "required"})
-    bad = complete(migrated, settings, row.id, handle="A", display_name="")
+    bad = complete(migrated, settings, row.id, handle="A", display_name="", terms_seen="2026-10")
     assert bad.fields == {"handle": "invalid", "display_name": "invalid", "terms": "required"}
     changed = complete(migrated, settings, row.id, terms_seen="2026-09", terms_accepted=True)
     assert changed.kind == "terms_changed" and claims == {}
+    # Terms set while the page was open (it showed none): the version asks first, ahead of
+    # what the form got wrong.
+    newly = complete(migrated, settings, row.id, handle="A", terms_seen=None)
+    assert newly.kind == "terms_changed" and claims == {}
     done = complete(migrated, settings, row.id, terms_seen="2026-10", terms_accepted=True)
     made = human(migrated, done.human_id)
     assert made.terms_version == "2026-10" and made.terms_accepted_at is not None

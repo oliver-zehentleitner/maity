@@ -226,8 +226,13 @@ unchanged; the page maps its result to a status: a form error or wrong password 
 terms that changed `409`, registration closed since the mail `403`, the hourly cap `503`, a link
 that no longer works `404` and one page for every reason. Every `POST` counts against the login
 limit of its source address (§2.7.3 shares them). The pages carry `Referrer-Policy: no-referrer`
-and `Cache-Control: no-store`, the request log masks the token, and the session cookies are set
-only on success, with the form cookie removed.
+and `Cache-Control: no-store`, the request log masks the token, and the cookies are set only on
+success, the way the login sets them, with the form cookie removed. The completion is a sign-in
+like the login: the browser's earlier session ends (§2.6.5), the new session is made by
+`sessions.create` (its account record, `last_login_at`, the password given as `password_at`), and
+the device cookie is set; `method: "register"` counts as signed in by password for the good
+standing, since the password was given at the completion. The terms version is asked first, so
+terms set or changed while the page was open say so before any other error.
 
 **Reason:** a page that sets a cookie and reads a form is not the page of a link that must set and
 read none, so mixing them would loosen the contract of §18.6 for the unsubscribe and verify

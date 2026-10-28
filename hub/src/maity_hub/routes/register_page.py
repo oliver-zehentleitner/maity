@@ -15,7 +15,7 @@ import hashlib
 import hmac
 import secrets
 from html import escape
-from typing import Any
+from typing import Any, NamedTuple
 from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Request
@@ -25,16 +25,12 @@ from sqlalchemy import Connection, select
 
 from maity_hub import clock, registration, registration_accounts, registration_mail
 from maity_hub import tables as t
-from maity_hub.auth.caller import (
-    CSRF_COOKIE,
-    SESSION_ABSOLUTE,
-    SESSION_COOKIE,
-    require_secure_transport,
-)
+from maity_hub.auth import sessions
+from maity_hub.auth.caller import SESSION_COOKIE, require_secure_transport
 from maity_hub.deps import engine_of, origin_of, settings_of
 from maity_hub.errors import ApiError, rate_limited
 from maity_hub.notifications import tokens
-from maity_hub.routes.auth import LOGIN_BY_ADDRESS
+from maity_hub.routes.auth import LOGIN_BY_ADDRESS, end_presented, set_session_cookies
 
 page_router = APIRouter()
 
@@ -255,27 +251,29 @@ def _read_form(raw: bytes) -> dict[str, str]:
     return {name: values[0] for name, values in parsed.items() if values}
 
 
-def _session_cookies(response: Response, request: Request, session_id: str, csrf: str) -> None:
-    secure = origin_of(request).tls
-    max_age = int(SESSION_ABSOLUTE.total_seconds())
-    response.set_cookie(
-        SESSION_COOKIE,
-        session_id,
-        max_age=max_age,
-        path="/",
-        secure=secure,
+def _session_cookies(
+    response: Response, request: Request, session_id: str, csrf: str, device: str | None
+) -> None:
+    """The cookies of a completed sign-in, as the login sets them, and the form cookie gone."""
+    set_session_cookies(response, request, session_id, csrf, device)
+    response.delete_cookie(
+        FORM_COOKIE,
+        path=FORM_PATH,
+        secure=origin_of(request).tls,
         httponly=True,
-        samesite="lax",
+        samesite="strict",
     )
-    response.set_cookie(
-        CSRF_COOKIE, csrf, max_age=max_age, path="/", secure=secure, httponly=False, samesite="lax"
-    )
-    response.delete_cookie(FORM_COOKIE, path=FORM_PATH, secure=secure, httponly=True)
 
 
-def _complete(
-    request: Request, token: str, fields: dict[str, str]
-) -> tuple[registration_accounts.Completion, Any, dict[str, Any], dict[str, str] | None] | None:
+class Outcome(NamedTuple):
+    done: registration_accounts.Completion
+    row: Any
+    payload: dict[str, Any]
+    terms: dict[str, str] | None
+    device: str | None  # the device cookie's new value, when this browser needs one
+
+
+def _complete(request: Request, token: str, fields: dict[str, str]) -> Outcome | None:
     """The completion in its own transaction, which commits what a refusal leaves behind
     (a wrong password counted, a pending registration voided)."""
     hub = settings_of(request)
@@ -298,7 +296,16 @@ def _complete(
             source=origin.address,
             user_agent=request.headers.get("user-agent"),
         )
-        return done, row, payload, _terms(conn, request)
+        device = None
+        if done.kind == "created":
+            assert done.human_id is not None
+            # A browser that holds a session, of any human, loses it (§2.6.5, session
+            # fixation); it is a sign-in, so this browser is known to the human now.
+            end_presented(conn, request.cookies.get(SESSION_COOKIE))
+            device = sessions.remember_device(
+                conn, done.human_id, request.cookies.get(sessions.DEVICE_COOKIE)
+            )
+        return Outcome(done, row, payload, _terms(conn, request), device)
 
 
 @page_router.post("/mail/register/{token}")
@@ -313,7 +320,9 @@ async def register_complete(token: str, request: Request) -> Response:
         raise ApiError(413, "payload_too_large", "the form is too large")
     fields = _read_form(raw)
     cookie = request.cookies.get(FORM_COOKIE, "")
-    if not cookie or not hmac.compare_digest(cookie, fields.get("form", "")):
+    if not cookie or not hmac.compare_digest(
+        cookie.encode("utf-8", "replace"), fields.get("form", "").encode("utf-8", "replace")
+    ):
         raise ApiError(403, "csrf_mismatch", "the form is not the one the page gave")
     wait = LOGIN_BY_ADDRESS.hit(origin_of(request).address)  # shared with the login (§2.7.3)
     if wait:
@@ -321,12 +330,12 @@ async def register_complete(token: str, request: Request) -> Response:
     result = await run_in_threadpool(_complete, request, token, fields)
     if result is None:
         return _dead()
-    done, row, payload, terms = result
+    done, row, payload, terms, device = result
     words = _WORDS[registration_mail.language_of(row.language)]
     if done.kind == "created":
         assert done.session_id is not None and done.csrf is not None and done.next is not None
         response = RedirectResponse(done.next, status_code=303)
-        _session_cookies(response, request, done.session_id, done.csrf)
+        _session_cookies(response, request, done.session_id, done.csrf, device)
         response.headers["Referrer-Policy"] = "no-referrer"
         return response
     if done.kind == "gone":

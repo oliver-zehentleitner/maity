@@ -353,3 +353,85 @@ def test_the_page_follows_the_languages_of_the_request(
     assert link
     page = client.get(link.group(1))
     assert "Konto" in page.text
+
+
+def test_a_form_value_that_is_not_ascii_is_refused_not_a_server_error(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    client, link = start(make_client, migrated, hub())
+    page = client.get(link)
+    body = {"password": PASSWORD, "handle": "ada", "display_name": "Ada", **form_of(page)}
+    body["form"] = "ünïcode-wert"
+    refused = client.post(link, data=body, headers=SAME, follow_redirects=False)
+    assert refused.status_code == 403 and humans(migrated) == []
+    client.cookies.clear()
+    body["form"] = form_of(page)["form"]
+    raw = {**SAME, "cookie": "maity_form=ünïcode".encode()}  # a browser may send any byte
+    again = client.post(link, data=body, headers=raw, follow_redirects=False)
+    assert again.status_code == 403 and humans(migrated) == []
+
+
+def test_the_completion_is_a_sign_in_like_the_login(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    from maity_hub.auth import sessions
+
+    client, link = start(make_client, migrated, hub())
+    # This browser holds a session of someone else: it ends with the sign-in (§2.6.5).
+    other = factory.human(migrated, "grace")
+    old_id, _, _ = _session_of(migrated, other, "old-cookie-value")
+    client.cookies.set("maity_session", "old-cookie-value")
+    page = client.get(link)
+    done = answer(client, link, page)
+    assert done.status_code == 303
+    cookies = done.headers.get_list("set-cookie")
+    assert any(c.startswith("maity_device=") for c in cookies)
+    assert any(
+        c.startswith("maity_form=") and "SameSite=strict" in c.replace("Strict", "strict")
+        for c in cookies
+    )
+    [created] = [h for h in humans(migrated) if h.handle == "ada"]
+    with migrated.connect() as conn:
+        mine = conn.execute(
+            select(t.human_session).where(t.human_session.c.human_id == created.id)
+        ).one()
+        old = conn.execute(
+            select(t.human_session).where(t.human_session.c.public_id == old_id)
+        ).one()
+        record = conn.execute(
+            select(t.account_record).where(t.account_record.c.human_id == created.id)
+        ).all()
+    assert old.ended_at is not None and old.ended_by == "logout"
+    assert mine.method == "register" and mine.password_at is not None
+    assert mine.sign_in_complete and sessions.good_standing(mine)
+    assert [r.type for r in record] == ["session_created"]
+    assert created.last_login_at is not None
+
+
+def _session_of(engine: Engine, human_id: str, cookie: str) -> tuple[str, str, str]:
+    from maity_hub.auth import sessions
+    from maity_hub.auth.caller import session_id_hash
+
+    with engine.begin() as conn:
+        session_id, csrf, public_id = sessions.create(
+            conn, human_id, method="password", address="198.51.100.1", user_agent=None
+        )
+        conn.execute(
+            t.human_session.update()
+            .where(t.human_session.c.public_id == public_id)
+            .values(id_hash=session_id_hash(cookie))
+        )
+    return public_id, session_id, csrf
+
+
+def test_terms_set_while_the_page_was_open_ask_first(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    settings = hub()
+    client, link = start(make_client, migrated, settings)
+    page = client.get(link)  # it showed no terms
+    with_terms = make_client(mail=settings.mail, registration=hub(**TERMS).registration)
+    with_terms.cookies.update(client.cookies)
+    asked = answer(with_terms, link, page, handle="x")  # a bad handle as well
+    assert asked.status_code == 409 and "2026-10" in asked.text
+    assert humans(migrated) == []

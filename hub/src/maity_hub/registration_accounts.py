@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import logging
 import re
-import secrets
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -28,7 +27,6 @@ from maity_hub import clock, invitations, namespace, registration
 from maity_hub import tables as t
 from maity_hub.admin import instance_admin_id
 from maity_hub.auth import passwords, sessions
-from maity_hub.auth.caller import SESSION_ABSOLUTE, session_id_hash
 from maity_hub.ids import new_id
 from maity_hub.models import HANDLE_PATTERN
 from maity_hub.notifications import records
@@ -174,14 +172,14 @@ def complete(
             .values(**values)
         )
         return Completion("wrong_password")
-    errors = check_names(conn, handle, display_name)
     terms = resolved.value("terms")
+    if terms is not None and terms_seen != terms["version"]:
+        return Completion("terms_changed")  # nothing created, no acceptance (§2.7.2)
+    errors = check_names(conn, handle, display_name)
     if terms is not None and not terms_accepted:
         errors["terms"] = "required"
     if errors:
         return Completion("invalid", fields=errors)
-    if terms is not None and terms_seen != terms["version"]:
-        return Completion("terms_changed")  # nothing created, no acceptance (§2.7.2)
     # The instance's hourly budget: one lock every completion takes, after its address's
     # and held until the account exists, so two addresses never both take the last place.
     lock_address(conn, BUDGET_LOCK)
@@ -266,25 +264,11 @@ def start_session(
     conn: Connection, human_id: str, source: str, user_agent: str | None = None
 ) -> tuple[str, str]:
     """A fresh dashboard session (§2.1), `method: "register"` in the session list
-    (§2.6.5): the session id and its CSRF token. The link page sets the cookies."""
-    now = clock.now()
-    browser, system = sessions.describe(user_agent)
-    session_id, csrf = secrets.token_urlsafe(32), secrets.token_hex(32)
-    conn.execute(
-        insert(t.human_session).values(
-            id_hash=session_id_hash(session_id),
-            human_id=human_id,
-            csrf_token=csrf,
-            created_at=now,
-            last_seen_at=now,
-            expires_at=now + SESSION_ABSOLUTE,
-            source=source[:64],
-            public_id=new_id("human_session"),
-            method="register",
-            browser=browser,
-            os=system,
-            ip=source[:64],
-        )
+    (§2.6.5): the session id and its CSRF token. It is a sign-in like any other, with its
+    account record and the password given at the completion; the link page sets the
+    cookies. The account is new, so it has no second factor to ask for."""
+    session_id, csrf, _ = sessions.create(
+        conn, human_id, method="register", address=source, user_agent=user_agent
     )
     return session_id, csrf
 
@@ -345,7 +329,9 @@ def remove(conn: Connection, row: Any, status: str, by: str | None, reason: str 
     a rejection (`by`, `reason`) or an expiry (§2.7.5). The row keeps the decision and
     the reason, no longer the address or where the request came from."""
     now = clock.now()
-    conn.execute(delete(t.human_session).where(t.human_session.c.human_id == row.human_id))
+    # What the account's first sign-in left (§2.6.5): its sessions, its record, its device.
+    for table in (t.human_session, t.account_record, t.human_device):
+        conn.execute(delete(table).where(table.c.human_id == row.human_id))
     conn.execute(delete(t.human).where(t.human.c.id == row.human_id))
     block(conn, row.address_normalized, now + BLOCK_FOR)
     conn.execute(

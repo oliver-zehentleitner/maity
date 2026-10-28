@@ -8,3 +8,7 @@
   form and a `Sec-Fetch-Site` of `same-origin`, binds the terms version the person saw to the
   registration, shares the login's limit per source address, and the request log masks the
   token. With this the registration works from the request to a signed-in account.
+- hub: the registration's sign-in is made like the login's: the browser's earlier session
+  ends, the session has its account record and the password given at the completion
+  (`method: "register"` counts as signed in by password), the device cookie is set, and a
+  rejected or expired pending account takes its account records and devices with it.
