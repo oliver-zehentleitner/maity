@@ -354,12 +354,13 @@ def test_after_the_reset_the_source_is_read_again(
     opener: FakeOpener, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import time
+    import types
 
     now = time.time()
     opener.answers["/repos/acme/maity"] = (403, _limits(0, now + 60))
     with pytest.raises(forge.ForgeUnavailableError):
         READER._get("/repos/acme/maity")
-    monkeypatch.setattr(forge.time, "time", lambda: now + 61)
+    monkeypatch.setattr(forge, "time", types.SimpleNamespace(time=lambda: now + 61))
     opener.answers["/repos/acme/maity"] = {"name": "maity"}
     assert READER._get("/repos/acme/maity") == {"name": "maity"}
 
