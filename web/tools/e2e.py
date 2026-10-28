@@ -1668,6 +1668,10 @@ def runners_step(run: Run, page: Page) -> None:
     status, headers2, _ = pair_exchange(run, repair)
     assert status == 201 and headers2["maity-runner-id"] == headers["maity-runner-id"], headers2
     page.goto(f"{run.base}/#/all")
+    # A hash change only: the Runners view from before (already showing the new
+    # credential) stays until #/all is drawn. Without this wait the Revoke below can
+    # land on that old view, while the new one draws a read from before the revoke.
+    expect(page.locator("main section.view-all")).to_be_visible()
     page.goto(f"{run.base}/#/runners")
     card = page.locator("article.runner", has=page.get_by_role("heading", name="e2e-renamed"))
     expect(card).to_contain_text(headers2["maity-credential-id"])  # the old one was replaced
