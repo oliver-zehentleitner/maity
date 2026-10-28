@@ -3,9 +3,11 @@
 // request or member id links to its page, and #123 to the project
 // repository's pull request or issue. Linked by shape only: no id is
 // looked up, the page it opens says when there is no such thing. The
-// link's text is the id as written; nothing else of the text changes, and
-// no mention is made (docs/api.md §8.6 is the hub's). Code stays plain:
-// the callers never pass code spans or fenced blocks here.
+// link's text is the id as written, and outside the id's project a card's
+// or request's carries the project's full name before it (docs/api.md
+// §6.25: oliver/maity/tsk-…, display only, never parsed); nothing else of
+// the text changes, and no mention is made (§8.6 is the hub's). Code stays
+// plain: the callers never pass code spans or fenced blocks here.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -26,18 +28,26 @@ window.Maity = window.Maity || {};
     return m && m[1].toLowerCase() === "github.com" ? "https://github.com/" + m[2] + "/" + m[3] : null;
   }
 
-  // Where a text belongs: the project it is part of, from a view's context.
-  // Read along from outside (#/observe, ctx.outsider) nothing of the project
-  // opens, so nothing links, as for a member's name (M.dom.memberRef).
+  // Where a text belongs: the project it is part of, from a view's context,
+  // and whether it is shown outside that project (the global chat, the
+  // views across projects). Read along from outside (#/observe,
+  // ctx.outsider) nothing of the project opens, so nothing links, as for a
+  // member's name (M.dom.memberRef).
   function where(ctx) {
     if (!ctx || ctx.outsider) return { slug: null, repository: null };
     const p = ctx && ctx.project;
-    return { slug: (ctx && ctx.slug) || null, repository: (p && p.repository && p.repository.url) || null };
+    return { slug: (ctx && ctx.slug) || null, repository: (p && p.repository && p.repository.url) || null,
+      outside: !!(ctx.scope && ctx.scope !== "project") };
   }
 
-  // A text as strings and links. `at`: {slug, repository}; without a slug
-  // ids stay text (there is no page to open), without a GitHub repository
-  // numbers do.
+  // A card's or a request's reference as it reads: the id alone inside its
+  // project, `<full name>/<id>` outside it (§6.25). The one place that
+  // writes the prefix.
+  const ref = (full, id, outside) => (outside && full ? full + "/" + id : id);
+
+  // A text as strings and links. `at`: {slug, repository, outside}; without
+  // a slug ids stay text (there is no page to open), without a GitHub
+  // repository numbers do.
   function link(text, at) {
     const s = String(text == null ? "" : text);
     const slug = at && at.slug;
@@ -54,7 +64,7 @@ window.Maity = window.Maity || {};
       // An id with nowhere to open still reads as one, never broken.
       if (!href) out.push(h("span", { class: "id-ref" }, m[0]));
       else out.push(m[1]
-        ? h("a", { class: "id-ref", href }, m[0])
+        ? h("a", { class: "id-ref", href }, m[1] === "tsk" || m[1] === "req" ? ref(slug, m[0], at.outside) : m[0])
         : h("a", { class: "id-ref", href, rel: "noopener noreferrer", target: "_blank" }, m[0]));
       from = m.index + m[0].length;
     }
@@ -66,5 +76,5 @@ window.Maity = window.Maity || {};
   // (an entry's title inside its button).
   const refs = (text, at) => link(text, at).filter((x) => typeof x !== "string");
 
-  M.ids = { link, refs, where, forgeBase };
+  M.ids = { link, refs, where, ref, forgeBase };
 })(window.Maity);

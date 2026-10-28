@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import collections
 import hashlib
 import io
 import json
@@ -59,8 +60,10 @@ from playwright.sync_api import Page, expect, sync_playwright
 WEB = Path(__file__).resolve().parent.parent
 OWNER = "owner"
 OWNER_PASSWORD = "e2e owner password"
-TIMEOUT_MS = 15_000  # one step in the browser; the feed reads every 5 s
-COUNTS_MS = 25_000  # counts of other projects: /me is re-read every 15 s
+TIMEOUT_MS = 25_000  # one step in the browser; the feed reads every 15 s
+COUNTS_MS = 70_000  # counts of other projects: /me is re-read every 60 s
+TRACE_ANSWERS = 12  # the page's latest API answers shown when a step fails
+TRACE_BODY = 1500  # characters of each body
 WAIT_S = 60  # the agent's `maity wait`
 
 # axe-core, the accessibility engine: the npm package's tarball, pinned by the
@@ -94,6 +97,9 @@ class Run:
         # §8.7 "Attachments off": each 409 for the pending uploads as the page got
         # it, judged one by one in no_problems() (a response handler reads no body).
         self.off_answers: list = []
+        # The page's latest API answers, read back when a step fails (report_failure()): what
+        # the hub said is told apart from what the page drew of it.
+        self.recent: collections.deque = collections.deque(maxlen=TRACE_ANSWERS)
 
     def a11y(self, page: Page, view: str) -> None:
         """axe-core on the page as it stands, in each pass; back to 1280 px, light, after."""
@@ -365,6 +371,8 @@ def watch_page(run: Run, page: Page) -> None:
 
     def response(resp) -> None:
         path = resp.url.split(run.base, 1)[-1]
+        if path.startswith("/api/v1/"):
+            run.recent.append(resp)
         # A hub without notifications (docs/api.md §18) answers their read with
         # 404 on every page, and their settings (which the page then no longer
         # asks for); the page goes on without them, and the notifications step
@@ -434,6 +442,83 @@ def off_problem(method: str, path: str, status: int, body: object) -> str | None
     if method == "GET" and PENDING_UPLOADS.match(path) and status == 409 and code == "attachments_not_configured":
         return None
     return f"{method} {path} answered {status}" + (f" ({code})" if code else "")
+
+
+# What the trace of a failed step may show. It goes to a public artifact and to the Actions log, so
+# every part is a closed set: a path keeps only the static route words below and shows every other
+# segment (ids, tokens, codes, slugs, in any spelling) as `{}`; a body shows only the listed fields,
+# each only with a value from its set, anything else as `?`. Nothing is copied by its shape.
+TRACE_ROUTE = {
+    "api", "v1", "me", "runners", "enrollments", "revoke", "pair", "join", "projects", "agents",
+    "humans", "members", "tasks", "messages", "events", "attachments", "notifications", "invitations",
+}
+TRACE_ENUMS = {
+    "credential_state": {"active", "revoked", "none", "pending", "expired"},
+    "presence": {"online", "offline", "listening", "away", "busy"},
+    "state": {"active", "revoked", "pending", "expired", "used", "removed"},
+}
+TRACE_CODES = {
+    "forbidden", "not_found", "conflict", "unauthenticated", "unauthorized", "revoked", "rate_limited",
+    "validation_error", "attachments_not_configured",
+}
+TRACE_ID = re.compile(r"(rnr|enr|agt|hum|prj|org)-[a-z0-9]{6,24}")
+
+
+def trace_path(path: str) -> str:
+    """The route without its query: static route words as they are, every other segment as `{}`."""
+    parts = path.split("?", 1)[0].split("/")
+    return "/".join(p if p in TRACE_ROUTE or not p else "{}" for p in parts)
+
+
+def trace_data(value: object) -> object:
+    """What of a JSON body may be shown: for the object or each of its `items`, the `id` (only a
+    known prefix), `credential_state`, `presence` and `state` (only listed values); for an error,
+    its `code` (only a listed one). Every other key and value is dropped."""
+    if isinstance(value, dict) and isinstance(value.get("items"), list):
+        return [trace_data(item) for item in value["items"][:5]]
+    if not isinstance(value, dict):
+        return None
+    out: dict = {}
+    item_id = value.get("id")
+    if isinstance(item_id, str):
+        out["id"] = item_id if TRACE_ID.fullmatch(item_id) else "?"
+    for key, allowed in TRACE_ENUMS.items():
+        if key in value:
+            shown = value[key]
+            out[key] = shown if isinstance(shown, str) and shown in allowed else "?"
+    error = value.get("error")
+    if isinstance(error, dict) and "code" in error:
+        code = error["code"]
+        out["error"] = {"code": code if isinstance(code, str) and code in TRACE_CODES else "?"}
+    return out
+
+
+def trace_line(method: str, path: str, status: int, text: str | None) -> str:
+    """One answer: method, safe path, status and the allowlisted part of a JSON body."""
+    try:
+        if not text:
+            raise ValueError("no body")
+        data = trace_data(json.loads(text))
+        shown = json.dumps(data, separators=(",", ":"), sort_keys=True)[:TRACE_BODY]
+    except Exception:  # not JSON, or gone: not copied
+        shown = "(body not shown)"
+    return f"{method} {trace_path(path)} {status} {shown}"
+
+
+def report_failure(answers: list, base: str, artifacts: Path) -> str:
+    """Said when a step fails: the page's latest API answers, to `api-trace.txt` and to stderr.
+    Both get the same text, built only by trace_line()."""
+    lines = []
+    for resp in answers:
+        try:
+            text = resp.text()
+        except Exception:
+            text = None
+        lines.append(trace_line(resp.request.method, resp.url.split(base, 1)[-1], resp.status, text))
+    trace = "\n".join(lines)
+    (artifacts / "api-trace.txt").write_text(trace + "\n")
+    print(f"\nthe page's last API answers (api-trace.txt):\n{trace}", file=sys.stderr)
+    return trace
 
 
 def no_problems(run: Run, where: str) -> None:
@@ -569,7 +654,11 @@ def main() -> int:
                 expect.set_options(timeout=TIMEOUT_MS)  # expect() has its own 5-s default
                 page = context.new_page()
                 watch_page(run, page)
-                scenario(run, page)
+                try:
+                    scenario(run, page)
+                except Exception:
+                    report_failure(list(run.recent), base, artifacts)
+                    raise
                 fixture_views(run, browser)
             finally:
                 browser.close()
@@ -1427,7 +1516,7 @@ def images_step(run: Run, page: Page, alpha: Path) -> None:
             {
                 "name": "banner.png",
                 "mimeType": "image/png",
-                "buffer": tiny_png(600, 150, (122, 63, 196)),
+                "buffer": tiny_png(640, 320, (122, 63, 196)),
             }
         ]
     )

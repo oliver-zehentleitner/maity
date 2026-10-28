@@ -474,3 +474,36 @@ variable is the fallback.
 - Relying on the `runs-on` condition against forks: the fork controls the workflow file.
 - Running every job on the machine: it runs one job at a time (the services bind host ports);
   the short jobs gain nothing there.
+
+## The runner gets its Python through uv into the tool cache, and starts through `runsvc.sh`
+
+**Id:** 2bede3db-2d8e-4716-851b-0ecc07cb140d
+**Type:** decision
+**Type:** workaround
+**Status:** active
+**Evidence:** confirmed
+**Source:** the first installation of the self-hosted runner, 2026-10-28 (the service exited at once; setup-python found no Python 3.12; pip refused to install); the review of the installer script
+**Revisit when:** setup-python supports Debian, or the database jobs run in a virtual environment on both runner kinds
+**See:** process.md#the-database-ci-jobs-may-run-on-the-maintainers-machine-a-forks-code-reaches-it-only-through-an-approval — 405c762c-11a2-4a95-a23b-0b2657a7aa8d — as of 2026-10-28
+
+The unit starts `bin/runsvc.sh`, not `run.sh`: `run.sh` copies a helper into its own directory on every start, which
+a root-owned runner directory refuses, and the service then exits with status 0 and restarts in a loop.
+`install-python.sh` gives the machine a Python that `setup-python` finds: uv installs 3.12 as the runner user and it is
+linked into the runner's tool cache (`_work/_tool/Python/<version>/x64`); uv's PEP 668 "externally managed" marker is
+removed from that private copy, because `pip install` in the jobs fails with it; the `.path` the runner stored at
+registration (the PATH of root's shell, with directories the runner user may not enter) is replaced by a plain one.
+Everything inside the runner user's own paths is done as that user: a job can leave symlinks there, and root following one
+would write wherever it points.
+
+**Reason:** `setup-python` knows Ubuntu, macOS and Windows; on Debian it fails with "version 3.12 not found". The tool cache
+is the place it looks first, so the workflow stays the same on hosted and on the self-hosted runner. The marker is removed
+only from a copy that belongs to the runner, so no system Python is changed.
+
+**Rejected alternatives:**
+- The database jobs install into a virtual environment (`python -m venv`): the same on both runner kinds and it leaves the
+  runner's Python untouched, but it changes three jobs and every `make` call; the marker route is documented instead and
+  this stays the revisit.
+- The system Python of the machine: Debian 13 ships 3.13, the hub is tested on 3.12.
+- `pip install --break-system-packages` in the jobs: it would leak a self-hosted special case into the shared workflow.
+- Root creating the links and files in the tool cache: the first version did, and the review showed it follows symlinks a
+  job may have left there.

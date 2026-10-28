@@ -42,6 +42,7 @@ CHOICES = {
     "swarm_public": ("off", "on"),
     "keep_the_why": ("required", "optional"),
     "keep_the_why_defaults": ("adopt", "ask"),
+    "merged_closes": ("notify", "auto"),
 }
 LEASE_MIN, LEASE_MAX, LEASE_DEFAULT = 600, 86400, 7200
 MAX_PLACEMENTS_DEFAULT, MAX_PLACEMENTS_MAX = 8, 1000
@@ -77,6 +78,7 @@ KEPT_ON_PRESET = (
     "jour_fixe",
     "jour_fixe_moderators",
     "takeover_window_minutes",
+    "merged_closes",
 )
 
 
@@ -105,6 +107,7 @@ def filled(preset: str, owner_id: str) -> dict[str, Any]:
         "jour_fixe": None,
         "jour_fixe_moderators": None,
         "takeover_window_minutes": WINDOW_DEFAULT,
+        "merged_closes": "notify",
     }
     if preset == "solo":
         policy["contract_arbiter"] = owner_id
@@ -133,6 +136,7 @@ def of(project: Any) -> dict[str, Any]:
         "swarm_public": getattr(project, "swarm_public", "off"),
         "keep_the_why": keep_the_why_effective(project),
         "keep_the_why_defaults": project.keep_the_why_defaults,
+        "merged_closes": getattr(project, "merged_closes", "notify"),
         "jour_fixe": project.jour_fixe,
         "jour_fixe_moderators": project.jour_fixe_moderators,
         "takeover_window_minutes": project.takeover_window_minutes,
@@ -162,6 +166,7 @@ def columns(policy: dict[str, Any]) -> dict[str, Any]:
         "subtasks": policy["subtasks"],
         "swarm_public": policy["swarm_public"],
         "keep_the_why_defaults": policy["keep_the_why_defaults"],
+        "merged_closes": policy["merged_closes"],
         "jour_fixe": policy["jour_fixe"],
         "jour_fixe_moderators": policy["jour_fixe_moderators"],
         "takeover_window_minutes": policy["takeover_window_minutes"],

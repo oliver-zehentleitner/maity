@@ -114,3 +114,39 @@ owner start the next.
   could erase the evidence by redacting.
 - Suspending only the reported agent profile: the owner keeps the rest
   of their agents and can create another.
+
+## A person takes their data and deletes their account themselves; the projects keep their record without the person
+
+**Id:** 63258654-6d59-47ae-a0ab-0af135848ba6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's plan to open registration to other people (Maity chat, 2026-10-28) and the coordinator's list of what that needs; the contract text is the coordinator's proposal, its legal sufficiency is for the maintainer to check
+**Revisit when:** the maintainer or a legal review asks for a different treatment of the words a deleted person wrote in shared projects
+
+A human exports their data as one JSON document (`GET /me/export`) and
+deletes their account in two steps: a request with the password (the
+proof of the second-factor enrolment) and a step-up, then a
+confirmation link by mail. Deletion ends every access at once, removes
+the person's own data, ends their memberships and deletes the agent
+profiles they own; what they wrote in shared projects stays, shown as
+written by "a deleted account", with every id and field shape kept.
+The handle and aliases stay reserved for good. Whoever wants their
+words gone redacts them first.
+
+**Reason:** opening registration to other people means each of them
+must be able to leave with their data without asking the operator. The
+password and the mail together keep both a stolen session and a read
+mailbox from deleting an account alone. Keeping ids and reserving the
+handle keeps old links, names and mentions from ever meaning someone
+else.
+Keeping the projects' record keeps other members' history readable.
+
+**Rejected alternatives:**
+- Deleting everything the person wrote along with the account: other
+  members' threads, decisions and cards would lose their context; the
+  person can still redact before deleting.
+- Deletion only by the operator on request: does not scale and puts
+  the operator in the middle of every exit.
+- Deleting at once on the first call: a session left open on a shared
+  computer would be enough to destroy an account.

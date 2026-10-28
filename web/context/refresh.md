@@ -11,7 +11,8 @@
 
 A project view starts at the head (`GET /projects/{slug}/events?after=latest&wait=0`,
 read together with the project and its members, before the view's own
-data) and then reads `after=<cursor>&wait=0` every 5 seconds, page by
+data) and then reads `after=<cursor>&wait=0` every 5 seconds (15 since
+6cb02c3d-063d-473b-b86b-8f8324c11f14), page by
 page. An event from someone else of a kind the view shows offers a
 reload instead of replacing the view; a request event re-reads `/me` at
 once; a chat event of the open conversation fetches its new messages.
@@ -19,8 +20,9 @@ Presence emits no event, so the Agents view re-reads it every 30 seconds
 and updates it in place; the chat's list of conversations re-reads
 `/conversations` on every chat event in the feed and, together with
 `/members` for presence, every 30 seconds, one read at a time (a refresh
-asked for during a read runs once more after it). `/me` is still read every 15 seconds for the
-counts of every project, which no single project's feed carries.
+asked for during a read runs once more after it). `/me` is still read every 60 seconds (15 until
+2026-10-28, see 6cb02c3d-063d-473b-b86b-8f8324c11f14) for the counts of every project, which no single project's
+feed carries.
 
 **Reason:** `wait=0` returns the readable set, which for an owner or
 admin is every event of the project; the long-poll returns the
@@ -49,8 +51,8 @@ one feed, and nothing for the views that have no cheap "after" query.
 **See:** https://github.com/oliver-zehentleitner/maity — d2d3356f-7a73-4e77-ac7c-3e04b07c2517 — as of 2026-10-22
 
 The badges and the tab title come from one read of
-`GET /me/notifications?limit=0`, made with the existing 15-second `/me`
-read and after every answer: the counts and `by_project` for the switcher
+`GET /me/notifications?limit=0`, made with the existing interval `/me`
+read (60 seconds since 6cb02c3d-063d-473b-b86b-8f8324c11f14) and after every answer: the counts and `by_project` for the switcher
 and the tabs. The bell reads its latest 20 only when it opens.
 An item's link is built from its `target`, never from its `url`. A hub
 that answers 404 leaves the page as it was, with no bell. Any other
@@ -166,3 +168,46 @@ coordinator confirmed this follow-up after the held-page reproduction.
 **Rejected alternative:** relying on timer disposal and the late-401
 guard alone: neither prevents a successful old reply from continuing
 work, including after another session has signed in.
+
+## A hidden tab reads nothing on its intervals; /me every 60 seconds, events every 15
+
+**Id:** 6cb02c3d-063d-473b-b86b-8f8324c11f14
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the load finding of 2026-10-28 on the card tsk-yek3wssk08dq (three hours at the proxy: `/me` 2657 and `/auth/sessions` 2606 requests, roughly every 4 seconds over the open tabs, on a hub with one vCPU); the dashboard's implementation, 2026-10-28
+**Revisit when:** the hub offers the counts as a stream a cookie session can hold, or the counts' latency is reported as too slow
+**See:** refresh.md#the-dashboard-reads-the-projects-events-with-wait0-on-an-interval-not-with-the-long-poll — 264c1452-2cc4-4518-b1fb-85e901a09aa2 — as of 2026-10-28
+
+The `/me` round (`/me`, the notification counts and, while a sign-in
+alert is unread, the banner's session list) runs every 60 seconds, not
+15. A tab whose `document.visibilityState` is `hidden` skips it, along
+with the project's events and the chat lists (every 30 seconds, a
+project's and `#/chats`). The project's events are read every 15 seconds
+instead of 5. A tab shown again after a skipped `/me` round or event read
+reads it within 5 seconds, once; the events from the cursor. Its chat
+lists catch up at the next 30-second round. Actions and events still
+re-read `/me` at once. `#/chats`, which has no project feed, reads the
+notification counts (`/me/notifications?limit=0`, not `/me`) every 15
+seconds while it is shown: a reply in the open chat comes in by them.
+
+**Reason:** the 15-second round in every open tab was a large share of
+the hub's load: each round with an unread sign-in alert also read the
+session list. A hidden tab shows nothing that the round would update, so
+its reads were pure cost. Since the round runs only in tabs that are
+shown, a browser in practice asks once, not once per tab. Sixty seconds
+is the bound the finding asked for. The event read with `wait=0` every
+5 seconds in each open project page was the largest share. It stays
+`wait=0` for the reasons of 264c1452 (a long-poll returns only the
+wake-relevant set, one long-poll per session), now every 15 seconds: a
+change made by someone else shows up to 15 seconds late, and one's own
+changes show at once from the answer. Counts that matter at once (a
+request answered, a request event in the open project) are re-read by
+the event, not by the interval.
+
+**Rejected alternative:** one read per browser through a
+`BroadcastChannel` between tabs. It is more code and a shared state
+between tabs, for the case of several tabs shown at once, which the
+visibility check does not cover. Re-reading the banner's sessions only
+when the count of unread alerts changes: the banner must go when its
+session ends elsewhere with the count unchanged, which only a read finds.

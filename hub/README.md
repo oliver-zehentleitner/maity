@@ -46,7 +46,7 @@ positions and its long-poll, `POST /me/notifications/read`, and a waiting
 registration as the instance admin's `inbox` item are in; card watches (§6.4)
 stay but notify nobody. The notification settings with the verified address
 (§18.4) are in, and so are the links in mails (§18.6) and the delivery failures of an
-address (§18.7); the notification mail itself follows.
+address (§18.7); the notification mail (§18.5) is in.
 
 Availability (`docs/api.md` §6.12): every member's computed
 `availability`, the agent's and the human's limit (`POST /me/limit`, a
@@ -216,8 +216,9 @@ All settings come from the environment.
 | `MAITY_ATTACHMENT_DIR` | unset | The `local` store's directory: an absolute path to an existing, writable directory (else the hub stops). The files are `<dir>/<project id>/<attachment id>`, written whole; back them up separately from the database. Unset, the hub starts and every attachment call answers `409 attachments_not_configured`. |
 | `MAITY_ATTACHMENT_QUOTA` | `1073741824` | Bytes of attachments one project may store, pending uploads included, counted after re-encoding; past it an upload is `attachment_quota`. |
 | (the attachment sweep) | every 5 minutes | Not a setting. With a store set, a background pass deletes pending uploads older than 24 hours, the bytes of deleted attachments that are still on disk, and blobs no row names (older than 10 minutes, so an upload in flight is safe) (`docs/api.md` §8.7). |
-| `MAITY_DB_POOL_SIZE` | `5` | Pooled connections to a server database (PostgreSQL, MariaDB), 1–500. |
-| `MAITY_DB_MAX_OVERFLOW` | `10` | Connections beyond the pool when it is busy, 0–500. |
+| `MAITY_DB_POOL_SIZE` | `16` | Pooled connections to a server database (PostgreSQL, MariaDB), 1–500. They are reused, the most recently used first. |
+| `MAITY_DB_MAX_OVERFLOW` | `16` | Connections beyond the pool when it is busy, 0–500. |
+| `MAITY_DB_POOL_RECYCLE` | `1800` | Seconds after which a pooled connection is replaced when it is next taken, 0–86400; 0 never replaces. A connect that fails because the database host name does not resolve is tried once more after a short pause. |
 | `MAITY_SECRET_KEY` | unset | The instance key for secrets stored at rest (`docs/api.md` §16.2, §17.4): 32 random bytes, base64 (`head -c 32 /dev/urandom \| base64`). AES-256-GCM, a random nonce per value and the field's name as associated data. Never in the database, never logged or returned; a value that is not 32 base64 bytes stops the hub. Without it a forge webhook secret cannot be created (`secret_key_missing`). A key that changes makes every stored secret unusable until it is set again.
 | `MAITY_TRUSTED_PROXIES` | empty | Comma-separated addresses or CIDRs of reverse proxies whose `X-Forwarded-Proto` and `X-Forwarded-For` the hub believes. Empty: forwarded headers change nothing. |
 | `MAITY_ALLOW_PLAIN_HTTP` | `0` | `1` lets bearer credentials, logins and cookies travel over plain HTTP from any address. Only for a hub reachable on one machine or a private network; logged as a warning. Without it, plain HTTP is accepted from loopback only. The cookies' `Secure` flag follows the scheme a request arrived with, whatever this says. |
@@ -227,7 +228,7 @@ All settings come from the environment.
 | `MAITY_SMTP_CA_FILE` | unset | A PEM file the server's certificate is verified against instead of the system store. Certificates are always verified. |
 | `MAITY_SMTP_USERNAME`, `MAITY_SMTP_PASSWORD` or `MAITY_SMTP_PASSWORD_FILE` | unset | `AUTH`, sent only over TLS. The password (or the file a Secret is mounted at, one trailing newline dropped) is never stored, logged or returned. |
 | `MAITY_SMTP_FROM`, `MAITY_SMTP_REPLY_TO` | unset | The sender, `maity@example.org` or `Maity <maity@example.org>`, and an optional reply address; one address each, never a list. |
-| `MAITY_MAIL_MAX_PER_HOUR`, `MAITY_MAIL_SECURITY_MAX_PER_HOUR`, `MAITY_MAIL_SIGN_IN_MAX_PER_HOUR` | `500`, `100`, `60` | The three hourly budgets: notification, security and sign-in mail, each counted on its own. |
+| `MAITY_MAIL_MAX_PER_HOUR`, `MAITY_MAIL_SECURITY_MAX_PER_HOUR`, `MAITY_MAIL_SIGN_IN_MAX_PER_HOUR`, `MAITY_MAIL_REGISTRATION_MAX_PER_HOUR` | `500`, `100`, `60`, `30` | The hourly budgets: notification, security, sign-in and registration mail, each counted on its own. |
 | `MAITY_MAIL_SIGNING_KEY` | unset | 32 bytes or more, base64; signs the links in mails. Without it the hub sends no mail. |
 | `MAITY_SMTP_ALLOW_PLAINTEXT` | `0` | **Insecure**, for a test bench only: `1` sends in clear to a server that offers no STARTTLS (still never `AUTH`). Logged as a warning at startup and at every such send. |
 | `MAITY_SIGN_IN_DEVICE_CODE`, `MAITY_SIGN_IN_EMAIL_LINK` | unset | `1` or `0`: switch a sign-in method on or off for good (`docs/api.md` §2.6.6); unset leaves it to the instance admin (default on). The password cannot be switched off. |
