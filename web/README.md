@@ -1165,8 +1165,8 @@ fails while the bundle is stale.
   far a tab row is scrolled stay.
 - In a project, the project's events (`docs/api.md` §8.3): the head is
   read with `after=latest&wait=0` together with the project and its
-  members, then `after=<cursor>&wait=0` every 5 seconds, page by page,
-  none while the tab is hidden; the chat lists' 30-second reads skip a
+  members, then `after=<cursor>&wait=0` every 15 seconds, page by page,
+  none while the tab is hidden (shown again, it reads within 5 seconds); the chat lists' 30-second reads skip a
   hidden tab too.
   Not the long-poll: `context/refresh.md`.
   - a request event re-reads `/me` at once;

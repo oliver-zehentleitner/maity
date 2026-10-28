@@ -11,7 +11,8 @@
 
 A project view starts at the head (`GET /projects/{slug}/events?after=latest&wait=0`,
 read together with the project and its members, before the view's own
-data) and then reads `after=<cursor>&wait=0` every 5 seconds, page by
+data) and then reads `after=<cursor>&wait=0` every 5 seconds (15 since
+6cb02c3d-063d-473b-b86b-8f8324c11f14), page by
 page. An event from someone else of a kind the view shows offers a
 reload instead of replacing the view; a request event re-reads `/me` at
 once; a chat event of the open conversation fetches its new messages.
@@ -168,7 +169,7 @@ coordinator confirmed this follow-up after the held-page reproduction.
 guard alone: neither prevents a successful old reply from continuing
 work, including after another session has signed in.
 
-## A hidden tab reads nothing on its intervals; /me every 60 seconds
+## A hidden tab reads nothing on its intervals; /me every 60 seconds, events every 15
 
 **Id:** 6cb02c3d-063d-473b-b86b-8f8324c11f14
 **Type:** decision
@@ -181,18 +182,24 @@ work, including after another session has signed in.
 The `/me` round (`/me`, the notification counts and, while a sign-in
 alert is unread, the banner's session list) runs every 60 seconds, not
 15. A tab whose `document.visibilityState` is `hidden` skips it, along
-with the project's events (every 5 seconds) and the chat lists (every 30
-seconds, a project's and `#/chats`). A tab shown again after a skipped
-`/me` round reads it within 5 seconds, once. Its events catch up at the
-next 5-second tick from the cursor, and its chat lists at the next
-30-second one. Actions and events still re-read `/me` at once.
+with the project's events and the chat lists (every 30 seconds, a
+project's and `#/chats`). The project's events are read every 15 seconds
+instead of 5. A tab shown again after a skipped `/me` round or event read
+reads it within 5 seconds, once; the events from the cursor. Its chat
+lists catch up at the next 30-second round. Actions and events still
+re-read `/me` at once.
 
 **Reason:** the 15-second round in every open tab was a large share of
 the hub's load: each round with an unread sign-in alert also read the
 session list. A hidden tab shows nothing that the round would update, so
 its reads were pure cost. Since the round runs only in tabs that are
 shown, a browser in practice asks once, not once per tab. Sixty seconds
-is the bound the finding asked for. Counts that matter at once (a
+is the bound the finding asked for. The event read with `wait=0` every
+5 seconds in each open project page was the largest share. It stays
+`wait=0` for the reasons of 264c1452 (a long-poll returns only the
+wake-relevant set, one long-poll per session), now every 15 seconds: a
+change made by someone else shows up to 15 seconds late, and one's own
+changes show at once from the answer. Counts that matter at once (a
 request answered, a request event in the open project) are re-read by
 the event, not by the interval.
 

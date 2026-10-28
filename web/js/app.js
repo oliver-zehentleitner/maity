@@ -70,9 +70,9 @@ window.Maity = window.Maity || {};
   const BACK_MS = 5000;
   const hidden = () => document.visibilityState === "hidden";
 
-  // The open project's events are read on this interval, with wait=0; see
-  // context/refresh.md for why not the long-poll.
-  const EVENTS_MS = 5000;
+  // The open project's events are read on this interval, with wait=0, while
+  // the tab is shown; see context/refresh.md for why not the long-poll.
+  const EVENTS_MS = 15000;
   const EVENTS_PAGE = 200;
 
   // Events that change the header of every project view.
@@ -1312,8 +1312,10 @@ window.Maity = window.Maity || {};
       if (events.some((e) => REQUEST_KINDS.test(e.kind))) counts().catch(failed);
     });
     let reading = false;
-    ctx.every(EVENTS_MS, async () => {
-      if (reading || hidden()) return;
+    let eventsMissed = false;
+    const read = async () => {
+      if (reading) return;
+      eventsMissed = false;
       reading = true;
       try {
         await readEvents(ctx);
@@ -1323,7 +1325,11 @@ window.Maity = window.Maity || {};
       } finally {
         reading = false;
       }
-    });
+    };
+    // A hidden tab reads no events; shown again, it reads what it missed
+    // within BACK_MS, from the cursor.
+    ctx.every(EVENTS_MS, () => { if (hidden()) { eventsMissed = true; return null; } return read(); });
+    ctx.every(BACK_MS, () => (eventsMissed && !hidden() ? read() : null));
   }
 
   // Reads every event after the cursor, page by page, and hands them on.
