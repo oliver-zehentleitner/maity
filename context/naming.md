@@ -7,6 +7,7 @@
 **Status:** active
 **Evidence:** confirmed
 **Source:** naming conversation with the maintainer, 2026-10-21
+**See:** naming.md#the-project-does-not-tell-readers-how-to-hear-or-pronounce-the-name — 4245c857-a586-455b-86a8-cea24e492236 — as of 2026-10-28 (the reading below is the maintainers' record, not something told to readers)
 
 The project, its repository, its package name and its domains (maity.dev,
 maity.team) are "Maity": a coined word that reads like *matey* — a mate, a
