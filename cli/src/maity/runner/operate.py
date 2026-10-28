@@ -340,7 +340,7 @@ def _active(cfg: config.Config) -> tuple[set[tuple[str, str]], set[str]]:
     for p in (answer.get("items") if isinstance(answer, dict) else None) or []:
         if not supervisor.valid(p):
             continue
-        pairs.add((p["project"], p["workspace"]["clone"]))
+        pairs.add((p["project_id"], p["workspace"]["clone"]))
         agent = p.get("agent") or {}
         agents.update(v for v in (agent.get("id"), agent.get("handle")) if isinstance(v, str))
     return pairs, agents
@@ -399,14 +399,16 @@ def _collect(
     path = Path(path_text)
     as_user = _as_user(cfg)
     try:
-        expected = workspace.locate(cfg.local.workspaces, str(record.get("project")), path.name)
+        # A clone taken over from before the namespace stays at its slug path (§15.5).
+        where = record.get("legacy_slug") or record.get("project")
+        expected = workspace.locate(cfg.local.workspaces, str(where), path.name)
     except workspace.Refused:
         return False
     if str(expected.path) != path_text or as_user.exists(path, "-L"):
         return False  # a record pointing anywhere else is never followed
     if not as_user.exists(path, "-d"):
         return False
-    if (expected.project, expected.clone) in pairs or record.get("agent") in agents:
+    if (record.get("project"), expected.clone) in pairs or record.get("agent") in agents:
         return False  # a placement uses it, or will
     if not credential_revoked(expected, as_user):
         return False
@@ -441,7 +443,7 @@ def cmd_workspace_claim(cfg: config.Config, args: argparse.Namespace) -> int:
     try:
         place = workspace.locate(cfg.local.workspaces, project, clone)
     except workspace.Refused:
-        raise Refused(f"not <project>/<clone>: {onboarding.inline(args.where)}") from None
+        raise Refused(f"not <project id>/<clone>: {onboarding.inline(args.where)}") from None
     if not _as_user(cfg).exists(place.path / ".git", "-d"):
         raise Refused(f"{place.path} is not a clone")
     if str(place.path) in workspace.records(cfg.state_dir) and not args.force:

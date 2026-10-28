@@ -18,7 +18,7 @@ url = "{url}"
 state_dir = "{state_dir}"
 
 [limits]
-projects = ["maity"]
+projects = ["oliver/maity"]
 repositories = ["github.com/oliver-zehentleitner/maity"]
 
 [harness.stub]
@@ -535,3 +535,17 @@ def test_default_config_path(home: Path, monkeypatch: pytest.MonkeyPatch) -> Non
 def test_opencode_is_not_offered_yet() -> None:
     found = problems(minimal(o="\n[harness.opencode]\n"))
     assert any(p.startswith("harness.opencode: not offered yet") for p in found), found
+
+
+@pytest.mark.parametrize(
+    ("projects", "said"),
+    [
+        ('["maity"]', "a project is named <owner>/<slug> now: write 'maity'"),
+        ('["oliver/maity", "../x"]', "not a project full name: '../x'"),
+    ],
+)
+def test_the_configured_projects_are_full_names(projects: str, said: str) -> None:
+    text = MINIMAL.replace('projects = ["oliver/maity"]', f"projects = {projects}")
+    with pytest.raises(config.ConfigError) as info:
+        parse(text.format(url="https://hub.example", state_dir="/srv/state"))
+    assert any(said in problem for problem in info.value.problems)

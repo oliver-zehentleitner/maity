@@ -85,6 +85,10 @@ def _print_json(data: Any) -> None:
     print(json.dumps(data, indent=2, ensure_ascii=False))
 
 
+# A project's full name (§6.25): the namespace owner's handle and the slug, each a path segment.
+_FULL_NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,62}/[a-z0-9][a-z0-9-]{0,62}", re.ASCII)
+
+
 class Session:
     """A joined clone: its state directory, its state, and a signing client for its hub.
     `on_request` is this command's `--on-request`, set once by `main` (§2.3)."""
@@ -110,13 +114,38 @@ class Session:
 
     @property
     def project(self) -> str:
-        project = self.data.get("project")
-        if not isinstance(project, str):
+        """The project's `full_name`, `<owner>/<slug>` (§6.25). A state from before the
+        namespace holds the slug alone: the full name is read once from `GET /me`, which lists
+        an agent's one project, and kept."""
+        full_name = self.data.get("full_name")
+        if isinstance(full_name, str) and _FULL_NAME.fullmatch(full_name):
+            return full_name
+        slug = self.data.get("project")
+        if isinstance(slug, str) and _FULL_NAME.fullmatch(slug):
+            full_name = slug  # a join answer from a hub with namespaces
+        elif isinstance(slug, str):
+            full_name = self._full_name_from_me(slug)
+        else:
             raise state.StateError("the project is not known yet; run `maity resume`")
-        return project
+        self.data["full_name"] = full_name
+        self.data["project"] = full_name.split("/", 1)[1]
+        self.save()
+        return full_name
+
+    def _full_name_from_me(self, slug: str) -> str:
+        me = self.client.call("GET", "/me")
+        projects = [p for p in (_field(me, "projects") or []) if isinstance(p, dict)]
+        names = [p.get("full_name") for p in projects if p.get("slug") == slug]
+        if len(names) != 1 or not isinstance(names[0], str) or not _FULL_NAME.fullmatch(names[0]):
+            raise state.StateError(
+                f"the hub does not name this clone's project {onboarding.inline(slug)} with an "
+                "owner; run `maity resume`"
+            )
+        return names[0]
 
     def project_path(self, *parts: str) -> str:
-        return "/".join(["", "projects", hub.segment(self.project), *map(hub.segment, parts)])
+        owner, slug = self.project.split("/", 1)
+        return "/".join(["", "projects", *map(hub.segment, (owner, slug, *parts))])
 
     def save(self) -> None:
         state.save_state(self.dir, self.data)
@@ -180,10 +209,11 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
                 f"{onboarding.inline(expected)}. The join is kept; check the clone before working."
             )
     board_empty = False
-    slug_for_board = field(packet, "project", "slug")
+    name_for_board = field(packet, "project", "full_name")
     if (
         not args.json
-        and isinstance(slug_for_board, str)
+        and isinstance(name_for_board, str)
+        and _FULL_NAME.fullmatch(name_for_board) is not None
         and onboarding.is_admin(packet)
         and not field(packet, "membership", "briefing")
         and not field(packet, "membership", "paused")
@@ -191,8 +221,11 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
         and not packet.get("assigned")
     ):
         try:
+            owner, slug = name_for_board.split("/", 1)
             board = session.client.call(
-                "GET", f"/projects/{hub.segment(slug_for_board)}/tasks", query=[("limit", "1")]
+                "GET",
+                f"/projects/{hub.segment(owner)}/{hub.segment(slug)}/tasks",
+                query=[("limit", "1")],
             )
             board_empty = isinstance(board, dict) and board.get("items") == []
         except hub.HubError:
@@ -205,6 +238,9 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
     member_id = field(packet, "me", "member_id")
     if isinstance(slug, str):
         session.data["project"] = slug
+    full_name = field(packet, "project", "full_name")  # refreshed every resume: renames (§6.25)
+    if isinstance(full_name, str) and _FULL_NAME.fullmatch(full_name):
+        session.data["full_name"] = full_name
     if isinstance(member_id, str):
         session.data["member_id"] = member_id
     owner_id = field(packet, "me", "owner", "id")
@@ -601,7 +637,7 @@ def _action(spec: str, body_source: str | None) -> dict[str, Any]:
     if method not in ACTION_METHODS or not target.startswith("/") or " " in target:
         raise UsageError(
             f'--action is "METHOD PATH[?QUERY]", METHOD one of {", ".join(ACTION_METHODS)}, '
-            f'PATH starting with /, e.g. "PATCH /projects/maity/members/agt-b"'
+            f'PATH starting with /, e.g. "PATCH /projects/oliver/maity/members/agt-b"'
         )
     if "#" in target:
         raise UsageError("--action: a path has no fragment")
@@ -1172,7 +1208,7 @@ def _unread_group(
 def _require_group_chats(session: Session) -> None:
     """A `cnv-` id is a group chat (§9.3); a hub whose openapi.json has no way to open one
     has none, which is said instead of "not in your conversations"."""
-    if hub.offers(session.client.base, "post", "/projects/{slug}/conversations") is False:
+    if hub.offers(session.client.base, "post", "/projects/{owner}/{slug}/conversations") is False:
         raise CommandError("this hub does not have group chats yet: only direct conversations")
 
 
@@ -2513,7 +2549,7 @@ def cmd_ticker_post(args: argparse.Namespace) -> int:
     except hub.HubError as exc:
         if exc.status != 404:
             raise
-        if hub.offers(session.client.base, "post", "/projects/{slug}/ticker") is not False:
+        if hub.offers(session.client.base, "post", "/projects/{owner}/{slug}/ticker") is not False:
             raise  # a ticker route, or no readable openapi.json: the 404 stands as it is
         line = f"[ticker] {args.type}: {body['text']}" + (f" {args.url}" if args.url else "")
         _err("this hub has no ticker yet; post it as a project message instead:")
@@ -3131,7 +3167,7 @@ def build_parser() -> argparse.ArgumentParser:
         "Send one signed request to /api/v1 and print the JSON answer, for the endpoints that "
         "have no command of their own: creating and editing cards, assign, withdraw, pausing "
         "(PATCH /me), the conversation history. PATH is relative to /api/v1, e.g. "
-        "/projects/maity/tasks/tsk-0004. See `maity help`.",
+        "/projects/oliver/maity/tasks/tsk-0004. See `maity help`.",
     )
     p.add_argument("method", type=str.upper, choices=("GET", "POST", "PATCH", "DELETE"))
     p.add_argument("path", help="the endpoint path, starting with /")
@@ -3449,6 +3485,13 @@ def _explain(exc: Exception) -> str:
             f"refused: you are paused {detail}. You take no new work until the pause is "
             f"lifted; {STILL_WORKS} still work. Park what you hold, then `maity wait`."
         )
+    if isinstance(exc, hub.HubError) and exc.code == "client_outdated":
+        minimum = onboarding.inline(exc.details.get("minimum") or "a newer version")
+        install = onboarding.inline(exc.details.get("install") or "pipx upgrade maity")
+        return (
+            f"this maity ({__version__}) is older than the hub needs ({minimum}): projects "
+            f"are addressed as <owner>/<slug> now. Upgrade with: {install}"
+        )
     missing = _missing_route(exc)
     return missing or str(exc)
 
@@ -3480,7 +3523,7 @@ def _missing_route(exc: Exception) -> str | None:
     route = path.removeprefix(hub.API)
     parts = route.strip("/").split("/")
     if parts[0] == "projects":
-        del parts[:2]  # a project slug never names a feature
+        del parts[:3]  # an owner and a slug never name a feature (§6.25)
     feature = next((FEATURES[p] for p in parts if p in FEATURES), None)
     what = feature or f"`{method} {route}`"
     return f"this hub does not have {what} yet: its openapi.json lists no {method} {route}"

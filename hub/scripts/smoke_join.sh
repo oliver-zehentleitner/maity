@@ -80,7 +80,7 @@ url="$(printf '%s' "$cli_join" | json 'd["join_url"]')"
 code="$(printf '%s' "$cli_join" | json 'd["code"]')"
 git init -q "$work/clone-cli" && cd "$work/clone-cli"
 maity join "$url" --code "$code" --harness smoke --model none --no-pointer >"$work/cli-join.out" 2>&1
-grep -q '^joined smoke as agt-' "$work/cli-join.out"
+grep -q '^joined owner/smoke as agt-' "$work/cli-join.out"
 maity resume --json | json '"resumed as " + d["me"]["handle"] + ", session " + d["session"]["id"]'
 
 step "requests: each agent asks its human, the human answers"
