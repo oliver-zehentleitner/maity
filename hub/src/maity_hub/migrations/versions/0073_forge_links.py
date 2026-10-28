@@ -8,7 +8,7 @@ No installation token is stored: they live in the hub's memory only. `forge_toke
 holds a human's own fine-grained token, sealed with `MAITY_SECRET_KEY`.
 
 Revision ID: 0073
-Revises: 0071
+Revises: 0075
 Create Date: 2026-10-28
 """
 
@@ -20,7 +20,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql
 
 revision: str = "0073"
-down_revision: str | None = "0071"
+down_revision: str | None = "0075"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
