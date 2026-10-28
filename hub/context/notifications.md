@@ -240,3 +240,47 @@ answered `False` and failed closed).
   shared lock, and registration needs it to void the other pending registrations in the same
   transaction.
 - A lock on the human's row: it would not serialize two accounts racing for one address.
+
+## Notification mail is planned per human once a minute from the derived items, each item mailed once; a human whose notifications did not move is not derived again
+
+**Id:** de75f59b-21f5-4a26-8ab4-9819c23c6228
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §18.4, §18.5, §2.6.5; the implementation of tsk-32jx98jzne6z, part 4 of the re-cut of #280, 2026-10-27; the incident of 2026-10-26 (a per-call cost that grew with history)
+**Revisit when:** many humans make one pass longer than a minute, or the bell gets a cheaper way to say that nothing moved than `listing.stamp`
+
+`maity_hub.notifications.mailer` runs once a minute. For each human with a verified address
+it first reads `listing.stamp` (a few aggregates, the one the bell's long-poll compares).
+If it equals the stamp of the last pass, no item was left waiting for its hour or day
+(`notification_mail_state.waiting`) and the human is not held over the budget, the pass
+ends there. Otherwise it derives the unread items as the bell does and keeps those not yet
+in `mail_item_sent` and not older than the address's `verified_at`; the open matters
+`registration_pending` and `mail_disabled` are never mailed (§18.5). A new sign-in goes out
+at once as a security mail. Outside quiet hours, `immediate` items go out together once the
+oldest is two minutes old, unless ten notification mails left in the past hour; then they
+join the hour's digest. `hourly` and `daily` digests go out when the full hour or `daily_at`
+(in the human's time zone) has passed since the last one, recorded in
+`notification_mail_state`. A human's first pass only starts those two clocks. When the
+notification mail of the past hour, sent or waiting, reaches the instance's `max_per_hour`,
+nothing is queued for the human; their items stay pending and the first pass with room again
+sends everything due in one mail (§18.5, "merged into each human's next mail"). A kind set
+to `off` leaves nothing waiting, so it never keeps a human's passes deriving. The text of a
+`chat` or `mention` message, where the human asked for it, is read from the event, never
+from a redacted one.
+
+**Reason:** deriving from the same items as the bell keeps a mail from ever saying more than
+the human may read at the moment it is built (§18.5, freshness). A row per mailed item is the
+simplest guard against sending twice across passes and restarts. Starting from `verified_at`
+keeps a newly confirmed address from receiving a month of backlog. The stamp is what the
+bell already trusts to say that an answer cannot have changed; reusing it means a pass for a
+human who did nothing costs a few aggregate reads and not thirty days of every project, which
+the incident of 2026-10-26 showed does not scale.
+
+**Rejected alternatives:**
+- Mailing from event hooks at write time: the readability check would be the event's, not
+  the mail's, and quiet hours and digests would need a queue anyway.
+- Deriving every verified human on every pass, as the first version did: simple, but a cost
+  per minute that grows with the humans' histories, the shape the incident was about.
+- Letting mails over the instance budget wait in the outbox: simpler, but it can mean two
+  mails where §18.5 asks for one (the first version, changed before review).

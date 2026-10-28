@@ -63,8 +63,10 @@ def _no_background_mail(monkeypatch: pytest.MonkeyPatch) -> None:
     """The app's mail worker would send the outbox behind a test's back; tests drive
     `outbox.send_due` themselves."""
     from maity_hub.mail import outbox
+    from maity_hub.notifications import mailer
 
     monkeypatch.setattr(outbox.Worker, "start", lambda self: None)
+    monkeypatch.setattr(mailer.Worker, "start", lambda self: None)
 
 
 @pytest.fixture(scope="session")
