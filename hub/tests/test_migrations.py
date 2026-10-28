@@ -281,6 +281,17 @@ def test_trust_and_role_maps_every_stored_role_and_token_both_ways(engine: Engin
                 **{"class": "decision"},
             )
         )  # fmt: skip
+        for n, values in enumerate(({"role": "tester"}, {"trust": "member"})):
+            conn.execute(
+                insert(t.request).values(
+                    id=f"req-half-{n}", project_id=project, title="Change", options=[],
+                    priority="normal", to_kind="owner", asked_by=agents["admin"].membership_id,
+                    while_open="wait", status="open", created_at=now, **{"class": "consent"},
+                    proposal={"kind": "member_change", "action": "patch",
+                              "membership_id": agents["reviewer"].membership_id,
+                              "values": values},
+                )
+            )  # fmt: skip
         conn.execute(
             insert(t.invitation).values(
                 id="inv-split", project_id=project, trust="admin", role="coder",
@@ -296,11 +307,21 @@ def test_trust_and_role_maps_every_stored_role_and_token_both_ways(engine: Engin
             r[0]: r[1] for r in conn.exec_driver_sql("SELECT id, role FROM membership")
         }
         assert old[owner_row] == old[designer] == "owner"
-        proposal = conn.execute(select(t.request.c.proposal)).scalar()
-        assert proposal is not None and proposal["values"] == {
-            "role": "member",
-            "availability_policy": {"substitutes": ["role:" + "admin"]},
-        }
+        proposal = conn.execute(
+            select(t.request.c.proposal).where(t.request.c.id == "req-split")
+        ).scalar()
+        assert proposal is not None
+        assert proposal["values"]["availability_policy"] == {"substitutes": ["role:" + "admin"]}
+        # Fail closed: an open member_change consent is withdrawn, never applied in the
+        # single role with a trust × role value.
+        statuses = dict(
+            conn.execute(
+                select(t.request.c.id, t.request.c.status).where(
+                    t.request.c.id.in_(["req-split", "req-half-0", "req-half-1"])
+                )
+            ).all()
+        )
+        assert set(statuses.values()) == {"withdrawn"}
         # Fail closed: the guest is removed and its credential revoked, never a member.
         guest = conn.execute(
             select(t.membership.c.active).where(t.membership.c.id == agents["guest"].membership_id)
@@ -329,7 +350,9 @@ def test_trust_and_role_maps_every_stored_role_and_token_both_ways(engine: Engin
             "role:reviewer",
             "all",
         ]
-        request = conn.exec_driver_sql("SELECT to_role FROM request").scalar()
+        request = conn.exec_driver_sql(
+            "SELECT to_role FROM request WHERE id = 'req-split'"
+        ).scalar()
         assert request == "admin"
 
     migrate(engine)
@@ -337,9 +360,12 @@ def test_trust_and_role_maps_every_stored_role_and_token_both_ways(engine: Engin
         rows = conn.execute(select(t.membership.c.id, t.membership.c.trust, t.membership.c.role))
         back = {r.id: (r.trust, r.role) for r in rows}
         assert back[owner_row] == back[designer] == ("owner", "coder")
-        proposal = conn.execute(select(t.request.c.proposal)).scalar()
+        proposal = conn.execute(
+            select(t.request.c.proposal).where(t.request.c.id == "req-split")
+        ).scalar()
+        # Withdrawn on the way down, the consent keeps its values as they were.
         assert proposal is not None and proposal["values"] == {
-            "trust": "member",
+            "trust": "guest",
             "role": "coder",
             "availability_policy": {"substitutes": ["trust:admin"]},
         }
@@ -369,7 +395,9 @@ def test_trust_and_role_maps_every_stored_role_and_token_both_ways(engine: Engin
             "role:reviewer",
             "all",
         ]
-        request = conn.execute(select(t.request.c.to_role, t.request.c.forwarding)).one()
+        request = conn.execute(
+            select(t.request.c.to_role, t.request.c.forwarding).where(t.request.c.id == "req-split")
+        ).one()
         assert (request.to_role, request.forwarding) == ("trust:admin", [{"to": "trust:admin"}])
         invitation = conn.execute(select(t.invitation.c.trust, t.invitation.c.role)).one()
         assert tuple(invitation) == ("admin", "coder")

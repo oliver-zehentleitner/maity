@@ -19,7 +19,8 @@ and stay as they are.
 
 The downgrade maps back. It fails closed for trust `guest`, which the single role cannot
 hold: guest memberships are removed with their credentials revoked and their placements
-closed, and unused guest invitations and joins end. The roles the single role did not
+closed, and unused guest invitations and joins end; open `member_change` consents are
+withdrawn, since their values are trust × role. The roles the single role did not
 know (`tester`, `designer`, `ops`, `writer`) become `member`, `role:<them>`
 `role:member`.
 
@@ -135,13 +136,35 @@ def _proposal_up(proposal: Any) -> Any:
     return {**proposal, "values": {**values, "trust": trust, "role": role}}
 
 
-def _proposal_down(proposal: Any) -> Any:
-    values = proposal.get("values") if isinstance(proposal, dict) else None
-    if not isinstance(values, dict) or "trust" not in values:
-        return proposal
-    rest = {k: v for k, v in values.items() if k not in ("trust", "role")}
-    old = _down_role(values["trust"], values.get("role", "coder"))
-    return {**proposal, "values": {**rest, "role": old}}
+def _proposals_down() -> None:
+    """Fail closed for the admin agents' open `member_change` consents: a `go` after the
+    downgrade would write a trust × role value the single role may not know, so they are
+    withdrawn and the agent asks again."""
+    bind = op.get_bind()
+    requests = sa.table(
+        "request",
+        sa.column("id"),
+        sa.column("status", sa.String),
+        sa.column("proposal", sa.JSON),
+        sa.column("withdrawn_at", TIMESTAMP),
+        sa.column("withdraw_reason", sa.Text),
+    )
+    now = datetime.now(UTC)
+    rows = bind.execute(
+        sa.select(requests.c.id, requests.c.proposal).where(requests.c.status == "open")
+    ).all()
+    for row in rows:
+        proposal = row.proposal
+        if isinstance(proposal, dict) and proposal.get("kind") == "member_change":
+            bind.execute(
+                sa.update(requests)
+                .where(requests.c.id == row.id)
+                .values(
+                    status="withdrawn",
+                    withdrawn_at=now,
+                    withdraw_reason="withdrawn by the downgrade below trust and role",
+                )
+            )
 
 
 def _end_guests() -> None:
@@ -207,12 +230,16 @@ def _end_guests() -> None:
             )
     for table, column in (("invitation", "voided_at"), ("join_link", "revoked_at")):
         rows = sa.table(
-            table, sa.column("trust", sa.String), sa.column("used_at"), sa.column(column, TIMESTAMP)
+            table,
+            sa.column("trust", sa.String),
+            sa.column("used_at"),
+            sa.column(column, TIMESTAMP),
+            *([sa.column("void_reason", sa.String)] if table == "invitation" else []),
         )
         bind.execute(
             sa.update(rows)
             .where(rows.c.trust == "guest", rows.c.used_at.is_(None), rows.c[column].is_(None))
-            .values({column: now})
+            .values({column: now, **({"void_reason": "trust"} if table == "invitation" else {})})
         )
 
 
@@ -277,7 +304,7 @@ def downgrade() -> None:
     with op.batch_alter_table("request") as batch:
         batch.alter_column("to_role", existing_type=sa.String(32), type_=sa.String(16))
     _rewrite("placement", "id", "new_profile", _profile_down)
-    _rewrite("request", "id", "proposal", _proposal_down)
+    _proposals_down()
     for table in ("membership", "invitation", "join_link"):
         _join_roles(table)
         with op.batch_alter_table(table) as batch:
