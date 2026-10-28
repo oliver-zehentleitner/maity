@@ -60,7 +60,7 @@ class Settings:
     attachment_dir: Path | None = None
     attachment_quota: int = 1024 * 1024 * 1024
     # MAITY_DB_POOL_SIZE, MAITY_DB_MAX_OVERFLOW: the server database's connection pool
-    # (SQLAlchemy's defaults, 5 + 10).
+    # (16 + 16; SQLAlchemy's own defaults are 5 + 10, hub/context/persistence.md).
     db_pool_size: int = 16
     db_max_overflow: int = 16
     # MAITY_DB_POOL_RECYCLE: seconds after which a pooled connection is replaced; 0 never.

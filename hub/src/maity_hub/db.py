@@ -38,8 +38,9 @@ CONNECT_TIMEOUT_SECONDS = 5
 # A name that did not resolve is tried once more after this pause (and as much again, at
 # random): the cluster's DNS answers in bursts and a second try mostly gets through.
 RESOLVE_PAUSE_SECONDS = 0.25
-# A pooled connection older than this is replaced when it is next taken (30 minutes), so that a
-# firewall or a proxy that drops idle connections never hands the hub a dead one.
+# A pooled connection older than this is replaced when it is next taken (30 minutes): it bounds the
+# age of a connection, whatever sits between the hub and the server. A dead one is found by
+# `pool_pre_ping`, which tests every connection as it is taken.
 POOL_RECYCLE_SECONDS = 1800
 
 

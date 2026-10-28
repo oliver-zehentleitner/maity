@@ -572,7 +572,8 @@ is tried once more after 0.25–0.5 s; every other failure, and a second DNS fai
 **Reason:** every new connection is a name lookup and a handshake. On a saturated one-vCPU node the cluster's
 DNS answered in bursts, and the old pool of 5 opened and closed connections under a burst of requests, so each
 burst was a burst of lookups. Reusing connections removes most lookups; the single retry covers the rest, and
-a lookup that fails twice in half a second is a real outage that should be answered 503 at once. The cause is
+a lookup that fails twice, 0.25–0.5 s apart (the pause is the retry's only wait; each attempt also has its own
+connect timeout), is a real outage that should be answered 503 at once. The cause is
 inferred from the log categories, not reproduced.
 
 **Rejected alternatives:**
