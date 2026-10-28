@@ -405,6 +405,8 @@ def patch_member(
         demotes = values.get("role", "owner") != "owner" and target.role == "owner"
         if demotes and _owners(conn, mine.project.id) <= 1:
             raise invalid({"role": "last_owner"}, "the last owner cannot be demoted")
+        if demotes and target.human_id is not None:  # the namespace owner stays (§6.25)
+            namespace.namespace_owner_of(conn, target.human_id, [mine.project.id])
         if "instance" in given and ("paused" not in given or body.paused is not None):
             raise invalid({"instance": "paused_only"}, "instance goes with paused: null")
         pause = ("paused" in given, body.paused.reason if body.paused else None)
@@ -660,6 +662,8 @@ def remove_member(slug: str, member_id: str, request: Request, caller: AnyCaller
             return idempotency.Outcome(202, "request", request_id, _request(conn, request_id))
         if target.role == "owner" and _owners(conn, mine.project.id) <= 1:
             raise invalid({"member": "last_owner"}, "the last owner cannot be removed")
+        if target.human_id is not None:  # the namespace owner stays a member (§6.25)
+            namespace.namespace_owner_of(conn, target.human_id, [mine.project.id])
         apply_remove(conn, change_of(mine, caller), target)
         # The answer goes to the admin who removed it, like a repeated DELETE's.
         return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))

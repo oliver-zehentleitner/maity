@@ -75,3 +75,68 @@ gives a pending upload no audience but its uploader.
 
 **Rejected alternative:** a second limiter with a byte-exact window: new code
 for a cap whose exact edge nobody relies on.
+
+## A message names its attachments in the transaction that writes it, and its payload always carries the list
+
+**Id:** 627630f3-2e12-46bc-9831-55c6b75f865a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-10-27 (`docs/api.md` §8.7: "the post and the binding are one transaction", the error values per id); the payload shape and the body rule are the implementer's reading
+**Revisit when:** a message kind other than a project message or a chat can carry files, or the contract lets a message name an attachment of another member
+**See:** attachments.md#the-blob-is-written-before-the-row-and-removed-when-the-row-never-commits-or-is-gone — 7dcd4850-9dc4-4b4a-9148-e156c8e11718 — as of 2026-10-27
+
+`post_message` checks the named ids before it writes (no store, a closed
+project, more than ten, each id: unknown or already attached; a repeated id
+counts as already attached), puts `attachments` into the payload (metadata
+only, in the order named, `[]` when there are none, so every message has the
+key the contract describes), emits the event, and binds the rows to its
+`seq` in the same transaction. A row that was taken or deleted between the
+check and the bind refuses the whole post, so a message never names a file it
+does not own. The body may be empty when attachments are named: the check is
+a field validator that raises pydantic's own `string_too_short` otherwise, so
+the answer for an empty message is the one it always was.
+
+**Reason:** one transaction means a failed post leaves the uploads pending,
+which the contract asks for, and a bound attachment always has its message.
+
+**Rejected alternative:** relaxing the body's `min_length` and checking in
+`post_message`: it changes the error an empty message has always had.
+
+## Redacting a message tombstones its attachments in the redaction's transaction
+
+**Id:** 588c979f-8c75-4ad4-ab2d-cd19a1921738
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-10-27 (`docs/api.md` §8.7, Retention)
+**Revisit when:** the sweep lands and can take over removing the bytes
+
+`_tombstone` marks every attachment of the message deleted
+(`deleted_reason` `redacted`, `deleted_by` the redactor) in the transaction that
+replaces the payload, and the bytes are removed once it commits
+(`events.on_commit`). No `attachment_deleted` is emitted: `event_redacted` covers
+them. A redacted message has no readable attachments, so the metadata and the
+content answer `not_found`, to its sender too. With the store switched off the
+redaction still goes through and the rows are tombstoned; the bytes then wait
+for the sweep, so a redaction never fails on `attachments_not_configured`.
+
+**Reason:** the payload that named them is gone in the same step, so the rows
+cannot outlive it readable.
+
+## The project view's quota is filled where the caller is known
+
+**Id:** 33db5e76-fc25-413e-9998-dd2a718ff346
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-10-27 (`docs/api.md` §8.7, Quota: `attachments: {used, quota}` for callers with `project:admin`, else `null`)
+**Revisit when:** project views are built with their reader known
+
+`views.project_view` knows no caller, so it takes the pair as an argument and
+the project routes compute it: the caller's membership in the project, then
+`project:admin`, then the sum of the bytes of every attachment not deleted.
+A list of projects does that per project.
+
+**Rejected alternative:** a reader argument on `project_view` for every caller of it
+(replays, the creation answer, events): a wide change for one field.

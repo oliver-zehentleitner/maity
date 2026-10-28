@@ -304,6 +304,9 @@ project = Table(
     Column("state_changed_at", UtcDateTime, nullable=False),
     Column("repository_url", String(255)),
     Column("repository_default_branch", String(255)),
+    # Whether the namespace owner confirmed this URL for their own forge grants (§11.4);
+    # every change of the URL and every transfer sets it back.
+    Column("repository_owner_confirmed", Boolean, nullable=False, server_default=false()),
     Column("keep_the_why", Boolean, nullable=False),
     # The policy (docs/api.md §6.1); its history is in the events.
     Column("policy_preset", String(32), nullable=False),
