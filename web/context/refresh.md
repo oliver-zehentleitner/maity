@@ -209,4 +209,3 @@ between tabs, for the case of several tabs shown at once, which the
 visibility check does not cover. Re-reading the banner's sessions only
 when the count of unread alerts changes: the banner must go when its
 session ends elsewhere with the count unchanged, which only a read finds.
-
