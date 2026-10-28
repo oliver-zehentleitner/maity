@@ -530,3 +530,34 @@ fast adoption and an excellent product, not through licence terms.
   as a service, it only requires publishing changes. The coordinator had
   recommended MIT plus a registered trademark and a contributor
   agreement; the trademark is a separate open reminder.
+
+## Only an instance with a landing page invites search engines, and only to its root
+
+**Id:** 4f798011-3707-4fe7-a825-ad2575d6f395
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request in the project chat, 2026-10-28 (a sitemap for maity.team and maity.dev for the search console); contract `docs/api.md` §16.7 "Search engines"
+**Revisit when:** public projects or discovery pages come (later stage in this file), which would add public URLs worth listing
+
+The hub serves `/robots.txt` and `/sitemap.xml`. While the landing page
+is enabled the robots file allows the root, the static files and the
+two public reads the page is drawn from, and names the sitemap, which
+lists the root; while it is not, the robots file allows only the root,
+which says `noindex` (a crawler must be allowed to fetch a page to read
+its `noindex`), and there is no sitemap.
+
+**Reason:** the hosted instance wants to be found by its landing page;
+a self-hosted or local instance has no public face and should not be
+indexed by default. The landing setting already says which of the two
+an instance is, so it decides this too, without a second switch.
+Everything else the hub serves is behind a sign-in or is a fragment
+route a crawler does not fetch.
+
+**Rejected alternatives:**
+- Allowing the root alone: the landing page is drawn by scripts from a
+  public read; a crawler barred from both sees an empty page.
+- A static `robots.txt` and `sitemap.xml` in the repository: they would
+  invite indexing of every self-hosted instance, or none of them.
+- Listing badges or swarm pages: they are per project and belong to the
+  project's owner, not to the instance's public face.

@@ -151,3 +151,31 @@ The fields refuse C0 control characters other than tab, newline and carriage
 return (`control_character`). Without them a valid page escapes to at most
 three times its size (`\u00e9` for a two-byte character, two `\uXXXX` for a
 four-byte one), and 256 KiB holds every valid page.
+
+## uvicorn keeps idle connections 120 s, longer than a proxy's pool
+
+**Id:** ad270d7b-3905-487e-8046-8de7a2a775c4
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-kpm7wxssthry (long-polls ending early, 2026-10-28); the coordinator's go after the ops agent's evidence; Traefik's counters on maity.team (144 of 350k answers were 502)
+**Revisit when:** the ingress is changed to close its idle backend connections sooner than the hub does, or the early-ending long-polls turn out to have another cause
+**See:** kubernetes.md#the-ingress-is-a-plain-networkingk8siov1-ingress-ingress-nginx-annotations-are-only-defaults — adc362f5-08ef-41e0-ab34-05f07cd5fa26 — as of 2026-10-28
+
+`maity-hub serve` starts uvicorn with `timeout_keep_alive=120` (`cli.KEEP_ALIVE_SECONDS`)
+instead of its default of 5 seconds.
+
+**Reason:** a proxy keeps idle connections to its backend in a pool (Traefik 90 s).
+When the hub closes one after 5 s, the next request the proxy sends on it meets a
+closed socket and the client gets a 502; the hub never sees that request. A
+keep-alive longer than the proxy's removes the race for any proxy. That this is
+what ends the agents' waits is an inference: the 502s exist and fit, but the
+early endings did not reproduce from the ops VM in 80 minutes, so the card stays
+open until the numbers change.
+
+**Rejected alternatives:**
+- Shorten Traefik's idle backend connection timeout instead: it is the cluster's
+  setting, not shipped with the hub, and every other proxy in front of it would
+  have the same race.
+- A retry middleware at the ingress: it hides the 502 for idempotent requests
+  only, and a replayed POST is not safe.

@@ -23,7 +23,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 ## 9
 
 ## A
-- [attachments.md](attachments.md) — without MAITY_ATTACHMENT_DIR the hub starts and uploads say `attachments_not_configured` (open: the contract requires the directory); the blob is written before the row and removed when the row never commits; a pending upload is its uploader's alone and the rate counts 64 KiB units
+- [attachments.md](attachments.md) — without MAITY_ATTACHMENT_DIR the hub starts and uploads say `attachments_not_configured` (the contract agrees since #464, §8.7 "Attachments off"); the blob is written before the row and removed when the row never commits; a pending upload is its uploader's alone and the rate counts 64 KiB units
 - [auth.md](auth.md) — a call's presence and lease side effects commit before the endpoint runs; a runner caller is confined before any route runs; an admin agent's members:admin as two endpoints, not the scope; a session's public id, named browser and system, no address kept once it ends; good standing by password only and `not_implemented` for the mail link until the other methods exist; device-code long-polls read the row, the device cookie holds one value per human; a pending account confined in the same place; no registration before the operator's account exists
 - [availability.md](availability.md) — availability computed on read, the announced state stored and reconciled under the project lock by requests and a one-minute sweep; an agent's first look a silent baseline; a limit only lengthens leases; a human's limit on the account
 
@@ -63,7 +63,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 
 ## N
 - [namespace.md](namespace.md) — projects as `<owner>/<slug>`: `ProjectRoute` hands routes the full name as `slug`, the route rewrite as an idempotent script; old paths answered before routing from the schema's route words (426 for the CLI, 410 otherwise), old badge and swarm addresses as 301 while served; hooks left for handle aliases and request actions; migration 0060's owner rule, its stops and its downgrade; a stale transfer go withdrawn after the rollback, renames counted from events; a slug claim locks the owner's row; transfer without step-up until the second factor (open); ending a human membership checks the namespace owner
-- [notifications.md](notifications.md) — items derived on every read from 30 days of the human's projects with the relations as they are now; positions sealed under a key derived from the instance key, else a stored random key; a held long-poll compares a stamp before it derives again, a few full answers at a time; deriving reads each kind of lookup once per batch
+- [notifications.md](notifications.md) — notification settings store only what the human changed, the defaults fill the rest on read; items derived on every read from 30 days of the human's projects with the relations as they are now; positions sealed under a key derived from the instance key, else a stored random key; a held long-poll compares a stamp before it derives again, a few full answers at a time; deriving reads each kind of lookup once per batch
 
 ## O
 - [outbound.md](outbound.md) — reads whose host comes from data resolve once and connect to the checked address; `routable()` beyond `is_global`; seams instead of a TLS server in tests
@@ -88,7 +88,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 
 ## T
 - [takeovers.md](takeovers.md) — the window settled lazily and by a worker, alike under the project lock; a takeover from a replaced or removed instance is cancelled
-- [testing.md](testing.md) — CI matrix: full check on SQLite, tests on PostgreSQL 17 and MariaDB 11.4; MariaDB stands in for MySQL; races on two real connections, PostgreSQL and MariaDB only
+- [testing.md](testing.md) — CI matrix: full check on SQLite, tests on PostgreSQL 17 and MariaDB 11.4; MariaDB stands in for MySQL; the suite runs in parallel with a database per worker and the wheel job runs a marked subset; races on two real connections, PostgreSQL and MariaDB only
 - [ticker.md](ticker.md) — a ticker item is an event with its dedupe key in a table of its own; shaped per reader where every event view is made; settings replaced key by key; merges read by the probe from the switch-on moment, sections from the diff; the forge webhook answered in the middleware before its body, only ever a trigger
 
 ## U

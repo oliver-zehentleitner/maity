@@ -246,6 +246,7 @@ def _serve(settings: Settings, banner: list[str] | None = None) -> int:
         proxy_headers=False,
         access_log=False,
         timeout_graceful_shutdown=GRACEFUL_SECONDS,
+        timeout_keep_alive=KEEP_ALIVE_SECONDS,
     )
     _Server(config, banner=[*(banner or []), _where(settings)]).run()
     return 0
@@ -261,6 +262,11 @@ def _where(settings: Settings) -> str:
 # A request still running this long after the stop signal is cut off; the long-polls
 # answer at once (`longpoll.begin_shutdown`), so this only bounds a slow request.
 GRACEFUL_SECONDS = 10
+
+# How long an idle connection stays open. uvicorn's own 5 s closes it before a proxy's
+# pool (Traefik keeps idle backend connections 90 s) has dropped it; the next request on
+# it then fails with a 502. Longer than any proxy keeps one.
+KEEP_ALIVE_SECONDS = 120
 
 
 class _Server(uvicorn.Server):

@@ -55,3 +55,41 @@ Not chosen now: it changes when a card counts as done for dependencies,
 releases and the board counts, a separate and larger contract. A new
 report on any closed card: rejected, a `cancelled` card or a merged pull
 request has nothing left to report.
+
+## A merged pull request wakes the done authority, and may close the card
+
+**Id:** ee81b817-86bb-4185-80c6-e0598132d5bd
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's go in the project chat, 2026-10-28, on the coordinator's card tsk-hkb9qe4xn520; contract `docs/api.md` §6.6 "A merge closes the loop", §6.1 `merged_closes`
+**Revisit when:** the done authority closes cards reliably on its own, or a forge other than GitHub reports merges differently
+
+When the probe first sees a card's reported pull request merged (and
+the merge is what was reported), the hub emits `task_merged`, which
+wakes whoever may move the card to `done`. Under the policy
+`merged_closes: auto` it also moves the card to `done` itself, but only
+where the project's done authority is the holder or an admin, and only
+when no dependency or objection hold keeps it. Where the project asks
+for a review or a test, a merge is not one, so `auto` only notifies. A
+move by the hub is no history entry, so the instance statistic
+`reviews` does not count it; it counts in `cards_done`.
+
+**Reason:** on 2026-10-28, 17 of 36 cards in `review` had a pull request
+that was long merged. Reviews ran through messages and the forge, and
+nobody moved the cards, so the instance statistics showed no reviews
+and the board did not show what was finished. The hub already observes
+the merge through the probe; it only has to say so.
+
+**Rejected alternatives:**
+- Closing on every observed merge without conditions: would skip an
+  open objection, a missing test approval or an open child card, which
+  the done rules exist for.
+- Letting `auto` close under `reviewer` or `tester`: the holder can
+  merge on the forge themself, so the merge would replace the review or
+  test the project asked for.
+- A request in the inbox per merge: one per card is noise for a team
+  that merges many small pull requests; an event that wakes the right
+  members and a button do the same.
+- Leaving it to discipline: it had been left to discipline the whole
+  time.
