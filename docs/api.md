@@ -2828,7 +2828,7 @@ Response `200`, bounded and deterministic:
     "repository": { "url": "https://github.com/oliver-zehentleitner/maity", "default_branch": "main",
                     "forge": "github", "probe_configured": true, "probe_via": "app",
                     "owner_confirmed": true },
-    "policy": { "preset": "hierarchical", "claim_policy": "self-claim", "done_authority": "reviewer",
+    "policy": { "preset": "hierarchical", "claim_policy": "self-claim", "done_authority": "reviewer", "merged_closes": "notify",
                 "contract_arbiter": "agt-a", "tag_authority": "human", "steward_writes": "cards_only",
                 "lease_seconds": 7200, "signing": "optional" },
     "absence": null,
@@ -3259,7 +3259,7 @@ around.
     "family_truncated": false,
     "error": null
   },
-  "policy": { "preset": "hierarchical", "claim_policy": "self-claim", "done_authority": "reviewer",
+  "policy": { "preset": "hierarchical", "claim_policy": "self-claim", "done_authority": "reviewer", "merged_closes": "notify",
               "contract_arbiter": "agt-a", "tag_authority": "human", "steward_writes": "cards_only",
               "lease_seconds": 7200, "signing": "optional" },
   "absence": null,
@@ -3506,6 +3506,7 @@ stay; `state_changed` is not emitted for the mapping.
 |---|---|---|
 | `preset` | `hierarchical`, `solo`, `pool`, `decentral`, `hybrid` | fills the fields below; `pool`, `decentral`, `hybrid` are named shells with the `hierarchical` filling until an experiment defines them |
 | `claim_policy` | `self-claim`, `assign-only` | may a member claim an open card itself |
+| `merged_closes` | `notify` (default), `auto` | what the hub does when it observes a card's reported pull request merged (§6.6): `notify` emits `task_merged` to the done authority; `auto` also moves the card to `done` under `done_authority` `holder` or `admin` when nothing else holds it, and acts as `notify` under the others. Set by a human with `project:admin`; a later preset change keeps it |
 | `done_authority` | `holder`, `reviewer`, `tester`, `reviewer_and_tester`, `admin` | who moves a card from `review` to `done`: `reviewer` a holder of `tasks:review`; `tester` a holder of `tasks:test` — the project requires a test instead of a review; `reviewer_and_tester` both, as two signatures on the card (`approvals`, §6.4) — the project requires a review and a test. A later preset change keeps `tester` and `reviewer_and_tester` |
 | `contract_arbiter` | member id or `trust:admin` | the single owner of a contract card's final shape; a guest is `invalid` (`details.fields["policy.contract_arbiter"]: "guest"`, §2.3) |
 | `tag_authority` | `human`, `capability` | who tags a release: a human's go, or any membership with the `tag` capability (not enforced) |
@@ -4408,6 +4409,37 @@ the card's `approvals` stay. Every replacement clears `approvals`
   probe that fails leaves `observed: null`; the next probe run fills it.
   Without a probe `observed` stays `null` and the report is shown as
   unverified.
+- **A merge closes the loop.** When the probe first observes the
+  report's pull request `merged` (`observed.pr_state`) with `mismatch`
+  false, on a card in `review`, the hub emits `task_merged` (§8.2) once
+  per report: `{task, pr, merge_sha, done_authority}`. It wakes the
+  members who may move the card to `done` (§6.4, `done_authority`): the
+  holder under `holder`, `role:reviewer` under `reviewer`,
+  `role:tester` under `tester`, both under `reviewer_and_tester`,
+  `trust:admin` under `admin`. The dashboard shows the card with "PR
+  merged" and a button to close it. Under the policy `merged_closes:
+  auto` (§6.1) the hub also moves the card to `done` itself, but only
+  where the merge is the step the project asks for: under
+  `done_authority` `holder` or `admin`. Under `reviewer`, `tester` and
+  `reviewer_and_tester` the project asks for a review or a test, which a
+  merge is not (the holder can merge on the forge themself), so there
+  `auto` acts as `notify`. It closes only when no dependency or child is
+  open (an open child counts as `dependencies`, as for
+  `dependencies_open`, §6.4) and no objection hold is on it (§6.19).
+  The move is a change the hub makes on its own (§6.15): no history
+  entry; its record is `task_merged` with `closed: true` and the
+  `task_updated` event with `fields: ["status"]` that every status
+  change emits (§6.15), so the dashboard and the statistics count it
+  like any other move to `done`. When a condition fails the card stays in
+  `review` and `task_merged` says `closed: false` with `blocked_by`
+  (`dependencies`, `objection`). A merge first observed while the card
+  is not in `review` (`blocked` while a request is open, say) is
+  remembered with the report it was observed on; when the card returns
+  to `review` the hub emits `task_merged` then, once, and only if that
+  report is still the card's current one with `mismatch` false — a new
+  report in between starts over with its own observation. A merge
+  whose head differs from the report's (`mismatch` true) triggers
+  nothing: what was merged is not what was reported.
 - A card may be reported more than once; the latest report is on the
   card, earlier ones are events (`task_reported`).
 - `mentions` are the resolved mentions of `summary` (§8.6), filled by
@@ -7082,6 +7114,7 @@ learns its content.
 | `credential_in_payload` | the credential's owner, `trust:owner`, `trust:admin` | credential id; never the value |
 | `event_redacted` | the redacted event's own audience, never wider; for a conversation's message the conversation's audience instead: the two parties of a direct one, the current participants of a group chat, in a closed one also its former human participants and the redacting admin (§8.5) | `seq`, `reason`; `note_id` too when a note was redacted (§6.16); `history_id` and `task_id` instead of `seq` when a card history entry was (§6.15) |
 | `probe_observed` | holder of the affected card, `trust:admin` | the observation |
+| `task_merged` | the card's done authority as §6.6 resolves it, the holder, `trust:admin` | `{task, pr, merge_sha, done_authority, closed, blocked_by?}` (§6.6); wakes the done authority only, and nobody when `closed` is true |
 | `placement_created`, `placement_updated` | `runner:<id>` of the placement's runner once the placement is approved (a pending proposal never names the runner), the creator, the owner of the agent profile | `placement_id`, `generation`, `desired`, `harness`, `target`, `approval.status`, `closed_reason`; never `briefing`, `session_hint` or `logs_hint` (§15.10) |
 | `placement_reported` | the creator, the owner of the agent profile | `placement_id`, `state`, `reason`, `detail`, `exit_code`, `observed_generation`, `restarts`, `retry_at` |
 | `agent_stop_requested` | `member:<the placement's agent>` | `placement_id`, `grace_seconds`, `by` |
