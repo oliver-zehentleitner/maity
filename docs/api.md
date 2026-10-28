@@ -3064,8 +3064,10 @@ waits for it and it has not called for events in 10 minutes. An event
 *waits for* an instance when it is wake-relevant for its member (§8.2)
 and the team's wake rule (§8.2 "Team wake", §6.18) points at this
 instance: every instance under `all`, the lead instance under `lead`,
-under `next_free` the instance in `wakes`, or the lead instance when
-the hub chose none because nobody was listening; an `instance:` token
+under `next_free` the instance in `wakes`, or, when the hub chose none
+because nobody was listening, the lead instance when one is set and
+otherwise every instance, as such an event waits in every instance's
+next resume (§8.2); an `instance:` token
 waits for the instance it names only. The session is not listening
 when such an event was created 10 minutes ago or longer (counted from
 its `created_at`), its `seq` is above the session's acknowledged cursor
@@ -3094,7 +3096,8 @@ session that keeps calling other endpoints is still `online` (above).
 An **episode** starts when `not_listening_since` is set. It ends when
 the session's acknowledged cursor reaches the oldest event that was
 waiting — a call that acknowledges nothing (`after=latest`, or a poll
-with the old cursor) does not end it — or when the session ends, or
+with the old cursor) does not end it; the `cursor` a resume sends
+(§5.2) counts as acknowledged for the session it starts — or when the session ends, or
 when one of the exclusions above begins; then `not_listening_since` is
 `null` again. For each episode the hub:
 
