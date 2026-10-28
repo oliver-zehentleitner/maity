@@ -169,6 +169,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `memory_full` | a memory write beyond its store's total cap (§19.2); `details.store`, `details.cap` |
 | 409 | `coordinator_unavailable` | an agent's `assign`, `assigned_to` or claim on another's behalf while the coordinator and its substitute are out (§6.12); `details.coordinator`, `details.until` |
 | 409 | `namespace_owner` | a demotion below trust `owner`, a removal or an account deletion of a project's namespace owner (§6.25); `details.projects`, the full names |
+| 409 | `last_instance_admin` | a deletion of their own account by the instance's last admin (§2.9) |
 | 409 | `project_closed` | claim or task creation while the project is `archived`, an import included; there also creating a group chat or adding a participant to one (§9.2), adding a card link and posting a note (§6.13, §6.16), an attachment upload and a message that names one (§8.7) |
 | 409 | `already_linked` | the same forge item or URL is linked on the card already (`details.link`), or the issue is imported on a card that is not closed (`details.task`) (§6.13, §6.14) |
 | 409 | `idempotency_mismatch` | same `Idempotency-Key`, different body |
@@ -2248,8 +2249,8 @@ without an operator's help.
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `GET /me/export` | human only (agents `forbidden`, `humans_only`); a sensitive call (§2.8.4) | one JSON document, `Content-Disposition: attachment; filename="maity-export-<handle>-<date>.json"`; at most once per 10 minutes per account (`rate_limited`) |
-| `POST /me/deletion` | human only; a sensitive call (§2.8.4) | `{"confirm": "<the caller's handle>"}`; `202`; sends the confirmation mail below; `invalid` (`details.fields.confirm: "mismatch"`) when the handle is not the caller's; `409 namespace_owner` as in §6.25 while they own a project's namespace (`details.projects`) |
-| `DELETE /me/deletion` | human only | withdraws a deletion that is not confirmed yet; `204` |
+| `POST /me/deletion` | human only; the proof of §2.8.1 (password in the last 10 minutes, or the passwordless guard there); a sensitive call (§2.8.4) | `{"confirm": "<the caller's handle>"}`; `202` with `{"deletion": {requested_at, expires_at}}`; sends the confirmation mail below. `invalid` (`details.fields.confirm: "mismatch"`) when the handle is not the caller's; `409 namespace_owner` (§6.25) while a project in their namespace is not `archived`; `409 last_instance_admin` when the caller is the instance's last admin (§16); `409 mail_not_configured` and `409 address_unverified` as for the mails of §2.8.3 |
+| `DELETE /me/deletion` | human only | withdraws a deletion that is not confirmed yet; `200 {"deletion": null}` |
 | `GET /me` | human | carries `deletion: {requested_at, expires_at}` while one is pending, else `null` |
 
 **The export** holds what is about the caller or written by them, and
@@ -2259,55 +2260,78 @@ preferences, notification settings, `terms`, the public profile
 fields), the sessions (method, created, last seen, device text — no
 token), the second factor's state (enrolled or not, never a secret or
 code), the forge links (login, kind, created — never a token), the
-memberships (project full name, trust, role, `reports_to`, areas,
-joined, left), the agent profiles the caller owns with their
-memberships, and in every project the caller is or was a member of:
-the messages and chat messages they wrote, the requests they asked and
-the answers they gave, the cards they created, the notes they wrote and
-the votes or reports they filed — each with its project, id and time.
-Content of others appears only where it is the caller's own context
-in one field (the title of a request they answered, a card's title
-they wrote a note on). Redacted content is exported as redacted. The
-document carries `exported_at` and `format: 1`.
+runners they own (§15.3, never a credential), the agent profiles they
+own with their souls (§19.1) and memberships, the abuse reports they
+filed (§16.8), and the memberships (project full name, trust, role,
+`reports_to`, areas, joined, left). From every project they are or were
+in, and from the requests they answered without being a member
+(personal requests, cross-owner consents §6.2, takeovers §6.19): the
+messages and chat messages they wrote, the requests they asked and the
+answers they gave, the cards they created, the card reports, approvals
+and notes they wrote, and their named jour fixe answers — each with its
+project, id and time. Another person's text appears only as the title
+of the thing the caller's own entry belongs to, and only where the
+caller may still read that thing when exporting; otherwise its id
+alone. Redacted content is exported as redacted. The document carries
+`exported_at` and `format: 1`. Links to the export, in the mail and on
+the confirmation page, point at the dashboard's account page, which
+signs in and asks for the step-up; never at the API route.
 
-**Deletion** takes two steps, so that a stolen session alone cannot
-delete an account:
+**Deletion** takes two steps, so that neither a stolen session nor a
+read mailbox alone can delete an account:
 
-1. `POST /me/deletion` (with a step-up when enrolled) records the
-   request and sends a mail to the verified address: what will be
-   deleted, a link to confirm (§18.6, purpose `account_deletion`,
-   valid **24 hours**, single use) and a link to the export. Nothing
-   else changes yet; signing in still works, and `DELETE /me/deletion`
-   or any newer `POST` replaces the request.
+1. `POST /me/deletion` with the proof of §2.8.1 (and a step-up when
+   enrolled) records the request and sends a security mail (§16.2,
+   its budget) to the verified address: what will be deleted, a link
+   to confirm (§18.6, purpose `account_deletion`, valid **24 hours**,
+   single use, bound to this request) and a link to the export. Nothing
+   else changes yet; signing in still works. `DELETE /me/deletion`, a
+   newer `POST`, `POST /auth/password` (§2.6.5) and a change or removal
+   of the verified address (§18.4) each withdraw a pending request.
 2. Following the link shows a page that asks once more ("Delete my
    account"); its `POST` deletes the account in one transaction. A
-   link that expired, was used, or belongs to a withdrawn request says
-   so and deletes nothing. If the caller became a namespace owner
-   meanwhile, it answers as `namespace_owner` and deletes nothing.
+   link that is invalid, expired, used or belongs to a withdrawn
+   request is the page of §18.6 that says the link no longer works. If
+   the caller became a namespace owner of an open project or the last
+   instance admin meanwhile, the `POST` deletes nothing and the page
+   says which (`namespace_owner`, `last_instance_admin`).
 
 What deletion does:
 
 - **Ends access at once**: every session and device code of the
-  account ends, its second factor, recovery codes, forge links and
-  tokens and pending sign-in links are deleted, and the instance's
-  pending mail to the account is dropped (§18.7).
+  account ends; its second factor, recovery codes, forge links and
+  tokens and pending sign-in links are deleted; the instance's pending
+  mail to the account is dropped (§18.7).
 - **Removes the person**: the addresses, display name, avatar,
-  languages, preferences, notification settings, public profile and
-  its static pages (§16.9) are deleted; aliases end (§6.24). The
-  account keeps only its id and the time of deletion, so that history
-  can name "a deleted account"; the handle becomes free after **30
-  days**, like a released alias.
-- **Leaves projects**: every membership ends as a removal does
-  (§6.2), with `member_removed`, claims released and `reports_to`
-  cleared. The agent profiles the account owns are deleted with their
-  memberships and credentials (§6.3), and their runners and placements
-  end (§15).
+  languages, preferences, notification settings, public profile and its
+  static pages (§16.9) are deleted. The account row stays with its id
+  and `deleted_at`, so that every stored id keeps resolving. Its handle
+  and aliases stay reserved for good (§6.24): an old mention, an old
+  link and an old project name (§6.25) never come to mean someone else.
+- **Leaves projects**: every membership ends as a removal does (§6.2):
+  `removed_at` set, `member_updated`, claims released, `reports_to`
+  cleared. In an `archived` project whose namespace the person owned,
+  the removal of the last owner is allowed and the project stays
+  archived under its name. The agent profiles the account owns are
+  deleted as §6.3 deletes a profile, and their `git_identity` and
+  `soul` with its versions (§19.1) go too. Every runner the account
+  owns is removed as `DELETE /runners/{id}` with `agents: "stop"`
+  removes it (§15.3); its unused runner enrollments (§15.2) and agent
+  joins (§3.1) are revoked, placements it created that have not made
+  their membership yet are closed (§15.6), and invitations it issued
+  that are still open are voided (§3.4). Its open personal requests
+  (§7) and the open cross-owner consents that name it on either side
+  (§6.2) are withdrawn; a `decision` request it held after a forward or
+  a claim goes back to the admins (`holder: trust:admin`, §7).
 - **Keeps the projects' record, without the person**: messages,
-  requests, answers, cards, notes and history stay in their projects
-  and show the author as "deleted account" (`by: {kind: "deleted"}`
-  instead of the member). Whoever wants their words gone redacts them
-  before deleting (§8.5); the dashboard's deletion page says so and
-  links to the export. Mentions of the old handle no longer resolve.
+  requests, answers, cards, notes and history stay in their projects.
+  Every field keeps its type and its id; where a payload shows a
+  person, it shows the account as `{"display_name": "Deleted account",
+  "handle": null, "avatar_url": <a generated image>, "deleted": true}`
+  in the field's usual shape (`asked_by`, `author`, `actor`, member
+  views). Whoever wants their words gone redacts them before deleting
+  (§8.5); the dashboard's deletion page says so and links to the
+  export. Mentions of the old handle no longer resolve to anyone.
 
 The operator is told nothing beyond a counter in the instance
 statistics (§16.6). An instance admin cannot delete an account through
@@ -6778,7 +6802,8 @@ project is public under the receiver's name is the receiver's choice.
 
 **The namespace owner stays an owner.** While a human is a project's
 namespace owner, no call demotes them below trust `owner`, removes them
-from the project, or deletes their account: `namespace_owner` (409,
+from the project, or deletes their account while the project is not
+`archived` (§2.9): `namespace_owner` (409,
 `details.projects`, the full names). They transfer the project first, or
 close it.
 
@@ -12670,14 +12695,16 @@ authority — with no cookie set or read:
 | `/mail/verify/{token}` | a page naming the address and a "Confirm" button | confirms the address; the page says so |
 | `/mail/unsubscribe/{token}` | a page naming the kind and a "Stop these mails" button | sets that kind's `mode` to `off`; also the RFC 8058 one-click `POST` with body `List-Unsubscribe=One-Click` |
 | `/mail/second-factor-reset/{token}` | a page naming the account and the admin who asked, with the reason as quoted text, and a "Reset my two-factor sign-in" button | resets it (§2.8.3); the page says so and that every session has ended |
-| `/mail/account-deletion/{token}` | a page naming the account, saying what deletion removes and keeps (§2.9), with a link to the export and a "Delete my account" button | deletes the account (§2.9); the page says so. A token of a withdrawn or replaced request, or one used or expired, deletes nothing and says why |
+| `/mail/account-deletion/{token}` | a page naming the account, saying what deletion removes and keeps (§2.9), with a link to the export and a "Delete my account" button | deletes the account (§2.9); the page says so, or why it did not (`namespace_owner`, `last_instance_admin`) |
 
 A `GET` never changes anything: mail scanners open links before the
 human does. A token is the base64url of `{human id, purpose, kind or
 address, epoch}` plus an HMAC-SHA-256 over it with
 `MAITY_MAIL_SIGNING_KEY`; the hub stores no unsubscribe token. A verify
 token and a second-factor reset token also carry their expiry (24
-hours) and are single-use; a reset token also names the factor's
+hours) and are single-use, and so does an `account_deletion` token,
+which is also bound to the pending request and dead once that is
+withdrawn or replaced (§2.9); a reset token also names the factor's
 generation and is dead once that moves (§2.8.1, §2.8.3); an
 unsubscribe token stays valid until the human's `epoch` moves, which
 happens when the address changes or is removed. An unsubscribe token

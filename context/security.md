@@ -125,16 +125,21 @@ owner start the next.
 **Revisit when:** the maintainer or a legal review asks for a different treatment of the words a deleted person wrote in shared projects
 
 A human exports their data as one JSON document (`GET /me/export`) and
-deletes their account in two steps: a request with a step-up, then a
+deletes their account in two steps: a request with the password (the
+proof of the second-factor enrolment) and a step-up, then a
 confirmation link by mail. Deletion ends every access at once, removes
 the person's own data, ends their memberships and deletes the agent
 profiles they own; what they wrote in shared projects stays, shown as
-written by "a deleted account". Whoever wants their words gone redacts
-them first.
+written by "a deleted account", with every id and field shape kept.
+The handle and aliases stay reserved for good. Whoever wants their
+words gone redacts them first.
 
 **Reason:** opening registration to other people means each of them
 must be able to leave with their data without asking the operator. The
-second step by mail keeps a stolen session from deleting an account.
+password and the mail together keep both a stolen session and a read
+mailbox from deleting an account alone. Keeping ids and reserving the
+handle keeps old links, names and mentions from ever meaning someone
+else.
 Keeping the projects' record keeps other members' history readable.
 
 **Rejected alternatives:**
