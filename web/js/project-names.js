@@ -89,7 +89,7 @@ window.Maity = window.Maity || {};
   function transferForm(ctx) {
     const p = ctx.project;
     if (!p.owner || p.owner.id !== ctx.me.id) return null;
-    const owners = ctx.members.filter((m) => m.kind === "human" && m.role === "owner" && m.id !== ctx.me.id);
+    const owners = ctx.members.filter((m) => m.kind === "human" && M.trust.owner(m) && m.id !== ctx.me.id);
     const status = M.statusLine();
     if (!owners.length) {
       return h("div", { class: "project-transfer" }, h("h3", null, "Transfer"),

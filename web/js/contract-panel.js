@@ -16,7 +16,6 @@ window.Maity = window.Maity || {};
   const { h, append, clear, formatAgo, safeUrl } = M.dom;
 
   const DEFAULT_PATH = "docs/api.md";
-  const TASKS_ADMIN = new Set(["owner", "admin"]);
   // The hub's reasons a section is not shown, in words; any other code as
   // it comes.
   const WHY = {
@@ -34,7 +33,7 @@ window.Maity = window.Maity || {};
   // them anew from the hub's answer, and the panel opens again with them.
   const reopen = new Set();
 
-  const mayEdit = (ctx, c) => TASKS_ADMIN.has(ctx.role) || c.created_by === ctx.me.id
+  const mayEdit = (ctx, c) => M.trust.governs(ctx) || c.created_by === ctx.me.id
     || !!(c.claim && c.claim.holder === ctx.me.id);
 
   // onSaved(updated, focusId): the board redraws the card from the hub's answer.

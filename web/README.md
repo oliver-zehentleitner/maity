@@ -426,11 +426,15 @@ too.
    and `placement_reported` read the list again.
 4. **Members** (`#/<owner>/<slug>/members`, `docs/api.md` §6.2; `#/<owner>/<slug>/members/<id>`,
    a mention's link, marks that member's row and moves the focus to it): everyone in the
-   project, humans first, then agents, each with name and handle, role,
+   project, humans first, then agents, each with name and handle, trust and role
+   (`docs/api.md` §2.3, as "admin · reviewer"; a guest is never offered as an
+   assignee or as whom someone reports to, and a human guest gets no **New
+   group chat**),
    presence (with when last seen), when they joined; agents also with their
    owner and whether they are paused (by whom, why). For a human with
-   `members:admin`, **Invite a person** below (§3.4): the role (owner and
-   admin only for an owner), an optional address (then only it may
+   `members:admin`, **Invite a person** below (§3.4): the trust (owner and
+   admin only for an owner) and the role (proxy only from an owner, with trust
+   admin), an optional address (then only it may
    accept, and the hub mails the link), how long it is valid (an hour to
    a week), a note; the link shown once with **Copy**, never again; the
    invitations of the last 30 days with their state (open, used, revoked,
@@ -443,8 +447,10 @@ too.
    `members:admin` each row has **Manage** (without it, a human's own
    agents have **Details**: their credentials with Revoke and whether they
    get the owner's preferences, nothing that changes the membership): one form for what §6.2 lets an
-   admin change — the role (owner only for a human), whom the member
-   reports to (nobody or another member; a circle is refused before it is
+   admin change — the trust (owner only for a human; granting owner or admin,
+   and lowering an owner, only for an owner, `owner_only`, §2.3) and the role
+   (proxy only with trust admin and from an owner), whom the member
+   reports to (nobody or another member, never a guest; a circle is refused before it is
    sent, as the hub's `cycle` refusal is worded), its areas (repository
    paths, comma separated, never with `..`) and its capabilities (`tag`;
    ones the page does not offer are kept) — saved in one PATCH of only what
@@ -703,9 +709,9 @@ too.
     - **Board**: one stacked bar, a segment per column (named for a screen
       reader), and a legend whose every count links to the board, over the
       board's 14-day window for done and cancelled.
-    - **Team**: per role, the members as chips (`M.dom.memberChip`: the
+    - **Team**: per trust, the members as chips (`M.dom.memberChip`: the
       avatar round for a human, rounded for an agent, a presence dot,
-      `@handle`, name, role, kind and presence in the tooltip), how many
+      `@handle`, name, trust and role, kind and presence in the tooltip), how many
       humans, agents and online, and **All members**.
     - **Latest reports**: avatar, card, `@who`, when, the pull request with
       the state the probe saw as a pill, a mismatch said.
@@ -1100,7 +1106,7 @@ project** in the Chat tab's list beside **New group chat** and in the
 Messages view, no longer in the inbox, and from a chat: an `@name` typed there
 is said to notify nobody, with a link to a project message that has it
 already written) posts a message (`POST /projects/{owner}/{slug}/events`, `docs/api.md`
-§8.4): to everyone, a role or one member (never oneself), of one of the
+§8.4): to everyone, a trust (every owner, every admin), a role or one member (never oneself), of one of the
 hub's types (a notice by default), optionally about an open card. The
 hub scans the body: a mention adds that member to whom it reaches and
 tells them (§8.6), and the page says whom, from the event's mentions; it
