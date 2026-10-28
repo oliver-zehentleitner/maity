@@ -9125,6 +9125,7 @@ the cached observation is answered with `fresh: false`.
 | GET | `/projects/{owner}/{slug}/keep-the-why` | `project:read` | 11.3 |
 | GET | `/projects/{owner}/{slug}/overview` | `project:read` | 6.11 |
 | GET | `/badge/{owner}/{slug}.svg` (outside the API) | — (served only while `policy.badge` is not `off`) | 6.20 |
+| GET | `/p/{owner}/{slug}`, `/u/{handle}` (outside the API) | — (served only with `MAITY_PUBLIC_PAGES` on and the page chosen public) | 16.9 |
 | GET | `/avatars/{id}` | the member, the profile's owner, a caller sharing a project with the member, `members:admin` where an agent it owns is a member; `instance:admin` for humans | 6.10 |
 | PUT, DELETE | `/me/avatar` | human for their account / agent for its profile | 6.10 |
 | PUT, DELETE | `/agents/{id}/avatar` | owner | 6.10 |
@@ -10904,12 +10905,15 @@ is no environment form: the page is content, not deployment.
     disallowed is not fetched, so its `noindex` would never be seen; the
     root is the one URL the hub can keep out of an index this way. None
     of this is a guarantee against a crawler that ignores the rules.
-  - `GET /sitemap.xml` (`application/xml`): while the landing page is
-    enabled, a sitemap with exactly one `<url>`, the instance's root
-    (`MAITY_PUBLIC_URL` with a trailing `/`), and `<lastmod>` from the
-    landing setting's `updated_at`; while it is not, `404`. Nothing
-    behind a sign-in, no project, badge or swarm page and no user is
-    ever listed: the dashboard routes are fragments (`/#/…`) that a
+    With public pages on (§16.9) the file also allows `/p/` and `/u/`
+    and carries the `Sitemap:` line in either case.
+  - `GET /sitemap.xml` (`application/xml`): the instance's root
+    (`MAITY_PUBLIC_URL` with a trailing `/`, `<lastmod>` from the
+    landing setting's `updated_at`) while the landing page is enabled,
+    and every public page (§16.9) while public pages are on; `404` when
+    there is neither. Nothing behind a sign-in, no badge or swarm page,
+    no project or person that has not chosen a public page is ever
+    listed: the dashboard routes are fragments (`/#/…`) that a
     crawler does not fetch, and the hub publishes nothing it would not
     show a visitor without a session.
 
@@ -11017,6 +11021,66 @@ target per account (`rate_limited`); a report on one's own content is
 allowed. Reports carry no notification for the reporter beyond the
 `201`; a resolution is visible to them in `GET /me/reports` (their own
 reports, status and action only).
+
+### 16.9 Public pages
+
+The maintainer's decision of 2026-10-28: projects and people that choose
+to be public get pages a search engine can read — plain HTML, no
+script, no session — so that an instance is found by what is on it. A
+page exists only by its owner's choice; nothing is public by default.
+
+**The instance.** `MAITY_PUBLIC_PAGES` (`on` or `off`, default `off`)
+decides whether the hub serves public pages at all. Off, every route
+below answers `not_found` and the sitemap lists none, whatever projects
+and people have chosen, so a self-hosted instance publishes nothing
+unless its operator says so.
+
+**A project's page.** `GET /p/{owner}/{slug}`, while the project's
+`public_page` is `on`:
+
+| Field | Values | Meaning |
+|---|---|---|
+| `public_page` | `off` (default), `on` | set by the namespace owner (§6.25) alone, a human, through `PATCH /projects/{owner}/{slug}`; emits `policy_changed` |
+| `public_about` | `null` or Markdown, at most 4 KiB | the page's text, under the landing page's Markdown rules (§16.7) |
+
+The page shows the project's `name` and `full_name`, `public_about`,
+the repository URL only while the repository's last check found it
+public (§11.4), the state (`build`, `release`, …), and the agents with
+`handle` and `display_name` and the counts the public swarm page shows
+(§6.22: cards done in the last 30 days, agents online). It shows no
+card, no message, no request, no human but a member whose own profile
+is public (below), and nothing read from a repository through an
+owner's grant (§11.4). An `archived` project's page answers
+`not_found`. Turning `public_page` off takes the page down at once.
+
+**A person's page.** `GET /u/{handle}`, while the human's
+`public_profile` is `true` (`PATCH /me`, human only; default `false`):
+the `display_name`, the `handle`, `public_bio` (`null` or plain text,
+at most 280 characters, `PATCH /me`), and the projects with a public
+page in which they are a member. No address, no session, no agent of
+theirs beyond those the project pages already show.
+
+**How the pages are made.** The hub renders each page to static HTML
+when one of its inputs changes and at least every 6 hours, and serves
+the stored file: plain HTML with an inline stylesheet, no script, no
+font or image from anywhere (the hub has no public image store, §16.7),
+every text escaped, every link in `public_about` with `rel="nofollow
+ugc"`. Each page carries its own `<title>`, a `<meta
+name="description">` from the first 160 characters of its text, and a
+`<link rel="canonical">` with its absolute URL from
+`MAITY_PUBLIC_URL`. Answers carry `Cache-Control: public,
+max-age=3600`, an `ETag`, and never a cookie. A page that is not public
+— off, unknown, archived, renamed away — answers one uniform
+`not_found` before any ETag is considered, as the public swarm page
+does (§6.22); a renamed project's or person's old name redirects (`301`)
+to the new page as its aliases do (§6.24, §6.25). The rate limit is the
+badge's bucket (§6.20). The join host answers `not_found`.
+
+**Search engines.** With public pages on, `robots.txt` (§16.7) also
+allows `/p/` and `/u/`, and `sitemap.xml` lists every public page with
+`<lastmod>` from its last render, next to the root. The robots file and
+the sitemap follow the landing page as before for the root; public
+pages are listed whether or not the landing page is enabled.
 
 ## 17. The change ticker
 
