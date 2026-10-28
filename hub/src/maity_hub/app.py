@@ -41,6 +41,7 @@ from maity_hub.mail import outbox
 from maity_hub.mail import settings as mail
 from maity_hub.mail.environment import MailConfigError
 from maity_hub.middleware import HubMiddleware
+from maity_hub.notifications import mailer
 from maity_hub.routes import (
     admin,
     agents,
@@ -152,7 +153,12 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         sweeper = attachments.Worker(engine, file_store) if file_store is not None else None
         if sweeper is not None:
             sweeper.start()
+        notify_worker = mailer.Worker(
+            engine, settings.mail, settings.secret_key, settings.public_url
+        )
+        notify_worker.start()
         yield
+        notify_worker.stop()
         if sweeper is not None:
             sweeper.stop()
         mail_worker.stop()
