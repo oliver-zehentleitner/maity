@@ -209,6 +209,8 @@ def _apply_policy(
         arbiter = change.contract_arbiter
         if arbiter != "trust:admin" and not _is_member(conn, project_id, arbiter):
             errors["policy.contract_arbiter"] = "not_a_member"
+        elif arbiter != "trust:admin" and _is_guest(conn, project_id, arbiter):
+            errors["policy.contract_arbiter"] = "guest"
         proposed["contract_arbiter"] = arbiter
     if change.coordinator is not None:
         if (
@@ -254,6 +256,10 @@ def _agent_role(conn: Connection, project_id: str, member_id: str) -> str | None
     if row is None:
         return None
     return "admin" if in_admin_team(row.trust, row.role) else str(row.role)
+
+
+def _is_guest(conn: Connection, project_id: str, principal: str) -> bool:
+    return bool(member_row(conn, project_id, principal).trust == "guest")
 
 
 def _is_member(conn: Connection, project_id: str, principal: str) -> bool:
