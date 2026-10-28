@@ -33,3 +33,25 @@ would roll back the budget.
 alone: they leave a second redemption path or let distributed guesses multiply
 the human's allowed guesses. The limits and continued validity of the links are
 contract requirements, not new policy introduced by this implementation.
+
+## Mail sign-in becomes available only with its complete first-factor path
+
+**Id:** 36284c53-8139-4c41-99c0-9123e9e2c4f2
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §2.6 and §2.8; coordinator review of the predecessor entry, 2026-10-28
+
+The instance advertises mail sign-in only when the method, SMTP and signing
+key are available. Both redemption paths use the same second-factor entry
+point as password login; owning the mailbox proves only the first factor.
+The earlier `not_implemented` guard is removed with the routes, grant state,
+mail delivery and invalidation hooks in this change.
+
+**Reason:** the old guard prevented advertising an unavailable method. Once
+that path exists, keeping the guard would hide a working method; issuing a
+full session directly would instead bypass an enrolled human's second factor.
+
+**Rejected alternatives:** retaining the placeholder after implementation, or
+creating sessions directly from a valid mailed proof instead of entering the
+existing second-factor flow.

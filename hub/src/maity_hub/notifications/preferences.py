@@ -362,6 +362,10 @@ def patch(
         .where(t.notification_settings.c.human_id == human.id)
         .values(preferences=stored, updated_at=clock.now())
     )
+    if email.get("sign_in_link") is False:
+        from maity_hub.auth import email_links
+
+        email_links.void_human(conn, human.id)
     return status
 
 

@@ -24,7 +24,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 
 ## A
 - [attachments.md](attachments.md) — without MAITY_ATTACHMENT_DIR the hub starts with attachments off and every attachment call says `attachments_not_configured` (the coordinator's ruling, #464); the blob is written before the row and removed when the row never commits; a pending upload is its uploader's alone and the rate counts 64 KiB units; a message names its attachments in its own transaction and always carries the list; redaction tombstones them with the message; the project view's quota is filled where the caller is known; the sweep keeps rows and bytes equal and trusts no young blob; an owner outside the project reads a group chat's files through a gated stand-in row; deleting a sent file follows who the message is for
-- [auth.md](auth.md) — a call's presence and lease side effects commit before the endpoint runs; a runner caller is confined before any route runs; an admin agent's members:admin as two endpoints, not the scope; a session's public id, named browser and system, no address kept once it ends; good standing by password only and `not_implemented` for the mail link until the other methods exist; device-code long-polls read the row, the device cookie holds one value per human; a pending account confined in the same place; no registration before the operator's account exists; two-factor: enrolment derived per call, the second step re-keys the session, wrong codes counted in the process
+- [auth.md](auth.md) — a call's presence and lease side effects commit before the endpoint runs; a runner caller is confined before any route runs; an admin agent's members:admin as two endpoints, not the scope; a session's public id, named browser and system, no address kept once it ends; the initial password-only standing and mail-link placeholder (superseded); device-code long-polls read the row, the device cookie holds one value per human; a pending account confined in the same place; no registration before the operator's account exists; two-factor: enrolment derived per call, the second step re-keys the session, wrong codes counted in the process
 - [availability.md](availability.md) — availability computed on read, the announced state stored and reconciled under the project lock by requests and a one-minute sweep; an agent's first look a silent baseline; a limit only lengthens leases; a human's limit on the account
 
 ## B
@@ -35,7 +35,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 ## D
 
 ## E
-- [email-links.md](email-links.md) — a link and its browser-bound code spend one grant; guesses and the daily human budget share the human row lock
+- [email-links.md](email-links.md) — a link and its browser-bound code spend one grant; guesses and the daily human budget share the human row lock; the complete mail first-factor path replaces the unavailable-method guard and preserves the second factor
 - [events.md](events.md) — the long-poll waits on an asyncio event in-process, never on the database; a runner's stream reads every project it was ever attached to; mention pings counted in process, given back when the write does not commit; shared environments computed from live sessions, only announcements stored; the project message listing runs the events through the same read rule in Python, with a cursor bound to its query; an episode of not listening stored on the session, checked by a minute worker
 
 

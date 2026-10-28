@@ -33,7 +33,7 @@ def conn(engine: Engine) -> Iterator[Connection]:
 def issue(
     conn: Connection, pending: str = "browser-one", source: str = "192.0.2.1"
 ) -> links.Issued:
-    return links.issue(
+    issued = links.issue(
         conn,
         human_id=HUMAN,
         address_epoch=1,
@@ -42,6 +42,9 @@ def issue(
         next_path="/",
         signing_key=KEY,
     )
+
+    assert issued is not None
+    return issued
 
 
 def test_code_and_link_are_the_same_single_use_grant(conn: Connection) -> None:

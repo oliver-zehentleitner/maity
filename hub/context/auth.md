@@ -128,7 +128,8 @@ text into the dashboard.
 
 **Id:** a6967e81-d77f-45dd-b5ab-dbd5628d7c8a
 **Type:** workaround
-**Status:** needs-review
+**Status:** superseded
+**Superseded by:** 36284c53-8139-4c41-99c0-9123e9e2c4f2
 **Evidence:** inferred
 **Source:** docs/api.md §2.6.5, §2.6.6; the implementation of tsk-bjmkt2akq5dn, 2026-10-23
 **Revisit when:** the device code (§2.6.2) or the sign-in link (§2.6.3) lands, or account records (§18.1) exist

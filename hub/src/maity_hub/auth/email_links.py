@@ -73,11 +73,24 @@ def issue(
     source: str,
     next_path: str,
     signing_key: bytes,
-) -> Issued:
+    requested_at: datetime | None = None,
+) -> Issued | None:
     """Issue only after lookup. Unknown addresses never get a row or an account lookup
     on the response path. The pending value was already generated for every request."""
     lock_human(conn, human_id)
     now = clock.now()
+    requested_at = requested_at or now
+    newer = conn.execute(
+        select(t.email_sign_in.c.nonce_hash)
+        .where(
+            t.email_sign_in.c.human_id == human_id,
+            t.email_sign_in.c.source == source,
+            t.email_sign_in.c.created_at > requested_at,
+        )
+        .limit(1)
+    ).first()
+    if newer is not None or requested_at + LIFETIME <= now:
+        return None
     conn.execute(
         update(t.email_sign_in)
         .where(
@@ -92,7 +105,7 @@ def issue(
     code = (
         f"{secrets.randbelow(1_000_000):06d}" if _daily(conn, human_id).wrong_codes < 20 else None
     )
-    expires = now + LIFETIME
+    expires = requested_at + LIFETIME
     conn.execute(
         insert(t.email_sign_in).values(
             nonce_hash=hashed,
@@ -103,7 +116,7 @@ def issue(
             next_path=next_path,
             code_mac=code_mac(signing_key, hashed, code) if code is not None else None,
             wrong_codes=0,
-            created_at=now,
+            created_at=requested_at,
             expires_at=expires,
         )
     )
