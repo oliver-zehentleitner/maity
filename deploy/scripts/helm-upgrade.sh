@@ -59,26 +59,28 @@ fi
 kubectl -n "$NAMESPACE" delete job "$RELEASE-maity-hub-migrate" --ignore-not-found >/dev/null ||
   { echo "could not remove the old migrate Job" >&2; restored=1; exit 1; }
 
+# Scale down only when the Deployment wants replicas; whatever it wants, Helm starts only when no
+# pod of the release is left, so a hub found at 0 with pods still terminating is not migrated against.
 if [ "$replicas" != 0 ]; then
   kubectl -n "$NAMESPACE" scale "deploy/$DEPLOYMENT" --replicas=0 ||
     { echo "could not scale $DEPLOYMENT to 0; no upgrade was started" >&2; exit 1; }
-  waited=0
-  while :; do
-    pods=$(kubectl -n "$NAMESPACE" get pods -l "$SELECTOR" -o name) ||
-      { echo "could not list the hub's pods; no upgrade was started" >&2; exit 1; }
-    [ -z "$pods" ] && break
-    if [ "$waited" -ge "$STOP_TIMEOUT" ]; then
-      echo "the hub's pods are still there after ${STOP_TIMEOUT}s ($pods); no upgrade was started" >&2
-      exit 1
-    fi
-    sleep 2; waited=$((waited + 2))
-  done
-  echo "the hub is stopped"
 fi
+waited=0
+while :; do
+  pods=$(kubectl -n "$NAMESPACE" get pods -l "$SELECTOR" -o name) ||
+    { echo "could not list the hub's pods; no upgrade was started" >&2; exit 1; }
+  [ -z "$pods" ] && break
+  if [ "$waited" -ge "$STOP_TIMEOUT" ]; then
+    echo "the hub's pods are still there after ${STOP_TIMEOUT}s ($pods); no upgrade was started" >&2
+    exit 1
+  fi
+  sleep 2; waited=$((waited + 2))
+done
+echo "the hub is stopped"
 
 helm -n "$NAMESPACE" upgrade "$RELEASE" "$CHART" --wait --timeout "$HELM_TIMEOUT" "$@"
 helm_status=$?
-[ "$helm_status" = 0 ] || echo "helm upgrade failed ($helm_status); the hub goes back on the old release" >&2
+[ "$helm_status" = 0 ] || echo "helm upgrade failed ($helm_status); the hub is scaled back to $replicas replica(s) as it is deployed now (check helm history)" >&2
 
 status=$helm_status
 restore || { echo "scaling back failed" >&2; [ "$status" = 0 ] && status=3; }

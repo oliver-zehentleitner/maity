@@ -43,11 +43,12 @@ STUB
 chmod +x "$work/bin/"*
 
 failures=0
-run() { # name, FAIL value, initial replicas, expected exit, expect helm (yes/no), expected final replicas
-  local name=$1 fail=$2 initial=$3 want=$4 helm=$5 final=$6
+run() { # name, FAIL value, initial replicas, expected exit, expect helm (yes/no), expected final replicas, [pods left]
+  local name=$1 fail=$2 initial=$3 want=$4 helm=$5 final=$6 podsleft=${7:-}
   export STUB_STATE="$work/$name"; mkdir -p "$STUB_STATE"
   echo "$initial" > "$STUB_STATE/initial"; echo "$initial" > "$STUB_STATE/replicas"
   echo pod/hub-1 > "$STUB_STATE/pods"; : > "$STUB_STATE/log"
+  [ "$initial" = 0 ] && [ "$podsleft" != yes ] && : > "$STUB_STATE/pods"
   PATH="$work/bin:$PATH" FAIL=$fail STOP_TIMEOUT=4 DUMP_CRONJOB=dump \
     "$here/helm-upgrade.sh" -f values.yaml >"$STUB_STATE/out" 2>&1
   local got=$? ran=no; grep -q '^helm ' "$STUB_STATE/log" && ran=yes
@@ -68,4 +69,5 @@ run helm       helm       1 7 yes 1
 run restore    restore    1 3 yes 0
 run rollout    rollout    1 4 yes 1
 run initial0   none       0 0 yes 0
+run initial0_pods none    0 1 no  0 yes
 [ "$failures" = 0 ] && echo "all scenarios pass" || { echo "$failures scenario(s) failed"; exit 1; }
