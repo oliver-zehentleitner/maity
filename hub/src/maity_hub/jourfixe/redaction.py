@@ -23,6 +23,7 @@ from maity_hub.errors import ApiError, invalid, not_found
 from maity_hub.events import Actor, emit, lock_project
 from maity_hub.jourfixe import answers
 from maity_hub.jourfixe.answers import refused
+from maity_hub.scopes import in_admin_team
 
 REDACTED_TITLE = "[redacted jour fixe proposal]"
 REDACTED_TEXT = "[redacted]"
@@ -311,7 +312,11 @@ def _redact_answer(
         allowed = (
             moderator
             or (human and mine.may("events:admin"))
-            or (human and mine.trust in ("owner", "admin") and not answers.window_open(round_row))
+            or (
+                human
+                and in_admin_team(mine.trust, mine.role)
+                and not answers.window_open(round_row)
+            )
         )
     else:
         allowed = moderator or (human and (own or mine.may("events:admin")))

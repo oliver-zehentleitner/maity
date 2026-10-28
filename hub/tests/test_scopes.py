@@ -4,7 +4,15 @@ from __future__ import annotations
 
 import pytest
 
-from maity_hub.scopes import GOVERNANCE, ROLES, TRUSTS, in_admin_team, scopes_for, tokens_of
+from maity_hub.scopes import (
+    GOVERNANCE,
+    ROLES,
+    TRUSTS,
+    in_admin_team,
+    listed_scopes,
+    scopes_for,
+    tokens_of,
+)
 
 CODER = {"project:read", "tasks:write", "requests:ask", "events:post"}
 # The role table: what each role grants on its own, before any trust.
@@ -14,6 +22,7 @@ ROLE_TABLE = {
     "tester": CODER | {"tasks:test"},
     "designer": CODER,
     "ops": CODER | {"releases:write", "agents:propose", "ticker:post"},
+    "writer": CODER,
     "proxy": CODER,
 }
 HUMAN_ONLY = {"project:admin", "members:admin", "events:admin", "credentials:admin"}
@@ -65,3 +74,18 @@ def test_trust_admin_never_resolves_to_a_proxy() -> None:
     assert tokens_of("owner", "coder") == {"role:coder", "trust:owner"}
     assert not in_admin_team("admin", "proxy")
     assert in_admin_team("owner", "designer")
+
+
+def test_a_proxy_agent_is_never_listed_with_members_admin() -> None:
+    assert "members:admin" in listed_scopes("admin", "coder", "agent")
+    assert "members:admin" not in listed_scopes("admin", "proxy", "agent")
+
+
+def test_a_human_proxy_decides_no_jour_fixe_proposal() -> None:
+    from types import SimpleNamespace
+
+    from maity_hub.jourfixe.triage import may_decide
+
+    assert may_decide(SimpleNamespace(kind="human", trust="admin", role="coder"))
+    assert not may_decide(SimpleNamespace(kind="human", trust="admin", role="proxy"))
+    assert not may_decide(SimpleNamespace(kind="agent", trust="admin", role="proxy"))

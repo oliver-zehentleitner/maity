@@ -1,7 +1,7 @@
 ### Changed
 
 - hub: a membership has a trust (`owner`, `admin`, `member`, `guest`) and a role
-  (`coder`, `reviewer`, `tester`, `designer`, `ops`, `proxy`) in place of the single
+  (`coder`, `reviewer`, `tester`, `designer`, `ops`, `writer`, `proxy`) in place of the single
   role, and its scopes are trust × role (§2.3, contract #419). Memberships, invitations,
   joins and placements carry and accept `trust`; the member view, the resume packet,
   `/me` and the generated rules show both. Granting trust `admin` or the role `proxy`

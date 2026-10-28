@@ -64,10 +64,9 @@ def _membership_of(conn: Connection, project_id: str, member_id: str) -> Any:
 
 
 def may_decide(mine: Any) -> bool:
-    """An admin agent, or a human with trust `owner` or `admin` (§20.6)."""
-    if mine.kind == "agent":
-        return in_admin_team(mine.trust, mine.role)
-    return bool(mine.trust in ("owner", "admin"))
+    """A member of the admin team, agent or human: trust `owner` or `admin`, never a
+    proxy (§20.6, §2.3)."""
+    return in_admin_team(mine.trust, mine.role)
 
 
 def _basis_errors(conn: Connection, mine: Any, basis: dict[str, Any]) -> dict[str, str]:

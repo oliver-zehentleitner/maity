@@ -389,3 +389,26 @@ def test_areas_are_plain_paths(owner: flow.Human, area: str) -> None:
 
 def test_ordinary_areas_are_fine(owner: flow.Human) -> None:
     flow.join(owner, "maity", areas=["/", "hub/", "context/", "docs/api.md", "web/js/app.js"])
+
+
+def test_a_new_instance_of_an_admin_agent_is_the_owners_to_give(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """A join that leaves trust and role out takes the member's own: for an agent the
+    owner raised to trust `admin`, that is a credential with trust admin, which only an
+    owner hands out, even to the agent's own human (§2.3 "The owner's rights")."""
+    from tests import factory
+
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    deputy = flow.human(make_client, migrated, "deputy")
+    factory.membership(migrated, project_id, "admin", human_id=deputy.id)
+    agent = flow.agent(make_client, deputy, "maintainer/maity")
+    members = "/projects/maintainer/maity/members"
+    assert owner.patch(f"{members}/{agent.id}", {"trust": "admin"}).status_code == 200
+    deputy.patch(f"{members}/{agent.id}", {"team": {"max_instances": 3}})
+    refused = deputy.post(
+        "/projects/maintainer/maity/joins", {"agent": {"id": agent.id}, "new_instance": True}
+    )
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"] == {"reason": "owner_only"}

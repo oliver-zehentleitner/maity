@@ -149,6 +149,7 @@ def audience(conn: Connection, project_id: str, *also: str) -> list[str]:
             t.membership.c.project_id == project_id,
             t.membership.c.human_id.is_not(None),
             t.membership.c.trust.in_(("owner", "admin")),
+            t.membership.c.role != "proxy",  # holds no members:admin (§2.3)
             t.membership.c.active.is_(True),
         )
         .order_by(t.membership.c.joined_at)

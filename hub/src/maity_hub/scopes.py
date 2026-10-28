@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 TRUSTS = ("owner", "admin", "member", "guest")
-ROLES = ("coder", "reviewer", "tester", "designer", "ops", "proxy")
+ROLES = ("coder", "reviewer", "tester", "designer", "ops", "writer", "proxy")
 # The roles below governance: what a member's own agent may hold (§3.1), and what an
 # admin agent sets on the memberships it manages (§2.3 ᵃ) besides `ops`.
-WORK_ROLES = ("coder", "reviewer", "tester", "designer")
+WORK_ROLES = ("coder", "reviewer", "tester", "designer", "writer")
 # The tokens a request, a message or a setting names (§7, §8.2): `trust:<trust>`
 # for the two governing trusts, `role:<role>` for every role.
 TOKEN_TRUSTS = ("owner", "admin")
@@ -18,6 +18,7 @@ _ROLE_SCOPES: dict[str, tuple[str, ...]] = {
     "tester": (*_CODER, "tasks:test"),
     "designer": _CODER,
     "ops": (*_CODER, "releases:write", "agents:propose", "ticker:post"),
+    "writer": _CODER,
     "proxy": _CODER,
 }
 # Trust `owner` and `admin` add these on top of the role's (§2.3).
@@ -84,10 +85,10 @@ def scopes_for(trust: str, role: str, kind: str) -> list[str]:
 
 
 def listed_scopes(trust: str, role: str, kind: str) -> list[str]:
-    """The scopes a membership is shown to hold (§5.2): an agent with trust `admin` is
+    """The scopes a membership is shown to hold (§5.2): an admin agent (never a proxy) is
     listed with `members:admin`, which it holds only within ᵃ, checked per endpoint and
     never granted by `has_scope`."""
-    limited = {"members:admin"} if kind == "agent" and trust == "admin" else set()
+    limited = {"members:admin"} if kind == "agent" and in_admin_team(trust, role) else set()
     return [s for s in SCOPES if s in scopes_for(trust, role, kind) or s in limited]
 
 

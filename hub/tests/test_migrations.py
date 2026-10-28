@@ -230,6 +230,10 @@ def test_trust_and_role_maps_every_stored_role_and_token_both_ways(engine: Engin
     )
     owner = factory.human(engine, "boss")
     owner_row = factory.membership(engine, project, "owner", human_id=owner)
+    # An owner whose role is not coder stays an owner on the way down.
+    designer = factory.membership(
+        engine, project, "designer", trust="owner", human_id=factory.human(engine, "maker")
+    )
     seats = {
         "admin": ("admin", "coder"),
         "proxy": ("admin", "proxy"),
@@ -271,6 +275,8 @@ def test_trust_and_role_maps_every_stored_role_and_token_both_ways(engine: Engin
                 priority="normal", to_kind="role", to_role="trust:admin",
                 asked_by=agents["coder"].membership_id, while_open="wait", status="open",
                 created_at=now, forwarding=[{"to": "trust:admin"}],
+                proposal={"kind": "member_change", "action": "patch",
+                          "values": {"trust": "guest", "role": "coder"}},
                 **{"class": "decision"},
             )
         )  # fmt: skip
@@ -288,7 +294,11 @@ def test_trust_and_role_maps_every_stored_role_and_token_both_ways(engine: Engin
         old: dict[int, str] = {
             r[0]: r[1] for r in conn.exec_driver_sql("SELECT id, role FROM membership")
         }
-        assert old[owner_row] == "owner"
+        assert old[owner_row] == old[designer] == "owner"
+        proposal = conn.execute(select(t.request.c.proposal)).scalar()
+        assert proposal is not None and proposal["values"] == {
+            "role": "member"
+        }  # guest has no older name
         expected = {
             "admin": "admin", "proxy": "proxy", "reviewer": "reviewer", "coder": "member",
             "tester": "member", "guest": "member",
@@ -313,7 +323,9 @@ def test_trust_and_role_maps_every_stored_role_and_token_both_ways(engine: Engin
     with engine.connect() as conn:
         rows = conn.execute(select(t.membership.c.id, t.membership.c.trust, t.membership.c.role))
         back = {r.id: (r.trust, r.role) for r in rows}
-        assert back[owner_row] == ("owner", "coder")
+        assert back[owner_row] == back[designer] == ("owner", "coder")
+        proposal = conn.execute(select(t.request.c.proposal)).scalar()
+        assert proposal is not None and proposal["values"] == {"trust": "member", "role": "coder"}
         for name in ("admin", "proxy", "reviewer", "coder"):
             assert back[agents[name].membership_id] == seats[name]
         # What the single role could not hold comes back as a member coder.

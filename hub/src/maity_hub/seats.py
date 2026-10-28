@@ -58,6 +58,7 @@ def _deciders(conn: Connection, project_id: str) -> list[str]:
             t.membership.c.project_id == project_id,
             t.membership.c.human_id.is_not(None),
             t.membership.c.trust.in_(("owner", "admin")),
+            t.membership.c.role != "proxy",  # a proxy holds no seat and names none (§2.3)
             t.membership.c.active.is_(True),
         )
         .order_by(t.membership.c.joined_at)

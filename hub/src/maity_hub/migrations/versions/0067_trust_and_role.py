@@ -13,7 +13,8 @@ stored: `role:owner` becomes `trust:owner`, `role:admin` `trust:admin`, `role:me
 every event audience, a request's `to` (`to_role` now holds the whole token) and its
 forwarding steps, the project's `contract_arbiter`, `coordinator` and
 `settings.onboarding.check_in_with`, a membership's `availability_policy.substitutes`,
-and a card contract's `arbiter`. Event payloads are the record of what was said then
+a card contract's `arbiter`, and the values of an open `member_change` consent, which
+its `go` applies later. Event payloads are the record of what was said then
 and stay as they are.
 
 The downgrade maps back: `guest` becomes `member`, and the roles the single role did
@@ -115,6 +116,24 @@ def _profile_down(profile: Any) -> Any:
     return {**rest, "role": _down_role(profile["trust"], profile.get("role", "coder"))}
 
 
+def _proposal_up(proposal: Any) -> Any:
+    """An open `member_change` consent's values, which a `go` applies later (§2.3 ᵃ)."""
+    values = proposal.get("values") if isinstance(proposal, dict) else None
+    if not isinstance(values, dict) or "role" not in values or "trust" in values:
+        return proposal
+    trust, role = UP_ROLE.get(values["role"], ("member", "coder"))
+    return {**proposal, "values": {**values, "trust": trust, "role": role}}
+
+
+def _proposal_down(proposal: Any) -> Any:
+    values = proposal.get("values") if isinstance(proposal, dict) else None
+    if not isinstance(values, dict) or "trust" not in values:
+        return proposal
+    rest = {k: v for k, v in values.items() if k not in ("trust", "role")}
+    old = _down_role(values["trust"], values.get("role", "coder"))
+    return {**proposal, "values": {**rest, "role": old}}
+
+
 def _stored_tokens(mapping: dict[str, str], to_role: Callable[[str], str]) -> None:
     def tokens(value: Any) -> Any:
         return _tokens(value, mapping)
@@ -147,6 +166,7 @@ def upgrade() -> None:
     with op.batch_alter_table("request") as batch:  # `role:` and a 24-character name
         batch.alter_column("to_role", existing_type=sa.String(16), type_=sa.String(32))
     _rewrite("placement", "id", "new_profile", _profile_up)
+    _rewrite("request", "id", "proposal", _proposal_up)
     _stored_tokens(UP_TOKEN, lambda bare: UP_TO_ROLE.get(bare, f"role:{bare}"))
     with op.batch_alter_table("project") as batch:
         batch.alter_column(
@@ -173,6 +193,7 @@ def downgrade() -> None:
     with op.batch_alter_table("request") as batch:
         batch.alter_column("to_role", existing_type=sa.String(32), type_=sa.String(16))
     _rewrite("placement", "id", "new_profile", _profile_down)
+    _rewrite("request", "id", "proposal", _proposal_down)
     for table in ("membership", "invitation", "join_link"):
         _join_roles(table)
         with op.batch_alter_table(table) as batch:

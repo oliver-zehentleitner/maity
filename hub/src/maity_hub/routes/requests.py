@@ -926,6 +926,7 @@ def _holder_audience(conn: Connection, mine: Membership, row: Any) -> list[str]:
             select(t.membership.c.human_id).where(
                 t.membership.c.project_id == row.project_id,
                 t.membership.c.trust == "admin",
+                t.membership.c.role != "proxy",  # the pool is the admin team's (§2.3)
                 t.membership.c.human_id.is_not(None),
                 t.membership.c.active.is_(True),
             )

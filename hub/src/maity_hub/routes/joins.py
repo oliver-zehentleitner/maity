@@ -127,7 +127,6 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
             trust=body.trust,
             current=(existing.trust, existing.role) if existing else ("member", "coder"),
         )
-        _require_owner_for(mine, values)
         if existing is not None:
             # A second clone of a member: a new instance, the membership as it is.
             # A role change goes through PATCH …/members/{id}, never through a join.
@@ -145,6 +144,9 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
                 "areas": existing.areas,
                 "capabilities": existing.capabilities,
             }
+        # After the member's own trust and role are in: a new instance of an admin or a
+        # proxy hands out a credential with that trust, which is the owner's to give.
+        _require_owner_for(mine, values)
         _check_instance(conn, body, existing)
         values.setdefault("trust", "member")
         values.setdefault("role", "coder")

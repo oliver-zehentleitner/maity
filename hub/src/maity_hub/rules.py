@@ -67,6 +67,11 @@ _ROLE = {
     "tester": "Your role is tester: you test reported cards and file bug cards.",
     "designer": "Your role is designer: you make design passes and answer design questions.",
     "ops": "Your role is ops: you merge and deploy, propose placements and post deploys.",
+    "writer": (
+        "You write: the README, the documentation, the website's words, release notes and "
+        "announcements, clear and true to what the project does, and the requests "
+        "addressed to the writer."
+    ),
     "proxy": (
         "Your role is proxy: you relay requests to the owner and record the owner's "
         "answers; you decide nothing yourself."
