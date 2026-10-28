@@ -1509,6 +1509,9 @@ def pair_exchange(run: Run, pair_line: str) -> tuple[int, dict, str]:
 def runners_step(run: Run, page: Page) -> None:
     """The instance-level Runners view (docs/api.md §15.2, §15.3) against the hub."""
     page.goto(f"{run.base}/#/owner/e2e-alpha/members")
+    # A hash-only goto returns before the page renders anew, and that render
+    # replaces the header: a menu opened on the old one is gone mid-click.
+    expect(page.locator("main section.view-members")).to_be_visible()
     # Runners are the person's: in the gear menu, not the project row (tsk-cb6myw32def0).
     expect(page.locator("nav.switcher").get_by_role("link", name="Runners", exact=True)).to_have_count(0)
     page.locator("header").get_by_role("button", name="Settings", exact=True).click()

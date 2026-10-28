@@ -14,6 +14,7 @@ from pydantic_core import PydanticCustomError
 from sqlalchemy import Connection, delete, insert, select, update
 
 from maity_hub import (
+    attachments,
     availability,
     clock,
     idempotency,
@@ -263,12 +264,36 @@ def _export(project: Any, request: Request) -> dict[str, Any] | None:
     return ktw.export_for_view(reader_of(request), project.id, project.repository_url)
 
 
+def _stored(conn: Connection, project: Any, request: Request) -> dict[str, int] | None:
+    """The project's attachment bytes against its quota, for a caller with `project:admin`
+    in it (§8.7); anyone else gets None."""
+    caller = getattr(request.state, "caller", None)
+    if caller is None:
+        return None
+    try:
+        mine = membership(conn, caller, namespace.full_name(conn, project))
+    except ApiError:
+        return None
+    if not mine.may("project:admin"):
+        return None
+    return {
+        "used": attachments.used(conn, project.id),
+        "quota": settings_of(request).attachment_quota,
+    }
+
+
 def _view(conn: Connection, project: Any, request: Request) -> dict[str, Any]:
     shown = images.views(conn, [project.id])[project.id]
     owner = namespace.owner_of(conn, project)["handle"]
     aliases = namespace.aliases_of(conn, project.id)
     return project_view(
-        project, settings_of(request), owner, shown, _export(project, request), aliases
+        project,
+        settings_of(request),
+        owner,
+        shown,
+        _export(project, request),
+        aliases,
+        _stored(conn, project, request),
     )
 
 
@@ -304,6 +329,7 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
                         shown[r.id],
                         _export(r, request),
                         aliases[r.id],
+                        _stored(conn, r, request),
                     )
                     for r in rows
                 ],
