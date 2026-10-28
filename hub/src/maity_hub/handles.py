@@ -23,7 +23,7 @@ from sqlalchemy.exc import IntegrityError
 
 from maity_hub import clock, mentions, namespace
 from maity_hub import tables as t
-from maity_hub.errors import ApiError, invalid, rate_limited
+from maity_hub.errors import ApiError, invalid, not_found, rate_limited
 
 ALIAS_MAX = 8
 RENAME_LIMIT = 3
@@ -171,6 +171,10 @@ def rename(
     table = t.human if owner_id is None else t.agent_profile
     # The id's own row first, then the handle's lock: the order every rename takes.
     row = conn.execute(select(table).where(table.c.id == subject_id).with_for_update()).one()
+    # The caller looked at the profile before this lock: a delete that won the lock in between
+    # has freed its handle and aliases, and a rename now would take them back for a tombstone.
+    if owner_id is not None and row.live is not True:
+        raise not_found()
     if row.handle == handle:
         return None
     ensure_free(conn, owner_id, handle, exclude=subject_id)
