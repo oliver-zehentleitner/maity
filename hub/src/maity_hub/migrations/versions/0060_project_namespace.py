@@ -170,6 +170,12 @@ def upgrade() -> None:
         mysql_engine="InnoDB",
         mysql_charset="utf8mb4",
         mysql_collate="utf8mb4_bin",
+        # SQLAlchemy's MariaDB dialect reads its own prefix, not mysql_: without these
+        # the table takes the server's default collation, and its keys to project.id
+        # and human.id (utf8mb4_bin) are refused (errno 150).
+        mariadb_engine="InnoDB",
+        mariadb_charset="utf8mb4",
+        mariadb_collate="utf8mb4_bin",
     )
 
 
