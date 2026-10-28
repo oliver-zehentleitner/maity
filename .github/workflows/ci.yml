@@ -23,6 +23,10 @@ defaults:
   run:
     working-directory: hub
 
+# The three database jobs may run on the maintainer's own machine (deploy/runner/): the
+# repository variable HUB_RUNNER holds the labels as JSON, e.g. ["self-hosted","maity-hub"].
+# Unset or empty, and for every pull request from a fork, they run on GitHub-hosted
+# runners; unsetting the variable is the whole fallback.
 jobs:
   # Which parts a pull request touches, from its merge commit against the base it
   # merges into: a suite runs only when its part changed. A push to main, or a
@@ -159,9 +163,13 @@ jobs:
   hub-sqlite:
     needs: changes
     if: needs.changes.outputs.hub == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ (vars.HUB_RUNNER != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON(vars.HUB_RUNNER) || 'ubuntu-latest' }}
     steps:
+      - run: echo "runner $RUNNER_NAME ($RUNNER_ENVIRONMENT, $RUNNER_OS $RUNNER_ARCH), $(nproc) cpus"  # hosted or the maintainer's machine (HUB_RUNNER)
+        working-directory: .  # before the checkout, `hub` does not exist yet
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
@@ -253,22 +261,26 @@ jobs:
   hub-postgresql:
     needs: changes
     if: needs.changes.outputs.hub == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ (vars.HUB_RUNNER != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON(vars.HUB_RUNNER) || 'ubuntu-latest' }}
     services:
       postgres:
-        image: postgres:17
+        image: postgres:17@sha256:31ba9c94a03ada9988f2bb493a22a75eef3a185884533e5cdbcd498ea835b08f # pinned: a local tag cannot replace it
         env:
           POSTGRES_USER: maity
           POSTGRES_PASSWORD: ci-only
           POSTGRES_DB: maity
-        ports: ["5432:5432"]
+        ports: ["127.0.0.1:5432:5432"]
         options: >-
           --health-cmd "pg_isready -U maity" --health-interval 2s
           --health-timeout 5s --health-retries 30
     env:
       MAITY_TEST_DATABASE_URL: postgresql://maity:ci-only@127.0.0.1:5432/maity
     steps:
+      - run: echo "runner $RUNNER_NAME ($RUNNER_ENVIRONMENT, $RUNNER_OS $RUNNER_ARCH), $(nproc) cpus"  # hosted or the maintainer's machine (HUB_RUNNER)
+        working-directory: .  # before the checkout, `hub` does not exist yet
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
@@ -278,16 +290,16 @@ jobs:
   hub-mariadb:
     needs: changes
     if: needs.changes.outputs.hub == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ (vars.HUB_RUNNER != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON(vars.HUB_RUNNER) || 'ubuntu-latest' }}
     services:
       mariadb:
-        image: mariadb:11.4
+        image: mariadb:11.4@sha256:d1891ede5a559f1086f55053bb8cc1569b0298338c4d72d71725a7f74f6ba620 # pinned: a local tag cannot replace it
         env:
           MARIADB_USER: maity
           MARIADB_PASSWORD: ci-only
           MARIADB_DATABASE: maity
           MARIADB_ROOT_PASSWORD: ci-only  # the test workers create their own databases
-        ports: ["3306:3306"]
+        ports: ["127.0.0.1:3306:3306"]
         options: >-
           --health-cmd "healthcheck.sh --connect --innodb_initialized"
           --health-interval 2s --health-timeout 5s --health-retries 30
@@ -295,7 +307,11 @@ jobs:
       MAITY_TEST_DATABASE_URL: mariadb://maity:ci-only@127.0.0.1:3306/maity
       MAITY_TEST_ADMIN_DATABASE_URL: mariadb://root:ci-only@127.0.0.1:3306/maity
     steps:
+      - run: echo "runner $RUNNER_NAME ($RUNNER_ENVIRONMENT, $RUNNER_OS $RUNNER_ARCH), $(nproc) cpus"  # hosted or the maintainer's machine (HUB_RUNNER)
+        working-directory: .  # before the checkout, `hub` does not exist yet
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"

@@ -26,6 +26,7 @@ from maity_hub import (
     longpoll,
     mentions,
     namespace,
+    not_listening,
 )
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
@@ -147,6 +148,7 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
             else:
                 after = after_param
                 _acknowledge(conn, caller, after)
+            not_listening.called(conn, caller.session_id)
             return mine, after, supervised
 
     mine, after, supervised = await run_in_threadpool(start)

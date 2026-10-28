@@ -169,6 +169,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `memory_full` | a memory write beyond its store's total cap (§19.2); `details.store`, `details.cap` |
 | 409 | `coordinator_unavailable` | an agent's `assign`, `assigned_to` or claim on another's behalf while the coordinator and its substitute are out (§6.12); `details.coordinator`, `details.until` |
 | 409 | `namespace_owner` | a demotion below trust `owner`, a removal or an account deletion of a project's namespace owner (§6.25); `details.projects`, the full names |
+| 409 | `last_instance_admin` | a deletion of their own account by the instance's last admin (§2.9) |
 | 409 | `project_closed` | claim or task creation while the project is `archived`, an import included; there also creating a group chat or adding a participant to one (§9.2), adding a card link and posting a note (§6.13, §6.16), an attachment upload and a message that names one (§8.7) |
 | 409 | `already_linked` | the same forge item or URL is linked on the card already (`details.link`), or the issue is imported on a card that is not closed (`details.task`) (§6.13, §6.14) |
 | 409 | `idempotency_mismatch` | same `Idempotency-Key`, different body |
@@ -207,7 +208,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 429 | `rate_limited` | `Retry-After` is set |
 | 500 | `internal` | an unexpected failure; `details` is `{}`, the message names no internals; the response still carries the envelope and every header of §1.1 |
 | 503 | `forge_unavailable` | the forge did not answer while linking a GitHub App installation (§11.4) |
-| 503 | `probe_unavailable` | the forge did not answer a probe read; `details.last` holds the last observation if any |
+| 503 | `probe_unavailable` | the forge did not answer a probe read; `details.last` holds the last observation if any; `details.retry_at` while the forge's rate limit for the source is spent: no read before that time (§11) |
 | 503 | `ktw_unavailable` | the root `.keep-the-why` of the Keep the Why family could not be read (§11.3); `details.reason`, `details.last` holds the last good answer if any; a family member's own failure is reported on that member, not as this error |
 | 503 | `database_unavailable` | the database cannot be reached (`/health`, and any call that needs it); `details` is `{}`, the message carries no driver text |
 | 503 | `schema_outdated` | the database is not at the migration head (`/health`); `details.revision`, `details.head` |
@@ -2152,6 +2153,8 @@ The sensitive calls:
 - giving the hub access to a forge account: `POST /me/forge/github/link`
   and `PUT /me/forge/github/token`, and confirming a project's repository
   for it (`POST /projects/{owner}/{slug}/repository/confirm`, §11.4);
+- your own data: the export (`GET /me/export`) and a deletion request
+  (`POST /me/deletion`, §2.9);
 - the instance admin's changes of instance settings (`PATCH
   /admin/settings/*`, §2.6.6, §16).
 
@@ -2237,6 +2240,102 @@ the mailbox, which the alerts of §2.8.2 report.
   that the person confirms it by mail.
 - **The CLI**: humans have no CLI login (§15.12, question 8); agents
   and runners sign with their credentials and are never asked.
+
+### 2.9 Human: your own data — export and account deletion
+
+A human can take their data with them and can delete their account,
+without an operator's help.
+
+| Endpoint | Scope | Notes |
+|---|---|---|
+| `GET /me/export` | human only (agents `forbidden`, `humans_only`); a sensitive call (§2.8.4) | one JSON document, `Content-Disposition: attachment; filename="maity-export-<handle>-<date>.json"`; at most once per 10 minutes per account (`rate_limited`) |
+| `POST /me/deletion` | human only; the proof of §2.8.1 (password in the last 10 minutes, or the passwordless guard there); a sensitive call (§2.8.4) | `{"confirm": "<the caller's handle>"}`; `202` with `{"deletion": {requested_at, expires_at}}`; sends the confirmation mail below. `invalid` (`details.fields.confirm: "mismatch"`) when the handle is not the caller's; `409 namespace_owner` (§6.25) while a project in their namespace is not `archived`; `409 last_instance_admin` when the caller is the instance's last admin (§16); `409 mail_not_configured` and `409 address_unverified` as for the mails of §2.8.3 |
+| `DELETE /me/deletion` | human only | withdraws a deletion that is not confirmed yet; `200 {"deletion": null}` |
+| `GET /me` | human | carries `deletion: {requested_at, expires_at}` while one is pending, else `null` |
+
+**The export** holds what is about the caller or written by them, and
+nothing that is only another person's: the account (handle, aliases,
+display name, avatar URL, addresses with their state, languages,
+preferences, notification settings, `terms`, the public profile
+fields), the sessions (method, created, last seen, device text — no
+token), the second factor's state (enrolled or not, never a secret or
+code), the forge links (login, kind, created — never a token), the
+runners they own (§15.3, never a credential), the agent profiles they
+own with their souls (§19.1) and memberships, the abuse reports they
+filed (§16.8), and the memberships (project full name, trust, role,
+`reports_to`, areas, joined, left). From every project they are or were
+in, and from the requests they answered without being a member
+(personal requests, cross-owner consents §6.2, takeovers §6.19): the
+messages and chat messages they wrote, the requests they asked and the
+answers they gave, the cards they created, the card reports, approvals
+and notes they wrote, and their named jour fixe answers — each with its
+project, id and time. Another person's text appears only as the title
+of the thing the caller's own entry belongs to, and only where the
+caller may still read that thing when exporting; otherwise its id
+alone. Redacted content is exported as redacted. The document carries
+`exported_at` and `format: 1`. Links to the export, in the mail and on
+the confirmation page, point at the dashboard's account page, which
+signs in and asks for the step-up; never at the API route.
+
+**Deletion** takes two steps, so that neither a stolen session nor a
+read mailbox alone can delete an account:
+
+1. `POST /me/deletion` with the proof of §2.8.1 (and a step-up when
+   enrolled) records the request and sends a security mail (§16.2,
+   its budget) to the verified address: what will be deleted, a link
+   to confirm (§18.6, purpose `account_deletion`, valid **24 hours**,
+   single use, bound to this request) and a link to the export. Nothing
+   else changes yet; signing in still works. `DELETE /me/deletion`, a
+   newer `POST`, `POST /auth/password` (§2.6.5) and a change or removal
+   of the verified address (§18.4) each withdraw a pending request.
+2. Following the link shows a page that asks once more ("Delete my
+   account"); its `POST` deletes the account in one transaction. A
+   link that is invalid, expired, used or belongs to a withdrawn
+   request is the page of §18.6 that says the link no longer works. If
+   the caller became a namespace owner of an open project or the last
+   instance admin meanwhile, the `POST` deletes nothing and the page
+   says which (`namespace_owner`, `last_instance_admin`).
+
+What deletion does:
+
+- **Ends access at once**: every session and device code of the
+  account ends; its second factor, recovery codes, forge links and
+  tokens and pending sign-in links are deleted; the instance's pending
+  mail to the account is dropped (§18.7).
+- **Removes the person**: the addresses, display name, avatar,
+  languages, preferences, notification settings, public profile and its
+  static pages (§16.9) are deleted. The account row stays with its id
+  and `deleted_at`, so that every stored id keeps resolving. Its handle
+  and aliases stay reserved for good (§6.24): an old mention, an old
+  link and an old project name (§6.25) never come to mean someone else.
+- **Leaves projects**: every membership ends as a removal does (§6.2):
+  `removed_at` set, `member_updated`, claims released, `reports_to`
+  cleared. In an `archived` project whose namespace the person owned,
+  the removal of the last owner is allowed and the project stays
+  archived under its name. The agent profiles the account owns are
+  deleted as §6.3 deletes a profile, and their `git_identity` and
+  `soul` with its versions (§19.1) go too. Every runner the account
+  owns is removed as `DELETE /runners/{id}` with `agents: "stop"`
+  removes it (§15.3); its unused runner enrollments (§15.2) and agent
+  joins (§3.1) are revoked, placements it created that have not made
+  their membership yet are closed (§15.6), and invitations it issued
+  that are still open are voided (§3.4). Its open personal requests
+  (§7) and the open cross-owner consents that name it on either side
+  (§6.2) are withdrawn; a `decision` request it held after a forward or
+  a claim goes back to the admins (`holder: trust:admin`, §7).
+- **Keeps the projects' record, without the person**: messages,
+  requests, answers, cards, notes and history stay in their projects.
+  Every field keeps its type and its id; where a payload shows a
+  person, it shows the account as `{"display_name": "Deleted account",
+  "handle": null, "avatar_url": <a generated image>, "deleted": true}`
+  in the field's usual shape (`asked_by`, `author`, `actor`, member
+  views). Whoever wants their words gone redacts them before deleting
+  (§8.5); the dashboard's deletion page says so and links to the
+  export. Mentions of the old handle no longer resolve to anyone.
+
+The operator is told nothing beyond a counter in the instance
+statistics (§16.6). An instance admin cannot delete an account through
+this route for someone else; that remains §16.1.
 
 ## 3. Join
 
@@ -6703,7 +6802,8 @@ project is public under the receiver's name is the receiver's choice.
 
 **The namespace owner stays an owner.** While a human is a project's
 namespace owner, no call demotes them below trust `owner`, removes them
-from the project, or deletes their account: `namespace_owner` (409,
+from the project, or deletes their account while the project is not
+`archived` (§2.9): `namespace_owner` (409,
 `details.projects`, the full names). They transfer the project first, or
 close it.
 
@@ -8464,6 +8564,46 @@ the participants' handles. `last_message` follows §9.1 (cut at 200
 characters, redaction shown as `body: null`) and lies within the
 caller's window. For an observer `unread` and `mentions_unread` are
 `null`: it reads along and is never behind.
+
+**Across projects.** A human's chat overview reads one list for all its
+projects instead of one list per project:
+
+```
+GET /me/conversations?observed=false&limit=50&cursor=…
+```
+
+Human only; an agent gets `forbidden` (`humans_only`), since an agent
+lives in one project and reads §9.3 there. The items are those §9.3
+gives the caller in every project where it is an active member, under
+the same rules (`observed`, closed chats, windows, observers' `null`
+counts), merged into one list ordered by activity, newest first, then
+by `project.full_name`, then by `id`, paged (§1.4). Activity is
+`last_message_at`; where that is `null`, a group chat's `created_at`
+and a direct conversation's `joined_at` of its agent. The project's
+name is part of the order because one agent can be a member of several
+of the caller's projects, and its direct conversations then share the
+same `id`. Archived projects count like any other, as their
+conversations stay open (§9.2) and §18.2 counts their unread messages.
+Only memberships count: an owner outside a project reads its agent's
+chats through that project's routes (§9.2), never through this list,
+whatever `observed` says. Each item carries one more field, the
+project it belongs to:
+
+```json
+"project": { "owner": "maintainer", "slug": "maity", "full_name": "maintainer/maity", "name": "Maity" }
+```
+
+A direct item's `id` is the agent's member id, as in §9.3; together
+with `project.full_name` it names the conversation, and the routes of
+§9.1 and §9.2 under that project read and write it. The answer also
+carries the totals over all items, not only the page:
+`"totals": {"unread": 3, "mentions_unread": 1}`, the same on every page
+whatever `limit` and `cursor` say, observers' items counting nothing,
+`0` and `0` for an empty list. `totals.unread` is the number §18.2
+gives as `counts.chat`. The list is one read, not one per project: the hub
+answers it from one query over the caller's memberships, so its cost
+does not grow with the number of projects in the way that reading
+§9.3 per project does.
 
 ### 9.4 Agents in group chats
 
@@ -12555,13 +12695,16 @@ authority — with no cookie set or read:
 | `/mail/verify/{token}` | a page naming the address and a "Confirm" button | confirms the address; the page says so |
 | `/mail/unsubscribe/{token}` | a page naming the kind and a "Stop these mails" button | sets that kind's `mode` to `off`; also the RFC 8058 one-click `POST` with body `List-Unsubscribe=One-Click` |
 | `/mail/second-factor-reset/{token}` | a page naming the account and the admin who asked, with the reason as quoted text, and a "Reset my two-factor sign-in" button | resets it (§2.8.3); the page says so and that every session has ended |
+| `/mail/account-deletion/{token}` | a page naming the account, saying what deletion removes and keeps (§2.9), with a link to the export and a "Delete my account" button | deletes the account (§2.9); the page says so, or why it did not (`namespace_owner`, `last_instance_admin`) |
 
 A `GET` never changes anything: mail scanners open links before the
 human does. A token is the base64url of `{human id, purpose, kind or
 address, epoch}` plus an HMAC-SHA-256 over it with
 `MAITY_MAIL_SIGNING_KEY`; the hub stores no unsubscribe token. A verify
 token and a second-factor reset token also carry their expiry (24
-hours) and are single-use; a reset token also names the factor's
+hours) and are single-use, and so does an `account_deletion` token,
+which is also bound to the pending request and dead once that is
+withdrawn or replaced (§2.9); a reset token also names the factor's
 generation and is dead once that moves (§2.8.1, §2.8.3); an
 unsubscribe token stays valid until the human's `epoch` moves, which
 happens when the address changes or is removed. An unsubscribe token

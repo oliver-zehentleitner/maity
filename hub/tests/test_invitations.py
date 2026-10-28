@@ -51,7 +51,7 @@ def mailed(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
     monkeypatch.setattr(
         registration_mail,
         "send",
-        lambda conn, *, kind, to, pending_id=None: sent.append((kind, to)),
+        lambda conn, *, kind, to, pending_id=None, **_: sent.append((kind, to)),
     )
     return sent
 

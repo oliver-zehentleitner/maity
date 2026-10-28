@@ -259,6 +259,7 @@ def row(name: str, method: str, minutes_old: float) -> Any:
         public_id=f"hss-{name}",
         method=method,
         created_at=clock.now() - timedelta(minutes=minutes_old),
+        second_factor=None,
     )
 
 
@@ -415,8 +416,9 @@ def test_sign_in_settings_defaults_and_who_reads_them(
         "password": {"value": True, "source": "fixed"},
         "device_code": {"value": True, "source": "default"},
         "email_link": {"value": True, "source": "default"},
+        "second_factor": {"value": "optional", "source": "default"},
         "email_link_available": False,
-        "missing": ["mail", "not_implemented"],
+        "missing": ["mail", "not_implemented", "secret_key"],
     }
     other = flow.human(make_client, migrated, "someone")
     assert other.get(SIGN_IN).json()["error"]["details"] == {"scope": "instance:admin"}

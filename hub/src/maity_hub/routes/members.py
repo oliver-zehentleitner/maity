@@ -14,6 +14,7 @@ from sqlalchemy import Connection, case, select, update
 
 from maity_hub import (
     admin_agents,
+    attachments,
     availability,
     briefings,
     clock,
@@ -652,6 +653,7 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
     placements.forget_boss(conn, change.project.id, target.id)
     # Out of every group chat too, which may close one (§6.2, §9.2).
     group_chats.membership_removed(conn, target, change.actor, change.by)
+    attachments.drop_pending(conn, target.id)  # its pending uploads go (§6.2)
     seats.reset(conn, change.project.id, removed, change.actor)
     instances.refresh_team_wake(conn, change.project.id)  # it may have been the last team
 

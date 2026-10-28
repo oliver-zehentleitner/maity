@@ -191,3 +191,37 @@ today and whenever the rule changes, instead of by two copies kept equal.
   roles, instance tokens, humans-only kinds, redactions of hidden events).
 - A table of project messages kept beside the log: one more write on every
   post and on every redaction, to speed up a read nobody has measured.
+
+## An episode of not listening lives on the session, checked by a minute worker
+
+**Id:** 0cbc3037-5834-4a6d-b518-ae640fb47046
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §5.3 "Not listening" (contract #498, the maintainer's decision of 2026-10-28); the card tsk-43r1yqwjq3pg from the coordinator, 2026-10-28
+**Revisit when:** the hub runs more than one process (the open long-poll is known in process only), or the contract counts other calls than /events as listening
+
+A session's last call for events (or its resume) is stored as
+`events_at`; `last_seen_at` counts every call and cannot tell. An
+episode is three columns on the session: when the 10 minutes ran out,
+the oldest event that waited, and the notice filed to the profile's
+owner. A worker checks every minute, per session under its project's
+lock: it starts an episode when the oldest event that waits for the
+instance (`events.wakes`, and, where the team's wake rule chose no
+instance, the lead or every instance) is 10 minutes old and the session
+made no call for events in that time, and it ends one when the
+acknowledged cursor reaches that event, the session ends or an exclusion
+begins. A session with an open long-poll is listening. The start of
+`member_not_listening` wakes only an agent the event names by
+`member:`, the reports-to; the end wakes nobody.
+
+**Reason:** the episode must survive restarts and be ended by whoever
+notices first, so it is stored; on the session, since an episode belongs
+to one session and ends with it. A minute's delay to notice the end is
+what the contract's own check interval allows.
+
+**Rejected alternative:** ending the episode inside the /events call that
+acknowledges the event: faster, but that call would then take the
+project lock and file or withdraw requests on the long-poll's hot path;
+the worker keeps the read path cheap. A table of episodes of its own:
+more than one row per session is never needed.

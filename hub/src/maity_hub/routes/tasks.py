@@ -23,6 +23,7 @@ from maity_hub import (
     idempotency,
     instances,
     mentions,
+    merged,
     namespace,
     paging,
     ranks,
@@ -1050,6 +1051,8 @@ def patch_task(
             subject=("task", card.id),
         )
         history.stamp(conn, entries, seq)
+        if changed.get("status") == "review":
+            merged.returned_to_review(conn, card.id)  # a merge remembered is told now (§6.6)
         touched_parents: set[str] = set()
         if "parent" in changed:
             touched_parents.update(p for p in (before_card.parent, card.parent) if p is not None)

@@ -15,7 +15,8 @@ window.Maity = window.Maity || {};
   const { h, append, clear, safeUrl, formatTime } = M.dom;
 
   const TYPES = [["merge", "Merges"], ["contract", "Contract changes"], ["decision", "Decisions"], ["deploy", "Deploys"], ["release", "Releases"], ["note", "Notes"]];
-  const TYPE_WORD = { merge: "Merge", decision: "Decision", deploy: "Deploy", release: "Release", note: "Note" };
+  // A rename (§6.25, "<old> is now <new>") is the hub's to write; no filter of its own (§17).
+  const TYPE_WORD = { merge: "Merge", decision: "Decision", deploy: "Deploy", release: "Release", rename: "Rename", note: "Note" };
   const TYPE_PLURAL = { merge: "merges", contract: "contract changes", decision: "decisions", deploy: "deploys", release: "releases", note: "notes" };
   const PAGE = 50;
   // How many pages of new items one live round reads at most.
