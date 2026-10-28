@@ -67,6 +67,41 @@ later. The row is the one place every reader passes through.
 - One `probe_observed` per sweep with all changed refs, as before: fewer
   events, but only the sweep could send them.
 
+## A spent forge budget stops reads until its reset; the worker waits and starts each round elsewhere
+
+**Id:** d4a944d2-5e48-45e4-a93b-f528f43705ed
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-wq0mhep8mzec from the coordinator, 2026-10-28, after the live forge reads ran into GitHub's limit; the contract text in PR #500 (§11.4 "Rate limits": one budget per source, `probe_unavailable` with `details.retry_at` until the reset)
+**Revisit when:** the hub reads with more than one source per owner (a GitHub App installation, owner tokens), or GitHub changes its rate limit headers
+
+Every forge answer's `X-RateLimit-Limit`, `-Remaining` and `-Reset` (and
+`Retry-After`) update one budget per source, keyed by the token's digest
+(a separate one for reads without a token). A spent budget (403 or 429
+with Remaining 0 or a Retry-After) or one under 5 % of its limit holds
+every read with that source until the reset: the read fails at once,
+nothing is sent, and the error carries `retry_at`, which `GET …/probe` and
+the contract text answer as `details.retry_at` of `probe_unavailable`.
+Each read is counted against the source before it is sent, in the same
+step as the check, so readers in parallel cannot spend together what the
+last answer said was left; answers that arrive out of order only ever
+lower the count within one window. The worker schedules its next sweep
+and merge round no earlier than that reset, and each kind of round
+starts at another project each time, on its own position, since a round
+ends at its first unanswered read.
+
+**Reason:** a spent limit answered every read with an error and the
+worker asked again every interval, spending the next hour's budget at its
+first minute; readers were told nothing about when it would work again.
+Keeping the last 5 % leaves room for the reads a person asks for.
+
+**Rejected alternative:** answering from the cache without saying so
+while the budget is spent: the card asks for `probe_unavailable` with
+the time instead of silently stale data. A budget per project: the limit
+is the source's, and every project of an owner reads with it. Other
+alternatives: unknown.
+
 ## Confirming the repository asks for no step-up until the second factor lands
 
 **Id:** 0b375b9b-2098-4e55-a461-cccdad6a62d1

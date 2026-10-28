@@ -241,6 +241,7 @@ def _fresh_process_state() -> Iterator[None]:
     second_factor._wrong_in_session.clear()
     caller.NONCES = NonceWindow()
     forge._visible.clear()
+    forge._budgets.clear()
     images.reset()
     ktw.CACHE.clear()
     yield
