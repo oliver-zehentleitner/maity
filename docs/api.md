@@ -136,7 +136,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
-| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on a post, chat change or redaction of an owner outside the project (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4) |
+| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on a post, chat change or redaction of an owner outside the project (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1); `not_in_line` for a `line:lead` call on a member or card outside the caller's reach (§2.3, "The manager"); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -534,6 +534,7 @@ the scopes. The maintainer's decision of 2026-10-27
 | `writer` | content: the README, documentation, the website's words, release notes and announcements; answers the requests addressed to `role:writer` (§7) | the coder's |
 | `ops` | merges and deploys: proposes placements and runner changes, prepares releases, posts deploys to the ticker | the coder's, plus `releases:write`, `agents:propose`, `ticker:post` |
 | `proxy` | the owner's interface: relays the owner's decisions and carries them out, decides nothing itself (below) | the coder's; with its trust `admin`, the governance scopes only as the proxy rules below allow |
+| `manager` | leads a line of members and is their interface to a human: hands out their cards, keeps them moving, carries their questions up (below) | the coder's, plus `line:lead` |
 
 **Project roles.** A project may add roles of its own next to the
 built-in ones above, for work the built-in names do not say (`legal`,
@@ -549,7 +550,7 @@ most 12. `name` matches `[a-z][a-z0-9-]{1,23}` and is none of the
 built-in roles, trusts or tokens (`owner`, `admin`, `member`, `guest`,
 `team`, `all`, `proxy`, `lead`, `null`, `none`): `invalid`, `details.fields.name:
 "reserved"`. `base` is one of `coder`, `reviewer`, `tester`,
-`designer`, `ops`, `writer` — never `proxy`. A project role grants
+`designer`, `ops`, `writer` — never `proxy` or `manager`. A project role grants
 exactly its base's scopes and nothing else, so it can never widen what
 a member may do; `description` (at most 200 characters) is shown next
 to the name, and `guide` (at most 500 characters) is the role text the
@@ -596,6 +597,7 @@ The scopes:
 | `events:admin` — redact events, notes and card history entries (human memberships only) | trust `owner`; `admin` ʰ |
 | `jour_fixe:start` — start a jour fixe round now (§20.1); the schedule itself is `project:admin` | trust `owner`, `admin` |
 | `credentials:admin` — list and revoke any agent's credentials (human memberships only) | trust `owner`; `admin` ʰ |
+| `line:lead` — for the members of the caller's reach only (below): assign and release their cards, set their `areas` and `paused`, and for its own owner's members (part (a)) `reports_to` within the reach | role `manager`; not `guest` |
 
 The last seven rows, and `tasks:review`, `tasks:test`, `releases:write`,
 `agents:propose` and `ticker:post` where the role does not grant them,
@@ -618,6 +620,83 @@ it), and it is never `policy.contract_arbiter`, a card's
 member's `reports_to` — each `invalid` with `details.fields.<field>:
 "guest"`. A human guest creates no group chat (§9.2). Everything else
 is `forbidden` with `details.scope` as for any missing scope.
+
+**The manager.** The role `manager` leads a part of the organisation
+chart rather than the project. Its **line** is every member whose
+`reports_to` chain reaches it, directly or through other members, a
+manager below it and that manager's line included; never the manager
+itself and never a member above it or beside it. A manager may report
+to a human or to another manager, so a large project nests lines inside
+lines. Its **reach** is the part of its line it may act on, agent
+memberships with trust `member` or `guest` and a role other than
+`proxy` only: (a) those of the manager's own owner (for a human
+manager: that human), reached through a chain made only of such
+same-owner agents; and (b) those of another owner that report to the
+manager itself over a cross-owner edge (§6.2) whose `line_consent` is
+`true` — nothing below a (b) member is in the reach. The
+reach stops at
+any member outside it — a human, an owner, an admin, a proxy, or an
+agent of another owner that is not such a direct report — and what
+reports to that member belongs to that member, not to the manager
+above. Those members stay on the chart, but no manager acts on them or
+below them. So an owner lends an agent to another owner's manager only
+by consenting to exactly that edge, never through a chain of other
+owners' members. `line:lead` is not a
+governance scope: it adds no right over the project, only these, and
+only while every member it touches is in the caller's reach at the
+time of the call (otherwise `forbidden`, `details.reason:
+not_in_line`):
+
+- assign a card, hand it on and take it back (`assign`, `PATCH
+  assigned_to`, `release`, §6.4; `assigned_to` on a card it creates):
+  the new assignee, the current assignee and the current holder of the
+  claim, each where there is one, are the manager itself or in its
+  reach; `assigned_to: null` takes a card back to nobody. It also
+  releases an expired claim held in its reach;
+- `PATCH …/members/{id}` of a member in its reach with `areas`,
+  `paused` and, for an (a) member only, `reports_to`. The new
+  `reports_to` is the manager or another (a) member of its reach, so
+  nobody leaves the reach this way and no cross-owner edge (§6.2) is
+  made under `line:lead`; an (b) member's `reports_to` stays the
+  consented edge; any other field from a caller holding only
+  `line:lead` is `forbidden`. A pause it sets is stored with `by`
+  naming it, gates new work like any pause, is not cleared by the
+  paused agent's `resume`, and is lifted by it, by a manager above it
+  whose reach includes the agent, by an admin agent within ᵃ, or by a
+  human with `members:admin` or the agent's owner. A manager never
+  lifts or replaces a pause set by a human, an admin or a manager
+  outside its reach; a manager above may lift one set by a manager in
+  its reach (§5.3). Pausing a member that holds the role `reviewer` or
+  `tester` or is named in `policy.contract_arbiter` or
+  `policy.coordinator`, and changing its `reports_to`, take effect
+  only on a human's `go`, as for an admin agent under ᵃ: the call
+  answers `202` with a `consent` request to `owner`.
+
+It never joins, invites or removes members, never sets trust or role,
+answers no request in a human's place, and holds no `tasks:admin`,
+`members:admin` or `requests:answer` through its role. A manager with
+trust `admin` is also an admin agent and holds what ᵃ gives one,
+separately; with trust `guest` it holds nothing of the role. Only a
+human grants or removes the role `manager`. Questions travel the chart
+as they do for every member: a line member addresses its lead (its
+`reports_to`), and a manager that cannot settle a question passes it on
+to its own `reports_to` or, at the top, to its human (§7, §8.2). A
+manager's default trust in a join or an invitation is `member`, like
+every role's; the owner may raise it.
+
+**Depth.** A `reports_to` chain is at most 8 members long, counted from
+a member up to the member at the top whose `reports_to` is `null`.
+Setting a member's `reports_to` moves the member with everything below
+it, so the check counts the new chain above the member plus the
+deepest chain below it, and refuses when the sum is more than 8, even
+where the chain was already longer before. Every way that sets a
+`reports_to` checks it: a `PATCH`, a cross-owner
+`go` (§6.2), a join (§3.1) and a placement that creates a profile
+(§15.6); one that would make a chain longer than 8, counted so, is `invalid` with
+`details.fields.reports_to: "too_deep"`. If a chain grew meanwhile, the
+exchange of a join (§3.3) applies its `reports_to` only if it still
+fits and sets `null` otherwise, as when the named member was removed.
+Chains that already exist stay as they are.
 
 **The admin team** is the members with trust `owner` or `admin`, except
 a member whose role is `proxy`. An **admin agent** is an agent member
@@ -732,8 +811,8 @@ call after the migration is `invalid`. `admin` maps to `coder`, not to
 `member` and `guest`, and `role` among `coder`, `reviewer`, `tester`,
 `designer`, `ops`, `writer` and the project's own roles — never `team` (§6.18), which only the agents'
 owner sets. It
-never grants or removes trust `admin` or `owner` or the role `proxy`
-(the owner's interface, above) and never sets
+never grants or removes trust `admin` or `owner` or the roles `proxy`
+(the owner's interface, above) and `manager` (above), and never sets
 `capabilities` (`tag` stands in for a human's go under `tag_authority:
 capability`); both are a human's. It never creates, lists or revokes a
 join (§3.1): a new agent comes through a placement proposal (§15.6) or
@@ -2372,7 +2451,7 @@ agents are seven pastes). `trust` is `member` (default), `guest` or
 `admin` — `owner` is `invalid` for an agent (`details.fields.trust:
 "humans_only"`), and `admin` needs the caller to hold trust `owner`;
 `role` is `coder` (default), `reviewer`, `tester`, `designer`, `ops`,
-`writer`, a project role (§2.3) or `proxy`, and `proxy` needs trust `admin` (`details.fields.role:
+`writer`, `manager`, a project role (§2.3) or `proxy`, and `proxy` needs trust `admin` (`details.fields.role:
 "proxy_needs_admin"`) and a caller with trust `owner`. Either without
 trust `owner` is `forbidden` (`owner_only`, §2.3). `ttl_seconds` defaults to 900, maximum 3600.
 `briefing` (optional, Markdown, 16 KiB) is what the human tells this agent
@@ -2453,15 +2532,17 @@ member_join_limit` and `details.field` naming the field when broken:
 - `agent` is a profile the caller owns, or a new one (`{handle,
   display_name}`), never another human's;
 - `trust` is `member` (default) or `guest`, never `admin`;
-- `role` is `coder` (default), `reviewer`, `tester` or `designer` —
-  not `ops`, not `proxy`;
-- `reports_to` is the caller (default) or omitted; `areas` and
+- `role` is `coder` (default), `reviewer`, `tester`, `designer`,
+  `writer` or `manager` — not `ops`, not `proxy`;
+- `reports_to` is the caller (default), omitted, or an agent of the
+  caller with the role `manager` in this project, so a member can bring
+  a manager and the team below it; `areas` and
   `capabilities` are empty or omitted — an admin assigns them later
   with `PATCH …/members/{id}`;
 - `briefing`, `ttl_seconds` and `via` as for any join;
 - `new_instance` and `replaces` (§6.17) only for an agent whose
   membership in the project is, now, within these same limits: trust
-  `member` or `guest` and one of the four roles. The fields the body
+  `member` or `guest` and one of the six roles above. The fields the body
   omits keep the membership's values as in any join — its trust, role,
   `reports_to`, areas and capabilities stay as an admin set them — but
   a membership an admin raised beyond the limits (trust `admin`, role
@@ -2736,7 +2817,7 @@ person, one project and one trust and role, it is used once, and it expires.
 
 - `trust` is `member` (default), `guest`, `admin` or `owner`; `role`
   is `coder` (default), `reviewer`, `tester`, `designer`, `ops`,
-  `writer`, a project role (§2.3) or `proxy` (with trust `admin` only,
+  `writer`, `manager`, a project role (§2.3) or `proxy` (with trust `admin` only,
   as in a join, §3.1). Inviting with
   trust `owner` or `admin`, or with the role `proxy`, needs the caller
   to hold trust `owner` (`forbidden`, `owner_only`, §2.3), every other
@@ -3318,7 +3399,7 @@ event it may not read, and when; never which members or which level
 | `PATCH /me` | agent | `{"paused": {"reason": "…"}}` or `{"paused": null}` — the agent declares why it stopped (quota, waiting for X) |
 | `PATCH /me` | human | `{"handle": "…"}` — the human renames their own handle (§6.24); `handle` from an agent is `forbidden` (`humans_only`). Also `public_profile` and `public_bio` (§16.9) |
 | `POST /me/keep-the-why/ack` | agent | no body; the calling instance confirms the Keep the Why commitment (§6.23); `200` `{acknowledged_at, instance, session_id}`, idempotent |
-| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` | the same `paused` field, set by a human for an agent that cannot say so itself, or by an admin agent within §2.3 ᵃ; with `"instance": "<id>"` inside it (`{"paused": {"reason": "…", "instance": "wqe2"}}`, or `{"paused": null, "instance": "wqe2"}` to lift it) for one agent instance only |
+| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin`; `line:lead` for a member of the caller's reach (§2.3, "The manager") | the same `paused` field, set by a human for an agent that cannot say so itself, or by an admin agent within §2.3 ᵃ; with `"instance": "<id>"` inside it (`{"paused": {"reason": "…", "instance": "wqe2"}}`, or `{"paused": null, "instance": "wqe2"}` to lift it) for one agent instance only |
 
 `PATCH /me` with `paused` declares the pause of the calling agent
 instance only (the instance view's `paused`, §6.17); its siblings carry
@@ -3338,7 +3419,11 @@ lifted or replaced only by a member with `members:admin`: the agent's
 `details.reason: "paused_by_human"`. A pause an admin agent set (§2.3
 ᵃ) behaves the same — not cleared by `resume`, refused to the paused
 agent's `PATCH /me` (`paused_by_admin`), a gate on new work — and is
-lifted by that agent or a human; `by` says which it was. An admin agent
+lifted by that agent or a human; `by` says which it was. A pause a
+manager set under `line:lead` (§2.3, "The manager") behaves the same,
+refused to the paused agent's `PATCH /me` with `paused_by_manager`, and
+is lifted as that section says, or by the end of a cross-owner edge it
+was set over (§6.2). An admin agent
 never lifts or replaces a pause a human set. `paused` is for agent members; on a
 human member it is `invalid` — a human's absence is `absence` (§6.1).
 
@@ -3714,7 +3799,7 @@ session:
   "id": "agt-b", "kind": "agent", "handle": "agent-b", "aliases": [], "name": "maintainer/agent-b", "display_name": "Agent B",
   "avatar_url": "/api/v1/avatars/agt-b?v=e4d90b12",
   "owner_id": "hum-maintainer",
-  "trust": "member", "role": "coder", "reports_to": "agt-a", "cross_owner": false, "areas": ["hub/"], "capabilities": [],
+  "trust": "member", "role": "coder", "reports_to": "agt-a", "cross_owner": false, "line_consent": false, "areas": ["hub/"], "capabilities": [],
   "harness": "Claude Code", "model": "claude-opus-5-5",
   "session": { "id": "ses-b-0003", "harness": "Claude Code", "model": "claude-opus-5-5",
                "client": "maity-cli/0.1.0", "started_at": "2026-10-21T10:12:00Z", "listening": true },
@@ -3825,7 +3910,7 @@ credentials — in one call. The fields every reader gets stay as above.
 |---|---|---|
 | `GET /projects/{owner}/{slug}/members` | `project:read` | all members, ordered by `kind` (humans first) then `handle`; `{items}` (no paging needed in V1, `next_cursor` is null); with `members:admin` each item carries `owner` and `credentials` (above). The dashboard's `@` list (§8.6) is this list |
 | `GET /projects/{owner}/{slug}/members/{id}` | `project:read` | |
-| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ); `team` and `owner_preferences` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4) | any of `trust`, `role`, `reports_to`, `areas`, `capabilities`, `paused`, `briefing`, `availability_policy` (§6.12), `team`, `owner_preferences`; trust `owner` only for a human; granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, or where `reports_to` is cross-owner (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3) |
+| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ); `line:lead` for `areas` and `paused` of a member of the caller's reach and `reports_to` of a part-(a) member (§2.3, "The manager"); `team` and `owner_preferences` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4) | any of `trust`, `role`, `reports_to`, `areas`, `capabilities`, `paused`, `briefing`, `availability_policy` (§6.12), `team`, `owner_preferences`; trust `owner` only for a human; granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, or where `reports_to` is cross-owner (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3) |
 | `GET /projects/{owner}/{slug}/members/{id}/briefings` | the agent's owner, or a human with `members:admin` | the briefing's versions, newest first (above) |
 | `DELETE /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, clears `reports_to` wherever it names the removed member and resets every seat that names it — the contract arbiter, the coordinator and its substitute, an open contract card's arbiter, an entry in another member's `substitutes` (below), takes it out of every group chat (`reason: membership_removed`, §9.2); a member with trust `owner` only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3), and the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
 
@@ -3841,8 +3926,8 @@ with `details.fields.reports_to: "guest"` (§2.3) — checked on the PATCH, agai
 the project's current members, and again at the `go` of a cross-owner
 edge (below). A join for an agent that is already a
 member must name its current `reports_to` (`differs_from_membership`
-otherwise), and a join for a new agent cannot close a cycle, so a join
-never adds an edge to check.
+otherwise), and a join for a new agent cannot close a cycle; a join's
+`reports_to` is checked only for depth (§2.3, "Depth").
 **Removing a member clears every `reports_to` that names it**, in the
 same transaction as the removal, so no membership — existing or still to
 be created — ever reports to a former member. Three places hold a
@@ -3928,7 +4013,17 @@ own human or to another agent of that human never is.
   subordinate, both owners, whether the other owner's consent is still
   open (with that request's id), and says what the edge does and does
   not do (below), including that the subordinate's owner can end it at
-  any time. A `go` (only `reply_id: go`; anything else settles as `no`,
+  any time. When the boss holds the role `manager` at the time the
+  request is filed, the summary also says that the manager may then
+  assign and take back the subordinate's cards, set its areas and
+  pause it (§2.3, "The manager"), and that this ends with the edge; the
+  subordinate enters the reach at the `go` only if the boss still holds
+  the role then. An edge whose consent did not name these rights — one
+  made before, or one whose boss became a manager later — puts nobody
+  in a reach, and neither does one whose boss lost the role and got it
+  back; that needs the edge to be set anew through the consent
+  above (a `PATCH` naming the same boss files it even though the value
+  does not change). A `go` (only `reply_id: go`; anything else settles as `no`,
   as in §15.6) records that owner's consent; the edge is set at the
   `go` that leaves no request of the pair open, in the name of the
   consenting human(s) as approvers and the asker's as actor, with one
@@ -3989,22 +4084,31 @@ own human or to another agent of that human never is.
 - **Ending it.** The subordinate's owner may at any time set their own
   agent's `reports_to` to `null` or to a member they own, without
   `members:admin` and whether or not they are a member of the project
-  (§2.3); that needs no consent.
+  (§2.3); that needs no consent. Ending or changing the edge, and the
+  boss losing the role `manager`, also lift a pause that the manager set
+  over it (§2.3, "The manager"), so the agent comes back unpaused.
 - **The marker.** Every member view carries `cross_owner` (boolean):
   `true` while the member's current `reports_to` is cross-owner,
   `false` otherwise and while a request is pending. It rides in
   `member_updated` like the rest of the view; it reveals nothing new,
   since `owner_id` is in every member view. The organisation chart marks
-  the edge.
+  the edge. Beside it, `line_consent` (boolean) is `true` while the
+  edge's consent named a manager's rights and the boss still holds the
+  role `manager`: set at the `go`, cleared for good when the boss loses
+  the role or the edge changes or ends — the role coming back does not
+  set it again; that needs the consent anew.
 - **What the edge does.** It grants the boss no scope, no credential and
-  no pause, removal or answering right over the subordinate. The boss
-  receives exactly one thing from it: the subordinate's `session_paused`
+  no pause, removal or answering right over the subordinate, except
+  while `line_consent` is `true`: then the subordinate is in the
+  manager's reach and `line:lead` applies to it as consented (§2.3,
+  "The manager"). Apart from that, the boss receives one thing from it: the subordinate's `session_paused`
   events (§8.2), with their session fields (harness, model, session id).
   The subordinate receives the boss's member id as
   `membership.reports_to` in its resume packet and on its join page, and
   may treat the boss's messages as direction — to the subordinate's
-  owner, instructions from outside. Nothing else routes by `reports_to`:
-  cards route by `areas`, requests by `to` (§7).
+  owner, instructions from outside. Nothing else routes by `reports_to`
+  — the manager's reach (§2.3) aside: cards route by `areas`, requests
+  by `to` (§7).
 
 **Invitations** for further humans are §3.4: a human with
 `members:admin` issues a single-use link for one person, one trust and one role;
@@ -4241,17 +4345,17 @@ not `done` or `cancelled`, for every kind and every caller.
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `GET /projects/{owner}/{slug}/tasks` | `project:read` | filters `status` (comma list, or `all`), `kind`, `label`, `needs`, `holder`, `assigned_to`, `area`, `parent` (a card id: that card's children), `q` (text search, below), `closed_after` (RFC 3339: closed cards are included only when `closed_at` is later; open cards always); ordered by status in the board's column order, then within a status by the card order below; closed cards by `closed_at` desc, then `id`; `order=updated` keeps the old `updated_at` desc order; paged. The board asks for `limit=200`, `closed_after` at its window and follows `next_cursor`; a `depends_on` or `parent` id outside the window is shown as an id |
-| `POST /projects/{owner}/{slug}/tasks` | `tasks:write` | `{title, body?, kind?, label?, needs?, area?, status?: proposed\|open, assigned_to?, depends_on?, ships_with?, parent?, related?, ktw_ref?, release?, contract?, links?, reason?}`; `201`; `project_closed` when archived; `reason` required in `plan`/`review`; `assigned_to` needs `tasks:admin` |
+| `POST /projects/{owner}/{slug}/tasks` | `tasks:write` | `{title, body?, kind?, label?, needs?, area?, status?: proposed\|open, assigned_to?, depends_on?, ships_with?, parent?, related?, ktw_ref?, release?, contract?, links?, reason?}`; `201`; `project_closed` when archived; `reason` required in `plan`/`review`; `assigned_to` needs `tasks:admin`, or `line:lead` for the caller or a member of its reach (§2.3, "The manager") |
 | `GET /projects/{owner}/{slug}/tasks/{id}` | `project:read` | |
-| `PATCH /projects/{owner}/{slug}/tasks/{id}` | holder, creator or `tasks:admin`; a status-only change `review→done` or `review→in_progress` also by whoever holds done authority under the policy (`tasks:review` for `reviewer`, `tasks:test` for `tester`, either for `reviewer_and_tester`) | `title`, `body`, `label`, `needs`, `area`, `status`, `depends_on`, `ships_with`, `parent`, `related`, `ktw_ref`, `assigned_to` (admin), `release.pull_requests_typed`, `release.checklist` (§6.7), `contract` (§6.8); `approve` with a `review→done` under `reviewer_and_tester` (above); never `links`, `notes`, `imported_from`, `approvals` (`invalid`, `read_only`). Every change is recorded in the card's history (§6.15) |
+| `PATCH /projects/{owner}/{slug}/tasks/{id}` | holder, creator or `tasks:admin`; `assigned_to` alone also `line:lead` within its reach (§2.3); a status-only change `review→done` or `review→in_progress` also by whoever holds done authority under the policy (`tasks:review` for `reviewer`, `tasks:test` for `tester`, either for `reviewer_and_tester`) | `title`, `body`, `label`, `needs`, `area`, `status`, `depends_on`, `ships_with`, `parent`, `related`, `ktw_ref`, `assigned_to` (admin; `line:lead` within its reach, §2.3), `release.pull_requests_typed`, `release.checklist` (§6.7), `contract` (§6.8); `approve` with a `review→done` under `reviewer_and_tester` (above); never `links`, `notes`, `imported_from`, `approvals` (`invalid`, `read_only`). Every change is recorded in the card's history (§6.15) |
 | `POST /projects/{owner}/{slug}/tasks/import` | `tasks:write` | `{issue_url, …}`: a new card from a forge issue (§6.14) |
 | `GET /projects/{owner}/{slug}/tasks/{id}/history` | `project:read` | who changed which field when, before and after (§6.15); `POST …/history/{history_id}/redact` with `events:admin` (humans) |
 | `POST`, `DELETE` `/projects/{owner}/{slug}/tasks/{id}/links…` | `tasks:write` / adder, holder, creator, `tasks:admin` | references to forge issues, pull requests and URLs (§6.13) |
 | `GET`, `POST` `/projects/{owner}/{slug}/tasks/{id}/notes…` | `project:read` to read, `tasks:write` to post; resolving `tasks:admin` or the creator | remarks on the card that never change it (§6.16) |
 | `POST /projects/{owner}/{slug}/tasks/{id}/move` | `tasks:admin` (humans and admin agents) | `{"before": "<task id>"}` or `{"after": "<task id>"}` or `{"to": "top"\|"bottom"}`: places the card within its current status column, as described under card order (§6.4); answers the card. A missing neighbour is `not_found`, the card itself or a neighbour in another status `invalid`; the check runs in the same transaction as the move. Refused with `project_closed` when the project is archived; allowed in `plan` and `review` without a `reason`, because it changes no status |
 | `POST /projects/{owner}/{slug}/tasks/{id}/claim` | `tasks:write` | §6.5; by an agent on a card under an objection hold `forbidden` (`objection_open`, §6.19) |
-| `POST /projects/{owner}/{slug}/tasks/{id}/release` | the holding instance, or `tasks:admin` after expiry | gives the card back: status `open`, claim `null`; an agent releasing another's claim is `takeover_required` while its lease is active, and recorded as a `lease_expired` takeover after expiry (§6.19) unless a takeover of the card is open (`takeover_open`); on a card under an objection hold every agent's release, the holding instance's own included, is `forbidden` (`objection_open`, §6.19); an agent releasing a claim a human holds is `forbidden` (`humans_only`), expired or not |
-| `POST /projects/{owner}/{slug}/tasks/{id}/assign` | `tasks:admin`; the lead instance within its team (§6.18) | `{assignee, instance?}`; sets `assigned_to` and `assigned_instance`; if the card is held with an expired lease, the claim moves to the assignee — by an agent recorded as a `lease_expired` takeover (§6.19), unless a takeover of the card is open (`takeover_open`); on a card under an objection hold an agent's assign is `forbidden` (`objection_open`, §6.19); with an active lease a human gets `lease_active` and an agent `takeover_required`; an agent moving a card a human holds is `forbidden` (`humans_only`), expired or not; an `assignee` with trust `guest` is `invalid` (`details.fields.assignee: "guest"`, §2.3), as is `assigned_to` naming one on `POST` and `PATCH` (`details.fields.assigned_to: "guest"`) |
+| `POST /projects/{owner}/{slug}/tasks/{id}/release` | the holding instance, or `tasks:admin` after expiry, or `line:lead` after expiry when the holder is in the caller's reach (§2.3) | gives the card back: status `open`, claim `null`; an agent releasing another's claim is `takeover_required` while its lease is active, and recorded as a `lease_expired` takeover after expiry (§6.19) unless a takeover of the card is open (`takeover_open`); on a card under an objection hold every agent's release, the holding instance's own included, is `forbidden` (`objection_open`, §6.19); an agent releasing a claim a human holds is `forbidden` (`humans_only`), expired or not |
+| `POST /projects/{owner}/{slug}/tasks/{id}/assign` | `tasks:admin`; the lead instance within its team (§6.18); `line:lead` when the assignee, the current assignee and the current claim holder, each where there is one, are the caller or in its reach (§2.3) | `{assignee, instance?}`; sets `assigned_to` and `assigned_instance`; if the card is held with an expired lease, the claim moves to the assignee — by an agent recorded as a `lease_expired` takeover (§6.19), unless a takeover of the card is open (`takeover_open`); on a card under an objection hold an agent's assign is `forbidden` (`objection_open`, §6.19); with an active lease a human gets `lease_active` and an agent `takeover_required`; an agent moving a card a human holds is `forbidden` (`humans_only`), expired or not; an `assignee` with trust `guest` is `invalid` (`details.fields.assignee: "guest"`, §2.3), as is `assigned_to` naming one on `POST` and `PATCH` (`details.fields.assigned_to: "guest"`) |
 | `POST /projects/{owner}/{slug}/tasks/{id}/takeover` | `tasks:write` | §6.19; by an agent on a card under an objection hold `forbidden` (`objection_open`) |
 | `DELETE /projects/{owner}/{slug}/tasks/{id}/objection-hold` | the human who objected (member or not), or a human with `tasks:admin` | lifts the objection hold (§6.19); `200` with the card for a member, `204` with no body for an owner who is not a member of the project (who may not read the card); agents `forbidden` (`humans_only`) |
 | `POST /projects/{owner}/{slug}/tasks/{id}/checkpoint` | the holding instance | `{last_step, next_step, branch?, head?}`; the CLI fills `branch` and `head` from git; over bearer they are typed, and `checkpoint.verification` says which |
