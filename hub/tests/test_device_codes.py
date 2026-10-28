@@ -15,6 +15,7 @@ from maity_hub import clock
 from maity_hub import tables as t
 from maity_hub.auth import device_codes
 from maity_hub.auth.caller import SESSION_COOKIE
+from maity_hub.routes import device_codes as routes
 from maity_hub.routes.device_codes import PENDING_COOKIE
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -241,6 +242,23 @@ def test_rate_limits(make_client: ClientFactory, desk: flow.Human) -> None:
     assert redeem(guesser, "ZZZZ-ZZZZ").status_code == 429
 
 
+@pytest.fixture
+def frozen_monotonic(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The wrong-code window is 60 s of the monotonic clock. Sixty requests on a slow or busy
+    runner can take longer than that, and the window drains before the breaker trips; the
+    clock the limiter and the breaker read stands still instead."""
+    import time
+    import types
+
+    from maity_hub import ratelimit
+
+    frozen = time.monotonic()
+    stub = types.SimpleNamespace(monotonic=lambda: frozen)
+    monkeypatch.setattr(ratelimit, "time", stub)
+    monkeypatch.setattr(routes, "time", stub)
+
+
+@pytest.mark.usefixtures("frozen_monotonic")
 def test_the_wrong_code_breaker_stops_every_redemption(
     make_client: ClientFactory, desk: flow.Human
 ) -> None:
@@ -372,9 +390,8 @@ def test_switched_off_in_the_environment_stops_every_step(
         assert response.json()["error"]["details"] == {"reason": "method_disabled"}
 
 
+@pytest.mark.usefixtures("frozen_monotonic")
 def test_the_breaker_holds_for_a_minute(make_client: ClientFactory, desk: flow.Human) -> None:
-    from maity_hub.routes import device_codes as routes
-
     for n in range(60):
         redeem(make_client(peer=f"192.0.2.{n + 1}"), "ZZZZ-ZZZZ")
     code = started(desk)["code"]

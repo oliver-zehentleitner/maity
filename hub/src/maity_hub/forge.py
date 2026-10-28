@@ -4,8 +4,12 @@ The token comes from the operator's environment only (`Settings`) and lives in
 one `Forge` object, which the app hands to whoever reads: the probe route, the
 worker, readiness. It is not a process global and never in a `repr`. Nothing a
 project member sets can change where it is sent. Requests go to the fixed API
-host of the forge kind, and a redirect to any other host is refused, so the
-token never leaves for a host the operator did not choose.
+host of the forge kind, and no redirect is followed, so the token never
+leaves for a host the operator did not choose.
+
+The operator's token reads only public repositories (§11.4): it may see the
+operator's own private ones, which no project should see through the probe, so
+every read with it first asks the forge whether the repository is public.
 """
 
 from __future__ import annotations
@@ -45,6 +49,17 @@ class ForgeUnavailableError(Exception):
         self.retry_at = retry_at  # when the source's budget is there again (§11.4)
 
 
+class NotCoveredError(ForgeUnavailableError):
+    """No source the hub holds may read the repository (§11.4): `reason` is
+    `private_without_grant` (the forge reports it private), `no_grant` (the token
+    cannot see it at all) or `repository_moved` (the forge redirects the read). A
+    read that is refused, not a forge that failed."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(f"no source covers the repository ({reason})")
+        self.reason = reason
+
+
 def kind_of(url: str | None) -> str | None:
     if not url:
         return None
@@ -60,8 +75,10 @@ def repository_of(url: str) -> str:
 
 
 class _SameHostOnly(urllib.request.HTTPRedirectHandler):
-    """Follows a redirect only to https://api.github.com on the default port: the
-    Authorization header goes with it, so plain HTTP or another port would leak it."""
+    """Follows no redirect (§11.4). Within https://api.github.com it is a renamed or
+    moved repository: reads stop until a project admin sets the new URL, which the
+    namespace owner then confirms again. Anywhere else it is refused like any failure:
+    the Authorization header would go with it."""
 
     def redirect_request(
         self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str
@@ -73,7 +90,7 @@ class _SameHostOnly(urllib.request.HTTPRedirectHandler):
             port = -1
         if target.scheme != "https" or target.hostname != API_HOST or port not in (None, 443):
             raise ForgeUnavailableError(f"the forge redirected elsewhere ({code})")
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
+        raise NotCoveredError("repository_moved")
 
 
 _opener = urllib.request.build_opener(_SameHostOnly)
@@ -212,6 +229,36 @@ VISIBILITY_SECONDS = 300
 # (token digest, repository) -> when that token last saw it; the digest, not the token
 _visible: dict[tuple[str, str], float] = {}
 
+PUBLIC_SECONDS = 600  # §11.4: the visibility is read again at most every 10 minutes
+# (token digest, repository) -> (when it was read, None when public or the reason not)
+_public: dict[tuple[str, str], tuple[float, str | None]] = {}
+
+
+def _graphql_refused(found: Any) -> bool:
+    """A GraphQL answer (status 200) that may be a refusal: no repository, or an error
+    that is not a rate limit."""
+    if not isinstance(found, dict):
+        return True
+    errors = found.get("errors") or []
+    if any(not isinstance(e, dict) or e.get("type") != "RATE_LIMITED" for e in errors):
+        return True
+    return not isinstance(found.get("data"), dict) or found["data"].get("repository") is None
+
+
+def _repository_in(path: str, query: dict[str, Any] | None) -> str | None:
+    """The `owner/name` a read is about: from a REST path `/repos/{owner}/{name}/…`
+    or a GraphQL query's variables; None when the read names none."""
+    if query is not None:
+        variables = query.get("variables") or {}
+        owner, name = variables.get("owner"), variables.get("name")
+        if isinstance(owner, str) and isinstance(name, str):
+            return f"{owner}/{name}".lower()
+        return None
+    parts = path.split("?", 1)[0].split("/")
+    if len(parts) >= 4 and parts[0] == "" and parts[1] == "repos" and parts[2] and parts[3]:
+        return f"{parts[2]}/{parts[3]}".lower()
+    return None
+
 
 @dataclass(frozen=True)
 class Forge:
@@ -236,6 +283,59 @@ class Forge:
     def _call(self, path: str, query: dict[str, Any] | None = None) -> Any | None:
         """A read on the forge API, with the token when the hub holds one and without it
         otherwise (a public repository). `query` makes it a GraphQL POST, which only reads.
+        With the token, only of a repository the forge reports public (`NotCoveredError`
+        otherwise); a read that names no repository is not made with it."""
+        if self.token is not None:
+            repository = _repository_in(path, query)
+            if repository is None:
+                raise ForgeUnavailableError("a read with the forge token names no repository")
+            self._require_public(repository)
+            try:
+                found = self._send(path, query)
+            except ForgeUnavailableError as error:
+                refused = error.status in (401, 403) and not error.rate_limited
+                if refused or isinstance(error, NotCoveredError):
+                    self._forget(repository)
+                raise
+            if found is None or (query is not None and _graphql_refused(found)):
+                self._forget(repository)  # a 404 may be a ref that is not there, or a refusal
+            return found
+        return self._send(path, query)
+
+    def _forget(self, repository: str) -> None:
+        """A refused read (§11.4): the next one asks again whether the repository is public."""
+        key = (hashlib.sha256((self.token or "").encode()).hexdigest(), repository.lower())
+        _public.pop(key, None)
+
+    def _require_public(self, repository: str) -> None:
+        """Raises `NotCoveredError` unless the forge reported the repository public within
+        PUBLIC_SECONDS; a visibility the forge does not answer is `ForgeUnavailableError`
+        and is asked again on the next read."""
+        key = (hashlib.sha256((self.token or "").encode()).hexdigest(), repository)
+        known = _public.get(key)
+        if known is None or time.monotonic() - known[0] >= PUBLIC_SECONDS:
+            try:
+                found = self._send(f"/repos/{repository}")
+            except NotCoveredError as error:  # moved: kept like the other refusals
+                found = error
+            reason: str | None
+            if isinstance(found, NotCoveredError):
+                reason = found.reason
+            elif found is None:
+                reason = "no_grant"
+            elif isinstance(found, dict) and found.get("private") is False:
+                reason = None
+            elif isinstance(found, dict) and found.get("private") is True:
+                reason = "private_without_grant"
+            else:
+                raise ForgeUnavailableError("the forge did not say whether it is public")
+            known = (time.monotonic(), reason)
+            _public[key] = known
+        if known[1] is not None:
+            raise NotCoveredError(known[1])
+
+    def _send(self, path: str, query: dict[str, Any] | None = None) -> Any | None:
+        """The request itself, with no visibility check: only `_call` and the check use it.
         While the source's budget is spent nothing is sent (§11.4)."""
         source = _source(self.token)
         held = _take(source)

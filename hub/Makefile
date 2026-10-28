@@ -25,8 +25,11 @@ lint:
 typecheck:
 	$(PYTHON) -m mypy
 
+# One worker per core (pytest-xdist); `make test PYTEST_ARGS=` runs the suite in one process.
+PYTEST_ARGS ?= -n auto
+
 test:
-	$(PYTHON) -m pytest
+	$(PYTHON) -m pytest $(PYTEST_ARGS)
 
 # make revision m="add the task table"
 revision:

@@ -15,16 +15,23 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Coroutine, Iterable
+from datetime import timedelta
 from typing import Any
 
 from fastapi import Request, Response
 from fastapi.routing import APIRoute
-from sqlalchemy import Connection, select
+from sqlalchemy import Connection, delete, insert, select
 
+from maity_hub import clock
 from maity_hub import tables as t
-from maity_hub.errors import ApiError
+from maity_hub.errors import ApiError, rate_limited
 
 PREFIX = "/api/v1/projects/"
+# A project's aliases (§6.25), as a handle's (§6.24): at most 8, and renames and transfers
+# together at most 3 per 24 hours per project.
+ALIAS_LIMIT = 8
+CHANGES_PER_DAY = 3
+DAY_SECONDS = 24 * 3600
 FULL_NAME = re.compile(r"^([a-z0-9][a-z0-9-]{1,30})/([a-z0-9][a-z0-9-]{1,62})$")
 # The lowest CLI that addresses projects as <owner>/<slug> (§6.25): what `client_outdated`
 # names. Any CLI that calls an old path is older than that by construction.
@@ -203,7 +210,12 @@ def full_names(conn: Connection, project_ids: Iterable[str]) -> dict[str, str]:
 
 def taken(conn: Connection, owner_id: str, slug: str, project_id: str | None = None) -> bool:
     """Whether `slug` is the current name or an alias of a project in `owner_id`'s namespace,
-    other than `project_id` (which may take back its own alias, §6.25)."""
+    other than `project_id` (which may take back its own alias, §6.25).
+
+    Every caller is about to claim the slug, so the namespace owner's row is locked first:
+    a project's slug and an alias live in two tables, and no constraint keeps a create of
+    `s` from racing a rename away from `s`, which writes `s` as an alias."""
+    conn.execute(select(t.human.c.id).where(t.human.c.id == owner_id).with_for_update()).first()
     current = conn.execute(
         select(t.project.c.id).where(t.project.c.owner_id == owner_id, t.project.c.slug == slug)
     ).scalar()
@@ -215,3 +227,112 @@ def taken(conn: Connection, owner_id: str, slug: str, project_id: str | None = N
         )
     ).scalar()
     return alias is not None and alias != project_id
+
+
+def aliases_by(conn: Connection, project_ids: Iterable[str]) -> dict[str, list[str]]:
+    """project id → `aliases_of`, in one query, for lists."""
+    ids = list(set(project_ids))
+    found: dict[str, list[str]] = {i: [] for i in ids}
+    if not ids:
+        return found
+    rows = conn.execute(
+        select(t.project_alias.c.project_id, t.project_alias.c.slug, t.human.c.handle)
+        .join(t.human, t.human.c.id == t.project_alias.c.owner_id)
+        .where(t.project_alias.c.project_id.in_(ids))
+        .order_by(t.project_alias.c.id)
+    ).all()
+    for row in rows:
+        found[row.project_id].append(f"{row.handle}/{row.slug}")
+    return found
+
+
+def check_change(conn: Connection, project: Any, owner_id: str, slug: str) -> None:
+    """Before a rename or a transfer to `owner_id`/`slug` (§6.25): the slug free in that
+    namespace (the project may take back its own alias), the alias the change adds within
+    `ALIAS_LIMIT`, and the project's changes within `CHANGES_PER_DAY`."""
+    if taken(conn, owner_id, slug, project.id):
+        raise ApiError(
+            400, "invalid", "the slug is taken in that namespace", {"fields": {"slug": "taken"}}
+        )
+    back = _own_alias(conn, project.id, owner_id, slug)
+    given_up = _own_alias(conn, project.id, project.owner_id, project.slug)
+    names = aliases_of(conn, project.id)
+    after = len(names) - (back is not None) + (given_up is None)
+    if after > ALIAS_LIMIT:  # taking a name back never adds one, so it stays possible
+        raise ApiError(
+            409,
+            "alias_limit",
+            f"a project keeps at most {ALIAS_LIMIT} former names",
+            {"limit": ALIAS_LIMIT, "aliases": names},
+        )
+    _check_rate(conn, project.id)
+
+
+def _own_alias(conn: Connection, project_id: str, owner_id: str, slug: str) -> int | None:
+    found: int | None = conn.execute(
+        select(t.project_alias.c.id).where(
+            t.project_alias.c.project_id == project_id,
+            t.project_alias.c.owner_id == owner_id,
+            t.project_alias.c.slug == slug,
+        )
+    ).scalar()
+    return found
+
+
+def _check_rate(conn: Connection, project_id: str) -> None:
+    """`rate_limited` past `CHANGES_PER_DAY` renames and transfers in 24 hours, counted from
+    the `project_updated` events that changed the full name: the log is the record."""
+    now = clock.now()
+    since = now - timedelta(seconds=DAY_SECONDS)
+    rows = conn.execute(
+        select(t.event.c.at, t.event.c.payload)
+        .where(
+            t.event.c.project_id == project_id,
+            t.event.c.kind == "project_updated",
+            t.event.c.at > since,
+        )
+        .order_by(t.event.c.seq)
+    ).all()
+    changes = [r.at for r in rows if "full_name" in ((r.payload or {}).get("fields") or {})]
+    if len(changes) >= CHANGES_PER_DAY:
+        wait = changes[-CHANGES_PER_DAY] + timedelta(seconds=DAY_SECONDS) - now
+        raise rate_limited(max(1, int(wait.total_seconds()) + 1))
+
+
+def move(conn: Connection, project: Any, owner_id: str, slug: str) -> None:
+    """Give the project the name `owner_id`/`slug`: the name given up becomes an alias,
+    and a name taken back leaves the aliases (§6.25). `check_change` came first."""
+    back = _own_alias(conn, project.id, owner_id, slug)
+    if back is not None:
+        conn.execute(delete(t.project_alias).where(t.project_alias.c.id == back))
+    if _own_alias(conn, project.id, project.owner_id, project.slug) is None:
+        conn.execute(
+            insert(t.project_alias).values(
+                project_id=project.id,
+                owner_id=project.owner_id,
+                slug=project.slug,
+                created_at=clock.now(),
+            )
+        )
+    conn.execute(
+        t.project.update().where(t.project.c.id == project.id).values(owner_id=owner_id, slug=slug)
+    )
+
+
+def namespace_owner_of(conn: Connection, human_id: str, project_ids: Iterable[str]) -> None:
+    """`namespace_owner` (409) when `human_id` is the namespace owner of any of
+    `project_ids`: no demotion below owner, no removal, no account deletion (§6.25)."""
+    ids = list(project_ids)
+    if not ids:
+        return
+    rows = conn.execute(
+        select(t.project.c.id).where(t.project.c.owner_id == human_id, t.project.c.id.in_(ids))
+    ).scalars()
+    names = sorted(full_names(conn, rows).values())
+    if names:
+        raise ApiError(
+            409,
+            "namespace_owner",
+            "the project's namespace owner stays an owner: transfer the project first",
+            {"projects": names},
+        )

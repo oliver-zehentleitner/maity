@@ -963,6 +963,66 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = prGet;
   await go("#/maintainer/maity/agents"); for (let k = 0; k < 4; k++) await tick();
 
+  // The change ticker's settings and the forge webhook in Project settings (tsk-a3cj2canahy3, §17.3, §17.4).
+  await go("#/maintainer/maity/inbox"); await projectSettings();
+  expect(byId("ticker-enabled") && byId("ticker-enabled").checked && byId("ticker-files").value === "docs/api.md"
+    && byId("ticker-implementers").value === "8: area:hub/ area:web/\n15: member:agt-b\n*: area:hub/"
+    && main.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/maintainer/maity/ticker"),
+    "ticker settings: on, the contract file and who implements which section, written as lines; one's follows in the Ticker");
+  byId("ticker-implementers").value = "8: area:hub/ member:agt-gone\n*: role:nobody"; byId("ticker-implementers").dispatch("input");
+  expect(!byId("ticker-unresolved").hidden && text(byId("ticker-unresolved")).includes("member:agt-gone") && text(byId("ticker-unresolved")).includes("role:nobody"),
+    "ticker settings: a token that names nobody now is said as unresolved");
+  const tsetPatches = [];
+  const tsetPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { tsetPatches.push([p, b]); return tsetPatch(p, b); };
+  byId("ticker-implementers").value = "eight area:hub/"; main.querySelector("form.ticker-settings").dispatch("submit"); await tick();
+  expect(!tsetPatches.length && text(main.querySelector("form.ticker-settings .send-status")).includes("write it as"), "ticker settings: a line that is no mapping is refused before sending");
+  byId("ticker-enabled").checked = false; byId("ticker-files").value = "docs/api.md\ndocs/runner.md";
+  byId("ticker-implementers").value = "8.2: area:web/\n*: trust:admin";
+  main.querySelector("form.ticker-settings").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(tsetPatches.length === 1 && JSON.stringify(tsetPatches[0][1]) === JSON.stringify({ settings: { ticker: { enabled: false,
+    contract_files: ["docs/api.md", "docs/runner.md"], contract_implementers: { "8.2": ["area:web/"], "*": ["trust:admin"] } } } }),
+    "ticker settings: saved whole, as the hub takes the setting " + JSON.stringify(tsetPatches[0] && tsetPatches[0][1]));
+  win.Maity.api.patch = tsetPatch;
+  // The webhook: none yet; made, the secret shown once with the address; rotated after a confirm; removed.
+  await go("#/maintainer/maity/inbox"); await projectSettings();
+  const whBox = () => main.querySelector("section.webhook");
+  expect(whBox() && text(whBox()).includes("Secret") && text(whBox()).includes("none") && btn(whBox(), "Create a secret"), "webhook: none set, Create a secret");
+  btn(whBox(), "Create a secret").click(); for (let k = 0; k < 6; k++) await tick();
+  const whSecret = whBox().querySelector(".webhook-secret-value");
+  expect(whSecret && /^whsec_/.test(text(whSecret)) && text(whBox()).includes("/api/v1/projects/maintainer/maity/forge/webhook") && text(whBox()).includes("Shown only now")
+    && btn(whBox(), "Rotate the secret") && btn(whBox(), "Remove the secret"), "webhook: a made secret is shown once with the payload URL, then Rotate and Remove");
+  const whConfirm = win.confirm;
+  let whAsked = 0;
+  win.confirm = () => { whAsked += 1; return false; };
+  btn(whBox(), "Rotate the secret").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(whAsked === 1 && text(whBox().querySelector(".webhook-secret-value")) === text(whSecret), "webhook: rotating asks first; declined, nothing changes");
+  win.confirm = () => true;
+  btn(whBox(), "Remove the secret").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(btn(whBox(), "Create a secret") && !whBox().querySelector(".webhook-secret-value"), "webhook: removed, none set again");
+  win.confirm = whConfirm;
+  // Made, but the read after it fails: the secret from the POST is still shown, once.
+  const whGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/forge/webhook" && whGetFail ? Promise.reject(new win.Maity.api.ApiError("down", 503, p, "internal", {})) : whGet(p));
+  let whGetFail = true;
+  btn(whBox(), "Create a secret").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(text(whBox()).includes("The webhook could not be read") && whBox().querySelector(".webhook-secret-value")
+    && /^whsec_/.test(text(whBox().querySelector(".webhook-secret-value"))) && btn(whBox(), "Read it again"),
+    "webhook: a made secret is shown even when the read after it fails");
+  whGetFail = false;
+  const whKept = text(whBox().querySelector(".webhook-secret-value"));
+  btn(whBox(), "Read it again").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(text(whBox().querySelector(".webhook-secret-value")) === whKept && btn(whBox(), "Rotate the secret"), "webhook: read again, the same secret still shown");
+  win.Maity.api.get = whGet;
+  win.confirm = () => true;
+  btn(whBox(), "Remove the secret").click(); for (let k = 0; k < 6; k++) await tick();
+  win.confirm = whConfirm;
+  // An area token resolves as the hub resolves it (hub/ticker.py contains).
+  const tsC = win.Maity.tickerSettings.contains;
+  expect(tsC("/", "hub/") && tsC("hub", "hub/") && tsC("hub/", "hub") && tsC("hub/", "hub/src") && !tsC("hub", "hubris") && !tsC("hub/src", "hub"),
+    "ticker settings: an area contains a path as the hub reads it");
+  await go("#/maintainer/maity/inbox");
+
   // Runners (docs/api.md §15): the instance-level view.
   // Runners are the person's (tsk-cb6myw32def0): in the gear menu, not beside the projects.
   expect(!header.querySelectorAll(".switcher a").some((a) => a.textContent === "Runners"), "runners: no link in the projects' row");
@@ -1065,8 +1125,35 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   card("build-box").querySelector("form.rename").dispatch("submit"); await tick(); await tick(); await tick();
   expect(card("builder") && JSON.stringify(rWrites.find((w) => w[0] === "PATCH" && w[2].name === "builder")) === JSON.stringify(["PATCH", "/runners/rnr-0003", { name: "builder" }]),
     "runners: renamed");
+  // A periodic read still in flight when the revoke reloads answers last: it draws nothing.
+  const rAll1 = win.Maity.api.getAll;
+  let releaseStale = null;
+  win.Maity.api.getAll = (p) => {
+    if (p !== "/runners" || releaseStale) return rAll1(p);
+    const stale = rAll1(p).then((a) => JSON.parse(JSON.stringify(a)));
+    return new Promise((resolve) => { releaseStale = () => resolve(stale); });
+  };
+  const periodic = fireIntervals(); await tick();
+  win.Maity.api.getAll = rAll1;
   btn(card("builder"), "Revoke").click(); await tick(); await tick(); await tick();
   expect(text(card("builder")).includes("revoked") && !btn(card("builder"), "Revoke"), "runners: revoked, no second Revoke");
+  releaseStale(); await periodic; await tick(); await tick();
+  expect(text(card("builder")).includes("revoked") && !btn(card("builder"), "Revoke"), "runners: an older periodic read answering late does not undo the revoke");
+  // A slow periodic read is not overtaken by the next tick: it lands.
+  let releaseSlow = null;
+  win.Maity.api.getAll = (p) => {
+    if (p !== "/runners") return rAll1(p);
+    const renamed = rAll1(p).then((a) => ({ items: a.items.map((r) => (r.id !== "rnr-0003" ? r : Object.assign({}, r, { name: "slow-box" }))), next_cursor: null }));
+    return new Promise((resolve) => { releaseSlow = () => resolve(renamed); });
+  };
+  const rSlowRead = fireIntervals(); await tick();
+  const rFirstRelease = releaseSlow; releaseSlow = null;
+  const rNextTick = fireIntervals(); await tick();
+  expect(releaseSlow === null, "runners: no second periodic read while one is in flight");
+  rFirstRelease(); await rSlowRead; await rNextTick; await tick(); await tick();
+  expect(card("slow-box"), "runners: a slow periodic read still draws once it answers");
+  win.Maity.api.getAll = rAll1;
+  await fireIntervals(); await tick(); await tick();
   btn(card("home-laptop"), "Remove").click(); await tick(); await tick(); await tick();
   expect(!card("home-laptop") && text(main).includes("home-laptop was removed.") && text(main).includes("Agent B · running")
     && text(main).includes("maity runner stop-all"), "runners: removed, with the agents still running that are now the operator's to end");
@@ -3102,7 +3189,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "password: a wrong current one is put next to its field");
   win.Maity.api.post = realPost5;
 
-  // Pictures (docs/api.md §6.10): one's own and one's agents', on the account.
+  // Pictures (docs/api.md §6.10): one's own on the account, an agent's in its row on Members;
+  // the account keeps only the agents no project of one's own shows (tsk-th1yq0jtk3yf).
   const avCalls = [];
   win.Maity.api.putImage = (p, blob, type) => { avCalls.push(["PUT", p, type]); return realPut(p, blob, type); };
   win.Maity.api.del = (p) => { avCalls.push(["DELETE", p]); return realDel(p); };
@@ -3111,8 +3199,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(avHeading && avHeading.getAttribute("tabindex") === "-1" && byId("avatar-file-hum-maintainer") && text(main).includes("Generated from the member id")
     && !btn(main, "Remove the upload"), "picture: the account shows the picture, where it comes from and an upload; nothing to remove yet");
   const avAgents = main.querySelectorAll(".picture-list li");
-  // The fixtures' seven, and any joined earlier in this run.
-  expect(avAgents.length >= 7 && byId("avatar-file-agt-b") && avAgents.some((li) => text(li).includes("Agent B @maintainer/agent-b")), "picture: the human's agents, each with its own upload and its global name");
+  // agt-x works only in guest/guestlab; an agent added earlier in this run is in no project yet.
+  const avX = avAgents.find((li) => li.getAttribute("data-agent") === "agt-x");
+  expect(avX && byId("avatar-file-agt-x") && text(avX).includes("Spare @maintainer/spare") && text(main).includes("Agents in other projects")
+    && !avAgents.some((li) => /^agt-(a|b|c|d|r|s1)$/.test(li.getAttribute("data-agent"))) && !byId("avatar-file-agt-b"),
+    "picture: the account lists only the agents in no project one is in, each with its upload and global name");
   await pick("avatar-file-hum-maintainer", fakeFile(SVG, 0, "image/svg+xml"));
   expect(!avCalls.length && text(main).includes("Not uploaded: not a PNG, JPEG or WebP image"), "picture: an SVG is refused by its bytes, before sending");
   await pick("avatar-file-hum-maintainer", fakeFile(PNG, 1024 * 1024 + 1));
@@ -3128,11 +3219,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(main, "Remove the upload").click(); for (let k = 0; k < 6; k++) await tick();
   expect(JSON.stringify(avCalls[1]) === JSON.stringify(["DELETE", "/me/avatar"]) && text(main).includes("Uploaded picture removed; the generated one shows again.")
     && !btn(main, "Remove the upload"), "picture: Remove deletes the upload; the generated picture applies again");
+  // An agent in one's project: its picture in its row on Members, opened by the link.
+  await go("#/maintainer/maity/members/agt-b/picture"); for (let k = 0; k < 6; k++) await tick();
+  const avRow = () => main.querySelectorAll("tr.member-manage").find((r) => r.id === "member-manage-agt-b");
+  expect(avRow() && avRow().querySelector(".member-picture-title") && text(avRow().querySelector(".member-picture-title")) === "Picture" && byId("avatar-file-agt-b"),
+    "picture: an own agent's row on Members opens with its picture and upload");
   await pick("avatar-file-agt-b", fakeFile(PNG, 3000));
-  await tick(); await tick();
+  for (let k = 0; k < 6; k++) await tick();
   const bAfter = (await win.Maity.api.getAll("/projects/maintainer/maity/members")).items.find((x) => x.id === "agt-b");
   expect(JSON.stringify(avCalls[2]) === JSON.stringify(["PUT", "/agents/agt-b/avatar", "image/png"]) && bAfter.avatar_source === "uploaded",
     "picture: an owner sets an agent's picture, which its member view carries");
+  expect(avRow() && text(main).includes("Picture uploaded.") && btn(avRow(), "Remove the upload"),
+    "picture: the row stays open, says so and offers Remove");
+  await go("#/account/picture");
   // The hub's refusals in words.
   const refuse = (code, details) => () => Promise.reject(new win.Maity.api.ApiError("x", code === "invalid" ? 400 : 429, "/me/avatar", code, details));
   win.Maity.api.putImage = refuse("invalid", { fields: { body: "dimensions" } });
@@ -4818,10 +4917,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!("keep_the_why" in win.Maity.notify.KIND_WORDS), "keep the why: the owner's notice is a request in the inbox, no notification kind of its own");
   const ktProto = Object.getPrototypeOf(main), ktFocus = ktProto.focus;
   ktProto.focus = function () { document.activeElement = this; };
-  await go("#/account/picture/agt-b"); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
-  const ktAgent = main.querySelectorAll("li.wanted").find((li) => li.getAttribute("data-agent") === "agt-b");
+  await go("#/account/picture/agt-x"); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  const ktAgent = main.querySelectorAll("li.wanted").find((li) => li.getAttribute("data-agent") === "agt-x");
   expect(ktAgent && main.querySelectorAll("li.wanted").length === 1 && document.activeElement === ktAgent.querySelector(".picture-name"),
     "keep the why: the account marks the agent the notice is about and starts there");
+  await go("#/account/picture/agt-b"); for (let k = 0; k < 6; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  expect(win.location.hash === "#/maintainer/maity/members/agt-b/picture" && main.querySelectorAll("tr.member-manage").some((r) => r.id === "member-manage-agt-b"),
+    "keep the why: an agent in one's own project is led to its row on Members, opened");
   ktProto.focus = ktFocus; document.activeElement = undefined;
 
   // Subtasks (docs/api.md §6.4): children folded under their parent with the hub's counts, a child whose parent
