@@ -149,6 +149,22 @@ def test_closing_a_child_tells_its_parent(
     assert _card(owner, parent["id"])["children"] == {"open": 0, "total": 1}
 
 
+def test_closing_cancels_an_open_takeover(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """§6.19: a takeover ends `cancelled` once the holder's card is done."""
+    _policy(owner, done_authority="holder", merged_closes="auto")
+    github.pull(7, merged=True)
+    _, card_id = _reported(owner, make_client)
+    asker = flow.agent(make_client, owner)
+    opened = asker.post(f"{BASE}/tasks/{card_id}/takeover", {"reason": "silent for hours"})
+    assert opened.status_code == 201, opened.text
+    probe.observe_report(migrated, READER, card_id)
+    assert _card(owner, card_id)["status"] == "done"
+    row = owner.get(f"{BASE}/takeovers/{opened.json()['id']}").json()
+    assert (row["status"], row["outcome"]["how"]) == ("cancelled", "cancelled")
+
+
 def test_a_mismatched_merge_triggers_nothing(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
 ) -> None:

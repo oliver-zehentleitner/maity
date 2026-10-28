@@ -17,7 +17,7 @@ from typing import Any
 
 from sqlalchemy import Connection, select, update
 
-from maity_hub import cards, clock
+from maity_hub import cards, clock, takeovers
 from maity_hub import tables as t
 from maity_hub.events import emit
 from maity_hub.instances import token
@@ -155,6 +155,7 @@ def _tell(conn: Connection, card_id: str, merge_sha: str | None) -> None:
             },
             subject=("task", card.id),
         )
+        takeovers.reconcile(conn, card.id, None, decided=False)  # §6.19: holder done
         if card.parent is not None:
             _touch_parent(conn, card.parent, project.state)
 
@@ -189,7 +190,7 @@ def _touch_parent(conn: Connection, parent_id: str, state: str) -> None:
 def _close(conn: Connection, card: Any) -> None:
     """The move to done the hub makes on its own (§6.15): no history entry; its record
     is `task_merged` with `closed: true` and the `task_updated` that every status change
-    emits."""
+    emits; an open takeover of the card is cancelled after it, as on any move to done."""
     now = clock.now()
     values: dict[str, Any] = {
         "status": "done",
