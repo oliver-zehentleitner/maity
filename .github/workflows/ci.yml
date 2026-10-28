@@ -24,7 +24,9 @@ defaults:
     working-directory: hub
 
 # The three database jobs may run on the maintainer's own machine (deploy/runner/): the
-# repository variable HUB_RUNNER holds the labels as JSON, e.g. ["self-hosted","maity-hub"].
+# repository variable HUB_RUNNER_LABEL holds a label prefix, e.g. maity-hub, and each job asks for
+# [self-hosted, <prefix>-sqlite], <prefix>-pg or <prefix>-maria: one runner service per job type, so a
+# pull request's three jobs run side by side and two Postgres jobs never share port 5432.
 # Unset or empty, and for every pull request from a fork, they run on GitHub-hosted
 # runners; unsetting the variable is the whole fallback.
 jobs:
@@ -163,7 +165,7 @@ jobs:
   hub-sqlite:
     needs: changes
     if: needs.changes.outputs.hub == 'true'
-    runs-on: ${{ (vars.HUB_RUNNER != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON(vars.HUB_RUNNER) || 'ubuntu-latest' }}
+    runs-on: ${{ (vars.HUB_RUNNER_LABEL != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON(format('["self-hosted","{0}-sqlite"]', vars.HUB_RUNNER_LABEL)) || 'ubuntu-latest' }}
     steps:
       - run: echo "runner $RUNNER_NAME ($RUNNER_ENVIRONMENT, $RUNNER_OS $RUNNER_ARCH), $(nproc) cpus"  # hosted or the maintainer's machine (HUB_RUNNER)
         working-directory: .  # before the checkout, `hub` does not exist yet
@@ -261,7 +263,7 @@ jobs:
   hub-postgresql:
     needs: changes
     if: needs.changes.outputs.hub == 'true'
-    runs-on: ${{ (vars.HUB_RUNNER != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON(vars.HUB_RUNNER) || 'ubuntu-latest' }}
+    runs-on: ${{ (vars.HUB_RUNNER_LABEL != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON(format('["self-hosted","{0}-pg"]', vars.HUB_RUNNER_LABEL)) || 'ubuntu-latest' }}
     services:
       postgres:
         image: postgres:17@sha256:31ba9c94a03ada9988f2bb493a22a75eef3a185884533e5cdbcd498ea835b08f # pinned: a local tag cannot replace it
@@ -290,7 +292,7 @@ jobs:
   hub-mariadb:
     needs: changes
     if: needs.changes.outputs.hub == 'true'
-    runs-on: ${{ (vars.HUB_RUNNER != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON(vars.HUB_RUNNER) || 'ubuntu-latest' }}
+    runs-on: ${{ (vars.HUB_RUNNER_LABEL != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON(format('["self-hosted","{0}-maria"]', vars.HUB_RUNNER_LABEL)) || 'ubuntu-latest' }}
     services:
       mariadb:
         image: mariadb:11.4@sha256:d1891ede5a559f1086f55053bb8cc1569b0298338c4d72d71725a7f74f6ba620 # pinned: a local tag cannot replace it
