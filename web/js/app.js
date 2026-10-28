@@ -487,6 +487,22 @@ window.Maity = window.Maity || {};
     // Humans only, as every policy field (§2.3 ʰ); where the hub knows it.
     if (humanAdmin && ctx.project.policy && "badge" in ctx.project.policy) append(panel, badgeForm(ctx, save));
     if (humanAdmin && ctx.project.policy && "keep_the_why" in ctx.project.policy) append(panel, keepTheWhyForm(ctx, save));
+    // The change ticker (§17.3) where the hub has one, read by every member,
+    // changed by a human admin; the forge webhook (§17.4) for that human only.
+    if (M.tickerSettings) {
+      const tickerSlot = h("div", { class: "ticker-settings-slot" });
+      append(panel, tickerSlot);
+      M.api.hubHas("GET", "/projects/{owner}/{slug}/ticker").catch(() => false).then((yes) => {
+        if (yes) append(tickerSlot, M.tickerSettings.tickerForm(ctx, save));
+      });
+      if (humanAdmin) {
+        const webhookSlot = h("div", { class: "webhook-slot" });
+        append(panel, webhookSlot);
+        M.api.hubHas("GET", "/projects/{owner}/{slug}/forge/webhook").catch(() => false).then((yes) => {
+          if (yes) append(webhookSlot, M.tickerSettings.webhookPanel(ctx));
+        });
+      }
+    }
     if (humanAdmin && ctx.project.policy && "member_agents" in ctx.project.policy) append(panel, memberAgentsForm(ctx, save));
     // Only on a hub with group chats: without them there is no closed one.
     if (ctx.canAdmin && M.groupChat) {

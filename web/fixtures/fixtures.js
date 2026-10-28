@@ -2526,7 +2526,25 @@ window.MAITY_FIXTURES = {
       "release_checklist": [
         "CHANGELOG has a section for this version",
         "live version equals the tag"
-      ]
+      ],
+      "ticker": {
+        "contract_files": [
+          "docs/api.md"
+        ],
+        "contract_implementers": {
+          "*": [
+            "area:hub/"
+          ],
+          "15": [
+            "member:agt-b"
+          ],
+          "8": [
+            "area:hub/",
+            "area:web/"
+          ]
+        },
+        "enabled": true
+      }
     },
     "setup": null,
     "slug": "maity",

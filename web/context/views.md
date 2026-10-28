@@ -1493,6 +1493,29 @@ guess: seqs are the project's, not the chat's, so no guess finds the last
 would never fall. Keeping everything drawn: the DOM of a chat open all
 day grows without bound.
 
+## The ticker's contract implementers are edited as lines of text
+
+**Id:** b1c60ee1-addd-4e0f-897c-937fcdea8b29
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's wish for ticker settings in Project settings (tsk-a3cj2canahy3), 2026-10-27; docs/api.md §17.3 (a map of up to 200 sections to up to 20 tokens each, `*` for the rest, the view to show unresolved tokens); the dashboard's implementation, 2026-10-27
+**Revisit when:** the mapping grows past what a textarea reads well, or the hub validates and names unresolved tokens itself
+
+`settings.ticker.contract_implementers` is a textarea of lines
+`<section>: <token> <token>`, the contract's own notation; the form
+checks each line and token before sending, sends the setting whole, and
+says the tokens that name nobody now (a member not in the project, a
+role nobody holds, an area no member owns) under the field.
+
+**Reason:** the mapping is a list a maintainer writes once and reads
+often; lines match how the contract writes it and how a reviewer would
+paste it, and 200 sections fit.
+
+**Rejected alternative:** a row per section with pickers for areas,
+members, roles and trusts: many controls for a short list, and it could
+not hold a token that names nobody yet, which the hub accepts.
+
 ## An agent's credentials, briefing and pause live in its row on Members; an owner opens their own agents as Details
 
 **Id:** 1c00024d-a3a6-49bc-ba2e-704359713aeb

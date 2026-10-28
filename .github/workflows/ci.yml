@@ -169,7 +169,9 @@ jobs:
       - run: make check
 
   # What ships: the wheel, installed non-editable, so a file missing from it
-  # (a migration, help.md) fails here. Python 3.13 backs "3.12 or newer".
+  # (a migration, help.md) fails here. Python 3.13 backs "3.12 or newer". Only the
+  # tests marked `wheel` run: the package data, the entry point and the migrations
+  # the wheel carries. The whole suite runs in hub-sqlite on the checkout.
   hub-wheel:
     needs: changes
     if: needs.changes.outputs.hub == 'true'
@@ -182,7 +184,7 @@ jobs:
       - run: pip install --require-hashes -r requirements/dev.txt -r requirements/build.txt
       - run: pip wheel --no-deps --no-build-isolation --wheel-dir dist .
       - run: pip install --no-deps "$(ls dist/*.whl)"
-      - run: rm -rf src && pytest
+      - run: rm -rf src && pytest -m wheel
 
   # The locks in hub/requirements/ follow pyproject.toml: recompiled with the
   # pinned uv, they must come out unchanged (`make lock` was run).
@@ -284,13 +286,14 @@ jobs:
           MARIADB_USER: maity
           MARIADB_PASSWORD: ci-only
           MARIADB_DATABASE: maity
-          MARIADB_RANDOM_ROOT_PASSWORD: "1"
+          MARIADB_ROOT_PASSWORD: ci-only  # the test workers create their own databases
         ports: ["3306:3306"]
         options: >-
           --health-cmd "healthcheck.sh --connect --innodb_initialized"
           --health-interval 2s --health-timeout 5s --health-retries 30
     env:
       MAITY_TEST_DATABASE_URL: mariadb://maity:ci-only@127.0.0.1:3306/maity
+      MAITY_TEST_ADMIN_DATABASE_URL: mariadb://root:ci-only@127.0.0.1:3306/maity
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
