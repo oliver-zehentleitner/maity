@@ -451,6 +451,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("project-rename").value = "maity"; nsNames().querySelector("form.project-rename").dispatch("submit"); await nsSettle(); await go(win.location.hash); await nsSettle();
   expect(win.location.hash === "#/maintainer/maity/settings" && text(nsNames().querySelector(".project-aliases")).includes("maintainer/maity-hub")
     && !text(nsNames().querySelector(".project-aliases")).includes("maintainer/maity,"), "namespace: a name taken back is current again");
+  // At 8 earlier names a new one is refused, taking back one's own is not (as the hub, #487).
+  let nsFull = null;
+  try { await win.Maity.api.patch("/projects/maintainer/sample", { slug: "sample-new" }); } catch (err) { nsFull = err; }
+  const nsBack = await win.Maity.api.patch("/projects/maintainer/sample", { slug: "sample-old" });
+  const nsHome = await win.Maity.api.patch("/projects/maintainer/sample-old", { slug: "sample" });
+  expect(nsFull && nsFull.code === "alias_limit" && nsBack.full_name === "maintainer/sample-old" && nsBack.aliases.length === 8
+    && nsHome.full_name === "maintainer/sample" && nsHome.aliases.length === 8 && !nsHome.aliases.includes("maintainer/sample"),
+    "namespace: at the alias limit a new name is refused, an earlier one of its own taken back");
   // Transfer: only to another human owner; without one the way is said.
   expect(nsNames().querySelector(".project-transfer") && text(nsNames().querySelector(".project-transfer")).includes("make them an owner of it first"),
     "namespace: without another owner the transfer says what comes first");

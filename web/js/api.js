@@ -118,8 +118,10 @@ window.Maity = window.Maity || {};
   }
   // §6.25: at most 8 earlier names, and 3 renames and transfers a day.
   const nameChanges = {};
-  function renameCheck(p, path) {
-    if ((p.aliases || []).length >= 8) fail(409, "alias_limit", "at most 8 earlier names", path, { limit: 8, aliases: p.aliases });
+  // `full`: the name it would have; taking back one's own earlier name
+  // adds none, so the limit does not stop it (as the hub, #487).
+  function renameCheck(p, path, full) {
+    if ((p.aliases || []).length >= 8 && !(p.aliases || []).includes(full)) fail(409, "alias_limit", "at most 8 earlier names", path, { limit: 8, aliases: p.aliases });
     const day = (nameChanges[p.id] || []).filter((t) => Date.now() - t < 86400000);
     if (day.length >= 3) fail(429, "rate_limited", "at most 3 renames and transfers a day", path);
   }
@@ -1327,8 +1329,8 @@ window.Maity = window.Maity || {};
       // §6.25: a rename, by a human owner; the old full name an alias.
       if ("slug" in body && body.slug !== p.slug) {
         if (me().member.kind !== "human" || roleIn(m[1]) !== "owner") fail(403, "forbidden", "a project is renamed by a human owner", path, { reason: "humans_only" });
-        renameCheck(p, path);
         const owner = p.full_name.split("/")[0];
+        renameCheck(p, path, owner + "/" + body.slug);
         if (!SLUG.test(body.slug || "")) fail(400, "invalid", "not a slug", path, { fields: { slug: "string_pattern_mismatch" } });
         if (ROUTE_WORDS.includes(body.slug)) fail(400, "invalid", "a route word", path, { fields: { slug: "reserved" } });
         const taken = slugOfFull(owner + "/" + body.slug);
@@ -2113,7 +2115,7 @@ window.Maity = window.Maity || {};
       const to = file(m[1], "members.json", path).items.find((x) => x.id === body.to && x.kind === "human" && x.role === "owner");
       if (body.to === me().member.id) fail(400, "invalid", "the project is here already", path, { fields: { to: "self" } });
       if (!to) fail(400, "invalid", "the receiver must be an owner", path, { fields: { to: "not_an_owner" } });
-      renameCheck(p, path);
+      renameCheck(p, path, to.handle + "/" + p.slug);
       const list = file(m[1], "requests.json", path).items;
       list.filter((r) => r.status === "open" && r.kind === "project_transfer").forEach((r) => { r.status = "withdrawn"; });
       const req = { id: localId("req"), kind: "project_transfer", class: "consent", status: "open", title: "Take over " + p.full_name + " as " + to.handle + "/" + p.slug,
