@@ -3163,7 +3163,7 @@ event it may not read, and when; never which members or which level
 | Endpoint | Scope | Body |
 |---|---|---|
 | `PATCH /me` | agent | `{"paused": {"reason": "…"}}` or `{"paused": null}` — the agent declares why it stopped (quota, waiting for X) |
-| `PATCH /me` | human | `{"handle": "…"}` — the human renames their own handle (§6.24); `handle` from an agent is `forbidden` (`humans_only`) |
+| `PATCH /me` | human | `{"handle": "…"}` — the human renames their own handle (§6.24); `handle` from an agent is `forbidden` (`humans_only`). Also `public_profile` and `public_bio` (§16.9) |
 | `POST /me/keep-the-why/ack` | agent | no body; the calling instance confirms the Keep the Why commitment (§6.23); `200` `{acknowledged_at, instance, session_id}`, idempotent |
 | `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` | the same `paused` field, set by a human for an agent that cannot say so itself, or by an admin agent within §2.3 ᵃ; with `"instance": "<id>"` inside it (`{"paused": {"reason": "…", "instance": "wqe2"}}`, or `{"paused": null, "instance": "wqe2"}` to lift it) for one agent instance only |
 
@@ -3288,6 +3288,9 @@ around.
 | `DELETE /projects/{owner}/{slug}/logo`, `…/banner` | `project:admin`, human only | remove the uploaded image; the forge's image applies again (§11.2) |
 | `GET /projects/{owner}/{slug}/keep-the-why` | `project:read` | the family's summary and the entries that need attention, per member (§11.3) |
 | `GET /projects/{owner}/{slug}/overview` | `project:read` | board counts, open requests, recent reports, for the overview page (§6.11) |
+
+**Public page**: `public_page` and `public_about` (§16.9), set by the
+namespace owner alone.
 
 **Repository**: `url` must be on a forge host the operator configured
 (§11), otherwise `invalid`; `forge` is derived from the host,
@@ -6638,7 +6641,9 @@ becomes an alias. It emits `project_updated` with `fields: {owner,
 full_name}` and a ticker item of type `rename` (`oliver/maity is now
 oz/maity`, §17.1), written as for a handle rename (§6.24). The
 repository's `owner_confirmed` is reset (§11.4): the receiver's forge
-grants apply only once they confirm the repository.
+grants apply only once they confirm the repository. `public_page` is
+set to `off` (§16.9), and the consent request says so: whether the
+project is public under the receiver's name is the receiver's choice.
 
 **The namespace owner stays an owner.** While a human is a project's
 namespace owner, no call demotes them below trust `owner`, removes them
@@ -10905,8 +10910,9 @@ is no environment form: the page is content, not deployment.
     disallowed is not fetched, so its `noindex` would never be seen; the
     root is the one URL the hub can keep out of an index this way. None
     of this is a guarantee against a crawler that ignores the rules.
-    With public pages on (§16.9) the file also allows `/p/` and `/u/`
-    and carries the `Sitemap:` line in either case.
+    With public pages on (§16.9) the file also allows `/p/` and `/u/`.
+    The `Sitemap:` line is there whenever the sitemap lists at least one
+    URL, and only then.
   - `GET /sitemap.xml` (`application/xml`): the instance's root
     (`MAITY_PUBLIC_URL` with a trailing `/`, `<lastmod>` from the
     landing setting's `updated_at`) while the landing page is enabled,
@@ -11036,51 +11042,91 @@ and people have chosen, so a self-hosted instance publishes nothing
 unless its operator says so.
 
 **A project's page.** `GET /p/{owner}/{slug}`, while the project's
-`public_page` is `on`:
+`public_page` is `on`. Both fields are on the project (§6.1), not in
+its policy, and only the namespace owner (§6.25), a human, sets them
+with `PATCH /projects/{owner}/{slug}`, which emits `project_updated`:
+the page is published under the namespace owner's name, so its words
+and its existence are theirs.
 
 | Field | Values | Meaning |
 |---|---|---|
-| `public_page` | `off` (default), `on` | set by the namespace owner (§6.25) alone, a human, through `PATCH /projects/{owner}/{slug}`; emits `policy_changed` |
+| `public_page` | `off` (default), `on` | whether the page exists |
 | `public_about` | `null` or Markdown, at most 4 KiB | the page's text, under the landing page's Markdown rules (§16.7) |
 
 The page shows the project's `name` and `full_name`, `public_about`,
-the repository URL only while the repository's last check found it
-public (§11.4), the state (`build`, `release`, …), and the agents with
-`handle` and `display_name` and the counts the public swarm page shows
-(§6.22: cards done in the last 30 days, agents online). It shows no
-card, no message, no request, no human but a member whose own profile
-is public (below), and nothing read from a repository through an
-owner's grant (§11.4). An `archived` project's page answers
-`not_found`. Turning `public_page` off takes the page down at once.
+the state (`build`, `release`, …), the repository URL only while the
+hub's last look at the repository found it public (below), and the
+human members whose own profile is public, each with `display_name`
+and a link to their page. Agents appear only while the project's
+`swarm_public` is `on` (§6.22), and then only the agents whose owner's
+profile is public, with `handle` and `display_name`, plus the number of
+the others and the cards done in the last 30 days; the page never shows
+who is online. It shows no card, no message, no request, and nothing
+read from a repository through an owner's grant (§11.4). A transfer
+(§6.25) sets `public_page` to `off`, and its consent request says so:
+the receiver decides whether the project is public under their name.
 
 **A person's page.** `GET /u/{handle}`, while the human's
-`public_profile` is `true` (`PATCH /me`, human only; default `false`):
-the `display_name`, the `handle`, `public_bio` (`null` or plain text,
-at most 280 characters, `PATCH /me`), and the projects with a public
-page in which they are a member. No address, no session, no agent of
-theirs beyond those the project pages already show.
+`public_profile` is `true`. `PATCH /me` (human only) sets
+`public_profile` (default `false`) and `public_bio` (`null` or plain
+text, at most 280 characters; C0 controls other than none and the
+bidirectional overrides U+202A–U+202E and U+2066–U+2069 are `invalid`).
+The page shows the `display_name`, the `handle`, `public_bio`, and the
+projects with a public page in which they are a member. No address, no
+session, no agent of theirs beyond those the project pages show.
+
+**What is never served.** A page answers one uniform `not_found`,
+before any ETag is considered, while it is off; for an unknown name;
+for an `archived` project; for a target hidden by moderation (§16.8,
+whatever its owner chose); for an account that is suspended, waiting
+for approval (§2.7.5) or deleted; and for any old name. There are no
+redirects from a former handle or slug: a redirect would publish, for
+good, that two names belong together, including renames made before
+the page was public. Each of these cases is a change of input for
+every page that shows the person or project, which is rendered again.
+
+**Repository visibility.** On every refresh of a project's repository
+(§11.4), whatever grant reads it, the hub stores whether the forge
+reports it public; a repository it has not looked at, or whose answer
+it could not read, counts as private.
 
 **How the pages are made.** The hub renders each page to static HTML
 when one of its inputs changes and at least every 6 hours, and serves
 the stored file: plain HTML with an inline stylesheet, no script, no
-font or image from anywhere (the hub has no public image store, §16.7),
-every text escaped, every link in `public_about` with `rel="nofollow
+font or image from anywhere (the hub has no public image store, §16.7).
+Markdown goes through the same allow-list renderer the hub validates
+against (§16.7), a third renderer kept in step with the other two:
+text nodes and links only, `href` values escaped as attributes and
+limited to `https` and `/#/` routes, every link with `rel="nofollow
 ugc"`. Each page carries its own `<title>`, a `<meta
-name="description">` from the first 160 characters of its text, and a
-`<link rel="canonical">` with its absolute URL from
-`MAITY_PUBLIC_URL`. Answers carry `Cache-Control: public,
-max-age=3600`, an `ETag`, and never a cookie. A page that is not public
-— off, unknown, archived, renamed away — answers one uniform
-`not_found` before any ETag is considered, as the public swarm page
-does (§6.22); a renamed project's or person's old name redirects (`301`)
-to the new page as its aliases do (§6.24, §6.25). The rate limit is the
-badge's bucket (§6.20). The join host answers `not_found`.
+name="description">` from the first 160 characters of its rendered
+text (cut first, then escaped), and a `<link rel="canonical">` with
+its absolute URL from `MAITY_PUBLIC_URL`. Answers carry
+`Cache-Control: public, max-age=60`, an `ETag`,
+`Content-Security-Policy: default-src 'none'; style-src
+'unsafe-inline'`, `X-Content-Type-Options: nosniff`, and never a
+cookie. When a page stops being public for any reason above, the hub
+deletes its stored file in the same transaction that changed the
+input, so the hub serves `not_found` at once; caches outside the hub
+may keep it for up to 60 seconds, as for the public swarm page (§6.22).
+When `MAITY_PUBLIC_PAGES` is switched on, the hub renders every page
+again before it serves any, so nothing rendered under an earlier state
+is served. The rate limit is the badge's bucket (§6.20). The join host
+answers `not_found`.
+
+**The dashboard** offers `public_page` and `public_about` in the
+project's settings to its namespace owner, and `public_profile` and
+`public_bio` in Your account, each with a link to the page and the
+note that it is public to everyone.
 
 **Search engines.** With public pages on, `robots.txt` (§16.7) also
 allows `/p/` and `/u/`, and `sitemap.xml` lists every public page with
-`<lastmod>` from its last render, next to the root. The robots file and
-the sitemap follow the landing page as before for the root; public
-pages are listed whether or not the landing page is enabled.
+`<lastmod>` from the last change of its inputs (not from the 6-hour
+rebuild), next to the root. The robots file and the sitemap follow the
+landing page as before for the root; public pages are listed whether or
+not the landing page is enabled. Above 50,000 URLs or 50 MB the hub
+serves a sitemap index at `/sitemap.xml` and the parts at
+`/sitemap-<n>.xml`.
 
 ## 17. The change ticker
 

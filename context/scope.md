@@ -596,5 +596,12 @@ must not publish its members by an update.
 - Making the dashboard itself crawlable (server-side rendering of the
   app): the whole app would have to render without a session for a
   handful of public facts.
-- Any co-owner turning a project's page on: the page is published under
-  the namespace owner's name, so the namespace owner decides.
+- Any co-owner turning a project's page on or writing its text: the
+  page is published under the namespace owner's name, so the namespace
+  owner decides; a transfer turns it off for the same reason.
+- Redirecting a former handle or slug to the public page: it would
+  publish for good that two names belong together.
+- Listing every agent of a public project: agents of other owners and
+  their activity would be published by someone else's choice; they show
+  only with the project's `swarm_public` and their owner's public
+  profile, the rest as a number.
