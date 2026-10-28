@@ -69,3 +69,24 @@ def test_an_agent_still_needs_paused(owner: flow.Human, make_client: ClientFacto
     agent = flow.agent(make_client, owner)
     assert agent.patch("/me", {}).status_code == 400
     assert agent.patch("/me", {"paused": {"reason": "quota"}}).status_code == 200
+
+
+def test_a_repeated_key_replays_the_answer_as_the_profile_is_now(owner: flow.Human) -> None:
+    key = {"Idempotency-Key": "meat-proxy-replay-0001"}
+    path = "/api/v1/me"
+    first = owner.client.patch(
+        path, json={"meat_proxy": True}, headers={"X-CSRF-Token": owner.csrf, **key}
+    )
+    assert first.status_code == 200 and first.json()["member"]["meat_proxy"] is True
+    owner.patch("/me", {"meat_proxy": False})
+    replay = owner.client.patch(
+        path, json={"meat_proxy": True}, headers={"X-CSRF-Token": owner.csrf, **key}
+    )
+    assert replay.status_code == 200
+    assert replay.headers["Idempotent-Replayed"] == "true"
+    assert replay.json()["member"]["meat_proxy"] is False  # the resource as it is now
+    assert "server_time" in replay.json()
+    other = owner.client.patch(
+        path, json={"meat_proxy": False}, headers={"X-CSRF-Token": owner.csrf, **key}
+    )
+    assert other.status_code == 409  # the same key with another body

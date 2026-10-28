@@ -555,6 +555,14 @@ def _credential(conn: Connection, caller: Caller) -> Any:
     return conn.execute(select(t.credential).where(t.credential.c.id == caller.credential_id)).one()
 
 
+def load_human_profile(conn: Connection, human_id: str) -> dict[str, Any]:
+    """A human's `PATCH /me` answer: `/me` as it is now (§5.1), also on a replay."""
+    return {**human_body(conn, human_id), "server_time": clock.rfc3339(clock.now())}
+
+
+idempotency.LOADERS["human_profile"] = idempotency.plain(load_human_profile)
+
+
 @router.patch("/me")
 def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse:
     given = body.model_fields_set
@@ -570,9 +578,9 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
             .where(t.human.c.id == caller.human_id)
             .values(meat_proxy=body.meat_proxy)
         )
-        body_out = human_body(conn, caller.human_id)
-        body_out["server_time"] = clock.rfc3339(clock.now())
-        return idempotency.Outcome(200, "member", caller.human_id, body_out)
+        return idempotency.Outcome(
+            200, "human_profile", caller.human_id, load_human_profile(conn, caller.human_id)
+        )
 
     def action(conn: Connection) -> idempotency.Outcome:
         if "meat_proxy" in given:
