@@ -126,7 +126,7 @@ def test_the_default_dashboard_is_served(database_url: str, migrated: Engine) ->
         assert client.get("/js/app.js").status_code == 200
 
 
-def test_driver_reason_names_the_cause_and_masks_credentials() -> None:
+def test_driver_reason_names_a_category_and_never_the_driver_text() -> None:
     from sqlalchemy.exc import OperationalError
 
     from maity_hub.errors import driver_reason
@@ -134,24 +134,39 @@ def test_driver_reason_names_the_cause_and_masks_credentials() -> None:
     class ConnectionTimeout(Exception):
         pass
 
-    dsn = "postgresql://maity:s3cret-pw@db.example:5432/maity"
-    error = OperationalError(
-        "SELECT 1",
-        {},
-        ConnectionTimeout(
-            'connection failed: connection to server at "10.0.0.5", port 5432 '
-            "failed: timeout expired\n"
-            f"({dsn}) password=hunter2 user='maity' PASSWORD = 'quoted pw'"
-        ),
-    )
-    reason = driver_reason(error)
-    assert reason.startswith("ConnectionTimeout: connection failed: connection to server at")
-    assert "timeout expired" in reason and "10.0.0.5" in reason  # the cause stays readable
-    for secret in ("s3cret-pw", "hunter2", "quoted pw", dsn):
-        assert secret not in reason
-    assert "\n" not in reason and "<url>" in reason
-    assert len(driver_reason(OperationalError("x", {}, Exception("a" * 5000)))) < 400
+    cases = {
+        "dns": "failed to resolve host 'db': [Errno -2] Name or service not known",
+        "timeout": 'connection to server at "10.0.0.5", port 5432 failed: timeout expired',
+        "refused": "connection failed: Connection refused",
+        "closed": "consuming input failed: server closed the connection unexpectedly",
+        "no_slots": "FATAL: remaining connection slots are reserved",
+        "unclassified": "something no list knows",
+    }
+    for category, text in cases.items():
+        reason = driver_reason(OperationalError("SELECT 1", {}, ConnectionTimeout(text)))
+        assert reason.endswith(f" {category}"), (category, reason)
+        assert reason.startswith("tests.test_app.") or ".ConnectionTimeout " in reason
     assert driver_reason(Exception("no orig")) == ""
+
+
+def test_driver_reason_never_carries_the_driver_text() -> None:
+    """Every form in which a driver could quote a credential, however it is escaped or encoded."""
+    from sqlalchemy.exc import OperationalError
+
+    from maity_hub.errors import driver_reason
+
+    texts = [
+        "host=db password='prefix\\'LEAK_MARKER'",
+        "password=prefix\\ LEAK_MARKER",
+        "postgresql://user:prefix'LEAK_MARKER@db/name",
+        "postgresql%3A%2F%2Fuser%3ALEAK_MARKER%40db%2Fname",
+        "{'password': 'LEAK_MARKER'}",
+        "failed to resolve host 'LEAK_MARKER' user=LEAK_MARKER",
+        "timeout expired LEAK_MARKER\n" + "x" * 5000,
+    ]
+    for text in texts:
+        reason = driver_reason(OperationalError("SELECT 1", {}, Exception(text)))
+        assert "LEAK_MARKER" not in reason and "\n" not in reason and len(reason) < 120, reason
 
 
 def test_the_database_error_handler_logs_the_cause_not_the_secret(
@@ -170,5 +185,5 @@ def test_the_database_error_handler_logs_the_cause_not_the_secret(
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "database_unavailable"
     logged = " ".join(record.getMessage() for record in caplog.records)
-    assert "failed to resolve host" in logged and "pw-in-dsn" not in logged
+    assert logged.endswith(" dns") and "pw-in-dsn" not in logged
     assert "pw-in-dsn" not in response.text

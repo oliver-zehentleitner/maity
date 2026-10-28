@@ -8,7 +8,6 @@ body.
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -95,25 +94,37 @@ def driver_code(error: Exception) -> str:
     return str(args[0]) if args and isinstance(args[0], int) else ""
 
 
-_DSN = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^\s'\"]*")
-_KEYWORD = re.compile(r"(?i)\b(password|passwd|pwd|secret|token)\s*=\s*(?:'[^']*'|\"[^\"]*\"|\S+)")
-_REASON_LIMIT = 300
+# What a connection failure can be, found by phrases the drivers use. Nothing of the driver's text
+# is kept: the category is chosen from this list and only its name is logged, so a password, a
+# user, a host or a connection string in the text cannot reach the log, whatever escaping it uses.
+_CAUSES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("dns", ("failed to resolve host", "name or service not known", "temporary failure in name")),
+    ("timeout", ("timeout expired", "timed out")),
+    ("refused", ("connection refused",)),
+    ("unreachable", ("network is unreachable", "no route to host")),
+    ("closed", ("server closed the connection", "connection lost", "eof detected", "broken pipe")),
+    ("starting", ("starting up", "shutting down", "recovery mode")),
+    ("no_slots", ("remaining connection slots", "too many clients", "too many connections")),
+    ("auth", ("authentication failed", "access denied")),
+    ("ssl", ("ssl", "tls")),
+)
 
 
 def driver_reason(error: Exception) -> str:
-    """What the driver says about a connection failure, for the log and never for a client:
-    the original exception's type and its text with every URL (a DSN with credentials) and every
-    `password=...` pair replaced, on one line and cut short. Connection errors name hosts, ports and
-    timeouts; the masking covers the case that a driver ever quotes the connection string."""
+    """Why a connection failed, for the log and never for a client: the original exception's class
+    and one category from a fixed list (`_CAUSES`), or `unclassified`. The driver's own text is
+    never logged: it can quote the connection string, the user or the password in forms no
+    pattern covers.
+    """
     original = getattr(error, "orig", None)
     if original is None:
         return ""
-    text = " ".join(str(original).split())
-    text = _DSN.sub("<url>", text)
-    text = _KEYWORD.sub(lambda m: f"{m.group(1)}=<hidden>", text)
-    if len(text) > _REASON_LIMIT:
-        text = text[:_REASON_LIMIT] + "..."
-    return f"{type(original).__name__}: {text}" if text else type(original).__name__
+    text = str(original).lower()
+    cause = next(
+        (name for name, phrases in _CAUSES if any(p in text for p in phrases)), "unclassified"
+    )
+    kind = type(original)
+    return f"{kind.__module__}.{kind.__qualname__} {cause}"
 
 
 def install(app: FastAPI) -> None:
