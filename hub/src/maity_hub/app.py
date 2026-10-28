@@ -20,6 +20,8 @@ from starlette.types import Scope
 from maity_hub import (
     API_VERSION,
     __version__,
+    attachment_store,
+    attachments,
     availability,
     errors,
     forge,
@@ -138,7 +140,14 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         # The outbox is sent in the background, with the settings in effect (§16.2, §18.7).
         mail_worker = outbox.Worker(engine, settings.mail, settings.secret_key)
         mail_worker.start()
+        # Pending uploads expire and stray blobs go without a request to notice it (§8.7).
+        file_store = attachment_store.optional_store(settings)
+        sweeper = attachments.Worker(engine, file_store) if file_store is not None else None
+        if sweeper is not None:
+            sweeper.start()
         yield
+        if sweeper is not None:
+            sweeper.stop()
         mail_worker.stop()
         takeover_worker.stop()
         jour_fixe_clock.stop()

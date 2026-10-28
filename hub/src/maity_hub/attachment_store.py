@@ -52,6 +52,17 @@ class LocalStore:
         with contextlib.suppress(FileNotFoundError):
             self._path(key).unlink()
 
+    def projects(self) -> list[str]:
+        """The projects that have a folder, for the sweep."""
+        return [p.name for p in self.root.iterdir() if p.is_dir()]
+
+    def age(self, key: str, now: float) -> float | None:
+        """Seconds since the blob was written, or None when it is gone."""
+        try:
+            return now - self._path(key).stat().st_mtime
+        except FileNotFoundError:
+            return None
+
     def keys(self, project: str) -> list[str]:
         """The blobs of one project, for the sweep."""
         folder = self.root / project
