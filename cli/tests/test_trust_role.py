@@ -13,7 +13,7 @@ import pytest
 
 from maity import cli, onboarding, sign
 
-P = "/api/v1/projects/maity"
+P = "/api/v1/projects/oliver/maity"
 EMPTY_SHA = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 MEMBERS = {
     "items": [
@@ -55,7 +55,7 @@ def test_api_sends_the_go_signed_and_the_body_as_read(
     body = tmp_path / "body.json"
     body.write_bytes(b'{ "trust":  "guest" }\n')
     fake.routes[("PATCH", f"{P}/members/agt-b")] = lambda s: (200, {"id": "agt-b"})
-    argv = ["api", "PATCH", "/projects/maity/members/agt-b", "--json", str(body),
+    argv = ["api", "PATCH", "/projects/oliver/maity/members/agt-b", "--json", str(body),
             "--on-request", "req-0091"]  # fmt: skip
     assert cli.main(argv) == cli.EXIT_OK
     seen = fake.signed()[-1]  # the fake hub verified the signature over the extra line
@@ -78,7 +78,7 @@ def test_api_without_a_go_sends_neither_header_nor_raw_body(
 
 def test_reads_carry_no_go(joined: Path, fake: fakehub.FakeHub) -> None:
     fake.routes[("GET", f"{P}/members")] = lambda s: (200, MEMBERS)
-    argv = ["api", "GET", "/projects/maity/members", "--on-request", "req-0091"]
+    argv = ["api", "GET", "/projects/oliver/maity/members", "--on-request", "req-0091"]
     assert cli.main(argv) == cli.EXIT_OK
     assert "maity-on-request" not in fake.signed()[-1].headers
 
@@ -122,12 +122,12 @@ def test_ask_action_sends_the_exact_call(
     body = tmp_path / "body.json"
     body.write_bytes(b'{ "trust":  "guest" }\n')
     argv = ["ask", "Make agent-b a guest?", "--to", "owner", "--class", "decision",
-            "--action", "patch /api/v1/projects/maity/members/agt-b?b=2&a=x%20y",
+            "--action", "patch /api/v1/projects/oliver/maity/members/agt-b?b=2&a=x%20y",
             "--action-body", str(body)]  # fmt: skip
     assert cli.main(argv) == cli.EXIT_OK
     assert fake.signed()[-1].json()["action"] == {
         "method": "PATCH",
-        "path": "/projects/maity/members/agt-b",
+        "path": "/projects/oliver/maity/members/agt-b",
         "query": "a=x%20y&b=2",  # as `maity api --query` signs and sends it
         "body": '{ "trust":  "guest" }\n',
     }
@@ -136,18 +136,18 @@ def test_ask_action_sends_the_exact_call(
 def test_ask_action_without_body_or_query_sends_null(joined: Path, fake: fakehub.FakeHub) -> None:
     _ask(fake)
     argv = ["ask", "Remove agent-b?", "--to", "owner", "--class", "consent",
-            "--action", "DELETE /projects/maity/members/agt-b"]  # fmt: skip
+            "--action", "DELETE /projects/oliver/maity/members/agt-b"]  # fmt: skip
     assert cli.main(argv) == cli.EXIT_OK
     action = fake.signed()[-1].json()["action"]
-    assert action == {"method": "DELETE", "path": "/projects/maity/members/agt-b",
+    assert action == {"method": "DELETE", "path": "/projects/oliver/maity/members/agt-b",
                       "query": None, "body": None}  # fmt: skip
 
 
 @pytest.mark.parametrize(
     "extra",
     [
-        ["--action", "GET /projects/maity/members"],
-        ["--action", "PATCH projects/maity"],
+        ["--action", "GET /projects/oliver/maity/members"],
+        ["--action", "PATCH projects/oliver/maity"],
         ["--action", "PATCH"],
         ["--action", "PATCH /a#b"],
         ["--action-body", "body.json"],

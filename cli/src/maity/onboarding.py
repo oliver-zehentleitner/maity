@@ -209,7 +209,7 @@ def _project(packet: dict[str, Any]) -> list[str]:
         return []
     name = project.get("name") or project.get("slug")
     lines = [
-        f"Project: {inline(name)} ({inline(project.get('slug'))}), "
+        f"Project: {inline(name)} ({inline(project.get('full_name') or project.get('slug'))}), "
         f"state {inline(project.get('state'))}"
     ]
     repository = get(project, "repository", "url")
@@ -295,10 +295,7 @@ def _request(req: dict[str, Any], names: dict[str, str], answering: bool = False
     by = f"  answered by {_name(answer.get('by') or '?', names)}"
     lines.append(by + (f": {inline(label or reply)}" if reply else ""))
     if answer.get("talk"):
-        lines.append(
-            "  they want to talk first: read your chat, "
-            "`maity api GET /projects/<slug>/conversations/<your member id>/messages`"
-        )
+        lines.append("  they want to talk first: read your chat, " "`maity chat <your member id>`")
     if answer.get("text"):
         lines += ["  " + q for q in quote(answer["text"])]
     return lines
@@ -539,7 +536,8 @@ def render(packet: Any, first: bool = False, board_empty: bool = False) -> str:
     out: list[str] = []
     ms = _dict(packet.get("membership"))
     names = _names(packet)
-    slug = inline(get(packet, "project", "slug") or "<slug>")
+    # The read-more hints name the API path, `<owner>/<slug>` since the namespace (§6.25).
+    slug = inline(get(packet, "project", "full_name") or "<owner>/<slug>")
     out += _memory(packet)  # the soul first: what the agent loads before anything (§19.3)
     paused = ms.get("paused")
     if isinstance(paused, dict):

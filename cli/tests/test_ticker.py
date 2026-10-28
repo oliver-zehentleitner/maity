@@ -13,7 +13,7 @@ from test_onboarding import packet
 
 from maity import cli, onboarding
 
-BASE = "/api/v1/projects/maity/ticker"
+BASE = "/api/v1/projects/oliver/maity/ticker"
 MERGE = {"id": "tck-4302", "seq": 4302, "type": "merge", "text": "#212 hub: lease survives",
          "url": "https://github.com/o/r/pull/212", "for_me": True,
          "why": ["area_owner:hub/", "card_holder:tsk-0031"], "muted": False}  # fmt: skip
@@ -145,7 +145,7 @@ def test_a_hub_without_the_ticker_gets_the_interim_line(
 def test_a_real_not_found_on_a_hub_with_the_ticker_is_an_error(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    fake.openapi = {"paths": {"/projects/{slug}/ticker": {"get": {}, "post": {}}}}
+    fake.openapi = {"paths": {"/projects/{owner}/{slug}/ticker": {"get": {}, "post": {}}}}
     fake.routes[("POST", BASE)] = lambda s: (
         404, {"error": {"code": "not_found", "message": "not_found", "details": {}}}
     )  # fmt: skip

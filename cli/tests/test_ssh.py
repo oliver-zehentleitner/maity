@@ -20,7 +20,7 @@ url = "https://hub.example"
 state_dir = "{root}/st"
 
 [limits]
-projects = ["maity"]
+projects = ["oliver/maity"]
 repositories = ["github.com/oliver-zehentleitner/*"]
 max_agents = 4
 
