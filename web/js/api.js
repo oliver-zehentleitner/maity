@@ -1580,6 +1580,9 @@ window.Maity = window.Maity || {};
     }],
     ["GET", /^\/openapi\.json$/, () => ({ openapi: "3.1.0", paths: {
       "/api/v1/admin/users": { get: {} },
+      // §6.24: the handle is a field of the rename's PATCHes.
+      "/api/v1/me": { patch: { requestBody: { content: { "application/json": { schema: { properties: { handle: {} } } } } } } },
+      "/api/v1/agents/{agent_id}": { patch: { requestBody: { content: { "application/json": { schema: { properties: { handle: {} } } } } } } },
       "/api/v1/admin/statistics": { get: {} },
       "/api/v1/admin/settings/landing": { get: {}, patch: {} },
       "/api/v1/landing": { get: {} },

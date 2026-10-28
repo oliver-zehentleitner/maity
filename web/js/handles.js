@@ -69,5 +69,13 @@ window.Maity = window.Maity || {};
         : h("p", { class: "muted" }, "A handle you give up stays as an alias, so what was written under it keeps reaching you."));
   }
 
-  M.handles = { editor, refusal, FORMAT };
+  // Whether the hub's machine form names `handle` in the body of the PATCHes (§6.24):
+  // { me, agent }. A hub whose machine form cannot be read keeps the editors, as the
+  // controls of views.md do; a failure then says itself where it happens.
+  async function offered() {
+    const read = (path) => M.api.hubBody("PATCH", path).then((fields) => fields.has("handle")).catch(() => true);
+    return { me: await read("/me"), agent: await read("/agents/{agent_id}") };
+  }
+
+  M.handles = { editor, refusal, offered, FORMAT };
 })(window.Maity);

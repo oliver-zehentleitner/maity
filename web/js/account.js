@@ -169,6 +169,7 @@ window.Maity = window.Maity || {};
     // Your agents' pictures (§6.10: the profile's owner sets them); a hub
     // without the field shows the profiles without the editor.
     const agents = await M.api.getAll("/agents").then((r) => r.items.filter((a) => a.owner_id === ctx.me.id)).catch(() => null);
+    const rename = M.handles ? await M.handles.offered() : { me: false, agent: false };
     const notify = M.notifySettings ? await M.notifySettings(ctx) : null;
     const sessions = M.sessions ? await M.sessions.section(ctx) : null;
     const preferences = M.preferences ? await M.preferences.section(ctx) : null;
@@ -187,7 +188,7 @@ window.Maity = window.Maity || {};
       h("dl", { class: "facts" },
         h("dt", null, "Name"), h("dd", null, ctx.me.display_name),
         h("dt", null, "Handle"), h("dd", null, "@" + ctx.me.handle)),
-      M.handles ? M.handles.editor(ctx.me, "/me", "your handle", changed) : null,
+      rename.me ? M.handles.editor(ctx.me, "/me", "your handle", changed) : null,
       pictureHeading,
       h("p", { class: "muted" }, "Shown next to your name in every project, to everyone who shares one with you."),
       note,
@@ -198,7 +199,7 @@ window.Maity = window.Maity || {};
         // in a project one is not in) marks that agent and starts there.
         h("ul", { class: "picture-list" }, agents.map((a) => h("li", { class: wantedAgent === a.id ? "wanted" : null, "data-agent": a.id },
           h("h4", { class: "picture-name", tabindex: wantedAgent === a.id ? "-1" : null }, a.display_name, h("span", { class: "muted" }, " @" + (a.name || a.handle))),
-          M.handles ? M.handles.editor(a, "/agents/" + encodeURIComponent(a.id), a.display_name + "'s handle", changed) : null,
+          rename.agent ? M.handles.editor(a, "/agents/" + encodeURIComponent(a.id), a.display_name + "'s handle", changed) : null,
           pictureEditor(a, "/agents/" + encodeURIComponent(a.id) + "/avatar", false, changed))))] : null,
       themeBox ? [themeHeading, h("p", { class: "muted" }, "Kept in this browser only: another browser or device has its own. System follows the light or dark setting of your device."), themeBox] : null,
       preferences ? preferences.el : null,
