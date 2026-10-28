@@ -527,13 +527,14 @@ a.id-ref:hover, a.id-ref:focus-visible { text-decoration: underline; }
 .project-label .project-mark { margin-right: 4px; }
 .bar .project-mark { margin-right: -2px; }
 /* A forge's social preview is 2:1 (GitHub: at least 640×320, ideally 1280×640):
-   the banner keeps that shape at every width and is cropped, not squashed, if not. */
-.project-banner { display: block; width: 100%; height: auto; aspect-ratio: 2 / 1; object-fit: cover; border-radius: var(--radius); margin: 0 0 12px; }
+   the banner keeps that shape at every width. It is never cropped, since its text
+   would be cut; an image of another shape gets margins instead. */
+.project-banner { display: block; width: 100%; height: auto; aspect-ratio: 2 / 1; object-fit: contain; background: var(--surface-2); border-radius: var(--radius); margin: 0 0 12px; }
 .images { display: grid; gap: 10px; margin-top: 12px; }
 .image-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; max-width: 32rem; }
 .image-row label { font-size: 0.85rem; color: var(--muted); }
 .image-preview-logo { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; }
-.image-preview-banner { width: 100%; height: auto; aspect-ratio: 2 / 1; object-fit: cover; border-radius: 6px; }
+.image-preview-banner { width: 100%; height: auto; aspect-ratio: 2 / 1; object-fit: contain; background: var(--surface-2); border-radius: 6px; }
 /* Runners (docs/api.md §15). */
 .runners { display: grid; gap: 12px; margin-top: 12px; }
 .runner { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; min-width: 0; overflow-wrap: anywhere; }

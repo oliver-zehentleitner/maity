@@ -1778,13 +1778,18 @@ on the account: this is what the maintainer asked to move.
 
 The banner on the project's inbox, and its preview in Project settings,
 are as wide as their column and half as high (`aspect-ratio: 2 / 1`).
-An image of another shape is cropped to it (`object-fit: cover`). There
-is no fixed height. On a wide screen the banner is the first screenful
-above the inbox.
+The image is never cropped (`object-fit: contain`): one of another shape
+is shown whole, with margins in the surface colour. There is no fixed
+height. On a wide screen the banner is the first screenful above the
+inbox.
 
 **Reason:** a project's banner is mostly the repository's social preview,
-which GitHub defines at 2:1. The same shape shows it whole at every width.
+which GitHub defines at 2:1. The same shape shows it whole at every
+width. A preview often carries text, such as the Keep the Why banner, and
+cropping makes that unreadable, so margins are preferred.
 
 **Rejected alternative:** the fixed 180-pixel strip it had: at desktop
 width it cut a 2:1 preview to about 6.5:1, showing only a stripe of it.
+Filling the 2:1 box by cropping (`object-fit: cover`): a banner of
+another shape lost the text at its edges.
 
