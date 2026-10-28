@@ -12,7 +12,7 @@ import pytest
 
 from maity import cli
 
-TASKS = "/api/v1/projects/maity/tasks"
+TASKS = "/api/v1/projects/oliver/maity/tasks"
 
 
 def card(

@@ -73,8 +73,10 @@ def attach_hint(socket: Path, name: str, as_user: AsUser) -> str:
 
 
 def session_name(project: str, clone: str) -> str:
-    """`maity_<project>_<clone>`: the tokens are `[a-z0-9-]`, so `_` keeps two different
-    pairs from ever giving one name (`ab` + `cd-ef` and `ab-cd` + `ef` would with `-`)."""
+    """`maity_<project>_<clone>`, `project` the project's id (§15.5), which no rename changes:
+    the tokens are `[a-z0-9-]`, so `_` keeps two different pairs from ever giving one name
+    (`ab` + `cd-ef` and `ab-cd` + `ef` would with `-`). Sessions are found by their
+    placement label, not by this name, so one started under an older name is still found."""
     return f"{PREFIX}{project}_{clone}"
 
 
