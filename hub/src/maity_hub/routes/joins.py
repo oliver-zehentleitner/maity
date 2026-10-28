@@ -25,7 +25,16 @@ from sqlalchemy import Connection, insert, select, update
 from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import briefings, clock, events, idempotency, instances, namespace, takeovers
+from maity_hub import (
+    briefings,
+    clock,
+    events,
+    handles,
+    idempotency,
+    instances,
+    namespace,
+    takeovers,
+)
 from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.auth import credentials
@@ -802,15 +811,19 @@ def _create_for_join(conn: Connection, row: Any) -> str:
             t.agent_profile.c.handle == row.new_agent_handle,
         )
     ).first()
-    if taken is not None:
+    if taken is not None or handles.holder(conn, row.created_by, row.new_agent_handle) not in (
+        None,
+        "placement",
+    ):
         raise not_found()
     # `POST /agents` does not take the project lock: a profile of that handle may land
     # after the check above. Its `invalid`, or the unique constraint, is still a join
     # that no longer works, never a 400 or a 500 that tells the holder of the link more.
     try:
         return create_profile(
-            conn, row.created_by, row.new_agent_handle, row.new_agent_display_name, None
-        )
+            conn, row.created_by, row.new_agent_handle, row.new_agent_display_name, None,
+            placement=True,
+        )  # fmt: skip
     except IntegrityError:
         raise not_found() from None
     except ApiError as error:

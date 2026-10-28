@@ -8,10 +8,10 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, insert, select, update
 
-from maity_hub import avatars, clock, events, idempotency
+from maity_hub import avatars, clock, events, handles, idempotency
 from maity_hub import tables as t
 from maity_hub.deps import HumanCaller, engine_of
-from maity_hub.errors import ApiError, invalid, not_found
+from maity_hub.errors import ApiError, not_found
 from maity_hub.events import Actor
 from maity_hub.ids import new_id
 from maity_hub.models import HANDLE_PATTERN, GitIdentity, Strict, title
@@ -27,6 +27,7 @@ class AgentCreate(Strict):
 
 
 class AgentPatch(Strict):
+    handle: str | None = None  # checked by handles.rename: format, taken, aliases (§6.24)
     display_name: str | None = title(default=None)
     git_identity: GitIdentity | None = None
 
@@ -56,18 +57,18 @@ def owned(
 
 
 def create_profile(
-    conn: Connection, owner_id: str, handle: str, display_name: str, git: GitIdentity | None
+    conn: Connection,
+    owner_id: str,
+    handle: str,
+    display_name: str,
+    git: GitIdentity | None,
+    *,
+    placement: bool = False,
 ) -> str:
-    """A new profile of `owner_id`; `invalid` when the handle is taken (unique per owner)."""
-    taken = conn.execute(
-        select(t.agent_profile.c.id).where(
-            t.agent_profile.c.owner_id == owner_id,
-            t.agent_profile.c.handle == handle,
-            t.agent_profile.c.live.is_(True),  # a deleted profile's handle is free (§6.3)
-        )
-    ).first()
-    if taken:
-        raise invalid({"handle": "taken"}, "you already have an agent with this handle")
+    """A new profile of `owner_id`; `invalid` when the handle is the handle or an alias of
+    another of their profiles (a deleted profile's are free, §6.3), or an active placement
+    will create one with it (§6.24) unless `placement`: this is that placement's pickup."""
+    handles.ensure_free(conn, owner_id, handle, exclude="placement" if placement else None)
     agent_id = new_id("agent")
     conn.execute(
         insert(t.agent_profile).values(
@@ -126,6 +127,10 @@ def patch_agent(
 
     def action(conn: Connection) -> idempotency.Outcome:
         owned(conn, agent_id, caller.principal_id)
+        if "handle" in given and body.handle is not None:
+            done = handles.rename(conn, agent_id, caller.principal_id, body.handle)
+            if done is not None:
+                handles.announce(conn, caller, agent_id, caller.principal_id, *done)
         values: dict[str, Any] = {}
         if "display_name" in given and body.display_name is not None:
             values["display_name"] = body.display_name
@@ -245,6 +250,7 @@ def delete_agent(
             .where(t.agent_profile.c.id == agent_id)
             .values(deleted_at=now, live=None)
         )
+        handles.retire(conn, agent_id)  # its aliases leave the owner's scope with its handle
         return idempotency.Outcome(200, "agent", agent_id, load_agent(conn, agent_id))
 
     return idempotency.run(engine_of(request), request, caller, action)

@@ -123,9 +123,11 @@ def outdated_error(user_agent: str, install: str) -> ApiError:
 
 
 def resolve_owner(conn: Connection, handle: str) -> str | None:
-    """The human id a namespace owner's handle names (§6.25): the current handle. The hook
-    for handle aliases (§6.24): when the hub keeps aliases, an alias resolves here too."""
-    return conn.execute(select(t.human.c.id).where(t.human.c.handle == handle)).scalar()
+    """The human id a namespace owner's handle names (§6.25): the current handle or an alias
+    (§6.24), so that `<old handle>/<slug>` keeps reaching the project after a rename."""
+    from maity_hub import handles
+
+    return handles.human_id_of(conn, handle)
 
 
 def resolve(conn: Connection, full_name: str) -> Any | None:

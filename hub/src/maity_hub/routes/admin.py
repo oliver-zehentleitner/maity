@@ -9,7 +9,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
 
-from maity_hub import avatars, statistics
+from maity_hub import avatars, handles, statistics
 from maity_hub import tables as t
 from maity_hub.admin import instance_admin_id
 from maity_hub.deps import HumanCaller, engine_of
@@ -49,10 +49,14 @@ def list_users(
             # case folding on every database (SQLite's lower() is ASCII only). An
             # instance's humans are few; the whole list is read.
             needle = q.casefold()
+            everyone = conn.execute(query).all()
+            given_up = handles.aliases(conn, [r.id for r in everyone])  # an alias finds it (§6.24)
             rows = [
                 row
-                for row in conn.execute(query).all()
-                if needle in row.handle.casefold() or needle in row.display_name.casefold()
+                for row in everyone
+                if needle in row.handle.casefold()
+                or needle in row.display_name.casefold()
+                or any(needle in alias.casefold() for alias in given_up[row.id])
             ][: limit + 1]
         page = rows[:limit]
         ids = [r.id for r in page]

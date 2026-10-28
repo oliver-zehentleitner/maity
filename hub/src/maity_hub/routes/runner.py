@@ -20,7 +20,7 @@ from pydantic import AwareDatetime, Field, StringConstraints, model_validator
 from sqlalchemy import Connection, insert, select, update
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import availability, clock, events, idempotency, instances, longpoll
+from maity_hub import availability, clock, events, handles, idempotency, instances, longpoll
 from maity_hub import placements as pl
 from maity_hub import tables as t
 from maity_hub.auth.caller import Caller
@@ -540,7 +540,9 @@ def _join_fields(conn: Connection, placement: Any) -> tuple[dict[str, Any], str]
             t.agent_profile.c.handle == placement.new_handle,
         )
     ).first()
-    if taken is not None:  # the exchange would refuse it: no code that can never work
+    aliased = handles.holder(conn, placement.created_by, placement.new_handle)
+    if taken is not None or aliased not in (None, "placement"):
+        # the exchange would refuse it: no code that can never work
         raise _pickup_refused("handle_taken")
     profile = placement.new_profile or {}
     return {

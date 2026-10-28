@@ -77,10 +77,11 @@ one, and a project made after the migration has no old address.
 
 **Id:** 3de94ffb-3359-4af4-b0f7-0f6ffba9d903
 **Type:** constraint
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the coordinator's ruling of 2026-10-27: this change lands before the hub cards for trust × role (`tsk-tryqzr76gh9q`) and for handle aliases (`tsk-xsqc4whfqj4h`), with the hooks named so that they are found
 **Revisit when:** either card lands; then this entry is superseded by what it built
+**Verification:** contradicted — the alias card landed: `resolve_owner` resolves aliases through `handles.human_id_of` (handles.md); the `action` half is still open
 
 The hub had neither handle aliases nor a trust column, nor a request
 `action`, when the namespace came. Two places stand in for them:

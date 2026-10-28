@@ -20,6 +20,7 @@ from maity_hub import (
     policy,
     ticker_read,
 )
+from maity_hub import handles as handle_book
 from maity_hub import tables as t
 from maity_hub.config import Settings
 
@@ -312,6 +313,7 @@ def member_views(
     )
     principals = principal_ids(conn, (r.reports_to for r in rows))
     pictures = avatars.urls(conn, [*agent_ids, *human_ids])
+    aliased = handle_book.aliases(conn, [*agent_ids, *human_ids])  # §6.24
     live, latest_of = _sessions(conn, {r.id for r in rows if r.agent_id is not None})
     placed = _placements(conn, {r.id for r in rows if r.agent_id is not None})
     detailed = [
@@ -351,6 +353,7 @@ def member_views(
         )
         view: dict[str, Any] = {
             **head,
+            "aliases": aliased[row.agent_id or row.human_id],
             "role": row.role,
             "reports_to": principals.get(row.reports_to) if row.reports_to is not None else None,
             "areas": row.areas,
@@ -502,6 +505,7 @@ def agent_view(
     return {
         "id": row.id,
         "handle": row.handle,
+        "aliases": handle_book.aliases(conn, [row.id])[row.id],  # §6.24
         "name": mentions.global_name(owner_handle, row.handle),  # §6.3, never stored
         "display_name": row.display_name,
         # avatar_url and avatar_source: only its owner reads this

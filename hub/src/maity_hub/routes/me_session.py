@@ -19,6 +19,7 @@ from maity_hub import (
     environment,
     events,
     group_chats,
+    handles,
     idempotency,
     instances,
     memory,
@@ -34,8 +35,8 @@ from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth.caller import CLOSED_STATUSES, Caller
 from maity_hub.db import retrying
-from maity_hub.deps import AgentCaller, engine_of, settings_of
-from maity_hub.errors import ApiError
+from maity_hub.deps import AgentCaller, AnyCaller, engine_of, settings_of
+from maity_hub.errors import ApiError, forbidden, humans_only, invalid
 from maity_hub.forge import Forge
 from maity_hub.ids import new_id
 from maity_hub.models import Strict
@@ -145,7 +146,8 @@ class ResumeIn(Strict):
 
 
 class MePatch(Strict):
-    paused: PausedIn | None
+    paused: PausedIn | None = None
+    handle: str | None = None  # a human's own (§6.24); an agent's is `forbidden`
 
 
 def _own_membership(conn: Connection, caller: Caller) -> Membership:
@@ -539,8 +541,37 @@ def _credential(conn: Connection, caller: Caller) -> Any:
     return conn.execute(select(t.credential).where(t.credential.c.id == caller.credential_id)).one()
 
 
+def _human_me(conn: Connection, human_id: str) -> dict[str, Any]:
+    from maity_hub.routes.me import human_body
+
+    return {**human_body(conn, human_id), "server_time": clock.rfc3339(clock.now())}
+
+
+idempotency.LOADERS["me"] = idempotency.plain(_human_me)
+
+
 @router.patch("/me")
-def patch_me(body: MePatch, request: Request, caller: AgentCaller) -> JSONResponse:
+def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse:
+    if caller.kind == "human":  # a human renames themselves (§6.24)
+        assert caller.human_id is not None
+        human_id = caller.human_id
+
+        def rename(conn: Connection) -> idempotency.Outcome:
+            if body.handle is None:
+                raise invalid({"handle": "required"})
+            done = handles.rename(conn, human_id, None, body.handle)
+            if done is not None:
+                handles.announce(conn, caller, human_id, None, *done)
+            return idempotency.Outcome(200, "me", human_id, _human_me(conn, human_id))
+
+        return idempotency.run(engine_of(request), request, caller, rename)
+    if caller.kind != "agent":
+        raise forbidden()
+    if body.handle is not None:  # nobody renames an agent but its owner (§2.3, §6.24)
+        raise humans_only("only the owner of an agent profile renames its handle")
+    if "paused" not in body.model_fields_set:
+        raise invalid({"paused": "required"})
+
     def action(conn: Connection) -> idempotency.Outcome:
         mine = _own_membership(conn, caller)
         credential = _credential(conn, caller)

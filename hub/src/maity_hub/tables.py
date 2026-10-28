@@ -356,6 +356,46 @@ project = Table(
     **MYSQL_TABLE,
 )
 
+# A handle a human or an agent profile gave up by a rename (§6.24): it stays with the id, oldest
+# first, and nobody else can take it. `scope` is where handles are unique: "human" for all
+# humans, the owner's id for an owner's agent profiles; a deleted profile's aliases leave the
+# scope with it (`live` NULL), as its handle does.
+handle_alias = Table(
+    "handle_alias",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    _ref("human_id", "human.id"),
+    _ref("agent_id", "agent_profile.id"),
+    Column("scope", String(ID), nullable=False),
+    Column("handle", String(HANDLE), nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("live", Boolean, server_default=true()),
+    UniqueConstraint("scope", "handle", "live", name="uq_handle_alias_scope_handle"),
+    CheckConstraint("(human_id IS NULL) <> (agent_id IS NULL)", name="one_id"),
+    CheckConstraint("live IS NOT FALSE", name="live_true_or_null"),
+    **MYSQL_TABLE,
+)
+
+# One row per rename (a no-op leaves none), for the limit of 3 in 24 hours (§1.7, §6.24).
+handle_change = Table(
+    "handle_change",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("subject_id", String(ID), nullable=False, index=True),
+    Column("created_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# The lock a rename or a creation takes on the handle it wants, so that two of them for one
+# handle in one scope run one after the other (§6.24); rows are made when first asked for.
+handle_lock = Table(
+    "handle_lock",
+    metadata,
+    Column("scope", String(ID), primary_key=True),
+    Column("handle", String(HANDLE), primary_key=True),
+    **MYSQL_TABLE,
+)
+
 # A full name a project gave up by a rename or a transfer (§6.25): the namespace owner's id
 # at that time and the slug. Never released, never given to another project, so an old
 # address cannot lead somewhere else.

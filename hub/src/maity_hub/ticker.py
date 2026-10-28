@@ -25,9 +25,9 @@ from maity_hub.views import event_views
 
 log = logging.getLogger(__name__)
 
-TYPES = ("merge", "decision", "deploy", "release", "note")
+TYPES = ("merge", "decision", "deploy", "release", "rename", "note")
 # `contract` is a merge with `contract` set, as a filter and in a subscription (§17.8).
-FILTER_TYPES = ("merge", "contract", "decision", "deploy", "release", "note")
+FILTER_TYPES = ("merge", "contract", "decision", "deploy", "release", "rename", "note")
 TEXT_MAX = 280
 ENVIRONMENT_MAX = 64  # a deploy's environment, by hand or from the forge (§17.6)
 SHA = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")  # SHA-1, or SHA-256 repositories
@@ -904,4 +904,27 @@ def write_deploy(
                 "log_url": log_url,
             }
         },
+    )
+
+
+def write_rename(
+    conn: Connection,
+    project_id: str,
+    old: str,
+    new: str,
+    member_id: str,
+    actor: events.Actor | None,
+) -> int | None:
+    """`<old> is now <new>` (§6.24, §17.1): a human's handles or an agent's global names.
+    Listed for every member, waking no one, written whether the ticker is on or not."""
+    return write(
+        conn,
+        project_id,
+        kind="rename",
+        text=f"{old} is now {new}",
+        url=None,
+        audience=Audience(),
+        origin="hub",
+        actor=actor,
+        subject=("member", member_id),
     )

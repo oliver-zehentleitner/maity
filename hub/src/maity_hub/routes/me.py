@@ -8,7 +8,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, select
 
-from maity_hub import avatars, clock, images, namespace
+from maity_hub import avatars, clock, handles, images, namespace
 from maity_hub import tables as t
 from maity_hub.admin import is_instance_admin
 from maity_hub.auth.caller import Caller
@@ -35,6 +35,7 @@ def me(request: Request, caller: AnyCaller) -> JSONResponse:
                         avatar_url=None,
                         owner_handle=owner_handles(conn, [agent.owner_id])[agent.owner_id],
                     ),
+                    "aliases": handles.aliases(conn, [agent.id])[agent.id],
                     **avatars.state(conn, agent.id),
                 },
                 "projects": _agent_project(conn, caller),
@@ -49,6 +50,7 @@ def human_body(conn: Connection, human_id: str) -> dict[str, Any]:
     return {
         "member": {
             **human_member(human, avatar_url=None),
+            "aliases": handles.aliases(conn, [human.id])[human.id],
             **avatars.state(conn, human.id),
             "instance_admin": is_instance_admin(conn, human.id),
             "account_status": human.account_status,
