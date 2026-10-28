@@ -197,6 +197,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `keep_the_why_not_required` | `POST /me/keep-the-why/ack` in a project whose `policy.keep_the_why` is `optional` (§6.23) |
 | 409 | `ktw_not_configured` | the project has no Keep the Why export: no repository, no root `.keep-the-why` in it, or no `dashboard-state:` line in that file (§11.3) |
 | 409 | `ticker_duplicate` | a manual ticker post whose `dedupe_key` exists (§17.7); `details.seq` |
+| 409 | `forge_app_missing` | linking a GitHub App installation while the instance has no App configured (§11.4) |
 | 409 | `secret_key_missing` | a forge webhook secret is to be stored and the instance has no `MAITY_SECRET_KEY` (§17.4); a second-factor enrolment or verify while the instance has no `MAITY_SECRET_KEY`, or one that no longer opens the stored secrets (§2.8.1) |
 | 409 | `attachment_quota` | an attachment upload would take the project over its quota, or the uploading membership over its pending cap (§8.7); `details.scope` (`project` or `pending`), `details.used`, `details.quota`, and `details.count`, `details.max` for `pending` |
 | 409 | `attachments_not_configured` | an attachment upload, read or delete, or a message that names an attachment, while the instance has no attachment store: `MAITY_ATTACHMENT_STORE` is `local` and `MAITY_ATTACHMENT_DIR` is unset (§8.7) |
@@ -205,6 +206,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 426 | `client_outdated` | a CLI older than the project-namespace release calls a project route (§6.25); `details.minimum` (the lowest CLI version that works), `details.install` (the install line, §3.2) |
 | 429 | `rate_limited` | `Retry-After` is set |
 | 500 | `internal` | an unexpected failure; `details` is `{}`, the message names no internals; the response still carries the envelope and every header of §1.1 |
+| 503 | `forge_unavailable` | the forge did not answer while linking a GitHub App installation (§11.4) |
 | 503 | `probe_unavailable` | the forge did not answer a probe read; `details.last` holds the last observation if any |
 | 503 | `ktw_unavailable` | the root `.keep-the-why` of the Keep the Why family could not be read (§11.3); `details.reason`, `details.last` holds the last good answer if any; a family member's own failure is reported on that member, not as this error |
 | 503 | `database_unavailable` | the database cannot be reached (`/health`, and any call that needs it); `details` is `{}`, the message carries no driver text |
@@ -8996,8 +8998,10 @@ account, not to a project; it then serves every project they own whose
 repository it includes.
 
 - `POST /me/forge/github/link` (human) answers `{url}`: the App's
-  installation page with a `state` the hub signs and binds to the
-  caller's session, valid 15 minutes and usable once. The App is set up
+  installation page with a `state` of 256 random bits that the hub
+  stores only as a hash, bound to the caller's session, valid 15
+  minutes and usable once. Without the App configured it is `409
+  forge_app_missing`, and `GET /me/forge` says `app_configured: false`. The App is set up
   to ask for the user's authorisation during installation, so the forge
   sends the browser back with both `installation_id` and an OAuth
   `code`.
@@ -9016,13 +9020,24 @@ repository it includes.
   never stored. An installation of another account is refused (`403
   forbidden`, `details.reason: installation_not_yours`), so nobody links
   an installation by guessing or copying its id. A missing, expired, used or foreign `state` is
-  `403 forbidden`, `details.reason: link_state`. The page then shows the
-  dashboard's forge settings.
+  refused with `details.reason: link_state`. Since the browser arrives
+  here by the forge's redirect, every outcome is a `303` to the
+  dashboard's forge settings (`<MAITY_PUBLIC_URL>/#/settings/forge`): on
+  success without a query, otherwise with `?error=<reason>`, the reason
+  one of `link_state`, `installation_not_yours`,
+  `organisation_installation`, `installation_linked` (below),
+  `forge_app_missing`, or `forge_unavailable` when the forge did not
+  answer; never with a forge token, code or state in the URL. To a
+  client that sends `Accept: application/json` the same reasons answer
+  as JSON: `403 forbidden` for the first three, `409 conflict` for
+  `installation_linked`, `409 forge_app_missing`, and `503
+  forge_unavailable`.
 - An installation is linked to one human at a time. Linking one that is
   linked to another human is refused (`409 conflict`, `details.reason:
   installation_linked`); the other human unlinks it first, or the
   installation is removed on the forge.
-- `GET /me/forge` (human) lists the caller's links: `[{id, forge,
+- `GET /me/forge` (human) answers `app_configured` (whether the instance
+  has a GitHub App, above) and lists the caller's links: `[{id, forge,
   installation_id, account: {login, type}, repository_selection: "all"
   | "selected", repositories_shown, status: "active" | "suspended" |
   "removed", linked_at, checked_at}]` and the caller's own token (below)
