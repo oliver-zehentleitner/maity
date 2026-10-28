@@ -32,10 +32,11 @@ BUDGETS = {
     "notification": "max_per_hour",
     "security": "security_max_per_hour",
     "sign_in": "sign_in_max_per_hour",
+    "registration": "registration_max_per_hour",
 }
 # Answers to an anonymous request: over their budget they are dropped, never held; a late
 # link is useless (§16.2).
-DROPPED_OVER_BUDGET = ("sign_in",)
+DROPPED_OVER_BUDGET = ("sign_in", "registration")
 # A failure here is the instance's setting, not the recipient's address (§18.7).
 SETTING_STAGES = ("resolve", "connect", "tls", "auth", "timeout")
 

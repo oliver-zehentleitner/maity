@@ -228,7 +228,7 @@ All settings come from the environment.
 | `MAITY_SMTP_CA_FILE` | unset | A PEM file the server's certificate is verified against instead of the system store. Certificates are always verified. |
 | `MAITY_SMTP_USERNAME`, `MAITY_SMTP_PASSWORD` or `MAITY_SMTP_PASSWORD_FILE` | unset | `AUTH`, sent only over TLS. The password (or the file a Secret is mounted at, one trailing newline dropped) is never stored, logged or returned. |
 | `MAITY_SMTP_FROM`, `MAITY_SMTP_REPLY_TO` | unset | The sender, `maity@example.org` or `Maity <maity@example.org>`, and an optional reply address; one address each, never a list. |
-| `MAITY_MAIL_MAX_PER_HOUR`, `MAITY_MAIL_SECURITY_MAX_PER_HOUR`, `MAITY_MAIL_SIGN_IN_MAX_PER_HOUR` | `500`, `100`, `60` | The three hourly budgets: notification, security and sign-in mail, each counted on its own. |
+| `MAITY_MAIL_MAX_PER_HOUR`, `MAITY_MAIL_SECURITY_MAX_PER_HOUR`, `MAITY_MAIL_SIGN_IN_MAX_PER_HOUR`, `MAITY_MAIL_REGISTRATION_MAX_PER_HOUR` | `500`, `100`, `60`, `30` | The hourly budgets: notification, security, sign-in and registration mail, each counted on its own. |
 | `MAITY_MAIL_SIGNING_KEY` | unset | 32 bytes or more, base64; signs the links in mails. Without it the hub sends no mail. |
 | `MAITY_SMTP_ALLOW_PLAINTEXT` | `0` | **Insecure**, for a test bench only: `1` sends in clear to a server that offers no STARTTLS (still never `AUTH`). Logged as a warning at startup and at every such send. |
 | `MAITY_SIGN_IN_DEVICE_CODE`, `MAITY_SIGN_IN_EMAIL_LINK` | unset | `1` or `0`: switch a sign-in method on or off for good (`docs/api.md` §2.6.6); unset leaves it to the instance admin (default on). The password cannot be switched off. |
