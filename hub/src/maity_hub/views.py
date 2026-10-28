@@ -796,7 +796,8 @@ def _task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[
                 "closed_at": ts(row.closed_at),
             }
         )
-    return views
+    # A deleted account among the stored mentions is shown as one (§2.9).
+    return [dict(v) for v in shape_deleted(conn, views)]
 
 
 def event_view(conn: Connection, row: Any) -> dict[str, Any]:

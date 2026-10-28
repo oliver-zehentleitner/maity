@@ -210,7 +210,9 @@ def request_view(conn: Connection, row: Any, *, with_proposal: bool = False) -> 
     shown = proposals.view(conn, row) if with_proposal else {}
     if shown.keys() & view.keys():  # a kind adds its own fields, it never replaces one
         raise ValueError(f"a proposal view repeats {sorted(shown.keys() & view.keys())}")
-    return view | shown
+    # A deleted account in the stored mentions or answer is shown as one (§2.9).
+    [shaped] = shape_deleted(conn, [view | shown])
+    return dict(shaped)
 
 
 def _holder(conn: Connection, row: Any) -> str:

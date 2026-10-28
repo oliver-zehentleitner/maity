@@ -133,6 +133,17 @@ account_deletion = Table(
     **MYSQL_TABLE,
 )
 
+# One row per human, never read for its content: the lock that orders a human caller's
+# transactions (shared, before their first locking statement) against the deletion of the
+# account (exclusive, first), `write_guard` (§2.9). Made by 0076 for existing humans and on
+# first need for later ones.
+account_lock = Table(
+    "account_lock",
+    metadata,
+    _ref("human_id", "human.id", primary_key=True),
+    **MYSQL_TABLE,
+)
+
 # A registration whose address is not yet proven (docs/api.md §2.7.1): the address, the
 # password chosen with it, where the request came from and what it saw. Deleted 24 hours
 # after it was made; `voided_at` ends it earlier (another request, the cap of five, a

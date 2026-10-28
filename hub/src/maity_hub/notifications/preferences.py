@@ -580,6 +580,11 @@ def verify(
     owner = str(payload.get("h"))
     if human_id is not None and owner != human_id:
         return False
+    from maity_hub import write_guard
+
+    # The account's lock first, in the order a deletion takes it (§2.9, `write_guard`):
+    # this link's change withdraws a pending deletion.
+    write_guard.share(conn, owner)
     row = conn.execute(
         select(t.notification_settings)
         .where(t.notification_settings.c.human_id == owner)

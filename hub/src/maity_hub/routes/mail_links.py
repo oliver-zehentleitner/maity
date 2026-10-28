@@ -17,6 +17,7 @@ from sqlalchemy import Connection, select
 
 from maity_hub import account_deletion, clock, events
 from maity_hub import tables as t
+from maity_hub.db import retrying
 from maity_hub.deps import engine_of, settings_of
 from maity_hub.notifications import preferences, tokens
 from maity_hub.notifications.preferences import KINDS
@@ -234,8 +235,14 @@ def account_deletion_confirm(token: str, request: Request) -> HTMLResponse:
     with engine_of(request).begin() as conn:
         # Read before the deletion removes the human's settings, the language with them.
         words = _WORDS[_language(conn, request, token)]
-    with events.transaction(engine_of(request)) as conn:
-        outcome = account_deletion.confirm(conn, hub, token)
+
+    def run() -> str | None:
+        with events.transaction(engine_of(request)) as conn:
+            return account_deletion.confirm(conn, hub, token)
+
+    # A deadlock or serialisation failure rolls the whole deletion back; it runs again
+    # (`db.retrying`), so it is never left half done or failed by a transient conflict.
+    outcome = retrying(run)
     if outcome is None:
         return _dead(words)
     if outcome != "deleted":  # `namespace_owner`, `last_instance_admin`: nothing changed

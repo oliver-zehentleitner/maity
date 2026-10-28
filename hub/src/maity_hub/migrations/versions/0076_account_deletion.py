@@ -7,7 +7,11 @@ link's nonce, `live` is true while it may still be confirmed and NULL once it wa
 withdrawn (by `DELETE /me/deletion`, a newer request, a password change or a change of
 the verified address), used or replaced, so a human has at most one pending request on
 every engine. The instance statistics count deleted accounts from `human.deleted_at`
-(§16.6 stores nothing of its own), so no counter table is needed.
+(§16.6 stores nothing of its own), so no counter table is needed. `account_lock` holds
+one row per human and nothing else: a human caller's transaction takes it with a shared
+lock before its first locking statement and the deletion takes it exclusively first
+(`write_guard`), so the two share one lock order and no other lock of the human row
+takes part; existing humans get their row here, later ones when first needed.
 
 Re-chained at merge time: `down_revision` is the head of the chain this branch started
 from and follows whatever head `main` has when it lands.
@@ -60,8 +64,20 @@ def upgrade() -> None:
         **TABLE_OPTIONS,
     )
 
+    op.create_table(
+        "account_lock",
+        sa.Column("human_id", sa.String(length=40), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["human_id"], ["human.id"], name=op.f("fk_account_lock_human_id_human")
+        ),
+        sa.PrimaryKeyConstraint("human_id", name=op.f("pk_account_lock")),
+        **TABLE_OPTIONS,
+    )
+    op.execute("INSERT INTO account_lock (human_id) SELECT id FROM human")
+
 
 def downgrade() -> None:
+    op.drop_table("account_lock")
     op.drop_table("account_deletion")
     with op.batch_alter_table("human") as batch_op:
         batch_op.drop_column("deleted_at")

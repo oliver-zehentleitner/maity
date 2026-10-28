@@ -28,7 +28,7 @@ from typing import Any
 
 from sqlalchemy import Connection, delete, func, insert, select, update
 
-from maity_hub import clock, invitations, namespace, placements
+from maity_hub import clock, invitations, namespace, placements, write_guard
 from maity_hub import tables as t
 from maity_hub.admin import is_instance_admin
 from maity_hub.auth import second_factor, sessions
@@ -111,6 +111,16 @@ def blocker(conn: Connection, human_id: str) -> ApiError | None:
             "the instance's last admin cannot delete the account",
         )
     return None
+
+
+def lock_account(conn: Connection, human_id: str) -> None:
+    """Take the human's `account_lock` exclusively: the first lock of a deletion."""
+    write_guard.ensure_row(conn, human_id)
+    conn.execute(
+        select(t.account_lock.c.human_id)
+        .where(t.account_lock.c.human_id == human_id)
+        .with_for_update()
+    ).first()
 
 
 def _lock_namespace(conn: Connection, human_id: str) -> None:
@@ -249,13 +259,17 @@ def confirm(conn: Connection, hub: Settings, token: str) -> str | None:
     link keeps working), or None for a link that does not work. Must run inside
     `events.transaction`: the removals it reuses defer work to the commit."""
     payload = tokens.read(hub.mail.signing_key, token)
-    if payload is None:
+    if payload is None or payload.get("p") != PURPOSE:
         return None
-    # The human's row first, as the request does: a concurrent request, password change
-    # or address change either commits before (and this link is dead) or waits.
-    human = conn.execute(
-        select(t.human).where(t.human.c.id == str(payload.get("h"))).with_for_update()
-    ).first()
+    human_id = str(payload.get("h"))
+    # The account's lock before any other (`write_guard`): every transaction of the
+    # human's own calls (a newer request, a password or address change) and an address's
+    # confirmation link hold it shared before their first lock, so each either commits
+    # before this one (and this link may be dead) or waits for it. The human row needs
+    # no lock of its own here: ordinary work locks it after project locks, and taking
+    # it before the projects would invert that order.
+    lock_account(conn, human_id)
+    human = conn.execute(select(t.human).where(t.human.c.id == human_id)).first()
     if human is None or human.deleted_at is not None:
         return None
     row = _alive(conn, hub.mail.signing_key, token, lock=True)
@@ -288,13 +302,6 @@ def delete_account(conn: Connection, hub: Settings, human_id: str) -> None:
     from maity_hub.routes.agents import delete_profile
 
     now = clock.now()
-    # The row first: every event the removals below write then shows the account as
-    # deleted, never the person's name or handle (§2.9).
-    conn.execute(
-        update(t.human)
-        .where(t.human.c.id == human_id)
-        .values(display_name=DELETED_NAME, password_hash=NO_PASSWORD, deleted_at=now)
-    )
     # Its runners, as `DELETE /runners/{id}` with `agents: stop` (§15.3): placements
     # closed, the agents' credentials revoked at once, the runner credential revoked.
     for runner_id in _ids(
@@ -491,8 +498,10 @@ def _end_access(conn: Connection, human_id: str) -> None:
 
 def _remove_person(conn: Connection, human_id: str) -> None:
     """The address, picture, languages, preferences and notification settings go, with
-    the account's own records and its declared limit; the row stays with `deleted_at`
-    (set first, with the name), its handle taken for good (§2.9). The hub has no
+    the account's own records and its declared limit; the row stays with `deleted_at`,
+    its handle taken for good (§2.9). The row is written last: ordinary work locks it
+    after project locks (account records), and so does the deletion; what the removals
+    wrote into events before it is shaped when read (`views.shape_deleted`). The hub has no
     public profile or static pages of a human yet (§16.9), and no handle aliases
     (§6.24)."""
     _forget_mail(conn, human_id, _addresses(conn, human_id))
@@ -516,7 +525,15 @@ def _remove_person(conn: Connection, human_id: str) -> None:
     conn.execute(
         update(t.human)
         .where(t.human.c.id == human_id)
-        .values(limit_until=None, limit_since=None, limit_reason=None, limit_show_reason_in=None)
+        .values(
+            display_name=DELETED_NAME,
+            password_hash=NO_PASSWORD,
+            limit_until=None,
+            limit_since=None,
+            limit_reason=None,
+            limit_show_reason_in=None,
+            deleted_at=clock.now(),
+        )
     )
 
 

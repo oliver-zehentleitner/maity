@@ -81,14 +81,19 @@ out.
 
 The deletion itself is unchanged from the superseded entry: one
 `events.transaction`, the existing removals on its connection, the hub as
-actor, the account row marked first. What changed is the old payloads:
+actor. (The account row is no longer marked first but written last, for the
+lock order of 2cecbd85-ba32-43db-905f-11efddb97f3d; with read-time shaping
+nothing depends on it.) What changed is the old payloads:
 `views.shape_deleted` rewrites, at read time, every person object of a
 deleted account in stored JSON — a member view (`id` with `kind: human`),
 or an object with a human's `member_id` and a name or handle (`asked_by`,
 `on_behalf_of`, mentions, history and chat participants) — into the
 deleted shape, keeping ids, types and free text. It runs once over all
-payloads of a page in `event_views`, the message listings and a request's
-`needs_in_session`, with one query for the deleted accounts among them.
+payloads of a page in `event_views` and the message listings, and over
+the stored JSON of the direct views: a request (its mentions, answer and
+`needs_in_session`; single and lists), a card (single, lists, board), a
+note and a history entry, with one query for the deleted accounts among
+them.
 
 **Reason:** §2.9 says a payload shows a deleted account as one; the
 append-only log constrains what is stored, not what is delivered. Shaping
@@ -106,7 +111,8 @@ once.
 
 **Id:** a96c2553-eac1-4ee1-b1d7-573c45e581a9
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 2cecbd85-ba32-43db-905f-11efddb97f3d
 **Evidence:** confirmed
 **Source:** review of #561 (a write held between authentication and its transaction committed after the deletion)
 **Revisit when:** a human caller writes through a path that is not this engine, or the deletion stops locking the account row first
@@ -130,6 +136,48 @@ one place every write passes, whichever route or helper made it.
 - Also refusing when the calling session ended: a logout ends its own
   session in the transaction being checked; the deletion sets `deleted_at`
   in the same transaction that ends every session, so the account decides.
+
+## One lock order against a deletion: the account lock before any other
+
+**Id:** 2cecbd85-ba32-43db-905f-11efddb97f3d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** re-review of #561 (the commit-time check inverted the lock order: a profile delete holding the profile lock waited for the human row the deletion held, while the deletion waited for the profile)
+**Revisit when:** something besides `write_guard` and the deletion locks `account_lock`, or a human caller works through a path outside the engine
+**See:** account.md#no-write-of-a-deleted-account-commits-the-check-is-at-the-commit — a96c2553-eac1-4ee1-b1d7-573c45e581a9 — as of 2026-10-28
+
+`write_guard` still binds the authenticated human caller per request, but
+checks at the start instead of the commit: before a transaction's first
+locking statement (a write or a locking read) it takes the human's row in
+`account_lock` (one row per human, made by 0076 and on first need) with a
+shared lock and refuses a deleted account. The deletion takes that row
+exclusively as its first lock (`account_deletion.lock_account`), takes no
+lock on the human row before its object locks, and writes the human row
+last. An address's confirmation link, which changes the account without a
+caller, takes the shared lock too. The link's `POST` runs under
+`db.retrying`, so a deadlock with unrelated work never leaves the deletion
+failed or half done.
+
+**Reason:** with one first lock that only these take, a human's own work
+and the deletion cannot wait for each other while holding something the
+other wants. Its own row rather than the human row: the human row is
+locked `FOR UPDATE` by ordinary work — account records (`records.write`),
+a slug claim (`namespace.taken`), the preferences, the avatar, and the
+deletion request — often after project locks, so a shared lock on it held
+from a transaction's start would deadlock against those. Read-only
+transactions take nothing: a plain read under READ COMMITTED holds nothing
+the deletion waits for.
+
+**Rejected alternatives:**
+- The human row `FOR SHARE` at the start of every human transaction: two
+  writers of one human that both later lock the row `FOR UPDATE` (a record
+  each) deadlock on the upgrade, and a third party's record for the human
+  after a project lock forms a cycle with the human's own work.
+- PostgreSQL's `FOR KEY SHARE` against `FOR NO KEY UPDATE`: no such modes
+  on MariaDB.
+- The check at the commit (the superseded entry): it took the human row
+  after object locks, the opposite of the deletion's order.
 
 ## The operator's counter is derived from `deleted_at`, nothing is stored
 

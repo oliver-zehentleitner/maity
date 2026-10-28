@@ -731,3 +731,116 @@ def test_a_reopen_racing_the_confirmation_is_seen(
         assert finished(step) == "namespace_owner"
         deletion.rollback()
     assert deleted_at(migrated, pat.id) is None
+
+
+# --- re-review of #561: stored mentions on every read path, one lock order -----------------------
+
+
+def deleted_mentions(value: Any, human_id: str) -> list[dict[str, Any]]:
+    named = [p for p in persons_of(value, human_id, []) if "handle" in p]
+    assert named, value
+    return named
+
+
+def test_stored_mentions_in_requests_and_cards_show_the_deleted_account(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    admin_first(migrated, moment)
+    owner = flow.human(make_client, migrated)
+    flow.project(owner)
+    pat = person(make_client, migrated, moment)
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    factory.membership(migrated, project_id, "member", human_id=pat.id)
+    request = asked(owner, summary="What does @pat think?")
+    card = owner.post("/projects/maintainer/maity/tasks", {"title": "A card", "body": "For @pat"})
+    assert card.status_code == 201, card.text
+    assert deleted_mentions(request["mentions"], pat.id)[0]["handle"] == "pat"
+    assert press(pat, requested(pat, migrated)).status_code == 200
+    base = "/projects/maintainer/maity"
+    reads = {
+        "request": owner.get(f"{base}/requests/{request['id']}").json(),
+        "requests": owner.get(f"{base}/requests?status=all").json(),
+        "card": owner.get(f"{base}/tasks/{card.json()['id']}").json(),
+        "cards": owner.get(f"{base}/tasks").json(),
+    }
+    for name, body in reads.items():
+        for mention in deleted_mentions(body, pat.id):
+            assert (mention["handle"], mention["deleted"]) == (None, True), name
+    # Free text is unchanged.
+    assert reads["request"]["summary"] == "What does @pat think?"
+    assert reads["card"]["body"] == "For @pat"
+
+
+def test_the_account_lock_comes_before_any_other_lock_of_a_human_write(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """Every transaction of a human caller that locks anything takes `account_lock`
+    first (`write_guard`), so it shares the deletion's order."""
+    from sqlalchemy import event
+
+    from maity_hub import write_guard
+
+    admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    flow.project(pat, "own")
+    seen: list[list[str]] = []
+
+    def begin(conn: Any) -> None:
+        seen.append([])
+
+    def statement(conn: Any, cursor: Any, text: str, *args: Any) -> None:
+        if seen:
+            seen[-1].append(text)
+
+    event.listen(migrated, "begin", begin)
+    event.listen(migrated, "before_cursor_execute", statement)
+    try:
+        assert pat.post("/agents", {"handle": "first", "display_name": "First"}).status_code == 201
+        assert pat.patch("/projects/pat/own", {"name": "Renamed"}).status_code == 200
+    finally:
+        event.remove(migrated, "begin", begin)
+        event.remove(migrated, "before_cursor_execute", statement)
+    guarded = 0
+    for statements in seen:
+        statements = [s for s in statements if not s.upper().startswith("BEGIN")]
+        first = next((i for i, s in enumerate(statements) if write_guard.locking(s)), None)
+        if first is None or "human_session" in statements[first]:
+            continue  # read-only, or the authentication's own (checked by `_cookie`)
+        before = statements[:first]
+        # SQLite renders no lock clause: the account lock's read is what comes first.
+        assert any("FROM account_lock" in s for s in before), statements
+        guarded += 1
+    assert guarded >= 2  # the profile's and the project's transactions
+
+
+def test_a_profile_delete_racing_the_deletion_does_not_deadlock(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """The reviewer's interleaving: pat's `DELETE /agents/{id}` holds the profile lock,
+    the confirmation starts; with one lock order the confirmation waits for the account
+    lock, the profile deletion commits, then the account is deleted (PostgreSQL, MariaDB)."""
+    from maity_hub import write_guard
+    from maity_hub.routes.agents import delete_profile, owned
+    from tests.concurrency import finished, race, waiting
+
+    admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    created = pat.post("/agents", {"handle": "doomed", "display_name": "Doomed"})
+    agent_id = created.json()["id"]
+    token = requested(pat, migrated)
+    hub = mail_env()
+    with race(migrated) as r:
+        profile, deletion = r.first, r.second
+        write_guard.hold(profile, pat.id)  # what the hook does before the first lock
+        owned(profile, agent_id, pat.id, deleted=True, lock=True)
+        step = r.run(deletion, lambda: account_deletion.confirm(deletion, hub, token))
+        assert waiting(step)  # on the account lock, holding nothing the profile needs
+        delete_profile(
+            profile, agent_id, actor_in=lambda _p: account_deletion.HUB, by=pat.id,
+            credential_id=None, via=None,
+        )  # fmt: skip
+        profile.commit()
+        assert finished(step) == "deleted"
+        deletion.commit()
+    assert deleted_at(migrated, pat.id) is not None
