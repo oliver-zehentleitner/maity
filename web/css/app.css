@@ -1274,9 +1274,12 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 
 /* At phone width the text beside the logo (the scope line, the project's
    name) is hidden from sight only: the switcher's active tab names it, and
-   a screen reader still reads it. */
+   a screen reader still reads it. The project's mark goes too (it is
+   decoration, hidden from screen readers already): with it the buttons
+   wrapped to a second row inside a project. */
 @media (max-width: 600px) {
   .bar > .project { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .bar > .project-mark { display: none; }
 }
 
 /* An opened card (js/card-panel.js): beside the columns on a wide screen,

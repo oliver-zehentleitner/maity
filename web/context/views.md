@@ -1020,15 +1020,20 @@ and the instruction asked for none.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's instruction of 2026-10-25, from a phone screenshot of the cross-project inbox; the dashboard's implementation, 2026-10-25
+**Source:** the maintainer's instruction of 2026-10-25, from a phone screenshot of the cross-project inbox; the dashboard's implementation, 2026-10-25; the project's mark added after his phone screenshots of 2026-10-28 (inside a project the buttons wrapped to a second row)
 **Revisit when:** the switcher stops naming the current scope, or the header gets a second line on phones
 
 Below 600 px the span beside the logo (the project's name, "Everything
 waiting for you", "Your account", …) is clipped to one pixel by CSS,
 the usual visually hidden pattern; on wider screens it stays as it was.
+The project's mark beside it is not shown there either (`display:
+none`): it is decoration, already hidden from screen readers. Inside a
+project the header then has the same parts as everywhere else.
 
 **Reason:** on a phone the text crowded the menus, and the switcher's
-current tab already names the scope. Clipped rather than removed, a
+current tab already names the scope. The mark alone was enough to push
+the buttons into a second row inside a project, where its tab shows the
+same mark. Clipped rather than removed, a
 screen reader still reads where the page is.
 
 **Rejected alternative:** `display: none`: it takes the name from
