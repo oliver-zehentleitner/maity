@@ -335,6 +335,8 @@ def _packet(
                     "paused": view["paused"],
                     "availability": view["availability"],  # §6.12
                     "covered_by": view["covered_by"],
+                    # Write to a human in their language (§5.2, §6.2).
+                    **({"language": view["language"]} if "language" in view else {}),
                 }
             )
     peers.sort(key=lambda p: (p["kind"] != "human", p["handle"]))
