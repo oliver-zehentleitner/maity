@@ -367,9 +367,12 @@ def _recheck_member_rule(conn: Connection, row: Any, project: Any, member: Any) 
         if not _within_limits(member):
             raise not_found()
         return
-    # The join's own profile is no longer open (its `used_at` is set): the others count.
-    held = _agents_held(conn, row.project_id, row.created_by)
-    if row.agent_id not in held and len(held) >= project.member_agents_max:
+    # What the member would hold once this join is exchanged: the distinct profiles of
+    # their memberships and open first joins, this join's own included, against the
+    # maximum now. Another open join naming the same profile is no exemption: a lowered
+    # maximum holds for it too.
+    held = _agents_held(conn, row.project_id, row.created_by) | {row.agent_id}
+    if len(held) > project.member_agents_max:
         raise not_found()
 
 

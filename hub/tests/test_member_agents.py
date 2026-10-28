@@ -321,3 +321,17 @@ def test_two_joins_for_the_last_slot_create_exactly_one(migrated: Engine) -> Non
         with pytest.raises(ApiError) as refused:
             finished(step)
     assert refused.value.details == {"reason": "member_agents_max", "max": 1}
+
+
+@pytest.mark.parametrize("lowered", [0, 1])
+def test_two_open_joins_for_one_profile_do_not_lift_a_lowered_maximum(
+    friend: flow.Human, make_client: ClientFactory, owner: flow.Human, lowered: int
+) -> None:
+    """Two open first joins name the same new profile; the maximum is lowered below what
+    the member would hold: the exchange voids the join, the other open join no exemption."""
+    if lowered:
+        _bring(friend, 9)  # a second profile already held, so one slot is too few
+    first = _bring(friend, 1).json()
+    friend.post(JOINS, {"agent": {"id": first["agent_id"]}})  # the same profile again
+    _policy(owner, member_agents_max=lowered)
+    assert flow.exchange(make_client(), first).status_code == 404
