@@ -549,6 +549,20 @@ def test_the_sweep_empties_the_rows_that_left_before_the_text_went_at_once(
                     status=status,
                 )
             )
+        # What an earlier version of the change left: no text, the links still in the headers.
+        conn.execute(
+            insert(t.mail_outbox).values(
+                kind="security",
+                recipient="me@example.org",
+                subject="s",
+                body="",
+                headers=_link_header(),
+                created_at=clock.now(),
+                not_before=clock.now(),
+                attempts=0,
+                status="sent",
+            )
+        )
     with migrated.begin() as conn:
         outbox.forget_old(conn)
     with migrated.begin() as conn:
@@ -559,4 +573,5 @@ def test_the_sweep_empties_the_rows_that_left_before_the_text_went_at_once(
         ("dropped", "", {}),
         ("waiting", "a link\n", _link_header()),
         ("sending", "a link\n", _link_header()),
+        ("sent", "", {}),
     ]

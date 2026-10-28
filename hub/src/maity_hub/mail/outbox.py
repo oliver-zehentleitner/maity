@@ -15,7 +15,7 @@ import threading
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Connection, Engine, delete, insert, select, update
+from sqlalchemy import Connection, Engine, String, cast, delete, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from maity_hub import clock
@@ -326,7 +326,8 @@ def forget_old(conn: Connection) -> None:
         update(t.mail_outbox)
         .where(
             t.mail_outbox.c.status.in_(("sent", "failed", "dropped")),
-            t.mail_outbox.c.body != "",
+            # Either may be left: the text, or headers that carry a signed link.
+            or_(t.mail_outbox.c.body != "", cast(t.mail_outbox.c.headers, String) != "{}"),
         )
         .values(body="", headers={})
     )
