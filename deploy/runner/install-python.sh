@@ -15,6 +15,7 @@
 #        [PYTHON_SERIES=3.12] install-python.sh      (once per runner directory)
 #        (FORCE=1 restarts the service even while a job runs; UV_VERSION pins the uv installer)
 set -euo pipefail
+cd /   # a neutral directory: uv looks for a config in the current one, which the runner user may not read (/root)
 RU=${RUNNER_USER:-gh-runner}
 HOME_RU=${RUNNER_HOME:-$(getent passwd "$RU" | cut -d: -f6)}
 RUNNER_DIR=${RUNNER_DIR:-/opt/actions-runner}

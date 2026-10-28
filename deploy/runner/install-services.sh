@@ -8,6 +8,7 @@
 #        [RUNNER_USER=gh-runner] [LABEL_PREFIX=maity-hub] [INSTANCES="sqlite pg maria"] install-services.sh
 # Then run install-python.sh for each instance (README.md, step 4) and set the repository variable HUB_RUNNER_LABEL.
 set -euo pipefail
+cd /   # a neutral directory: uv looks for a config in the current one, which the runner user may not read (/root)
 RU=${RUNNER_USER:-gh-runner}
 HOME_RU=${RUNNER_HOME:-$(getent passwd "$RU" | cut -d: -f6)}
 PREFIX=${LABEL_PREFIX:-maity-hub}
