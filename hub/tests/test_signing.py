@@ -50,8 +50,8 @@ def _credential(engine: Engine, agent: factory.Agent) -> Any:
     [
         ("GET", "/api/v1/me"),
         ("POST", "/api/v1/me/resume"),
-        ("GET", "/api/v1/projects/maity/events?after=0"),
-        ("GET", "/api/v1/projects/maity/tasks"),
+        ("GET", "/api/v1/projects/maintainer/maity/events?after=0"),
+        ("GET", "/api/v1/projects/maintainer/maity/tasks"),
     ],
 )
 def test_a_bearer_call_is_refused_where_signing_is_required(
@@ -138,12 +138,18 @@ def test_an_answer_stored_over_bearer_is_not_replayed_after_the_flip(
     flow.project(owner)
     agent = flow.agent(make_client, owner)
     created = agent.client.post(
-        "/api/v1/projects/maity/tasks", json={"title": "A card"}, headers=agent.auth | KEY
+        "/api/v1/projects/maintainer/maity/tasks",
+        json={"title": "A card"},
+        headers=agent.auth | KEY,
     )
     assert created.status_code == 201, created.text
-    owner.patch("/projects/maity", {"policy": {"signing": "required"}, "reason": "CLI only"})
+    owner.patch(
+        "/projects/maintainer/maity", {"policy": {"signing": "required"}, "reason": "CLI only"}
+    )
     again = agent.client.post(
-        "/api/v1/projects/maity/tasks", json={"title": "A card"}, headers=agent.auth | KEY
+        "/api/v1/projects/maintainer/maity/tasks",
+        json={"title": "A card"},
+        headers=agent.auth | KEY,
     )
     assert again.status_code == 403
     assert again.headers["Maity-Error"] == "signature_required"
@@ -152,9 +158,11 @@ def test_an_answer_stored_over_bearer_is_not_replayed_after_the_flip(
 
 def test_human_sessions_are_not_affected(owner: flow.Human, migrated: Engine) -> None:
     flow.project(owner)
-    patched = owner.patch("/projects/maity", {"policy": {"signing": "required"}, "reason": "x"})
+    patched = owner.patch(
+        "/projects/maintainer/maity", {"policy": {"signing": "required"}, "reason": "x"}
+    )
     assert patched.status_code == 200, patched.text
-    assert owner.get("/projects/maity/tasks").status_code == 200
+    assert owner.get("/projects/maintainer/maity/tasks").status_code == 200
 
 
 # --- last_used_via ------------------------------------------------------------------------
@@ -175,10 +183,14 @@ def test_the_credentials_list_shows_the_last_path(
 ) -> None:
     flow.project(owner)
     agent = flow.agent(make_client, owner)
-    [listed] = owner.get(f"/projects/maity/members/{agent.id}/credentials").json()["items"]
+    [listed] = owner.get(f"/projects/maintainer/maity/members/{agent.id}/credentials").json()[
+        "items"
+    ]
     assert listed["last_used_via"] is None  # the exchange is not a use
     assert agent.get("/me").status_code == 200
-    [listed] = owner.get(f"/projects/maity/members/{agent.id}/credentials").json()["items"]
+    [listed] = owner.get(f"/projects/maintainer/maity/members/{agent.id}/credentials").json()[
+        "items"
+    ]
     assert listed["last_used_via"] == "bearer"
 
 
@@ -192,21 +204,25 @@ def owner(make_client: ClientFactory, migrated: Engine) -> flow.Human:
 
 def test_signing_is_a_policy_field(owner: flow.Human) -> None:
     flow.project(owner)
-    assert owner.get("/projects/maity").json()["policy"]["signing"] == "optional"
-    patched = owner.patch("/projects/maity", {"policy": {"signing": "required"}, "reason": "x"})
+    assert owner.get("/projects/maintainer/maity").json()["policy"]["signing"] == "optional"
+    patched = owner.patch(
+        "/projects/maintainer/maity", {"policy": {"signing": "required"}, "reason": "x"}
+    )
     assert patched.json()["policy"]["signing"] == "required"
-    unknown = owner.patch("/projects/maity", {"policy": {"signing": "always"}, "reason": "x"})
+    unknown = owner.patch(
+        "/projects/maintainer/maity", {"policy": {"signing": "always"}, "reason": "x"}
+    )
     assert unknown.json()["error"]["details"]["fields"] == {"policy.signing": "unknown"}
 
 
 def test_a_preset_change_keeps_signing(owner: flow.Human) -> None:
     flow.project(owner)
-    owner.patch("/projects/maity", {"policy": {"signing": "required"}, "reason": "x"})
-    solo = owner.patch("/projects/maity", {"policy": {"preset": "solo"}, "reason": "x"})
+    owner.patch("/projects/maintainer/maity", {"policy": {"signing": "required"}, "reason": "x"})
+    solo = owner.patch("/projects/maintainer/maity", {"policy": {"preset": "solo"}, "reason": "x"})
     assert solo.json()["policy"]["signing"] == "required"
     assert solo.json()["policy"]["done_authority"] == "holder"  # the rest was refilled
     both = owner.patch(
-        "/projects/maity",
+        "/projects/maintainer/maity",
         {"policy": {"preset": "hierarchical", "signing": "optional"}, "reason": "x"},
     )
     assert both.json()["policy"]["signing"] == "optional"
@@ -222,7 +238,9 @@ def test_an_agent_cannot_switch_signing(
 ) -> None:
     flow.project(owner)
     agent = flow.agent(make_client, owner, role="admin")
-    response = agent.patch("/projects/maity", {"policy": {"signing": "optional"}, "reason": "x"})
+    response = agent.patch(
+        "/projects/maintainer/maity", {"policy": {"signing": "optional"}, "reason": "x"}
+    )
     assert response.status_code == 403
     assert response.headers["Maity-Error"] == "forbidden"
 
@@ -236,7 +254,7 @@ def test_the_exchange_says_whether_signing_is_required(
     flow.project(owner)
     optional = flow.exchange(make_client(), flow.join(owner, "maity"))
     assert optional.headers["Maity-Signing"] == "optional"
-    owner.patch("/projects/maity", {"policy": {"signing": "required"}, "reason": "x"})
+    owner.patch("/projects/maintainer/maity", {"policy": {"signing": "required"}, "reason": "x"})
     required = flow.exchange(make_client(), flow.join(owner, "maity"))
     assert required.status_code == 201
     assert required.headers["Maity-Signing"] == "required"
@@ -251,7 +269,7 @@ def test_the_join_page_puts_the_cli_first_when_signing_is_required(
     page = make_client().get(f"/j/{token}").text
     assert "This project requires the CLI" not in page
     assert "It is optional:" in page
-    owner.patch("/projects/maity", {"policy": {"signing": "required"}, "reason": "x"})
+    owner.patch("/projects/maintainer/maity", {"policy": {"signing": "required"}, "reason": "x"})
     page = make_client().get(f"/j/{token}").text
     required = page.index("## This project requires the CLI")
     assert required < page.index("## 1. What this is")

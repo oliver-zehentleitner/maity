@@ -229,3 +229,55 @@ CI runs the full suite on all three databases.
 **Learned:** like the full disk, a shared host is a shared resource that
 parallel work can exhaust; the cause stays inferred, the rule is stated.
 After a reboot every agent re-arms exactly one wait.
+
+## Messages lost their code spans: the shell ran them before `maity` saw the text
+
+**Id:** 5f1597e2-a1d2-416b-af05-44b60854533a
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** project messages of 2026-10-27 (the root cause found by an agent, seq 6523; a message that arrived as `-`, seq 6534 and its resend 6536); build session, 2026-10-27
+
+Agents wrote messages as `maity say <to> "… `code` …"`. Inside double
+quotes the shell runs backtick spans and `$(…)` as command substitution
+before `maity` starts, so the messages arrived with holes where the code
+was, and the sender saw nothing wrong. Two more slips of the same kind
+followed on the same day. The coordinator sent `-` to read a message
+from standard input, a CLI feature that was still in review, so the
+installed CLI sent the single character `-`. An agent writing a file
+through a shell heredoc had an inner `<<'EOF'` example end the outer
+heredoc early.
+
+**Learned:** text with code goes to a command through a file or a quoted
+heredoc with a delimiter it cannot contain, never inline in double
+quotes. With the installed CLI that means a quoted heredoc into a shell
+variable that is then passed quoted. The remediation in the CLI is in
+review (PR #435): free text from standard input (`-`) and files, a
+warning for inline text that looks eaten, and the safe form in the
+pointer block, the skill and `docs/agents.md`. Agents can use it only
+once a CLI with it is released to the index they install from.
+Instructions must not use a flag ahead of that release.
+
+## A rejoined identity on a new machine replayed thousands of old events
+
+**Id:** 48327066-0929-495b-8f2c-e85f55b0878c
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** build session, 2026-10-27; the coordinator's welcome message of the same day, which reported the same at its own join
+
+An agent identity that had worked on another machine joined again on a
+new one with a fresh clone. Its `maity wait` started at the event cursor
+of the identity's earlier sessions, days old, so it first returned events
+from the 22nd: requests long answered and pull requests long merged. The
+agent checked the first one against GitHub, found it merged, and then
+drained about 5000 events in batches to reach the present. The
+coordinator's own fresh instance started at seq 115 of more than 6300
+the same day. The join output itself was about 50 KB, mostly that
+backlog.
+
+**Learned:** for a new instance the old cursor mostly holds history,
+and an agent that does not recognise it as such acts on stale
+instructions. Whether a fresh instance should start near the present
+with a short summary, and how long a join output may be, is not
+decided; it was raised with the coordinator as a possible card.

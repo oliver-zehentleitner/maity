@@ -64,7 +64,7 @@ def test_a_human_writes_versions_and_a_stale_base_is_a_conflict(
     assert (empty["markdown"], empty["version"], empty["projects"]) == (
         "",
         0,
-        [{"slug": "maity", "include": True}],
+        [{"slug": "maity", "full_name": "maintainer/maity", "include": True}],
     )
     first = put(owner, "German in chat, English in code.")
     assert first.status_code == 200, first.text
@@ -90,18 +90,22 @@ def test_agents_read_a_humans_text_other_humans_do_not_and_the_switch_turns_it_o
     agent = flow.agent(make_client, owner)
     other = second_human(make_client, migrated)
     put(owner, "Short answers.")
-    path = f"/projects/maity/members/{owner.id}/preferences"
+    path = f"/projects/maintainer/maity/members/{owner.id}/preferences"
     assert agent.get(path).json()["markdown"] == "Short answers."
     assert owner.get(path).status_code == 200  # its own
     assert other.get(path).status_code == 404  # other humans do not read them
-    assert agent.get(f"/projects/maity/members/{agent.id}/preferences").status_code == 404
+    assert (
+        agent.get(f"/projects/maintainer/maity/members/{agent.id}/preferences").status_code == 404
+    )
     off = owner.client.put(
-        "/api/v1/me/preferences/projects/maity",
+        "/api/v1/me/preferences/projects/maintainer/maity",
         json={"include": False},
         headers={"X-CSRF-Token": owner.csrf},
     )
     assert off.status_code == 200, off.text
-    assert off.json()["projects"] == [{"slug": "maity", "include": False}]
+    assert off.json()["projects"] == [
+        {"slug": "maity", "full_name": "maintainer/maity", "include": False}
+    ]
     assert agent.get(path).status_code == 404
     switched = events(migrated, "preferences_changed")[-1]
     assert switched.payload == {"human_id": owner.id, "included": False}
@@ -112,7 +116,7 @@ def test_agents_read_a_humans_text_other_humans_do_not_and_the_switch_turns_it_o
 
 def propose(agent: flow.Agent, human_id: str, text: str, base: int = 0) -> Any:
     return agent.post(
-        f"/projects/maity/members/{human_id}/preferences/proposals",
+        f"/projects/maintainer/maity/members/{human_id}/preferences/proposals",
         {"markdown": text, "base_version": base, "reason": "from what I saw today"},
     )
 
@@ -135,7 +139,7 @@ def test_only_an_admin_agent_or_the_proxy_proposes(
     request = proposed.json()
     assert request["personal"] is True and request["to"] == f"human:{owner.id}"
     # Not in the project's list, in the human's personal inbox.
-    assert owner.get("/projects/maity/requests?to=all").json()["items"] == []
+    assert owner.get("/projects/maintainer/maity/requests?to=all").json()["items"] == []
     inbox = owner.get("/requests").json()["items"]
     assert [r["id"] for r in inbox] == [request["id"]]
 
@@ -162,7 +166,7 @@ def test_the_review_go_edited_go_no_and_a_stale_go(
     assert current["version"] == 1 and current["markdown"] == "Be brief."
     assert current["by"]["kind"] == "agent" and current["confirmed_by"] == owner.id
     assert current["proposed_by"]["request_id"] == first["id"]
-    assert current["proposed_by"]["project"] == "maity"
+    assert current["proposed_by"]["project"] == "maintainer/maity"
 
     second = propose(admin, owner.id, "Be very brief.", base=1).json()
     edited = answer(owner, second["id"], reply_id="go", markdown="Be brief, kind.", base_version=1)
@@ -246,16 +250,23 @@ def test_an_agent_given_its_owners_text_gets_it_on_its_membership_owner_member_o
             .where(t.agent_profile.c.id == agent.id)
             .values(owner_id=stranger.id)
         )
-    refused = agent.patch(f"/projects/maity/members/{agent.id}", {"owner_preferences": True})
+    refused = agent.patch(
+        f"/projects/maintainer/maity/members/{agent.id}", {"owner_preferences": True}
+    )
     assert refused.status_code == 403
     assert refused.json()["error"]["details"]["reason"] == "humans_only"
-    given = stranger.patch(f"/projects/maity/members/{agent.id}", {"owner_preferences": True})
+    given = stranger.patch(
+        f"/projects/maintainer/maity/members/{agent.id}", {"owner_preferences": True}
+    )
     assert given.status_code == 204, given.text  # the owner is no member: no body
     packet = agent.resume().json()
     assert packet["membership"]["owner_preferences"]["markdown"] == "The stranger's way."
     assert [i["human"]["id"] for i in packet["preferences"]["items"]] == []
-    assert agent.get(f"/projects/maity/members/{stranger.id}/preferences").status_code == 200
-    stranger.patch(f"/projects/maity/members/{agent.id}", {"owner_preferences": False})
+    assert (
+        agent.get(f"/projects/maintainer/maity/members/{stranger.id}/preferences").status_code
+        == 200
+    )
+    stranger.patch(f"/projects/maintainer/maity/members/{agent.id}", {"owner_preferences": False})
     assert agent.resume().json()["membership"]["owner_preferences"] is None
 
 
@@ -301,12 +312,12 @@ def test_the_proposer_never_reads_the_current_text_through_its_request(
     admin = flow.agent(make_client, owner, role="admin")
     put(owner, "private: do not share")
     owner.client.put(
-        "/api/v1/me/preferences/projects/maity",
+        "/api/v1/me/preferences/projects/maintainer/maity",
         json={"include": False},
         headers={"X-CSRF-Token": owner.csrf},
     )
     request = propose(admin, owner.id, "Be brief.", base=1).json()
-    seen = admin.get(f"/projects/maity/requests/{request['id']}").json()
+    seen = admin.get(f"/projects/maintainer/maity/requests/{request['id']}").json()
     assert "private" not in str(seen)
     assert "current" not in seen["memory_proposal"]
     mine = owner.get(f"/requests/{request['id']}").json()["memory_proposal"]
@@ -328,3 +339,26 @@ def test_an_open_proposal_older_than_a_day_is_superseded_too(
     propose(admin, owner.id, "new")
     statuses = {r["id"]: r["status"] for r in owner.get("/requests?status=all").json()["items"]}
     assert statuses[old["id"]] == "withdrawn"
+
+
+def test_projects_of_two_owners_with_one_slug_stay_apart(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    # Each project is named by its full name (§6.25), and a switch reaches that one only.
+    maintainer = flow.human(make_client, migrated)
+    anna = flow.human(make_client, migrated, "anna")
+    flow.project(maintainer, "shared")
+    hers = flow.project(anna, "shared")
+    factory.membership(migrated, hers["id"], "member", human_id=maintainer.id)
+    put = maintainer.client.put(
+        "/api/v1/me/preferences/projects/anna/shared",
+        json={"include": False},
+        headers={"X-CSRF-Token": maintainer.csrf},
+    )
+    assert put.status_code == 200, put.text
+    expected = [
+        {"slug": "shared", "full_name": "anna/shared", "include": False},
+        {"slug": "shared", "full_name": "maintainer/shared", "include": True},
+    ]
+    assert put.json()["projects"] == expected
+    assert maintainer.get("/me/preferences").json()["projects"] == expected

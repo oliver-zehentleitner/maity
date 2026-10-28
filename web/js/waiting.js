@@ -6,7 +6,7 @@ window.Maity = window.Maity || {};
   // §18.8: requests (and what asks like one), conversations, mentions, the
   // account's alerts. Cards, the ticker and jour fixe steps are not here.
   const GROUPS = [["inbox", "Request updates"], ["chat", "Conversations"], ["mention", "Mentions"], ["account", "Account"]];
-  const projectOf = (x) => x.project && x.project.slug || "";
+  const projectOf = (x) => x.project && x.project.full_name || "";
   // The view shows 200 rows: 4 pages of the hub's most (50, §18.2) are all it
   // reads; the rest is behind More notifications. Stream events within a
   // short while are one refresh.

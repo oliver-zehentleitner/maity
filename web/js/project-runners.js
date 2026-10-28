@@ -1,4 +1,4 @@
-// (9) Project → Runners (#/p/<slug>/runners, project:admin): the runners
+// (9) Project → Runners (#/<owner>/<slug>/runners, project:admin): the runners
 // allowed to start agents for this project (docs/api.md §15.4). Allowing
 // one is the grant; its own configuration still decides what it starts.
 // Detaching closes the agents it runs here. Capabilities are shown in the

@@ -16,7 +16,7 @@ from typing import Any
 
 from sqlalchemy import Connection, select, update
 
-from maity_hub import clock, events, placements, policy
+from maity_hub import clock, events, namespace, placements, policy
 from maity_hub import tables as t
 from maity_hub.runners import attached_project_ids, human_actor
 
@@ -153,7 +153,7 @@ def answer(
             )
         ).scalars()
     )
-    slugs = {r.id: r.slug for r in conn.execute(select(t.project.c.id, t.project.c.slug))}
+    slugs = namespace.full_names(conn, {r["project_id"] for r in results})
     return [
         {"project": slugs[r["project_id"]], "rule": r["rule"], "stopped": r["stopped"]}
         for r in results

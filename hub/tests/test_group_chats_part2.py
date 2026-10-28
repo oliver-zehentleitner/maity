@@ -48,7 +48,7 @@ def test_an_owner_outside_reads_its_agents_chats_and_nothing_else(
     assert [m["seq"] for m in read(outside, with_agent["id"]).json()["items"]] == [said["seq"]]
     assert outside.get(f"{BASE}/{without['id']}").status_code == 404
     assert outside.get(f"{BASE}/{agent.id}/messages").status_code == 404  # no direct chat here
-    assert outside.get("/projects/maity/events").status_code == 404  # nothing else of it
+    assert outside.get("/projects/maintainer/maity/events").status_code == 404  # nothing else of it
     posted = say(outside, with_agent["id"], "hi")
     assert (posted.status_code, reason(posted)) == (403, "observer")
     renamed = outside.patch(f"{BASE}/{with_agent['id']}", {"title": "x"})
@@ -57,8 +57,8 @@ def test_an_owner_outside_reads_its_agents_chats_and_nothing_else(
     # Outside a chat it reads along, a write stays not_found, like every other read.
     assert outside.post(BASE, {"participants": [agent.id]}).status_code == 404
     notice = {"kind": "message", "type": "notice", "to": "all", "body": "hi"}
-    assert outside.post("/projects/maity/events", notice).status_code == 404
-    assert outside.post("/projects/maity/tasks", {"title": "x"}).status_code == 404
+    assert outside.post("/projects/maintainer/maity/events", notice).status_code == 404
+    assert outside.post("/projects/maintainer/maity/tasks", {"title": "x"}).status_code == 404
 
 
 def test_an_outsider_without_an_agent_learns_nothing(
@@ -114,7 +114,7 @@ def test_an_outsider_posting_through_events_is_an_observer(
     outside, agent = outside_owner(make_client, migrated)
     chat = create(owner, agent.id).json()
     posted = outside.post(
-        "/projects/maity/events",
+        "/projects/maintainer/maity/events",
         {"kind": "message", "type": "chat", "body": "hi", "conversation_id": chat["id"]},
     )
     assert (posted.status_code, reason(posted)) == (403, "observer")
@@ -149,12 +149,13 @@ def test_observer_only_where_the_outsider_reads_along(
     guest = other_human(make_client, migrated, "guest")
     without = create(owner, guest.id).json()  # none of its agents in it
     notice = owner.post(
-        "/projects/maity/events", {"kind": "message", "type": "notice", "to": "all", "body": "x"}
+        "/projects/maintainer/maity/events",
+        {"kind": "message", "type": "notice", "to": "all", "body": "x"},
     ).json()["seq"]
     assert redact(outside, notice).status_code == 404  # a project event
     assert redact(outside, 10**9).status_code == 404  # no such seq
     hidden_post = outside.post(
-        "/projects/maity/events",
+        "/projects/maintainer/maity/events",
         {"kind": "message", "type": "chat", "body": "hi", "conversation_id": without["id"]},
     )
     assert hidden_post.status_code == 404

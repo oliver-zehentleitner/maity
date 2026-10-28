@@ -3,7 +3,7 @@
 // conversation, on a phone the list its own screen. The list merges each
 // project's direct and group chats (docs/api.md §9.3, one read per project),
 // unread first, then the newest, each with its project. A conversation opens
-// in place (#/chats/<slug>/<id>) with chat.js's own pane, in its project's
+// in place (#/chats/<owner>/<slug>/<id>) with chat.js's own pane, in its project's
 // context.
 //
 // Live updates hold no events feed of any project: the notifications stream
@@ -18,7 +18,7 @@ window.Maity = window.Maity || {};
 (function (M) {
   const { h, append, clear } = M.dom;
   const SETTLE_MS = 400;
-  const chatLink = (slug, id) => "#/chats" + (id ? "/" + encodeURIComponent(slug) + "/" + encodeURIComponent(id) : "");
+  const chatLink = (full, id) => "#/chats" + (id ? "/" + M.api.projectPath(full) + "/" + encodeURIComponent(id) : "");
 
   // Unread first, then the newest, then by title; the open one counts as read.
   function ordered(all, currentKey) {
@@ -28,8 +28,8 @@ window.Maity = window.Maity || {};
       || (at(b) > at(a) ? 1 : at(b) < at(a) ? -1 : a.chat.title.localeCompare(b.chat.title)));
   }
 
-  // The merged list. pctxs: slug -> the project's context; open: the open
-  // conversation's {slug, id}, or null. Shaped as chat.js's own list.
+  // The merged list. pctxs: full name -> the project's context; open: the
+  // open conversation's {slug: its project's full name, id}, or null. Shaped as chat.js's own list.
   function globalList(pctxs, open) {
     const P = M.chatParts;
     const ul = h("ul", { class: "chat-list" });
@@ -108,20 +108,20 @@ window.Maity = window.Maity || {};
   }
 
   M.views.chats = async function (ctx, root, args) {
-    const [slug, id] = args || [];
-    const open = slug && id ? { slug, id } : null;
+    const [owner, name, id] = args || [];
+    const open = owner && name && id ? { slug: owner + "/" + name, id } : null;
     // Each project's context, read once when the view opens; one that fails is said, the rest shown.
     const pctxs = {};
     const unreadable = [];
-    await Promise.all(ctx.projects.map((p) => M.projectContext(ctx, p.slug, chatLink)
-      .then((pctx) => { pctxs[p.slug] = pctx; }, (err) => { unreadable.push(h("p", { class: "send-status failed" }, "Could not read " + p.name + ": " + err.message)); })));
+    await Promise.all(ctx.projects.map((p) => M.projectContext(ctx, p.full_name, chatLink)
+      .then((pctx) => { pctxs[p.full_name] = pctx; }, (err) => { unreadable.push(h("p", { class: "send-status failed" }, "Could not read " + p.name + ": " + err.message)); })));
     append(root, unreadable);
     // The projects an agent is in, as far as the reader may see: those of
     // the reader's whose member list names it (tsk-p94e7njrmg1p), in the
     // switcher's order. Never a project the reader is not in.
     const projectsOf = (memberId) => ctx.projects
-      .filter((p) => pctxs[p.slug] && pctxs[p.slug].memberById && pctxs[p.slug].memberById[memberId])
-      .map((p) => ({ slug: p.slug, name: p.name || p.slug, view: (ctx.projectViews || {})[p.slug] }));
+      .filter((p) => pctxs[p.full_name] && pctxs[p.full_name].memberById && pctxs[p.full_name].memberById[memberId])
+      .map((p) => ({ slug: p.full_name, name: p.name || p.full_name, view: (ctx.projectViews || {})[p.full_name] }));
     Object.values(pctxs).forEach((x) => { x.projectsOf = projectsOf; });
     const list = globalList(pctxs, open);
     const pctx = open ? pctxs[open.slug] : null;
@@ -168,7 +168,7 @@ window.Maity = window.Maity || {};
 
     if (!open || !pctx) {
       append(root, h("div", { class: "chat-layout" + (open ? " open" : "") }, list.el,
-        open ? h("p", { class: "error", role: "alert" }, "No project of yours with the slug " + open.slug + ".")
+        open ? h("p", { class: "error", role: "alert" }, "No project of yours named " + open.slug + ".")
           : h("p", { class: "chat-none muted" }, "Pick a conversation.")));
       await list.refresh();
       return;

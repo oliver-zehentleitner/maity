@@ -14,7 +14,7 @@ from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
 
-M = "/projects/maity/memory"
+M = "/projects/maintainer/maity/memory"
 
 
 @pytest.fixture
@@ -449,9 +449,13 @@ def test_an_agents_community_entry_is_a_proposal_a_project_admin_confirms(
                                           "tags": ["release"]}  # fmt: skip
     assert agent.get(M).json()["items"] == []  # nothing is stored before the go
     other = flow.agent(make_client, owner, role="admin")
-    refused = other.post(f"/projects/maity/requests/{request['id']}/answer", {"reply_id": "go"})
+    refused = other.post(
+        f"/projects/maintainer/maity/requests/{request['id']}/answer", {"reply_id": "go"}
+    )
     assert refused.json()["error"]["details"] == {"reason": "humans_only"}
-    go = owner.post(f"/projects/maity/requests/{request['id']}/answer", {"reply_id": "go"})
+    go = owner.post(
+        f"/projects/maintainer/maity/requests/{request['id']}/answer", {"reply_id": "go"}
+    )
     assert go.status_code == 200, go.text
     (entry,) = agent.get(M).json()["items"]
     assert entry["store"] == "community" and entry["text"] == "Never on a Friday."
@@ -465,9 +469,11 @@ def test_a_refused_or_withdrawn_proposal_stores_nothing(
 ) -> None:
     agent = flow.agent(make_client, owner)
     first = agent.post(M, {"store": "community", "text": "one"}).json()
-    owner.post(f"/projects/maity/requests/{first['id']}/answer", {"reply_id": "no"})
+    owner.post(f"/projects/maintainer/maity/requests/{first['id']}/answer", {"reply_id": "no"})
     second = agent.post(M, {"store": "community", "text": "two"}).json()
-    agent.post(f"/projects/maity/requests/{second['id']}/withdraw", {"reason": "rethought"})
+    agent.post(
+        f"/projects/maintainer/maity/requests/{second['id']}/withdraw", {"reason": "rethought"}
+    )
     assert agent.get(M).json()["items"] == []
 
 
@@ -477,10 +483,14 @@ def test_only_a_project_admin_gives_the_go(
     agent = flow.agent(make_client, owner)
     request = agent.post(M, {"store": "community", "text": "Never on a Friday."}).json()
     proxy = _second_human(make_client, migrated, "proxy")
-    answered = proxy.post(f"/projects/maity/requests/{request['id']}/answer", {"reply_id": "go"})
+    answered = proxy.post(
+        f"/projects/maintainer/maity/requests/{request['id']}/answer", {"reply_id": "go"}
+    )
     assert answered.status_code == 403, answered.text
     assert agent.get(M).json()["items"] == []
-    assert owner.get(f"/projects/maity/requests/{request['id']}").json()["status"] == "open"
+    assert (
+        owner.get(f"/projects/maintainer/maity/requests/{request['id']}").json()["status"] == "open"
+    )
 
 
 def test_a_replay_answers_only_a_caller_who_still_reads_the_entry(
@@ -508,9 +518,13 @@ def test_go_on_a_full_community_store_refuses_and_keeps_the_request_open(
     request = agent.post(M, {"store": "community", "text": "one more"}).json()
     for n in range(memory.STORE_MAX // memory.ENTRY_MAX):
         owner.post(M, {"store": "community", "text": f"{n:04d}" + "x" * (memory.ENTRY_MAX - 4)})
-    go = owner.post(f"/projects/maity/requests/{request['id']}/answer", {"reply_id": "go"})
+    go = owner.post(
+        f"/projects/maintainer/maity/requests/{request['id']}/answer", {"reply_id": "go"}
+    )
     assert go.status_code == 409 and go.json()["error"]["code"] == "memory_full"
-    assert owner.get(f"/projects/maity/requests/{request['id']}").json()["status"] == "open"
+    assert (
+        owner.get(f"/projects/maintainer/maity/requests/{request['id']}").json()["status"] == "open"
+    )
 
 
 def test_deleting_a_proposed_entry_clears_the_proposals_text(
@@ -518,10 +532,12 @@ def test_deleting_a_proposed_entry_clears_the_proposals_text(
 ) -> None:
     agent = flow.agent(make_client, owner)
     request = agent.post(M, {"store": "community", "text": "a secret by mistake"}).json()
-    owner.post(f"/projects/maity/requests/{request['id']}/answer", {"reply_id": "go"})
+    owner.post(f"/projects/maintainer/maity/requests/{request['id']}/answer", {"reply_id": "go"})
     (entry,) = agent.get(M).json()["items"]
     assert remove(owner, entry["id"]).status_code == 200
-    proposal = owner.get(f"/projects/maity/requests/{request['id']}").json()["memory_proposal"]
+    proposal = owner.get(f"/projects/maintainer/maity/requests/{request['id']}").json()[
+        "memory_proposal"
+    ]
     assert proposal["text"] is None and proposal["store"] == "community"
 
 
@@ -532,9 +548,11 @@ def test_a_proxy_answers_no_answer_at_all(
     request = agent.post(M, {"store": "community", "text": "Never on a Friday."}).json()
     proxy = _second_human(make_client, migrated, "proxy")
     for body in ({"reply_id": "no"}, {"text": "rather not"}, {"reply_id": "go"}):
-        refused = proxy.post(f"/projects/maity/requests/{request['id']}/answer", body)
+        refused = proxy.post(f"/projects/maintainer/maity/requests/{request['id']}/answer", body)
         assert refused.status_code == 403, refused.text
-    assert owner.get(f"/projects/maity/requests/{request['id']}").json()["status"] == "open"
+    assert (
+        owner.get(f"/projects/maintainer/maity/requests/{request['id']}").json()["status"] == "open"
+    )
 
 
 def test_the_proposed_text_is_in_no_event(
@@ -542,9 +560,9 @@ def test_the_proposed_text_is_in_no_event(
 ) -> None:
     agent = flow.agent(make_client, owner)
     request = agent.post(M, {"store": "community", "text": "the secret word"}).json()
-    owner.post(f"/projects/maity/requests/{request['id']}/answer", {"reply_id": "go"})
+    owner.post(f"/projects/maintainer/maity/requests/{request['id']}/answer", {"reply_id": "go"})
     with migrated.connect() as conn:
         payloads = [str(p) for p in conn.execute(select(t.event.c.payload)).scalars()]
     assert not [p for p in payloads if "the secret word" in p]
-    shown = owner.get(f"/projects/maity/requests/{request['id']}").json()
+    shown = owner.get(f"/projects/maintainer/maity/requests/{request['id']}").json()
     assert shown["memory_proposal"]["text"] == "the secret word"  # only GET shows it

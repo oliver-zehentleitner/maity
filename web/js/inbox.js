@@ -1,6 +1,6 @@
 // (1) The inbox: what each agent wants from the human, one entry after the
 // other. The first open entry in the chosen order is expanded; answering
-// it expands the next. Runs in one project (#/p/<slug>/inbox) or across
+// it expands the next. Runs in one project (#/<owner>/<slug>/inbox) or across
 // all of them (#/all), where every entry is labelled with its project.
 // Requests carry everything an entry shows (docs/api.md §7): asker, card
 // and context are inline, so no other call is made.
@@ -24,8 +24,9 @@ window.Maity = window.Maity || {};
   const ui = { sort: "priority", show: "open", current: null, later: new Set(), project: "", group: false };
 
   // An entry is addressed by project and id: ids are unique per project
-  // only. req.slug is set on load; the API gives a cross-project item its
-  // project as {slug, name, state} and a per-project item none.
+  // only. req.slug is set on load to the project's full name (§6.25); the
+  // API gives a cross-project item its project as {slug, full_name, name,
+  // state} and a per-project item none.
   const keyOf = (req) => req.slug + "/" + req.id;
 
   // Who asked, from the request itself: asked_by and, where the request was
@@ -70,14 +71,14 @@ window.Maity = window.Maity || {};
   // In the cross-project view: the project's logo or monogram, its name
   // and state, a link to the project, before the entry it belongs to.
   function projectBadge(ctx, req, names) {
-    const p = req.project || { slug: req.slug, name: names.project(req) };
+    const p = req.project || { full_name: req.slug, name: names.project(req) };
     // A personal request (§7) is the human's, not the project's: no link to
     // a project inbox that never lists it, and maybe one is not a member of.
     if (req.personal) {
       return h("span", { class: "project-label personal" }, "Personal", h("span", { class: "muted" }, " · " + p.name));
     }
-    return h("a", { class: "project-label", href: ctx.projectLink(p.slug, "inbox") },
-      M.projectMark(p.slug, p.name, (ctx.projectViews || {})[p.slug], "small"),
+    return h("a", { class: "project-label", href: ctx.projectLink(p.full_name, "inbox") },
+      M.projectMark(p.full_name, p.name, (ctx.projectViews || {})[p.full_name], "small"),
       p.name,
       p.state ? h("span", { class: "state state-" + p.state }, ctx.stateLabel(p.state)) : null);
   }
@@ -128,7 +129,7 @@ window.Maity = window.Maity || {};
   // (js/ids.js): none for a personal request from a project the human is
   // not in, whose pages would not open.
   function textAt(ctx, req) {
-    const p = ctx.projects.find((x) => x.slug === req.slug);
+    const p = ctx.projects.find((x) => x.full_name === req.slug);
     const slug = req.personal && !p ? null : req.slug;
     return { slug, repository: (p && p.repository && p.repository.url) || (ctx.slug === req.slug ? M.ids.where(ctx).repository : null) };
   }
@@ -223,7 +224,7 @@ window.Maity = window.Maity || {};
     // accept an edit, decline; Later, talk and Withdraw stay below.
     if (preference) append(body, M.preferences.review(ctx, req, (payload) => onAnswer(req, payload)));
 
-    const textId = "reply-" + req.slug + "-" + req.id;
+    const textId = "reply-" + String(req.slug).replace("/", "-") + "-" + req.id;
     const text = h("textarea", { id: textId, rows: "3", placeholder: "Reply in your own words" });
     const sendWords = () => {
       const value = text.value.trim();
@@ -262,7 +263,7 @@ window.Maity = window.Maity || {};
         text,
         // @ offers this project's members; the hub links them, it pings nobody (§8.6).
         // Not for a personal request: its project may be one the human is not in.
-        req.personal ? null : M.mentionPicker(text, () => M.api.getAll("/projects/" + encodeURIComponent(req.slug) + "/members").then((r) => r.items), ctx.me.id),
+        req.personal ? null : M.mentionPicker(text, () => M.api.getAll("/projects/" + M.api.projectPath(req.slug) + "/members").then((r) => r.items), ctx.me.id),
         sendText),
       status.el);
 
@@ -292,7 +293,7 @@ window.Maity = window.Maity || {};
       return requests.items;
     }
     const requests = await M.api.getAll("/requests");
-    requests.items.forEach((r) => { r.slug = r.project.slug; });
+    requests.items.forEach((r) => { r.slug = r.project.full_name; });
     // A list shows no proposal (§7): an open personal request is read on its
     // own, so a preference proposal (§19.4) comes with its review's texts.
     // One that cannot be read is offered no reply until it is: it may be a
@@ -301,7 +302,7 @@ window.Maity = window.Maity || {};
     return requests.items;
   }
 
-  // args[0]: a request to show (#/p/<slug>/inbox/<id>, an id's link,
+  // args[0]: a request to show (#/<owner>/<slug>/inbox/<id>, an id's link,
   // js/ids.js): opened, and listed among the answered when it is one; an id
   // the project's inbox does not hold is said.
   M.views.inbox = async function (ctx, root, args) {
@@ -318,7 +319,7 @@ window.Maity = window.Maity || {};
     const names = {
       member: (id) => (ctx.nameOf ? ctx.nameOf(id) : id || "—"),
       project: (req) => (req.project && req.project.name)
-        || (ctx.projects.find((x) => x.slug === req.slug) || { name: req.slug }).name,
+        || (ctx.projects.find((x) => x.full_name === req.slug) || { name: req.slug }).name,
     };
     const sorts = ctx.scope === "all" ? ["priority", "date", "agent", "project"] : ["priority", "date", "agent"];
     if (!sorts.includes(ui.sort)) ui.sort = "priority";
@@ -327,7 +328,7 @@ window.Maity = window.Maity || {};
 
     // The project filter is the cross-project view's only; a project no
     // longer in the switcher is no filter (it would empty the list for good).
-    if (ui.project && !ctx.projects.some((p) => p.slug === ui.project)) ui.project = "";
+    if (ui.project && !ctx.projects.some((p) => p.full_name === ui.project)) ui.project = "";
     const projectFilter = () => (ctx.scope === "all" ? ui.project : "");
     const grouped = () => ctx.scope === "all" && ui.group;
     const list = h("div", { class: "entries-box" });
@@ -348,7 +349,7 @@ window.Maity = window.Maity || {};
         .sort(comparator(names));
       if (!grouped()) return sorted;
       // Personal requests first, in a group of their own; then by project.
-      const at = (r) => { if (r.personal) return -1; const i = ctx.projects.findIndex((p) => p.slug === r.slug); return i < 0 ? ctx.projects.length : i; };
+      const at = (r) => { if (r.personal) return -1; const i = ctx.projects.findIndex((p) => p.full_name === r.slug); return i < 0 ? ctx.projects.length : i; };
       return sorted.map((r, i) => [r, i]).sort((a, b) => at(a[0]) - at(b[0]) || a[1] - b[1]).map(([r]) => r);
     }
 
@@ -387,7 +388,7 @@ window.Maity = window.Maity || {};
         const slugs = [...new Set(shown.map(groupOf))];
         slugs.forEach((slug) => {
           const own = shown.filter((r) => groupOf(r) === slug);
-          const id = "inbox-group-" + (slug || "personal");
+          const id = "inbox-group-" + (slug ? slug.replace("/", "-") : "personal");
           append(list, h("section", { class: "entry-group", "aria-labelledby": id },
             h("h3", { id }, slug ? names.project(own[0]) : "Personal", h("span", { class: "count" }, String(own.length))),
             h("ol", { class: "entries" }, own.map(entry))));
@@ -417,7 +418,7 @@ window.Maity = window.Maity || {};
     // the project's routes answer not_found for it.
     async function answer(req, payload, verb) {
       const order = ordered();
-      const path = (req.personal ? "" : "/projects/" + encodeURIComponent(req.slug))
+      const path = (req.personal ? "" : "/projects/" + M.api.projectPath(req.slug))
         + "/requests/" + encodeURIComponent(req.id) + "/" + (verb || "answer");
       const updated = await M.api.post(path, payload);
       updated.slug = req.slug;
@@ -454,7 +455,7 @@ window.Maity = window.Maity || {};
       onchange: (e) => { ui.project = e.target.value; ui.current = null; draw(); },
     }, h("option", { value: "" }, "every project"),
     // No counts in the options: the switcher beside it has them, kept current.
-    ctx.projects.map((p) => h("option", { value: p.slug }, p.name))) : null;
+    ctx.projects.map((p) => h("option", { value: p.full_name }, p.name))) : null;
     if (projectSelect) projectSelect.value = ui.project;
     const groupBox = ctx.scope === "all" ? h("input", { type: "checkbox", id: "inbox-group", onchange: (e) => { ui.group = e.target.checked; draw(); } }) : null;
     if (groupBox) groupBox.checked = ui.group;

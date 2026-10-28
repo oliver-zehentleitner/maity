@@ -1,5 +1,10 @@
 {
+  "id": "prj-maity0000001",
   "slug": "maity",
+  "owner": { "id": "hum-maintainer", "handle": "maintainer" },
+  "full_name": "maintainer/maity",
+  "legacy_slug": "maity",
+  "aliases": [],
   "name": "Maity",
   "state": "build",
   "state_note": "MVP skeletons in progress; contract in docs/api.md pending.",
@@ -26,7 +31,9 @@
     "signing": "optional",
     "swarm_public": "on",
     "badge": "off",
-    "keep_the_why": "required"
+    "keep_the_why": "required",
+    "member_agents": "on",
+    "member_agents_max": 3
   },
   "absence": null,
   "settings": {

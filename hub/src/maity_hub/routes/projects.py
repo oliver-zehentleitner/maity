@@ -19,6 +19,7 @@ from maity_hub import (
     idempotency,
     images,
     ktw,
+    namespace,
     onboarding,
     placements,
     policy,
@@ -33,10 +34,11 @@ from maity_hub.errors import ApiError, forbidden, humans_only, invalid
 from maity_hub.events import emit, lock_project
 from maity_hub.ids import new_id
 from maity_hub.models import SLUG_PATTERN, Strict, markdown, title
+from maity_hub.namespace import ProjectRoute
 from maity_hub.onboarding import OnboardingIn
 from maity_hub.views import forge_of, member_view, principal_id, project_view
 
-router = APIRouter()
+router = APIRouter(route_class=ProjectRoute)
 
 BROADCAST = ["all"]
 ABSENCE_AHEAD = timedelta(days=90)  # an absence cannot hold the owner's cover open (§6.1)
@@ -257,7 +259,8 @@ def _export(project: Any, request: Request) -> dict[str, Any] | None:
 
 def _view(conn: Connection, project: Any, request: Request) -> dict[str, Any]:
     shown = images.views(conn, [project.id])[project.id]
-    return project_view(project, settings_of(request), shown, _export(project, request))
+    owner = namespace.owner_of(conn, project)["handle"]
+    return project_view(project, settings_of(request), owner, shown, _export(project, request))
 
 
 def load_project(conn: Connection, project_id: str, request: Request) -> dict[str, Any]:
@@ -280,10 +283,14 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
             )
         rows = conn.execute(query.order_by(t.project.c.slug)).all()
         shown = images.views(conn, [r.id for r in rows])
+        names = namespace.full_names(conn, [r.id for r in rows])
         return JSONResponse(
             {
                 "items": [
-                    project_view(r, settings, shown[r.id], _export(r, request)) for r in rows
+                    project_view(
+                        r, settings, names[r.id].split("/")[0], shown[r.id], _export(r, request)
+                    )
+                    for r in rows
                 ],
                 "next_cursor": None,
             }
@@ -293,15 +300,25 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
 @router.post("/projects")
 def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -> JSONResponse:
 
+    words = namespace.app_words(request.app)
+    owner_id = caller.human_id
+    assert owner_id is not None  # a human caller
+
     def action(conn: Connection) -> idempotency.Outcome:
-        if conn.execute(select(t.project.c.id).where(t.project.c.slug == body.slug)).first():
-            raise invalid({"slug": "taken"}, "a project with this slug exists")
+        # The creator is the namespace owner: `<handle>/<slug>`, the slug free among the
+        # owner's projects and their aliases, and never a word that follows a project in a
+        # route (§6.25).
+        if body.slug in words:
+            raise invalid({"slug": "reserved"}, "this slug is a word of the API's routes")
+        if namespace.taken(conn, owner_id, body.slug):
+            raise invalid({"slug": "taken"}, "you have a project with this slug")
         now = clock.now()
         project_id = new_id("project")
         filled = policy.filled("hierarchical", caller.principal_id)
         conn.execute(
             insert(t.project).values(
                 id=project_id,
+                owner_id=owner_id,
                 slug=body.slug,
                 name=body.name,
                 state="build",
@@ -359,7 +376,7 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
     return idempotency.run(engine_of(request), request, caller, action)
 
 
-@router.get("/projects/{slug}")
+@router.get("/projects/{owner}/{slug}")
 def get_project(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
@@ -367,7 +384,7 @@ def get_project(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
         return JSONResponse(_view(conn, mine.project, request))
 
 
-@router.patch("/projects/{slug}")
+@router.patch("/projects/{owner}/{slug}")
 def patch_project(
     slug: str, body: ProjectPatch, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -457,7 +474,7 @@ def patch_project(
                 BROADCAST,
                 {"fields": settings_changed},
                 actor=actor,
-                subject=("project", project.slug),
+                subject=("project", namespace.full_name(conn, project)),
             )
         if "repository" in given:
             if values.get("repository_url") != project.repository_url:
@@ -545,7 +562,7 @@ def patch_project(
                     BROADCAST,
                     {"old": old, "new": new_absence, "reason": body.reason},
                     actor=actor,
-                    subject=("project", project.slug),
+                    subject=("project", namespace.full_name(conn, project)),
                 )
                 availability.absence_changed(
                     conn,
@@ -632,7 +649,7 @@ def _owner_id(conn: Connection, project_id: str) -> str:
     return owner
 
 
-@router.get("/projects/{slug}/rules")
+@router.get("/projects/{owner}/{slug}/rules")
 def get_rules(slug: str, request: Request, caller: AnyCaller) -> Response:
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)

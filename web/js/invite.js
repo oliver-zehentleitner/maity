@@ -58,7 +58,7 @@ window.Maity = window.Maity || {};
     append(box,
       h("div", { class: "invite-project" },
         ownLogo(inv.project.logo_url) ? h("img", { class: "invite-logo", src: inv.project.logo_url, alt: "", width: "48", height: "48" })
-          : M.projectMark ? M.projectMark(inv.project.slug || inv.project.name, inv.project.name, null, "invite-logo") : null,
+          : M.projectMark ? M.projectMark(inv.project.full_name || inv.project.name, inv.project.name, null, "invite-logo") : null,
         h("h2", null, "Join ", h("span", { class: "invite-name" }, inv.project.name))),
       h("p", { class: "invite-lead" }, inv.invited_by.display_name + " invites you to join " + inv.project.name + " as ", h("strong", null, role), "."),
       inv.note ? [h("blockquote", { class: "invite-note" }, h("p", null, inv.note)),
@@ -100,7 +100,7 @@ window.Maity = window.Maity || {};
       status.done();
       clear(ways);
       append(ways, h("p", { class: "ok" }, "You are a member of " + inv.project.name + " now."),
-        h("p", null, h("a", { class: "button primary", href: "#/p/" + encodeURIComponent(inv.project.slug) + "/inbox" }, "Open " + inv.project.name)));
+        h("p", null, h("a", { class: "button primary", href: "#/" + M.api.projectPath(inv.project.full_name) + "/inbox" }, "Open " + inv.project.name)));
       const open = ways.querySelector("a");
       if (open) open.focus();
     });
@@ -130,7 +130,7 @@ window.Maity = window.Maity || {};
   // For a human with members:admin; null otherwise or on a hub without invitations.
   async function membersPanel(ctx) {
     if (!ctx.canAdmin || ctx.me.kind !== "human") return null;
-    if (!(await M.api.hubHas("POST", "/projects/{slug}/invitations").catch(() => true))) return null;
+    if (!(await M.api.hubHas("POST", "/projects/{owner}/{slug}/invitations").catch(() => true))) return null;
     const box = h("section", { class: "invitations", "aria-labelledby": "invitations-heading" });
     const listBox = h("div");
     const issued = h("div", { class: "invite-issued" });

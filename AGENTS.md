@@ -21,9 +21,9 @@ brought, not run — the hub never starts or owns an agent process.
   was argued once already; propose a change to it, do not silently revert it.
 - Documentation is part of the change: README, the changelog entry,
   `docs/` and `context/` are updated in the same pull request as the code
-  they describe. A `context/` entry is committed right after it is
-  written, in its own commit, so that its Git timestamp is the moment the
-  reasoning was recorded.
+  they describe. A `context/` entry belongs to the pull request of the
+  change it explains; it needs no commit of its own, since pull requests
+  are squash-merged.
 - The changelog entry is one new file in `changelog.d/` per pull request
   (`changelog.d/<branch-topic>.md`, Keep a Changelog headings with `- `
   bullets; format in `changelog.d/README.md`, checked by

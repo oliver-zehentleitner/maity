@@ -547,6 +547,44 @@ the one the docs show. A narrow rule keeps every other typo an error.
   already use the other order, and the failure cost a round trip each
   time.
 
+## The CLI keeps the project's full name, refreshed by every resume; an old state asks `GET /me` once
+
+**Id:** 156050f1-bac1-47aa-af43-0c677ecf888f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card "cli: project namespace" (contract #424, `docs/api.md` §6.25, §13); the coordinator's assignment of 2026-10-27
+**Revisit when:** an agent's credential is no longer bound to one project, or the hub drops `full_name` from `/me` or the resume packet
+
+Every project route is `/projects/<owner>/<slug>/…`, with owner and slug
+each encoded as a path segment. The state keeps `full_name` next to the
+slug. `maity resume` overwrites both from the packet, so a rename or a
+transfer reaches the CLI with the next resume and needs no new join. A
+join answer that already names `<owner>/<slug>` is taken as the full
+name. A state from before the namespace holds only the slug. The first
+command that builds a project route then calls `GET /me`, takes the
+`full_name` of the listed project with that slug, and keeps it. If `/me`
+lists no such project, that is an error that says to run `maity resume`,
+not a guess. A value that is not `<handle>/<slug>` in shape is never
+used as a path. `client_outdated` (426) is printed as one line with the
+minimum version and the install line from the answer.
+
+**Reason:** agents in running sessions hold states written by the old
+CLI, and the release changes every route at once. Without a fallback
+each of them would need a new join from a human, and joins are single
+use. `/me` lists an agent's one project with its full name (§5.1), so the
+answer is the hub's own, not a guess. Refreshing on resume follows from
+the contract: the full name is computed and follows renames.
+
+**Rejected alternatives:**
+- Building the owner from the owner handle the packet names: a
+  project's namespace owner is not necessarily the agent's own human,
+  and handles can be renamed (§6.24).
+- Refusing an old state and asking for a new join: a human has to issue
+  a single-use link per agent for a change the hub can answer itself.
+- Keeping the slug as the only stored name: a slug is unique only
+  within its owner's namespace now (§6.25).
+
 ## Free text from standard input or a file; inline text that the shell ate is warned about, not refused
 
 **Id:** 1be5edbf-e53f-407f-b5b1-e4836ba195a8

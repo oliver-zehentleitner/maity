@@ -24,11 +24,14 @@ def owner(make_client: ClientFactory, migrated: Engine) -> flow.Human:
 
 
 def column(who: Any, status: str = "open") -> list[str]:
-    return [c["id"] for c in who.get(f"/projects/maity/tasks?status={status}").json()["items"]]
+    return [
+        c["id"]
+        for c in who.get(f"/projects/maintainer/maity/tasks?status={status}").json()["items"]
+    ]
 
 
 def move(who: Any, card_id: str, **body: Any) -> Any:
-    return who.post(f"/projects/maity/tasks/{card_id}/move", body)
+    return who.post(f"/projects/maintainer/maity/tasks/{card_id}/move", body)
 
 
 def rank_events(engine: Engine) -> list[Any]:
@@ -63,8 +66,8 @@ def test_the_order_lasts_through_a_status_change(owner: flow.Human) -> None:
     a, b, c = (task(owner, title=x)["id"] for x in "abc")
     move(owner, c, to="top")
     assert column(owner) == [c, a, b]
-    owner.patch(f"/projects/maity/tasks/{c}", {"status": "proposed"})
-    owner.patch(f"/projects/maity/tasks/{c}", {"status": "open"})
+    owner.patch(f"/projects/maintainer/maity/tasks/{c}", {"status": "proposed"})
+    owner.patch(f"/projects/maintainer/maity/tasks/{c}", {"status": "open"})
     assert column(owner) == [c, a, b]  # the rank stays
 
 
@@ -91,17 +94,20 @@ def test_who_may_move(owner: flow.Human, make_client: ClientFactory) -> None:
     card = task(owner)["id"]
     task(owner)
     member = flow.agent(make_client, owner)
-    refused = member.post(f"/projects/maity/tasks/{card}/move", {"to": "bottom"})
+    refused = member.post(f"/projects/maintainer/maity/tasks/{card}/move", {"to": "bottom"})
     assert refused.status_code == 403
     admin = flow.agent(make_client, owner, role="admin")
-    assert admin.post(f"/projects/maity/tasks/{card}/move", {"to": "bottom"}).status_code == 200
+    assert (
+        admin.post(f"/projects/maintainer/maity/tasks/{card}/move", {"to": "bottom"}).status_code
+        == 200
+    )
 
 
 def test_a_closed_project_refuses_and_a_freeze_does_not(owner: flow.Human) -> None:
     a, b = task(owner)["id"], task(owner)["id"]
-    owner.patch("/projects/maity", {"state": "freeze", "reason": "release"})
+    owner.patch("/projects/maintainer/maity", {"state": "freeze", "reason": "release"})
     assert move(owner, b, to="top").status_code == 200  # no reason needed: no status changes
-    owner.patch("/projects/maity", {"state": "accepted", "reason": "done"})
+    owner.patch("/projects/maintainer/maity", {"state": "accepted", "reason": "done"})
     answer = move(owner, a, to="top")
     assert (answer.status_code, answer.headers["Maity-Error"]) == (409, "project_closed")
 
@@ -162,17 +168,17 @@ def test_a_move_between_equal_ranks(owner: flow.Human) -> None:
     x = task(owner)["id"]
     move(owner, a, to="top")
     move(owner, b, to="top")  # the first key of an empty column: the same as a's
-    owner.patch(f"/projects/maity/tasks/{b}", {"status": "open"})  # the rank goes along
+    owner.patch(f"/projects/maintainer/maity/tasks/{b}", {"status": "open"})  # the rank goes along
     assert column(owner) == [a, b, x]  # equal ranks: by creation
     moved = move(owner, x, after=a)
     assert moved.status_code == 200, moved.text
     assert column(owner) == [a, x, b]
-    listed = owner.get("/projects/maity/tasks?status=open").json()["items"]
+    listed = owner.get("/projects/maintainer/maity/tasks?status=open").json()["items"]
     assert len({c["rank"] for c in listed}) == 3
 
 
 def pages(who: Any, query: str, cursor: str | None = None) -> tuple[list[str], str | None]:
-    url = f"/projects/maity/tasks?{query}" + (f"&cursor={cursor}" if cursor else "")
+    url = f"/projects/maintainer/maity/tasks?{query}" + (f"&cursor={cursor}" if cursor else "")
     body = who.get(url).json()
     return [c["id"] for c in body["items"]], body["next_cursor"]
 
@@ -199,7 +205,7 @@ def test_paging_after_a_move_ranks_the_last_card_shown(owner: flow.Human) -> Non
 def test_paging_after_the_last_card_shown_left(owner: flow.Human) -> None:
     c = [task(owner, title=str(i))["id"] for i in range(6)]
     _, cursor = pages(owner, "status=open&limit=3")
-    owner.patch(f"/projects/maity/tasks/{c[2]}", {"status": "proposed"})
+    owner.patch(f"/projects/maintainer/maity/tasks/{c[2]}", {"status": "proposed"})
     second, _ = pages(owner, "status=open&limit=3", cursor)
     assert second == c[3:6]
 
@@ -209,7 +215,7 @@ def test_paging_when_the_last_card_shown_left_and_the_rest_were_ranked(
 ) -> None:
     c = [task(owner, title=str(i))["id"] for i in range(6)]
     _, cursor = pages(owner, "status=open&limit=3")
-    owner.patch(f"/projects/maity/tasks/{c[2]}", {"status": "proposed"})
+    owner.patch(f"/projects/maintainer/maity/tasks/{c[2]}", {"status": "proposed"})
     move(owner, c[5], before=c[4])  # ranks c0, c1, c3 on the way: their keys change kind
     second, _ = pages(owner, "status=open&limit=3", cursor)
     assert second == [c[3], c[5], c[4]]  # from the first card not shown, where it now sits
@@ -218,8 +224,8 @@ def test_paging_when_the_last_card_shown_left_and_the_rest_were_ranked(
 def test_paging_when_both_cards_at_the_edge_left_the_column(owner: flow.Human) -> None:
     c = [task(owner, title=str(i))["id"] for i in range(6)]
     _, cursor = pages(owner, "status=all&limit=3")
-    owner.patch(f"/projects/maity/tasks/{c[2]}", {"status": "proposed"})
-    owner.patch(f"/projects/maity/tasks/{c[3]}", {"status": "cancelled"})
+    owner.patch(f"/projects/maintainer/maity/tasks/{c[2]}", {"status": "proposed"})
+    owner.patch(f"/projects/maintainer/maity/tasks/{c[3]}", {"status": "cancelled"})
     rest: list[str] = []
     while cursor is not None:
         page, cursor = pages(owner, "status=all&limit=3", cursor)
@@ -231,7 +237,7 @@ def test_paging_when_both_cards_at_the_edge_left_the_column(owner: flow.Human) -
 def test_paging_when_the_first_card_not_shown_moved_to_the_bottom(owner: flow.Human) -> None:
     c = [task(owner, title=str(i))["id"] for i in range(6)]
     _, cursor = pages(owner, "status=open&limit=3")
-    owner.patch(f"/projects/maity/tasks/{c[2]}", {"status": "proposed"})
+    owner.patch(f"/projects/maintainer/maity/tasks/{c[2]}", {"status": "proposed"})
     move(owner, c[3], to="bottom")
     second, _ = pages(owner, "status=open&limit=3", cursor)
     assert second == [c[4], c[5], c[3]]
@@ -240,8 +246,8 @@ def test_paging_when_the_first_card_not_shown_moved_to_the_bottom(owner: flow.Hu
 def test_paging_when_both_left_and_the_rest_were_ranked(owner: flow.Human) -> None:
     c = [task(owner, title=str(i))["id"] for i in range(6)]
     _, cursor = pages(owner, "status=open&limit=3")
-    owner.patch(f"/projects/maity/tasks/{c[2]}", {"status": "proposed"})
-    owner.patch(f"/projects/maity/tasks/{c[3]}", {"status": "proposed"})
+    owner.patch(f"/projects/maintainer/maity/tasks/{c[2]}", {"status": "proposed"})
+    owner.patch(f"/projects/maintainer/maity/tasks/{c[3]}", {"status": "proposed"})
     move(owner, c[0], to="bottom")  # ranks every card left in the column
     second, _ = pages(owner, "status=open&limit=3", cursor)
     assert second == [c[4], c[5]]
@@ -267,13 +273,19 @@ def test_a_cursor_holds_for_its_filters_only(owner: flow.Human, order: str) -> N
     _, cursor = pages(owner, f"order={order}&limit=1")
     assert cursor is not None
     assert (
-        owner.get(f"/projects/maity/tasks?order={order}&limit=1&cursor={cursor}").status_code == 200
+        owner.get(
+            f"/projects/maintainer/maity/tasks?order={order}&limit=1&cursor={cursor}"
+        ).status_code
+        == 200
     )
     for other in (f"order={order}&limit=1&label=fix", f"order={order}&status=open&limit=1"):
-        refused = owner.get(f"/projects/maity/tasks?{other}&cursor={cursor}")
+        refused = owner.get(f"/projects/maintainer/maity/tasks?{other}&cursor={cursor}")
         assert refused.json()["error"]["details"]["fields"] == {"cursor": "invalid"}, other
     swapped = "updated" if order == "board" else "board"
-    assert owner.get(f"/projects/maity/tasks?order={swapped}&cursor={cursor}").status_code == 400
+    assert (
+        owner.get(f"/projects/maintainer/maity/tasks?order={swapped}&cursor={cursor}").status_code
+        == 400
+    )
 
 
 def test_closed_cards_list_newest_first(owner: flow.Human) -> None:
@@ -285,13 +297,13 @@ def test_closed_cards_list_newest_first(owner: flow.Human) -> None:
             return at
 
         clock.set_source(now)
-        owner.patch(f"/projects/maity/tasks/{card_id}", {"status": "cancelled"})
+        owner.patch(f"/projects/maintainer/maity/tasks/{card_id}", {"status": "cancelled"})
     assert column(owner, "cancelled") == [c, b, a]
 
 
 def test_a_neighbour_from_another_project_is_not_found(owner: flow.Human) -> None:
     a = task(owner)["id"]
     flow.project(owner, "other")
-    other = owner.post("/projects/other/tasks", {"title": "elsewhere"}).json()["id"]
+    other = owner.post("/projects/maintainer/other/tasks", {"title": "elsewhere"}).json()["id"]
     refused = move(owner, a, before=other)
     assert (refused.status_code, refused.headers["Maity-Error"]) == (404, "not_found")

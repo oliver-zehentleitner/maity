@@ -234,9 +234,9 @@ def _handler(hub: FakeHub) -> type[BaseHTTPRequestHandler]:
                         "me": {"member_id": "agt-b", "owner": {"id": "hum-1", "handle": "m"}},
                     },
                 )
-            if (self.command, path) == ("GET", "/api/v1/projects/maity/members"):
+            if (self.command, path) == ("GET", "/api/v1/projects/oliver/maity/members"):
                 return self._send(200, {"items": MEMBERS, "next_cursor": None})
-            if path == "/api/v1/projects/maity/events":
+            if path == "/api/v1/projects/oliver/maity/events":
                 after = int(dict(urllib.parse.parse_qsl(query)).get("after", "0"))
                 items = [e for e in hub.events if e["seq"] > after]
                 if not items and "wait=" in query:

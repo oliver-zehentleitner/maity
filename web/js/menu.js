@@ -44,6 +44,17 @@ window.Maity = window.Maity || {};
     svg.appendChild(body);
     return svg;
   }
+  // A person with a star at the shoulder, for the lead; the text colour.
+  function lead(size) {
+    const svg = document.createElementNS(SVG, "svg");
+    [["viewBox", "0 0 24 24"], ["width", String(size)], ["height", String(size)], ["aria-hidden", "true"], ["focusable", "false"], ["class", "icon"]]
+      .forEach(([k, v]) => svg.setAttribute(k, v));
+    const body = document.createElementNS(SVG, "path");
+    body.setAttribute("d", "M10 4a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM2 20c0-3.9 3.6-6.5 8-6.5s8 2.6 8 6.5zM18.5 2l1 2.1 2.3.3-1.7 1.6.4 2.3-2-1.1-2 1.1.4-2.3-1.7-1.6 2.3-.3z");
+    body.setAttribute("class", "icon-fill");
+    svg.appendChild(body);
+    return svg;
+  }
   // A speech bubble with its tail at the lower left; it takes the text colour.
   function chat(size) {
     const svg = document.createElementNS(SVG, "svg");
@@ -72,7 +83,7 @@ window.Maity = window.Maity || {};
     svg.appendChild(path);
     return svg;
   }
-  M.icons = { gear, bell, chat, theme: themeIcon };
+  M.icons = { gear, bell, chat, lead, theme: themeIcon };
 
   // spec: { label (accessible name), face (nodes inside the button), items: [...],
   // listLabel (the list's name, when the button's label carries a state that changes) }
@@ -117,7 +128,8 @@ window.Maity = window.Maity || {};
           el = h("span", Object.assign(attrs, { "aria-disabled": "true", class: "menu-item disabled" }), it.label,
             it.why ? h("span", { class: "muted" }, " · " + it.why) : null);
         } else if (it.href) {
-          el = h("a", Object.assign(attrs, { href: it.href, onclick: () => close(false) }), it.label);
+          // A link to the page shown says so, as the tabs do.
+          el = h("a", Object.assign(attrs, { href: it.href, "aria-current": it.current ? "page" : null, onclick: () => close(false) }), it.label);
         } else {
           // Back on the button before the action runs: whatever it does next
           // (moves the focus itself, fails, redraws) starts from a visible control.
