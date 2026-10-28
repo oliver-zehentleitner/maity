@@ -275,7 +275,7 @@ def announce(
             actor=actor,
             subject=("member", view["id"]),
         )
-        ticker.write_rename(conn, row.project_id, before, after, view["id"], actor)
+        ticker.write_handle_rename(conn, row.project_id, before, after, view["id"], actor)
 
     column = t.membership.c.human_id if owner_id is None else t.membership.c.agent_id
     shown = (old, new)

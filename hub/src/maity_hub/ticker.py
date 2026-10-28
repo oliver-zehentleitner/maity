@@ -932,7 +932,7 @@ def write_deploy(
     )
 
 
-def write_rename(
+def write_handle_rename(
     conn: Connection,
     project_id: str,
     old: str,

@@ -4,7 +4,7 @@
 of three in 24 hours, `handle_lock` is the per-handle lock a rename or a creation takes.
 
 Revision ID: 0072
-Revises: 0064
+Revises: 0070
 Create Date: 2026-10-28
 """
 
@@ -16,7 +16,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql
 
 revision: str = "0072"
-down_revision: str | None = "0064"
+down_revision: str | None = "0070"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
