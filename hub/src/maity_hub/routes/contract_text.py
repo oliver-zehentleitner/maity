@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from maity_hub import contract_text, forge
+from maity_hub import clock, contract_text, forge
 from maity_hub.access import membership
 from maity_hub.deps import AnyCaller, engine_of, reader_of
 from maity_hub.errors import ApiError, invalid
@@ -43,8 +43,9 @@ def read_contract(slug: str, card_id: str, request: Request, caller: AnyCaller) 
     branch = project.repository_default_branch or "main"
     try:
         shown = contract_text.read(fg, repository, branch, path, section)
-    except forge.ForgeUnavailableError:
-        raise ApiError(503, "probe_unavailable", "the forge did not answer") from None
+    except forge.ForgeUnavailableError as error:
+        held = {"retry_at": clock.rfc3339(error.retry_at)} if error.retry_at is not None else None
+        raise ApiError(503, "probe_unavailable", "the forge did not answer", held) from None
     except contract_text.ContractTextError as error:
         if error.reason in ("too_large", "not_text"):
             raise invalid({error.field: error.reason}) from None

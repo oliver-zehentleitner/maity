@@ -14,12 +14,13 @@ import base64
 import hashlib
 import http.client
 import json
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 HOSTS = {"github.com": "github"}  # host -> forge kind
@@ -31,10 +32,17 @@ class ForgeUnavailableError(Exception):
     """The forge did not answer a read (network, timeout, 5xx, rate limit, bad token,
     a repository the token cannot see, an answer of an unexpected shape)."""
 
-    def __init__(self, message: str, status: int | None = None, rate_limited: bool = False) -> None:
+    def __init__(
+        self,
+        message: str,
+        status: int | None = None,
+        rate_limited: bool = False,
+        retry_at: datetime | None = None,
+    ) -> None:
         super().__init__(message)
         self.status = status  # the forge's HTTP status, when it answered with one
         self.rate_limited = rate_limited  # a 403/429 that says "later", not "never"
+        self.retry_at = retry_at  # when the source's budget is there again (§11.4)
 
 
 def kind_of(url: str | None) -> str | None:
@@ -75,6 +83,76 @@ def _quote(ref: str) -> str:
     return urllib.parse.quote(ref, safe="")
 
 
+# --- the rate limit budget per source (§11.4) ------------------------------------------------
+#
+# Every answer of the forge says how much of the source's hourly budget is left
+# (X-RateLimit-Remaining of X-RateLimit-Limit) and when it is whole again
+# (X-RateLimit-Reset). A spent budget (403/429 with Remaining 0 or a Retry-After)
+# or one under LOW of its limit stops every read with that source until the reset:
+# a read then fails at once, with that time as `retry_at`, and nothing goes out.
+# One budget per token, by its digest (never the token), and one for reads without.
+
+LOW = 0.05  # below this share of the limit left, the rest is kept for the reset
+WAIT_UNKNOWN = 60  # seconds to hold off when a spent budget names no reset
+
+
+@dataclass
+class _Budget:
+    limit: int | None = None
+    remaining: int | None = None
+    until: float = 0.0  # epoch seconds before which this source is not read
+
+
+_budgets: dict[str, _Budget] = {}
+_budgets_lock = threading.Lock()
+
+
+def _source(token: str | None) -> str:
+    return hashlib.sha256(token.encode()).hexdigest() if token is not None else ""
+
+
+def _number(headers: Any, name: str) -> float | None:
+    try:
+        value = headers.get(name) if headers is not None else None
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _note(source: str, headers: Any, spent: bool) -> None:
+    """What an answer's headers say about the source's budget."""
+    limit, remaining = (
+        _number(headers, "X-RateLimit-Limit"),
+        _number(headers, "X-RateLimit-Remaining"),
+    )
+    reset, after = _number(headers, "X-RateLimit-Reset"), _number(headers, "Retry-After")
+    now = time.time()
+    with _budgets_lock:
+        budget = _budgets.setdefault(source, _Budget())
+        if limit is not None:
+            budget.limit = int(limit)
+        if remaining is not None:
+            budget.remaining = int(remaining)
+        low = (
+            budget.remaining is not None and budget.limit and budget.remaining < budget.limit * LOW
+        )
+        if spent or low:
+            if after is not None:
+                budget.until = max(budget.until, now + after)
+            elif reset is not None and reset > now:
+                budget.until = max(budget.until, reset)
+            elif spent:
+                budget.until = max(budget.until, now + WAIT_UNKNOWN)
+
+
+def retry_at(token: str | None) -> datetime | None:
+    """When the source of `token` may be read again; None while it may now."""
+    with _budgets_lock:
+        budget = _budgets.get(_source(token))
+        until = budget.until if budget is not None else 0.0
+    return datetime.fromtimestamp(until, UTC) if until > time.time() else None
+
+
 # --- how check runs and commit statuses count ------------------------------------------------
 
 FAILED = {"failure", "timed_out", "cancelled", "action_required", "startup_failure", "error"}
@@ -103,9 +181,22 @@ class Forge:
             raise ForgeUnavailableError("no forge token")
         return self._call(path)
 
+    def retry_at(self) -> datetime | None:
+        """When this reader's budget is there again, while it is spent (§11.4)."""
+        return retry_at(self.token)
+
     def _call(self, path: str, query: dict[str, Any] | None = None) -> Any | None:
         """A read on the forge API, with the token when the hub holds one and without it
-        otherwise (a public repository). `query` makes it a GraphQL POST, which only reads."""
+        otherwise (a public repository). `query` makes it a GraphQL POST, which only reads.
+        While the source's budget is spent nothing is sent (§11.4)."""
+        source = _source(self.token)
+        held = retry_at(self.token)
+        if held is not None:
+            raise ForgeUnavailableError(
+                "the forge's rate limit is spent until " + held.isoformat(),
+                rate_limited=True,
+                retry_at=held,
+            )
         data = None if query is None else json.dumps(query).encode()
         request = urllib.request.Request(f"https://{API_HOST}{path}", data=data)
         request.add_header("Accept", "application/vnd.github+json")
@@ -117,18 +208,22 @@ class Forge:
         request.add_header("User-Agent", "maity-hub")
         try:
             with _opener.open(request, timeout=TIMEOUT) as response:
+                _note(source, getattr(response, "headers", None), spent=False)
                 return json.loads(response.read())
         except urllib.error.HTTPError as error:
-            if error.code == 404:
-                return None
             headers: Any = error.headers or {}
+            if error.code == 404:
+                _note(source, headers, spent=False)
+                return None
             limited = error.code in (403, 429) and (
                 headers.get("X-RateLimit-Remaining") == "0" or "Retry-After" in headers
             )
+            _note(source, headers, spent=limited)
             raise ForgeUnavailableError(
                 f"the forge answered {error.code}" + (" (rate limit)" if limited else ""),
                 error.code,
                 rate_limited=limited,
+                retry_at=retry_at(self.token) if limited else None,
             ) from None
         except (OSError, ValueError, http.client.HTTPException) as error:
             # A protocol error (IncompleteRead, BadStatusLine, …) is a forge that did not

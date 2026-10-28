@@ -48,10 +48,15 @@ def read_probe(
             continue
         try:
             observation = probe.observe(engine, fg, project, kind, ref, max_age)
-        except forge.ForgeUnavailableError:
+        except forge.ForgeUnavailableError as error:
             stored = probe.last(engine, project.id, kind, ref)
-            details = {"last": stored.stamped()} if stored is not None else None
-            raise ApiError(503, "probe_unavailable", "the forge did not answer", details) from None
+            details: dict[str, Any] = {"last": stored.stamped()} if stored is not None else {}
+            # A spent budget says when the forge is read again (§11.4).
+            if error.retry_at is not None:
+                details["retry_at"] = clock.rfc3339(error.retry_at)
+            raise ApiError(
+                503, "probe_unavailable", "the forge did not answer", details or None
+            ) from None
         observations.append(observation)
         shown[kind] = observation.shown()
     return JSONResponse(

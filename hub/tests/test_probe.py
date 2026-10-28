@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select
 
-from maity_hub import forge, probe
+from maity_hub import clock, forge, probe
 from maity_hub import tables as t
 from maity_hub.config import Settings
 from tests import flow
@@ -196,6 +196,21 @@ def test_merged_conflicting_branch_and_tag(owner: flow.Human, github: FakeGitHub
     assert body["observed_at"] <= body["tag"]["observed_at"]
     missing = owner.get("/projects/maintainer/maity/probe?branch=gone").json()["branch"]
     assert missing == {"name": "gone", "head_sha": None, "found": False}
+
+
+def test_a_spent_rate_limit_is_probe_unavailable_with_retry_at(
+    owner: flow.Human, github: FakeGitHub
+) -> None:
+    """§11.4: while the source's budget is spent the probe says when it reads again."""
+    from datetime import UTC, datetime, timedelta
+
+    at = (datetime.now(UTC) + timedelta(minutes=10)).replace(microsecond=0)
+    github.answers["/repos/acme/maity/pulls/9"] = forge.ForgeUnavailableError(
+        "spent", rate_limited=True, retry_at=at
+    )
+    answer = owner.get("/projects/maintainer/maity/probe?pr=9")
+    assert (answer.status_code, answer.json()["error"]["code"]) == (503, "probe_unavailable")
+    assert answer.json()["error"]["details"]["retry_at"] == clock.rfc3339(at)
 
 
 def test_an_unanswering_forge_is_probe_unavailable_with_the_last_observation(
@@ -572,3 +587,24 @@ def test_a_slow_read_that_started_first_never_replaces_a_newer_one(
     probe.observe(migrated, READER, project, "pr", "1", 0)
     stored = probe.last(migrated, project.id, "pr", "1")
     assert stored is not None and stored.data["state"] == "merged"
+
+
+def test_the_worker_waits_for_a_spent_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    """§11.4: the next round is not before the forge's reset, so a spent budget is not
+    asked again every interval."""
+    from datetime import UTC, datetime, timedelta
+
+    held = datetime.now(UTC) + timedelta(hours=1)
+    worker = probe.Worker(None, forge.Forge("ghp_x"), interval=300)  # type: ignore[arg-type]
+    monkeypatch.setattr(forge.Forge, "retry_at", lambda _self: held)
+    assert worker._after(probe.MERGE_INTERVAL) == held
+    monkeypatch.setattr(forge.Forge, "retry_at", lambda _self: None)
+    soon = worker._after(probe.MERGE_INTERVAL)
+    assert soon < held and soon > datetime.now(UTC)
+
+
+def test_each_round_starts_at_another_project() -> None:
+    """A round ends at its first unanswered read; turning the order spreads the reads."""
+    firsts = {probe._rotated(["a", "b", "c"])[0] for _ in range(3)}
+    assert firsts == {"a", "b", "c"}
+    assert probe._rotated([]) == []

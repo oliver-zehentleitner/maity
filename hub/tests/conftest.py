@@ -135,6 +135,7 @@ def _fresh_process_state() -> Iterator[None]:
     jour_fixe_worker.INTERVAL = 24 * 3600.0
     caller.NONCES = NonceWindow()
     forge._visible.clear()
+    forge._budgets.clear()
     images.reset()
     ktw.CACHE.clear()
     yield
