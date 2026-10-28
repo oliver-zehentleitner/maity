@@ -521,6 +521,9 @@ def report_failure(answers: list, base: str, artifacts: Path) -> str:
     return trace
 
 
+BEFORE_CHAT_LIST = re.compile(r"GET /api/v1/me/conversations\?\S* answered 404$")
+
+
 def no_problems(run: Run, where: str) -> None:
     # Each 409 for the pending uploads, judged by its own body, read here
     # outside the response handler.
@@ -533,6 +536,9 @@ def no_problems(run: Run, where: str) -> None:
         problem = off_problem(resp.request.method, resp.url.split(run.base, 1)[-1], resp.status, body)
         if problem:
             run.problems.append(problem)
+    # A hub before the chat list across projects (§9.3) answers it 404 wherever
+    # #/chats is open; the page then reads each project's list, as before.
+    run.problems = [p for p in run.problems if not BEFORE_CHAT_LIST.match(p)]
     if run.problems:
         raise AssertionError(f"{where}:\n  " + "\n  ".join(run.problems))
 
