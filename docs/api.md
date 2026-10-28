@@ -11096,16 +11096,16 @@ rendered, as the maintainer asked (2026-10-28):
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `MAITY_PUBLIC_PAGES_RENDER` | `on_change` | `on_change`: a page is rendered again when one of its inputs changes, and at least every interval as a safety net; `interval`: pages are rendered only every interval, so a change appears with the next run |
+| `MAITY_PUBLIC_PAGES_RENDER` | `on_change` | `on_change`: a page is rendered again when one of its inputs changes, and at least every interval as a safety net; `interval`: new entries and counts appear with the next run, while anything taken off a page is taken off at once (below) |
 | `MAITY_PUBLIC_PAGES_INTERVAL_HOURS` | `6` | 1–24 |
 
 Removing something is never left to the interval. Under either
 setting, a change that takes anything off a page — a page that stops
 being public (above), a member or agent owner who makes their profile
 private, `swarm_public` turned off, a person suspended or hidden, a
-repository that turns private, and any edit of `public_about`,
-`public_bio` or a `display_name` shown on a page (an edit replaces what
-was there) — renders every page it touches at once, in the same
+repository that turns private, and any edit of a text shown on a page
+— `public_about`, `public_bio`, a `display_name`, a `handle`, a
+project's `name` or `full_name` (an edit replaces what was there) — renders every page it touches at once, in the same
 transaction that changed the input, or deletes the page until it is
 rendered again. `interval` holds back only new entries — a new public
 member, agent or project on a page — and the counts. The
