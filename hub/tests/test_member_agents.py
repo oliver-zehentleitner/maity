@@ -96,6 +96,11 @@ def test_each_limit_is_named(friend: flow.Human, owner: flow.Human) -> None:
     # Within the limits, said explicitly: a reviewer reporting to the caller.
     assert _bring(friend, role="reviewer", reports_to=friend.id).status_code == 201
     assert _bring(friend, 2, trust="guest", role="tester").status_code == 201
+    assert _bring(friend, 3, role="writer").status_code == 201
+    # `manager` is in the contract (#541) but not in this hub yet: unknown, not a limit.
+    unknown = _bring(friend, 4, role="manager")
+    assert unknown.status_code == 400
+    assert unknown.json()["error"]["details"]["fields"] == {"role": "unknown"}
 
 
 def test_an_agent_raised_beyond_the_limits_gets_instances_only_from_an_admin(

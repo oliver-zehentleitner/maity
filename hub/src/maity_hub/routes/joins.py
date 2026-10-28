@@ -43,7 +43,7 @@ from maity_hub.namespace import ProjectRoute
 from maity_hub.ratelimit import Limiter
 from maity_hub.routes.agents import create_profile
 from maity_hub.routes.members import validate_assignment
-from maity_hub.scopes import has_scope
+from maity_hub.scopes import ROLES, has_scope
 from maity_hub.views import join_view, member_view, principal_id
 
 router = APIRouter(route_class=ProjectRoute)
@@ -55,7 +55,9 @@ TTL_DEFAULT, TTL_MIN, TTL_MAX = 900, 60, 3600
 WRONG_CODES_BEFORE_BURN = 3
 # What a member's own agent may hold (§3.1 "Bringing your own agent"): below governance.
 MEMBER_RULE_TRUSTS = ("member", "guest")
-MEMBER_RULE_ROLES = ("coder", "reviewer", "tester", "designer")
+# `manager` (§2.3, #541) joins this list once the hub knows the role; until then it is
+# `unknown` like any role the hub does not have.
+MEMBER_RULE_ROLES = ("coder", "reviewer", "tester", "designer", "writer")
 EXCHANGE_BY_ADDRESS = Limiter(10, 60)
 _TEMPLATE_PLACEHOLDER = re.compile(r"\{\{(\w+)\}\}")
 
@@ -288,8 +290,8 @@ def _check_member_limits(body: JoinCreate, mine: Any, existing: Any) -> None:
     """The limits of §3.1 a member's join stays within, the first broken one named."""
     if body.trust is not None and body.trust not in MEMBER_RULE_TRUSTS:
         raise _limit("trust")
-    if body.role is not None and body.role not in MEMBER_RULE_ROLES:
-        raise _limit("role")
+    if body.role is not None and body.role in ROLES and body.role not in MEMBER_RULE_ROLES:
+        raise _limit("role")  # a role the hub does not know is `invalid` below
     if body.reports_to is not None and body.reports_to != mine.principal_id:
         raise _limit("reports_to")
     if body.areas:

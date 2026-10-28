@@ -657,7 +657,7 @@ the inbox.
   …/joins/{id}`, `GET …/members/{id}/credentials`, `POST
   …/credentials/{id}/revoke`. A human with trust `member` creates joins for
   agents of their own while `policy.member_agents` is `on`: trust `member` or
-  `guest`, role `coder`, `reviewer`, `tester` or `designer`, reporting to
+  `guest`, role `coder`, `reviewer`, `tester`, `designer` or `writer`, reporting to
   them, no areas or capabilities, at most `policy.member_agents_max` agents
   (`forbidden` with `member_join_limit` and `details.field`, or
   `member_agents_max` and `details.max`); they list and revoke only their own
