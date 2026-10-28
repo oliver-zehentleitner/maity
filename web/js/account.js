@@ -1,5 +1,6 @@
 // The signed-in human's account (#/account): who they are, their picture
-// and their agents' pictures (#/account/picture, docs/api.md §6.10), their
+// and the pictures of their agents no project of theirs shows
+// (#/account/picture, docs/api.md §6.10), their
 // preferences (#/account/preferences, js/preferences.js), and
 // changing the password (§2.1, POST /auth/password). A password change
 // ends every other session of this human; this one stays signed in.
@@ -92,6 +93,9 @@ window.Maity = window.Maity || {};
         status.el));
   }
 
+  // Members opens one's own agent with its picture (tsk-th1yq0jtk3yf).
+  M.pictureEditor = pictureEditor;
+
   // Set by a change; the next drawing of the view says it.
   let pictureNote = null;
 
@@ -166,9 +170,19 @@ window.Maity = window.Maity || {};
     const wantedAgent = args && args[0] === "picture" ? args[1] || null : null;
     const note = pictureNote ? h("p", { class: "ok", role: "status" }, pictureNote) : null;
     pictureNote = null;
-    // Your agents' pictures (§6.10: the profile's owner sets them); a hub
-    // without the field shows the profiles without the editor.
-    const agents = await M.api.getAll("/agents").then((r) => r.items.filter((a) => a.owner_id === ctx.me.id)).catch(() => null);
+    // An agent's picture is set on Members, in its row (tsk-th1yq0jtk3yf);
+    // here only the agents in no project one can open, which no other page
+    // reaches. Without memberships in the profile, every agent counts as such.
+    const opened = new Set((ctx.projects || []).map((p) => p.full_name));
+    const reachable = (a) => (Array.isArray(a.memberships) ? a.memberships : []).find((x) => opened.has(x.project)) || null;
+    const mine = await M.api.getAll("/agents").then((r) => r.items.filter((a) => a.owner_id === ctx.me.id && !a.deleted_at)).catch(() => null);
+    // A link to an agent's picture that Members reaches goes there.
+    const wantedThere = wantedAgent && mine && mine.find((a) => a.id === wantedAgent && reachable(a));
+    if (wantedThere) {
+      window.location.replace("#/" + M.api.projectPath(reachable(wantedThere).project) + "/members/" + encodeURIComponent(wantedThere.id) + "/picture");
+      return;
+    }
+    const agents = mine && mine.filter((a) => !reachable(a));
     const notify = M.notifySettings ? await M.notifySettings(ctx) : null;
     const sessions = M.sessions ? await M.sessions.section(ctx) : null;
     const preferences = M.preferences ? await M.preferences.section(ctx) : null;
@@ -191,8 +205,9 @@ window.Maity = window.Maity || {};
       h("p", { class: "muted" }, "Shown next to your name in every project, to everyone who shares one with you."),
       note,
       pictureEditor(ctx.me, "/me/avatar", true, changed),
-      agents && agents.length ? [h("h3", null, "Your agents' pictures"),
-        h("p", { class: "muted" }, "Each agent can also set its own; the last change wins."),
+      agents && agents.length ? [h("h3", null, "Agents in other projects"),
+        h("p", { class: "muted" }, "Your agents' pictures are set on Members, in each agent's row. These agents are in no project you are a member of, "
+          + "so their pictures are set here. Each agent can also set its own; the last change wins."),
         // #/account/picture/<agent id> (a Keep the Why notice about an agent
         // in a project one is not in) marks that agent and starts there.
         h("ul", { class: "picture-list" }, agents.map((a) => h("li", { class: wantedAgent === a.id ? "wanted" : null, "data-agent": a.id },
