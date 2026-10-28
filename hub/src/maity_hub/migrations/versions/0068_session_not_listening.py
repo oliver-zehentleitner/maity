@@ -6,7 +6,7 @@ session: when it started, the oldest event that was waiting (it ends when the
 acknowledged cursor reaches it) and the personal request filed to the profile's owner.
 
 Revision ID: 0068
-Revises: 0060
+Revises: 0065
 Create Date: 2026-10-28
 """
 
@@ -17,7 +17,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql
 
 revision: str = "0068"
-down_revision: str | None = "0060"
+down_revision: str | None = "0065"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
