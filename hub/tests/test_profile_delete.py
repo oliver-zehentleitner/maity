@@ -62,7 +62,7 @@ def test_live_joins_are_revoked_first(owner: flow.Human, make_client: ClientFact
     assert delete(owner, agent_id).status_code == 200
     late = flow.exchange(make_client(), pending)
     assert late.status_code == 404  # no membership for a deleted profile
-    named = owner.post("/projects/maity/joins", {"agent": {"id": agent_id}})
+    named = owner.post("/projects/maintainer/maity/joins", {"agent": {"id": agent_id}})
     assert named.status_code == 404
 
 
@@ -76,7 +76,7 @@ def test_a_profile_in_use_needs_cascade_and_nothing_changes(
     assert (refused.status_code, refused.headers["Maity-Error"]) == (409, "profile_in_use")
     details = refused.json()["error"]["details"]
     assert details == {
-        "memberships": [{"project": "maity", "member_id": agent.id, "role": "member"}],
+        "memberships": [{"project": "maintainer/maity", "member_id": agent.id, "role": "member"}],
         "placements": [],
     }
     with migrated.connect() as conn:
@@ -99,7 +99,7 @@ def test_cascade_removes_every_membership(
     assert gone.json()["memberships"] == []
     for credential in (agent, elsewhere):
         assert credential.get("/me").headers["Maity-Error"] == "credential_revoked"
-    view = owner.get(f"/projects/maity/members/{report.id}").json()
+    view = owner.get(f"/projects/maintainer/maity/members/{report.id}").json()
     assert view["reports_to"] is None
     with migrated.connect() as conn:
         removed = conn.execute(
@@ -156,7 +156,9 @@ def test_an_owner_who_is_no_member_acts_as_the_human(
     [removed] = [
         e for e in _events(migrated, "member_updated") if e.payload.get("removed_at") is not None
     ]
-    seen = other.get(f"/projects/maity/events?after={removed.seq - 1}").json()["items"][0]
+    seen = other.get(f"/projects/maintainer/maity/events?after={removed.seq - 1}").json()["items"][
+        0
+    ]
     assert seen["actor"] == {
         "kind": "human",
         "id": owner.id,
@@ -172,7 +174,7 @@ def test_an_owner_who_is_no_member_resets_the_check_in_seat(
     owner as its writer, though they are no member of the project any more."""
     agent = flow.agent(make_client, owner)
     named = owner.patch(
-        "/projects/maity", {"settings": {"onboarding": {"check_in_with": agent.id}}}
+        "/projects/maintainer/maity", {"settings": {"onboarding": {"check_in_with": agent.id}}}
     )
     assert named.status_code == 200, named.text
     other = flow.human(make_client, migrated, "co-owner")
@@ -186,7 +188,7 @@ def test_an_owner_who_is_no_member_resets_the_check_in_seat(
     factory.membership(migrated, project_id, "owner", human_id=other.id)
     deleted = delete(owner, agent.id, cascade=True)
     assert deleted.status_code == 200, deleted.text
-    onboarding = other.get("/projects/maity").json()["settings"]["onboarding"]
+    onboarding = other.get("/projects/maintainer/maity").json()["settings"]["onboarding"]
     assert onboarding["check_in_with"] == "coordinator"
     assert onboarding["by"] == {"id": owner.id, "handle": "maintainer", "kind": "human"}
 
@@ -200,19 +202,23 @@ def test_the_cascade_resets_the_seats_the_profile_held(
     if with_admin:
         flow.agent(make_client, owner, role="admin")
     changed = owner.patch(
-        "/projects/maity", {"policy": {"contract_arbiter": agent.id}, "reason": "the arbiter"}
+        "/projects/maintainer/maity",
+        {"policy": {"contract_arbiter": agent.id}, "reason": "the arbiter"},
     )
     assert changed.status_code == 200, changed.text
     created = owner.post(
-        "/projects/maity/tasks",
+        "/projects/maintainer/maity/tasks",
         {"title": "A contract", "kind": "contract", "contract": {"arbiter": agent.id}},
     )
     assert created.status_code == 201, created.text
     card_id = created.json()["id"]
     assert delete(owner, agent.id, cascade=True).status_code == 200
     fallback = "role:admin" if with_admin else owner.id
-    assert owner.get("/projects/maity").json()["policy"]["contract_arbiter"] == fallback
-    assert owner.get(f"/projects/maity/tasks/{card_id}").json()["contract"]["arbiter"] == fallback
+    assert owner.get("/projects/maintainer/maity").json()["policy"]["contract_arbiter"] == fallback
+    assert (
+        owner.get(f"/projects/maintainer/maity/tasks/{card_id}").json()["contract"]["arbiter"]
+        == fallback
+    )
     policy_event = _events(migrated, "policy_changed")[-1]
     assert policy_event.payload["reason"] == "member_removed"
     assert policy_event.payload["new"]["contract_arbiter"] == fallback

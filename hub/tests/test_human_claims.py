@@ -45,7 +45,7 @@ def test_no_agent_moves_a_humans_claim(
     held = holder(migrated, card["id"])
     if expired:
         _later(LEASE + 1)
-    url = f"/projects/maity/tasks/{card['id']}"
+    url = f"/projects/maintainer/maity/tasks/{card['id']}"
     attempts = [
         admin.post(f"{url}/assign", {"assignee": member.id}),
         admin.post(f"{url}/release", {}),
@@ -66,7 +66,7 @@ def test_assigning_a_humans_card_to_that_human_is_no_move(
     admin = flow.agent(make_client, owner, role="admin")
     card = task(owner)
     _claim(owner, card)
-    url = f"/projects/maity/tasks/{card['id']}"
+    url = f"/projects/maintainer/maity/tasks/{card['id']}"
     assert admin.patch(url, {"assigned_to": owner.id}).status_code == 200
 
 
@@ -81,7 +81,9 @@ def test_a_human_admin_still_moves_an_expired_human_claim(
     card = task(other)
     assert _claim(other, card).status_code == 200
     _later(LEASE + 1)
-    moved = owner.post(f"/projects/maity/tasks/{card['id']}/assign", {"assignee": member.id})
+    moved = owner.post(
+        f"/projects/maintainer/maity/tasks/{card['id']}/assign", {"assignee": member.id}
+    )
     assert moved.status_code == 200, moved.text
     assert moved.json()["claim"]["holder"] == member.id
 
@@ -94,7 +96,7 @@ def test_an_admin_agent_still_releases_an_agents_expired_claim(
     card = task(owner)
     assert _claim(member, card).status_code == 200
     _later(LEASE + 1)
-    released = admin.post(f"/projects/maity/tasks/{card['id']}/release", {})
+    released = admin.post(f"/projects/maintainer/maity/tasks/{card['id']}/release", {})
     assert released.status_code == 200, released.text
 
 
@@ -106,7 +108,7 @@ def test_done_stays_done_authoritys_on_a_humans_card(
     reviewer = flow.agent(make_client, owner, role="reviewer")
     card = task(owner)
     _claim(owner, card)
-    url = f"/projects/maity/tasks/{card['id']}"
+    url = f"/projects/maintainer/maity/tasks/{card['id']}"
     with migrated.begin() as conn:  # reported: in review, still the human's (§6.6)
         conn.execute(t.card.update().where(t.card.c.id == card["id"]).values(status="review"))
     approved = reviewer.patch(url, {"status": "done"})

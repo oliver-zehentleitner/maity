@@ -1,5 +1,10 @@
 {
+  "id": "prj-sample000001",
   "slug": "sample",
+  "owner": { "id": "hum-maintainer", "handle": "maintainer" },
+  "full_name": "maintainer/sample",
+  "legacy_slug": "sample",
+  "aliases": [],
   "name": "Sample shop",
   "state": "freeze",
   "state_note": "Release 2.3 frozen; fixes only after the tag.",

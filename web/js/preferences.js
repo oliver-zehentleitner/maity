@@ -201,12 +201,12 @@ window.Maity = window.Maity || {};
   // Per project: whether its agents read the preferences (on by default).
   function projectsBox(ctx, projects) {
     if (!projects.length) return null;
-    const nameOf = (slug) => (ctx.projects.find((p) => p.slug === slug) || { name: slug }).name;
+    const nameOf = (full) => (ctx.projects.find((p) => p.full_name === full) || { name: full }).name;
     const status = M.statusLine();
     return h("fieldset", { class: "preferences-projects" },
       h("legend", null, "The agents of these projects read them"),
       h("ul", null, projects.map((p) => {
-        const id = "preferences-in-" + p.slug;
+        const id = "preferences-in-" + String(p.full_name).replace("/", "-");
         const box = h("input", { type: "checkbox", id, checked: p.include });
         box.checked = p.include;
         box.addEventListener("change", async () => {
@@ -214,17 +214,17 @@ window.Maity = window.Maity || {};
           box.disabled = true;
           status.busy("Saving…");
           try {
-            await M.api.put("/me/preferences/projects/" + encodeURIComponent(p.slug), { include: want });
+            await M.api.put("/me/preferences/projects/" + M.api.projectPath(p.full_name), { include: want });
             p.include = want;
             status.done();
           } catch (err) {
             box.checked = !want;
-            status.fail("Not changed for " + nameOf(p.slug) + ": ", err);
+            status.fail("Not changed for " + nameOf(p.full_name) + ": ", err);
           } finally {
             box.disabled = false;
           }
         });
-        return h("li", null, box, h("label", { for: id }, nameOf(p.slug)));
+        return h("li", null, box, h("label", { for: id }, nameOf(p.full_name)));
       })),
       h("p", { class: "hint" }, "Off, that project's agents get no preferences of yours, except an agent you gave them to on its card."),
       status.el);

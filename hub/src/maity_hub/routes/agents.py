@@ -154,8 +154,9 @@ class ProfileInUse(ApiError):
 def _in_use(conn: Connection, agent_id: str) -> tuple[list[Any], list[str]]:
     """The profile's active memberships and the active placements that run them."""
     members = conn.execute(
-        select(t.membership, t.project.c.slug)
+        select(t.membership, t.project.c.slug, t.human.c.handle.label("owner_handle"))
         .join(t.project, t.project.c.id == t.membership.c.project_id)
+        .join(t.human, t.human.c.id == t.project.c.owner_id)
         .where(t.membership.c.agent_id == agent_id, t.membership.c.active.is_(True))
         .order_by(t.project.c.slug)
     ).all()
@@ -208,7 +209,10 @@ def delete_agent(
         members, running = _in_use(conn, agent_id)
         if members and not cascade:
             raise ProfileInUse(
-                [{"project": m.slug, "member_id": agent_id, "role": m.role} for m in members],
+                [
+                    {"project": f"{m.owner_handle}/{m.slug}", "member_id": agent_id, "role": m.role}
+                    for m in members
+                ],
                 running,
             )
         # No membership is ever created for a deleted profile: its joins go first.

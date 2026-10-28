@@ -12,6 +12,7 @@ from typing import Any
 
 from sqlalchemy import Connection, select
 
+from maity_hub import namespace
 from maity_hub import tables as t
 from maity_hub.auth.caller import Caller
 from maity_hub.errors import forbidden, not_found
@@ -51,7 +52,9 @@ class Membership:
 
 
 def membership(conn: Connection, caller: Caller, slug: str) -> Membership:
-    project = conn.execute(select(t.project).where(t.project.c.slug == slug)).first()
+    """The caller's active membership in the project `slug` names: its full name
+    `<owner>/<slug>`, current or an alias (§6.25), as `ProjectRoute` hands it to a route."""
+    project = namespace.resolve(conn, slug)
     if project is None or caller.kind == "runner":  # a runner is no member (§15.1)
         raise not_found()
     # An agent credential belongs to one membership, of one project (§2.2): the

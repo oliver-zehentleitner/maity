@@ -1565,6 +1565,34 @@ project's.
 
 **Alternatives:** unknown.
 
+## The dashboard keys a project by its full name, everywhere
+
+**Id:** 242091d4-23c3-446e-ae63-6bb67057640e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §6.25 (projects in their owner's namespace; a client keeps `full_name` or the pair, never the slug alone), the card tsk-dbbcw9ccabfk and the hub's PR #483, 2026-10-27
+**Revisit when:** organisations become namespace owners, or the hub serves the one-segment routes again
+
+A project's address in the dashboard is `#/<owner>/<slug>/…`, and every
+key the dashboard keeps for a project is its `full_name`: the API base,
+the switcher, the inbox's grouping and filter, the counts, the global
+chat, the read-along page, the lead button, the runners' configuration.
+`#/p/<slug>` is rewritten only through `legacy_slug` in one's own
+project list; a full name that is no project of one's own is asked of
+the hub once, which answers an alias with the current name. The fixture
+hub maps a full name to its fixture directory and refuses an old path
+with 410, as the hub does.
+
+**Reason:** a slug is unique only within its owner's namespace; a key or
+a link built from the slug alone could reach another owner's project of
+the same slug, and an old link could lead somewhere new.
+
+**Rejected alternative:** changing only the API paths and keeping the
+slug as the dashboard's key: two projects named `shop` would share
+counts, drafts and links. Rewriting `#/p/<slug>` by the current slug:
+§6.25 forbids it, since another project may carry that slug by now.
+
 ## Agents are added in Members: Add at the head of the agents' table, open joins as seats under it
 
 **Id:** 621d28a8-36f5-4ebd-a90a-f7d729d7af34

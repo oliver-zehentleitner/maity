@@ -171,7 +171,7 @@ def owner(make_client: ClientFactory, migrated: Engine) -> flow.Human:
 
 
 def get(owner: flow.Human, **params: Any) -> Any:
-    return owner.get("/projects/widget/keep-the-why", params=params)
+    return owner.get("/projects/maintainer/widget/keep-the-why", params=params)
 
 
 # --- hostile .keep-the-why ---------------------------------------------------------------------
@@ -464,7 +464,7 @@ def test_a_lone_surrogate_does_not_break_the_answer_or_the_project_view(
 ) -> None:
     """json.loads accepts "\\ud800"; text() keeps it; Starlette's
     JSONResponse encodes to UTF-8 and raises UnicodeEncodeError. The snapshot is cached,
-    so the export 500s for 600 s, and so do GET /projects/{slug} and GET /projects once
+    so the export 500s for 600 s, and so do GET /projects/maintainer/{slug} and GET /projects once
     the view's cache holds it (§6.1: the project view never fails on the export)."""
     one_member(repo, web, doc({"id": "x", "title": "\\ud800", "status": "open"}))
     web.routes["/d/h.json"] = (
@@ -475,8 +475,8 @@ def test_a_lone_surrogate_does_not_break_the_answer_or_the_project_view(
     flow.project(owner, "widget", repository={"url": REPO})
     outcomes = {}
     for name, path in (
-        ("export", "/projects/widget/keep-the-why"),
-        ("view", "/projects/widget"),
+        ("export", "/projects/maintainer/widget/keep-the-why"),
+        ("view", "/projects/maintainer/widget"),
         ("list", "/projects"),
     ):
         try:
@@ -493,8 +493,8 @@ def test_a_lone_surrogate_in_state_json_version(owner: flow.Human, repo: Repo, w
     flow.project(owner, "widget", repository={"url": REPO})
     statuses = {}
     for name, path in (
-        ("export", "/projects/widget/keep-the-why"),
-        ("view", "/projects/widget"),
+        ("export", "/projects/maintainer/widget/keep-the-why"),
+        ("view", "/projects/maintainer/widget"),
         ("list", "/projects"),
     ):
         try:
@@ -734,10 +734,10 @@ def test_the_cache_is_per_project(
     repo.files[".keep-the-why"] = kfile(f"{BASE}/s.json", "r")
     web.routes["/d/s.json"] = doc({"id": "secret", "status": "open"})
     flow.project(alice, "widget", repository={"url": REPO})
-    assert alice.get("/projects/widget/keep-the-why").status_code == 200
+    assert alice.get("/projects/alice/widget/keep-the-why").status_code == 200
     flow.project(bob, "other")
-    assert bob.get("/projects/other/keep-the-why").status_code == 409
-    assert bob.get("/projects/widget/keep-the-why").status_code == 404
+    assert bob.get("/projects/bob/other/keep-the-why").status_code == 409
+    assert bob.get("/projects/alice/widget/keep-the-why").status_code == 404
     assert "secret" not in json.dumps(bob.get("/projects").json())
 
 
@@ -761,7 +761,7 @@ def test_nothing_is_written_to_the_database(
     before = snapshot()
     for params in ({}, {"max_age": 0}, {"member": "h"}):
         assert get(owner, **params).status_code == 200
-    owner.get("/projects/widget")
+    owner.get("/projects/maintainer/widget")
     after = snapshot()
     changed = {k: (before[k], after[k]) for k in before if before[k] != after[k]}
     print("DB CHANGES", changed)
@@ -789,7 +789,7 @@ def test_waiters_on_a_slow_family_do_not_starve_the_request_threadpool(
         t.start()
     time.sleep(0.5)
     start = time.monotonic()
-    status = owner.get("/projects/widget").status_code
+    status = owner.get("/projects/maintainer/widget").status_code
     waited = time.monotonic() - start
     for t in threads:
         t.join()

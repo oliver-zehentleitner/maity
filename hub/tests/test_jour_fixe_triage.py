@@ -90,11 +90,11 @@ def test_a_decided_adoption_opens_a_card_and_to_owner_files_a_decision(
     body = done.json()
     assert body["round"]["status"] == "reported" and body["round"]["reported_at"]
     [task_id], [request_id] = body["tasks"], body["requests"]
-    card = reporting.owner.get(f"/projects/maity/tasks/{task_id}").json()
+    card = reporting.owner.get(f"/projects/maintainer/maity/tasks/{task_id}").json()
     assert card["status"] == "open" and card["assigned_to"] is None
     assert card["created_by"] == reporting.lead.id and card["title"] == "Pin the runner image"
     assert card["jour_fixe"] == {"round_id": reporting.id, "proposal_id": "r1"}
-    asked = reporting.owner.get(f"/projects/maity/requests/{request_id}").json()
+    asked = reporting.owner.get(f"/projects/maintainer/maity/requests/{request_id}").json()
     assert asked["class"] == "decision" and asked["to"] == "owner"
     assert [o["id"] for o in asked["options"]] == ["adopt", "reject"]
     assert asked["jour_fixe"] == {"round_id": reporting.id, "proposal_id": "r2"}
@@ -112,7 +112,7 @@ def test_the_owners_adopt_opens_the_card_a_reject_opens_nothing(reporting: Round
     second = {**TO_OWNER, "title": "Drop the flaky test", "statement_proposal_id": None}
     body = report(reporting, proposals=[TO_OWNER, second]).json()
     first_request, second_request = body["requests"]
-    path = "/projects/maity/requests/{}/answer"
+    path = "/projects/maintainer/maity/requests/{}/answer"
     assert (
         reporting.owner.post(path.format(first_request), {"reply_id": "adopt"}).status_code == 200
     )
@@ -162,7 +162,7 @@ def test_no_report_before_the_exchange_closed(
 def test_without_a_report_in_time_the_hub_builds_one_from_the_statement(
     reporting: Round,
 ) -> None:
-    reporting.owner.patch("/projects/maity", {"settings": {"ticker": {"enabled": True}}})
+    reporting.owner.patch("/projects/maintainer/maity", {"settings": {"ticker": {"enabled": True}}})
     reporting.tick(timedelta(hours=13))
     view = reporting.get()
     assert view["status"] == "reported"
@@ -180,7 +180,9 @@ def test_without_a_report_in_time_the_hub_builds_one_from_the_statement(
 
 
 def test_a_closed_project_finishes_the_round_but_opens_no_card(reporting: Round) -> None:
-    closed = reporting.owner.patch("/projects/maity", {"state": "accepted", "reason": "done"})
+    closed = reporting.owner.patch(
+        "/projects/maintainer/maity", {"state": "accepted", "reason": "done"}
+    )
     assert closed.status_code == 200, closed.text
     body = report(reporting, proposals=[decided(reporting.owner)])
     assert body.status_code == 200, body.text
@@ -207,13 +209,17 @@ def test_a_report_replay_answers_only_a_member(
         "moderator": other.id,
     }
     assert (
-        owner.patch("/projects/maity", {"policy": {"jour_fixe": series}, "reason": "r"}).status_code
+        owner.patch(
+            "/projects/maintainer/maity", {"policy": {"jour_fixe": series}, "reason": "r"}
+        ).status_code
         == 200
     )
     member = flow.agent(make_client, owner)
     listen(member)
     other.get("/me")
-    round_id = other.post("/projects/maity/jour-fixe/rounds", {"reason": "r"}).json()["id"]
+    round_id = other.post("/projects/maintainer/maity/jour-fixe/rounds", {"reason": "r"}).json()[
+        "id"
+    ]
     member.post(rounds_path(round_id, "/answers"), {"went_well": "ok"})
     now[0] += STEP
     worker.sweep(migrated)
@@ -227,14 +233,14 @@ def test_a_report_replay_answers_only_a_member(
     body = {"summary": "s", "findings": [], "proposals": []}
     first = other.client.post(path, json=body, headers=headers)
     assert first.status_code == 200, first.text
-    assert owner.delete(f"/projects/maity/members/{other.id}").status_code == 200
+    assert owner.delete(f"/projects/maintainer/maity/members/{other.id}").status_code == 200
     replay = other.client.post(path, json=body, headers=headers)
     assert replay.status_code == 404, replay.text
 
 
 def test_a_demoted_moderator_no_longer_decides(reporting: Round) -> None:
     demoted = reporting.owner.patch(
-        f"/projects/maity/members/{reporting.lead.id}", {"role": "member"}
+        f"/projects/maintainer/maity/members/{reporting.lead.id}", {"role": "member"}
     )
     assert demoted.status_code == 200, demoted.text
     refused = report(reporting, proposals=[decided(reporting.owner)])

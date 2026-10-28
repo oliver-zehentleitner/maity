@@ -88,7 +88,7 @@ def test_a_new_profile_is_created_at_the_exchange(setup: Setup, make_client: Cli
     joined = exchange(make_client(), picked)
     assert joined.status_code == 201, joined.text
     agent_id = joined.headers["Maity-Member-Id"]
-    member = setup.owner.get(f"/projects/maity/members/{agent_id}").json()
+    member = setup.owner.get(f"/projects/maintainer/maity/members/{agent_id}").json()
     assert member["handle"] == "agent-f"
     with setup.engine.connect() as conn:
         owner = conn.execute(
@@ -160,11 +160,11 @@ def test_a_rejoin_replaces_the_revoked_instance(setup: Setup, make_client: Clien
     assigned = factory.card(setup.engine, project_id, member,
                             assigned_to=member, assigned_instance=old_instance)  # fmt: skip
     revoked = setup.owner.post(
-        f"/projects/maity/credentials/{first.headers['Maity-Credential-Id']}/revoke", {}
+        f"/projects/maintainer/maity/credentials/{first.headers['Maity-Credential-Id']}/revoke", {}
     )
     assert revoked.status_code == 200, revoked.text
     restarted = setup.owner.post(
-        f"/projects/maity/placements/{placement['id']}/restart", {"rejoin": True}
+        f"/projects/maintainer/maity/placements/{placement['id']}/restart", {"rejoin": True}
     )
     assert restarted.status_code == 200, restarted.text
     again = pick_up(setup, restarted.json())
@@ -249,7 +249,7 @@ def test_an_unused_pickup_dies_with_its_placement_or_runner(
 ) -> None:
     placement = placed(setup)
     picked = pick_up(setup, placement).json()
-    path = f"/projects/maity/placements/{placement['id']}"
+    path = f"/projects/maintainer/maity/placements/{placement['id']}"
     answer = {
         "deleted": lambda: setup.owner.delete(path),
         "stopped": lambda: setup.owner.patch(path, {"desired": "stopped"}),
@@ -291,7 +291,7 @@ def test_a_pickup_never_brings_back_a_removed_member(
 ) -> None:
     placement = placed(setup)
     picked = pick_up(setup, placement).json()
-    removed = setup.owner.delete(f"/projects/maity/members/{setup.agent.id}")
+    removed = setup.owner.delete(f"/projects/maintainer/maity/members/{setup.agent.id}")
     assert removed.status_code == 200, removed.text
     _unrevoke_joins(setup)
     with setup.engine.begin() as conn:  # whatever the removal did to the placement
@@ -318,11 +318,11 @@ def _rejoin_picked(setup: Setup, make_client: ClientFactory) -> tuple[Any, Any, 
     first = exchange(make_client(), pick_up(setup, placement).json())
     assert first.status_code == 201, first.text
     revoked = setup.owner.post(
-        f"/projects/maity/credentials/{first.headers['Maity-Credential-Id']}/revoke", {}
+        f"/projects/maintainer/maity/credentials/{first.headers['Maity-Credential-Id']}/revoke", {}
     )
     assert revoked.status_code == 200, revoked.text
     restarted = setup.owner.post(
-        f"/projects/maity/placements/{placement['id']}/restart", {"rejoin": True}
+        f"/projects/maintainer/maity/placements/{placement['id']}/restart", {"rejoin": True}
     )
     assert restarted.status_code == 200, restarted.text
     again = pick_up(setup, restarted.json())
@@ -438,14 +438,18 @@ def test_a_supervised_resume_says_so(setup: Setup) -> None:
 
 def test_a_supervised_long_poll_skips_what_does_not_wake_it(setup: Setup) -> None:
     def poll() -> list[Any]:
-        latest = setup.agent.get("/projects/maity/events", params={"after": "latest", "wait": 0})
+        latest = setup.agent.get(
+            "/projects/maintainer/maity/events", params={"after": "latest", "wait": 0}
+        )
         cursor = latest.json()["cursor"]
         said = setup.owner.post(
-            "/projects/maity/events",
+            "/projects/maintainer/maity/events",
             {"kind": "message", "type": "notice", "to": "all", "body": "hi"},
         )
         assert said.status_code == 201, said.text
-        waited = setup.agent.get("/projects/maity/events", params={"after": cursor, "wait": 1})
+        waited = setup.agent.get(
+            "/projects/maintainer/maity/events", params={"after": cursor, "wait": 1}
+        )
         assert waited.status_code == 200, waited.text
         return [e["kind"] for e in waited.json()["items"]]
 

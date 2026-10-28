@@ -111,11 +111,14 @@ def test_private_project_routes_and_other_humans_cannot_read_or_answer(
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
     factory.membership(migrated, project_id, role="admin", human_id=other.id)
     request_id = propose(agent).json()["id"]
-    project_path = f"/projects/maity/requests/{request_id}"
+    project_path = f"/projects/maintainer/maity/requests/{request_id}"
     for who in (owner, other, admin, proxy):
         assert who.get(project_path).status_code == 404
         assert who.post(project_path + "/answer", {"reply_id": "go"}).status_code == 404
-        assert who.get("/projects/maity/requests", params={"to": "all"}).json()["items"] == []
+        assert (
+            who.get("/projects/maintainer/maity/requests", params={"to": "all"}).json()["items"]
+            == []
+        )
     assert other.get(f"/requests/{request_id}").status_code == 404
     assert other.post(f"/requests/{request_id}/answer", {"reply_id": "go"}).status_code == 404
     assert agent.get(project_path).status_code == 200

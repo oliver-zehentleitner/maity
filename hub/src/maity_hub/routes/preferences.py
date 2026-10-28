@@ -10,16 +10,17 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, select
 
-from maity_hub import clock, events, idempotency, preferences
+from maity_hub import clock, events, idempotency, namespace, preferences
 from maity_hub import tables as t
 from maity_hub.access import member_row, membership
 from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import ApiError, invalid, not_found, rate_limited
 from maity_hub.models import Strict
 from maity_hub.models import markdown as text_field
+from maity_hub.namespace import ProjectRoute
 from maity_hub.routes.requests import file_to_human, load_request
 
-router = APIRouter()
+router = APIRouter(route_class=ProjectRoute)
 
 PAGE_DEFAULT, PAGE_MAX = 50, 200
 
@@ -48,13 +49,19 @@ def _human(caller: Any) -> str:
 
 def _mine(conn: Connection, human_id: str) -> dict[str, Any]:
     shown = preferences.view(conn, human_id)
+    # Each project by its full name (§6.25): two owners' projects may share a slug.
     rows = conn.execute(
-        select(t.project.c.slug, t.membership.c.preferences_include)
+        select(t.project.c.slug, t.human.c.handle, t.membership.c.preferences_include)
         .join(t.project, t.project.c.id == t.membership.c.project_id)
+        .join(t.human, t.human.c.id == t.project.c.owner_id)
         .where(t.membership.c.human_id == human_id, t.membership.c.active.is_(True))
-        .order_by(t.project.c.slug)
+        .order_by(t.human.c.handle, t.project.c.slug)
     ).all()
-    return {**shown, "projects": [{"slug": r.slug, "include": r.preferences_include} for r in rows]}
+    projects = [
+        {"slug": r.slug, "full_name": f"{r.handle}/{r.slug}", "include": r.preferences_include}
+        for r in rows
+    ]
+    return {**shown, "projects": projects}
 
 
 def load_preferences(conn: Connection, human_id: str) -> dict[str, Any]:
@@ -106,7 +113,7 @@ def get_versions(
         return JSONResponse(preferences.versions(conn, human_id, before, limit))
 
 
-@router.put("/me/preferences/projects/{slug}")
+@router.put("/me/preferences/projects/{owner}/{slug}")
 def put_include(slug: str, body: IncludeIn, request: Request, caller: AnyCaller) -> JSONResponse:
     human_id = _human(caller)
 
@@ -129,7 +136,7 @@ def _the_human(conn: Connection, project_id: str, member_id: str) -> Any:
         raise not_found() from None
 
 
-@router.get("/projects/{slug}/members/{member_id}/preferences")
+@router.get("/projects/{owner}/{slug}/members/{member_id}/preferences")
 def get_theirs(slug: str, member_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     """The human itself, an agent member while the project reads the text, or the agent
     given its owner's text, the owner a member here or not; `not_found` for anyone else
@@ -143,7 +150,7 @@ def get_theirs(slug: str, member_id: str, request: Request, caller: AnyCaller) -
         return JSONResponse(preferences.view(conn, member_id))
 
 
-@router.post("/projects/{slug}/members/{member_id}/preferences/proposals")
+@router.post("/projects/{owner}/{slug}/members/{member_id}/preferences/proposals")
 def propose(
     slug: str, member_id: str, body: ProposalIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -199,7 +206,7 @@ def propose(
                             t.agent_profile.c.id == mine.principal_id
                         )
                     ).scalar_one(),
-                    "project": mine.project.slug,
+                    "project": namespace.full_name(conn, mine.project),
                 },
             },
         )

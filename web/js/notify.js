@@ -47,9 +47,9 @@ window.Maity = window.Maity || {};
     if (t0.type === "settings") return "#/account/notifications";
     // A registration waiting for the instance admin (§16.4): Admin.
     if (t0.type === "registration") return "#/admin";
-    const slug = item.project && item.project.slug;
-    if (!slug || item.project.member === false) return "#/all";
-    const base = "#/p/" + encodeURIComponent(slug) + "/";
+    const full = item.project && item.project.full_name;
+    if (!full || item.project.member === false) return "#/all";
+    const base = "#/" + M.api.projectPath(full) + "/";
     const t = item.target || {};
     if (t.type === "conversation") return base + "chat/" + encodeURIComponent(t.id);
     if (t.type === "task") return base + "tasks/" + encodeURIComponent(t.id);
@@ -79,7 +79,7 @@ window.Maity = window.Maity || {};
 
   // What asks for the human in one project of theirs, as the hub counts it.
   function projectCount(p) {
-    const c = state.byProject[p.slug];
+    const c = state.byProject[p.full_name];
     if (!c || c.member === false) return { requests: p.open_requests || 0, chat: 0, mention: 0, total: p.open_requests || 0 };
     return { requests: c.inbox || 0, chat: c.chat || 0, mention: c.mention || 0, total: c.total || 0 };
   }

@@ -72,7 +72,7 @@ def test_a_body_over_64_kib_is_refused(make_client: ClientFactory) -> None:
 def test_a_body_to_an_api_path_nothing_serves_is_404_unread(make_client: ClientFactory) -> None:
     client = make_client()
     big = client.post(
-        "/api/v1/projects/maity/nothing-serves-this",
+        "/api/v1/projects/maintainer/maity/nothing-serves-this",
         content=b"x" * (64 * 1024 + 1),
         headers={"Content-Type": "application/octet-stream"},
     )

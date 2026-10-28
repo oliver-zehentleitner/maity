@@ -72,13 +72,13 @@ window.Maity = window.Maity || {};
   function targetsEverywhere(ctx) {
     if (!everywhereOf.has(ctx)) {
       everywhereOf.set(ctx, Promise.all(ctx.projects.map(async (p) => {
-        const base = "/projects/" + encodeURIComponent(p.slug);
+        const base = "/projects/" + M.api.projectPath(p.full_name);
         try {
           const [project, page] = await Promise.all([M.api.get(base), M.api.getAll(base + "/members")]);
           const memberById = Object.fromEntries(page.items.map((m) => [m.id, m]));
-          const pctx = { ...ctx, slug: p.slug, base, project, members: page.items, memberById,
+          const pctx = { ...ctx, slug: p.full_name, base, project, members: page.items, memberById,
             nameOf: (id) => (memberById[id] || {}).display_name || id,
-            link: (view, id) => ctx.projectLink(p.slug, view, id) };
+            link: (view, id) => ctx.projectLink(p.full_name, view, id) };
           return targets(pctx).map((member) => ({ ctx: pctx, member, project: p }));
         } catch (err) { return []; }
       })).then((lists) => [].concat(...lists)));
@@ -137,8 +137,8 @@ window.Maity = window.Maity || {};
     // Per project, its leads and, with more than one, a group chat with all.
     const projects = [];
     list.forEach((t) => {
-      let p = projects.find((x) => x.slug === t.project.slug);
-      if (!p) { p = { slug: t.project.slug, name: t.project.name, ctx: t.ctx, members: [] }; projects.push(p); }
+      let p = projects.find((x) => x.slug === t.project.full_name);
+      if (!p) { p = { slug: t.project.full_name, name: t.project.name, ctx: t.ctx, members: [] }; projects.push(p); }
       p.members.push(t.member);
     });
     const menu = M.menuButton({
@@ -149,7 +149,7 @@ window.Maity = window.Maity || {};
         const items = [];
         projects.forEach((p, i) => {
           if (i) items.push({ separator: true });
-          list.filter((t) => t.project.slug === p.slug).forEach((t) => items.push({ label: name(t), onSelect: () => once(() => open(t.ctx, t.member)) }));
+          list.filter((t) => t.project.full_name === p.slug).forEach((t) => items.push({ label: name(t), onSelect: () => once(() => open(t.ctx, t.member)) }));
           if (p.members.length > 1) {
             items.push({ label: "Group chat with all leads" + (found.multiProject ? " · " + p.name : ""),
               onSelect: () => once(() => openGroup(p.ctx, p.members)) });
@@ -168,7 +168,7 @@ window.Maity = window.Maity || {};
     if (!ctx.me || ctx.me.kind !== "human") return { list: [], multiProject: false };
     if (ctx.scope === "project") return { list: targets(ctx).map((member) => ({ ctx, member, project: ctx.project })), multiProject: false };
     const list = await targetsEverywhere(ctx);
-    return { list, multiProject: new Set(list.map((t) => t.project.slug)).size > 1 };
+    return { list, multiProject: new Set(list.map((t) => t.project.full_name)).size > 1 };
   }
 
   M.leadChat = { resolve, targets, open, openGroup, found, leadControl };

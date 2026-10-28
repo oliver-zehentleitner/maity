@@ -51,7 +51,8 @@ def inbox_item(make_client: ClientFactory, owner: flow.Human) -> dict[str, Any]:
     """One unread `inbox` item of the owner's: an agent asks the owner something."""
     agent = flow.agent(make_client, owner)
     asked = agent.post(
-        "/projects/maity/requests", {"class": "decision", "title": "Which?", "to": "owner"}
+        "/projects/maintainer/maity/requests",
+        {"class": "decision", "title": "Which?", "to": "owner"},
     )
     assert asked.status_code == 201, asked.text
     [item] = [i for i in bell(owner)["items"] if i["kind"] == "inbox" and not i["read"]]
@@ -92,10 +93,10 @@ def test_the_stamp_moves_with_events_and_read_marks(
     owner.post(f"{N}/read", {"ids": [item["id"]]})
     marked = stamp()
     assert marked != before
-    owner.post("/projects/maity/tasks", {"title": "Another"})
+    owner.post("/projects/maintainer/maity/tasks", {"title": "Another"})
     assert stamp() == marked  # a card makes no notification: it moves nothing (§18.1)
     agent = flow.agent(make_client, owner)
-    agent.post(f"/projects/maity/conversations/{agent.id}/messages", {"body": "hi"})
+    agent.post(f"/projects/maintainer/maity/conversations/{agent.id}/messages", {"body": "hi"})
     assert stamp() != marked
 
 
@@ -228,10 +229,12 @@ def test_the_derive_reads_a_fixed_number_of_queries_however_many_events(
     def act(times: int) -> None:
         for n in range(times):
             agent.post(
-                "/projects/maity/requests",
+                "/projects/maintainer/maity/requests",
                 {"class": "decision", "title": f"Which {n}?", "to": "owner"},
             )
-            agent.post(f"/projects/maity/conversations/{agent.id}/messages", {"body": "hi"})
+            agent.post(
+                f"/projects/maintainer/maity/conversations/{agent.id}/messages", {"body": "hi"}
+            )
 
     def queries() -> tuple[int, int]:
         counted: list[int] = []

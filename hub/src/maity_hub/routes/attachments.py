@@ -1,4 +1,4 @@
-"""`/projects/{slug}/attachments` (docs/api.md §8.7): upload, read, list and delete.
+"""`/projects/{owner}/{slug}/attachments` (docs/api.md §8.7): upload, read, list and delete.
 
 An upload is raw bytes with the name in the query. An image is decoded and encoded again
 outside the transaction, in the avatar decoder's process; the blob is written before the
@@ -23,9 +23,10 @@ from maity_hub.deps import AnyCaller, engine_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.events import lock_project, on_commit, on_rollback
 from maity_hub.ids import new_id
+from maity_hub.namespace import ProjectRoute
 from maity_hub.routes.project_images import _matches
 
-router = APIRouter()
+router = APIRouter(route_class=ProjectRoute)
 
 CLOSED = ("accepted", "archived")
 HEADERS = {
@@ -62,7 +63,7 @@ def _admin_human(mine: Membership) -> bool:
 # --- upload --------------------------------------------------------------------------------
 
 
-@router.post("/projects/{slug}/attachments")
+@router.post("/projects/{owner}/{slug}/attachments")
 def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     engine = engine_of(request)
     settings = settings_of(request)
@@ -155,7 +156,7 @@ def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
 # --- reading -------------------------------------------------------------------------------
 
 
-@router.get("/projects/{slug}/attachments/{attachment_id}")
+@router.get("/projects/{owner}/{slug}/attachments/{attachment_id}")
 def get_attachment(
     slug: str, attachment_id: str, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -169,7 +170,7 @@ def get_attachment(
         return JSONResponse(attachments.view(conn, [row])[0])
 
 
-@router.get("/projects/{slug}/attachments/{attachment_id}/content")
+@router.get("/projects/{owner}/{slug}/attachments/{attachment_id}/content")
 def get_content(slug: str, attachment_id: str, request: Request, caller: AnyCaller) -> Response:
     settings = settings_of(request)
     store = blobs.store_of(settings)  # also before a 304: configured, or 409
@@ -195,7 +196,7 @@ def get_content(slug: str, attachment_id: str, request: Request, caller: AnyCall
     return Response(content=data, media_type="application/octet-stream", headers=headers)
 
 
-@router.get("/projects/{slug}/attachments")
+@router.get("/projects/{owner}/{slug}/attachments")
 def list_pending(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     blobs.store_of(settings_of(request))  # every attachment call: configured, or 409
     if request.query_params.get("status") != "pending":
@@ -252,7 +253,7 @@ def list_pending(slug: str, request: Request, caller: AnyCaller) -> JSONResponse
 # --- deleting ------------------------------------------------------------------------------
 
 
-@router.delete("/projects/{slug}/attachments/{attachment_id}")
+@router.delete("/projects/{owner}/{slug}/attachments/{attachment_id}")
 def delete_attachment(
     slug: str, attachment_id: str, request: Request, caller: AnyCaller
 ) -> JSONResponse:
