@@ -1766,3 +1766,25 @@ nowhere.
 sending such a notice to `#/all`. `#/all` says nothing about the agent,
 and its picture would become unreachable. Keeping every agent's picture
 on the account: this is what the maintainer asked to move.
+
+## The project banner is shown at 2:1, the shape of a forge's social preview
+
+**Id:** c2e9d1e8-f7b5-46fd-8c93-9ea04ff52042
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish on the card tsk-4jhn5xeypjjb (the banner had the wrong height; GitHub asks for at least 640×320, ideally 1280×640), 2026-10-28
+**Revisit when:** the banner should no longer take the full width above the inbox, or a forge's preview has another shape
+
+The banner on the project's inbox, and its preview in Project settings,
+are as wide as their column and half as high (`aspect-ratio: 2 / 1`).
+An image of another shape is cropped to it (`object-fit: cover`). There
+is no fixed height. On a wide screen the banner is the first screenful
+above the inbox.
+
+**Reason:** a project's banner is mostly the repository's social preview,
+which GitHub defines at 2:1. The same shape shows it whole at every width.
+
+**Rejected alternative:** the fixed 180-pixel strip it had: at desktop
+width it cut a 2:1 preview to about 6.5:1, showing only a stripe of it.
+
