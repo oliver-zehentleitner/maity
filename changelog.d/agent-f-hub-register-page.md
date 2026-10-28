@@ -1,0 +1,10 @@
+### Added
+
+- hub: the registration's link page `/mail/register/{token}` (`docs/api.md` §2.7.1 steps 5 and 6,
+  §2.7.2): a `GET` that shows the form (the password chosen at registration, handle, display
+  name and, when the instance has terms, their acceptance) and changes nothing, a `POST` that
+  makes the account, signs this browser in and answers `303` to the stored `next` or the pending
+  page. It sets only the `maity_form` cookie before the `POST`, needs that cookie's value in the
+  form and a `Sec-Fetch-Site` of `same-origin`, binds the terms version the person saw to the
+  registration, shares the login's limit per source address, and the request log masks the
+  token. With this the registration works from the request to a signed-in account.

@@ -204,3 +204,40 @@ from using up the security or notification budgets.
   registration, given the password hash is not.
 - The registration mail on the sign-in budget: the two are triggered by different requests with
   different limits (§2.7.3 against §2.6.4); one flood would silence the other.
+
+## The registration's link page is a router of its own, and answers each refusal with the status of what refused
+
+**Id:** 5c1d7e0a-2b64-4f0e-9a38-71d0b6f4c2e9
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.7.1 steps 5 and 6, §2.7.2, §2.7.3, §18.6; the implementation of tsk-sbxts7s5990v, part 5b, 2026-10-28
+**Revisit when:** the sign-in link page (§2.6.3) lands and the two form cookies want one helper, or the dashboard takes over the form
+
+`routes/register_page.py` serves `GET` and `POST /mail/register/{token}`; `routes/mail_links.py`
+stays the pages that set and read no cookie. The `GET` sets only `maity_form` (a random value,
+`Path=/mail/register`, `HttpOnly`, `SameSite=Strict`, ten minutes) and puts the same value in a
+hidden field; the `POST` needs both to match and a `Sec-Fetch-Site` of exactly `same-origin`, so a
+request that does not say where it comes from is refused as well (the rule of §2.6.3's sign-in
+page). The terms version the person saw travels in a hidden field the hub signs with the
+registration's nonce, so a version from another registration, or a forged one, counts as none
+seen and asks for a fresh confirmation. The completion itself is `registration_accounts.complete`
+unchanged; the page maps its result to a status: a form error or wrong password `400`,
+terms that changed `409`, registration closed since the mail `403`, the hourly cap `503`, a link
+that no longer works `404` and one page for every reason. Every `POST` counts against the login
+limit of its source address (§2.7.3 shares them). The pages carry `Referrer-Policy: no-referrer`
+and `Cache-Control: no-store`, the request log masks the token, and the session cookies are set
+only on success, with the form cookie removed.
+
+**Reason:** a page that sets a cookie and reads a form is not the page of a link that must set and
+read none, so mixing them would loosen the contract of §18.6 for the unsubscribe and verify
+pages. Binding the terms version to the nonce makes the signed field useless on another
+registration. Statuses that tell a browser, a proxy and a test what happened cost nothing here:
+the person sees the same words either way, and only a person who proved the mailbox and the
+password sees an error that depends on an account (a taken handle).
+
+**Rejected alternatives:**
+- One `POST` that answers JSON for the dashboard to render: §2.7.1 puts the page outside the API
+  and the link must work from a mail on any device, with no script.
+- Accepting a `POST` without `Sec-Fetch-Site`: an older browser could then be made to submit the
+  form from another site; the cookie alone is a second guard, not a reason to drop the first.
