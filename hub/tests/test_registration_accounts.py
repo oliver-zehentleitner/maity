@@ -172,11 +172,13 @@ def test_an_invitation_that_stops_admitting_ends_the_registration(
     """§3.4: under `closed` the admitting invitation is read again at completion."""
     flow.project(admin)
     closed = hub(MAITY_MAIL_SIGNING_KEY=SIGNING, **MAIL)
-    invited = admin.post("/projects/maity/invitations", {"address": "ada@example.com"}).json()
+    invited = admin.post(
+        "/projects/maintainer/maity/invitations", {"address": "ada@example.com"}
+    ).json()
     row = requested(make_client, migrated, closed)
-    admin.delete(f"/projects/maity/invitations/{invited['id']}")
+    admin.delete(f"/projects/maintainer/maity/invitations/{invited['id']}")
     assert complete(migrated, closed, row.id).kind == "closed"
-    again = admin.post("/projects/maity/invitations", {"address": "ada@example.com"})
+    again = admin.post("/projects/maintainer/maity/invitations", {"address": "ada@example.com"})
     assert again.status_code == 201
     second = requested(make_client, migrated, closed)
     assert complete(migrated, closed, second.id).kind == "created"
@@ -285,7 +287,7 @@ def test_the_next_path_follows_the_dashboard_rule(
     """§2.6.5: anything but `/` or a dashboard route becomes `/`, silently."""
     for bad in ("https://evil.example/", "/\t//evil.example", "/#/a//b", "/#/x#y", "/#/a b"):
         assert registration.safe_next(bad) == "/", bad
-    assert registration.safe_next("/#/projects/maity") == "/#/projects/maity"
+    assert registration.safe_next("/#/projects/maintainer/maity") == "/#/projects/maintainer/maity"
     settings = settings_for(MAITY_REGISTRATION_APPROVAL="automatic")
     client = make_client(mail=settings.mail, registration=settings.registration)
     answer = client.post(
@@ -326,7 +328,9 @@ def test_a_revocation_racing_the_completion_waits_for_it(
         pytest.skip("SQLite serialises writers; the lock is for the server databases")
     flow.project(admin)
     closed = hub(MAITY_MAIL_SIGNING_KEY=SIGNING, **MAIL)
-    invited = admin.post("/projects/maity/invitations", {"address": "ada@example.com"}).json()
+    invited = admin.post(
+        "/projects/maintainer/maity/invitations", {"address": "ada@example.com"}
+    ).json()
     row = requested(make_client, migrated, closed)
     first = migrated.connect()
     started, finished = threading.Event(), threading.Event()
@@ -417,7 +421,7 @@ def _invited_by_admin(
     with migrated.connect() as conn:
         project = str(conn.execute(select(t.project.c.id)).scalar_one())
     factory.membership(migrated, project, "admin", human_id=issuer.id)
-    made = issuer.post("/projects/maity/invitations", {"address": "ada@example.com"})
+    made = issuer.post("/projects/maintainer/maity/invitations", {"address": "ada@example.com"})
     assert made.status_code == 201, made.text
     closed = hub(MAITY_MAIL_SIGNING_KEY=SIGNING, **MAIL)
     return closed, requested(make_client, migrated, closed), issuer
@@ -487,7 +491,7 @@ def test_a_pending_account_reaches_only_its_own_account(
         person.get("/projects"),
         person.get("/agents"),
         person.post("/projects", {"slug": "mine", "name": "Mine"}),
-        person.get("/projects/maity"),
+        person.get("/projects/maintainer/maity"),
         person.get(ADMIN),
     ):
         assert refused.status_code == 403

@@ -72,6 +72,7 @@ def test_a_human_sees_every_membership_with_its_open_requests(
     assert body["projects"] == [
         {
             "slug": "maity",
+            "full_name": "maintainer/maity",
             "name": "Maity",
             "state": "build",
             "role": "owner",
@@ -80,6 +81,7 @@ def test_a_human_sees_every_membership_with_its_open_requests(
         },
         {
             "slug": "sample",
+            "full_name": "maintainer/sample",
             "name": "Sample shop",
             "state": "freeze",
             "role": "proxy",

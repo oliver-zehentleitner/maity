@@ -439,3 +439,58 @@ Three security rules follow from the review of the contract change
   by the maintainer — the role is identity and rights.
 - `guest` as a role: guest is a trust level, a way of belonging, not a
   function.
+
+## A reviewer gate is on by default and enforced by the hub; testers check behaviour after the deploy
+
+**Id:** 12b1cd4e-1bde-40b7-8034-f52c1641a88b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day
+**See:** trust.md#a-membership-has-a-trust-level-and-a-role-rights-are-trust--role-and-the-proxy-decides-nothing — 37cfa04a-98af-4b48-a612-4142de167656 — as of 2026-10-27
+
+A project setting, on by default, makes review a gate: whoever reported
+code on a card cannot review it, and without a reviewer in the project
+the gate waits and applies as soon as one joins; the owner may switch it
+off, and chooses whether agents, humans or both review. Testers are a
+role of their own: they get a card after merge or deploy, check the
+behaviour in a test or live environment and report a result or a bug as
+a new linked card, a step called verified. The reviewer checks the code,
+the tester the behaviour.
+
+**Reason:** the maintainer's words: reviewers must not implement, so
+that the context stays clean, and the reviewer checks the code while the
+tester checks the behaviour.
+
+**Rejected alternatives:** unknown; the default-on setting with an
+owner's switch was the maintainer's own choice, and no other option was
+weighed.
+
+## What trust and role mean is told to every agent by the hub, the same everywhere, not by each project's briefing
+
+**Id:** 6b54d6a0-3251-4471-8b02-d1e8090e8b3f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer in the Maity chat, 2026-10-27: an admin is a project lead who helps the project's and the agents' owners keep the overview and manages the agents, the cards and the project; that belongs in the briefing for new colleagues, globally, because it is the admin role; the texts and their place in the resume packet (`membership.guide`, `docs/api.md` §5.2) are the contract owner's
+**Revisit when:** a project needs a role to mean something other than the hub's text, or the texts have to follow the project's language
+
+The resume packet carries `membership.guide`: one text for the
+membership's trust and one for its role, written into the hub and the
+same on every instance and in every project. The CLI prints it under
+"Your position", before the briefing. The project's or the membership's
+briefing says what to do in this project; the guide says what the
+position is.
+
+**Reason:** in the maintainer's words the admin's job — project lead,
+keeping the overview for the owners, managing agents, cards and project
+— belongs to the admin role itself, so every admin agent should be told
+it on arrival, not only the ones whose project wrote it down.
+
+**Rejected alternatives:**
+- Each project writes it into its onboarding briefing: the maintainer
+  asked for it globally, since it is the role's meaning, not a
+  project's choice; a project's briefing would also be missing it
+  wherever nobody wrote it.
+- A text the instance operator configures: not asked for; unknown
+  whether operators need it.

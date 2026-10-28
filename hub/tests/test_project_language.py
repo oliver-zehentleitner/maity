@@ -22,16 +22,19 @@ def owner(make_client: ClientFactory, migrated: Engine) -> flow.Human:
 def test_new_existing_and_resume_language_defaults(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
-    assert owner.get("/projects/maity").json()["settings"]["language"] == "en"
+    assert owner.get("/projects/maintainer/maity").json()["settings"]["language"] == "en"
     assert owner.get("/projects").json()["items"][0]["settings"]["language"] == "en"
     agent = flow.agent(make_client, owner)
     assert agent.resume().json()["project"]["language"] == "en"
-    assert owner.patch("/projects/maity", {"settings": {"language": "de"}}).status_code == 200
+    assert (
+        owner.patch("/projects/maintainer/maity", {"settings": {"language": "de"}}).status_code
+        == 200
+    )
     assert agent.resume().json()["project"]["language"] == "de"
     assert (
-        owner.patch("/projects/maity", {"settings": {"language": None}}).json()["settings"][
-            "language"
-        ]
+        owner.patch("/projects/maintainer/maity", {"settings": {"language": None}}).json()[
+            "settings"
+        ]["language"]
         == "en"
     )
     assert agent.resume().json()["project"]["language"] == "en"
@@ -40,20 +43,20 @@ def test_new_existing_and_resume_language_defaults(
 def test_language_merges_and_emits_only_effective_changes(
     owner: flow.Human, migrated: Engine
 ) -> None:
-    owner.patch("/projects/maity", {"settings": {"language": "en"}})
-    owner.patch("/projects/maity", {"settings": {"release_checklist": ["keep this"]}})
+    owner.patch("/projects/maintainer/maity", {"settings": {"language": "en"}})
+    owner.patch("/projects/maintainer/maity", {"settings": {"release_checklist": ["keep this"]}})
     with migrated.connect() as conn:
         before = conn.execute(select(t.project.c.rules_version)).scalar_one()
-    response = owner.patch("/projects/maity", {"settings": {"language": "de"}})
+    response = owner.patch("/projects/maintainer/maity", {"settings": {"language": "de"}})
     assert response.json()["settings"] == {
         "language": "de",
         "release_checklist": ["keep this"],
         "onboarding": {"check_in_with": "coordinator"},
     }
-    owner.patch("/projects/maity", {"settings": {"language": "de"}})
-    owner.patch("/projects/maity", {"settings": {}})
-    owner.patch("/projects/maity", {"settings": {"language": None}})
-    owner.patch("/projects/maity", {"settings": {"language": None}})
+    owner.patch("/projects/maintainer/maity", {"settings": {"language": "de"}})
+    owner.patch("/projects/maintainer/maity", {"settings": {}})
+    owner.patch("/projects/maintainer/maity", {"settings": {"language": None}})
+    owner.patch("/projects/maintainer/maity", {"settings": {"language": None}})
     with migrated.connect() as conn:
         events = conn.execute(
             select(t.event).where(t.event.c.kind == "project_updated").order_by(t.event.c.seq)
@@ -71,12 +74,12 @@ def test_language_merges_and_emits_only_effective_changes(
 
 @pytest.mark.parametrize("language", ["fr", "EN", "", 1, True, [], {}])
 def test_unknown_language_has_contract_error(owner: flow.Human, language: Any) -> None:
-    response = owner.patch("/projects/maity", {"settings": {"language": language}})
+    response = owner.patch("/projects/maintainer/maity", {"settings": {"language": language}})
     assert response.headers["Maity-Error"] == "invalid"
     assert response.json()["error"]["details"]["fields"] == {
         "settings.language": "unknown_language"
     }
-    assert owner.get("/projects/maity").json()["settings"]["language"] == "en"
+    assert owner.get("/projects/maintainer/maity").json()["settings"]["language"] == "en"
 
 
 @pytest.mark.parametrize("role", ["admin", "member"])
@@ -85,7 +88,7 @@ def test_agents_cannot_change_or_reset_language(
 ) -> None:
     agent = flow.agent(make_client, owner, role=role)
     for language in ["de", None]:
-        response = agent.patch("/projects/maity", {"settings": {"language": language}})
+        response = agent.patch("/projects/maintainer/maity", {"settings": {"language": language}})
         assert response.status_code == 403
         assert response.json()["error"]["details"]["reason"] == "humans_only"
 
@@ -98,7 +101,10 @@ def test_only_human_project_admins_can_set_language(
     with migrated.connect() as conn:
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
     factory.membership(migrated, project_id, role, human_id=human.id)
-    assert human.patch("/projects/maity", {"settings": {"language": "de"}}).status_code == status
+    assert (
+        human.patch("/projects/maintainer/maity", {"settings": {"language": "de"}}).status_code
+        == status
+    )
 
 
 @pytest.mark.parametrize("checklist_write", [True, False])
@@ -126,10 +132,12 @@ def test_settings_merge_uses_the_row_read_under_the_project_lock(
 
     monkeypatch.setattr(projects, "lock_project", changed_since_membership, raising=False)
     if checklist_write:
-        response = owner.patch("/projects/maity", {"settings": {"release_checklist": ["new"]}})
+        response = owner.patch(
+            "/projects/maintainer/maity", {"settings": {"release_checklist": ["new"]}}
+        )
         expected = {"language": "de", "release_checklist": ["new"]}
     else:
-        response = owner.patch("/projects/maity", {"settings": {"language": "en"}})
+        response = owner.patch("/projects/maintainer/maity", {"settings": {"language": "en"}})
         expected = {"language": "en", "release_checklist": ["concurrent"]}
     assert response.status_code == 200
     assert locked

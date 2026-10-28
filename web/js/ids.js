@@ -47,11 +47,13 @@ window.Maity = window.Maity || {};
     let from = 0;
     for (const m of s.matchAll(ID)) {
       const href = m[1]
-        ? (slug ? "#/p/" + encodeURIComponent(slug) + "/" + { tsk: "tasks", req: "inbox", agt: "members", hum: "members" }[m[1]] + "/" + m[0] : null)
+        ? (slug ? "#/" + M.api.projectPath(slug) + "/" + { tsk: "tasks", req: "inbox", agt: "members", hum: "members" }[m[1]] + "/" + m[0] : null)
         : (forge ? forge + "/issues/" + m[3] : null);
-      if (!href) continue;
+      if (!href && !m[1]) continue;
       if (m.index > from) out.push(s.slice(from, m.index));
-      out.push(m[1]
+      // An id with nowhere to open still reads as one, never broken.
+      if (!href) out.push(h("span", { class: "id-ref" }, m[0]));
+      else out.push(m[1]
         ? h("a", { class: "id-ref", href }, m[0])
         : h("a", { class: "id-ref", href, rel: "noopener noreferrer", target: "_blank" }, m[0]));
       from = m.index + m[0].length;

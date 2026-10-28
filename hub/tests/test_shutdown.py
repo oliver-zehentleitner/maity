@@ -25,11 +25,13 @@ def test_an_open_long_poll_answers_when_the_hub_stops(
     owner = flow.human(make_client, migrated)
     flow.project(owner)
     agent = flow.agent(make_client, owner)
-    latest = agent.get("/projects/maity/events?after=latest").json()["cursor"]
+    latest = agent.get("/projects/maintainer/maity/events?after=latest").json()["cursor"]
     answers: list[Any] = []
     begun = time.monotonic()
     waiter = threading.Thread(
-        target=lambda: answers.append(agent.get(f"/projects/maity/events?after={latest}&wait=30"))
+        target=lambda: answers.append(
+            agent.get(f"/projects/maintainer/maity/events?after={latest}&wait=30")
+        )
     )
     waiter.start()
     time.sleep(0.5)

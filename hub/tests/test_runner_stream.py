@@ -90,7 +90,9 @@ def hello(client: TestClient, runner: Runner, **body: Any) -> Any:
 def attach(owner: flow.Human, runner: Runner, slug: str = "maity", key: str | None = None) -> Any:
     headers = {"X-CSRF-Token": owner.csrf} | ({"Idempotency-Key": key} if key else {})
     return owner.client.post(
-        f"/api/v1/projects/{slug}/runners", json={"runner_id": runner.id}, headers=headers
+        f"/api/v1/projects/maintainer/{slug}/runners",
+        json={"runner_id": runner.id},
+        headers=headers,
     )
 
 
@@ -122,21 +124,21 @@ def test_attaching_a_runner(make_client: ClientFactory, owner: flow.Human) -> No
     created = attach(owner, runner, key="attach-key-0000001")
     assert created.status_code == 201, created.text
     body = created.json()
-    assert body["id"].startswith("ratt-") and body["project"] == "maity"
+    assert body["id"].startswith("ratt-") and body["project"] == "maintainer/maity"
     assert (body["attached_by"], body["detached_at"], body["active_placements"]) == (
         owner.id,
         None,
         0,
     )
-    assert body["runner"]["projects"] == ["maity"]
-    listed = owner.get("/projects/maity/runners").json()["items"]
+    assert body["runner"]["projects"] == ["maintainer/maity"]
+    listed = owner.get("/projects/maintainer/maity/runners").json()["items"]
     assert [a["id"] for a in listed] == [body["id"]]
     replay = attach(owner, runner, key="attach-key-0000001")
     assert (replay.status_code, replay.json()["id"]) == (201, body["id"])
     again = attach(owner, runner, key="attach-key-0000002")
     assert (again.status_code, error(again)) == (409, "already_attached")
     assert again.json()["error"]["details"]["attachment"]["id"] == body["id"]
-    assert owner.get(f"/runners/{runner.id}").json()["projects"] == ["maity"]
+    assert owner.get(f"/runners/{runner.id}").json()["projects"] == ["maintainer/maity"]
 
 
 def test_only_an_admin_attaches_and_only_their_own_runner(
@@ -154,9 +156,9 @@ def test_only_an_admin_attaches_and_only_their_own_runner(
     assert not_theirs.json()["error"]["details"]["fields"] == {"runner_id": "not_yours"}
     assert attach(owner, runner).status_code == 201
     # A reader sees the attachment without what the runner advertises, and no credential.
-    [seen] = plain.get("/projects/maity/runners").json()["items"]
+    [seen] = plain.get("/projects/maintainer/maity/runners").json()["items"]
     assert "capabilities" not in seen["runner"] and "credential" not in seen["runner"]
-    [admin_view] = admin.get("/projects/maity/runners").json()["items"]
+    [admin_view] = admin.get("/projects/maintainer/maity/runners").json()["items"]
     assert "capabilities" in admin_view["runner"] and "credential" not in admin_view["runner"]
     # An admin of an attached project sees the runner; a plain member does not.
     assert admin.get(f"/runners/{runner.id}").status_code == 200
@@ -168,21 +170,21 @@ def test_an_agent_does_not_read_the_projects_runners(
     make_client: ClientFactory, owner: flow.Human
 ) -> None:
     agent = flow.agent(make_client, owner)
-    response = agent.get("/projects/maity/runners")
+    response = agent.get("/projects/maintainer/maity/runners")
     assert (response.status_code, error(response)) == (403, "forbidden")
 
 
 def test_detaching_a_runner(make_client: ClientFactory, owner: flow.Human) -> None:
     runner = paired(make_client, owner)
     attached = attach(owner, runner).json()
-    detached = owner.delete(f"/projects/maity/runners/{runner.id}")
+    detached = owner.delete(f"/projects/maintainer/maity/runners/{runner.id}")
     assert detached.status_code == 200
     assert detached.json()["id"] == attached["id"] and detached.json()["detached_at"]
-    assert owner.delete(f"/projects/maity/runners/{runner.id}").json() == detached.json()
-    assert owner.get("/projects/maity/runners").json()["items"] == []
+    assert owner.delete(f"/projects/maintainer/maity/runners/{runner.id}").json() == detached.json()
+    assert owner.get("/projects/maintainer/maity/runners").json()["items"] == []
     assert owner.get(f"/runners/{runner.id}").json()["projects"] == []
     other = paired(make_client, owner, name="never-attached")
-    assert owner.delete(f"/projects/maity/runners/{other.id}").status_code == 404
+    assert owner.delete(f"/projects/maintainer/maity/runners/{other.id}").status_code == 404
     # Attached again: a new attachment.
     assert attach(owner, runner).json()["id"] != attached["id"]
 
@@ -191,9 +193,9 @@ def test_an_enrollment_attaches_at_the_exchange(
     make_client: ClientFactory, owner: flow.Human, migrated: Engine
 ) -> None:
     flow.project(owner, "sample")
-    created = enroll(owner, attach=["maity", "sample", "maity"])
+    created = enroll(owner, attach=["maintainer/maity", "maintainer/sample", "maintainer/maity"])
     listed = owner.get("/runners/enrollments").json()["items"][0]
-    assert listed["attach"] == ["maity", "sample"]
+    assert listed["attach"] == ["maintainer/maity", "maintainer/sample"]
     # The creator is no longer an admin of `sample` when the runner pairs.
     sample = factory_project_id(migrated, "sample")
     with migrated.begin() as conn:
@@ -203,10 +205,10 @@ def test_an_enrollment_attaches_at_the_exchange(
             .values(role="member")
         )
     response = exchange(make_client(), created)
-    assert response.headers["Maity-Attached"] == "maity"
+    assert response.headers["Maity-Attached"] == "maintainer/maity"
     runner_id = response.headers["Maity-Runner-Id"]
-    assert owner.get(f"/runners/{runner_id}").json()["projects"] == ["maity"]
-    attached = owner.get("/projects/maity/events?after=0").json()["items"]
+    assert owner.get(f"/runners/{runner_id}").json()["projects"] == ["maintainer/maity"]
+    attached = owner.get("/projects/maintainer/maity/events?after=0").json()["items"]
     assert [e["payload"]["runner_id"] for e in attached if e["kind"] == "runner_attached"] == [
         runner_id
     ]
@@ -216,12 +218,12 @@ def test_an_enrollment_attaches_only_where_its_creator_is_admin(
     make_client: ClientFactory, owner: flow.Human, migrated: Engine
 ) -> None:
     plain = member(make_client, migrated, "member")
-    refused = plain.post("/runners/enrollments", {"name": "box", "attach": ["maity"]})
+    refused = plain.post("/runners/enrollments", {"name": "box", "attach": ["maintainer/maity"]})
     assert (refused.status_code, refused.json()["error"]["details"]) == (
         403,
         {"scope": "members:admin"},
     )
-    unknown = owner.post("/runners/enrollments", {"name": "box", "attach": ["nope"]})
+    unknown = owner.post("/runners/enrollments", {"name": "box", "attach": ["maintainer/nope"]})
     assert unknown.status_code == 404
 
 
@@ -243,6 +245,7 @@ def test_hello_opens_a_session_and_answers_the_packet(
     assert packet["projects"] == [
         {
             "slug": "maity",
+            "full_name": "maintainer/maity",
             "name": "Maity",
             "repository": "https://github.com/oliver-zehentleitner/maity",
         }
@@ -326,7 +329,7 @@ def test_the_stream_reads_only_what_names_the_runner(
     body = stream(client, runner, f"after={cursor}").json()
     assert set(body) == {"items", "cursor", "server_time", "superseded"}
     assert [(e["kind"], e["payload"]["project"]) for e in body["items"]] == [
-        ("runner_attached", "sample")
+        ("runner_attached", "maintainer/sample")
     ]
     assert body["items"][0]["actor"]["kind"] == "member"
     assert stream(client, runner, f"after={body['cursor']}").json()["items"] == []
@@ -341,7 +344,7 @@ def test_a_detached_runner_still_reads_its_detachment(
     client = make_client()
     attach(owner, runner)
     cursor = hello(client, runner).json()["cursor"]
-    owner.delete(f"/projects/maity/runners/{runner.id}")
+    owner.delete(f"/projects/maintainer/maity/runners/{runner.id}")
     items = stream(client, runner, f"after={cursor}").json()["items"]
     assert [e["kind"] for e in items] == ["runner_detached"]
     assert hello(client, runner).json()["projects"] == []
@@ -410,7 +413,7 @@ def test_a_revocation_is_announced_in_every_attached_project(
     for slug in ("maity", "sample"):
         [revoked] = [
             e
-            for e in owner.get(f"/projects/{slug}/events?after=0").json()["items"]
+            for e in owner.get(f"/projects/maintainer/{slug}/events?after=0").json()["items"]
             if e["kind"] == "runner_credential_revoked"
         ]
         assert revoked["audience"] == ["role:owner"]
@@ -430,9 +433,11 @@ def test_removing_a_runner_detaches_it_everywhere(
     runner = paired(make_client, owner)
     attach(owner, runner)
     owner.delete(f"/runners/{runner.id}")
-    kinds = [e["kind"] for e in owner.get("/projects/maity/events?after=0").json()["items"]]
+    kinds = [
+        e["kind"] for e in owner.get("/projects/maintainer/maity/events?after=0").json()["items"]
+    ]
     assert kinds[-2:] == ["runner_credential_revoked", "runner_detached"]
-    assert owner.get("/projects/maity/runners").json()["items"] == []
+    assert owner.get("/projects/maintainer/maity/runners").json()["items"] == []
 
 
 def test_a_re_pair_is_announced_where_the_runner_is_attached(
@@ -443,7 +448,7 @@ def test_a_re_pair_is_announced_where_the_runner_is_attached(
     exchange(make_client(), enroll(owner, name=None, runner_id=runner.id))
     [revoked] = [
         e
-        for e in owner.get("/projects/maity/events?after=0").json()["items"]
+        for e in owner.get("/projects/maintainer/maity/events?after=0").json()["items"]
         if e["kind"] == "runner_credential_revoked"
     ]
     assert revoked["payload"]["reason"] == "repaired"
@@ -471,7 +476,7 @@ def test_a_runner_as_an_event_actor(
         )
     [event] = [
         e
-        for e in owner.get("/projects/maity/events?after=0").json()["items"]
+        for e in owner.get("/projects/maintainer/maity/events?after=0").json()["items"]
         if e["kind"] == "notice_for_test"
     ]
     assert event["actor"] == {
@@ -489,7 +494,9 @@ def test_a_runner_reaches_its_own_routes_only(
 ) -> None:
     runner = paired(make_client, owner)
     assert call(make_client(), runner, "GET", "/api/v1/runner/events").status_code == 200
-    assert call(make_client(), runner, "GET", "/api/v1/projects/maity").status_code == 404
+    assert (
+        call(make_client(), runner, "GET", "/api/v1/projects/maintainer/maity").status_code == 404
+    )
 
 
 def test_attaching_while_the_runner_is_removed_leaves_no_attachment(

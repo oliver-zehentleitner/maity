@@ -68,7 +68,9 @@ def enable(owner: flow.Human, **extra: Any) -> None:
         "contract_files": ["docs/api.md"],
         "contract_implementers": {"6": ["area:hub/"], "13": ["area:cli/"]},
     }
-    response = owner.patch("/projects/maity", {"settings": {"ticker": {**body, **extra}}})
+    response = owner.patch(
+        "/projects/maintainer/maity", {"settings": {"ticker": {**body, **extra}}}
+    )
     assert response.status_code == 200, response.text
 
 
@@ -117,7 +119,7 @@ def content(github: FakeGitHub, path: str, sha: str, text: str) -> None:
 
 
 def items(owner: flow.Human) -> list[dict[str, Any]]:
-    events = owner.get("/projects/maity/events?after=0&limit=200").json()["items"]
+    events = owner.get("/projects/maintainer/maity/events?after=0&limit=200").json()["items"]
     return [e for e in events if e["kind"] == "ticker"]
 
 
@@ -163,8 +165,8 @@ def test_a_merge_reaches_area_owners_card_holders_and_the_contracts_implementers
     owner: flow.Human, team: dict[str, flow.Agent], github: FakeGitHub, migrated: Engine
 ) -> None:
     enable(owner)
-    card = team["hub"].post("/projects/maity/tasks", {"title": "Claims"}).json()
-    team["hub"].post(f"/projects/maity/tasks/{card['id']}/claim", {})
+    card = team["hub"].post("/projects/maintainer/maity/tasks", {"title": "Claims"}).json()
+    team["hub"].post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
     with migrated.begin() as conn:
         conn.execute(
             update(t.card).where(t.card.c.id == card["id"]).values(report={"pr": {"number": 212}})
@@ -223,7 +225,7 @@ def test_nothing_while_the_ticker_is_off(
     owner: flow.Human, team: dict[str, flow.Agent], github: FakeGitHub, migrated: Engine
 ) -> None:
     enable(owner)
-    owner.patch("/projects/maity", {"settings": {"ticker": {"enabled": False}}})
+    owner.patch("/projects/maintainer/maity", {"settings": {"ticker": {"enabled": False}}})
     merged(github, 6, [{"filename": "hub/a.py", "patch": ""}])
     assert probe.announce_merges(migrated, READER, project_id(migrated)) == 0
 
@@ -261,7 +263,7 @@ def test_switching_on_again_starts_again_from_then(owner: flow.Human, migrated: 
     enable(owner)
     with migrated.connect() as conn:
         first = ticker.merges_since(conn, project_id(migrated))
-    owner.patch("/projects/maity", {"settings": {"ticker": {"enabled": False}}})
+    owner.patch("/projects/maintainer/maity", {"settings": {"ticker": {"enabled": False}}})
     enable(owner)
     with migrated.connect() as conn:
         assert ticker.merges_since(conn, project_id(migrated)) >= first
@@ -347,8 +349,8 @@ def test_a_round_that_outlived_a_switch_off_and_on_writes_nothing(
     real = forge.Forge.pull_files
 
     def meanwhile(self: forge.Forge, repository: str, number: int, cap: int = 300) -> Any:
-        owner.patch("/projects/maity", {"settings": {"ticker": {"enabled": False}}})
-        owner.patch("/projects/maity", {"settings": {"ticker": {"enabled": True}}})
+        owner.patch("/projects/maintainer/maity", {"settings": {"ticker": {"enabled": False}}})
+        owner.patch("/projects/maintainer/maity", {"settings": {"ticker": {"enabled": True}}})
         return real(self, repository, number, cap)
 
     monkeypatch.setattr(forge.Forge, "pull_files", meanwhile)

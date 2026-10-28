@@ -23,6 +23,7 @@ from maity_hub import (
     idempotency,
     instances,
     mentions,
+    namespace,
     paging,
     ranks,
     releases,
@@ -40,6 +41,7 @@ from maity_hub.events import emit, lock_project
 from maity_hub.forge import Forge
 from maity_hub.ids import new_id
 from maity_hub.models import Strict, Written, markdown, title
+from maity_hub.namespace import ProjectRoute
 from maity_hub.policy import CLOSED_STATES, REASON_STATES
 from maity_hub.routes.members import AREA
 from maity_hub.views import (
@@ -51,7 +53,7 @@ from maity_hub.views import (
     view_contract,
 )
 
-router = APIRouter()
+router = APIRouter(route_class=ProjectRoute)
 
 SHA = re.compile(r"[0-9a-f]{7,64}")
 FULL_SHA = re.compile(r"[0-9a-f]{40}")  # a report's heads are compared whole
@@ -174,9 +176,7 @@ def load_task(conn: Connection, card_id: str, request: Request) -> dict[str, Any
     caller = getattr(request.state, "caller", None)
     viewer = None
     if caller is not None:
-        slug = conn.execute(
-            select(t.project.c.slug).where(t.project.c.id == card.project_id)
-        ).scalar_one()
+        slug = namespace.name_of(conn, card.project_id)
         viewer = membership(conn, caller, slug)
     return task_view(conn, card, reader_of(request), viewer)
 
@@ -550,7 +550,7 @@ def _subtasks_proposed() -> ApiError:
 # --- the board -------------------------------------------------------------------
 
 
-@router.get("/projects/{slug}/tasks")
+@router.get("/projects/{owner}/{slug}/tasks")
 def list_tasks(
     slug: str,
     request: Request,
@@ -694,7 +694,7 @@ def _after(
         raise invalid({"cursor": "invalid"}) from None
 
 
-@router.get("/projects/{slug}/tasks/{card_id}")
+@router.get("/projects/{owner}/{slug}/tasks/{card_id}")
 def get_task(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     fg = reader_of(request)
     with engine_of(request).begin() as conn:
@@ -722,7 +722,7 @@ CREATED = (
 )
 
 
-@router.post("/projects/{slug}/tasks")
+@router.post("/projects/{owner}/{slug}/tasks")
 def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller) -> JSONResponse:
     fg = reader_of(request)
 
@@ -847,7 +847,7 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
     return response
 
 
-@router.patch("/projects/{slug}/tasks/{card_id}")
+@router.patch("/projects/{owner}/{slug}/tasks/{card_id}")
 def patch_task(
     slug: str, card_id: str, body: TaskPatch, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -1113,7 +1113,7 @@ def _ping(
 # --- claims and leases (§6.5) ----------------------------------------------------------
 
 
-@router.post("/projects/{slug}/tasks/{card_id}/claim")
+@router.post("/projects/{owner}/{slug}/tasks/{card_id}/claim")
 def claim(
     slug: str, card_id: str, body: ClaimIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -1266,7 +1266,7 @@ def _lease_expired(card: Any) -> bool:
     return card.lease_until is not None and card.lease_until <= clock.now()
 
 
-@router.post("/projects/{slug}/tasks/{card_id}/release")
+@router.post("/projects/{owner}/{slug}/tasks/{card_id}/release")
 def release(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     fg = reader_of(request)
 
@@ -1346,7 +1346,7 @@ class MoveIn(Strict):
     to: Literal["top", "bottom"] | None = None
 
 
-@router.post("/projects/{slug}/tasks/{card_id}/move")
+@router.post("/projects/{owner}/{slug}/tasks/{card_id}/move")
 def move(
     slug: str, card_id: str, body: MoveIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -1409,7 +1409,7 @@ def move(
     return idempotency.run(engine_of(request), request, caller, action)
 
 
-@router.post("/projects/{slug}/tasks/{card_id}/assign")
+@router.post("/projects/{owner}/{slug}/tasks/{card_id}/assign")
 def assign(
     slug: str, card_id: str, body: AssignIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -1616,7 +1616,7 @@ def _holder_card(conn: Connection, mine: Membership, card_id: str) -> Any:
     return card
 
 
-@router.post("/projects/{slug}/tasks/{card_id}/checkpoint")
+@router.post("/projects/{owner}/{slug}/tasks/{card_id}/checkpoint")
 def checkpoint(
     slug: str, card_id: str, body: CheckpointIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -1663,7 +1663,7 @@ def checkpoint(
     return idempotency.run(engine_of(request), request, caller, action)
 
 
-@router.post("/projects/{slug}/tasks/{card_id}/report")
+@router.post("/projects/{owner}/{slug}/tasks/{card_id}/report")
 def report(
     slug: str, card_id: str, body: ReportIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -1838,7 +1838,7 @@ def _check_report(body: ReportIn) -> None:
 # --- release checklist (§6.7) --------------------------------------------------------------
 
 
-@router.post("/projects/{slug}/tasks/{card_id}/checklist/{item_id}")
+@router.post("/projects/{owner}/{slug}/tasks/{card_id}/checklist/{item_id}")
 def tick_checklist(
     slug: str,
     card_id: str,

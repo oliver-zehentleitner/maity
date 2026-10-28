@@ -1,4 +1,4 @@
-// A card opened (#/p/<slug>/tasks/<id>): a panel beside the board on a
+// A card opened (#/<owner>/<slug>/tasks/<id>): a panel beside the board on a
 // wide screen and above it, full width, on a phone. It holds the card as
 // the board draws it, controls included, and what the board leaves out:
 // the body (Markdown), the links (§6.13), the open notes with a form to add
@@ -56,15 +56,18 @@ window.Maity = window.Maity || {};
   function render(ctx, c, cardEl, close) {
     const where = M.ids.where(ctx);
     const base = ctx.base + "/tasks/" + encodeURIComponent(c.id);
-    const heading = h("h2", { class: "panel-title", id: "card-panel-title", tabindex: "-1" }, c.id);
+    // The panel is the card (the designer's pass part 2): its id in the
+    // bar beside Close, its title the panel's heading, where the focus goes.
+    const heading = h("h2", { class: "panel-title", id: "card-panel-title", tabindex: "-1" }, M.ids.link(c.title, where));
     const cardSlot = h("div", { class: "card-panel-card" }, cardEl);
     const notesBox = h("div", { class: "card-notes" });
     const historyBox = h("div", { class: "card-history" });
     // The note field as last drawn: it gets the focus back after a post.
     let noteField = null;
     const box = h("aside", { class: "card-panel", "aria-labelledby": "card-panel-title" },
-      h("div", { class: "card-panel-head" }, heading,
+      h("div", { class: "card-panel-head" }, h("span", { class: "card-id" }, c.id),
         h("button", { type: "button", class: "small card-panel-close", onclick: () => close() }, "Close")),
+      heading,
       cardSlot,
       h("h3", null, "Description"),
       c.body ? h("div", { class: "md card-body" }, M.markdown(c.body, where)) : h("p", { class: "muted" }, "No description."),
@@ -135,15 +138,20 @@ window.Maity = window.Maity || {};
 
     // The parts the hub may not serve yet are left out quietly (§1.6).
     const has = (method, path) => M.api.hubHas(method, path).catch(() => true);
-    has("GET", "/projects/{slug}/tasks/{task_id}/notes").then((ok) => { if (ok) notes(); else append(notesBox, M.dom.notOnHub("This hub has no notes yet.")); });
-    has("GET", "/projects/{slug}/tasks/{task_id}/history").then((ok) => { if (ok) history(); else append(historyBox, M.dom.notOnHub("This hub has no card history yet.")); });
+    has("GET", "/projects/{owner}/{slug}/tasks/{task_id}/notes").then((ok) => { if (ok) notes(); else append(notesBox, M.dom.notOnHub("This hub has no notes yet.")); });
+    has("GET", "/projects/{owner}/{slug}/tasks/{task_id}/history").then((ok) => { if (ok) history(); else append(historyBox, M.dom.notOnHub("This hub has no card history yet.")); });
 
     return {
       el: box,
       id: c.id,
       focus: () => heading.focus(),
-      // The board redrew: the card part follows, the rest stays as read.
-      update: (fresh) => append(clear(cardSlot), fresh),
+      // The board redrew: the card part follows, and the heading with its
+      // title, which may have changed (H on #461); the rest stays as read.
+      update: (fresh) => {
+        append(clear(cardSlot), fresh);
+        const title = fresh && fresh.getAttribute && fresh.getAttribute("aria-label");
+        if (title) append(clear(heading), M.ids.link(title, where));
+      },
     };
   }
 

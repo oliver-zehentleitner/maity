@@ -7,7 +7,7 @@ says whether a joining agent takes the repository's personal defaults; projects 
 before read `adopt`. The memory provider itself stays in `keep_the_why`.
 
 Revision ID: 0059
-Revises: 0055
+Revises: 0060
 Create Date: 2026-10-27
 """
 
@@ -17,7 +17,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0059"
-down_revision: str | None = "0055"
+down_revision: str | None = "0060"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

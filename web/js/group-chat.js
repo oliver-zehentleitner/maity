@@ -125,17 +125,13 @@ window.Maity = window.Maity || {};
     const status = M.statusLine();
     status.el.setAttribute("tabindex", "-1");
 
-    // The window: from this participant's latest join on (§9.2), read to its end.
-    const first = await M.api.get(path + "?limit=" + parts.HISTORY_PAGE);
-    const all = first.items.slice();
-    let earlier = first.earlier === undefined ? null : first.earlier;
-    for (let page = first; page.items.length === parts.HISTORY_PAGE;) {
-      page = await M.api.get(path + "?after=" + encodeURIComponent(page.items[page.items.length - 1].seq) + "&limit=" + parts.HISTORY_PAGE);
-      all.push(...page.items);
-    }
-    let cursor = all.length ? all[all.length - 1].seq : (first.cursor || 0);
-    // The messages read with Show earlier messages, kept across a re-read.
-    const earlierRead = new Set();
+    // The newest page only (js/chat.js newestPage, tsk-r1adgwp0a5dr): what
+    // came before it, before one joined included (§9.2), with Show earlier
+    // messages or on scroll-up.
+    const first = await parts.newestPage(path, item.last_message && item.last_message.seq ? item.last_message.seq + 1 : null);
+    const all = first.items;
+    let earlier = first.earlier;
+    let cursor = first.cursor || 0;
     await list.refresh(false);
     const theirs = all.filter((m) => m.from !== ctx.me.id);
     const firstUnread = !observer && unreadBefore && theirs.length >= unreadBefore ? theirs[theirs.length - unreadBefore].seq : null;
@@ -188,34 +184,42 @@ window.Maity = window.Maity || {};
     }
     redraw();
 
-    // What was said before one joined: read on demand, nothing marked (§9.2).
+    // What was said before: read on demand, nothing marked (§9.2), with the
+    // button or on scroll-up near the top; the reader's place is kept.
     const earlierBox = h("div", { class: "earlier" });
+    let readingOlder = false;
+    async function older(focusAfter) {
+      if (earlier === null || readingOlder) return;
+      readingOlder = true;
+      try {
+        const page = await M.api.get(path + "?before=" + encodeURIComponent(earlier) + "&limit=" + EARLIER_PAGE);
+        const fresh = page.items.filter((m) => !all.some((x) => x.seq === m.seq));
+        earlier = page.earlier === undefined ? null : page.earlier;
+        const height = messages.scrollHeight;
+        const top = messages.scrollTop;
+        all.unshift(...fresh);
+        redraw();
+        messages.scrollTop = top + (messages.scrollHeight - height);
+        drawEarlier();
+        if (focusAfter) { const again = earlierBox.querySelector("button"); (again || messages).focus(); }
+      } catch (err) {
+        const button = earlierBox.querySelector("button");
+        if (button) button.disabled = false;
+        pollStatus.fail("The earlier messages could not be read: ", err);
+      } finally {
+        readingOlder = false;
+      }
+    }
     function drawEarlier() {
       clear(earlierBox);
       if (earlier === null) return;
       append(earlierBox, h("button", {
         type: "button", class: "small",
-        onclick: async (e) => {
-          const button = e.target;
-          button.disabled = true;
-          try {
-            const page = await M.api.get(path + "?before=" + encodeURIComponent(earlier) + "&limit=" + EARLIER_PAGE);
-            const older = page.items.filter((m) => !all.some((x) => x.seq === m.seq));
-            older.forEach((m) => earlierRead.add(m.seq));
-            all.unshift(...older);
-            earlier = page.earlier === undefined ? null : page.earlier;
-            redraw();
-            drawEarlier();
-            const again = earlierBox.querySelector("button");
-            (again || messages).focus();
-          } catch (err) {
-            button.disabled = false;
-            pollStatus.fail("The earlier messages could not be read: ", err);
-          }
-        },
+        onclick: (e) => { e.target.disabled = true; older(true); },
       }, "Show earlier messages"));
     }
     drawEarlier();
+    messages.addEventListener("scroll", () => { if (messages.scrollTop < parts.NEAR_TOP) older(false); });
 
     function add(msg) {
       if (all.some((m) => m.seq === msg.seq)) return;
@@ -224,6 +228,14 @@ window.Maity = window.Maity || {};
       if (empty) { redraw(); } else { append(messages, draw(msg)); }
       follow.added(msg.from === ctx.me.id);
       if (msg.seq > cursor) cursor = msg.seq;
+      // At the newest with a long tail drawn: the oldest are let go (js/chat.js).
+      if (all.length > parts.KEEP && parts.atBottom(messages)) {
+        all.splice(0, all.length - parts.PAGE * 2);
+        earlier = all[0].seq;
+        redraw();
+        drawEarlier();
+        messages.scrollTop = messages.scrollHeight;
+      }
     }
 
     // A message of this chat fetches what is new; a change of the chat
@@ -455,20 +467,27 @@ window.Maity = window.Maity || {};
     }, 0);
     // An observer is in no audience (§9.2): its view re-reads what is new.
     // From outside the project no event says a message was removed, so the
-    // window is read again whole; a 404 means the access has ended.
+    // newest page is read again; a 404 means the access has ended.
     if (observer && ctx.outsider) {
       ctx.every(30000, async () => {
         try {
-          // The whole window, to its end, as the opening read has it.
-          const first = await M.api.get(path + "?limit=" + parts.HISTORY_PAGE);
-          const fresh = first.items.slice();
-          for (let page = first; page.items.length === parts.HISTORY_PAGE;) {
-            page = await M.api.get(path + "?after=" + encodeURIComponent(page.items[page.items.length - 1].seq) + "&limit=" + parts.HISTORY_PAGE);
-            fresh.push(...page.items);
+          // The newest page again, never the whole history (tsk-r1adgwp0a5dr):
+          // what it holds replaces what is shown in its range, what is older stays.
+          const page = await M.api.get(path + "?before=" + Number.MAX_SAFE_INTEGER + "&limit=" + parts.PAGE);
+          const fresh = page.items;
+          const from = fresh.length ? fresh[0].seq : Infinity;
+          const newestShown = all.length ? all[all.length - 1].seq : 0;
+          // More came than one page holds: what is shown no longer meets the
+          // page, so it is let go, and scrolling up reads the gap in order.
+          const gap = fresh.length && from > newestShown && page.earlier !== null && page.earlier !== undefined && all.length > 0;
+          let next = gap ? fresh.slice() : all.filter((m) => m.seq < from).concat(fresh);
+          if (gap) { earlier = page.earlier; drawEarlier(); }
+          // At the newest with a long tail drawn: the oldest are let go, as in add().
+          if (next.length > parts.KEEP && parts.atBottom(messages)) {
+            next = next.slice(next.length - parts.PAGE * 2);
+            earlier = next[0].seq;
+            drawEarlier();
           }
-          // What was read before the window (Show earlier messages) stays.
-          const before = all.filter((m) => earlierRead.has(m.seq) && !fresh.some((x) => x.seq === m.seq));
-          const next = before.concat(fresh);
           // Drawn again only on a change: the list is a live region.
           const sig = (list) => JSON.stringify(list.map((m) => [m.seq, m.body, !!m.redacted]));
           if (sig(next) !== sig(all)) {
@@ -500,7 +519,7 @@ window.Maity = window.Maity || {};
   // Whether this hub has group chats (§9.2): it serves their creation. A
   // machine form that cannot be read counts as yes: the controls stay, and
   // a failure says itself where it happens.
-  const served = () => M.api.hubHas("POST", "/projects/{slug}/conversations").catch(() => true);
+  const served = () => M.api.hubHas("POST", "/projects/{owner}/{slug}/conversations").catch(() => true);
 
   M.groupChat = { create, open, served };
 })(window.Maity);

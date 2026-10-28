@@ -43,7 +43,7 @@ def team(make_client: ClientFactory, owner: flow.Human) -> dict[str, flow.Agent]
 
 
 def post(who: Any, **body: Any) -> Any:
-    return who.post("/projects/maity/ticker", body)
+    return who.post("/projects/maintainer/maity/ticker", body)
 
 
 def note(who: Any, text: str = "Staging is down for an hour.", **body: Any) -> dict[str, Any]:
@@ -54,14 +54,16 @@ def note(who: Any, text: str = "Staging is down for an hour.", **body: Any) -> d
 
 
 def listed(who: Any, query: str = "") -> list[dict[str, Any]]:
-    response = who.get(f"/projects/maity/ticker{query}")
+    response = who.get(f"/projects/maintainer/maity/ticker{query}")
     assert response.status_code == 200, response.text
     items: list[dict[str, Any]] = response.json()["items"]
     return items
 
 
 def enable(owner: flow.Human, **extra: Any) -> None:
-    response = owner.patch("/projects/maity", {"settings": {"ticker": {"enabled": True, **extra}}})
+    response = owner.patch(
+        "/projects/maintainer/maity", {"settings": {"ticker": {"enabled": True, **extra}}}
+    )
     assert response.status_code == 200, response.text
 
 
@@ -91,7 +93,9 @@ def test_a_note_goes_to_the_owners_of_its_areas_and_is_an_event(
     assert item["audience"] == ["all"]
     as_owner = listed(owner, "?for=all")[0]
     assert as_owner["seq"] == item["seq"]
-    with_reasons = owner.get(f"/projects/maity/events?after={item['seq'] - 1}").json()["items"][0]
+    with_reasons = owner.get(f"/projects/maintainer/maity/events?after={item['seq'] - 1}").json()[
+        "items"
+    ][0]
     # The narrowest area wins: hub/maity_hub/ before hub/ (§6.2).
     assert reasons(with_reasons) == {
         team["claims"].id: ["area_owner:hub/maity_hub/"],
@@ -169,7 +173,9 @@ def test_to_all_reaches_everyone_and_never_wakes_the_poster(
     owner: flow.Human, team: dict[str, flow.Agent]
 ) -> None:
     item = note(owner, to="all", areas=None)
-    full = owner.get(f"/projects/maity/events?after={item['seq'] - 1}").json()["items"][0]
+    full = owner.get(f"/projects/maintainer/maity/events?after={item['seq'] - 1}").json()["items"][
+        0
+    ]
     by = {r["member_id"]: r for r in full["payload"]["reasons"]}
     assert set(by) == {owner.id, *(a.id for a in team.values())}
     assert all(r["why"] == ["posted_to_all"] for r in by.values())
@@ -181,7 +187,9 @@ def test_a_token_list_is_resolved_to_members(
     owner: flow.Human, team: dict[str, flow.Agent]
 ) -> None:
     item = note(owner, to=["role:admin", "area:web/x.js", f"member:{team['hub'].id}"], areas=None)
-    full = owner.get(f"/projects/maity/events?after={item['seq'] - 1}").json()["items"][0]
+    full = owner.get(f"/projects/maintainer/maity/events?after={item['seq'] - 1}").json()["items"][
+        0
+    ]
     assert reasons(full) == {
         team["admin"].id: ["addressed"],
         team["web"].id: ["addressed"],
@@ -226,19 +234,19 @@ def test_one_subscription_is_changed_by_what_it_adds_and_removes(
     owner: flow.Human, team: dict[str, flow.Agent]
 ) -> None:
     agent = team["web"]
-    assert agent.get("/projects/maity/ticker/subscription").json() == {
+    assert agent.get("/projects/maintainer/maity/ticker/subscription").json() == {
         "follow": {"areas": [], "types": []},
         "mute": {"areas": [], "types": []},
         "updated_at": None,
     }
     changed = agent.patch(
-        "/projects/maity/ticker/subscription",
+        "/projects/maintainer/maity/ticker/subscription",
         {"add": {"follow": {"areas": ["cli/"], "types": ["release"]}, "mute": {"types": ["note"]}}},
     ).json()
     assert changed["follow"] == {"areas": ["cli/"], "types": ["release"]}
     assert changed["mute"] == {"areas": [], "types": ["note"]}
     again = agent.patch(
-        "/projects/maity/ticker/subscription",
+        "/projects/maintainer/maity/ticker/subscription",
         {"add": {"follow": {"areas": ["cli/"]}}, "remove": {"mute": {"types": ["note"]}}},
     ).json()
     assert again["follow"]["areas"] == ["cli/"] and again["mute"]["types"] == []
@@ -261,7 +269,7 @@ def test_one_subscription_is_changed_by_what_it_adds_and_removes(
 def test_a_subscription_change_is_checked(
     owner: flow.Human, body: dict[str, Any], fields: dict[str, str]
 ) -> None:
-    response = owner.patch("/projects/maity/ticker/subscription", body)
+    response = owner.patch("/projects/maintainer/maity/ticker/subscription", body)
     assert response.status_code == 400
     assert response.json()["error"]["details"]["fields"] == fields
 
@@ -270,14 +278,16 @@ def test_the_change_is_read_by_the_member_and_the_human_owners_only(
     owner: flow.Human, team: dict[str, flow.Agent], migrated: Engine
 ) -> None:
     agent = team["web"]
-    agent.patch("/projects/maity/ticker/subscription", {"add": {"mute": {"areas": ["context/"]}}})
+    agent.patch(
+        "/projects/maintainer/maity/ticker/subscription", {"add": {"mute": {"areas": ["context/"]}}}
+    )
     with migrated.connect() as conn:
         seq = conn.execute(
             select(t.event.c.seq).where(t.event.c.kind == "ticker_subscription_changed")
         ).scalar_one()
 
     def sees(who: Any) -> bool:
-        items = who.get(f"/projects/maity/events?after={seq - 1}").json()["items"]
+        items = who.get(f"/projects/maintainer/maity/events?after={seq - 1}").json()["items"]
         return any(i["seq"] == seq for i in items)
 
     assert sees(agent) and sees(owner)
@@ -289,15 +299,19 @@ def test_follows_add_and_mutes_remove_or_mark(
     owner: flow.Human, team: dict[str, flow.Agent]
 ) -> None:
     team["web"].patch(
-        "/projects/maity/ticker/subscription", {"add": {"follow": {"areas": ["hub/"]}}}
+        "/projects/maintainer/maity/ticker/subscription", {"add": {"follow": {"areas": ["hub/"]}}}
     )
-    team["hub"].patch("/projects/maity/ticker/subscription", {"add": {"mute": {"types": ["note"]}}})
+    team["hub"].patch(
+        "/projects/maintainer/maity/ticker/subscription", {"add": {"mute": {"types": ["note"]}}}
+    )
     team["claims"].patch(
-        "/projects/maity/ticker/subscription",
+        "/projects/maintainer/maity/ticker/subscription",
         {"add": {"follow": {"types": ["note"]}, "mute": {"areas": ["hub/"]}}},
     )
     item = note(owner, areas=["hub/a.py", "hub/maity_hub/b.py"])
-    full = owner.get(f"/projects/maity/events?after={item['seq'] - 1}").json()["items"][0]
+    full = owner.get(f"/projects/maintainer/maity/events?after={item['seq'] - 1}").json()["items"][
+        0
+    ]
     by = {r["member_id"]: r for r in full["payload"]["reasons"]}
     assert by[team["web"].id]["why"] == ["follow:hub/"] and by[team["web"].id]["wake"]
     assert team["hub"].id not in by, "a mute without a follow removes the member"
@@ -348,13 +362,15 @@ def test_the_listing_filters_and_pages(owner: flow.Human) -> None:
     post(owner, type="deploy", text="Deployed", deploy={"environment": "prod", "version": "1.0.0"})
     assert [i["type"] for i in listed(owner, "?type=deploy")] == ["deploy"]
     assert [i["seq"] for i in listed(owner, "?type=note&area=hub/")] == [seqs[3], seqs[1]]
-    first = owner.get("/projects/maity/ticker?type=note&limit=2").json()
+    first = owner.get("/projects/maintainer/maity/ticker?type=note&limit=2").json()
     assert [i["seq"] for i in first["items"]] == [seqs[4], seqs[3]]
     second = owner.get(
-        f"/projects/maity/ticker?type=note&limit=2&cursor={first['next_cursor']}"
+        f"/projects/maintainer/maity/ticker?type=note&limit=2&cursor={first['next_cursor']}"
     ).json()
     assert [i["seq"] for i in second["items"]] == [seqs[2], seqs[1]]
-    other = owner.get(f"/projects/maity/ticker?type=deploy&limit=2&cursor={first['next_cursor']}")
+    other = owner.get(
+        f"/projects/maintainer/maity/ticker?type=deploy&limit=2&cursor={first['next_cursor']}"
+    )
     assert other.status_code == 400, "a cursor is valid for one filter set"
     after = listed(owner, f"?type=note&after={seqs[2]}")
     assert [i["seq"] for i in after] == [seqs[3], seqs[4]], "after= is oldest first"
@@ -372,7 +388,7 @@ def test_the_listing_filters_and_pages(owner: flow.Human) -> None:
     ],
 )
 def test_the_listing_query_is_checked(owner: flow.Human, query: str) -> None:
-    assert owner.get(f"/projects/maity/ticker{query}").status_code == 400
+    assert owner.get(f"/projects/maintainer/maity/ticker{query}").status_code == 400
 
 
 # --- §17.2, §17.3, §17.5 the hub's decisions ---------------------------------------------
@@ -395,9 +411,9 @@ def test_a_decision_goes_to_who_may_read_its_request_and_nobody_else(
     assert item["detail"] == {"request_title": "Which?", "reply_label": "Argon2id"}
     assert listed(team["web"]) == [], "a member who may not read the request gets no item"
     assert listed(team["admin"]) != [], "an admin agent holds requests:answer"
-    events_of_web = team["web"].get("/projects/maity/events?after=0").json()["items"]
+    events_of_web = team["web"].get("/projects/maintainer/maity/events?after=0").json()["items"]
     assert not any(e["kind"] == "ticker" for e in events_of_web)
-    raw = owner.get(f"/projects/maity/events?after={item['seq'] - 1}").json()["items"][0]
+    raw = owner.get(f"/projects/maintainer/maity/events?after={item['seq'] - 1}").json()["items"][0]
     assert "all" not in raw["audience"]
     assert not any(a.startswith("role:") for a in raw["audience"])
 
@@ -443,7 +459,7 @@ def test_a_release_card_done_announces_its_version_once(
             ticker.on_release_done(conn, project, row, None, None)
     [item] = listed(owner)
     assert (item["type"], item["text"]) == ("release", "Released 0.3.0: First public")
-    raw = owner.get(f"/projects/maity/events?after={item['seq'] - 1}").json()["items"][0]
+    raw = owner.get(f"/projects/maintainer/maity/events?after={item['seq'] - 1}").json()["items"][0]
     assert raw["payload"]["dedupe_key"] == "release:0.3.0"
     assert set(reasons(raw)) == {owner.id, *(a.id for a in team.values())}
 
@@ -455,10 +471,14 @@ def test_only_human_owners_and_admins_see_everyones_reasons(
     owner: flow.Human, team: dict[str, flow.Agent]
 ) -> None:
     item = note(owner, to="all", areas=None)
-    as_owner = owner.get(f"/projects/maity/events?after={item['seq'] - 1}").json()["items"][0]
+    as_owner = owner.get(f"/projects/maintainer/maity/events?after={item['seq'] - 1}").json()[
+        "items"
+    ][0]
     assert len(as_owner["payload"]["reasons"]) == 5
     as_admin_agent = (
-        team["admin"].get(f"/projects/maity/events?after={item['seq'] - 1}").json()["items"][0]
+        team["admin"]
+        .get(f"/projects/maintainer/maity/events?after={item['seq'] - 1}")
+        .json()["items"][0]
     )
     assert [r["member_id"] for r in as_admin_agent["payload"]["reasons"]] == [team["admin"].id]
     assert as_admin_agent["audience"] == ["all", f"member:{team['admin'].id}"]
@@ -496,13 +516,13 @@ def test_the_resume_packet_has_the_ticker_for_me_first(
 
 
 def test_settings_ticker_is_set_beside_the_other_settings(owner: flow.Human) -> None:
-    owner.patch("/projects/maity", {"settings": {"release_checklist": ["CHANGELOG"]}})
+    owner.patch("/projects/maintainer/maity", {"settings": {"release_checklist": ["CHANGELOG"]}})
     enable(
         owner,
         contract_files=["docs/api.md"],
         contract_implementers={"8.2": ["area:hub/"], "*": ["role:admin"]},
     )
-    settings = owner.get("/projects/maity").json()["settings"]
+    settings = owner.get("/projects/maintainer/maity").json()["settings"]
     assert settings["release_checklist"] == ["CHANGELOG"], "a setting not named stays"
     assert settings["ticker"]["enabled"] is True
     assert settings["ticker"]["contract_implementers"]["8.2"] == ["area:hub/"]
@@ -518,14 +538,16 @@ def test_settings_ticker_is_set_beside_the_other_settings(owner: flow.Human) -> 
     ],
 )
 def test_settings_ticker_is_checked(owner: flow.Human, ticker_settings: dict[str, Any]) -> None:
-    response = owner.patch("/projects/maity", {"settings": {"ticker": ticker_settings}})
+    response = owner.patch("/projects/maintainer/maity", {"settings": {"ticker": ticker_settings}})
     assert response.status_code == 400, response.text
 
 
 def test_an_agent_cannot_switch_the_ticker_on(
     owner: flow.Human, team: dict[str, flow.Agent]
 ) -> None:
-    response = team["admin"].patch("/projects/maity", {"settings": {"ticker": {"enabled": True}}})
+    response = team["admin"].patch(
+        "/projects/maintainer/maity", {"settings": {"ticker": {"enabled": True}}}
+    )
     assert response.status_code == 403
 
 
@@ -543,13 +565,14 @@ def test_one_members_concurrent_changes_all_land(
         answers = list(
             pool.map(
                 lambda a: agent.patch(
-                    "/projects/maity/ticker/subscription", {"add": {"follow": {"areas": [a]}}}
+                    "/projects/maintainer/maity/ticker/subscription",
+                    {"add": {"follow": {"areas": [a]}}},
                 ),
                 areas,
             )
         )
     assert [r.status_code for r in answers] == [200] * len(areas)
-    final = agent.get("/projects/maity/ticker/subscription").json()
+    final = agent.get("/projects/maintainer/maity/ticker/subscription").json()
     assert sorted(final["follow"]["areas"]) == sorted(areas), "nothing read first, nothing lost"
 
 
@@ -557,10 +580,10 @@ def test_a_replayed_subscription_change_answers_as_the_first_time(owner: flow.Hu
     body = {"add": {"mute": {"types": ["note"]}}}
     headers = {"X-CSRF-Token": owner.csrf, "Idempotency-Key": "ticker-sub-replay-0001"}
     first = owner.client.patch(
-        "/api/v1/projects/maity/ticker/subscription", json=body, headers=headers
+        "/api/v1/projects/maintainer/maity/ticker/subscription", json=body, headers=headers
     )
     again = owner.client.patch(
-        "/api/v1/projects/maity/ticker/subscription", json=body, headers=headers
+        "/api/v1/projects/maintainer/maity/ticker/subscription", json=body, headers=headers
     )
     assert first.status_code == again.status_code == 200
     assert again.headers.get("Idempotent-Replayed") == "true"
@@ -571,7 +594,9 @@ def test_humans_are_never_woken_by_an_item(
     owner: flow.Human, team: dict[str, flow.Agent], make_client: ClientFactory, migrated: Engine
 ) -> None:
     item = note(team["admin"], to="all", areas=None)
-    full = owner.get(f"/projects/maity/events?after={item['seq'] - 1}").json()["items"][0]
+    full = owner.get(f"/projects/maintainer/maity/events?after={item['seq'] - 1}").json()["items"][
+        0
+    ]
     by = {r["member_id"]: r for r in full["payload"]["reasons"]}
     assert by[owner.id]["wake"] is False, "for me, never a wake (§17.10)"
     assert f"member:{owner.id}" in full["audience"], "listed by its token, never woken"
@@ -583,13 +608,19 @@ def test_a_redacted_item_is_noticed_by_its_audience_shaped_and_wakes_no_one(
 ) -> None:
     item = note(owner, areas=["web/"])
     redacted = owner.post(
-        f"/projects/maity/events/{item['seq']}/redact", {"reason": "wrong project"}
+        f"/projects/maintainer/maity/events/{item['seq']}/redact", {"reason": "wrong project"}
     )
     assert redacted.status_code == 200
-    as_hub = team["hub"].get(f"/projects/maity/events?after={item['seq'] - 1}").json()["items"]
+    as_hub = (
+        team["hub"]
+        .get(f"/projects/maintainer/maity/events?after={item['seq'] - 1}")
+        .json()["items"]
+    )
     tomb = next(e for e in as_hub if e["seq"] == item["seq"])
     assert tomb["redacted"] and tomb["audience"] == ["all"], "the tombstone is shaped like the item"
-    as_web = team["web"].get(f"/projects/maity/events?after={item['seq']}").json()["items"]
+    as_web = (
+        team["web"].get(f"/projects/maintainer/maity/events?after={item['seq']}").json()["items"]
+    )
     [notice] = [e for e in as_web if e["kind"] == "event_redacted"]
     assert notice["audience"] == [
         "all",
@@ -612,21 +643,31 @@ def test_the_notice_of_a_withheld_decision_is_withheld_too(
     request = asked(team["hub"], to="owner")
     answer(owner, request, text="Yes.")
     [item] = listed(team["hub"])
-    owner.post(f"/projects/maity/events/{item['seq']}/redact", {"reason": "x"})
-    seen = team["web"].get(f"/projects/maity/events?after={item['seq'] - 1}").json()["items"]
+    owner.post(f"/projects/maintainer/maity/events/{item['seq']}/redact", {"reason": "x"})
+    seen = (
+        team["web"]
+        .get(f"/projects/maintainer/maity/events?after={item['seq'] - 1}")
+        .json()["items"]
+    )
     assert not any(
         e["kind"] == "event_redacted" and e["subject"]["id"] == str(item["seq"]) for e in seen
     )
-    asker = team["hub"].get(f"/projects/maity/events?after={item['seq']}").json()["items"]
+    asker = (
+        team["hub"].get(f"/projects/maintainer/maity/events?after={item['seq']}").json()["items"]
+    )
     assert any(e["kind"] == "event_redacted" for e in asker)
 
 
 def test_humans_keep_their_token_without_a_wake(
     owner: flow.Human, team: dict[str, flow.Agent]
 ) -> None:
-    owner.patch("/projects/maity/ticker/subscription", {"add": {"follow": {"areas": ["web/"]}}})
+    owner.patch(
+        "/projects/maintainer/maity/ticker/subscription", {"add": {"follow": {"areas": ["web/"]}}}
+    )
     item = note(team["admin"], areas=["web/"])
-    full = owner.get(f"/projects/maity/events?after={item['seq'] - 1}").json()["items"][0]
+    full = owner.get(f"/projects/maintainer/maity/events?after={item['seq'] - 1}").json()["items"][
+        0
+    ]
     assert f"member:{owner.id}" in full["audience"], "the token that names a human for §18"
     assert {r["member_id"]: r["wake"] for r in full["payload"]["reasons"]}[owner.id] is False
 
@@ -635,7 +676,9 @@ def test_an_agents_own_post_does_not_wake_it(
     owner: flow.Human, team: dict[str, flow.Agent]
 ) -> None:
     item = note(team["admin"], to="all", areas=None)
-    full = owner.get(f"/projects/maity/events?after={item['seq'] - 1}").json()["items"][0]
+    full = owner.get(f"/projects/maintainer/maity/events?after={item['seq'] - 1}").json()["items"][
+        0
+    ]
     by = {r["member_id"]: r for r in full["payload"]["reasons"]}
     assert by[team["admin"].id]["wake"] is False and by[team["hub"].id]["wake"] is True
 
@@ -667,7 +710,7 @@ def test_a_redacted_decision_is_withheld_like_a_live_one(
     request = asked(team["hub"], to="owner")
     answer(owner, request, text="Yes.")
     [item] = listed(team["hub"])
-    owner.post(f"/projects/maity/events/{item['seq']}/redact", {"reason": "x"})
+    owner.post(f"/projects/maintainer/maity/events/{item['seq']}/redact", {"reason": "x"})
     assert listed(team["web"]) == [], "no item and no placeholder (§17.5)"
     assert listed(team["hub"])[0]["redacted"] is True
 
@@ -680,7 +723,7 @@ def test_a_reader_who_lost_access_no_longer_reads_the_decision(
     request = asked(team["hub"], to="owner")
     answer(owner, request, text="Yes.")
     assert listed(proxy) != [], "a proxy holds requests:answer"
-    owner.patch(f"/projects/maity/members/{proxy.id}", {"role": "member"})
+    owner.patch(f"/projects/maintainer/maity/members/{proxy.id}", {"role": "member"})
     assert listed(proxy) == [], "checked again at read time (§17.5)"
 
 
@@ -690,7 +733,11 @@ def test_an_answer_in_words_never_appears(owner: flow.Human, team: dict[str, flo
     answer(owner, request, text="a secret reason in words")
     [item] = listed(team["hub"])
     assert item["detail"] == {"request_title": "Which?", "reply_label": None}
-    raw = team["hub"].get(f"/projects/maity/events?after={item['seq'] - 1}").json()["items"][0]
+    raw = (
+        team["hub"]
+        .get(f"/projects/maintainer/maity/events?after={item['seq'] - 1}")
+        .json()["items"][0]
+    )
     assert "a secret reason in words" not in str(raw)
 
 
@@ -729,7 +776,9 @@ def hold(
 
 def decision_event(owner: flow.Human) -> dict[str, Any]:
     seq = listed(owner)[0]["seq"]
-    event: dict[str, Any] = owner.get(f"/projects/maity/events?after={seq - 1}").json()["items"][0]
+    event: dict[str, Any] = owner.get(f"/projects/maintainer/maity/events?after={seq - 1}").json()[
+        "items"
+    ][0]
     return event
 
 
@@ -740,7 +789,8 @@ def test_the_asker_and_the_card_holder_cannot_mute_a_decision(
     card = task(team["admin"], title="Hash")
     for agent in (team["hub"], team["admin"]):
         agent.patch(
-            "/projects/maity/ticker/subscription", {"add": {"mute": {"types": ["decision"]}}}
+            "/projects/maintainer/maity/ticker/subscription",
+            {"add": {"mute": {"types": ["decision"]}}},
         )
     request = asked(team["hub"], to="owner", task_id=card["id"])
     hold(migrated, card["id"], holder=team["admin"].id)
@@ -772,13 +822,14 @@ def test_a_decisions_followers_are_listed_not_woken_and_only_if_they_may_read(
     proxy = flow.agent(make_client, owner, role="proxy")
     for agent in (proxy, team["web"]):
         agent.patch(
-            "/projects/maity/ticker/subscription", {"add": {"follow": {"types": ["decision"]}}}
+            "/projects/maintainer/maity/ticker/subscription",
+            {"add": {"follow": {"types": ["decision"]}}},
         )
     request = asked(team["hub"], to="owner")
     answer(owner, request, text="Yes.")
-    raw = owner.get(f"/projects/maity/events?after={listed(owner)[0]['seq'] - 1}").json()["items"][
-        0
-    ]
+    raw = owner.get(
+        f"/projects/maintainer/maity/events?after={listed(owner)[0]['seq'] - 1}"
+    ).json()["items"][0]
     by = {r["member_id"]: r for r in raw["payload"]["reasons"]}
     assert by[proxy.id]["why"] == ["follow:type:decision"] and by[proxy.id]["wake"] is False
     assert team["web"].id not in by, "a follower who may not read the request gets nothing"
@@ -803,9 +854,11 @@ def test_the_area_filter_looks_at_paths_too(owner: flow.Human, migrated: Engine)
 
 def test_after_pages_carry_a_cursor_while_more_follow(owner: flow.Human) -> None:
     seqs = [note(owner, text=f"n{n}", areas=["/"])["seq"] for n in range(3)]
-    first = owner.get(f"/projects/maity/ticker?after={seqs[0] - 1}&limit=2").json()
+    first = owner.get(f"/projects/maintainer/maity/ticker?after={seqs[0] - 1}&limit=2").json()
     assert [i["seq"] for i in first["items"]] == seqs[:2] and first["next_cursor"]
-    second = owner.get(f"/projects/maity/ticker?limit=2&cursor={first['next_cursor']}").json()
+    second = owner.get(
+        f"/projects/maintainer/maity/ticker?limit=2&cursor={first['next_cursor']}"
+    ).json()
     assert [i["seq"] for i in second["items"]] == seqs[2:] and second["next_cursor"] is None
 
 
@@ -829,22 +882,24 @@ def test_the_packet_counts_every_item(owner: flow.Human, team: dict[str, flow.Ag
 
 def test_settings_null_removes_a_key(owner: flow.Human) -> None:
     enable(owner)
-    owner.patch("/projects/maity", {"settings": {"ticker": None}})
-    assert "ticker" not in owner.get("/projects/maity").json()["settings"]
+    owner.patch("/projects/maintainer/maity", {"settings": {"ticker": None}})
+    assert "ticker" not in owner.get("/projects/maintainer/maity").json()["settings"]
 
 
 def test_settings_a_named_key_is_replaced_whole(owner: flow.Human) -> None:
     enable(owner, contract_files=["docs/api.md"])
-    owner.patch("/projects/maity", {"settings": {"ticker": {"enabled": False}}})
-    assert owner.get("/projects/maity").json()["settings"]["ticker"]["contract_files"] == []
+    owner.patch("/projects/maintainer/maity", {"settings": {"ticker": {"enabled": False}}})
+    assert (
+        owner.get("/projects/maintainer/maity").json()["settings"]["ticker"]["contract_files"] == []
+    )
 
 
 def test_settings_empty_changes_nothing(owner: flow.Human) -> None:
-    owner.patch("/projects/maity", {"settings": {"release_checklist": ["CHANGELOG"]}})
+    owner.patch("/projects/maintainer/maity", {"settings": {"release_checklist": ["CHANGELOG"]}})
     enable(owner)
-    before = owner.get("/projects/maity").json()["settings"]
-    assert owner.patch("/projects/maity", {"settings": {}}).status_code == 200
-    assert owner.get("/projects/maity").json()["settings"] == before
+    before = owner.get("/projects/maintainer/maity").json()["settings"]
+    assert owner.patch("/projects/maintainer/maity", {"settings": {}}).status_code == 200
+    assert owner.get("/projects/maintainer/maity").json()["settings"] == before
 
 
 def test_a_reader_who_lost_access_loses_the_item_the_notice_and_its_shape(
@@ -855,14 +910,14 @@ def test_a_reader_who_lost_access_loses_the_item_the_notice_and_its_shape(
     request = asked(team["hub"], to="owner")
     answer(owner, request, text="Yes.")
     [item] = listed(proxy)
-    owner.post(f"/projects/maity/events/{item['seq']}/redact", {"reason": "x"})
-    seen = proxy.get(f"/projects/maity/events?after={item['seq'] - 1}").json()["items"]
+    owner.post(f"/projects/maintainer/maity/events/{item['seq']}/redact", {"reason": "x"})
+    seen = proxy.get(f"/projects/maintainer/maity/events?after={item['seq'] - 1}").json()["items"]
     [notice] = [e for e in seen if e["kind"] == "event_redacted"]
     assert notice["audience"] == [
         f"member:{proxy.id}"
     ], "a decision's notice: its own token, no all"
-    owner.patch(f"/projects/maity/members/{proxy.id}", {"role": "member"})
-    after = proxy.get(f"/projects/maity/events?after={item['seq'] - 1}").json()["items"]
+    owner.patch(f"/projects/maintainer/maity/members/{proxy.id}", {"role": "member"})
+    after = proxy.get(f"/projects/maintainer/maity/events?after={item['seq'] - 1}").json()["items"]
     assert not any(e["seq"] == item["seq"] for e in after), "no item"
     assert not any(e["kind"] == "event_redacted" for e in after), "no notice"
     assert listed(proxy) == []

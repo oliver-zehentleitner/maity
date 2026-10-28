@@ -13,7 +13,7 @@ from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_mentions import second_owners_agent
 
-BASE = "/projects/maity/conversations"
+BASE = "/projects/maintainer/maity/conversations"
 
 
 @pytest.fixture
@@ -74,12 +74,16 @@ def test_check_in_with_names_an_agent_and_the_instruction_uses_the_long_form(
 ) -> None:
     target = named(make_client, owner, "agent-lead")
     newcomer = named(make_client, owner, "agent-new")
-    owner.patch("/projects/maity", {"settings": {"onboarding": {"check_in_with": target.id}}})
+    owner.patch(
+        "/projects/maintainer/maity", {"settings": {"onboarding": {"check_in_with": target.id}}}
+    )
     hint = newcomer.resume().json()["onboarding"]
     assert hint["check_in_with"]["name"] == "maintainer/agent-lead"
     assert "@maintainer/agent-lead " in hint["instruction"]
     # A human target keeps the short form: a human has no long one.
-    owner.patch("/projects/maity", {"settings": {"onboarding": {"check_in_with": owner.id}}})
+    owner.patch(
+        "/projects/maintainer/maity", {"settings": {"onboarding": {"check_in_with": owner.id}}}
+    )
     hint = newcomer.resume().json()["onboarding"]
     assert "name" not in hint["check_in_with"]
     assert "@maintainer " in hint["instruction"]
@@ -90,7 +94,9 @@ def test_the_stored_by_carries_no_name(owner: flow.Human, make_client: ClientFac
     admin = flow.agent(
         make_client, owner, role="admin", agent={"handle": "agent-a", "display_name": "A"}
     )
-    written = admin.patch("/projects/maity", {"settings": {"onboarding": {"briefing": "hi"}}})
+    written = admin.patch(
+        "/projects/maintainer/maity", {"settings": {"onboarding": {"briefing": "hi"}}}
+    )
     assert written.status_code == 200, written.text
-    by = owner.get("/projects/maity").json()["settings"]["onboarding"]["by"]
+    by = owner.get("/projects/maintainer/maity").json()["settings"]["onboarding"]["by"]
     assert by == {"id": admin.id, "handle": "agent-a", "kind": "agent"}

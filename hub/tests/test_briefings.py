@@ -24,7 +24,7 @@ def owner(make_client: ClientFactory, migrated: Engine) -> flow.Human:
 
 
 def history(who: Any, member_id: str) -> Any:
-    return who.get(f"/projects/maity/members/{member_id}/briefings")
+    return who.get(f"/projects/maintainer/maity/members/{member_id}/briefings")
 
 
 def latest_member_updated(engine: Engine) -> Any:
@@ -38,7 +38,7 @@ def test_the_join_is_version_1_by_whoever_made_it(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
     agent = flow.agent(make_client, owner, briefing="the hub")
-    view = owner.get(f"/projects/maity/members/{agent.id}").json()
+    view = owner.get(f"/projects/maintainer/maity/members/{agent.id}").json()
     assert (view["briefing"], view["briefing_version"]) == ("the hub", 1)
     assert view["briefing_by"] == {"kind": "human", "id": owner.id, "handle": "maintainer"}
     assert view["briefing_updated_at"] is not None
@@ -50,14 +50,18 @@ def test_a_change_is_a_new_version_and_its_event_says_only_that(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
     agent = flow.agent(make_client, owner, briefing="the hub")
-    changed = owner.patch(f"/projects/maity/members/{agent.id}", {"briefing": "the hub, and CI"})
+    changed = owner.patch(
+        f"/projects/maintainer/maity/members/{agent.id}", {"briefing": "the hub, and CI"}
+    )
     assert changed.json()["briefing_version"] == 2
     event = latest_member_updated(migrated)
     assert (event.payload["changed"], event.payload["briefing_version"]) == (["briefing"], 2)
     assert "briefing" not in event.payload and "the hub" not in str(event.payload)
     items = history(owner, agent.id).json()["items"]
     assert [(i["version"], i["text"]) for i in items] == [(2, "the hub, and CI"), (1, "the hub")]
-    same = owner.patch(f"/projects/maity/members/{agent.id}", {"briefing": "the hub, and CI"})
+    same = owner.patch(
+        f"/projects/maintainer/maity/members/{agent.id}", {"briefing": "the hub, and CI"}
+    )
     assert same.json()["briefing_version"] == 2  # unchanged text: no new version
 
 
@@ -67,7 +71,10 @@ def test_an_admin_agents_change_names_the_agent(
     admin = flow.agent(make_client, owner, role="admin")
     member = flow.agent(make_client, owner)
     assert (
-        admin.patch(f"/projects/maity/members/{member.id}", {"briefing": "docs"}).status_code == 200
+        admin.patch(
+            f"/projects/maintainer/maity/members/{member.id}", {"briefing": "docs"}
+        ).status_code
+        == 200
     )
     [latest, _] = history(owner, member.id).json()["items"]
     assert latest["by"] == {"kind": "agent", "id": admin.id, "handle": latest["by"]["handle"]}
@@ -127,7 +134,7 @@ def test_two_admins_at_once_get_two_versions(
         return real_update(*args)
 
     monkeypatch.setattr(briefings, "update", after_both_read)
-    url = f"/projects/maity/members/{agent.id}"
+    url = f"/projects/maintainer/maity/members/{agent.id}"
     with ThreadPoolExecutor(max_workers=2) as pool:
         answers = list(pool.map(lambda who: who.patch(url, {"briefing": who.id}), [owner, admin]))
     assert [a.status_code for a in answers] == [200, 200], [a.text for a in answers]
@@ -140,7 +147,7 @@ def test_the_packet_names_the_briefings_writer_and_version(
 ) -> None:
     """§5.2: a membership's own briefing comes with who wrote it and its version."""
     agent = flow.agent(make_client, owner, briefing="the hub")
-    owner.patch(f"/projects/maity/members/{agent.id}", {"briefing": "the hub, and CI"})
+    owner.patch(f"/projects/maintainer/maity/members/{agent.id}", {"briefing": "the hub, and CI"})
     block = agent.resume().json()["membership"]
     assert (block["briefing"], block["briefing_source"], block["briefing_version"]) == (
         "the hub, and CI",

@@ -14,10 +14,24 @@ from maity import proc
 
 BEGIN = "<!-- maity:begin -->"
 END = "<!-- maity:end -->"
+# The maintainer's request of 2026-10-27: once joined, an agent talks to its human through
+# Maity alone, because the human follows many agents in one place, not in many chat windows.
+HUMAN_CHANNEL = (
+    "Once joined, talk to your human only through Maity: `maity say human` to chat, "
+    "`maity ask --to human` for decisions and proposals, `maity report` for results. The "
+    "harness terminal is only where your human starts you or unblocks a permission; if they "
+    "write there, answer with one line that points to Maity. Your human follows many agents "
+    "on several machines in one place, not in one chat window per agent."
+)
 PROJECT_CHANNEL = (
     "Maity is the project's main channel: use `maity say`, `maity ask` and `maity report` "
     "for work communication; bring project instructions from other chats onto the relevant "
-    "card or into a Maity message."
+    f"card or into a Maity message. {HUMAN_CHANNEL}"
+)
+SHELL_TEXT = (
+    "Pass Markdown with `code` spans to `maity` as `-` with a quoted heredoc "
+    "(`maity say <to> --type notice - <<'EOF'`) or with `--body-file`, never inline in double "
+    "quotes: the shell runs backtick spans and `$(…)` before `maity` sees the text."
 )
 BLOCK = f"""{BEGIN}
 ## Maity
@@ -25,6 +39,8 @@ BLOCK = f"""{BEGIN}
 This repository is a Maity project. At the start of every session, and after a
 context compaction, run `maity resume` from this clone: it says who you are, what
 you hold, and what you missed. `maity --help` lists the other commands.
+
+{SHELL_TEXT}
 
 {PROJECT_CHANNEL}
 {END}

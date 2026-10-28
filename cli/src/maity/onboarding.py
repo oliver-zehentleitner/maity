@@ -25,6 +25,8 @@ import unicodedata
 from collections.abc import Iterable
 from typing import Any
 
+from maity import pointer
+
 HANDBOOK = "https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md"
 MAX_BODY_LINES = 40
 MAX_BODY_CHARS = 4000
@@ -207,7 +209,7 @@ def _project(packet: dict[str, Any]) -> list[str]:
         return []
     name = project.get("name") or project.get("slug")
     lines = [
-        f"Project: {inline(name)} ({inline(project.get('slug'))}), "
+        f"Project: {inline(name)} ({inline(project.get('full_name') or project.get('slug'))}), "
         f"state {inline(project.get('state'))}"
     ]
     repository = get(project, "repository", "url")
@@ -293,10 +295,7 @@ def _request(req: dict[str, Any], names: dict[str, str], answering: bool = False
     by = f"  answered by {_name(answer.get('by') or '?', names)}"
     lines.append(by + (f": {inline(label or reply)}" if reply else ""))
     if answer.get("talk"):
-        lines.append(
-            "  they want to talk first: read your chat, "
-            "`maity api GET /projects/<slug>/conversations/<your member id>/messages`"
-        )
+        lines.append("  they want to talk first: read your chat, " "`maity chat <your member id>`")
     if answer.get("text"):
         lines += ["  " + q for q in quote(answer["text"])]
     return lines
@@ -436,6 +435,12 @@ def _trust_role(member: dict[str, Any], both: str, single: str) -> str:
     return both.format(trust=inline(member.get("trust")), role=inline(member.get("role")))
 
 
+def _formerly(member: dict[str, Any]) -> str:
+    """`; formerly <alias>, …` for a member's former handles, which still name it (§6.24)."""
+    aliases = [inline(a) for a in member.get("aliases") or [] if isinstance(a, str) and a]
+    return f"; formerly {', '.join(aliases)}" if aliases else ""
+
+
 def memory_entry_lines(entry: dict[str, Any]) -> list[str]:
     """One team, role or community entry: its header, then its text as a quote (§19.2)."""
     kind = entry.get("store")
@@ -531,7 +536,8 @@ def render(packet: Any, first: bool = False, board_empty: bool = False) -> str:
     out: list[str] = []
     ms = _dict(packet.get("membership"))
     names = _names(packet)
-    slug = inline(get(packet, "project", "slug") or "<slug>")
+    # The read-more hints name the API path, `<owner>/<slug>` since the namespace (§6.25).
+    slug = inline(get(packet, "project", "full_name") or "<owner>/<slug>")
     out += _memory(packet)  # the soul first: what the agent loads before anything (§19.3)
     paused = ms.get("paused")
     if isinstance(paused, dict):
@@ -610,12 +616,15 @@ def render(packet: Any, first: bool = False, board_empty: bool = False) -> str:
                 if isinstance(p.get("member_id"), str)
                 else inline(p.get("handle") or "?")
             )
-            + f" ({_trust_role(p, '{trust} {role}', '{role}')}, {inline(p.get('presence'))})"
+            + f" ({_trust_role(p, '{trust} {role}', '{role}')}, {inline(p.get('presence'))}"
+            + _formerly(p)
+            + ")"
             for p in peers
         )
         out += ["", f"Members: {listed}"]
     out += ["", "Next: " + _next_step(packet, isinstance(paused, dict), board_empty)]
     if first:
+        out.append(pointer.HUMAN_CHANNEL)
         out.append(f"How to work as a member, and the rules that matter: {HANDBOOK}")
         out.append(
             "Run `maity resume` at the start of every session; `maity --help` lists the rest."

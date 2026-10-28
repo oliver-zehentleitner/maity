@@ -83,7 +83,8 @@ def put(fake: FakeGitHub, path: str, text: str | bytes, ref: str = SHA) -> None:
 
 def contract(owner: flow.Human, **place: Any) -> str:
     response = owner.post(
-        "/projects/maity/tasks", {"title": "A contract", "kind": "contract", "contract": place}
+        "/projects/maintainer/maity/tasks",
+        {"title": "A contract", "kind": "contract", "contract": place},
     )
     assert response.status_code == 201, response.text
     card_id: str = response.json()["id"]
@@ -91,7 +92,7 @@ def contract(owner: flow.Human, **place: Any) -> str:
 
 
 def read(owner: flow.Human, card_id: str) -> Any:
-    return owner.get(f"/projects/maity/tasks/{card_id}/contract")
+    return owner.get(f"/projects/maintainer/maity/tasks/{card_id}/contract")
 
 
 def error(response: Any) -> tuple[int, str, Any]:
@@ -104,7 +105,7 @@ def error(response: Any) -> tuple[int, str, Any]:
 
 def test_path_and_section_are_set_and_checked(owner: flow.Human) -> None:
     card_id = contract(owner, section="6.2")
-    url = f"/projects/maity/tasks/{card_id}"
+    url = f"/projects/maintainer/maity/tasks/{card_id}"
     shown = owner.get(url).json()["contract"]
     assert (shown["path"], shown["section"]) == ("docs/api.md", "6.2")
     moved = owner.patch(url, {"contract": {"path": "docs/agents.md", "section": "2.6.2"}})
@@ -130,7 +131,7 @@ def test_path_and_section_are_set_and_checked(owner: flow.Human) -> None:
         "contract.section": "invalid"
     }
     created = owner.post(
-        "/projects/maity/tasks",
+        "/projects/maintainer/maity/tasks",
         {"title": "x", "kind": "contract", "contract": {"path": "/abs.md"}},
     )
     assert error(created)[2] == {"contract.path": "not_a_path"}
@@ -141,15 +142,15 @@ def test_only_an_editor_moves_the_place_not_the_arbiter_alone(
 ) -> None:
     arbiter = flow.agent(make_client, owner)
     card_id = contract(owner, arbiter=arbiter.id, section="6.2")
-    url = f"/projects/maity/tasks/{card_id}"
+    url = f"/projects/maintainer/maity/tasks/{card_id}"
     assert arbiter.patch(url, {"contract": {"section": "6.20"}}).status_code == 403
     assert arbiter.patch(url, {"contract": {"state": "final"}}).status_code == 200
 
 
 def _history(owner: flow.Human, card_id: str) -> list[dict[str, Any]]:
-    items: list[dict[str, Any]] = owner.get(f"/projects/maity/tasks/{card_id}/history").json()[
-        "items"
-    ]
+    items: list[dict[str, Any]] = owner.get(
+        f"/projects/maintainer/maity/tasks/{card_id}/history"
+    ).json()["items"]
     return [i for i in items if i["field"].startswith("contract.")]
 
 
@@ -164,7 +165,7 @@ def test_a_changed_place_is_in_the_history_and_its_event(
     owner: flow.Human, migrated: Engine
 ) -> None:
     card_id = contract(owner, section="6.2")
-    url = f"/projects/maity/tasks/{card_id}"
+    url = f"/projects/maintainer/maity/tasks/{card_id}"
     moved = owner.patch(url, {"contract": {"path": "docs/agents.md", "section": "2.6"}})
     assert moved.status_code == 200, moved.text
     entries = {e["field"]: e for e in _history(owner, card_id)}
@@ -192,7 +193,7 @@ def test_a_changed_place_is_in_the_history_and_its_event(
 
 def test_the_same_place_again_is_no_change(owner: flow.Human, migrated: Engine) -> None:
     card_id = contract(owner, section="6.2")
-    url = f"/projects/maity/tasks/{card_id}"
+    url = f"/projects/maintainer/maity/tasks/{card_id}"
     seq = _last_update(migrated)
     again = owner.patch(url, {"contract": {"path": "docs/api.md", "section": "6.2"}})
     assert again.status_code == 200, again.text
@@ -242,7 +243,7 @@ def test_the_section_is_read_at_one_commit(owner: flow.Human, github: FakeGitHub
 
 def test_a_card_without_a_section_or_of_another_kind(owner: flow.Human, github: FakeGitHub) -> None:
     assert error(read(owner, contract(owner))) == (404, "not_found", {"contract.section": "unset"})
-    plain = owner.post("/projects/maity/tasks", {"title": "x"}).json()["id"]
+    plain = owner.post("/projects/maintainer/maity/tasks", {"title": "x"}).json()["id"]
     assert error(read(owner, plain))[2] == {"contract": "contracts_only"}
     assert read(owner, "ctr-nothing").status_code == 404
 
@@ -302,7 +303,9 @@ def test_a_moved_file_or_a_new_commit_is_never_answered_from_an_older_read(
     again = read(owner, card_id).json()
     assert (again["ref"], again["heading"]) == (OTHER, "## 6.2 Members, rewritten")
     # A changed path: the card's place at the call, never the older one.
-    owner.patch(f"/projects/maity/tasks/{card_id}", {"contract": {"path": "docs/moved.md"}})
+    owner.patch(
+        f"/projects/maintainer/maity/tasks/{card_id}", {"contract": {"path": "docs/moved.md"}}
+    )
     github.answers[f"/repos/acme/maity/contents/docs/moved.md?ref={OTHER}"] = None
     assert error(read(owner, card_id))[2] == {"contract.path": "not_found_on_forge"}
 

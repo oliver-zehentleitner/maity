@@ -43,7 +43,7 @@ window.Maity = window.Maity || {};
   // What the runner says, or that it has not acted on this generation yet.
   function stateLine(ctx, p) {
     const a = p.approval || {};
-    const ask = (text) => h("span", { class: "placement-consent" }, text,
+    const ask = (text) => h("span", { class: "placement-consent pill pill-warn" }, text,
       a.request_id ? [" — ", h("a", { href: ctx.link("inbox", a.request_id) }, "answer it in the inbox")] : null);
     if (a.status === "pending") return ask("Waits for consent to start");
     const r = p.reported;
@@ -56,10 +56,26 @@ window.Maity = window.Maity || {};
     const loop = r.reason === "crash_loop" && r.crash_count
       ? " (" + r.crash_count + " quick exits within " + Math.round((r.crash_window_seconds || 0) / 60) + " min)" : "";
     const bad = ["failed"].includes(r.state) || r.reason === "crash_loop";
-    return h("span", { class: "placement-state state-" + r.state + (bad ? " flag-inline" : "") },
+    // A pill with a dot, so a failure stands out of the row (the
+    // designer's pass part 3): running ok, failed bad, the rest grey.
+    const tone = bad ? "pill-bad" : r.state === "running" ? "pill-ok" : "pill-idle";
+    return h("span", { class: "placement-state pill " + tone + " state-" + r.state + (bad ? " flag-inline" : "") },
       (STATES[r.state] || r.state) + (why ? ": " + why + loop : "") + (r.detail ? " · " + r.detail : ""),
       r.retry_at ? " · again " + formatTime(r.retry_at) : "",
       " · since " + formatAgo(r.since, M.api.now()), change);
+  }
+
+  // A command to type on the runner's machine: its name, the command in a
+  // box that scrolls sideways rather than running past the row, and Copy.
+  function command(name, text) {
+    const copy = h("button", { type: "button", class: "small", "aria-label": "Copy the " + name.toLowerCase() + " command" }, "Copy");
+    copy.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(text); copy.textContent = "Copied"; } catch (err) { copy.textContent = "Copy failed: select the text"; }
+      window.setTimeout(() => { copy.textContent = "Copy"; }, 2000);
+    });
+    // A box that scrolls sideways is reachable by keyboard, and named.
+    return h("div", { class: "placement-command" }, h("span", { class: "muted" }, name + ": "),
+      h("code", { tabindex: "0", role: "region", "aria-label": name + " command" }, text), copy);
   }
 
   // The section, read and drawn into the Agents view. `credentials`: the
@@ -67,7 +83,7 @@ window.Maity = window.Maity || {};
   // for whether a placement's credential was revoked (§15.6 `rejoin`).
   async function section(ctx, credentials) {
     let served = false;
-    try { served = await M.api.hubHas("GET", "/projects/{slug}/placements"); } catch (err) { served = false; }
+    try { served = await M.api.hubHas("GET", "/projects/{owner}/{slug}/placements"); } catch (err) { served = false; }
     if (!served) return null;
     const box = h("section", { class: "placements", "aria-labelledby": "placements-title" });
     const list = h("ul", { class: "placement-list" });
@@ -161,15 +177,16 @@ window.Maity = window.Maity || {};
         h("dl", { class: "facts" },
           h("dt", null, "Runs"), h("dd", null, p.harness + (p.model ? " · " + p.model : "") + " · " + p.mode),
           h("dt", null, "Wanted"), h("dd", null, p.desired === "running" ? "running" : "stopped"),
-          h("dt", null, "Reported"), h("dd", null, stateLine(ctx, p)),
-          h("dt", null, "Generation"), h("dd", null, String(p.generation),
-            p.reported && p.reported.reported_at ? " · last report " + formatAgo(p.reported.reported_at, M.api.now()) : "")),
+          // The generation is for the curious: folded into the reported line, muted.
+          h("dt", null, "Reported"), h("dd", null, stateLine(ctx, p),
+            h("span", { class: "muted placement-generation" }, " · generation " + p.generation
+              + (p.reported && p.reported.reported_at ? " · last report " + formatAgo(p.reported.reported_at, M.api.now()) : "")))),
         actions(p),
-        // The runner's owner sees how to look at it (§15.5: theirs only).
-        p.session_hint || p.logs_hint ? h("p", { class: "hint placement-hints" },
-          p.session_hint ? ["Session: ", h("code", null, p.session_hint)] : null,
-          p.session_hint && p.logs_hint ? " · " : null,
-          p.logs_hint ? ["Logs: ", h("code", null, p.logs_hint)] : null) : null)));
+        // The runner's owner sees how to look at it (§15.5: theirs only),
+        // each command in a box of its own that scrolls, with Copy.
+        p.session_hint || p.logs_hint ? h("div", { class: "placement-hints" },
+          p.session_hint ? command("Session", p.session_hint) : null,
+          p.logs_hint ? command("Logs", p.logs_hint) : null) : null)));
     }
 
     let reading = null;

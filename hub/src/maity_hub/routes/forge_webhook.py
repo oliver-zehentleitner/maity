@@ -7,15 +7,16 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, select
 
-from maity_hub import forge_webhook, idempotency
+from maity_hub import forge_webhook, idempotency, namespace
 from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.deps import HumanCaller, engine_of, settings_of
+from maity_hub.namespace import ProjectRoute
 
-router = APIRouter()
+router = APIRouter(route_class=ProjectRoute)
 
 
-@router.get("/projects/{slug}/forge/webhook")
+@router.get("/projects/{owner}/{slug}/forge/webhook")
 def get_webhook(slug: str, request: Request, caller: HumanCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
@@ -27,7 +28,7 @@ def get_webhook(slug: str, request: Request, caller: HumanCaller) -> JSONRespons
         )
 
 
-@router.post("/projects/{slug}/forge/webhook/secret")
+@router.post("/projects/{owner}/{slug}/forge/webhook/secret")
 def rotate_secret(slug: str, request: Request, caller: HumanCaller) -> JSONResponse:
     """The secret is answered once, here; a replay does not show it again (§17.4)."""
     settings = settings_of(request)
@@ -38,13 +39,14 @@ def rotate_secret(slug: str, request: Request, caller: HumanCaller) -> JSONRespo
         secret = forge_webhook.rotate(
             conn, mine.project, settings.secret_key, caller.actor(mine.id), mine.principal_id
         )
-        body = {"secret": secret, "url": forge_webhook.url(settings.public_url, slug)}
+        name = namespace.full_name(conn, mine.project)  # the current one, not an alias
+        body = {"secret": secret, "url": forge_webhook.url(settings.public_url, name)}
         return idempotency.Outcome(201, "forge_webhook", mine.project.id, body)
 
     return idempotency.run(engine_of(request), request, caller, action)
 
 
-@router.delete("/projects/{slug}/forge/webhook/secret")
+@router.delete("/projects/{owner}/{slug}/forge/webhook/secret")
 def remove_secret(slug: str, request: Request, caller: HumanCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)

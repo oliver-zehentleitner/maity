@@ -59,6 +59,14 @@ def canonical(
     return "\n".join([*lines, hashlib.sha256(body).hexdigest()])
 
 
+# The member list a test gets unless it routes its own: this agent and its human (§6.2).
+MEMBERS = [
+    {"id": "hum-1", "kind": "human", "handle": "m", "aliases": []},
+    {"id": "agt-b", "kind": "agent", "handle": "agent-b", "aliases": [], "owner_id": "hum-1",
+     "name": "m/agent-b"},
+]  # fmt: skip
+
+
 @dataclass
 class Seen:
     method: str
@@ -226,7 +234,9 @@ def _handler(hub: FakeHub) -> type[BaseHTTPRequestHandler]:
                         "me": {"member_id": "agt-b", "owner": {"id": "hum-1", "handle": "m"}},
                     },
                 )
-            if path == "/api/v1/projects/maity/events":
+            if (self.command, path) == ("GET", "/api/v1/projects/oliver/maity/members"):
+                return self._send(200, {"items": MEMBERS, "next_cursor": None})
+            if path == "/api/v1/projects/oliver/maity/events":
                 after = int(dict(urllib.parse.parse_qsl(query)).get("after", "0"))
                 items = [e for e in hub.events if e["seq"] > after]
                 if not items and "wait=" in query:

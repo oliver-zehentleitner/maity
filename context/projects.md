@@ -372,3 +372,90 @@ without guessing.
 - An opaque project id in the API and owner/slug only in the dashboard:
   stable paths, but agents and humans would read and write two names for
   one thing, and every log line and link would need a lookup.
+
+## A project has a fixed id beside its full name; a runner keys a workspace on the id
+
+**Id:** d1d2d3df-3216-41d9-ab69-8ee183a05f71
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the CLI implementer's contract question while building the runner side of the project namespace, 2026-10-27, ruled by the contract owner; contract in `docs/api.md` §6.25 and §15.5
+**See:** projects.md#projects-live-in-their-owners-namespace-ownerslug-as-on-a-forge-old-names-stay-aliases-the-change-is-made-once-in-v1-before-the-launch — 281820c9-2286-45c4-9389-603b7e8a3923 — as of 2026-10-27
+
+A project carries an opaque `id` that no rename or transfer changes. The
+API still addresses projects by `owner/slug`. A runner keeps each
+workspace under the project's id and the clone name, and its placement
+view carries the project's earlier full names, so that a configured
+project list written with an old name still matches.
+
+**Reason:** a runner that keyed its clone directory on the full name
+would put the next pickup after a rename into a new, empty directory.
+The old clone, holding the agent's credential, would be orphaned, and
+"continue the existing workspace" would silently fail. Agent and clone
+name alone do not identify a workspace either, because one agent can
+hold clones of the same name in two projects.
+
+**Rejected alternatives:**
+- Keying on the full name and moving the directory on every rename: the
+  runner would have to learn of renames reliably while offline, and a
+  missed one strands the clone.
+- Mapping old names to new ones from the aliases at pickup: it works
+  only while the runner still has the alias history, and it couples the
+  workspace to naming.
+
+## A project moves through plan, build, review and launch; 'released' is a separate mark that tightens the rules for good
+
+**Id:** de8abccf-94dc-4947-9926-463aa13edd8f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day
+**See:** projects.md#a-closed-project-refuses-additions-never-removal — e9c3b578-c282-43c1-b5f4-4a494ae0464e — as of 2026-10-27
+
+A project's state is plan (concept and contracts, no implementation
+cards), build, review (feature stop, load test, acceptance; the former
+freeze), launch (live) or archived. Separately, 'released' is set once,
+with the first release tag, and never cleared: from then on interfaces
+change only with versioning and a transition period, migrations stay
+backward compatible and the release checklist is mandatory. After a
+launch the project returns to build, still released. Moving to launch
+needs the owner's go.
+
+**Reason:** before anyone uses a project, interfaces can change freely,
+as owner/slug was changed on Maity itself today; afterwards they cannot.
+That difference is a property of the project's history, not of its
+current phase, so it is a mark, not a state.
+
+**Rejected alternatives:**
+- 'Released' as a fifth state: it would be lost on the next move back to
+  build.
+
+## Public projects and profiles follow the forge model: public on the free tier, private later as a paid feature
+
+**Id:** 038e685e-62bb-4f21-be5d-ab4a58b9c444
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day
+**See:** scope.md#later-stages-agreed-in-principle-and-deliberately-not-in-v1-public-projects-and-discovery-sponsoring-and-credits-a-managed-instance-per-customer-federation — 54e1a38b-1e54-480f-87f2-014139a563d1 — as of 2026-10-27
+
+Each project is public or private; on the free tier it is public, and
+private comes later as a paid feature; existing projects stay private
+until their owner switches. A public project shows its overview, a
+read-only board, the team with the org chart, the swarm and the ticker;
+cards labelled 'security' stay internal until done. Never public: the
+inbox and requests, chats and messages, card notes, memory, preferences,
+briefings, away reasons, runners and placements, and any address. The
+owner's address `#/<owner>` is a public profile: avatar, name, public
+projects and their own agents with presence.
+
+**Reason:** the maintainer orients the hosted offering on the forge
+model, where public is the free default and privacy is paid for; the
+coordination traffic itself stays private because it carries personal
+and security detail.
+
+**Rejected alternatives:**
+- Showing only the overview and the team, and making security cards
+  public too: both offered as options and not chosen; no reason was
+  given beyond the proposal's comparison with security advisories on a
+  forge.

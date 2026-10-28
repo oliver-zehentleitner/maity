@@ -21,7 +21,7 @@ def owner(make_client: ClientFactory, migrated: Engine) -> flow.Human:
 
 
 def _patch(owner: flow.Human, slug: str, body: dict[str, Any]) -> Any:
-    return owner.patch(f"/projects/{slug}", body)
+    return owner.patch(f"/projects/maintainer/{slug}", body)
 
 
 def test_the_default_provider_is_keep_the_why(owner: flow.Human) -> None:
@@ -150,3 +150,40 @@ def test_a_mirror_is_set_by_the_environment() -> None:
     assert Settings.from_env({"MAITY_KTW_SKILL_SOURCE": mirror}).ktw_skill_source == mirror
     with pytest.raises(ConfigError):
         Settings.from_env({"MAITY_KTW_SKILL_SOURCE": "file:///etc/passwd"})
+
+
+def test_an_optional_set_while_the_provider_is_off_is_kept(owner: flow.Human) -> None:
+    flow.project(owner, "bare", keep_the_why=False)
+    set_ = _patch(owner, "bare", {"policy": {"keep_the_why": "optional"}, "reason": "own"})
+    assert set_.status_code == 200, set_.text
+    on = _patch(owner, "bare", {"memory": {"provider": "keep-the-why"}})
+    assert on.json()["policy"]["keep_the_why"] == "optional"
+
+
+def test_a_stored_required_waits_while_the_provider_is_off(owner: flow.Human) -> None:
+    flow.project(owner)
+    _patch(owner, "maity", {"policy": {"keep_the_why": "required"}, "reason": "own"})
+    off = _patch(owner, "maity", {"memory": {"provider": "none"}})
+    assert off.json()["policy"]["keep_the_why"] == "optional"
+    on = _patch(owner, "maity", {"memory": {"provider": "keep-the-why"}})
+    assert on.json()["policy"]["keep_the_why"] == "required"
+
+
+def test_an_unchanged_optional_set_while_off_still_needs_a_reason(owner: flow.Human) -> None:
+    flow.project(owner, "bare", keep_the_why=False)
+    refused = _patch(owner, "bare", {"policy": {"keep_the_why": "optional"}})
+    assert refused.status_code == 400
+    assert refused.json()["error"]["details"]["fields"] == {"reason": "required"}
+
+
+def test_no_agent_changes_the_keep_the_why_policy(
+    make_client: ClientFactory, owner: flow.Human
+) -> None:
+    flow.project(owner)
+    admin_agent = flow.agent(make_client, owner, role="admin")
+    for policy in ({"keep_the_why": "optional"}, {"keep_the_why_defaults": "ask"}):
+        response = admin_agent.patch(
+            "/projects/maintainer/maity", {"policy": policy, "reason": "x"}
+        )
+        assert response.status_code == 403, response.text
+        assert response.json()["error"]["details"] == {"scope": "project:admin"}

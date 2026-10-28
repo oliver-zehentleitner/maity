@@ -1,4 +1,4 @@
-"""`GET /projects/{slug}/probe` (docs/api.md §11)."""
+"""`GET /projects/{owner}/{slug}/probe` (docs/api.md §11)."""
 
 from __future__ import annotations
 
@@ -11,13 +11,14 @@ from maity_hub import clock, forge, probe
 from maity_hub.access import membership
 from maity_hub.deps import AnyCaller, engine_of, reader_of
 from maity_hub.errors import ApiError, invalid
+from maity_hub.namespace import ProjectRoute
 
-router = APIRouter()
+router = APIRouter(route_class=ProjectRoute)
 
 REF = r"^[^\s~^:?*\[\\]{1,255}$"  # what git accepts in a ref name, roughly
 
 
-@router.get("/projects/{slug}/probe")
+@router.get("/projects/{owner}/{slug}/probe")
 def read_probe(
     slug: str,
     request: Request,

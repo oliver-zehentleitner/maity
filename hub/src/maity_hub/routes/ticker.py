@@ -19,10 +19,11 @@ from maity_hub.access import Membership, membership
 from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import ApiError, invalid, rate_limited
 from maity_hub.models import Strict
+from maity_hub.namespace import ProjectRoute
 from maity_hub.ratelimit import Limiter
 from maity_hub.views import event_views
 
-router = APIRouter()
+router = APIRouter(route_class=ProjectRoute)
 
 PAGE_MAX = 200
 
@@ -161,7 +162,7 @@ def _charge(conn: Connection, mine: Membership, to_all: bool) -> None:
         events.on_rollback(conn, lambda: POSTS_TO_ALL.give_back(key, 1))
 
 
-@router.post("/projects/{slug}/ticker")
+@router.post("/projects/{owner}/{slug}/ticker")
 def post_item(slug: str, body: PostIn, request: Request, caller: AnyCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
@@ -254,7 +255,7 @@ def _uncursor(text: str, filters: str) -> tuple[int, bool]:
     return seq, order == "asc"
 
 
-@router.get("/projects/{slug}/ticker")
+@router.get("/projects/{owner}/{slug}/ticker")
 def get_listing(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     q = request.query_params
     errors: dict[str, str] = {}
@@ -319,7 +320,7 @@ def _load_subscription(conn: Connection, membership_id: str, _request: Request) 
 idempotency.LOADERS["ticker_subscription"] = _load_subscription
 
 
-@router.get("/projects/{slug}/ticker/subscription")
+@router.get("/projects/{owner}/{slug}/ticker/subscription")
 def get_subscription(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
@@ -344,7 +345,7 @@ class SubscriptionPatch(Strict):
 AREA = re.compile(r"^(/|[^/\s][^\s]{0,254})$")
 
 
-@router.patch("/projects/{slug}/ticker/subscription")
+@router.patch("/projects/{owner}/{slug}/ticker/subscription")
 def patch_subscription(
     slug: str, body: SubscriptionPatch, request: Request, caller: AnyCaller
 ) -> JSONResponse:

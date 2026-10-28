@@ -280,12 +280,12 @@ def test_a_runner_credential_as_bearer_is_signature_required(
 @pytest.mark.parametrize(
     ("method", "path", "status", "code"),
     [
-        ("GET", "/api/v1/projects/maity", 404, "not_found"),
-        ("GET", "/api/v1/projects/maity/tasks", 404, "not_found"),
-        ("GET", "/api/v1/projects/maity/members", 404, "not_found"),
-        ("GET", "/api/v1/projects/maity/events", 404, "not_found"),
-        ("GET", "/api/v1/projects/maity/requests", 404, "not_found"),
-        ("GET", "/api/v1/projects/elsewhere/tasks", 404, "not_found"),
+        ("GET", "/api/v1/projects/maintainer/maity", 404, "not_found"),
+        ("GET", "/api/v1/projects/maintainer/maity/tasks", 404, "not_found"),
+        ("GET", "/api/v1/projects/maintainer/maity/members", 404, "not_found"),
+        ("GET", "/api/v1/projects/maintainer/maity/events", 404, "not_found"),
+        ("GET", "/api/v1/projects/maintainer/maity/requests", 404, "not_found"),
+        ("GET", "/api/v1/projects/maintainer/elsewhere/tasks", 404, "not_found"),
         ("GET", "/api/v1/projects", 403, "forbidden"),
         ("GET", "/api/v1/me", 403, "forbidden"),
         ("POST", "/api/v1/me/resume", 403, "forbidden"),

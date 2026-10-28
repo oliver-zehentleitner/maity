@@ -161,7 +161,7 @@ the packet itself, complete.
 ```text
 <git common dir>/maity/            mode 0700  (.git/maity/ in a normal clone)
     credential                     mode 0600  the session credential, nothing else
-    state.json                     mode 0600  hub, project, identity, session, cursor
+    state.json                     mode 0600  hub, project (slug and full name), identity, session, cursor
     env-secret                     mode 0600  this workspace's environment secret
 ~/.local/state/maity/env-secret    mode 0600  this home's environment secret
 ```
@@ -301,18 +301,29 @@ Every command prints one status line, or the hub's answer as JSON with
 message. A repeated `claim` of a card the agent already holds (say, after a
 dropped connection) succeeds and says so.
 
+`…` stands for the project's routes, `/api/v1/projects/<owner>/<slug>`
+(§6.25). The CLI keeps the project's `full_name` (`oliver/maity`) in its
+state and takes it anew from every `maity resume`, so a renamed or
+transferred project needs no new join. A state written before the
+namespace holds the slug alone. The first command that needs the project
+then reads the full name once from `GET /me` and keeps it. A hub that
+needs a newer CLI answers `client_outdated` (426), and the CLI prints the
+minimum version and the upgrade line from the answer.
+
 | Command | Call (`docs/api.md`) |
 |---|---|
 | `maity claim <card> [--reason R]` | `POST …/tasks/{card}/claim` (§6.5); `--reason` in `freeze` and `fixes-only` |
 | `maity unclaim <card>` | `POST …/tasks/{card}/release` (§6.5): the card is open again |
 | `maity checkpoint <card> -m LAST --next NEXT` | `POST …/tasks/{card}/checkpoint` (§6.4), with `branch` and `head` from git; `--no-code` sends neither |
-| `maity say <to> "…" --type T [--task ID]` | `POST …/events` (§8.4); `<to>` is `all`, `role:<role>`, `trust:owner`, `trust:admin` or a member id; `T` is `interface_change`, `blocker`, `go_request`, `review_result`, `handover` or `notice` |
+| `maity say <to> "…" --type T [--task ID]` | `POST …/events` (§8.4); `<to>` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or a handle, current or former, or `<handle>#<instance>` (resolved to the id, see below); `T` is `interface_change`, `blocker`, `go_request`, `review_result`, `handover` or `notice` |
+| text from stdin or a file | the text argument `-` reads standard input: `say <to> -`, `say --chat C -`, `ask -`, `report --summary -`, `checkpoint -m -` or `--next -` (one per command). `--body-file FILE` for `say` and `ask`, `--summary-file` for `report`, `--last-file` and `--next-file` for `checkpoint`. Use it for Markdown with `code` spans or `$(…)`, with a quoted heredoc (`- <<'EOF'`): inline in double quotes, the shell runs them first. Inline text with a gap where a word was (two spaces, a space before punctuation) or an odd number of backticks gets a warning; it is still sent |
 | `maity say human "…"` | `POST …/conversations/{own member id}/messages` (§9): the chat with the human who owns the agent |
 | `maity say --chat <conversation> "…"` | `POST …/conversations/{id}/messages` (§9): a group chat, or the agent's own member id (the same as `say human`); no `--type`, no `--task` |
 | `maity say … --attach FILE` | each file first `POST …/attachments` (§8.7), at most 10; then the message names them. Any form of `say`. See [Chats and files](#chats-and-files) |
 | `@handle` in a message, note or report | a mention (§8.6). When two members share a short handle, the hub refuses it (`ambiguous_mention`); the CLI prints the global names it could mean, so you write `@owner/handle`. Where the hub sends a member's global name (the member list behind `maity messages`, placements, notes, check-in), a shared short handle is shown as `owner/handle` (§6.3); your own is built from the packet. Peers in the resume packet and chat participants show a namesake's id until the hub sends `name` there; a human keeps its handle when only agents share it |
 | `maity answer <request> [--reply ID] [--text T] [--on-behalf-of MEMBER]` | `POST …/requests/{id}/answer` (§7); `--on-behalf-of` (id or handle) is a proxy relaying its owner's answer, sent as `on_behalf_of` (§2.3) |
 | `maity ask "…" --to owner --class decision\|consent --action "METHOD PATH[?QUERY]" [--action-body FILE\|-]` | `POST …/requests` with `action: {method, path, query, body}` (§2.3, §7): a proxy asking its owner's go for one call. The query is put in the order `maity api --query` sends it, the body is the file's text as it is; then `maity api METHOD PATH --json FILE --on-request <request>` |
+| a handle as an argument | `say <to>`, `ask --to`, `takeover --to`, `answer --on-behalf-of` and the placement commands read `GET …/members` and send the member id (§6.24): a current handle, a former one (`aliases`), or a global name `owner/handle` with either part former. Several candidates are refused with their names, unless exactly one is a human whose current handle it is. A name nobody has goes to the hub as given, except for `--on-behalf-of`, which refuses it. The placement commands resolve the name against the member list before they look at the placements, so two members sharing a name are refused and never settled by which one happens to be placed; only a name no member has is matched against the placements' own handles. `maity resume` lists a member's former handles after its presence |
 | `maity release list` | `GET …/tasks?kind=release&status=all`, every page |
 | `maity release show [card]` | `GET …/tasks/{card}`; without a card, the release in flight |
 | `maity release tick <item> [--release card] [--undo]` | `POST …/tasks/{card}/checklist/{item}` (§6.7) |
@@ -663,7 +674,7 @@ change (a warning), and finally `GET /health` on the hub
 url = "https://maity.example.org"
 
 [limits]
-projects = ["maity"]
+projects = ["oliver/maity"]   # full names <owner>/<slug>; an earlier name of a project matches too
 repositories = ["github.com/oliver-zehentleitner/maity"]   # or "github.com/oliver-zehentleitner/*"
 
 [harness.claude-code]
@@ -697,8 +708,15 @@ otherwise) and then starts, restarts, stops, adopts or ends sessions:
 - **Clean environment.** The tmux server starts under `env -i` with only
   `HOME`, `PATH` (= `agent_path`), `LANG` and `TERM`, so `SSH_AUTH_SOCK`,
   `MAITY_STATE_DIR` and the runner's own variables never reach an agent.
-- **Clones.** Each clone is `<workspaces>/<project>/<clone>`, recorded in
-  `<state_dir>/workspaces.json`. The runner runs `git clone` only into a
+- **Clones.** Each clone is `<workspaces>/<project id>/<clone>`, recorded in
+  `<state_dir>/workspaces.json`. The project id (`prj-…`) is fixed, so a
+  renamed or transferred project (`docs/api.md` §6.25) finds its clone and
+  the agent's credential in it again. A clone recorded before the project
+  namespace, under `<workspaces>/<slug>/<clone>`, is taken over in place on
+  the first pickup of the same agent and recorded under the id; it is never
+  moved. `limits.projects` takes full names (`oliver/maity`); a bare slug is
+  a configuration error, since a slug is unique only within its owner's
+  namespace. The runner runs `git clone` only into a
   missing directory and never runs git in an existing clone; it parses
   `.git/config` instead.
 - **Restarts.** A process that exits is restarted after `10 s × 2^n`
@@ -922,7 +940,7 @@ maity runner logs agent-f [--follow]   # a placement's session output (by id or 
 maity runner approve agent-f           # with limits.require_local_approval: let it start
 maity runner stop-all [--grace 30]     # end every agent; refused while the service runs
 maity runner gc --revoked [--yes]      # workspaces whose credential is revoked: list, then remove
-maity runner workspace claim maity/agent-h --agent agt-h   # record a clone made by hand
+maity runner workspace claim prj-7k2m9q/agent-h --agent agt-h   # record a clone made by hand
 ```
 
 `gc` asks the hub through each clone's own `maity`, so the runner never

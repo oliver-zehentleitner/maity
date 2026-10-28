@@ -51,6 +51,7 @@ def _project(conn: Connection) -> str:
     conn.execute(
         insert(t.project).values(
             id=project_id,
+            owner_id=_human(conn),
             slug=project_id,
             name="Maity",
             state="build",

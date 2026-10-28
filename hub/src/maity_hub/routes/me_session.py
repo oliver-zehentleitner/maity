@@ -24,6 +24,7 @@ from maity_hub import (
     ktw_skill,
     memory,
     mentions,
+    namespace,
     onboarding,
     preferences,
     ranks,
@@ -39,6 +40,7 @@ from maity_hub.errors import ApiError
 from maity_hub.forge import Forge
 from maity_hub.ids import new_id
 from maity_hub.models import Strict
+from maity_hub.namespace import ProjectRoute
 from maity_hub.policy import CLOSED_STATES
 from maity_hub.policy import of as policy_of
 from maity_hub.routes.conversations import conversation_packet
@@ -59,7 +61,7 @@ from maity_hub.views import (
     ts,
 )
 
-router = APIRouter()
+router = APIRouter(route_class=ProjectRoute)
 
 PACKET_EVENTS = 100  # then `truncated: true` (§1.7)
 PACKET_REQUESTS = 100  # per list, then `requests.truncated: true`
@@ -97,32 +99,32 @@ OPERATIONS: list[tuple[str, str, str | None]] = [
     ("POST", "/me/limit", None),
     ("GET", "/help", None),
     ("GET", "/projects", None),
-    ("GET", "/projects/{slug}", "project:read"),
-    ("GET", "/projects/{slug}/rules", "project:read"),
-    ("GET", "/projects/{slug}/members", "project:read"),
-    ("GET", "/projects/{slug}/members/{id}", "project:read"),
+    ("GET", "/projects/{owner}/{slug}", "project:read"),
+    ("GET", "/projects/{owner}/{slug}/rules", "project:read"),
+    ("GET", "/projects/{owner}/{slug}/members", "project:read"),
+    ("GET", "/projects/{owner}/{slug}/members/{id}", "project:read"),
     # An admin agent within §2.3 ᵃ: member and reviewer agents, never itself.
-    ("PATCH", "/projects/{slug}/members/{id}", "members:admin"),
-    ("DELETE", "/projects/{slug}/members/{id}", "members:admin"),
-    ("GET", "/projects/{slug}/tasks", "project:read"),
-    ("GET", "/projects/{slug}/tasks/{id}", "project:read"),
-    ("POST", "/projects/{slug}/tasks", "tasks:write"),
-    ("PATCH", "/projects/{slug}/tasks/{id}", "tasks:write"),
-    ("POST", "/projects/{slug}/tasks/{id}/claim", "tasks:write"),
-    ("POST", "/projects/{slug}/tasks/{id}/release", "tasks:write"),
-    ("POST", "/projects/{slug}/tasks/{id}/checkpoint", "tasks:write"),
-    ("POST", "/projects/{slug}/tasks/{id}/report", "tasks:write"),
-    ("POST", "/projects/{slug}/tasks/{id}/assign", "tasks:admin"),
-    ("GET", "/projects/{slug}/requests", "project:read"),
-    ("GET", "/projects/{slug}/requests/{id}", "project:read"),
-    ("POST", "/projects/{slug}/requests", "requests:ask"),
-    ("POST", "/projects/{slug}/requests/{id}/answer", "requests:ask"),
-    ("POST", "/projects/{slug}/requests/{id}/withdraw", "requests:ask"),
-    ("GET", "/projects/{slug}/events", "project:read"),
-    ("POST", "/projects/{slug}/events", "events:post"),
-    ("GET", "/projects/{slug}/conversations", None),
-    ("GET", "/projects/{slug}/conversations/{agent_id}/messages", None),
-    ("POST", "/projects/{slug}/conversations/{agent_id}/messages", None),
+    ("PATCH", "/projects/{owner}/{slug}/members/{id}", "members:admin"),
+    ("DELETE", "/projects/{owner}/{slug}/members/{id}", "members:admin"),
+    ("GET", "/projects/{owner}/{slug}/tasks", "project:read"),
+    ("GET", "/projects/{owner}/{slug}/tasks/{id}", "project:read"),
+    ("POST", "/projects/{owner}/{slug}/tasks", "tasks:write"),
+    ("PATCH", "/projects/{owner}/{slug}/tasks/{id}", "tasks:write"),
+    ("POST", "/projects/{owner}/{slug}/tasks/{id}/claim", "tasks:write"),
+    ("POST", "/projects/{owner}/{slug}/tasks/{id}/release", "tasks:write"),
+    ("POST", "/projects/{owner}/{slug}/tasks/{id}/checkpoint", "tasks:write"),
+    ("POST", "/projects/{owner}/{slug}/tasks/{id}/report", "tasks:write"),
+    ("POST", "/projects/{owner}/{slug}/tasks/{id}/assign", "tasks:admin"),
+    ("GET", "/projects/{owner}/{slug}/requests", "project:read"),
+    ("GET", "/projects/{owner}/{slug}/requests/{id}", "project:read"),
+    ("POST", "/projects/{owner}/{slug}/requests", "requests:ask"),
+    ("POST", "/projects/{owner}/{slug}/requests/{id}/answer", "requests:ask"),
+    ("POST", "/projects/{owner}/{slug}/requests/{id}/withdraw", "requests:ask"),
+    ("GET", "/projects/{owner}/{slug}/events", "project:read"),
+    ("POST", "/projects/{owner}/{slug}/events", "events:post"),
+    ("GET", "/projects/{owner}/{slug}/conversations", None),
+    ("GET", "/projects/{owner}/{slug}/conversations/{agent_id}/messages", None),
+    ("POST", "/projects/{owner}/{slug}/conversations/{agent_id}/messages", None),
 ]
 
 
@@ -417,6 +419,8 @@ def _packet(
         "team": siblings,
         "project": {
             "language": project_language(project),
+            "id": project.id,
+            "full_name": namespace.full_name(conn, project),
             "slug": project.slug,
             "name": project.name,
             "state": project.state,
@@ -448,7 +452,7 @@ def _packet(
         },
         "conversations": conversation_packet(conn, mine, caller),
         "peers": peers,
-        "operations": operations(project, mine.role),
+        "operations": operations(project, mine.role, namespace.full_name(conn, project)),
     }
 
 
@@ -521,7 +525,7 @@ def _requests_block(conn: Connection, mine: Membership, cursor: int) -> dict[str
     }
 
 
-def operations(project: Any, role: str) -> list[str]:
+def operations(project: Any, role: str, full_name: str) -> list[str]:
     allowed = []
     for method, path, scope in OPERATIONS:
         if scope is not None and scope not in listed_scopes(role, "agent"):
@@ -530,7 +534,7 @@ def operations(project: Any, role: str) -> list[str]:
             path.endswith("/claim") or (method == "POST" and path.endswith("/tasks"))
         ):
             continue
-        allowed.append(f"{method} {path.replace('{slug}', project.slug)}")
+        allowed.append(f"{method} {path.replace('{owner}/{slug}', full_name)}")
     return allowed
 
 

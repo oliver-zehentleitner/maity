@@ -30,6 +30,7 @@ REQUEST_KEYS = {
     "while_open",
     "needs_in_session",
     "ktw_ref",
+    "jour_fixe",
     "status",
     "answer",
     "created_at",
@@ -53,7 +54,9 @@ def owner(make_client: ClientFactory, migrated: Engine) -> flow.Human:
 
 
 def ask(who: Any, slug: str = "maity", **body: Any) -> Any:
-    return who.post(f"/projects/{slug}/requests", {"class": "decision", "title": "Which?", **body})
+    """`slug` is the maintainer's project, or a full name (§6.25)."""
+    name = slug if "/" in slug else f"maintainer/{slug}"
+    return who.post(f"/projects/{name}/requests", {"class": "decision", "title": "Which?", **body})
 
 
 def asked(who: Any, slug: str = "maity", **body: Any) -> dict[str, Any]:
@@ -64,7 +67,7 @@ def asked(who: Any, slug: str = "maity", **body: Any) -> dict[str, Any]:
 
 
 def answer(who: Any, request: dict[str, Any], slug: str = "maity", **body: Any) -> Any:
-    return who.post(f"/projects/{slug}/requests/{request['id']}/answer", body)
+    return who.post(f"/projects/maintainer/{slug}/requests/{request['id']}/answer", body)
 
 
 def _events(engine: Engine, kind: str) -> list[Any]:
@@ -216,11 +219,11 @@ def test_waiting_on_a_request_blocks_the_card_and_the_answer_restores_it(
     card = task(owner)
     _claim(agent, card)
     request = asked(agent, task_id=card["id"])
-    blocked = owner.get(f"/projects/maity/tasks/{card['id']}").json()
+    blocked = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()
     assert (blocked["status"], blocked["blocked_by_request"]) == ("blocked", request["id"])
     assert request["task"] == {"id": card["id"], "title": "A card", "status": "blocked"}
     answer(owner, request, text="go ahead")
-    restored = owner.get(f"/projects/maity/tasks/{card['id']}").json()
+    restored = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()
     assert (restored["status"], restored["blocked_by_request"]) == ("in_progress", None)
 
 
@@ -230,10 +233,12 @@ def test_a_request_after_the_report_restores_review(
     agent = flow.agent(make_client, owner)
     card = task(owner)
     _claim(agent, card)
-    agent.post(f"/projects/maity/tasks/{card['id']}/report", _report())
+    agent.post(f"/projects/maintainer/maity/tasks/{card['id']}/report", _report())
     request = asked(agent, task_id=card["id"])
-    agent.post(f"/projects/maity/requests/{request['id']}/withdraw", {"reason": "found it"})
-    assert owner.get(f"/projects/maity/tasks/{card['id']}").json()["status"] == "review"
+    agent.post(
+        f"/projects/maintainer/maity/requests/{request['id']}/withdraw", {"reason": "found it"}
+    )
+    assert owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()["status"] == "review"
 
 
 def test_proceeding_provisionally_does_not_block(
@@ -243,7 +248,10 @@ def test_proceeding_provisionally_does_not_block(
     card = task(owner)
     _claim(agent, card)
     asked(agent, task_id=card["id"], while_open="proceed_provisionally")
-    assert owner.get(f"/projects/maity/tasks/{card['id']}").json()["status"] == "in_progress"
+    assert (
+        owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()["status"]
+        == "in_progress"
+    )
 
 
 def test_cancel_and_release_clear_the_block(owner: flow.Human, make_client: ClientFactory) -> None:
@@ -252,9 +260,11 @@ def test_cancel_and_release_clear_the_block(owner: flow.Human, make_client: Clie
     for card in (first, second):
         _claim(agent, card)
         asked(agent, task_id=card["id"])
-    cancelled = owner.patch(f"/projects/maity/tasks/{first['id']}", {"status": "cancelled"}).json()
+    cancelled = owner.patch(
+        f"/projects/maintainer/maity/tasks/{first['id']}", {"status": "cancelled"}
+    ).json()
     assert (cancelled["status"], cancelled["blocked_by_request"]) == ("cancelled", None)
-    released = agent.post(f"/projects/maity/tasks/{second['id']}/release", {}).json()
+    released = agent.post(f"/projects/maintainer/maity/tasks/{second['id']}/release", {}).json()
     assert (released["status"], released["blocked_by_request"]) == ("open", None)
 
 
@@ -269,9 +279,9 @@ def test_the_inbox_defaults_to_open_requests_addressed_to_me(
     asked(agent, to="role:admin")  # not mine
     done = asked(agent)
     answer(owner, done, text="x")
-    items = owner.get("/projects/maity/requests").json()["items"]
+    items = owner.get("/projects/maintainer/maity/requests").json()["items"]
     assert [r["id"] for r in items] == [mine["id"]]
-    everything = owner.get("/projects/maity/requests?to=all&status=all").json()["items"]
+    everything = owner.get("/projects/maintainer/maity/requests?to=all&status=all").json()["items"]
     assert len(everything) == 3  # the owner answers every class
 
 
@@ -282,10 +292,10 @@ def test_without_requests_answer_to_all_is_mine_and_addressed(
     own = asked(a)
     to_a = asked(b, to=a.id)
     asked(b)  # to the owner: not a's business
-    seen = {r["id"] for r in a.get("/projects/maity/requests?to=all").json()["items"]}
+    seen = {r["id"] for r in a.get("/projects/maintainer/maity/requests?to=all").json()["items"]}
     assert seen == {own["id"], to_a["id"]}
     other = asked(b)
-    assert a.get(f"/projects/maity/requests/{other['id']}").status_code == 403
+    assert a.get(f"/projects/maintainer/maity/requests/{other['id']}").status_code == 403
 
 
 def test_the_inbox_sorts_three_ways_and_pages(
@@ -296,17 +306,28 @@ def test_the_inbox_sorts_three_ways_and_pages(
     low = asked(zed, priority="low")
     urgent = asked(zed, priority="urgent")
     normal = asked(abe)
-    by_priority = [r["id"] for r in owner.get("/projects/maity/requests").json()["items"]]
+    by_priority = [
+        r["id"] for r in owner.get("/projects/maintainer/maity/requests").json()["items"]
+    ]
     assert by_priority == [urgent["id"], normal["id"], low["id"]]
-    by_date = [r["id"] for r in owner.get("/projects/maity/requests?sort=date").json()["items"]]
+    by_date = [
+        r["id"] for r in owner.get("/projects/maintainer/maity/requests?sort=date").json()["items"]
+    ]
     assert by_date == [normal["id"], urgent["id"], low["id"]]
-    by_agent = [r["id"] for r in owner.get("/projects/maity/requests?sort=agent").json()["items"]]
+    by_agent = [
+        r["id"] for r in owner.get("/projects/maintainer/maity/requests?sort=agent").json()["items"]
+    ]
     assert by_agent == [normal["id"], low["id"], urgent["id"]]
-    first = owner.get("/projects/maity/requests?limit=2").json()
-    second = owner.get(f"/projects/maity/requests?limit=2&cursor={first['next_cursor']}").json()
+    first = owner.get("/projects/maintainer/maity/requests?limit=2").json()
+    second = owner.get(
+        f"/projects/maintainer/maity/requests?limit=2&cursor={first['next_cursor']}"
+    ).json()
     assert [r["id"] for r in first["items"] + second["items"]] == by_priority
     assert second["next_cursor"] is None
-    assert owner.get("/projects/maity/requests?sort=loudest").headers["Maity-Error"] == "invalid"
+    assert (
+        owner.get("/projects/maintainer/maity/requests?sort=loudest").headers["Maity-Error"]
+        == "invalid"
+    )
 
 
 def test_the_cross_project_inbox(
@@ -319,14 +340,19 @@ def test_the_cross_project_inbox(
     asked(sample_agent, "sample", priority="high")
     stranger = flow.human(make_client, migrated, "stranger")
     flow.project(stranger, "elsewhere")
-    asked(stranger, "elsewhere")
+    asked(stranger, "stranger/elsewhere")
     for path in ("/requests", "/requests?scope=all"):
         items = owner.get(path).json()["items"]
         assert [(r["project"]["slug"], r["priority"]) for r in items] == [
             ("sample", "high"),
             ("maity", "normal"),
         ]
-        assert items[0]["project"] == {"slug": "sample", "name": "Sample", "state": "build"}
+        assert items[0]["project"] == {
+            "slug": "sample",
+            "full_name": "maintainer/sample",
+            "name": "Sample",
+            "state": "build",
+        }
         assert items[0]["asked_by"]["member_id"] == sample_agent.id
     counts = {p["slug"]: p["open_requests"] for p in owner.get("/me").json()["projects"]}
     assert counts == {"maity": 1, "sample": 1}
@@ -427,8 +453,13 @@ def test_withdrawal_is_the_askers_or_an_answerers(
 ) -> None:
     a, b = flow.agent(make_client, owner), flow.agent(make_client, owner)
     request = asked(a)
-    assert b.post(f"/projects/maity/requests/{request['id']}/withdraw", {}).status_code == 403
-    body = a.post(f"/projects/maity/requests/{request['id']}/withdraw", {"reason": "solved"}).json()
+    assert (
+        b.post(f"/projects/maintainer/maity/requests/{request['id']}/withdraw", {}).status_code
+        == 403
+    )
+    body = a.post(
+        f"/projects/maintainer/maity/requests/{request['id']}/withdraw", {"reason": "solved"}
+    ).json()
     assert body["status"] == "withdrawn"
     event = _events(migrated, "request_withdrawn")[-1]
     assert event.audience == [f"member:{a.id}"] and event.payload["reason"] == "solved"
@@ -460,13 +491,14 @@ def test_a_card_stays_blocked_while_any_waiting_request_is_open(
     first = asked(agent, task_id=card["id"])
     second = asked(agent, task_id=card["id"])
     assert (
-        owner.get(f"/projects/maity/tasks/{card['id']}").json()["blocked_by_request"] == first["id"]
+        owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()["blocked_by_request"]
+        == first["id"]
     )
     answer(owner, first, text="yes")
-    held = owner.get(f"/projects/maity/tasks/{card['id']}").json()
+    held = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()
     assert (held["status"], held["blocked_by_request"]) == ("blocked", second["id"])
-    agent.post(f"/projects/maity/requests/{second['id']}/withdraw", {})
-    freed = owner.get(f"/projects/maity/tasks/{card['id']}").json()
+    agent.post(f"/projects/maintainer/maity/requests/{second['id']}/withdraw", {})
+    freed = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()
     assert (freed["status"], freed["blocked_by_request"]) == ("in_progress", None)
 
 
@@ -484,7 +516,7 @@ def test_a_request_on_an_unheld_card_blocks_nothing(
         **({"assigned_to": agent.id} if state == "assigned" else {}),
     )
     asked(agent, task_id=card["id"])
-    after = owner.get(f"/projects/maity/tasks/{card['id']}").json()
+    after = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()
     assert (after["status"], after["blocked_by_request"]) == (card["status"], None)
     if state != "proposed":
         assert _claim(agent, card).status_code == 200
@@ -493,12 +525,16 @@ def test_a_request_on_an_unheld_card_blocks_nothing(
 def test_done_on_a_blocked_card_clears_the_block(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
-    owner.patch("/projects/maity", {"policy": {"done_authority": "holder"}, "reason": "solo"})
+    owner.patch(
+        "/projects/maintainer/maity", {"policy": {"done_authority": "holder"}, "reason": "solo"}
+    )
     agent = flow.agent(make_client, owner)
     card = task(owner)
     _claim(agent, card)
     asked(agent, task_id=card["id"])
-    done = agent.post(f"/projects/maity/tasks/{card['id']}/report", _report(done=True)).json()
+    done = agent.post(
+        f"/projects/maintainer/maity/tasks/{card['id']}/report", _report(done=True)
+    ).json()
     assert (done["status"], done["blocked_by_request"]) == ("done", None)
 
 
@@ -507,12 +543,16 @@ def test_the_cursor_survives_an_answer_between_pages(
 ) -> None:
     agent = flow.agent(make_client, owner)
     first, second, third = asked(agent), asked(agent), asked(agent)
-    page = owner.get("/projects/maity/requests?limit=2").json()
+    page = owner.get("/projects/maintainer/maity/requests?limit=2").json()
     assert [r["id"] for r in page["items"]] == [first["id"], second["id"]]
     answer(owner, first, text="done")  # leaves the open list
-    rest = owner.get(f"/projects/maity/requests?limit=2&cursor={page['next_cursor']}").json()
+    rest = owner.get(
+        f"/projects/maintainer/maity/requests?limit=2&cursor={page['next_cursor']}"
+    ).json()
     assert [r["id"] for r in rest["items"]] == [third["id"]]
-    other_sort = owner.get(f"/projects/maity/requests?sort=date&cursor={page['next_cursor']}")
+    other_sort = owner.get(
+        f"/projects/maintainer/maity/requests?sort=date&cursor={page['next_cursor']}"
+    )
     assert other_sort.json()["error"]["details"]["fields"] == {"cursor": "other_sort"}
 
 
