@@ -21,7 +21,7 @@ from sqlalchemy.exc import IntegrityError
 
 from maity_hub import clock, ticker_read
 from maity_hub import tables as t
-from maity_hub.scopes import tokens_of
+from maity_hub.scopes import in_admin_team, tokens_of
 
 _PENDING = "maity_pending_events"
 _UNDO = "maity_undo_on_rollback"
@@ -525,9 +525,11 @@ def _merge_wakes(row: Any, membership: Any, principal: str, instance: str | None
             return True
         allowed = f"member:{principal}" in audience
     elif authority == "admin":
-        allowed = membership.role in SEE_ALL_ROLES
-    else:
-        allowed = membership.role in _DONE_ROLES.get(str(authority), ())
+        allowed = in_admin_team(membership.trust, membership.role)
+    else:  # a guest holds none of its role's scopes (§2.3)
+        allowed = membership.trust != "guest" and membership.role in _DONE_ROLES.get(
+            str(authority), ()
+        )
     if not allowed:
         return False
     chosen = (row.wakes or {}).get(principal)
