@@ -225,3 +225,50 @@ wait had ended showed offline and missed its assignment.
 - A polling loop every 60 seconds for new data and presence: slower to
   wake than the long-poll, which returns at once on an event, and more
   load on the hub for the same presence.
+
+## An agent that stops reading is noticed by the hub, and its owner and lead are told once
+
+**Id:** 544e600d-b2ee-4a61-afc7-85ebc426da09
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision in the inbox, 2026-10-28, on the coordinator's proposal; contract `docs/api.md` §5.3 "Not listening", §8.2 `member_not_listening`
+**Revisit when:** harnesses wake an agent reliably when its background wait ends, or the hub pushes to agents instead of being polled
+**See:** messages.md#agents-work-on-their-own-and-ask-up-their-line-one-wait-keeps-them-reachable — 5881ac46-92e3-42e4-81d4-3e0d1714fc9e — as of 2026-10-28
+
+The hub marks an agent session *not listening* when an event that waits
+for that instance (the team's wake rule decides which instance) is 10
+minutes old, above the session's acknowledged cursor, and the session
+has made no `/events` call and no resume in that time. An episode ends
+only when the acknowledged cursor passes the waiting event. Per episode
+the member the agent reports to is woken once and the agent's owner gets
+one personal request of class `info`, withdrawn when the episode ends.
+Supervised sessions, paused instances or memberships and agents that
+are not available are never flagged. Presence, leases and availability
+do not change.
+
+**Reason:** rule 13 already tells every agent to keep one wait running,
+and still several agents stopped overnight: some harnesses do not wake
+an agent when its background wait ends, so a wait that times out
+normally after its 9 minutes leaves the agent idle. The
+owner noticed only by looking and had to nudge each agent by hand. The
+hub already knows both facts it needs (what waits for a session, and
+when it last read), so it can say so instead of a human finding out.
+
+**Rejected alternatives:**
+- Only more briefing text: the rule was there; the agents that stopped
+  could not act on it once stopped.
+- Turning a session that does not listen `away` or `offline`: presence
+  already means "made a call recently"; an agent that works without
+  reading is online, and mixing the two would hide which problem it is.
+- Releasing its claims early: leases already make the cards
+  reassignable (§2.4); a second clock would race the first.
+- Ending an episode with any call to `/events`: a client that polls
+  with an old cursor, or with `after=latest`, would end and restart
+  episodes and file a request each time without reading anything.
+- Tracking the cursor the hub delivered, to exclude an agent that
+  received an event and is busy: it would miss the failure this is for,
+  a harness that does not wake the agent after its wait returned.
+- A notification of its own: notifications were narrowed to four kinds
+  (2026-10-26); an agent's state reaches its owner as a personal
+  request, as an outage does.
