@@ -17,7 +17,9 @@ non-editable on Python 3.13 with the source tree removed, and a job that
 builds the image and migrates with it. The suite picks the database from
 `MAITY_TEST_DATABASE_URL`; without it every test gets its own SQLite
 file. On a server database the fixture downgrades to the empty schema
-before and after each test instead of creating a database per test.
+before and after each test instead of creating a database per test. Since 2026-10-28 a test that needs the schema keeps it from the test before
+(rows deleted), and each parallel worker has its own database: see the entry on
+the parallel suite below.
 
 Which engines run in CI — SQLite, PostgreSQL and MariaDB — came from
 the coordinator's brief; the job split, the versions and the fixture were
