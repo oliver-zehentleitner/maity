@@ -3189,7 +3189,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "password: a wrong current one is put next to its field");
   win.Maity.api.post = realPost5;
 
-  // Pictures (docs/api.md §6.10): one's own and one's agents', on the account.
+  // Pictures (docs/api.md §6.10): one's own on the account, an agent's in its row on Members;
+  // the account keeps only the agents no project of one's own shows (tsk-th1yq0jtk3yf).
   const avCalls = [];
   win.Maity.api.putImage = (p, blob, type) => { avCalls.push(["PUT", p, type]); return realPut(p, blob, type); };
   win.Maity.api.del = (p) => { avCalls.push(["DELETE", p]); return realDel(p); };
@@ -3198,8 +3199,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(avHeading && avHeading.getAttribute("tabindex") === "-1" && byId("avatar-file-hum-maintainer") && text(main).includes("Generated from the member id")
     && !btn(main, "Remove the upload"), "picture: the account shows the picture, where it comes from and an upload; nothing to remove yet");
   const avAgents = main.querySelectorAll(".picture-list li");
-  // The fixtures' seven, and any joined earlier in this run.
-  expect(avAgents.length >= 7 && byId("avatar-file-agt-b") && avAgents.some((li) => text(li).includes("Agent B @maintainer/agent-b")), "picture: the human's agents, each with its own upload and its global name");
+  // agt-x works only in guest/guestlab; an agent added earlier in this run is in no project yet.
+  const avX = avAgents.find((li) => li.getAttribute("data-agent") === "agt-x");
+  expect(avX && byId("avatar-file-agt-x") && text(avX).includes("Spare @maintainer/spare") && text(main).includes("Agents in other projects")
+    && !avAgents.some((li) => /^agt-(a|b|c|d|r|s1)$/.test(li.getAttribute("data-agent"))) && !byId("avatar-file-agt-b"),
+    "picture: the account lists only the agents in no project one is in, each with its upload and global name");
   await pick("avatar-file-hum-maintainer", fakeFile(SVG, 0, "image/svg+xml"));
   expect(!avCalls.length && text(main).includes("Not uploaded: not a PNG, JPEG or WebP image"), "picture: an SVG is refused by its bytes, before sending");
   await pick("avatar-file-hum-maintainer", fakeFile(PNG, 1024 * 1024 + 1));
@@ -3215,11 +3219,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(main, "Remove the upload").click(); for (let k = 0; k < 6; k++) await tick();
   expect(JSON.stringify(avCalls[1]) === JSON.stringify(["DELETE", "/me/avatar"]) && text(main).includes("Uploaded picture removed; the generated one shows again.")
     && !btn(main, "Remove the upload"), "picture: Remove deletes the upload; the generated picture applies again");
+  // An agent in one's project: its picture in its row on Members, opened by the link.
+  await go("#/maintainer/maity/members/agt-b/picture"); for (let k = 0; k < 6; k++) await tick();
+  const avRow = () => main.querySelectorAll("tr.member-manage").find((r) => r.id === "member-manage-agt-b");
+  expect(avRow() && avRow().querySelector(".member-picture-title") && text(avRow().querySelector(".member-picture-title")) === "Picture" && byId("avatar-file-agt-b"),
+    "picture: an own agent's row on Members opens with its picture and upload");
   await pick("avatar-file-agt-b", fakeFile(PNG, 3000));
-  await tick(); await tick();
+  for (let k = 0; k < 6; k++) await tick();
   const bAfter = (await win.Maity.api.getAll("/projects/maintainer/maity/members")).items.find((x) => x.id === "agt-b");
   expect(JSON.stringify(avCalls[2]) === JSON.stringify(["PUT", "/agents/agt-b/avatar", "image/png"]) && bAfter.avatar_source === "uploaded",
     "picture: an owner sets an agent's picture, which its member view carries");
+  expect(avRow() && text(main).includes("Picture uploaded.") && btn(avRow(), "Remove the upload"),
+    "picture: the row stays open, says so and offers Remove");
+  await go("#/account/picture");
   // The hub's refusals in words.
   const refuse = (code, details) => () => Promise.reject(new win.Maity.api.ApiError("x", code === "invalid" ? 400 : 429, "/me/avatar", code, details));
   win.Maity.api.putImage = refuse("invalid", { fields: { body: "dimensions" } });
@@ -4905,10 +4917,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!("keep_the_why" in win.Maity.notify.KIND_WORDS), "keep the why: the owner's notice is a request in the inbox, no notification kind of its own");
   const ktProto = Object.getPrototypeOf(main), ktFocus = ktProto.focus;
   ktProto.focus = function () { document.activeElement = this; };
-  await go("#/account/picture/agt-b"); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
-  const ktAgent = main.querySelectorAll("li.wanted").find((li) => li.getAttribute("data-agent") === "agt-b");
+  await go("#/account/picture/agt-x"); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  const ktAgent = main.querySelectorAll("li.wanted").find((li) => li.getAttribute("data-agent") === "agt-x");
   expect(ktAgent && main.querySelectorAll("li.wanted").length === 1 && document.activeElement === ktAgent.querySelector(".picture-name"),
     "keep the why: the account marks the agent the notice is about and starts there");
+  await go("#/account/picture/agt-b"); for (let k = 0; k < 6; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  expect(win.location.hash === "#/maintainer/maity/members/agt-b/picture" && main.querySelectorAll("tr.member-manage").some((r) => r.id === "member-manage-agt-b"),
+    "keep the why: an agent in one's own project is led to its row on Members, opened");
   ktProto.focus = ktFocus; document.activeElement = undefined;
 
   // Subtasks (docs/api.md §6.4): children folded under their parent with the hub's counts, a child whose parent
