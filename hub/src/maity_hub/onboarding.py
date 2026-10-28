@@ -7,7 +7,7 @@ from typing import Any
 from pydantic import Field
 from sqlalchemy import Connection, func, select, update
 
-from maity_hub import clock, policy
+from maity_hub import clock, namespace, policy
 from maity_hub import tables as t
 from maity_hub.errors import invalid
 from maity_hub.mentions import global_name
@@ -254,5 +254,5 @@ def member_removed(conn: Connection, project_id: str, removed: str, actor: Any) 
         ["all"],
         {"fields": {"settings.onboarding": announcement}},
         actor=actor,
-        subject=("project", project.slug),
+        subject=("project", namespace.full_name(conn, project)),
     )

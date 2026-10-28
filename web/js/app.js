@@ -6,7 +6,7 @@
 // Routes:
 //   #/all                         everything waiting for the human, all projects
 //   #/new                         create a project
-//   #/p/<slug>/<view>[/<arg>...]  a view inside one project
+//   #/<owner>/<slug>/<view>[/<arg>...]  a view inside one project (§6.25)
 //   (empty)                       #/all with several projects, else the inbox
 //                                 (no project yet: #/all shows the empty state)
 "use strict";
@@ -24,11 +24,12 @@ window.Maity = window.Maity || {};
     // Redrawn in place on task_*, request_* and probe_observed (js/overview.js).
     { route: "overview", label: "Overview" },
     { route: "board", label: "Board", watch: /^task_/, changed: "The board changed." },
-    // One card (#/p/<slug>/tasks/<id>, an id's link, js/ids.js): the board
+    // One card (#/<owner>/<slug>/tasks/<id>, an id's link, js/ids.js): the board
     // with that card marked; its tab is the board's.
     { route: "tasks", view: "board", label: "Board", tab: false, current: "board", watch: /^task_/, changed: "The board changed." },
-    { route: "agents", label: "Agents", watch: /^(member_|session_|credential_)/, changed: "The agents changed." },
-    { route: "members", label: "Members", watch: /^member_/, changed: "The members changed." },
+    // No tab: the agents are in Members (tsk-7v2snhk002ak); old links lead there.
+    { route: "agents", label: "Agents", tab: false },
+    { route: "members", label: "Members", watch: /^(member_|session_|credential_)/, changed: "The members changed." },
     { route: "org", label: "Organisation", watch: /^member_/, changed: "The organisation changed." },
     { route: "chat", label: "Chat" },
     // Redrawn in place from the feed (js/messages.js).
@@ -77,9 +78,14 @@ window.Maity = window.Maity || {};
 
   const own = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
 
-  function projectLink(slug, view, ...rest) {
-    return "#/p/" + [slug, view].concat(rest).map(encodeURIComponent).join("/");
+  // A project's address is its full name (§6.25): #/<owner>/<slug>/<view>.
+  function projectLink(full, view, ...rest) {
+    return "#/" + M.api.projectPath(full) + "/" + [view].concat(rest).map(encodeURIComponent).join("/");
   }
+  // The dashboard's own first words: never a namespace (§6.25, a handle may
+  // not be one of them).
+  const OWN_WORDS = ["account", "admin", "agents", "all", "chats", "components", "invite", "join", "login", "new", "notifications",
+    "observe", "p", "register", "requests", "runners", "s", "settings", "sign-in"];
 
   // Throws URIError on a malformed escape; called inside render's try.
   function parseHash() {
@@ -90,8 +96,9 @@ window.Maity = window.Maity || {};
     if (parts[0] === "invite" && parts[1]) return { scope: "invite", token: parts[1] };
     if (parts[0] === "register") return { scope: "register" };
     if (parts[0] === "notifications") return { scope: "notifications" };
-    // A project's public swarm page (§6.22), with or without a session.
-    if (parts[0] === "s" && parts[1]) return { scope: "public-swarm", slug: parts[1] };
+    // A project's public swarm page (§6.22), with or without a session; the
+    // old #/s/<slug> asks the hub's old address, which leads on or not.
+    if (parts[0] === "s" && parts[1]) return { scope: "public-swarm", slug: parts[2] ? parts[1] + "/" + parts[2] : parts[1] };
     if (parts[0] === "chats") return { scope: "chats", args: parts.slice(1) };
     // The login page, always reachable (docs/api.md §16.7); signed in, the root.
     if (parts[0] === "login") return { scope: "login" };
@@ -99,11 +106,13 @@ window.Maity = window.Maity || {};
     if (parts[0] === "new") return { scope: "new" };
     if (parts[0] === "account") return { scope: "account", args: parts.slice(1) };
     if (parts[0] === "runners") return { scope: "runners" };
-    if (parts[0] === "observe" && parts[1]) return { scope: "observe", slug: parts[1], args: parts.slice(2) };
+    if (parts[0] === "observe" && parts[2]) return { scope: "observe", slug: parts[1] + "/" + parts[2], args: parts.slice(3) };
     if (parts[0] === "admin" && !parts[1]) return { scope: "instance-admin" };
     if (parts[0] === "admin" && parts[1] === "users") return { scope: "admin-users" };
-    if (parts[0] === "p" && parts[1]) {
-      return { scope: "project", slug: parts[1], route: parts[2] || "inbox", args: parts.slice(3) };
+    // #/p/<slug>/…, the address before namespaces: rewritten by legacy_slug.
+    if (parts[0] === "p" && parts[1]) return { scope: "legacy", slug: parts[1], route: parts[2] || "inbox", args: parts.slice(3) };
+    if (parts[1] && !OWN_WORDS.includes(parts[0])) {
+      return { scope: "project", slug: parts[0] + "/" + parts[1], route: parts[2] || "inbox", args: parts.slice(3) };
     }
     return { scope: "unknown" };
   }
@@ -283,7 +292,7 @@ window.Maity = window.Maity || {};
   // ---- project state and absence ----------------------------------------
 
   // State (owner and admin, with a reason) and absence (owner only), as
-  // PATCH /projects/{slug}.
+  // PATCH /projects/{owner}/{slug}.
   // The hub's rule for a repository URL (§6.1), as the create view says it too.
   const FORGE_RULE = "Must be https://<forge host>/<owner>/<name> on a forge this hub is configured for.";
   M.FORGE_RULE = FORGE_RULE;
@@ -475,6 +484,7 @@ window.Maity = window.Maity || {};
     // Humans only, as every policy field (§2.3 ʰ); where the hub knows it.
     if (humanAdmin && ctx.project.policy && "badge" in ctx.project.policy) append(panel, badgeForm(ctx, save));
     if (humanAdmin && ctx.project.policy && "keep_the_why" in ctx.project.policy) append(panel, keepTheWhyForm(ctx, save));
+    if (humanAdmin && ctx.project.policy && "member_agents" in ctx.project.policy) append(panel, memberAgentsForm(ctx, save));
     // Only on a hub with group chats: without them there is no closed one.
     if (ctx.canAdmin && M.groupChat) {
       const slot = h("div", { class: "remove-reported-slot" });
@@ -731,6 +741,41 @@ window.Maity = window.Maity || {};
     h("button", { type: "submit", disabled: off ? true : null }, "Change"));
   }
 
+  // §3.1 "Bringing your own agent", §6.1: whether members add agents of
+  // their own, and how many each may hold here; a human with project:admin,
+  // with a reason, as every policy field.
+  function memberAgentsForm(ctx, save) {
+    const pol = ctx.project.policy;
+    const on = h("select", { id: "member-agents-select" }, [["on", "On: members add agents of their own"], ["off", "Off: only admins add agents"]]
+      .map(([v, l]) => h("option", { value: v }, l)));
+    on.value = pol.member_agents || "on";
+    const max = h("input", { id: "member-agents-max", type: "number", min: "0", max: "20", step: "1" });
+    max.value = String(pol.member_agents_max === undefined ? 3 : pol.member_agents_max);
+    const reason = h("input", { id: "member-agents-reason", required: true, placeholder: "Why it changes (logged)" });
+    const error = h("p", { class: "field-error", id: "member-agents-error", role: "alert" });
+    return h("form", {
+      class: "inline-form member-agents-form",
+      onsubmit: (e) => {
+        e.preventDefault();
+        const n = Number(max.value);
+        if (!Number.isInteger(n) || n < 0 || n > 20) { error.textContent = "Agents per member: a whole number from 0 to 20."; max.focus(); return; }
+        const policy = {};
+        if (on.value !== (pol.member_agents || "on")) policy.member_agents = on.value;
+        if (n !== (pol.member_agents_max === undefined ? 3 : pol.member_agents_max)) policy.member_agents_max = n;
+        if (!Object.keys(policy).length) return;
+        if (!reason.value.trim()) { reason.focus(); return; }
+        save({ policy, reason: reason.value.trim() }, "Members' own agents");
+      },
+    },
+    h("h2", { class: "panel-title" }, "Members' own agents"),
+    h("p", { class: "hint" }, "A member may add agents of their own: as member or guest, as coder, reviewer, tester or designer, reporting to them. "
+      + "Turning it off stops new ones; joins already handed out stay usable."),
+    h("label", { for: "member-agents-select" }, "Members add agents"), on,
+    h("label", { for: "member-agents-max" }, "Agents per member (active and open joins)"), max, error,
+    h("label", { for: "member-agents-reason" }, "Reason"), reason,
+    h("button", { type: "submit" }, "Save"));
+  }
+
   function badgeForm(ctx, save) {
     const current = ctx.project.policy.badge;
     const select = h("select", { id: "badge-select" }, BADGES.map(([v, l]) => h("option", { value: v, selected: v === current }, l)));
@@ -739,8 +784,8 @@ window.Maity = window.Maity || {};
     // As reached in this tab; a file:// page has no origin to name.
     const raw = window.location && window.location.origin;
     const origin = raw && raw !== "null" ? raw : "https://<hub>";
-    const url = origin + "/badge/" + encodeURIComponent(ctx.slug) + ".svg";
-    const snippet = "[![maity](" + url + ")](" + origin + "/#/p/" + encodeURIComponent(ctx.slug) + "/overview)";
+    const url = origin + "/badge/" + M.api.projectPath(ctx.slug) + ".svg";
+    const snippet = "[![maity](" + url + ")](" + origin + "/" + projectLink(ctx.slug, "overview") + ")";
     const copy = h("button", {
       type: "button",
       onclick: async () => {
@@ -769,7 +814,7 @@ window.Maity = window.Maity || {};
     current !== "off" && M.api.source === "api"
       // Versioned by the rules: a policy change bumps it, so a cached
       // badge of the old variant is not shown (§6.20: max-age=60).
-      ? h("img", { class: "badge-preview", src: "/badge/" + encodeURIComponent(ctx.slug) + ".svg?v=" + encodeURIComponent(ctx.project.rules_version || 0),
+      ? h("img", { class: "badge-preview", src: "/badge/" + M.api.projectPath(ctx.slug) + ".svg?v=" + encodeURIComponent(ctx.project.rules_version || 0),
         alt: "The project's badge as the hub serves it" }) : null,
     h("div", { class: "paste-row" }, h("code", { class: "paste-line" }, snippet), copy),
     current === "off" ? h("p", { class: "muted" }, "While the badge is off, its address answers not found.") : null,
@@ -844,10 +889,10 @@ window.Maity = window.Maity || {};
     return h("nav", { class: "switcher", "aria-label": "Projects" },
       h("a", { href: "#/all", "aria-current": ctx.scope === "all" ? "page" : null }, "All projects", all),
       ctx.projects.map((p) => h("a", {
-        href: projectLink(p.slug, "inbox"),
-        "aria-current": ctx.scope === "project" && p.slug === ctx.slug ? "page" : null,
+        href: projectLink(p.full_name, "inbox"),
+        "aria-current": ctx.scope === "project" && p.full_name === ctx.slug ? "page" : null,
       },
-      projectMark(p.slug, p.name, (ctx.projectViews || {})[p.slug], "small"),
+      projectMark(p.full_name, p.name, (ctx.projectViews || {})[p.full_name], "small"),
       p.name,
       h("span", { class: "dot state-dot-" + p.state, title: STATE_LABELS[p.state] || p.state, "aria-label": STATE_LABELS[p.state] || p.state }),
       pill(p))),
@@ -883,7 +928,7 @@ window.Maity = window.Maity || {};
   // chats (docs/api.md §18.2), where the hub has notifications.
   function tabCount(ctx, route) {
     if (!M.notify.state.available || (route !== "inbox" && route !== "chat")) return null;
-    const c = M.notify.projectCount(ctx.projects.find((p) => p.slug === ctx.slug) || { slug: ctx.slug });
+    const c = M.notify.projectCount(ctx.projects.find((p) => p.full_name === ctx.slug) || { full_name: ctx.slug });
     const n = route === "inbox" ? c.requests : c.chat;
     return n ? h("span", { class: "count", "aria-label": n + (route === "inbox" ? " open" : " unread") }, String(n)) : null;
   }
@@ -1063,17 +1108,34 @@ window.Maity = window.Maity || {};
   async function projectViews(me) {
     if (me.projects.every((p) => "logo" in p)) {
       const bySlug = {};
-      me.projects.forEach((p) => { bySlug[p.slug] = p; });
+      me.projects.forEach((p) => { bySlug[p.full_name] = p; });
       return bySlug;
     }
     try {
       const list = await M.api.get("/projects");
       const bySlug = {};
-      (list.items || []).forEach((p) => { bySlug[p.slug] = p; });
+      (list.items || []).forEach((p) => { bySlug[p.full_name] = p; });
       return bySlug;
     } catch (err) {
       return {};
     }
+  }
+
+  // §6.25: #/p/<slug> leads to the project in one's own list whose frozen
+  // legacy_slug it is (never by its current slug); a full name that is no
+  // project of one's own may be an alias, which the hub answers with the
+  // current full name. Null where nothing moved: the view says what it says.
+  async function movedTo(where, me) {
+    if (where.scope === "legacy") {
+      const list = await M.api.get("/projects").catch(() => ({ items: [] }));
+      const p = (list.items || []).find((x) => x.legacy_slug && x.legacy_slug === where.slug);
+      if (p) return projectLink(p.full_name, where.route, ...where.args);
+      throw new M.api.ApiError("You are not a member of the project " + where.slug, 404, "/me", "not_found");
+    }
+    if (where.scope !== "project" || me.projects.some((p) => p.full_name === where.slug)) return null;
+    const view = await M.api.get("/projects/" + M.api.projectPath(where.slug)).catch(() => null);
+    return view && view.full_name && view.full_name !== where.slug && me.projects.some((p) => p.full_name === view.full_name)
+      ? projectLink(view.full_name, where.route, ...where.args) : null;
   }
 
   async function loadContext(where, me) {
@@ -1110,7 +1172,7 @@ window.Maity = window.Maity || {};
       },
     };
     if (where.scope !== "project") return ctx;
-    const mine = me.projects.find((p) => p.slug === where.slug);
+    const mine = me.projects.find((p) => p.full_name === where.slug);
     if (!mine) {
       throw new M.api.ApiError("You are not a member of the project " + where.slug, 404, "/me", "not_found");
     }
@@ -1120,7 +1182,7 @@ window.Maity = window.Maity || {};
     // members:admin (docs/api.md §2.3); absence is the owner's alone.
     ctx.canAdmin = mine.role === "owner" || mine.role === "admin";
     ctx.isOwner = mine.role === "owner";
-    ctx.base = "/projects/" + encodeURIComponent(where.slug);
+    ctx.base = "/projects/" + M.api.projectPath(where.slug);
     ctx.link = (view, ...rest) => projectLink(where.slug, view, ...rest);
     // The event head is read before the view's data, so that nothing that
     // happens while the view loads is missed (it is offered as a reload).
@@ -1140,11 +1202,11 @@ window.Maity = window.Maity || {};
   // its chats, so that they stay in that view.
   M.withMembers = (ctx, members) => withMembers(ctx, members);
   M.projectContext = async (ctx, slug, chatLink) => {
-    const mine = ctx.projects.find((p) => p.slug === slug);
+    const mine = ctx.projects.find((p) => p.full_name === slug);
     if (!mine) throw new M.api.ApiError("You are not a member of the project " + slug, 404, "/me", "not_found");
     const pctx = Object.assign({}, ctx, {
       slug, role: mine.role, canAdmin: mine.role === "owner" || mine.role === "admin", isOwner: mine.role === "owner",
-      base: "/projects/" + encodeURIComponent(slug), listeners: [], outsider: false,
+      base: "/projects/" + M.api.projectPath(slug), listeners: [], outsider: false,
     });
     pctx.onEvents = (fn) => { pctx.listeners.push(fn); };
     pctx.link = (view, ...rest) => (view === "chat" ? chatLink(slug, rest[0]) : projectLink(slug, view, ...rest));
@@ -1175,7 +1237,7 @@ window.Maity = window.Maity || {};
   function watch(ctx, where, item, main) {
     const openNow = () => (where.scope === "all"
       ? ctx.projects.reduce((n, p) => n + (p.open_requests || 0), 0)
-      : (ctx.projects.find((p) => p.slug === ctx.slug) || {}).open_requests);
+      : (ctx.projects.find((p) => p.full_name === ctx.slug) || {}).open_requests);
     let seen = openNow();
     const countLine = h("div");
     const changeLine = h("div");
@@ -1332,9 +1394,13 @@ window.Maity = window.Maity || {};
       }
       if (where.scope === null || where.scope === "login") {
         const next = where.scope === "login" ? hashNext() : null;
-        window.location.replace(next ? next.slice(1) : me.projects.length === 1 ? projectLink(me.projects[0].slug, "inbox") : "#/all");
+        window.location.replace(next ? next.slice(1) : me.projects.length === 1 ? projectLink(me.projects[0].full_name, "inbox") : "#/all");
         return;
       }
+      // An old or earlier address of a project leads to its current one.
+      const moved = await movedTo(where, me);
+      if (seq !== renderSeq) return;
+      if (moved) { window.location.replace(moved); return; }
       // Notifications never stop the page: a failed read is said in the
       // notice (watch), and a hub without them leaves the counts as /me has them.
       const [loaded, views] = await Promise.all([loadContext(where, me), projectViews(me),

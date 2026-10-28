@@ -25,12 +25,13 @@ def owner(make_client: ClientFactory, migrated: Engine) -> flow.Human:
 
 def say(who: Any, **body: Any) -> Any:
     return who.post(
-        "/projects/maity/events", {"kind": "message", "type": "notice", "body": "hi", **body}
+        "/projects/maintainer/maity/events",
+        {"kind": "message", "type": "notice", "body": "hi", **body},
     )
 
 
 def chat(who: Any, agent_id: str, body: str) -> Any:
-    return who.post(f"/projects/maity/conversations/{agent_id}/messages", {"body": body})
+    return who.post(f"/projects/maintainer/maity/conversations/{agent_id}/messages", {"body": body})
 
 
 # --- §8.4 messages ----------------------------------------------------------------------
@@ -80,7 +81,7 @@ def test_messages_are_checked(
 
 def test_only_messages_may_be_posted(owner: flow.Human) -> None:
     response = owner.post(
-        "/projects/maity/events",
+        "/projects/maintainer/maity/events",
         {"kind": "task_created", "type": "notice", "to": "all", "body": "x"},
     )
     assert response.headers["Maity-Error"] == "invalid"
@@ -101,10 +102,12 @@ def test_a_redaction_cannot_be_redacted(
 ) -> None:
     agent = flow.agent(make_client, owner)
     leaked = say(agent, to="all", body="a secret").json()
-    owner.post(f"/projects/maity/events/{leaked['seq']}/redact", {"reason": "a secret"})
+    owner.post(f"/projects/maintainer/maity/events/{leaked['seq']}/redact", {"reason": "a secret"})
     with migrated.connect() as conn:
         tomb = conn.execute(select(t.event).where(t.event.c.kind == "event_redacted")).one()
-    again = owner.post(f"/projects/maity/events/{tomb.seq}/redact", {"reason": "hide it"})
+    again = owner.post(
+        f"/projects/maintainer/maity/events/{tomb.seq}/redact", {"reason": "hide it"}
+    )
     assert again.status_code == 400
     assert again.json()["error"]["details"] == {"reason": "already_redacted"}
 
@@ -115,10 +118,10 @@ def test_only_human_admins_and_the_redactor_read_the_reason(
     agent = flow.agent(make_client, owner)
     admin = flow.agent(make_client, owner, role="admin")
     leaked = say(agent, to="all", body="a secret").json()
-    owner.post(f"/projects/maity/events/{leaked['seq']}/redact", {"reason": "the token"})
+    owner.post(f"/projects/maintainer/maity/events/{leaked['seq']}/redact", {"reason": "the token"})
 
     def seen(who: Any) -> dict[str, Any]:
-        items = who.get("/projects/maity/events?after=0&limit=200").json()["items"]
+        items = who.get("/projects/maintainer/maity/events?after=0&limit=200").json()["items"]
         notice = next(e for e in items if e["kind"] == "event_redacted")
         tomb = next(e for e in items if e["seq"] == leaked["seq"])
         return {"notice": notice["payload"]["reason"], "tomb": tomb["payload"]["reason"]}
@@ -142,13 +145,15 @@ def test_a_chats_redaction_notice_stays_in_the_chat(
     with migrated.begin() as conn:
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
     factory.membership(migrated, project_id, "admin", human_id=second.id)
-    owner.post(f"/projects/maity/events/{message['seq']}/redact", {"reason": "the key abc"})
+    owner.post(
+        f"/projects/maintainer/maity/events/{message['seq']}/redact", {"reason": "the key abc"}
+    )
     with migrated.connect() as conn:
         notice = conn.execute(select(t.event).where(t.event.c.kind == "event_redacted")).one()
     assert notice.conversation_id == agent.id  # the chat's, as the message was
 
     def kinds(who: Any, **headers: Any) -> list[Any]:
-        items = who.get("/projects/maity/events?after=0&limit=200").json()["items"]
+        items = who.get("/projects/maintainer/maity/events?after=0&limit=200").json()["items"]
         return [e for e in items if e["kind"] == "event_redacted"]
 
     assert kinds(second) == []  # a second human admin does not read it (§8.5)
@@ -157,7 +162,7 @@ def test_a_chats_redaction_notice_stays_in_the_chat(
     [theirs] = kinds(agent)
     assert theirs["payload"]["reason"] is None  # the agent party
     # An event the caller cannot read stays not_found, before already_redacted.
-    again = second.post(f"/projects/maity/events/{notice.seq}/redact", {"reason": "x"})
+    again = second.post(f"/projects/maintainer/maity/events/{notice.seq}/redact", {"reason": "x"})
     assert again.status_code == 404
 
 
@@ -168,7 +173,7 @@ def test_without_a_reader_the_reason_is_hidden(
 
     agent = flow.agent(make_client, owner)
     leaked = say(agent, to="all", body="a secret").json()
-    owner.post(f"/projects/maity/events/{leaked['seq']}/redact", {"reason": "the token"})
+    owner.post(f"/projects/maintainer/maity/events/{leaked['seq']}/redact", {"reason": "the token"})
     with migrated.connect() as conn:
         rows = [
             *conn.execute(select(t.event).where(t.event.c.redacted.is_(True))),
@@ -186,7 +191,7 @@ def test_expect_closed_chat_message_redacts_nothing_else(
     chat_message = chat(agent, agent.id, "my token").json()
     for message in (project_message, chat_message):  # no group chat exists in the hub yet
         answer = owner.post(
-            f"/projects/maity/events/{message['seq']}/redact",
+            f"/projects/maintainer/maity/events/{message['seq']}/redact",
             {"reason": "x", "expect": "closed_chat_message"},
         )
         assert answer.status_code == 400
@@ -194,7 +199,9 @@ def test_expect_closed_chat_message_redacts_nothing_else(
     with migrated.connect() as conn:
         assert conn.execute(select(t.event).where(t.event.c.redacted.is_(True))).all() == []
     for value in ("something_else", None):  # any other value, null included (§8.5)
-        unknown = owner.post("/projects/maity/events/1/redact", {"reason": "x", "expect": value})
+        unknown = owner.post(
+            "/projects/maintainer/maity/events/1/redact", {"reason": "x", "expect": value}
+        )
         assert unknown.json()["error"]["details"]["fields"] == {"expect": "unknown"}
 
 
@@ -211,24 +218,28 @@ def test_expect_answers_nothing_that_the_caller_could_not_redact(
     with migrated.begin() as conn:
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
     factory.membership(migrated, project_id, "admin", human_id=second.id)
-    outsider = second.post(f"/projects/maity/events/{message['seq']}/redact", expect)
+    outsider = second.post(f"/projects/maintainer/maity/events/{message['seq']}/redact", expect)
     assert (outsider.status_code, outsider.headers["Maity-Error"]) == (404, "not_found")
     # An event the caller cannot read at all: another project's.
-    other = flow.human(make_client, migrated, "elsewhere")
+    other = flow.human(make_client, migrated, "outsider")
     flow.project(other, "elsewhere")
     theirs = other.post(
-        "/projects/elsewhere/events",
+        "/projects/outsider/elsewhere/events",
         {"kind": "message", "type": "notice", "to": "all", "body": "x"},
     )
     assert theirs.status_code == 201, theirs.text
-    unreadable = owner.post(f"/projects/maity/events/{theirs.json()['seq']}/redact", expect)
+    unreadable = owner.post(
+        f"/projects/maintainer/maity/events/{theirs.json()['seq']}/redact", expect
+    )
     assert (unreadable.status_code, unreadable.headers["Maity-Error"]) == (404, "not_found")
     # A tombstone answers already_redacted, expect or not.
     project_message = say(agent, to="all", body="a secret").json()
-    owner.post(f"/projects/maity/events/{project_message['seq']}/redact", {"reason": "x"})
+    owner.post(
+        f"/projects/maintainer/maity/events/{project_message['seq']}/redact", {"reason": "x"}
+    )
     with migrated.connect() as conn:
         tomb = conn.execute(select(t.event).where(t.event.c.kind == "event_redacted")).one()
-    on_tomb = owner.post(f"/projects/maity/events/{tomb.seq}/redact", expect)
+    on_tomb = owner.post(f"/projects/maintainer/maity/events/{tomb.seq}/redact", expect)
     assert on_tomb.json()["error"]["details"] == {"reason": "already_redacted"}
 
 
@@ -244,7 +255,9 @@ def test_a_chats_human_party_reads_the_reason_whatever_its_role(
     member = flow.human(make_client, migrated, "plain-member")
     factory.membership(migrated, project_id, "member", human_id=member.id)
     agent = factory.agent(migrated, project_id, member.id)  # the member's own agent
-    sent = member.post(f"/projects/maity/conversations/{agent.agent_id}/messages", {"body": "x"})
+    sent = member.post(
+        f"/projects/maintainer/maity/conversations/{agent.agent_id}/messages", {"body": "x"}
+    )
     assert sent.status_code == 201, sent.text
     with migrated.begin() as conn:
         conn.execute(
@@ -260,10 +273,14 @@ def test_a_chats_human_party_reads_the_reason_whatever_its_role(
                 },
             )
         )
-    items = member.get(f"/projects/maity/conversations/{agent.agent_id}/messages").json()["items"]
+    items = member.get(
+        f"/projects/maintainer/maity/conversations/{agent.agent_id}/messages"
+    ).json()["items"]
     assert items[0]["redaction"]["reason"] == "a key"  # the human party, not an admin
     seq = sent.json()["seq"]
-    listed = member.get("/projects/maity/events", params={"after": seq - 1}).json()["items"]
+    listed = member.get("/projects/maintainer/maity/events", params={"after": seq - 1}).json()[
+        "items"
+    ]
     [event] = [e for e in listed if e["seq"] == seq]
     assert event["payload"]["reason"] == "a key"  # GET /events: the same chat rule
 
@@ -291,7 +308,9 @@ def test_of_two_concurrent_redactions_the_first_stands(
 
     sqlalchemy.event.listen(migrated, "before_cursor_execute", interleave)
     try:
-        late = owner.post(f"/projects/maity/events/{leaked['seq']}/redact", {"reason": "second"})
+        late = owner.post(
+            f"/projects/maintainer/maity/events/{leaked['seq']}/redact", {"reason": "second"}
+        )
     finally:
         sqlalchemy.event.remove(migrated, "before_cursor_execute", interleave)
     assert fired and late.status_code == 200, late.text
@@ -321,7 +340,9 @@ def test_two_admins_redacting_at_once_leave_one_tombstone_and_one_notice(
             both_read.wait()
 
     def redact(who: flow.Human) -> Any:
-        return who.post(f"/projects/maity/events/{leaked['seq']}/redact", {"reason": who.id})
+        return who.post(
+            f"/projects/maintainer/maity/events/{leaked['seq']}/redact", {"reason": who.id}
+        )
 
     sqlalchemy.event.listen(migrated, "before_cursor_execute", after_both_reads)
     try:
@@ -346,7 +367,9 @@ def test_redaction_replaces_the_payload_and_is_itself_recorded(
 ) -> None:
     agent = flow.agent(make_client, owner)
     leaked = say(agent, to="all", body="a secret that got in").json()
-    response = owner.post(f"/projects/maity/events/{leaked['seq']}/redact", {"reason": "a secret"})
+    response = owner.post(
+        f"/projects/maintainer/maity/events/{leaked['seq']}/redact", {"reason": "a secret"}
+    )
     assert response.status_code == 200
     body = response.json()
     assert body["redacted"] is True and body["seq"] == leaked["seq"] and body["kind"] == "message"
@@ -361,7 +384,9 @@ def test_redaction_replaces_the_payload_and_is_itself_recorded(
         tomb = conn.execute(select(t.event).where(t.event.c.kind == "event_redacted")).one()
     assert tomb.audience == leaked["audience"]  # the event's own, never wider (§8.5)
     assert tomb.payload == {"seq": leaked["seq"], "reason": "a secret"}
-    again = owner.post(f"/projects/maity/events/{leaked['seq']}/redact", {"reason": "twice"})
+    again = owner.post(
+        f"/projects/maintainer/maity/events/{leaked['seq']}/redact", {"reason": "twice"}
+    )
     assert again.json()["payload"]["reason"] == "a secret"  # the first tombstone stands
 
 
@@ -370,12 +395,16 @@ def test_redaction_is_for_human_admins_and_this_project(
 ) -> None:
     admin_agent = flow.agent(make_client, owner, role="admin")
     event = say(owner, to="all").json()
-    refused = admin_agent.post(f"/projects/maity/events/{event['seq']}/redact", {"reason": "x"})
+    refused = admin_agent.post(
+        f"/projects/maintainer/maity/events/{event['seq']}/redact", {"reason": "x"}
+    )
     assert refused.status_code == 403 and refused.json()["error"]["details"] == {
         "scope": "events:admin"
     }
     flow.project(owner, "other")
-    elsewhere = owner.post(f"/projects/other/events/{event['seq']}/redact", {"reason": "x"})
+    elsewhere = owner.post(
+        f"/projects/maintainer/other/events/{event['seq']}/redact", {"reason": "x"}
+    )
     assert elsewhere.headers["Maity-Error"] == "not_found"
 
 
@@ -415,7 +444,7 @@ def test_the_human_and_its_agent_chat_and_nobody_else_sees_it(
     with migrated.connect() as conn:
         event = conn.execute(select(t.event).where(t.event.c.seq == message["seq"])).one()
     assert event.audience == [f"member:{agent.id}", f"member:{owner.id}"]
-    seen_by_admin = admin.get("/projects/maity/events?after=0").json()["items"]
+    seen_by_admin = admin.get("/projects/maintainer/maity/events?after=0").json()["items"]
     assert message["seq"] not in [e["seq"] for e in seen_by_admin]  # admins included: nobody else
     assert chat(admin, agent.id, "me too").status_code == 403
 
@@ -426,15 +455,21 @@ def test_delivery_is_the_first_time_the_recipient_got_it(
     agent = flow.agent(make_client, owner)
     message = chat(owner, agent.id, "ping").json()
     owner.get(
-        f"/projects/maity/conversations/{agent.id}/messages"
+        f"/projects/maintainer/maity/conversations/{agent.id}/messages"
     )  # the sender reading: no delivery
-    mine = owner.get(f"/projects/maity/conversations/{agent.id}/messages").json()["items"]
+    mine = owner.get(f"/projects/maintainer/maity/conversations/{agent.id}/messages").json()[
+        "items"
+    ]
     assert mine[0]["delivered_at"] is None
     agent.resume(cursor=0)  # through the resume packet
-    delivered = owner.get(f"/projects/maity/conversations/{agent.id}/messages").json()["items"][0]
+    delivered = owner.get(f"/projects/maintainer/maity/conversations/{agent.id}/messages").json()[
+        "items"
+    ][0]
     assert delivered["delivered_at"] is not None
-    agent.get("/projects/maity/events?after=0")
-    again = owner.get(f"/projects/maity/conversations/{agent.id}/messages").json()["items"][0]
+    agent.get("/projects/maintainer/maity/events?after=0")
+    again = owner.get(f"/projects/maintainer/maity/conversations/{agent.id}/messages").json()[
+        "items"
+    ][0]
     assert again["delivered_at"] == delivered["delivered_at"]  # the first time stands
     assert message["seq"] == delivered["seq"]
 
@@ -448,10 +483,12 @@ def test_the_agent_answers_in_the_conversation(
     assert (reply["from"], reply["to"]) == (agent.id, owner.id)
     via_events = say(agent, type="chat", conversation_id=agent.id, body="and tested").json()
     assert via_events["payload"]["to"] == owner.id
-    items = owner.get(f"/projects/maity/conversations/{agent.id}/messages").json()["items"]
+    items = owner.get(f"/projects/maintainer/maity/conversations/{agent.id}/messages").json()[
+        "items"
+    ]
     assert [m["body"] for m in items] == ["status?", "contract drafted", "and tested"]
     later = owner.get(
-        f"/projects/maity/conversations/{agent.id}/messages?after={items[0]['seq']}"
+        f"/projects/maintainer/maity/conversations/{agent.id}/messages?after={items[0]['seq']}"
     ).json()
     assert [m["body"] for m in later["items"]] == ["contract drafted", "and tested"]
     assert later["cursor"] == items[-1]["seq"]
@@ -464,14 +501,14 @@ def test_the_list_counts_unread_for_the_human(
     other = flow.agent(make_client, owner, agent={"handle": "agent-c", "display_name": "C"})
     chat(agent, agent.id, "one")
     chat(agent, agent.id, "two")
-    listed = owner.get("/projects/maity/conversations").json()["items"]
+    listed = owner.get("/projects/maintainer/maity/conversations").json()["items"]
     assert [(c["agent_id"], c["unread"]) for c in listed] == [(agent.id, 2), (other.id, 0)]
     assert listed[0]["last_message_at"] is not None and listed[1]["last_message_at"] is None
-    owner.get(f"/projects/maity/conversations/{agent.id}/messages")
-    assert owner.get("/projects/maity/conversations").json()["items"][0]["unread"] == 0
-    assert [c["agent_id"] for c in agent.get("/projects/maity/conversations").json()["items"]] == [
-        agent.id
-    ]
+    owner.get(f"/projects/maintainer/maity/conversations/{agent.id}/messages")
+    assert owner.get("/projects/maintainer/maity/conversations").json()["items"][0]["unread"] == 0
+    assert [
+        c["agent_id"] for c in agent.get("/projects/maintainer/maity/conversations").json()["items"]
+    ] == [agent.id]
 
 
 def test_someone_elses_agent_has_no_conversation_with_me(
@@ -482,7 +519,9 @@ def test_someone_elses_agent_has_no_conversation_with_me(
     agent = flow.agent(make_client, owner)
     assert chat(stranger, agent.id, "x").status_code in (403, 404)
     assert (
-        owner.get("/projects/maity/conversations/agt-nobody/messages").headers["Maity-Error"]
+        owner.get("/projects/maintainer/maity/conversations/agt-nobody/messages").headers[
+            "Maity-Error"
+        ]
         == "not_found"
     )
 
@@ -490,14 +529,18 @@ def test_someone_elses_agent_has_no_conversation_with_me(
 def test_a_redacted_chat_message_has_no_body(owner: flow.Human, make_client: ClientFactory) -> None:
     agent = flow.agent(make_client, owner)
     message = chat(agent, agent.id, "my token is …").json()
-    owner.post(f"/projects/maity/events/{message['seq']}/redact", {"reason": "a token"})
-    items = owner.get(f"/projects/maity/conversations/{agent.id}/messages").json()["items"]
+    owner.post(f"/projects/maintainer/maity/events/{message['seq']}/redact", {"reason": "a token"})
+    items = owner.get(f"/projects/maintainer/maity/conversations/{agent.id}/messages").json()[
+        "items"
+    ]
     assert items[0]["body"] is None and items[0]["mentions"] == []
     assert items[0]["redacted"] is True  # as in the list preview (§9.2, §9.3)
     redaction = items[0]["redaction"]
     assert (redaction["by"], redaction["reason"]) == (owner.id, "a token") and redaction["at"]
     # The agent party keeps the message's place, without the reason (§8.5).
-    theirs = agent.get(f"/projects/maity/conversations/{agent.id}/messages").json()["items"]
+    theirs = agent.get(f"/projects/maintainer/maity/conversations/{agent.id}/messages").json()[
+        "items"
+    ]
     assert theirs[0]["redacted"] is True and theirs[0]["redaction"]["reason"] is None
     assert theirs[0]["redaction"]["by"] == owner.id
     later = chat(agent, agent.id, "fine now").json()
@@ -518,9 +561,11 @@ def test_a_chat_is_redacted_only_by_its_human_party(
     with migrated.begin() as conn:  # a second human admin, as invitations will bring
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
     factory.membership(migrated, project_id, "admin", human_id=other.id)
-    refused = other.post(f"/projects/maity/events/{message['seq']}/redact", {"reason": "x"})
+    refused = other.post(
+        f"/projects/maintainer/maity/events/{message['seq']}/redact", {"reason": "x"}
+    )
     assert refused.status_code == 404 and refused.headers["Maity-Error"] == "not_found"
-    owner.post(f"/projects/maity/events/{message['seq']}/redact", {"reason": "a key"})
+    owner.post(f"/projects/maintainer/maity/events/{message['seq']}/redact", {"reason": "a key"})
     with migrated.connect() as conn:
         tomb = conn.execute(select(t.event).where(t.event.c.kind == "event_redacted")).one()
     assert tomb.audience == [f"member:{agent.id}", f"member:{owner.id}"]
@@ -531,13 +576,17 @@ def test_the_humans_event_read_does_not_deliver_its_chat(
 ) -> None:
     agent = flow.agent(make_client, owner)
     chat(agent, agent.id, "to my human")
-    owner.get("/projects/maity/events?after=0")  # the human's side is the conversation endpoint
-    items = agent.get(f"/projects/maity/conversations/{agent.id}/messages").json()["items"]
-    assert items[0]["delivered_at"] is None
-    owner.get(f"/projects/maity/conversations/{agent.id}/messages")
-    assert agent.get(f"/projects/maity/conversations/{agent.id}/messages").json()["items"][0][
-        "delivered_at"
+    owner.get(
+        "/projects/maintainer/maity/events?after=0"
+    )  # the human's side is the conversation endpoint
+    items = agent.get(f"/projects/maintainer/maity/conversations/{agent.id}/messages").json()[
+        "items"
     ]
+    assert items[0]["delivered_at"] is None
+    owner.get(f"/projects/maintainer/maity/conversations/{agent.id}/messages")
+    assert agent.get(f"/projects/maintainer/maity/conversations/{agent.id}/messages").json()[
+        "items"
+    ][0]["delivered_at"]
 
 
 def test_a_chat_with_a_to_is_refused(owner: flow.Human, make_client: ClientFactory) -> None:
@@ -549,8 +598,8 @@ def test_a_chat_with_a_to_is_refused(owner: flow.Human, make_client: ClientFacto
 @pytest.mark.parametrize(
     "path",
     [
-        "/projects/maity/conversations/{agent}/messages?after=99999999999999999999",
-        "/projects/maity/events/99999999999999999999/redact",
+        "/projects/maintainer/maity/conversations/{agent}/messages?after=99999999999999999999",
+        "/projects/maintainer/maity/events/99999999999999999999/redact",
     ],
 )
 def test_integers_out_of_range_are_invalid(

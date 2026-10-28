@@ -21,11 +21,11 @@ def owner(make_client: ClientFactory, migrated: Engine) -> flow.Human:
 
 
 def put(owner: flow.Human, value: Any) -> Any:
-    return owner.patch("/projects/maity", {"settings": {"onboarding": value}})
+    return owner.patch("/projects/maintainer/maity", {"settings": {"onboarding": value}})
 
 
 def test_default_checkin_and_no_briefing(owner: flow.Human, make_client: ClientFactory) -> None:
-    assert owner.get("/projects/maity").json()["settings"]["onboarding"] == {
+    assert owner.get("/projects/maintainer/maity").json()["settings"]["onboarding"] == {
         "check_in_with": "coordinator"
     }
     agent = flow.agent(make_client, owner)
@@ -44,7 +44,7 @@ def test_default_checkin_and_no_briefing(owner: flow.Human, make_client: ClientF
 
 
 def test_metadata_versions_reset_and_no_text_in_events(owner: flow.Human, migrated: Engine) -> None:
-    before = owner.get("/projects/maity").json()["rules_version"]
+    before = owner.get("/projects/maintainer/maity").json()["rules_version"]
     first = put(
         owner,
         {
@@ -63,7 +63,7 @@ def test_metadata_versions_reset_and_no_text_in_events(owner: flow.Human, migrat
     assert put(owner, ob).json()["settings"]["onboarding"] == ob
     assert put(owner, None).json()["settings"]["onboarding"] == {"check_in_with": "coordinator"}
     assert put(owner, {"briefing": "next"}).json()["settings"]["onboarding"]["version"] == 3
-    assert owner.get("/projects/maity").json()["rules_version"] == before
+    assert owner.get("/projects/maintainer/maity").json()["rules_version"] == before
     with migrated.connect() as conn:
         events = (
             conn.execute(select(t.event.c.payload).where(t.event.c.kind == "project_updated"))
@@ -82,7 +82,7 @@ def test_admin_agent_can_only_patch_onboarding(
 ) -> None:
     agent = flow.agent(make_client, owner, role="admin")
     result = agent.patch(
-        "/projects/maity", {"settings": {"onboarding": {"briefing": "team startup"}}}
+        "/projects/maintainer/maity", {"settings": {"onboarding": {"briefing": "team startup"}}}
     )
     assert result.status_code == 200
     assert result.json()["settings"]["onboarding"]["by"]["id"] == agent.id
@@ -93,21 +93,31 @@ def test_admin_agent_can_only_patch_onboarding(
     ]
     for extra in extras:
         assert (
-            agent.patch("/projects/maity", {"settings": {"onboarding": {}}, **extra}).status_code
+            agent.patch(
+                "/projects/maintainer/maity", {"settings": {"onboarding": {}}, **extra}
+            ).status_code
             == 403
         )
     assert (
         agent.patch(
-            "/projects/maity", {"settings": {"onboarding": {}, "release_checklist": ["bad"]}}
+            "/projects/maintainer/maity",
+            {"settings": {"onboarding": {}, "release_checklist": ["bad"]}},
         ).status_code
         == 403
     )
     assert (
-        owner.get("/projects/maity").json()["settings"]["onboarding"]["briefing"] == "team startup"
+        owner.get("/projects/maintainer/maity").json()["settings"]["onboarding"]["briefing"]
+        == "team startup"
     )
-    assert agent.patch("/projects/maity", {"settings": {"onboarding": None}}).status_code == 200
+    assert (
+        agent.patch("/projects/maintainer/maity", {"settings": {"onboarding": None}}).status_code
+        == 200
+    )
     member = flow.agent(make_client, owner)
-    assert member.patch("/projects/maity", {"settings": {"onboarding": {}}}).status_code == 403
+    assert (
+        member.patch("/projects/maintainer/maity", {"settings": {"onboarding": {}}}).status_code
+        == 403
+    )
 
 
 def test_project_briefing_is_live_and_never_copied(
@@ -119,7 +129,7 @@ def test_project_briefing_is_live_and_never_copied(
     membership = fallback.resume().json()["membership"]
     assert membership["briefing"] == "first" and membership["briefing_source"] == "project"
     assert membership["briefing_version"] == 1 and membership["briefing_by"]["id"] == owner.id
-    assert owner.get(f"/projects/maity/members/{fallback.id}").json()["briefing"] is None
+    assert owner.get(f"/projects/maintainer/maity/members/{fallback.id}").json()["briefing"] is None
     assert own.resume().json()["membership"]["briefing"] == "my own job"
     assert own.resume().json()["membership"]["briefing_source"] == "membership"
     put(owner, {"briefing": "second"})
@@ -166,7 +176,7 @@ def test_first_target_message_checks_in_permanently(
     member = flow.agent(make_client, owner)
     assert (
         member.post(
-            "/projects/maity/events",
+            "/projects/maintainer/maity/events",
             {"kind": "message", "to": "all", "type": "notice", "body": "broadcast"},
         ).status_code
         == 201
@@ -177,7 +187,7 @@ def test_first_target_message_checks_in_permanently(
         body.update(type="chat", conversation_id=member.id)
     else:
         body["to"] = owner.id if address == "direct" else "role:owner"
-    assert member.post("/projects/maity/events", body).status_code == 201
+    assert member.post("/projects/maintainer/maity/events", body).status_code == 201
     assert "onboarding" not in member.resume().json()
     put(owner, {"check_in_with": member.id})
     put(owner, None)
@@ -188,10 +198,14 @@ def test_claim_marks_work_started_even_after_release(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
     member = flow.agent(make_client, owner)
-    task = owner.post("/projects/maity/tasks", {"title": "first", "body": "work"}).json()
-    assert member.post(f"/projects/maity/tasks/{task['id']}/claim", {}).status_code == 200
+    task = owner.post("/projects/maintainer/maity/tasks", {"title": "first", "body": "work"}).json()
+    assert (
+        member.post(f"/projects/maintainer/maity/tasks/{task['id']}/claim", {}).status_code == 200
+    )
     assert "onboarding" not in member.resume().json()
-    assert member.post(f"/projects/maity/tasks/{task['id']}/release", {}).status_code == 200
+    assert (
+        member.post(f"/projects/maintainer/maity/tasks/{task['id']}/release", {}).status_code == 200
+    )
     assert "onboarding" not in member.resume().json()
     # An upgrade also recognizes a historical claim, including one no longer held.
     downgrade(migrated, "0039")
@@ -211,8 +225,8 @@ def test_removal_resets_named_target_without_losing_briefing(
     target = flow.agent(make_client, owner)
     member = flow.agent(make_client, owner)
     put(owner, {"briefing": "keep me", "check_in_with": target.id})
-    assert owner.delete(f"/projects/maity/members/{target.id}").status_code == 200
-    setting = owner.get("/projects/maity").json()["settings"]["onboarding"]
+    assert owner.delete(f"/projects/maintainer/maity/members/{target.id}").status_code == 200
+    setting = owner.get("/projects/maintainer/maity").json()["settings"]["onboarding"]
     assert setting["briefing"] == "keep me" and setting["check_in_with"] == "coordinator"
     assert setting["version"] == 2
     assert member.resume().json()["onboarding"]["check_in_with"]["member_id"] == owner.id
@@ -296,9 +310,11 @@ def test_historical_claim_does_not_onboard_a_later_rejoin(
     migrated: Engine,
 ) -> None:
     old = flow.agent(make_client, owner)
-    task = owner.post("/projects/maity/tasks", {"title": "old work", "body": "old"}).json()
-    assert old.post(f"/projects/maity/tasks/{task['id']}/claim", {}).status_code == 200
-    assert owner.delete(f"/projects/maity/members/{old.id}").status_code == 200
+    task = owner.post(
+        "/projects/maintainer/maity/tasks", {"title": "old work", "body": "old"}
+    ).json()
+    assert old.post(f"/projects/maintainer/maity/tasks/{task['id']}/claim", {}).status_code == 200
+    assert owner.delete(f"/projects/maintainer/maity/members/{old.id}").status_code == 200
     rejoined = flow.agent(make_client, owner, agent={"id": old.id})
     assert "onboarding" in rejoined.resume().json()
     downgrade(migrated, "0039")

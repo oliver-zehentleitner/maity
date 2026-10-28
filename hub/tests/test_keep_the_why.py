@@ -289,7 +289,7 @@ def test_the_family_is_read_depth_first_with_summaries_and_attention(
 ) -> None:
     fake.family()
     flow.project(owner, "widget", repository={"url": REPO})
-    body = owner.get("/projects/widget/keep-the-why").json()
+    body = owner.get("/projects/maintainer/widget/keep-the-why").json()
     paths = [m["path"] for m in body["members"]]
     assert paths == ["", "hub", "hub/api", "https://github.com/acme/other", "cli"]
     root, hub, api, remote, cli = body["members"]
@@ -316,13 +316,13 @@ def test_the_family_is_read_depth_first_with_summaries_and_attention(
 def test_member_narrows_the_answer(owner: flow.Human, fake: Fake) -> None:
     fake.family()
     flow.project(owner, "widget", repository={"url": REPO})
-    hub = owner.get("/projects/widget/keep-the-why", params={"member": "hub"}).json()
+    hub = owner.get("/projects/maintainer/widget/keep-the-why", params={"member": "hub"}).json()
     assert [m["path"] for m in hub["members"]] == ["hub"]
     assert hub["summary"]["entries"] == 3
     assert {a["member"] for a in hub["attention"]} == {"hub"}
-    root = owner.get("/projects/widget/keep-the-why", params={"member": ""}).json()
+    root = owner.get("/projects/maintainer/widget/keep-the-why", params={"member": ""}).json()
     assert [m["path"] for m in root["members"]] == [""]
-    missing = owner.get("/projects/widget/keep-the-why", params={"member": "web"})
+    missing = owner.get("/projects/maintainer/widget/keep-the-why", params={"member": "web"})
     assert missing.status_code == 404
 
 
@@ -337,10 +337,10 @@ def test_not_configured(owner: flow.Human, fake: Fake, setup: str) -> None:
         flow.project(owner, "widget", repository={"url": REPO})
     if setup == "no_state_line":
         fake.files[".keep-the-why"] = kfile(None, "x", ["- hub: hub — s"])
-    answer = owner.get("/projects/widget/keep-the-why")
+    answer = owner.get("/projects/maintainer/widget/keep-the-why")
     assert answer.status_code == 409
     assert answer.json()["error"]["code"] == "ktw_not_configured"
-    assert owner.get("/projects/widget").json()["keep_the_why_export"] is None
+    assert owner.get("/projects/maintainer/widget").json()["keep_the_why_export"] is None
 
 
 @pytest.mark.parametrize(
@@ -363,7 +363,7 @@ def test_a_member_that_fails_fails_alone(
     fake.family()
     fake.states[f"{BASE}/hub/state.json"] = state
     flow.project(owner, "widget", repository={"url": REPO})
-    body = owner.get("/projects/widget/keep-the-why").json()
+    body = owner.get("/projects/maintainer/widget/keep-the-why").json()
     hub = body["members"][1]
     assert hub["error"] == {"code": "ktw_unavailable", "reason": reason, **extra}
     assert hub["summary"] is None
@@ -385,7 +385,7 @@ def test_a_child_config_that_fails(owner: flow.Human, fake: Fake, file: Any, rea
     fake.family()
     fake.files["hub/.keep-the-why"] = file
     flow.project(owner, "widget", repository={"url": REPO})
-    hub = owner.get("/projects/widget/keep-the-why").json()["members"][1]
+    hub = owner.get("/projects/maintainer/widget/keep-the-why").json()["members"][1]
     assert hub["path"] == "hub"
     assert hub["error"]["reason"] == reason
 
@@ -397,10 +397,10 @@ def test_a_failed_member_keeps_its_last_good_summary(
     monkeypatch.setattr(ktw, "_now", lambda: now[0])
     fake.family()
     flow.project(owner, "widget", repository={"url": REPO})
-    good = owner.get("/projects/widget/keep-the-why").json()["members"][1]["summary"]
+    good = owner.get("/projects/maintainer/widget/keep-the-why").json()["members"][1]["summary"]
     fake.states[f"{BASE}/hub/state.json"] = outbound.Refused("timeout")
     now[0] += ktw.FORCE_INTERVAL + 1
-    later = owner.get("/projects/widget/keep-the-why", params={"max_age": 0}).json()
+    later = owner.get("/projects/maintainer/widget/keep-the-why", params={"max_age": 0}).json()
     hub = later["members"][1]
     assert hub["error"]["reason"] == "timeout"
     assert hub["summary"] == good
@@ -414,16 +414,16 @@ def test_a_root_that_cannot_be_read_fails_the_call_with_the_last_answer(
     monkeypatch.setattr(ktw, "_now", lambda: now[0])
     fake.family()
     flow.project(owner, "widget", repository={"url": REPO})
-    first = owner.get("/projects/widget/keep-the-why").json()
+    first = owner.get("/projects/maintainer/widget/keep-the-why").json()
     fake.files[".keep-the-why"] = forge.ForgeUnavailableError("down")
     now[0] += ktw.FORCE_INTERVAL + 1
-    answer = owner.get("/projects/widget/keep-the-why", params={"max_age": 0})
+    answer = owner.get("/projects/maintainer/widget/keep-the-why", params={"max_age": 0})
     assert answer.status_code == 503
     error = answer.json()["error"]
     assert error["code"] == "ktw_unavailable"
     assert error["details"]["reason"] == "forge_unavailable"
     assert error["details"]["last"]["members"] == first["members"]
-    view = owner.get("/projects/widget").json()["keep_the_why_export"]
+    view = owner.get("/projects/maintainer/widget").json()["keep_the_why_export"]
     assert view["error"] == {"code": "ktw_unavailable", "reason": "forge_unavailable"}
     assert view["summary"]["entries"] == 7
 
@@ -431,7 +431,7 @@ def test_a_root_that_cannot_be_read_fails_the_call_with_the_last_answer(
 def test_a_root_that_was_never_read_fails_without_a_last(owner: flow.Human, fake: Fake) -> None:
     fake.files[".keep-the-why"] = forge.ForgeUnavailableError("down")
     flow.project(owner, "widget", repository={"url": REPO})
-    error = owner.get("/projects/widget/keep-the-why").json()["error"]
+    error = owner.get("/projects/maintainer/widget/keep-the-why").json()["error"]
     assert error["code"] == "ktw_unavailable" and "last" not in error["details"]
 
 
@@ -442,7 +442,7 @@ def test_the_caps_on_depth_and_members(owner: flow.Human, fake: Fake) -> None:
         fake.files[f"{path}/.keep-the-why"] = kfile(f"{BASE}/{depth}.json", "x", ["- a: a — s"])
         path += "/a"
     flow.project(owner, "widget", repository={"url": REPO})
-    body = owner.get("/projects/widget/keep-the-why").json()
+    body = owner.get("/projects/maintainer/widget/keep-the-why").json()
     assert [m["path"].count("a") for m in body["members"]] == [0, 1, 2, 3, 4]
     assert body["family_truncated"] is True
 
@@ -452,7 +452,7 @@ def test_the_caps_on_depth_and_members(owner: flow.Human, fake: Fake) -> None:
     for n in range(40):
         fake.files[f"c{n}/.keep-the-why"] = kfile(f"{BASE}/c{n}.json", f"c{n}")
     ktw.CACHE.clear()
-    wide = owner.get("/projects/widget/keep-the-why").json()
+    wide = owner.get("/projects/maintainer/widget/keep-the-why").json()
     assert len(wide["members"]) == ktw.MAX_MEMBERS
     assert wide["family_truncated"] is True
     assert fake.file_reads.count("c1/.keep-the-why") == 1  # listed twice, read once
@@ -467,7 +467,7 @@ def test_at_most_four_exports_are_read_at_once(owner: flow.Human, fake: Fake) ->
         fake.states[f"{BASE}/c{n}.json"] = export(entry(n))
     fake.delay = 0.05
     flow.project(owner, "widget", repository={"url": REPO})
-    assert owner.get("/projects/widget/keep-the-why").status_code == 200
+    assert owner.get("/projects/maintainer/widget/keep-the-why").status_code == 200
     assert 1 < fake.most_in_flight <= ktw.IN_FLIGHT
 
 
@@ -478,24 +478,26 @@ def test_the_cache_and_a_forced_read(
     monkeypatch.setattr(ktw, "_now", lambda: now[0])
     fake.family()
     flow.project(owner, "widget", repository={"url": REPO})
-    owner.get("/projects/widget/keep-the-why")
+    owner.get("/projects/maintainer/widget/keep-the-why")
     reads = len(fake.state_reads)
-    cached = owner.get("/projects/widget/keep-the-why").json()
+    cached = owner.get("/projects/maintainer/widget/keep-the-why").json()
     assert cached["fresh"] is False and len(fake.state_reads) == reads
-    forced_too_soon = owner.get("/projects/widget/keep-the-why", params={"max_age": 0}).json()
+    forced_too_soon = owner.get(
+        "/projects/maintainer/widget/keep-the-why", params={"max_age": 0}
+    ).json()
     assert forced_too_soon["fresh"] is False and len(fake.state_reads) == reads
     now[0] += ktw.FORCE_INTERVAL + 1
-    forced = owner.get("/projects/widget/keep-the-why", params={"max_age": 0}).json()
+    forced = owner.get("/projects/maintainer/widget/keep-the-why", params={"max_age": 0}).json()
     assert forced["fresh"] is True and len(fake.state_reads) == 2 * reads
     now[0] += ktw.DEFAULT_MAX_AGE + 1
-    assert owner.get("/projects/widget/keep-the-why").json()["fresh"] is True
+    assert owner.get("/projects/maintainer/widget/keep-the-why").json()["fresh"] is True
 
 
 def test_more_than_200_entries_needing_attention_are_cut(owner: flow.Human, fake: Fake) -> None:
     fake.files[".keep-the-why"] = kfile(f"{BASE}/s.json", "r")
     fake.states[f"{BASE}/s.json"] = export(*[entry(n, "open") for n in range(250)])
     flow.project(owner, "widget", repository={"url": REPO})
-    body = owner.get("/projects/widget/keep-the-why").json()
+    body = owner.get("/projects/maintainer/widget/keep-the-why").json()
     assert len(body["attention"]) == ktw.MAX_ATTENTION and body["truncated"] is True
     assert body["summary"]["attention"] == 250
 
@@ -508,7 +510,7 @@ def test_untrusted_names_and_ids_are_cleaned(owner: flow.Human, fake: Fake) -> N
     fake.states[f"{BASE}/s.json"] = export()
     fake.states[f"{BASE}/hub.json"] = export()
     flow.project(owner, "widget", repository={"url": REPO})
-    root, hub = owner.get("/projects/widget/keep-the-why").json()["members"]
+    root, hub = owner.get("/projects/maintainer/widget/keep-the-why").json()["members"]
     assert "\x1b" not in root["id"] and len(root["id"]) == 200 and root["id"].endswith("…")
     assert hub["name"] == "badname"
 
@@ -525,12 +527,12 @@ def test_the_view_shows_the_cached_export_and_never_reads(
     )
     fake.family()
     flow.project(owner, "widget", repository={"url": REPO})
-    view = owner.get("/projects/widget").json()
+    view = owner.get("/projects/maintainer/widget").json()
     assert view["keep_the_why_export"] is None
     assert fake.file_reads == [] and fake.state_reads == []  # nothing read in the request
     assert scheduled  # but a background read was scheduled
-    owner.get("/projects/widget/keep-the-why")
-    export_view = owner.get("/projects/widget").json()["keep_the_why_export"]
+    owner.get("/projects/maintainer/widget/keep-the-why")
+    export_view = owner.get("/projects/maintainer/widget").json()["keep_the_why_export"]
     assert set(export_view) == {"observed_at", "summary", "members", "family_truncated", "error"}
     assert export_view["summary"]["members"] == 5
     listed = owner.get("/projects").json()["items"][0]["keep_the_why_export"]
@@ -548,7 +550,10 @@ def test_the_background_read_fills_the_cache_once_per_project(
     ktw._refresh_in_background(forge.Forge(None), project_id, REPO, jobs.append)
     assert len(jobs) == 1  # one pending read per project
     jobs[0]()
-    assert owner.get("/projects/widget").json()["keep_the_why_export"]["summary"]["members"] == 5
+    assert (
+        owner.get("/projects/maintainer/widget").json()["keep_the_why_export"]["summary"]["members"]
+        == 5
+    )
     ktw._refresh_in_background(forge.Forge(None), project_id, REPO, jobs.append)
     assert len(jobs) == 2  # done: the next one may be scheduled
 
@@ -566,9 +571,11 @@ def _project_id(owner: flow.Human) -> str:
 def test_a_new_repository_forgets_the_export(owner: flow.Human, fake: Fake) -> None:
     fake.family()
     flow.project(owner, "widget", repository={"url": REPO})
-    owner.get("/projects/widget/keep-the-why")
-    owner.patch("/projects/widget", {"repository": {"url": "https://github.com/acme/other"}})
-    assert owner.get("/projects/widget").json()["keep_the_why_export"] is None
+    owner.get("/projects/maintainer/widget/keep-the-why")
+    owner.patch(
+        "/projects/maintainer/widget", {"repository": {"url": "https://github.com/acme/other"}}
+    )
+    assert owner.get("/projects/maintainer/widget").json()["keep_the_why_export"] is None
 
 
 # --- review: foreign data stays with its member; the budget -------------------------------------
@@ -585,7 +592,7 @@ def test_a_broken_export_fails_only_its_member(
     fake.family()
     fake.states[f"{BASE}/hub/state.json"] = body
     flow.project(owner, "widget", repository={"url": REPO})
-    answer = owner.get("/projects/widget/keep-the-why")
+    answer = owner.get("/projects/maintainer/widget/keep-the-why")
     assert answer.status_code == 200
     hub = answer.json()["members"][1]
     assert (hub["error"] or {}).get("reason") == reason
@@ -605,7 +612,7 @@ def test_an_unexpected_error_digesting_an_export_is_shape(
 
     monkeypatch.setattr(ktw, "digest", digest)
     flow.project(owner, "widget", repository={"url": REPO})
-    answer = owner.get("/projects/widget/keep-the-why")
+    answer = owner.get("/projects/maintainer/widget/keep-the-why")
     assert answer.status_code == 200
     assert answer.json()["members"][1]["error"]["reason"] == "shape"
 
@@ -618,7 +625,7 @@ def test_a_slow_family_ends_at_the_deadline(
     fake.delay = 2.0
     flow.project(owner, "widget", repository={"url": REPO})
     started = time.monotonic()
-    body = owner.get("/projects/widget/keep-the-why").json()
+    body = owner.get("/projects/maintainer/widget/keep-the-why").json()
     assert time.monotonic() - started < 1.5
     read = [m for m in body["members"] if m["state_url"]]
     assert {m["error"]["reason"] for m in read} == {"timeout"}
@@ -630,7 +637,7 @@ def test_configs_past_the_deadline_are_not_read(
     monkeypatch.setattr(ktw, "FAMILY_DEADLINE", 0.0)
     fake.family()
     flow.project(owner, "widget", repository={"url": REPO})
-    body = owner.get("/projects/widget/keep-the-why").json()
+    body = owner.get("/projects/maintainer/widget/keep-the-why").json()
     assert fake.file_reads == [".keep-the-why"]
     children = [m for m in body["members"][1:] if "://" not in m["path"]]
     assert {m["error"]["reason"] for m in children} == {"timeout"}
@@ -647,15 +654,15 @@ def test_a_request_waiting_on_a_long_read_gets_the_cache_or_503(
     lock = ktw.CACHE._lock(project_id)
     lock.acquire()
     try:
-        busy = owner.get("/projects/widget/keep-the-why")
+        busy = owner.get("/projects/maintainer/widget/keep-the-why")
         assert busy.status_code == 503
         assert busy.json()["error"]["code"] == "ktw_unavailable"
     finally:
         lock.release()
-    owner.get("/projects/widget/keep-the-why")  # cached now
+    owner.get("/projects/maintainer/widget/keep-the-why")  # cached now
     lock.acquire()
     try:
-        cached = owner.get("/projects/widget/keep-the-why", params={"max_age": 0})
+        cached = owner.get("/projects/maintainer/widget/keep-the-why", params={"max_age": 0})
         assert cached.status_code == 200 and cached.json()["fresh"] is False
     finally:
         lock.release()

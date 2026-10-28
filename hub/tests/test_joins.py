@@ -32,7 +32,7 @@ def _token(created: dict[str, str]) -> str:
 
 def test_a_join_answers_the_paste_line_once(owner: flow.Human) -> None:
     response = owner.post(
-        "/projects/maity/joins",
+        "/projects/maintainer/maity/joins",
         {
             "agent": {"handle": "agent-b", "display_name": "Agent B"},
             "role": "member",
@@ -59,8 +59,8 @@ def test_a_join_answers_the_paste_line_once(owner: flow.Human) -> None:
     assert CODE.match(body["code"])
     assert body["paste_line"] == f"maity join {body['join_url']} --code {body['code']}"
     assert body["agent_id"].startswith("agt-")
-    assert body["project"] == "maity"
-    listed = owner.get("/projects/maity/joins").json()["items"]
+    assert body["project"] == "maintainer/maity"
+    listed = owner.get("/projects/maintainer/maity/joins").json()["items"]
     assert set(listed[0]) == {
         "id",
         "agent_id",
@@ -93,16 +93,16 @@ def test_a_join_names_an_own_agent_or_a_new_one(
     assert flow.join(owner, "maity", agent={"id": mine["id"]})["agent_id"] == mine["id"]
     other = flow.human(make_client, migrated, "someone")
     theirs = other.post("/agents", {"handle": "theirs", "display_name": "Theirs"}).json()
-    response = owner.post("/projects/maity/joins", {"agent": {"id": theirs["id"]}})
+    response = owner.post("/projects/maintainer/maity/joins", {"agent": {"id": theirs["id"]}})
     assert response.json()["error"]["details"]["fields"] == {"agent.id": "not_yours"}
-    neither = owner.post("/projects/maity/joins", {"agent": {}})
+    neither = owner.post("/projects/maintainer/maity/joins", {"agent": {}})
     assert neither.json()["error"]["details"]["fields"] == {"agent": "id_or_handle"}
 
 
 @pytest.mark.parametrize("ttl", [59, 3601])
 def test_the_ttl_is_bounded(owner: flow.Human, ttl: int) -> None:
     response = owner.post(
-        "/projects/maity/joins",
+        "/projects/maintainer/maity/joins",
         {"agent": {"handle": "aa", "display_name": "A"}, "ttl_seconds": ttl},
     )
     assert response.json()["error"]["details"]["fields"] == {"ttl_seconds": "out_of_range"}
@@ -111,7 +111,7 @@ def test_the_ttl_is_bounded(owner: flow.Human, ttl: int) -> None:
 def test_joins_need_members_admin(owner: flow.Human, make_client: ClientFactory) -> None:
     admin_agent = flow.agent(make_client, owner, role="admin")
     response = admin_agent.post(
-        "/projects/maity/joins", {"agent": {"handle": "x", "display_name": "X"}}
+        "/projects/maintainer/maity/joins", {"agent": {"handle": "x", "display_name": "X"}}
     )
     assert response.status_code == 403
     assert response.headers["Maity-Error"] == "forbidden"
@@ -122,7 +122,7 @@ def test_a_join_for_an_existing_member_keeps_the_membership(
 ) -> None:
     first = flow.agent(make_client, owner, role="member", areas=["hub/"])
     differing = owner.post(
-        "/projects/maity/joins",
+        "/projects/maintainer/maity/joins",
         {"agent": {"id": first.id}, "role": "admin", "areas": ["web/"], "capabilities": []},
     )
     assert differing.status_code == 400
@@ -130,7 +130,7 @@ def test_a_join_for_an_existing_member_keeps_the_membership(
         "role": "differs_from_membership",
         "areas": "differs_from_membership",
     }
-    owner.patch(f"/projects/maity/members/{first.id}", {"team": {"max_instances": 2}})
+    owner.patch(f"/projects/maintainer/maity/members/{first.id}", {"team": {"max_instances": 2}})
     second_clone = flow.agent(
         make_client, owner, agent={"id": first.id}, areas=["hub/"], new_instance=True
     )
@@ -147,15 +147,15 @@ def test_delete_revokes_an_unused_join_and_refuses_a_spent_one(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
     unused = flow.join(owner, "maity")
-    revoked = owner.delete(f"/projects/maity/joins/{unused['id']}")
+    revoked = owner.delete(f"/projects/maintainer/maity/joins/{unused['id']}")
     assert revoked.status_code == 200 and revoked.json()["revoked_at"]
-    again = owner.delete(f"/projects/maity/joins/{unused['id']}")
+    again = owner.delete(f"/projects/maintainer/maity/joins/{unused['id']}")
     assert again.status_code == 200 and again.json() == revoked.json()
     assert flow.exchange(make_client(), unused).headers["Maity-Error"] == "not_found"
 
     used = flow.join(owner, "maity")
     flow.exchange(make_client(), used)
-    response = owner.delete(f"/projects/maity/joins/{used['id']}")
+    response = owner.delete(f"/projects/maintainer/maity/joins/{used['id']}")
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "invalid_transition"
     assert response.json()["error"]["details"] == {"from": "used", "to": "revoked"}
@@ -195,7 +195,10 @@ def test_join_page_names_the_expected_repository(
 ) -> None:
     if repository:
         assert (
-            owner.patch("/projects/maity", {"repository": {"url": repository}}).status_code == 200
+            owner.patch(
+                "/projects/maintainer/maity", {"repository": {"url": repository}}
+            ).status_code
+            == 200
         )
     created = flow.join(owner, "maity")
     for accept in ["text/markdown", "text/html"]:
@@ -259,7 +262,7 @@ def test_the_exchange_answers_the_bare_credential_and_facts_in_headers(
     assert re.fullmatch(r"mty1\.crd-[0-9a-z]+\.[A-Za-z0-9_-]{43}", response.text)
     assert response.headers["Maity-Credential-Id"] == response.text.split(".")[1]
     assert response.headers["Maity-Member-Id"] == created["agent_id"]
-    assert response.headers["Maity-Project"] == "maity"
+    assert response.headers["Maity-Project"] == "maintainer/maity"
     assert response.headers["Maity-Hub"] == "https://hub.example"
     me = make_client().get("/api/v1/me", headers={"Authorization": f"Bearer {response.text}"})
     assert me.json()["member"]["id"] == created["agent_id"]
@@ -286,7 +289,7 @@ def test_three_wrong_codes_burn_the_join(owner: flow.Human, make_client: ClientF
         assert wrong.status_code == 403
         assert wrong.headers["Maity-Error"] == "code_invalid"
     assert flow.exchange(client, created).headers["Maity-Error"] == "not_found"
-    listed = owner.get("/projects/maity/joins").json()["items"][0]
+    listed = owner.get("/projects/maintainer/maity/joins").json()["items"][0]
     assert listed["burned"] is True and listed["used_at"] is None
 
 
@@ -341,7 +344,7 @@ def test_the_exchange_records_the_client_and_needs_it(
     missing = make_client().post(f"/api/v1/join/{token}", json={"code": created["code"]})
     assert missing.json()["error"]["details"]["fields"] == {"client": "missing"}
     agent = flow.agent(make_client, owner)
-    listed = owner.get(f"/projects/maity/members/{agent.id}/credentials").json()["items"]
+    listed = owner.get(f"/projects/maintainer/maity/members/{agent.id}/credentials").json()["items"]
     assert listed[0]["client"] == "curl"
     assert listed[0]["resumed_at"] is None  # "never resumed"
 
@@ -373,7 +376,8 @@ def test_concurrent_wrong_codes_burn_after_exactly_three(
 )
 def test_areas_are_plain_paths(owner: flow.Human, area: str) -> None:
     response = owner.post(
-        "/projects/maity/joins", {"agent": {"handle": "aa", "display_name": "A"}, "areas": [area]}
+        "/projects/maintainer/maity/joins",
+        {"agent": {"handle": "aa", "display_name": "A"}, "areas": [area]},
     )
     assert response.json()["error"]["details"]["fields"] == {"areas": "invalid_path"}
 

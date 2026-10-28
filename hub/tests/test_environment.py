@@ -43,7 +43,7 @@ def detected(engine: Engine) -> list[Any]:
 
 
 def sharing(owner: flow.Human, agent: flow.Agent) -> Any:
-    return owner.get(f"/projects/maity/members/{agent.id}").json()["shared_environment"]
+    return owner.get(f"/projects/maintainer/maity/members/{agent.id}").json()["shared_environment"]
 
 
 @pytest.mark.parametrize(
@@ -128,7 +128,7 @@ def test_revoking_a_credential_ends_the_sharing(
     a, b = flow.agent(make_client, owner), flow.agent(make_client, owner)
     resume(a, HOME, WORK)
     resume(b, HOME, WORK)
-    revoked = owner.post(f"/projects/maity/credentials/{b.credential_id}/revoke", {})
+    revoked = owner.post(f"/projects/maintainer/maity/credentials/{b.credential_id}/revoke", {})
     assert revoked.status_code == 200, revoked.text
     assert sharing(owner, a) == []
     with migrated.connect() as conn:
@@ -144,17 +144,20 @@ def test_no_agent_sees_the_field_or_the_event(
     resume(a, HOME, WORK)
     resume(b, HOME, WORK)
     for viewer in (a, admin):
-        view = viewer.get(f"/projects/maity/members/{b.id}").json()
+        view = viewer.get(f"/projects/maintainer/maity/members/{b.id}").json()
         assert "shared_environment" not in view
-        listed = viewer.get("/projects/maity/members").json()["items"]
+        listed = viewer.get("/projects/maintainer/maity/members").json()["items"]
         assert all("shared_environment" not in v for v in listed)
         kinds = [
             e["kind"]
-            for e in viewer.get("/projects/maity/events?after=0&limit=200").json()["items"]
+            for e in viewer.get("/projects/maintainer/maity/events?after=0&limit=200").json()[
+                "items"
+            ]
         ]
         assert "shared_environment_detected" not in kinds
     owners = [
-        e["kind"] for e in owner.get("/projects/maity/events?after=0&limit=200").json()["items"]
+        e["kind"]
+        for e in owner.get("/projects/maintainer/maity/events?after=0&limit=200").json()["items"]
     ]
     assert "shared_environment_detected" in owners
     # Never in member_updated, nor anywhere else an event carries a member view.
@@ -166,7 +169,7 @@ def test_no_agent_sees_the_field_or_the_event(
 def test_the_ids_are_never_shown(owner: flow.Human, make_client: ClientFactory) -> None:
     a = flow.agent(make_client, owner)
     packet = resume(a, HOME, WORK).text
-    view = owner.get(f"/projects/maity/members/{a.id}").text
+    view = owner.get(f"/projects/maintainer/maity/members/{a.id}").text
     assert HOME not in packet + view and WORK not in packet + view
 
 
@@ -198,7 +201,7 @@ def test_removing_a_member_ends_its_sharing(
     a, b = flow.agent(make_client, owner), flow.agent(make_client, owner)
     resume(a, HOME, WORK)
     resume(b, HOME, WORK)
-    assert owner.delete(f"/projects/maity/members/{b.id}").status_code == 200
+    assert owner.delete(f"/projects/maintainer/maity/members/{b.id}").status_code == 200
     assert sharing(owner, a) == []
     with migrated.connect() as conn:
         [row] = conn.execute(select(t.environment_overlap)).all()
@@ -213,10 +216,12 @@ def test_a_redaction_is_as_hidden_from_agents_as_what_it_redacts(
     resume(a, HOME, WORK)
     resume(b, HOME, WORK)
     [event] = detected(migrated)
-    redacted = owner.post(f"/projects/maity/events/{event.seq}/redact", {"reason": "test"})
+    redacted = owner.post(
+        f"/projects/maintainer/maity/events/{event.seq}/redact", {"reason": "test"}
+    )
     assert redacted.status_code == 200, redacted.text
-    seen = admin.get("/projects/maity/events?after=0&limit=200").json()["items"]
+    seen = admin.get("/projects/maintainer/maity/events?after=0&limit=200").json()["items"]
     tombstones = [e for e in seen if e["kind"] == "event_redacted"]
     assert tombstones == []  # see-all does not reach it (§8.5)
-    owners = owner.get("/projects/maity/events?after=0&limit=200").json()["items"]
+    owners = owner.get("/projects/maintainer/maity/events?after=0&limit=200").json()["items"]
     assert [e["payload"]["seq"] for e in owners if e["kind"] == "event_redacted"] == [event.seq]

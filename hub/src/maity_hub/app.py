@@ -35,6 +35,7 @@ from maity_hub.config import ConfigError, Settings
 from maity_hub.db import current_revision, head_revision, make_engine
 from maity_hub.errors import error_response
 from maity_hub.forge_webhook import check_secrets
+from maity_hub.mail import outbox
 from maity_hub.mail import settings as mail
 from maity_hub.mail.environment import MailConfigError
 from maity_hub.middleware import HubMiddleware
@@ -138,7 +139,11 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         # A takeover's window ends without anybody calling (docs/api.md §6.19).
         takeover_worker = takeovers.Worker(engine)
         takeover_worker.start()
+        # The outbox is sent in the background, with the settings in effect (§16.2, §18.7).
+        mail_worker = outbox.Worker(engine, settings.mail, settings.secret_key)
+        mail_worker.start()
         yield
+        mail_worker.stop()
         takeover_worker.stop()
         jour_fixe_clock.stop()
         registrations_worker.stop()

@@ -1,4 +1,4 @@
-"""`GET /projects/{slug}/keep-the-why` (docs/api.md §11.3)."""
+"""`GET /projects/{owner}/{slug}/keep-the-why` (docs/api.md §11.3)."""
 
 from __future__ import annotations
 
@@ -9,11 +9,12 @@ from maity_hub import ktw
 from maity_hub.access import membership
 from maity_hub.deps import AnyCaller, engine_of, reader_of
 from maity_hub.errors import ApiError, not_found
+from maity_hub.namespace import ProjectRoute
 
-router = APIRouter()
+router = APIRouter(route_class=ProjectRoute)
 
 
-@router.get("/projects/{slug}/keep-the-why")
+@router.get("/projects/{owner}/{slug}/keep-the-why")
 def read_keep_the_why(
     slug: str,
     request: Request,

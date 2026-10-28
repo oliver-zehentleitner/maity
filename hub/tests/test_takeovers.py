@@ -33,17 +33,18 @@ def later() -> Iterator[list[timedelta]]:
 
 
 def _held(owner: flow.Human, holder: flow.Agent) -> str:
-    card = owner.post("/projects/maity/tasks", {"title": "A card"})
+    card = owner.post("/projects/maintainer/maity/tasks", {"title": "A card"})
     assert card.status_code == 201, card.text
     card_id: str = card.json()["id"]
-    claimed = holder.post(f"/projects/maity/tasks/{card_id}/claim", {})
+    claimed = holder.post(f"/projects/maintainer/maity/tasks/{card_id}/claim", {})
     assert claimed.status_code == 200, claimed.text
     return card_id
 
 
 def _open(who: Any, card_id: str, **body: Any) -> Any:
     return who.post(
-        f"/projects/maity/tasks/{card_id}/takeover", {"reason": "silent for hours", **body}
+        f"/projects/maintainer/maity/tasks/{card_id}/takeover",
+        {"reason": "silent for hours", **body},
     )
 
 
@@ -60,7 +61,7 @@ def _events(engine: Engine, kind: str) -> list[Any]:
 
 
 def _card(owner: flow.Human, card_id: str) -> Any:
-    return owner.get(f"/projects/maity/tasks/{card_id}").json()
+    return owner.get(f"/projects/maintainer/maity/tasks/{card_id}").json()
 
 
 # --- opening -----------------------------------------------------------------------------
@@ -89,7 +90,7 @@ def test_a_takeover_opens_a_window_and_tells_the_holder(
     again = _open(asker, card_id)
     assert again.status_code == 409 and again.json()["error"]["code"] == "takeover_open"
     assert again.json()["error"]["details"] == {"takeover": body["id"]}
-    listed = asker.get("/projects/maity/takeovers").json()["items"]
+    listed = asker.get("/projects/maintainer/maity/takeovers").json()["items"]
     assert [i["id"] for i in listed] == [body["id"]]
 
 
@@ -100,7 +101,7 @@ def test_accepting_moves_the_card_with_a_fresh_lease(
     asker = flow.agent(make_client, owner)
     card_id = _held(owner, holder)
     takeover = _open(asker, card_id).json()
-    path = f"/projects/maity/takeovers/{takeover['id']}"
+    path = f"/projects/maintainer/maity/takeovers/{takeover['id']}"
     stranger = asker.post(f"{path}/respond", {"accept": True})
     assert stranger.status_code == 409 and stranger.json()["error"]["code"] == "not_holder"
     accepted = holder.post(f"{path}/respond", {"accept": True})
@@ -118,8 +119,8 @@ def test_accepting_moves_the_card_with_a_fresh_lease(
     closed = holder.post(f"{path}/respond", {"accept": True})
     assert closed.status_code == 409 and closed.json()["error"]["code"] == "takeover_closed"
     assert closed.json()["error"]["details"] == {"status": "transferred"}
-    assert asker.get("/projects/maity/takeovers").json()["items"] == []
-    assert len(asker.get("/projects/maity/takeovers?status=all").json()["items"]) == 1
+    assert asker.get("/projects/maintainer/maity/takeovers").json()["items"] == []
+    assert len(asker.get("/projects/maintainer/maity/takeovers?status=all").json()["items"]) == 1
 
 
 def test_an_objection_holds_the_card_until_settled(
@@ -128,7 +129,7 @@ def test_an_objection_holds_the_card_until_settled(
     holder = flow.agent(make_client, owner)
     asker = flow.agent(make_client, owner)
     card_id = _held(owner, holder)
-    path = f"/projects/maity/takeovers/{_open(asker, card_id).json()['id']}"
+    path = f"/projects/maintainer/maity/takeovers/{_open(asker, card_id).json()['id']}"
     objected = holder.post(f"{path}/respond", {"object": {"reasons": "nearly done"}})
     assert objected.status_code == 200, objected.text
     assert objected.json()["status"] == "objected"
@@ -150,7 +151,7 @@ def test_the_window_elapsing_transfers_the_card(
     later.append(timedelta(minutes=61))
     takeovers.sweep(migrated)
     takeovers.sweep(migrated)  # settled once: a second sweep moves nothing
-    row = owner.get(f"/projects/maity/takeovers/{takeover_id}").json()
+    row = owner.get(f"/projects/maintainer/maity/takeovers/{takeover_id}").json()
     assert (row["status"], row["outcome"]["how"]) == ("transferred", "window_elapsed")
     assert len(_events(migrated, "takeover_closed")) == 1
     assert _card(owner, card_id)["claim"]["holder"] == asker.id
@@ -188,19 +189,19 @@ def test_a_card_a_human_holds_is_never_taken_over(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
     admin = flow.agent(make_client, owner, role="admin")
-    card_id = owner.post("/projects/maity/tasks", {"title": "Mine"}).json()["id"]
-    assert owner.post(f"/projects/maity/tasks/{card_id}/claim", {}).status_code == 200
+    card_id = owner.post("/projects/maintainer/maity/tasks", {"title": "Mine"}).json()["id"]
+    assert owner.post(f"/projects/maintainer/maity/tasks/{card_id}/claim", {}).status_code == 200
     response = _open(admin, card_id)
     assert response.status_code == 403
     assert response.json()["error"]["details"]["reason"] == "humans_only"
-    moved = admin.post(f"/projects/maity/tasks/{card_id}/assign", {"assignee": admin.id})
+    moved = admin.post(f"/projects/maintainer/maity/tasks/{card_id}/assign", {"assignee": admin.id})
     assert moved.status_code == 403
     assert moved.json()["error"]["details"]["reason"] == "humans_only"
 
 
 def test_a_takeover_needs_a_held_card(owner: flow.Human, make_client: ClientFactory) -> None:
     asker = flow.agent(make_client, owner)
-    card_id = owner.post("/projects/maity/tasks", {"title": "Free"}).json()["id"]
+    card_id = owner.post("/projects/maintainer/maity/tasks", {"title": "Free"}).json()["id"]
     response = _open(asker, card_id)
     assert response.status_code == 409 and response.json()["error"]["code"] == "not_claimed"
 
@@ -222,7 +223,7 @@ def test_the_lead_moves_a_card_within_its_team(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
     lead = flow.agent(make_client, owner)
-    path = f"/projects/maity/members/{lead.id}"
+    path = f"/projects/maintainer/maity/members/{lead.id}"
     assert owner.patch(path, {"team": {"max_instances": 2}}).status_code == 200
     sibling = flow.agent(make_client, owner, agent={"id": lead.id}, new_instance=True)
     assert owner.patch(path, {"team": {"lead_instance": lead.instance}}).status_code == 200
@@ -238,7 +239,7 @@ def test_a_member_id_that_leaves_the_choice_open_is_refused(
 ) -> None:
     holder = flow.agent(make_client, owner)
     team = flow.agent(make_client, owner)
-    path = f"/projects/maity/members/{team.id}"
+    path = f"/projects/maintainer/maity/members/{team.id}"
     assert owner.patch(path, {"team": {"max_instances": 2}}).status_code == 200
     flow.agent(make_client, owner, agent={"id": team.id}, new_instance=True)
     admin = flow.agent(make_client, owner, role="admin")
@@ -256,7 +257,7 @@ def test_an_agent_moves_a_held_card_only_through_a_takeover(
     holder = flow.agent(make_client, owner)
     admin = flow.agent(make_client, owner, role="admin")
     card_id = _held(owner, holder)
-    path = f"/projects/maity/tasks/{card_id}"
+    path = f"/projects/maintainer/maity/tasks/{card_id}"
     for response in (
         admin.post(f"{path}/assign", {"assignee": admin.id}),
         admin.post(f"{path}/release", {}),
@@ -271,7 +272,7 @@ def test_an_agent_moves_a_held_card_only_through_a_takeover(
     _expire(migrated, card_id)
     moved = admin.post(f"{path}/assign", {"assignee": admin.id})
     assert moved.status_code == 200, moved.text
-    record = admin.get(f"/projects/maity/takeovers?status=all&task_id={card_id}").json()
+    record = admin.get(f"/projects/maintainer/maity/takeovers?status=all&task_id={card_id}").json()
     (only,) = record["items"]
     assert (only["status"], only["outcome"]["how"]) == ("transferred", "lease_expired")
     assert only["from"]["member_id"] == holder.id and only["to"]["member_id"] == admin.id
@@ -286,11 +287,11 @@ def test_an_open_takeover_blocks_an_agents_move(
     card_id = _held(owner, holder)
     takeover_id = _open(asker, card_id).json()["id"]
     _expire(migrated, card_id)  # a lease that runs out later does not end the takeover
-    moved = admin.post(f"/projects/maity/tasks/{card_id}/release", {})
+    moved = admin.post(f"/projects/maintainer/maity/tasks/{card_id}/release", {})
     assert moved.status_code == 409 and moved.json()["error"]["code"] == "takeover_open"
     # A human admin's move decides it.
-    assert owner.post(f"/projects/maity/tasks/{card_id}/release", {}).status_code == 200
-    row = owner.get(f"/projects/maity/takeovers/{takeover_id}").json()
+    assert owner.post(f"/projects/maintainer/maity/tasks/{card_id}/release", {}).status_code == 200
+    row = owner.get(f"/projects/maintainer/maity/takeovers/{takeover_id}").json()
     assert (row["status"], row["outcome"]["how"]) == ("cancelled", "decided")
 
 
@@ -301,8 +302,8 @@ def test_the_holders_own_release_cancels_the_takeover(
     asker = flow.agent(make_client, owner)
     card_id = _held(owner, holder)
     takeover_id = _open(asker, card_id).json()["id"]
-    assert holder.post(f"/projects/maity/tasks/{card_id}/release", {}).status_code == 200
-    row = owner.get(f"/projects/maity/takeovers/{takeover_id}").json()
+    assert holder.post(f"/projects/maintainer/maity/tasks/{card_id}/release", {}).status_code == 200
+    row = owner.get(f"/projects/maintainer/maity/takeovers/{takeover_id}").json()
     assert (row["status"], row["outcome"]["how"]) == ("cancelled", "cancelled")
 
 
@@ -312,7 +313,7 @@ def test_the_holders_own_release_cancels_the_takeover(
 def test_only_the_requester_withdraws(owner: flow.Human, make_client: ClientFactory) -> None:
     holder = flow.agent(make_client, owner)
     asker = flow.agent(make_client, owner)
-    path = f"/projects/maity/takeovers/{_open(asker, _held(owner, holder)).json()['id']}"
+    path = f"/projects/maintainer/maity/takeovers/{_open(asker, _held(owner, holder)).json()['id']}"
     assert holder.post(f"{path}/withdraw", {}).status_code == 403
     assert asker.post(f"{path}/withdraw", {}).json()["status"] == "withdrawn"
 
@@ -323,7 +324,7 @@ def test_the_admin_team_overrides_an_open_takeover(
     holder = flow.agent(make_client, owner)
     asker = flow.agent(make_client, owner, role="admin")
     card_id = _held(owner, holder)
-    path = f"/projects/maity/takeovers/{_open(asker, card_id).json()['id']}"
+    path = f"/projects/maintainer/maity/takeovers/{_open(asker, card_id).json()['id']}"
     party = asker.post(f"{path}/override", {"reason": "release waits"})
     assert party.status_code == 403
     assert party.json()["error"]["details"]["reason"] == "party_to_takeover"
@@ -344,11 +345,11 @@ def test_the_admin_team_overrides_an_open_takeover(
 
 def test_the_window_is_project_policy(owner: flow.Human, make_client: ClientFactory) -> None:
     out = owner.patch(
-        "/projects/maity", {"policy": {"takeover_window_minutes": 4}, "reason": "test"}
+        "/projects/maintainer/maity", {"policy": {"takeover_window_minutes": 4}, "reason": "test"}
     )
     assert out.status_code == 400
     changed = owner.patch(
-        "/projects/maity", {"policy": {"takeover_window_minutes": 15}, "reason": "test"}
+        "/projects/maintainer/maity", {"policy": {"takeover_window_minutes": 15}, "reason": "test"}
     )
     assert changed.status_code == 200, changed.text
     assert changed.json()["policy"]["takeover_window_minutes"] == 15
@@ -363,8 +364,8 @@ def test_removing_a_party_cancels_its_takeovers(
     holder = flow.agent(make_client, owner)
     asker = flow.agent(make_client, owner)
     takeover_id = _open(asker, _held(owner, holder)).json()["id"]
-    assert owner.delete(f"/projects/maity/members/{asker.id}").status_code == 200
-    row = owner.get(f"/projects/maity/takeovers/{takeover_id}").json()
+    assert owner.delete(f"/projects/maintainer/maity/members/{asker.id}").status_code == 200
+    row = owner.get(f"/projects/maintainer/maity/takeovers/{takeover_id}").json()
     assert (row["status"], row["outcome"]["how"]) == ("cancelled", "cancelled")
 
 
@@ -376,7 +377,7 @@ def test_a_replacement_cancels_a_takeover_from_the_replaced_instance(
     card_id = _held(owner, holder)
     takeover_id = _open(asker, card_id).json()["id"]
     flow.agent(make_client, owner, agent={"id": holder.id}, replaces=holder.instance)
-    row = owner.get(f"/projects/maity/takeovers/{takeover_id}").json()
+    row = owner.get(f"/projects/maintainer/maity/takeovers/{takeover_id}").json()
     assert row["status"] == "cancelled"
 
 
@@ -384,8 +385,8 @@ def test_a_humans_expired_claim_is_never_taken_over(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
     admin = flow.agent(make_client, owner, role="admin")
-    card_id = owner.post("/projects/maity/tasks", {"title": "Mine"}).json()["id"]
-    assert owner.post(f"/projects/maity/tasks/{card_id}/claim", {}).status_code == 200
+    card_id = owner.post("/projects/maintainer/maity/tasks", {"title": "Mine"}).json()["id"]
+    assert owner.post(f"/projects/maintainer/maity/tasks/{card_id}/claim", {}).status_code == 200
     _expire(migrated, card_id)  # expired or not, a human's card stays theirs (§2.3)
     for who in (admin, owner):
         response = _open(who, card_id)
@@ -403,7 +404,8 @@ def _disputed(owner: flow.Human, make_client: ClientFactory) -> tuple[Any, Any, 
     card_id = _held(owner, holder)
     takeover_id = _open(asker, card_id).json()["id"]
     objected = holder.post(
-        f"/projects/maity/takeovers/{takeover_id}/respond", {"object": {"reasons": "nearly done"}}
+        f"/projects/maintainer/maity/takeovers/{takeover_id}/respond",
+        {"object": {"reasons": "nearly done"}},
     )
     assert objected.status_code == 200, objected.text
     return holder, asker, card_id, takeover_id
@@ -413,7 +415,7 @@ def test_a_party_escalates_to_the_admin_team(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
     holder, asker, card_id, takeover_id = _disputed(owner, make_client)
-    path = f"/projects/maity/takeovers/{takeover_id}"
+    path = f"/projects/maintainer/maity/takeovers/{takeover_id}"
     stranger = flow.agent(make_client, owner)
     refused = stranger.post(f"{path}/escalate", {})
     assert refused.status_code == 403, refused.text
@@ -421,13 +423,13 @@ def test_a_party_escalates_to_the_admin_team(
     assert escalated.status_code == 200, escalated.text
     assert escalated.json()["status"] == "escalated"
     request_id = escalated.json()["request_id"]
-    asked = owner.get(f"/projects/maity/requests/{request_id}").json()
+    asked = owner.get(f"/projects/maintainer/maity/requests/{request_id}").json()
     assert asked["class"] == "decision" and asked["to"] == "role:admin"
     assert [r["id"] for r in asked["replies"]] == ["transfer", "keep"]
     assert asked["while_open"] == "proceed_provisionally"
     assert asked["takeover_id"] == takeover_id and asked["tried"] == "nearly done"
     assert _events(migrated, "takeover_escalated")
-    answer = f"/projects/maity/requests/{request_id}/answer"
+    answer = f"/projects/maintainer/maity/requests/{request_id}/answer"
     party = asker.post(answer, {"reply_id": "transfer"})
     assert party.status_code == 403
     assert party.json()["error"]["details"]["reason"] == "party_to_takeover"
@@ -445,10 +447,12 @@ def test_a_party_escalates_to_the_admin_team(
 
 def test_keep_refuses_the_takeover(owner: flow.Human, make_client: ClientFactory) -> None:
     holder, _, card_id, takeover_id = _disputed(owner, make_client)
-    path = f"/projects/maity/takeovers/{takeover_id}"
+    path = f"/projects/maintainer/maity/takeovers/{takeover_id}"
     request_id = holder.post(f"{path}/escalate", {}).json()["request_id"]
     admin = flow.agent(make_client, owner, role="admin")  # an admin agent, same owner
-    kept = admin.post(f"/projects/maity/requests/{request_id}/answer", {"reply_id": "keep"})
+    kept = admin.post(
+        f"/projects/maintainer/maity/requests/{request_id}/answer", {"reply_id": "keep"}
+    )
     assert kept.status_code == 200, kept.text
     row = owner.get(path).json()
     assert (row["status"], row["outcome"]["how"]) == ("refused", "decided")
@@ -462,7 +466,7 @@ def test_an_unsettled_dispute_escalates_itself(
     later.append(timedelta(minutes=61))
     takeovers.sweep(migrated)
     takeovers.sweep(migrated)  # escalated once
-    row = owner.get(f"/projects/maity/takeovers/{takeover_id}").json()
+    row = owner.get(f"/projects/maintainer/maity/takeovers/{takeover_id}").json()
     assert row["status"] == "escalated" and row["request_id"] is not None
     assert len(_events(migrated, "takeover_escalated")) == 1
 
@@ -471,10 +475,10 @@ def test_withdrawing_an_escalated_takeover_withdraws_its_request(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
     holder, asker, _, takeover_id = _disputed(owner, make_client)
-    path = f"/projects/maity/takeovers/{takeover_id}"
+    path = f"/projects/maintainer/maity/takeovers/{takeover_id}"
     request_id = holder.post(f"{path}/escalate", {}).json()["request_id"]
     assert asker.post(f"{path}/withdraw", {}).json()["status"] == "withdrawn"
-    asked = owner.get(f"/projects/maity/requests/{request_id}").json()
+    asked = owner.get(f"/projects/maintainer/maity/requests/{request_id}").json()
     assert asked["status"] == "withdrawn"
 
 
@@ -486,10 +490,10 @@ def test_an_escalation_is_neither_forwarded_nor_claimed_by_a_party(
     receiver = flow.agent(make_client, owner, role="admin")
     card_id = _held(owner, holder)
     takeover_id = _open(asker, card_id, to=receiver.id).json()["id"]
-    path = f"/projects/maity/takeovers/{takeover_id}"
+    path = f"/projects/maintainer/maity/takeovers/{takeover_id}"
     holder.post(f"{path}/respond", {"object": {"reasons": "nearly done"}})
     request_id = holder.post(f"{path}/escalate", {}).json()["request_id"]
-    requests = f"/projects/maity/requests/{request_id}"
+    requests = f"/projects/maintainer/maity/requests/{request_id}"
     judge = flow.agent(make_client, owner, role="admin")  # holds it as an admin
     forwarded = judge.post(f"{requests}/forward", {"to": receiver.id})
     assert forwarded.status_code == 403, forwarded.text

@@ -115,7 +115,7 @@ def test_the_packet_has_every_part_of_the_contract(
             "covered_by": None,
         }
     ]
-    assert "GET /projects/maity/members" in packet["operations"]
+    assert "GET /projects/maintainer/maity/members" in packet["operations"]
     assert not any("joins" in op for op in packet["operations"])
 
 
@@ -191,7 +191,7 @@ def test_the_cursor_is_mirrored_and_the_own_start_is_skipped(
             select(t.event.c.seq).where(t.event.c.kind == "session_started")
         ).scalar_one()
     assert events["cursor"] >= started
-    owner.patch("/projects/maity", {"state": "freeze", "reason": "release"})
+    owner.patch("/projects/maintainer/maity", {"state": "freeze", "reason": "release"})
     later = agent.resume(cursor=events["cursor"]).json()["events"]
     assert later["after"] == events["cursor"]
     assert [e["kind"] for e in later["items"]] == ["state_changed"]
@@ -230,7 +230,7 @@ def test_rules_markdown_comes_only_when_the_rules_moved(
     cursor = first["events"]["cursor"]
     quiet = agent.resume(cursor=cursor).json()["rules"]
     assert quiet == {"version": 1, "changed": False}
-    owner.patch("/projects/maity", {"rules_markdown": "Write tests first."})
+    owner.patch("/projects/maintainer/maity", {"rules_markdown": "Write tests first."})
     moved = agent.resume(cursor=cursor).json()["rules"]
     assert moved["changed"] is True and moved["version"] == 2
     assert "Write tests first." in moved["markdown"]
@@ -297,10 +297,12 @@ def test_the_packet_carries_the_agents_own_pause(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
     agent = flow.agent(make_client, owner)
-    paused = owner.patch(f"/projects/maity/members/{agent.id}", {"paused": {"reason": "quota"}})
+    paused = owner.patch(
+        f"/projects/maintainer/maity/members/{agent.id}", {"paused": {"reason": "quota"}}
+    )
     assert paused.status_code == 200, paused.text
     shown = agent.resume().json()["membership"]["paused"]
     assert (shown["reason"], shown["by"]) == ("quota", owner.id)
     assert shown["since"] is not None
-    owner.patch(f"/projects/maity/members/{agent.id}", {"paused": None})
+    owner.patch(f"/projects/maintainer/maity/members/{agent.id}", {"paused": None})
     assert agent.resume().json()["membership"]["paused"] is None

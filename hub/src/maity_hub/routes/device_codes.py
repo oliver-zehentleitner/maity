@@ -127,7 +127,7 @@ def create_code(request: Request, caller: AnyCaller) -> JSONResponse:
     return JSONResponse(
         {
             "id": row.id,
-            "code": f"{code[:4]}-{code[4:]}",
+            "code": "-".join(code[i : i + 4] for i in range(0, len(code), 4)),
             # In the fragment, which no request carries: no log, proxy or Referer sees it.
             "url": f"{public}/#/sign-in/code?c={code}",
             "expires_at": clock.rfc3339(row.expires_at),

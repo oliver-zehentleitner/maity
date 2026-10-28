@@ -77,7 +77,7 @@ def test_avatar_url_follows_the_member_everywhere(
     agent_url = put_agent(agent, image("WEBP"), "image/webp").json()["avatar_url"]
     me = owner.get("/me").json()["member"]
     assert (me["avatar_url"], me["avatar_source"]) == (url, "uploaded")
-    members = {m["id"]: m for m in owner.get("/projects/maity/members").json()["items"]}
+    members = {m["id"]: m for m in owner.get("/projects/maintainer/maity/members").json()["items"]}
     assert members[owner.id]["avatar_url"] == url
     assert members[agent.id]["avatar_url"] == agent_url
     assert members[agent.id]["owner"]["avatar_url"] == url  # the admin's owner object
@@ -87,7 +87,7 @@ def test_avatar_url_follows_the_member_everywhere(
     assert agent.get("/me").json()["member"]["avatar_url"] == agent_url
     assert owner.get("/admin/users").json()["items"][0]["avatar_url"] == url
     asked = agent.post(
-        "/projects/maity/requests",
+        "/projects/maintainer/maity/requests",
         {"class": "info", "title": "a question", "summary": "x", "to": "owner"},
     ).json()
     assert asked["asked_by"]["avatar_url"] == agent_url
@@ -217,7 +217,7 @@ def test_who_may_read_a_picture(
     owner_url = put_human(owner, "/me/avatar", image()).json()["avatar_url"]
     stranger = flow.human(make_client, migrated, "stranger")
     flow.project(stranger, "elsewhere")
-    elsewhere = flow.agent(make_client, stranger, "elsewhere")
+    elsewhere = flow.agent(make_client, stranger, "stranger/elsewhere")
     assert owner.client.get(agent_url).status_code == 200  # the agent's owner, a member too
     assert agent.client.get(owner_url, headers=agent.auth).status_code == 200  # shares a project
     for who in (stranger, elsewhere):
@@ -243,7 +243,7 @@ def test_a_paused_agent_still_sets_its_picture(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
     agent = flow.agent(make_client, owner)
-    owner.patch(f"/projects/maity/members/{agent.id}", {"paused": {"reason": "quota"}})
+    owner.patch(f"/projects/maintainer/maity/members/{agent.id}", {"paused": {"reason": "quota"}})
     assert put_agent(agent, image()).status_code == 200  # the avatar is not work
 
 
@@ -428,7 +428,7 @@ def test_the_instance_admin_does_not_read_an_agents_picture_elsewhere(
 ) -> None:
     stranger = flow.human(make_client, migrated, "stranger")
     flow.project(stranger, "elsewhere")
-    theirs = flow.agent(make_client, stranger, "elsewhere")
+    theirs = flow.agent(make_client, stranger, "stranger/elsewhere")
     url = put_agent(theirs, image()).json()["avatar_url"]
     assert owner.client.get(url).status_code == 404  # instance admin: humans' pictures only
 

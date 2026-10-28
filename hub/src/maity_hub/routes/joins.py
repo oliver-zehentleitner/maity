@@ -25,7 +25,7 @@ from sqlalchemy import Connection, insert, select, update
 from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import briefings, clock, events, idempotency, instances, takeovers
+from maity_hub import briefings, clock, events, idempotency, instances, namespace, takeovers
 from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.auth import credentials, second_factor
@@ -39,13 +39,16 @@ from maity_hub.errors import ApiError, forbidden, invalid, not_found, rate_limit
 from maity_hub.events import Actor, emit, lock_project
 from maity_hub.ids import new_id
 from maity_hub.models import HANDLE_PATTERN, GitIdentity, Strict, markdown, title
+from maity_hub.namespace import ProjectRoute
 from maity_hub.ratelimit import Limiter
 from maity_hub.routes.agents import create_profile
 from maity_hub.routes.members import validate_assignment
 from maity_hub.views import join_view, member_view, principal_id
 
-router = APIRouter()
-page_router = APIRouter()  # /join/{token} and /j/{token}, outside the API prefix
+router = APIRouter(route_class=ProjectRoute)
+page_router = APIRouter(
+    route_class=ProjectRoute
+)  # /join/{token} and /j/{token}, outside the API prefix
 
 TTL_DEFAULT, TTL_MIN, TTL_MAX = 900, 60, 3600
 WRONG_CODES_BEFORE_BURN = 3
@@ -92,7 +95,7 @@ idempotency.LOADERS["join"] = idempotency.plain(load_join)
 # --- the join link (human) --------------------------------------------------------
 
 
-@router.post("/projects/{slug}/joins")
+@router.post("/projects/{owner}/{slug}/joins")
 def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCaller) -> JSONResponse:
     if not TTL_MIN <= body.ttl_seconds <= TTL_MAX:
         raise invalid({"ttl_seconds": "out_of_range"})
@@ -177,7 +180,7 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
                 "code": code,
                 "paste_line": f"maity join {join_url} --code {code}",
                 "agent_id": agent_id,
-                "project": mine.project.slug,
+                "project": namespace.full_name(conn, mine.project),
                 "expires_at": clock.rfc3339(now + timedelta(seconds=body.ttl_seconds)),
                 "via": via,
             },
@@ -239,7 +242,7 @@ def _agent_for_join(conn: Connection, agent: JoinAgent, owner_id: str) -> str:
     return create_profile(conn, owner_id, agent.handle, agent.display_name, agent.git_identity)
 
 
-@router.get("/projects/{slug}/joins")
+@router.get("/projects/{owner}/{slug}/joins")
 def list_joins(slug: str, request: Request, caller: HumanCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
@@ -252,7 +255,7 @@ def list_joins(slug: str, request: Request, caller: HumanCaller) -> JSONResponse
         return JSONResponse({"items": [join_view(conn, r) for r in rows], "next_cursor": None})
 
 
-@router.delete("/projects/{slug}/joins/{join_id}")
+@router.delete("/projects/{owner}/{slug}/joins/{join_id}")
 def revoke_join(slug: str, join_id: str, request: Request, caller: HumanCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
@@ -383,7 +386,7 @@ def render_page(
     values = {
         "project_name": _md(project.name),
         "project_repository": _md(project.repository_url or "not configured"),
-        "project": project.slug,
+        "project": namespace.full_name(conn, project),
         "handle": handle,
         "role": row.role,
         "areas": ", ".join(f"`{a}`" for a in row.areas) or "none",
@@ -683,7 +686,8 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
             actor=Actor(membership_id=membership_id, credential_id=credential_id),
             subject=("member", agent_id),
         )
-    return value, credential_id, agent_id, project.slug, project.signing, instance
+    name = namespace.full_name(conn, project)  # the join answer's project (§6.25)
+    return value, credential_id, agent_id, name, project.signing, instance
 
 
 def _require_pickup_holds(conn: Connection, row: Any) -> None:

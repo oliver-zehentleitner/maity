@@ -23,6 +23,15 @@ def database_url(tmp_path: Path) -> str:
     return normalize_database_url(url) if url else f"sqlite:///{tmp_path / 'hub.db'}"
 
 
+@pytest.fixture(autouse=True)
+def _no_background_mail(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The app's mail worker would send the outbox behind a test's back; tests drive
+    `outbox.send_due` themselves."""
+    from maity_hub.mail import outbox
+
+    monkeypatch.setattr(outbox.Worker, "start", lambda self: None)
+
+
 @pytest.fixture
 def engine(database_url: str) -> Iterator[Engine]:
     engine = make_engine(database_url)

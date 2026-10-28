@@ -8,7 +8,7 @@ from fastapi import Depends, Request
 from sqlalchemy import Connection, Engine, select
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import events, runner_revoke
+from maity_hub import events, namespace, runner_revoke
 from maity_hub import tables as t
 from maity_hub.auth import second_factor, sessions
 from maity_hub.auth.caller import Caller, RequestFacts, authenticate
@@ -108,8 +108,8 @@ def _refuse_other_project(conn: Connection, caller: Caller, slug: str) -> None:
     any route runs, so that nothing (an idempotent replay included) answers for
     another project; raising inside the transaction also undoes the call's
     presence and lease side effects."""
-    project_id = conn.execute(select(t.project.c.id).where(t.project.c.slug == slug)).scalar()
-    if project_id != caller.project_id:
+    project = namespace.resolve(conn, slug)
+    if project is None or project.id != caller.project_id:
         raise not_found()
 
 

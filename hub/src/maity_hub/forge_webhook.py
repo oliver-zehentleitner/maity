@@ -1,6 +1,6 @@
 """The forge webhook (docs/api.md §17.4): a signed trigger that makes the probe look now.
 
-`POST /api/v1/projects/{slug}/forge/webhook` carries no credential and no cookie; the
+`POST /api/v1/projects/{owner}/{slug}/forge/webhook` carries no credential and no cookie; the
 forge signs the body with the project's secret (`X-Hub-Signature-256`). It is handled
 here, from the middleware, before the body is read: an unknown project, one without a
 secret, a body declared over the cap and the limits answer first, so junk cannot make
@@ -27,14 +27,18 @@ from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse
 from starlette.types import Receive, Scope, Send
 
-from maity_hub import clock, events, secretbox, ticker
+from maity_hub import clock, events, namespace, secretbox, ticker
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, error_response
 from maity_hub.ratelimit import Limiter
 
 log = logging.getLogger(__name__)
 
-PATH = re.compile(r"^/api/v1/projects/([a-z0-9][a-z0-9-]{1,62})/forge/webhook$")
+# `<owner>/<slug>` since the namespace (§6.25), or a project's frozen `legacy_slug` alone:
+# the address a forge was given before the migration keeps working.
+PATH = re.compile(
+    r"^/api/v1/projects/((?:[a-z0-9][a-z0-9-]{1,30}/)?[a-z0-9][a-z0-9-]{1,62})/forge/webhook$"
+)
 BODY_CAP = 1024 * 1024
 FIELD = "forge_webhook.secret"
 
@@ -83,9 +87,13 @@ def _declared(scope: Scope) -> int | None:
 
 def _lookup(engine: Engine, slug: str, key: bytes) -> tuple[Any, bytes] | None:
     """The project and its opened secret; None for no project, no secret or a secret the
-    key does not open, which all answer alike (§17.4)."""
+    key does not open, which all answer alike (§17.4). `slug` is a full name, current or an
+    alias, or a pre-namespace project's `legacy_slug` (§6.25)."""
     with engine.connect() as conn:
-        project = conn.execute(select(t.project).where(t.project.c.slug == slug)).first()
+        if "/" in slug:
+            project = namespace.resolve(conn, slug)
+        else:
+            project = conn.execute(select(t.project).where(t.project.c.legacy_slug == slug)).first()
         if project is None:
             return None
         hook = conn.execute(
@@ -264,8 +272,8 @@ def _record(engine: Engine, project_id: str, result: str) -> None:
 # --- the admin's side: the view, creating, rotating and removing the secret ------------
 
 
-def url(public_url: str, slug: str) -> str:
-    return f"{public_url}/api/v1/projects/{slug}/forge/webhook"
+def url(public_url: str, full_name: str) -> str:
+    return f"{public_url}/api/v1/projects/{full_name}/forge/webhook"
 
 
 def view(conn: Connection, project: Any, public_url: str, key: bytes | None) -> dict[str, Any]:
@@ -276,7 +284,7 @@ def view(conn: Connection, project: Any, public_url: str, key: bytes | None) -> 
     ).first()
     return {
         "configured": hook is not None and _opens(key, project.id, hook.secret_sealed),
-        "url": url(public_url, project.slug),
+        "url": url(public_url, namespace.full_name(conn, project)),
         "created_at": clock.rfc3339(hook.created_at) if hook else None,
         "rotated_at": clock.rfc3339(hook.rotated_at) if hook and hook.rotated_at else None,
         "last_delivery_at": (

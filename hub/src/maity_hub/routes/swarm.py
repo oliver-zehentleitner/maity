@@ -1,4 +1,4 @@
-"""The swarm page (docs/api.md §6.22): `GET /projects/{slug}/swarm` for members, and the
+"""The swarm page (docs/api.md §6.22): `GET /projects/{owner}/{slug}/swarm` for members, and the
 public `GET /swarm/{slug}` under `policy.swarm_public`, agents only."""
 
 from __future__ import annotations
@@ -8,20 +8,21 @@ import json
 from typing import Any
 
 from fastapi import APIRouter, Query, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import Connection, select
 
-from maity_hub import clock, swarm
+from maity_hub import clock, namespace, swarm
 from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import not_found
+from maity_hub.namespace import ProjectRoute
 from maity_hub.policy import CLOSED_STATES
 from maity_hub.routes.badges import CACHE as PUBLIC_CACHE
 from maity_hub.routes.badges import limit_not_served, limit_source
 from maity_hub.views import member_views
 
-router = APIRouter()
+router = APIRouter(route_class=ProjectRoute)
 DAYS = Query(default=30, ge=1, le=90)
 HELD = ("done", "cancelled")  # a card in neither, with a holder, is held
 
@@ -94,7 +95,7 @@ def _who(rows: list[Any], live: list[dict[str, Any]]) -> dict[int, dict[str, Any
     }
 
 
-@router.get("/projects/{slug}/swarm")
+@router.get("/projects/{owner}/{slug}/swarm")
 def project_swarm(slug: str, request: Request, caller: AnyCaller, days: int = DAYS) -> JSONResponse:
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
@@ -116,19 +117,36 @@ def project_swarm(slug: str, request: Request, caller: AnyCaller, days: int = DA
         )
 
 
+def _public(project: Any) -> bool:
+    return project.state not in CLOSED_STATES and project.swarm_public == "on"
+
+
 @router.get("/swarm/{slug}")
-def public_swarm(slug: str, request: Request, days: int = DAYS) -> Response:
-    """For visitors without a session: the policy first, one uniform `not_found` before
-    any ETag, then the members' page reduced to the agents (§6.22)."""
+def legacy_public_swarm(slug: str, request: Request, days: int = DAYS) -> Response:
+    """The address from before the namespace (§6.25): the slug frozen at the migration,
+    never the current slug, which another owner's project may carry. A `301` to the new
+    address only while the page is public; otherwise the same answer as any page not
+    served, so the old address tells nobody whether a project exists."""
     limit_source(request)
     with engine_of(request).begin() as conn:
-        project = conn.execute(select(t.project).where(t.project.c.slug == slug)).first()
-        served = (
-            project is not None
-            and project.state not in CLOSED_STATES
-            and project.swarm_public == "on"
-        )
-        if project is None or not served:
+        project = conn.execute(select(t.project).where(t.project.c.legacy_slug == slug)).first()
+        if project is None or not _public(project):
+            limit_not_served()
+            raise not_found()
+        name = namespace.full_name(conn, project)
+    query = f"?days={days}" if days != DAYS else ""
+    return RedirectResponse(f"/api/v1/swarm/{name}{query}", status_code=301)
+
+
+@router.get("/swarm/{owner}/{slug}")
+def public_swarm(slug: str, request: Request, days: int = DAYS) -> Response:
+    """For visitors without a session: the policy first, one uniform `not_found` before
+    any ETag, then the members' page reduced to the agents (§6.22). `slug` is the full
+    name, as `ProjectRoute` hands it over."""
+    limit_source(request)
+    with engine_of(request).begin() as conn:
+        project = namespace.resolve(conn, slug)
+        if project is None or not _public(project):
             limit_not_served()
             raise not_found()
         rows = [r for r in _active(conn, project.id) if r.agent_id is not None]

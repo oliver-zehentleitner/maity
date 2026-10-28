@@ -23,7 +23,8 @@ def owner(make_client: ClientFactory, migrated: Engine) -> flow.Human:
 
 def say(who: Any, to: str, body: str = "hello", type_: str = "notice") -> int:
     done = who.post(
-        "/projects/maity/events", {"kind": "message", "type": type_, "to": to, "body": body}
+        "/projects/maintainer/maity/events",
+        {"kind": "message", "type": type_, "to": to, "body": body},
     )
     assert done.status_code == 201, done.text
     seq: int = done.json()["seq"]
@@ -31,7 +32,7 @@ def say(who: Any, to: str, body: str = "hello", type_: str = "notice") -> int:
 
 
 def listed(who: Any, query: str = "") -> Any:
-    return who.get(f"/projects/maity/messages{query}")
+    return who.get(f"/projects/maintainer/maity/messages{query}")
 
 
 def seqs(answer: Any) -> list[int]:
@@ -76,7 +77,7 @@ def test_a_member_lists_what_it_can_read_through_events(
     say(owner, "role:admin")  # not the agent's role
     sent = say(agent, owner.id)
     assert seqs(listed(agent)) == [sent, to_agent, to_all]
-    on_events = agent.get("/projects/maity/events?after=0").json()["items"]
+    on_events = agent.get("/projects/maintainer/maity/events?after=0").json()["items"]
     assert sorted(
         e["seq"] for e in on_events if e["kind"] == "message" and e["seq"] in (to_all, to_agent)
     ) == [to_all, to_agent]
@@ -145,7 +146,9 @@ def test_after_and_before_are_integers_and_never_together(owner: flow.Human) -> 
 def test_a_chat_is_never_listed(owner: flow.Human, make_client: ClientFactory) -> None:
     agent = flow.agent(make_client, owner)
     note = say(owner, "all")
-    chat = owner.post(f"/projects/maity/conversations/{agent.id}/messages", {"body": "private"})
+    chat = owner.post(
+        f"/projects/maintainer/maity/conversations/{agent.id}/messages", {"body": "private"}
+    )
     assert chat.status_code == 201, chat.text
     assert seqs(listed(owner)) == [note]
     assert seqs(listed(agent)) == [note]
@@ -155,7 +158,9 @@ def test_a_redacted_message_keeps_its_place_as_a_tombstone(owner: flow.Human) ->
     kept = say(owner, "all", "kept")
     gone = say(owner, "all", "secret", "blocker")
     assert (
-        owner.post(f"/projects/maity/events/{gone}/redact", {"reason": "a secret"}).status_code
+        owner.post(
+            f"/projects/maintainer/maity/events/{gone}/redact", {"reason": "a secret"}
+        ).status_code
         == 200
     )
     items = listed(owner).json()["items"]
@@ -177,9 +182,11 @@ def test_a_redacted_chat_message_is_not_listed_either(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
     agent = flow.agent(make_client, owner)
-    sent = owner.post(f"/projects/maity/conversations/{agent.id}/messages", {"body": "private"})
+    sent = owner.post(
+        f"/projects/maintainer/maity/conversations/{agent.id}/messages", {"body": "private"}
+    )
     seq = sent.json()["seq"]
-    done = owner.post(f"/projects/maity/events/{seq}/redact", {"reason": "x"})
+    done = owner.post(f"/projects/maintainer/maity/events/{seq}/redact", {"reason": "x"})
     assert done.status_code == 200, done.text
     assert seq not in seqs(listed(owner))
 

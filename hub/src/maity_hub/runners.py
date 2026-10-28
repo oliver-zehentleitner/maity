@@ -14,7 +14,7 @@ from typing import Any
 
 from sqlalchemy import Connection, func, insert, select, update
 
-from maity_hub import clock, events, listening
+from maity_hub import clock, events, listening, namespace
 from maity_hub import tables as t
 from maity_hub.events import Actor
 from maity_hub.ids import new_id
@@ -126,9 +126,10 @@ def live_credential_id(conn: Connection, runner_id: str) -> str | None:
 
 
 def _project_slugs(conn: Connection, runner_id: str, viewer_id: str | None) -> list[str]:
-    """The runner's projects; for a human only those they are a member of (§15.3)."""
+    """The runner's projects by full name (§6.25); for a human only those they are a
+    member of (§15.3)."""
     query = (
-        select(t.project.c.slug)
+        select(t.project.c.id)
         .join(t.runner_attachment, t.runner_attachment.c.project_id == t.project.c.id)
         .where(
             t.runner_attachment.c.runner_id == runner_id,
@@ -143,7 +144,7 @@ def _project_slugs(conn: Connection, runner_id: str, viewer_id: str | None) -> l
             & (t.membership.c.human_id == viewer_id)
             & t.membership.c.active.is_(True),
         )
-    return list(conn.execute(query).scalars())
+    return sorted(namespace.full_names(conn, conn.execute(query).scalars()).values())
 
 
 def runner_view(
@@ -207,13 +208,7 @@ def visible_to(conn: Connection, runner: Any, human_id: str) -> bool:
 
 def enrollment_view(conn: Connection, row: Any) -> dict[str, Any]:
     """Nothing that opens it: no URL, no token, no code (§15.2)."""
-    slugs = dict(
-        conn.execute(
-            select(t.project.c.id, t.project.c.slug).where(t.project.c.id.in_(row.attach))
-        ).all()
-        if row.attach
-        else []
-    )
+    slugs = namespace.full_names(conn, row.attach or [])  # full names (§6.25)
     return {
         "id": row.id,
         "runner_id": row.runner_id,
@@ -234,7 +229,7 @@ def attachment_view(
     conn: Connection, row: Any, viewer_id: str | None, *, capabilities: bool = True
 ) -> dict[str, Any]:
     runner = conn.execute(select(t.runner).where(t.runner.c.id == row.runner_id)).one()
-    slug = conn.execute(select(t.project.c.slug).where(t.project.c.id == row.project_id)).scalar()
+    slug = namespace.name_of(conn, row.project_id)
     return {
         "id": row.id,
         "runner": runner_view(conn, runner, viewer_id, capabilities=capabilities),
@@ -307,7 +302,7 @@ def detach(conn: Connection, project_id: str, runner_id: str, by: str) -> Any:
 def _announce(
     conn: Connection, project_id: str, runner_id: str, attachment_id: str, kind: str, by: str
 ) -> None:
-    slug = conn.execute(select(t.project.c.slug).where(t.project.c.id == project_id)).scalar()
+    slug = namespace.name_of(conn, project_id)
     events.emit(
         conn,
         project_id,

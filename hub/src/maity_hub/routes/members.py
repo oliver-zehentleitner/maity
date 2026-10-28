@@ -20,6 +20,7 @@ from maity_hub import (
     group_chats,
     idempotency,
     instances,
+    namespace,
     placements,
     rules,
     seats,
@@ -33,6 +34,7 @@ from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.events import Actor, emit, lock_project
 from maity_hub.models import Strict, markdown
+from maity_hub.namespace import ProjectRoute
 from maity_hub.scopes import ROLES
 from maity_hub.views import (
     credential_view,
@@ -42,7 +44,7 @@ from maity_hub.views import (
     principal_id,
 )
 
-router = APIRouter()
+router = APIRouter(route_class=ProjectRoute)
 
 CAPABILITIES = ("tag",)
 # A repository path; nothing that could leave a code span in the join page.
@@ -101,9 +103,7 @@ def load_member_for_team(conn: Connection, membership_id: str, request: Request)
     """A replayed rulebook change: the briefing only for a reader with `members:admin`,
     as on the first answer (§6.2, §6.18)."""
     row = conn.execute(select(t.membership).where(t.membership.c.id == int(membership_id))).one()
-    slug = conn.execute(
-        select(t.project.c.slug).where(t.project.c.id == row.project_id)
-    ).scalar_one()
+    slug = namespace.name_of(conn, row.project_id)
     reader = membership(conn, request.state.caller, slug)
     return member_view(conn, row, briefing=reader.may("members:admin"))
 
@@ -188,7 +188,7 @@ def _owners(conn: Connection, project_id: str) -> int:
     )
 
 
-@router.get("/projects/{slug}/members")
+@router.get("/projects/{owner}/{slug}/members")
 def list_members(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
@@ -210,12 +210,12 @@ def list_members(slug: str, request: Request, caller: AnyCaller) -> JSONResponse
         return JSONResponse({"items": views, "next_cursor": None})
 
 
-@router.get("/projects/{slug}/members/{member_id}/briefings")
+@router.get("/projects/{owner}/{slug}/members/{member_id}/briefings")
 def list_briefings(slug: str, member_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     """A member's briefing versions, newest first (§6.2): for the agent's owner, a member
     of the project or not, and for a human with `members:admin`."""
     with engine_of(request).begin() as conn:
-        project = conn.execute(select(t.project.c.id).where(t.project.c.slug == slug)).first()
+        project = namespace.resolve(conn, slug)
         if project is None or caller.kind == "runner":
             raise not_found()
         try:
@@ -231,7 +231,7 @@ def list_briefings(slug: str, member_id: str, request: Request, caller: AnyCalle
         return JSONResponse({"items": briefings.history(conn, target.id)})
 
 
-@router.get("/projects/{slug}/members/{member_id}")
+@router.get("/projects/{owner}/{slug}/members/{member_id}")
 def get_member(slug: str, member_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
@@ -343,7 +343,7 @@ def apply_patch(
     return old
 
 
-@router.patch("/projects/{slug}/members/{member_id}")
+@router.patch("/projects/{owner}/{slug}/members/{member_id}")
 def patch_member(
     slug: str, member_id: str, body: MemberPatch, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -638,7 +638,7 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
     instances.refresh_team_wake(conn, change.project.id)  # it may have been the last team
 
 
-@router.delete("/projects/{slug}/members/{member_id}")
+@router.delete("/projects/{owner}/{slug}/members/{member_id}")
 def remove_member(slug: str, member_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
@@ -682,7 +682,7 @@ def _may_manage_credentials(
     raise forbidden("credentials:admin")
 
 
-@router.get("/projects/{slug}/members/{member_id}/credentials")
+@router.get("/projects/{owner}/{slug}/members/{member_id}/credentials")
 def list_credentials(
     slug: str, member_id: str, request: Request, caller: AnyCaller
 ) -> JSONResponse:
@@ -703,7 +703,7 @@ def list_credentials(
         )
 
 
-@router.post("/projects/{slug}/credentials/{credential_id}/revoke")
+@router.post("/projects/{owner}/{slug}/credentials/{credential_id}/revoke")
 def revoke_credential(
     slug: str, credential_id: str, body: RevokeIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:

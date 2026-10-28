@@ -83,7 +83,7 @@ window.Maity = window.Maity || {};
   // for whether a placement's credential was revoked (§15.6 `rejoin`).
   async function section(ctx, credentials) {
     let served = false;
-    try { served = await M.api.hubHas("GET", "/projects/{slug}/placements"); } catch (err) { served = false; }
+    try { served = await M.api.hubHas("GET", "/projects/{owner}/{slug}/placements"); } catch (err) { served = false; }
     if (!served) return null;
     const box = h("section", { class: "placements", "aria-labelledby": "placements-title" });
     const list = h("ul", { class: "placement-list" });

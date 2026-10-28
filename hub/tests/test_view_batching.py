@@ -117,9 +117,9 @@ def test_lists_cost_the_same_for_3_rows_and_for_30(
     resumer = make_client()
     bearer = {"Authorization": f"Bearer {agents[0].value}"}
     calls: dict[str, Callable[[], Any]] = {
-        "tasks": lambda: owner.get("/projects/maity/tasks?status=all&limit=200"),
-        "events": lambda: owner.get("/projects/maity/events?after=0&limit=200"),
-        "members": lambda: owner.get("/projects/maity/members"),
+        "tasks": lambda: owner.get("/projects/maintainer/maity/tasks?status=all&limit=200"),
+        "events": lambda: owner.get("/projects/maintainer/maity/events?after=0&limit=200"),
+        "members": lambda: owner.get("/projects/maintainer/maity/members"),
         # The packet: claims, events and every peer (§5.2).
         "resume": lambda: resumer.post(
             "/api/v1/me/resume", json={"client": "test", "cursor": 0}, headers=bearer

@@ -610,7 +610,7 @@ window.Maity = window.Maity || {};
   // them; a title opening its card keeps them too.
   let lastBoard = null;
 
-  // args[0]: a card to open (#/p/<slug>/tasks/<id>, a title's or an id's
+  // args[0]: a card to open (#/<owner>/<slug>/tasks/<id>, a title's or an id's
   // link, js/ids.js): its panel, and the card marked on the board; one the
   // board does not hold is read by itself, and said when there is none.
   M.views.board = async function (ctx, root, args) {

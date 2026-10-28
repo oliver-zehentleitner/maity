@@ -13,7 +13,7 @@ from typing import Any
 from sqlalchemy import Connection, func, insert, select, update
 from sqlalchemy.dialects import postgresql, sqlite
 
-from maity_hub import clock
+from maity_hub import clock, namespace
 from maity_hub import tables as t
 from maity_hub.auth import sessions
 from maity_hub.notifications import records
@@ -118,12 +118,8 @@ def _open_personal(conn: Connection, human_id: str) -> list[Any]:
 
 
 def _slugs(conn: Connection, by_project: dict[str, Any]) -> dict[str, str]:
-    if not by_project:
-        return {}
-    rows = conn.execute(
-        select(t.project.c.id, t.project.c.slug).where(t.project.c.id.in_(list(by_project)))
-    ).all()
-    return {row.id: row.slug for row in rows}
+    """project id → full name: `by_project` is keyed on full names (§6.25, §18)."""
+    return namespace.full_names(conn, by_project)
 
 
 # --- positions -----------------------------------------------------------------------
