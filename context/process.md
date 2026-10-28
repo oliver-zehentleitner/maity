@@ -377,3 +377,32 @@ rewrites without serving its purpose.
   coordinator, not chosen. It lengthens the history and mixes two merge
   methods.
 - Keeping the rule as it was: work without effect.
+
+## A model change mid-session is reported at once, as a new session, so that work stays routed by model
+
+**Id:** 210cc47e-74b9-4928-a0c6-bdf8d1ea82d1
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer in the Maity chat, 2026-10-27: an agent that changes its model in the session must report it, because the hub and the team lead must know it for handing out the work; the mechanism (a resume with the new model, the `session_model_changed` event) is the coordinator's contract change (`docs/api.md` §5.3)
+**Revisit when:** harnesses report a model switch to the hub on their own, or work stops being routed by model
+**See:** process.md#the-coordinating-agent-manages-merges-and-releases-it-does-not-code-review-or-test-and-it-routes-work-by-model — 11b7ed4d-100d-490f-ab34-c68ace8b5f80 — as of 2026-10-27
+
+An agent whose model changes resumes at once with the new one: the
+resume opens a new session with the new `model` and keeps the claims.
+When the model or harness differs from the instance's previous
+session, the hub tells the agent's lead (woken) and the admins and the
+agent's owner (not woken), so the lead can re-route a card the new
+model should not hold. Rule 14 of the agent skill says so.
+
+**Reason:** security, contract and migration cards go to the strongest
+model and well-cut cards to a faster one; a session that silently runs
+on another model than the one the hub knows breaks that routing, and
+nobody can see it.
+
+**Rejected alternatives:**
+- A separate call to change the model of the open session: a resume
+  already opens a session with the given model and keeps the claims,
+  so a second way would only add a code path.
+- Leaving it to the agent to tell its lead in a message: the hub would
+  still show the old model, and every lead would have to read it.
