@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Connection, select, update
 from starlette.concurrency import run_in_threadpool
@@ -60,7 +60,7 @@ class PasswordChange(Strict):
     new: str = Field(min_length=1, max_length=1024)
 
 
-def _set_cookies(response: JSONResponse, request: Request, session_id: str, csrf: str) -> None:
+def _set_cookies(response: Response, request: Request, session_id: str, csrf: str) -> None:
     # Secure follows the scheme the request actually arrived with (§2.5).
     secure = origin_of(request).tls
     max_age = int(SESSION_ABSOLUTE.total_seconds())
@@ -163,7 +163,7 @@ def end_presented(conn: Connection, presented: str | None) -> None:
 
 
 def set_session_cookies(
-    response: JSONResponse, request: Request, session_id: str, csrf: str, device: str | None
+    response: Response, request: Request, session_id: str, csrf: str, device: str | None
 ) -> None:
     """The cookies of a completed sign-in: the session's, and the device cookie when this
     browser held no value of the human yet (§2.6.5)."""

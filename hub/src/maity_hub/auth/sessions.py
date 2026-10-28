@@ -68,7 +68,9 @@ def good_standing(row: Any, confirmed: frozenset[str] = frozenset()) -> bool:
     """§2.6.5: signed in by password, or its sign-in confirmed from another session; and
     since §2.8.2 a sign-in that included the second factor, whatever its first."""
     return bool(
-        row.method == "password" or row.public_id in confirmed or row.second_factor is not None
+        row.method in ("password", "register")  # a registration gave its password too
+        or row.public_id in confirmed
+        or row.second_factor is not None
     )
 
 
@@ -298,7 +300,7 @@ def create(
             approved_by=approved_by,
             state=state,
             sign_in_complete=complete,
-            password_at=now if method == "password" else None,
+            password_at=now if method in ("password", "register") else None,
             next=next_route,
         )
     )

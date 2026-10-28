@@ -69,6 +69,7 @@ from maity_hub.routes import (
     project_images,
     project_messages,
     projects,
+    register_page,
     requests,
     runner,
     runners,
@@ -238,6 +239,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(joins.page_router)  # /j/{token}, before the dashboard mount
     app.include_router(runners.page_router)  # /r/{token}, likewise
     app.include_router(mail_links.page_router)  # /mail/*, likewise
+    app.include_router(register_page.page_router)  # the registration's link page, likewise
     app.include_router(badges.router)  # public /badge/*.svg, before the dashboard
     app.include_router(seo.router)  # /robots.txt and /sitemap.xml, before the dashboard
     app.include_router(swarm.router, prefix=prefix)  # the members' and the public swarm page
