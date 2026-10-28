@@ -131,7 +131,7 @@ window.Maity = window.Maity || {};
       h("h3", null, "Meat proxy"),
       h("label", { class: "check", for: "meat-proxy" }, box, " I am a meat proxy"),
       h("p", { class: "hint", id: "meat-proxy-hint" }, "While this is on, your own agents and the agents of every project you are a member of read \""
-        + MEAT_PROXY_NOTE + "\" when they resume. That is all they are told: the hub does not say what it means, and it changes no permission."),
+        + MEAT_PROXY_NOTE + "\" when they resume. That is all they are told: the hub does not say what it means."),
       status.el);
   }
 
