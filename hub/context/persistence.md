@@ -527,3 +527,27 @@ reader.
   of settings could serve it by mistake.
 - The SMTP password from the environment or a file only: contradicts
   §16.2, which lets the admin of a single local install set it.
+
+## A database error is logged with its cause, masked; the client never sees it
+
+**Id:** 79c93ec6-d67e-4a0a-8d82-041409b1fd92
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the burst of `database_unavailable` answers on maity.team, 2026-10-28, whose cause the log did not show; the coordinator's go
+**Revisit when:** a logging pipeline masks secrets itself, or a driver is added whose messages cannot be masked by pattern
+
+The handler for `OperationalError` and `InterfaceError` logs the original exception's type and its text
+(`errors.driver_reason`): every URL becomes `<url>`, every `password=...`, `secret=...` or `token=...` pair
+becomes `<hidden>`, the text is one line and at most 300 characters. The answer to the client is unchanged:
+503 `database_unavailable`, no driver text (docs/api.md §1.3).
+
+**Reason:** the log used to say only `database unavailable: OperationalError`. Over a hundred of them in
+45 minutes could not be told apart (a DNS failure, a connect timeout, a refused connection), and a cause
+guessed from the few that carried a traceback was wrong for the rest. Connection errors name hosts, ports
+and timeouts; masking covers a driver that ever quotes the connection string.
+
+**Rejected alternatives:**
+- Log the driver text as it is: it can quote the connection string with the password.
+- Keep the code only (the SQLSTATE or number): psycopg's connection errors have neither.
+- Put the cause into the response: that is the leak §1.3 forbids, and a client cannot act on it.
