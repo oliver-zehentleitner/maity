@@ -219,9 +219,7 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
         else:
             # A new instance (§6.17) starts at the project's head, not at 0: the handover
             # replaces the backlog, and `GET …/events?after=` still serves the history (§8.3).
-            cursor = events.highest_readable(
-                conn, mine.project.id, mine.row, caller.principal_id
-            )
+            cursor = events.highest_readable(conn, mine.project.id, mine.row, caller.principal_id)
         session_id = new_id("session")
         conn.execute(
             insert(t.agent_session).values(
