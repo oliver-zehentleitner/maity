@@ -19,9 +19,6 @@ window.Maity = window.Maity || {};
   // The hub's bound on a pull request number (docs/api.md §6.7).
   const PR_MAX = 2 ** 31;
 
-  // The roles holding releases:write (docs/api.md §2.3).
-  const RELEASERS = new Set(["owner", "admin", "reviewer"]);
-
   const KIND_LABELS = { release: "Release", contract: "Contract", maintenance_round: "Context round", setup: "Setup" };
 
   const status = (s) => s.replace("_", " ");
@@ -521,8 +518,8 @@ window.Maity = window.Maity || {};
     ];
   }
 
-  // A contract's arbiter may be a role ("role:admin"): named in words.
-  const arbiterName = (ctx, a) => (/^role:/.test(a || "") ? "the " + a.slice(5) + "s" : M.dom.memberRef(ctx, a));
+  // A contract's arbiter may be a token ("trust:admin", "role:reviewer"): named in words.
+  const arbiterName = (ctx, a) => (/^(role|trust):/.test(a || "") ? "the " + a.replace(/^(role|trust):/, "") + "s" : M.dom.memberRef(ctx, a));
 
   // manage: { move, assign, place, columnOf, drag } from the board, or null (read only).
   function actions(...controls) {
@@ -622,7 +619,8 @@ window.Maity = window.Maity || {};
     // whatever the filters said; the board's own title keeps them.
     const kept = prior && (returning || (prior.fromTitle && prior.id === wanted)) ? prior.snapshot() : null;
     const marked = wanted || returning;
-    ctx.canRelease = RELEASERS.has(ctx.role);
+    // releases:write (docs/api.md §2.3): reviewer, ops, or trust owner or admin.
+    ctx.canRelease = M.trust.releases(ctx);
     const E = M.boardEdit;
     const since = new Date(Date.now() - CLOSED_WINDOW_DAYS * 86400000).toISOString().replace(/\.\d{3}Z$/, "Z");
     const listPath = ctx.base + "/tasks?status=all&closed_after=" + encodeURIComponent(since);

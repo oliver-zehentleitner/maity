@@ -15,7 +15,8 @@
       "asked_by": {
         "member_id": "agt-q",
         "display_name": "Agent Q",
-        "role": "member",
+        "trust": "member",
+        "role": "coder",
         "session_id": null
       },
       "on_behalf_of": null,
@@ -47,7 +48,8 @@
       "asked_by": {
         "member_id": "agt-a",
         "display_name": "Agent A",
-        "role": "admin",
+        "trust": "admin",
+        "role": "coder",
         "session_id": null
       },
       "on_behalf_of": null,

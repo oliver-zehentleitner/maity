@@ -14,7 +14,6 @@ window.Maity = window.Maity || {};
   const COLUMNS = [["proposed", "Proposed"], ["open", "Open"], ["in_progress", "In progress"], ["blocked", "Blocked"],
     ["review", "Review"], ["done", "Done"], ["cancelled", "Cancelled"]];
   const PRIORITIES = [["urgent", "urgent"], ["high", "high"], ["normal", "normal"], ["low", "low"]];
-  const ROLES = ["owner", "admin", "reviewer", "member", "proxy"];
   const PR_STATES = { merged: "merged", open: "open", closed: "closed without merge" };
   const REREAD = /^(task_|request_|probe_observed$)/;
   const NARROW_MS = 60000;
@@ -132,9 +131,10 @@ window.Maity = window.Maity || {};
       head("overview-members", "Team", list.length ? plural(humans, "human", "humans") + ", " + plural(agents, "agent", "agents") + " · " + online + " online" : null,
         h("a", { href: ctx.link("members"), "data-key": "members" }, "All members")),
       list.length
-        ? h("div", { class: "overview-roles" }, ROLES.filter((r) => list.some((m) => m.role === r)).map((r) =>
-          h("div", { class: "overview-role" }, h("span", { class: "overview-role-name muted" }, r),
-            h("div", { class: "overview-chips" }, list.filter((m) => m.role === r).map((m) => M.dom.memberChip(ctx, m))))))
+        // By trust (§2.3); each chip names its role on hover.
+        ? h("div", { class: "overview-roles" }, M.trust.TRUSTS.filter((t) => list.some((m) => m.trust === t)).map((t) =>
+          h("div", { class: "overview-role" }, h("span", { class: "overview-role-name muted" }, t),
+            h("div", { class: "overview-chips" }, list.filter((m) => m.trust === t).map((m) => M.dom.memberChip(ctx, m))))))
         : h("p", { class: "muted" }, "No members."));
   }
 
