@@ -142,7 +142,7 @@ def test_a_token_close_to_its_expiry_is_minted_again(
 ) -> None:
     opener.answers[MINT] = {"token": "ghs_one", "expires_at": "2026-10-28T12:00:00Z"}
     now = [github_app._expiry("2026-10-28T11:00:00Z") or 0.0]
-    monkeypatch.setattr(github_app.time, "time", lambda: now[0])
+    monkeypatch.setattr("maity_hub.github_app.time.time", lambda: now[0])
     APP.token(7)
     now[0] = (github_app._expiry("2026-10-28T12:00:00Z") or 0.0) - github_app.TOKEN_MARGIN
     APP.token(7)
@@ -230,7 +230,8 @@ def start(who: flow.Human) -> str:
         "github.com",
         "/apps/maity-test/installations/new",
     )
-    return parse_qs(url.query)["state"][0]
+    state: str = parse_qs(url.query)["state"][0]
+    return state
 
 
 def setup(who: flow.Human, installation_id: int, state: str, code: str = "c0de") -> str:
