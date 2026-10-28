@@ -17,18 +17,25 @@ a card contract's `arbiter`, and the values of an open `member_change` consent, 
 its `go` applies later. Event payloads are the record of what was said then
 and stay as they are.
 
-The downgrade maps back: `guest` becomes `member`, and the roles the single role did
-not know (`tester`, `designer`, `ops`) become `member`, `role:<them>` `role:member`.
+The downgrade maps back. It fails closed for trust `guest`, which the single role cannot
+hold: guest memberships are removed with their credentials revoked and their placements
+closed, and unused guest invitations and joins end. The roles the single role did not
+know (`tester`, `designer`, `ops`, `writer`) become `member`, `role:<them>`
+`role:member`.
 
 Revision ID: 0067
 Revises: 0071
 """
 
 from collections.abc import Callable, Sequence
+from datetime import UTC, datetime
 from typing import Any
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import mysql
+
+TIMESTAMP = sa.DateTime().with_variant(mysql.DATETIME(fsp=6), "mysql", "mariadb")
 
 revision: str = "0067"
 down_revision: str | None = "0071"
@@ -50,12 +57,15 @@ DOWN_TOKEN = {
     "role:tester": "role:member",
     "role:designer": "role:member",
     "role:ops": "role:member",
+    "role:writer": "role:member",
 }
 # The bare role a request's `to_role` held before, and the token it holds now.
 UP_TO_ROLE = {"owner": "trust:owner", "admin": "trust:admin", "member": "role:coder"}
 
 
 def _down_role(trust: str, role: str) -> str:
+    if trust == "guest":  # removed by `_end_guests`; the row keeps the lowest name
+        return "member"
     if trust in ("owner", "admin"):
         return "proxy" if role == "proxy" else trust
     return "reviewer" if role == "reviewer" else "member"
@@ -134,12 +144,85 @@ def _proposal_down(proposal: Any) -> Any:
     return {**proposal, "values": {**rest, "role": old}}
 
 
+def _end_guests() -> None:
+    """The downgrade fails closed for trust `guest`, which the single role cannot hold:
+    a guest's membership is removed and its credentials revoked, its placements close,
+    and an unused invitation or join for a guest ends, rather than becoming a member."""
+    bind = op.get_bind()
+    now = datetime.now(UTC)
+    membership = sa.table(
+        "membership",
+        sa.column("id"),
+        sa.column("trust", sa.String),
+        sa.column("active", sa.Boolean),
+        sa.column("removed_at", TIMESTAMP),
+    )
+    credential = sa.table(
+        "credential",
+        sa.column("membership_id"),
+        sa.column("revoked_at", TIMESTAMP),
+        sa.column("revoked_reason", sa.Text),
+    )
+    placement = sa.table(
+        "placement",
+        sa.column("membership_id"),
+        sa.column("new_profile", sa.JSON),
+        sa.column("closed_at", TIMESTAMP),
+        sa.column("active", sa.Boolean),
+        sa.column("id"),
+    )
+    guests = [
+        r.id
+        for r in bind.execute(
+            sa.select(membership.c.id).where(
+                membership.c.trust == "guest", membership.c.active.is_(True)
+            )
+        )
+    ]
+    if guests:
+        bind.execute(
+            sa.update(credential)
+            .where(credential.c.membership_id.in_(guests), credential.c.revoked_at.is_(None))
+            .values(revoked_at=now, revoked_reason="trust guest has no single role")
+        )
+        bind.execute(
+            sa.update(placement)
+            .where(placement.c.membership_id.in_(guests), placement.c.closed_at.is_(None))
+            .values(closed_at=now, active=None)
+        )
+        bind.execute(
+            sa.update(membership)
+            .where(membership.c.id.in_(guests))
+            .values(active=None, removed_at=now)
+        )
+    open_profiles = bind.execute(
+        sa.select(placement.c.id, placement.c.new_profile).where(placement.c.closed_at.is_(None))
+    ).all()
+    for row in open_profiles:
+        if isinstance(row.new_profile, dict) and row.new_profile.get("trust") == "guest":
+            bind.execute(
+                sa.update(placement)
+                .where(placement.c.id == row.id)
+                .values(closed_at=now, active=None)
+            )
+    for table, column in (("invitation", "voided_at"), ("join_link", "revoked_at")):
+        rows = sa.table(
+            table, sa.column("trust", sa.String), sa.column("used_at"), sa.column(column, TIMESTAMP)
+        )
+        bind.execute(
+            sa.update(rows)
+            .where(rows.c.trust == "guest", rows.c.used_at.is_(None), rows.c[column].is_(None))
+            .values({column: now})
+        )
+
+
 def _stored_tokens(mapping: dict[str, str], to_role: Callable[[str], str]) -> None:
     def tokens(value: Any) -> Any:
         return _tokens(value, mapping)
 
     _rewrite("event", "seq", "audience", tokens)
     _rewrite("request", "id", "forwarding", tokens)
+    _rewrite("request", "id", "proposal", tokens)  # a consent's substitutes, among others
     _rewrite("request", "id", "to_role", to_role)
     _rewrite("project", "id", "contract_arbiter", tokens)
     _rewrite("project", "id", "coordinator", tokens)
@@ -189,6 +272,7 @@ def downgrade() -> None:
     def to_role(token: str) -> str:
         return DOWN_TOKEN.get(token, token).split(":", 1)[1]
 
+    _end_guests()
     _stored_tokens(DOWN_TOKEN, to_role)
     with op.batch_alter_table("request") as batch:
         batch.alter_column("to_role", existing_type=sa.String(32), type_=sa.String(16))

@@ -54,3 +54,25 @@ messages); storing the token lets requests use the same comparison, and
   `to_shape` check constraint names every `to_kind`, so the migration
   would rebuild that constraint on SQLite, PostgreSQL and MariaDB for a
   distinction the token already carries.
+
+## The 0067 downgrade removes a guest instead of making it a member
+
+**Id:** 3de05927-0c2d-4452-af37-14477aa945e3
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** review of the first trust × role pull request, 2026-10-28 (the reviewer's decision, relayed by the coordinator)
+**Revisit when:** the single role is gone for good and no downgrade below 0067 is supported
+
+Downgrading below migration 0067 removes every guest membership, revokes
+its credentials and closes its placements, and ends unused guest
+invitations and joins. The single role has no trust below `member`, so a
+guest cannot be mapped to anything it held.
+
+**Reason:** a downgrade that turned a guest into `member` would hand a
+read-only member the coder's scopes, a quiet escalation on the way back.
+Losing the guest is the safer failure, and an admin can re-invite them.
+
+**Rejected alternatives:**
+- Map `guest` to `member`: the first version of 0067, rejected in review
+  as fail-open.

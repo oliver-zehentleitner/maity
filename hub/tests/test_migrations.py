@@ -240,7 +240,7 @@ def test_trust_and_role_maps_every_stored_role_and_token_both_ways(engine: Engin
         "reviewer": ("member", "reviewer"),
         "coder": ("member", "coder"),
         "tester": ("member", "tester"),
-        "guest": ("guest", "designer"),
+        "guest": ("guest", "reviewer"),
     }
     agents = {
         name: factory.agent(engine, project, owner, role, trust=trust)
@@ -276,7 +276,8 @@ def test_trust_and_role_maps_every_stored_role_and_token_both_ways(engine: Engin
                 asked_by=agents["coder"].membership_id, while_open="wait", status="open",
                 created_at=now, forwarding=[{"to": "trust:admin"}],
                 proposal={"kind": "member_change", "action": "patch",
-                          "values": {"trust": "guest", "role": "coder"}},
+                          "values": {"trust": "guest", "role": "coder",
+                                     "availability_policy": {"substitutes": ["trust:admin"]}}},
                 **{"class": "decision"},
             )
         )  # fmt: skip
@@ -297,8 +298,20 @@ def test_trust_and_role_maps_every_stored_role_and_token_both_ways(engine: Engin
         assert old[owner_row] == old[designer] == "owner"
         proposal = conn.execute(select(t.request.c.proposal)).scalar()
         assert proposal is not None and proposal["values"] == {
-            "role": "member"
-        }  # guest has no older name
+            "role": "member",
+            "availability_policy": {"substitutes": ["role:" + "admin"]},
+        }
+        # Fail closed: the guest is removed and its credential revoked, never a member.
+        guest = conn.execute(
+            select(t.membership.c.active).where(t.membership.c.id == agents["guest"].membership_id)
+        ).scalar()
+        assert guest is None
+        revoked = conn.execute(
+            select(t.credential.c.revoked_at).where(
+                t.credential.c.membership_id == agents["guest"].membership_id
+            )
+        ).scalar()
+        assert revoked is not None
         expected = {
             "admin": "admin", "proxy": "proxy", "reviewer": "reviewer", "coder": "member",
             "tester": "member", "guest": "member",
@@ -325,7 +338,11 @@ def test_trust_and_role_maps_every_stored_role_and_token_both_ways(engine: Engin
         back = {r.id: (r.trust, r.role) for r in rows}
         assert back[owner_row] == back[designer] == ("owner", "coder")
         proposal = conn.execute(select(t.request.c.proposal)).scalar()
-        assert proposal is not None and proposal["values"] == {"trust": "member", "role": "coder"}
+        assert proposal is not None and proposal["values"] == {
+            "trust": "member",
+            "role": "coder",
+            "availability_policy": {"substitutes": ["trust:admin"]},
+        }
         for name in ("admin", "proxy", "reviewer", "coder"):
             assert back[agents[name].membership_id] == seats[name]
         # What the single role could not hold comes back as a member coder.
