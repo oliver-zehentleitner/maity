@@ -189,6 +189,14 @@ def get_content(slug: str, attachment_id: str, request: Request, caller: AnyCall
     if _matches(request.headers.get("if-none-match"), tag):
         return Response(status_code=304, headers=headers)
     data = store.get(blobs.key_of(row.project_id, row.id))
+    if data is None:
+        # The bytes may have gone since the row was read: a redaction or a deletion commits
+        # and removes them. Read the row again; gone or unreadable now is `not_found`.
+        with engine_of(request).begin() as conn:
+            mine = _reader(conn, caller, slug)
+            again = _row(conn, mine, attachment_id)
+            if again.deleted_at is not None or not attachments.readable(conn, mine, again):
+                raise not_found()
     if data is None or hashlib.sha256(data).hexdigest() != row.sha256:
         raise ApiError(500, "internal", "the stored bytes do not match their digest")
     if row.kind == "image":

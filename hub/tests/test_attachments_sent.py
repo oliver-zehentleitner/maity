@@ -16,6 +16,7 @@ from sqlalchemy import Engine, select, update
 
 from maity_hub import attachment_store, attachments, clock, events
 from maity_hub import tables as t
+from maity_hub.errors import ApiError
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_attachments import put
@@ -232,3 +233,70 @@ def test_removing_a_member_drops_its_pending_uploads_and_keeps_what_it_sent(
     os.utime(stale, (long_ago, long_ago))
     assert attachments.sweep(migrated, store)["orphans"] == 1
     assert sorted(p.name for p in blobs.glob("*/*")) == [sent_one]  # the pending bytes went
+
+
+def test_a_download_that_loses_the_race_with_a_redaction_is_not_found_not_a_failure(
+    stored: ClientFactory, owner: flow.Human, monkeypatch: pytest.MonkeyPatch, migrated: Engine
+) -> None:
+    agent = flow.agent(stored, owner)
+    named = upload(agent, "race.txt", b"bytes")
+    sent = send(agent, owner.id, [named])
+    real = attachment_store.LocalStore.get
+
+    def redacted_meanwhile(self: Any, key: str) -> bytes | None:
+        # The redaction commits between the read of the row and the read of the bytes.
+        done = owner.post(f"/projects/maity/events/{sent['seq']}/redact", {"reason": "x"})
+        assert done.status_code == 200, done.text
+        return real(self, key)
+
+    monkeypatch.setattr(attachment_store.LocalStore, "get", redacted_meanwhile)
+    answer = owner.get(f"/projects/maity/attachments/{named}/content")
+    assert answer.status_code == 404, answer.text
+    assert answer.json()["error"]["code"] == "not_found"
+
+
+def test_a_missing_blob_of_a_live_attachment_is_still_a_failure(
+    stored: ClientFactory, owner: flow.Human, blobs: Path
+) -> None:
+    named = upload(owner, "gone.txt", b"bytes")
+    [blob] = blobs.glob("*/*")
+    blob.unlink()  # the row says it is there; the bytes are not
+    answer = owner.get(f"/projects/maity/attachments/{named}/content")
+    assert answer.status_code == 500 and answer.json()["error"]["code"] == "internal"
+
+
+def test_redacting_a_group_chat_message_tombstones_its_attachments(
+    stored: ClientFactory, owner: flow.Human, blobs: Path, migrated: Engine
+) -> None:
+    from tests.factory import membership
+    from tests.test_group_chats import project_id
+
+    agent = flow.agent(stored, owner)
+    other = flow.human(stored, migrated, "colleague")
+    membership(migrated, project_id(migrated), "member", human_id=other.id)
+    chat = owner.post(BASE, {"title": "files", "participants": [agent.id, other.id]}).json()
+    named = upload(agent, "shared.txt", b"shared")
+    posted = agent.post(f"{BASE}/{chat['id']}/messages", {"body": "see", "attachments": [named]})
+    assert posted.status_code == 201, posted.text
+    done = other.post(f"/projects/maity/events/{posted.json()['seq']}/redact", {"reason": "x"})
+    assert done.status_code == 200, done.text  # a human in the chat redacts there
+    with migrated.connect() as conn:
+        row = conn.execute(select(t.attachment)).one()
+    assert row.deleted_reason == "redacted" and row.deleted_by == other.id
+    assert not list(blobs.glob("*/*"))
+    assert agent.get(f"/projects/maity/attachments/{named}").status_code == 404
+
+
+def test_naming_an_attachment_a_second_message_took_meanwhile_refuses_the_post(
+    stored: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    agent = flow.agent(stored, owner)
+    named = upload(agent, "twice.txt")
+    first = send(agent, owner.id, [named])
+    with migrated.begin() as conn:  # the later of two posts that both passed the check
+        row = conn.execute(select(t.attachment)).one()
+        with pytest.raises(ApiError) as refused:
+            attachments.attach(conn, [row], first["seq"] + 1)
+    assert refused.value.details["fields"]["attachments"] == {named: "unknown"}
+    with migrated.connect() as conn:
+        assert conn.execute(select(t.attachment.c.message_seq)).scalar() == first["seq"]
