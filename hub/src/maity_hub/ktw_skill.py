@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from maity_hub import commitment
 from maity_hub.config import Settings
 
 SKILL_NAME = "keep-the-why"
@@ -39,8 +40,9 @@ def skill(settings: Settings) -> dict[str, Any]:
     }
 
 
-def loading_block(project: Any, settings: Settings) -> dict[str, Any]:
-    """The `keep_the_why` block of the resume packet without the commitment (§5.2)."""
+def loading_block(project: Any, settings: Settings, credential: Any = None) -> dict[str, Any]:
+    """The `keep_the_why` block of the resume packet (§5.2): the loading part, and with the
+    caller's `credential` the commitment under `required`."""
     block: dict[str, Any] = {
         "enabled": bool(project.keep_the_why),
         "instruction": None,
@@ -51,4 +53,6 @@ def loading_block(project: Any, settings: Settings) -> dict[str, Any]:
             "config": CONFIG_PATH,
             "personal_defaults": project.keep_the_why_defaults,
         }
+        if credential is not None:
+            block |= commitment.packet(project, credential)
     return block

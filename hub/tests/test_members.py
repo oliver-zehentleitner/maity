@@ -72,6 +72,7 @@ def test_the_member_view_has_the_contract_shape(
         "owner_preferences",  # likewise (§19.4)
         "team",  # the team's rulebook and its instances (§6.17, §6.18)
         "instances",
+        "keep_the_why_unconfirmed",  # §6.1: set while the commitment is open
     }
     assert (view["kind"], view["owner_id"], view["reports_to"]) == ("agent", owner.id, owner.id)
     assert (view["harness"], view["model"], view["presence"]) == (

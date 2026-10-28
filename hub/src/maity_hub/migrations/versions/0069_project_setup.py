@@ -3,7 +3,7 @@
 `setup` holds the three booleans chosen at creation and the ids of the setup cards the
 hub created (`null` until it did); projects made before it read `null`.
 
-Revision ID: 0065
+Revision ID: 0069
 Revises: 0059
 Create Date: 2026-10-28
 """
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0065"
+revision: str = "0069"
 down_revision: str | None = "0059"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

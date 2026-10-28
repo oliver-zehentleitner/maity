@@ -21,6 +21,7 @@ from maity_hub import (
     API_VERSION,
     __version__,
     availability,
+    commitment,
     errors,
     forge,
     images,
@@ -124,6 +125,8 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         # Limits end and sessions go away without a request to notice it (§6.12).
         availability_worker = availability.Worker(engine)
         availability_worker.start()
+        commitment_worker = commitment.Worker(engine)
+        commitment_worker.start()
         registrations_worker = registration_accounts.Worker(engine)
         registrations_worker.start()
         from maity_hub.jourfixe import worker as jour_fixe_worker
@@ -141,6 +144,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         takeover_worker.stop()
         jour_fixe_clock.stop()
         registrations_worker.stop()
+        commitment_worker.stop()
         availability_worker.stop()
         image_worker.stop()
         if worker is not None:
