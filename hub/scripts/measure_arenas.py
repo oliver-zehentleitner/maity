@@ -12,13 +12,19 @@ concurrent clients, `--requests` each. It reports the process size (`VmRSS` of t
 /proc) before and after, the wall time, the throughput and the latency percentiles. One hub
 at a time, so the memory it needs is one hub's (about 150 MB) plus the clients.
 
+A run is valid only if every request was answered: the script counts the failed requests of
+each phase, leaves them out of the throughput and the latencies, says how many there were, and
+exits with 1 (marking the setting INVALID) if there was one. The environment is cleaned of
+`GLIBC_TUNABLES`, `LD_PRELOAD` and `MALLOC_*` first, since they change the allocator under test.
+What it shows is limited: a few concurrent clients on a few CPUs against a SQLite database say
+nothing certain about the production pod (40 request threads, 2 vCPU, a server database).
+
 Run it from the repository root with the hub installed (pip install -e hub). Linux only.
 """
 
 from __future__ import annotations
 
 import argparse
-import contextlib
 import os
 import statistics
 import subprocess
@@ -54,7 +60,8 @@ def run_setting(arenas: str, threads: int, requests: int, grow: int, phases: int
     env = dict(
         os.environ, MAITY_DATABASE_URL=f"sqlite:///{work}/hub.db", MAITY_BIND=f"127.0.0.1:{port}"
     )
-    env.pop("MALLOC_ARENA_MAX", None)
+    for name in [n for n in env if n.startswith("MALLOC_")] + ["GLIBC_TUNABLES", "LD_PRELOAD"]:
+        env.pop(name, None)  # they change the allocator under test
     if arenas != "default":
         env["MALLOC_ARENA_MAX"] = arenas
     subprocess.run(hub_command("migrate"), env=env, check=True, capture_output=True)
@@ -83,39 +90,41 @@ def run_setting(arenas: str, threads: int, requests: int, grow: int, phases: int
             )
         paths = [f"{base}/events?after=0&wait=0&limit=50", "/projects", f"{base}/members"]
 
-        def work_loop(count: int, latencies: list[float]) -> None:
+        def work_loop(count: int, latencies: list[float], failures: list[str]) -> None:
             for i in range(count):
                 started = time.perf_counter()
-                with contextlib.suppress(Exception):
+                try:
                     human.call("GET", paths[i % len(paths)])
+                except Exception as error:
+                    # not a sample: counted and reported, by kind (HTTP status or exception)
+                    status = getattr(error, "code", None)
+                    failures.append(f"HTTP {status}" if status else type(error).__name__)
+                    continue
                 latencies.append(time.perf_counter() - started)
 
-        def burst(count: int) -> tuple[list[float], float]:
-            found: list[list[float]] = [[] for _ in range(threads)]
+        def burst(count: int, clients: int) -> tuple[list[float], list[str], float]:
+            found: list[list[float]] = [[] for _ in range(clients)]
+            failed: list[list[str]] = [[] for _ in range(clients)]
             pool = [
-                threading.Thread(target=work_loop, args=(count, found[t])) for t in range(threads)
+                threading.Thread(target=work_loop, args=(count, found[t], failed[t]))
+                for t in range(clients)
             ]
             started = time.perf_counter()
             for thread in pool:
                 thread.start()
             for thread in pool:
                 thread.join()
-            return [x for part in found for x in part], time.perf_counter() - started
+            wall = time.perf_counter() - started
+            return [x for part in found for x in part], [k for f in failed for k in f], wall
 
-        burst(max(10, requests // 5))  # warm-up
+        errors: dict[str, list[str]] = {}
+        _, errors["warm-up"], _ = burst(max(10, requests // 5), threads)
         before = rss_mib(server.pid)
-        latencies, wall = burst(requests)
+        latencies, errors["burst"], wall = burst(requests, threads)
         after = rss_mib(server.pid)
         growth = [after]
-        for _ in range(phases if grow else 0):
-            found: list[list[float]] = [[] for _ in range(4)]
-            pool = [
-                threading.Thread(target=work_loop, args=(grow // 4, found[t])) for t in range(4)
-            ]
-            for thread in pool:
-                thread.start()
-            for thread in pool:
-                thread.join()
+        for phase in range(phases if grow else 0):
+            _, errors[f"growth {phase + 1}"], _ = burst(grow // 4, 4)
             growth.append(rss_mib(server.pid))
         ordered = sorted(latencies)
         return {
@@ -129,11 +138,15 @@ def run_setting(arenas: str, threads: int, requests: int, grow: int, phases: int
             "p99_ms": ordered[int(len(ordered) * 0.99) - 1] * 1000,
             "n": len(latencies),
             "growth": growth,
+            "errors": errors,
         }
     finally:
         server.terminate()
-        with contextlib.suppress(Exception):
+        try:
             server.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            server.kill()  # no process is left behind
+            server.wait()
 
 
 def main() -> int:
@@ -148,19 +161,31 @@ def main() -> int:
         f"python {sys.version.split()[0]}, {os.cpu_count()} cpus, "
         f"{args.threads} threads x {args.requests}"
     )
+    invalid = False
     for arenas in args.arenas:
         r = run_setting(arenas, args.threads, args.requests, args.grow, args.phases)
+        failed = sum(len(kinds) for kinds in r["errors"].values())
         print(
             f"arenas={r['arenas']:>7}  "
             f"rss {r['rss_before_mib']:.1f} -> {r['rss_after_mib']:.1f} MiB  "
             f"{r['n']} requests in {r['wall_s']:.1f}s = {r['per_s']:.0f}/s  "
-            f"latency p50 {r['p50_ms']:.0f} ms, p95 {r['p95_ms']:.0f} ms, p99 {r['p99_ms']:.0f} ms",
+            f"latency p50 {r['p50_ms']:.0f} ms, p95 {r['p95_ms']:.0f} ms, "
+            f"p99 {r['p99_ms']:.0f} ms  failed: {failed}",
             flush=True,
         )
         if args.grow:
             steps = " -> ".join(f"{mib:.1f}" for mib in r["growth"])
             print(f"           after each {args.grow} more requests: {steps} MiB", flush=True)
-    return 0
+        if failed:
+            invalid = True
+            where = "; ".join(
+                f"{phase}: "
+                + ", ".join(f"{kind} x{kinds.count(kind)}" for kind in sorted(set(kinds)))
+                for phase, kinds in r["errors"].items()
+                if kinds
+            )
+            print(f"           INVALID: failed requests ({where}); do not compare this setting")
+    return 1 if invalid else 0
 
 
 if __name__ == "__main__":
