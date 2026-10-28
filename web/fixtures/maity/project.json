@@ -43,6 +43,24 @@
     ],
     "onboarding": {
       "check_in_with": "coordinator"
+    },
+    "ticker": {
+      "enabled": true,
+      "contract_files": [
+        "docs/api.md"
+      ],
+      "contract_implementers": {
+        "8": [
+          "area:hub/",
+          "area:web/"
+        ],
+        "15": [
+          "member:agt-b"
+        ],
+        "*": [
+          "area:hub/"
+        ]
+      }
     }
   },
   "rules_version": 7,
