@@ -85,8 +85,11 @@ window.Maity = window.Maity || {};
 
   // /sign-in/code#c=K7QM4XPR9D2F, the QR's URL (§2.6.2, §16.11): the code in
   // the fragment, never sent to the hub; the field filled in, sent only on
-  // the human's tap. Read once, then gone from the address. In fixture mode
-  // the fragment holds the route, so the code is its query there.
+  // the human's tap. Read once, then gone from the address: a later drawing
+  // of the login box finds no code and leaves the field empty, by design (a
+  // code in the address bar or the history is one more place to read it
+  // from). In fixture mode the fragment holds the route, so the code is its
+  // query there.
   function codeFromAddress() {
     const at = M.route.current();
     if (at.path !== "/sign-in/code") return null;

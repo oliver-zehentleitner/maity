@@ -181,7 +181,7 @@ window.Maity = window.Maity || {};
   // path of the dashboard only, as the hub checks it (no "#", no "//", not a
   // hub path); anything else is no next.
   function safeNext(v) {
-    return typeof v === "string" && v.length <= 512 && M.route.isRoute(v) && !v.includes("//") && !/[\u0000-\u001f\\]/.test(v) ? v : null;
+    return typeof v === "string" && v.length <= 512 && M.route.isRoute(v) ? v : null;
   }
   function routeNext() {
     return safeNext(M.route.current().query.get("next"));

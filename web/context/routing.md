@@ -24,7 +24,10 @@ did. In fixture mode, a page opened from `file://`, the same path
 travels in the fragment (`index.html#/new`), since such an address
 cannot carry a path and `pushState` to another one is refused there.
 Every view writes paths: `M.dom.h` turns an `href` that is a route into
-what the address bar needs, and `tools/check.py` fails on a `#/`, on
+what the address bar needs. `M.route.isRoute` is also the security
+boundary for those links and for a sign-in's `next`: no `//`, no
+backslash (which a browser reads as a slash, so `/\x` would leave the
+origin), no control character, no hub path. `tools/check.py` fails on a `#/`, on
 `location.hash` or on the History API anywhere in `web/js/` but
 `js/route.js`. The device code reads from the fragment over https
 (`/sign-in/code#c=…`) and is removed from the address once read; in

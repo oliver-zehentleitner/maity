@@ -18,10 +18,13 @@ window.Maity = window.Maity || {};
   const firstOf = (path) => path.split(/[/?#]/)[1] || "";
   const hubPath = (path) => HUB.includes(firstOf(path)) || /^sitemap(-\d+)?\.xml$/.test(firstOf(path));
 
-  // A path of the dashboard: one "/", then no second "/", no fragment, not
-  // under a hub path. A sign-in's next must be one (§2.6.5).
+  // A path of the dashboard: one "/", no "//" anywhere, no backslash (a
+  // browser reads "/\\x" as "//x", another origin), no fragment, no space or
+  // control character, not under a hub path. This is the boundary for every
+  // link the views write and for a sign-in's next (§2.6.5).
   function isRoute(value) {
-    return typeof value === "string" && /^\/(?!\/)/.test(value) && !value.includes("#") && !/\s/.test(value) && !hubPath(value);
+    return typeof value === "string" && value.startsWith("/") && !value.includes("//") && !value.includes("\\")
+      && !value.includes("#") && !/[\s\u0000-\u001f\u007f]/.test(value) && !hubPath(value);
   }
 
   // Where the page is: its path, its query and, over http(s), its fragment

@@ -3844,6 +3844,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   header.querySelectorAll("button.menu-item").find((b) => b.textContent === "Sign out").click(); await dsSettle();
   win.location.hash = "#/sign-in/code?c=k7qm4xpr9d2f"; win.onhashchange(); await dsSettle();
   expect(byId("device-code") && byId("device-code").value === "K7QM-4XPR-9D2F" && byId("login-handle"), "device code: the QR's URL opens the login with the code filled in, not sent");
+  // Over https (§16.11) the code is in the fragment, /sign-in/code#c=…: read once, then gone from the address.
+  const dsRoute = win.Maity.route;
+  let dsFragment = "c=k7qm4xpr9d2f";
+  win.Maity.route = Object.assign({}, dsRoute, { fixture: false,
+    current: () => ({ path: "/sign-in/code", query: new URLSearchParams(""), fragment: dsFragment }),
+    dropFragment: () => { dsFragment = ""; } });
+  const dsHttps = win.Maity.deviceSignIn.loginOptions(() => {}, () => {}); await dsSettle();
+  const dsAgain = win.Maity.deviceSignIn.loginOptions(() => {}, () => {}); await dsSettle();
+  win.Maity.route = dsRoute;
+  const dsField = (box) => box.querySelectorAll("input").find((i) => i.id === "device-code");
+  expect(dsField(dsHttps) && dsField(dsHttps).value === "K7QM-4XPR-9D2F" && dsFragment === ""
+    && text(dsAgain).includes("Have a code?") && !(dsField(dsAgain) && dsField(dsAgain).value),
+    "device code: over https the code comes from the fragment and fills the field, the fragment is gone after; a second drawing finds none and folds the entry");
   main.querySelector(".sign-in-code form").dispatch("submit"); await dsSettle();
   const dsWait = main.querySelector(".device-waiting");
   expect(dsWait && text(dsWait).includes("Waiting for approval on your other device") && text(dsWait.querySelector(".match-number")) === "47" && !text(dsWait).includes("Maintainer"),
@@ -7150,8 +7163,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!R.fixture && rtAt.path === "/maintainer/maity/board" && rtAt.query.get("q") === "x" && rtAt.fragment === "c=K7QM4XPR9D2F"
     && R.href("/new") === "/new", "route: over https the address is the path, its query and the fragment apart; a link's href is the path itself");
   expect(R.isRoute("/maintainer/maity/board") && R.isRoute("/login?next=%2Fall") && ["//evil", "/a#b", "https://x/y", "/api/v1/me", "/assets/js/app.js",
-    "/join/abc", "/r/x", "/mail/x", "/badge/a/b.svg", "/robots.txt", "/sitemap-2.xml", "#/new", "/ x"].every((x) => !R.isRoute(x)),
-  "route: a dashboard path is a route; another origin, a fragment, a hub path or a space is not");
+    "/join/abc", "/r/x", "/mail/x", "/badge/a/b.svg", "/robots.txt", "/sitemap-2.xml", "#/new", "/ x", "/\\evil.example", "/a\\b", "/a//b",
+    "/a\u0007b", "/a\u007fb"].every((x) => !R.isRoute(x)),
+  "route: a dashboard path is a route; another origin, a backslash, a doubled slash, a fragment, a hub path, a space or a control character is not");
   R.dropFragment();
   expect(rtPushed.length === 1 && rtPushed[0][0] === "replace" && rtPushed[0][1] === "/maintainer/maity/board?q=x" && R.current().fragment === "",
     "route: the device code's fragment is dropped with replaceState, path and query kept");
