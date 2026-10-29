@@ -5,6 +5,8 @@
 - hub: a member's own settings in a project, `GET`/`PATCH
   /projects/{owner}/{slug}/me/settings` with the override `not_listening.minutes` and
   the `effective` value (§6.2); humans only, migration 0091
+- hub: the data export (§2) carries `not_listening` with the notification settings
+  and each membership's `own_settings`
 
 ### Fixed
 

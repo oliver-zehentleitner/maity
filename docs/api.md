@@ -2365,7 +2365,7 @@ runners they own (§15.3, never a credential), the agent profiles they
 own with their souls (§19.1) and memberships, the organisations they
 belong to (handle, role, joined; §6.26), the abuse reports they
 filed (§16.8), and the memberships (project full name, trust, role,
-`reports_to`, areas, joined, left). From every project they are or were
+`reports_to`, areas, their own settings there (§6.2), joined, left). From every project they are or were
 in, and from the requests they answered without being a member
 (personal requests, cross-owner consents §6.2, takeovers §6.19): the
 messages and chat messages they wrote, the requests they asked and the

@@ -653,7 +653,9 @@ stored notification preferences (`notification_settings.preferences`, filled fro
 project is a JSON column `own_settings` on that membership (migration 0091), each
 setting `null` for "use the personal default". `member_settings.not_listening_minutes`
 gives the effective threshold, the override or else the personal `minutes`; the
-digest reads it.
+owner's digest (§5.3) is to read it when it comes (card tsk-32g2cjbm52ft). The export
+(§2) carries the personal `not_listening` with the notification settings and each
+membership's `own_settings` with the membership, since both are the person's.
 
 **Reason:** the contract ties the override to "the caller's own membership"
 (`not_found` without one). On the membership row it goes when the membership ends,
