@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Iterator
 from datetime import timedelta
 from typing import Any
@@ -18,7 +17,7 @@ from maity_hub import clock, idempotency
 from maity_hub import tables as t
 from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import ApiError
-from tests import factory
+from tests import factory, flow
 from tests.conftest import ClientFactory
 
 CALLS: list[dict[str, Any]] = []
@@ -84,7 +83,7 @@ def client(make_client: ClientFactory) -> Iterator[TestClient]:
                     insert(t.idempotency_key).values(
                         caller=caller.idempotency_caller,
                         idem_key=KEY["Idempotency-Key"],
-                        body_hash=hashlib.sha256(request.scope["state"]["body"]).hexdigest(),
+                        body_hash=idempotency.fingerprint(other, request),
                         status_code=201,
                         resource_type="probe",
                         resource_id="p-other",
@@ -246,3 +245,54 @@ def test_losing_the_race_for_a_key_replays_the_winner(
     assert response.status_code == 201
     assert response.headers["Idempotent-Replayed"] == "true"
     assert response.json() == {"id": "p-other", "loaded": True}
+
+
+def _create(owner: flow.Human, project: str) -> Any:
+    """The same card, with the same key, in `project`."""
+    return owner.client.post(
+        f"/api/v1/projects/{project}/tasks",
+        json={"title": "Same card"},
+        headers={"X-CSRF-Token": owner.csrf} | KEY,
+    )
+
+
+def test_a_key_used_again_in_another_project_is_a_mismatch(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """A human's key spans their projects: the second project's call must not replay
+    the card the first one made (§1.5)."""
+    owner = flow.human(make_client, migrated)
+    flow.project(owner, "one")
+    flow.project(owner, "two")
+    assert _create(owner, "maintainer/one").status_code == 201
+    other = _create(owner, "maintainer/two")
+    assert other.status_code == 409, other.text
+    assert other.headers["Maity-Error"] == "idempotency_mismatch"
+    assert owner.get("/projects/maintainer/two/tasks").json()["items"] == []
+
+
+def test_a_key_on_another_route_is_a_mismatch(client: TestClient, agent: factory.Agent) -> None:
+    client.post("/api/v1/probe", json={"a": 1}, headers=_auth(agent) | KEY)
+    response = client.post("/api/v1/failing", json={"a": 1}, headers=_auth(agent) | KEY)
+    assert response.headers["Maity-Error"] == "idempotency_mismatch"
+    assert [{"by": agent.agent_id}] == CALLS
+
+
+def test_an_old_name_of_the_project_replays_the_same_call(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The project counts by its id: the call through an alias (§6.25) is the same."""
+    owner = flow.human(make_client, migrated)
+    project = flow.project(owner, "maity")
+    with migrated.begin() as conn:
+        conn.execute(
+            insert(t.project_alias).values(
+                project_id=project["id"], owner_id=owner.id, slug="old", created_at=clock.now()
+            )
+        )
+    first = _create(owner, "maintainer/maity")
+    assert first.status_code == 201, first.text
+    again = _create(owner, "maintainer/old")
+    assert again.status_code == 201, again.text
+    assert again.headers["Idempotent-Replayed"] == "true"
+    assert again.json()["id"] == first.json()["id"]
