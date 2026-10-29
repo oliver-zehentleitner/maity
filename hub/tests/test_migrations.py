@@ -468,3 +468,31 @@ def test_settings_stored_for_removed_notification_kinds_are_deleted(engine: Engi
         "email": {"kinds": {"inbox": {"mode": "daily"}}, "language": "de"},
     }
     assert rows[owners["clean"]] == clean
+
+
+def test_the_states_before_2026_10_27_are_mapped_once(engine: Engine) -> None:
+    """0094 (§6.1): `freeze` and `fixes-only` become `review`, `accepted` becomes `archived`,
+    `build` and `archived` stay; downgrading maps `review` back to `freeze`."""
+    from sqlalchemy import select
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    migrate(engine, _before(engine, "0094"))
+    old = ("build", "freeze", "fixes-only", "accepted", "archived")
+    ids = {state: factory.project(engine, f"p-{state}", state=state) for state in old}
+
+    def states() -> dict[str, str]:
+        with engine.connect() as conn:
+            return dict(conn.execute(select(t.project.c.id, t.project.c.state)).all())
+
+    migrate(engine)
+    assert states() == {
+        ids["build"]: "build",
+        ids["freeze"]: "review",
+        ids["fixes-only"]: "review",
+        ids["accepted"]: "archived",
+        ids["archived"]: "archived",
+    }
+    downgrade(engine, _before(engine, "0094"))
+    assert states()[ids["freeze"]] == "freeze" and states()[ids["accepted"]] == "archived"

@@ -19,16 +19,16 @@ from maity_hub.events import Actor, emit, lock_project
 KEEP_THE_WHY = "Load the keep-the-why skill and read context/index.md before working."
 
 _STATE = {
+    "plan": (
+        "The project is in plan, concept and contracts: creating or claiming a card needs "
+        "a `reason`, which is logged with the event."
+    ),
     "build": "The project is being built: claim and create cards as the policy says.",
-    "freeze": (
-        "The project is frozen: creating or claiming a card needs a `reason`, "
-        "which is logged with the event."
+    "review": (
+        "The project is in review, the feature stop before a launch: creating or claiming "
+        "a card needs a `reason`, which is logged with the event."
     ),
-    "fixes-only": (
-        "The project takes fixes only: creating or claiming a card needs a `reason`, "
-        "which is logged with the event."
-    ),
-    "accepted": "The project is accepted: no card may be created or claimed.",
+    "launch": "The project is live: claim and create cards as the policy says.",
     "archived": "The project is archived: no card may be created or claimed.",
 }
 _CLAIM = {

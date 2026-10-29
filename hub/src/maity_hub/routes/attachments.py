@@ -24,6 +24,7 @@ from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_foun
 from maity_hub.events import emit, lock_project, on_commit, on_rollback
 from maity_hub.ids import new_id
 from maity_hub.namespace import ProjectRoute
+from maity_hub.policy import CLOSED_STATES
 from maity_hub.routes.conversations import Outsider, _reader
 from maity_hub.routes.events import chat_parties
 from maity_hub.routes.project_images import _matches
@@ -31,7 +32,6 @@ from maity_hub.scopes import in_admin_team
 
 router = APIRouter(route_class=ProjectRoute)
 
-CLOSED = ("accepted", "archived")
 HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "Content-Security-Policy": "default-src 'none'; sandbox",
@@ -91,7 +91,7 @@ def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     sniffed = attachments.sniff(data)
     if sniffed is not None and declared != sniffed:
         raise invalid({"body": "unsupported_type"}, "the declared type does not name the image")
-    if mine.project.state in CLOSED:
+    if mine.project.state in CLOSED_STATES:
         raise ApiError(409, "project_closed", f"the project is {mine.project.state}")
     rate_key = str(mine.id)
     received = len(data)  # what the rate was charged: the refund is this, whatever follows
@@ -121,7 +121,7 @@ def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
         # under the lock, right before the insert.
         locked = membership(conn, caller, slug)
         _require_post(locked)
-        if project.state in CLOSED:
+        if project.state in CLOSED_STATES:
             raise ApiError(409, "project_closed", f"the project is {project.state}")
         used = attachments.used(conn, locked.project.id)
         if used + len(data) > settings.attachment_quota:

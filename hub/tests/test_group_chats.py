@@ -118,7 +118,7 @@ def test_who_may_create_and_with_whom(
 
 def test_a_closed_project_refuses_a_new_room(owner: flow.Human, migrated: Engine) -> None:
     with migrated.begin() as conn:
-        conn.execute(update(t.project).values(state="accepted"))
+        conn.execute(update(t.project).values(state="archived"))
     refused = create(owner, "hum-anyone", "hum-else")
     assert refused.json()["error"]["code"] == "project_closed"
 

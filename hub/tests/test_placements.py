@@ -264,10 +264,10 @@ def test_the_quota_the_closed_project_and_the_revoked_runner(
     setup.owner.patch(
         "/projects/maintainer/maity", {"policy": {"max_placements": 8}, "reason": "more"}
     )
-    setup.owner.patch("/projects/maintainer/maity", {"state": "freeze", "reason": "release"})
+    setup.owner.patch("/projects/maintainer/maity", {"state": "review", "reason": "release"})
     reasonless = place(setup, agent={"id": other.id})
     assert reasonless.json()["error"]["details"]["fields"] == {"reason": "required"}
-    setup.owner.patch("/projects/maintainer/maity", {"state": "accepted", "reason": "done"})
+    setup.owner.patch("/projects/maintainer/maity", {"state": "archived", "reason": "done"})
     closed = place(setup, agent={"id": other.id}, reason="late")
     assert (closed.status_code, error(closed)) == (409, "project_closed")
     setup.owner.patch("/projects/maintainer/maity", {"state": "build", "reason": "again"})
