@@ -604,6 +604,11 @@ membership = Table(
     Column("paused_reason", MARKDOWN_TEXT),
     Column("paused_since", UtcDateTime),
     Column("paused_by", String(ID)),
+    # The pause was set by a manager under `line:lead`, which decides who lifts it (§5.3).
+    Column("paused_line", Boolean, nullable=False, server_default=false()),
+    # The cross-owner `reports_to` edge was consented with a manager's rights and the
+    # boss still holds the role `manager` (§6.2): the member is in the boss's reach.
+    Column("line_consent", Boolean, nullable=False, server_default=false()),
     # What the human told this agent about its job (§3.1); its own and the admins' to read.
     Column("briefing", MARKDOWN_TEXT),
     Column("onboarded_at", UtcDateTime),
@@ -786,6 +791,7 @@ credential = Table(
     Column("paused_reason", MARKDOWN_TEXT),
     Column("paused_since", UtcDateTime),
     Column("paused_by", String(ID)),
+    Column("paused_line", Boolean, nullable=False, server_default=false()),
     UniqueConstraint("membership_id", "instance", name="uq_credential_instance"),
     **MYSQL_TABLE,
 )

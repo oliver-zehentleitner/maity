@@ -11,8 +11,8 @@ Actions → Variables): a label prefix, for example `maity-hub`. Each database j
 runner of its own type: `hub-sqlite` for `[self-hosted, maity-hub-sqlite]`, `hub-postgresql` for
 `maity-hub-pg`, `hub-mariadb` for `maity-hub-maria`.
 
-- **One runner service per job type**, so the three jobs of a pull request run side by side, and two
-  pull requests queue only per type. A pool of identical runners would let two Postgres jobs run at
+- **One runner service per job type**, so the three jobs of a push run side by side, and two
+  pushes queue only per type. A pool of identical runners would let two Postgres jobs run at
   once, both binding the host port 5432 for their service container (`ports: 127.0.0.1:5432`).
 - Each service sets `PYTEST_ARGS=-n 2` in its unit: two workers per job, six on the machine's
   eight cores. Hosted runners keep `-n auto`.
@@ -22,8 +22,11 @@ runner of its own type: `hub-sqlite` for `[self-hosted, maity-hub-sqlite]`, `hub
 - Variable unset or empty: GitHub-hosted (`ubuntu-latest`). **Deleting the variable is the whole
   fallback**, no commit needed. Runs already queued for a self-hosted label keep it, so cancel and
   rerun them after deleting the variable.
-- Set: pushes to `main` and pull requests from this repository use the runners; the condition sends
-  pull requests from forks to the hosted runners.
+- Set: **only a push (to `main`) uses the runners; every pull request runs on a hosted runner.** One
+  runner per job type does one job at a time (about 12 minutes for the MariaDB job); with pull requests
+  on it the queue grew to eleven jobs and the oldest waited an hour and a half, which held up `main`
+  as well. On the hosted side pull requests run in parallel. This is about the queue, not about trust
+  (next section): a pull request can change `ci.yml` itself.
 
 ## The trust boundary, stated honestly
 

@@ -1,7 +1,7 @@
-// Joining an agent, inside the Members view (js/members.js): a panel that
+// Joining an agent, inside a project's Agents view (js/agents-page.js): a panel that
 // creates a join for one of the human's agent profiles (or a new one) and
-// shows the paste line once (docs/api.md §3.1); the open joins as seats at
-// the front of the agents' grid; the others folded at the view's end. The
+// shows the paste line once (docs/api.md §3.1); the open joins as seats under
+// the cards; the others folded at the view's end. The
 // line carries a single-use code; it is held in the view only, never
 // stored, and gone when the view is left. Each join's state is derived from
 // its fields, expiry against the clock while the view is open; only an open
@@ -44,7 +44,7 @@ window.Maity = window.Maity || {};
   function build(ctx, hooks, panel, listStatus, profilesRead, joinsRead) {
     let profiles = profilesRead;
     let joins = joinsRead;
-    // The project's members as last read (ctx.members, which Members keeps
+    // The project's members as last read (ctx.members, which Agents keeps
     // current after each save): an agent among them joins as an instance.
     // Agents the hub said are members count as such even when the list on
     // screen does not show them yet.
@@ -283,9 +283,9 @@ window.Maity = window.Maity || {};
             : d.reason === "member_join_limit" ? { message: "a member may not set this for their own agent: " + (LIMIT_WORDS[d.field] || d.field || "a field") }
             : d.reason === "member_agents_max" ? { message: "you hold as many agents in this project as it allows (" + d.max + ")" }
             : err);
-          // The limit is the agent owner's rulebook, in the agent's row on Members (§6.18).
+          // The limit is the agent owner's rulebook, on its card on Agents (§6.18).
           if (err.code === "instance_quota" && agent.id) {
-            append(status.el, " ", h("a", { class: "join-quota-link", href: ctx.link("members", agent.id, "rulebook") },
+            append(status.el, " ", h("a", { class: "join-quota-link", href: ctx.link("agents", agent.id, "rulebook") },
               "Raise it in the team's rulebook"));
           }
           // A member the list on screen did not show, a first join the list
@@ -467,13 +467,13 @@ window.Maity = window.Maity || {};
     // A join that expires while the view is open moves on without a reload.
     ctx.every(EXPIRY_MS, () => { if (keyOf(joins, M.api.now()) !== shownKey) changed(); });
 
-    // The members changed under an open panel (a rulebook saved on Members):
+    // The members changed under an open panel (a rulebook saved on Agents):
     // the choice drawn again from them, the chosen agent and instance kept.
     const refresh = () => { if (!panel.hidden) showAgent(); };
     return { open, close, seats, earlier, openCount, openAgents, reread, refresh };
   }
 
-  // On a page the router has not attached yet (a direct /<owner>/<slug>/members/join), the
+  // On a page the router has not attached yet (a direct /<owner>/<slug>/agents/join), the
   // focus waits until it is in the document.
   function focusSoon(el) {
     if (el.isConnected === false) window.setTimeout(() => { if (el.isConnected !== false) el.focus(); }, 0);
