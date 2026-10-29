@@ -152,7 +152,7 @@ stop the page. Mail settings come with the hub's mail (stage 3).
 | `#/chats` | every chat across one's projects (`js/chats.js`), laid out as a project's Chat tab: the list beside the open conversation (on a phone the list its own screen), merging each project's direct and group chats (one read across projects, `GET /me/conversations`, §9.3, or one per project on a hub without it, then every 30 s and after the notifications stream says something changed, never a project's events feed), unread first, then the newest, each with its project as a 14 px mark after the who line (name on hover), and in the open chat each agent message with the marks of the reader's projects it is in; from the header's **Chat** |
 | `#/chats/<owner>/<slug>/<id>` | one of those chats opened in place, with the Chat tab's messages, drafts and composer in its project's context; **← Conversations** goes back to `#/chats` |
 | `#/all` | the inbox across every project, each entry with its project's badge (logo or monogram, name, state) before it, as a link to the project; filterable by project and groupable by project (each group a heading with its own list; the filter holds in `#/all` only, and answering opens the next entry as it stands on screen); the landing page with more than one project, and with none (then it offers **Create a project**) |
-| `#/new` | create a project; also **+ New project** in the switcher |
+| `#/new` | create a project; also **+ New project** in the switcher. Where the hub takes `owner` and the human is in an organisation that lets them create projects, **Owner** chooses between them and that organisation (`docs/api.md` §6.26); the address is then `<organisation>/<slug>` |
 | `#/s/<owner>/<slug>` | a project's public swarm page, where its owner switched it on; for visitors with or without a session |
 | `#/login` | the login page, always; signed in, the dashboard's start (the root without a session shows the instance's landing page where it has one). `#/login?next=<route>` signs in and goes on to that dashboard route (`/#/…` only, §2.6.5), passed to the password, mail-link and device sign-in calls; the page offers **Create an account** where `GET /auth/methods` says the instance registers |
 | `#/invite/<token>` | an invitation (`js/invite.js`, §3.4), with or without a session, as one centred card like sign-in and register: the project's logo or monogram, who invites to which project as what, the note, until when, whether it is for one address; signed out **Sign in to accept** and, where the hub registers or the invitation admits, **Create one**, both returning here; signed in **Join <project> as <you>** (`POST …/accept`), then the way into the project; a refusal (address mismatch, already a member, void, project closed, account pending) said in the hub's words with its reason; an unknown, used, expired or revoked link one answer |
@@ -1043,12 +1043,17 @@ same panel for a human owner, where the hub's project view has
 asks first and follows the new address; the hub's `taken`, `reserved`,
 `alias_limit` (at most 8 earlier names) and `rate_limited` (3 renames
 and transfers a day) are said in words. **Transfer**, for the namespace
-owner only, asks another human owner of the project to take it over
-(`POST …/transfer`, a consent request in their inbox; the project moves
-on their go) and offers to withdraw the request; without another owner
-it says to make one first, and a step-up the hub asks for is said. In
+owner (for an organisation's project, any of its owners), asks another
+human owner of the project to take it over (`POST …/transfer`, a
+consent request in their inbox; the project moves on their go) and
+offers to withdraw the request. It also moves the project into an
+organisation the human owns, at once, or one they administer, by asking
+its owners (§6.26). Without another owner or such an organisation it
+says to make an owner first. The password or a code is asked in place
+where the hub wants the step-up (`js/step-up.js`). In
 Members, demoting or removing the namespace owner is refused with
-`namespace_owner`, said with the way out. The ticker names a `rename`
+`namespace_owner`, said with the way out (for an organisation's
+project, its owners stay owners the same way). The ticker names a `rename`
 item as such.
 
 **Agent signing** (`policy.signing`, `docs/api.md` §2.2, §6.1) is in the
