@@ -57,7 +57,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 - [jour-fixe.md](jour-fixe.md) — minutes online for the moderator order counted per agent membership and minute in their own table; a round's thread opens with the round, a pending further step waits in the steps list; the thread and its messages wake nobody; a proposal's decision request asked by the moderator; a later adopt opens the card, the report stays final; a card still carries the hub's text while it is exactly what the hub wrote
 
 ## K
-- [keep-the-why.md](keep-the-why.md) — the Keep the Why export in memory: read through on request, refreshed in the background for the project view, never stored; the policy stores only what a human set, the provider keeps its boolean column
+- [keep-the-why.md](keep-the-why.md) — the Keep the Why export in memory: read through on request, refreshed in the background for the project view, never stored; the policy stores only what a human set, the provider keeps its boolean column; the commitment's deadline is on the credential, one reconcile function (a minute-sweep, and at once on a policy change) decides what is owed; the why on a report is checked by its shape only, the hub reads no file
 - [kubernetes.md](kubernetes.md) — one pod with Recreate, no replica count; migrations as a pre-install/pre-upgrade hook Job; readiness on health, liveness on help; a plain Ingress with ingress-nginx defaults (retired upstream); serving only on its own schema head, no rollback downgrade; the mail signing key and the SMTP password come from Secrets by reference
 
 ## L

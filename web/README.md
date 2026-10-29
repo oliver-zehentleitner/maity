@@ -648,7 +648,10 @@ too.
    cards held; preselected when it has one) or **Start another instance**
    (with how many of the team's limit are active). Role, reports to, areas
    and briefing then stay the membership's: hidden, and left out of the
-   join. When the hub answers that the agent is a member although the list
+   join. Its line comes after a note that the instance needs a state
+   directory of its own, with the `export MAITY_STATE_DIR=…` to set in a
+   clone where the agent already joined, and that `maity resume` there
+   would take over that instance (`docs/agents.md`). When the hub answers that the agent is a member although the list
    did not show it, the members are read again and the same choice is
    offered; `instance_quota` and the other refusals are shown as the hub
    words them. Each join is labelled with its state from

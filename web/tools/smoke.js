@@ -2958,6 +2958,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(main, "Copy").click(); await tick();
   expect(ctx.copied && ctx.copied.startsWith("maity join"), "copy puts the line on the clipboard");
   expect(main.querySelector(".join-result") && !main.querySelector("form.join-form"), "the line takes the form's place in the panel");
+  expect(!main.querySelector(".instance-note"), "a new agent's line has no note on another instance's state directory");
   btn(main.querySelector("article.seat"), "Revoke").click(); for (let k = 0; k < 4; k++) await tick();
   expect(text(main.querySelector("details.earlier-joins")).includes("revoked"), "open join revoked, now in the record");
   // A join for a new profile: Join another brings the form back; the new join is a seat, the select offers it.
@@ -3001,6 +3002,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const inBody = inPosts[0] && inPosts[0][1];
   expect(inPosts.length === 1 && inBody.replaces === "wle2" && !("new_instance" in inBody) && ["role", "reports_to", "areas", "capabilities", "briefing"].every((k) => !(k in inBody))
     && main.querySelector(".join-result"), "join: Replace instance sends replaces and leaves the membership's fields out " + JSON.stringify(inBody));
+  // An instance runs with a state directory of its own (tsk-axmb8dsyvrpb): said before the line, with the export to set.
+  const inNote = () => main.querySelector(".join-result .instance-note");
+  const inResult = main.querySelector(".join-result");
+  expect(inNote() && inResult.childNodes.indexOf(inNote()) < inResult.childNodes.indexOf(inResult.querySelector(".paste-row"))
+    && text(inNote().querySelector("code")) === 'export MAITY_STATE_DIR="$HOME/.local/state/maity/agent-b-<name>"'
+    && text(inNote()).includes("Do not run maity resume there to start it"),
+    "join: a replacing instance's line comes after the note on its own state directory, the export named, resume warned off");
   await inAgain(); inPick("agt-b"); inNew(); await inSubmit();
   expect(inPosts.length === 2 && inPosts[1][1].new_instance === true && !("replaces" in inPosts[1][1]) && !main.querySelector(".join-result")
     && text(main).includes("No join created: the team has as many instances as its rulebook allows"),
@@ -3013,6 +3021,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "join: a member's active instance offered, the team's count against its limit");
   inNew(); await inSubmit();
   expect(inPosts.length === 3 && inPosts[2][1].new_instance === true && main.querySelector(".join-result"), "join: Start another instance sends new_instance within the team's limit");
+  expect(inNote() && text(inNote().querySelector("code")).includes("/maity/agent-c-<name>"), "join: another instance's line has the note too, for its handle");
   // The maintainer's incident: the list on screen does not show the agent as a member; the hub's
   // refusal brings the choice, with the instances read again, and the next create carries it.
   await inAgain();

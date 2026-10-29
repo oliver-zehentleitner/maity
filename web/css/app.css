@@ -1334,3 +1334,7 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .card-family { display: grid; gap: 8px; margin-top: 8px; }
 .card-family-form { display: grid; gap: 6px; }
 .card-family-form button[type="submit"] { justify-self: start; }
+
+/* Another instance's state directory, said before its join line (js/join.js). */
+.instance-note { border-left: 3px solid var(--warn); padding: 4px 0 4px 10px; margin: 8px 0; }
+.instance-note p { margin: 4px 0; }
