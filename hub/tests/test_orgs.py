@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, insert, select, update
 
-from maity_hub import clock, handle_register, namespace, orgs, registration_accounts
+from maity_hub import clock, handle_register, orgs, paths, registration_accounts
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -89,7 +89,7 @@ def test_a_handle_is_one_namespace_for_humans_and_organisations(
         "maintainer": "taken",  # a human's
         "x": "invalid",  # too short
         "Upper": "invalid",
-        sorted(namespace.DASHBOARD_WORDS)[0]: "reserved",
+        sorted(paths.RESERVED_FIRST)[0]: "reserved",
     }
     for handle, reason in cases.items():
         refused = owner.post("/orgs", {"handle": handle, "display_name": "Another"})

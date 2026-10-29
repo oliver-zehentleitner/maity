@@ -48,7 +48,7 @@ def test_a_change_of_the_factor_is_a_security_item(
     owner, _ = setup(make_client, migrated)
     write(migrated, owner.id, "second_factor_changed", data)
     shown = [i for i in bell(owner) if i["title"] == title]
-    assert len(shown) == 1 and shown[0]["url"].endswith("/#/account/security")
+    assert len(shown) == 1 and shown[0]["url"].endswith("/account/security")
     assert shown[0]["read"] is False
 
 
@@ -82,7 +82,7 @@ def test_each_is_a_security_mail_of_its_own_and_goes_once(
         "[Maity] Wrong second-factor codes after a sign-in: Firefox on Linux, 203.0.113.9",
     ]
     reset = next(m for m in mails if "reset by grace" in m.subject)
-    assert "/#/account/security" in reset.body and "List-Unsubscribe" in reset.headers
+    assert "/account/security" in reset.body and "List-Unsubscribe" in reset.headers
     assert "Maity only links to https://hub.example" in reset.body
     before = len(outbox_rows(migrated))
     at(minutes=3)

@@ -502,8 +502,7 @@ project = Table(
     metadata,
     _id(primary_key=True),
     # The namespace owner, a human, and the slug: unique together, with the project's
-    # aliases (§6.25). `legacy_slug` is the slug at the namespace migration, frozen, for the
-    # addresses outside the API that predate it; null for every later project.
+    # aliases (§6.25).
     # `owner_id` is the one id every reader uses, a `hum-…` or an `org-…`; the two columns
     # below carry the foreign keys, exactly one set, and the check keeps the three in step
     # (§6.26, hub/context/orgs.md).
@@ -511,7 +510,6 @@ project = Table(
     _ref("owner_human_id", "human.id"),
     _ref("owner_org_id", "org.id"),
     Column("slug", String(HANDLE), nullable=False),
-    Column("legacy_slug", String(HANDLE)),
     Column("name", String(TITLE), nullable=False),
     Column("state", String(16), nullable=False),
     Column("state_note", MARKDOWN_TEXT),
@@ -1147,6 +1145,8 @@ card = Table(
     Column("merge_report", String(64)),
     Column("merge_told", Boolean, nullable=False, server_default=false()),
     Column("contract", JSON_VALUE),
+    # The forge issue an import read (§6.14): set once, never changed; null otherwise.
+    Column("imported_from", JSON_VALUE),
     # Releases: the version is unique per project; `release_in_flight` is
     # True on the one release card that is neither done nor cancelled and
     # NULL on every other card, so the unique constraint allows one per project.

@@ -74,14 +74,14 @@ def test_unknown_and_known_requests_have_same_response_and_fresh_cookie(
     client, _ = setup(make_client, migrated)
     first = ask(client, "missing@example.com")
     cookie = client.cookies.get("maity_pending")
-    second = ask(client, "  ADA@example.com  ", next="/#/projects")
+    second = ask(client, "  ADA@example.com  ", next="/projects")
     assert first.status_code == second.status_code == 202
     assert first.json() == second.json() == {"expires_in": 900}
     assert cookie != client.cookies.get("maity_pending")
     _, code = mail(migrated)
     answer = client.post("/api/v1/auth/email-code", json={"code": code})
     assert answer.status_code == 200, answer.text
-    assert answer.json()["next"] == "/#/projects"
+    assert answer.json()["next"] == "/projects"
     assert answer.json()["member"]["handle"] == "ada"
     assert client.cookies.get("maity_pending") is None
 

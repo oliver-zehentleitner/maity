@@ -249,14 +249,14 @@ back to following the system once a choice was made.
 
 `js/ids.js` turns `tsk-`, `req-`, `agt-` and `hum-` ids of the hub's
 exact shape, and `#n`, into links in every text the dashboard renders
-outside code: the card on the board (`#/p/<slug>/tasks/<id>`, a route
+outside code: the card on the board (`/<owner>/<slug>/tasks/<id>`, a route
 that is the board with the card marked), the request in the inbox
-(`#/p/<slug>/inbox/<id>`), the member in Members, and the repository's
+(`/<owner>/<slug>/inbox/<id>`), the member in Members, and the repository's
 `/issues/<n>` on GitHub. Nothing is looked up; the page an id opens says
 when it holds no such thing. An inbox entry's title sits inside its
 button, so its ids are repeated as links under **In the title** in the
 open entry. A text with no project of its own (a personal request from a
-project the human is not in, a chat read along from outside, `#/observe`)
+project the human is not in, a chat read along from outside, `/observe`)
 links none. Known false positive, accepted: a three-digit hex colour
 (`#123`) links as a number.
 
@@ -312,10 +312,10 @@ already turns every piece into a text node.
 **Revisit when:** the hub serves images to visitors, or the designer reworks the page
 
 Only the root without a session asks `GET /landing`; every other route
-without a session, and `#/login` always, is the login page. An answer
+without a session, and `/login` always, is the login page. An answer
 that is off, absent or a failure shows the login page and no error. The
 Markdown goes through the chat's renderer, in which a module flag set by
-`M.markdown.withRoutes` lets `[text](/#/…)` become an in-page link for
+`M.markdown.withRoutes` lets `[text](/…)` become an in-page link for
 this one call; the chat itself still shows such a link as written.
 
 **Reason:** a visitor who came to sign in must never meet an error or a

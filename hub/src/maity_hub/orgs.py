@@ -17,7 +17,7 @@ from typing import Any
 
 from sqlalchemy import Connection, delete, func, insert, select, update
 
-from maity_hub import avatars, clock, handle_register, namespace
+from maity_hub import avatars, clock, handle_register, namespace, paths
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid, not_found
 from maity_hub.ids import new_id
@@ -213,7 +213,7 @@ def create(
     errors: dict[str, str] = {}
     if not _HANDLE.fullmatch(handle):
         errors["handle"] = "invalid"
-    elif handle in namespace.DASHBOARD_WORDS:
+    elif handle in paths.RESERVED_FIRST:
         errors["handle"] = "reserved"
     if not display_name_ok(display_name):
         errors["display_name"] = "invalid"

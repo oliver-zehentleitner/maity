@@ -16,7 +16,6 @@
     "probe_configured": false
   },
   "memory": { "provider": "none" },
-  "keep_the_why": false,
   "setup": { "keep_the_why_init": false, "keep_the_why_badge": false, "maity_badge": false, "cards": [] },
   "policy": {
     "preset": "solo",

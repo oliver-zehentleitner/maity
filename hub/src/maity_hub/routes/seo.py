@@ -22,9 +22,7 @@ CACHE = {"Cache-Control": "public, max-age=3600"}
 # What a crawler that renders the landing page must be allowed to fetch (§16.7).
 ALLOWED = (
     "/$",
-    "/js/",
-    "/css/",
-    "/brand/",
+    "/assets/",
     "/api/v1/auth/session$",
     "/api/v1/openapi.json$",
     "/api/v1/landing$",

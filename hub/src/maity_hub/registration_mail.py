@@ -93,7 +93,7 @@ def send(
         return
     if kind == "already_registered":
         words = _WORDS[language_of(language)]
-        body = words["known"].format(url=hub.public_url, login=f"{hub.public_url}/#/login")
+        body = words["known"].format(url=hub.public_url, login=f"{hub.public_url}/login")
         subject = words["known_subject"]
     else:
         subject, body = _confirm(conn, hub, pending_id)

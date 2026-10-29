@@ -67,7 +67,7 @@ Docker for it, allows `rootlesskit` the user namespaces Ubuntu 24.04 denies by d
 `MAITY_RUNNER` for that uid (IPv4 and IPv6, rebuilt at boot by `maity-runner-firewall.service`, which starts before the user manager of
 the runner user; `install-services.sh` makes the runner units require it and start after it, so a failed rule set stops the runner). It then tests what it built: the user cannot `sudo`,
 cannot reach `127.0.0.1:22`, `[::1]:22`, its own public address on port 22 or `169.254.169.254`, gets answers from a listener of its own
-on the database ports 5432 and 3306 (the path of a job to its service container), and can reach `github.com`.
+on the database ports 5432 and 3306 and on an arbitrary port (the path of a job to its service container, and the test suite's own servers on loopback), and can reach `github.com`.
 
 It does not harden SSH (step 3b does), set up updates or watch the machine: the provider's image and Ubuntu's unattended upgrades are what
 there is for a week. It was written without a fresh machine to run it on; the first server is its first run, and a `FAIL`

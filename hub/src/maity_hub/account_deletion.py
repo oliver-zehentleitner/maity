@@ -202,7 +202,7 @@ def _digest(nonce: str) -> str:
 def export_url(public_url: str) -> str:
     """The dashboard's account page, which signs in and asks for the step-up before the
     export: never the API route (§2.9)."""
-    return f"{public_url}/#/account"
+    return f"{public_url}/account"
 
 
 def _mail(conn: Connection, public_url: str, human: Any, address: str, token: str) -> None:
@@ -227,7 +227,7 @@ def _mail(conn: Connection, public_url: str, human: Any, address: str, token: st
             f"Confirm the deletion: {public_url}/mail/account-deletion/{token}\n\n"
             "The link is valid for 24 hours and works once. Nothing changes until you "
             "confirm. If this was not you, change your password: that withdraws the "
-            f"request. Your sessions: {public_url}/#/account/sessions\n"
+            f"request. Your sessions: {public_url}/account/sessions\n"
         ),
     )
 
