@@ -528,3 +528,43 @@ def test_a_group_message_redacted_before_it_is_read_counts_as_the_chat_counts_it
     assert got["by_project"]["maintainer/maity"]["chat"] == 1
     item = next(i for i in got["items"] if i["kind"] == "chat")
     assert (item["redacted"], item["title"]) == (True, None)
+
+
+def _statements(engine: Engine, call: Any) -> int:
+    from sqlalchemy import event
+
+    seen = [0]
+
+    def counted(*_: Any) -> None:
+        seen[0] += 1
+
+    event.listen(engine, "before_cursor_execute", counted)
+    try:
+        call()
+    finally:
+        event.remove(engine, "before_cursor_execute", counted)
+    return seen[0]
+
+
+def test_the_bell_costs_the_same_statements_for_more_personal_requests(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """Every personal request is an inbox item: its request and its asker are read for all
+    of them together, not three statements per item (tsk-430dnt8s25a8)."""
+    agents = [flow.agent(make_client, owner) for _ in range(3)]
+
+    def file(n: int) -> None:
+        for agent in agents:
+            for _ in range(n):
+                _file(migrated, agent.id)
+
+    def read() -> None:
+        assert owner.get("/me/notifications", params={"limit": 50}).status_code == 200
+
+    file(4)
+    read()  # the first read of a session does one-time work; it is not a cost per item
+    few = _statements(migrated, read)
+    file(20)
+    many = _statements(migrated, read)
+    assert many == few, (few, many)
+    assert bell(owner, limit=0)["counts"]["inbox"] == 3 * 24

@@ -6,12 +6,15 @@
 # self-hosted runner; the token is valid for an hour and is not printed here).
 # Start with ONE instance (INSTANCES=pg) while someone watches the machine, then add the others (README, "limits").
 # Usage: RUNNER_TOKEN=<token> RUNNER_TARBALL=/root/actions-runner-linux-x64-2.338.0.tar.gz \
-#        [RUNNER_USER=gh-runner] [LABEL_PREFIX=maity-hub] [INSTANCES="pg"] install-services.sh
+#        [RUNNER_USER=gh-runner] [LABEL_PREFIX=maity-hub] [INSTANCES="pg"] [RUNNER_NAME_PREFIX=maity-vm] install-services.sh
+# A second machine for the same job type registers under the same label (GitHub hands a job to whichever runner is free), but the
+# NAME of a runner must be unique in the repository: give each machine its own RUNNER_NAME_PREFIX (maity-srv2 -> maity-srv2-maria).
 # Then run install-python.sh for each instance (README.md, step 4) and set the repository variable HUB_RUNNER_LABEL.
 set -euo pipefail
 RU=${RUNNER_USER:-gh-runner}
 HOME_RU=${RUNNER_HOME:-$(getent passwd "$RU" | cut -d: -f6)}
 PREFIX=${LABEL_PREFIX:-maity-hub}
+NAME_PREFIX=${RUNNER_NAME_PREFIX:-maity-vm}
 INSTANCES=${INSTANCES:-pg}   # ONE instance by default; the others are added one at a time, after the caps held (README, "limits")
 URL=${RUNNER_URL:-https://github.com/oliver-zehentleitner/maity}
 : "${RUNNER_TOKEN:?RUNNER_TOKEN is not set}" "${RUNNER_TARBALL:?RUNNER_TARBALL is not set}"
@@ -52,7 +55,7 @@ for t in $INSTANCES; do
   chown -R "$RU" "$d"
   # config.sh as the runner user (as root it refuses); the token is passed as an argument, never echoed.
   runuser -u "$RU" -- env HOME="$HOME_RU" "$d/config.sh" --url "$URL" --token "$RUNNER_TOKEN" --unattended --disableupdate \
-    --name "maity-vm-$t" --labels "$PREFIX-$t" >/dev/null
+    --name "$NAME_PREFIX-$t" --labels "$PREFIX-$t" >/dev/null
   chown -R root:root "$d"
   # Only regular files are handed on: a symlink among the registration files stops the script.
   for f in .runner .credentials .credentials_rsaparams; do
@@ -66,7 +69,7 @@ for t in $INSTANCES; do
   install -d -o "$RU" "$d/_work" "$d/_diag" "$d/_temp"
   rm -f "$d/.path"
   echo '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' > "$d/.path"
-  echo "registered maity-vm-$t with label $PREFIX-$t in $d"
+  echo "registered $NAME_PREFIX-$t with label $PREFIX-$t in $d"
 done
 # On a server prepared by bootstrap-server.sh the runner must not run without the firewall chain: start it after the firewall
 # unit and only with it. (Not in the template: the workstation has no such unit and would never start the runner.)

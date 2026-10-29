@@ -13,6 +13,37 @@ window.Maity = window.Maity || {};
 (function (M) {
   const { h, safeUrl } = M.dom;
 
+  // The clipboard, and what is said after it: "Copied", or how to copy by hand.
+  async function copied(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return "Copied";
+    } catch (err) {
+      return "Copy failed — select the text";
+    }
+  }
+
+  // Inline code copies itself on a click, or Enter or Space (the maintainer,
+  // tsk-rdx6gaqveygx); a click that ends a selection inside it copies nothing.
+  // "Copied" stands beside it for two seconds, a status for a screen reader.
+  function inlineCode(text) {
+    const said = h("span", { class: "md-copied", role: "status" });
+    const copy = async () => {
+      said.textContent = await copied(text);
+      window.setTimeout(() => { said.textContent = ""; }, 2000);
+    };
+    // Only a click that ends a selection inside this code is a selection,
+    // not a copy; one elsewhere on the page never swallows a key.
+    const selectedHere = () => {
+      const sel = window.getSelection ? window.getSelection() : null;
+      return !!sel && !sel.isCollapsed && String(sel) !== "" && typeof sel.containsNode === "function" && sel.containsNode(code, true);
+    };
+    const code = h("code", { class: "md-inline-copy", tabindex: "0", role: "button", title: "Click to copy", "aria-label": "Copy " + text,
+      onclick: () => { if (!selectedHere()) copy(); },
+      onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); copy(); } } }, text);
+    return [code, said];
+  }
+
   // Inline: code spans first (a run of n backticks to the next run of
   // exactly n), then links, autolinks and emphasis in the text between.
   function inline(text, at) {
@@ -25,7 +56,7 @@ window.Maity = window.Maity || {};
       if (close < 0) continue;
       out.push(...spans(text.slice(from, open.index), at));
       const inner = text.slice(open.index + open[0].length, runs[close].index);
-      out.push(h("code", null, inner.length > 2 && inner.startsWith(" ") && inner.endsWith(" ") ? inner.slice(1, -1) : inner));
+      out.push(...inlineCode(inner.length > 2 && inner.startsWith(" ") && inner.endsWith(" ") ? inner.slice(1, -1) : inner));
       from = runs[close].index + runs[close][0].length;
       k = close;
     }
@@ -91,12 +122,7 @@ window.Maity = window.Maity || {};
       class: "small md-copy",
       "aria-label": "Copy " + name,
       onclick: async () => {
-        try {
-          await navigator.clipboard.writeText(code);
-          copy.textContent = "Copied";
-        } catch (err) {
-          copy.textContent = "Copy failed — select the text";
-        }
+        copy.textContent = await copied(code);
         window.setTimeout(() => { copy.textContent = "Copy"; }, 2000);
       },
     }, "Copy");

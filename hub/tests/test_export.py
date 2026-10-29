@@ -59,6 +59,8 @@ def note(who: Any, card_id: str, body: str) -> dict[str, Any]:
 
 
 def test_one_document_to_save(owner: flow.Human) -> None:
+    owner.patch("/me/notification-settings", {"not_listening": {"mode": "bell", "minutes": 25}})
+    owner.patch("/projects/maintainer/maity/me/settings", {"not_listening": {"minutes": 15}})
     response = export(owner)
     today = clock.now().date().isoformat()
     assert response.headers["content-disposition"] == (
@@ -89,10 +91,12 @@ def test_one_document_to_save(owner: flow.Human) -> None:
     account = body["account"]
     assert (account["handle"], account["id"]) == ("maintainer", owner.id)
     assert {"display_name", "avatar_url", "addresses", "terms", "preferences"} <= set(account)
-    assert set(account["notification_settings"]) == {"browser", "email"}
+    assert set(account["notification_settings"]) == {"browser", "email", "not_listening"}
+    assert account["notification_settings"]["not_listening"] == {"mode": "bell", "minutes": 25}
     assert [m["project"] for m in body["memberships"]] == ["maintainer/maity"]
     membership = body["memberships"][0]
     assert (membership["trust"], membership["left_at"]) == ("owner", None)
+    assert membership["own_settings"] == {"not_listening": {"minutes": 15}}
     [session] = body["sessions"]
     assert session["method"] and session["created_at"] and session["last_seen_at"]
     assert set(session["device"]) == {"browser", "os"}

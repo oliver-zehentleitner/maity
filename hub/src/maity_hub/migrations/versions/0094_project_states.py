@@ -6,7 +6,7 @@ names they were written with. Downgrading maps back as far as the old states rea
 becomes `freeze`, `plan` and `launch` become `build`.
 
 Revision ID: 0094
-Revises: 0086
+Revises: 0091
 Create Date: 2026-10-29
 """
 
@@ -16,7 +16,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0094"
-down_revision: str | None = "0086"
+down_revision: str | None = "0091"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

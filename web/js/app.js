@@ -22,14 +22,13 @@ window.Maity = window.Maity || {};
   // the chat reads its own messages.
   const NAV = [
     { route: "inbox", label: "Inbox" },
-    // Redrawn in place on task_*, request_* and probe_observed (js/overview.js).
+    // Redrawn in place on task_*, request_*, probe_observed and member_* (js/overview.js).
     { route: "overview", label: "Overview" },
     { route: "board", label: "Board", watch: /^task_/, changed: "The board changed." },
     // One card (/<owner>/<slug>/tasks/<id>, an id's link, js/ids.js): the board
     // with that card marked; its tab is the board's.
     { route: "tasks", view: "board", label: "Board", tab: false, current: "board", watch: /^task_/, changed: "The board changed." },
     { route: "members", label: "Members", watch: /^(member_|session_|credential_)/, changed: "The members changed." },
-    { route: "org", label: "Organisation", watch: /^member_/, changed: "The organisation changed." },
     { route: "chat", label: "Chat" },
     // Redrawn in place from the feed (js/messages.js).
     { route: "messages", label: "Messages" },
@@ -39,6 +38,9 @@ window.Maity = window.Maity || {};
     { route: "swarm", label: "Swarm" },
     // No tab: opened from the Chat tab, the Messages view and a chat (js/project-message.js).
     { route: "message", label: "Message the project", tab: false },
+    // One's own agents in the project (js/agents-page.js), the component of
+    // /agents; before Runners and Why (the maintainer, 2026-10-29).
+    { route: "agents", view: "projectAgents", label: "Agents", when: (ctx) => ctx.me.kind === "human", watch: /^(member_|credential_)/, changed: "Your agents changed." },
     // The account-level view is views.runners; this one is the project's.
     { route: "runners", view: "projectRunners", label: "Runners", admin: true, watch: /^runner_/, changed: "The runners changed." },
     // Where the hub knows the Keep the Why export (docs/api.md §6.1, §11.3).
@@ -1259,9 +1261,13 @@ window.Maity = window.Maity || {};
   let quietNote = null;
 
   function watch(ctx, where, item, main) {
+    // The inbox count as §18.2 keeps it (counts.inbox, by_project's inbox),
+    // which counts the personal requests the list holds; /me's open_requests
+    // does not. A hub without notifications: open_requests.
+    const notified = () => M.notify.state.available && M.notify.state.counts;
     const openNow = () => (where.scope === "all"
-      ? ctx.projects.reduce((n, p) => n + (p.open_requests || 0), 0)
-      : (ctx.projects.find((p) => p.full_name === ctx.slug) || {}).open_requests);
+      ? (notified() ? M.notify.state.counts.inbox || 0 : ctx.projects.reduce((n, p) => n + (p.open_requests || 0), 0))
+      : (() => { const p = ctx.projects.find((x) => x.full_name === ctx.slug); return p ? (notified() ? M.notify.projectCount(p).requests : p.open_requests) : undefined; })());
     let seen = openNow();
     const countLine = h("div");
     const changeLine = h("div");
@@ -1477,7 +1483,7 @@ window.Maity = window.Maity || {};
         // what waits comes first, the way to a project of one's own after it.
         const waiting = (await M.api.getAll("/requests")).items;
         if (seq !== renderSeq) return;
-        if (waiting.length || M.notify.state.available) await M.views.inbox(ctx, root, []);
+        if (waiting.length) await M.views.inbox(ctx, root, []);
         const start = h("div", { class: "no-projects" });
         M.views.noProjects(ctx, start);
         append(root, start);

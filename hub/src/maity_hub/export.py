@@ -233,7 +233,11 @@ def _account(conn: Connection, human: Any) -> dict[str, Any]:
             if prefs is not None
             else None
         ),
-        "notification_settings": {"browser": settings["browser"], "email": email},
+        "notification_settings": {
+            "browser": settings["browser"],
+            "email": email,
+            "not_listening": settings["not_listening"],
+        },
     }
 
 
@@ -351,6 +355,7 @@ _MEMBERSHIP_COLUMNS = (
     t.membership.c.role,
     t.membership.c.reports_to,
     t.membership.c.areas,
+    t.membership.c.own_settings,
     t.membership.c.joined_at,
     t.membership.c.removed_at,
 )
@@ -388,6 +393,12 @@ def _membership_view(row: Any, names: dict[str, str], member_ids: dict[int, str]
         "role": row.role,
         "reports_to": member_ids.get(row.reports_to) if row.reports_to is not None else None,
         "areas": list(row.areas or []),
+        # The person's own settings in this project, `null` for the personal default (§6.2).
+        "own_settings": {
+            "not_listening": {
+                "minutes": ((row.own_settings or {}).get("not_listening") or {}).get("minutes")
+            }
+        },
         "joined_at": ts(row.joined_at),
         "left_at": ts(row.removed_at),
     }

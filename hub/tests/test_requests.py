@@ -574,3 +574,48 @@ def test_needs_in_session_names_a_session_of_that_member(
     assert response.json()["error"]["details"]["fields"] == {
         "needs_in_session.session_id": "not_the_members"
     }
+
+
+def _statements(engine: Engine, call: Any) -> int:
+    from sqlalchemy import event
+
+    seen = [0]
+
+    def counted(*_: Any) -> None:
+        seen[0] += 1
+
+    event.listen(engine, "before_cursor_execute", counted)
+    try:
+        call()
+    finally:
+        event.remove(engine, "before_cursor_execute", counted)
+    return seen[0]
+
+
+def test_a_listing_costs_its_page_not_every_request(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """Sorting and paging read light entries; only the page becomes full views, so a list
+    with more requests than a page costs the same (tsk-430dnt8s25a8)."""
+    agents = [flow.agent(make_client, owner) for _ in range(3)]
+
+    def file(n: int) -> None:
+        for agent in agents:
+            for i in range(n):
+                asked(agent, title=f"Which {i}?")
+
+    calls = {
+        "project": lambda: owner.get("/projects/maintainer/maity/requests", params={"limit": 10}),
+        "history": lambda: owner.get(
+            "/projects/maintainer/maity/requests", params={"limit": 10, "status": "all"}
+        ),
+        "cross": lambda: owner.get("/requests", params={"limit": 10}),
+    }
+    file(5)  # 15 requests: more than a page of 10
+    few = {name: _statements(migrated, call) for name, call in calls.items()}
+    file(10)  # 45
+    many = {name: _statements(migrated, call) for name, call in calls.items()}
+    assert many == few, (few, many)
+    page = owner.get("/requests", params={"limit": 10}).json()
+    assert len(page["items"]) == 10 and page["next_cursor"] is not None
+    assert all("_row" not in v and "_created" not in v for v in page["items"])

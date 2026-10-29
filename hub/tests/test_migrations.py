@@ -470,6 +470,144 @@ def test_settings_stored_for_removed_notification_kinds_are_deleted(engine: Engi
     assert rows[owners["clean"]] == clean
 
 
+def test_the_old_landing_body_is_carried_into_the_first_section_page(engine: Engine) -> None:
+    """0090 (§16.7): the title, call to action and Markdown of the one-body landing become
+    the `en` page, a `hero` and a `text` section; a landing that held nothing stays off,
+    and going back restores the old columns from that page."""
+    import sqlalchemy as sa
+
+    migrate(engine, _before(engine, "0090"))
+    old = sa.table(
+        "instance_landing",
+        sa.column("id", sa.String),
+        sa.column("enabled", sa.Boolean),
+        sa.column("title", sa.String),
+        sa.column("markdown", sa.Text),
+        sa.column("cta", sa.JSON),
+        sa.column("updated_at", sa.DateTime),
+        sa.column("updated_by", sa.String),
+    )
+    from maity_hub import clock
+
+    cta = {"label": "Sign in", "href": "/login"}
+    with engine.begin() as conn:
+        conn.execute(
+            sa.insert(old).values(
+                id="landing",
+                enabled=True,
+                title="Bring your agent",
+                markdown="# Hi",
+                cta=cta,
+                updated_at=clock.now(),
+                updated_by=None,
+            )
+        )
+    migrate(engine)
+    new = sa.table(
+        "instance_landing",
+        sa.column("enabled", sa.Boolean),
+        sa.column("default_language", sa.String),
+        sa.column("pages", sa.JSON),
+        sa.column("footer", sa.JSON),
+    )
+    with engine.connect() as conn:
+        row = conn.execute(sa.select(new)).one()
+    assert (row.enabled, row.default_language, row.footer) == (True, "en", None)
+    assert row.pages == {
+        "en": {
+            "title": "Bring your agent",
+            "description": "",
+            "sections": [
+                {
+                    "type": "hero",
+                    "enabled": True,
+                    "title": "Bring your agent",
+                    "cta_primary": cta,
+                },
+                {"type": "text", "enabled": True, "markdown": "# Hi"},
+            ],
+        }
+    }
+    downgrade(engine, _before(engine, "0090"))
+    with engine.connect() as conn:
+        back = conn.execute(sa.select(old.c.enabled, old.c.title, old.c.markdown, old.c.cta)).one()
+    assert tuple(back) == (True, "Bring your agent", "# Hi", cta)
+
+
+def test_a_landing_that_held_nothing_stays_off_and_empty(engine: Engine) -> None:
+    import sqlalchemy as sa
+
+    migrate(engine)
+    with engine.connect() as conn:
+        assert conn.execute(sa.text("select count(*) from instance_landing")).scalar() == 0
+        assert conn.execute(sa.text("select count(*) from legal_page")).scalar() == 0
+
+
+@pytest.mark.parametrize(
+    ("title", "markdown", "cta", "kinds", "page_title"),
+    [
+        ("Hello", "Body", None, ["text"], "Hello"),  # a title alone is the page's title
+        (None, "Body", {"label": "Go", "href": "/login"}, ["text"], "Maity"),  # no title: no hero
+        ("Hello", None, {"label": "Go", "href": "/login"}, ["hero"], "Hello"),
+        ("Hello", "Body", {"label": "Go", "href": "/login"}, ["hero", "text"], "Hello"),
+        (None, "Body", None, ["text"], "Maity"),
+    ],
+)
+def test_a_carried_landing_passes_the_checks_of_the_setting(
+    engine: Engine,
+    title: str | None,
+    markdown: str | None,
+    cta: dict[str, str] | None,
+    kinds: list[str],
+    page_title: str,
+) -> None:
+    """0090 must never make a hero the setting itself would refuse: a hero needs a title and
+    a call to action, and the old schema allowed either to be null (§16.7)."""
+    import sqlalchemy as sa
+
+    from maity_hub import clock, landing
+
+    migrate(engine, _before(engine, "0090"))
+    old = sa.table(
+        "instance_landing",
+        sa.column("id", sa.String),
+        sa.column("enabled", sa.Boolean),
+        sa.column("title", sa.String),
+        sa.column("markdown", sa.Text),
+        sa.column("cta", sa.JSON),
+        sa.column("updated_at", sa.DateTime),
+        sa.column("updated_by", sa.String),
+    )
+    with engine.begin() as conn:
+        conn.execute(
+            sa.insert(old).values(
+                id="landing",
+                enabled=True,
+                title=title,
+                markdown=markdown,
+                cta=cta,
+                updated_at=clock.now(),
+                updated_by=None,
+            )
+        )
+    migrate(engine)
+    new = sa.table(
+        "instance_landing", sa.column("pages", sa.JSON), sa.column("enabled", sa.Boolean)
+    )
+    with engine.connect() as conn:
+        row = conn.execute(sa.select(new)).one()
+    page = row.pages["en"]
+    assert page["title"] == page_title and [s["type"] for s in page["sections"]] == kinds
+    current = {
+        "enabled": False,
+        "default_language": "en",
+        "pages": {},
+        "footer": {"operator": None, "social": []},
+    }
+    checked = landing.check({"enabled": True, "pages": row.pages}, current)
+    assert checked["pages"] == row.pages  # the editor can write it back unchanged
+
+
 def test_the_states_before_2026_10_27_are_mapped_once(engine: Engine) -> None:
     """0094 (§6.1): `freeze` and `fixes-only` become `review`, `accepted` becomes `archived`,
     `build` and `archived` stay; downgrading maps `review` back to `freeze`."""
