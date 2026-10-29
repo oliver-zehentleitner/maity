@@ -17,6 +17,7 @@ from sqlalchemy import Engine, insert, select
 from maity_hub import clock, registration, registration_mail
 from maity_hub import tables as t
 from maity_hub.config import ConfigError, Settings
+from maity_hub.mail import address as addresses
 from maity_hub.routes import registration as routes
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -380,6 +381,7 @@ def test_an_addresses_pending_registrations_change_one_at_a_time(migrated: Engin
     assertion cannot leave CI waiting on a blocked thread."""
     if migrated.dialect.name == "sqlite":
         pytest.skip("SQLite serialises writers; the row lock is for the server databases")
+    addresses.prepare(migrated, None)  # the locks below are taken without a route
     first, second = migrated.connect(), migrated.connect()
     started, locked = threading.Event(), threading.Event()
 

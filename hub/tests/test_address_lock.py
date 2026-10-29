@@ -106,7 +106,7 @@ def test_after_a_deletion_no_table_holds_the_address_or_its_lock(
     assert press(pat, token).status_code == 200
     found = []
     with migrated.connect() as conn:
-        for table in metadata.sorted_tables:
+        for table in metadata.tables.values():
             for row in conn.execute(select(table)):
                 text = " ".join(str(value) for value in row)
                 if address in text.lower() or digest in text:
