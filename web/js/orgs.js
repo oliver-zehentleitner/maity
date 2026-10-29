@@ -210,6 +210,10 @@ window.Maity = window.Maity || {};
     create.checked = !!org.members_create_projects;
     const page = h("input", { id: "org-public-page", type: "checkbox" });
     page.checked = org.public_page === "on";
+    // While suspended the hub refuses a rename and turning the page on (§6.26).
+    const held = !!org.moderation;
+    handle.disabled = held;
+    page.disabled = held && !page.checked;
     const go = h("button", { type: "submit" }, "Save");
     const form = h("form", {
       class: "org-settings project-form",
@@ -236,7 +240,8 @@ window.Maity = window.Maity || {};
     },
     h("label", { for: "org-name" }, "Name"), name,
     h("label", { for: "org-handle" }, "Handle"), handle,
-    h("p", { class: "hint" }, "A new handle renames every project address of the organisation; the old one keeps leading here as an alias."),
+    h("p", { class: "hint" }, held ? "While the organisation is suspended its handle cannot change and its public page cannot be turned on."
+      : "A new handle renames every project address of the organisation; the old one keeps leading here as an alias."),
     h("p", { class: "check" }, create, h("label", { for: "org-members-create" }, " Members may create projects in it")),
     h("p", { class: "check" }, page, h("label", { for: "org-public-page" }, " A public page")),
     go, status.el);
@@ -328,6 +333,14 @@ window.Maity = window.Maity || {};
     await draw();
   }
 
+  // A handle from the address as a typed one is read (§6.24): decoded, without
+  // a leading @, in lowercase.
+  function handleOf(arg) {
+    let text = String(arg || "");
+    try { text = decodeURIComponent(text); } catch (ignored) { /* kept as it came */ }
+    return text.trim().replace(/^@/, "").toLowerCase();
+  }
+
   M.views.orgs = async function (ctx, root, args) {
     if (ctx.me.kind !== "human") {
       append(root, h("p", null, "Organisations are for humans only."));
@@ -337,8 +350,8 @@ window.Maity = window.Maity || {};
       append(root, h("h2", null, "Organisations"), M.dom.notOnHub("This hub has no organisations yet."));
       return;
     }
-    if (args && args[0]) await orgPage(ctx, root, args[0]);
+    if (args && args[0]) await orgPage(ctx, root, handleOf(args[0]));
     else await listPage(ctx, root);
   };
-  M.orgs = { said };
+  M.orgs = { said, handleOf };
 })(window.Maity);

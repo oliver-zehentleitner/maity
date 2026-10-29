@@ -578,25 +578,93 @@ next test survivable whichever it is. The machine does other work: a second cras
 
 **Id:** d621283e-1580-4220-8c72-ca1d5804d0aa
 **Type:** decision
-**Status:** open
-**Evidence:** inferred
-**Source:** the maintainer's proposal as relayed by the coordinating agent, 2026-10-29 (the workstation stays for the agents; one to three rented servers act as runners for a week); his go is still to come
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's proposal as relayed by the coordinating agent, 2026-10-29 (the workstation stays for the agents; one to three rented servers act as runners for a week); his go, a Vultr dedicated-CPU plan of 8 cores and 16 GB for one week, was given in the project chat on 2026-10-29
 **Revisit when:** the week is over, or a rented server stalls with the caps in place
 **See:** process.md#the-runner-is-capped-and-it-starts-with-one-service — a35df240-f14b-4468-8ab2-23b447a08175 — as of 2026-10-29
 
-Proposed, to run only on the maintainer's go: the database jobs move from the maintainer's workstation to up to three rented Ubuntu servers (8 vCPU, 16 GB), one job type
-per server, started with one server and `pg`. The machine is prepared by `deploy/runner/bootstrap-server.sh` (runner user,
+The database jobs move from the maintainer's workstation to up to three rented Ubuntu servers (8 vCPU, 16 GB), one job type
+per server, started with one server and `maria`, with 8 pytest workers on the dedicated profile (`dedicated-profile.sh`). The machine is prepared by `deploy/runner/bootstrap-server.sh` (runner user,
 rootless Docker, a firewall chain for that uid) and the steps are in `deploy/runner/SERVER-SETUP.md`, run by the maintainer.
-The same caps as on the workstation apply.
+The caps of the workstation are replaced by drop-ins sized to the machine: the service may use 7 of 8 cores and 11 GB, the runner user's slice 7.5 cores and 13 GB, no swap.
 
 **Reason:** the stall of 2026-10-28 took down the machine the agents work on; a machine that does nothing else loses
 only CI when it stalls. One type per server keeps a stalled or compromised machine to one type, and each type binds its own host
 port anyway.
 
 **Rejected alternatives:**
+- `pg` first, as planned for the workstation: `maria` is the slowest job (about 26 minutes hosted), so the gain is the biggest and the easiest to measure.
+- The workstation caps unchanged: at 150% CPU per service eight workers would measure the cap, not the machine.
 - All three types on one rented server: one stall or one malicious job takes all three, and the first test would again be
   the full load.
-- A bigger or unlimited rented server: the cause of the stall is not established (see the entry above), so the caps stay until
-  a test shows what the machine holds.
+- No caps on the rented server: the cause of the stall is not established (see the entry above), and a runaway job should cost CI,
+  not the machine's sshd; one core and about 3 GB stay free.
 - A cloud autoscaling runner service: it needs a standing token with admin rights on the repository (see "Why not an ephemeral runner"
   in the runner README).
+
+
+## HUB_RUNNER_TYPES: the jobs that go to the machine are named, the default stays all three
+
+**Id:** 62a0fbc3-3f45-42ae-b33a-637373535070
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the plan to start the rented server with one job type only, 2026-10-29; the three `runs-on` expressions of `ci.yml`
+**Revisit when:** all three types have a runner of their own, or the label prefix scheme changes
+**See:** process.md#one-runner-service-per-database-job-type-a-label-each-three-workers-per-job — c2713d54-e602-42a3-8636-693ff3fd2c0b — as of 2026-10-29
+
+An optional repository variable `HUB_RUNNER_TYPES` (a space-separated list of `sqlite`, `pg`, `maria`) names the database jobs that run
+on the machine; unset or empty means all three, as before. A job whose type is not listed stays on a hosted runner.
+
+**Reason:** `HUB_RUNNER_LABEL` alone sends all three jobs to self-hosted labels. With a runner for `maria` only, `hub-sqlite` and
+`hub-postgresql` would queue for a runner that does not exist. A list keeps the default and the fallback (deleting the label variable
+is still the whole fallback) and needs no change to the runners.
+
+The list is matched as whole words (`contains(' <list> ', ' <type> ')`), and anything else (a comma, a stray newline, an unknown
+name) matches nothing, so the job stays hosted: a mistyped variable costs speed, never a queued job waiting for a runner that does
+not exist.
+
+**Rejected alternatives:**
+- One variable per type: three variables to set and to forget, and the fallback is no longer one deletion.
+- One runner registered with all three labels: the three jobs would take turns on it, and the measurement of one type would be mixed
+  with the others.
+- A change of the workflow for the test only, reverted afterwards: a commit to main and a revert for what a variable does.
+
+
+## The runner user is fenced by an owner-match chain on OUTPUT, replies first, loopback closed
+
+**Id:** ca3532c5-f8f1-4687-b467-ee1b129dc603
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** review of the setup package (two defects found by the reviewer, both reproduced in an unprivileged network namespace); re-check after the merge
+**Revisit when:** the runner moves to a different container runtime or network stack, or a rented server shows the rules failing at boot
+**See:** process.md#rented-servers-carry-the-runners-for-a-week-one-type-each — d621283e-1580-4220-8c72-ca1d5804d0aa — as of 2026-10-29
+
+On a rented runner server one firewall chain (`MAITY_RUNNER`, IPv4 and IPv6) is jumped to from `OUTPUT` for packets of the runner user's
+uid. Order: established and related connections return first; then only the two database ports on loopback and the local resolver
+return; then everything else on `lo` is rejected (which includes the machine's own public address, routed over `lo`, so sshd on
+0.0.0.0 stays out of reach); then the private ranges, link-local (the provider's metadata address) and shared address space are
+rejected. The chain is rebuilt at boot by its own unit, which starts before the runner user's manager, and the runner units require
+it, so a failed rule set stops the runner instead of leaving it open.
+
+**Reason:** everything a job runs, rootless Docker and its containers behind slirp4netns included, runs under that one uid in the
+host's network stack, so an owner match is the one place that sees all of it. The first version rejected loopback wholesale after the
+two port exceptions: the replies of the database listener are packets of the same uid to a loopback address and were rejected, and
+the machine's own address went over `lo` untouched. Both were reproduced in a network namespace before the fix.
+
+The runner units get `Requires=`/`After=` on the firewall unit through a drop-in that `install-services.sh` writes only when
+`maity-runner-firewall.service` exists: the same template serves the maintainer's workstation, which has no such unit, and a
+`Requires=` there would keep the runner from ever starting. The firewall unit is ordered `Before=user@<uid>.service` (ordering
+only), so at boot the runner user's rootless dockerd and slirp4netns start after the chain; a failed rule set then stops the runner
+through its own `Requires=`, while the user manager still comes up and runs no job.
+
+**Rejected alternatives:**
+- `Requires=maity-runner-firewall.service` in the `maity-runner@.service` template: the workstation has no firewall unit and would
+  never start its runner.
+- A host firewall (ufw or a general policy): it would also hit sshd and the administrators, and does not single out the runner.
+- A network namespace of its own for the runner: rootless Docker already builds one, and a second layer would have to be reached
+  by the jobs' service containers on the loopback ports.
+- Only the private ranges, without closing `lo`: the machine's own services stay reachable through its public address.
+

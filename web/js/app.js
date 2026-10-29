@@ -113,7 +113,6 @@ window.Maity = window.Maity || {};
     if (parts[0] === "runners") return { scope: "runners" };
     if (parts[0] === "observe" && parts[2]) return { scope: "observe", slug: parts[1] + "/" + parts[2], args: parts.slice(3) };
     if (parts[0] === "admin" && !parts[1]) return { scope: "instance-admin" };
-    if (parts[0] === "admin" && parts[1] === "users") return { scope: "admin-users" };
     // #/p/<slug>/…, the address before namespaces: rewritten by legacy_slug.
     if (parts[0] === "p" && parts[1]) return { scope: "legacy", slug: parts[1], route: parts[2] || "inbox", args: parts.slice(3) };
     if (parts[1] && !OWN_WORDS.includes(parts[0])) {
@@ -1067,7 +1066,7 @@ window.Maity = window.Maity || {};
         brandTitle(),
         ctx.scope === "project"
           ? [projectMark(ctx.slug, ctx.project.name, ctx.project), h("span", { class: "project" }, ctx.project.name)]
-          : h("span", { class: "project" }, { new: "New project", account: "Your account", orgs: "Organisations", runners: "Runners", "admin-users": "Users of this hub", "instance-admin": "Instance administration", observe: "Read along", chats: "Chats" }[ctx.scope] || "Everything waiting for you"),
+          : h("span", { class: "project" }, { new: "New project", account: "Your account", orgs: "Organisations", runners: "Runners", "instance-admin": "Instance administration", observe: "Read along", chats: "Chats" }[ctx.scope] || "Everything waiting for you"),
         M.api.source === "fixtures"
           ? h("span", { class: "source", title: "Data from web/fixtures/, not from the hub. Changes are kept in this tab only." }, "Fixtures")
           : null,
@@ -1467,10 +1466,10 @@ window.Maity = window.Maity || {};
     const item = where.scope === "project" ? NAV.find((n) => n.route === where.route) : null;
     renderHeader(ctx, (item && item.current) || where.route);
     const empty = where.scope === "all" && !ctx.projects.length;
-    const known = ["all", "new", "account", "orgs", "runners", "admin-users", "instance-admin", "observe", "notifications", "chats"].includes(where.scope)
+    const known = ["all", "new", "account", "orgs", "runners", "instance-admin", "observe", "notifications", "chats"].includes(where.scope)
       || (item && own(M.views, item.view || item.route) && offered(ctx, item));
     let viewName = "unknown";
-    if (["all", "new", "account", "orgs", "runners", "admin-users", "instance-admin", "observe", "notifications", "chats"].includes(where.scope)) viewName = where.scope;
+    if (["all", "new", "account", "orgs", "runners", "instance-admin", "observe", "notifications", "chats"].includes(where.scope)) viewName = where.scope;
     else if (known) viewName = (item && item.current) || where.route;
     const root = h("section", { class: "view view-" + viewName });
     try {
@@ -1505,8 +1504,6 @@ window.Maity = window.Maity || {};
         await M.views.orgs(ctx, root, where.args);
       } else if (where.scope === "instance-admin") {
         await M.views.instanceAdmin(ctx, root);
-      } else if (where.scope === "admin-users") {
-        await M.views.adminUsers(ctx, root);
       } else if (where.scope === "runners") {
         await M.views.runners(ctx, root);
       } else if (known) {
@@ -1529,10 +1526,9 @@ window.Maity = window.Maity || {};
     else if (where.scope === "chats") label = "Chats";
     else if (where.scope === "new") label = "New project";
     else if (where.scope === "account") label = "Your account";
-    else if (where.scope === "orgs") label = where.args && where.args[0] ? "@" + where.args[0] + " · Organisations" : "Organisations";
+    else if (where.scope === "orgs") label = where.args && where.args[0] ? "@" + M.orgs.handleOf(where.args[0]) + " · Organisations" : "Organisations";
     else if (where.scope === "runners") label = "Runners";
     else if (where.scope === "instance-admin") label = "Instance administration";
-    else if (where.scope === "admin-users") label = "Users";
     else if (where.scope === "observe") label = "Read along · " + where.slug;
     else if (known) label = item.label + " · " + ctx.project.name;
     baseTitle = label + " · Maity";

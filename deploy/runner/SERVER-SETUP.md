@@ -8,12 +8,15 @@ here is run before he says go. Each step names **who** (user, or the web page), 
 
 Three servers, one job type each: `pg`, `maria`, `sqlite`. Two services of different types on one machine would be fine
 for the ports (each type binds its own), but each server then has its own uid, its own Docker and its own caps, and a
-stalled machine takes down one type, not all. Start with **one server and `pg`**; add the next only after the first one
+stalled machine takes down one type, not all. The first server runs **`maria`** (the slowest job, so the gain is the biggest
+and the easiest to measure) on the dedicated profile below, with 8 pytest workers; add the next only after the first one
 ran jobs without a stall. A server that runs two types is the same procedure with `INSTANCES="pg maria"`, one at a time.
 
 The machine: Ubuntu 22.04 or 24.04, 8 vCPU, 16 GB, nothing else on it, SSH by key only, no other user, no secrets of the
-project on it. The caps of [README.md](README.md) ("limits") fit it unchanged: at most 4 of 8 cores and 8 GB for everything
-the runner user runs. A dedicated machine could take more; the first week is not the time to find out.
+project on it. The caps of [README.md](README.md) ("limits") are for a workstation and would throttle this machine to a fraction of itself
+(150% CPU per service, `-n 2`). `dedicated-profile.sh` raises them to the size of the machine and keeps them as a fence: the service
+may use 7 of 8 cores and 11 GB, everything the runner user runs 7.5 cores and 13 GB, no swap, so one core and about 3 GB stay for
+the system and sshd.
 
 ## Steps (per server)
 
@@ -30,26 +33,30 @@ the runner user runs. A dedicated machine could take more; the first week is not
 4. **root, `/root`:** `curl -fsSLO <tarball-url> && echo "<sha256>  $(basename <tarball-url>)" | sha256sum -c`. It must
    print `OK`.
 5. **root, `/root/maity/deploy/runner`:** `RUNNER_TOKEN=<token> RUNNER_TARBALL=/root/<tarball-name> INSTANCES=<type> ./install-services.sh`
-   (`<type>`: `pg`, `maria` or `sqlite`), then `RUNNER_DIR=/opt/actions-runner-<type> SERVICE=maity-runner@<type> ./install-python.sh`.
-6. **root:** `systemctl enable --now maity-runner@<type>`; GitHub shows the runner as **Idle**.
-7. **root, check the caps before any job:**
+   (`<type>`: `maria` on the first server), then `RUNNER_DIR=/opt/actions-runner-<type> SERVICE=maity-runner@<type> ./install-python.sh`.
+6. **root, same directory:** `./dedicated-profile.sh <type>`. It refuses on a machine that is not exactly 8 cores and 16 GB, and prints the
+   values it set.
+7. **root:** `systemctl enable --now maity-runner@<type>`; GitHub shows the runner as **Idle**. Then check the caps before any job:
    - `systemctl show -p ControlGroup maity-runner@<type>`: it must end under `user-<uid>.slice` (`<uid>`: `id -u gh-runner`).
-   - `systemctl show -p CPUQuotaPerSecUSec -p MemoryMax user-<uid>.slice`: `4s` and `8589934592`.
-   - `systemctl show -p CPUQuotaPerSecUSec -p MemoryMax maity-runner@<type>`: `1.5s` and `4294967296`.
-8. **root, a second shell, kept open:** `vmstat 5`. **Web, the repository variable** `HUB_RUNNER_LABEL` = `maity-hub`
-   (Settings → Secrets and variables → Actions → Variables): from then on the next run uses the runners. Watch `vmstat`
-   (`id` stays above 20, `wa` low, `si`/`so` zero) while the first job runs.
-9. **Taking a server away:** delete `HUB_RUNNER_LABEL` first, **cancel and rerun** the runs still queued on its label
-   (deleting the variable does not re-route them), then remove the runner (Settings → Actions → Runners) and delete the server.
+   - `systemctl show -p CPUQuotaPerSecUSec -p MemoryMax -p MemorySwapMax user-<uid>.slice`: `7.5s`, `13958643712` and `MemorySwapMax=0`.
+   - `systemctl show -p CPUQuotaPerSecUSec -p MemoryMax -p MemorySwapMax maity-runner@<type>`: `7s`, `11811160064` and `MemorySwapMax=0`.
+   - `systemctl show -p Environment maity-runner@<type>`: it ends with `PYTEST_ARGS=-n 8` (shown in quotes, so the line ends with `"`).
+8. **root, a second shell, kept open:** `vmstat 5`. **Web, the repository variables** (Settings → Secrets and variables →
+   Actions → Variables): `HUB_RUNNER_TYPES`: add `<type>` to the list (space-separated; for the first server it is just `maria`), then, once, `HUB_RUNNER_LABEL` = `maity-hub`.
+   Only the jobs of the listed types go to the machines; the others stay hosted. Setting the list to `<type>` on a second server would silently
+   send the first server's job back to the hosted runner. Watch `vmstat` (`id` above 10, `wa` low, `si`/`so` zero) while the first job runs.
+9. **Taking a server away:** first remove its type from `HUB_RUNNER_TYPES` (delete `HUB_RUNNER_LABEL` only when it was the last server), then **cancel and rerun** the runs still
+   queued on its label (changing the variables does not re-route them), then remove the runner (Settings → Actions → Runners) and delete the server.
    A server a fork's job may have run on is deleted, not cleaned.
 
 ## What the bootstrap does and what it does not
 
-It installs Docker from Docker's own repository (the key's fingerprint is checked, the script stops on any other),
+It installs Docker from Docker's own repository (the key file must hold exactly one key and its fingerprint is checked, the script stops otherwise),
 switches the system Docker off, creates `gh-runner` without a password or sudo, turns on lingering, installs rootless
 Docker for it, allows `rootlesskit` the user namespaces Ubuntu 24.04 denies by default, and installs a firewall chain
-`MAITY_RUNNER` for that uid (IPv4 and IPv6, rebuilt at boot by `maity-runner-firewall.service`). It then tests what it built: the user cannot `sudo`,
-cannot reach `127.0.0.1:22`, its own public address on port 22 or `169.254.169.254`, gets answers from a listener of its own
+`MAITY_RUNNER` for that uid (IPv4 and IPv6, rebuilt at boot by `maity-runner-firewall.service`, which starts before the user manager of
+the runner user; `install-services.sh` makes the runner units require it and start after it, so a failed rule set stops the runner). It then tests what it built: the user cannot `sudo`,
+cannot reach `127.0.0.1:22`, `[::1]:22`, its own public address on port 22 or `169.254.169.254`, gets answers from a listener of its own
 on the database ports 5432 and 3306 (the path of a job to its service container), and can reach `github.com`.
 
 It does not harden SSH, set up updates or watch the machine: the provider's image and Ubuntu's unattended upgrades are what

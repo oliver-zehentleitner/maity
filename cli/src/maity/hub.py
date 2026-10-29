@@ -303,6 +303,7 @@ class JoinResult:
     member_id: str | None
     project: str | None
     hub: str | None
+    instance: str | None = None  # `Maity-Instance` (§6.17); absent from a hub before instances
 
 
 def _exchange(
@@ -338,6 +339,7 @@ def exchange(url: str, code: str, timeout: float = 30.0, client: str = CLIENT) -
         member_id=facts.get("Maity-Member-Id"),
         project=facts.get("Maity-Project"),
         hub=facts.get("Maity-Hub"),
+        instance=facts.get("Maity-Instance"),
     )
 
 

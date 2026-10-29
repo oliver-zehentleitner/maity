@@ -17,6 +17,7 @@ from maity_hub import (
     attachments,
     availability,
     clock,
+    commitment,
     idempotency,
     images,
     ktw,
@@ -75,6 +76,8 @@ class PolicyIn(Strict):
     badge: str | None = None
     subtasks: str | None = None
     swarm_public: str | None = None
+    keep_the_why: str | None = None
+    keep_the_why_defaults: str | None = None
     merged_closes: str | None = None
     jour_fixe: dict[str, Any] | None = None  # replaced as a whole (§20.1)
     jour_fixe_moderators: list[str] | None = None
@@ -132,11 +135,35 @@ class SettingsIn(Strict):
         return value
 
 
+class MemoryIn(Strict):
+    provider: str
+
+
+PROVIDERS = ("none", "keep-the-why")
+
+
+def _provider(keep_the_why: bool | None, memory: MemoryIn | None) -> bool | None:
+    """The memory provider a body names as `keep_the_why`'s boolean, or None when it
+    names none (§6.1): `memory.provider` and its alias must agree."""
+    errors: dict[str, str] = {}
+    named = None if memory is None else memory.provider
+    if named is not None and named not in PROVIDERS:
+        errors["memory.provider"] = "unknown_provider"
+    elif (
+        named is not None and keep_the_why is not None and (named == "keep-the-why") != keep_the_why
+    ):
+        errors["keep_the_why"] = "conflicts_with_memory"
+    if errors:
+        raise invalid(errors)
+    return keep_the_why if named is None else named == "keep-the-why"
+
+
 class ProjectCreate(Strict):
     slug: str = Field(pattern=SLUG_PATTERN)
     name: str = title()
     repository: RepositoryIn | None = None
-    keep_the_why: bool = False
+    keep_the_why: bool | None = None
+    memory: MemoryIn | None = None
     policy: PolicyIn | None = None
 
 
@@ -145,6 +172,7 @@ class ProjectPatch(Strict):
     name: str | None = title(default=None)
     repository: RepositoryIn | None = None
     keep_the_why: bool | None = None
+    memory: MemoryIn | None = None
     state: str | None = None
     state_note: str | None = markdown(default=None)
     policy: PolicyIn | None = None
@@ -177,6 +205,7 @@ def _apply_policy(
     change: PolicyIn,
     owner_id: str,
     instance_rule: str,
+    memory_on: bool,
 ) -> dict[str, Any]:
     proposed = dict(current)
     if change.preset is not None:
@@ -200,6 +229,8 @@ def _apply_policy(
         if not 0 <= change.max_placements <= policy.MAX_PLACEMENTS_MAX:
             errors["policy.max_placements"] = "out_of_range"
         proposed["max_placements"] = change.max_placements
+    if change.keep_the_why == "required" and not memory_on:
+        errors["policy.keep_the_why"] = "no_memory_provider"
     if change.member_agents_max is not None:
         if not 0 <= change.member_agents_max <= policy.MEMBER_AGENTS_MAX_MAX:
             errors["policy.member_agents_max"] = "out_of_range"
@@ -248,6 +279,13 @@ def _apply_policy(
     if errors:
         raise invalid(errors)
     return proposed
+
+
+def _set_keep_the_why(change: PolicyIn | None) -> dict[str, Any]:
+    """The column of a human's own `policy.keep_the_why`, when the body names it."""
+    if change is not None and "keep_the_why" in change.model_fields_set:
+        return {"keep_the_why_policy": change.keep_the_why}
+    return {}
 
 
 def _agent_role(conn: Connection, project_id: str, member_id: str) -> str | None:
@@ -359,6 +397,8 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
 @router.post("/projects")
 def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -> JSONResponse:
 
+    named = _provider(body.keep_the_why, body.memory)
+    memory_on = True if named is None else named  # the default provider is keep-the-why (§6.1)
     words = namespace.app_words(request.app)
     owner_id = caller.human_id
     assert owner_id is not None  # a human caller
@@ -382,7 +422,7 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
                 name=body.name,
                 state="build",
                 state_changed_at=now,
-                keep_the_why=body.keep_the_why,
+                keep_the_why=memory_on,
                 **_repository_columns(body.repository),
                 **policy.columns(filled),
                 settings={"release_checklist": []},
@@ -414,11 +454,12 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
                 body.policy,
                 caller.principal_id,
                 settings_of(request).on_runner_revoke,
+                memory_on,
             )
             conn.execute(
                 update(t.project)
                 .where(t.project.c.id == project_id)
-                .values(**policy.columns(proposed))
+                .values(**policy.columns(proposed), **_set_keep_the_why(body.policy))
             )
         member = conn.execute(select(t.membership).where(t.membership.c.id == owner)).one()
         emit(
@@ -517,6 +558,8 @@ def patch_project(
             # upgraded with the ticker on has no start yet): merges count from now.
             if now_on and (not was_on or ticker.merges_since(conn, project.id) is None):
                 ticker.switched_on(conn, project.id)
+        provider = _provider(body.keep_the_why, body.memory)
+        memory_on = project.keep_the_why if provider is None else provider
         new_policy = None
         if "policy" in given and body.policy is not None:
             new_policy = _apply_policy(
@@ -526,13 +569,20 @@ def patch_project(
                 body.policy,
                 owner_id,
                 settings_of(request).on_runner_revoke,
+                memory_on,
             )
             if new_policy == policy.of(project):
                 new_policy = None
+        # What a human set is compared as stored, not as read: `optional` under a provider
+        # that is off reads the same as nothing, and still has to be kept (§6.23).
+        explicit = _set_keep_the_why(body.policy)
+        explicit_changes = (
+            bool(explicit) and explicit["keep_the_why_policy"] != project.keep_the_why_policy
+        )
         state_changes = "state" in given and body.state != project.state
         if state_changes and body.state not in policy.STATES:
             raise invalid({"state": "unknown"})
-        if (state_changes or new_policy is not None) and not body.reason:
+        if (state_changes or new_policy is not None or explicit_changes) and not body.reason:
             raise invalid({"reason": "required"}, "a change of state or policy needs a reason")
         if values:
             conn.execute(update(t.project).where(t.project.c.id == project.id).values(**values))
@@ -584,11 +634,28 @@ def patch_project(
                 .values(state_note=body.state_note)
             )
             rules_inputs_changed = True
+        if new_policy is None and explicit_changes:
+            conn.execute(update(t.project).where(t.project.c.id == project.id).values(**explicit))
+            # The view may not move (`optional` under a provider that is off reads the
+            # same), but a human changed the policy: version, event and reason as for any
+            # policy change (§6.1).
+            rules.bump(
+                conn,
+                project,
+                "policy_changed",
+                BROADCAST,
+                {
+                    "old": policy.of(project),
+                    "new": {**policy.of(project), "keep_the_why": explicit["keep_the_why_policy"]},
+                    "reason": body.reason,
+                },
+                actor=actor,
+            )
         if new_policy is not None:
             conn.execute(
                 update(t.project)
                 .where(t.project.c.id == project.id)
-                .values(**policy.columns(new_policy))
+                .values(**policy.columns(new_policy), **_set_keep_the_why(body.policy))
             )
             if new_policy["jour_fixe"] != policy.of(project)["jour_fixe"]:
                 # A changed schedule counts its weeks from now and catches up on no slot
@@ -640,9 +707,15 @@ def patch_project(
                     body.absence.until if body.absence else None,
                     actor,
                 )
-        for name in ("rules_markdown", "keep_the_why"):
-            new_value = getattr(body, name)
-            if name in given and new_value is not None and new_value != getattr(project, name):
+        for name, new_value in (
+            ("rules_markdown", body.rules_markdown),
+            ("keep_the_why", provider),
+        ):
+            if (
+                (name in given or (name == "keep_the_why" and "memory" in given))
+                and new_value is not None
+                and new_value != getattr(project, name)
+            ):
                 conn.execute(
                     update(t.project).where(t.project.c.id == project.id).values({name: new_value})
                 )
@@ -652,6 +725,9 @@ def patch_project(
         if rules_inputs_changed:
             payload = {"reason": body.reason} if body.reason else {}
             rules.bump(conn, project, "rules_changed", BROADCAST, payload, actor=actor)
+        if new_policy is not None or explicit_changes or provider is not None:
+            # An instance owes nothing once the policy is `optional` or the provider `none`.
+            commitment.reconcile(conn, _load(conn, project.id))
         return idempotency.Outcome(
             200, "project", project.id, _view(conn, _load(conn, project.id), request)
         )

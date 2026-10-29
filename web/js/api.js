@@ -425,6 +425,9 @@ window.Maity = window.Maity || {};
   }
   // /agents/{id}/avatar: the profile's owner only; any other is not_found.
   // §6.26 Organisations in fixture mode (fixtures/orgs.json).
+  // The hub's reserved handles: DASHBOARD_WORDS in hub/src/maity_hub/namespace.py
+  // (docs/api.md §6.25 "Dashboard routes and handles", §16.11 with #601);
+  // change this list with it.
   const ORG_RESERVED = ["account", "admin", "agents", "all", "chats", "components", "invite", "join", "login", "new", "notifications",
     "observe", "p", "register", "requests", "runners", "s", "settings", "sign-in"];
   let orgInviteSerial = 0;
@@ -673,7 +676,6 @@ window.Maity = window.Maity || {};
   // those from account records record "acr-<n>"; a position is "a.b".
   // §18.1 since 2026-10-26: only what the human must react to.
   const KINDS = ["inbox", "chat", "mention", "security"];
-  const REMOVED_KINDS = ["card", "agent", "ticker", "jour_fixe", "keep_the_why", "system", "registration"];
   function notificationCounts() {
     const counts = {};
     KINDS.forEach((k) => { counts[k] = 0; });
@@ -1018,7 +1020,6 @@ window.Maity = window.Maity || {};
       const { counts, by_project: byProject } = notificationCounts();
       const kinds = query.get("kind") ? query.get("kind").split(",") : null;
       (kinds || []).forEach((k) => {
-        if (REMOVED_KINDS.includes(k)) fail(400, "invalid", "the request does not validate", path, { fields: { kind: "removed_kind" } });
         if (!KINDS.includes(k)) fail(400, "invalid", "the request does not validate", path, { fields: { kind: "unknown" } });
       });
       const projects = query.get("project") ? query.get("project").split(",") : null;
@@ -1058,6 +1059,8 @@ window.Maity = window.Maity || {};
     ["POST", /^\/me\/notifications\/read$/, (m, body, path) => {
       const n = fixtures()["notifications.json"];
       if (("ids" in body) === ("up_to" in body)) fail(400, "invalid", "ids or up_to", path, { fields: { body: "invalid" } });
+      // A kind outside the four, one removed earlier included, is unknown (§18.3).
+      if ("kind" in body && !KINDS.includes(body.kind)) fail(400, "invalid", "the request does not validate", path, { fields: { kind: "unknown" } });
       // up_to never reaches a security item: those only by id, from a
       // session allowed to (§18.3); a confirmed sign-in is in good standing.
       n.items.forEach((x) => {

@@ -4237,7 +4237,8 @@ window.MAITY_FIXTURES = {
       "id": "hum-maintainer",
       "instance_admin": true,
       "kind": "human",
-      "meat_proxy": false
+      "meat_proxy": false,
+      "meat_proxy_note": "This person says: I am a meat proxy. Lead me step by step rather than expecting me to explain; and when you need a human's hands, come to me first."
     },
     "projects": [
       {
