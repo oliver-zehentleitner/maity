@@ -3927,6 +3927,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.post = rgPost;
   await go("#/register"); for (let k = 0; k < 6; k++) await tick();
   expect(!rgForm() && text(main).includes("This hub does not create new accounts on request."), "register: a hub that does not register says so, with the way to sign in");
+  // A hub that registers on request (§2.7, GET /auth/methods): the form, and its terms named with their version.
+  const rgGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/auth/methods"
+    ? Promise.resolve({ password: true, device_code: true, email_link: true, registration: true, terms: { url: "https://example.org/terms", version: "2026-10" } }) : rgGet(p));
+  await go("#/login"); await go("#/register"); for (let k = 0; k < 6; k++) await tick();
+  const rgTerms = main.querySelector(".register-terms");
+  expect(rgForm() && rgTerms && text(rgTerms) === "When you complete your account you accept this hub's terms (version 2026-10)."
+    && rgTerms.querySelector("a").getAttribute("href") === "https://example.org/terms" && rgTerms.querySelector("a").getAttribute("rel") === "noopener noreferrer",
+    "register: where the hub registers, the form names its terms and their version, as a link");
+  win.Maity.api.get = (p) => (p === "/auth/methods"
+    ? Promise.resolve({ password: true, device_code: true, email_link: true, registration: true, terms: { url: "javascript:alert(1)", version: "1" } }) : rgGet(p));
+  await go("#/login"); await go("#/register"); for (let k = 0; k < 6; k++) await tick();
+  expect(main.querySelector(".register-terms") && !main.querySelector(".register-terms a"), "register: terms whose address is not plain https are named, not linked");
+  win.Maity.api.get = rgGet;
   // Signing in from the invitation returns to it, now with the button to join.
   await go("#/login?next=%2Finvite%2Fonly-xxxxxxxxxxxxxxxx2"); for (let k = 0; k < 4; k++) await tick();
   byId("login-handle").value = "maintainer"; byId("login-password").value = "a long new password";

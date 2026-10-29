@@ -220,6 +220,8 @@ def test_switched_off_voids_and_refuses(
         "password": True,
         "device_code": False,
         "email_link": False,
+        "registration": False,
+        "terms": None,
     }
 
 
@@ -228,6 +230,8 @@ def test_the_methods_the_login_page_offers(make_client: ClientFactory, migrated:
         "password": True,
         "device_code": True,
         "email_link": False,
+        "registration": False,
+        "terms": None,
     }
 
 
