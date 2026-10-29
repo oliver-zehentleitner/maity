@@ -305,8 +305,10 @@ only the first `limit + 1` per project that the filters, the cursor or `after` a
 from the database in the order the listing uses (`at`, then `seq`), in chunks that grow
 while a filter such as `unread` rejects them. A message whose payload text has a `member_id`
 and the human's id is derived with the rest, since it may mention them; the text test only
-selects, `_classify` decides. `scope` and the unread-chat count read their rows in one query
-each instead of one per membership and per agent, and a page reads each project and actor once.
+selects, `_classify` decides. `scope` reads its rows in one query instead of one per membership
+and per agent, and a page reads each project and actor once. The unread-chat count (`counts.chat`)
+is no longer read here: it comes from `conversation_list.unread_chats`, shared with
+`totals.unread` of `GET /me/conversations` and counting group chats too (see events.md a7fca6c0).
 Measured on SQLite with 10 projects and 30,000 chat items: 1.16 s before, 0.1 s after.
 
 **Reason:** the answer is a function of the page, so the work should be too; a cache would
@@ -462,8 +464,9 @@ who has left gets nothing from the chat, what was said while they were in it inc
 rejoin does not bring back what was said while they were away. `counts.chat` adds the group chats
 to the direct ones (`listing._unread_groups`, per stay: the others' messages after both the stay
 began and the read mark, tombstones included), the number the chat list shows; a test compares
-the two. The count costs two queries per group chat, which the bell's counts will take from the
-chat list's batched `unread` instead (#560).
+the two. The count cost two queries per group chat; #560 replaced `_unread_groups` (and the direct
+count) by `conversation_list.unread_chats`, the chat list's batched `unread`, so the bell and
+`totals.unread` are one number computed once (events.md a7fca6c0).
 
 **Reason:** §18.1 names the participants as recipients. A former participant no longer reads the
 chat (`…/messages` answers `not_found`, the list does not show it, §9.2), so an item for an
