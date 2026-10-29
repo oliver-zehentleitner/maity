@@ -239,7 +239,10 @@ The chart takes `mail.signingKeySecret` (`MAITY_MAIL_SIGNING_KEY`) and `mail.pas
 existing Secrets, like the database URL and the forge token, and `mail.host`, `port`, `tls`, `username`, `from`, `replyTo` as plain
 values. Nothing is rendered without a value, so a release without mail is unchanged. Mail on maity.team went live first as a
 config-only Helm revision with the same variables in `extraEnv`; this wires them into the chart so that a `helm upgrade` with the
-chart's own values cannot drop them. The rendered environment of the live values is the same before and after moving them.
+chart's own values cannot drop them. The rendered environment of the live values is the same before and after moving them. Moving the live values from `extraEnv` into
+`mail.*` drops them from `extraEnv` in the same revision: the chart renders both, so the names would appear twice in the container
+env and the later (`extraEnv`) one wins, which hides whether the chart values are in effect. With a host set, port and TLS always
+come from the chart (its defaults included) and win over the admin settings; an operator who wants those in the admin UI sets no host.
 
 **Reason:** the signing key and the password are secrets and stay out of values files; the host, port, TLS mode and addresses are not,
 and are easier to review as values. The reply-to address differs from the sender on purpose: the sending account is a no-reply

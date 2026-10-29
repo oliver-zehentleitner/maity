@@ -190,7 +190,7 @@ silently ignored. These are the values that matter:
 | `database.existingSecret`, `.key` | required, `database-url` | the Secret holding `MAITY_DATABASE_URL` |
 | `forge.github.existingSecret`, `.key` | none, `github-token` | the Secret holding `MAITY_FORGE_GITHUB_TOKEN` |
 | `mail.signingKeySecret.existingSecret`, `.key` | none, `mail-signing-key` | the Secret holding `MAITY_MAIL_SIGNING_KEY` (32 bytes or more, base64); without it the hub sends no mail |
-| `mail.host`, `.port`, `.tls` | none, `587`, `starttls` | `MAITY_SMTP_HOST`, `_PORT`, `_TLS` (`starttls`, `implicit` or `none`); empty host: no SMTP env, the admin settings apply |
+| `mail.host`, `.port`, `.tls` | none, `587`, `starttls` | `MAITY_SMTP_HOST`, `_PORT`, `_TLS` (`starttls`, `implicit` or `none`); empty host: no SMTP env, the admin settings apply; with a host, port and TLS always come from here. Moving these from `extraEnv`: drop them from `extraEnv` in the same upgrade, the chart does not dedupe |
 | `mail.username`, `.from`, `.replyTo` | none | `MAITY_SMTP_USERNAME`, `_FROM`, `_REPLY_TO` |
 | `mail.passwordSecret.existingSecret`, `.key` | none, `smtp-password` | the Secret holding `MAITY_SMTP_PASSWORD` |
 | `config.publicUrl` | `https://<ingress.host>` | `MAITY_PUBLIC_URL`, the address in join links; required without the Ingress |

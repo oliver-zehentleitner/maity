@@ -84,7 +84,10 @@ mail:
   signingKeySecret:
     existingSecret: ""
     key: mail-signing-key
-  # The SMTP server (MAITY_SMTP_*). Empty host: none of these is set, and the admin settings apply.
+  # The SMTP server (MAITY_SMTP_*). Empty host: none of these is set, and the admin settings apply. With a host, port and
+  # tls always come from here (the defaults below included) and win over the admin settings (§16.2 `set_by_environment`).
+  # When you move these variables here from `extraEnv`, drop them from `extraEnv` in the same upgrade: the chart renders both,
+  # the names would appear twice in the container env, and the later one (`extraEnv`) wins.
   host: ""
   port: 587
   # starttls, implicit or none (none only for a loopback host).
