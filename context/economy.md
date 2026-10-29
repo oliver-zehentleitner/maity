@@ -165,8 +165,8 @@ accepted proposal.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decisions in the team chat, 2026-10-29 (the idea, the invitation budget, one level, the numbers set by the instance operator), on the coordinator's proposal of the rules
-**Revisit when:** the economy stage is contracted, referrals turn out to be gamed despite these rules, or a referred person reaches the threshold mainly through their agents
+**Source:** the maintainer's decisions in the team chat, 2026-10-29 (the idea, the invitation budget, one level, the numbers set by the instance operator), on the coordinator's proposal of the rules, and his "paßt" to the proposals on detection (the address hash only) and on agents' credit (it counts, with the threshold set high enough for that and watched)
+**Revisit when:** the economy stage is contracted, referrals turn out to be gamed despite these rules, or a referred person reaches the threshold mainly through their agents; when the stage is built, the kept hash and mark go into the deletion and export lists (§2.9)
 **See:** economy.md#two-currencies-social-credit-is-reputation-and-never-moves-performance-points-move-between-members — fe4bbd1f-93d5-4032-87b0-204fed9acf49 — as of 2026-10-29
 
 Every human has a personal invitation link. Whoever registers through it
@@ -178,9 +178,18 @@ reward of whoever referred them, so there is no compounding and no
 chain. A human may send 10 invitations in their first month (counted
 from registration) and 2 a month after that, each month counted from the
 registration date, not the calendar; unused invitations lapse at the end
-of that month. One reward per referred person, and no self-referral; how
-both are detected is open (below). Agents do not refer: referring is a
-human's act. The
+of that month. One reward per referred person: a deleted referred
+account leaves only its salted address hash and the mark that it was
+referred (no referrer, no date), kept the way the debt rule keeps its
+hash, so the same address registering again is not a new referral.
+Self-referral is not allowed, but through a second address it is not
+detected, since no
+network or device signals are kept; what limits it is that the reward
+waits for the second account's own earned credit, and the monthly
+budget. Credit the referred person's agents earn counts towards the
+threshold, since an agent earns for its owner; the maintainer agreed to
+setting the threshold high enough for that and watching it. Agents do
+not refer: referring is a human's act. The
 threshold, the reward and the invitation budgets are instance settings
 the instance operator can change. Like the rest of the economy this is a
 stage after the core launch.
@@ -191,15 +200,15 @@ still holds with its one exception. The maintainer accepted the
 coordinator's proposal of the rules as a whole ("paßt für mich"); the
 invitation budget and the operator-set numbers are his own.
 
-**Open:** (1) How a re-registration and a self-referral are detected.
-The debt rule keeps the salted address hash only for deleted accounts
-with debt; stopping a deleted referred account from being referred
-again would mean keeping that hash for every deleted referred account,
-and "the same environment" would mean keeping network or device
-signals. Both are data-retention decisions still to be made. (2)
-Whether credit a referred person's agents earn counts towards the
-threshold ("an agent earns for its owner"); if it does, a person with
-many agents reaches it without personal work.
+Both points were open at first and settled on the coordinator's
+proposal, for the coordinator's reasons: keeping only the address hash
+is data-sparing and stops a re-registration with the same address;
+network or device signals would be personal data kept about people who
+left, and a second account must reach the threshold by its own work
+anyway. Counting the agents' credit follows the concept
+that agents work for their owner; the risk that someone reaches the
+threshold mainly through many agents is why that case is a Revisit
+trigger.
 
 **Reason:** the maintainer wants people who bring active people to be
 rewarded. Tying the reward to the referred person's own earned credit
@@ -213,3 +222,8 @@ budget keep it from becoming a pyramid or a farm of fake accounts.
   they never brought; that is the compounding the maintainer ruled out.
 - Unused invitations carried over: a year's worth could be spent at
   once; lapsing keeps the budget a monthly one.
+- Network or device signals to detect self-referral: more data kept
+  about people who left, while a second account must earn the threshold
+  by its own work anyway.
+- Counting only the person's own credit: it contradicts that an agent
+  earns for its owner.
