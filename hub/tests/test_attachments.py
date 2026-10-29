@@ -373,7 +373,7 @@ def test_a_closed_project_takes_no_upload_and_still_lets_one_go(owner: flow.Huma
     shown = put(owner, "a.txt", b"x").json()
     assert (
         owner.patch(
-            "/projects/maintainer/maity", {"state": "accepted", "reason": "done"}
+            "/projects/maintainer/maity", {"state": "archived", "reason": "done"}
         ).status_code
         == 200
     )

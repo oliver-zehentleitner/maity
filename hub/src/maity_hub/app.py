@@ -30,6 +30,7 @@ from maity_hub import (
     not_listening,
     probe,
     registration_accounts,
+    reports,
     takeovers,
     write_guard,
 )
@@ -63,6 +64,7 @@ from maity_hub.routes import (
     mail_links,
     mail_settings,
     me_session,
+    member_settings,
     members,
     memory,
     notification_settings,
@@ -95,6 +97,7 @@ from maity_hub.routes import legal as legal_routes
 from maity_hub.routes import me as me_routes
 from maity_hub.routes import probe as probe_routes
 from maity_hub.routes import registration as registration_routes
+from maity_hub.routes import reports as report_routes
 from maity_hub.routes import second_factor as second_factor_routes
 from maity_hub.routes import takeovers as takeover_routes
 from maity_hub.shell import AssetFiles, ShellRoute
@@ -167,6 +170,9 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         commitment_worker.start()
         registrations_worker = registration_accounts.Worker(engine)
         registrations_worker.start()
+        # An open report expires and a closed one's content goes on time (§16.8).
+        reports_worker = reports.Worker(engine)
+        reports_worker.start()
         from maity_hub.jourfixe import worker as jour_fixe_worker
 
         jour_fixe_clock = jour_fixe_worker.Worker(engine)  # the schedule acts on its own
@@ -193,6 +199,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         mail_worker.stop()
         takeover_worker.stop()
         jour_fixe_clock.stop()
+        reports_worker.stop()
         registrations_worker.stop()
         commitment_worker.stop()
         availability_worker.stop()
@@ -228,6 +235,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(forge_links.router, prefix=prefix)
     app.include_router(notification_settings.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)
+    app.include_router(report_routes.router, prefix=prefix)
     app.include_router(registration_routes.router, prefix=prefix)
     app.include_router(invitation_routes.router, prefix=prefix)
     app.include_router(landing_routes.router, prefix=prefix)
@@ -240,6 +248,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(project_images.router, prefix=prefix)
     app.include_router(keep_the_why.router, prefix=prefix)
     app.include_router(members.router, prefix=prefix)
+    app.include_router(member_settings.router, prefix=prefix)
     app.include_router(agents.router, prefix=prefix)
     app.include_router(avatars.router, prefix=prefix)
     app.include_router(joins.router, prefix=prefix)

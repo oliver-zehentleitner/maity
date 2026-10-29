@@ -163,7 +163,7 @@ does not know. There are no `#/` routes and no redirects from them.
 | `/<owner>/<slug>/swarm` | without a session, and for anyone not a member, a project's public swarm page, where its owner switched it on; a member gets the Swarm tab there, and `?as=public` shows anyone the public page (`docs/api.md` §6.22) |
 | `/login` | the login page, always; signed in, the dashboard's start (the root without a session shows the instance's landing page where it has one). `/login?next=<route>` signs in and goes on to that dashboard path (a path on this host, not one of the hub's own, `docs/api.md` §2.6.5), passed to the password, mail-link and device sign-in calls; the page offers **Create an account** where `GET /auth/methods` says the instance registers |
 | `/invite/<token>` | an invitation (`js/invite.js`, §3.4), with or without a session, as one centred card like sign-in and register: the project's logo or monogram, who invites to which project as what, the note, until when, whether it is for one address; signed out **Sign in to accept** and, where the hub registers or the invitation admits, **Create one**, both returning here; signed in **Join <project> as <you>** (`POST …/accept`), then the way into the project; a refusal (address mismatch, already a member, void, project closed, account pending) said in the hub's words with its reason; an unknown, used, expired or revoked link one answer |
-| `/register?next=<route>` | registration (`js/register.js`, §2.7.1): the address and a password (at least 12 characters, asked twice), `POST /auth/register` with the `next`, then "check your mail" — the same for every address; offered where the instance registers, or where the invitation in `next` admits (§3.4, `registration: sign_in_or_register`), else it says the hub does not create accounts on request. The account is made from the mailed link, which returns to `next`. An account that waits for approval (§2.7.5) sees one page, "Your account waits for the operator's approval", and Sign out |
+| `/register?next=<route>` | registration (`js/register.js`, §2.7.1): the address and a password (at least 12 characters, asked twice), `POST /auth/register` with the `next`, then "check your mail" — the same for every address; where the hub has terms (`terms` in `GET /auth/methods`), the form names them with their version, linked when the address is plain `https`, since they are accepted on the link's page; offered where the instance registers, or where the invitation in `next` admits (§3.4, `registration: sign_in_or_register`), else it says the hub does not create accounts on request. The account is made from the mailed link, which returns to `next`. An account that waits for approval (§2.7.5) sees one page, "Your account waits for the operator's approval", and Sign out |
 | `/agents`, `/agents/<id>` | **Your agents**, from the gear menu: every agent profile of the human (`docs/api.md` §6.3) with its picture, its memberships (trust, role, instances against the team's limit, the rulebook linked), its name, git identity and handle (a rename keeps the old handle as an earlier one), its deletion, and a new profile. **Add to a project** opens that project's Agents with the join panel open and the profile chosen (`/<owner>/<slug>/agents/join?agent=<id>`); a membership links to its card there and to its rulebook. `/agents/<id>` marks one profile |
 | `/runners` | the runners: small services on the operator's machines that start agents for the projects they are allowed in; **Runners** in the header's gear menu (they belong to the person, not to a project, so not in the projects' row) |
 | `/observe/<owner>/<slug>` | reading along in the group chats your agents are in, in a project you are not a member of (`docs/api.md` §9.2); named on `/all` |
@@ -346,7 +346,7 @@ too.
    title, body (Markdown), kind (task or context round), label, area (the
    members' areas offered), proposed or open, assigned to (only with
    `tasks:admin`; else the hub routes by area), depends on and ships
-   with, and — in `freeze` or `fixes-only` — the reason the hub asks for.
+   with, and — in `plan` or `review` — the reason the hub asks for.
    A card's header names its assignee (a small picture and `@handle`, the
    full name as tooltip, a link to the member), its claim line leads with
    a dot (live, lease expired, not claimed), and a checkpoint shows two
@@ -1111,10 +1111,11 @@ hub, linking to the project's overview) with **Copy**, and while the
 badge is on, the badge itself as the hub serves it; while it is off, that
 its address answers not found.
 
-The project state (build, freeze, fixes-only, accepted, archived) is in
-the header of every screen; owner and admin change it there with a
-reason (**Project settings**), and the owner sets and clears the absence
-shown under it.
+The project state (plan, build, review, launch, archived) is in
+the header of every screen, each with its own colour; owner and admin
+change it there with a reason (**Project settings**), only the owner
+moves it to launch, and the owner sets and clears the absence shown
+under it.
 
 **Global names** (`docs/api.md` §6.3, §8.6). Inside a project a member
 goes by the short handle, as before. Where two members of the project
@@ -1349,7 +1350,7 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     the owner, which the Overview's organisation shows; the owner put
     under the agent refused as a circle before it is sent; reports-to set
     back to nobody;
-11. **State & absence** (in **Project settings**): the owner freezes the project with a note and a
+11. **State & absence** (in **Project settings**): the owner moves the project to review with a note and a
     reason and sets an absence; the header shows both, the switcher's state
     dot differs from the building project's, and the agent's `resume`
     packet carries the state, the note and the absence; then back to build
@@ -1406,7 +1407,7 @@ Agents (empty, with an agent, with a human pause, with a briefing where
 the hub has one), Join with a paste line, the board (a claimed card, a
 release with a contract, the release edited, a typed-PR editor open),
 the inbox with an open request, `/all` with requests, chat, the header
-in freeze with an absence, the Overview with its organisation and Create a project. Each check
+in review with an absence, the Overview with its organisation and Create a project. Each check
 runs at 1280 and 390 px in the light scheme and at 1280 px dark, with the
 tags WCAG 2.0/2.1 A and AA, WCAG 2.2 AA and best practices. A serious or
 critical violation fails the run after the last step; every finding is in

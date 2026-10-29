@@ -235,6 +235,75 @@ def test_only_the_instance_admin_reads_the_settings(
     assert other.patch(SETTINGS, {"mode": "closed"}).status_code == 403
 
 
+# --- GET /auth/methods: what the login page learns (§2.6.1, §2.7) -------------------------
+
+
+@pytest.mark.parametrize(
+    ("mode", "mail", "offered"),
+    [
+        ("closed", True, False),
+        ("closed", False, False),
+        ("allowlist", True, True),
+        ("allowlist", False, False),
+        ("open", True, True),
+        ("open", False, False),
+    ],
+)
+def test_the_login_page_learns_whether_it_offers_registration(
+    make_client: ClientFactory, migrated: Engine, mode: str, mail: bool, offered: bool
+) -> None:
+    """`registration` is true only for `allowlist` or `open` with complete, enabled mail;
+    nothing about the lists or any account."""
+    env = {"MAITY_REGISTRATION": mode, "MAITY_REGISTRATION_DOMAINS": "@example.com"}
+    if mail:
+        env.update(MAITY_MAIL_SIGNING_KEY=SIGNING, **MAIL)
+    answer = client_for(make_client, hub(**env)).get("/api/v1/auth/methods").json()
+    assert answer["registration"] is offered
+    assert answer["terms"] is None
+    assert set(answer) == {"password", "device_code", "email_link", "registration", "terms"}
+
+
+def test_an_empty_allowlist_offers_no_registration(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§2.7: under `allowlist` with both lists empty nobody may register, so the login
+    page is not offered a way that ends nowhere; the admin sees `missing`."""
+    settings = hub(MAITY_MAIL_SIGNING_KEY=SIGNING, MAITY_REGISTRATION="allowlist", **MAIL)
+    client = client_for(make_client, settings)
+    assert client.get("/api/v1/auth/methods").json()["registration"] is False
+    by = factory.human(migrated, "maintainer")
+    env = settings.registration or registration.RegistrationEnvironment()
+    with migrated.begin() as conn:
+        registration.patch(conn, env, True, {"addresses": ["ada@example.com"]}, by)
+    assert client.get("/api/v1/auth/methods").json()["registration"] is True
+
+
+def test_the_login_page_learns_the_terms(make_client: ClientFactory, migrated: Engine) -> None:
+    settings = hub(
+        MAITY_MAIL_SIGNING_KEY=SIGNING,
+        MAITY_REGISTRATION="open",
+        MAITY_TERMS_URL="https://example.com/terms",
+        MAITY_TERMS_VERSION="2026-10",
+        **MAIL,
+    )
+    answer = client_for(make_client, settings).get("/api/v1/auth/methods").json()
+    assert answer["registration"] is True
+    assert answer["terms"] == {"url": "https://example.com/terms", "version": "2026-10"}
+
+
+def test_the_admins_mode_shows_at_once(make_client: ClientFactory, migrated: Engine) -> None:
+    """A mode set in the admin settings (§16.4), not only the environment, is what the
+    login page learns, on the next read."""
+    settings = hub(MAITY_MAIL_SIGNING_KEY=SIGNING, **MAIL)
+    client = client_for(make_client, settings)
+    assert client.get("/api/v1/auth/methods").json()["registration"] is False
+    by = factory.human(migrated, "maintainer")
+    env = settings.registration or registration.RegistrationEnvironment()
+    with migrated.begin() as conn:
+        registration.patch(conn, env, True, {"mode": "open"}, by)
+    assert client.get("/api/v1/auth/methods").json()["registration"] is True
+
+
 # --- POST /auth/register (§2.7.1, §2.7.3) -----------------------------------------------
 
 

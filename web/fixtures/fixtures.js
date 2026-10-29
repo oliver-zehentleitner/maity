@@ -2543,6 +2543,7 @@ window.MAITY_FIXTURES = {
       "swarm_public": "on",
       "tag_authority": "human"
     },
+    "released_at": null,
     "repository": {
       "default_branch": "main",
       "forge": "github",
@@ -4255,7 +4256,7 @@ window.MAITY_FIXTURES = {
         "open_requests": 1,
         "role": "coder",
         "slug": "sample",
-        "state": "freeze",
+        "state": "review",
         "trust": "owner"
       }
     ],
@@ -5121,6 +5122,7 @@ window.MAITY_FIXTURES = {
       "steward_writes": "cards_only",
       "tag_authority": "human"
     },
+    "released_at": "2026-09-14T10:00:00Z",
     "repository": {
       "default_branch": "main",
       "forge": "github",
@@ -5141,9 +5143,9 @@ window.MAITY_FIXTURES = {
       "maity_badge": false
     },
     "slug": "sample",
-    "state": "freeze",
+    "state": "review",
     "state_changed_at": "2026-10-20T16:00:00Z",
-    "state_note": "Release 2.3 frozen; fixes only after the tag."
+    "state_note": "Release 2.3 in review; fixes only after the tag."
   },
   "sample/requests.json": {
     "items": [
@@ -5194,9 +5196,9 @@ window.MAITY_FIXTURES = {
           "title": "Checkout rounding"
         },
         "task_id": "tsk-0021",
-        "title": "Ship the checkout rounding fix into the frozen 2.3?",
+        "title": "Ship the checkout rounding fix into 2.3 while it is in review?",
         "to": "owner",
-        "tried": "Fix and regression test are on a branch; the freeze allows fixes only after the tag.",
+        "tried": "Fix and regression test are on a branch; in review, fixes ship only after the tag.",
         "while_open": "wait"
       }
     ],

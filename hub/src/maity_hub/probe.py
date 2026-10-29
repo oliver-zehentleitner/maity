@@ -30,7 +30,7 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, delete, insert, select, update
 
-from maity_hub import clock, forge, merged, releases, ticker
+from maity_hub import clock, forge, merged, releases, rules, ticker
 from maity_hub import tables as t
 from maity_hub.events import emit, lock_project, transaction
 from maity_hub.instances import token
@@ -148,6 +148,8 @@ def observe(
                 project_id=project.id, kind=kind, ref=ref, observed_at=observed_at, data=data
             )
         )
+        if kind == "tag" and data.get("found"):
+            _mark_released(conn, project.id, ref, observed_at)
         observation = Observation(data, observed_at, fresh=True)
         observation.changed = stored is None or _state(stored.data) != _state(data)
         if observation.changed:
@@ -188,6 +190,38 @@ def _announce_for_release(
             {"task": card.id, "observations": {f"{kind}:{ref}": observation.stamped()}},
             subject=("task", card.id),
         )
+
+
+def _mark_released(conn: Connection, project_id: str, ref: str, observed_at: datetime) -> None:
+    """`released_at` once, when the found tag is a release's, done or not (§6.1)."""
+    project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
+    if project.released_at is not None or not ref.startswith("v"):
+        return
+    release = conn.execute(
+        select(t.card.c.id).where(
+            t.card.c.project_id == project_id,
+            t.card.c.kind == "release",
+            t.card.c.release_version == ref[1:],
+        )
+    ).first()
+    if release is None:
+        return
+    conn.execute(
+        update(t.project).where(t.project.c.id == project_id).values(released_at=observed_at)
+    )
+    rules.bump(
+        conn,
+        project,
+        "state_changed",
+        ["all"],
+        {
+            "old": project.state,
+            "new": project.state,
+            "reason": None,
+            "released_at": clock.rfc3339(observed_at),
+        },
+        actor=None,
+    )
 
 
 def last(engine: Engine, project_id: str, kind: str, ref: str) -> Observation | None:

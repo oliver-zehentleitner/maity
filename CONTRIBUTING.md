@@ -24,6 +24,13 @@ Imperative, plain English, one concern per commit:
 `hub: claim tasks with a lease`. A handful of meaningful commits per
 feature; `context/` entries are the exception and get one each.
 
+## Issues
+
+A bug is a GitHub issue; the form asks for the component, the version and
+the steps. Feature requests and the work on Maity itself are discussed in
+the project on Maity (`https://maity.team/oliver-zehentleitner/maity`),
+not in issues; the issue chooser links there.
+
 ## Reasoning
 
 Before changing something that looks odd, read `context/`. If the reason
@@ -32,6 +39,5 @@ out.
 
 ## Security
 
-Secrets never enter the repository. See `SECURITY.md` once it exists; until
-then, report security issues to the maintainer directly, not in a public
-issue.
+Secrets never enter the repository. Report security problems privately as
+`SECURITY.md` describes, never in a public issue.
