@@ -2,11 +2,11 @@
 
 `instance_landing` held one Markdown body, a title and a call to action. It now holds
 `default_language`, `pages` (per language `{title, description, sections}`) and `footer`; the
-old body is carried over as the `en` page: a `hero` with the title and the call to action,
-and a `text` section with the Markdown, enabled as before. A row that held nothing stays
-disabled. The legal pages get their three tables: the setting, every version of a page, and
-the version served now. Downgrading restores the old columns from the `en` page, as far as
-it has the old shape; the legal tables go with their texts.
+old body is carried over as the `en` page: a `hero` with the title and the call to action
+(only when it had both), and a `text` section with the Markdown, enabled as before. A row that
+held nothing stays disabled. The legal pages get their three tables: the setting, every
+version of a page, and the version served now. Downgrading restores the old columns from the
+`en` page, as far as it has the old shape; the legal tables go with their texts.
 
 Revision ID: 0090
 Revises: 0086
@@ -38,15 +38,20 @@ TABLE_OPTIONS: dict[str, Any] = {
 
 
 def _carried(title: Any, markdown: Any, cta: Any) -> dict[str, Any]:
-    """The `en` page the old body becomes."""
+    """The `en` page the old body becomes. A `hero` needs both a title and a call to action
+    (§16.7), and the old schema allowed either to be null, so the hero is made only when both
+    are there: with a title alone the title is the page's, with a call to action alone there is
+    no section to put it in without inventing a title, and it is left out."""
     sections: list[dict[str, Any]] = []
-    if title or cta:
-        hero: dict[str, Any] = {"type": "hero", "enabled": True}
-        if title:
-            hero["title"] = title
-        if isinstance(cta, dict):
-            hero["cta_primary"] = {"label": cta.get("label"), "href": cta.get("href")}
-        sections.append(hero)
+    if title and isinstance(cta, dict) and cta.get("label") and cta.get("href"):
+        sections.append(
+            {
+                "type": "hero",
+                "enabled": True,
+                "title": title,
+                "cta_primary": {"label": cta["label"], "href": cta["href"]},
+            }
+        )
     if markdown:
         sections.append({"type": "text", "enabled": True, "markdown": markdown})
     return {"title": title or "Maity", "description": "", "sections": sections}
