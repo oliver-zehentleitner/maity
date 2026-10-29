@@ -636,3 +636,30 @@ an agent could then change what a human reads in the bell and in mail.
 **Rejected alternatives:** a writable `language` on the member that writes through to the
 settings (an admin could change another person's language, which the contract keeps with the
 human); a stored copy on the membership (two values to keep equal, per project, for one person).
+
+## A member's own settings in a project live on the membership row, the personal defaults in the notification settings
+
+**Id:** 3bb0e3fa-9f87-4a1c-82ae-715c41c15a84
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation of the not-listening card tsk-32g2cjbm52ft (contract #627, the maintainer's decision of 2026-10-29 that personal settings are the defaults and a member overrides them per project), 2026-10-29
+**See:** notifications.md#notification-settings-store-only-what-the-human-changed-the-defaults-fill-the-rest-on-read — 3e9a6b69-7715-4ce3-8c9d-a9194fbf9500 — as of 2026-10-29
+**Revisit when:** a project setting must outlive the membership (a member who leaves and comes back), or settings come that are not per project at all
+
+The personal default `not_listening {mode, minutes}` is one more key of the human's
+stored notification preferences (`notification_settings.preferences`, filled from
+`DEFAULTS` on read like the others), so it needed no migration. The override for one
+project is a JSON column `own_settings` on that membership (migration 0091), each
+setting `null` for "use the personal default". `member_settings.not_listening_minutes`
+gives the effective threshold, the override or else the personal `minutes`; the
+digest reads it.
+
+**Reason:** the contract ties the override to "the caller's own membership"
+(`not_found` without one). On the membership row it goes when the membership ends,
+and a removed member's choices for a project are not carried into a later membership.
+
+**Rejected alternative:** a map of project ids in the human's notification
+preferences, which would need no migration. It would keep overrides for projects the
+human has left, with no row that ends them, and the per-project settings would be read
+apart from the membership that the route already loads.

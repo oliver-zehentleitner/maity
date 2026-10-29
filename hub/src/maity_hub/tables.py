@@ -565,6 +565,9 @@ membership = Table(
     # limit, the state the hub last announced and since when, and when the current
     # outage began (null while available).
     Column("availability_policy", JSON_VALUE),
+    # A human member's own settings in this project, each `null` for the personal default
+    # (§6.2, "A member's own settings in a project"): `{not_listening: {minutes}}`.
+    Column("own_settings", JSON_VALUE),
     Column("limit_until", UtcDateTime),
     Column("limit_since", UtcDateTime),
     Column("limit_source", String(16)),
