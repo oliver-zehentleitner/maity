@@ -262,6 +262,18 @@ def withdraw_for_human(conn: Connection, human_id: str, reason: str) -> None:
         close(conn, invitation, reason)
 
 
+def withdraw_by_inviter_everywhere(conn: Connection, human_id: str, reason: str) -> None:
+    """The inviter's account is gone: every open invitation they sent, in every
+    organisation, is withdrawn (§2.9, §6.26)."""
+    rows = conn.execute(
+        select(t.org_invitation).where(
+            t.org_invitation.c.live.is_(True), t.org_invitation.c.invited_by == human_id
+        )
+    ).all()
+    for invitation in rows:
+        close(conn, invitation, reason)
+
+
 def expire(conn: Connection, org_id: str | None = None) -> None:
     """Withdraw the invitations that are 14 days old, with their requests."""
     query = select(t.org_invitation).where(

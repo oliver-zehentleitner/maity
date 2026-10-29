@@ -21,7 +21,9 @@ loser. The migration entered every existing human. A row is never deleted: the h
 deleted account or organisation stays taken for good, so an old link or project name never
 comes to mean someone else. `human.handle` and `org.handle` stay as columns, and
 `registration_accounts.check_names` asks the register first. Agent profiles are not in it, their
-handles are unique per owner only.
+handles are unique per owner only. An account's deletion leaves the row: the table is in
+`DELETION_KEEPS` of `tests/test_per_human_tables.py`, which fails for a table that names a human
+and is neither handled nor kept on purpose.
 
 **Reason:** a primary key is enforced by the database itself, in the same statement as the
 insert, so no path has to remember a lock or a check and a new path cannot forget it. The
@@ -58,6 +60,12 @@ one organisation and one `org_limit`. Two owners who demote each other at once l
 second call, running after the first, finds its caller no owner any more and gets `forbidden`
 (`org_role`), not `org_last_owner`. A caller who is not a member gets `not_found` on every
 route, before and after the lock, and so does a handle that names nothing.
+The deletion of an account takes its place in that order: `account_deletion.confirm` locks
+the account first, then the projects of its namespace, then every organisation it belongs to
+in the order of their ids (`orgs.lock_all_of`), and only then checks `blocker`, which refuses
+with `org_last_owner` (`details.orgs`, the handles) for an organisation of which it is the only
+owner, at `POST /me/deletion` as at the link's `POST`. Its memberships in organisations end with
+the deletion; the organisations and their handles stay.
 
 **Reason:** a role read before the lock could be stale by the time the change commits, which is
 how two demotions would both succeed and leave an organisation with no owner. One order (a
@@ -73,3 +81,73 @@ each other.
 **Known limit:** `max_orgs_per_human` is read from the environment (`MAITY_MAX_ORGS_PER_HUMAN`);
 the admin's value of §16.5 (`GET`/`PATCH /admin/settings/limits`) is not built, and neither is
 the limit for agent profiles that shares it.
+
+## An organisation's invitation is a personal consent request with no project, on the request row
+
+**Id:** fa2cf0ea-591f-478b-a162-952ac0e138df
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §6.26, §7 "Personal requests", §18.1; the coordinator's ruling of 2026-10-29 on the card tsk-whe4wv1jpsae (the sender must be visible to the invited human)
+**Revisit when:** a second thing without a project needs to ask a human (a request the instance files, a transfer between organisations), or the request routes are split by scope
+
+The contract files the invitation as a `consent` request to the invited human with `project: null`
+and `org: {id, handle}`. The `request` row got the case instead of a table of its own:
+`project_id` and `asked_by` (a membership) are nullable, `org_id` names the organisation and
+`asked_by_human` the human who invites, whom the invited human has to see (`asked_by` in the
+view); a check allows no project only for a personal request with an organisation and no
+asking membership. The personal routes work on it with three differences: they lock the
+organisation's row where they lock a project (`routes.requests._locked_personal`), they write no
+`request_*` project event (there is no project to write it to; the invited human learns of it
+from the account record, which now carries `org_id` too), and the human's own withdrawal settles
+the proposal like any other close, which for an invitation counts as their `no`. The bell counts
+such a request in `inbox` and in no project's `by_project`; the listing and `GET /requests/{id}`
+show `project: null` and the organisation; the account deletion withdraws the open ones that name
+the human and those they sent before it ends their memberships.
+
+**Reason:** the personal-request machinery already does everything an invitation needs (the
+inbox, the answer with `go` and `no`, the position and read flag in the notifications, the
+export, the withdrawal on deletion), and each of these places had to learn only that a request
+may have no project.
+
+**Rejected alternatives:**
+- A table of its own for organisation requests with its own routes: it would repeat the answer,
+  the withdrawal, the listing, the counts and the record, and a second inbox would have been a
+  second place to keep in step.
+- Hanging the request on a project of the organisation: an organisation may own none, and the
+  request would then show in that project's lists and permissions.
+- Keeping `asked_by` required and filing the request in the inviter's name as a membership: the
+  inviter has no membership to put there.
+
+## An invitation is closed by whoever closes it, with its reason; the answer only closes one that is still open
+
+**Id:** 506a6ea2-4f34-4174-a86f-09c3c5c66200
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** `docs/api.md` §6.26 "Adding a member"; the implementation of tsk-whe4wv1jpsae (part 2)
+**Revisit when:** an invitation gets a second way to be answered, or the aliases of §6.24 let two names reach one human, which the contract's "two open invitations" rule is written for
+
+`org_invitations.close` sets the row closed (`live` NULL, `closed_by` the reason: `revoked`,
+`inviter_role`, `org_deleted`, `expired`, `superseded`, `invitee_deleted`, `inviter_deleted`) and
+then withdraws its request. The request's own settlement (`org_invitations.settle`, run by
+`proposals.settle` wherever a request closes) closes a row that is still open as `declined`, which
+is the invited human's `no` and their withdrawal, and makes them a member on `go` only while the
+invitation is open, not expired and the organisation not deleted, else the `go` is `transfer_stale`'s
+sibling `invitation_stale`. A `go` also supersedes every other open invitation of the organisation
+whose request went to the same human. Expiry is 14 days; it runs in a minute worker and at the
+start of every read or filing in the organisation. The limit of 20 invitations per organisation
+in 24 hours is counted from the rows, so a restart forgets none.
+
+**Reason:** the reason of a closed invitation must be the one that really closed it, and a
+settlement that closed every invitation the same way would lose it. Closing the row first makes
+the settlement of the request that follows a no-op, so nothing is closed twice.
+
+**Rejected alternatives:**
+- Letting `settle` close the row with a reason read from the request's `withdraw_reason`: the row
+  is written before the request, and a text is a poor key for logic.
+- An in-process limiter for the daily 20 (`ratelimit.Limiter`): it forgets on every restart and
+  does not hold across replicas, and the rows are there.
+
+**Known limit:** an invitation names a human by their current handle only; the alias of §6.24
+joins it with #523, together with the duplicate-name case above.

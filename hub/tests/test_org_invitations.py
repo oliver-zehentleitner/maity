@@ -294,3 +294,21 @@ def test_the_deleted_accounts_invitations_are_withdrawn(
     with migrated.connect() as conn:
         assert conn.execute(select(t.org_invitation.c.closed_by)).scalar_one() == "invitee_deleted"
         assert conn.execute(select(func.count()).select_from(t.org_member)).scalar_one() == 1
+
+
+def test_the_deletion_of_either_side_withdraws_the_invitations(
+    make_client: ClientFactory, migrated: Engine, owner: flow.Human
+) -> None:
+    _, people = team(make_client, migrated, owner)
+    guest = flow.human(make_client, migrated, "guest")
+    other = flow.human(make_client, migrated, "other")
+    invite(people["admin"], "guest")
+    invite(owner, "other")
+    with migrated.begin() as conn:
+        # the invited human's own, then the inviter's: the two functions the deletion calls
+        org_invitations.withdraw_for_human(conn, guest.id, "invitee_deleted")
+        org_invitations.withdraw_by_inviter_everywhere(conn, owner.id, "inviter_deleted")
+    assert requests_of(guest) == [] and requests_of(other) == []
+    with migrated.connect() as conn:
+        reasons = sorted(r.closed_by for r in conn.execute(select(t.org_invitation)).all())
+    assert reasons == ["invitee_deleted", "inviter_deleted"]

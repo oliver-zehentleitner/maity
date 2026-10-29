@@ -3,13 +3,14 @@ handles that a human's and an organisation's share."""
 
 from __future__ import annotations
 
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, insert, select
+from sqlalchemy import Engine, insert, select, update
 
-from maity_hub import clock, handle_register, namespace, registration_accounts
+from maity_hub import clock, handle_register, namespace, orgs, registration_accounts
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -322,3 +323,52 @@ def test_deleting_an_organisation_keeps_its_handle_taken(
         assert (invitation.live, invitation.closed_by) == (None, "org_deleted")
     again = owner.post("/orgs", {"handle": "oz-team", "display_name": "Back"})
     assert again.json()["error"]["details"]["fields"] == {"handle": "taken"}
+
+
+def test_a_setting_that_is_sent_is_a_value(
+    make_client: ClientFactory, migrated: Engine, owner: flow.Human
+) -> None:
+    make_org(owner)
+    for body, field in (
+        ({"display_name": None}, "display_name"),
+        ({"members_create_projects": None}, "members_create_projects"),
+        ({"public_page": None}, "public_page"),
+    ):
+        refused = owner.patch("/orgs/oz-team", body)
+        assert refused.status_code == 400, (body, refused.text)
+        assert field in refused.json()["error"]["details"]["fields"], body
+    for wrong in ("off", 0, "true"):
+        assert owner.patch("/orgs/oz-team", {"members_create_projects": wrong}).status_code == 400
+    assert owner.patch("/orgs/oz-team", {}).status_code == 200  # nothing sent, nothing changed
+    assert owner.get("/orgs/oz-team").json()["members_create_projects"] is False
+
+
+def test_a_role_lost_while_waiting_for_the_lock_is_the_roles_at_the_lock(
+    make_client: ClientFactory, migrated: Engine, owner: flow.Human
+) -> None:
+    """The caller's role is read again under the organisation's lock: an owner demoted by
+    a change that ran first changes nothing, however long it waited (§6.26)."""
+    _, people = team(make_client, migrated, owner)
+    second = people["owner2"]
+    org_id = owner.get("/orgs/oz-team").json()["id"]
+    with migrated.begin() as conn:  # the demotion has been decided and not yet committed
+        orgs.lock(conn, org_id)
+        results: list[Any] = []
+
+        def second_changes() -> None:
+            results.append(second.patch("/orgs/oz-team", {"display_name": "Second"}))
+
+        thread = threading.Thread(target=second_changes)
+        thread.start()
+        thread.join(timeout=0.5)  # it waits for the lock when the database has row locks
+        conn.execute(
+            update(t.org_member).where(t.org_member.c.human_id == second.id).values(role="member")
+        )
+    thread.join(timeout=10)
+    [answer] = results
+    assert answer.status_code in (200, 403), answer.text
+    if answer.status_code == 200:  # SQLite serialised the writes the other way round
+        assert owner.get("/orgs/oz-team").json()["display_name"] == "Second"
+    else:
+        assert answer.json()["error"]["details"] == {"reason": "org_role"}
+        assert owner.get("/orgs/oz-team").json()["display_name"] == "OZ Team"

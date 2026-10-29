@@ -8,7 +8,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Request
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, StrictBool
 
 from maity_hub import org_invitations, orgs
 from maity_hub.auth import second_factor
@@ -27,7 +27,7 @@ class CreateOrg(BaseModel):
 class ChangeOrg(BaseModel):
     model_config = ConfigDict(extra="forbid")
     display_name: str | None = None
-    members_create_projects: bool | None = None
+    members_create_projects: StrictBool | None = None
     public_page: str | None = None
 
 
@@ -47,6 +47,18 @@ def _human(caller: AnyCaller) -> str:
     if caller.kind != "human" or caller.human_id is None:
         raise forbidden()
     return caller.human_id
+
+
+def _locked_actor(conn: Any, org_id: str, human_id: str) -> tuple[Any, str]:
+    """The organisation under its lock and the caller's role in it, read under the lock:
+    a role read before it could be stale when the change commits (§6.26)."""
+    locked = orgs.lock(conn, org_id)
+    if locked is None:
+        raise not_found()
+    role = orgs.role_of(conn, locked.id, human_id)
+    if role is None:
+        raise not_found()
+    return locked, role
 
 
 @router.post("/orgs", status_code=201)
@@ -78,12 +90,10 @@ def get_org(request: Request, caller: AnyCaller, org: str) -> JSONResponse:
 def patch_org(request: Request, caller: AnyCaller, org: str, body: ChangeOrg) -> JSONResponse:
     human_id = _human(caller)
     with engine_of(request).begin() as conn:
-        row, role = orgs.find(conn, human_id, org)
+        row, _ = orgs.find(conn, human_id, org)
+        locked, role = _locked_actor(conn, row.id, human_id)
         if role != "owner":
             raise orgs.org_role()
-        locked = orgs.lock(conn, row.id)
-        if locked is None:
-            raise not_found()
         changed = orgs.change_settings(conn, locked, body.model_dump(exclude_unset=True))
         return JSONResponse(orgs.view(conn, changed, role))
 
@@ -94,13 +104,13 @@ def delete_org(
 ) -> Response:
     human_id = _human(caller)
     with engine_of(request).begin() as conn:
-        row, role = orgs.find(conn, human_id, org)
-        if role != "owner":
+        row, found_role = orgs.find(conn, human_id, org)
+        if found_role != "owner":
             raise orgs.org_role()
         second_factor.require_step_up(conn, settings_of(request), caller)  # §2.8.4
-        locked = orgs.lock(conn, row.id)
-        if locked is None:
-            raise not_found()
+        locked, role = _locked_actor(conn, row.id, human_id)
+        if role != "owner":  # demoted while waiting for the lock
+            raise orgs.org_role()
         orgs.delete_org(conn, locked, body.confirm)
         return Response(status_code=204)
 
@@ -120,12 +130,7 @@ def patch_member(
     human_id = _human(caller)
     with engine_of(request).begin() as conn:
         row, _ = orgs.find(conn, human_id, org)
-        locked = orgs.lock(conn, row.id)
-        if locked is None:
-            raise not_found()
-        actor_role = orgs.role_of(conn, locked.id, human_id)
-        if actor_role is None:
-            raise not_found()
+        locked, actor_role = _locked_actor(conn, row.id, human_id)
         item: dict[str, Any] = orgs.set_role(conn, locked, actor_role, member, body.role)
         return JSONResponse(item)
 
@@ -135,12 +140,7 @@ def delete_member(request: Request, caller: AnyCaller, org: str, member: str) ->
     human_id = _human(caller)
     with engine_of(request).begin() as conn:
         row, _ = orgs.find(conn, human_id, org)
-        locked = orgs.lock(conn, row.id)
-        if locked is None:
-            raise not_found()
-        actor_role = orgs.role_of(conn, locked.id, human_id)
-        if actor_role is None:
-            raise not_found()
+        locked, actor_role = _locked_actor(conn, row.id, human_id)
         orgs.remove_member(conn, locked, human_id, actor_role, member)
         return Response(status_code=204)
 
@@ -149,17 +149,6 @@ class Invite(BaseModel):
     model_config = ConfigDict(extra="forbid")
     handle: str
     role: str
-
-
-def _locked_actor(conn: Any, org_id: str, human_id: str) -> tuple[Any, str]:
-    """The organisation under its lock and the caller's role in it, read under the lock."""
-    locked = orgs.lock(conn, org_id)
-    if locked is None:
-        raise not_found()
-    role = orgs.role_of(conn, locked.id, human_id)
-    if role is None:
-        raise not_found()
-    return locked, role
 
 
 @router.get("/orgs/{org}/members/invitations")
