@@ -297,6 +297,11 @@ decided; it was raised with the coordinator as a possible card.
 is complete" (the upgrade script, a person) trusted nothing: several nightly dumps and one dump before a change left an empty `.part` and no
 dump. Found because the Job's log was read after a change, not because anything failed.
 
+The empty `.part` files in the volume date the failures (UTC): 2026-10-22 11:31 and 18:40, 10-23 05:45 and 10:17, 10-24 03:17, 10-25 03:17 and 13:15,
+10-26 03:17 and 11:18, 10-28 17:50, 10-29 07:25. So the nightly runs of 10-24, 10-25 and 10-26 produced no dump; the runs of 10-27, 10-28 and 10-29
+did. Whether the runs of 10-22 and 10-23 did cannot be told: the rotation of fourteen dumps had removed the older ones. The newest dump before the
+change of 10-29 was ten minutes old.
+
 The script now has one command per line, tries `pg_dump` up to five times, requires a non-empty file, removes its own leftovers on any exit
 and stale `.part` files after an hour, so a failed dump is a failed Job. `deploy/scripts/helm-upgrade.sh` also refuses to go on when
 the Job's log contains `pg_dump: error`, because a CronJob in the cluster keeps its old script until the manifest is applied again.
