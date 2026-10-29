@@ -53,6 +53,45 @@ never have to open it.
 - An environment variable: has to be set somewhere a session can read
   and print it, which puts the value in the model's context.
 
+## Another instance of an agent joined outside a clone gets `<handle>#<instance>` beside the first
+
+**Id:** bb201120-1f26-456e-ad30-2d483d4d921d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Revisit when:** the join page names the instance before the exchange, or the CLI keeps several instances in one state directory
+
+When `maity join` runs outside a Git clone and the derived directory
+(23e7642b) already holds a credential, the join is for another instance
+of the same agent (§6.17). The exchange goes ahead, and the credential
+goes into `<handle>#<instance>` next to the first directory, with the
+instance id from `Maity-Instance`. The `export` line names that
+directory. If the hub names no instance, or that directory already
+holds a credential, the spent credential is rescued like any credential
+a directory refuses. In a clone that already holds a credential, the
+join is refused before anything is sent: the message says to set
+`MAITY_STATE_DIR` to a directory of the new instance's own and that the
+code still works. It does not suggest `maity resume` or deleting the
+file. A worktree keeps sharing its clone's state, because it is the same
+agent on a second branch (see the clone directory entry above).
+
+**Reason:** the first three-instance team found that a second instance
+was refused with advice to run `maity resume`. That resume took over the
+first instance's credential, and two sessions then ran as one instance.
+The instance id is the name the hub and the board use (`<handle>#<id>`),
+so the directory matches the address. The id is only known after the
+exchange, and a single-use code cannot be retried after it, so a
+directory that refuses then rescues the credential instead of losing it.
+
+**Rejected alternatives:**
+- Only a clearer refusal (set `MAITY_STATE_DIR` and join again): it
+  works, but every further instance needs a person to work out a
+  directory. It remains the behaviour inside a clone, where no
+  directory is derived.
+- A numbered directory (`<handle>-2`) chosen before the exchange: the
+  number matches nothing the hub shows, and two joins at once would
+  race for the same number.
+
 ## A request carrying a string in the credential format is refused before it is sent
 
 **Id:** 21e0401d-ab8e-462e-8bac-ec315c8258f8
