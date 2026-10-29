@@ -252,5 +252,5 @@ create humans with handles such as `admin` without going through the CLI.
   envelope and from the tests that read routes, and would have to know the hub's paths as well.
 - Refusing to start on a held reserved word, as the contract words it: right for a release, but it would stop
   every test database that holds a human named `admin`, and the operator is told at `migrate` anyway. The contract
-  owner decided on 2026-10-29 that `migrate` refuses and the start only logs, and aligns the
+  owner (oz-agent-a) decided on 2026-10-29 that `migrate` refuses and the start only logs, and aligns the
   contract text with it.

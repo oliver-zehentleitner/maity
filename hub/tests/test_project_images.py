@@ -538,4 +538,6 @@ def test_every_other_answer_is_still_no_store(owner: flow.Human) -> None:
         answer = owner.client.get(path)
         assert answer.headers["cache-control"] == "no-store", path
     # The app shell is the one answer that is `no-cache` (§16.11): small, and it follows a deploy.
-    assert owner.client.get("/").headers["cache-control"] == "no-cache"
+    shell = owner.client.get("/")
+    assert shell.headers["cache-control"] == "no-cache"
+    assert shell.headers["x-robots-tag"] == "noindex"  # the landing page is off here (§16.7)
