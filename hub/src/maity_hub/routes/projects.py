@@ -599,7 +599,16 @@ def patch_project(
         state_changes = "state" in given and body.state != project.state
         if state_changes and body.state not in policy.STATES:
             raise invalid({"state": "unknown"})
-        if (state_changes or new_policy is not None or explicit_changes) and not body.reason:
+        # The README badge alone is a display choice: it needs no reason (§6.20), and its
+        # policy_changed carries `reason: null` then. Every other policy field keeps it.
+        current = policy.of(project)
+        badge_only = new_policy is not None and {
+            name for name in new_policy if new_policy[name] != current.get(name)
+        } == {"badge"}
+        needs_reason = (
+            state_changes or (new_policy is not None and not badge_only) or explicit_changes
+        )
+        if needs_reason and not body.reason:
             raise invalid({"reason": "required"}, "a change of state or policy needs a reason")
         if values:
             conn.execute(update(t.project).where(t.project.c.id == project.id).values(**values))

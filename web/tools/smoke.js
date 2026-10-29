@@ -4029,13 +4029,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const bgPatches = [];
   const bgPatch = win.Maity.api.patch;
   win.Maity.api.patch = (p, b) => { bgPatches.push([p, b]); return bgPatch(p, b); };
+  expect(!byId("badge-reason"), "settings: the badge form asks for no reason (§6.20)");
   byId("badge-select").value = "agents_online";
-  main.querySelector("form.badge-form").dispatch("submit"); await tick();
-  expect(!bgPatches.length, "settings: a badge change without a reason is not sent");
-  byId("badge-select").value = "agents_online"; byId("badge-reason").value = "Show who works";
   main.querySelector("form.badge-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
-  expect(bgPatches.length === 1 && JSON.stringify(bgPatches[0][1]) === JSON.stringify({ policy: { badge: "agents_online" }, reason: "Show who works" }),
-    "settings: the badge changed as a policy change with its reason");
+  expect(bgPatches.length === 1 && JSON.stringify(bgPatches[0][1]) === JSON.stringify({ policy: { badge: "agents_online" } }),
+    "settings: the badge changed as a policy change without a reason");
   expect(onSettings() && main.querySelector("form.badge-form") && byId("badge-select").value === "agents_online",
     "settings: after the save the page stays on Settings and shows the new badge (the maintainer's report)");
   win.Maity.api.patch = bgPatch;
