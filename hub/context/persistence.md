@@ -593,7 +593,7 @@ inferred from the log categories, not reproduced.
 
 On a server database `GET /api/v1/health` reads the revision over an engine of its own
 (`db.make_health_engine`): the same URL, no pool, a connection per check that is closed after it,
-the 5 s connect timeout and a 5 s `statement_timeout`. SQLite keeps one engine, since there is no
+the 5 s connect timeout and a 5 s `statement_timeout` (on MariaDB the driver's 5 s `read_timeout`). SQLite keeps one engine, since there is no
 pool wait to escape and a second in-memory engine would be a second, empty database. Every
 PostgreSQL connection of the serving hub is opened with `statement_timeout` 30 s and
 `idle_in_transaction_session_timeout` 60 s, as the `options` startup parameter
@@ -606,6 +606,8 @@ The serving engine is built in one place, `app.serving_engine(settings)`, which 
 so none of the pool settings (`MAITY_DB_POOL_*`) reached a served hub, and the timeouts would not
 have either (found in review of #667); a test now reads the pool and the options off the engine
 that `serve` runs the app on.
+
+On MariaDB there is no server-side statement timeout to set per session, so the probe's 5 s bound is the driver's `read_timeout`; without it a hung statement on `alembic_version` would hold the probe's thread for good.
 
 **Reason:** in the incident the pool was used up and the readiness probe, which took a pooled
 connection like every call, failed with it; the only pod left the network because of the load it

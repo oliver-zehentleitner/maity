@@ -184,13 +184,23 @@ def test_sqlite_probes_through_the_one_engine(tmp_path: Any) -> None:
     assert db.make_health_engine(db.make_engine(f"sqlite:///{tmp_path}/h.db")) is None
 
 
-def test_the_probe_answers_while_the_pool_is_exhausted(client: TestClient, engine: Engine) -> None:
-    """The hub's health answers from `app.state.health_engine`, never the pool a busy hub
-    has used up."""
+def test_mariadb_probe_stops_waiting_for_a_hung_statement() -> None:
+    main = db.make_engine("mysql+pymysql://u:p@localhost/h", 2, 0)
+    health = db.make_health_engine(main)
+    assert health is not None and isinstance(health.pool, NullPool)
+    seen = captured_connect_args(health, "pymysql")
+    assert seen["read_timeout"] == db.HEALTH_STATEMENT_SECONDS and "options" not in seen
+
+
+def test_the_health_check_reads_the_probes_engine_not_the_apps(
+    client: TestClient, engine: Engine
+) -> None:
+    """`/health` asks `app.state.health_engine`: with the app's own engine unusable it still
+    answers. (The pool itself is not exhausted here; a pooled engine needs a server.)"""
     app: Any = client.app
-    assert app.state.health_engine is engine  # SQLite: no second engine
+    assert app.state.health_engine is engine  # SQLite: one engine
     app.state.engine = db.make_engine("postgresql+psycopg://u:p@localhost/h", 1, 0)
-    assert client.get("/api/v1/health").status_code == 200  # the probe did not ask the pool
+    assert client.get("/api/v1/health").status_code == 200
 
 
 def test_settings_read_the_two_timeouts() -> None:

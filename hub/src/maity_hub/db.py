@@ -44,8 +44,9 @@ RESOLVE_PAUSE_SECONDS = 0.25
 # `pool_pre_ping`, which tests every connection as it is taken.
 POOL_RECYCLE_SECONDS = 1800
 # What the readiness probe may spend on the database: the connect timeout above and this long
-# for its one statement. It runs on a connection of its own, so a slow database answers 503
-# within about this long and does not hold the probe's request thread for the pool's wait.
+# for its one statement (PostgreSQL's `statement_timeout`, the driver's `read_timeout` on
+# MariaDB). It runs on a connection of its own, so a slow database answers 503 within about
+# this long and does not hold the probe's request thread for the pool's wait.
 HEALTH_STATEMENT_SECONDS = 5
 
 
@@ -133,6 +134,9 @@ def make_health_engine(engine: Engine) -> Engine | None:
     }
     if engine.dialect.name == "postgresql":
         kwargs["connect_args"]["options"] = postgres_options(statement=HEALTH_STATEMENT_SECONDS)
+    elif engine.dialect.name in ("mysql", "mariadb"):
+        # No server-side statement timeout to set per session here: the driver stops waiting.
+        kwargs["connect_args"]["read_timeout"] = HEALTH_STATEMENT_SECONDS
     health = create_engine(engine.url, **kwargs)
 
     @event.listens_for(health, "do_connect")
