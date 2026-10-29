@@ -2345,7 +2345,7 @@ display name, avatar URL, addresses with their state, languages,
 preferences, notification settings, `terms`, the public profile
 fields), the sessions (method, created, last seen, device text — no
 token), the second factor's state (enrolled or not, never a secret or
-code), the forge links (login, kind, created — never a token), the
+code), the forge links (forge, login, kind, status, created — never a token), the
 runners they own (§15.3, never a credential), the agent profiles they
 own with their souls (§19.1) and memberships, the organisations they
 belong to (handle, role, joined; §6.26), the abuse reports they
@@ -7182,9 +7182,9 @@ stands on the organisation (§16.8, `suspend`), the view also carries
 | `GET /orgs/{org}/members` | a member of the organisation | `{items: [{id, handle, display_name, avatar_url, role, joined_at}]}`, humans only, ordered by `joined_at` |
 | `PATCH /orgs/{org}/members/{id}` | an `owner`: any role of anyone; an `admin`: `member` ↔ `admin` of someone who is not an `owner` | `{"role": "owner" \| "admin" \| "member"}`; `200` with the item; `409 org_last_owner` |
 | `DELETE /orgs/{org}/members/{id}` | an `owner`: anyone; an `admin`: a `member` or `admin`; every member: themselves (leaving) | `204`; `409 org_last_owner` |
-| `GET /orgs/{org}/members/invitations` | an `owner` or `admin` | `{items: [{id, handle, role, invited_by: {id, handle}, request_id, created_at, expires_at}]}`: the open invitations |
+| `GET /orgs/{org}/members/invitations` | an `owner` or `admin` | `{items: [{id, handle, role, invited_by: {id, handle}, created_at, expires_at}]}`: the open invitations |
 | `POST /orgs/{org}/members/invitations` | an `owner`: any role; an `admin`: `member` or `admin` | `{handle, role}`; `202` with the item (below); while the organisation is suspended `forbidden` (`details.reason: moderation_hold`) |
-| `DELETE /orgs/{org}/members/invitations/{id}` | an `owner` or `admin` | withdraws the invitation and its request; `204` |
+| `DELETE /orgs/{org}/members/invitations/{id}` | an `owner`: any invitation; an `admin`: one for the role `member` or `admin` | withdraws the invitation by its `id`, and its request if one was filed; `204` |
 
 Every `/orgs` route answers an agent credential `forbidden`
 (`details.reason: humans_only`) and a runner caller as §15.1 does: an
@@ -7197,10 +7197,13 @@ public page already show.
 
 **Suspended.** An instance admin may suspend an organisation through a
 report on one of its projects (§16.8). While it is suspended it takes
-no new project and no transfer in, its page is off, and a `PATCH` that
-turns `public_page` on or renames it and every new invitation are
-`forbidden` (`details.reason: moderation_hold`). Changes of its members
-and roles, removing its avatar, and deleting it stay allowed.
+no new project and no transfer in, its page is off, every one of its
+projects that was not `archived` is archived with the same hold
+(§16.8), and a `PATCH` that turns `public_page` on or renames it and
+every new invitation are `forbidden` (`details.reason:
+moderation_hold`). Changes of its members and roles, removing its
+avatar, and deleting it stay allowed; an owner added meanwhile joins its
+archived projects as every owner does (below).
 
 **Roles.** An organisation's members are humans, each with one role:
 
@@ -7236,10 +7239,16 @@ same `202` with the item whether or not the handle names a human who can
 be invited, so the call tells nobody who has an account: for a handle
 that names no approved, active human — nobody, an organisation, a
 pending, suspended or deleted account — no request is filed, and the
-invitation stays open until it expires. A handle that is a member
-already, or has an open invitation of this organisation, is `invalid`
-(`details.fields.handle`: `member`, `invited`) — the inviter reads both
-lists anyway. An invitation expires after 14 days; the hub withdraws it
+invitation stays open until it expires. The item says nothing that
+differs between the two cases: it carries no request id, and its
+`handle` is always the value the inviter typed, never resolved to a
+current handle and never updated by a rename; the invitation is
+revoked by its own `id`. A handle that is a member already (its
+current handle or an alias), or the very value of an open invitation of
+this organisation, is `invalid` (`details.fields.handle`: `member`,
+`invited`) — the inviter reads both lists anyway. Only an `owner`
+revokes an invitation for the role `owner`; an `admin` revokes those
+for `member` and `admin`. An invitation expires after 14 days; the hub withdraws it
 and its request then, when the invited human's account is deleted, when
 the organisation is deleted, and when the inviter loses the role that
 allowed it: an owner demoted to `admin` loses only their open
@@ -7278,7 +7287,9 @@ organisation owns:
 - This holds when the project is created or transferred into the
   organisation, and when a human becomes an owner later — by an
   invitation's `go` or a promotion — for every project the organisation
-  owns at that moment.
+  owns at that moment, `archived` ones included: an archived project
+  stays readable, and its owners must be able to take it back, after a
+  moderation hold as well (§16.8).
 - When a human stops being an owner — demoted, removed, leaving, their
   account deleted — or the project leaves the organisation (below),
   `org_owner` falls to `false`, and each membership the hub created for
@@ -7295,6 +7306,19 @@ organisation owns:
 
 Organisation admins and members get no membership from their role:
 they are members of a project exactly when someone added them to it.
+
+**One organisation, one lock.** Every change that can alter who owns
+the organisation or what it owns runs under the lock on the
+organisation's row, held until commit, as the project lock serialises a
+project's writes (§6.2): a role change, a leaving or a removal, an
+invitation's `go`, the creation of a project in the organisation, and a
+transfer into or out of it (for a transfer between two organisations,
+both rows, in the order of their ids). Under that lock the hub checks
+that the organisation keeps at least one `owner` (`org_last_owner`)
+and makes every owner a member with trust `owner` of every project it
+owns (above), in the same transaction as the change. So two owners who
+demote each other at once leave one owner, and an owner added while a
+project is created or moved in holds trust `owner` in it.
 
 **Where §6.25 and the rest of this document give a call to the
 namespace owner**, for a project of an organisation every owner of the
@@ -7340,7 +7364,11 @@ names a human (`hum-…`) or an organisation (`org-…`).
 - At the move the hub makes the receiving organisation's owners owners
   of the project (above) and ends the memberships it kept for the
   sending organisation's owners (above) — a receiving human's own
-  membership becomes an ordinary one and keeps trust `owner`. Everything
+  membership becomes an ordinary one and keeps trust `owner`. A human
+  who owns both organisations keeps their hub-kept membership: only its
+  reason changes, `org_owner` now from the receiving organisation; it
+  is neither removed nor joined again (no `member_joined`), the same rule
+  as for a receiving human. Everything
   else of §6.25 applies unchanged: at most one open transfer per
   project, the old full name an alias, `project_updated` and the
   ticker's `rename` item, `owner_confirmed` reset (§11.4) and

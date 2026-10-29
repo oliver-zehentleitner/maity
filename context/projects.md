@@ -472,6 +472,7 @@ and security detail.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's decision of 2026-10-28 (request req-nj9xa739bacm); the details are the contract owner's; contract in docs/api.md §6.26
+**Revisit when:** private organisations are taken up as a paid feature, or an installation on a forge organisation is to serve a Maity organisation (docs/api.md §11.4, "Follow-up")
 **See:** projects.md#projects-live-in-their-owners-namespace-ownerslug-as-on-a-forge-old-names-stay-aliases-the-change-is-made-once-in-v1-before-the-launch — 281820c9-2286-45c4-9389-603b7e8a3923 — as of 2026-10-29
 
 Any approved human may create an organisation (at most five as owner
@@ -499,7 +500,22 @@ and the namespace decision already foresaw organisations sharing the
 namespace of human handles, as on a forge, where users and
 organisations are both owners in one name space. Giving ownership to
 the organisation's owners alone keeps the strong project rights in few
-hands while the organisation can still grow.
+hands while the organisation can still grow. The details follow the
+same care. An invitation answers the same way for every handle, and
+its item carries nothing that differs between a person and nobody, so
+inviting never becomes a probe for who has an account. An organisation
+holds no forge grant of its own while forge organisation installations
+are not linked; the owner who confirms the repository lends theirs and
+is named as `confirmed_by`, so whose access reads it is always one
+named person, and it stops when they stop being an owner. A suspension
+targets the organisation, never its people, since a project report
+says nothing about each member's own conduct. The owner limit gates
+only creating an organisation: becoming an owner by invitation or
+promotion is someone else's word as well. An admin's transfer in needs
+one owner's go, because only owners carry the rights an organisation's
+projects confer. Every change of owners or projects runs under one
+lock on the organisation, so the last owner and the owners' memberships
+cannot be lost to two changes at once.
 
 **Rejected alternatives:**
 - Organisations in a namespace of their own (`/orgs/<x>/…`): an
@@ -510,3 +526,10 @@ hands while the organisation can still grow.
   give every member of an organisation every one of its projects,
   however large the organisation grows; only owners get it, everyone
   else is added per project.
+- Telling the inviter that a handle is unknown: it turns the invitation
+  into a probe for accounts.
+- A forge grant of the organisation itself: it needs an installation on
+  the forge organisation, which is a follow-up.
+- Suspending the accounts of an organisation's owners with it: it
+  punishes people for a project report without a decision on each of
+  them.
