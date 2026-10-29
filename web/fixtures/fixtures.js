@@ -4431,6 +4431,56 @@ window.MAITY_FIXTURES = {
       "mail_available": false
     }
   },
+  "orgs.json": {
+    "invitations": {
+      "org-oz00team0001": [
+        {
+          "created_at": "2026-10-29T10:00:00Z",
+          "expires_at": "2026-11-12T10:00:00Z",
+          "handle": "ben",
+          "id": "oinv-0001",
+          "invited_by": {
+            "handle": "maintainer",
+            "id": "hum-maintainer"
+          },
+          "request_id": "req-o001",
+          "role": "member"
+        }
+      ]
+    },
+    "items": [
+      {
+        "aliases": [],
+        "avatar_url": null,
+        "created_at": "2026-10-29T09:00:00Z",
+        "display_name": "OZ Team",
+        "handle": "oz-team",
+        "id": "org-oz00team0001",
+        "members_create_projects": false,
+        "public_page": "off"
+      }
+    ],
+    "members": {
+      "org-oz00team0001": [
+        {
+          "avatar_url": null,
+          "display_name": "Maintainer",
+          "handle": "maintainer",
+          "id": "hum-maintainer",
+          "joined_at": "2026-10-29T09:00:00Z",
+          "role": "owner"
+        },
+        {
+          "avatar_url": null,
+          "display_name": "Anna",
+          "handle": "anna",
+          "id": "hum-anna",
+          "joined_at": "2026-10-29T09:30:00Z",
+          "role": "admin"
+        }
+      ]
+    }
+  },
   "personal-requests.json": {
     "items": [
       {
