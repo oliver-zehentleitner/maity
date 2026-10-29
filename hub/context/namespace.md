@@ -48,19 +48,17 @@ Until 2026-10-29 the middleware answered a project path from before the namespac
 (`/projects/<slug>` alone, or `/projects/<slug>/<word>/…`) before the body
 was read, before authentication and without a lookup: `client_outdated`
 (426) to a `maity-cli/…` User-Agent, `project_path_outdated` (410) to
-everyone else. That answer, the pre-migration addresses of the badge, the public swarm
-page and the forge webhook (`legacy_slug`) and the column itself (migration 0086) are
-removed: the maintainer's alpha rule is to keep no compatibility layer, so an old path is
-`not_found` like any path, see 261f1ce2-819b-4aac-ae4a-387bb83d0907. The words below stay, as the slug check. The words are the literal segments that follow `{owner}/{slug}`
-in the app's schema paths, joined with the set at this change as a floor.
-The same set refuses a slug at `POST /projects` (`reserved`). The
-dashboard's top-level route words are refused as human handles, at
-registration and in `owner create`. The forge webhook keeps a
-pre-migration project's old address through `legacy_slug`. The old badge
-and public swarm addresses answer `301` to the new ones while they are
-served, and otherwise the same `not_found` from the same shared bucket.
-Any CLI that calls an old path is older than the release by construction,
-so no version is compared.
+everyone else; the forge webhook kept a pre-migration project's old address and the old badge
+and public swarm addresses answered `301` (all through `legacy_slug`). That answer, those
+addresses and the column itself (migration 0086) are removed: the maintainer's alpha rule is to
+keep no compatibility layer, so an old path is `not_found` like any path, see
+261f1ce2-819b-4aac-ae4a-387bb83d0907.
+
+What stays is the slug check. The words are the literal segments that follow `{owner}/{slug}`
+in the app's schema paths, joined with the set at this change as a floor and, since the same
+date, the dashboard's project views (`paths.PROJECT_VIEWS`); that set refuses a slug at
+`POST /projects` (`reserved`). The first segments the hub and the dashboard use are refused as
+human handles, at registration and in `owner create` (`paths.RESERVED_FIRST`, §16.11).
 
 **Reason:** an old path always has a route word where a new path has a
 slug, so recognising it needs no database, and the answer cannot say
