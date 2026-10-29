@@ -3948,7 +3948,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const npGetAll = win.Maity.api.getAll;
   win.Maity.api.getAll = (p) => (p === "/requests" ? Promise.resolve({ items: [], next_cursor: null }) : npGetAll(p));
   await go("#/new"); await go("#/all"); await tick();
-  expect(text(main).includes("No projects yet") && !main.querySelector("li.entry") && !text(main).includes("Nothing waits for you"),
+  expect(text(main).includes("No projects yet") && !main.querySelector("li.entry") && !text(main).includes("Nothing waits for you")
+    && !text(main).includes("Waiting for you") && win.Maity.notify.state.available !== false,
     "no project and nothing personal: only the empty state");
   win.Maity.api.getAll = npGetAll;
   const createLink = main.querySelectorAll("a").find((a) => a.textContent === "Create a project");
@@ -6491,6 +6492,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "inbox: the requests alone, no block of other activity under them");
   expect(main.querySelectorAll("li.entry").some((li) => text(li).includes("agent-b is not listening")),
     "inbox: a project's inbox lists the open personal requests about the project too, as its tab counts them");
+  const pmEntry = main.querySelectorAll("li.entry").find((li) => text(li).includes("agent-b is not listening"));
+  const pmLabel = pmEntry && pmEntry.querySelector(".project-label.personal");
+  expect(pmLabel && text(pmLabel).startsWith("Personal") && !pmEntry.querySelector("a.project-label")
+    && text(pmEntry.querySelector(".entry-head")).startsWith("Personal, "),
+    "inbox: in a project's inbox a personal request carries its Personal label and no link into the project");
+  expect(!main.querySelectorAll("li.entry").filter((li) => li !== pmEntry).some((li) => li.querySelector(".project-label")),
+    "inbox: the project's own requests carry no project label in its inbox");
   await go("#/maintainer/sample/inbox"); for (let k = 0; k < 6; k++) await tick();
   expect(!main.querySelectorAll("li.entry").some((li) => text(li).includes("agent-b is not listening")), "inbox: another project's personal request is not listed there");
   win.Maity.api.getAll = waitGetAll;

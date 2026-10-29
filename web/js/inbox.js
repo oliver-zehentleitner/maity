@@ -97,7 +97,7 @@ window.Maity = window.Maity || {};
     },
     // The project's badge stands before the entry, as a link; its name is
     // also the start of this button's name, for whom the badge is not seen.
-    ctx.scope === "all" ? h("span", { class: "visually-hidden" }, (req.personal ? "Personal, " : "") + (names.project(req) || (req.org ? "@" + req.org.handle : "")) + (req.project && req.org ? ", into @" + req.org.handle : "") + ": ") : null,
+    ctx.scope === "all" || req.personal ? h("span", { class: "visually-hidden" }, (req.personal ? "Personal, " : "") + (names.project(req) || (req.org ? "@" + req.org.handle : "")) + (req.project && req.org ? ", into @" + req.org.handle : "") + ": ") : null,
     h("span", { class: "prio prio-" + req.priority }, req.priority),
     h("span", { class: "kind" }, CLASS_LABELS[req.class] || req.class),
     h("span", { class: "title" }, req.title),
@@ -149,15 +149,15 @@ window.Maity = window.Maity || {};
     const titleRefs = M.ids.refs(req.title, at);
 
     append(body, h("dl", { class: "facts" },
-      ctx.scope === "all" && req.personal && req.org && !req.project
+      req.personal && req.org && !req.project
         ? [h("dt", null, "Organisation"), h("dd", null, "@" + req.org.handle + " — a personal request: for you, not for a project")]
         : null,
       // A transfer into an organisation: the project, and the organisation it would move into.
-      ctx.scope === "all" && req.personal && req.org && req.project
+      req.personal && req.org && req.project
         ? [h("dt", null, "Project"), h("dd", null, names.project(req) + " — a personal request: for you as an owner of @" + req.org.handle),
           h("dt", null, "Into"), h("dd", null, "@" + req.org.handle)]
         : null,
-      ctx.scope === "all" && req.personal && !req.org && names.project(req)
+      req.personal && !req.org && names.project(req)
         ? [h("dt", null, "Project"), h("dd", null, names.project(req) + " — a personal request: for you as the owner of the agent, not for the project")]
         : null,
       ctx.scope === "all" && !req.personal
@@ -391,7 +391,8 @@ window.Maity = window.Maity || {};
       const entry = (req) => {
         const expanded = keyOf(req) === ui.current;
         return h("li", { class: "entry" + (expanded ? " current" : "") + (req.status !== "open" ? " done" : ""), "data-request": req.id },
-          ctx.scope === "all"
+          // A personal request carries its label in a project's inbox too (§18.2).
+          ctx.scope === "all" || req.personal
             ? h("div", { class: "entry-row" }, projectBadge(ctx, req, names), entrySummary(ctx, req, names, expanded, () => {
               ui.current = expanded ? null : keyOf(req);
               draw();

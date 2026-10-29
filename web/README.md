@@ -245,8 +245,9 @@ too.
    an entry down the list in this tab only and sends nothing: the hub has
    no deferred state, the request stays open. A **personal request**
    (`docs/api.md` §7: to you as the owner of an agent profile, not to the
-   project) is only in everything waiting (`/all`): labelled
-   **Personal** with its project's name and no link into the project, it
+   project) is in everything waiting (`/all`) and, when it is about a
+   project, in that project's inbox too: labelled **Personal** with its
+   project's name and no link into the project, it
    is answered on `/requests/{id}/answer` and offers **Withdraw**
    (`/requests/{id}/withdraw`, the free text as its reason); grouped, the
    personal ones come first. Without any membership, `/all` still lists
