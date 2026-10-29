@@ -78,11 +78,10 @@ def create_landing_preview(
         after = landing.check({**draft, "enabled": True}, landing.stored(conn))
         payload = {k: after[k] for k in ("default_language", "pages", "footer")}
         draft_id, expires = previews.create(conn, caller.human_session or "", "landing", payload)
-    base = settings_of(request).public_url.rstrip("/")
     return JSONResponse(
         {
             "id": draft_id,
-            "url": f"{base}/api/v1/admin/settings/landing/preview/{draft_id}",
+            "url": f"/api/v1/admin/settings/landing/preview/{draft_id}",
             "expires_at": clock.rfc3339(expires),
         },
         status_code=201,
@@ -101,9 +100,8 @@ def show_landing_preview(
         row = previews.read(conn, draft_id, caller.human_session or "", "landing")
         draft = row.payload
         pages = draft["pages"]
-        chosen = render.choose_language(
-            list(pages), draft["default_language"], lang, request.headers.get("accept-language")
-        )
+        # No `Accept-Language`: without `lang` the draft's own default language (§16.7).
+        chosen = render.choose_language(list(pages), draft["default_language"], lang, None)
         setting = {**landing.stored(conn), **draft}
         body = render.landing_document(
             setting,

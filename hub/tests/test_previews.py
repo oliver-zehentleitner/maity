@@ -44,8 +44,7 @@ def open_draft(owner: flow.Human, body: dict[str, Any] | None = None) -> tuple[d
     made = owner.post(f"{ADMIN}/preview", body or DRAFT)
     assert made.status_code == 201, made.text
     found = made.json()
-    path = found["url"].removeprefix("https://hub.example")
-    return found, path
+    return found, found["url"]
 
 
 def test_a_draft_is_posted_then_opened_as_the_page_would_be(
@@ -53,7 +52,7 @@ def test_a_draft_is_posted_then_opened_as_the_page_would_be(
 ) -> None:
     found, path = open_draft(owner)
     assert set(found) == {"id", "url", "expires_at"}
-    assert found["url"] == f"https://hub.example/api/v1{ADMIN}/preview/{found['id']}"
+    assert found["url"] == f"/api/v1{ADMIN}/preview/{found['id']}"  # the path under the API base
     page = owner.client.get(path)
     assert page.status_code == 200 and page.headers["content-type"].startswith("text/html")
     assert page.headers["cache-control"] == "no-store" and page.headers["x-robots-tag"] == "noindex"
@@ -143,9 +142,9 @@ def test_a_legal_draft_says_draft_where_the_page_says_as_of_and_lists_no_version
     owner: flow.Human, migrated: Engine
 ) -> None:
     owner.patch(LEGAL, {"terms": {"en": {"title": "Terms 1", "markdown": "one"}}})
-    made = owner.post(f"{LEGAL}/preview?page=terms", {"terms": TEXT})
+    made = owner.post(f"{LEGAL}/preview?page=terms", TEXT)
     assert made.status_code == 201, made.text
-    path = made.json()["url"].removeprefix("https://hub.example")
+    path = made.json()["url"]
     page = owner.client.get(path)
     assert page.status_code == 200
     assert (
@@ -161,28 +160,23 @@ def test_a_legal_draft_says_draft_where_the_page_says_as_of_and_lists_no_version
     assert owner.get(LEGAL).json()["pages"]["terms"]["languages"]["en"]["title"] == "Terms 1"
 
 
-def test_a_legal_draft_takes_the_patch_body_alone_and_counts_no_limit(owner: flow.Human) -> None:
+def test_a_legal_draft_takes_the_languages_alone_and_counts_no_limit(owner: flow.Human) -> None:
     for _ in range(25):  # no change limit applies to a preview (§16.7.1)
-        assert owner.post(f"{LEGAL}/preview?page=privacy", {"privacy": TEXT}).status_code == 201
+        assert owner.post(f"{LEGAL}/preview?page=privacy", TEXT).status_code == 201
     assert owner.get(LEGAL).json()["pages"]["privacy"] is None
-    bare = owner.post(
-        f"{LEGAL}/preview?page=privacy", TEXT
-    )  # the languages alone: not a PATCH body
-    assert bare.status_code == 400
-    assert bare.json()["error"]["details"]["fields"] == {"en": "extra_forbidden"}
-    other = owner.post(f"{LEGAL}/preview?page=privacy", {"terms": TEXT})  # another page's body
-    assert other.status_code == 400
-    assert other.json()["error"]["details"]["fields"] == {"privacy": "required"}
+    wrapped = owner.post(f"{LEGAL}/preview?page=privacy", {"privacy": TEXT})  # not the PATCH value
+    assert wrapped.status_code == 400
+    assert wrapped.json()["error"]["details"]["fields"] == {"privacy.privacy": "invalid"}
 
 
 @pytest.mark.parametrize(
     ("query", "body", "field"),
     [
-        ("", {"terms": TEXT}, "page"),
-        ("?page=nope", {"terms": TEXT}, "page"),
-        ("?page=terms", {"terms": {"fr": TEXT["en"]}}, "terms.fr"),
-        ("?page=terms", {"terms": {"en": {"title": "T", "markdown": "<b>x"}}}, "terms.en.markdown"),
-        ("?page=terms", {"terms": None}, "terms"),
+        ("", TEXT, "page"),
+        ("?page=nope", TEXT, "page"),
+        ("?page=terms", {"fr": TEXT["en"]}, "terms.fr"),
+        ("?page=terms", {"en": {"title": "T", "markdown": "<b>x"}}, "terms.en.markdown"),
+        ("?page=terms", {}, "terms"),
     ],
 )
 def test_a_legal_draft_is_validated_like_a_patch(
@@ -191,3 +185,18 @@ def test_a_legal_draft_is_validated_like_a_patch(
     refused = owner.post(f"{LEGAL}/preview{query}", body)
     assert refused.status_code == 400
     assert field in refused.json()["error"]["details"]["fields"]
+
+
+def test_a_draft_is_shown_in_its_default_language_not_the_browsers(owner: flow.Human) -> None:
+    both = {
+        "default_language": "de",
+        "pages": {
+            "en": {"title": "English draft", "sections": [HERO]},
+            "de": {"title": "Deutscher Entwurf", "sections": [HERO]},
+        },
+    }
+    _, path = open_draft(owner, both)
+    german = owner.client.get(path, headers={"Accept-Language": "en"})
+    assert "<title>Deutscher Entwurf</title>" in german.text  # `Accept-Language` is not read
+    assert "<title>English draft</title>" in owner.client.get(f"{path}?lang=en").text
+    assert "<title>Deutscher Entwurf</title>" in owner.client.get(f"{path}?lang=fr").text

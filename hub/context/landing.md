@@ -106,7 +106,9 @@ the page has, else the default language. The counters are computed at most every
 the process and shared by every visitor. A draft is stored in `preview_draft` (session-bound,
 ten minutes, twenty per session), because the dashboard can only post with its CSRF token and
 HTML it fetched would run under the dashboard's policy, not the page's: the second step is a
-top-level `GET` that answers the page itself.
+top-level `GET` that answers the page itself, in the language the `lang` query asks for or else the
+draft's own default language (the browser's `Accept-Language` is not read), with the page's policy in
+place of the API's. The `POST` answers the path under the API base, not an absolute address.
 
 **Reason:** a crawler and a visitor with a script blocker read the same words; a policy that
 forbids everything but one style element leaves no way for an operator's text to run anything,

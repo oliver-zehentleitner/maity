@@ -63,23 +63,23 @@ def get_legal(request: Request) -> Response:
 def create_legal_preview(
     request: Request, caller: HumanCaller, body: Annotated[dict[str, Any], Body()], page: str = ""
 ) -> JSONResponse:
-    """A draft of one legal page, seen before it is saved (§16.7.1): the body `PATCH` takes
-    for that page, `{"<page>": {…}}`; nothing is saved and no limit is counted."""
+    """A draft of one legal page, seen before it is saved (§16.7.1): the page's value as `PATCH`
+    takes it under its key, the languages `{"en": {…}, "de": {…}}`, not wrapped in the page's
+    name; nothing is saved and no limit is counted."""
     if page not in legal.PAGES:
         raise invalid({"page": "invalid"})
     with engine_of(request).begin() as conn:
         _require_admin(conn, caller)
-        change = legal.check(body)
-        if change.page != page or change.languages is None:
-            raise invalid({page: "required" if change.page != page else "invalid"})
+        change = legal.check({page: body})
+        if change.languages is None:
+            raise invalid({page: "invalid"})
         draft_id, expires = previews.create(
             conn, caller.human_session or "", "legal", change.languages, page
         )
-    base = settings_of(request).public_url.rstrip("/")
     return JSONResponse(
         {
             "id": draft_id,
-            "url": f"{base}/api/v1/admin/settings/legal/preview/{draft_id}",
+            "url": f"/api/v1/admin/settings/legal/preview/{draft_id}",
             "expires_at": clock.rfc3339(expires),
         },
         status_code=201,
@@ -97,9 +97,7 @@ def show_legal_preview(
         row = previews.read(conn, draft_id, caller.human_session or "", "legal")
         texts = row.payload
         setting = legal.stored(conn)
-        chosen = render.choose_language(
-            list(texts), setting["default_language"], lang, request.headers.get("accept-language")
-        )
+        chosen = render.choose_language(list(texts), setting["default_language"], lang, None)
         body = render.legal_document(
             page=row.page,
             lang=chosen,
