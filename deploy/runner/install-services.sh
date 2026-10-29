@@ -4,16 +4,18 @@
 # unit instance maity-runner@<type>. Needs: the runner user with rootless Docker, the hook in /opt/maity-runner-hooks,
 # the runner package as a tarball, and a registration token from GitHub (Settings → Actions → Runners → New
 # self-hosted runner; the token is valid for an hour and is not printed here).
+# Start with ONE instance (INSTANCES=pg) while someone watches the machine, then add the others (README, "limits").
 # Usage: RUNNER_TOKEN=<token> RUNNER_TARBALL=/root/actions-runner-linux-x64-2.338.0.tar.gz \
-#        [RUNNER_USER=gh-runner] [LABEL_PREFIX=maity-hub] [INSTANCES="sqlite pg maria"] install-services.sh
+#        [RUNNER_USER=gh-runner] [LABEL_PREFIX=maity-hub] [INSTANCES="pg"] install-services.sh
 # Then run install-python.sh for each instance (README.md, step 4) and set the repository variable HUB_RUNNER_LABEL.
 set -euo pipefail
 RU=${RUNNER_USER:-gh-runner}
 HOME_RU=${RUNNER_HOME:-$(getent passwd "$RU" | cut -d: -f6)}
 PREFIX=${LABEL_PREFIX:-maity-hub}
-INSTANCES=${INSTANCES:-sqlite pg maria}
+INSTANCES=${INSTANCES:-pg}   # ONE instance by default; the others are added one at a time, after the caps held (README, "limits")
 URL=${RUNNER_URL:-https://github.com/oliver-zehentleitner/maity}
 : "${RUNNER_TOKEN:?RUNNER_TOKEN is not set}" "${RUNNER_TARBALL:?RUNNER_TARBALL is not set}"
+RUNNER_TARBALL=$(realpath -- "$RUNNER_TARBALL")   # resolved before the cd below
 [ -f "$RUNNER_TARBALL" ] || { echo "no such tarball: $RUNNER_TARBALL" >&2; exit 1; }
 # Root works in directories that belong to the runner user for a moment (config.sh runs as that user). A process of that
 # user could leave a symlink there that a root chgrp, chmod or redirect would follow. So no runner of that user may run:
@@ -22,11 +24,15 @@ if pgrep -u "$RU" -f 'Runner\.(Listener|Worker)|runsvc\.sh' >/dev/null; then
   echo "a runner of $RU is running; stop all runner services first: systemctl stop 'maity-runner*'" >&2
   exit 1
 fi
-HERE=$(cd "$(dirname "$0")" && pwd)
+HERE=$(cd "$(dirname "$0")" && pwd)   # before the cd below, so a relative call still finds the files next to it
+cd /   # a neutral directory: uv looks for a config in the current one, which the runner user may not read (/root)
 UID_RU=$(id -u "$RU")
 [ -x /opt/maity-runner-hooks/job-completed.sh ] || install -d -m 755 /opt/maity-runner-hooks
 install -m 755 -o root "$HERE/job-completed.sh" /opt/maity-runner-hooks/job-completed.sh
 sed -e "s/<runner-user>/$RU/g" -e "s/<uid>/$UID_RU/g" "$HERE/maity-runner@.service" > /etc/systemd/system/maity-runner@.service
+# One cap for everything the runner user runs, rootless Docker included (README, "Limits").
+install -d "/etc/systemd/system/user-$UID_RU.slice.d"
+install -m 644 "$HERE/user-slice-limits.conf" "/etc/systemd/system/user-$UID_RU.slice.d/maity-runner-limits.conf"
 
 # A service container left running by a job that was cut off when the services stopped (they run under the runner
 # user's Docker, outside the unit's cgroup) would keep 127.0.0.1:5432 or :3306 for good: each registration is new, so

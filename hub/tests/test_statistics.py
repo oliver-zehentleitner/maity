@@ -86,6 +86,7 @@ def test_a_week_of_use_in_counts(make_client: ClientFactory, migrated: Engine) -
         "projects": 1,
         "instances_online": answer["totals"]["instances_online"],
         "humans_with_an_agent": 1,
+        "humans_deleted": 0,
     }
     assert answer["returning"] == {"after_7_days": 0, "after_30_days": 0}  # all new
     # The history (§6.15) starts with the first card three days ago: before it, unknown.

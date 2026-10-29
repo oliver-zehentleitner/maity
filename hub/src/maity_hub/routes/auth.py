@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Connection, select, update
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import avatars, clock
+from maity_hub import account_deletion, avatars, clock
 from maity_hub import tables as t
 from maity_hub.auth import passwords, second_factor, sessions
 from maity_hub.auth.caller import (
@@ -114,6 +114,8 @@ async def login(body: Login, request: Request) -> JSONResponse:
             row = conn.execute(select(t.human).where(t.human.c.handle == body.handle)).first()
             stored = row.password_hash if row is not None else passwords.DUMMY_HASH
             if not passwords.verify_password(body.password, stored) or row is None:
+                raise unauthenticated("handle or password is wrong")
+            if row.deleted_at is not None:  # a deleted account never signs in (§2.9)
                 raise unauthenticated("handle or password is wrong")
             sessions.forget_expired_addresses(conn)
             end_presented(conn, presented)
@@ -221,6 +223,7 @@ def change_password(body: PasswordChange, request: Request, caller: HumanCaller)
             .where(t.human.c.id == row.id)
             .values(password_hash=passwords.hash_password(body.new))
         )
+        account_deletion.withdraw(conn, row.id, "password")  # §2.9
         sessions.end_where(
             conn,
             (t.human_session.c.human_id == row.id)

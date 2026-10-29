@@ -4,7 +4,8 @@
     "kind": "human",
     "handle": "maintainer",
     "display_name": "Maintainer",
-    "instance_admin": true
+    "instance_admin": true,
+    "meat_proxy": false
   },
   "projects": [
     {
@@ -12,7 +13,8 @@
       "full_name": "maintainer/maity",
       "name": "Maity",
       "state": "build",
-      "role": "owner",
+      "trust": "owner",
+      "role": "coder",
       "open_requests": 3
     },
     {
@@ -20,7 +22,8 @@
       "full_name": "maintainer/sample",
       "name": "Sample shop",
       "state": "freeze",
-      "role": "owner",
+      "trust": "owner",
+      "role": "coder",
       "open_requests": 1
     }
   ],

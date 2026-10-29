@@ -198,7 +198,7 @@ window.Maity = window.Maity || {};
       M.api.getAll("/runners/enrollments"),
       M.api.get("/projects"),
     ]);
-    const admin = new Set(ctx.projects.filter((p) => p.role === "owner" || p.role === "admin").map((p) => p.full_name));
+    const admin = new Set(ctx.projects.filter((p) => M.trust.governs(p)).map((p) => p.full_name));
     const adminProjects = (projects.items || []).filter((p) => admin.has(p.full_name));
     const status = M.statusLine();
     const list = h("div", { class: "runners" });

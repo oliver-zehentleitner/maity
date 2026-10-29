@@ -31,6 +31,7 @@ from maity_hub import (
 )
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
+from maity_hub.auth import second_factor
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid
 from maity_hub.events import emit, lock_project
@@ -694,6 +695,7 @@ def confirm_repository(
             raise humans_only("only the namespace owner confirms the repository")
         if mine.row.human_id != project.owner_id:
             raise forbidden(message="only the project's namespace owner confirms its repository")
+        second_factor.require_step_up(conn, settings_of(request), caller)  # §2.8.4
         if project.repository_url is None or body.url.rstrip("/") != project.repository_url:
             # A co-admin's change between what the owner saw and the click is never
             # confirmed with it.

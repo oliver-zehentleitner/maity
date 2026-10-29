@@ -213,7 +213,7 @@ class Run:
         """The agent's `maity wait`, started after its own events (resume first)."""
         self.maity(clone, "resume")
         return subprocess.Popen(
-            ["maity", "wait", "--timeout", str(WAIT_S)],
+            ["maity", "wait", "--one", "--timeout", str(WAIT_S)],
             cwd=clone,
             env=CLEAN_ENV,
             stdout=subprocess.PIPE,
@@ -521,6 +521,9 @@ def report_failure(answers: list, base: str, artifacts: Path) -> str:
     return trace
 
 
+BEFORE_CHAT_LIST = re.compile(r"GET /api/v1/me/conversations\?\S* answered 404( \(not_found\))?$")
+
+
 def no_problems(run: Run, where: str) -> None:
     # Each 409 for the pending uploads, judged by its own body, read here
     # outside the response handler.
@@ -533,6 +536,9 @@ def no_problems(run: Run, where: str) -> None:
         problem = off_problem(resp.request.method, resp.url.split(run.base, 1)[-1], resp.status, body)
         if problem:
             run.problems.append(problem)
+    # A hub before the chat list across projects (§9.3) answers it 404 wherever
+    # #/chats is open; the page then reads each project's list, as before.
+    run.problems = [p for p in run.problems if not BEFORE_CHAT_LIST.match(p)]
     if run.problems:
         raise AssertionError(f"{where}:\n  " + "\n  ".join(run.problems))
 
@@ -552,7 +558,7 @@ def join_line(
     slug: str,
     handle: str | None,
     display: str = "E2E Agent",
-    role: str = "member",
+    role: str = "coder",
 ) -> tuple[str, str]:
     """Create a join line in the join panel on Members; a new profile when handle is given."""
     view_tab(page, "Members").click()
@@ -788,7 +794,7 @@ def scenario(run: Run, page: Page) -> None:
     print(f"   asked {request_id}")
     run.maity(alpha, "resume")  # the wait starts after the agent's own events
     wait = subprocess.Popen(
-        ["maity", "wait", "--timeout", str(WAIT_S)],
+        ["maity", "wait", "--one", "--timeout", str(WAIT_S)],
         cwd=alpha,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -2301,7 +2307,7 @@ def invitations_step(run: Run, page: Page) -> None:
         watch_page(run, guest)
         guest.goto(f"{run.base}/#/invite/{token}")
         card = guest.locator("article.invite")
-        expect(card).to_contain_text("Owner invites you to join E2E Alpha as reviewer.")
+        expect(card).to_contain_text("Owner invites you to join E2E Alpha as member · reviewer.")
         expect(card.locator(".invite-note")).to_have_text("Welcome to the e2e project.")
         # A closed hub and no address: signing in is the one way in.
         expect(card.get_by_role("link", name="Create one", exact=True)).to_have_count(0)
@@ -2350,15 +2356,15 @@ def members_step(run: Run, page: Page) -> None:
     run.a11y(page, "members")
     row.get_by_role("button", name="Manage E2E Agent").click()
     manage = page.locator("tr.member-manage")
-    manage.locator("select").first.select_option("reviewer")
+    manage.locator("select[id^=member-role-]").select_option("reviewer")
     manage.get_by_role("button", name="Save changes", exact=True).click()
     expect(row.locator("td").nth(0)).to_contain_text("reviewer")
     run.shot(page, "members")
-    manage.locator("select").first.select_option("member")
+    manage.locator("select[id^=member-role-]").select_option("coder")
     manage.get_by_role("button", name="Save changes", exact=True).click()
-    expect(row.locator("td").nth(0)).to_contain_text("member")
+    expect(row.locator("td").nth(0)).to_contain_text("member · coder")
     # Reports to: the agent under the owner, at once in the organisation.
-    manage.locator("select").nth(1).select_option(label="Owner (@owner)")
+    manage.locator("select[id^=member-reports-]").select_option(label="Owner (@owner)")
     manage.get_by_role("button", name="Save changes", exact=True).click()
     expect(page.locator("main section.view-members > .send-status")).to_contain_text("Saved for E2E Agent: reports to.")
     view_tab(page, "Organisation").click()
@@ -2368,12 +2374,12 @@ def members_step(run: Run, page: Page) -> None:
     # The owner reporting to the agent would close a circle: refused before it is sent.
     humans.get_by_role("button", name="Manage Owner").click()
     owner_manage = page.locator("tr.member-manage")
-    owner_manage.locator("select").nth(1).select_option(label="E2E Agent (@e2e-agent)")
+    owner_manage.locator("select[id^=member-reports-]").select_option(label="E2E Agent (@e2e-agent)")
     owner_manage.get_by_role("button", name="Save changes", exact=True).click()
     expect(page.locator("main section.view-members > .send-status")).to_contain_text("That would close a circle")
     humans.get_by_role("button", name="Done managing Owner").click()
     row.get_by_role("button", name="Manage E2E Agent").click()
-    manage.locator("select").nth(1).select_option("")
+    manage.locator("select[id^=member-reports-]").select_option("")
     manage.get_by_role("button", name="Save changes", exact=True).click()
     expect(page.locator("main section.view-members > .send-status")).to_contain_text("Saved for E2E Agent: reports to.")
     # On a phone each row is a card: Manage and Remove are on screen, not in a sideways scroll.

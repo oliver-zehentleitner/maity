@@ -31,8 +31,88 @@ def ts(moment: datetime | None) -> str | None:
     return clock.rfc3339(moment) if moment is not None else None
 
 
+DELETED_NAME = "Deleted account"
+
+
+def deleted(row: Any) -> bool:
+    """Whether a human row is a deleted account (§2.9)."""
+    return getattr(row, "deleted_at", None) is not None
+
+
+def deleted_person() -> dict[str, Any]:
+    """What a payload shows of a deleted account where it shows a person (§2.9), merged
+    into the field's usual shape: no handle, the generated avatar (`avatar_url: null`
+    makes the client draw it, §6.10)."""
+    return {"display_name": DELETED_NAME, "handle": None, "avatar_url": None, "deleted": True}
+
+
+def _person_id(value: dict[str, Any]) -> str | None:
+    """The human a stored person object names, or None: a member view (`id` with `kind:
+    human`), or an object with a human's `member_id` that shows a name or a handle
+    (`asked_by`, `on_behalf_of`, a mention, a history or chat participant)."""
+    if value.get("kind") == "human" and isinstance(value.get("id"), str):
+        return str(value["id"])
+    member = value.get("member_id")
+    if (
+        isinstance(member, str)
+        and member.startswith("hum-")
+        and ("display_name" in value or "handle" in value)
+    ):
+        return member
+    return None
+
+
+def _person_ids(value: Any, found: set[str]) -> None:
+    if isinstance(value, dict):
+        named = _person_id(value)
+        if named is not None:
+            found.add(named)
+        for inner in value.values():
+            _person_ids(inner, found)
+    elif isinstance(value, list):
+        for inner in value:
+            _person_ids(inner, found)
+
+
+def _without_deleted(value: Any, gone: set[str]) -> Any:
+    if isinstance(value, list):
+        return [_without_deleted(inner, gone) for inner in value]
+    if not isinstance(value, dict):
+        return value
+    shaped = {key: _without_deleted(inner, gone) for key, inner in value.items()}
+    if _person_id(value) in gone:
+        if "display_name" in value:
+            shaped.update(deleted_person())
+        else:  # a handle-only reference: no name to replace
+            shaped.update(handle=None, deleted=True)
+    return shaped
+
+
+def shape_deleted(conn: Connection, values: Sequence[Any]) -> list[Any]:
+    """`values` (stored JSON: event payloads, a request's `needs_in_session`, mentions)
+    with every person object of a deleted account in the deleted shape (§2.9), at read
+    time: the stored rows stay as written (the log is append-only), ids, types and free
+    text unchanged. One query for the lot; without a deleted account among them the
+    values come back as they are."""
+    found: set[str] = set()
+    for value in values:
+        _person_ids(value, found)
+    if not found:
+        return list(values)
+    gone = set(
+        conn.execute(
+            select(t.human.c.id).where(t.human.c.id.in_(found), t.human.c.deleted_at.is_not(None))
+        ).scalars()
+    )
+    if not gone:
+        return list(values)
+    return [_without_deleted(value, gone) for value in values]
+
+
 def human_member(row: Any, *, avatar_url: str | None) -> dict[str, Any]:
     """`avatar_url` is the caller's to look up (`avatars.urls`), so a list costs one query."""
+    if deleted(row):
+        return {"id": row.id, "kind": "human", **deleted_person()}
     return {
         "id": row.id,
         "kind": "human",
@@ -456,12 +536,16 @@ def _owners(conn: Connection, agents: dict[str, Any]) -> dict[str, dict[str, Any
         return {}
     pictures = avatars.urls(conn, owner_ids)
     humans = {
-        h.id: {
-            "id": h.id,
-            "handle": h.handle,
-            "display_name": h.display_name,
-            "avatar_url": pictures[h.id],
-        }
+        h.id: (
+            {"id": h.id, **deleted_person()}
+            if deleted(h)
+            else {
+                "id": h.id,
+                "handle": h.handle,
+                "display_name": h.display_name,
+                "avatar_url": pictures[h.id],
+            }
+        )
         for h in conn.execute(select(t.human).where(t.human.c.id.in_(owner_ids)))
     }
     return {agent_id: humans[a.owner_id] for agent_id, a in agents.items()}
@@ -712,7 +796,8 @@ def _task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[
                 "closed_at": ts(row.closed_at),
             }
         )
-    return views
+    # A deleted account among the stored mentions is shown as one (§2.9).
+    return [dict(v) for v in shape_deleted(conn, views)]
 
 
 def event_view(conn: Connection, row: Any) -> dict[str, Any]:
@@ -764,12 +849,15 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
         conn, (r.actor_credential_id for r in rows if r.actor_membership is not None)
     )
     human_ids = {r.actor_human_id for r in rows if r.actor_human_id is not None}
-    human_handles = (
-        dict(
-            conn.execute(
-                select(t.human.c.id, t.human.c.handle).where(t.human.c.id.in_(human_ids))
-            ).all()
-        )
+    human_rows = (
+        {
+            h.id: h
+            for h in conn.execute(
+                select(t.human.c.id, t.human.c.handle, t.human.c.deleted_at).where(
+                    t.human.c.id.in_(human_ids)
+                )
+            )
+        }
         if human_ids
         else {}
     )
@@ -808,12 +896,15 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
                 "model": row.actor_model,
             }
         elif row.actor_human_id is not None:  # §8.1
+            who = human_rows.get(row.actor_human_id)
             actor = {
                 "kind": "human",
                 "id": row.actor_human_id,
-                "handle": human_handles.get(row.actor_human_id),
+                "handle": who.handle if who is not None else None,
                 "via": row.actor_via,
             }
+            if who is not None and deleted(who):
+                actor.update(deleted_person())
         elif row.actor_runner_id is not None:  # §15.10
             actor = {
                 "kind": "runner",
@@ -850,6 +941,11 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
                 "redacted": row.redacted,
             }
         )
+    # A deleted account in a stored payload is shown as one, for every reader (§2.9).
+    for view, payload in zip(
+        views, shape_deleted(conn, [v["payload"] for v in views]), strict=True
+    ):
+        view["payload"] = payload
     return views
 
 

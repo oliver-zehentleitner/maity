@@ -31,6 +31,7 @@ from maity_hub import (
     probe,
     registration_accounts,
     takeovers,
+    write_guard,
 )
 from maity_hub.auth import device_codes as codes
 from maity_hub.auth import sign_in_settings as sign_in
@@ -52,6 +53,7 @@ from maity_hub.routes import (
     contract_text,
     conversations,
     device_codes,
+    forge_links,
     forge_webhook,
     joins,
     jour_fixe,
@@ -112,6 +114,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
             settings.db_pool_recycle,
         )
     )
+    write_guard.install(engine)  # no write of a deleted account commits (§2.9)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -202,6 +205,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(second_factor_routes.router, prefix=prefix)
     app.include_router(me_routes.router, prefix=prefix)
     app.include_router(notifications.router, prefix=prefix)
+    app.include_router(forge_links.router, prefix=prefix)
     app.include_router(notification_settings.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)
     app.include_router(registration_routes.router, prefix=prefix)
