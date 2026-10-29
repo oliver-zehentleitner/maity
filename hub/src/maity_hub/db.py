@@ -43,6 +43,11 @@ RESOLVE_PAUSE_SECONDS = 0.25
 # age of a connection, whatever sits between the hub and the server. A dead one is found by
 # `pool_pre_ping`, which tests every connection as it is taken.
 POOL_RECYCLE_SECONDS = 1800
+# What a PostgreSQL connection says it is in `pg_stat_activity.application_name`: the serving
+# hub, its readiness probe, and every other command (`migrate`, `owner create`, ...).
+APPLICATION_SERVING = "maity-hub"
+APPLICATION_HEALTH = "maity-hub-health"
+APPLICATION_COMMAND = "maity-hub-cli"
 # What the readiness probe may spend on the database: the connect timeout above and this long
 # for its one statement (PostgreSQL's `statement_timeout`, the driver's `read_timeout` on
 # MariaDB). It runs on a connection of its own, so a slow database answers 503 within about
@@ -82,6 +87,7 @@ def make_engine(
     pool_recycle: int = POOL_RECYCLE_SECONDS,
     statement_timeout: float = 0,
     idle_in_transaction_timeout: float = 0,
+    application_name: str = APPLICATION_COMMAND,
 ) -> Engine:
     # hide_parameters: a failing statement's error never carries the values.
     kwargs: dict[str, Any] = {"pool_pre_ping": True, "hide_parameters": True}
@@ -100,8 +106,10 @@ def make_engine(
         options = postgres_options(
             statement=statement_timeout, idle_in_transaction=idle_in_transaction_timeout
         )
-        if url.startswith("postgresql") and options:
-            kwargs["connect_args"]["options"] = options
+        if url.startswith("postgresql"):
+            kwargs["connect_args"]["application_name"] = application_name
+            if options:
+                kwargs["connect_args"]["options"] = options
         kwargs["pool_size"], kwargs["max_overflow"] = pool_size, max_overflow
         # Connections are kept and reused, the most recently used first, so that the few that
         # a quiet hub needs stay warm and the rest age out; a new connection is a name lookup
@@ -134,6 +142,7 @@ def make_health_engine(engine: Engine) -> Engine | None:
     }
     if engine.dialect.name == "postgresql":
         kwargs["connect_args"]["options"] = postgres_options(statement=HEALTH_STATEMENT_SECONDS)
+        kwargs["connect_args"]["application_name"] = APPLICATION_HEALTH
     elif engine.dialect.name in ("mysql", "mariadb"):
         # No server-side statement timeout to set per session here: the driver stops waiting.
         kwargs["connect_args"]["read_timeout"] = HEALTH_STATEMENT_SECONDS

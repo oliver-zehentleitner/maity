@@ -38,7 +38,13 @@ from maity_hub import (
 from maity_hub.auth import device_codes as codes
 from maity_hub.auth import sign_in_settings as sign_in
 from maity_hub.config import ConfigError, Settings
-from maity_hub.db import current_revision, head_revision, make_engine, make_health_engine
+from maity_hub.db import (
+    APPLICATION_SERVING,
+    current_revision,
+    head_revision,
+    make_engine,
+    make_health_engine,
+)
 from maity_hub.errors import error_response
 from maity_hub.forge_webhook import check_secrets
 from maity_hub.mail import outbox
@@ -122,6 +128,7 @@ def serving_engine(settings: Settings) -> Engine:
         settings.db_pool_recycle,
         settings.db_statement_timeout,
         settings.db_idle_in_transaction_timeout,
+        APPLICATION_SERVING,
     )
 
 
