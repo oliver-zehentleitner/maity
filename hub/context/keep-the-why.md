@@ -52,3 +52,37 @@ each member's last good export.
 - The probe's worker sweeping all families: it exists only with a
   forge token, and a public repository's families are readable without
   one.
+
+## The Keep the Why policy stores only what a human set; the provider keeps its boolean column
+
+**Id:** a0966b9e-2263-44c1-9098-3c1f5d709911
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session of the card for the memory provider and the Keep the Why policy, 2026-10-27; `docs/api.md` §6.1, §6.23
+**Revisit when:** a second memory provider is added, or the policy needs a third value
+
+`policy.keep_the_why` is read as `required` while the provider is `keep-the-why`
+and nobody set it, `optional` under `none`. The column `keep_the_why_policy`
+holds only a human's own value and is `NULL` otherwise; the policy object
+carries the effective value, and `policy.columns()` never writes it back. The
+provider stays in the boolean `keep_the_why`; `memory.provider` is derived from
+it, so no data migration and no second source of truth. A project's
+`keep_the_why_defaults` is a plain column with the default `adopt`.
+`MAITY_KTW_SKILL_SOURCE` must be an `https` URL and the hub stops at start
+otherwise: the three texts it produces are instructions that an agent reads.
+
+**Reason:** every policy write rewrites all policy columns from the current policy
+object. Storing the effective value would freeze the default on the first
+unrelated policy change (a badge, a preset), so a project on `none` would
+come back from `none` as `optional` instead of `required`. A provider
+column would have had to be kept equal to the boolean the view and the rules
+text already read.
+
+**Rejected alternatives:**
+- Store the effective value in every policy write: freezes the default, as
+  above.
+- A `memory_provider` string column with the boolean as a mirror: two columns
+  that must agree, for one provider and one alias.
+- Accept any URL scheme for the skill source: the value ends up in an
+  agent's instructions, so a `file:` or `javascript:` source is refused.
