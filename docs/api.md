@@ -11772,6 +11772,24 @@ all languages.
   Both are answered with `Cache-Control: public, max-age=3600` and
   never set a cookie. The join host (§1.1) answers both `not_found`.
 
+**Seeing it as a visitor, and a draft.** A signed-in human sees the
+landing page as a visitor does with `GET /?as=public`: the static page
+whatever the session, while it is enabled, and the app shell otherwise,
+exactly as `?as=public` on a public page (§16.9); its canonical link
+stays the bare root. A draft is seen before it is saved with
+
+```
+POST /admin/settings/landing/preview?lang=<tag>
+```
+
+instance admin only, the body the same as `PATCH`'s `pages`, validated
+the same way (the same `invalid` field paths), nothing stored: `200`
+with the HTML the hub would serve at `/` for that language, `text/html`,
+`Cache-Control: no-store`, `X-Robots-Tag: noindex` and the same
+`Content-Security-Policy` as the served page, so the preview cannot run
+what the page could not. `lang` must be a language the body has a page
+for (`invalid`, `details.fields.lang`, otherwise).
+
 ### 16.7.1 Legal pages
 
 The operator's imprint, privacy notice and terms of use, as instance
@@ -11814,6 +11832,11 @@ read-only.
   read. The order is: the environment (`source: "env"`), then a value
   the instance admin set in the registration setting (`source:
   "admin"`), then the legal pages (`source: "legal_pages"`), then none.
+- **Preview** with `POST /admin/settings/legal/preview?page=<imprint|privacy|terms>&lang=<tag>`,
+  instance admin only, the body the same as `PATCH`'s for that page:
+  `200` with the HTML the hub would serve at `/<page>`, nothing stored,
+  with the headers of the landing preview (§16.7). A legal page is read
+  as a visitor at its own path; it has no `?as=public` of its own.
 - **Read** with `GET /legal` (unauthenticated): `{default_language,
   pages: {imprint|privacy|terms: {version, languages}}}` without the
   text, for the dashboard's links.
