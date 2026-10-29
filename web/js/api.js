@@ -423,6 +423,17 @@ window.Maity = window.Maity || {};
       return setAvatar(id, uploaded[key], "uploaded");
     };
   }
+  // A profile's handle and git identity as §6.3 and §6.24 check them.
+  function agentFields(body, agent, list) {
+    const fields = {};
+    if ("handle" in body && (!agent || body.handle !== agent.handle)) {
+      if (!/^[a-z0-9][a-z0-9-]{1,30}$/.test(body.handle || "")) fields.handle = "string_pattern_mismatch";
+      else if (list.some((a) => a !== agent && a.owner_id === me().member.id && !a.deleted_at && (a.handle === body.handle || (a.aliases || []).includes(body.handle)))) fields.handle = "taken";
+    }
+    const g = body.git_identity;
+    if (g !== undefined && g !== null && (typeof g !== "object" || !String(g.name || "").trim() || !/^[^\s@]+@[^\s@]+$/.test(String(g.email || "")))) fields.git_identity = "invalid";
+    return fields;
+  }
   // /agents/{id}/avatar: the profile's owner only; any other is not_found.
   // §6.26 Organisations in fixture mode (fixtures/orgs.json).
   // The hub's reserved handles: DASHBOARD_WORDS in hub/src/maity_hub/namespace.py
@@ -861,7 +872,7 @@ window.Maity = window.Maity || {};
         created_by: me().member.id, created_at: at, expires_at: new Date(Date.now() + ttl * 1000).toISOString().replace(/\.\d{3}Z$/, "Z"),
         used_at: null, used_by: null, revoked_at: null, voided_at: null };
       list.push(made);
-      return Object.assign({}, made, { url: window.location.origin + window.location.pathname + "#/invite/" + token });
+      return Object.assign({}, made, { url: window.location.origin + window.location.pathname + M.route.href("/invite/" + token) });
     }],
     ["DELETE", /^\/projects\/([^/]+)\/invitations\/([^/]+)$/, (m, body, path) => {
       if (!["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "members:admin", path, { scope: "members:admin" });
@@ -877,7 +888,7 @@ window.Maity = window.Maity || {};
       const code = "K7QM4XPR9D2F";
       deviceSim = { id: "dvc-" + (++deviceSerial), code, status: "waiting", reads: 0, match: 47,
         expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString().replace(/\.\d{3}Z$/, "Z") };
-      return { id: deviceSim.id, code: "K7QM-4XPR-9D2F", url: window.location.origin + window.location.pathname + "#/sign-in/code?c=" + code, expires_at: deviceSim.expires_at };
+      return { id: deviceSim.id, code: "K7QM-4XPR-9D2F", url: window.location.origin + window.location.pathname + M.route.href("/sign-in/code?c=" + code), expires_at: deviceSim.expires_at };
     }],
     ["GET", /^\/auth\/device-codes\/([^/]+)$/, (m, body, path) => {
       const d = deviceOf(m[1], path);
@@ -1266,6 +1277,36 @@ window.Maity = window.Maity || {};
     }],
     // A deleted profile (tombstone) is never listed (§6.3).
     ["GET", /^\/agents$/, () => Object.assign({}, fixtures()["agents.json"], { items: fixtures()["agents.json"].items.filter((a) => !a.deleted_at) })],
+    // §6.3: a human's new profile; its handle unique among the owner's profiles.
+    ["POST", /^\/agents$/, (m, body, path) => {
+      if (me().member.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
+      const list = fixtures()["agents.json"].items;
+      const fields = agentFields(body, null, list);
+      if (!body.handle) fields.handle = "string_too_short";
+      if (!body.display_name || !String(body.display_name).trim()) fields.display_name = "string_too_short";
+      if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
+      const agent = { id: localId("agt"), handle: body.handle, name: me().member.handle + "/" + body.handle, display_name: String(body.display_name).trim(),
+        owner_id: me().member.id, git_identity: body.git_identity || null, memberships: [], aliases: [], created_at: nowIso() };
+      list.push(agent);
+      return agent;
+    }],
+    // §6.3, §6.24: the owner changes its name, git identity or handle; an old handle stays an alias.
+    ["PATCH", /^\/agents\/([^/]+)$/, (m, body, path) => {
+      const list = fixtures()["agents.json"].items;
+      const agent = list.find((a) => a.id === m[1] && !a.deleted_at);
+      if (!agent || agent.owner_id !== me().member.id) fail(404, "not_found", "Not found", path);
+      const fields = agentFields(body, agent, list);
+      if ("display_name" in body && !String(body.display_name || "").trim()) fields.display_name = "string_too_short";
+      if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
+      if ("handle" in body && body.handle !== agent.handle) {
+        agent.aliases = (agent.aliases || []).concat(agent.handle);
+        agent.handle = body.handle;
+        agent.name = me().member.handle + "/" + body.handle;
+      }
+      if ("display_name" in body) agent.display_name = String(body.display_name).trim();
+      if ("git_identity" in body) agent.git_identity = body.git_identity;
+      return agent;
+    }],
     // §6.3: the owner deletes a profile. In use (an active membership) only with
     // ?cascade=true, which ends every membership as DELETE …/members/{id} does;
     // then a tombstone with deleted_at, no avatar, no memberships. Again: 200 as it is.
@@ -1801,7 +1842,7 @@ window.Maity = window.Maity || {};
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
       const v = Object.assign({}, fixtures()["landing.json"]);
       const errors = {};
-      const target = (t) => /^\/#\/[A-Za-z0-9._~%\/?=&-]*$/.test(t) || /^https:\/\/[^\s/@]+(\/[^\s]*)?$/.test(t);
+      const target = (t) => (/^\/(?!\/)[A-Za-z0-9._~%\/?=&-]*$/.test(t) && M.route.isRoute(t)) || /^https:\/\/[^\s/@]+(\/[^\s]*)?$/.test(t);
       Object.entries(body).forEach(([k, x]) => {
         if (!["enabled", "title", "markdown", "cta"].includes(k)) errors[k] = "extra_forbidden";
         else if (k === "enabled") { if (typeof x === "boolean") v.enabled = x; else errors.enabled = "invalid"; }
@@ -1843,11 +1884,9 @@ window.Maity = window.Maity || {};
         // Oldest first, as swarm.py sends them: the window is the last n days.
         totals: Object.assign({}, s.totals, { cards_done_per_day: (s.totals.cards_done_per_day || []).slice(-n) }) });
     }],
-    // §6.25: /swarm/{owner}/{slug}; the old /swarm/{slug} redirects by the
-    // frozen legacy_slug (followed here), answering as an unserved page else.
-    ["GET", /^\/swarm\/([^/]+)(?:\/([^/]+))?$/, (m, body, path, query) => {
-      const slug = m[2] ? slugOfFull(decodeURIComponent(m[1]) + "/" + decodeURIComponent(m[2]))
-        : fixtureSlugs().find((x) => (fixtures()[x + "/project.json"] || {}).legacy_slug === decodeURIComponent(m[1]));
+    // §6.22, §6.25: /swarm/{owner}/{slug}.
+    ["GET", /^\/swarm\/([^/]+)\/([^/]+)$/, (m, body, path, query) => {
+      const slug = slugOfFull(decodeURIComponent(m[1]) + "/" + decodeURIComponent(m[2]));
       const p = slug && fixtures()[slug + "/project.json"];
       const s = slug && fixtures()[slug + "/swarm.json"];
       if (!p || !s || (p.policy || {}).swarm_public !== "on" || ["accepted", "archived"].includes(p.state)) fail(404, "not_found", "Not found", path);
@@ -1886,6 +1925,8 @@ window.Maity = window.Maity || {};
       "/api/v1/orgs/{org}/members/invitations/{invitation_id}": { delete: {} },
       "/api/v1/me/export": { get: {} },
       "/api/v1/me/deletion": { post: {}, delete: {} },
+      "/api/v1/agents": { get: {}, post: {} },
+      "/api/v1/agents/{agent_id}": { get: {}, patch: { requestBody: { content: { "application/json": { schema: { properties: { display_name: {}, git_identity: {}, handle: {} } } } } } }, delete: {} },
       "/api/v1/me": { get: {}, patch: { requestBody: { content: { "application/json": { schema: { properties: { meat_proxy: {} } } } } } } },
       "/api/v1/projects/{owner}/{slug}/attachments": { get: {}, post: {} },
       "/api/v1/requests/{request_id}/answer": { post: {} },
@@ -1898,7 +1939,7 @@ window.Maity = window.Maity || {};
       "/api/v1/projects/{owner}/{slug}/invitations": { get: {}, post: {} },
       "/api/v1/invitations/{token}": { get: {} },
       "/api/v1/auth/register": { post: {} },
-      "/api/v1/projects": { get: {}, post: { requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/ProjectCreate" } } } } } },
+      "/api/v1/projects": { get: {}, post: { requestBody: { content: { "application/json": { schema: { $ref: "/components/schemas/ProjectCreate" } } } } } },
       "/api/v1/projects/{owner}/{slug}/tasks/{task_id}/contract": { get: {} },
       "/api/v1/projects/{owner}/{slug}/tasks/{task_id}/notes": { get: {}, post: {} },
       "/api/v1/projects/{owner}/{slug}/tasks/{task_id}/history": { get: {} },

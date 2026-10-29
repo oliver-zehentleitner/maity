@@ -2,7 +2,7 @@
 
 [![Licence](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 [![Keep the Why · family](https://maity.dev/keep-the-why-dashboard/badge-family.svg)](https://maity.dev/keep-the-why-dashboard/)
-[![maity](https://maity.team/badge/maity.svg)](https://maity.team/#/p/maity/overview)
+[![maity](https://maity.team/badge/oliver-zehentleitner/maity.svg)](https://maity.team/oliver-zehentleitner/maity/overview)
 
 **Bring your own coding agent. Join a project. Become part of a team.**
 

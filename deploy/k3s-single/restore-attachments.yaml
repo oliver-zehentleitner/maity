@@ -22,7 +22,8 @@ spec:
             - |
               t=/backups/maity-@TS@.attachments.tar
               test -s "$t"
-              # a cut-off tar must not be found out after the volume was emptied
+              # a cut-off tar must not be found out after the volume was emptied: this catches a torn file, not a tar cut between two
+              # members (the nightly Job writes to .part and renames, which covers that)
               tar -tf "$t" > /dev/null
               find /attachments -mindepth 1 -delete
               # --strip-components=1 skips the "./" entry: the root of the volume is the provisioner's (root, 0777), not ours, and

@@ -10,8 +10,8 @@
 # Usage: deploy/scripts/helm-upgrade.sh -f values.yaml [more helm upgrade arguments]
 # Environment: NAMESPACE (maity), RELEASE (maity), DEPLOYMENT (<release>-maity-hub),
 #   CHART (the chart next to this script), HELM_TIMEOUT (10m), DUMP_CRONJOB (a CronJob to run as a
-#   dump first, e.g. maity-pg-dump; unset = no dump), DUMP_REQUIRES_ATTACHMENTS (1: the dump's mark must carry the
-#   attachment tar; set it when the release has attachments.existingClaim), STOP_TIMEOUT (seconds to wait for the hub's
+#   dump first, e.g. maity-pg-dump; unset = no dump), DUMP_TIMEOUT (seconds to wait for it, 300), DUMP_REQUIRES_ATTACHMENTS (1: the
+#   dump's mark must carry the attachment tar; set it when the release has attachments.existingClaim), STOP_TIMEOUT (seconds to wait for the hub's
 #   pods to be gone, 180), KUBECONFIG as usual.
 #
 # helm upgrade only runs when the hub is verifiably stopped: a failed scale-down or pods still
@@ -49,11 +49,14 @@ on_exit() {
 trap on_exit EXIT
 trap 'exit 130' INT TERM
 
+case "${DUMP_TIMEOUT:-300}" in
+  *[!0-9]*|'') echo "DUMP_TIMEOUT must be a number of seconds, not '${DUMP_TIMEOUT}'; nothing was changed" >&2; exit 1;;
+esac
 if [ -n "${DUMP_CRONJOB:-}" ]; then
   job="pre-upgrade-$(date +%H%M%S)"
   # Complete or Failed, whichever comes first: `kubectl wait` takes one condition and would sit out its whole timeout on a failed Job.
   dump_finished() {
-    local end=$((SECONDS + 300)) done_ failed
+    local end=$((SECONDS + ${DUMP_TIMEOUT:-300})) done_ failed
     while [ "$SECONDS" -lt "$end" ]; do
       done_=$(kubectl -n "$NAMESPACE" get job "$job" -o 'jsonpath={.status.conditions[?(@.type=="Complete")].status}' 2>/dev/null)
       failed=$(kubectl -n "$NAMESPACE" get job "$job" -o 'jsonpath={.status.conditions[?(@.type=="Failed")].status}' 2>/dev/null)

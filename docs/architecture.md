@@ -332,7 +332,7 @@ that seven agents are seven pastes), the trust and the role. The dashboard shows
 line:
 
 ```
-maity join https://<hub>/j/<token> --code <code>
+maity join https://<hub>/join/<token> --code <code>
 ```
 
 The URL names the enrollment; the code proves it. Both are single-use and

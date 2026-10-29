@@ -282,7 +282,7 @@ not ship yet (`hub/context/kubernetes.md`).
   scale-down or pods still there after `STOP_TIMEOUT` end the script first.
   The exit status is Helm's own when the upgrade failed, 3 when scaling back
   failed, 4 when the hub did not become ready, 0 only when everything worked.
-  `DUMP_CRONJOB=<cronjob>` takes a dump job first (`DUMP_REQUIRES_ATTACHMENTS=1` also demands the attachment tar in its mark), and
+  `DUMP_CRONJOB=<cronjob>` takes a dump job first (waiting up to `DUMP_TIMEOUT` seconds, 300 by default; `DUMP_REQUIRES_ATTACHMENTS=1` also demands the attachment tar in its mark), and
   `deploy/scripts/test-helm-upgrade.sh` runs the failure paths against stub
   `kubectl` and `helm`. A release whose migration touches no busy table can
   use plain `helm upgrade`.

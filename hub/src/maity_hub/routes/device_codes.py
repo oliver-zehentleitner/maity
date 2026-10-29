@@ -19,7 +19,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import API_VERSION, clock, longpoll
+from maity_hub import API_VERSION, clock, longpoll, paths
 from maity_hub.auth import device_codes, second_factor, sessions, sign_in_settings
 from maity_hub.auth.caller import SESSION_COOKIE, Caller, require_secure_transport
 from maity_hub.deps import AnyCaller, engine_of, origin_of, settings_of, wait_of
@@ -129,7 +129,7 @@ def create_code(request: Request, caller: AnyCaller) -> JSONResponse:
             "id": row.id,
             "code": "-".join(code[i : i + 4] for i in range(0, len(code), 4)),
             # In the fragment, which no request carries: no log, proxy or Referer sees it.
-            "url": f"{public}/#/sign-in/code?c={code}",
+            "url": f"{public}/sign-in/code#c={code}",
             "expires_at": clock.rfc3339(row.expires_at),
         },
         status_code=201,
@@ -219,7 +219,7 @@ def redeem_code(body: Redeem, request: Request) -> JSONResponse:
             address=origin.address,
             user_agent=request.headers.get("user-agent"),
             device_cookie=request.cookies.get(sessions.DEVICE_COOKIE),
-            next_route=sessions.safe_next(body.next),
+            next_route=paths.safe_next(body.next),
         )
     if redeemed is None:
         WRONG_CODES.hit("instance")

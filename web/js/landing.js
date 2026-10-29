@@ -33,7 +33,7 @@ window.Maity = window.Maity || {};
   // https URL opens apart; anything else is no button.
   function ctaLink(cta, cls) {
     if (!cta || !cta.label) return null;
-    if (ROUTE.test(cta.href || "")) return h("a", { class: cls, href: cta.href.slice(1) }, cta.label);
+    if (ROUTE.test(cta.href || "") && M.route.isRoute(cta.href)) return h("a", { class: cls, href: cta.href }, cta.label);
     const url = safeUrl(cta.href);
     return url ? h("a", { class: cls, href: url, rel: "noopener noreferrer", target: "_blank" }, cta.label) : null;
   }
@@ -55,7 +55,7 @@ window.Maity = window.Maity || {};
   // small lockup over the large one.
   function show(main, p, header) {
     if (p.title) document.title = p.title;
-    const signIn = p.cta && p.cta.href === "/#/login" ? null : h("a", { class: "button landing-sign-in", href: "#/login" }, "Sign in");
+    const signIn = p.cta && p.cta.href === "/login" ? null : h("a", { class: "button landing-sign-in", href: "/login" }, "Sign in");
     append(clear(header), h("div", { class: "bar landing-bar" }, M.themeMenu ? M.themeMenu() : null, signIn));
     append(clear(main), page(p));
   }
@@ -67,7 +67,7 @@ window.Maity = window.Maity || {};
     invalid: "not allowed here",
     extra_forbidden: "not supported by this hub",
   };
-  const MARKDOWN_RULE = "Headings, paragraphs, emphasis, lists, quotes, fenced code and links (https, or a dashboard route like /#/login); "
+  const MARKDOWN_RULE = "Headings, paragraphs, emphasis, lists, quotes, fenced code and links (https, or a dashboard path like /login); "
     + "no images and no HTML outside fenced code.";
 
   async function section(ctx, root) {
@@ -76,7 +76,7 @@ window.Maity = window.Maity || {};
     const title = h("input", { id: "landing-title", maxlength: String(TITLE_MAX), autocomplete: "off" });
     const markdown = h("textarea", { id: "landing-markdown", rows: "14", spellcheck: "true", "aria-describedby": "landing-markdown-rule landing-markdown-error" });
     const label = h("input", { id: "landing-cta-label", maxlength: String(LABEL_MAX), autocomplete: "off", placeholder: "Sign in" });
-    const href = h("input", { id: "landing-cta-href", autocomplete: "off", spellcheck: "false", placeholder: "/#/login or https://…" });
+    const href = h("input", { id: "landing-cta-href", autocomplete: "off", spellcheck: "false", placeholder: "/login or https://…" });
     const errors = {
       title: h("p", { class: "field-error", id: "landing-title-error", role: "alert" }),
       markdown: h("p", { class: "field-error", id: "landing-markdown-error", role: "alert" }),
@@ -151,7 +151,7 @@ window.Maity = window.Maity || {};
         if (v.markdown && utf8Length(v.markdown) > MARKDOWN_MAX) local.markdown = "longer than 64 KiB";
         if (v.enabled && !v.markdown) local.markdown = "required";
         if (v.cta && !v.cta.label) local.cta = "a button needs a label as well as a link";
-        else if (v.cta && !(ROUTE.test(v.cta.href) || safeUrl(v.cta.href))) local["cta.href"] = "invalid";
+        else if (v.cta && !((ROUTE.test(v.cta.href) && M.route.isRoute(v.cta.href)) || safeUrl(v.cta.href))) local["cta.href"] = "invalid";
         if (Object.keys(local).length) { refused(local); status.done(); return; }
         refused({});
         status.busy("Saving…");

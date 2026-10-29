@@ -58,27 +58,6 @@ def normalized(value: str) -> str:
     return value.strip().lower()
 
 
-NEXT_MAX = 512
-
-
-def safe_next(value: str | None) -> str:
-    """`next` as §2.6.5 allows it: `/`, or a dashboard route `/#/…` of at most 512
-    characters with no backslash, no control or whitespace character, no second `#` and
-    no `//`. Anything else becomes `/`, silently."""
-    if value is None or value == "/":
-        return "/"
-    if (
-        not value.startswith("/#/")
-        or len(value) > NEXT_MAX
-        or "\\" in value
-        or "//" in value
-        or value.count("#") > 1
-        or any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in value)
-    ):
-        return "/"
-    return value
-
-
 def domain_entry(value: object) -> str | None:
     """`@` plus a host name of §18.4, lower case; None when it is not one."""
     if not isinstance(value, str) or not value.startswith("@"):

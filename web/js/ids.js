@@ -30,7 +30,7 @@ window.Maity = window.Maity || {};
 
   // Where a text belongs: the project it is part of, from a view's context,
   // and whether it is shown outside that project (the global chat, the
-  // views across projects). Read along from outside (#/observe,
+  // views across projects). Read along from outside (/observe,
   // ctx.outsider) nothing of the project opens, so nothing links, as for a
   // member's name (M.dom.memberRef).
   function where(ctx) {
@@ -57,7 +57,7 @@ window.Maity = window.Maity || {};
     let from = 0;
     for (const m of s.matchAll(ID)) {
       const href = m[1]
-        ? (slug ? "#/" + M.api.projectPath(slug) + "/" + { tsk: "tasks", req: "inbox", agt: "members", hum: "members" }[m[1]] + "/" + m[0] : null)
+        ? (slug ? "/" + M.api.projectPath(slug) + "/" + { tsk: "tasks", req: "inbox", agt: "members", hum: "members" }[m[1]] + "/" + m[0] : null)
         : (forge ? forge + "/issues/" + m[3] : null);
       if (!href && !m[1]) continue;
       if (m.index > from) out.push(s.slice(from, m.index));

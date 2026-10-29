@@ -32,7 +32,7 @@ window.Maity = window.Maity || {};
   // to the account: a sign-in to its sessions, the settings to the
   // notification settings; a personal request of a project one is no
   // member of, to everything waiting, until the page has the personal
-  // inbox (§18.2 names #/requests/<id>). A security item of another target
+  // inbox (§18.2 names /requests/<id>). A security item of another target
   // goes to the sessions too, where it is confirmed.
   // Of the kinds since 2026-10-26 (§18.1): an older hub's other items are no notification here.
   const known = (x) => Object.prototype.hasOwnProperty.call(KIND_WORDS, x.kind);
@@ -43,13 +43,13 @@ window.Maity = window.Maity || {};
 
   function linkOf(item) {
     const t0 = item.target || {};
-    if (t0.type === "session" || item.kind === "security") return "#/account/sessions";
-    if (t0.type === "settings") return "#/account/notifications";
+    if (t0.type === "session" || item.kind === "security") return "/account/sessions";
+    if (t0.type === "settings") return "/account/notifications";
     // A registration waiting for the instance admin (§16.4): Admin.
-    if (t0.type === "registration") return "#/admin";
+    if (t0.type === "registration") return "/admin";
     const full = item.project && item.project.full_name;
-    if (!full || item.project.member === false) return "#/all";
-    const base = "#/" + M.api.projectPath(full) + "/";
+    if (!full || item.project.member === false) return "/all";
+    const base = "/" + M.api.projectPath(full) + "/";
     const t = item.target || {};
     if (t.type === "conversation") return base + "chat/" + encodeURIComponent(t.id);
     if (t.type === "task") return base + "tasks/" + encodeURIComponent(t.id);
@@ -90,12 +90,12 @@ window.Maity = window.Maity || {};
     return (n ? "(" + n + ") " : "") + base;
   }
 
-  // The Chat button: every chat across the projects (#/chats), with the
+  // The Chat button: every chat across the projects (/chats), with the
   // unread chat messages the hub counts (counts.chat, §18.2) on it.
   function chatButton(ctx) {
     const n = state.available && state.counts ? state.counts.chat || 0 : 0;
     const label = n ? n + (n === 1 ? " unread chat message" : " unread chat messages") : "Chats";
-    return h("a", { class: "bell chat-button", href: "#/chats", "aria-label": label, title: label, "aria-current": ctx && ctx.scope === "chats" ? "page" : null },
+    return h("a", { class: "bell chat-button", href: "/chats", "aria-label": label, title: label, "aria-current": ctx && ctx.scope === "chats" ? "page" : null },
       M.icons.chat(18), n ? h("span", { class: "count", "aria-hidden": "true" }, String(n)) : null);
   }
 
@@ -107,7 +107,7 @@ window.Maity = window.Maity || {};
     // bell, so that a refresh replaces it in place.
     if (!state.available) {
       return h("div", { class: "bell-box" },
-        h("a", { class: "bell", href: "#/all", "aria-label": "Notifications", title: "Notifications" }, M.icons.bell(18)));
+        h("a", { class: "bell", href: "/all", "aria-label": "Notifications", title: "Notifications" }, M.icons.bell(18)));
     }
     // What is unread on the bell: every kind but the open requests, which
     // the inbox and the switcher show. Sign-in and address alerts count,
@@ -168,8 +168,8 @@ window.Maity = window.Maity || {};
             h("span", { class: "muted" }, " · " + (x.project ? x.project.name + " · " : "") + formatAgo(x.at)),
             x.read ? null : h("span", { class: "visually-hidden" }, " (unread)"))))
           : h("p", { class: "muted" }, "No notifications in the last 30 days."),
-        h("p", { class: "hint" }, h("a", { href: "#/notifications", onclick: () => close(false) }, "All notifications"), " · ",
-          h("a", { href: "#/account/notifications", onclick: () => close(false) }, "Notification settings")),
+        h("p", { class: "hint" }, h("a", { href: "/notifications", onclick: () => close(false) }, "All notifications"), " · ",
+          h("a", { href: "/account/notifications", onclick: () => close(false) }, "Notification settings")),
         status.el);
     }
     // The latest 20 are read when the bell opens; "mark all read" marks up to
@@ -286,7 +286,7 @@ window.Maity = window.Maity || {};
             tag: x.id,
             body: (x.project ? x.project.name : "") + (withText ? "\n" + x.content.slice(0, 120) : ""),
           });
-          note.onclick = () => { window.focus(); window.location.hash = linkOf(x); note.close(); };
+          note.onclick = () => { window.focus(); M.route.go(linkOf(x)); note.close(); };
         });
         if (!items.length && Date.now() - asked < QUICK_MS && wanted()) await pause(PAUSE_MS);
       }

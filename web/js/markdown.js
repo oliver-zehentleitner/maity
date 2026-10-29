@@ -33,15 +33,15 @@ window.Maity = window.Maity || {};
     return out;
   }
 
-  // A dashboard route as a link target (/#/…), for the landing page only
-  // (docs/api.md §16.7: the card-body renderer extended by that alone);
+  // A path of the dashboard as a link target (/login, §16.7, §16.11), for
+  // the landing page only (the card-body renderer extended by that alone);
   // set while M.markdown.withRoutes renders.
   let routes = false;
-  const ROUTE = /^\/#\/[A-Za-z0-9._~%\/?=&-]*$/;
-  const routeHref = (target) => (routes && ROUTE.test(target) ? target.slice(1) : null);
+  const ROUTE = /^\/(?!\/)[A-Za-z0-9._~%\/?=&-]*$/;
+  const routeHref = (target) => (routes && ROUTE.test(target) && M.route.isRoute(target) ? target : null);
 
   // [text](https://…), a bare https://… and **strong**, *em* or _em_.
-  const TOKEN = /\[([^\[\]\n]+)\]\((https:\/\/[^\s)]+|\/#\/[^\s)]*)\)|(https:\/\/[^\s<>()]+[^\s<>().,;:!?'"])|\*\*([^*\n]+)\*\*|(?:^|(?<=[\s(]))[*_]([^*_\n]+)[*_](?=$|[\s).,;:!?])/g;
+  const TOKEN = /\[([^\[\]\n]+)\]\((https:\/\/[^\s)]+|\/[^\s)]*)\)|(https:\/\/[^\s<>()]+[^\s<>().,;:!?'"])|\*\*([^*\n]+)\*\*|(?:^|(?<=[\s(]))[*_]([^*_\n]+)[*_](?=$|[\s).,;:!?])/g;
   function spans(text, where) {
     const out = [];
     const plain = (s) => (where ? M.ids.link(s, where) : [s]);
@@ -53,7 +53,7 @@ window.Maity = window.Maity || {};
         // A text that looks like another address says where the link goes.
         const looks = /^\s*(https?:\/\/|www\.)/i.test(m[1]) && hostOf(m[1]) !== hostOf(m[2]);
         // A route stays in the page; an https link opens apart, without an opener.
-        out.push(!url ? m[0] : url.startsWith("#") ? h("a", { href: url }, m[1])
+        out.push(!url ? m[0] : url.startsWith("/") ? h("a", { href: url }, m[1])
           : h("a", { href: url, rel: "noopener noreferrer", target: "_blank" }, m[1]));
         if (url && looks) out.push(h("span", { class: "md-real-href" }, " (goes to " + hostOf(m[2]) + ")"));
       } else if (m[3] !== undefined) {
