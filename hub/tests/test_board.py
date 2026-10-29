@@ -181,16 +181,16 @@ def test_who_removes_a_link(owner: flow.Human, make_client: ClientFactory) -> No
 def test_a_closed_project_refuses_a_new_link_and_lets_one_go(owner: flow.Human) -> None:
     card = task(owner)
     added = link(owner, card, kind="url", url="https://example.com/a").json()
-    owner.patch("/projects/maintainer/maity", {"state": "accepted", "reason": "done"})
+    owner.patch("/projects/maintainer/maity", {"state": "archived", "reason": "done"})
     closed = link(owner, card, kind="url", url="https://example.com/b")
     assert closed.status_code == 409 and closed.json()["error"]["code"] == "project_closed"
     gone = owner.delete(f"/projects/maintainer/maity/tasks/{card['id']}/links/{added['id']}")
     assert gone.status_code == 200
 
 
-def test_a_frozen_project_takes_links_without_a_reason(owner: flow.Human) -> None:
+def test_a_project_in_review_takes_links_without_a_reason(owner: flow.Human) -> None:
     card = task(owner)
-    owner.patch("/projects/maintainer/maity", {"state": "freeze", "reason": "release"})
+    owner.patch("/projects/maintainer/maity", {"state": "review", "reason": "release"})
     assert link(owner, card, kind="url", url="https://example.com/a").status_code == 201
 
 

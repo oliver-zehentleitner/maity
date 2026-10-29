@@ -49,8 +49,9 @@ dashboard already holds both for its header.
 **Source:** the contract owner's rulings of 2026-10-22 on the group-chat, attachment and card-link contracts (`docs/api.md` §6.1, §9.2)
 **Revisit when:** a project state is added that should refuse more than additions, or an operator needs an archived project frozen for an audit or legal hold
 
-In a project that is `accepted` or `archived`, a write that adds one of
-the following is refused with `project_closed`: a claim, a card, a group
+In a project that is `archived` (until 2026-10-27 also `accepted`, which
+migration 0094 maps to `archived`), a write that adds one of the
+following is refused with `project_closed`: a claim, a card, a group
 chat, a participant added to one, an upload, a card link, a note.
 Posting messages stays allowed, in project messages and in group chats
 alike (a message that names an attachment adds an upload and is refused
@@ -438,8 +439,8 @@ hold clones of the same name in two projects.
 **Id:** de8abccf-94dc-4947-9926-463aa13edd8f
 **Type:** decision
 **Status:** active
-**Evidence:** confirmed
-**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day
+**Evidence:** inferred
+**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day; why leaving launch is ungated: the Grok review of PR #644, 2026-10-29
 **See:** projects.md#a-closed-project-refuses-additions-never-removal — e9c3b578-c282-43c1-b5f4-4a494ae0464e — as of 2026-10-27
 
 A project's state is plan (concept and contracts, no implementation
@@ -449,7 +450,12 @@ with the first release tag, and never cleared: from then on interfaces
 change only with versioning and a transition period, migrations stay
 backward compatible and the release checklist is mandatory. After a
 launch the project returns to build, still released. Moving to launch
-needs the owner's go.
+needs the owner's go. Only entering launch is gated: leaving it, back to
+build or into review or archived, is any admin's transition with a
+reason, as between every other pair of states (§6.1). Why leaving is
+free is inferred, not stated by the maintainer: the go is for taking the
+project live, the commitment to users, and stepping back from it is
+ordinary work. Everything else here is confirmed.
 
 **Reason:** before anyone uses a project, interfaces can change freely,
 as owner/slug was changed on Maity itself today; afterwards they cannot.

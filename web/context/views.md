@@ -18,13 +18,13 @@ the options it sees) and its answers (prepared replies, free text,
 "neither — let's talk"); answering moves on to the next. The chat with
 an agent the human owns is the channel beside the inbox, reachable from
 every inbox entry and every agent card, never the landing page. The
-project state (build, freeze, fixes-only, accepted, archived) sits in the
+project state (plan, build, review, launch, archived) sits in the
 header of every screen.
 
 **Reason:** the root decision makes the inbox the human's primary
 surface; the dashboard's order follows from it, and an entry has to carry
 its context because the point is that answering does not require a chat.
-The project state belongs on every screen because a freeze changes what
+The project state belongs on every screen because a review changes what
 any answer means.
 
 **Rejected alternative:** the board as the landing page, the default of
@@ -1296,13 +1296,17 @@ not register at all, which §3.4 allows.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** docs/api.md §2.6.1, §2.7 and §2.7.2; the card tsk-46vft0764kve (the terms from `terms`), the review of #652, 2026-10-29
+**Source:** docs/api.md §2.6.1, §2.7 and §2.7.2; the card tsk-46vft0764kve (the terms from `terms`), the review of #652, 2026-10-29; the coordinator's ruling on an empty allowlist, 2026-10-29
 **Revisit when:** acceptance moves from the link's page to the form, or terms gain more than a URL and a version (§16.4)
 
 Where `GET /auth/methods` answers `terms`, `/register` says that
 completing the account accepts this hub's terms, with their version. It
 links the terms only when `M.dom.safeUrl` passes the address (plain
-`https`, no user info); otherwise it names them without a link.
+`https`, no user info); otherwise it names them without a link. The
+hub answers `registration: false` under `allowlist` while both lists
+are empty, so neither the login page nor `/register` offers a way in
+that nobody could finish; the instance admin sees the gap as
+`missing: ["allowlist"]` (§16.4).
 
 **Reason:** the terms are accepted on the link's page, where their
 version is signed with the registration token (§2.7.2). Without a word
@@ -1313,7 +1317,9 @@ find out only there that they do not want to accept them.
 nothing, since acceptance and its version belong to the completion's
 `POST` (§2.7.2), and it would suggest a second acceptance. Linking any
 URL the hub returns: the hub checks `https`, but the dashboard does not
-rely on that alone.
+rely on that alone. `registration: true` under an empty allowlist, as
+the contract first said: every address would get the form and the mail
+silence of a request that is dropped, a dead end for everyone.
 
 ## An agent is named with the instance that wrote or did it, as <handle>#<id>
 

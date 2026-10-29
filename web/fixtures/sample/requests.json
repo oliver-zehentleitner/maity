@@ -5,7 +5,7 @@
       "class": "consent",
       "title": "Ship the checkout rounding fix into the frozen 2.3?",
       "summary": "Totals with three items at 0.335 round down instead of up.",
-      "tried": "Fix and regression test are on a branch; the freeze allows fixes only after the tag.",
+      "tried": "Fix and regression test are on a branch; the review allows fixes only after the tag.",
       "options": [
         { "id": "now", "label": "Into 2.3", "detail": "Retag the release candidate." },
         { "id": "after", "label": "2.3.1", "detail": "Tag 2.3 as is, the fix follows." }

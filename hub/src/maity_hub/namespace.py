@@ -71,9 +71,9 @@ def route_words(paths: Iterable[str]) -> frozenset[str]:
 ROUTE_WORDS = frozenset(
     {
         "attachments", "banner", "conversations", "credentials", "events", "forge",
-        "invitations", "joins", "jour-fixe", "keep-the-why", "logo", "members", "memory",
-        "messages", "placements", "probe", "requests", "rules", "runners", "swarm", "takeovers",
-        "tasks", "ticker", "transfer",
+        "invitations", "joins", "jour-fixe", "keep-the-why", "logo", "me", "members", "memory",
+        "messages", "placements", "probe", "repository", "requests", "rules", "runners", "swarm",
+        "takeovers", "tasks", "ticker", "transfer",
     }
 )  # fmt: skip
 

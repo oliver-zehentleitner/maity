@@ -876,6 +876,10 @@ def _authorise_patch(mine: Membership, body: ProjectPatch, given: set[str]) -> N
         raise forbidden(message="the absence is set by the owner only")
     if given - {"absence", "reason"}:
         mine.require("project:admin")
+    # Launch is the owner's go (§6.1): an admin human is refused too.
+    moves_to_launch = body.state == "launch" and mine.project.state != "launch"
+    if moves_to_launch and (mine.trust != "owner" or mine.kind != "human"):
+        raise forbidden(message="moving to launch is the owner's go")
 
 
 def _absence(project: Any) -> dict[str, Any] | None:
