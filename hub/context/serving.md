@@ -211,6 +211,11 @@ files now follow the landing setting and the legal pages (`routes/seo.py`): `All
 and the legal pages that are set, a sitemap with the root and those pages, none when there is
 neither. The join host answers both files `not_found`, in `join_host.route`, before its redirect.
 
+The rendered pages answer `HEAD` as well as `GET`, and the middleware gives a `HEAD` of a public
+path the same cache value: otherwise the app shell's route matches a `HEAD` of `/` and answers
+`noindex` for a page that is meant to be indexed. **Rejected alternative:** leaving `HEAD` to the
+shell. Its headers then differ from `GET`'s on the same address.
+
 **Reason:** the dashboard's mount would otherwise answer `/robots.txt` from the web
 directory (or with its 404), and the root's header must follow a setting an admin changes
 without a restart.

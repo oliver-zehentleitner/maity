@@ -81,7 +81,7 @@ class HubMiddleware:
         scope["state"]["on_join_host"] = on_join_host
         path = scope.get("path", "")
         public: bytes | None = None
-        if not on_join_host and scope.get("method") == "GET":
+        if not on_join_host and scope.get("method") in ("GET", "HEAD"):
             if PUBLIC_PATHS.fullmatch(path):
                 public = b"public, max-age=60"
             elif SEO_PATHS.fullmatch(path):

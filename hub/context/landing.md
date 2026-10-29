@@ -149,3 +149,12 @@ winning over an inference.
   purpose without being told.
 - Storing the derived terms in the registration setting at each change of the page: two stores
   that can differ, and an admin's explicit value could not be told apart from the copy.
+
+Every caller of `registration.resolve` passes the public URL (`public_url` has no default): the
+login page's `GET /auth/methods`, the registration's link page, `POST /registration`, the invitation
+page and the admin's view must name the same terms, or the form says nothing about terms the link
+page then requires.
+
+**Rejected alternative:** a default of `""` for `public_url`. It silently dropped
+`source: legal_pages` for `/auth/methods` (found in review of #635), the form showed no terms, and no
+test noticed.

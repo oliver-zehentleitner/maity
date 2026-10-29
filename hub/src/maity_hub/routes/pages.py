@@ -49,7 +49,7 @@ def landing_html(
     )
 
 
-@page_router.get("/", include_in_schema=False)
+@page_router.api_route("/", methods=["GET", "HEAD"], include_in_schema=False)
 def root(
     request: Request,
     lang: str | None = None,
@@ -126,13 +126,20 @@ def legal_html(
 
 
 def _legal_route(page: str, address: str) -> None:
-    @page_router.get(f"/{address}", include_in_schema=False, name=f"legal_{page}")
+    @page_router.api_route(
+        f"/{address}", methods=["GET", "HEAD"], include_in_schema=False, name=f"legal_{page}"
+    )
     def current(request: Request, lang: str | None = None) -> Response:
         with engine_of(request).begin() as conn:
             body = legal_html(conn, request, page, None, lang)
         return _answer(body)
 
-    @page_router.get(f"/{address}/{{version}}", include_in_schema=False, name=f"legal_{page}_old")
+    @page_router.api_route(
+        f"/{address}/{{version}}",
+        methods=["GET", "HEAD"],
+        include_in_schema=False,
+        name=f"legal_{page}_old",
+    )
     def earlier(version: str, request: Request, lang: str | None = None) -> Response:
         with engine_of(request).begin() as conn:
             body = legal_html(conn, request, page, version, lang)
@@ -144,7 +151,7 @@ def _answer(body: str) -> Response:
         body,
         headers={
             "Cache-Control": PUBLIC,
-            "Vary": "Accept-Language",
+            "Vary": "Cookie, Accept-Language",
             "Content-Security-Policy": LEGAL_CSP,
         },
     )

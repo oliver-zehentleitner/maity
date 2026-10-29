@@ -242,7 +242,7 @@ class Resolved:
 
 
 def resolve(
-    conn: Connection, env: RegistrationEnvironment, mail_ready: bool, public_url: str = ""
+    conn: Connection, env: RegistrationEnvironment, mail_ready: bool, public_url: str
 ) -> Resolved:
     stored = store.stored(conn, SECTION)
     values = {

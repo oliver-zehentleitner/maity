@@ -257,6 +257,22 @@ def test_a_page_that_is_not_set_is_not_found(make_client: ClientFactory, owner: 
         assert answer.json()["error"]["code"] == "not_found"
 
 
+def test_head_answers_with_the_headers_of_get_not_the_shells(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    """A crawler that asks with `HEAD` first must not be told `noindex` of a page that is
+    meant to be indexed (the shell's headers)."""
+    publish(owner)
+    owner.patch(LEGAL, {"imprint": IMPRINT})
+    visitor = make_client()
+    for path in ("/", "/impressum"):
+        got, head = visitor.get(path), visitor.head(path)
+        assert head.status_code == 200 and head.content == b""
+        for name in ("content-security-policy", "cache-control", "vary", "x-robots-tag"):
+            assert head.headers.get(name) == got.headers.get(name), (path, name)
+        assert "x-robots-tag" not in head.headers
+
+
 def test_a_legal_page_is_static_html_with_its_version_and_its_own_policy(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
@@ -268,7 +284,7 @@ def test_a_legal_page_is_static_html_with_its_version_and_its_own_policy(
         answer.headers["content-security-policy"] == "default-src 'none'; style-src 'unsafe-inline'"
     )
     assert answer.headers["cache-control"] == "public, max-age=60"
-    assert answer.headers["vary"] == "Accept-Language"
+    assert answer.headers["vary"] == "Cookie, Accept-Language"  # as the page's (§16.7)
     page = answer.text
     assert "<script" not in page and "<h1>Imprint</h1>" in page and f"As of {version}" in page
     assert "<h1>Operator</h1>" in page and "<li>one</li>" in page

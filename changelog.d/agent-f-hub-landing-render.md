@@ -16,3 +16,6 @@
 
 - hub: `robots.txt` and `sitemap.xml` follow the landing page and the legal pages that are set;
   the app shell is `noindex` on every path including `/`.
+- hub: `HEAD` of `/` and of the legal pages answers with the headers of `GET`, not the app
+  shell's; the two preview `POST`s take the 512 KiB body of the settings they preview;
+  `GET /auth/methods` names the terms of the legal pages, as the registration does.
