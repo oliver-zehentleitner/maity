@@ -118,7 +118,7 @@ def test_the_join_page_on_the_join_host(make_client: ClientFactory, owner: flow.
     html = join_client(make_client).get(f"/{token}", headers={"Accept": "text/html"})
     assert html.headers["content-type"].startswith("text/html")
     assert f'href="{PUBLIC}/"' in html.text
-    public = make_client().get(f"/j/{token}")
+    public = make_client().get(f"/join/{token}")
     assert f"{PUBLIC}/api/v1/join/{token}; then" in public.text  # both shapes stay valid
 
 
@@ -160,7 +160,6 @@ def test_a_dead_link_says_so(make_client: ClientFactory, owner: flow.Human) -> N
     [
         "/",
         "/join/" + "A" * 22,
-        "/j/" + "A" * 22,
         "/api/v1/help",
         "/api/v1/health",
         "/r/xyz",
@@ -195,7 +194,7 @@ def test_the_public_host_is_unchanged(make_client: ClientFactory, owner: flow.Hu
     client = make_client(join_url=JOIN)
     assert client.get("/api/v1/help").status_code == 200
     token = token_of(create(owner))
-    assert client.get(f"/j/{token}").status_code == 200
+    assert client.get(f"/join/{token}").status_code == 200
     assert client.get(f"/{token}", follow_redirects=False).status_code != 302
 
 
@@ -271,14 +270,15 @@ def test_pairing_lines_stay_on_the_public_url(make_client: ClientFactory, migrat
 # --- the page's path and install line (#104, #113) ------------------------------------------
 
 
-def test_the_page_lives_at_join_with_j_as_an_alias(
+def test_the_page_lives_at_join_and_the_short_path_is_gone(
     make_client: ClientFactory, owner: flow.Human
 ) -> None:
     token = token_of(create(owner))
     client = make_client()
-    canonical, alias = client.get(f"/join/{token}"), client.get(f"/j/{token}")
-    assert canonical.status_code == alias.status_code == 200
-    assert canonical.text == alias.text  # the same document, no redirect
+    assert client.get(f"/join/{token}").status_code == 200
+    # `/j/<token>` was an alias; now it is a dashboard path, the app shell (§16.11).
+    short = client.get(f"/j/{token}")
+    assert "text/markdown" not in short.headers.get("content-type", "")
 
 
 def test_the_page_names_the_instances_install_line_and_the_state_directory(

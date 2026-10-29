@@ -297,7 +297,9 @@ def test_quickstart_is_for_sqlite_only(
     assert "migrate, owner create and serve" in err and PASSWORD not in err
 
 
-@pytest.mark.parametrize(("login", "handle"), [("alice", "alice"), ("Bob Smith", "owner")])
+@pytest.mark.parametrize(
+    ("login", "handle"), [("alice", "alice"), ("Bob Smith", "owner"), ("admin", "owner")]
+)
 def test_quickstart_names_the_account_after_the_login(
     login: str,
     handle: str,
@@ -355,3 +357,14 @@ def test_quickstart_never_adds_a_second_first_account(
 
         assert [r.handle for r in conn.execute(select(t.human.c.handle))] == ["other"]
     engine.dispose()
+
+
+def test_quickstart_refuses_a_reserved_handle_for_the_first_account(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The first account has no way to be renamed, and `maity-hub migrate` stops on a
+    handle that is a first segment of the hub (§16.11): so it is refused up front."""
+    _banner_only(monkeypatch)
+    _stdin(monkeypatch, ACCOUNT_PASSWORD + "\n")
+    assert main(["quickstart", "--handle", "admin"]) == 2
+    assert "reserved first segment" in capsys.readouterr().err

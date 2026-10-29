@@ -73,7 +73,7 @@ def test_an_immediate_item_waits_its_window_and_goes_once(
     [mail] = notifications(migrated)
     assert mail.recipient == "me@example.org"
     assert mail.subject.startswith("[Maity] Maity: ") and mail.subject.endswith("asks: Which?")
-    assert "https://hub.example/#/maintainer/maity/inbox" in mail.body
+    assert "https://hub.example/maintainer/maity/inbox" in mail.body
     assert "Maity only links to https://hub.example" in mail.body
     assert "Stop these mails (inbox): https://hub.example/mail/unsubscribe/" in mail.body
     assert mail.headers["List-Unsubscribe"].startswith("<https://hub.example/mail/unsubscribe/")
@@ -266,7 +266,7 @@ def test_a_digest_lists_fifty_and_counts_the_rest(migrated: Engine) -> None:
     from maity_hub.notifications.preferences import DEFAULTS
 
     many = [
-        Item(kind="inbox", at=clock.now(), title=f"t{n}", target=None, url=f"{PUBLIC}/#/x", seq=n)
+        Item(kind="inbox", at=clock.now(), title=f"t{n}", target=None, url=f"{PUBLIC}/x", seq=n)
         for n in range(53)
     ]
     with migrated.begin() as conn:
@@ -275,7 +275,7 @@ def test_a_digest_lists_fifty_and_counts_the_rest(migrated: Engine) -> None:
         )
     assert subject == "[Maity] 53 updates" and kinds == ["inbox"]
     assert body.count("\n- ") + body.startswith("- ") == 50
-    assert "and 3 more: https://hub.example/#/" in body
+    assert "and 3 more: https://hub.example/" in body
 
 
 def test_over_the_instance_budget_mail_waits_and_merges_into_one(

@@ -758,6 +758,6 @@ def _tell_old_address(
             f"The Maity address of your account at {public_url} {change} "
             f"on {clock.rfc3339(clock.now())}.{where}\n\n"
             "If this was not you, sign in and check your sessions: "
-            f"{public_url}/#/account/sessions\n"
+            f"{public_url}/account/sessions\n"
         ),
     )

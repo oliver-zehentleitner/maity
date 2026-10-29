@@ -53,11 +53,11 @@ def test_a_device_signs_in_by_code_and_number(
 ) -> None:
     code = started(desk)
     assert len(code["code"]) == 14 and code["code"][4] == "-" and code["code"][9] == "-"
-    assert code["url"] == f"https://hub.example/#/sign-in/code?c={code['code'].replace('-', '')}"
+    assert code["url"] == f"https://hub.example/sign-in/code#c={code['code'].replace('-', '')}"
     assert desk.get(f"/auth/device-codes/{code['id']}").json()["status"] == "waiting"
 
     new = phone(make_client)
-    redeemed = redeem(new, code["code"].lower(), next="/#/p/maity/board")
+    redeemed = redeem(new, code["code"].lower(), next="/maintainer/maity/board")
     assert redeemed.status_code == 200
     body = redeemed.json()
     assert set(body) == {"status", "expires_at", "match_number"}
@@ -86,7 +86,7 @@ def test_a_device_signs_in_by_code_and_number(
     done = new.post("/api/v1/auth/device-login/complete")
     assert done.status_code == 200
     assert done.json()["member"]["handle"] == "maintainer"
-    assert done.json()["next"] == "/#/p/maity/board"
+    assert done.json()["next"] == "/maintainer/maity/board"
     assert SESSION_COOKIE in new.cookies and PENDING_COOKIE not in new.cookies
     assert "maity_device" in new.cookies
     csrf = new.get("/api/v1/auth/session").json()

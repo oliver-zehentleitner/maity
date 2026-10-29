@@ -57,7 +57,7 @@ window.Maity = window.Maity || {};
   // made), which its owner can read. Never a wider existing chat, never a
   // direct chat with someone else's agent.
   async function open(ctx, member) {
-    if (member.owner_id === ctx.me.id) { window.location.hash = ctx.link("chat", member.id); return; }
+    if (member.owner_id === ctx.me.id) { M.route.go(ctx.link("chat", member.id)); return; }
     if (M.groupChat && !(await M.groupChat.served())) throw new Error("This hub does not support group chats yet.");
     const page = await M.api.getAll(ctx.base + "/conversations");
     const existing = page.items.find((c) => c.kind === "group" && !c.closed_at && c.access === "participant"
@@ -66,7 +66,7 @@ window.Maity = window.Maity || {};
       && c.participants.some((p) => p.member_id === member.id));
     const chat = existing || await M.api.post(ctx.base + "/conversations",
       { title: "Talk to the lead", participants: [member.id] });
-    window.location.hash = ctx.link("chat", chat.id);
+    M.route.go(ctx.link("chat", chat.id));
   }
 
   // Every project's targets, for the header outside a project: each
@@ -101,7 +101,7 @@ window.Maity = window.Maity || {};
       && c.participants.every((p) => want.has(p.member_id)));
     const chat = existing || await M.api.post(ctx.base + "/conversations",
       { title: "Talk to the leads", participants: members.map((m) => m.id) });
-    window.location.hash = ctx.link("chat", chat.id);
+    M.route.go(ctx.link("chat", chat.id));
   }
 
   // The header's Lead button, beside Chat (the maintainer's decision on

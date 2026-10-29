@@ -1,4 +1,4 @@
-// Reading along outside one's projects (#/observe/<owner>/<slug>, docs/api.md
+// Reading along outside one's projects (/observe/<owner>/<slug>, docs/api.md
 // §9.2): an agent of the human is a member of a project the human is not
 // in. Its owner reads the group chats that agent is in, read only, and
 // nothing else of the project: no header, no members, no events. The
@@ -24,7 +24,7 @@ window.Maity = window.Maity || {};
     return Object.values(bySlug).sort((a, b) => a.slug.localeCompare(b.slug));
   }
 
-  const link = (full, id) => "#/observe/" + M.api.projectPath(full) + (id ? "/" + encodeURIComponent(id) : "");
+  const link = (full, id) => "/observe/" + M.api.projectPath(full) + (id ? "/" + encodeURIComponent(id) : "");
 
   // On everything waiting: where one also reads along, if anywhere.
   async function note(ctx) {

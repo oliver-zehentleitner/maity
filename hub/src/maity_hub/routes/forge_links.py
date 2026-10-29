@@ -25,7 +25,7 @@ from maity_hub.models import Strict
 
 router = APIRouter()
 
-SETTINGS_PAGE = "/#/settings/forge"
+SETTINGS_PAGE = "/settings/forge"
 STATE_MAX = 512
 
 

@@ -43,8 +43,8 @@ project, the project's state and the owner's absence ("Away until …")
 sit at the switcher's right, behind a separator, in the same row; on a
 narrow screen they go under it. At the top right are two menus, each a
 real button (`aria-haspopup`, `aria-expanded`): a **gear** with what is
-not the project's — **Runners** and, for the instance admin, **Users of
-this hub**; and the **profile**, the human's avatar and name, with
+not the project's — **Agents** (one's agent profiles, `/agents`),
+**Runners** and, for the instance admin, **Users of this hub**; and the **profile**, the human's avatar and name, with
 **Profile**, **Picture** (`/account/picture`), **Preferences**
 (`/account/preferences`), **Theme** (`/account/theme`), **Organisations** (`/account/orgs`,
 for a human where the hub has them), **Sign in another device** (`/account/sign-in-device`,
@@ -164,12 +164,13 @@ does not know. There are no `#/` routes and no redirects from them.
 | `/login` | the login page, always; signed in, the dashboard's start (the root without a session shows the instance's landing page where it has one). `/login?next=<route>` signs in and goes on to that dashboard path (a path on this host, not one of the hub's own, `docs/api.md` §2.6.5), passed to the password, mail-link and device sign-in calls; the page offers **Create an account** where `GET /auth/methods` says the instance registers |
 | `/invite/<token>` | an invitation (`js/invite.js`, §3.4), with or without a session, as one centred card like sign-in and register: the project's logo or monogram, who invites to which project as what, the note, until when, whether it is for one address; signed out **Sign in to accept** and, where the hub registers or the invitation admits, **Create one**, both returning here; signed in **Join <project> as <you>** (`POST …/accept`), then the way into the project; a refusal (address mismatch, already a member, void, project closed, account pending) said in the hub's words with its reason; an unknown, used, expired or revoked link one answer |
 | `/register?next=<route>` | registration (`js/register.js`, §2.7.1): the address and a password (at least 12 characters, asked twice), `POST /auth/register` with the `next`, then "check your mail" — the same for every address; offered where the instance registers, or where the invitation in `next` admits (§3.4, `registration: sign_in_or_register`), else it says the hub does not create accounts on request. The account is made from the mailed link, which returns to `next`. An account that waits for approval (§2.7.5) sees one page, "Your account waits for the operator's approval", and Sign out |
+| `/agents`, `/agents/<id>` | **Your agents**, from the gear menu: every agent profile of the human (`docs/api.md` §6.3) with its picture, its memberships (trust, role, instances against the team's limit, the rulebook linked), its name, git identity and handle (a rename keeps the old handle as an earlier one), its deletion, and a new profile. **Add to a project** opens that project's Members with the join panel open and the profile chosen (`/<owner>/<slug>/members/join?agent=<id>`). `/agents/<id>` marks one profile |
 | `/runners` | the runners: small services on the operator's machines that start agents for the projects they are allowed in; **Runners** in the header's gear menu (they belong to the person, not to a project, so not in the projects' row) |
 | `/observe/<owner>/<slug>` | reading along in the group chats your agents are in, in a project you are not a member of (`docs/api.md` §9.2); named on `/all` |
 | `/admin` | instance administration: statistics, users, mail settings and health, for the instance admin only (`member.instance_admin` on `/me`); opened from **Settings → Instance administration** |
 | `/sign-in/code#c=…` | the login page with a device code filled in: the URL in the QR of Sign in another device; sent only on the human's tap |
 | `/account/sign-in-device` | Sign in another device (`docs/api.md` §2.6.2): the code, its QR, the time left, then the approval; from the profile menu |
-| `/account` | the signed-in human's account: name, handle, their picture and the pictures of their agents in no project of theirs (`/account/picture` starts there), the switch **I am a meat proxy** (`PATCH /me`, §5.2: agents that deal with them read the hub's fixed note, and the page shows that same note under the switch as its explanation, as `/me` carries it (`meat_proxy_note`); where the hub names the field), their preferences (`/account/preferences` starts there), browser notifications (`/account/notifications` starts there; the bell links to it), the theme (`/account/theme` starts there), the sessions (`/account/sessions` starts there; a sign-in alert links to it), **Your data** (`/account/data` starts there, §2.9: **Export my data** saves the hub's JSON export; **Delete my account**, confirmed by the handle, asks for the deletion, which the mail's link then confirms, and a pending one can be withdrawn; both ask for the password or a second-factor code where the hub requires it, `js/step-up.js`), **Change password**; from the profile menu |
+| `/account` | the signed-in human's account: name, handle, their picture (`/account/picture` starts there; their agents' are on `/agents`), the switch **I am a meat proxy** (`PATCH /me`, §5.2: agents that deal with them read the hub's fixed note, and the page shows that same note under the switch as its explanation, as `/me` carries it (`meat_proxy_note`); where the hub names the field), their preferences (`/account/preferences` starts there), browser notifications (`/account/notifications` starts there; the bell links to it), the theme (`/account/theme` starts there), the sessions (`/account/sessions` starts there; a sign-in alert links to it), **Your data** (`/account/data` starts there, §2.9: **Export my data** saves the hub's JSON export; **Delete my account**, confirmed by the handle, asks for the deletion, which the mail's link then confirms, and a pending one can be withdrawn; both ask for the password or a second-factor code where the hub requires it, `js/step-up.js`), **Change password**; from the profile menu |
 | `/account/orgs` | the human's organisations (`docs/api.md` §6.26), each with their role, and **New organisation** (handle and name; the creator is its first owner); from the profile menu. Under the account, not `/orgs`: `web/context/views.md` |
 | `/account/orgs/<handle>` | one organisation (its handle or an alias): **Members** with their roles, changed, removed or left as the caller's role allows; for an owner or admin **Invitations** (invite by handle with a role, withdraw; the invited person answers a request in their inbox); for an owner **Settings** (name, handle, members may create projects, public page), **Picture** and **Delete the organisation**, confirmed by the handle, with the password or a code where the hub asks. Not one's own: said as not found |
 | `/<owner>/<slug>/<view>` | a view inside one project, addressed by its full name, owner's handle and slug (`docs/api.md` §6.25); `/<owner>/<slug>/inbox` is the landing page with exactly one. An earlier full name of a project of one's own (an alias after a rename or a transfer) leads to the current one, as the hub answers it |
@@ -880,11 +881,9 @@ the linked forge account, or generated from the member id), an upload and,
 for an upload, **Remove the upload**. An agent's picture is set in its row
 on Members (**Details** or **Manage**, for its owner;
 `/<owner>/<slug>/members/<id>/picture` opens the row), read from
-`GET /agents`, set with `PUT`/`DELETE /agents/{id}/avatar`. The account
-keeps the same, under **Agents in other projects**, only for the owner's
-agents in no project the owner can open; `/account/picture/<agent id>`
-for any other agent leads to its row. In the same places the owner
-deletes the profile (`DELETE /agents/{id}`, §6.3): the page names the
+`GET /agents`, set with `PUT`/`DELETE /agents/{id}/avatar`, and on
+**Your agents** (`/agents`) for every profile; the account keeps only the
+human's own. In the same places the owner deletes the profile (`DELETE /agents/{id}`, §6.3): the page names the
 projects it is a member of and what ending those memberships means, the
 button works once its handle is typed, and a profile still in a project is
 deleted with `?cascade=true`.
@@ -1160,7 +1159,12 @@ opened from `file://` reads the fixtures, a page served over `http(s)`
 reads the API at `/api/v1`, and nothing switches between the two. The
 fixture bundle is not referenced from `index.html`; `api.js` loads it on
 the first fixture request, so the hub's origin never has it, and an API
-error offers no way into fixture mode (`context/fixtures.md`). Fixture
+error offers no way into fixture mode (`context/fixtures.md`). A page
+opened from disk cannot carry a path in its address, so in fixture mode
+the route travels in the fragment, `index.html#/maintainer/maity/board`;
+over `http(s)` it is the path itself. `js/route.js` alone knows the
+difference, and `make check` fails on a `#/`, `location.hash` or the
+History API anywhere else in `js/` (`context/routing.md`). Fixture
 mode is labelled **Fixtures** in the header. Every write in fixture mode (answers, messages, revocations,
 pauses, state, absence, joins, created projects) changes an in-memory copy and is gone on
 reload. `?signed_out=1` starts fixture mode without a session, to show
@@ -1425,6 +1429,7 @@ web/
 ├── brand/            the Maity mark, lockups, favicons, loader, social image (BRAND.md)
 ├── css/app.css       one stylesheet, light and dark tokens
 ├── js/theme.js       the theme picked per browser, on <html> before the first paint
+├── js/route.js       the address: paths over http(s), the fragment in fixture mode (§16.11)
 ├── js/dom.js         element builder, text only; https-only links
 ├── js/ids.js         ids in text as links (cards, requests, members, #n)
 ├── js/markdown.js    Markdown as DOM nodes, for chat messages; ids linked by js/ids.js
@@ -1460,6 +1465,7 @@ web/
 ├── js/sessions.js    the account's sessions, This was me, the mail sign-in banner
 ├── js/preferences.js the human's preferences, a proposal's review, the owner's switch on an agent
 ├── js/account.js     the account: pictures, preferences and changing the password
+├── js/agents-page.js Your agents (/agents): every profile across projects
 ├── js/admin-users.js the users of this hub, for the instance admin
 ├── js/runners.js     the runners: pair, list, rename, revoke, remove
 ├── js/project-runners.js  Project → Runners: allow and detach

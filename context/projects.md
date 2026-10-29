@@ -143,6 +143,33 @@ reach.
 - A redirect to shields.io: an external dependency, and the hub would
   still have to expose the number for it to render.
 
+## Changing the project badge needs no reason
+
+**Id:** edccf213-6a0c-40e7-b448-ac1413eb3321
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** maintainer decision in the team chat, 2026-10-29; contract in `docs/api.md` §6.1, §6.20 (#617)
+**Revisit when:** another policy field turns out to be as purely presentational as the badge
+**See:** projects.md#the-project-badge-is-opt-in-and-shows-counts-only — c436ef08-627d-46c9-b3c9-92b1b0fdf3e4 — as of 2026-10-29
+
+A `PATCH` whose policy change is `badge` alone takes `reason`
+optionally; its `policy_changed` carries `reason: null` when none was
+sent. Every other policy field keeps its reason, and a badge change
+sent together with another policy field or with `state` still needs
+one. The event and the `rules_version` bump stay, so the switch is
+still visible to everyone.
+
+**Reason:** the maintainer found the reason prompt in the project
+settings a needless step for the badge. The badge only decides what a
+README shows; it changes nothing about how the project works, who may
+do what or how cards move.
+
+**Rejected alternatives:**
+- Keeping the reason for the badge like for every policy field (the
+  state before): it asked for an audit note on a choice that guards
+  nothing.
+
 ## The memory provider is chosen at creation, Keep the Why preselected; the setup is an agent's work through cards and pull requests
 
 **Id:** 822d63b0-99da-4092-aaef-93c0674934a2
@@ -547,3 +574,31 @@ consequences followed by a join of the same person.
 - Ending and re-creating a shared owner's membership on a transfer
   between organisations: the removal's consequences (§6.2) and a
   `member_joined` for someone who never left.
+
+## A member's own settings in a project override their personal defaults
+
+**Id:** b880260a-094c-4045-989e-6a737f314e79
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision in the team chat, 2026-10-29 ("machen wir das als muster, dort defaults setzen die aber pro projekt überschrieben werden können"); contract `docs/api.md` §6.2 "A member's own settings in a project"
+**Revisit when:** a setting needs a third level (an organisation's default between the person's and the project's)
+
+Settings that concern how a human works in a project, not how the
+project works, live in two places: the human's account holds the
+personal default, and the human's membership holds an override per
+project, `null` meaning "use my default". They are the member's own and
+apart from the project's settings, which the owner and admins keep. The
+first is the threshold after which the human hears of their agents that
+are not listening; the firewall for one's own agents (card
+tsk-5c6hw63ncq3m) follows the same shape.
+
+**Reason:** the maintainer wants one place to set a value once and a way
+to differ in the projects where it matters, without asking a project's
+owner.
+
+**Rejected alternatives:**
+- One value per project set by the project's owner: it decides for every
+  member how they want to be told about their own agents.
+- Only a personal value: a member cannot treat a busy project
+  differently from a quiet one.
