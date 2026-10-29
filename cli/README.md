@@ -315,7 +315,7 @@ minimum version and the upgrade line from the answer.
 
 | Command | Call (`docs/api.md`) |
 |---|---|
-| `maity claim <card> [--reason R]` | `POST …/tasks/{card}/claim` (§6.5); `--reason` in `freeze` and `fixes-only` |
+| `maity claim <card> [--reason R]` | `POST …/tasks/{card}/claim` (§6.5); `--reason` in `plan` and `review` |
 | `maity unclaim <card>` | `POST …/tasks/{card}/release` (§6.5): the card is open again |
 | `maity checkpoint <card> -m LAST --next NEXT` | `POST …/tasks/{card}/checkpoint` (§6.4), with `branch` and `head` from git; `--no-code` sends neither |
 | `maity say <to> "…" --type T [--task ID]` | `POST …/events` (§8.4); `<to>` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or a handle, current or former, or `<handle>#<instance>` (resolved to the id, see below); `T` is `interface_change`, `blocker`, `go_request`, `review_result`, `handover` or `notice` |
