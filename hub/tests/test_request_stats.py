@@ -26,17 +26,49 @@ def access_lines(caplog: pytest.LogCaptureFixture) -> list[str]:
     return [r.getMessage() for r in caplog.records if r.name == ACCESS]
 
 
-def test_the_route_is_the_path_with_the_values_put_back_as_names() -> None:
-    scope = {
-        "route": object(),
-        "path": "/api/v1/projects/ann/maity/tasks/tsk-1",
-        "path_params": {"owner": "ann", "slug": "maity", "card": "tsk-1"},
-    }
-    assert request_stats.route_of(scope) == "/api/v1/projects/{owner}/{slug}/tasks/{card}"
+def test_the_route_is_the_declared_pattern_whatever_the_values_look_like(
+    client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Values that are also words of the prefix or of the pattern (`api`, `v1`, `badge`) must
+    neither shift the pattern nor reach the log: it is the route's own text, not a rebuilt path."""
+    with caplog.at_level(logging.INFO, logger=ACCESS):
+        client.get("/api/v1/projects/api/v1/tasks")
+        client.get("/api/v1/join/api")
+        client.get("/badge/badge/badge.svg")
+    project, join, badge = access_lines(caplog)
+    assert project.endswith("route=/api/v1/projects/{owner}/{slug}/tasks")
+    assert join.startswith("GET /api/v1/join/… 404 ") and join.endswith(
+        "route=/api/v1/join/{token}"
+    )
+    assert badge.endswith("route=/badge/{owner}/{slug}.svg")
+
+
+def test_a_method_the_route_refuses_still_names_the_route(
+    client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A 405 on a project route (`ProjectRoute` rewrites its path parameters before the endpoint)
+    logs the same pattern as an answered request would."""
+    with caplog.at_level(logging.INFO, logger=ACCESS):
+        client.delete("/api/v1/projects/o/s/tasks")
+        client.put("/api/v1/health")
+    project, health = access_lines(caplog)
+    assert " 405 " in project and project.endswith("route=/api/v1/projects/{owner}/{slug}/tasks")
+    assert " 405 " in health and health.endswith("route=/api/v1/health")
+
+
+def test_a_route_that_cannot_be_told_from_the_path_is_a_dash() -> None:
+    import re as regex
+
+    class Route:
+        path = "/x/{id}"
+        path_format = "/x/{id}"
+        path_regex = regex.compile(r"^/x/(?P<id>[^/]+)$")
+
+    assert request_stats.route_of({"route": Route(), "path": "/x/1"}) == "/x/{id}"
+    assert request_stats.route_of({"route": Route(), "path": "/api/v1/x/1"}) == "/api/v1/x/{id}"
+    assert request_stats.route_of({"route": Route(), "path": "/elsewhere"}) == "-"
+    assert request_stats.route_of({"route": object(), "path": "/x/1"}) == "-"
     assert request_stats.route_of({"path": "/x"}) == "-"
-    # A value that is also a word of the path is put back at the first place it occurs.
-    twin = {"route": object(), "path": "/projects/projects/x", "path_params": {"a": "projects"}}
-    assert request_stats.route_of(twin) == "/{a}/projects/x"
 
 
 def test_a_routed_request_logs_its_time_and_the_pattern_not_the_values(

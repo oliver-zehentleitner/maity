@@ -277,23 +277,32 @@ create humans with handles such as `admin` without going through the CLI.
 **Revisit when:** the cluster gets a log or metrics stack that scrapes or parses something better than `key=value` lines, or the pool line needs the number of callers waiting for a connection
 
 Each request is logged as `METHOD path status ms=<n> route=<pattern>` (`middleware._access`): how
-long the hub took from the middleware's first line, and the route's pattern, which is the path with
-each value the router took from it put back as its `{name}` (`request_stats.route_of`; the route
-object's own `path` leaves the `/api/v1` prefix out). Once a minute `maity_hub.stats` logs `stats
-window=60s requests=<n> 5xx=<n> max_ms=<n> pool_open=<n> pool_checked_out=<n> pool_max=<n>`
-(`request_stats.Reporter`); the pool part is `pool=none` where the pool cannot be counted.
+long the hub took from the middleware's first line, and the pattern the answering route was
+declared with (`request_stats.route_of`): the route's `path_format`, with the `/api/v1` prefix put
+back where the route's regular expression takes the rest of the path, because the route object's
+own `path` leaves the prefix out (FastAPI 0.159 keeps it in the included router). A request no
+route answered, or one whose route cannot be told from the path, logs `-`. Once a minute
+`maity_hub.stats` logs `stats window=60s requests=<n> 5xx=<n> max_ms=<n> pool_open=<n>
+pool_checked_out=<n> pool_max=<n>` (`request_stats.Reporter`); the pool part is `pool=none` where
+the pool cannot be counted.
 
 **Reason:** in the incident the pool was used up at a low request rate and nothing in the log said
 how long requests took or how many connections were out; the diagnosis worked from Traefik's log.
 The cluster runs k3s with `kubectl logs` and no log stack, so the lines are plain `key=value`, to
 be read with `grep`, and an alarm built on them needs nothing from the hub. The pattern, not the
 path, so that a count by route is not one line per project slug or id, and so that nothing from the
-request reaches the log that the path masking (§1.1) does not already cover.
+request reaches the log that the path masking (§1.1) does not already cover: the pattern is the
+route's own declared text.
 
 **Rejected alternatives:**
 - JSON lines: the lead decided against it; with `kubectl logs` and no parser it is harder to read.
 - A `/metrics` endpoint: no scraper is known in the cluster, and an endpoint is a new surface with
   its own access rule; the log needs neither.
+- Rebuilding the pattern from the logged path and the router's `path_params`, which the first
+  version did: a value that is also a word of the prefix or of the pattern (`api`, `v1`, `badge`)
+  was found in the wrong place, so the pattern shifted and a real path or token value could stay
+  in the log; and `ProjectRoute` rewrites `owner` and `slug` into one parameter before the
+  endpoint, so the parameters did not match the pattern (found in review of #670).
 - The number of callers waiting for a pool connection: SQLAlchemy's `QueuePool` does not expose it,
   so the line shows open and checked-out connections and the ceiling, from which a full pool reads.
 

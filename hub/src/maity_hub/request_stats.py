@@ -16,9 +16,12 @@ from typing import Any
 
 from sqlalchemy import Engine
 
+from maity_hub import API_VERSION
+
 log = logging.getLogger("maity_hub.stats")
 
 INTERVAL = 60.0  # seconds between two `stats` lines
+API_PREFIX = f"/api/{API_VERSION}"
 
 
 @dataclass(frozen=True)
@@ -56,20 +59,21 @@ WINDOW = Window()
 
 
 def route_of(scope: Any) -> str:
-    """The route's pattern (`/api/v1/tasks/{id}`): the path with each value the router took
-    out of it put back as its `{name}`, so it holds nothing from the request. `-` for a
-    request no route answered. (The route object's own `path` leaves the `/api/v1` prefix out.)"""
-    if scope.get("route") is None:
+    """The pattern of the route that answered, as it was declared (`/api/v1/tasks/{id}`), so it
+    holds nothing from the request; `-` for a request no route answered, or one whose route
+    cannot be told from the path. The route object's own `path` leaves out the prefix the router
+    was included under (FastAPI 0.159 keeps it elsewhere), so the one prefix the hub uses is put
+    back where the route's regular expression takes the rest of the path."""
+    route = scope.get("route")
+    pattern = getattr(route, "path_format", None) or getattr(route, "path", None)
+    regex = getattr(route, "path_regex", None)
+    if not isinstance(pattern, str) or regex is None:
         return "-"
     path = str(scope.get("path", ""))
-    cursor = 0
-    for name, value in (scope.get("path_params") or {}).items():
-        found = path.find(str(value), cursor) if str(value) else -1
-        if found < 0:
-            continue
-        path = f"{path[:found]}{{{name}}}{path[found + len(str(value)):]}"
-        cursor = found + len(name) + 2
-    return path
+    for prefix in ("", API_PREFIX):
+        if path.startswith(prefix) and regex.fullmatch(path[len(prefix) :]):
+            return prefix + pattern
+    return "-"
 
 
 def pool_fields(engine: Engine) -> str:
