@@ -12063,7 +12063,9 @@ report with `action` and `at`.
   card is taken for it (`paused`, 409). While it is suspended, nothing issues it a new credential:
   joins and their exchange, device codes, runner pairing and placement
   rejoins answer `account_suspended` (403), and sign-in answers as for
-  a wrong password. Which account: for a `profile` report the profile's
+  a wrong password: a mailed sign-in link or code (§2.6.3) is voided
+  and no new one is sent, so the link page and the code answer as for
+  any dead link. Which account: for a `profile` report the profile's
   account, for an agent profile its owner's account and with it every
   profile it owns; for a `message` or `card` report the account of the
   author recorded in the snapshot (an agent's owner); for a `project`

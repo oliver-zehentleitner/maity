@@ -61,10 +61,15 @@ def test_remove_archives_a_project_that_stays_archived(
     team: dict[str, Any], migrated: Engine
 ) -> None:
     owner = team["owner"]
+    badge = owner.patch(f"/projects/{PROJECT}", {"policy": {"badge": "members"}})
+    assert badge.status_code == 200, badge.text
     made = report(team["pat"], {"type": "project", "id": PROJECT}).json()
     assert resolve(team, made["id"], "remove", "scam").status_code == 200
     assert owner.get(f"/projects/{PROJECT}").json()["state"] == "archived"
     held(owner.patch(f"/projects/{PROJECT}", {"state": "build", "reason": "back"}))
+    # A surface left as it was blocks no other policy change (the badge was on).
+    other = owner.patch(f"/projects/{PROJECT}", {"policy": {"subtasks": "direct"}, "reason": "x"})
+    assert other.status_code == 200, other.text
 
 
 def test_remove_cancels_a_card_and_redacts_a_message(
@@ -86,6 +91,8 @@ def test_remove_cancels_a_card_and_redacts_a_message(
     assert row.redacted and row.payload["reason"] == "spam" and row.payload["by"] is None
     [notice] = [e for e in events(owner) if e["kind"] == "event_redacted"]
     assert notice["actor"] == {"kind": "moderation", "report_id": on_message["id"]}
+    [shown] = [e for e in events(owner) if e["seq"] == seq]
+    assert shown["moderation"]["report_id"] == on_message["id"]
 
 
 def test_remove_resets_an_agent_profile_and_holds_it(
@@ -222,3 +229,13 @@ def test_a_project_report_follows_a_rename(team: dict[str, Any], migrated: Engin
     assert stored == team["project_id"]
     shown = team["owner"].get(f"/admin/reports/{made['id']}").json()
     assert shown["target"] == {"type": "project", "id": PROJECT}
+
+
+def test_a_held_human_profile_shows_its_hold(team: dict[str, Any], migrated: Engine) -> None:
+    pat = team["pat"]
+    made = report(team["owner"], {"type": "profile", "id": pat.id}, "impersonation").json()
+    assert resolve(team, made["id"], "hide").status_code == 200
+    assert pat.get("/me").json()["member"]["moderation"]["action"] == "hide"
+    members = team["owner"].get(f"/projects/{PROJECT}/members").json()["items"]
+    shown = next(m for m in members if m["handle"] == "pat")
+    assert shown["moderation"]["report_id"] == made["id"]

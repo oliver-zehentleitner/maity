@@ -661,7 +661,7 @@ def patch_project(
         )
         if needs_reason and not body.reason:
             raise invalid({"reason": "required"}, "a change of state or policy needs a reason")
-        _refuse_against_a_hold(conn, project.id, state_changes, new_policy)
+        _refuse_against_a_hold(conn, project, state_changes, new_policy)
         if values:
             conn.execute(update(t.project).where(t.project.c.id == project.id).values(**values))
         if settings_changed:
@@ -902,14 +902,21 @@ HUMANS_ONLY_POLICY = {
 
 
 def _refuse_against_a_hold(
-    conn: Connection, project_id: str, state_changes: bool, new_policy: dict[str, Any] | None
+    conn: Connection,
+    project: Any,
+    state_changes: bool,
+    new_policy: dict[str, Any] | None,
 ) -> None:
     """A moderation hold (§16.8): a hidden or removed project stays members-only, and a
-    removed one stays archived, until an instance admin lifts the hold."""
-    found = moderation.hold(conn, "project", project_id)
+    removed one stays archived, until an instance admin lifts the hold. Only what this
+    PATCH turns on is refused: a surface left as it was blocks no other policy change."""
+    found = moderation.hold(conn, "project", project.id)
     if found is None:
         return
-    if new_policy is not None and any(new_policy[k] != v for k, v in PUBLIC_OFF.items()):
+    current = policy.of(project)
+    if new_policy is not None and any(
+        new_policy[k] != off and new_policy[k] != current[k] for k, off in PUBLIC_OFF.items()
+    ):
         raise moderation.held()
     if state_changes and found.action == "remove":
         raise moderation.held()

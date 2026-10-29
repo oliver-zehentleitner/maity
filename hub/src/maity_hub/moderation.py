@@ -14,7 +14,7 @@ from sqlalchemy import Connection, delete, insert, select, update
 
 from maity_hub import attachment_store, clock
 from maity_hub import tables as t
-from maity_hub.auth import leaks, sessions
+from maity_hub.auth import email_links, leaks, sessions
 from maity_hub.errors import ApiError, invalid
 from maity_hub.events import Actor
 from maity_hub.forge import Forge
@@ -166,6 +166,7 @@ def suspend(conn: Connection, human_id: str, report_id: str) -> None:
         .values(suspended_at=clock.now(), suspended_report=report_id)
     )
     sessions.end_where(conn, t.human_session.c.human_id == human_id, ENDED_BY)
+    email_links.void_human(conn, human_id)  # a mailed sign-in link or code dies too
     m, c = t.membership.c, t.credential.c
     agents = select(t.agent_profile.c.id).where(t.agent_profile.c.owner_id == human_id)
     credentials = conn.execute(

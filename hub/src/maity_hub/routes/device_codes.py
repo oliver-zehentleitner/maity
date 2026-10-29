@@ -276,9 +276,9 @@ def complete_redemption(request: Request) -> JSONResponse:
         row = device_codes.of_pending(conn, pending, lock=True)
         if row is None:
             raise not_found()
+        moderation.refuse_suspended(conn, row.human_id)  # before the state: §16.8
         if device_codes.status(row, clock.now()) != "approved":
             raise ApiError(409, "conflict", "the code is not approved")
-        moderation.refuse_suspended(conn, row.human_id)  # §16.8
         end_presented(conn, request.cookies.get(SESSION_COOKIE))
         user_agent = request.headers.get("user-agent")
         session_id, csrf, _, state = device_codes.complete(

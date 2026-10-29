@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, select
 
-from maity_hub import clock
+from maity_hub import clock, moderation
 from maity_hub import tables as t
 from maity_hub.auth import device_codes
 from maity_hub.auth.caller import SESSION_COOKIE
@@ -422,3 +422,18 @@ def test_a_waiting_poll_answers_when_the_hub_stops(desk: flow.Human) -> None:
     waiter.join(timeout=10)
     assert answers and answers[0].json()["status"] == "waiting"
     assert time.monotonic() - begun < 5  # not the 30 seconds it asked for
+
+
+def test_a_suspended_account_completes_no_device_code(
+    make_client: ClientFactory, desk: flow.Human, migrated: Engine
+) -> None:
+    """§16.8: `account_suspended`, not the denied code's `conflict`."""
+    code = started(desk)
+    new = phone(make_client)
+    match = redeem(new, code["code"]).json()["match_number"]
+    approved = desk.post(f"/auth/device-codes/{code['id']}/approve", {"number": match})
+    assert approved.status_code == 200, approved.text
+    with migrated.begin() as conn:
+        moderation.suspend(conn, desk.id, "rpt-000000000000")
+    done = new.post("/api/v1/auth/device-login/complete")
+    assert (done.status_code, done.json()["error"]["code"]) == (403, "account_suspended")

@@ -476,6 +476,9 @@ def member_views(
     from maity_hub import moderation  # moderation reads views; imported here, not at the top
 
     suspended = moderation.suspensions(conn, rows, {a.id: a.owner_id for a in agents.values()})
+    profile_holds = moderation.holds_of(
+        conn, "profile", [r.agent_id or r.human_id for r in rows if r.agent_id or r.human_id]
+    )
     views = []
     for row in rows:
         head = (
@@ -551,7 +554,7 @@ def member_views(
             unconfirmed = commitment.unconfirmed(projects[row.project_id], view["instances"])
             if unconfirmed is not None:
                 view["keep_the_why_unconfirmed"] = unconfirmed
-            if view["instances"] and row.paused_since is None:
+            if view["instances"] and stopped is None:
                 # The best of its instances' (§5.3).
                 view["presence"] = min(
                     (i["presence"] for i in view["instances"]), key=PRESENCE_ORDER.index
@@ -571,6 +574,9 @@ def member_views(
             view["shared_environment"] = sharing.get(row.id, [])
             if row.agent_id is not None:  # given its owner's preferences (§19.4)
                 view["owner_preferences"] = bool(row.owner_preferences)
+        held = profile_holds.get(row.agent_id or row.human_id or "")
+        if held is not None:  # only while a hold stands on the profile (§16.8)
+            view["moderation"] = held
         views.append(view)
     return views
 
@@ -1017,6 +1023,15 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
         views, shape_deleted(conn, [v["payload"] for v in views]), strict=True
     ):
         view["payload"] = payload
+    from maity_hub import moderation  # moderation reads views; imported here, not at the top
+
+    held = moderation.holds_of(
+        conn, "message", [f"{r.project_id}/{r.seq}" for r in rows if r.kind == "message"]
+    )
+    for row, view in zip(rows, views, strict=True):
+        found = held.get(f"{row.project_id}/{row.seq}") if row.kind == "message" else None
+        if found is not None:  # only while a hold stands on the message (§16.8)
+            view["moderation"] = found
     return views
 
 

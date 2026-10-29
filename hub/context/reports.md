@@ -153,7 +153,10 @@ takeovers reconciled. The actor is the hub with the report's id
 (`event.actor_report_id`, shown as `{kind: "moderation", report_id}`),
 and nobody's membership is used. A suspension is a column on the
 account; `sessions.create` refuses it as a wrong password, so every way
-of signing in ends there, and each place that issues a credential
+of signing in ends there; mail sign-in counts it ineligible
+(`email_sign_in._eligible`) and the suspension voids the links already
+sent, so the link page and the code answer as for a dead link rather
+than a raw `401`; and each place that issues a credential
 (join exchange, runner pairing, device-code completion, placement
 rejoin) refuses `account_suspended` itself.
 
