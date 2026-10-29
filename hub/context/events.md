@@ -295,10 +295,11 @@ place where a chat's window, unread count and observer rules are decided.
   needs the project name, and the contract names it.
 
 **Resolved (same change):** §9.3 says `totals.unread` is the number §18.2 gives as
-`counts.chat`, but the bell counted only the direct conversations (`listing._unread_chats`), so
-a room with unread messages made the two differ. Decided by the lead on 2026-10-28: both count
-the direct and the group chats the human takes part in, observers nothing, through one
-function, `conversation_list.unread_chats` (per project, from the same direct-chat and window
-helpers the list uses). `tests/test_me_conversations.py` holds the bell and `totals.unread`
-equal, also after a read mark. The old `_unread_chats` looped over the agents with two
-statements each and counted an agent whose owner had left; it is gone.
+`counts.chat`, but the bell counted only the direct conversations, so a room with unread
+messages made the two differ. Decided by the lead on 2026-10-28: both count the direct and the
+group chats the human takes part in, observers nothing, through one function,
+`conversation_list.unread_chats` (per project, from the same direct-chat and window helpers
+the list uses). #556 meanwhile added the groups to the bell with `listing._unread_groups`, two
+statements per stay; that and the per-agent direct count are replaced by `unread_chats`.
+`tests/test_me_conversations.py` holds the bell and `totals.unread` equal, also after a read
+mark.

@@ -54,6 +54,7 @@ from maity_hub.routes import (
     contract_text,
     conversations,
     device_codes,
+    email_sign_in,
     forge_links,
     forge_webhook,
     joins,
@@ -130,6 +131,10 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
             # A method the environment switched off voids its open codes at once (§2.6.5).
             if not sign_in.device_code_enabled(conn, settings):
                 codes.void_open(conn)
+            if not sign_in.email_link_enabled(conn, settings):
+                from maity_hub.auth import email_links
+
+                email_links.void_open(conn)
             # A second factor the environment switched off is told, once (§2.8.5).
             source = sign_in.resolve(conn, settings)["second_factor"][1]
             sign_in.note_second_factor(
@@ -248,6 +253,8 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(forge_webhook.router, prefix=prefix)
     app.include_router(joins.page_router)  # /j/{token}, before the dashboard mount
     app.include_router(runners.page_router)  # /r/{token}, likewise
+    app.include_router(email_sign_in.router, prefix=prefix)
+    app.include_router(email_sign_in.page_router)
     app.include_router(mail_links.page_router)  # /mail/*, likewise
     app.include_router(register_page.page_router)  # the registration's link page, likewise
     app.include_router(badges.router)  # public /badge/*.svg, before the dashboard

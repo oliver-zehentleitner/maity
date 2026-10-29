@@ -4,4 +4,4 @@
 
 ### Fixed
 
-- hub: the bell's `counts.chat` (§18.2) counted only direct conversations; it now counts the unread messages of the group chats the human takes part in as well (observers nothing), by the same function as `totals.unread` of `GET /me/conversations`, so the two are equal (tsk-45vs1hdzswjs).
+- hub: the bell's `counts.chat` (§18.2) and `totals.unread` of `GET /me/conversations` are computed by one function and are equal; the bell reads its chats in a fixed number of statements per request instead of two per direct chat and per group chat (tsk-45vs1hdzswjs).
