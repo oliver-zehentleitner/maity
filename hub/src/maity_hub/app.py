@@ -37,7 +37,7 @@ from maity_hub import (
 from maity_hub.auth import device_codes as codes
 from maity_hub.auth import sign_in_settings as sign_in
 from maity_hub.config import ConfigError, Settings
-from maity_hub.db import current_revision, head_revision, make_engine
+from maity_hub.db import current_revision, head_revision, make_engine, make_health_engine
 from maity_hub.errors import error_response
 from maity_hub.forge_webhook import check_secrets
 from maity_hub.mail import outbox
@@ -111,17 +111,22 @@ class SchemaNotCurrentError(RuntimeError):
     """The database is not at the migration head; `maity-hub migrate` has not run."""
 
 
-def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
-    engine = (
-        engine
-        if engine is not None
-        else make_engine(
-            settings.database_url,
-            settings.db_pool_size,
-            settings.db_max_overflow,
-            settings.db_pool_recycle,
-        )
+def serving_engine(settings: Settings) -> Engine:
+    """The engine of a serving hub: the pool and the PostgreSQL timeouts of the settings.
+    `maity-hub serve` builds it here too, so a setting reaches the engine the hub runs on."""
+    return make_engine(
+        settings.database_url,
+        settings.db_pool_size,
+        settings.db_max_overflow,
+        settings.db_pool_recycle,
+        settings.db_statement_timeout,
+        settings.db_idle_in_transaction_timeout,
     )
+
+
+def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
+    engine = engine if engine is not None else serving_engine(settings)
+    health_engine = make_health_engine(engine)  # the probe's own connection, outside the pool
     write_guard.install(engine)  # no write of a deleted account commits (§2.9)
 
     @asynccontextmanager
@@ -208,6 +213,8 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         if worker is not None:
             worker.stop()
         engine.dispose()
+        if health_engine is not None:
+            health_engine.dispose()
 
     app = FastAPI(
         title="Maity hub",
@@ -220,6 +227,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     )
     app.state.settings = settings
     app.state.engine = engine
+    app.state.health_engine = health_engine or engine
     app.state.forge_access = forge_access.ForgeAccess(
         engine, settings.github_app, settings.secret_key
     )
@@ -323,7 +331,7 @@ def _api_router() -> APIRouter:
 
     @router.get("/health")
     def health(request: Request) -> JSONResponse:
-        engine: Engine = request.app.state.engine
+        engine: Engine = request.app.state.health_engine
         try:
             current = current_revision(engine)
         except SQLAlchemyError:

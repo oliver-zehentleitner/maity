@@ -581,6 +581,73 @@ inferred from the log categories, not reproduced.
 - A DNS cache inside the hub: the address can change with the database's failover, and a stale cache would turn a blip into an outage.
 - A connection pooler (pgbouncer): one more component to run for a problem that reuse mostly solves.
 
+## The health check has its own connection, and the hub's PostgreSQL sessions have a statement and an idle-in-transaction timeout
+
+**Id:** 54a226b4-8866-4fab-b782-0404e52d388e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-e1tdj6sac2xf, step 1 of the overload follow-ups decided by the maintainer (req-v10nsyz26p78, 2026-10-27); the incident of 2026-10-26 (notifications.md, "a held long-poll compares a stamp"); live check against a local PostgreSQL, 2026-10-29
+**See:** persistence.md#the-pool-keeps-connections-warm-and-a-host-name-that-does-not-resolve-is-tried-once-more — 3b5f0c52-6d1e-4c7a-9a43-1e8d7f2a9b64 — as of 2026-10-29
+**Revisit when:** the load test (`tsk-ryas52q9k53z`) has run, or the first legitimate query is cancelled by the 30 s; also a statement the hub runs legitimately takes longer than 30 s, a request holds a transaction open across a slow call to somebody else, or the database sits behind a pooler that does not pass the `options` startup parameter
+
+On a server database `GET /api/v1/health` reads the revision over an engine of its own
+(`db.make_health_engine`): the same URL, no pool, a connection per check that is closed after it,
+the 5 s connect timeout and a 5 s `statement_timeout` (on MariaDB the driver's 5 s
+`read_timeout`). SQLite keeps one engine, since there is no pool wait to escape and a second
+in-memory engine would be a second, empty database. Every
+PostgreSQL connection of the serving hub is opened with `statement_timeout` 30 s and
+`idle_in_transaction_session_timeout` 60 s, as the `options` startup parameter
+(`MAITY_DB_STATEMENT_TIMEOUT`, `MAITY_DB_IDLE_IN_TRANSACTION_TIMEOUT`; 0 turns one off). They are set
+per connection from the settings, and only where the hub serves: `maity-hub migrate` and the other
+commands take none, so a migration is never cut short. MariaDB gets neither.
+
+The serving engine is built in one place, `app.serving_engine(settings)`, which `create_app` and
+`maity-hub serve` both call. `serve` had built its own engine from the URL alone and passed it in,
+so none of the pool settings (`MAITY_DB_POOL_*`) reached a served hub, and the timeouts would not
+have either (found in review of #667); a test now reads the pool and the options off the engine
+that `serve` runs the app on.
+
+**Rejected alternative:** building the engine only inside `create_app` and dropping `_serve`'s:
+`_serve` needs the engine before the app, to check the schema (`require_current_schema`) and to
+answer with an exit code. The other CLI commands keep `make_engine(url)` on purpose, so a migration
+or an admin command is never cut short by the serving timeouts.
+
+On MariaDB there is no server-side statement timeout to set per session, so the probe's 5 s
+bound is the driver's `read_timeout`; without it a hung statement on `alembic_version` would hold
+the probe's thread for good.
+
+The probe test used to compare engines with `is`, which held on SQLite (one engine) and failed on
+MariaDB, where the probe has an engine of its own. It now takes a real pool of one connection,
+holds it, and expects `/health` to answer anyway; it is skipped on SQLite, which has nothing to
+escape to, and a separate SQLite test checks the one engine. **Rejected alternative:** faking the
+exhausted pool by swapping `app.state.engine`, because that never proves the probe stays off a
+pool that is really used up.
+
+**Reason:** in the incident the pool was used up and the readiness probe, which took a pooled
+connection like every call, failed with it; the only pod left the network because of the load it
+could have reported. A probe that does not queue for the pool answers 503 for what is wrong with the
+database, not for what is wrong with the pool. The two timeouts bound what one stuck request can
+hold: a statement that runs for minutes, or a transaction that is open and idle, keeps a pooled
+connection (and its locks) away from every other call. Neither number was measured and no
+statement of the hub was timed for them: 30 s and 60 s were chosen as round values well above any
+request a person waits for, and below the point where a stuck request has taken the pool. Which
+of the hub's own statements come nearest to 30 s, and whether any transaction stays open across a
+slow call, is not established; that is what the `Revisit when` watches. Both are settings so that
+an operator who finds a legitimate case can raise them without a release. The lead confirmed the
+values for the launch on 2026-10-29; that settles that they stay, not that they were derived from
+measurements, so the evidence stays inferred.
+
+**Rejected alternatives:**
+- A reserved slot in the shared pool for the probe: it still queues behind a pool that is used up
+  unless the pool is made larger, and it makes the pool's size depend on a second purpose.
+- Setting the timeouts as a role default (`ALTER ROLE`): they would also bind `maity-hub migrate`,
+  which runs long statements on purpose, and an operator's database role is not the hub's to change.
+- Setting them with `SET` after the connect: one more round trip per connection, and a pooled
+  connection that fails between the connect and the `SET` would run unbounded.
+- A MariaDB equivalent (`max_statement_time`): no idle-in-transaction counterpart there, and the
+  card asked for PostgreSQL, the production database.
+
 ## A briefing keeps every version in `member_briefing`; the membership row holds only the current one
 
 **Id:** 1db3938a-aaf1-4095-b168-6dc4cc541e08

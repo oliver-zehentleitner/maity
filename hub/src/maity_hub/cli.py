@@ -17,7 +17,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from maity_hub import __version__, clock, longpoll, moderation, namespace, paths
 from maity_hub import tables as t
-from maity_hub.app import SchemaNotCurrentError, create_app, require_current_schema
+from maity_hub.app import SchemaNotCurrentError, create_app, require_current_schema, serving_engine
 from maity_hub.auth import second_factor_reset
 from maity_hub.auth.passwords import MIN_LENGTH, hash_password
 from maity_hub.config import ConfigError, Settings, redact_database_url
@@ -311,7 +311,7 @@ def _quickstart(settings: Settings, handle: str | None, display_name: str | None
 
 def _serve(settings: Settings, banner: list[str] | None = None) -> int:
     try:
-        engine = make_engine(settings.database_url)
+        engine = serving_engine(settings)
         require_current_schema(engine)
         app = create_app(settings, engine)
     except SchemaNotCurrentError as error:
