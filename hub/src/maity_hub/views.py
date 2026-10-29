@@ -14,6 +14,7 @@ from maity_hub import (
     clock,
     contract_text,
     forge,
+    forge_access,
     mentions,
     namespace,
     onboarding,
@@ -161,13 +162,13 @@ def git_identity(row: Any) -> dict[str, str] | None:
 def repository(project: Any, settings: Settings) -> dict[str, Any] | None:
     if project.repository_url is None:
         return None
+    via = forge_access.probe_via(project.id, project.repository_url, settings.forge_github_token)
     return {
         "url": project.repository_url,
         "default_branch": project.repository_default_branch,
         "forge": forge_of(project.repository_url),
-        "probe_configured": forge.Forge(settings.forge_github_token).configured_for(
-            project.repository_url
-        ),
+        "probe_configured": via is not None,
+        "probe_via": via,
         "owner_confirmed": bool(project.repository_owner_confirmed),
     }
 

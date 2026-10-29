@@ -183,7 +183,11 @@ def test_a_pull_request_counts_once_by_its_first_merged_observation(
     second = card(migrated, project_id, creator, claim_holder=membership_of(migrated, b.id))
     old = card(migrated, project_id, creator, claim_holder=membership_of(migrated, a.id))
     url = "https://github.com/oliver-zehentleitner/maity/pull/12"
-    merged = {"new": {"found": True, "title": "x", "state": "merged"}, "forge_url": url}
+    merged = {
+        "new": {"found": True, "title": "x", "state": "merged"},
+        "forge_url": url,
+        "public": True,
+    }
     for task, at in ((first, NOW - timedelta(days=3)), (second, NOW - timedelta(days=2))):
         event(migrated, project_id, "link_observed", at, task, {**merged, "task_id": task})
     early = "https://github.com/oliver-zehentleitner/maity/pull/3"
@@ -194,6 +198,30 @@ def test_a_pull_request_counts_once_by_its_first_merged_observation(
     found = page(owner)
     assert found["totals"]["prs_merged"] == 1  # #12 once; #3 was first merged before the window
     assert row(found, a.id)["prs_merged"] == 1 and row(found, b.id)["prs_merged"] == 1
+
+
+@pytest.mark.parametrize("public", [False, None])
+def test_a_merge_not_read_as_public_is_not_counted(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    project_id: str,
+    public: bool | None,
+) -> None:
+    """§11.4: data read while the repository was private, or before the hub said, never
+    reaches the page without sign-in, not even as a count."""
+    a = flow.agent(make_client, owner)
+    creator = membership_of(migrated, owner.id)
+    task = card(migrated, project_id, creator, claim_holder=membership_of(migrated, a.id))
+    payload: dict[str, Any] = {
+        "new": {"found": True, "title": "secret", "state": "merged"},
+        "forge_url": "https://github.com/oliver-zehentleitner/maity/pull/12",
+        "task_id": task,
+    }
+    if public is not None:
+        payload["public"] = public
+    event(migrated, project_id, "link_observed", NOW - timedelta(days=1), task, payload)
+    assert page(owner)["totals"]["prs_merged"] == 0
 
 
 def test_the_medians_pool_durations_and_need_three_samples(

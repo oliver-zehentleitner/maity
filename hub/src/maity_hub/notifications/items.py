@@ -346,6 +346,24 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
                     record_type=row.type,
                 )
             )
+        elif row.type == "forge_access_changed":
+            if data.get("change") not in records.FORGE_ADDED:
+                continue  # a record, no notification (§18.1)
+            items.append(
+                Item(
+                    kind="security",
+                    at=row.at,
+                    record=row.n,
+                    title=_cut(
+                        f"Forge access added: {data.get('login') or 'an account'}"
+                        f" ({data.get('source')})"
+                    ),
+                    target={"type": "settings", "id": "forge"},
+                    url=_url(where, "/#/settings/forge"),
+                    read=row.read_at is not None,
+                    record_type=row.type,
+                )
+            )
         elif row.type == "registration_pending":
             # Listed while the registration waits, however old, and read once decided
             # (§18.1, §18.3); no read mark closes it.

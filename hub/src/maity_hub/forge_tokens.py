@@ -17,6 +17,7 @@ from sqlalchemy import Connection, delete, insert, select, update
 from maity_hub import clock, forge, github_app, secretbox
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid
+from maity_hub.notifications import records
 
 FORGE = "github"
 FINE_GRAINED = "github_pat_"
@@ -63,11 +64,16 @@ def store(conn: Connection, key: bytes, human_id: str, token: str, login: str) -
         )
     else:
         conn.execute(insert(t.forge_token).values(human_id=human_id, **columns))
+    records.forge_access_changed(conn, human_id, "owner_token", "token_set", login)
 
 
 def remove(conn: Connection, human_id: str) -> bool:
-    removed = conn.execute(delete(t.forge_token).where(t.forge_token.c.human_id == human_id))
-    return bool(removed.rowcount)
+    row = conn.execute(select(t.forge_token).where(t.forge_token.c.human_id == human_id)).first()
+    if row is None:
+        return False
+    conn.execute(delete(t.forge_token).where(t.forge_token.c.human_id == human_id))
+    records.forge_access_changed(conn, human_id, "owner_token", "token_removed", row.login)
+    return True
 
 
 def view(conn: Connection, human_id: str) -> dict[str, Any]:

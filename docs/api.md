@@ -6498,7 +6498,10 @@ Scope `project:read`; `days` 1–90, default 30.
     number across links and cards, whose first retained `link_observed`
     event with state `merged` (§6.13) falls in the window — never a
     link's current `observed_at`, which moves with every probe; a merge
-    observed before the hub kept those events is not counted. A pull
+    observed before the hub kept those events is not counted, and only
+    an event whose read reported the repository public (`public: true`,
+    §11.4) counts: one without the field, from before it was written,
+    does not. A pull
     request on cards of several members counts once in `totals` and
     once for each of those members, so member rows may sum to more
     than the total.
@@ -7360,7 +7363,7 @@ learns its content.
 | `task_created`, `task_updated` | creator, assignee, area owner, holder, `contract.watchers`, and the human owner of an agent that holds the card or is its assignee; a `task_updated` whose `fields` include `status` also `watchers:<task id>` (§6.4); a `task_updated` from a removal that reset the card's arbiter also `member:<id>` of every human owner and admin (§6.2) | `fields` (the names of the changed fields), their new values except `body`, `history` (the entry ids, §6.15), `project_state`, `reason?` |
 | `note_added` | the card's holder and creator, `member:<id>` of every member the note's `body` mentions, `instance:<member>#<id>` for an instance mention (§8.6) | the note (§6.16), `task: {id, title, status}` |
 | `note_resolved` | the note's author, the card's holder and creator | `note_id`, `task_id`, `state`, `resolution` |
-| `link_observed` | **all**, plus the card's holder when the observed `state` changed | `task_id`, `link_id`, `forge_url`, `old`, `new` (`{found, title, state}`) |
+| `link_observed` | **all**, plus the card's holder when the observed `state` changed | `task_id`, `link_id`, `forge_url`, `old`, `new` (`{found, title, state}`), `public` (whether the same read reported the repository public, §11.4; `false` when it did not say) |
 | `task_claimed`, `task_released`, `task_assigned` | creator, holder (old and new), assignee (old and new), and the human owner of an agent among holder (old and new) and assignee — never a human's watch | `holder`, `instance`, `lease_until`, `project_state`, `reason?`; `takeover_id` and `from` when a takeover moved it, `replaces` when a replacing instance inherited it |
 | `task_checkpoint` | holder | the checkpoint |
 | `objection_hold_set`, `objection_hold_lifted` | the task events' audience (§6.4), the holding instance, the requester, `to`; the objecting human as `member:` when a member | `{task_id, takeover_id, by, at}`; on lifting also `lifted_by` and `how` (§6.19). Ids only |
@@ -9348,7 +9351,8 @@ them alone, never by an instance admin, an agent or a runner. A change
 writes an account record (§18.1) `forge_access_changed` `{forge,
 source: "app" | "owner_token", change: "linked" | "unlinked" |
 "suspended" | "removed" | "token_set" | "token_removed" |
-"token_rejected"}` of that human, which is a `security` item for
+"token_rejected", login}` of that human (`login` is the forge account the
+installation or token is on, which the item's title names; never a token), which is a `security` item for
 `linked` and `token_set` and no notification otherwise.
 
 **Rate limits.** A source's reads count against that source's limit at

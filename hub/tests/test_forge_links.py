@@ -558,3 +558,52 @@ def test_a_link_and_a_token_need_a_recent_factor(
     assert human.post("/auth/second-factor/verify", {"code": code_now(secret, moment.at)})
     assert human.post("/me/forge/github/link").status_code == 200
     assert put_token(human, FINE).status_code == 200
+
+
+# --- the account records (§18.1) -------------------------------------------------------------
+
+
+def _records(engine: Engine, human_id: str) -> list[dict[str, Any]]:
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(t.account_record)
+            .where(
+                t.account_record.c.human_id == human_id,
+                t.account_record.c.type == "forge_access_changed",
+            )
+            .order_by(t.account_record.c.n)
+        ).all()
+    return [dict(row.data) for row in rows]
+
+
+def _security_titles(who: flow.Human) -> list[str]:
+    items = who.get("/me/notifications").json()["items"]
+    return [i["title"] for i in items if i["kind"] == "security" and "Forge" in i["title"]]
+
+
+def test_a_link_and_its_end_are_account_records_and_only_the_link_a_notification(
+    human: flow.Human, fake: Forge, migrated: Engine
+) -> None:
+    fake.install(7)
+    setup(human, 7, start(human))
+    [link] = links(human)
+    fake.repositories[7] = github_app.InstallationGoneError("suspended")
+    links(human)
+    human.delete(f"/me/forge/github/links/{link['id']}")
+    assert [(r["source"], r["change"], r["login"]) for r in _records(migrated, human.id)] == [
+        ("app", "linked", "maintainer-gh"),
+        ("app", "suspended", "maintainer-gh"),
+        ("app", "unlinked", "maintainer-gh"),
+    ]
+    assert _security_titles(human) == ["Forge access added: maintainer-gh (app)"]
+
+
+def test_a_token_set_and_removed_are_account_records(
+    human: flow.Human, migrated: Engine, sealing: None, user_api: list[str]
+) -> None:
+    put_token(human, FINE)
+    human.delete("/me/forge/github/token")
+    changes = [(r["source"], r["change"]) for r in _records(migrated, human.id)]
+    assert changes == [("owner_token", "token_set"), ("owner_token", "token_removed")]
+    assert FINE not in str(_records(migrated, human.id))
+    assert _security_titles(human) == ["Forge access added: maintainer-gh (owner_token)"]

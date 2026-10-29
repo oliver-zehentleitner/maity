@@ -208,3 +208,65 @@ stored hash does not already make, and the hub would need a key for it.
 - A state signed with an instance key (the contract's first wording):
   it still needs the stored record for single use, and adds a key to
   manage.
+
+## A project's source is chosen per project, and a grant is bound to its repository
+
+**Id:** a5b07f08-306e-4f33-8643-8b59af50dd71
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-10-28 (card tsk-dtpr7zqxhxc2, part 5a)
+**Revisit when:** organisations become namespace owners (§6.25), or one repository serves projects of several owners with different grants and that needs one shared read
+
+`Forge.for_project` chooses the reader of one project (`forge_access.py`).
+Every place that reads calls it with the project it reads for: the probe,
+reports, releases, the ticker, deploys, card links, images, Keep the Why
+and contract texts. A grant's reader carries the one repository it was
+chosen for. A read of any other repository goes out without a token
+(public only), and a GraphQL read of another repository is refused. The
+choice is kept for at most 10 minutes. Its key is everything it depends
+on: the URL, the owner, the confirmation, the owner's links and token,
+and the operator's token. A change of any of them, or a refused read,
+chooses again.
+
+**Reason:** the same repository URL can be set on projects of different
+namespace owners. A choice keyed by the repository would let one owner's
+grant read for another owner's project. That is the leak §11.4 exists to
+prevent.
+
+**Rejected alternatives:**
+- One resolver per repository inside `Forge._call`: no call site would
+  need to change, but the project, and with it the owner whose grant
+  counts, would be lost.
+- Choosing inside the views (for `probe_via`): a view holds a database
+  connection, and the choice would ask the forge. The view shows the
+  last choice instead (`forge_access.probe_via`), and before any
+  choice the operator's token if there is one.
+
+## A page without sign-in counts only merges a read found public
+
+**Id:** 6af0bb67-32dd-40df-91df-df1eb03288fc
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §11.4 ("What a private repository's data may reach") and the event table, §8.2; the lead's decision on card tsk-dtpr7zqxhxc2, part 5b
+**Revisit when:** another page without sign-in shows data the probe read, or the forge stops reporting visibility in the GraphQL read
+
+`link_observed` carries `public`: whether the same GraphQL read reported
+the repository public (`isPrivate: false`), `false` when it did not say.
+The swarm page counts merged pull requests only from events with
+`public: true`. Events written before the field existed do not count.
+
+**Reason:** the flag follows what the read itself saw, not which token
+made it. With the token as the test, a public repository read with an
+App or owner token would never count, and a repository that turned
+private between two reads would still count. The old events go
+uncounted on purpose: before the instance token was limited to public
+repositories, it could read private ones too, so those events cannot
+prove they were public. Privacy goes before the statistic.
+
+**Rejected alternatives:**
+- `public` from the source (`via == "instance"`): it leaves out public
+  repositories read with an owner's grant.
+- Counting events without the field: it may count merges of private
+  repositories read before the instance token was limited.

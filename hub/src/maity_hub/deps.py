@@ -30,8 +30,9 @@ def settings_of(request: Request) -> Settings:
 
 
 def reader_of(request: Request) -> Forge:
-    """The forge reader with the operator's token; the token lives in the settings only."""
-    return Forge(settings_of(request).forge_github_token)
+    """The forge reader with the operator's token; the token lives in the settings only.
+    `for_project` on it chooses a project's source (§11.4)."""
+    return Forge(settings_of(request).forge_github_token, access=request.app.state.forge_access)
 
 
 def origin_of(request: Request) -> Origin:
