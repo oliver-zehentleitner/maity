@@ -35,9 +35,10 @@ def read_probe(
     project = mine.project
     if pr is None and branch is None and tag is None:
         raise invalid({"pr": "one_of_pr_branch_tag"})
-    fg = reader_of(request)
+    fg = reader_of(request).for_project(project.id)
     if not fg.configured_for(project.repository_url):
-        raise probe_not_configured("no_grant" if mine.may("project:admin") else None)
+        reason = fg.refused or "no_grant"
+        raise probe_not_configured(reason if mine.may("project:admin") else None)
     wanted = [("pr", str(pr) if pr else None), ("branch", branch), ("tag", tag)]
     shown: dict[str, Any] = {"pr": None, "branch": None, "tag": None}
     observations = []
@@ -45,7 +46,9 @@ def read_probe(
         if ref is None:
             continue
         try:
-            observation = probe.observe(engine, fg, project, kind, ref, max_age)
+            observation = probe.observe(
+                engine, fg, project, kind, ref, max_age, floor=probe.FORCED_FLOOR
+            )
         except forge.NotCoveredError as error:
             raise probe_not_configured(
                 error.reason if mine.may("project:admin") else None

@@ -186,7 +186,7 @@ def test_to_all_reaches_everyone_and_never_wakes_the_poster(
 def test_a_token_list_is_resolved_to_members(
     owner: flow.Human, team: dict[str, flow.Agent]
 ) -> None:
-    item = note(owner, to=["role:admin", "area:web/x.js", f"member:{team['hub'].id}"], areas=None)
+    item = note(owner, to=["trust:admin", "area:web/x.js", f"member:{team['hub'].id}"], areas=None)
     full = owner.get(f"/projects/maintainer/maity/events?after={item['seq'] - 1}").json()["items"][
         0
     ]
@@ -520,7 +520,7 @@ def test_settings_ticker_is_set_beside_the_other_settings(owner: flow.Human) -> 
     enable(
         owner,
         contract_files=["docs/api.md"],
-        contract_implementers={"8.2": ["area:hub/"], "*": ["role:admin"]},
+        contract_implementers={"8.2": ["area:hub/"], "*": ["trust:admin"]},
     )
     settings = owner.get("/projects/maintainer/maity").json()["settings"]
     assert settings["release_checklist"] == ["CHANGELOG"], "a setting not named stays"
@@ -723,7 +723,9 @@ def test_a_reader_who_lost_access_no_longer_reads_the_decision(
     request = asked(team["hub"], to="owner")
     answer(owner, request, text="Yes.")
     assert listed(proxy) != [], "a proxy holds requests:answer"
-    owner.patch(f"/projects/maintainer/maity/members/{proxy.id}", {"role": "member"})
+    owner.patch(
+        f"/projects/maintainer/maity/members/{proxy.id}", {"trust": "member", "role": "coder"}
+    )
     assert listed(proxy) == [], "checked again at read time (§17.5)"
 
 
@@ -916,7 +918,9 @@ def test_a_reader_who_lost_access_loses_the_item_the_notice_and_its_shape(
     assert notice["audience"] == [
         f"member:{proxy.id}"
     ], "a decision's notice: its own token, no all"
-    owner.patch(f"/projects/maintainer/maity/members/{proxy.id}", {"role": "member"})
+    owner.patch(
+        f"/projects/maintainer/maity/members/{proxy.id}", {"trust": "member", "role": "coder"}
+    )
     after = proxy.get(f"/projects/maintainer/maity/events?after={item['seq'] - 1}").json()["items"]
     assert not any(e["seq"] == item["seq"] for e in after), "no item"
     assert not any(e["kind"] == "event_redacted" for e in after), "no notice"

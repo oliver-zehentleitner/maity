@@ -337,7 +337,7 @@ def test_the_admin_team_overrides_an_open_takeover(
     assert response.json()["override"]["by"] == admin.id
     assert response.json()["outcome"]["how"] == "override"
     assert _events(migrated, "takeover_overridden")
-    assert "role:admin" in _events(migrated, "takeover_closed")[-1].audience
+    assert "trust:admin" in _events(migrated, "takeover_closed")[-1].audience
 
 
 # --- policy ------------------------------------------------------------------------------------
@@ -424,7 +424,7 @@ def test_a_party_escalates_to_the_admin_team(
     assert escalated.json()["status"] == "escalated"
     request_id = escalated.json()["request_id"]
     asked = owner.get(f"/projects/maintainer/maity/requests/{request_id}").json()
-    assert asked["class"] == "decision" and asked["to"] == "role:admin"
+    assert asked["class"] == "decision" and asked["to"] == "trust:admin"
     assert [r["id"] for r in asked["replies"]] == ["transfer", "keep"]
     assert asked["while_open"] == "proceed_provisionally"
     assert asked["takeover_id"] == takeover_id and asked["tried"] == "nearly done"
@@ -498,7 +498,7 @@ def test_an_escalation_is_neither_forwarded_nor_claimed_by_a_party(
     forwarded = judge.post(f"{requests}/forward", {"to": receiver.id})
     assert forwarded.status_code == 403, forwarded.text
     assert forwarded.json()["error"]["details"]["reason"] == "party_to_takeover"
-    pooled = judge.post(f"{requests}/forward", {"to": "role:admin"})
+    pooled = judge.post(f"{requests}/forward", {"to": "trust:admin"})
     assert pooled.status_code == 200, pooled.text
     claimed = receiver.post(f"{requests}/claim", {})
     assert claimed.status_code == 403, claimed.text

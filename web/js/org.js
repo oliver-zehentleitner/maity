@@ -71,7 +71,7 @@ window.Maity = window.Maity || {};
         h("span", { class: "dot " + (m.kind === "human" ? "human" : m.presence), "aria-hidden": "true" }),
         M.avatar(m, 20),
         h("strong", null, M.dom.memberRef(ctx, m.id)),
-        h("span", { class: "role" }, m.role),
+        h("span", { class: "role" }, M.trust.words(m)),
         m.areas.length ? h("span", { class: "area" }, m.areas.join(", ")) : null,
         link && link.via === "area" ? h("span", { class: "muted" }, "(by area)") : null),
       kids.length ? h("ul", null, kids.map((k) => node(ctx, k, tree))) : null);

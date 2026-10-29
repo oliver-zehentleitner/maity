@@ -12,7 +12,7 @@ PRESETS = ("hierarchical", "solo", "pool", "decentral", "hybrid")
 _HIERARCHICAL = {
     "claim_policy": "self-claim",
     "done_authority": "reviewer",
-    "contract_arbiter": "role:admin",
+    "contract_arbiter": "trust:admin",
     "tag_authority": "human",
     "steward_writes": "cards_only",
     "signing": "optional",
@@ -43,10 +43,12 @@ CHOICES = {
     "keep_the_why": ("required", "optional"),
     "keep_the_why_defaults": ("adopt", "ask"),
     "merged_closes": ("notify", "auto"),
+    "member_agents": ("off", "on"),
 }
 LEASE_MIN, LEASE_MAX, LEASE_DEFAULT = 600, 86400, 7200
 MAX_PLACEMENTS_DEFAULT, MAX_PLACEMENTS_MAX = 8, 1000
 WINDOW_MIN, WINDOW_MAX, WINDOW_DEFAULT = 5, 1440, 60  # takeover_window_minutes (§6.19)
+MEMBER_AGENTS_MAX_MAX, MEMBER_AGENTS_MAX_DEFAULT = 20, 3  # member_agents_max (§3.1)
 FIELDS = (
     "preset",
     *CHOICES,
@@ -58,10 +60,12 @@ FIELDS = (
     "jour_fixe",
     "jour_fixe_moderators",
     "takeover_window_minutes",
+    "member_agents_max",
 )
 # Kept when a preset changes: a preset must not quietly loosen signing or who may start
 # agents, reset the placement limit, the coordinator seats or the takeover window, or
-# publish a badge or the swarm; only the field itself changes them (§6.1).
+# publish a badge or the swarm, or change who may bring agents; only the field itself
+# changes them (§6.1).
 KEPT_ON_PRESET = (
     "signing",
     "spawn_requests",
@@ -79,6 +83,8 @@ KEPT_ON_PRESET = (
     "jour_fixe_moderators",
     "takeover_window_minutes",
     "merged_closes",
+    "member_agents",
+    "member_agents_max",
 )
 
 
@@ -96,7 +102,7 @@ def filled(preset: str, owner_id: str) -> dict[str, Any]:
         **_FILLINGS[preset],
         "lease_seconds": LEASE_DEFAULT,
         "max_placements": MAX_PLACEMENTS_DEFAULT,
-        "coordinator": "role:admin",
+        "coordinator": "trust:admin",
         "coordinator_substitute": None,
         "on_runner_revoke": "inherit",
         "badge": "off",
@@ -108,6 +114,8 @@ def filled(preset: str, owner_id: str) -> dict[str, Any]:
         "jour_fixe_moderators": None,
         "takeover_window_minutes": WINDOW_DEFAULT,
         "merged_closes": "notify",
+        "member_agents": "on",
+        "member_agents_max": MEMBER_AGENTS_MAX_DEFAULT,
     }
     if preset == "solo":
         policy["contract_arbiter"] = owner_id
@@ -140,6 +148,8 @@ def of(project: Any) -> dict[str, Any]:
         "jour_fixe": project.jour_fixe,
         "jour_fixe_moderators": project.jour_fixe_moderators,
         "takeover_window_minutes": project.takeover_window_minutes,
+        "member_agents": project.member_agents,
+        "member_agents_max": project.member_agents_max,
     }
 
 
@@ -170,6 +180,8 @@ def columns(policy: dict[str, Any]) -> dict[str, Any]:
         "jour_fixe": policy["jour_fixe"],
         "jour_fixe_moderators": policy["jour_fixe_moderators"],
         "takeover_window_minutes": policy["takeover_window_minutes"],
+        "member_agents": policy["member_agents"],
+        "member_agents_max": policy["member_agents_max"],
     }
 
 

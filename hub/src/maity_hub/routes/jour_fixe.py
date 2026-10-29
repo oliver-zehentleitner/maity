@@ -20,6 +20,7 @@ from maity_hub.jourfixe import answers, exchange, redaction, rounds, schedule, t
 from maity_hub.models import Strict
 from maity_hub.models import markdown as text_field
 from maity_hub.namespace import ProjectRoute
+from maity_hub.scopes import in_admin_team
 
 router = APIRouter(route_class=ProjectRoute)
 
@@ -239,7 +240,10 @@ def put_moderators(
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
-        if not (mine.may("project:admin") or (mine.kind == "agent" and mine.role == "admin")):
+        if not (
+            mine.may("project:admin")
+            or (mine.kind == "agent" and in_admin_team(mine.trust, mine.role))
+        ):
             raise forbidden("project:admin", "a human with project:admin or an admin agent")
         project = events.lock_project(conn, mine.project.id)
         order = body.order

@@ -10,7 +10,7 @@ from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Connection, func, insert, select, update
+from sqlalchemy import Connection, and_, func, insert, select, update
 from sqlalchemy.dialects import postgresql, sqlite
 
 from maity_hub import clock, namespace
@@ -34,7 +34,7 @@ def counts(conn: Connection, where: Scope, found: list[Item]) -> dict[str, Any]:
     by_project: dict[str, dict[str, Any]] = {}
     for mine in where.memberships:
         entry = dict.fromkeys(COUNTED, 0)
-        entry["inbox"] = open_requests(conn, mine.id, mine.row.role)
+        entry["inbox"] = open_requests(conn, mine.id)
         entry["chat"] = _unread_chats(conn, mine)
         by_project[mine.project.id] = {"member": True, **entry}
     for request in _open_personal(conn, where.human_id):
@@ -72,37 +72,38 @@ def counts(conn: Connection, where: Scope, found: list[Item]) -> dict[str, Any]:
 def _unread_chats(conn: Connection, mine: Any) -> int:
     """The other party's messages after the human's chat mark, over the human's direct
     chats in this project: the number the chat list shows (§9)."""
-    agents = conn.execute(
-        select(t.membership.c.agent_id)
-        .join(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
-        .where(
-            t.membership.c.project_id == mine.project.id,
-            t.agent_profile.c.owner_id == mine.row.human_id,
-        )
-    ).scalars()
-    unread = 0
-    for agent_id in agents:
-        seen = (
-            conn.execute(
-                select(t.conversation_read.c.last_seq).where(
+    agents = list(
+        conn.execute(
+            select(t.membership.c.agent_id)
+            .join(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
+            .where(
+                t.membership.c.project_id == mine.project.id,
+                t.agent_profile.c.owner_id == mine.row.human_id,
+            )
+        ).scalars()
+    )
+    if not agents:
+        return 0
+    return int(
+        conn.execute(
+            select(func.count())
+            .select_from(t.event)
+            .outerjoin(
+                t.conversation_read,
+                and_(
                     t.conversation_read.c.reader == mine.id,
-                    t.conversation_read.c.conversation_id == agent_id,
-                )
-            ).scalar()
-            or 0
-        )
-        unread += int(
-            conn.execute(
-                select(func.count()).where(
-                    t.event.c.project_id == mine.project.id,
-                    t.event.c.kind == "message",
-                    t.event.c.conversation_id == agent_id,
-                    t.event.c.seq > seen,
-                    t.event.c.actor_membership != mine.id,
-                )
-            ).scalar_one()
-        )
-    return unread
+                    t.conversation_read.c.conversation_id == t.event.c.conversation_id,
+                ),
+            )
+            .where(
+                t.event.c.project_id == mine.project.id,
+                t.event.c.kind == "message",
+                t.event.c.conversation_id.in_(agents),
+                t.event.c.seq > func.coalesce(t.conversation_read.c.last_seq, 0),
+                t.event.c.actor_membership != mine.id,
+            )
+        ).scalar_one()
+    )
 
 
 def _open_personal(conn: Connection, human_id: str) -> list[Any]:

@@ -436,7 +436,8 @@ def test_only_the_agents_owner_sets_the_rulebook(
         f"/projects/maintainer/maity/members/{owner.id}", {"team": {"wake": "all"}}
     )
     mixed = admin_agent.patch(
-        f"/projects/maintainer/maity/members/{agent.id}", {"team": {"wake": "all"}, "role": "admin"}
+        f"/projects/maintainer/maity/members/{agent.id}",
+        {"team": {"wake": "all"}, "trust": "admin"},
     )
     for refused in (on_a_human, mixed):
         assert refused.status_code == 403, refused.text
@@ -459,12 +460,12 @@ def test_team_is_set_on_its_own(owner: flow.Human, make_client: ClientFactory) -
     agent = flow.agent(make_client, owner)
     mixed = owner.patch(
         f"/projects/maintainer/maity/members/{agent.id}",
-        {"team": {"max_instances": 2}, "role": "admin"},
+        {"team": {"max_instances": 2}, "trust": "admin"},
     )
     assert mixed.status_code == 400
     assert mixed.json()["error"]["details"]["fields"] == {"team": "alone"}
     view = owner.get(f"/projects/maintainer/maity/members/{agent.id}").json()
-    assert (view["role"], view["team"]["max_instances"]) == ("member", 1)
+    assert (view["trust"], view["role"], view["team"]["max_instances"]) == ("member", "coder", 1)
 
 
 def test_a_lead_rule_needs_a_lead(owner: flow.Human, make_client: ClientFactory) -> None:
@@ -504,7 +505,7 @@ def test_the_rulebooks_answer_shows_the_briefing_only_to_members_admin(
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
     factory.membership(migrated, project_id, "admin", human_id=colleague.id)
     theirs = flow.agent(make_client, colleague, agent={"handle": "theirs", "display_name": "T"})
-    demoted = owner.patch(f"/projects/maintainer/maity/members/{colleague.id}", {"role": "member"})
+    demoted = owner.patch(f"/projects/maintainer/maity/members/{colleague.id}", {"trust": "member"})
     assert demoted.status_code == 200, demoted.text
     plain = _team(colleague, theirs.id, max_instances=2)
     assert plain.status_code == 200 and "briefing" not in plain.json()

@@ -1187,15 +1187,16 @@ review with an open child would hide nothing, the common case.
 **Type:** incident
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's card for the global chat (tsk-z8z8cg56y00s), 2026-10-26, after that day's incident of an events long-poll multiplied by open tabs; the dashboard's implementation, 2026-10-26
-**Revisit when:** the hub offers a cross-project conversation list or a per-user chat stream, or the notifications stream stops reporting chat messages
+**Source:** the maintainer's card for the global chat (tsk-z8z8cg56y00s), 2026-10-26, after that day's incident of an events long-poll multiplied by open tabs; the dashboard's implementation, 2026-10-26; the list across projects (§9.3, GET /me/conversations) read once instead of per project, 2026-10-28
+**Revisit when:** the hub offers a per-user chat stream, or the notifications stream stops reporting chat messages
 
 `#/chats` shows every project's chats in the Chat tab's layout and opens
 one in place with chat.js's own pane, in that project's context. It opens
 no events long-poll: the notifications stream (js/notify.js), which every
 signed-in page reads anyway, says that something changed; the global view
-then reads each project's conversation list once a burst has settled
-(0.4 s), and the open conversation fetches what came after its last
+then reads its conversations once a burst has settled (0.4 s): in one
+read across projects (`GET /me/conversations`, §9.3) where the hub has
+it, and each project's list on a hub without it. The open conversation fetches what came after its last
 message, as its project's feed would have made it, and reads its newest
 page and (for a group chat) itself again, to take over what the stream
 cannot name: a removal, a deleted file, a rename, a change of who is in it
@@ -1801,4 +1802,119 @@ cropping makes that unreadable, so margins are preferred.
 width it cut a 2:1 preview to about 6.5:1, showing only a stripe of it.
 Filling the 2:1 box by cropping (`object-fit: cover`): a banner of
 another shape lost the text at its edges.
+
+## The view being left is inert until the next one is drawn
+
+**Id:** 1d888f69-9233-40b4-b9f3-cd679825ef82
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the runner flake of web-e2e (tsk-q1xrpaahtah0, runs 40718638353 and 40721945466) and the reviewer's reproduction with ordinary clicks and Back on PR #551, 2026-10-28
+**Revisit when:** views are mounted before their data is read, or a view is kept across navigations
+
+A navigation renders the next view off screen and mounts it when its
+data is read; until then the view being left stays shown. From the start
+of the render it is `inert`: no click, key or focus reaches it.
+
+**Reason:** an action in the old view (a Revoke) was answered into that
+view, which then disappeared, while the new view showed what it had read
+before the action, as if nothing had happened. The page alone was wrong,
+the hub had revoked. Inert keeps the old view as a visual placeholder
+without letting it start anything.
+
+**Rejected alternative:** waiting in the end-to-end test only: it hid a
+real case (a click during a slow navigation). Clearing the old view at
+once: a blank page on every navigation, and a jump. Making every view's
+initial read consistent with actions in other instances: one rule per
+view, for a race the inert placeholder removes for all of them.
+
+## An agent profile is deleted where it is managed, confirmed by its handle, its projects named first
+
+**Id:** 7929359f-6af1-415e-b6e6-a55dd40ca27c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish on the card tsk-g1yz7rhaptqk (profiles deletable, with a confirmation by typing the handle and what happens), 2026-10-28; docs/api.md §6.3 (`profile_in_use`, `?cascade=true`, the tombstone)
+**Revisit when:** the hub offers an undo or a grace period for a deleted profile, or deletion moves to a page of one's agents outside any project
+
+The owner deletes a profile in its row on Members, beside its picture,
+and on the account for an agent in no project of the owner's. The page
+first names every project the profile is a member of and what deleting
+it ends there (credentials, claims, placements), then enables the button
+only once the handle is typed. A profile that is still a member
+somewhere goes out with `?cascade=true`; one in no project, without.
+
+**Reason:** a deletion cannot be undone, and in a project it ends a
+working membership. Typing the handle makes it a deliberate act for this
+very profile, and the named projects say what it costs before, not after.
+In a Members row the profile is always a member, so the cascade is the
+only deletion that can succeed there.
+
+**Rejected alternative:** a plain `DELETE` first and a second
+confirmation on `profile_in_use`: two dialogs for what the page can say
+at once. A browser `confirm()`: it names neither the projects nor the
+handle, and is clicked away too easily.
+
+## Trust and role are shown and chosen as the hub keeps them; what only an owner may grant is not offered to others
+
+**Id:** b71cebbf-56d9-4f65-aef9-cbb4ab5131a1
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §2.3 (trust × role, owner_only, the guest's limits) and the card for the dashboard's part (tsk-tx9qcehevfnk), which replaces the interim mapping at the API boundary, 2026-10-28
+**Revisit when:** a project's own roles (§2.3) get a place in the dashboard, or the hub lets a non-owner grant trust admin
+
+The dashboard reads and sends a membership's `trust` and `role` as the
+hub has them. Every view asks one helper (`js/trust.js`) who governs
+(trust owner or admin, never a proxy, which relays and decides nothing
+itself), who is an owner and who is a guest, and names a
+member as "trust · role". The member form, the invitation and the join
+line each choose trust and role on their own. Trust owner or admin and
+the role proxy are offered only to a caller with trust owner, and proxy
+only together with trust admin; a proxy whose trust changes becomes a
+coder in the same change. An owner's membership is removed only by an
+owner, so no one else is offered it. A guest is never offered as an assignee
+or as whom someone reports to, and a human guest is offered no new
+group chat. The overview groups the team by trust.
+
+**Reason:** trust and role are two separate questions (§2.3): how far
+the project trusts a member, and what the member does. A single name
+could not say "admin reviewer" or "guest coder", and the interim mapping
+lost exactly those. The choices the hub refuses for a non-owner
+(`owner_only`) or for a guest would only lead to a refusal, so they are
+not offered.
+
+**Rejected alternative:** keeping the mapping between single-role names
+and trust and role at the API boundary: it translated every answer and
+body and could not show a guest's role or a reviewer with trust admin.
+Offering every choice and saying the hub's refusal afterwards: a form
+that offers what it will refuse.
+
+## A sensitive call asks for the password or a code where it stands, then is made again
+
+**Id:** bddf61cb-f6a0-4290-891f-2f3b3006946d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §2.8.1 (the proof: the password in the last 10 minutes, `reauthentication_required`) and §2.8.4 (the step-up, `step_up_required`, "the dashboard asks for a code and repeats the call"); the coordinator's card for Your data (§2.9), 2026-10-28
+**Revisit when:** the hub tells in advance which calls will need a proof, or the dashboard gets a dialog layer of its own
+
+A sensitive call goes through `M.stepUp.run` (`js/step-up.js`). It
+makes the call. When the hub refuses with `reauthentication_required`
+or `step_up_required`, it asks for the password or a code in a slot of
+the section that made the call, proves it (`POST /auth/reauthenticate`,
+`POST /auth/second-factor/verify`, a recovery code too) and makes the
+call again, at most three times. A wrong answer is said there and asked
+again. Cancel ends quietly.
+
+**Reason:** the hub, not the page, knows whether the password was given
+in the last 10 minutes and whether the human is enrolled, so asking
+only after its refusal never asks for nothing. The question stands next
+to the button that caused it. Your data is the first user; the other
+sensitive calls (§2.8.4) can take the same helper.
+
+**Rejected alternative:** asking for the password before every
+sensitive call: needless right after a sign-in, and wrong for a
+passwordless account. A modal dialog: the dashboard has none, and a
+slot in place keeps the focus and the context where the human was.
 

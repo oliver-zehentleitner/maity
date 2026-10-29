@@ -442,7 +442,7 @@ already knows what it deploys.
 **Revisit when:** the repository stops being public, a job needs a secret of the repository, or hosted runners get as fast as the machine
 
 `ci.yml` lets `hub-sqlite`, `hub-postgresql` and `hub-mariadb` run on a self-hosted runner
-when the repository variable `HUB_RUNNER` holds its labels; unset, they run on GitHub's
+when the repository variable `HUB_RUNNER_LABEL` holds a label prefix (one runner service per job type, see below); unset, they run on GitHub's
 runners. The runner is a user of its own with rootless Docker, no read access to anything
 else on the machine and a firewall rule against local and internal services (IPv4 and
 IPv6); the runner's files, hook and unit are root-owned under /opt and a system unit, not in
@@ -507,3 +507,96 @@ only from a copy that belongs to the runner, so no system Python is changed.
 - `pip install --break-system-packages` in the jobs: it would leak a self-hosted special case into the shared workflow.
 - Root creating the links and files in the tool cache: the first version did, and the review showed it follows symlinks a
   job may have left there.
+
+## One runner service per database job type, a label each, three workers per job
+
+**Id:** c2713d54-e602-42a3-8636-693ff3fd2c0b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the first measurements on the self-hosted runner, 2026-10-28 (one Postgres job 11 min 57 s on the machine against about 22 on a hosted runner; nine CI runs queued behind the single runner); the coordinator's go and conditions
+**Revisit when:** the machine's memory or cores change, or hosted runners get as fast as it
+**See:** process.md#the-database-ci-jobs-may-run-on-the-maintainers-machine-a-forks-code-reaches-it-only-through-an-approval — 405c762c-11a2-4a95-a23b-0b2657a7aa8d — as of 2026-10-28
+
+The three database jobs run on three runner services of the machine, `maity-runner@sqlite`, `@pg` and `@maria`, each in
+its own directory with its own registration and the label `<prefix>-<type>`. `ci.yml` asks each job for its own label
+through the repository variable `HUB_RUNNER_LABEL` (the prefix); unset, and for forks, the jobs run hosted. Each service
+sets `PYTEST_ARGS=-n 2` (it was `-n 3` at first, nine workers on eight cores; lowered after the machine went down, see the entry
+on the cap below), so six workers share the eight cores.
+
+**Reason:** one runner takes one job at a time. With every pull request sending three jobs of about twelve minutes each to
+it, nine runs were queued within an hour and the runner was slower per pull request than the hosted ones, which run in
+parallel. A pool of identical runners would fix the queue but let two Postgres jobs run at once, both binding the host
+port 5432 for their service container; a label per job type keeps the ports apart by construction and still lets the three
+jobs of one pull request run side by side. Memory carried it: one job at eight workers peaked at 5.2 GB of 19.9 GB with
+swap unused.
+
+**Trade-off, stated:** the three services run as one user with one rootless Docker. A job can therefore also read and change the
+jobs running at the same time on the other instances (their `GITHUB_TOKEN` in `/proc/<pid>/environ`, their `_work`). The
+boundary stays "the repository's own code only, reinstall after a malicious job"; one user and one Docker per instance would
+close it at the price of three users, three daemons and three times the disk for images. The cleanup hook, which runs in that
+shared Docker, removes only what is stopped, unused or old, never a running job's containers.
+
+**Rejected alternatives:**
+- One runner for everything, as installed first: a queue of hours as soon as several pull requests are open.
+- Several identical runners: the port 5432 and 3306 collision between two jobs of the same type.
+- A random host port for the service containers: it would need the jobs' connection URLs to follow, a change in the shared
+  workflow for the self-hosted case only.
+
+
+## The runner is capped, and it starts with one service
+
+**Id:** a35df240-f14b-4468-8ab2-23b447a08175
+**Type:** incident
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the first run of the three runner services, 2026-10-28 (the machine went down two and a half minutes after three jobs started; memory sampler, job timestamps and the boot log agree on the time); the coordinator's decision that evening
+**Revisit when:** a test with the caps (one service first, someone watching) runs without a stall, or the CI moves to a machine that is not a workstation
+**See:** process.md#one-runner-service-per-database-job-type-a-label-each-three-workers-per-job — c2713d54-e602-42a3-8636-693ff3fd2c0b — as of 2026-10-29
+
+Every runner service carries `CPUQuota=150%`, `Nice=10`, low CPU and I/O weight, `MemoryMax=4G` and `-n 2`; the runner user's whole
+slice, rootless Docker included, is capped at 4 of 8 cores and 8 GB without swap. The three services are started one at a time,
+with the maintainer at the machine and a sampler running.
+
+**Reason:** the first run of three uncapped services (nine workers, three database containers, three installs on eight vCPUs)
+was followed within minutes by the stop of the machine, a VirtualBox guest on the maintainer's workstation, and by the loss of
+three jobs. Memory was not it (one job peaked at 5.2 GB of 19.9 GB). That the cause is CPU starvation of the host is an
+inference: the guest's journal of the crashed boot, read afterwards, ends five minutes after the jobs started with no error at
+all, only two clocksource warnings of 3 s and 13 s gaps (the guest's CPUs did not run: a stall on the host, not a kill inside the
+guest), and earlier crashes happened without CI. The caps make the
+next test survivable whichever it is. The machine does other work: a second crash costs the agents their ops.
+
+**Rejected alternatives:**
+- A lower `-n` alone: it does not bound the database containers or three installs running at once.
+- A cap on the units only: the containers of a rootless Docker run under the user's dockerd, outside the units' cgroups.
+- Running the three services unattended after the first green test: a green test on a quiet machine says little about the
+  load of several pull requests at once.
+
+
+## Rented servers carry the runners for a week, one type each
+
+**Id:** d621283e-1580-4220-8c72-ca1d5804d0aa
+**Type:** decision
+**Status:** open
+**Evidence:** inferred
+**Source:** the maintainer's proposal as relayed by the coordinating agent, 2026-10-29 (the workstation stays for the agents; one to three rented servers act as runners for a week); his go is still to come
+**Revisit when:** the week is over, or a rented server stalls with the caps in place
+**See:** process.md#the-runner-is-capped-and-it-starts-with-one-service — a35df240-f14b-4468-8ab2-23b447a08175 — as of 2026-10-29
+
+Proposed, to run only on the maintainer's go: the database jobs move from the maintainer's workstation to up to three rented Ubuntu servers (8 vCPU, 16 GB), one job type
+per server, started with one server and `pg`. The machine is prepared by `deploy/runner/bootstrap-server.sh` (runner user,
+rootless Docker, a firewall chain for that uid) and the steps are in `deploy/runner/SERVER-SETUP.md`, run by the maintainer.
+The same caps as on the workstation apply.
+
+**Reason:** the stall of 2026-10-28 took down the machine the agents work on; a machine that does nothing else loses
+only CI when it stalls. One type per server keeps a stalled or compromised machine to one type, and each type binds its own host
+port anyway.
+
+**Rejected alternatives:**
+- All three types on one rented server: one stall or one malicious job takes all three, and the first test would again be
+  the full load.
+- A bigger or unlimited rented server: the cause of the stall is not established (see the entry above), so the caps stay until
+  a test shows what the machine holds.
+- A cloud autoscaling runner service: it needs a standing token with admin rights on the repository (see "Why not an ephemeral runner"
+  in the runner README).

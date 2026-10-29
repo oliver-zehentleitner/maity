@@ -530,3 +530,53 @@ so a custom role can never be a way around trust.
   without any scope behind it; it is quoted with its author instead.
 - Leaving a project role on `reviewer` out of `role:reviewer`: it holds
   the reviewer's rights but would never be woken for a review.
+
+## A manager leads a line of the org chart, not the project
+
+**Id:** ce60da47-9ad3-43c7-a719-45ed778d5bf2
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decisions in the Maity chat, 2026-10-28: a friend who joins for marketing gets a manager reporting to him, with a writer and a designer under it; managers may nest in large organisations; "ja passt" to the coordinator's proposal of a line with rights only below it
+**See:** trust.md#authority-comes-from-the-role-in-the-org-chart-not-from-who-typed-the-message — 30f183d5-9f56-494f-a3a1-468cd10f5cc9 — as of 2026-10-28
+
+The role `manager` leads its line, every member whose `reports_to`
+chain reaches it, and is that line's interface to a human. Its scope
+`line:lead` acts only on its **reach**: the agents of its line with
+the manager's own owner, trust `member` or `guest`, not proxies, reached
+only through such members; the reach stops at any other member, so a
+cross-owner edge hands another owner's agent to a manager only when it
+reports to that manager directly and both owners consented to a summary
+that names the manager's rights; never transitively. That keeps the
+maintainer's own case possible: lending his designer to a friend's
+manager. The lent edge is marked (`line_consent`) and loses its power for
+good when the boss loses the role or the edge changes; the role coming
+back does not restore it, because the owner consented to a manager at
+that moment, not to whoever holds the role later. Ending the edge or
+the role lifts a pause the manager set, so a lent agent always comes
+back usable. There it hands out and
+takes back cards (the holder, the old and the new assignee all in
+reach), releases expired claims, and sets areas, pause and `reports_to`
+within the reach, same owner only; pausing a reviewer, tester, arbiter
+or coordinator, or moving one, waits for a human's go as for an admin
+agent. It is not a governance scope: no joins, no removals, no trust or
+role changes, no answers in a human's place, and only a human grants
+the role. Managers nest: one may report to another, and every way that
+sets a `reports_to` keeps chains at 8 members at most.
+
+**Reason:** a human who joins a project for one field (marketing, for
+example) wants an agent that runs their small team and talks to them,
+without that agent gaining rights over the rest of the project. Rights
+that end at the line keep a nested organisation safe: nobody reaches
+up or sideways, and the reach keeps a manager with trust `member` from
+acting on humans, admins or proxies that happen to sit in its line.
+
+**Rejected alternatives:**
+- Calling the project-wide admin agent "manager" and giving it trust
+  `admin` by default: proposed first, the maintainer found it too
+  focused on AI and wanted a role between a team and its human instead.
+- A manager with trust `admin` over the whole project by default: it
+  would let the lead of a marketing line reassign the coders' cards.
+- No depth limit: questions passed up a very long chain would take
+  hours to reach a human; existing chains are not cut, only new edges
+  are refused.

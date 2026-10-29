@@ -31,6 +31,7 @@ from maity_hub import (
 )
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
+from maity_hub.auth import second_factor
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid
 from maity_hub.events import emit, lock_project
@@ -38,6 +39,7 @@ from maity_hub.ids import new_id
 from maity_hub.models import SLUG_PATTERN, Strict, markdown, title
 from maity_hub.namespace import ProjectRoute
 from maity_hub.onboarding import OnboardingIn
+from maity_hub.scopes import in_admin_team
 from maity_hub.views import forge_of, member_view, principal_id, project_view
 
 router = APIRouter(route_class=ProjectRoute)
@@ -79,6 +81,8 @@ class PolicyIn(Strict):
     jour_fixe: dict[str, Any] | None = None  # replaced as a whole (§20.1)
     jour_fixe_moderators: list[str] | None = None
     takeover_window_minutes: int | None = None
+    member_agents: str | None = None
+    member_agents_max: int | None = None
 
 
 class AbsenceIn(Strict):
@@ -96,7 +100,7 @@ class TickerSettingsIn(Strict):
 
 
 SECTION_KEY = re.compile(r"^(\*|\d+(\.\d+)*)$")
-IMPLEMENTER = re.compile(r"^(member|role|area):\S{1,255}$")
+IMPLEMENTER = re.compile(r"^(member|role|trust|area):\S{1,255}$")
 
 
 def _check_ticker(settings: TickerSettingsIn) -> None:
@@ -226,6 +230,10 @@ def _apply_policy(
         proposed["max_placements"] = change.max_placements
     if change.keep_the_why == "required" and not memory_on:
         errors["policy.keep_the_why"] = "no_memory_provider"
+    if change.member_agents_max is not None:
+        if not 0 <= change.member_agents_max <= policy.MEMBER_AGENTS_MAX_MAX:
+            errors["policy.member_agents_max"] = "out_of_range"
+        proposed["member_agents_max"] = change.member_agents_max
     if change.on_runner_revoke == "keep" and instance_rule == "stop_floor":
         # The operator made stop a floor (§15.3, §16): no project keeps its agents.
         errors["policy.on_runner_revoke"] = "stop_floor"
@@ -236,12 +244,14 @@ def _apply_policy(
         proposed["takeover_window_minutes"] = window
     if change.contract_arbiter is not None:
         arbiter = change.contract_arbiter
-        if arbiter != "role:admin" and not _is_member(conn, project_id, arbiter):
+        if arbiter != "trust:admin" and not _is_member(conn, project_id, arbiter):
             errors["policy.contract_arbiter"] = "not_a_member"
+        elif arbiter != "trust:admin" and _is_guest(conn, project_id, arbiter):
+            errors["policy.contract_arbiter"] = "guest"
         proposed["contract_arbiter"] = arbiter
     if change.coordinator is not None:
         if (
-            change.coordinator != "role:admin"
+            change.coordinator != "trust:admin"
             and _agent_role(conn, project_id, change.coordinator) is None
         ):
             errors["policy.coordinator"] = "not_an_agent_member"
@@ -278,15 +288,22 @@ def _set_keep_the_why(change: PolicyIn | None) -> dict[str, Any]:
 
 
 def _agent_role(conn: Connection, project_id: str, member_id: str) -> str | None:
-    """The role of an active agent member, or None when the id names no such member."""
-    role: str | None = conn.execute(
-        select(t.membership.c.role).where(
+    """`admin` for an active admin agent (trust `admin`, never a proxy, §2.3), else the
+    agent's role; None when the id names no active agent member."""
+    row = conn.execute(
+        select(t.membership.c.trust, t.membership.c.role).where(
             t.membership.c.project_id == project_id,
             t.membership.c.agent_id == member_id,
             t.membership.c.active.is_(True),
         )
-    ).scalar()
-    return role
+    ).first()
+    if row is None:
+        return None
+    return "admin" if in_admin_team(row.trust, row.role) else str(row.role)
+
+
+def _is_guest(conn: Connection, project_id: str, principal: str) -> bool:
+    return bool(member_row(conn, project_id, principal).trust == "guest")
 
 
 def _is_member(conn: Connection, project_id: str, principal: str) -> bool:
@@ -416,7 +433,8 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
             insert(t.membership).values(
                 project_id=project_id,
                 human_id=caller.human_id,
-                role="owner",
+                trust="owner",
+                role="coder",
                 areas=["/"],
                 capabilities=[],
                 joined_at=now,
@@ -749,6 +767,7 @@ def confirm_repository(
             raise humans_only("only the namespace owner confirms the repository")
         if mine.row.human_id != project.owner_id:
             raise forbidden(message="only the project's namespace owner confirms its repository")
+        second_factor.require_step_up(conn, settings_of(request), caller)  # §2.8.4
         if project.repository_url is None or body.url.rstrip("/") != project.repository_url:
             # A co-admin's change between what the owner saw and the click is never
             # confirmed with it.
@@ -779,6 +798,8 @@ HUMANS_ONLY_POLICY = {
     "on_runner_revoke",
     "spawn_requests",
     "merged_closes",  # set by a human with project:admin (§6.1)
+    "member_agents",  # who may bring agents into the project (§3.1, §6.1)
+    "member_agents_max",
 }
 
 
@@ -798,14 +819,14 @@ def _refuse_for_agents(mine: Membership, body: Any, given: set[str]) -> None:
 def _authorise_patch(mine: Membership, body: ProjectPatch, given: set[str]) -> None:
     if (
         mine.kind == "agent"
-        and mine.role == "admin"
+        and in_admin_team(mine.trust, mine.role)
         and given == {"settings"}
         and body.settings is not None
         and body.settings.model_fields_set == {"onboarding"}
     ):
         return  # §2.3 ʰ: coordination alone, never a mixed project/settings PATCH.
     # The absence is written by the owner, the human it concerns, and nobody else (§6.1).
-    if "absence" in given and (mine.role != "owner" or mine.kind != "human"):
+    if "absence" in given and (mine.trust != "owner" or mine.kind != "human"):
         raise forbidden(message="the absence is set by the owner only")
     if given - {"absence", "reason"}:
         mine.require("project:admin")
@@ -822,7 +843,7 @@ def _owner_id(conn: Connection, project_id: str) -> str:
         select(t.membership.c.human_id)
         .where(
             t.membership.c.project_id == project_id,
-            t.membership.c.role == "owner",
+            t.membership.c.trust == "owner",
             t.membership.c.active.is_(True),
         )
         .order_by(t.membership.c.joined_at)
@@ -838,7 +859,7 @@ def get_rules(slug: str, request: Request, caller: AnyCaller) -> Response:
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
-        text = rules.generate(mine.project, mine.role, arbiter_text(conn, mine.project))
+        text = rules.generate(mine.project, mine.trust, mine.role, arbiter_text(conn, mine.project))
     return Response(
         text,
         media_type="text/markdown; charset=utf-8",
@@ -847,7 +868,7 @@ def get_rules(slug: str, request: Request, caller: AnyCaller) -> Response:
 
 
 def arbiter_text(conn: Connection, project: Any) -> str:
-    if project.contract_arbiter == "role:admin":
+    if project.contract_arbiter == "trust:admin":
         return "the admin role"
     try:
         row = member_row(conn, project.id, project.contract_arbiter)

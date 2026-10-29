@@ -67,13 +67,14 @@ def test_a_created_project_has_the_contract_shape(owner: flow.Human) -> None:
         "default_branch": "main",
         "forge": "github",
         "probe_configured": False,
+        "probe_via": None,
         "owner_confirmed": False,
     }
     assert body["policy"] == {
         "preset": "hierarchical",
         "claim_policy": "self-claim",
         "done_authority": "reviewer",
-        "contract_arbiter": "role:admin",
+        "contract_arbiter": "trust:admin",
         "tag_authority": "human",
         "steward_writes": "cards_only",
         "lease_seconds": 7200,
@@ -81,7 +82,7 @@ def test_a_created_project_has_the_contract_shape(owner: flow.Human) -> None:
         "spawn_requests": "consent",
         "spawn_consent_by": "human",
         "max_placements": 8,
-        "coordinator": "role:admin",
+        "coordinator": "trust:admin",
         "coordinator_substitute": None,
         "on_runner_revoke": "inherit",  # the instance setting decides (§15.3)
         "badge": "off",
@@ -93,10 +94,12 @@ def test_a_created_project_has_the_contract_shape(owner: flow.Human) -> None:
         "jour_fixe": None,
         "jour_fixe_moderators": None,
         "takeover_window_minutes": 60,
+        "member_agents": "on",
+        "member_agents_max": 3,
     }
     assert body["absence"] is None and body["rules_version"] == 1
     me = owner.get("/me").json()
-    assert me["projects"][0]["role"] == "owner"
+    assert me["projects"][0]["trust"] == "owner"
 
 
 def test_probe_configured_says_whether_the_hub_holds_a_token(
@@ -290,7 +293,8 @@ def test_the_rules_are_generated_per_role(owner: flow.Human, make_client: Client
     assert "You own the project" in text
     assert "keep-the-why skill" in text and "Commit in English." in text
     member = flow.agent(make_client, owner, role="member")
-    assert "You are a member" in member.get("/projects/maintainer/maity/rules").text
+    mine = member.get("/projects/maintainer/maity/rules").text
+    assert "You are a member" in mine and "Your role is coder" in mine  # trust, then role
 
 
 def test_settings_carry_the_release_checklist(owner: flow.Human) -> None:
