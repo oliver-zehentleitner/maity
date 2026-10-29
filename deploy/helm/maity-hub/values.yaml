@@ -73,6 +73,31 @@ forge:
     existingSecret: ""
     key: github-token
 
+mail:
+  # The instance's outgoing mail (docs/api.md §16.2). Nothing is rendered until a value is set: without
+  # `signingKeySecret` the hub sends no mail at all, and the settings below only take effect with it.
+  # The environment wins over the admin settings (`set_by_environment`).
+  #
+  # The signing key (MAITY_MAIL_SIGNING_KEY: 32 bytes or more, base64) signs the links in mails. It
+  # comes from a Secret that already exists in the release namespace, and its value never passes
+  # through the chart. Keep a copy: a new key makes every mailed link that is still out invalid.
+  signingKeySecret:
+    existingSecret: ""
+    key: mail-signing-key
+  # The SMTP server (MAITY_SMTP_*). Empty host: none of these is set, and the admin settings apply.
+  host: ""
+  port: 587
+  # starttls, implicit or none (none only for a loopback host).
+  tls: starttls
+  username: ""
+  # Sender, optionally as `Name <address>` (MAITY_SMTP_FROM), and where replies go (MAITY_SMTP_REPLY_TO).
+  from: ""
+  replyTo: ""
+  # The Secret holding the SMTP password (MAITY_SMTP_PASSWORD). The password is never a value here.
+  passwordSecret:
+    existingSecret: ""
+    key: smtp-password
+
 migrate:
   # `maity-hub migrate` as a Helm hook Job before every install and upgrade;
   # the hub itself never migrates and refuses to serve an outdated schema.

@@ -1,5 +1,5 @@
-# Everything on: Ingress with TLS through cert-manager and a join host, the forge token,
-# a digest.
+# Everything on: Ingress with TLS through cert-manager and a join host, the forge token, the mail
+# settings, a digest.
 image:
   repository: ghcr.io/example/maity-hub
   digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
@@ -10,6 +10,18 @@ database:
 forge:
   github:
     existingSecret: maity-hub-secrets
+mail:
+  signingKeySecret:
+    existingSecret: maity-hub-secrets
+  host: smtp.example.org
+  port: 465
+  tls: implicit
+  username: noreply@example.org
+  from: "Maity <noreply@example.org>"
+  replyTo: info@example.org
+  passwordSecret:
+    existingSecret: maity-hub-secrets
+    key: smtp-pass
 config:
   trustedProxies: 10.244.0.0/16
 ingress:
