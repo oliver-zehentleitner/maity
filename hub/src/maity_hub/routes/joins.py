@@ -778,6 +778,11 @@ def _boss_still_here(conn: Connection, reports_to: int | None) -> int | None:
 
 
 def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, str, str, str]:
+    # Nothing issues a suspended account a credential (§16.8): the profile's owner, or
+    # the creator for a profile the exchange creates. Before the project lock, so the
+    # account lock comes first here as in the suspension, which then locks the project.
+    owner = moderation.owner_account(conn, row.agent_id) if row.agent_id else row.created_by
+    moderation.refuse_suspended(conn, owner)
     # Serialise with every other write to the project: two first exchanges for
     # one new agent must not both insert its membership.
     lock_project(conn, row.project_id)
@@ -794,10 +799,6 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
     ).rowcount
     if consumed != 1:  # a concurrent exchange won
         raise not_found()
-    # Nothing issues a suspended account a credential (§16.8): the profile's owner, or
-    # the creator for a profile the exchange creates.
-    owner = moderation.owner_account(conn, row.agent_id) if row.agent_id else row.created_by
-    moderation.refuse_suspended(conn, owner)
     if row.placement_id is not None:
         _require_pickup_holds(conn, row)
     project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()

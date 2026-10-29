@@ -273,10 +273,14 @@ def complete_redemption(request: Request) -> JSONResponse:
     origin = origin_of(request)
     pending = request.cookies.get(PENDING_COOKIE)
     with engine_of(request).begin() as conn:
+        # A suspended account first (§16.8), before the state, and before the code's row
+        # lock: the suspension holds the account lock when it denies the open codes.
+        seen = device_codes.of_pending(conn, pending)
+        if seen is not None:
+            moderation.refuse_suspended(conn, seen.human_id)
         row = device_codes.of_pending(conn, pending, lock=True)
         if row is None:
             raise not_found()
-        moderation.refuse_suspended(conn, row.human_id)  # before the state: §16.8
         if device_codes.status(row, clock.now()) != "approved":
             raise ApiError(409, "conflict", "the code is not approved")
         end_presented(conn, request.cookies.get(SESSION_COOKIE))

@@ -6,10 +6,12 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from sqlalchemy import Engine, select, update
 
 from maity_hub import moderation
 from maity_hub import tables as t
+from maity_hub.errors import ApiError
 from tests import factory, flow
 from tests import test_runners as runners
 from tests.conftest import ClientFactory
@@ -204,6 +206,26 @@ def test_a_suspended_account_gets_no_new_credential(
     ):
         assert refused.status_code == 403, refused.text
         assert refused.json()["error"]["code"] == "account_suspended"
+
+
+def test_an_issue_waits_for_a_suspension_in_progress(
+    team: dict[str, Any], migrated: Engine
+) -> None:
+    """The order of §2.9: the suspension holds the account lock exclusively until it
+    commits, an issue takes it shared before it reads the column, so it waits and then
+    refuses; reading the column alone would see it unset and issue (PostgreSQL, MariaDB)."""
+    from tests.concurrency import finished, race, waiting
+
+    owner = team["owner"]
+    with race(migrated) as r:
+        suspension, issue = r.first, r.second
+        moderation.suspend(suspension, owner.id, "rpt-000000000000")
+        step = r.run(issue, lambda: moderation.refuse_suspended(issue, owner.id))
+        assert waiting(step)  # on the account lock
+        suspension.commit()
+        with pytest.raises(ApiError) as refused:
+            finished(step)
+        assert refused.value.code == "account_suspended"
 
 
 def test_an_agent_on_a_public_swarm_page_can_be_reported_by_its_name(

@@ -550,6 +550,10 @@ def restart_placement(
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
+        if rejoin:  # a rejoin issues a credential: none for a suspended account (§16.8)
+            # Before the project lock: the suspension takes the account lock, then projects.
+            account = pl.profile_owner(conn, _placement(conn, mine, placement_id))
+            moderation.refuse_suspended(conn, account)
         project = events.lock_project(conn, mine.project.id)
         placement = _placement(conn, mine, placement_id)
         runner = _runner(conn, placement.runner_id)
@@ -576,8 +580,6 @@ def restart_placement(
             placement = _settle_by_right(conn, placement, actor, mine.principal_id, approve=True)
         _require_open(project)
         _require_live(conn, runner)
-        if rejoin:  # a rejoin issues a credential: none for a suspended account (§16.8)
-            moderation.refuse_suspended(conn, pl.profile_owner(conn, placement))
         placement = pl.restart(conn, placement, rejoin, actor, mine.principal_id)
         return idempotency.Outcome(200, "placement", placement.id, _view(conn, mine, placement))
 

@@ -12,7 +12,7 @@ from typing import Any
 
 from sqlalchemy import Connection, delete, insert, select, update
 
-from maity_hub import attachment_store, clock
+from maity_hub import account_deletion, attachment_store, clock, write_guard
 from maity_hub import tables as t
 from maity_hub.auth import email_links, leaks, sessions
 from maity_hub.errors import ApiError, invalid
@@ -108,6 +108,13 @@ def suspended(conn: Connection, human_id: str | None) -> bool:
 
 
 def refuse_suspended(conn: Connection, human_id: str | None) -> None:
+    """Refuse an issue to a suspended account. The account lock is taken shared first, as
+    every write of the account takes it (§2.9): a suspension in progress holds it
+    exclusively, so the issue waits for it and then reads the column committed. Callers
+    run this before their other locks, the order the suspension takes them in."""
+    if human_id is None:
+        return
+    write_guard.share(conn, human_id)
     if suspended(conn, human_id):
         raise account_suspended()
 
@@ -159,7 +166,10 @@ def suspensions(conn: Connection, rows: Any, owner_of: dict[str, str]) -> dict[i
 
 def suspend(conn: Connection, human_id: str, report_id: str) -> None:
     """The account signs in no more, and every session and credential it holds ends at
-    once: its agents' credentials and its runners' credentials, so its placements stop."""
+    once: its agents' credentials and its runners' credentials, so its placements stop.
+    The account lock comes first and exclusively, as for a deletion (§2.9), so no issue
+    that read the account before this commits hands out a credential after it."""
+    account_deletion.lock_account(conn, human_id)
     conn.execute(
         update(t.human)
         .where(t.human.c.id == human_id, t.human.c.suspended_at.is_(None))

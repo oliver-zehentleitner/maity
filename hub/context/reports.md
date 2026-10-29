@@ -189,3 +189,27 @@ public pages exist. A suspension is no hold: only the operator's
 (project, card, agent profile, human, event): a column on five tables for
 one rule, and a target reported twice would keep only one
 report's hold.
+
+## A suspension takes the account lock first; every issue waits for it
+
+**Id:** 525c4922-109b-418f-82e2-0b02b285b946
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** review of #663 (a race between a suspension and a credential issue), the lead's ruling, 2026-10-29; `hub/tests/test_moderation.py` `test_an_issue_waits_for_a_suspension_in_progress`
+
+`moderation.suspend` takes the account's `account_lock` exclusively
+(`account_deletion.lock_account`) before it changes anything, as a
+deletion does (§2.9). `moderation.refuse_suspended` takes the same lock
+shared (`write_guard.share`) and only then reads `suspended_at`. An
+issue that starts while a suspension is in progress therefore waits for
+it, and then refuses. The issuers (join exchange, runner pairing,
+device-code completion, placement rejoin) call it before any other lock,
+because the suspension, holding the account lock, goes on to lock
+sessions, credentials and codes. `write_guard.hold` refuses a suspended
+account as it refuses a deleted one.
+
+**Rejected alternative:** only reading the column. A read does not wait
+for an uncommitted suspension, so an issue could see the account
+unsuspended, and then commit a fresh credential after the suspension has
+revoked all the others.
