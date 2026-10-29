@@ -1547,7 +1547,8 @@ not hold a token that names nobody yet, which the hub accepts.
 
 **Id:** 1c00024d-a3a6-49bc-ba2e-704359713aeb
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 54a49af9-4763-4b4c-8624-bf2c51a2bc34
 **Evidence:** confirmed
 **Source:** the maintainer's wish to fold the Agents page into Members → Manage (tsk-7v2snhk002ak, chat 2026-10-27); the coordinator's cut into two PRs and its tie to the decided Team page's Members tab (context/members.md f0ca2279: humans and agents in one list, actions per row), 2026-10-27
 **Revisit when:** the Team page's Members tab lands, or a member page of its own takes the actions (tsk-rtb5vjrvbh34)
@@ -1648,7 +1649,8 @@ slug: §6.25 forbade it, since another project may carry that slug by now.
 
 **Id:** 621d28a8-36f5-4ebd-a90a-f7d729d7af34
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 54a49af9-4763-4b4c-8624-bf2c51a2bc34
 **Evidence:** confirmed
 **Source:** the maintainer's wish to fold the Agents page into Members (tsk-7v2snhk002ak, chat 2026-10-27); the coordinator's cut, whose second PR moves joining and the placements and removes the Agents page, 2026-10-27; the decided Team page's Members tab (context/members.md f0ca2279)
 **Revisit when:** the Team page's Members tab lands, or joins get a lifecycle beyond open, used, expired, burned and revoked
@@ -1683,7 +1685,7 @@ is read by the hub's member list.
 **Revisit when:** the hub sends `member_agents` in every project's policy, or §3.1 changes what counts
 
 A human member without `members:admin` sees **+ Add my agent** at the
-head of the agents' table when the project's policy has `member_agents`
+head of Agents (the agents' table on Members before 54a49af9) when the project's policy has `member_agents`
 and it is not `off`. The panel offers only what §3.1 lets a member
 set (trust member or guest; role coder, reviewer, tester or designer;
 no reports to, no areas) and lists only the member's own joins. A line
@@ -1774,8 +1776,9 @@ the prefix display only.
 the human (`GET /agents`): its picture, its memberships with trust, role
 and the instances against the team's limit, its name, git identity and
 handle, and its deletion; a new profile at the end. **Add to a project**
-leads to that project's Members with the join panel open and the
-profile chosen (`/<owner>/<slug>/members/join?agent=<id>`): the one join
+leads to that project's Agents with the join panel open and the
+profile chosen (`/<owner>/<slug>/agents/join?agent=<id>`, since
+54a49af9; Members before it): the one join
 component, where the project's rules (who may bring agents, the
 member's limit, the team's) are known. The profile asked for
 (`?agent=<id>`) is kept across a failed first read of the joins, so
@@ -1783,7 +1786,8 @@ member's limit, the team's) are known. The profile asked for
 have. The handle is offered only where the hub's machine form names it
 on `PATCH /agents/{id}` (§6.24). `/agents/<id>` marks one profile.
 The account keeps the human's own picture and points to this page; an
-agent's picture stays settable in its row on Members as well.
+agent's picture stays settable on its card on a project's Agents and in
+its Manage row on Members as well.
 
 **Reason:** an agent is the owner's across projects, so its settings
 need one place that is not a project; and the join panel already knows
@@ -1794,6 +1798,46 @@ to repeat.
 repeat the project's join rules (§3.1's member limits, the team's
 instance limit) apart from the panel and drift from it. Keeping the
 agents in no project on the account: two places for the same profile.
+
+## A project's tabs: Members a neutral list with Chat, Agents one's own agents, the organisation in the Overview
+
+**Id:** 54a49af9-4763-4b4c-8624-bf2c51a2bc34
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer on the card tsk-3ap6mj5y1k2a, 2026-10-29 (Members neutral with a Chat per entry, the admin's Manage kept as it is; an Agents tab before Runners and Why, the component of /agents filtered to the project; the organigram into the Overview, the Organisation tab gone without a redirect); docs/api.md §16.11 (the project views, `agents` among them, `org` no longer)
+**Revisit when:** the Team page's Members tab lands, or the hub lets an agent's owner pause or remove it without `members:admin`
+
+**Members** lists everyone in the project the same way for every
+viewer: trust and role, presence, owner, joined, paused, a link to the
+member and a **Chat** per entry (one's own agent: its direct chat;
+anyone else: a new group chat with them chosen, `chat/new?with=<id>`,
+where the hub has group chats). With `members:admin` each row keeps
+**Manage**, with the membership form, briefing, picture, rulebook,
+credentials, pause and removal. **Agents** (`/<owner>/<slug>/agents`, for
+humans) shows one's own agents in the project, each as its card on
+`/agents` (`profileCard`, one component), with what belongs to the
+membership under it: the preferences switch, the team's rulebook, the
+credentials, and with `members:admin` the pause and the removal (§6.2
+gives an owner without it neither). The join panel, the open joins, the
+placements and the earlier joins are there; `…/agents/join[?agent=<id>]`
+opens the panel, `…/agents/<id>/rulebook` the limit, and a new project
+lands on Agents. The parts the Members row and the Agents card share
+(rulebook, credentials, picture, pause, removal) are one code,
+`M.memberParts`. The organisation tree is a section of the Overview and
+is redrawn there when a member event arrives.
+
+**Reason:** Members is where one sees who is in the project and talks
+to them; managing one's own agents is a different job, the same one as
+on `/agents`, so it gets that page's component in the project. A tab
+for one computed tree was a page to go to for what the Overview can show.
+
+**Rejected alternative:** the earlier cut (1c00024d, 621d28a8): one's
+own agents opened as **Details** in their rows on Members, the join
+panel at the head of the agents' table, the placements under it, and an
+Organisation tab. It mixed managing one's agents into the team's list,
+and the list looked different to each viewer. A redirect from `…/org`
+to the Overview: the alpha rule, no compatibility routes.
 
 ## A human's picture is set on the account, an agent's in its row on Members; the account keeps only agents no project shows
 

@@ -164,7 +164,7 @@ does not know. There are no `#/` routes and no redirects from them.
 | `/login` | the login page, always; signed in, the dashboard's start (the root without a session shows the instance's landing page where it has one). `/login?next=<route>` signs in and goes on to that dashboard path (a path on this host, not one of the hub's own, `docs/api.md` §2.6.5), passed to the password, mail-link and device sign-in calls; the page offers **Create an account** where `GET /auth/methods` says the instance registers |
 | `/invite/<token>` | an invitation (`js/invite.js`, §3.4), with or without a session, as one centred card like sign-in and register: the project's logo or monogram, who invites to which project as what, the note, until when, whether it is for one address; signed out **Sign in to accept** and, where the hub registers or the invitation admits, **Create one**, both returning here; signed in **Join <project> as <you>** (`POST …/accept`), then the way into the project; a refusal (address mismatch, already a member, void, project closed, account pending) said in the hub's words with its reason; an unknown, used, expired or revoked link one answer |
 | `/register?next=<route>` | registration (`js/register.js`, §2.7.1): the address and a password (at least 12 characters, asked twice), `POST /auth/register` with the `next`, then "check your mail" — the same for every address; offered where the instance registers, or where the invitation in `next` admits (§3.4, `registration: sign_in_or_register`), else it says the hub does not create accounts on request. The account is made from the mailed link, which returns to `next`. An account that waits for approval (§2.7.5) sees one page, "Your account waits for the operator's approval", and Sign out |
-| `/agents`, `/agents/<id>` | **Your agents**, from the gear menu: every agent profile of the human (`docs/api.md` §6.3) with its picture, its memberships (trust, role, instances against the team's limit, the rulebook linked), its name, git identity and handle (a rename keeps the old handle as an earlier one), its deletion, and a new profile. **Add to a project** opens that project's Members with the join panel open and the profile chosen (`/<owner>/<slug>/members/join?agent=<id>`). `/agents/<id>` marks one profile |
+| `/agents`, `/agents/<id>` | **Your agents**, from the gear menu: every agent profile of the human (`docs/api.md` §6.3) with its picture, its memberships (trust, role, instances against the team's limit, the rulebook linked), its name, git identity and handle (a rename keeps the old handle as an earlier one), its deletion, and a new profile. **Add to a project** opens that project's Agents with the join panel open and the profile chosen (`/<owner>/<slug>/agents/join?agent=<id>`); a membership links to its card there and to its rulebook. `/agents/<id>` marks one profile |
 | `/runners` | the runners: small services on the operator's machines that start agents for the projects they are allowed in; **Runners** in the header's gear menu (they belong to the person, not to a project, so not in the projects' row) |
 | `/observe/<owner>/<slug>` | reading along in the group chats your agents are in, in a project you are not a member of (`docs/api.md` §9.2); named on `/all` |
 | `/admin` | instance administration: statistics, users, mail settings and health, for the instance admin only (`member.instance_admin` on `/me`); opened from **Settings → Instance administration** |
@@ -388,8 +388,21 @@ too.
    notes, reports and older closed cards from the hub. Matching fields and
    closed cards outside the usual window are labelled. **Clear search**
    restores the board while keeping the column, member and area filters.
-3. **Agents** are in **Members** (no tab or path of their own). An
-   agent's row opens with its membership form, its **briefing** (Markdown,
+3. **Agents** (`/<owner>/<slug>/agents`, a tab before Runners and Why,
+   for humans; the maintainer, 2026-10-29): one's own agents in the
+   project, each as its card on **Your agents** (`/agents`, one component,
+   `js/agents-page.js`): picture, name and handle, its memberships, and
+   its name, handle, picture and deletion folded. Under the card, what
+   belongs to this membership: trust, role and presence, **Give my
+   preferences to this agent** (where the member view has
+   `owner_preferences`, §19.4), the **Team rulebook** and its credentials
+   (below), and with members:admin its pause and **Remove from the
+   project**. `/<owner>/<slug>/agents/<id>` marks one card;
+   `/<owner>/<slug>/agents/<id>/rulebook` (a join's quota refusal)
+   focuses its limit. **+ Add an agent** (or **+ Add my agent**) at the
+   head opens the join panel (item 7); the open joins stand under the
+   cards, then **Where they run**, then the earlier joins.
+   With members:admin, an agent's row on **Members** opens with **Manage**: its membership form, its **briefing** (Markdown,
    at most 16,384 characters, `PATCH …/members/{id}`, offered only where
    the hub's member view has the field; sent as typed, "Set by @handle"
    where the hub says who wrote it), **Give my preferences to this agent**
@@ -405,13 +418,11 @@ too.
    since stays chosen, marked revoked), which instance an event for the
    team wakes, and whether one instance may review another's work; only
    what changed is sent. A join refused with `instance_quota` links
-   there (`/<owner>/<slug>/members/<id>/rulebook`: the row open, at the
-   limit). Without
-   members:admin a human's own agents open as **Details** with their
-   picture, credentials and the preferences switch; with it, **Manage**
-   shows one's own agent's picture too.
+   there (`/<owner>/<slug>/agents/<id>/rulebook`: the card's limit
+   focused). On Members, **Manage** shows one's own agent's picture,
+   rulebook and the preferences switch too.
    **Where they run** (`js/placements.js`, `docs/api.md` §15.5–§15.7),
-   in Members after the agents' table where the hub has placements: one row per
+   on Agents after the cards where the hub has placements: one row per
    active placement — the agent, the runner (and target), harness, model
    and mode, what is wanted (`desired`), what the runner last reported
    (state and reason in words, a crash loop with its count, a retry time,
@@ -434,7 +445,10 @@ too.
    and `placement_reported` read the list again.
 4. **Members** (`/<owner>/<slug>/members`, `docs/api.md` §6.2; `/<owner>/<slug>/members/<id>`,
    a mention's link, marks that member's row and moves the focus to it): everyone in the
-   project, humans first, then agents, each with name and handle, trust and role
+   project as a neutral list, humans first, then agents, each with name and handle
+   (a link to the member), a **Chat** button (one's own agent: its direct chat;
+   anyone else: a new group chat with them chosen, `chat/new?with=<id>`, where
+   the hub has group chats; none on oneself), trust and role
    (`docs/api.md` §2.3, as "admin · reviewer"; a guest is never offered as an
    assignee or as whom someone reports to, and a human guest gets no **New
    group chat**),
@@ -449,12 +463,11 @@ too.
    voided, expired), for whom, by whom, and **Revoke** on an open one. Under
    `policy.keep_the_why: required` (`docs/api.md` §6.23) a **Keep the Why**
    column says per instance when it confirmed or by when it is to; an agent
-   past that deadline unconfirmed is marked, not shown as an error. Where the hub sends
-   them (`members:admin`), an agent's credentials summary: active, never
-   used, revoked lately, last used (and when by bearer token). With
-   `members:admin` each row has **Manage** (without it, a human's own
-   agents have **Details**: their credentials with Revoke and whether they
-   get the owner's preferences, nothing that changes the membership): one form for what §6.2 lets an
+   past that deadline unconfirmed is marked, not shown as an error. The
+   credentials are not in the list: on Agents for one's own, in **Manage**
+   for an admin. With
+   `members:admin` each row has **Manage** (one's own agents are managed
+   on **Agents**, item 3): one form for what §6.2 lets an
    admin change — the trust (owner only for a human; granting owner or admin,
    and lowering an owner, only for an owner, `owner_only`, §2.3) and the role
    (proxy only with trust admin and from an owner), whom the member
@@ -462,7 +475,7 @@ too.
    sent, as the hub's `cycle` refusal is worded), its areas (repository
    paths, comma separated, never with `..`) and its capabilities (`tag`;
    ones the page does not offer are kept) — saved in one PATCH of only what
-   changed, and at once in the Organisation view. Each field says its own
+   changed, and at once in the Overview's organisation. Each field says its own
    error; edits not yet saved survive any redraw (the presence refresh, an
    action in another row) and are dropped by **Done**; a drafted boss who
    has left since is dropped and said, never sent as nobody; a change that
@@ -479,8 +492,11 @@ too.
    30 s and updated in place; a redraw keeps the keyboard focus (Manage
    to the opened row's role, Done back to Manage). On a phone each row is
    a card with its cells labelled.
-5. **Organisation** (`/<owner>/<slug>/org`): an indented tree computed from
-   `reports_to` and area ownership on every render.
+5. **Organisation**, a section of the **Overview** (no tab or path of its
+   own; the maintainer, 2026-10-29): an indented tree computed from
+   `reports_to` and area ownership on every render, the policy's preset
+   beside its heading; a member event reads the members again and redraws
+   it in place.
 6. **Chat** (`/<owner>/<slug>/chat`, `/<owner>/<slug>/chat/<agent-id>` or `/<group chat id>`, `/new`): two panes,
    like a messenger. On the left, under the heading and **New group
    chat**, the human's chats, one per agent they own in the project,
@@ -623,7 +639,7 @@ too.
      there stay as links. An upload or a delete that met it first says
      "attachments are not set up on this instance" in place, and Project
      settings says so too, beside the storage line.
-7. **Add an agent**, inside **Members** (owner and admin; and, as **Add
+7. **Add an agent**, inside **Agents** (owner and admin; and, as **Add
    my agent**, a human member while the project's `member_agents` is on,
    docs/api.md §3.1 "Bringing your own agent": the panel then offers trust
    member or guest, the roles coder, reviewer, tester and designer, and a
@@ -632,12 +648,14 @@ too.
    is off at the limit; the hub's `member_join_limit` and
    `member_agents_max` said in words with the field; Project settings let
    a human admin turn it on or off and set how many, with a reason; no tab of its
-   own: `/<owner>/<slug>/members/join` opens it there). **+ Add an agent** at the head of
-   the agents' table opens a panel under it
-   (a project without agents opens it at once); the panel has its own
-   Close, and Cancel. The title's count line says how many agents, online
-   and open joins there are. An open join is an **open seat** under the
-   agents' table (dashed, its profile, role, expiry and id, Revoke);
+   own: `/<owner>/<slug>/agents/join` opens it there, `?agent=<id>` with
+   that profile chosen). **+ Add an agent** at the head of
+   Agents opens a panel under it
+   (a project without an agent of one's own opens it at once, a new project
+   lands there); the panel has its own
+   Close, and Cancel. The count line says how many of one's agents are
+   here, online, and the open joins. An open join is an **open seat** under the
+   cards (dashed, its profile, role, expiry and id, Revoke);
    used, expired, burned and revoked joins are folded at the view's end
    under **Earlier joins**. Once a join is made, the panel shows its line
    in the form's place, with **Join another** and **Done**. The panel creates a join
@@ -878,9 +896,9 @@ card.
 **Pictures** (`/account/picture`, `docs/api.md` §6.10). The account
 shows the human's picture as it shows now, where it comes from (uploaded,
 the linked forge account, or generated from the member id), an upload and,
-for an upload, **Remove the upload**. An agent's picture is set in its row
-on Members (**Details** or **Manage**, for its owner;
-`/<owner>/<slug>/members/<id>/picture` opens the row), read from
+for an upload, **Remove the upload**. An agent's picture is set on its
+card on a project's **Agents** and in its **Manage** row on Members (for
+its owner), read from
 `GET /agents`, set with `PUT`/`DELETE /agents/{id}/avatar`, and on
 **Your agents** (`/agents`) for every profile; the account keeps only the
 human's own. In the same places the owner deletes the profile (`DELETE /agents/{id}`, §6.3): the page names the
@@ -1005,8 +1023,8 @@ once the project has a repository, and that the Maity badge also
 switches the project's public badge on. A hub whose machine form does
 not name `memory` and `setup` for `POST /projects` would refuse them, so
 there they are neither shown nor sent. The creator becomes the
-owner. On `201` the page opens the new project's Members, whose empty
-state offers **Join an agent**. The hub's `invalid` answer is shown under
+owner. On `201` the page opens the new project's Agents, where the join
+panel is open at once. The hub's `invalid` answer is shown under
 each field it names in `details.fields` (`slug: taken`,
 `repository.url: not_a_configured_forge`, …); a refused setup option is
 said under the options.
@@ -1228,7 +1246,7 @@ fails while the bundle is stale.
   Not the long-poll: `context/refresh.md`.
   - a request event re-reads `/me` at once;
   - a card event (`task_*`) on the board, a member, session or
-    credential event on Agents, a member event on Organisation, and a
+    credential event on Members or Agents, and a
     state, absence, policy or rules change anywhere offer **Reload** when
     someone else caused them;
   - a chat event of the open conversation fetches its new messages
@@ -1324,9 +1342,9 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     knows briefings, the owner writes one on the card and the agent's
     `resume` packet carries it; where it does not, no editor is offered.
     **Members**: the owner in the humans table, the agent in the agents
-    table (credentials only where the hub sends them); the agent's role
+    table with its Chat; the agent's role
     changed to reviewer and back through **Manage**; the agent put under
-    the owner, which the Organisation view shows at once; the owner put
+    the owner, which the Overview's organisation shows; the owner put
     under the agent refused as a circle before it is sent; reports-to set
     back to nobody;
 11. **State & absence** (in **Project settings**): the owner freezes the project with a note and a
@@ -1386,7 +1404,7 @@ Agents (empty, with an agent, with a human pause, with a briefing where
 the hub has one), Join with a paste line, the board (a claimed card, a
 release with a contract, the release edited, a typed-PR editor open),
 the inbox with an open request, `/all` with requests, chat, the header
-in freeze with an absence, Organisation and Create a project. Each check
+in freeze with an absence, the Overview with its organisation and Create a project. Each check
 runs at 1280 and 390 px in the light scheme and at 1280 px dark, with the
 tags WCAG 2.0/2.1 A and AA, WCAG 2.2 AA and best practices. A serious or
 critical violation fails the run after the last step; every finding is in
@@ -1444,9 +1462,9 @@ web/
 ├── js/board.js       (2) board
 ├── js/card-panel.js  an opened card: body, links, notes, history
 ├── js/ticker-settings.js  Project settings: the change ticker and the forge webhook
-├── js/agents.js      an agent's credentials and briefing for its row in Members; /<owner>/<slug>/agents leads there
-├── js/members.js     (4) members: humans and agents, managed by an admin
-├── js/org.js         (5) organisation tree
+├── js/agents.js      an agent's credentials and briefing, for Members and Agents
+├── js/members.js     (4) members: a neutral list with Chat, managed by an admin; the parts Agents shares
+├── js/org.js         (5) the organisation tree, a section of the Overview
 ├── js/project-message.js message the project (§8.4)
 ├── js/attachments.js  files on messages: attach, show, delete; the admin's pending list
 ├── js/chat.js        (6) chat
@@ -1465,7 +1483,7 @@ web/
 ├── js/sessions.js    the account's sessions, This was me, the mail sign-in banner
 ├── js/preferences.js the human's preferences, a proposal's review, the owner's switch on an agent
 ├── js/account.js     the account: pictures, preferences and changing the password
-├── js/agents-page.js Your agents (/agents): every profile across projects
+├── js/agents-page.js (3) Your agents (/agents), every profile across projects; a project's Agents
 ├── js/admin-users.js the users of this hub, for the instance admin
 ├── js/runners.js     the runners: pair, list, rename, revoke, remove
 ├── js/project-runners.js  Project → Runners: allow and detach
