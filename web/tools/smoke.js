@@ -6168,6 +6168,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // The bell's agents_not_listening item leads to one's agents (§18.2 target agents).
   expect(win.Maity.notify.linkOf({ kind: "inbox", record: "acr-9", target: { type: "agents" }, project: null }) === "/agents",
     "not listening: the bell's item links to /agents");
+  expect(win.Maity.notify.keepsUnread({ kind: "inbox", record: "acr-9", target: { type: "agents" } })
+    && !win.Maity.notify.keepsUnread({ kind: "inbox", target: { type: "request", id: "req-1" } }),
+    "not listening: the bell's item stays unread when opened, an open matter like a registration (§18.3)");
   // The digest (§5.3): a personal request the hub files, about no project; named as Maity's, leading to one's agents.
   const dgAll = win.Maity.api.getAll, dgGet = win.Maity.api.get;
   const dgReq = { id: "req-dg01", class: "info", title: "2 of your agent instances are not listening",

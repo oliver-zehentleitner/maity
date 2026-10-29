@@ -39,7 +39,9 @@ window.Maity = window.Maity || {};
   // Read only on purpose: a sign-in alert by This was me (§2.6.5), and an
   // item that asks for an action (a registration to decide, an address to
   // set again) closes with the matter, not by opening it (§18.1).
-  const keepsUnread = (x) => x.kind === "security" || ["registration", "settings"].includes((x.target || {}).type);
+  // An open matter (§18.3: a registration, a disabled address, agents not
+  // listening) reads as read only once it is closed, never by opening it.
+  const keepsUnread = (x) => x.kind === "security" || ["registration", "settings", "agents"].includes((x.target || {}).type);
 
   function linkOf(item) {
     const t0 = item.target || {};

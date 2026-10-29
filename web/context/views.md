@@ -1911,7 +1911,7 @@ per-project overrides on the account: far from the project it is about.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** docs/api.md §5.3 (the owner's digest: `asked_by` null, `filed_by` "hub", no project), §7, §18.1–§18.2 (`agents_not_listening`, target `agents`, linking to `/agents`, the coordinator's ruling of 2026-10-29); the card tsk-32g2cjbm52ft
+**Source:** docs/api.md §5.3 (the owner's digest: `asked_by` null, `filed_by` "hub", no project), §7, §18.1–§18.3 (`agents_not_listening`, target `agents`, linking to `/agents`; read only once its matter is closed — the coordinator's rulings of 2026-10-29); the card tsk-32g2cjbm52ft; the review of #649
 **Revisit when:** the hub files requests of its own that are about one project and should lead into it, or the dashboard gets a personal inbox
 
 A request with `asked_by: null` and `filed_by: "hub"` names its asker
@@ -1920,7 +1920,11 @@ says nothing about an agent waiting, since none does. The hourly digest
 of agent instances that are not listening — personal, about no project
 and no organisation — adds a link to one's agents (`/agents`); its
 summary lists the instances. The bell's `agents_not_listening` item
-(target `agents`) leads to `/agents` too.
+(target `agents`) leads to `/agents` too, and is not marked read when
+opened: like `registration_pending` and `mail_disabled` it asks for an
+action (resume or end the instances) and is read once the matter is
+closed, when no instance is away any more (§18.1–§18.3); `keepsUnread`
+names its target `agents`.
 
 **Reason:** "—" as an asker reads as a missing name, not as the hub;
 and "the agent waits for the answer" would be false. The instances
@@ -1928,7 +1932,9 @@ named in the digest can be resumed or ended only from one's agents.
 
 **Rejected alternative:** the item's `url` as the link: the dashboard
 builds every bell link from the target (the entries above), so one
-item built otherwise would be the exception.
+item built otherwise would be the exception. Reading the bell's item on open, like a request's item: the bell would
+go quiet while the instances are still away, and the next hour's record
+would bring it back.
 
 ## A human's picture is set on the account, an agent's in its row on Members; the account keeps only agents no project shows
 
