@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -240,3 +241,29 @@ def test_settings_read_the_two_timeouts() -> None:
         for bad in ("-1", "3601", "soon"):
             with pytest.raises(ConfigError):
                 Settings.from_env({"MAITY_DATABASE_URL": "sqlite:///x.db", name: bad})
+
+
+def test_a_postgres_connection_says_who_it_is() -> None:
+    url = "postgresql+psycopg://u:p@localhost/h"
+    assert captured_connect_args(db.make_engine(url))["application_name"] == "maity-hub-cli"
+    serving = db.make_engine(url, application_name=db.APPLICATION_SERVING)
+    assert captured_connect_args(serving)["application_name"] == "maity-hub"
+    health = db.make_health_engine(serving)
+    assert health is not None
+    assert captured_connect_args(health)["application_name"] == "maity-hub-health"
+
+
+def test_the_serving_hub_names_its_connections(settings: Settings) -> None:
+    from maity_hub.app import serving_engine
+
+    url = "postgresql+psycopg://u:p@localhost/h"
+    engine = serving_engine(replace(settings, database_url=url))
+    assert captured_connect_args(engine)["application_name"] == "maity-hub"
+
+
+def test_mariadb_and_sqlite_get_no_application_name(tmp_path: Any) -> None:
+    mariadb = db.make_engine("mysql+pymysql://u:p@localhost/h", application_name="x")
+    assert "application_name" not in captured_connect_args(mariadb, "pymysql")
+    assert "application_name" not in captured_connect_args(
+        db.make_health_engine(mariadb) or mariadb, "pymysql"
+    )
