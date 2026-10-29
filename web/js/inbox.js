@@ -1,7 +1,7 @@
 // (1) The inbox: what each agent wants from the human, one entry after the
 // other. The first open entry in the chosen order is expanded; answering
-// it expands the next. Runs in one project (#/<owner>/<slug>/inbox) or across
-// all of them (#/all), where every entry is labelled with its project.
+// it expands the next. Runs in one project (/<owner>/<slug>/inbox) or across
+// all of them (/all), where every entry is labelled with its project.
 // Requests carry everything an entry shows (docs/api.md §7): asker, card
 // and context are inline, so no other call is made.
 "use strict";
@@ -133,7 +133,7 @@ window.Maity = window.Maity || {};
     const p = ctx.projects.find((x) => x.full_name === req.slug);
     const slug = req.personal && !p ? null : req.slug;
     return { slug, repository: (p && p.repository && p.repository.url) || (ctx.slug === req.slug ? M.ids.where(ctx).repository : null),
-      // Across projects (#/all) a card or request reads with its project (§6.25).
+      // Across projects (/all) a card or request reads with its project (§6.25).
       outside: ctx.scope !== "project" };
   }
 
@@ -305,7 +305,7 @@ window.Maity = window.Maity || {};
     return requests.items;
   }
 
-  // args[0]: a request to show (#/<owner>/<slug>/inbox/<id>, an id's link,
+  // args[0]: a request to show (/<owner>/<slug>/inbox/<id>, an id's link,
   // js/ids.js): opened, and listed among the answered when it is one; an id
   // the project's inbox does not hold is said.
   M.views.inbox = async function (ctx, root, args) {

@@ -1,9 +1,9 @@
-// Every chat across one's projects (#/chats, the header's Chat button),
+// Every chat across one's projects (/chats, the header's Chat button),
 // laid out as a project's Chat tab (js/chat.js): the list beside the open
 // conversation, on a phone the list its own screen. The list merges each
 // project's direct and group chats (docs/api.md §9.3, one read per project),
 // unread first, then the newest, each with its project. A conversation opens
-// in place (#/chats/<owner>/<slug>/<id>) with chat.js's own pane, in its project's
+// in place (/chats/<owner>/<slug>/<id>) with chat.js's own pane, in its project's
 // context.
 //
 // Live updates hold no events feed of any project: the notifications stream
@@ -22,7 +22,7 @@ window.Maity = window.Maity || {};
   // are read this often while the view is shown, as the /me round did before
   // it went to 60 seconds (context/refresh.md).
   const NOTICE_MS = 15000;
-  const chatLink = (full, id) => "#/chats" + (id ? "/" + M.api.projectPath(full) + "/" + encodeURIComponent(id) : "");
+  const chatLink = (full, id) => "/chats" + (id ? "/" + M.api.projectPath(full) + "/" + encodeURIComponent(id) : "");
 
   // Unread first, then the newest, then by title; the open one counts as read.
   function ordered(all, currentKey) {

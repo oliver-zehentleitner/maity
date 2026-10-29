@@ -69,7 +69,7 @@ window.Maity = window.Maity || {};
         status.busy("Renaming…");
         try {
           const updated = await M.api.patch(ctx.base, { slug });
-          window.location.hash = ctx.projectLink((updated && updated.full_name) || owner + "/" + slug, "settings");
+          M.route.go(ctx.projectLink((updated && updated.full_name) || owner + "/" + slug, "settings"));
         } catch (err) {
           const why = said(err);
           if (err.code === "invalid" && err.details && err.details.fields && err.details.fields.slug) { status.done(); fail(why.message); }
