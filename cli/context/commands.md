@@ -625,7 +625,7 @@ the contract: the full name is computed and follows renames.
 **Id:** f502c036-d109-46e5-a25a-ffc793bc08bd
 **Type:** decision
 **Status:** active
-**Evidence:** inferred
+**Evidence:** confirmed
 **Revisit when:** the hub keeps an alias for the old full name (#523) that makes the old path answer, or an agent's credential is no longer bound to one project
 
 A `not_found` on a path under the project asks `GET /me` once. When the
