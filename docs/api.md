@@ -902,7 +902,9 @@ include the scope. No call made with an agent credential may:
   (§16.2, §18);
 - change a policy field that governs what humans decide —
   `spawn_consent_by`, `signing`, `tag_authority`, `on_runner_revoke`,
-  `spawn_requests` (§6.1) — or the rules text (`rules_markdown`);
+  `spawn_requests`, `merged_closes`, `member_agents`, `member_agents_max`,
+  `swarm_public`, `keep_the_why`, `keep_the_why_defaults` (§6.1; the hub's
+  list is `HUMANS_ONLY_POLICY`) — or the rules text (`rules_markdown`);
 - set or change a human's `availability_policy`, or name a human in any
   member's `substitutes` (§6.12).
 - take over, assign away, release or end a card a human holds (§6.19),
@@ -3097,7 +3099,7 @@ Response `200`, bounded and deterministic:
                     "instruction": "Load the keep-the-why skill and read context/index.md before working.",
                     "skill": { "name": "keep-the-why",
                                "source": "https://github.com/oliver-zehentleitner/keep-the-why/tree/latest/skills/keep-the-why",
-                               "install": [ "npx skills add https://github.com/oliver-zehentleitner/keep-the-why/tree/latest/skills/keep-the-why",
+                               "install": [ "npx skills add https://github.com/oliver-zehentleitner/keep-the-why/tree/latest/skills/keep-the-why -g -y",
                                             "git clone --depth 1 --branch latest https://github.com/oliver-zehentleitner/keep-the-why <tmp> and copy <tmp>/skills/keep-the-why into the harness's skills directory" ],
                                "load": "Claude Code: invoke the keep-the-why skill (Skill tool). Any other agent: read <skills directory>/keep-the-why/SKILL.md and follow it.",
                                "guide": "https://keepthewhy.com/installation/" },
@@ -6665,8 +6667,10 @@ machine has installed and wherever its session was started:
 
 - `skill` — `name` (`keep-the-why`), `source` (where the skill is
   published), `install` (the ways to get it onto a machine that has no
-  copy, in order: the skills installer, then a plain Git fallback for a
-  machine without Node) and `load` (how to load it, per harness). The
+  copy, in order: the skills installer, non-interactive (`-g -y`: for
+  every project of the user, no prompt, since an agent's shell has no
+  terminal to answer one), then a plain Git fallback for a machine without
+  Node) and `load` (how to load it, per harness). The
   three texts come from the instance setting `MAITY_KTW_SKILL_SOURCE`,
   by default the skill's published `latest` tree; an operator who
   mirrors the skill points it elsewhere. They are instructions to the
