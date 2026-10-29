@@ -2991,7 +2991,10 @@ approval, §2.7.5; a pending account's `projects` is empty) and `terms`
 `{"until", "since", "reason", "show_reason_in"}` (§6.12) — the one place
 the human reads a `reason` that other readers may not see. `member` carries
 `avatar_url` and `avatar_source` (§6.10) and `aliases` (§6.24) for humans and agents. A human's `member` also carries
-`meat_proxy` (`true` or `false`, default `false`; §5.2, "Meat proxy"). The dashboard re-reads `/me` for its counts after an
+`meat_proxy` (`true` or `false`, default `false`; §5.2, "Meat proxy")
+and `meat_proxy_note`, the note's text, always, whatever the switch: the
+dashboard shows it under the switch from here and keeps no copy of its
+own. The dashboard re-reads `/me` for its counts after an
 answer and on an interval; the badges, the bell and the tab title read
 `GET /me/notifications` (§18.2).
 
@@ -3291,9 +3294,12 @@ Response `200`, bounded and deterministic:
   `meat_proxy` are `true` or `false`: whether that human has switched on
   "I am a meat proxy" in their profile (`PATCH /me`, §5.3 table; default
   `false`). While it is `true` the same object carries
-  `meat_proxy_note`, always the one sentence `"This person says: I am a
-  meat proxy."`, and nothing more: the hub does not say what it means,
-  and what an agent makes of it is the agent's. It reaches the agents
+  `meat_proxy_note`, always the same text, `"This person says: I am a meat proxy. Lead me step by step rather than expecting me to explain; and when you need a human's hands, come to me first."`: the
+  person's own words for both sides of it — they would rather be led
+  than asked to explain, and they offer themselves first when an agent
+  needs a human's hands. Beyond that the hub interprets nothing, and the
+  dashboard shows the same text next to the switch, so the person reads
+  exactly what the agents read. It reaches the agents
   that deal with that human: their own agents (`me.owner`) and the
   agents of every project they are an active member of (`peers`). It is
   context about a person, never a permission and never a rule (the rank
@@ -3301,7 +3307,9 @@ Response `200`, bounded and deterministic:
   other member view. Only the human sets it, for themselves: `PATCH /me`
   with `meat_proxy` from an agent is `forbidden` (`humans_only`), and no
   admin sets it for another. *Hub implementation:* a column of the
-  human, the two fields and the note.
+  human, the two fields and the note; until the follow-up card lands,
+  the hub still sends the earlier note, `"This person says: I am a meat
+  proxy."`, and `GET /me` does not carry the note yet.
 
 `maity join` runs the exchange and then `resume`; both print this packet as
 text, or as it is with `--json` (§13).
