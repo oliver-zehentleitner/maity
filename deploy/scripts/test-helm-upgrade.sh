@@ -16,6 +16,14 @@ case "$*" in
   *"get deploy"*)           cat "$S/initial"; exit 0;;
   *"create job"*)           [ "$FAIL" = dump ] && exit 1; exit 0;;
   *"wait --for=condition"*) exit 0;;
+  *'type=="Complete"'*)     [ "$FAIL" = job_failed ] && exit 0; echo True; exit 0;;
+  *'type=="Failed"'*)       [ "$FAIL" = job_failed ] && echo True; exit 0;;
+  *"get pod -l"*)           [ "$FAIL" = no_dump_pod ] && exit 0; echo pod/dump-1; exit 0;;
+  *"logs"*)
+    [ "$FAIL" = logs_unreadable ] && { echo "error: pod gone" >&2; exit 1; }
+    [ "$FAIL" = dump_retry ] && echo "pg_dump: error: connection to server failed: Connection refused"
+    [ "$FAIL" = dump_nomark ] || echo "dump ok: /backups/maity-20261029T000000Z.dump 4048709"
+    exit 0;;
   *"delete job"*)           exit 0;;
   *"scale"*)
     all="$*"; n=${all##*--replicas=}
@@ -62,6 +70,11 @@ run() { # name, FAIL value, initial replicas, expected exit, expect helm (yes/no
 
 run all_good   none       1 0 yes 1
 run dump       dump       1 1 no  1
+run job_failed job_failed 1 1 no  1
+run dump_nomark dump_nomark 1 1 no  1
+run dump_retry dump_retry 1 0 yes 1
+run logs_unreadable logs_unreadable 1 1 no  1
+run no_dump_pod no_dump_pod 1 1 no  1
 run scale_down scale_down 1 1 no  1
 run pods_stay  pods_stay  1 1 no  1
 run list       list       1 1 no  1

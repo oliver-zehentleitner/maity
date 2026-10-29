@@ -281,3 +281,37 @@ and an agent that does not recognise it as such acts on stale
 instructions. Whether a fresh instance should start near the present
 with a short summary, and how long a join output may be, is not
 decided; it was raised with the coordinator as a possible card.
+
+## A dump Job that reported success for a dump that never happened
+
+**Id:** 19df9565-836c-4f23-a707-9c72d471b4d1
+**Type:** incident
+**Status:** active
+**Evidence:** inferred
+**Source:** the log of the backup Job run before a database change on 2026-10-29 (`pg_dump: error: … Connection refused`, the Job `Complete`), the volume listing with empty `.dump.part` files from 2026-10-22 to 2026-10-28, and the script in `deploy/k3s-single/backup.yaml`
+**Revisit when:** the backup moves off the instance (copies off the host), or the cause of the refused connection is found
+
+`pg_dump` and `mv` were joined by `&&` in a script run with `sh -e`. A failure inside an `&&` list does not stop `sh -e`, so after a failed
+`pg_dump` the script went on, the last commands (`ls`) succeeded, and the Job ended as `Complete`. Everything that trusted "the dump Job
+is complete" (the upgrade script, a person) trusted nothing: several nightly dumps and one dump before a change left an empty `.part` and no
+dump. Found because the Job's log was read after a change, not because anything failed.
+
+The empty `.part` files in the volume date the failures (UTC): 2026-10-22 11:31 and 18:40, 10-23 05:45 and 10:17, 10-24 03:17, 10-25 03:17 and 13:15,
+10-26 03:17 and 11:18, 10-28 17:50, 10-29 07:25. So the nightly runs of 10-24, 10-25 and 10-26 produced no dump; the runs of 10-27, 10-28 and 10-29
+did. Whether the runs of 10-22 and 10-23 did cannot be told: the rotation of fourteen dumps had removed the older ones. The newest dump before the
+change of 10-29 was ten minutes old.
+
+The script now has one command per line, tries `pg_dump` up to five times, requires a non-empty file, removes its own leftovers on any exit
+and stale `.part` files after an hour, so a failed dump is a failed Job, and ends with the line `dump ok: <file> <bytes>`. `deploy/scripts/helm-upgrade.sh`
+reads the log of the pod that succeeded and goes on only when that line is there: a CronJob in the cluster keeps its old script until the
+manifest is applied again, and that script has no such line, so the upgrade stops with the hint to apply the manifest.
+
+**Reason:** a safety net that cannot fail is worse than none, because it is trusted (the suite's fail-loud principle). A check that lets an unreadable log or an old script through is the same problem one level up, so the upgrade script asks for the positive mark and not for the absence of an error: errors that a later try fixed are in the log of a good dump too. The retry is a
+guess about the cause: the database was healthy at the time (no restart, normal checkpoints), the Job pod was seconds old, and the first
+dump ten minutes earlier worked, which fits a pod whose network was not ready yet; that is not proven.
+
+**Rejected alternatives:**
+- Searching the log for `pg_dump: error` in `helm-upgrade.sh` (the first version): it stops a good dump that needed a second try, and lets an unreadable log through.
+- Only the log check in `helm-upgrade.sh`: it protects upgrades, but the nightly dumps would go on failing silently.
+- Only the fixed script: the CronJob in the cluster keeps the old one until someone applies the manifest, so the upgrade script checks too.
+- A separate monitor for empty `.part` files: another thing to run for what the Job's own exit status can say.
