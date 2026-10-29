@@ -99,20 +99,22 @@ example; any cluster with the same pieces works.
    kubectl -n maity create secret generic maity-hub-forge --from-file=github-token=./github-token
    ```
 
-   The instance key for secrets the hub stores (`MAITY_SECRET_KEY`, the
-   forge webhook's secret, docs/api.md §17.4) is optional: without it no
-   webhook secret can be created. 32 random bytes, base64:
+   The instance key for secrets the hub stores (`MAITY_SECRET_KEY`: the
+   forge webhook's secret, a stored SMTP password, second-factor secrets;
+   docs/api.md §16.2, §17.4) is optional: without it none of those can be
+   stored, and the second factor `required_admins` refuses to start. 32
+   random bytes, base64:
 
    ```sh
    head -c 32 /dev/urandom | base64 > ./secret-key
-   kubectl -n maity create secret generic maity-secret-key --from-file=MAITY_SECRET_KEY=./secret-key
+   kubectl -n maity create secret generic maity-secret-key --from-file=secret-key=./secret-key
    ```
 
    A value that is not exactly 32 bytes of base64 stops the hub and the
    migrate Job from starting, so a typo shows at once. Keep a copy outside
    the cluster: a lost or changed key makes every stored secret unusable (the hub logs it at startup, and each webhook
-   needs a new secret). The chart has no value of its own for it; it goes
-   in through `extraEnv` (below).
+   needs a new secret). In the values it is `secretKey.existingSecret`
+   (below); the Secret's key defaults to `secret-key`, set `secretKey.key` if you named it differently.
 
 4. **Values.** A `values.yaml` behind an ingress controller with
    cert-manager:
@@ -143,10 +145,8 @@ example; any cluster with the same pieces works.
            matchLabels:
              kubernetes.io/metadata.name: ingress-nginx   # your controller's namespace
    # The instance key, when created in step 3:
-   extraEnv:
-     - name: MAITY_SECRET_KEY
-       valueFrom:
-         secretKeyRef: {name: maity-secret-key, key: MAITY_SECRET_KEY}
+   secretKey:
+     existingSecret: maity-secret-key
    # With sslmode=verify-full:
    extraVolumes:
      - name: db-ca
@@ -189,6 +189,7 @@ silently ignored. These are the values that matter:
 | `imagePullSecrets` | `[]` | `[{name: …}]` |
 | `database.existingSecret`, `.key` | required, `database-url` | the Secret holding `MAITY_DATABASE_URL` |
 | `forge.github.existingSecret`, `.key` | none, `github-token` | the Secret holding `MAITY_FORGE_GITHUB_TOKEN` |
+| `secretKey.existingSecret`, `.key` | none, `secret-key` | the Secret holding `MAITY_SECRET_KEY`, the instance key for stored secrets; moving it from `extraEnv`: drop it there in the same upgrade, the chart does not dedupe; a Secret created with the first README holds the key as `MAITY_SECRET_KEY`, then set `secretKey.key: MAITY_SECRET_KEY` |
 | `mail.signingKeySecret.existingSecret`, `.key` | none, `mail-signing-key` | the Secret holding `MAITY_MAIL_SIGNING_KEY` (32 bytes or more, base64); without it the hub sends no mail |
 | `mail.host`, `.port`, `.tls` | none, `587`, `starttls` | `MAITY_SMTP_HOST`, `_PORT`, `_TLS` (`starttls`, `implicit` or `none`); empty host: no SMTP env, the admin settings apply; with a host, port and TLS always come from here. Moving these from `extraEnv`: drop them from `extraEnv` in the same upgrade, the chart does not dedupe |
 | `mail.username`, `.from`, `.replyTo` | none | `MAITY_SMTP_USERNAME`, `_FROM`, `_REPLY_TO` |
