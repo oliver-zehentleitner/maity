@@ -1,4 +1,6 @@
-"""docs/api.md §16.7: the instance's landing page."""
+"""docs/api.md §16.7: the instance's landing page, in sections."""
+
+# ruff: noqa: E501  (the parametrized sections are one case per line)
 
 from __future__ import annotations
 
@@ -18,8 +20,31 @@ from tests.conftest import ClientFactory
 from tests.test_join_host import join_client
 
 ADMIN_PATH = "/admin/settings/landing"
-OFF = {"enabled": False, "title": None, "markdown": None, "cta": None}
+OFF = {
+    "enabled": False,
+    "default_language": "en",
+    "pages": {},
+    "footer": {"operator": None, "social": []},
+}
 GOOD = "# Bring your own agent\n\nRead [the docs](https://example.com/docs) or [sign in](/login)."
+HERO = {
+    "type": "hero",
+    "enabled": True,
+    "title": "Bring your agents. Share one project.",
+    "cta_primary": {"label": "Create your account", "href": "/register"},
+}
+
+
+def page(*sections: dict[str, Any], title: str = "Maity") -> dict[str, Any]:
+    return {"title": title, "description": "A hub", "sections": list(sections)}
+
+
+def text(markdown: str) -> dict[str, Any]:
+    return {"type": "text", "enabled": True, "markdown": markdown}
+
+
+def body(*sections: dict[str, Any], enabled: bool = False) -> dict[str, Any]:
+    return {"enabled": enabled, "pages": {"en": page(*sections)}}
 
 
 @pytest.fixture
@@ -44,10 +69,7 @@ def test_disabled_by_default_and_the_same_for_everyone(
     assert answer.headers["cache-control"] == "public, max-age=60"
     assert public(owner.client).json() == {"enabled": False}  # signed in or not
     got = owner.get(ADMIN_PATH).json()
-    assert got == {
-        "enabled": False, "title": None, "markdown": None, "cta": None,
-        "updated_at": None, "updated_by": None,
-    }  # fmt: skip
+    assert got == {**OFF, "updated_at": None, "updated_by": None}
 
 
 def test_the_admin_publishes_it_and_the_etag_follows(
@@ -55,33 +77,39 @@ def test_the_admin_publishes_it_and_the_etag_follows(
 ) -> None:
     visitor = make_client()
     off_tag = public(visitor).headers["etag"]
+    footer = {
+        "operator": "Maity, Austria",
+        "social": [{"label": "Mastodon", "href": "https://m.example/@x"}],
+    }
     saved = owner.patch(
         ADMIN_PATH,
-        {
-            "enabled": True,
-            "title": "Bring your own coding agent.",
-            "markdown": GOOD,
-            "cta": {"label": "Sign in", "href": "/login"},
-        },
+        {**body(HERO, text(GOOD), enabled=True), "default_language": "en", "footer": footer},
     )
     assert saved.status_code == 200, saved.text
     assert saved.json()["updated_by"] == owner.id and saved.json()["updated_at"]
-    page = public(visitor)
-    body = page.json()
-    assert body == {
+    shown = public(visitor)
+    assert shown.json() == {
         "enabled": True,
-        "title": "Bring your own coding agent.",
-        "markdown": GOOD,
-        "cta": {"label": "Sign in", "href": "/login"},
+        "default_language": "en",
+        "pages": {"en": page(HERO, text(GOOD))},
+        "footer": footer,
         "updated_at": saved.json()["updated_at"],
     }
-    tag = page.headers["etag"]
+    tag = shown.headers["etag"]
     assert tag != off_tag
     assert public(visitor, **{"If-None-Match": tag}).status_code == 304
     assert public(visitor, **{"If-None-Match": off_tag}).status_code == 200
     owner.patch(ADMIN_PATH, {"enabled": False})
     disabled = public(visitor, **{"If-None-Match": tag})
     assert (disabled.status_code, disabled.json()) == (200, {"enabled": False})
+
+
+def test_a_field_named_replaces_the_stored_one_and_the_rest_stays(owner: flow.Human) -> None:
+    owner.patch(ADMIN_PATH, {**body(text(GOOD)), "default_language": "de"})
+    owner.patch(ADMIN_PATH, {"footer": {"operator": "Op"}})
+    got = owner.get(ADMIN_PATH).json()
+    assert got["default_language"] == "de" and got["pages"]["en"]["sections"][0]["markdown"] == GOOD
+    assert got["footer"] == {"operator": "Op", "social": []}
 
 
 @pytest.mark.parametrize(
@@ -116,16 +144,16 @@ def test_the_admin_publishes_it_and_the_etag_follows(
     ],
 )
 def test_what_the_markdown_may_not_hold(owner: flow.Human, markdown: str) -> None:
-    refused = owner.patch(ADMIN_PATH, {"markdown": markdown})
+    refused = owner.patch(ADMIN_PATH, body(text(markdown)))
     assert refused.status_code == 400, markdown
-    assert field(refused)["markdown"].startswith("line ")
+    assert field(refused)["pages.en.sections.0.markdown"].startswith("line ")
 
 
 def test_html_in_fenced_code_is_text(owner: flow.Human) -> None:
-    text = "Install:\n\n```html\n<script>not run</script>\n```\n\nThen [sign in](/login)."
-    assert owner.patch(ADMIN_PATH, {"markdown": text}).status_code == 200
-    second = owner.patch(ADMIN_PATH, {"markdown": "one\n\nline three <b>"})
-    assert field(second) == {"markdown": "line 3"}
+    fenced = "Install:\n\n```html\n<script>not run</script>\n```\n\nThen [sign in](/login)."
+    assert owner.patch(ADMIN_PATH, body(text(fenced))).status_code == 200
+    second = owner.patch(ADMIN_PATH, body(text("one\n\nline three <b>")))
+    assert field(second) == {"pages.en.sections.0.markdown": "line 3"}
 
 
 @pytest.mark.parametrize(
@@ -139,86 +167,249 @@ def test_html_in_fenced_code_is_text(owner: flow.Human) -> None:
     ],
 )
 def test_what_the_markdown_may_hold(owner: flow.Human, markdown: str) -> None:
-    saved = owner.patch(ADMIN_PATH, {"markdown": markdown})
+    saved = owner.patch(ADMIN_PATH, body(text(markdown)))
     assert saved.status_code == 200, (markdown, saved.text)
 
 
-def test_a_page_at_the_markdown_limit_passes_the_body_cap(owner: flow.Human) -> None:
-    """§16.7: 64 KiB of Markdown whose JSON escaping grows it on the wire is accepted;
-    one byte more is the field's `invalid`, not 413; past 256 KiB the body is 413."""
-    quoted = ('"' * 63 + "\n") * (landing.MAX_MARKDOWN // 64)  # each character escaped
-    # The widest escaping of a valid page: `\u00e9` for two bytes, three times on the wire.
-    widest = json.dumps({"markdown": "\u00e9" * (landing.MAX_MARKDOWN // 2)}, ensure_ascii=True)
-    assert len(widest) > 3 * landing.MAX_MARKDOWN
+def test_a_page_at_the_stored_limit_passes_the_body_cap(owner: flow.Human) -> None:
+    """§16.7: a body whose JSON escaping grows it on the wire is accepted up to 512 KiB, a
+    page past the stored 256 KiB is `invalid`, a body past 512 KiB is 413."""
+    # 16 KiB of Markdown per text section, each a two-byte character escaped as `\\u00e9`.
+    wide = "é" * (16 * 1024 // 2)
+    sections = [text(wide) for _ in range(8)]
+    raw = json.dumps(body(*sections), ensure_ascii=True)
+    assert len(raw) > 64 * 1024
     sent = owner.client.patch(
         f"/api/v1{ADMIN_PATH}",
-        content=widest,
+        content=raw,
         headers={"X-CSRF-Token": owner.csrf, "Content-Type": "application/json"},
     )
     assert sent.status_code == 200, sent.text
-    assert len(quoted.encode()) == landing.MAX_MARKDOWN
-    saved = owner.patch(ADMIN_PATH, {"markdown": quoted})
-    assert saved.status_code == 200, saved.text
-    assert field(owner.patch(ADMIN_PATH, {"markdown": quoted + "x"})) == {"markdown": "invalid"}
-    huge = owner.patch(ADMIN_PATH, {"markdown": "x" * (257 * 1024)})
+    huge = owner.patch(ADMIN_PATH, {"pages": {"en": page(text("x" * (513 * 1024)))}})
     assert (huge.status_code, huge.json()["error"]["code"]) == (413, "payload_too_large")
 
 
+def test_the_stored_setting_is_capped(owner: flow.Human) -> None:
+    """20 text sections of 16 KiB are 320 KiB on the wire, under the 512 KiB of the body and
+    over the 256 KiB the setting may hold."""
+    full = [text("x" * (16 * 1024)) for _ in range(20)]
+    refused = owner.patch(ADMIN_PATH, body(*full))
+    assert refused.status_code == 400
+    assert field(refused) == {"pages": "too_large"}
+
+
 @pytest.mark.parametrize(
-    ("body", "fields"),
+    ("patch", "fields"),
     [
-        ({"markdown": "a\x01b"}, {"markdown": "control_character"}),
-        ({"markdown": "a\x1b[31mred"}, {"markdown": "control_character"}),
-        ({"title": "a\x00b"}, {"title": "control_character"}),
-        ({"cta": {"label": "Go\x07", "href": "/login"}}, {"cta": "control_character"}),
-        ({"cta": {"label": "Go", "href": "/login\x0b"}}, {"cta.href": "control_character"}),
+        (
+            {"pages": {"en": page(text("a\x01b"))}},
+            {"pages.en.sections.0.markdown": "control_character"},
+        ),
+        ({"pages": {"en": page(title="a\x00b")}}, {"pages.en.title": "control_character"}),
+        (
+            {"footer": {"operator": "O\x07p"}},
+            {"footer.operator": "control_character"},
+        ),
     ],
 )
 def test_control_characters_are_refused(
-    owner: flow.Human, body: dict[str, Any], fields: dict[str, str]
+    owner: flow.Human, patch: dict[str, Any], fields: dict[str, str]
 ) -> None:
-    assert field(owner.patch(ADMIN_PATH, body)) == fields
+    assert field(owner.patch(ADMIN_PATH, patch)) == fields
 
 
 def test_tab_newline_and_carriage_return_are_text(owner: flow.Human) -> None:
-    saved = owner.patch(ADMIN_PATH, {"markdown": "# Head\r\n\n\tindented\n"})
+    saved = owner.patch(ADMIN_PATH, body(text("# Head\r\n\n\tindented\n")))
     assert saved.status_code == 200, saved.text
 
 
-def test_the_larger_cap_is_the_landing_settings_alone(owner: flow.Human) -> None:
+def test_the_larger_cap_is_the_settings_alone(owner: flow.Human) -> None:
     refused = owner.patch("/me", {"display_name": "x" * (65 * 1024)})
     assert refused.status_code == 413
 
 
 def test_the_markdown_is_capped_in_bytes() -> None:
-    """64 KiB of UTF-8 (§16.7): a four-byte character counts four times."""
-    fits = "\U0001f984" * (landing.MAX_MARKDOWN // 4)
-    assert landing.check({"markdown": fits}, OFF)["markdown"] == fits
+    """16 KiB of UTF-8 in a `text` section: a four-byte character counts four times."""
+    fits = "\U0001f984" * (16 * 1024 // 4)
+    stored = landing.check(body(text(fits)), OFF)
+    assert stored["pages"]["en"]["sections"][0]["markdown"] == fits
     with pytest.raises(ApiError) as over:
-        landing.check({"markdown": fits + "x"}, OFF)
-    assert over.value.details == {"fields": {"markdown": "invalid"}}
+        landing.check(body(text(fits + "x")), OFF)
+    assert over.value.details == {"fields": {"pages.en.sections.0.markdown": "invalid"}}
 
 
-def test_the_other_fields_and_enabled_without_markdown(owner: flow.Human) -> None:
-    assert field(owner.patch(ADMIN_PATH, {"enabled": True})) == {"markdown": "required"}
-    assert field(owner.patch(ADMIN_PATH, {"title": ""})) == {"title": "invalid"}
-    assert field(owner.patch(ADMIN_PATH, {"title": "x" * 121})) == {"title": "invalid"}
-    assert field(owner.patch(ADMIN_PATH, {"cta": {"label": "Go", "href": "http://x.com"}})) == {
-        "cta.href": "invalid"
+ALL_TYPES = [
+    HERO,
+    {"type": "stats", "enabled": True, "items": ["people", "agents_online"]},
+    {
+        "type": "steps",
+        "enabled": True,
+        "title": "How",
+        "items": [{"title": "a", "text": "b", "code": "c"}],
+    },
+    {
+        "type": "scales",
+        "enabled": False,
+        "items": [{"tag": "t", "title": "a", "text": "b", "points": ["p1", "p2"]}],
+    },
+    {"type": "faq", "enabled": True, "items": [{"q": "Why?", "a": "Because [here](/login)."}]},
+    {"type": "cta_band", "enabled": True, "title": "Go", "cta": {"label": "Go", "href": "/login"}},
+    text(GOOD),
+    {"type": "activity", "enabled": False, "count": 5},
+    {"type": "profiles", "enabled": True, "handles": ["ada"], "markdown": "hi"},
+    {"type": "explore", "enabled": True, "projects": ["ada/maity"]},
+    {
+        "type": "collab",
+        "enabled": False,
+        "items": [
+            {"tag": "a", "title": "b", "points": ["x"], "cta": {"label": "l", "href": "/new"}},
+            {"tag": "c", "title": "d", "cta": {"label": "l", "href": "https://example.com"}},
+        ],
+    },
+]
+
+
+def test_every_section_type_is_stored_as_written(owner: flow.Human) -> None:
+    saved = owner.patch(ADMIN_PATH, body(*ALL_TYPES))
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["pages"]["en"]["sections"] == ALL_TYPES
+
+
+@pytest.mark.parametrize(
+    ("sections", "path", "reason"),
+    [
+        ([{"type": "nope", "enabled": True}], "pages.en.sections.0.type", "invalid"),
+        ([{"type": "text", "markdown": "x"}], "pages.en.sections.0.enabled", "required"),
+        (
+            [{"type": "text", "enabled": 1, "markdown": "x"}],
+            "pages.en.sections.0.enabled",
+            "invalid",
+        ),
+        (
+            [{"type": "text", "enabled": True, "markdown": "x", "zz": 1}],
+            "pages.en.sections.0.zz",
+            "extra_forbidden",
+        ),
+        (
+            [{"type": "hero", "enabled": True, "title": "x"}],
+            "pages.en.sections.0.cta_primary",
+            "required",
+        ),
+        (
+            [
+                {
+                    "type": "hero",
+                    "enabled": True,
+                    "title": "x" * 121,
+                    "cta_primary": {"label": "a", "href": "/x"},
+                }
+            ],
+            "pages.en.sections.0.title",
+            "invalid",
+        ),
+        (
+            [
+                {
+                    "type": "hero",
+                    "enabled": True,
+                    "title": "x",
+                    "cta_primary": {"label": "a", "href": "http://x.com"},
+                }
+            ],
+            "pages.en.sections.0.cta_primary.href",
+            "invalid",
+        ),
+        (
+            [{"type": "stats", "enabled": True, "items": ["people", "nope"]}],
+            "pages.en.sections.0.items",
+            "invalid",
+        ),
+        ([{"type": "stats", "enabled": True, "items": []}], "pages.en.sections.0.items", "invalid"),
+        (
+            [
+                {
+                    "type": "steps",
+                    "enabled": True,
+                    "items": [{"title": "a", "text": "b"}, {"title": "x" * 81, "text": "b"}],
+                }
+            ],
+            "pages.en.sections.0.items.1.title",
+            "invalid",
+        ),
+        ([{"type": "steps", "enabled": True, "items": []}], "pages.en.sections.0.items", "invalid"),
+        (
+            [{"type": "steps", "enabled": True, "items": [{"title": "a", "text": "b"}] * 7}],
+            "pages.en.sections.0.items",
+            "invalid",
+        ),
+        (
+            [{"type": "faq", "enabled": True, "items": [{"q": "q", "a": "<b>x"}]}],
+            "pages.en.sections.0.items.0.a",
+            "line 1",
+        ),
+        (
+            [{"type": "activity", "enabled": True, "count": 21}],
+            "pages.en.sections.0.count",
+            "invalid",
+        ),
+        (
+            [{"type": "profiles", "enabled": True, "handles": ["a", "b", "c"]}],
+            "pages.en.sections.0.handles",
+            "invalid",
+        ),
+        (
+            [{"type": "explore", "enabled": True, "projects": ["not-a-full-name"]}],
+            "pages.en.sections.0.projects",
+            "invalid",
+        ),
+        (
+            [
+                {
+                    "type": "collab",
+                    "enabled": True,
+                    "items": [{"tag": "a", "title": "b", "cta": {"label": "l", "href": "/x"}}],
+                }
+            ],
+            "pages.en.sections.0.items",
+            "invalid",
+        ),
+    ],
+)
+def test_a_section_that_breaks_a_rule_is_named_by_its_path(
+    owner: flow.Human, sections: list[dict[str, Any]], path: str, reason: str
+) -> None:
+    refused = owner.patch(ADMIN_PATH, body(*sections))
+    assert refused.status_code == 400, refused.text
+    assert field(refused).get(path) == reason, field(refused)
+
+
+def test_the_page_and_the_footer_have_their_limits(owner: flow.Human) -> None:
+    twenty_one = [text("x")] * 21
+    assert field(owner.patch(ADMIN_PATH, body(*twenty_one))) == {"pages.en.sections": "invalid"}
+    assert field(owner.patch(ADMIN_PATH, {"pages": {"en": {"sections": []}}})) == {
+        "pages.en.title": "required"
     }
-    assert field(owner.patch(ADMIN_PATH, {"cta": {"label": "x" * 41, "href": "/login"}})) == {
-        "cta": "invalid"
+    long_description = {"pages": {"en": {"title": "T", "description": "d" * 301, "sections": []}}}
+    assert field(owner.patch(ADMIN_PATH, long_description)) == {"pages.en.description": "invalid"}
+    assert field(owner.patch(ADMIN_PATH, {"pages": {"fr": page()}})) == {"pages.fr": "invalid"}
+    assert field(owner.patch(ADMIN_PATH, {"default_language": "fr"})) == {
+        "default_language": "invalid"
     }
-    for href in ("https://[example.com", "https://example.com:bad/", "https://example.com:0/"):
-        cta = {"label": "Go", "href": href}
-        assert field(owner.patch(ADMIN_PATH, {"cta": cta})) == {"cta.href": "invalid"}, href
+    social = [{"label": "l", "href": "https://example.com"}] * 9
+    assert field(owner.patch(ADMIN_PATH, {"footer": {"social": social}})) == {
+        "footer.social": "invalid"
+    }
+    bad_link = {"footer": {"social": [{"label": "l", "href": "http://example.com"}]}}
+    assert field(owner.patch(ADMIN_PATH, bad_link)) == {"footer.social.0.href": "invalid"}
     assert field(owner.patch(ADMIN_PATH, {"colour": "red"})) == {"colour": "extra_forbidden"}
-    assert (
-        owner.patch(
-            ADMIN_PATH, {"cta": {"label": "Docs", "href": "https://example.com/docs"}}
-        ).status_code
-        == 200
-    )
+
+
+def test_enabled_needs_a_page_in_the_default_language(owner: flow.Human) -> None:
+    assert field(owner.patch(ADMIN_PATH, {"enabled": True})) == {"pages.en": "required"}
+    german = {"enabled": True, "default_language": "de", "pages": {"en": page(text("x"))}}
+    assert field(owner.patch(ADMIN_PATH, german)) == {"pages.de": "required"}
+    german["pages"] = {"de": page(text("x"))}
+    assert owner.patch(ADMIN_PATH, german).status_code == 200
 
 
 def test_only_the_instance_admin_edits_it(
@@ -230,13 +421,13 @@ def test_only_the_instance_admin_edits_it(
 
 
 def test_the_join_host_never_serves_it(owner: flow.Human, make_client: ClientFactory) -> None:
-    owner.patch(ADMIN_PATH, {"enabled": True, "markdown": GOOD})
+    owner.patch(ADMIN_PATH, body(text(GOOD), enabled=True))
     answer = join_client(make_client).get("/api/v1/landing", follow_redirects=False)
     assert answer.status_code in (302, 404)
     assert "markdown" not in answer.text
 
 
-def _race(migrated: Engine, owner: flow.Human, title: str, cta: dict[str, str]) -> None:
+def _race(migrated: Engine, owner: flow.Human, language: str, footer: dict[str, Any]) -> None:
     """The first edit holds the lock while the second, on its own connection, waits."""
     first, second = migrated.connect(), migrated.connect()
     started, saved = threading.Event(), threading.Event()
@@ -245,14 +436,17 @@ def _race(migrated: Engine, owner: flow.Human, title: str, cta: dict[str, str]) 
         with second.begin():
             started.set()
             landing.lock(second)
-            landing.save(second, landing.check({"cta": cta}, landing.stored(second)), owner.id)
+            landing.save(
+                second, landing.check({"footer": footer}, landing.stored(second)), owner.id
+            )
             saved.set()
 
     pool = ThreadPoolExecutor(max_workers=1)
     first_tx = first.begin()
     try:
         landing.lock(first)
-        landing.save(first, landing.check({"title": title}, landing.stored(first)), owner.id)
+        edit_one = landing.check({"default_language": language}, landing.stored(first))
+        landing.save(first, edit_one, owner.id)
         waiting = pool.submit(edit)
         assert started.wait(timeout=10)
         assert not saved.wait(timeout=0.5)  # held by the first edit
@@ -276,8 +470,8 @@ def test_two_edits_at_once_keep_both_fields(owner: flow.Human, migrated: Engine)
         pytest.skip("SQLite serialises writers; the row lock is for the server databases")
     with migrated.begin() as conn:
         conn.execute(delete(t.instance_landing))
-    for title, label in (("First", "Made"), ("Second", "Existing")):
-        cta = {"label": label, "href": "/login"}
-        _race(migrated, owner, title, cta)
+    for language, operator in (("de", "First"), ("en", "Second")):
+        footer = {"operator": operator, "social": []}
+        _race(migrated, owner, language, footer)
         got = owner.get(ADMIN_PATH).json()
-        assert (got["title"], got["cta"]) == (title, cta)
+        assert (got["default_language"], got["footer"]) == (language, footer)

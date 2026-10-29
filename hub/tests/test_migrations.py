@@ -468,3 +468,76 @@ def test_settings_stored_for_removed_notification_kinds_are_deleted(engine: Engi
         "email": {"kinds": {"inbox": {"mode": "daily"}}, "language": "de"},
     }
     assert rows[owners["clean"]] == clean
+
+
+def test_the_old_landing_body_is_carried_into_the_first_section_page(engine: Engine) -> None:
+    """0087 (§16.7): the title, call to action and Markdown of the one-body landing become
+    the `en` page, a `hero` and a `text` section; a landing that held nothing stays off,
+    and going back restores the old columns from that page."""
+    import sqlalchemy as sa
+
+    migrate(engine, _before(engine, "0087"))
+    old = sa.table(
+        "instance_landing",
+        sa.column("id", sa.String),
+        sa.column("enabled", sa.Boolean),
+        sa.column("title", sa.String),
+        sa.column("markdown", sa.Text),
+        sa.column("cta", sa.JSON),
+        sa.column("updated_at", sa.DateTime),
+        sa.column("updated_by", sa.String),
+    )
+    from maity_hub import clock
+
+    cta = {"label": "Sign in", "href": "/login"}
+    with engine.begin() as conn:
+        conn.execute(
+            sa.insert(old).values(
+                id="landing",
+                enabled=True,
+                title="Bring your agent",
+                markdown="# Hi",
+                cta=cta,
+                updated_at=clock.now(),
+                updated_by=None,
+            )
+        )
+    migrate(engine)
+    new = sa.table(
+        "instance_landing",
+        sa.column("enabled", sa.Boolean),
+        sa.column("default_language", sa.String),
+        sa.column("pages", sa.JSON),
+        sa.column("footer", sa.JSON),
+    )
+    with engine.connect() as conn:
+        row = conn.execute(sa.select(new)).one()
+    assert (row.enabled, row.default_language, row.footer) == (True, "en", None)
+    assert row.pages == {
+        "en": {
+            "title": "Bring your agent",
+            "description": "",
+            "sections": [
+                {
+                    "type": "hero",
+                    "enabled": True,
+                    "title": "Bring your agent",
+                    "cta_primary": cta,
+                },
+                {"type": "text", "enabled": True, "markdown": "# Hi"},
+            ],
+        }
+    }
+    downgrade(engine, _before(engine, "0087"))
+    with engine.connect() as conn:
+        back = conn.execute(sa.select(old.c.enabled, old.c.title, old.c.markdown, old.c.cta)).one()
+    assert tuple(back) == (True, "Bring your agent", "# Hi", cta)
+
+
+def test_a_landing_that_held_nothing_stays_off_and_empty(engine: Engine) -> None:
+    import sqlalchemy as sa
+
+    migrate(engine)
+    with engine.connect() as conn:
+        assert conn.execute(sa.text("select count(*) from instance_landing")).scalar() == 0
+        assert conn.execute(sa.text("select count(*) from legal_page")).scalar() == 0

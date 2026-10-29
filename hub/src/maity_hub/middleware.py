@@ -39,14 +39,15 @@ IMAGE_CAP = 1024 * 1024
 _IMAGE_UPLOAD = re.compile(
     r"^/api/v1/(projects/[^/]+/[^/]+/(logo|banner)|me/avatar|agents/[^/]+/avatar)$"
 )
-# The landing page's Markdown may be 64 KiB decoded (§16.7); JSON escaping can grow it up
-# to four times on the wire, so its PATCH alone takes a larger body.
-LANDING_CAP = 256 * 1024
+# The landing page and the legal pages may hold 256 KiB and 64 KiB-per-text of Markdown
+# (§16.7, §16.7.1); JSON escaping can grow it on the wire, so their PATCH alone takes a
+# larger body, 512 KiB.
+LANDING_CAP = 512 * 1024
 # An attachment upload is one raw file of up to 10 MiB (§8.7); the body cap of §1.7 does not
 # apply to it, the file cap does.
 ATTACHMENT_CAP = 10 * 1024 * 1024
 _ATTACHMENT_UPLOAD = re.compile(r"^/api/v1/projects/[^/]+/[^/]+/attachments$")
-_LANDING_SETTINGS = "/api/v1/admin/settings/landing"
+_LANDING_SETTINGS = ("/api/v1/admin/settings/landing", "/api/v1/admin/settings/legal")
 CSP = "default-src 'self'"
 # The private Cache-Control a route may set instead of no-store: the project images
 # (images.HEADERS) and the avatars, revalidated on every use (avatars.HEADERS).
@@ -54,7 +55,7 @@ ROUTE_CACHE = frozenset({b"private, max-age=21600", b"private, no-cache", b"no-c
 # The answers a visitor without a session may cache: the badge, the swarm page and the
 # instance's landing page (§16.7).
 PUBLIC_PATHS = re.compile(
-    r"/badge/(?:[^/]+/)?[^/]+\.svg|/api/v1/swarm/(?:[^/]+/)?[^/]+|/api/v1/landing"
+    r"/badge/(?:[^/]+/)?[^/]+\.svg|/api/v1/swarm/(?:[^/]+/)?[^/]+|/api/v1/landing|/api/v1/legal"
 )
 # The two plain files a crawler asks for (§16.7), cached for an hour.
 SEO_PATHS = re.compile(r"/robots\.txt|/sitemap\.xml")
@@ -281,7 +282,7 @@ def _body_cap(scope: Scope) -> tuple[int, Callable[[Scope, Receive, Send], Await
         return IMAGE_CAP, _image_too_large
     if method == "POST" and _ATTACHMENT_UPLOAD.match(path):
         return ATTACHMENT_CAP, functools.partial(_too_large, cap=ATTACHMENT_CAP)
-    if method == "PATCH" and path == _LANDING_SETTINGS:
+    if method == "PATCH" and path in _LANDING_SETTINGS:
         return LANDING_CAP, functools.partial(_too_large, cap=LANDING_CAP)
     return BODY_CAP, _too_large
 
