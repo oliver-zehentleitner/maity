@@ -21,7 +21,9 @@ loser. The migration entered every existing human. A row is never deleted: the h
 deleted account or organisation stays taken for good, so an old link or project name never
 comes to mean someone else. `human.handle` and `org.handle` stay as columns, and
 `registration_accounts.check_names` asks the register first. Agent profiles are not in it, their
-handles are unique per owner only.
+handles are unique per owner only. An account's deletion leaves the row: the table is in
+`DELETION_KEEPS` of `tests/test_per_human_tables.py`, which fails for a table that names a human
+and is neither handled nor kept on purpose.
 
 **Reason:** a primary key is enforced by the database itself, in the same statement as the
 insert, so no path has to remember a lock or a check and a new path cannot forget it. The
@@ -58,6 +60,12 @@ one organisation and one `org_limit`. Two owners who demote each other at once l
 second call, running after the first, finds its caller no owner any more and gets `forbidden`
 (`org_role`), not `org_last_owner`. A caller who is not a member gets `not_found` on every
 route, before and after the lock, and so does a handle that names nothing.
+The deletion of an account takes its place in that order: `account_deletion.confirm` locks
+the account first, then the projects of its namespace, then every organisation it belongs to
+in the order of their ids (`orgs.lock_all_of`), and only then checks `blocker`, which refuses
+with `org_last_owner` (`details.orgs`, the handles) for an organisation of which it is the only
+owner, at `POST /me/deletion` as at the link's `POST`. Its memberships in organisations end with
+the deletion; the organisations and their handles stay.
 
 **Reason:** a role read before the lock could be stale by the time the change commits, which is
 how two demotions would both succeed and leave an organisation with no owner. One order (a

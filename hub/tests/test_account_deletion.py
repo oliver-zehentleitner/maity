@@ -10,7 +10,7 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, func, insert, select, update
+from sqlalchemy import Engine, delete, func, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
 from maity_hub import account_deletion, clock
@@ -21,6 +21,7 @@ from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_address_step_up import confirm_link, enrol, given
 from tests.test_notification_address import S, mail_env, outbox_rows, signed_in
+from tests.test_orgs import add_member
 from tests.test_requests import asked
 from tests.test_runners import paired
 from tests.test_two_factor import KEY, Clock
@@ -211,6 +212,34 @@ def test_a_namespace_owner_of_an_open_project_is_refused_both_times(
         ).scalar_one()
     assert rows and all(r.state == "archived" and r.owner_id == pat.id for r in rows)
     assert active == 0
+
+
+def test_the_last_owner_of_an_organisation_is_refused_both_times(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    org = pat.post("/orgs", {"handle": "pat-team", "display_name": "Pat Team"}).json()
+    other = factory.human(migrated, "other")
+    refused = ask_deletion(pat)
+    assert (refused.status_code, code(refused)) == (409, "org_last_owner")
+    assert refused.json()["error"]["details"]["orgs"] == ["pat-team"]
+    add_member(migrated, org["id"], other, "owner")  # two owners: allowed to ask
+    token = requested(pat, migrated)
+    with migrated.begin() as conn:  # and the other one leaves meanwhile
+        conn.execute(delete(t.org_member).where(t.org_member.c.human_id == other))
+    pressed = press(pat, token)
+    assert pressed.status_code == 409 and "last owner of an organisation" in pressed.text
+    assert deleted_at(migrated, pat.id) is None
+    add_member(migrated, org["id"], other, "owner")  # handed over: the link kept working
+    done = press(pat, token)
+    assert done.status_code == 200, done.text
+    assert deleted_at(migrated, pat.id) is not None
+    with migrated.connect() as conn:
+        left = conn.execute(select(t.org_member.c.human_id, t.org_member.c.role)).all()
+        assert [tuple(r) for r in left] == [(other, "owner")]
+        assert conn.execute(select(t.org.c.deleted_at)).scalar_one() is None
+        assert conn.execute(select(t.handle_register.c.handle)).all()  # handles stay taken
 
 
 def test_the_last_instance_admin_is_refused_both_times(

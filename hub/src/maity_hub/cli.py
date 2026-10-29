@@ -136,7 +136,8 @@ def _owner_create(
                         "or run quickstart again",
                         EXIT_FAILURE,
                     )
-                handle_register.claim(conn, handle, handle_register.HUMAN, human_id)
+                if not handle_register.claim(conn, handle, handle_register.HUMAN, human_id):
+                    raise _HandleTaken  # an organisation took it meanwhile: the account rolls back
             else:
                 if handle in namespace.DASHBOARD_WORDS:  # never a namespace (§6.25)
                     return _fail(f"the handle {handle!r} is a dashboard route", EXIT_FAILURE)
@@ -145,13 +146,20 @@ def _owner_create(
                 if handle_register.taken(conn, handle):
                     return _fail(f"an organisation has the handle {handle!r}", EXIT_FAILURE)
                 conn.execute(insert(t.human).values(**values))
-                handle_register.claim(conn, handle, handle_register.HUMAN, human_id)
+                if not handle_register.claim(conn, handle, handle_register.HUMAN, human_id):
+                    raise _HandleTaken  # an organisation took it meanwhile: the account rolls back
+    except _HandleTaken:
+        return _fail(f"the handle {handle!r} was taken meanwhile", EXIT_FAILURE)
     except SQLAlchemyError as error:
         return _database_error(settings, error)
     finally:
         engine.dispose()
     print(f"maity-hub: created {handle} ({human_id})")
     return 0
+
+
+class _HandleTaken(Exception):
+    """The register refused the new account's handle after the checks: roll it back."""
 
 
 def _second_factor_reset(settings: Settings, handle: str) -> int:

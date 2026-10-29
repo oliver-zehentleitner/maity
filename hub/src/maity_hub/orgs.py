@@ -158,6 +158,43 @@ def owners_count(conn: Connection, org_id: str) -> int:
     )
 
 
+def owned_alone(conn: Connection, human_id: str) -> list[str]:
+    """The handles of the organisations in which the human is the only owner: what their
+    account's deletion would leave without one (§2.9, §6.26)."""
+    owners = (
+        select(t.org_member.c.org_id)
+        .where(t.org_member.c.role == "owner")
+        .group_by(t.org_member.c.org_id)
+        .having(func.count() == 1)
+        .subquery()
+    )
+    return list(
+        conn.execute(
+            select(t.org.c.handle)
+            .join(t.org_member, t.org_member.c.org_id == t.org.c.id)
+            .join(owners, owners.c.org_id == t.org.c.id)
+            .where(
+                t.org_member.c.human_id == human_id,
+                t.org_member.c.role == "owner",
+                t.org.c.deleted_at.is_(None),
+            )
+            .order_by(t.org.c.handle)
+        ).scalars()
+    )
+
+
+def lock_all_of(conn: Connection, human_id: str) -> None:
+    """The rows of every organisation the human belongs to, in the order of their ids: the
+    deletion of an account locks them all (§6.26, "One organisation, one lock")."""
+    ids = conn.execute(
+        select(t.org_member.c.org_id)
+        .where(t.org_member.c.human_id == human_id)
+        .order_by(t.org_member.c.org_id)
+    ).scalars()
+    for org_id in list(ids):
+        lock(conn, org_id)
+
+
 # --- creating and changing -----------------------------------------------------------------
 
 
@@ -215,6 +252,9 @@ def create(
 def change_settings(conn: Connection, org: Any, fields: dict[str, Any]) -> Any:
     """`display_name`, `members_create_projects`, `public_page`, as the owner sent them."""
     values: dict[str, Any] = {}
+    nulled = {name: "invalid" for name, value in fields.items() if value is None}
+    if nulled:  # a field that is sent is a value: `null` does not mean "leave it"
+        raise invalid(nulled)
     if "display_name" in fields:
         if not display_name_ok(fields["display_name"]):
             raise invalid({"display_name": "invalid"})
@@ -283,6 +323,7 @@ def delete_org(conn: Connection, org: Any, confirm: object) -> None:
         raise invalid({"confirm": "mismatch"})
     now = clock.now()
     conn.execute(delete(t.org_member).where(t.org_member.c.org_id == org.id))
+    avatars.remove_upload(conn, org.id)  # the avatar goes with the organisation (§6.26)
     conn.execute(
         update(t.org_invitation)
         .where(t.org_invitation.c.org_id == org.id, t.org_invitation.c.live.is_(True))

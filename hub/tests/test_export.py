@@ -74,6 +74,7 @@ def test_one_document_to_save(owner: flow.Human) -> None:
         "sessions",
         "second_factor",
         "forge_links",
+        "organisations",
         "runners",
         "agent_profiles",
         "memberships",
@@ -280,3 +281,26 @@ def test_forge_links_are_login_kind_and_created_never_a_token(
     ]
     assert all(set(link) == {"kind", "forge", "login", "status", "created"} for link in links)
     assert "very-secret-sealed-bytes" not in response.text and "4711" not in response.text
+
+
+def test_the_organisations_are_handle_role_and_when_they_joined(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    from tests.test_orgs import add_member, make_org
+
+    who = flow.human(make_client, migrated)
+    mine = make_org(who, "my-team", "My Team")
+    boss = flow.human(make_client, migrated, "boss")
+    theirs = make_org(boss, "their-team", "Their Team")
+    add_member(migrated, theirs["id"], who.id, "admin")
+    gone = make_org(who, "gone-team", "Gone Team")
+    assert gone["id"] != mine["id"]
+    from tests.test_orgs import delete_org
+
+    assert delete_org(who, "gone-team", "gone-team").status_code == 204
+    shown = who.get("/me/export").json()["organisations"]
+    assert [(o["handle"], o["role"]) for o in shown] == [
+        ("my-team", "owner"),
+        ("their-team", "admin"),
+    ]
+    assert set(shown[0]) == {"handle", "role", "joined"}
