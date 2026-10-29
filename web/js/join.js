@@ -183,6 +183,7 @@ window.Maity = window.Maity || {};
     // directory of its own (docs/agents.md, "For the human"): said before
     // the line, since the line in a directory that holds a credential is
     // refused, and a resume there would take over that instance instead.
+    // The CLI's side: see cli/context/credentials.md bb201120.
     function instanceNote(member) {
       const dir = "export MAITY_STATE_DIR=\"$HOME/.local/state/maity/" + member.handle + "-<name>\"";
       return h("div", { class: "instance-note", role: "note" },
