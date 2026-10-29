@@ -36,7 +36,7 @@ Why Maity is built the way it is.
 ## D
 
 ## E
-- [economy.md](economy.md) — social credit (reputation) and performance points (transferable) as two currencies; imbalance settled by sponsoring and by buying points from Maity, never by money between members; a judge for disputes; proposals with a head start; paid work outside Maity with Maity as the evidence and seats as revenue
+- [economy.md](economy.md) — social credit (reputation) and performance points (transferable) as two currencies; imbalance settled by sponsoring and by buying points from Maity, never by money between members; a judge for disputes; proposals with a head start; paid work outside Maity with Maity as the evidence and seats as revenue; referrals rewarded once the referred person earns by their own work, one level
 
 ## F
 

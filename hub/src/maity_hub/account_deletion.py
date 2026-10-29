@@ -28,7 +28,7 @@ from typing import Any
 
 from sqlalchemy import Connection, delete, func, insert, select, update
 
-from maity_hub import clock, invitations, namespace, placements, write_guard
+from maity_hub import clock, github_app, invitations, namespace, placements, write_guard
 from maity_hub import tables as t
 from maity_hub.admin import is_instance_admin
 from maity_hub.auth import second_factor, sessions
@@ -386,7 +386,7 @@ def delete_account(conn: Connection, hub: Settings, human_id: str) -> None:
     _leave_projects(conn, human_id)
     # The personal requests last, once removing the profiles cannot file another.
     _withdraw_personal(conn, human_id)
-    _end_access(conn, human_id)
+    _end_access(conn, hub, human_id)
     _remove_person(conn, human_id)
 
 
@@ -455,12 +455,25 @@ def _leave_projects(conn: Connection, human_id: str) -> None:
         apply_remove(conn, Change(project, HUB, human_id, human_id, None, None), target)
 
 
-def _end_access(conn: Connection, human_id: str) -> None:
+def _end_access(conn: Connection, hub: Settings, human_id: str) -> None:
     """Every session and device code ends; the second factor, its recovery codes, reset
-    links and the device cookies' values go; the pending mail to the account is dropped
-    (§18.7). The hub keeps no forge link or token and no sign-in link of a human yet
-    (§11.4, §2.6.3 are not built): there is nothing of those to delete."""
+    links and the device cookies' values go; the forge links with their state and token
+    and the pending sign-in links go, with the day's count of wrong codes (§2.9, §11.4,
+    §2.6.3); the pending mail to the account is dropped (§18.7)."""
     sessions.end_where(conn, t.human_session.c.human_id == human_id, ENDED_BY)
+    installations = list(
+        conn.execute(
+            select(t.forge_link.c.installation_id).where(t.forge_link.c.human_id == human_id)
+        ).scalars()
+    )
+    conn.execute(delete(t.forge_link_state).where(t.forge_link_state.c.human_id == human_id))
+    conn.execute(delete(t.forge_token).where(t.forge_token.c.human_id == human_id))
+    conn.execute(delete(t.forge_link).where(t.forge_link.c.human_id == human_id))
+    if hub.github_app is not None:  # an installation's cached token, as an unlink drops it
+        for installation_id in installations:
+            github_app.forget_token(hub.github_app, installation_id)
+    conn.execute(delete(t.email_sign_in).where(t.email_sign_in.c.human_id == human_id))
+    conn.execute(delete(t.email_sign_in_day).where(t.email_sign_in_day.c.human_id == human_id))
     conn.execute(
         update(t.device_code)
         .where(

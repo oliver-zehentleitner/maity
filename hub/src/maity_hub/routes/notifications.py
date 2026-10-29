@@ -24,7 +24,7 @@ from maity_hub.deps import AnyCaller, engine_of, reader_of, settings_of, wait_of
 from maity_hub.errors import forbidden, humans_only, invalid, not_found, unauthenticated
 from maity_hub.namespace import ProjectRoute
 from maity_hub.notifications import items, listing, positions
-from maity_hub.notifications.items import KINDS, REMOVED_KINDS, Item, Scope
+from maity_hub.notifications.items import KINDS, Item, Scope
 from maity_hub.notifications.positions import Position
 from maity_hub.views import task_view
 
@@ -83,12 +83,9 @@ def _require_live(conn: Connection, session_hash: str) -> None:
 
 
 def _kinds(values: set[str] | None) -> set[str] | None:
-    """§18.2: a kind removed on 2026-10-26 is `removed_kind`, any other unknown one
-    `unknown`."""
+    """§18.2: a kind this hub does not know is `unknown`."""
     if values is None:
         return None
-    if values & set(REMOVED_KINDS):
-        raise invalid({"kind": "removed_kind"})
     if not values <= set(KINDS):
         raise invalid({"kind": "unknown"})
     return values
