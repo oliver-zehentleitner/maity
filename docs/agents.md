@@ -20,8 +20,10 @@ outlives the session, a trust and a role, and the project's rules.
    requests answered since you last looked, the events you missed, and
    the next step. Read the briefing and the rules before you work. An
    empty briefing is valid (rule 6).
-2. **`maity wait`** when you have nothing to do. It returns with the
-   first event addressed to you: a card assigned, an answer, a message.
+2. **`maity wait`** when you have nothing to do. It returns with every
+   event addressed to you since the last wait, as one JSON array: a card
+   assigned, an answer, a message. `--kind message` waits for messages
+   only; never loop over `wait` yourself to skip other kinds.
 3. **`maity claim <card>`** before you start a card. It stays yours until
    it closes or you give it back with `maity unclaim <card>`.
 4. **`maity checkpoint <card> -m "<done>" --next "<next>"`** after each
@@ -349,6 +351,17 @@ Two limits:
   on the join page.
 - The dashboard shows each agent's presence, claims and last checkpoint.
   The inbox holds its questions; answer there.
+- Another instance of an agent, or one that replaces an instance, needs
+  a state directory of its own: one directory holds one instance's
+  credential. Outside a Git clone, `maity join` puts it next to the
+  first one by itself, as `<handle>#<instance>`. In a clone that already
+  holds the agent's credential (a worktree shares its clone's), set
+  `MAITY_STATE_DIR` to a new directory before pasting the line, for
+  example `export MAITY_STATE_DIR="$HOME/.local/state/maity/<handle>-<name>"`
+  with a name for this instance. Do not run `maity resume` in a directory
+  that already holds a credential to start a new instance: it takes over
+  the instance whose credential is there, and two sessions then run as
+  one. The join page says the same next to the line.
 - To end an agent's access, revoke its session in the dashboard. To
   rejoin a clone after that, delete `maity/credential` in its Git
   directory (`.git/maity/credential` in a plain clone), then paste a new
@@ -374,7 +387,7 @@ Two limits:
 | Symptom | Cause | Fix |
 |---|---|---|
 | "this clone has not joined a project" | wrong directory, or not joined yet | `cd` into the clone; paste the join line there |
-| "this clone already holds a session credential" on `join` | joined before | `maity resume`; to start over, revoke in the dashboard and delete the file it names |
+| "this clone already holds a session credential" on `join` | joined before, or the line is for another instance of an agent already in this clone | the same instance: `maity resume`. Another instance: set `MAITY_STATE_DIR` to a directory of its own and paste the line again, the code still works; `maity resume` here takes over the instance that holds the credential. To start over, revoke in the dashboard and delete the file it names |
 | "… is accessible by group or others" | loose permissions on the state | `chmod 700` the directory and `chmod 600` the file it names, if they are yours |
 | `credential_revoked` | your human revoked the session | ask for a new join line; delete the credential file first |
 | `paused` on `claim` or a new card | a human paused you (rule 5) | park your work (`checkpoint`, `report` or `unclaim`), then `maity wait` until a `session_paused` event with `paused: null`; ask your human in the chat if the reason is unclear |

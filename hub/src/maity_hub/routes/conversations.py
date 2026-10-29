@@ -14,14 +14,23 @@ from typing import Any
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
-from pydantic import Field
+from pydantic import Field, ValidationInfo, field_validator
+from pydantic_core import PydanticCustomError
 from sqlalchemy import Connection, func, select
 
-from maity_hub import events, group_chats, idempotency, instances, namespace, paging
+from maity_hub import (
+    conversation_list,
+    events,
+    group_chats,
+    idempotency,
+    instances,
+    namespace,
+    paging,
+)
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.auth.caller import Caller
-from maity_hub.deps import AnyCaller, engine_of
+from maity_hub.deps import AnyCaller, engine_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.models import Strict, Written, markdown, title
 from maity_hub.namespace import ProjectRoute
@@ -32,7 +41,7 @@ from maity_hub.routes.events import (
     remember_read,
     writer,
 )
-from maity_hub.views import principal_id, sees_chat_reasons, ts
+from maity_hub.views import principal_id, sees_chat_reasons, shape_deleted, ts
 
 router = APIRouter(route_class=ProjectRoute)
 
@@ -44,7 +53,18 @@ class ChatIn(Written):
     """A chat message. A direct chat is never resolved for mentions, a group chat
     against its participants (§8.6); a client's `mentions` is `read_only` on both."""
 
-    body: str = markdown(min_length=1)
+    attachments: list[str] = Field(default_factory=list)
+    body: str = markdown()
+
+    @field_validator("body")
+    @classmethod
+    def _text_or_attachments(cls, value: str, info: ValidationInfo) -> str:
+        """A message has text, or names attachments and may then have none (§8.7)."""
+        if not value and not info.data.get("attachments"):
+            raise PydanticCustomError(
+                "string_too_short", "String should have at least 1 character", {"min_length": 1}
+            )
+        return value
 
 
 class GroupIn(Strict):
@@ -70,7 +90,8 @@ class Outsider:
     principal_id: str
     kind: str = "human"
     id: int = -1  # names no membership row
-    role: str | None = None  # holds no role in the project
+    trust: str | None = None  # holds no trust in the project
+    role: str | None = None  # nor a role
 
     def may(self, scope: str) -> bool:
         del scope
@@ -150,9 +171,10 @@ def message_views(conn: Connection, rows: list[Any], reader: Any = None) -> list
     )
     # A message from an agent names its instance (§9, §6.17); a human's has none.
     instance_of = instances.instances_of(conn, [r.actor_credential_id for r in rows])
+    # A deleted account among the mentions is shown as one (§2.9).
+    payloads = shape_deleted(conn, [r.payload or {} for r in rows])
     views = []
-    for row in rows:
-        payload = row.payload or {}
+    for row, payload in zip(rows, payloads, strict=True):
         group = group_chats.is_group(row.conversation_id)
         view: dict[str, Any] = {
             "id": f"evt-{row.seq}",
@@ -169,7 +191,7 @@ def message_views(conn: Connection, rows: list[Any], reader: Any = None) -> list
         view |= {
             # A direct chat is never resolved; a group chat's resolved mentions (§8.6).
             "mentions": [] if row.redacted or not group else payload.get("mentions") or [],
-            "attachments": [],  # the contract's shape before attachments land (§8.7)
+            "attachments": [] if row.redacted else payload.get("attachments") or [],
             "redacted": bool(row.redacted),  # as in the list preview (§9.3)
             "redaction": _redaction(
                 row, reader, readers.get(row.conversation_id) if group else None
@@ -271,20 +293,6 @@ def _direct_item(
     }
 
 
-def _direct_items(conn: Connection, mine: Membership, caller: Caller) -> list[dict[str, Any]]:
-    """The caller's direct conversations: each needs both parties active in the project
-    (§9.1), so an agent whose owner is no member has none, and its list and packet carry
-    only its group chats."""
-    items = []
-    for agent_id in _owned_agents(conn, mine, caller):
-        try:
-            items.append(_direct_item(conn, mine, caller, agent_id))
-        except ApiError as gone:
-            if gone.status != 404:
-                raise
-    return items
-
-
 def _direct_unread(conn: Connection, mine: Membership, caller: Caller, agent_id: str) -> int:
     """The other party's messages after what this reader has seen (§9.1)."""
     if caller.kind == "human":
@@ -324,80 +332,6 @@ def _window(conn: Connection, group: Any, mine: Membership, found: str) -> int:
     return int(min(s.window_after for s in current if s.agent_id in owned))
 
 
-def _group_item(conn: Connection, mine: Membership, group: Any, found: str) -> dict[str, Any]:
-    view = group_chats.view(conn, group, found)
-    window = _window(conn, group, mine, found)
-    in_window = _messages(mine.project.id, group.id).where(t.event.c.seq > window)
-    last = conn.execute(in_window.order_by(t.event.c.seq.desc()).limit(1)).first()
-    unread: int | None = None  # an observer reads along and is never behind
-    mentioned: int | None = None
-    if found == "participant":
-        seen = max(window, _read_mark(conn, mine.id, group.id))
-        rows = conn.execute(
-            in_window.where(t.event.c.seq > seen, t.event.c.actor_membership != mine.id)
-        ).all()
-        unread = len(rows)
-        mentioned = sum(
-            1
-            for r in rows
-            if not r.redacted
-            and any(
-                m.get("member_id") == mine.principal_id
-                for m in (r.payload or {}).get("mentions") or []
-            )
-        )
-    return {
-        "id": group.id,
-        "kind": "group",
-        "title": group.title,
-        "participants": [_short(p) for p in view["participants"]],
-        "observers": view["observers"],
-        "access": found,
-        "closed_at": view["closed_at"],
-        "last_message_at": ts(last.at) if last is not None else None,
-        "unread": unread,
-        "mentions_unread": mentioned,
-        "last_message": _preview(conn, last),
-        "_activity": last.at if last is not None else group.created_at,
-    }
-
-
-def _my_groups(conn: Connection, mine: Membership, observed: bool) -> list[tuple[Any, str]]:
-    """The group chats the caller takes part in, and with `observed` those it reads
-    along in as an owner (§9.3)."""
-    ids = set(
-        conn.execute(
-            select(t.conversation_participant.c.conversation_id).where(
-                t.conversation_participant.c.membership_id == mine.id,
-                t.conversation_participant.c.here.is_(True),
-            )
-        ).scalars()
-    )
-    if observed and mine.kind == "human":
-        ids |= set(
-            conn.execute(
-                select(t.conversation_participant.c.conversation_id)
-                .join(
-                    t.membership,
-                    t.membership.c.id == t.conversation_participant.c.membership_id,
-                )
-                .join(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
-                .where(
-                    t.conversation_participant.c.here.is_(True),
-                    t.agent_profile.c.owner_id == mine.principal_id,
-                    t.membership.c.project_id == mine.project.id,
-                )
-            ).scalars()
-        )
-    found = []
-    for conversation_id in sorted(ids):
-        group = group_chats.find(conn, mine.project.id, conversation_id)
-        access = group_chats.access(conn, conversation_id, mine) if group is not None else None
-        if access is not None:
-            found.append((group, access))
-    return found
-
-
 def _owned_agents(conn: Connection, mine: Membership, caller: Caller) -> list[str]:
     if caller.kind == "agent":
         return [caller.agent_id] if caller.agent_id else []
@@ -429,10 +363,11 @@ def list_conversations(
         mine = _reader(conn, caller, slug)
         items = []
         if isinstance(mine, Membership):
-            items = _direct_items(conn, mine, caller)
-            items += [_group_item(conn, mine, g, a) for g, a in _my_groups(conn, mine, observed)]
+            owned = conversation_list.owned_agents(conn, [mine], caller)
+            items = conversation_list.direct_entries(conn, [mine], caller, owned)
+            items += conversation_list.group_entries(conn, [mine], observed)
         elif observed:  # an owner outside: exactly its agents' chats, on request (§9.2)
-            items = [_group_item(conn, mine, g, a) for g, a in _my_groups(conn, mine, True)]
+            items = conversation_list.group_entries(conn, [mine], True)
         items.sort(key=lambda i: (i["_activity"], i["id"]), reverse=True)
         bound = paging.scope(observed=observed)
         if cursor is not None:
@@ -445,8 +380,70 @@ def list_conversations(
             else None
         )
         for item in page:
-            del item["_activity"]
+            del item["_activity"], item["_project"]
         return JSONResponse({"items": page, "next_cursor": next_cursor})
+
+
+@router.get("/me/conversations")
+def list_my_conversations(
+    request: Request,
+    caller: AnyCaller,
+    observed: bool = False,
+    limit: int = Query(default=PAGE_DEFAULT, ge=1, le=PAGE_MAX),
+    cursor: str | None = None,
+) -> JSONResponse:
+    """The conversations the human has in every project it is an active member of, as
+    one list, newest activity first, then by project name and id (§9.3, "Across
+    projects")."""
+    if caller.kind == "agent":
+        raise humans_only("the chat overview across projects is for humans")
+    if caller.kind != "human" or caller.human_id is None:
+        raise forbidden()
+    with engine_of(request).begin() as conn:
+        mines = conversation_list.memberships(conn, caller.human_id)
+        owned = conversation_list.owned_agents(conn, mines, caller)
+        items = conversation_list.direct_entries(conn, mines, caller, owned)
+        items += conversation_list.group_entries(conn, mines, observed)
+        names = namespace.full_names(conn, [i["_project"] for i in items])
+        by_project = {m.project.id: m.project for m in mines}
+        for item in items:
+            item["_name"] = names[item["_project"]]
+        # Newest first; where the moment is the same, by project name and id.
+        items.sort(key=lambda i: (i["_name"], i["id"]))
+        items.sort(key=lambda i: i["_activity"], reverse=True)
+        counted = [i for i in items if i["unread"] is not None]
+        totals = {
+            "unread": sum(i["unread"] for i in counted),
+            "mentions_unread": sum(i["mentions_unread"] for i in counted),
+        }
+        bound = paging.scope(me=True, observed=observed)
+        if cursor is not None:
+            at, after = paging.uncursor(cursor, bound)
+            name, _, after_id = after.partition("\x1f")
+            items = [
+                i
+                for i in items
+                if i["_activity"] < at
+                or (i["_activity"] == at and (i["_name"], i["id"]) > (name, after_id))
+            ]
+        page = items[:limit]
+        next_cursor = (
+            paging.cursor(page[-1]["_activity"], f"{page[-1]['_name']}\x1f{page[-1]['id']}", bound)
+            if len(items) > limit
+            else None
+        )
+        for item in page:
+            full_name = item.pop("_name")
+            project = by_project[item["_project"]]
+            owner, _, slug = full_name.partition("/")
+            item["project"] = {
+                "owner": owner,
+                "slug": slug,
+                "full_name": full_name,
+                "name": project.name,
+            }
+            del item["_activity"], item["_project"]
+        return JSONResponse({"items": page, "next_cursor": next_cursor, "totals": totals})
 
 
 PACKET_CONVERSATIONS = 50  # in the resume packet (§5.2)
@@ -456,8 +453,9 @@ PACKET_FIELDS = ("id", "kind", "title", "unread", "mentions_unread", "last_messa
 def conversation_packet(conn: Connection, mine: Membership, caller: Caller) -> list[dict[str, Any]]:
     """`conversations` of the resume packet: the agent's direct one and its group chats,
     newest activity first, at most 50, with the list's counts (§5.2, §9.3)."""
-    items = _direct_items(conn, mine, caller)
-    items += [_group_item(conn, mine, g, a) for g, a in _my_groups(conn, mine, False)]
+    owned = conversation_list.owned_agents(conn, [mine], caller)
+    items = conversation_list.direct_entries(conn, [mine], caller, owned)
+    items += conversation_list.group_entries(conn, [mine], False)
     items.sort(key=lambda i: (i["_activity"], i["id"]), reverse=True)
     return [{k: i[k] for k in PACKET_FIELDS} for i in items[:PACKET_CONVERSATIONS]]
 
@@ -473,6 +471,8 @@ def create_group(slug: str, body: GroupIn, request: Request, caller: AnyCaller) 
         mine = membership(conn, caller, slug)  # as of the lock
         if mine.kind != "human":  # the hub's jour fixe thread is no route (§20.5)
             raise humans_only("only a human creates a group chat")
+        if mine.trust == "guest":  # a guest chats where it is invited (§2.3, §9.2)
+            raise forbidden("events:post", "a guest creates no group chat")
         conversation_id = group_chats.create(
             conn,
             mine.project,
@@ -718,7 +718,14 @@ def send_message(
             conn,
             mine,
             caller,
-            MessageIn(kind="message", type="chat", body=body.body, conversation_id=conversation_id),
+            MessageIn(
+                kind="message",
+                type="chat",
+                body=body.body,
+                attachments=body.attachments,
+                conversation_id=conversation_id,
+            ),
+            settings_of(request),
         )
         return idempotency.Outcome(
             201, "message", str(view["seq"]), load_message(conn, str(view["seq"]))

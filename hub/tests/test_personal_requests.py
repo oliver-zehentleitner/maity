@@ -289,7 +289,7 @@ def test_the_inbox_filters_apply_to_it(
         return [i["id"] for i in outside.get("/requests", params=params).json()["items"]]
 
     assert ids() == ids(to="all") == ids(**{"class": "consent"}) == [request_id]
-    assert ids(to="owner") == ids(to="role:admin") == ids(**{"class": "decision"}) == []
+    assert ids(to="owner") == ids(to="trust:admin") == ids(**{"class": "decision"}) == []
     assert ids(asked_by=agent_id) == [request_id] and ids(asked_by="me") == []
     assert ids(status="answered") == []
 

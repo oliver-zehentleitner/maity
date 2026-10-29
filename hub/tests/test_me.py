@@ -47,11 +47,13 @@ def test_a_human_sees_every_membership_with_its_open_requests(
 
     _request(migrated, maity, agent.membership_id, to_kind="owner")
     _request(migrated, maity, agent.membership_id, to_kind="member", to_member=me_maity)
-    _request(migrated, maity, agent.membership_id, to_kind="role", to_role="owner")
-    _request(migrated, maity, agent.membership_id, to_kind="role", to_role="admin")  # not mine
+    _request(migrated, maity, agent.membership_id, to_kind="role", to_role="trust:owner")
+    _request(
+        migrated, maity, agent.membership_id, to_kind="role", to_role="trust:admin"
+    )  # not mine
     _request(migrated, maity, agent.membership_id, to_kind="owner", status="answered")
     _request(migrated, other, stranger.membership_id, to_kind="owner")
-    _request(migrated, sample, agent.membership_id, to_kind="role", to_role="proxy")
+    _request(migrated, sample, agent.membership_id, to_kind="role", to_role="role:proxy")
     _request(migrated, sample, agent.membership_id, to_kind="owner")  # the proxy is not owner
 
     client = make_client()
@@ -66,6 +68,7 @@ def test_a_human_sees_every_membership_with_its_open_requests(
         "avatar_url": None,
         "avatar_source": None,
         "instance_admin": True,  # the earliest human (§16)
+        "meat_proxy": False,  # §5.2
         "account_status": "active",  # §2.7.5
         "terms": None,  # made by the operator: nothing accepted (§2.7.2)
         "limit": None,  # no limit declared (§6.12)
@@ -76,7 +79,8 @@ def test_a_human_sees_every_membership_with_its_open_requests(
             "full_name": "maintainer/maity",
             "name": "Maity",
             "state": "build",
-            "role": "owner",
+            "trust": "owner",
+            "role": "coder",
             "logo": {"available": False, "etag": None},
             "open_requests": 3,
         },
@@ -85,6 +89,7 @@ def test_a_human_sees_every_membership_with_its_open_requests(
             "full_name": "maintainer/sample",
             "name": "Sample shop",
             "state": "freeze",
+            "trust": "admin",
             "role": "proxy",
             "logo": {"available": False, "etag": None},
             "open_requests": 1,

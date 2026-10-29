@@ -128,7 +128,8 @@ text into the dashboard.
 
 **Id:** a6967e81-d77f-45dd-b5ab-dbd5628d7c8a
 **Type:** workaround
-**Status:** active
+**Status:** superseded
+**Superseded by:** 36284c53-8139-4c41-99c0-9123e9e2c4f2
 **Evidence:** inferred
 **Source:** docs/api.md §2.6.5, §2.6.6; the implementation of tsk-bjmkt2akq5dn, 2026-10-23
 **Revisit when:** the device code (§2.6.2) or the sign-in link (§2.6.3) lands, or account records (§18.1) exist
@@ -218,3 +219,136 @@ module. Refusing before the operator exists follows from how
 not stated in the contract itself (inferred). The `account_registration`
 row of a deleted account keeps the decision and a rejection's reason,
 not the address or the source.
+
+## Two-factor sign-in: whether a session must enrol is worked out per call, and the second step re-keys the session in place
+
+**Id:** ff8b8099-8384-4d68-906a-1b4d7b17bc47
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session, 2026-10-25 (card tsk-rnchtdn1ffhe; contract `docs/api.md` §2.8)
+**Revisit when:** the hub runs more than one replica (the wrong-code counts are in the process), or a role change gains a hook every path goes through
+
+Three choices of the implementation that the contract leaves open:
+
+- **Enrolment is a derived state.** A session stores `full`,
+  `second_factor` or `enrolment`, but whether a full session must enrol
+  (`required_admins` for an admin or owner, or, once the reset lands, after a reset) is
+  computed on every call in the gate (`auth.second_factor.gate`, run in
+  `deps._resolve` before any route). So a session the human held when
+  the policy was switched on, or when they became an owner, is held at
+  enrolment from its next call without anything writing to it, and is
+  released the moment the reason goes away — except an enrolment session
+  whose human enrolled elsewhere meanwhile, which ends rather than
+  becoming full without ever giving a code. The gate refuses inside the
+  authentication transaction, as the other-project check does, so a
+  refused call leaves no presence behind; for the same reason the gate
+  cannot write: a session it has to end is ended by `deps` in a
+  transaction of its own before the 401, or the end would be rolled
+  back and the session revive.
+- **The second step re-keys the row.** Completing a sign-in replaces the
+  session's `id_hash` and CSRF token in a conditional update (the row
+  must still owe the step), instead of making a new row. The fresh
+  cookie value is what the fixation rule asks for; the public id, the
+  `approved_by` lineage and `created_at` stay, which the session list,
+  "End this session" and the age rules of §2.6.5 read. The conditional
+  update is also what makes one of two concurrent verifies win.
+- **A code counts only for the factor it was checked against.** The
+  check locks the factor's row first (as a confirmation, a reset and new
+  recovery codes do, so they wait for one another in one order: factor,
+  then recovery codes), and the step is consumed by an update that also
+  names the factor's generation and sealed secret. The lock alone would
+  serialize on a server database; the condition keeps a code of a factor
+  replaced between read and consume from counting even where no lock is
+  taken.
+- **Wrong codes are counted in the process**, per second-factor session
+  (five end it) and per human (ten in 15 minutes lock the checks), like
+  every other limit of the hub in V1 (`ratelimit.Limiter`). A restart
+  forgets the counts. With several worker processes the limits multiply,
+  so the hub runs one worker per process.
+- **The admin's reset of someone's factor (§2.8.3) is a decision of its own**
+  (the entry below); the step-up of address changes and held approvals is
+  in `notifications.md`.
+
+**Rejected alternatives:**
+- Writing the enrolment state when the policy or a role changes: every
+  path that makes someone an owner or an admin, or flips the policy,
+  would have to find and rewrite the human's sessions; a missed path
+  would leave a session unrestricted.
+- A new session row at the second step: it would lose the lineage and
+  the age the standing rules read, or have to copy them.
+- Counting wrong codes in the database: one replica is the V1 limit for
+  every limiter; a durable count only for this one would buy little
+  while the per-address and per-human limits elsewhere stay in memory.
+
+## A reset of a second factor takes effect when the human presses the button; the factor's generation is what kills the other links
+
+**Id:** 7d2b4c9e-3a15-4c6f-8e07-b9a1d5f06c42
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.8.3, §18.6; the implementation of #380, part 2, 2026-10-28
+**Revisit when:** the instance audit log exists (a request should be written there, §2.8.3), or the notification mail of `second_factor_changed` is derived and the effect's own mail is checked against it
+
+`POST /admin/users/{id}/second-factor/reset` (`auth/second_factor_reset.py`) writes one row of
+`second_factor_reset` and mails the human's verified address a link; nothing about the human
+changes. The row's id is the hash of the link's nonce, so the table holds nothing that opens a
+link. The page `/mail/second-factor-reset/{token}` (`routes/mail_links.py`, no cookie, like the other
+link pages) shows the account, the admin and the reason as quoted text; its `POST` is the effect:
+under the factor's row it claims the link with a conditional update of `used_at`, checks that the
+link's generation is still the factor's, and then removes the enrolment and the recovery codes
+with `reset_required`, moves the generation, ends every session of the human
+(`second_factor_reset`) and writes `second_factor_changed {change: reset, by: <admin handle>}`.
+The operator's `maity-hub second-factor reset --handle` runs the same effect at once with `by:
+operator`. A link is dead when it was used, expired, or the generation moved: a recovery code
+that was used, a new enrolment, turning the factor off and another reset all move it, so no list
+of links has to be voided. The request is limited to three an hour per human (in process, like
+the other limiters) and needs the admin's own step-up; the admin's own account is refused
+(`own_account`), a human without a verified address `address_unverified`, an instance
+without mail `mail_not_configured`.
+
+**Reason:** the mail proves the mailbox, not the person, so the admin alone must never strip a
+factor: the human's button is the second party. Tying the link to the generation reuses what
+every change of the factor already does, instead of a second bookkeeping that could miss a path.
+Storing only the hash of the nonce keeps a leaked table from holding a link that works. The
+effect and the operator's command share one function so that the record, the session end and
+`reset_required` cannot drift apart.
+
+**Rejected alternatives:**
+- The reset taking effect at the request: the contract forbids it, and a stolen admin session
+  would then remove every factor it names.
+- Marking the other links of the human as used when one takes effect: the generation already does
+  it, in the same transaction, for every way the factor can change.
+- Resetting a human who has no factor: nothing would change and a mail would go out for nothing;
+  it is a conflict.
+
+## A human's cookie call renews the leases of the memberships that hold an open claim, and reads no others
+
+**Id:** 659d15cb-6c9b-4e06-8fec-164368951df4
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.5; tsk-dfatkddmt565; `hub/tests/test_human_lease.py` and the cost found while measuring `GET /me/conversations` (tsk-45vs1hdzswjs)
+**Revisit when:** a human's lease is to be renewed for something other than a claimed card, or a hold (`availability.hold_cap`) is to cover a membership with no claim
+
+`auth.caller._cookie` renewed, on every request of a human with a session, the leases of all the
+human's active memberships: per membership three reads in `availability.hold_cap` (the
+membership, the human, the project) and an `UPDATE` of the claimed cards, so four statements
+for each project the human is in, whether or not a card was held. A human holds a claim rarely.
+Measured with 1 and with 7 projects and no claim: 11 and 35 statements for the sign-in alone;
+now 11 and 11. The membership query got an `EXISTS` on open cards whose `claim_holder` is the
+membership, and the loop runs over those memberships only, with the same `renewed_lease`, hold
+and 24-hour cap as before, so a claim that exists is renewed exactly as it was.
+
+**Reason:** the cost was linear in the human's projects on every dashboard poll and bought
+nothing, because a renewal with no card to update changes no row. Narrowing the set where it is
+chosen keeps §6.5 untouched; nothing the contract says depends on the renewal of a membership
+without a claim.
+
+**Rejected alternatives:**
+- Renewing at most once a minute per session: it would shorten the visible renewal of a held
+  claim and change what §6.5 says an ordinary call does.
+- One `UPDATE` for all memberships: the lease length and the hold are per membership
+  (`hold_cap` reads the human's and the project's limit and absence), so the reads would stay.
+- Caching the memberships of a session: the answer is a function of rows another request can
+  change (a claim taken, a membership ended), and a stale set would skip a renewal.

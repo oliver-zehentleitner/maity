@@ -11,7 +11,6 @@ window.Maity = window.Maity || {};
 (function (M) {
   const { h, append, clear, formatAgo, formatTime } = M.dom;
 
-  const ROLES = ["owner", "admin", "member", "reviewer", "proxy"];
   const PRESENCE_LABELS = { online: "Online", away: "Away", offline: "Offline", paused: "Paused" };
   // Presence emits no event (docs/api.md §5.3): the view re-reads it and
   // updates the presence cells in place, so focus and forms stay.
@@ -20,10 +19,13 @@ window.Maity = window.Maity || {};
   // The hub's refusals in words, by field and reason; a reason the page
   // does not know is shown as it comes.
   const REFUSALS = {
-    "role:last_owner": "The project's last owner cannot be demoted or removed.",
+    "trust:last_owner": "The project's last owner cannot be demoted or removed.",
     "member:last_owner": "The project's last owner cannot be demoted or removed.",
-    "role:owner_is_human": "Only a human can be an owner.",
+    "trust:humans_only": "Only a human can be an owner.",
+    "trust:unknown": "Not a trust of this hub.",
     "role:unknown": "Not a role of this hub.",
+    "role:proxy_needs_admin": "A proxy holds trust admin, and only that.",
+    "reports_to:guest": "A guest is never reported to.",
     "reports_to:cycle": "That would close a circle: they would end up reporting to themselves.",
     "reports_to:not_a_member": "Reports to someone who is not a member of this project.",
     "areas:invalid_path": "An area is a repository path like hub/ or docs/api.md, without ..",
@@ -43,6 +45,16 @@ window.Maity = window.Maity || {};
   function refusal(err) {
     if (err.code === "forbidden" && err.details && err.details.reason === "humans_only") {
       return { message: "only a human may make this change" };
+    }
+    // §2.3: granting owner, admin or proxy, and lowering or removing an owner.
+    if (err.code === "forbidden" && err.details && err.details.reason === "owner_only") {
+      return { message: "only an owner may grant trust owner or admin or the role proxy, or lower or remove an owner" };
+    }
+    // §6.25, §6.26: the person whose namespace holds the project, and every
+    // owner of the organisation that holds it, stays an owner here.
+    if (err.code === "namespace_owner") {
+      return { message: "the project lives in this person's namespace, or they own the organisation it belongs to, so they stay an owner; "
+        + "transfer the project first (Project settings), or change their role in the organisation" };
     }
     const fields = err.code === "invalid" && err.details && err.details.fields;
     if (!fields) return err;
@@ -84,7 +96,9 @@ window.Maity = window.Maity || {};
     const open = new Set();
     // #/<owner>/<slug>/members/<id>/rulebook (a join's quota refusal): that row open, at its rulebook.
     const rulebookAsked = !!(wanted && args[1] === "rulebook");
-    if (rulebookAsked) open.add(wanted);
+    // #/<owner>/<slug>/members/<id>/picture: the account's link to an agent's picture.
+    const pictureAsked = !!(wanted && args[1] === "picture");
+    if (rulebookAsked || pictureAsked) open.add(wanted);
     // member id -> its presence cell, updated in place by the refresh.
     const presenceCells = new Map();
     // focus key -> the element drawn for it, so focus survives a redraw.
@@ -195,6 +209,42 @@ window.Maity = window.Maity || {};
       return slot;
     }
 
+    // One's own agent's picture (§6.10: the profile's owner sets it). The
+    // member list has no avatar_source, one's agent profiles have: read once
+    // when the first such row opens, kept across redraws.
+    const profileOf = new Map();
+    let profiles = null;
+    const ownProfile = (id) => {
+      profiles = profiles || M.api.getAll("/agents").then((r) => r.items);
+      return profiles.then((items) => items.find((a) => a.id === id) || {});
+    };
+    function picturePart(m) {
+      if (!ownAgent(m) || !M.pictureEditor) return null;
+      const slot = h("div", { class: "member-picture" });
+      const changed = (answer, words) => {
+        profileOf.set(m.id, Object.assign({}, profileOf.get(m.id), answer));
+        act("Changing the picture", words, () => Promise.resolve(answer), null);
+      };
+      const fill = (profile) => append(clear(slot), h("h4", { class: "member-picture-title" }, "Picture"),
+        profile.error ? M.errorBox(profile.error)
+          : M.pictureEditor(Object.assign({}, m, profile), "/agents/" + encodeURIComponent(m.id) + "/avatar", false, changed),
+        // Deleting the profile (§6.3): its owner only, as the picture.
+        !profile.error && M.profileDelete ? M.profileDelete(Object.assign({}, m, profile), (answer, words) => {
+          open.delete(m.id);
+          profileOf.delete(m.id);
+          act("Deleting", words, () => Promise.resolve(answer), null);
+        }) : null);
+      const known = profileOf.get(m.id);
+      if (known && !known.then) { fill(known); return slot; }
+      append(slot, h("p", { class: "muted" }, "Reading the picture…"));
+      const reading = known || ownProfile(m.id)
+        .then((a) => ({ avatar_url: a.avatar_url, avatar_source: a.avatar_source, handle: a.handle || m.handle, memberships: a.memberships || [] }), (error) => ({ error }))
+        .then((got) => { profileOf.set(m.id, got); return got; });
+      profileOf.set(m.id, reading);
+      reading.then((got) => { if (slot.isConnected !== false) fill(got); });
+      return slot;
+    }
+
     // The team's rulebook (docs/api.md §6.18, tsk-xzbk67raztm0): for the
     // human who owns the agent profile only, as the hub allows it; other
     // viewers see none of it. Only the fields that changed are sent.
@@ -261,6 +311,7 @@ window.Maity = window.Maity || {};
       // whether it gets their preferences, nothing that changes the membership.
       if (!ctx.canAdmin) {
         return h("tr", { class: "member-manage", id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell" },
+          picturePart(m),
           teamForm(m, ctx.base + "/members/" + encodeURIComponent(m.id)),
           credentialsPart(m),
           M.preferences && "owner_preferences" in m ? M.preferences.ownerToggle(ctx, m) : null));
@@ -270,6 +321,7 @@ window.Maity = window.Maity || {};
         // The briefing (§6.2), edited here; where the hub knows briefings.
         if ("briefing" in m && M.agentParts) parts.push(M.agentParts.briefingControl(ctx, m));
         if (ownAgent(m) && M.preferences && "owner_preferences" in m) parts.push(M.preferences.ownerToggle(ctx, m));
+        parts.push(picturePart(m));
         parts.push(teamForm(m, memberPath));
         parts.push(credentialsPart(m));
       }
@@ -299,7 +351,8 @@ window.Maity = window.Maity || {};
           h("button", { type: "submit" }, "Pause"),
           h("p", { class: "hint" }, words.effect)));
       }
-      parts.push(h("div", { class: "member-remove" }, h("button", {
+      // A member with trust owner is removed only by an owner (owner_only, §2.3).
+      if (!M.trust.owner(m) || ctx.isOwner) parts.push(h("div", { class: "member-remove" }, h("button", {
         type: "button",
         class: "danger",
         onclick: async () => {
@@ -337,14 +390,34 @@ window.Maity = window.Maity || {};
       const id = (what) => "member-" + what + "-" + m.id;
       const draft = edits.get(m.id) || {};
       const keep = (k, v) => { edits.set(m.id, Object.assign(edits.get(m.id) || {}, { [k]: v })); };
-      const role = keyed("role:" + m.id, h("select", { id: id("role") },
-        ROLES.filter((r) => r !== "owner" || m.kind === "human").map((r) => h("option", { value: r }, r))));
-      role.value = draft.role !== undefined ? draft.role : m.role;
+      // Trust and role (§2.3). Owner only for a human; granting owner or admin
+      // or the role proxy, and lowering an owner, only from an owner (owner_only):
+      // a non-owner is not offered them. The member's own trust and role stay
+      // offered (a project role included), so saving other fields never changes them.
+      const trustOffered = (ctx.isOwner ? M.trust.TRUSTS : M.trust.owner(m) ? ["owner"] : ["member", "guest"])
+        .filter((t) => t !== "owner" || m.kind === "human");
+      if (m.trust && !trustOffered.includes(m.trust)) trustOffered.push(m.trust);
+      const trust = keyed("trust:" + m.id, h("select", { id: id("trust") }, trustOffered.map((t) => h("option", { value: t }, t))));
+      trust.value = draft.trust !== undefined ? draft.trust : m.trust;
+      const role = keyed("role:" + m.id, h("select", { id: id("role") }));
+      // The role proxy goes with trust admin only (proxy_needs_admin): with any
+      // other trust it is not offered, and a proxy whose trust changes becomes a coder.
+      const fillRoles = () => {
+        const wanted = role.value || (draft.role !== undefined ? draft.role : m.role);
+        const proxyOk = trust.value === "admin" && (ctx.isOwner || m.role === "proxy");
+        const offered = M.trust.ROLES.filter((r) => r !== "proxy" || proxyOk);
+        if (m.role && m.role !== "proxy" && !offered.includes(m.role)) offered.push(m.role);
+        append(clear(role), offered.map((r) => h("option", { value: r }, r)));
+        role.value = offered.includes(wanted) ? wanted : offered.includes(m.role) ? m.role : "coder";
+      };
+      fillRoles();
+      trust.addEventListener("change", () => { keep("trust", trust.value); fillRoles(); });
       // The current boss stays offered even if it is not in the list read.
       const others = items.filter((x) => x.id !== m.id);
       const listed = !m.reports_to || others.some((x) => x.id === m.reports_to);
+      // A guest is never reported to (§2.3).
       const reports = keyed("reports:" + m.id, h("select", { id: id("reports") }, h("option", { value: "" }, "nobody"),
-        others.map((x) => h("option", { value: x.id }, x.display_name + " (@" + M.dom.handleOf(ctx, x) + ")")),
+        others.filter((x) => !M.trust.guest(x) || x.id === m.reports_to).map((x) => h("option", { value: x.id }, x.display_name + " (@" + M.dom.handleOf(ctx, x) + ")")),
         listed ? null : h("option", { value: m.reports_to }, nameOf(m.reports_to) + " (not in this list)")));
       reports.value = m.reports_to || "";
       // A drafted boss who has left since is dropped, and said: a select that
@@ -367,11 +440,11 @@ window.Maity = window.Maity || {};
       areas.addEventListener("input", () => keep("areas", areas.value));
       // Each field says its own error, tied to it (as on the account view).
       const errorOf = (what) => h("p", { class: "field-error", id: id(what) + "-error", role: "alert" });
-      const errors = { role: errorOf("role"), reports: errorOf("reports"), areas: errorOf("areas") };
+      const errors = { trust: errorOf("trust"), role: errorOf("role"), reports: errorOf("reports"), areas: errorOf("areas") };
       if (bossGone) errors.reports.textContent = bossGone + ", whom you picked, is no longer a member; reports to is back to what it is.";
-      [[role, "role"], [reports, "reports"], [areas, "areas"]].forEach(([f, k]) => f.setAttribute("aria-describedby", id(k) + "-error"
+      [[trust, "trust"], [role, "role"], [reports, "reports"], [areas, "areas"]].forEach(([f, k]) => f.setAttribute("aria-describedby", id(k) + "-error"
         + (k === "areas" ? " " + id("areas") + "-hint" : "")));
-      const clearErrors = () => [[role, "role"], [reports, "reports"], [areas, "areas"]].forEach(([f, k]) => { errors[k].textContent = ""; f.removeAttribute("aria-invalid"); });
+      const clearErrors = () => [[trust, "trust"], [role, "role"], [reports, "reports"], [areas, "areas"]].forEach(([f, k]) => { errors[k].textContent = ""; f.removeAttribute("aria-invalid"); });
       const fieldFail = (f, k, text) => { errors[k].textContent = text; f.setAttribute("aria-invalid", "true"); status.fail("Not saved: ", { message: text }); f.focus(); };
       const save = h("button", { type: "submit" }, "Save changes");
       return h("form", {
@@ -381,6 +454,7 @@ window.Maity = window.Maity || {};
           if (save.disabled) return;
           clearErrors();
           const body = {};
+          if (trust.value !== m.trust) body.trust = trust.value;
           if (role.value !== m.role) body.role = role.value;
           const boss = reports.value || null;
           if (boss !== (m.reports_to || null)) {
@@ -395,16 +469,17 @@ window.Maity = window.Maity || {};
           const capList = kept.concat(caps.filter((c) => c.box.checked).map((c) => c.cap));
           if ([...capList].sort().join() !== [...(m.capabilities || [])].sort().join()) body.capabilities = capList;
           if (!Object.keys(body).length) { status.done(); append(status.el, h("span", { class: "ok" }, "Nothing changed.")); return; }
-          const said = { role: "role", reports_to: "reports to", areas: "areas", capabilities: "capabilities" };
+          const said = { trust: "trust", role: "role", reports_to: "reports to", areas: "areas", capabilities: "capabilities" };
           save.disabled = true;
           const saved = await act("Saving", "Saved for " + m.display_name + ": " + Object.keys(body).map((k) => said[k]).join(", ") + ".",
             () => M.api.patch(memberPath, body), "role:" + m.id, () => edits.delete(m.id));
           save.disabled = false;
           // Demoting oneself changes what this page may offer: re-render it.
-          if (saved === true && self && body.role) ctx.refresh();
+          if (saved === true && self && (body.trust || body.role)) ctx.refresh();
         },
       },
       h("div", { class: "member-fields" },
+        h("label", { for: id("trust") }, "Trust"), trust, errors.trust,
         h("label", { for: id("role") }, "Role"), role, errors.role,
         h("label", { for: id("reports") }, "Reports to"), reports, errors.reports,
         h("label", { for: id("areas") }, "Areas"), areas,
@@ -473,7 +548,7 @@ window.Maity = window.Maity || {};
       const agents = items.filter((m) => m.kind === "agent");
       // Owner and credentials only where the hub sends them.
       const hasCreds = agents.some((m) => "credentials" in m);
-      const role = { title: "Role", cell: (m) => m.role };
+      const role = { title: "Trust and role", cell: (m) => M.trust.words(m) };
       const presence = { title: "Presence", presence: true, cell: (m) => presenceNodes(m, ctx.canAdmin) };
       const joined = { title: "Joined", cell: (m) => formatTime(m.joined_at) };
       const owner = { title: "Owner", cell: (m) => M.dom.memberRef(ctx, m.owner ? Object.assign({ member_id: m.owner_id }, m.owner) : m.owner_id) };
@@ -505,7 +580,7 @@ window.Maity = window.Maity || {};
     // allows it, up to member_agents_max. Only where the hub sends the
     // field: a hub without it refuses a member's join.
     const policy = ctx.project.policy || {};
-    const memberAdds = !ctx.canAdmin && ctx.me.kind === "human" && ctx.role !== "guest" && (ctx.trust || "member") !== "guest"
+    const memberAdds = !ctx.canAdmin && ctx.me.kind === "human" && !M.trust.guest(ctx)
       && "member_agents" in policy && policy.member_agents !== "off";
     const maxOwn = policy.member_agents_max === undefined ? 3 : policy.member_agents_max;
     // What §3.1 counts: one's distinct agents with an active membership or

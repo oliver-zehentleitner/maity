@@ -18,9 +18,11 @@ from sqlalchemy.exc import SQLAlchemyError
 from maity_hub import __version__, clock, handles, longpoll, namespace
 from maity_hub import tables as t
 from maity_hub.app import SchemaNotCurrentError, create_app, require_current_schema
+from maity_hub.auth import second_factor_reset
 from maity_hub.auth.passwords import MIN_LENGTH, hash_password
 from maity_hub.config import ConfigError, Settings, redact_database_url
 from maity_hub.db import current_revision, head_revision, make_engine, migrate
+from maity_hub.errors import ApiError
 from maity_hub.ids import new_id
 
 EXIT_FAILURE = 1
@@ -41,6 +43,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     create.add_argument("--handle", required=True)
     create.add_argument("--display-name", required=True)
+    factor = commands.add_parser("second-factor", help="the second factor of a human account")
+    factor_commands = factor.add_subparsers(dest="factor_command", required=True)
+    reset = factor_commands.add_parser(
+        "reset",
+        help="reset a human's second factor at once, the last way in (docs/api.md §2.8.3)",
+    )
+    reset.add_argument("--handle", required=True)
     quick = commands.add_parser(
         "quickstart",
         help="a personal hub on SQLite: set up a new database, the first account, then serve",
@@ -62,6 +71,8 @@ def main(argv: list[str] | None = None) -> int:
         return _migrate(settings)
     if args.command == "owner":
         return _owner_create(settings, args.handle, args.display_name)
+    if args.command == "second-factor":
+        return _second_factor_reset(settings, args.handle)
     if args.command == "quickstart":
         return _quickstart(settings, args.handle, args.display_name)
     return _serve(settings)
@@ -140,6 +151,33 @@ def _owner_create(
     finally:
         engine.dispose()
     print(f"maity-hub: created {handle} ({human_id})")
+    return 0
+
+
+def _second_factor_reset(settings: Settings, handle: str) -> int:
+    """The operator's reset (§2.8.3): at once, the enrolment and the recovery codes gone,
+    every session of the human ended, the record and the mail as for any reset, `by:
+    operator`."""
+    try:
+        engine = make_engine(settings.database_url)
+        require_current_schema(engine)
+    except SchemaNotCurrentError as error:
+        return _fail(str(error), EXIT_FAILURE)
+    except (SQLAlchemyError, ImportError) as error:
+        return _database_error(settings, error)
+    try:
+        with engine.begin() as conn:
+            try:
+                done = second_factor_reset.operator_reset(conn, handle)
+            except ApiError:  # no such human
+                return _fail(f"no human with the handle {handle!r}", EXIT_FAILURE)
+    except SQLAlchemyError as error:
+        return _database_error(settings, error)
+    finally:
+        engine.dispose()
+    if not done:
+        return _fail(f"{handle} has no second factor enrolled", EXIT_FAILURE)
+    print(f"maity-hub: reset the second factor of {handle}; every session of theirs has ended")
     return 0
 
 

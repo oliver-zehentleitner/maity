@@ -34,13 +34,14 @@ def test_a_created_project_has_the_contract_shape(owner: flow.Human) -> None:
         owner,
         "maity",
         repository={"url": "https://github.com/oliver-zehentleitner/maity"},
-        keep_the_why=True,
+        memory={"provider": "keep-the-why"},
     )
     assert set(body) == {
         "id",
         "owner",
         "full_name",
         "slug",
+        "aliases",
         "legacy_slug",
         "name",
         "state",
@@ -49,8 +50,9 @@ def test_a_created_project_has_the_contract_shape(owner: flow.Human) -> None:
         "repository",
         "logo",
         "banner",
-        "keep_the_why",
+        "memory",
         "keep_the_why_export",
+        "attachments",
         "policy",
         "absence",
         "settings",
@@ -64,12 +66,14 @@ def test_a_created_project_has_the_contract_shape(owner: flow.Human) -> None:
         "default_branch": "main",
         "forge": "github",
         "probe_configured": False,
+        "probe_via": None,
+        "owner_confirmed": False,
     }
     assert body["policy"] == {
         "preset": "hierarchical",
         "claim_policy": "self-claim",
         "done_authority": "reviewer",
-        "contract_arbiter": "role:admin",
+        "contract_arbiter": "trust:admin",
         "tag_authority": "human",
         "steward_writes": "cards_only",
         "lease_seconds": 7200,
@@ -77,19 +81,24 @@ def test_a_created_project_has_the_contract_shape(owner: flow.Human) -> None:
         "spawn_requests": "consent",
         "spawn_consent_by": "human",
         "max_placements": 8,
-        "coordinator": "role:admin",
+        "coordinator": "trust:admin",
         "coordinator_substitute": None,
         "on_runner_revoke": "inherit",  # the instance setting decides (§15.3)
         "badge": "off",
         "subtasks": "proposed",
         "swarm_public": "off",
+        "keep_the_why": "required",
+        "keep_the_why_defaults": "adopt",
+        "merged_closes": "notify",  # §6.6: a merge wakes the done authority
         "jour_fixe": None,
         "jour_fixe_moderators": None,
         "takeover_window_minutes": 60,
+        "member_agents": "on",
+        "member_agents_max": 3,
     }
     assert body["absence"] is None and body["rules_version"] == 1
     me = owner.get("/me").json()
-    assert me["projects"][0]["role"] == "owner"
+    assert me["projects"][0]["trust"] == "owner"
 
 
 def test_probe_configured_says_whether_the_hub_holds_a_token(
@@ -258,22 +267,22 @@ def test_an_admin_agent_cannot_change_state_or_policy(
 def test_owner_text_and_keep_the_why_bump_the_rules_with_rules_changed(
     owner: flow.Human, migrated: Engine
 ) -> None:
-    flow.project(owner, "maity")
+    flow.project(owner, "maity", memory={"provider": "none"})
     owner.patch(
         "/projects/maintainer/maity", {"rules_markdown": "Commit in English.", "reason": "style"}
     )
-    owner.patch("/projects/maintainer/maity", {"keep_the_why": True})
+    owner.patch("/projects/maintainer/maity", {"memory": {"provider": "keep-the-why"}})
     events = _events(migrated, "rules_changed")
     assert [e.payload for e in events] == [{"version": 2, "reason": "style"}, {"version": 3}]
     assert all(e.audience == ["all"] for e in events)
     project = _project_row(migrated, "maity")
     assert (project.rules_version, project.rules_changed_seq) == (3, events[-1].seq)
-    unchanged = owner.patch("/projects/maintainer/maity", {"keep_the_why": True})
+    unchanged = owner.patch("/projects/maintainer/maity", {"memory": {"provider": "keep-the-why"}})
     assert unchanged.json()["rules_version"] == 3
 
 
 def test_the_rules_are_generated_per_role(owner: flow.Human, make_client: ClientFactory) -> None:
-    flow.project(owner, "maity", keep_the_why=True)
+    flow.project(owner, "maity", memory={"provider": "keep-the-why"})
     owner.patch("/projects/maintainer/maity", {"rules_markdown": "Commit in English."})
     rules = owner.get("/projects/maintainer/maity/rules")
     assert rules.headers["content-type"] == "text/markdown; charset=utf-8"
@@ -283,7 +292,8 @@ def test_the_rules_are_generated_per_role(owner: flow.Human, make_client: Client
     assert "You own the project" in text
     assert "keep-the-why skill" in text and "Commit in English." in text
     member = flow.agent(make_client, owner, role="member")
-    assert "You are a member" in member.get("/projects/maintainer/maity/rules").text
+    mine = member.get("/projects/maintainer/maity/rules").text
+    assert "You are a member" in mine and "Your role is coder" in mine  # trust, then role
 
 
 def test_settings_carry_the_release_checklist(owner: flow.Human) -> None:

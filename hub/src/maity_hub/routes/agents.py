@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -204,53 +205,78 @@ def delete_agent(
 ) -> JSONResponse:
     """Delete a profile its owner no longer wants (§6.3): live joins revoked first, the
     profile's memberships removed only with `cascade`, a tombstone kept."""
-    from maity_hub.routes.members import Change, apply_remove
 
     def action(conn: Connection) -> idempotency.Outcome:
         row = owned(conn, agent_id, caller.principal_id, deleted=True, lock=True)
         if row.deleted_at is not None:  # a second DELETE answers as it is
             return idempotency.Outcome(200, "agent", agent_id, load_agent(conn, agent_id))
-        now = clock.now()
         members, running = _in_use(conn, agent_id)
         if members and not cascade:
             raise ProfileInUse(
                 [
-                    {"project": f"{m.owner_handle}/{m.slug}", "member_id": agent_id, "role": m.role}
+                    {
+                        "project": f"{m.owner_handle}/{m.slug}",
+                        "member_id": agent_id,
+                        "trust": m.trust,
+                        "role": m.role,
+                    }
                     for m in members
                 ],
                 running,
             )
-        # No membership is ever created for a deleted profile: its joins go first.
-        conn.execute(
-            update(t.join_link)
-            .where(
-                t.join_link.c.agent_id == agent_id,
-                t.join_link.c.used_at.is_(None),
-                t.join_link.c.burned_at.is_(None),
-                t.join_link.c.revoked_at.is_(None),
-                t.join_link.c.expires_at > now,
-            )
-            .values(revoked_at=now)
-        )
-        for member in members:
-            events.lock_project(conn, member.project_id)
-            project = conn.execute(
-                select(t.project).where(t.project.c.id == member.project_id)
-            ).one()
-            actor = _owner_actor(conn, caller, project.id)
-            change = Change(
-                project, actor, caller.principal_id, caller.principal_id,
-                caller.credential_id, caller.via,
-            )  # fmt: skip
-            target = conn.execute(select(t.membership).where(t.membership.c.id == member.id)).one()
-            apply_remove(conn, change, target)
-        avatars.remove_upload(conn, agent_id)  # the generated one applies (§6.10)
-        conn.execute(
-            update(t.agent_profile)
-            .where(t.agent_profile.c.id == agent_id)
-            .values(deleted_at=now, live=None)
+        delete_profile(
+            conn,
+            agent_id,
+            actor_in=lambda project_id: _owner_actor(conn, caller, project_id),
+            by=caller.principal_id,
+            credential_id=caller.credential_id,
+            via=caller.via,
         )
         handles.retire(conn, agent_id)  # its aliases leave the owner's scope with its handle
         return idempotency.Outcome(200, "agent", agent_id, load_agent(conn, agent_id))
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+def delete_profile(
+    conn: Connection,
+    agent_id: str,
+    *,
+    actor_in: Callable[[str], Actor],
+    by: str,
+    credential_id: str | None,
+    via: str | None,
+) -> None:
+    """Delete a profile as §6.3 does with `cascade`: live joins revoked first, every
+    active membership removed (`apply_remove`), the avatar dropped, a tombstone kept.
+    `actor_in(project_id)` is the event actor in each project, `by` the human on whose
+    authority it happens. The caller has locked the profile row and checked the owner;
+    shared by `DELETE /agents/{id}` and the deletion of the owner's account (§2.9)."""
+    from maity_hub.routes.members import Change, apply_remove
+
+    now = clock.now()
+    members, _ = _in_use(conn, agent_id)
+    # No membership is ever created for a deleted profile: its joins go first.
+    conn.execute(
+        update(t.join_link)
+        .where(
+            t.join_link.c.agent_id == agent_id,
+            t.join_link.c.used_at.is_(None),
+            t.join_link.c.burned_at.is_(None),
+            t.join_link.c.revoked_at.is_(None),
+            t.join_link.c.expires_at > now,
+        )
+        .values(revoked_at=now)
+    )
+    for member in members:
+        events.lock_project(conn, member.project_id)
+        project = conn.execute(select(t.project).where(t.project.c.id == member.project_id)).one()
+        change = Change(project, actor_in(project.id), by, by, credential_id, via)
+        target = conn.execute(select(t.membership).where(t.membership.c.id == member.id)).one()
+        apply_remove(conn, change, target)
+    avatars.remove_upload(conn, agent_id)  # the generated one applies (§6.10)
+    conn.execute(
+        update(t.agent_profile)
+        .where(t.agent_profile.c.id == agent_id)
+        .values(deleted_at=now, live=None)
+    )

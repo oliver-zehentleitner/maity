@@ -22,11 +22,9 @@ window.Maity = window.Maity || {};
   const EXPIRY_MS = 10000;
   const GRACE_MS = 60000;
 
-  const ROLES = ["member", "reviewer", "proxy", "admin"];
-  // A member bringing their own agent (§3.1): these and nothing else; an
-  // admin assigns areas and capabilities later, and the agent reports to them.
-  const MEMBER_ROLES = ["coder", "reviewer", "tester", "designer"];
-  const MEMBER_TRUSTS = ["member", "guest"];
+  // A member bringing their own agent (§3.1): M.trust.MEMBER_TRUSTS and
+  // MEMBER_ROLES and nothing else; an admin assigns areas and capabilities
+  // later, and the agent reports to them.
   const LIMIT_WORDS = { agent: "the agent (only one of your own, or a new one; or its membership was raised by an admin)", trust: "the trust",
     role: "the role", reports_to: "whom it reports to", areas: "its areas", capabilities: "its capabilities" };
   const BRIEFING_CHARS = 16 * 1024; // docs/api.md §3: 16 KiB, in characters as the hub counts
@@ -147,11 +145,24 @@ window.Maity = window.Maity || {};
     }
 
     const own = !!hooks.member;
-    const role = h("select", { id: "join-role" }, (own ? MEMBER_ROLES : ROLES).map((r) => h("option", { value: r }, r)));
-    const trust = own ? h("select", { id: "join-trust" }, MEMBER_TRUSTS.map((r) => h("option", { value: r }, r))) : null;
+    // An agent never holds trust owner; admin and the role proxy only from an
+    // owner, proxy only with trust admin (§3.1, owner_only §2.3).
+    const trusts = own ? M.trust.MEMBER_TRUSTS : ctx.isOwner ? ["member", "guest", "admin"] : ["member", "guest"];
+    const trust = h("select", { id: "join-trust" }, trusts.map((r) => h("option", { value: r }, r)));
+    trust.value = "member";
+    const role = h("select", { id: "join-role" });
+    const fillRoles = () => {
+      const wanted = role.value || "coder";
+      const offered = own ? M.trust.MEMBER_ROLES : M.trust.ROLES.filter((r) => r !== "proxy" || (ctx.isOwner && trust.value === "admin"));
+      append(clear(role), offered.map((r) => h("option", { value: r }, r)));
+      role.value = offered.includes(wanted) ? wanted : "coder";
+    };
+    trust.addEventListener("change", fillRoles);
+    fillRoles();
     const reportsTo = h("select", { id: "join-reports" },
       h("option", { value: "" }, "nobody"),
-      ctx.members.map((m) => h("option", { value: m.id }, m.display_name)));
+      // A guest is never reported to (§2.3).
+      ctx.members.filter((m) => !M.trust.guest(m)).map((m) => h("option", { value: m.id }, m.display_name)));
     const areas = h("input", { id: "join-areas", placeholder: "hub/, docs/" });
     // docs/api.md §3: the briefing reaches the agent in its resume packet
     // after the exchange, never on the join page.
@@ -168,7 +179,23 @@ window.Maity = window.Maity || {};
     // The panel's body: the form, or once a join is made the line in its place.
     const body = h("div", { class: "join-body", "aria-live": "polite" });
 
-    function showLine(j) {
+    // Another instance, or one that replaces an instance, runs with a state
+    // directory of its own (docs/agents.md, "For the human"): said before
+    // the line, since the line in a directory that holds a credential is
+    // refused, and a resume there would take over that instance instead.
+    // The CLI's side: see cli/context/credentials.md bb201120.
+    function instanceNote(member) {
+      const dir = "export MAITY_STATE_DIR=\"$HOME/.local/state/maity/" + member.handle + "-<name>\"";
+      return h("div", { class: "instance-note", role: "note" },
+        h("p", null, h("strong", null, "Every instance needs a state directory of its own.")),
+        h("p", null, "Outside a clone of the repository, maity join puts this one next to the first by itself. "
+          + "In a clone where @" + member.handle + " already joined, set this first, with a name for the instance:"),
+        h("code", { class: "paste-line state-dir-line" }, dir),
+        h("p", null, "Do not run maity resume there to start it: in a directory that already holds a credential, "
+          + "resume takes over that instance, and two sessions then run as one."));
+    }
+
+    function showLine(j, member) {
       const line = h("code", { class: "paste-line" }, j.paste_line);
       const copy = h("button", {
         type: "button",
@@ -184,6 +211,7 @@ window.Maity = window.Maity || {};
       const again = h("button", { type: "button", onclick: () => { showForm(); agentSelect.focus(); } }, "Join another");
       append(clear(body), h("div", { class: "join-result" },
         h("p", null, h("strong", null, "Paste this into the agent's session. It is shown once and expires " + formatTime(j.expires_at) + ".")),
+        member ? instanceNote(member) : null,
         h("div", { class: "paste-row" }, line, copy),
         h("p", { class: "first-hint" }, "Send it to the agent (Claude Code, Codex, …) as a message in its clone of the "
           + "repository; the agent runs it. An agent without the maity CLI opens the link and follows the join page. "
@@ -233,6 +261,7 @@ window.Maity = window.Maity || {};
           : own ? { agent, trust: trust.value, role: role.value, ttl_seconds: Number(ttl.value) }
           : {
             agent,
+            trust: trust.value,
             role: role.value,
             reports_to: reportsTo.value || null,
             areas: areas.value.split(",").map((a) => a.trim()).filter(Boolean),
@@ -291,7 +320,7 @@ window.Maity = window.Maity || {};
           create.disabled = false;
         }
         status.done();
-        showLine(j);
+        showLine(j, member);
         // A new profile is named in the select, the new join is a seat.
         try {
           [profiles, joins] = await Promise.all([M.api.getAll("/agents"), M.api.getAll(ctx.base + "/joins")]);
@@ -312,7 +341,7 @@ window.Maity = window.Maity || {};
         h("div", { class: "field wide" }, h("label", { for: "join-agent" }, "Agent"), agentSelect),
         newFields,
         instanceBox,
-        own ? membershipField(h("div", { class: "field" }, h("label", { for: "join-trust" }, "Trust"), trust)) : null,
+        membershipField(h("div", { class: "field" }, h("label", { for: "join-trust" }, "Trust"), trust)),
         membershipField(h("div", { class: "field" }, h("label", { for: "join-role" }, "Role"), role)),
         own ? membershipField(h("p", { class: "hint field wide" }, "It reports to you. An admin gives it areas and capabilities later."))
           : [membershipField(h("div", { class: "field" }, h("label", { for: "join-reports" }, "Reports to"), reportsTo)),
@@ -404,7 +433,7 @@ window.Maity = window.Maity || {};
               p ? h("span", { class: "handle" }, "@" + profileHandle(p)) : null,
               h("span", { class: "seat-label" }, state.key === "open" ? "open seat" : "expired")),
             h("dl", { class: "facts" },
-              h("dt", null, "Role"), h("dd", null, j.role, j.reports_to ? " · reports to " + ctx.nameOf(j.reports_to) : null),
+              h("dt", null, "Trust and role"), h("dd", null, M.trust.words(j), j.reports_to ? " · reports to " + ctx.nameOf(j.reports_to) : null),
               h("dt", null, "Join"), h("dd", null, state.text + " · ", h("code", null, j.id))),
             h("p", { class: "muted" }, "Waiting for the agent to run its line."),
             h("div", { class: "seat-actions" }, revoke(j)));
@@ -419,7 +448,7 @@ window.Maity = window.Maity || {};
         h("summary", null, "Earlier joins (" + rows.length + "): used, expired or revoked"),
         h("ul", { class: "joins closed-joins" }, rows.map(({ j, state }) => h("li", { class: "join-" + state.key },
           h("span", { class: "badge join-state" }, state.label), " ",
-          h("code", null, j.id), " " + profileName(j.agent_id) + " as " + j.role + " · " + state.text))));
+          h("code", null, j.id), " " + profileName(j.agent_id) + " as " + M.trust.words(j) + " · " + state.text))));
     }
     const openCount = () => { const now = M.api.now(); return joins.items.filter((j) => joinState(j, now).key === "open").length; };
     // The agents open joins are for: with the active memberships, what §3.1 counts per profile.

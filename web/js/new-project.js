@@ -1,6 +1,7 @@
 // Create a project (docs/api.md §6.1, POST /projects): slug, name, an
 // optional repository, the project memory with its setup options (§6.21),
-// and the policy preset. The creator
+// and the policy preset, and where the hub takes it the owner: the human or
+// one of their organisations (§6.26). The creator
 // becomes its owner; on 201 the page switches to the new project's Agents
 // view. The hub's `invalid` answer is shown next to the fields it names.
 // Also the empty state of a human without memberships.
@@ -37,7 +38,7 @@ window.Maity = window.Maity || {};
 
   // The hub's reasons, in words; any other reason is shown as it comes.
   const REASONS = {
-    taken: "You have a project with this slug already, or had one by that name.",
+    taken: "This owner has a project with this slug already, or had one by that name.",
     reserved: "This word is part of the dashboard's addresses; choose another slug.",
     string_pattern_mismatch: M.dom.NAME_RULES.slug.text,
     string_too_short: "Required.",
@@ -45,6 +46,8 @@ window.Maity = window.Maity || {};
     missing: "Required.",
     not_a_configured_forge: M.FORGE_RULE,
     unknown: "Not a known value.",
+    // owner: the same answer for every handle that is no organisation of one's own.
+    owner_unknown: "Not an organisation you are in.",
     unknown_provider: "Not a memory provider this hub knows.",
     not_a_boolean: "Must be ticked or not.",
   };
@@ -61,18 +64,27 @@ window.Maity = window.Maity || {};
   M.views.newProject = async function (ctx, root) {
     // Memory and setup where the hub takes them (§6.21); an older hub
     // refuses a field it does not know, so then they are not offered.
-    // A hub before §6.21 knows the provider only as keep_the_why: the
-    // dropdown then sends that alias, without setup options.
     let fieldsRead = true;
     const fields = await M.api.hubBody("POST", "/projects").catch(() => { fieldsRead = false; return new Set(); });
     const knowsMemory = fields.has("memory") && fields.has("setup");
-    const knowsAlias = !knowsMemory && fields.has("keep_the_why");
     const field = (id, label, input, hint) => {
       const error = h("p", { class: "field-error", id: id + "-error", role: "alert" });
       input.setAttribute("aria-describedby", (hint ? id + "-hint " : "") + id + "-error");
       return { input, error, nodes: [h("label", { for: id }, label), input, hint ? h("p", { class: "hint", id: id + "-hint" }, hint) : null, error] };
     };
 
+    // §6.26: the owner, where the hub takes it and the human is in an
+    // organisation that lets them create projects; otherwise not offered.
+    const orgs = fields.has("owner")
+      // A suspended organisation takes no new project (§6.26).
+      ? await M.api.get("/orgs").then((r) => r.items.filter((o) => !o.moderation && (o.my_role !== "member" || o.members_create_projects))).catch(() => [])
+      : [];
+    const owner = field("project-owner", "Owner",
+      h("select", { id: "project-owner" },
+        h("option", { value: "" }, "@" + ctx.me.handle + " (you)"),
+        orgs.map((o) => h("option", { value: o.handle }, "@" + o.handle + " · " + o.display_name))),
+      "The project's address is <owner>/<slug>. An organisation's owners hold trust owner in every project it owns.");
+    owner.input.value = "";
     const name = field("project-name", "Name", h("input", { id: "project-name", required: true, maxlength: "200", autocomplete: "off" }));
     const slug = field("project-slug", "Slug",
       h("input", { id: "project-slug", required: true, pattern: SLUG_PATTERN, maxlength: "63", autocomplete: "off", spellcheck: "false" }),
@@ -125,9 +137,9 @@ window.Maity = window.Maity || {};
     });
 
     // The hub's field names (details.fields) to the inputs they belong to.
-    const byField = { name, slug, repository, "repository.url": repository, policy: preset, "policy.preset": preset,
-      memory, "memory.provider": memory, keep_the_why: memory };
-    const all = [name, slug, repository, memory, preset];
+    const byField = { owner, name, slug, repository, "repository.url": repository, policy: preset, "policy.preset": preset,
+      memory, "memory.provider": memory };
+    const all = [owner, name, slug, repository, memory, preset];
     const status = M.statusLine();
 
     const showErrors = (fields) => {
@@ -136,7 +148,7 @@ window.Maity = window.Maity || {};
       const rest = [];
       Object.keys(fields).forEach((key) => {
         const reason = String(fields[key]);
-        const text = REASONS[reason] || reason;
+        const text = (key === "owner" && REASONS["owner_" + reason]) || REASONS[reason] || reason;
         const option = options.find((o) => key === "setup." + o.key);
         if (option || key === "setup") {
           setupError.textContent += (setupError.textContent ? " " : "") + (option ? OPTIONS.find(([k]) => k === option.key)[1] + ": " : "") + text;
@@ -158,6 +170,7 @@ window.Maity = window.Maity || {};
       onsubmit: async (e) => {
         e.preventDefault();
         const body = { slug: slug.input.value.trim(), name: name.input.value.trim() };
+        if (owner.input.value) body.owner = owner.input.value;
         const local = {};
         if (!body.name) local.name = "string_too_short";
         if (!SLUG.test(body.slug)) local.slug = body.slug ? "string_pattern_mismatch" : "string_too_short";
@@ -165,7 +178,6 @@ window.Maity = window.Maity || {};
         showErrors({});
         const url = repository.input.value.trim();
         if (url) body.repository = { url };
-        if (knowsAlias) body.keep_the_why = memory.input.value === "keep-the-why";
         if (knowsMemory) {
           body.memory = { provider: memory.input.value };
           // §6.21: every option sent as it stands; under None the Keep the
@@ -188,14 +200,19 @@ window.Maity = window.Maity || {};
             const rest = showErrors(fields);
             if (rest.length) status.fail("Not created: ", { message: rest.join("; ") });
             else status.done();
+          } else if (err.code === "forbidden" && err.details && err.details.reason === "org_role") {
+            status.fail("Not created: ", { message: "this organisation lets only its owners and admins create projects" });
+          } else if (err.code === "forbidden" && err.details && err.details.reason === "moderation_hold") {
+            status.fail("Not created: ", { message: "this organisation is suspended and takes no new project" });
           } else {
             status.fail("Not created: ", err);
           }
         }
       },
     },
+    orgs.length ? owner.nodes : null,
     name.nodes, slug.nodes, repository.nodes,
-    knowsMemory || knowsAlias ? memory.nodes : null,
+    knowsMemory ? memory.nodes : null,
     knowsMemory ? setupBox : null,
     // What the hub chooses is said where its machine form could not be read.
     fieldsRead ? null : h("p", { class: "hint" }, "Project memory: this hub's machine form could not be read, so its defaults apply."),

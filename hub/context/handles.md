@@ -71,3 +71,24 @@ restart.
 
 **Rejected alternative:** `ratelimit.Limiter` — fine for a login budget that
 is minutes long, not for a window of a day.
+
+## A deleted account keeps its aliases, as it keeps its handle
+
+**Id:** 17a3950b-c717-4e1e-bf66-d97141685a81
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** `docs/api.md` §2.9 (the account row stays, its handle stays taken) applied to §6.24 (an alias is never released while its id exists); the merge of the alias card with `tests/test_per_human_tables.py`, 2026-10-29
+**Revisit when:** the accounts design lets a handle be released after a deletion
+
+`handle_alias` is in `DELETION_KEEPS` and left out of the export. The deleted
+human's row stays with its id, so its aliases stay with it and stay taken: the
+old names must never come to mean someone else. An agent profile's aliases go
+the other way, with the profile (`handles.retire`, called by `delete_profile`),
+because a tombstoned profile frees its handle for the same owner (§6.3).
+
+**Reason:** the two rules of §2.9 and §6.24 meet here; keeping the human's
+aliases is the reading that breaks neither. Not asked of the coordinator.
+
+**Rejected alternative:** deleting the aliases with the account — it would free
+names a person was once known by, for anyone to take.

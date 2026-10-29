@@ -527,3 +527,90 @@ reader.
   of settings could serve it by mistake.
 - The SMTP password from the environment or a file only: contradicts
   §16.2, which lets the admin of a single local install set it.
+
+## A database error is logged with a category of its cause, never with the driver's text
+
+**Id:** 79c93ec6-d67e-4a0a-8d82-041409b1fd92
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the burst of `database_unavailable` answers on maity.team, 2026-10-28, whose cause the log did not show; the coordinator's go; the review of the first version, which found credentials leaking through the masking
+**Revisit when:** a logging pipeline masks secrets itself, or a failure that matters keeps landing in `unclassified`
+
+The handler for `OperationalError` and `InterfaceError` logs the original exception's class and one category
+from a fixed list in `errors.py` (`dns`, `timeout`, `refused`, `unreachable`, `closed`, `starting`, `no_slots`,
+`auth`, `ssl`, otherwise `unclassified`), chosen by phrases the drivers use. None of the driver's text is
+logged. The answer to the client is unchanged: 503 `database_unavailable`, no driver text (docs/api.md §1.3).
+
+**Reason:** the log used to say only `database unavailable: OperationalError`. Over a hundred of them in
+45 minutes could not be told apart (a DNS failure, a connect timeout, a refused connection), and a cause
+guessed from the few that carried a traceback was wrong for the rest. A category tells them apart. The first
+version logged the driver's text with URLs and `password=` pairs masked; the review showed passwords leaking
+through valid libpq escapes, an apostrophe in a URL's user info, and an encoded URL, so no pattern can be
+trusted with text that may quote a credential.
+
+**Rejected alternatives:**
+- Log the driver text as it is, or masked by patterns: it can quote the connection string with the password,
+  and the masking missed real forms (tried, reverted).
+- Keep the code only (the SQLSTATE or number): psycopg's connection errors have neither.
+- Put the cause into the response: that is the leak §1.3 forbids, and a client cannot act on it.
+
+## The pool keeps connections warm, and a host name that does not resolve is tried once more
+
+**Id:** 3b5f0c52-6d1e-4c7a-9a43-1e8d7f2a9b64
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** ops finding on maity.team, 2026-10-28: 107 `database_unavailable` answers in 45 minutes, all category `dns`, on a node at its CPU limit
+**Revisit when:** the database sits behind a pooler or a local resolver cache, or a `dns` warning shows up in the log regularly
+
+For a server database the pool is 16 connections plus 16 overflow (was 5 + 10), it hands out the most recently
+used connection first (`pool_use_lifo`), and it replaces a connection older than 30 minutes
+(`MAITY_DB_POOL_RECYCLE`, `0` turns it off). A connect that fails with the `dns` category (`errors.connection_cause`)
+is tried once more after 0.25–0.5 s; every other failure, and a second DNS failure, goes on as before.
+
+**Reason:** every new connection is a name lookup and a handshake. On a saturated one-vCPU node the cluster's
+DNS answered in bursts, and the old pool of 5 opened and closed connections under a burst of requests, so each
+burst was a burst of lookups. Reusing connections removes most lookups; the single retry covers the rest, and
+a lookup that fails twice, 0.25–0.5 s apart (the pause is the retry's only wait; each attempt also has its own
+connect timeout), is a real outage that should be answered 503 at once. The cause is
+inferred from the log categories, not reproduced.
+
+**Rejected alternatives:**
+- Retry without limit or with long back-off: it holds a request thread while the database is really down.
+- A DNS cache inside the hub: the address can change with the database's failover, and a stale cache would turn a blip into an outage.
+- A connection pooler (pgbouncer): one more component to run for a problem that reuse mostly solves.
+
+## A briefing keeps every version in `member_briefing`; the membership row holds only the current one
+
+**Id:** 1db3938a-aaf1-4095-b168-6dc4cc541e08
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** `docs/api.md` §6.2 (`briefing_version`, `GET …/members/{id}/briefings`); migration 0031 (`0031_briefing_history.py`); recorded after the review of the briefing-history card, 2026-10-29
+**Revisit when:** §6.2 stops requiring past versions to be readable, or briefings get an edit history of another kind
+
+A briefing starts at version 1 with the join and gets a new version on every
+change. The membership row carries the current text, who wrote it, its
+version and when; every version, the current one included, is a row of
+`member_briefing`, read newest first through `GET …/members/{id}/briefings`.
+Migration 0031 gave each existing agent membership a version 1 with its
+current text, written by an unknown writer at its `joined_at`; a human
+membership has no briefing and stays at version 0.
+
+**Reason:** the contract (§6.2) requires it: a version number that starts at
+1 and grows by one per change, and past versions the agent's owner and
+`members:admin` can read. The versions are kept, never overwritten.
+
+The next version number is read with `FOR UPDATE` on the membership row
+(`briefings.record`): under MariaDB's repeatable read a plain read sees the
+transaction's snapshot, so two admins changing one member's briefing at once
+would both write the same version, and the second insert would fail on
+`member_briefing`'s primary key `(membership_id, version)`.
+
+Which part stands how: the model itself is confirmed by §6.2; the reason for
+the lock is inferred from the code's docstring and the key; why the contract
+chose versions over another form is not recorded.
+
+**Alternatives:** unknown. The weighing at the time is not recorded; this
+entry only follows the contract.

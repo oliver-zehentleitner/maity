@@ -21,6 +21,12 @@ def owner(make_client: ClientFactory, migrated: Engine) -> flow.Human:
     return owner
 
 
+def _project_id(engine: Engine) -> str:
+    with engine.connect() as conn:
+        project_id: str = conn.execute(select(t.project.c.id)).scalar_one()
+    return project_id
+
+
 def _last(engine: Engine, kind: str) -> Any:
     with engine.connect() as conn:
         return conn.execute(
@@ -47,6 +53,7 @@ def test_the_member_view_has_the_contract_shape(
         "display_name",
         "avatar_url",  # null: no picture uploaded (§6.10)
         "owner_id",
+        "trust",
         "role",
         "reports_to",
         "areas",
@@ -73,6 +80,7 @@ def test_the_member_view_has_the_contract_shape(
         "owner_preferences",  # likewise (§19.4)
         "team",  # the team's rulebook and its instances (§6.17, §6.18)
         "instances",
+        "keep_the_why_unconfirmed",  # §6.1: set while the commitment is open
     }
     assert (view["kind"], view["owner_id"], view["reports_to"]) == ("agent", owner.id, owner.id)
     assert (view["harness"], view["model"], view["presence"]) == (
@@ -126,8 +134,10 @@ def test_a_role_change_is_a_rules_bump(
 @pytest.mark.parametrize(
     ("body", "fields"),
     [
-        ({"role": "owner"}, {"role": "owner_is_human"}),
+        ({"trust": "owner"}, {"trust": "humans_only"}),
+        ({"trust": "boss"}, {"trust": "unknown"}),
         ({"role": "boss"}, {"role": "unknown"}),
+        ({"role": "member"}, {"role": "unknown"}),  # the old single role is gone (§2.3)
         ({"reports_to": "agt-nobody"}, {"reports_to": "not_a_member"}),
         ({"capabilities": ["deploy"]}, {"capabilities": "unknown"}),
     ],
@@ -141,10 +151,37 @@ def test_member_changes_are_checked(
 
 
 def test_the_last_owner_stays(owner: flow.Human) -> None:
-    demote = owner.patch(f"/projects/maintainer/maity/members/{owner.id}", {"role": "admin"})
-    assert demote.json()["error"]["details"]["fields"] == {"role": "last_owner"}
+    demote = owner.patch(f"/projects/maintainer/maity/members/{owner.id}", {"trust": "admin"})
+    assert demote.json()["error"]["details"]["fields"] == {"trust": "last_owner"}
     remove = owner.delete(f"/projects/maintainer/maity/members/{owner.id}")
     assert remove.json()["error"]["details"]["fields"] == {"member": "last_owner"}
+
+
+def test_only_an_owner_grants_admin_or_proxy_and_touches_an_owner(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§2.3 "The owner's rights": a human with trust admin manages members, but never
+    grants trust owner or admin or the role proxy, nor lowers or removes an owner."""
+    project_id = _project_id(migrated)
+    admin = flow.human(make_client, migrated, "deputy")
+    factory.membership(migrated, project_id, "admin", human_id=admin.id)
+    co_owner = flow.human(make_client, migrated, "partner")
+    factory.membership(migrated, project_id, "owner", human_id=co_owner.id)
+    agent = flow.agent(make_client, owner)
+    path = "/projects/maintainer/maity/members"
+
+    def refused(response: Any) -> None:
+        assert response.status_code == 403, response.text
+        assert response.json()["error"]["details"] == {"reason": "owner_only"}
+
+    refused(admin.patch(f"{path}/{agent.id}", {"trust": "admin"}))
+    refused(admin.patch(f"{path}/{agent.id}", {"trust": "admin", "role": "proxy"}))
+    refused(admin.patch(f"{path}/{co_owner.id}", {"trust": "admin"}))
+    refused(admin.delete(f"{path}/{co_owner.id}"))
+    # Below admin it manages as before; the owner may do all of it.
+    assert admin.patch(f"{path}/{agent.id}", {"role": "reviewer"}).status_code == 200
+    assert owner.patch(f"{path}/{agent.id}", {"trust": "admin"}).status_code == 200
+    assert owner.patch(f"{path}/{co_owner.id}", {"trust": "admin"}).status_code == 200
 
 
 def test_members_admin_beyond_admin_agents_is_for_human_memberships(
@@ -173,7 +210,7 @@ def test_a_pause_set_by_a_human_tells_reports_to_and_admins(
     assert response.json()["presence"] == "paused"
     event = _last(migrated, "session_paused")
     # The member itself first: its long-poll wakes (§5.3).
-    assert event.audience == [f"member:{agent.id}", f"member:{owner.id}", "role:admin"]
+    assert event.audience == [f"member:{agent.id}", f"member:{owner.id}", "trust:admin"]
     agent.resume()  # a human's pause survives the agent's resume
     assert (
         owner.get(f"/projects/maintainer/maity/members/{agent.id}").json()["paused"]["reason"]
@@ -321,7 +358,7 @@ def test_revoking_a_credential_ends_its_session_and_is_announced(
         None,
     )
     event = _last(migrated, "credential_revoked")
-    assert event.audience == [f"member:{agent.id}", "role:owner"]
+    assert event.audience == [f"member:{agent.id}", "trust:owner"]
     assert agent.get("/me").headers["Maity-Error"] == "credential_revoked"
     items = owner.get(f"/projects/maintainer/maity/members/{agent.id}/credentials").json()["items"]
     assert items[0]["revoked_at"]  # revoked ones stay listed

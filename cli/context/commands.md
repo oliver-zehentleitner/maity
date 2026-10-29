@@ -142,7 +142,8 @@ with whoever reads the output.
 
 **Id:** 3728614b-f9b2-43e2-86f6-c38e7c0385bf
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** b8049c3d-c652-421c-a10e-ab7d6d0bec60
 **Evidence:** confirmed
 **Source:** dogfooding on maity.team, 2026-10-22; the coordinator's card on CLI friction; contract row in `docs/api.md` §13
 **Revisit when:** the hub offers server-side filtering of the event stream, or a burst regularly exceeds fifty events
@@ -158,6 +159,40 @@ again for each of the rest, one turn of its harness per event.
 **Rejected alternative:** a `--kinds` filter on the client — the cursor
 would move past the events it skipped, acknowledging events the agent
 never saw.
+
+## `wait` returns every pending event by default, and `--kind` reads past the rest
+
+**Id:** b8049c3d-c652-421c-a10e-ab7d6d0bec60
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** ops on maity.team, 2026-10-28 (8000 `GET /events` in 3 hours, 5594 of them under a second); the lead's decision on card tsk-6ym6q2kymhn8
+**Revisit when:** the hub filters the event stream by kind on the server, or an agent misses an event because `--kind` read past it
+
+`maity wait` with no flag prints every pending event, up to fifty, as one
+JSON array, and moves the cursor past the last of them. `--one` gives the
+earlier output: the first event alone, as an object. `--batch` is still
+accepted and changes nothing. `--kind KIND` (repeatable) returns only
+events of those kinds. It reads past the others, which acknowledges them
+at the hub (`after=N`), and keeps waiting; it is refused with
+`--keep-cursor`, which promises the opposite. The events are printed and
+flushed before the cursor is saved. The runner's loop
+passes `--one`, because it starts one run per event.
+
+**Reason:** an agent's wait loop that looks for one kind ran `maity wait`
+once per event, whatever its kind. An event to `all` with eight agents
+listening became eight short requests, each answered at once. With every
+pending event in one answer and the filter inside `wait`, a burst costs
+one request, and only the wanted kind wakes the agent.
+
+**Rejected alternatives:**
+- Keeping `--batch` opt-in: the loops that cause the load never pass it.
+- No client-side filter, the earlier decision
+  (3728614b-f9b2-43e2-86f6-c38e7c0385bf): it avoided acknowledging events
+  the agent never saw. That risk remains, but it is opt-in now: whoever
+  passes `--kind` decides that the other kinds may go by unread.
+  `maity resume` and the board still show what matters.
+- A server minimum for `wait`: paging and scans need `wait=0`.
 
 ## The ticker's `more:` line repeats `--since` as the time it resolved to
 
@@ -584,6 +619,40 @@ the contract: the full name is computed and follows renames.
   a single-use link per agent for a change the hub can answer itself.
 - Keeping the slug as the only stored name: a slug is unique only
   within its owner's namespace now (§6.25).
+
+## A project that answers `not_found` is looked up once with `GET /me` and followed
+
+**Id:** f502c036-d109-46e5-a25a-ffc793bc08bd
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Revisit when:** the hub keeps an alias for the old full name (#523) that makes the old path answer, or an agent's credential is no longer bound to one project
+
+A `not_found` on a path under the project asks `GET /me` once. When the
+one project listed there has a different full name, the CLI keeps it,
+says `project is now <owner>/<slug>` and repeats the call at the new
+path. Later paths under the old name go to the new one without being
+tried first. This covers the path `maity wait` built before its loop.
+In a call with a timeout, the lookup and the repeat share what is left
+of it. A path outside the project, an unchanged name, or a `/me` with
+no single project leaves the original error as it was.
+
+**Reason:** after the owner's handle was renamed, every running
+`maity wait` stopped with `not_found`. Each agent needed a manual
+`maity resume`, and an agent that does not watch its wait loop stays
+deaf until someone notices. `GET /me` is a read with no side effects
+and already serves as the CLI's source for the full name (entry
+156050f1). A `not_found` for a card that really does not exist costs one
+read more.
+
+**Rejected alternatives:**
+- `POST /me/resume` as the lookup (the first proposal): it opens a new
+  session and moves the event cursor, which is a side effect in the
+  middle of an unrelated command.
+- Matching `/me` by slug: a project rename changes the slug too. The
+  credential is bound to one project, so the one listed is the answer.
+- Repeating the whole command: a command with several writes could
+  repeat the ones that had already gone through.
 
 ## Free text from standard input or a file; inline text that the shell ate is warned about, not refused
 

@@ -17,7 +17,6 @@ from fastapi import APIRouter, BackgroundTasks, Body, Query, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import Connection, Engine, and_, delete, insert, or_, select, update
-from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
 from maity_hub import (
@@ -29,7 +28,7 @@ from maity_hub import (
 )
 from maity_hub import tables as t
 from maity_hub.admin import instance_admin_id
-from maity_hub.auth import passwords
+from maity_hub.auth import passwords, second_factor
 from maity_hub.auth.caller import require_secure_transport
 from maity_hub.deps import HumanCaller, engine_of, origin_of, settings_of
 from maity_hub.errors import ApiError, forbidden, invalid, not_found, rate_limited
@@ -154,6 +153,7 @@ def _store(
     normalized = registration.normalized(given)
     pair = f"{normalized}\x00{source}"
     over = BY_PAIR_SHORT.hit(pair) or BY_PAIR_DAY.hit(pair) or BY_ADDRESS_DAY.hit(normalized)
+    address.prepare(engine, hub.secret_key)  # before the lock's transaction
     with engine.begin() as conn:
         now = clock.now()
         conn.execute(
@@ -174,9 +174,11 @@ def _store(
             registration.DROPPED.add()
             return
         if _has_account(conn, normalized):
-            registration_mail.send(conn, kind="already_registered", to=given)
+            registration_mail.send(
+                conn, kind="already_registered", to=given, language=language, hub=hub
+            )
             return
-        lock_address(conn, normalized)
+        lock_address(conn, hub.secret_key, normalized)
         _void_earlier(conn, normalized, source, now)
         pending_id = new_id("pending_registration")
         terms = resolved.value("terms")
@@ -195,31 +197,23 @@ def _store(
                 expires_at=now + registration.PENDING_FOR,
             )
         )
-        registration_mail.send(conn, kind="register_link", to=given, pending_id=pending_id)
+        registration_mail.send(conn, kind="register_link", to=given, pending_id=pending_id, hub=hub)
 
 
 def _has_account(conn: Connection, normalized: str) -> bool:
-    """Whether the address is an account's verified address (§18.4). Accounts carry no
-    address until the notification settings store them (#280); then this looks there."""
-    del conn, normalized
-    return False
+    """Whether the address is an account's verified address (§18.4)."""
+    from maity_hub.notifications import preferences
+
+    return preferences.has_verified_address(conn, normalized)
 
 
-def lock_address(conn: Connection, normalized: str) -> None:
+def lock_address(conn: Connection, secret_key: bytes | None, normalized: str) -> None:
     """Serialise what changes one address's pending registrations (§2.7.1): its row in
     `registration_lock`, made if absent, then locked until commit. Two requests for one
     address cannot both count four live ones and leave six, or both stay live from one
-    source. The claim at completion takes the account address lock (§18.4) as well."""
-    try:
-        with conn.begin_nested():
-            conn.execute(insert(t.registration_lock).values(address_normalized=normalized))
-    except IntegrityError:
-        pass  # it exists; lock it below
-    conn.execute(
-        select(t.registration_lock.c.address_normalized)
-        .where(t.registration_lock.c.address_normalized == normalized)
-        .with_for_update()
-    )
+    source. The claim at completion takes the account address lock (§18.4) as well. The
+    row holds the address's HMAC, never the address (`addresses.lock_key`)."""
+    address.take_lock(conn, t.registration_lock, address.lock_key(conn, secret_key, normalized))
 
 
 def _void_earlier(conn: Connection, normalized: str, source: str, now: Any) -> None:
@@ -274,6 +268,7 @@ def patch_settings(
 ) -> JSONResponse:
     with engine_of(request).begin() as conn:
         _require_admin(conn, caller)
+        second_factor.require_step_up(conn, settings_of(request), caller)  # §2.8.4
         ready = registration.mail_ready(conn, settings_of(request))
         registration.patch(conn, _environment(request), ready, body, caller.principal_id)
         return JSONResponse(registration.view(conn, _resolved(conn, settings_of(request))))

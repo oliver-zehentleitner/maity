@@ -179,6 +179,8 @@ def post_memory(slug: str, body: EntryIn, request: Request, caller: AnyCaller) -
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
+        if mine.trust == "guest":  # writes no memory at all, its own team's included (§2.3)
+            raise forbidden("tasks:write", "a guest writes no memory")
         if body.store == "team":
             if mine.kind != "agent":
                 raise forbidden(message="team memory is written by the team's agents")
@@ -253,6 +255,8 @@ def delete_memory(
             # is also what keeps an admin agent from deleting another team's memory.
             if not memory.reads_team(conn, mine, memory.member(conn, row.team_membership)):
                 raise not_found()
+            if mine.trust == "guest":
+                raise forbidden("tasks:write", "a guest writes no memory")
         elif mine.kind == "agent":
             raise humans_only("agents never delete community memory; propose a replacement")
         else:

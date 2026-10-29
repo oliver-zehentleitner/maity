@@ -24,7 +24,7 @@ from maity_hub.deps import AnyCaller, engine_of, reader_of, settings_of, wait_of
 from maity_hub.errors import forbidden, humans_only, invalid, not_found, unauthenticated
 from maity_hub.namespace import ProjectRoute
 from maity_hub.notifications import items, listing, positions
-from maity_hub.notifications.items import KINDS, REMOVED_KINDS, Item, Scope
+from maity_hub.notifications.items import KINDS, Item, Scope
 from maity_hub.notifications.positions import Position
 from maity_hub.views import task_view
 
@@ -83,12 +83,9 @@ def _require_live(conn: Connection, session_hash: str) -> None:
 
 
 def _kinds(values: set[str] | None) -> set[str] | None:
-    """§18.2: a kind removed on 2026-10-26 is `removed_kind`, any other unknown one
-    `unknown`."""
+    """§18.2: a kind this hub does not know is `unknown`."""
     if values is None:
         return None
-    if values & set(REMOVED_KINDS):
-        raise invalid({"kind": "removed_kind"})
     if not values <= set(KINDS):
         raise invalid({"kind": "unknown"})
     return values
@@ -198,9 +195,22 @@ def _answer(
     hub = settings_of(request)
     since = _open(conn, request, human_id, after, "after") if after is not None else None
     where = items.scope(conn, human_id, hub.public_url)
-    found = items.derive(conn, where)
-    answer: dict[str, Any] = listing.counts(conn, where, found)
     project_ids = _project_ids(conn, slugs)
+
+    def wanted(item: Item) -> bool:
+        """What a page can list: the filters, and the side of the cursor or of `after`."""
+        if listing.select_items([item], kinds=kinds, projects=project_ids, unread=unread) == []:
+            return False
+        if since is not None:
+            return not listing.behind(item, since, where)
+        return older is None or item.order < older
+
+    # A page needs `limit` items and to know whether one more follows; the counts read no
+    # chat item. So the plain chat messages are derived only as far as the page reaches.
+    found = items.derive_page(
+        conn, where, count=limit + 1, newest_first=since is None, wanted=wanted
+    )
+    answer: dict[str, Any] = listing.counts(conn, where, found)
     chosen = listing.select_items(found, kinds=kinds, projects=project_ids, unread=unread)
     head = listing.head(conn, where)
     next_cursor = None
@@ -221,7 +231,8 @@ def _answer(
         if limit and len(newest) > limit:
             next_cursor = listing.cursor_of(page[-1])
         next_position = head
-    answer["items"] = [items.view(conn, where, item) for item in page]
+    shared: dict[Any, Any] = {}
+    answer["items"] = [items.view(conn, where, item, shared) for item in page]
     answer["next_cursor"] = next_cursor
     answer["next_after"] = positions.issue(conn, hub.secret_key, human_id, next_position)
     answer["server_time"] = clock.rfc3339(clock.now())

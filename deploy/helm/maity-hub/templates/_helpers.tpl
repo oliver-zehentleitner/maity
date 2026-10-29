@@ -107,8 +107,8 @@ the cluster.
 {{- end -}}
 
 {{/*
-The environment the hub and the migrate Job share. The database URL and the
-forge token come from Secrets by reference; their values never pass through
+The environment the hub and the migrate Job share. The database URL, the
+forge token, the instance key, the mail signing key and the SMTP password come from Secrets by reference; their values never pass through
 the chart.
 */}}
 {{- define "maity-hub.env" -}}
@@ -123,6 +123,47 @@ the chart.
     secretKeyRef:
       name: {{ . }}
       key: {{ $.Values.forge.github.key }}
+{{- end }}
+{{- with .Values.secretKey.existingSecret }}
+- name: MAITY_SECRET_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ . }}
+      key: {{ $.Values.secretKey.key }}
+{{- end }}
+{{- with .Values.mail.signingKeySecret.existingSecret }}
+- name: MAITY_MAIL_SIGNING_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ . }}
+      key: {{ $.Values.mail.signingKeySecret.key }}
+{{- end }}
+{{- with .Values.mail.host }}
+- name: MAITY_SMTP_HOST
+  value: {{ . | quote }}
+- name: MAITY_SMTP_PORT
+  value: {{ $.Values.mail.port | toString | quote }}
+- name: MAITY_SMTP_TLS
+  value: {{ $.Values.mail.tls | quote }}
+{{- with $.Values.mail.username }}
+- name: MAITY_SMTP_USERNAME
+  value: {{ . | quote }}
+{{- end }}
+{{- with $.Values.mail.passwordSecret.existingSecret }}
+- name: MAITY_SMTP_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ . }}
+      key: {{ $.Values.mail.passwordSecret.key }}
+{{- end }}
+{{- with $.Values.mail.from }}
+- name: MAITY_SMTP_FROM
+  value: {{ . | quote }}
+{{- end }}
+{{- with $.Values.mail.replyTo }}
+- name: MAITY_SMTP_REPLY_TO
+  value: {{ . | quote }}
+{{- end }}
 {{- end }}
 - name: MAITY_PUBLIC_URL
   value: {{ include "maity-hub.publicUrl" . | quote }}

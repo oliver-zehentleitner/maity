@@ -51,7 +51,7 @@ def mailed(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
     monkeypatch.setattr(
         registration_mail,
         "send",
-        lambda conn, *, kind, to, pending_id=None: sent.append((kind, to)),
+        lambda conn, *, kind, to, pending_id=None, **_: sent.append((kind, to)),
     )
     return sent
 
@@ -116,7 +116,7 @@ def test_an_owner_issues_one_and_its_url_is_shown_once(
     owner: flow.Human, migrated: Engine, mailed: list[tuple[str, str]]
 ) -> None:
     made = issue(owner, address="Anna@Example.org", note="You review the web side.")
-    assert made["id"].startswith("inv-") and made["role"] == "member"
+    assert made["id"].startswith("inv-") and (made["trust"], made["role"]) == ("member", "coder")
     assert made["url"].startswith("https://hub.example/#/invite/")
     assert len(token_of(made)) == 22
     expires = datetime.fromisoformat(made["expires_at"]) - datetime.fromisoformat(
@@ -131,7 +131,12 @@ def test_an_owner_issues_one_and_its_url_is_shown_once(
         row = conn.execute(select(t.invitation)).one()
     assert row.token_hash != token_of(made) and row.address_normalized == "anna@example.org"
     [created] = kinds(migrated)
-    assert created.payload == {"id": made["id"], "role": "member", "address_bound": True}
+    assert created.payload == {
+        "id": made["id"],
+        "trust": "member",
+        "role": "coder",
+        "address_bound": True,
+    }
     assert created.audience == [f"member:{owner.id}"]
 
 
@@ -148,9 +153,11 @@ def test_what_issuing_refuses(
     assert owner.post(PATH, {"role": "boss"}).status_code == 400
     admin = member(make_client, migrated, "an-admin", "admin")
     assert issue(admin, role="reviewer")["role"] == "reviewer"
-    for role in ("admin", "owner"):  # only the owner grants these
-        assert admin.post(PATH, {"role": role}).status_code == 403
-    assert issue(owner, role="owner")["role"] == "owner"
+    assert owner.post(PATH, {"role": "member"}).status_code == 400  # the old single role
+    for body in ({"trust": "admin"}, {"trust": "owner"}, {"trust": "admin", "role": "proxy"}):
+        refused = admin.post(PATH, body)
+        assert (refused.status_code, reason(refused)) == (403, "owner_only")
+    assert issue(owner, trust="owner")["trust"] == "owner"
     plain = member(make_client, migrated, "a-member")
     assert plain.post(PATH, {}).status_code == 403
     assert plain.get(PATH).status_code == 403
@@ -254,6 +261,7 @@ def test_the_page_says_who_invites_to_what(owner: flow.Human, make_client: Clien
             "name": "Maity",
             "logo_url": None,
         },
+        "trust": "member",
         "role": "reviewer",
         "invited_by": {"display_name": shown.json()["invited_by"]["display_name"]},
         "note": "Welcome.",
@@ -343,8 +351,10 @@ def test_accepting_makes_a_member_and_uses_the_invitation(
     guest = flow.human(make_client, migrated, "guest")
     joined = accept(guest, token_of(made))
     assert joined.status_code == 201, joined.text
-    assert (joined.json()["id"], joined.json()["role"], joined.json()["kind"]) == (
+    shown = joined.json()
+    assert (shown["id"], shown["trust"], shown["role"], shown["kind"]) == (
         guest.id,
+        "member",
         "reviewer",
         "human",
     )
@@ -439,7 +449,7 @@ def test_an_issuer_who_lost_the_authority_voids_it(
     made = issue(admin)
     with migrated.begin() as conn:  # demoted between issue and accept
         conn.execute(
-            update(t.membership).where(t.membership.c.human_id == admin.id).values(role="member")
+            update(t.membership).where(t.membership.c.human_id == admin.id).values(trust="member")
         )
     guest = flow.human(make_client, migrated, "guest")
     void = accept(guest, token_of(made))
@@ -448,7 +458,12 @@ def test_an_issuer_who_lost_the_authority_voids_it(
     assert listed["voided_at"] and listed["used_at"] is None
     voided = kinds(migrated)[-1]
     assert voided.kind == "invitation_voided" and f"member:{admin.id}" in voided.audience
-    assert voided.payload == {"id": made["id"], "role": "member", "address_bound": False}
+    assert voided.payload == {
+        "id": made["id"],
+        "trust": "member",
+        "role": "coder",
+        "address_bound": False,
+    }
     assert accept(guest, token_of(made)).status_code == 404
 
 
@@ -456,10 +471,10 @@ def test_an_owner_invitation_needs_the_issuer_still_owner(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
     second = member(make_client, migrated, "co-owner", "owner")
-    made = issue(second, role="admin")
+    made = issue(second, trust="admin")
     with migrated.begin() as conn:
         conn.execute(
-            update(t.membership).where(t.membership.c.human_id == second.id).values(role="admin")
+            update(t.membership).where(t.membership.c.human_id == second.id).values(trust="admin")
         )
     guest = flow.human(make_client, migrated, "guest")
     assert reason(accept(guest, token_of(made))) == "invitation_void"

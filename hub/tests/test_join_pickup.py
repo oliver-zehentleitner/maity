@@ -221,7 +221,7 @@ def test_the_event_names_the_pickup_and_never_the_code(setup: Setup) -> None:
         audience = conn.execute(
             select(t.event.c.audience).where(t.event.c.kind == "join_picked_up")
         ).scalar_one()
-    assert audience == [f"member:{setup.owner.id}", "role:owner"]
+    assert audience == [f"member:{setup.owner.id}", "trust:owner"]
 
 
 def test_another_runner_does_not_pick_it_up(setup: Setup, make_client: ClientFactory) -> None:
@@ -496,7 +496,7 @@ def _row(kind: str, audience: list[str]) -> Any:
 
 
 def test_a_supervised_session_wakes_on_less() -> None:
-    me = SimpleNamespace(id=7, role="member", agent_id="agt-b")
+    me = SimpleNamespace(id=7, trust="member", role="coder", agent_id="agt-b")
     for kind, audience, plain, supervised in (
         ("task_created", ["all"], True, False),
         ("state_changed", ["all"], True, True),
@@ -504,7 +504,7 @@ def test_a_supervised_session_wakes_on_less() -> None:
         ("message", ["member:agt-b"], True, True),
         ("message", ["all", "member:agt-b"], True, True),
         ("message", ["all", "member:hum-a"], True, False),  # the sender's own term
-        ("message", ["role:member"], True, True),
+        ("message", ["role:coder"], True, True),
     ):
         row = _row(kind, audience)
         assert events.wakes(row, me, "agt-b") is plain, kind

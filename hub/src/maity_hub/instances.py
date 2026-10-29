@@ -16,7 +16,7 @@ from typing import Any, Literal
 from pydantic import Field
 from sqlalchemy import Connection, func, select, update
 
-from maity_hub import clock, namespace
+from maity_hub import clock, commitment, namespace
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
@@ -24,6 +24,7 @@ from maity_hub.errors import ApiError, invalid, not_found
 from maity_hub.events import Actor, emit
 from maity_hub.ids import new_instance_id
 from maity_hub.models import Strict
+from maity_hub.scopes import tokens_of
 
 INSTANCE_PATTERN = re.compile(r"[2-9a-hjkmnp-z]{4,5}")
 MAX_INSTANCES = 16
@@ -231,6 +232,12 @@ def views(
     rows = {m.id: m for m in members if m.agent_id is not None}
     if not rows:
         return {}
+    projects = {
+        p.id: p
+        for p in conn.execute(
+            select(t.project).where(t.project.c.id.in_({m.project_id for m in rows.values()}))
+        )
+    }
     credentials = conn.execute(
         select(t.credential)
         .where(t.credential.c.membership_id.in_(list(rows)), t.credential.c.revoked_at.is_(None))
@@ -264,6 +271,12 @@ def views(
                         "id": session.id,
                         "started_at": clock.rfc3339(session.started_at),
                         "listening": is_listening,
+                        # When the 10 minutes ran out, while an episode is open (§5.3).
+                        "not_listening_since": (
+                            clock.rfc3339(session.not_listening_since)
+                            if session.not_listening_since is not None
+                            else None
+                        ),
                     }
                     if session
                     else None
@@ -280,6 +293,7 @@ def views(
                 "replaces": c.replaces,
                 "created_at": clock.rfc3339(c.created_at),
                 "revoked_at": None,
+                **commitment.instance_fields(projects[member.project_id], c),
             }
         )
         found[member.id].append(view)
@@ -451,7 +465,7 @@ def team_wakes(
             )
         )
         if m.id != actor_membership
-        and (f"member:{m.agent_id}" in audience or f"role:{m.role}" in audience)
+        and (f"member:{m.agent_id}" in audience or bool(tokens_of(m.trust, m.role) & set(audience)))
     ]
     if not teams:
         return None

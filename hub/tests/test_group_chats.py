@@ -486,7 +486,7 @@ def test_a_demotion_that_commits_first_ends_the_blind_redaction(
 
     def demoted_meanwhile(conn: Any, project: str) -> Any:
         conn.execute(
-            update(t.membership).where(t.membership.c.human_id == admin.id).values(role="member")
+            update(t.membership).where(t.membership.c.human_id == admin.id).values(trust="member")
         )
         return real(conn, project)
 

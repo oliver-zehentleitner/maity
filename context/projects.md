@@ -333,21 +333,24 @@ hands out instructions and a path, and the settings stay in
 A project is addressed as `<owner>/<slug>` — in the API
 (`/projects/{owner}/{slug}/…`), the dashboard, the badge, the swarm page
 and every reference shown outside the project. The namespace owner is
-one human, the creator; a slug is unique within that namespace only. A
+a human or an organisation (see 33f520b9-5aaa-4aed-96f4-e90bf3749c56),
+the creator or the organisation it names; a slug is unique within that
+namespace only. A
 rename or a transfer keeps the old full name as an alias that is never
 given away; a request on an alias is served like one on the current
-name. The one-segment API routes are dropped in the same release, hub
-and CLI together, and an older CLI is told `client_outdated` instead of
-being misrouted. That works without guessing because a slug may never be
-one of the words that follow a project in a route, so an old path always
-shows a route word where a new one has a slug; for the same reason the
-dashboard's own route words are reserved as handles. Badges, the swarm
-page, the dashboard's `#/p/…` and the forge webhook keep their old
-addresses, because those sit where the hub cannot rewrite them, and
-answer an unknown or unserved slug exactly as before, so they reveal no
-project. A transfer needs the receiver's consent, and the namespace
-owner cannot be demoted or removed while the project lives under their
-name.
+name. The one-segment API routes are gone; an old path is simply
+`not_found` (the path-routing decision of 2026-10-29,
+e34ae588-4dbc-423c-8da8-29fc62436cb5, removed the `client_outdated`
+answer, the frozen `legacy_slug` and the old badge, swarm, `#/p/…` and
+webhook addresses that had been kept during the move). A slug may never
+be one of the words that follow a project in a route, and the
+dashboard's first path segments are reserved as handles (§16.11). A
+transfer needs the receiver's consent, and the namespace owner cannot be
+demoted or removed while the project lives under their name.
+The revisit point on organisations was settled by the organisations
+decision of 2026-10-28: they share this namespace as a second kind of
+owner. The aliases from a rename or a transfer stay (see e34ae588 for
+why they are a feature, not legacy).
 
 **Reason:** with self-registration on maity.team an instance-wide slug
 would let the first comer own `shop` or `blog` for everyone, the
@@ -446,8 +449,9 @@ read-only board, the team with the org chart, the swarm and the ticker;
 cards labelled 'security' stay internal until done. Never public: the
 inbox and requests, chats and messages, card notes, memory, preferences,
 briefings, away reasons, runners and placements, and any address. The
-owner's address `#/<owner>` is a public profile: avatar, name, public
-projects and their own agents with presence.
+owner's address `/<owner>` (the path-routing decision of 2026-10-29,
+e34ae588-4dbc-423c-8da8-29fc62436cb5) is a public profile: avatar, name,
+public projects and their own agents with presence.
 
 **Reason:** the maintainer orients the hosted offering on the forge
 model, where public is the free default and privacy is paid for; the
@@ -459,3 +463,87 @@ and security detail.
   public too: both offered as options and not chosen; no reason was
   given beyond the proposal's comparison with security advisories on a
   forge.
+
+## Organisations are a second kind of namespace owner beside humans, in the same owner/slug namespace; their owners own every project, admins and members only what they are added to
+
+**Id:** 33f520b9-5aaa-4aed-96f4-e90bf3749c56
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-10-28 (request req-nj9xa739bacm); the details are the contract owner's; contract in docs/api.md §6.26
+**Revisit when:** private organisations are taken up as a paid feature, or an installation on a forge organisation is to serve a Maity organisation (docs/api.md §11.4, "Follow-up")
+**See:** projects.md#projects-live-in-their-owners-namespace-ownerslug-as-on-a-forge-old-names-stay-aliases-the-change-is-made-once-in-v1-before-the-launch — 281820c9-2286-45c4-9389-603b7e8a3923 — as of 2026-10-29
+
+Any approved human may create an organisation (at most five as owner
+by default, an instance limit) and becomes its first owner. Its handle
+shares the namespace of human handles, with the same syntax, reserved
+words, uniqueness and aliases, so a project of an organisation is
+`<org>/<slug>` like any other. An organisation has owners, admins and
+members, all humans who joined by consenting to an invitation, and
+always at least one owner. Every owner holds trust owner in every
+project of the organisation, kept by the hub; admins add and remove
+members and admins and create projects; members create projects only
+when the organisation allows it. Projects move into and out of an
+organisation by the existing transfer; an owner of the receiving
+organisation speaks for it, an admin needs one owner's go. An
+organisation is deleted only while it owns no open project, and its
+handle is never released. Its page is public only by its owners' choice
+and never lists its members. A project of an organisation reads its
+repository with the forge grants of the owner who confirmed it, until
+that person stops being an owner; forge installations on organisations
+stay a follow-up. Moderation suspends the organisation, never its
+people's accounts. Private organisations come later as a paid feature.
+
+**Reason:** a team's projects should not hang on one person's account,
+and the namespace decision already foresaw organisations sharing the
+namespace of human handles, as on a forge, where users and
+organisations are both owners in one name space. Giving ownership to
+the organisation's owners alone keeps the strong project rights in few
+hands while the organisation can still grow. The details follow the
+same care. An invitation answers the same way for every handle, and
+its item carries nothing that differs between a person and nobody, so
+inviting never becomes a probe for who has an account. An organisation
+holds no forge grant of its own while forge organisation installations
+are not linked; the owner who confirms the repository lends theirs and
+is named as `confirmed_by`, so whose access reads it is always one
+named person, and it stops when they stop being an owner. A suspension
+targets the organisation, never its people, since a project report
+says nothing about each member's own conduct. The owner limit gates
+only creating an organisation: becoming an owner by invitation or
+promotion is someone else's word as well. An admin's transfer in needs
+one owner's go, because only owners carry the rights an organisation's
+projects confer. Every change of owners or projects runs under one
+lock on the organisation, so the last owner and the owners' memberships
+cannot be lost to two changes at once. Two open invitations may reach
+one human under a handle and an alias; the first `go` withdraws the
+others in the same transaction rather than the second being refused
+when it is made, because refusing it would mean resolving the typed
+value to a human and telling the inviter so, the very probe the uniform
+answer exists to prevent. Invitations for the role `owner` are revoked
+by owners only, as only owners issue them. A human who owns both
+organisations keeps their membership through a transfer between them,
+as a receiving human does, so the move is not a removal with its
+consequences followed by a join of the same person.
+
+**Rejected alternatives:**
+- Organisations in a namespace of their own (`/orgs/<x>/…`): an
+  organisation's projects would either collide with a human's of the
+  same name or need a prefix in every address; the decision was one
+  shared namespace, as forges have.
+- Automatic project membership for every organisation member: it would
+  give every member of an organisation every one of its projects,
+  however large the organisation grows; only owners get it, everyone
+  else is added per project.
+- Telling the inviter that a handle is unknown: it turns the invitation
+  into a probe for accounts.
+- A forge grant of the organisation itself: it needs an installation on
+  the forge organisation, which is a follow-up.
+- Suspending the accounts of an organisation's owners with it: it
+  punishes people for a project report without a decision on each of
+  them.
+- Refusing a second invitation that reaches an already invited human
+  under another name (`invited` resolved through aliases): it tells the
+  inviter that two names are one account.
+- Ending and re-creating a shared owner's membership on a transfer
+  between organisations: the removal's consequences (§6.2) and a
+  `member_joined` for someone who never left.

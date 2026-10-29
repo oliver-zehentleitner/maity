@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from pydantic import Field
+from pydantic import Field, StrictBool
 from sqlalchemy import Connection, func, insert, select, update
 
 from maity_hub import (
@@ -16,12 +16,14 @@ from maity_hub import (
     avatars,
     briefings,
     clock,
+    commitment,
     environment,
     events,
     group_chats,
     handles,
     idempotency,
     instances,
+    ktw_skill,
     memory,
     mentions,
     namespace,
@@ -44,6 +46,7 @@ from maity_hub.namespace import ProjectRoute
 from maity_hub.policy import CLOSED_STATES
 from maity_hub.policy import of as policy_of
 from maity_hub.routes.conversations import conversation_packet
+from maity_hub.routes.me import human_body
 from maity_hub.routes.members import PausedIn, change_of, load_member, set_paused
 from maity_hub.routes.projects import arbiter_text
 from maity_hub.scopes import listed_scopes
@@ -51,7 +54,9 @@ from maity_hub.views import (
     absence,
     event_views,
     git_identity,
+    meat_proxy_view,
     member_views,
+    memory_of,
     paused,
     principal_id,
     project_language,
@@ -96,6 +101,7 @@ OPERATIONS: list[tuple[str, str, str | None]] = [
     ("POST", "/me/resume", None),
     ("PATCH", "/me", None),
     ("POST", "/me/limit", None),
+    ("POST", "/me/keep-the-why/ack", None),
     ("GET", "/help", None),
     ("GET", "/projects", None),
     ("GET", "/projects/{owner}/{slug}", "project:read"),
@@ -146,7 +152,10 @@ class ResumeIn(Strict):
 
 
 class MePatch(Strict):
+    """An agent's `paused`, or a human's own profile switches (`meat_proxy`, §5.2)."""
+
     paused: PausedIn | None = None
+    meat_proxy: StrictBool | None = None
     handle: str | None = None  # a human's own (§6.24); an agent's is `forbidden`
 
 
@@ -209,11 +218,14 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
             )
             .values(live=None, ended_at=now)
         )
-        cursor = (
-            body.cursor
-            if body.cursor is not None
-            else (previous.acknowledged_seq if previous else 0)
-        )
+        if body.cursor is not None:
+            cursor = body.cursor
+        elif previous is not None:
+            cursor = previous.acknowledged_seq
+        else:
+            # A new instance (§6.17) starts at the project's head, not at 0: the handover
+            # replaces the backlog, and `GET …/events?after=` still serves the history (§8.3).
+            cursor = events.highest_readable(conn, mine.project.id, mine.row, caller.principal_id)
         session_id = new_id("session")
         conn.execute(
             insert(t.agent_session).values(
@@ -227,6 +239,7 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
                 user_agent=request.headers.get("user-agent"),
                 started_at=now,
                 last_seen_at=now,
+                events_at=now,  # a resume counts as a call for events (§5.3)
                 acknowledged_seq=cursor,
                 live=True,
                 env_home=body.environment.home if body.environment else None,
@@ -235,6 +248,7 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
             )
         )
         environment.refresh(conn, mine.project.id, mine.id)
+        commitment.start(conn, mine.project, caller.credential_id or "", session_id, now)
         conn.execute(
             update(t.card)
             .where(
@@ -273,6 +287,9 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
             )
         availability.reconcile_ids(conn, [mine.id], actor)
         mine = _own_membership(conn, caller)  # with the pause cleared
+        if caller.credential_id:
+            # A reminder that fell due while no session was open comes now (§6.23).
+            commitment.reconcile(conn, mine.project, now, caller.credential_id)
         packet = _packet(conn, mine, caller, body, cursor, started, session, settings)
     return packet
 
@@ -312,13 +329,25 @@ def _packet(
     rules_block: dict[str, Any] = {"version": project.rules_version, "changed": changed}
     if changed or body.supervisor is not None:  # the supervised duty is in every packet
         rules_block["markdown"] = rules.generate(
-            project, mine.role, arbiter_text(conn, project), supervised=body.supervisor is not None
+            project,
+            mine.trust,
+            mine.role,
+            arbiter_text(conn, project),
+            supervised=body.supervisor is not None,
         )
     members = conn.execute(
         select(t.membership).where(
             t.membership.c.project_id == project.id, t.membership.c.active.is_(True)
         )
     ).all()
+    meat_proxies = {
+        row.id: row.meat_proxy
+        for row in conn.execute(
+            select(t.human.c.id, t.human.c.meat_proxy).where(
+                t.human.c.id.in_([m.human_id for m in members if m.human_id is not None])
+            )
+        )
+    }
     peers = []
     areas = []
     for row, view in zip(members, member_views(conn, members), strict=True):
@@ -330,12 +359,18 @@ def _packet(
                     "kind": view["kind"],
                     "handle": view["handle"],
                     **({"name": view["name"]} if "name" in view else {}),  # agents (§6.3)
+                    "trust": view["trust"],
                     "role": view["role"],
                     "areas": view["areas"],
                     "presence": view["presence"],
                     "paused": view["paused"],
                     "availability": view["availability"],  # §6.12
                     "covered_by": view["covered_by"],
+                    # Write to a human in their language (§5.2, §6.2).
+                    **({"language": view["language"]} if "language" in view else {}),
+                    **(
+                        meat_proxy_view(meat_proxies[view["id"]]) if view["kind"] == "human" else {}
+                    ),
                 }
             )
     peers.sort(key=lambda p: (p["kind"] != "human", p["handle"]))
@@ -368,7 +403,7 @@ def _packet(
         for view in instances.views(conn, [mine.row], {agent.id: agent.handle}).get(mine.id, [])
         if view["id"] != caller.instance
     ]
-    scopes = listed_scopes(mine.role, "agent")
+    scopes = listed_scopes(mine.trust, mine.role, "agent")
     # Below the rules, never a permission (§19.4); the owner's text once, here or there.
     preferences_block, owner_preferences = preferences.packet(conn, mine, cursor)
     written = briefings.writers(conn, {mine.row.briefing_by} if mine.row.briefing_by else set())
@@ -398,10 +433,11 @@ def _packet(
             "avatar_url": avatars.urls(conn, [agent.id])[agent.id],
             "instance": caller.instance,
             "address": instances.address(agent.id, caller.instance or ""),
-            "owner": {"id": owner.id, "handle": owner.handle},
+            "owner": {"id": owner.id, "handle": owner.handle, **meat_proxy_view(owner.meat_proxy)},
             "git_identity": git_identity(agent),
         },
         "membership": {
+            "trust": mine.trust,
             "role": mine.role,
             "reports_to": principal_id(conn, mine.row.reports_to),
             "areas": mine.row.areas,
@@ -429,14 +465,20 @@ def _packet(
             "repository": repository(project, settings),
             "policy": policy_of(project),
             "absence": absence(project),
-            "keep_the_why": project.keep_the_why,
+            "memory": memory_of(project),
             "rules_version": project.rules_version,
         },
         "rules": rules_block,
         "preferences": preferences_block,
         "areas": areas,
         "keep_the_why": {
-            "enabled": project.keep_the_why,
+            **ktw_skill.loading_block(
+                project,
+                settings,
+                conn.execute(
+                    select(t.credential).where(t.credential.c.id == caller.credential_id)
+                ).one(),
+            ),
             "instruction": KEEP_THE_WHY_INSTRUCTION if project.keep_the_why else None,
         },
         "claims": task_views(conn, held, fg),
@@ -451,7 +493,9 @@ def _packet(
         },
         "conversations": conversation_packet(conn, mine, caller),
         "peers": peers,
-        "operations": operations(project, mine.role, namespace.full_name(conn, project)),
+        "operations": operations(
+            project, mine.trust, mine.role, namespace.full_name(conn, project)
+        ),
     }
 
 
@@ -524,10 +568,10 @@ def _requests_block(conn: Connection, mine: Membership, cursor: int) -> dict[str
     }
 
 
-def operations(project: Any, role: str, full_name: str) -> list[str]:
+def operations(project: Any, trust: str, role: str, full_name: str) -> list[str]:
     allowed = []
     for method, path, scope in OPERATIONS:
-        if scope is not None and scope not in listed_scopes(role, "agent"):
+        if scope is not None and scope not in listed_scopes(trust, role, "agent"):
             continue
         if project.state in CLOSED_STATES and (
             path.endswith("/claim") or (method == "POST" and path.endswith("/tasks"))
@@ -537,42 +581,104 @@ def operations(project: Any, role: str, full_name: str) -> list[str]:
     return allowed
 
 
+@router.post("/me/keep-the-why/ack")
+def acknowledge_keep_the_why(request: Request, caller: AgentCaller) -> JSONResponse:
+    """The calling instance confirms the Keep the Why commitment (§6.23): once, and a
+    second call answers the first record."""
+    return JSONResponse(retrying(lambda: _acknowledge(request, caller)))
+
+
+def _acknowledge(request: Request, caller: Caller) -> dict[str, Any]:
+    with events.transaction(engine_of(request)) as conn:
+        mine = _own_membership(conn, caller)
+        project = events.lock_project(conn, mine.project.id)
+        if not commitment.required(project):
+            raise ApiError(
+                409,
+                "keep_the_why_not_required",
+                "this project does not require the Keep the Why commitment",
+            )
+        credential = _credential(conn, caller)
+        if credential.ktw_acknowledged_at is not None:
+            return {
+                "acknowledged_at": ts(credential.ktw_acknowledged_at),
+                "instance": caller.instance,
+                "session_id": credential.ktw_acknowledged_session,
+            }
+        session_id = conn.execute(
+            select(t.agent_session.c.id).where(
+                t.agent_session.c.credential_id == caller.credential_id,
+                t.agent_session.c.live.is_(True),
+            )
+        ).scalar()
+        now = clock.now()
+        conn.execute(
+            update(t.credential)
+            .where(t.credential.c.id == caller.credential_id)
+            .values(ktw_acknowledged_at=now, ktw_acknowledged_session=session_id)
+        )
+        commitment.confirmed(conn, project, credential, caller.agent_id or "")
+        events.emit(
+            conn,
+            project.id,
+            "keep_the_why_acknowledged",
+            commitment.audience(conn, project.id, caller.agent_id or ""),
+            {
+                "member_id": principal_id(conn, mine.row.id),
+                "instance": caller.instance,
+                "session_id": session_id,
+                "acknowledged_at": ts(now),
+            },
+            actor=events.Actor(
+                mine.row.id, session_id, caller.credential_id, caller.via, None, None
+            ),
+        )
+        return {"acknowledged_at": ts(now), "instance": caller.instance, "session_id": session_id}
+
+
 def _credential(conn: Connection, caller: Caller) -> Any:
     return conn.execute(select(t.credential).where(t.credential.c.id == caller.credential_id)).one()
 
 
-def _human_me(conn: Connection, human_id: str) -> dict[str, Any]:
-    from maity_hub.routes.me import human_body
-
+def load_human_profile(conn: Connection, human_id: str) -> dict[str, Any]:
+    """A human's `PATCH /me` answer: `/me` as it is now (§5.1), also on a replay."""
     return {**human_body(conn, human_id), "server_time": clock.rfc3339(clock.now())}
 
 
-idempotency.LOADERS["me"] = idempotency.plain(_human_me)
+idempotency.LOADERS["human_profile"] = idempotency.plain(load_human_profile)
 
 
 @router.patch("/me")
 def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse:
-    if caller.kind == "human":  # a human renames themselves (§6.24)
+    given = body.model_fields_set
+
+    def human_action(conn: Connection) -> idempotency.Outcome:
+        if "paused" in given:
+            raise invalid({"paused": "agents_only"})
+        if body.meat_proxy is None and body.handle is None:
+            raise invalid({"meat_proxy": "required"}, "nothing to change")
         assert caller.human_id is not None
-        human_id = caller.human_id
-
-        def rename(conn: Connection) -> idempotency.Outcome:
-            if body.handle is None:
-                raise invalid({"handle": "required"})
-            done = handles.rename(conn, human_id, None, body.handle)
+        if body.handle is not None:  # a human renames themselves (§6.24)
+            done = handles.rename(conn, caller.human_id, None, body.handle)
             if done is not None:
-                handles.announce(conn, caller, human_id, None, *done)
-            return idempotency.Outcome(200, "me", human_id, _human_me(conn, human_id))
-
-        return idempotency.run(engine_of(request), request, caller, rename)
-    if caller.kind != "agent":
-        raise forbidden()
-    if body.handle is not None:  # nobody renames an agent but its owner (§2.3, §6.24)
-        raise humans_only("only the owner of an agent profile renames its handle")
-    if "paused" not in body.model_fields_set:
-        raise invalid({"paused": "required"})
+                handles.announce(conn, caller, caller.human_id, None, *done)
+        if body.meat_proxy is not None:
+            conn.execute(
+                update(t.human)
+                .where(t.human.c.id == caller.human_id)
+                .values(meat_proxy=body.meat_proxy)
+            )
+        return idempotency.Outcome(
+            200, "human_profile", caller.human_id, load_human_profile(conn, caller.human_id)
+        )
 
     def action(conn: Connection) -> idempotency.Outcome:
+        if "meat_proxy" in given:
+            raise humans_only("only a human sets their own profile")
+        if body.handle is not None:  # nobody renames an agent but its owner (§2.3, §6.24)
+            raise humans_only("only the owner of an agent profile renames its handle")
+        if "paused" not in given:
+            raise invalid({"paused": "required"}, "nothing to change")
         mine = _own_membership(conn, caller)
         credential = _credential(conn, caller)
         for row in (mine.row, credential):
@@ -598,4 +704,8 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
         )
         return idempotency.Outcome(200, "member", str(mine.id), load_member(conn, str(mine.id)))
 
-    return idempotency.run(engine_of(request), request, caller, action)
+    if caller.kind not in ("human", "agent"):
+        raise forbidden(message="this endpoint is for humans and agent credentials")
+    return idempotency.run(
+        engine_of(request), request, caller, human_action if caller.kind == "human" else action
+    )

@@ -15,7 +15,7 @@ from sqlalchemy import Connection, select
 
 from maity_hub import tables as t
 from maity_hub.replies import replies
-from maity_hub.scopes import has_scope
+from maity_hub.scopes import has_scope, tokens_of
 
 
 def may_read_request(request: Any, member: Any) -> bool:
@@ -23,7 +23,7 @@ def may_read_request(request: Any, member: Any) -> bool:
     the member asked for, the addressee (a member, the owner, every holder of the role),
     and whoever holds `requests:answer`."""
     membership_id = getattr(member, "membership_id", None) or member.id
-    role = member.role
+    trust, role = member.trust, member.role
     kind = getattr(member, "kind", None)
     if kind not in ("human", "agent"):
         kind = "agent" if member.agent_id else "human"
@@ -31,11 +31,11 @@ def may_read_request(request: Any, member: Any) -> bool:
         return True
     if request.to_kind == "member" and request.to_member == membership_id:
         return True
-    if request.to_kind == "owner" and role == "owner":
+    if request.to_kind == "owner" and trust == "owner":
         return True
-    if request.to_kind == "role" and request.to_role == role:
+    if request.to_kind == "role" and request.to_role in tokens_of(trust, role):
         return True
-    return has_scope(role, kind, "requests:answer")
+    return has_scope(trust, role, kind, "requests:answer")
 
 
 def _decision_request(row: Any) -> str | None:
@@ -71,7 +71,7 @@ def withheld(conn: Connection, rows: Sequence[Any], membership: Any) -> frozense
 
 def sees_everyones(reader: Any) -> bool:
     """Human owners and admins see every member's reasons and subscription (§17.5, §17.8)."""
-    return reader is not None and reader.kind == "human" and reader.role in ("owner", "admin")
+    return reader is not None and reader.kind == "human" and reader.trust in ("owner", "admin")
 
 
 def details(conn: Connection, rows: Sequence[Any]) -> dict[int, dict[str, Any]]:

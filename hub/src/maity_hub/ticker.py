@@ -20,6 +20,7 @@ from sqlalchemy import Connection, insert, select, update
 
 from maity_hub import clock, events
 from maity_hub import tables as t
+from maity_hub.scopes import tokens_of
 from maity_hub.ticker_read import may_read_request, reason_of
 from maity_hub.views import event_views
 
@@ -57,6 +58,7 @@ def cut(text: str) -> str:
 class Member:
     membership_id: int
     principal: str
+    trust: str
     role: str
     kind: str  # human, agent
     areas: tuple[str, ...]
@@ -72,6 +74,7 @@ def members(conn: Connection, project_id: str) -> list[Member]:
         Member(
             r.id,
             r.agent_id or r.human_id,
+            r.trust,
             r.role,
             "agent" if r.agent_id else "human",
             tuple(r.areas or ()),
@@ -103,12 +106,13 @@ def area_owner(people: Sequence[Member], path: str) -> tuple[Member, str] | None
 
 
 def resolve(people: Sequence[Member], token: str) -> list[Member]:
-    """`member:<id>`, `role:<role>`, `area:<path>` (§17.6); nobody for what names nobody."""
+    """`member:<id>`, `role:<role>`, `trust:<trust>`, `area:<path>` (§17.6); nobody for
+    what names nobody."""
     kind, _, value = token.partition(":")
     if kind == "member":
         return [m for m in people if m.principal == value]
-    if kind == "role":
-        return [m for m in people if m.role == value]
+    if kind in ("role", "trust"):
+        return [m for m in people if token in tokens_of(m.trust, m.role)]
     if kind == "area":
         owner = area_owner(people, value)
         return [owner[0]] if owner else []
@@ -427,6 +431,31 @@ def on_release_done(
         subject=("task", card.id),
         dedupe_key=f"release:{version}",
         facts={"release": {"task_id": card.id, "version": version}, "tasks": [card.id]},
+    )
+
+
+def write_rename(
+    conn: Connection,
+    project_id: str,
+    old: str,
+    new: str,
+    actor: events.Actor | None,
+    by: str | None,
+) -> None:
+    """`<old> is now <new>` (§17.1): a handle's rename (§6.24) or a project's rename or
+    transfer (§6.25). Its audience is `all` alone, so it is listed for every member and
+    wakes nobody; it is written whether the ticker is on or not, since it is no forge
+    source, and has no dedupe key."""
+    write(
+        conn,
+        project_id,
+        kind="rename",
+        text=f"{old} is now {new}",
+        url=None,
+        audience=Audience(),
+        origin="hub",
+        actor=actor,
+        actor_principal=by,
     )
 
 
@@ -816,8 +845,8 @@ def write_merge(
                 for m in resolve(people, token):
                     audience.add(m.principal, f"contract_implementer:{section}")
         for m in people:
-            if m.role == "admin":
-                audience.add(m.principal, "role:admin")
+            if "trust:admin" in tokens_of(m.trust, m.role):
+                audience.add(m.principal, "trust:admin")
     apply_subscriptions(
         conn, people, audience, "merge", contract is not None, [*merge.paths, *areas]
     )
@@ -904,27 +933,4 @@ def write_deploy(
                 "log_url": log_url,
             }
         },
-    )
-
-
-def write_rename(
-    conn: Connection,
-    project_id: str,
-    old: str,
-    new: str,
-    member_id: str,
-    actor: events.Actor | None,
-) -> int | None:
-    """`<old> is now <new>` (§6.24, §17.1): a human's handles or an agent's global names.
-    Listed for every member, waking no one, written whether the ticker is on or not."""
-    return write(
-        conn,
-        project_id,
-        kind="rename",
-        text=f"{old} is now {new}",
-        url=None,
-        audience=Audience(),
-        origin="hub",
-        actor=actor,
-        subject=("member", member_id),
     )

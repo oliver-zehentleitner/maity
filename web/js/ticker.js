@@ -15,7 +15,8 @@ window.Maity = window.Maity || {};
   const { h, append, clear, safeUrl, formatTime } = M.dom;
 
   const TYPES = [["merge", "Merges"], ["contract", "Contract changes"], ["decision", "Decisions"], ["deploy", "Deploys"], ["release", "Releases"], ["note", "Notes"]];
-  const TYPE_WORD = { merge: "Merge", decision: "Decision", deploy: "Deploy", release: "Release", note: "Note" };
+  // A rename (§6.25, "<old> is now <new>") is the hub's to write; no filter of its own (§17).
+  const TYPE_WORD = { merge: "Merge", decision: "Decision", deploy: "Deploy", release: "Release", rename: "Rename", note: "Note" };
   const TYPE_PLURAL = { merge: "merges", contract: "contract changes", decision: "decisions", deploy: "deploys", release: "releases", note: "notes" };
   const PAGE = 50;
   // How many pages of new items one live round reads at most.
@@ -36,6 +37,7 @@ window.Maity = window.Maity || {};
       case "card_assignee": return "you are assigned " + arg;
       case "contract_implementer": return arg === "*" ? "you implement the contract" : "you implement §" + arg;
       case "role": return "you are " + article(arg);
+      case "trust": return "you are " + article(arg);
       case "decision_asker": return "you asked";
       case "decision_on_behalf_of": return "it was asked for you";
       case "contract_watcher": return "you watch the contract";
@@ -298,7 +300,7 @@ window.Maity = window.Maity || {};
     const text = M.dom.sendOnCtrlEnter(h("textarea", { id: "ticker-post-text", rows: "2", required: true }));
     const url = h("input", { id: "ticker-post-url", type: "url", placeholder: "https://…" });
     const to = h("select", { id: "ticker-post-to" }, h("option", { value: "computed" }, "whom it concerns"), h("option", { value: "all" }, "everyone (wakes all)"), h("option", { value: "list" }, "these members, roles, areas"));
-    const tokens = h("input", { id: "ticker-post-tokens", placeholder: "member:agt-b role:admin area:web/" });
+    const tokens = h("input", { id: "ticker-post-tokens", placeholder: "member:agt-b trust:admin area:web/" });
     const areas = h("input", { id: "ticker-post-areas", placeholder: "hub/ web/" });
     const release = h("input", { id: "ticker-post-release", placeholder: "tsk-0050" });
     const env = h("input", { id: "ticker-post-env", placeholder: "staging" });

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import dataclasses
 import errno
 import hashlib
 import json
@@ -89,6 +90,51 @@ def _print_json(data: Any) -> None:
 _FULL_NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,62}/[a-z0-9][a-z0-9-]{0,62}", re.ASCII)
 
 
+@dataclasses.dataclass
+class ProjectClient(hub.Client):
+    """A client that follows its project to a new full name (§6.25). A `not_found` on a path
+    under the project asks `moved` once where the project is now; when it answers, the call
+    is repeated there, and every later path under the old name goes to the new one, the
+    wait loop's path built before the move included. A call with a timeout keeps to it: the
+    lookup and the repeat share what is left of it."""
+
+    moved: Callable[[str, float | None], str | None] | None = dataclasses.field(
+        default=None, repr=False
+    )
+    renamed: dict[str, str] = dataclasses.field(default_factory=dict, repr=False)
+
+    def call(
+        self,
+        method: str,
+        path: str,
+        query: Sequence[tuple[str, str]] = (),
+        body: Any = None,
+        timeout: float | None = None,
+        raw: bytes | None = None,
+        content_type: str | None = None,
+    ) -> Any:
+        path = _renamed(path, self.renamed)
+        started = time.monotonic()
+        try:
+            return super().call(method, path, query, body, timeout, raw, content_type)
+        except hub.HubError as exc:
+            if exc.code != "not_found" or self.moved is None:
+                raise
+            left = None if timeout is None else timeout - (time.monotonic() - started)
+            moved = self.moved(path, left) if left is None or left > 0 else None
+            left = None if timeout is None else timeout - (time.monotonic() - started)
+            if moved is None or (left is not None and left <= 0):
+                raise
+            return super().call(method, moved, query, body, left, raw, content_type)
+
+
+def _renamed(path: str, renamed: dict[str, str]) -> str:
+    for old, new in renamed.items():
+        if path == old or path.startswith(old + "/"):
+            return new + path[len(old) :]
+    return path
+
+
 class Session:
     """A joined clone: its state directory, its state, and a signing client for its hub.
     `on_request` is this command's `--on-request`, set once by `main` (§2.3)."""
@@ -110,7 +156,9 @@ class Session:
                 "this clone holds a credential but no hub URL; run `maity resume --hub <url>`"
             )
         key = sign.signing_key(state.read_credential(self.dir))
-        self.client = hub.Client(hub.hub_base(stored), key, on_request=Session.on_request)
+        self.client = ProjectClient(
+            hub.hub_base(stored), key, on_request=Session.on_request, moved=self._moved
+        )
 
     @property
     def project(self) -> str:
@@ -146,6 +194,40 @@ class Session:
     def project_path(self, *parts: str) -> str:
         owner, slug = self.project.split("/", 1)
         return "/".join(["", "projects", *map(hub.segment, (owner, slug, *parts))])
+
+    def _moved(self, path: str, timeout: float | None) -> str | None:
+        """Where `path` is now, when the project answered `not_found` because it has a new
+        full name (a rename of the owner or the project, a transfer): read from `GET /me`,
+        which names an agent's one project, kept in state and said once. None for a path
+        outside the project, an unchanged name, or a `/me` that does not say."""
+        full_name = self.data.get("full_name")
+        if not isinstance(full_name, str) or not _FULL_NAME.fullmatch(full_name):
+            return None
+        old = self.project_path()
+        if path != old and not path.startswith(old + "/"):
+            return None
+        try:
+            me = self.client.call("GET", "/me", timeout=timeout)
+        except hub.HubError:
+            return None
+        projects = [p for p in (_field(me, "projects") or []) if isinstance(p, dict)]
+        now = projects[0].get("full_name") if len(projects) == 1 else None
+        if not isinstance(now, str) or not _FULL_NAME.fullmatch(now) or now == full_name:
+            return None
+        self.data["full_name"] = now
+        self.data["project"] = now.split("/", 1)[1]
+        self.save()
+        new = self.project_path()
+        # Flat: every old name points at the current one (a→b→c sends a to c in one step),
+        # and a name that is current again is no longer an old one.
+        renamed = self.client.renamed
+        for key, value in list(renamed.items()):
+            if value == old:
+                renamed[key] = new
+        renamed.pop(new, None)
+        renamed[old] = new
+        _err(f"project is now {onboarding.inline(now)}; continuing there")
+        return new + path[len(old) :]
 
     def save(self) -> None:
         state.save_state(self.dir, self.data)
@@ -296,22 +378,36 @@ def cmd_join(args: argparse.Namespace) -> int:
     except state.StateError as outside:
         directory = _identity_dir(url, target, outside)
         derived = True
-    if state.has_credential(directory):
-        where = "this directory" if derived else "this clone"
+    # A derived directory that holds a credential belongs to another instance of this agent
+    # (§6.17): this one gets `<handle>#<instance>` beside it, once the exchange names it.
+    sibling = derived and state.has_credential(directory)
+    if not derived and state.has_credential(directory):
+        where = (
+            "this directory"
+            if os.environ.get(state.STATE_DIR_ENV)
+            else "this clone (its worktrees share it)"
+        )
         _err(
-            f"{where} already holds a session credential ({state.credential_path(directory)}); "
-            "run `maity resume`, or revoke the session in the dashboard and delete that file "
-            "before joining again"
+            f"{where} already holds a session credential ({state.credential_path(directory)})"
+            ". For another instance of this agent, give it a directory of its own and set it "
+            "for this join and every later command "
+            f"(`export {state.STATE_DIR_ENV}=~/.local/state/maity/<agent-handle>-<name>`); "
+            "for this instance after its session was revoked, delete that file and join again. "
+            "Nothing was sent; the join code still works"
         )
         return EXIT_ERROR
-    # Before the exchange: the code works once, so a directory that would refuse the
-    # credential afterwards must refuse it now, while the join can still be retried.
-    was = state.prepare_for_join(directory)
-    if was is not None:
-        _err(f"set {directory} to mode 0700 (it was {was:04o}): it will hold the credential")
+    if not sibling:
+        # Before the exchange: the code works once, so a directory that would refuse the
+        # credential afterwards must refuse it now, while the join can still be retried.
+        was = state.prepare_for_join(directory)
+        if was is not None:
+            _err(f"set {directory} to mode 0700 (it was {was:04o}): it will hold the credential")
     result = hub.exchange(target, code.strip(), client=args.client or hub.CLIENT)
     base = hub.accept_hub(url, result.hub)  # before anything is kept
     try:
+        if sibling:
+            directory = _instance_dir(directory, result.instance)
+            state.prepare_for_join(directory)
         path = state.write_credential(directory, result.credential)
     except (state.StateError, OSError) as exc:  # the join is spent: keep the credential
         path = state.rescue_credential(result.credential)
@@ -370,6 +466,22 @@ def cmd_join(args: argparse.Namespace) -> int:
 _PAGE_HANDLE = re.compile(r"^\| Your handle \| `([a-z0-9][a-z0-9-]{1,62})` \|$", re.MULTILINE)
 
 
+# An agent instance id (§6.17).
+_INSTANCE = re.compile(r"[2-9a-hjkmnp-z]{4,5}", re.ASCII)
+
+
+def _instance_dir(taken: Path, instance: str | None) -> Path:
+    """`<handle>#<instance>` beside the derived directory another instance holds. A hub that
+    names no instance, or a directory that already holds a credential, refuses: the caller
+    rescues the spent credential."""
+    if not isinstance(instance, str) or not _INSTANCE.fullmatch(instance):
+        raise state.StateError(f"{taken} holds another credential and the hub named no instance")
+    directory = taken.with_name(f"{taken.name}#{instance}")
+    if state.has_credential(directory):
+        raise state.StateError(f"{directory} already holds a credential")
+    return directory
+
+
 def _identity_dir(url: str, target: str, outside: Exception) -> Path:
     """Outside a Git clone and without MAITY_STATE_DIR: the agent's own directory, from the
     hub's host and the handle the join page names, so the pasted line works as it is. A page
@@ -405,6 +517,13 @@ def cmd_wait(args: argparse.Namespace) -> int:
     timeout = args.timeout or session.data.get("wait_timeout") or DEFAULT_WAIT
     if not isinstance(timeout, int) or timeout <= 0:
         raise UsageError("--timeout must be a positive number of seconds")
+    if args.kind and args.keep_cursor:
+        # Reading past an event means asking for `after` beyond it, and the hub takes
+        # `after=N` as the acknowledgement up to N (§8.3): it cannot be kept unacknowledged.
+        raise UsageError(
+            "--kind reads past other events, which acknowledges them at the hub; "
+            "it does not go with --keep-cursor"
+        )
     deadline = time.monotonic() + timeout
     cursor = session.data.get("cursor") or 0
     path = session.project_path("events")
@@ -443,18 +562,32 @@ def cmd_wait(args: argparse.Namespace) -> int:
             _err("another `maity wait` of this credential took over; this one stops")
             return EXIT_SUPERSEDED
         items = [e for e in page.get("items") or [] if isinstance(e, dict)]
+        if args.kind and items:
+            # Events of other kinds are read past, not returned: acknowledged as any read
+            # event is (unless --keep-cursor), and the wait goes on.
+            wanted = [e for e in items if e.get("kind") in args.kind]
+            if not wanted:
+                cursor = items[-1].get("seq", cursor)
+                if not args.keep_cursor:
+                    session.data["cursor"] = cursor
+                    session.save()
+                continue
+            items = wanted
         if items:
-            taken = items[:BATCH_MAX] if args.batch else items[:1]
-            if not args.keep_cursor:  # with it, the next resume still lists the events
-                session.data["cursor"] = taken[-1].get("seq", cursor)
-                session.save()
+            taken = items[:1] if args.one else items[:BATCH_MAX]
             for event in taken:
                 note = _pause_note(event, session.data.get("member_id"))
                 if note:
                     _err(note)
             for event in taken:  # one line a person reads; stdout stays the JSON scripts parse
                 _err(_event_line(event))
-            _print_json(taken if args.batch else taken[0])
+            _print_json(taken[0] if args.one else taken)
+            # Printed and flushed before the cursor moves: a wait stopped in between (a
+            # signal, a closed pipe) has acknowledged nothing it did not hand over.
+            sys.stdout.flush()
+            if not args.keep_cursor:  # with it, the next resume still lists the events
+                session.data["cursor"] = taken[-1].get("seq", cursor)
+                session.save()
             return EXIT_OK
         new_cursor = page.get("cursor")
         if isinstance(new_cursor, int) and new_cursor != cursor:
@@ -1386,7 +1519,11 @@ def cmd_messages(args: argparse.Namespace) -> int:
     show = onboarding.inline
 
     def who(member: Any) -> str:
-        return show(handles.get(member, member) if isinstance(member, str) else member)
+        if not isinstance(member, str):
+            return show(member)
+        # An instance address (§6.17) names the member before the `#`.
+        member_id, sep, instance = member.partition("#")
+        return show(handles.get(member_id, member_id) + sep + instance)
 
     if not items:
         print("no messages")
@@ -2750,8 +2887,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = add(
         "wait",
         "block until the next event for this agent arrives, or time out",
-        "Long-poll the project's events. Prints the first event addressed to this agent as JSON "
-        f"and exits {EXIT_OK}; exits {EXIT_TIMEOUT} when nothing arrived within the timeout, "
+        "Long-poll the project's events. Prints every pending event addressed to this agent "
+        f"(at most {BATCH_MAX}) as one JSON array and exits {EXIT_OK}, so a burst costs one "
+        f"wake and one request; exits {EXIT_TIMEOUT} when nothing arrived within the timeout, "
         f"{EXIT_SUPERSEDED} when another wait of this credential took over. Meant to run as a "
         "background command on harnesses that wake the agent when one exits. Never run two.",
     )
@@ -2767,8 +2905,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--batch",
         action="store_true",
-        help=f"print every pending event (at most {BATCH_MAX}) as one JSON array, not the first "
-        "one alone: one wake for a burst",
+        help="the default now: every pending event as one JSON array (kept for scripts)",
+    )
+    p.add_argument(
+        "--one",
+        action="store_true",
+        help="print only the first pending event, as a JSON object, and acknowledge only it "
+        "(the earlier default)",
+    )
+    p.add_argument(
+        "--kind",
+        action="append",
+        metavar="KIND",
+        help="return only events of this kind (repeatable, e.g. --kind message); others are "
+        "read past and acknowledged at the hub, and the wait goes on (not with --keep-cursor)",
     )
     p.add_argument(
         "--keep-cursor",

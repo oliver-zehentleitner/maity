@@ -30,7 +30,7 @@ sections from the diff), and the forge webhook: its secret sealed with
 automatic deploys. The
 instance's mail settings and the admin's test send (`docs/api.md` §16.2,
 §16.3) are in, and so is the mail outbox with its worker; the notifications
-and sign-in mails that use them follow.
+and sign-in mails use that outbox.
 A human's preferences (`docs/api.md` §19.4): one
 versioned text per human, written by the human, read by the agents of
 the projects they share (switch per project), proposed by an admin agent
@@ -39,13 +39,17 @@ detection, quoted in the resume packet (8 texts, the agent's owner first)
 and given to one agent on its membership by its owner.
 The session list (`docs/api.md` §2.6.5), the instance's sign-in settings
 (§2.6.6), the login's `next`, device codes with number matching (§2.6.2)
-and `GET /auth/methods` are in; the sign-in link follows. Notifications
+and `GET /auth/methods` are in. Mail sign-in (§2.6.3) uses a verified address,
+a scanner-safe confirmation page or a browser-bound six-digit code; both spend
+one fifteen-minute grant. It is offered only while SMTP and the signing key
+are configured and the instance method is enabled. Notifications
 (`docs/api.md` §18.1–§18.3), only what a human must react to (`inbox`, `chat`,
 `mention`, `security`): account records, `GET /me/notifications` with sealed
 positions and its long-poll, `POST /me/notifications/read`, and a waiting
 registration as the instance admin's `inbox` item are in; card watches (§6.4)
-stay but notify nobody. The notification settings (§18.4) are in, without the
-address; verified addresses and mail follow.
+stay but notify nobody. The notification settings with the verified address
+(§18.4) are in, and so are the links in mails (§18.6) and the delivery failures of an
+address (§18.7); the notification mail (§18.5) is in.
 
 Availability (`docs/api.md` §6.12): every member's computed
 `availability`, the agent's and the human's limit (`POST /me/limit`, a
@@ -86,6 +90,13 @@ Unknown, opted-out and closed projects all answer the same `not_found`.
 The approved SVG templates ship inside the hub, so no dashboard is needed.
 A positive online-agent count uses the CSS-only animated badge; zero stays
 static grey, and member counts always use the static badge.
+
+For search engines the hub serves `GET /robots.txt` and `GET /sitemap.xml` at its root
+(`docs/api.md` §16.7), without a session or a cookie and cached for an hour. While the
+instance's landing page is enabled, `robots.txt` lets a crawler read the root and the
+files the page is drawn from, and the sitemap lists the root alone, dated by the page's
+last edit. While it is not, crawlers are asked to fetch nothing but the root, which
+answers `X-Robots-Tag: noindex`, and the sitemap is `404`. The join host has neither file.
 
 ## Run it locally with plain Python
 
@@ -201,14 +212,18 @@ All settings come from the environment.
 | `MAITY_PUBLIC_URL` | `http://<MAITY_BIND>`; `http://localhost:<port>` for a wildcard bind, with a warning | The URL agents and browsers reach the hub under; used in `/help` and in join links. Set it whenever the hub is reached from elsewhere. |
 | `MAITY_JOIN_URL` | unset | An optional second hostname, `https://<host>` with no path and another host than the public URL's, that serves the agent join only (`docs/api.md` §1.1): `GET`/`POST /{token}` are the join page and the exchange, a dead token-shaped link answers a page saying so, every other `GET` is a `302` to the public start page and every other method `not_found`; no cookies there. Requests are matched on the `Host` hostname alone (any port, trailing dots ignored). Join links are built on it by default (`via`). Any other value stops the hub at startup. |
 | `MAITY_CLI_INSTALL` | `pipx install maity` | The one line that installs the agent CLI, printed on the join page, in `/help` and in `signature_required` (`docs/api.md` §3.2). Point it at a fork, for example with a `git+https://…#subdirectory=cli` URL. One line only; a line break stops the hub. |
+| `MAITY_KTW_SKILL_SOURCE` | the skill's published `latest` tree | Where the Keep the Why skill is published, as told to a joining agent in the resume packet (`docs/api.md` §6.23). An operator who mirrors the skill points it elsewhere. An `https` URL only; anything else stops the hub. |
+| `MAITY_KTW_SKILL_GUIDE` | `https://keepthewhy.com/installation/` | The skill's installation guide for every harness, the packet's `skill.guide` (`docs/api.md` §6.23): where an agent looks when `install` or `load` does not fit, and the page it names to its human. An `https` URL only; anything else stops the hub. |
 | `MAITY_AVATAR_DECODE_SECONDS` | `5` | Time budget of one avatar decode (`docs/api.md` §6.10), 0.5–120; past it the upload is refused (`undecodable`) and the kill logged. |
 | `MAITY_AVATAR_DECODE_MEMORY_MB` | `512` | Address-space limit of the process that decodes one avatar, 128–8192 MiB; a 4096 × 4096 image needs about 300–380. Past it the upload is refused (`undecodable`) and the kill logged. |
 | `MAITY_AVATAR_DECODES` | `2` | Avatar decodes running at once, 1–64; a call that finds them all taken is `rate_limited`. |
 | `MAITY_ATTACHMENT_STORE` | `local` | Where an attachment's bytes live (`docs/api.md` §8.7): `local` is built; `s3` is documented and stops the hub with a plain message; anything else stops it. |
 | `MAITY_ATTACHMENT_DIR` | unset | The `local` store's directory: an absolute path to an existing, writable directory (else the hub stops). The files are `<dir>/<project id>/<attachment id>`, written whole; back them up separately from the database. Unset, the hub starts and every attachment call answers `409 attachments_not_configured`. |
 | `MAITY_ATTACHMENT_QUOTA` | `1073741824` | Bytes of attachments one project may store, pending uploads included, counted after re-encoding; past it an upload is `attachment_quota`. |
-| `MAITY_DB_POOL_SIZE` | `5` | Pooled connections to a server database (PostgreSQL, MariaDB), 1–500. |
-| `MAITY_DB_MAX_OVERFLOW` | `10` | Connections beyond the pool when it is busy, 0–500. |
+| (the attachment sweep) | every 5 minutes | Not a setting. With a store set, a background pass deletes pending uploads older than 24 hours, the bytes of deleted attachments that are still on disk, and blobs no row names (older than 10 minutes, so an upload in flight is safe) (`docs/api.md` §8.7). |
+| `MAITY_DB_POOL_SIZE` | `16` | Pooled connections to a server database (PostgreSQL, MariaDB), 1–500. They are reused, the most recently used first. |
+| `MAITY_DB_MAX_OVERFLOW` | `16` | Connections beyond the pool when it is busy, 0–500. |
+| `MAITY_DB_POOL_RECYCLE` | `1800` | Seconds after which a pooled connection is replaced when it is next taken, 0–86400; 0 never replaces. A connect that fails because the database host name does not resolve is tried once more after a short pause. |
 | `MAITY_SECRET_KEY` | unset | The instance key for secrets stored at rest (`docs/api.md` §16.2, §17.4): 32 random bytes, base64 (`head -c 32 /dev/urandom \| base64`). AES-256-GCM, a random nonce per value and the field's name as associated data. Never in the database, never logged or returned; a value that is not 32 base64 bytes stops the hub. Without it a forge webhook secret cannot be created (`secret_key_missing`). A key that changes makes every stored secret unusable until it is set again.
 | `MAITY_TRUSTED_PROXIES` | empty | Comma-separated addresses or CIDRs of reverse proxies whose `X-Forwarded-Proto` and `X-Forwarded-For` the hub believes. Empty: forwarded headers change nothing. |
 | `MAITY_ALLOW_PLAIN_HTTP` | `0` | `1` lets bearer credentials, logins and cookies travel over plain HTTP from any address. Only for a hub reachable on one machine or a private network; logged as a warning. Without it, plain HTTP is accepted from loopback only. The cookies' `Secure` flag follows the scheme a request arrived with, whatever this says. |
@@ -218,7 +233,7 @@ All settings come from the environment.
 | `MAITY_SMTP_CA_FILE` | unset | A PEM file the server's certificate is verified against instead of the system store. Certificates are always verified. |
 | `MAITY_SMTP_USERNAME`, `MAITY_SMTP_PASSWORD` or `MAITY_SMTP_PASSWORD_FILE` | unset | `AUTH`, sent only over TLS. The password (or the file a Secret is mounted at, one trailing newline dropped) is never stored, logged or returned. |
 | `MAITY_SMTP_FROM`, `MAITY_SMTP_REPLY_TO` | unset | The sender, `maity@example.org` or `Maity <maity@example.org>`, and an optional reply address; one address each, never a list. |
-| `MAITY_MAIL_MAX_PER_HOUR`, `MAITY_MAIL_SECURITY_MAX_PER_HOUR`, `MAITY_MAIL_SIGN_IN_MAX_PER_HOUR` | `500`, `100`, `60` | The three hourly budgets: notification, security and sign-in mail, each counted on its own. |
+| `MAITY_MAIL_MAX_PER_HOUR`, `MAITY_MAIL_SECURITY_MAX_PER_HOUR`, `MAITY_MAIL_SIGN_IN_MAX_PER_HOUR`, `MAITY_MAIL_REGISTRATION_MAX_PER_HOUR` | `500`, `100`, `60`, `30` | The hourly budgets: notification, security, sign-in and registration mail, each counted on its own. |
 | `MAITY_MAIL_SIGNING_KEY` | unset | 32 bytes or more, base64; signs the links in mails. Without it the hub sends no mail. |
 | `MAITY_SMTP_ALLOW_PLAINTEXT` | `0` | **Insecure**, for a test bench only: `1` sends in clear to a server that offers no STARTTLS (still never `AUTH`). Logged as a warning at startup and at every such send. |
 | `MAITY_SIGN_IN_DEVICE_CODE`, `MAITY_SIGN_IN_EMAIL_LINK` | unset | `1` or `0`: switch a sign-in method on or off for good (`docs/api.md` §2.6.6); unset leaves it to the instance admin (default on). The password cannot be switched off. |

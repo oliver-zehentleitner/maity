@@ -12,12 +12,17 @@ from urllib.parse import urlsplit
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
-from maity_hub import secretbox
+from maity_hub import github_app, secretbox
+from maity_hub.github_app import GitHubApp
 from maity_hub.mail import environment as mail_environment
 from maity_hub.mail.environment import MailEnvironment
 
 DEFAULT_DATABASE_URL = "sqlite:///maity-hub.db"
 DEFAULT_BIND = "127.0.0.1:8080"
+KTW_SKILL_SOURCE = (
+    "https://github.com/oliver-zehentleitner/keep-the-why/tree/latest/skills/keep-the-why"
+)
+KTW_SKILL_GUIDE = "https://keepthewhy.com/installation/"
 
 _WILDCARD_HOSTS = {"0.0.0.0", "::"}
 
@@ -43,6 +48,9 @@ class Settings:
     allow_plain_http: bool = False
     # Never logged, never in a response; only whether it is set is shown (§11).
     forge_github_token: str | None = field(default=None, repr=False)
+    # MAITY_FORGE_GITHUB_APP_*: the instance's GitHub App, all five settings or none
+    # (§11.4); its key and client secret never in a repr.
+    github_app: GitHubApp | None = field(default=None, repr=False)
     # MAITY_JOIN_URL: a second hostname that serves the agent join only (§1.1).
     join_url: str | None = None
     # MAITY_CLI_INSTALL: the one line that installs the CLI, wherever the hub tells an
@@ -60,9 +68,11 @@ class Settings:
     attachment_dir: Path | None = None
     attachment_quota: int = 1024 * 1024 * 1024
     # MAITY_DB_POOL_SIZE, MAITY_DB_MAX_OVERFLOW: the server database's connection pool
-    # (SQLAlchemy's defaults, 5 + 10).
-    db_pool_size: int = 5
-    db_max_overflow: int = 10
+    # (16 + 16; SQLAlchemy's own defaults are 5 + 10, hub/context/persistence.md).
+    db_pool_size: int = 16
+    db_max_overflow: int = 16
+    # MAITY_DB_POOL_RECYCLE: seconds after which a pooled connection is replaced; 0 never.
+    db_pool_recycle: int = 1800
     # MAITY_SECRET_KEY: the instance key for secrets stored at rest (§16.2, §17.4);
     # never logged, never in a response, never in the database.
     secret_key: bytes | None = field(default=None, repr=False)
@@ -77,9 +87,18 @@ class Settings:
     # says `inherit` (§15.3, §16): keep, stop, or stop_floor (stop, and a project's keep
     # is refused).
     on_runner_revoke: str = "keep"
+    # MAITY_KTW_SKILL_SOURCE: where the Keep the Why skill is published, as told to a
+    # joining agent (§6.23); an operator who mirrors the skill points it elsewhere.
+    ktw_skill_source: str = KTW_SKILL_SOURCE
+    # MAITY_KTW_SKILL_GUIDE: the skill's installation guide for every harness, the page an
+    # agent names to its human when `install` or `load` does not fit (§6.23).
+    ktw_skill_guide: str = KTW_SKILL_GUIDE
     # MAITY_REGISTRATION*, MAITY_TERMS_*: what the environment sets for registration
     # (§16.4); None where it leaves the instance admin to decide.
     registration: Any = None
+    # MAITY_SIGN_IN_SECOND_FACTOR: off, optional or required_admins (§2.8.5); None
+    # leaves it to the instance admin.
+    sign_in_second_factor: str | None = None
 
     @property
     def join_host(self) -> str | None:
@@ -107,6 +126,7 @@ class Settings:
             web_dir_required=bool(web_dir_env),
             trusted_proxies=parse_networks(env.get("MAITY_TRUSTED_PROXIES", "")),
             forge_github_token=env.get("MAITY_FORGE_GITHUB_TOKEN") or None,
+            github_app=parse_github_app(env),
             allow_plain_http=parse_flag(
                 env.get("MAITY_ALLOW_PLAIN_HTTP", ""), "MAITY_ALLOW_PLAIN_HTTP"
             ),
@@ -124,9 +144,12 @@ class Settings:
             attachment_quota=int(
                 parse_number(env, "MAITY_ATTACHMENT_QUOTA", 1024**3, minimum=1024, maximum=2**50)
             ),
-            db_pool_size=int(parse_number(env, "MAITY_DB_POOL_SIZE", 5, minimum=1, maximum=500)),
+            db_pool_size=int(parse_number(env, "MAITY_DB_POOL_SIZE", 16, minimum=1, maximum=500)),
             db_max_overflow=int(
-                parse_number(env, "MAITY_DB_MAX_OVERFLOW", 10, minimum=0, maximum=500)
+                parse_number(env, "MAITY_DB_MAX_OVERFLOW", 16, minimum=0, maximum=500)
+            ),
+            db_pool_recycle=int(
+                parse_number(env, "MAITY_DB_POOL_RECYCLE", 1800, minimum=0, maximum=86400)
             ),
             secret_key=parse_secret_key(env.get("MAITY_SECRET_KEY", "")),
             mail=parse_mail(env),
@@ -135,8 +158,38 @@ class Settings:
             on_runner_revoke=parse_choice(
                 env, "MAITY_ON_RUNNER_REVOKE", ("keep", "stop", "stop_floor"), "keep"
             ),
+            ktw_skill_source=parse_skill_source(env.get("MAITY_KTW_SKILL_SOURCE", "")),
+            ktw_skill_guide=parse_skill_url(
+                "MAITY_KTW_SKILL_GUIDE", env.get("MAITY_KTW_SKILL_GUIDE", ""), KTW_SKILL_GUIDE
+            ),
             registration=parse_registration(env),
+            sign_in_second_factor=parse_second_factor(env),
         )
+
+
+def parse_skill_source(value: str) -> str:
+    """Unset is the skill's published tree; anything but an https URL stops the hub."""
+    return parse_skill_url("MAITY_KTW_SKILL_SOURCE", value, KTW_SKILL_SOURCE)
+
+
+def parse_skill_url(name: str, value: str, default: str) -> str:
+    """Unset is `default`; anything but an https URL stops the hub. The value ends up in
+    an agent's instructions, so a `file:` or `javascript:` URL is refused."""
+    value = value.strip()
+    if not value:
+        return default
+    parts = urlsplit(value)
+    if parts.scheme != "https" or not parts.hostname or any(c.isspace() for c in value):
+        raise ConfigError(f"{name} must be an https URL")
+    return value
+
+
+def parse_github_app(env: dict[str, str]) -> GitHubApp | None:
+    """All five App settings or none: a partial set stops the hub (§11.4)."""
+    try:
+        return github_app.parse(env)
+    except github_app.AppConfigError as error:
+        raise ConfigError(str(error)) from None
 
 
 def parse_attachment_store(env: dict[str, str]) -> str:
@@ -271,6 +324,25 @@ def parse_networks(value: str) -> tuple[IPNetwork, ...]:
                 f"MAITY_TRUSTED_PROXIES: {part!r} is not an address or CIDR"
             ) from None
     return tuple(networks)
+
+
+SECOND_FACTOR_POLICIES = ("off", "optional", "required_admins")
+
+
+def parse_second_factor(env: dict[str, str]) -> str | None:
+    """Unset is None. `required_admins` without a usable instance key would hold every
+    admin at an enrolment session that can do nothing, so the hub refuses to start
+    (§2.8.1)."""
+    value = env.get("MAITY_SIGN_IN_SECOND_FACTOR", "").strip()
+    if not value:
+        return None
+    if value not in SECOND_FACTOR_POLICIES:
+        raise ConfigError(
+            f"MAITY_SIGN_IN_SECOND_FACTOR must be off, optional or required_admins, got {value!r}"
+        )
+    if value == "required_admins" and parse_secret_key(env.get("MAITY_SECRET_KEY", "")) is None:
+        raise ConfigError("MAITY_SIGN_IN_SECOND_FACTOR=required_admins needs MAITY_SECRET_KEY")
+    return value
 
 
 def parse_switch(env: dict[str, str], name: str) -> bool | None:

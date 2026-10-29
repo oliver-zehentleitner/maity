@@ -480,7 +480,7 @@ they come. **This was me** marks the alert read by its id, the one way
 section, and the mail sign-in banner is shown at the top of every page of
 every other session. The banner stays while the reported session or one
 it approved is active, applies the list's rules to its End, and is built
-again on every 15-second round while a sign-in alert is unread.
+again on every round of the `/me` read while a sign-in alert is unread.
 "Confirmed" is said only when the alert is no longer unread afterwards,
 because the hub answers 200 for an id it skipped; when the list cannot
 be read again the result is said to be unknown. A check each minute
@@ -704,7 +704,7 @@ a listed route is the resource's (a project left, a card gone) and stays
 an error, as does one while the machine form cannot be read. A view that
 needs a missing route shows a muted line in its place (`M.dom.notOnHub`)
 and notes the route (`M.api.absent`, method and path without the query,
-until the next navigation, so a deploy meanwhile is found): the notifications' 15-second count read, the browser
+until the next navigation, so a deploy meanwhile is found): the notifications' count read on the `/me` round, the browser
 notifications' long-poll, the overview's re-reads and the sessions list
 ask no more. A 5xx, a network failure, 401 or 403 is still shown as an
 error.
@@ -876,7 +876,7 @@ the human would see fields that do nothing.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision on project memory and setup cards (docs/api.md §6.1, §6.21, contract #339), 2026-10-25; the card tsk-c8jt63tnztqj (provider read only after creation, the badge policy editable with its snippet in Project settings); hub/src/maity_hub/models.py (`extra="forbid"`: a hub refuses a body field it does not know); the dashboard's implementation, 2026-10-25
+**Source:** the maintainer's decision on project memory and setup cards (docs/api.md §6.1, §6.21, contract #339), 2026-10-25; the card tsk-c8jt63tnztqj (provider read only after creation, the badge policy editable with its snippet in Project settings); hub/src/maity_hub/models.py (`extra="forbid"`: a hub refuses a body field it does not know); the dashboard's implementation, 2026-10-25; the before-launch cleanup (tsk-wgg2t8ngx9xg, tsk-qeh64f8gpvnd), 2026-10-29
 **Revisit when:** a second provider arrives, the hub sets something up on a provider change, or the overview gets its badge section (§6.20 names the overview for the snippet)
 
 The create form has **Project memory** (Keep the Why preselected, None)
@@ -901,6 +901,14 @@ would invite a change whose consequences the hub does not carry out.
 Sending `memory` and `setup` always: a creation on an older hub would
 fail. Inferring support from a project's view having `memory`: a human
 without projects has no view to look at.
+
+Until 2026-10-29 the form also sent the `keep_the_why` boolean to a hub
+that knew the provider only under that alias (before §6.21). It no
+longer does: such a hub is offered no project memory. **Reason:** the
+maintainer's rule for the alpha is to delete compatibility layers before
+launch, and no hub before §6.21 is running. **Rejected alternative:**
+keeping the alias: a third branch in the form for a hub nobody runs.
+The fixture hub still accepts the alias until the hub drops it.
 
 ## Statistics sum counts of things over the window and show people by their busiest day
 
@@ -1020,15 +1028,23 @@ and the instruction asked for none.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's instruction of 2026-10-25, from a phone screenshot of the cross-project inbox; the dashboard's implementation, 2026-10-25
+**Source:** the maintainer's instruction of 2026-10-25, from a phone screenshot of the cross-project inbox; the dashboard's implementation, 2026-10-25; the project's mark added after his phone screenshots of 2026-10-28 (inside a project the buttons wrapped to a second row)
 **Revisit when:** the switcher stops naming the current scope, or the header gets a second line on phones
 
 Below 600 px the span beside the logo (the project's name, "Everything
 waiting for you", "Your account", …) is clipped to one pixel by CSS,
 the usual visually hidden pattern; on wider screens it stays as it was.
+The project's mark beside it is not shown there either (`display:
+none`): it is decoration, already hidden from screen readers. The
+buttons beside the logo are spaced tighter there (gaps, inner padding,
+the counts' padding; the same height), so that with their counts they
+stay in the logo's row at 360 px. Only two counts of three characters
+("99+") at 360 px still wrap, into the two rows it had before.
 
 **Reason:** on a phone the text crowded the menus, and the switcher's
-current tab already names the scope. Clipped rather than removed, a
+current tab already names the scope. Inside a project the mark and the
+buttons' spacing pushed the buttons into a second row, which moved the
+whole page down; the tab shows the same mark. Clipped rather than removed, a
 screen reader still reads where the page is.
 
 **Rejected alternative:** `display: none`: it takes the name from
@@ -1125,7 +1141,8 @@ an anchor. Waiting for a hub-made URL: none is in the contract.
 
 **Id:** be999be7-325a-4fcf-954a-2bdadb6e6f84
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** none — the notification kind `keep_the_why` was removed on 2026-10-26 (docs/api.md §18.2, "No longer notifications"), so the dashboard has no such item to link anywhere; an unconfirmed commitment now reaches the owner as a request in the inbox (§6.23), linked like every request
 **Evidence:** confirmed
 **Source:** docs/api.md §6.23 and §18.2; the coordinator's ruling of 2026-10-25 on the item's target and the interim place (tsk-bq6q65910g13); the dashboard's implementation, 2026-10-26
 **Revisit when:** the dashboard gets a page of one's agents outside any project
@@ -1179,15 +1196,16 @@ review with an open child would hide nothing, the common case.
 **Type:** incident
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's card for the global chat (tsk-z8z8cg56y00s), 2026-10-26, after that day's incident of an events long-poll multiplied by open tabs; the dashboard's implementation, 2026-10-26
-**Revisit when:** the hub offers a cross-project conversation list or a per-user chat stream, or the notifications stream stops reporting chat messages
+**Source:** the maintainer's card for the global chat (tsk-z8z8cg56y00s), 2026-10-26, after that day's incident of an events long-poll multiplied by open tabs; the dashboard's implementation, 2026-10-26; the list across projects (§9.3, GET /me/conversations) read once instead of per project, 2026-10-28
+**Revisit when:** the hub offers a per-user chat stream, or the notifications stream stops reporting chat messages
 
 `#/chats` shows every project's chats in the Chat tab's layout and opens
 one in place with chat.js's own pane, in that project's context. It opens
 no events long-poll: the notifications stream (js/notify.js), which every
 signed-in page reads anyway, says that something changed; the global view
-then reads each project's conversation list once a burst has settled
-(0.4 s), and the open conversation fetches what came after its last
+then reads its conversations once a burst has settled (0.4 s): in one
+read across projects (`GET /me/conversations`, §9.3) where the hub has
+it, and each project's list on a hub without it. The open conversation fetches what came after its last
 message, as its project's feed would have made it, and reads its newest
 page and (for a group chat) itself again, to take over what the stream
 cannot name: a removal, a deleted file, a rename, a change of who is in it
@@ -1435,8 +1453,10 @@ under each other hid all but the first below the fold.
 
 **Rejected alternative:** a sticky list of anchors over the whole page,
 the designer's other option: the scroll stays 5,000 px, only the jump is
-shorter. A route per section (`#/admin/users`): `#/admin/users` is the
-older Users page already, and links into a section were not asked for.
+shorter. A route per section (`#/admin/users`): links into a section
+were not asked for. The older Users page at `#/admin/users` was removed
+before launch with the other compatibility routes, so that address is
+now no view at all.
 
 ## On a phone an opened card is a page of its own; the panel is the card
 
@@ -1704,3 +1724,389 @@ elsewhere, a revoked lead included.
 **Rejected alternative:** editing the limit in the join panel where the
 refusal appears: the panel's user may not be the owner, and the rulebook
 would have two places. Alternatives to the row's placement: unknown.
+
+## A project's name is changed in Project settings; a card outside its project reads with it
+
+**Id:** 9cf859f1-d5e0-420c-9ea3-d633cea94e33
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §6.25 (rename by a human owner, transfer by the namespace owner as a consent request, aliases, card references outside a project); the card tsk-cns4d1d7ht4j from the maintainer's chat; the hub's PR #487, 2026-10-28
+**Revisit when:** the dashboard gets a second-factor prompt (the transfer's step-up), or organisations become namespace owners
+
+Project settings has a **Project name** section for a human owner,
+where the hub's view carries `aliases`: the full name, the earlier ones,
+a rename of the slug that follows the new address, and, for the
+namespace owner, a transfer to another human owner of the project, with
+the request withdrawable from the same place. A step-up the hub asks for
+is said, not entered: the dashboard has no second-factor prompt yet. A
+card's or a request's id reads `<owner>/<slug>/<id>` wherever it is shown
+outside its project (`M.ids.where` says so by the view's scope), written
+by one helper (`M.ids.ref`) and never parsed back.
+
+**Reason:** the name belongs with the project's other settings and to
+the people the contract gives it to; one helper keeps the prefix in one
+place, as the card asked, so a later change of its form is one edit.
+
+**Rejected alternative:** a transfer that names anyone by handle: the
+contract takes only a current owner of the project, so the list offers
+exactly those. Parsing `owner/slug/tsk-…` back into a link: §6.25 makes
+the prefix display only.
+
+## A human's picture is set on the account, an agent's in its row on Members; the account keeps only agents no project shows
+
+**Id:** 59aaf51f-c63d-4cb6-966b-85eb8f2c682d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish on the card tsk-th1yq0jtk3yf (an agent's picture belongs to its management, personal settings keep only one's own), 2026-10-28; the coordinator's ruling on the fallback for agents in no project one is in, 2026-10-28
+**Revisit when:** the dashboard gets a page of one's agents outside any project, or §6.10 gives `members:admin` a say over pictures
+**See:** rendering.md#a-picture-is-uploaded-on-the-account-checked-as-the-hub-checks-it-with-no-preview-of-the-chosen-file — 3ec853f0-4141-4e81-acdf-c0fee94c920b — as of 2026-10-28
+
+The account (`#/account/picture`) sets the human's own picture. An
+agent's picture is set where the agent is managed: in its row on
+Members, under **Details** or **Manage**, for its owner only, as §6.10
+allows. The picture is read from one's agent profiles (`GET /agents`)
+when the first such row opens, since the member list carries no
+`avatar_source`. The account still lists, under **Agents in other
+projects**, the owner's agents that are in no project the owner can
+open, and only those. `#/account/picture/<agent id>` for an agent that
+Members reaches leads to `#/<owner>/<slug>/members/<agent id>/picture`,
+the row open. The checks before sending and the missing preview stay as
+the entry this one replaces describes them.
+
+**Reason:** a picture is part of managing the agent, next to its
+credentials and rulebook, not of the human's personal settings. An
+agent working only in projects its owner is not a member of has no row
+the owner can open. Without the account's list, its picture could not be
+set from the dashboard, and a Keep the Why notice about it would lead
+nowhere.
+
+**Rejected alternative:** dropping the account's list entirely and
+sending such a notice to `#/all`. `#/all` says nothing about the agent,
+and its picture would become unreachable. Keeping every agent's picture
+on the account: this is what the maintainer asked to move.
+
+## The project banner is shown at 2:1, the shape of a forge's social preview
+
+**Id:** c2e9d1e8-f7b5-46fd-8c93-9ea04ff52042
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish on the card tsk-4jhn5xeypjjb (the banner had the wrong height; GitHub asks for at least 640×320, ideally 1280×640) and his follow-up (never crop: the Keep the Why banner's text was cut); the coordinator's cap at 960 pixels, 2026-10-28
+**Revisit when:** the 960-pixel cap is too small or too large for the inbox below, or a forge's preview has another shape
+
+The banner on the project's inbox, and its preview in Project settings,
+are as wide as their column, at most 960 pixels (the banner centred),
+and half as high (`aspect-ratio: 2 / 1`).
+The image is never cropped (`object-fit: contain`): one of another shape
+is shown whole, with margins in the surface colour. There is no fixed
+height; the cap keeps the inbox below in sight on a wide screen, where
+the full width made the banner the whole first screenful.
+
+**Reason:** a project's banner is mostly the repository's social preview,
+which GitHub defines at 2:1. The same shape shows it whole at every
+width. A preview often carries text, such as the Keep the Why banner, and
+cropping makes that unreadable, so margins are preferred.
+
+**Rejected alternative:** the fixed 180-pixel strip it had: at desktop
+width it cut a 2:1 preview to about 6.5:1, showing only a stripe of it.
+Filling the 2:1 box by cropping (`object-fit: cover`): a banner of
+another shape lost the text at its edges.
+
+## The view being left is inert until the next one is drawn
+
+**Id:** 1d888f69-9233-40b4-b9f3-cd679825ef82
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the runner flake of web-e2e (tsk-q1xrpaahtah0, runs 40718638353 and 40721945466) and the reviewer's reproduction with ordinary clicks and Back on PR #551, 2026-10-28
+**Revisit when:** views are mounted before their data is read, or a view is kept across navigations
+
+A navigation renders the next view off screen and mounts it when its
+data is read; until then the view being left stays shown. From the start
+of the render it is `inert`: no click, key or focus reaches it.
+
+**Reason:** an action in the old view (a Revoke) was answered into that
+view, which then disappeared, while the new view showed what it had read
+before the action, as if nothing had happened. The page alone was wrong,
+the hub had revoked. Inert keeps the old view as a visual placeholder
+without letting it start anything.
+
+**Rejected alternative:** waiting in the end-to-end test only: it hid a
+real case (a click during a slow navigation). Clearing the old view at
+once: a blank page on every navigation, and a jump. Making every view's
+initial read consistent with actions in other instances: one rule per
+view, for a race the inert placeholder removes for all of them.
+
+## An agent profile is deleted where it is managed, confirmed by its handle, its projects named first
+
+**Id:** 7929359f-6af1-415e-b6e6-a55dd40ca27c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish on the card tsk-g1yz7rhaptqk (profiles deletable, with a confirmation by typing the handle and what happens), 2026-10-28; docs/api.md §6.3 (`profile_in_use`, `?cascade=true`, the tombstone)
+**Revisit when:** the hub offers an undo or a grace period for a deleted profile, or deletion moves to a page of one's agents outside any project
+
+The owner deletes a profile in its row on Members, beside its picture,
+and on the account for an agent in no project of the owner's. The page
+first names every project the profile is a member of and what deleting
+it ends there (credentials, claims, placements), then enables the button
+only once the handle is typed. A profile that is still a member
+somewhere goes out with `?cascade=true`; one in no project, without.
+
+**Reason:** a deletion cannot be undone, and in a project it ends a
+working membership. Typing the handle makes it a deliberate act for this
+very profile, and the named projects say what it costs before, not after.
+In a Members row the profile is always a member, so the cascade is the
+only deletion that can succeed there.
+
+**Rejected alternative:** a plain `DELETE` first and a second
+confirmation on `profile_in_use`: two dialogs for what the page can say
+at once. A browser `confirm()`: it names neither the projects nor the
+handle, and is clicked away too easily.
+
+## Trust and role are shown and chosen as the hub keeps them; what only an owner may grant is not offered to others
+
+**Id:** b71cebbf-56d9-4f65-aef9-cbb4ab5131a1
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §2.3 (trust × role, owner_only, the guest's limits) and the card for the dashboard's part (tsk-tx9qcehevfnk), which replaces the interim mapping at the API boundary, 2026-10-28
+**Revisit when:** a project's own roles (§2.3) get a place in the dashboard, or the hub lets a non-owner grant trust admin
+
+The dashboard reads and sends a membership's `trust` and `role` as the
+hub has them. Every view asks one helper (`js/trust.js`) who governs
+(trust owner or admin, never a proxy, which relays and decides nothing
+itself), who is an owner and who is a guest, and names a
+member as "trust · role". The member form, the invitation and the join
+line each choose trust and role on their own. Trust owner or admin and
+the role proxy are offered only to a caller with trust owner, and proxy
+only together with trust admin; a proxy whose trust changes becomes a
+coder in the same change. An owner's membership is removed only by an
+owner, so no one else is offered it. A guest is never offered as an assignee
+or as whom someone reports to, and a human guest is offered no new
+group chat. The overview groups the team by trust.
+
+**Reason:** trust and role are two separate questions (§2.3): how far
+the project trusts a member, and what the member does. A single name
+could not say "admin reviewer" or "guest coder", and the interim mapping
+lost exactly those. The choices the hub refuses for a non-owner
+(`owner_only`) or for a guest would only lead to a refusal, so they are
+not offered.
+
+**Rejected alternative:** keeping the mapping between single-role names
+and trust and role at the API boundary: it translated every answer and
+body and could not show a guest's role or a reviewer with trust admin.
+Offering every choice and saying the hub's refusal afterwards: a form
+that offers what it will refuse.
+
+## A sensitive call asks for the password or a code where it stands, then is made again
+
+**Id:** bddf61cb-f6a0-4290-891f-2f3b3006946d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §2.8.1 (the proof: the password in the last 10 minutes, `reauthentication_required`) and §2.8.4 (the step-up, `step_up_required`, "the dashboard asks for a code and repeats the call"); the coordinator's card for Your data (§2.9), 2026-10-28
+**Revisit when:** the hub tells in advance which calls will need a proof, or the dashboard gets a dialog layer of its own
+
+A sensitive call goes through `M.stepUp.run` (`js/step-up.js`). It
+makes the call. When the hub refuses with `reauthentication_required`
+or `step_up_required`, it asks for the password or a code in a slot of
+the section that made the call, proves it (`POST /auth/reauthenticate`,
+`POST /auth/second-factor/verify`, a recovery code too) and makes the
+call again, at most three times. A wrong answer is said there and asked
+again. Cancel ends quietly.
+
+**Reason:** the hub, not the page, knows whether the password was given
+in the last 10 minutes and whether the human is enrolled, so asking
+only after its refusal never asks for nothing. The question stands next
+to the button that caused it. Your data is the first user; the other
+sensitive calls (§2.8.4) can take the same helper; the transfer of a
+project (Project settings, §6.25, §6.26) does since 2026-10-29, where it
+used to say to sign in again.
+
+**Rejected alternative:** asking for the password before every
+sensitive call: needless right after a sign-in, and wrong for a
+passwordless account. A modal dialog: the dashboard has none, and a
+slot in place keeps the focus and the context where the human was.
+
+
+## Organisations live under the account: `#/account/orgs`, not `#/orgs`
+
+**Id:** 73999dde-dbb6-4982-a448-e1441e7a5b6b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §6.25 (one namespace `<owner>/<slug>`, the dashboard's route words reserved as handles) and §6.26; `DASHBOARD_WORDS` in hub/src/maity_hub/namespace.py; the coordinator's approval of the route on the organisations card, 2026-10-29
+**Revisit when:** `orgs` is added to the hub's reserved dashboard words, or organisations get pages of their own beside the account (a public organisation page, §16.9)
+
+The dashboard addresses a project as `#/<owner>/<slug>`, and any first
+word the dashboard does not use itself is read as an owner's handle.
+The organisations view therefore sits under a word the dashboard
+already owns: `#/account/orgs` lists them, `#/account/orgs/<handle>`
+is one of them. It is reached from the profile menu.
+
+**Reason:** `orgs` is not among the hub's reserved handles
+(`DASHBOARD_WORDS`), so a human or an organisation may already be
+called `orgs`; `#/orgs/<x>` would then be that owner's project
+`orgs/<x>` as much as an organisation page. Organisations are a
+human's own business (§6.26, humans only, members only), which is what
+the account holds.
+
+**Rejected alternative:** `#/orgs` and `#/orgs/<handle>`: shorter,
+but ambiguous with a project of an owner named `orgs` unless the hub
+first reserves the word, a change to the hub and to handles that may
+already exist. Putting organisations into the Settings menu: that menu
+holds the hub's and the runners' settings, not the human's memberships.
+
+## A suspended organisation's handle and public page are locked in the form, not only refused
+
+**Id:** 156c278f-9df0-45c6-b53f-1cece42b2ed9
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.26 ("Suspended": a rename and `public_page: on` are `forbidden`, `moderation_hold`) and §16.8; the review of the organisations page (#584), 2026-10-29
+**Revisit when:** a suspension also locks other settings, or the hub sends the allowed changes with the view
+
+While the organisation's view carries `moderation`, the settings form
+disables the handle field and turning the public page on, and says why;
+turning the page off stays possible. The refusal `moderation_hold` is
+still said in words, for a suspension that comes between loading the
+page and saving it.
+
+**Reason:** the human should not type a change the hub will refuse;
+the view already says the organisation is suspended.
+
+**Rejected alternative:** leaving the fields open and showing the hub's
+`forbidden` afterwards: the human types first and is turned away.
+
+## The organisation's handle in the address is read as a typed one
+
+**Id:** c3e2532b-f64a-4ade-b834-853ad4b1160f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.24 (handles are lowercase; `{org}` resolves a handle or an alias); the review of the organisations page (#584), 2026-10-29
+**Revisit when:** the dashboard moves to real paths (the routing card after #601), where the route parser may normalise once for every handle
+
+`M.orgs.handleOf` decodes the handle from `/account/orgs/<handle>`,
+trims it, drops a leading `@` and writes it in lowercase, for the call
+and for the page title, so `/account/orgs/%40OZ-Team` opens @oz-team.
+
+**Reason:** a link copied with an `@` or typed with capitals names the
+same organisation for a human.
+
+**Rejected alternative:** handing the route as it is to
+`GET /orgs/{org}`: an `@` or a capital letter would answer
+`not_found` for an organisation the human is in.
+
+## The fixture hub's reserved handles are a copy of the hub's list
+
+**Id:** 6dccb66c-0cd3-4cbb-8b65-59e8e5b814e0
+**Type:** workaround
+**Status:** active
+**Evidence:** inferred
+**Source:** `ORG_RESERVED` in web/js/api.js; `DASHBOARD_WORDS` in hub/src/maity_hub/namespace.py (docs/api.md §6.25, "Dashboard routes and handles"; §16.11 with #601); the review of the organisations page (#584), 2026-10-29
+**Revisit when:** the hub publishes its reserved words (in its machine form or a route), or #601 changes the list
+
+The fixture hub refuses an organisation handle that is a word of the
+dashboard's addresses from its own copy of the hub's list. It is a copy,
+not a read: when the hub changes its words, `web/js/api.js` has to
+change with it. On a real hub the hub alone refuses.
+
+## New project offers an organisation as owner only where the hub takes `owner`, and only one it may create in
+
+**Id:** e0cf14f3-56b8-40c4-9e6e-4c5fb739b037
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.26 ("The organisation's projects", "Suspended"); web/js/new-project.js; the review of #609, 2026-10-29
+**Revisit when:** the hub's form names the owners a human may choose, or organisations get a page of their own for new projects
+
+The **Owner** field shows only where the hub's machine form names
+`owner` on `POST /projects`, and offers the human and the organisations
+in which they may create a project: as owner or admin, or as a member
+while `members_create_projects` is on, and none that is suspended. When
+`GET /orgs` fails, only the personal choice is left; the form still
+works.
+
+**Reason:** a hub without organisations refuses a field it does not
+know, and an organisation the human may not create in would only lead to
+`org_role` or `moderation_hold`.
+
+**Rejected alternative:** offering every organisation and saying the
+hub's 403 afterwards: the rule moves into an error message.
+
+## A transfer into an organisation moves at once only for its owner
+
+**Id:** e47c8d0d-373f-4b2d-be05-15ad3d4306ef
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.26 ("Transfer into and out of an organisation"), §6.25; web/js/project-names.js; the review of #609, 2026-10-29
+**Revisit when:** the transfer's answer says itself whether it moved or asked, or the project view carries the caller's role in its organisation
+
+Project settings offer the transfer to the project's namespace owner,
+and for an organisation's project to each of its owners. The
+confirmation says before the call which case comes: into an
+organisation the human owns, or to themselves out of an organisation,
+the project moves in the call and the page follows its new name; into
+one they administer, its owners are asked and the request can be
+withdrawn. Whether the human is an owner of the project's organisation
+comes from `org_owner` on their own member view (§6.2), since the
+project view carries no organisation role. Suspended organisations are
+not offered.
+
+**Reason:** an owner of the receiving organisation speaks for it, an
+admin only for themselves (§6.26); the page should say which before the
+human confirms.
+
+**Rejected alternative:** always saying the transfer waits for consent:
+wrong for an owner, whose call moves the project at once.
+
+## A personal request may carry no project
+
+**Id:** 5857ebb6-4ecb-47cc-8bb4-278c2c406abb
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §7 ("Personal requests"), §6.26 (an organisation's invitation; a transfer request carries `project` and `org`); web/js/inbox.js; the review of #609, 2026-10-29
+**Revisit when:** another kind of personal request names something other than a project or an organisation
+
+The cross-project inbox takes a personal request whose `project` is
+`null`: its slug stays empty, its label reads Personal, followed by the
+organisation where the request carries `org`, and nothing links into a
+project. A request with `project` and `org` (a transfer into an
+organisation) names the project and the organisation it would move into.
+
+**Reason:** an invitation into an organisation belongs to no project,
+and the inbox read `project.full_name` on every request, so one such
+request broke the whole list.
+
+**Rejected alternative:** filling in an empty project: it shows a
+project that is not there, and the links behind it lead nowhere.
+
+## The meat-proxy hint quotes the hub's note as /me carries it, and no text of its own
+
+**Id:** 8eb486bb-357a-477c-aaf5-2a4d51024cc4
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2 `GET /me` ("the dashboard shows it under the switch from here and keeps no copy of its own") and §5.2 "Meat proxy"; the change that replaced the page's own sentence with `meat_proxy_note`
+**Revisit when:** the note gets text per human or a translation, or `/me` stops carrying it
+
+Under the switch **I am a meat proxy** the account quotes
+`meat_proxy_note` from `/me` as text, never through HTML. A hub that
+does not send the field gets the switch and its hint without a quote.
+
+**Reason:** the human should read exactly what the agents that deal
+with them read. Any wording of the page's own drifts from the hub's as
+soon as the note changes, as it did once already.
+
+**Rejected alternative:** keeping the old sentence as a fallback where
+the field is missing: on a hub whose note has changed, it would show
+words the agents no longer read, the drift this avoids. The price is a
+hint without the words on a hub that does not send the note yet.
+Copying the text into the page: the same drift with every change of
+the wording.

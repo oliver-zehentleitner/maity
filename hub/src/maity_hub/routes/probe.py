@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from maity_hub import clock, forge, probe
 from maity_hub.access import membership
 from maity_hub.deps import AnyCaller, engine_of, reader_of
-from maity_hub.errors import ApiError, invalid
+from maity_hub.errors import ApiError, invalid, probe_not_configured
 from maity_hub.namespace import ProjectRoute
 
 router = APIRouter(route_class=ProjectRoute)
@@ -35,11 +35,10 @@ def read_probe(
     project = mine.project
     if pr is None and branch is None and tag is None:
         raise invalid({"pr": "one_of_pr_branch_tag"})
-    fg = reader_of(request)
+    fg = reader_of(request).for_project(project.id)
     if not fg.configured_for(project.repository_url):
-        raise ApiError(
-            409, "probe_not_configured", "the hub holds no forge token for this repository"
-        )
+        reason = fg.refused or "no_grant"
+        raise probe_not_configured(reason if mine.may("project:admin") else None)
     wanted = [("pr", str(pr) if pr else None), ("branch", branch), ("tag", tag)]
     shown: dict[str, Any] = {"pr": None, "branch": None, "tag": None}
     observations = []
@@ -47,11 +46,22 @@ def read_probe(
         if ref is None:
             continue
         try:
-            observation = probe.observe(engine, fg, project, kind, ref, max_age)
-        except forge.ForgeUnavailableError:
+            observation = probe.observe(
+                engine, fg, project, kind, ref, max_age, floor=probe.FORCED_FLOOR
+            )
+        except forge.NotCoveredError as error:
+            raise probe_not_configured(
+                error.reason if mine.may("project:admin") else None
+            ) from None
+        except forge.ForgeUnavailableError as error:
             stored = probe.last(engine, project.id, kind, ref)
-            details = {"last": stored.stamped()} if stored is not None else None
-            raise ApiError(503, "probe_unavailable", "the forge did not answer", details) from None
+            details: dict[str, Any] = {"last": stored.stamped()} if stored is not None else {}
+            # A spent budget says when the forge is read again (§11.4).
+            if error.retry_at is not None:
+                details["retry_at"] = clock.rfc3339(error.retry_at)
+            raise ApiError(
+                503, "probe_unavailable", "the forge did not answer", details or None
+            ) from None
         observations.append(observation)
         shown[kind] = observation.shown()
     return JSONResponse(

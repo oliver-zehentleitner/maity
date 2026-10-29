@@ -307,12 +307,17 @@ def set_symmetric(
 
 
 def area_owner(conn: Connection, project_id: str, area: str | None) -> int | None:
-    """The membership owning the narrowest area that contains `area` (§6.2 routing)."""
+    """The membership owning the narrowest area that contains `area` (§6.2 routing); a
+    guest is never routed to (§2.3)."""
     if not area:
         return None
     rows = conn.execute(
         select(t.membership.c.id, t.membership.c.areas, t.membership.c.joined_at)
-        .where(t.membership.c.project_id == project_id, t.membership.c.active.is_(True))
+        .where(
+            t.membership.c.project_id == project_id,
+            t.membership.c.active.is_(True),
+            t.membership.c.trust != "guest",
+        )
         .order_by(t.membership.c.joined_at, t.membership.c.id)
     ).all()
     best: tuple[int, int] | None = None  # (length of the owning area, membership id)

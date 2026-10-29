@@ -20,7 +20,7 @@ from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import invalid
 from maity_hub.namespace import ProjectRoute
 from maity_hub.routes.events import MESSAGE_TYPES, PAGE_DEFAULT, PAGE_MAX
-from maity_hub.views import _without_reason, principal_ids, ts
+from maity_hub.views import _without_reason, principal_ids, shape_deleted, ts
 
 router = APIRouter(route_class=ProjectRoute)
 
@@ -110,9 +110,10 @@ def _scan(
 
 def _items(conn: Connection, rows: list[Any], mine: Membership) -> list[dict[str, Any]]:
     senders = principal_ids(conn, (r.actor_membership for r in rows))
+    # A deleted account among the mentions is shown as one (§2.9).
+    payloads = shape_deleted(conn, [r.payload or {} for r in rows])
     items = []
-    for row in rows:
-        payload = row.payload or {}
+    for row, payload in zip(rows, payloads, strict=True):
         tomb = _without_reason(row, mine) if row.redacted else None
         items.append(
             {
@@ -125,7 +126,7 @@ def _items(conn: Connection, rows: list[Any], mine: Membership) -> list[dict[str
                 "body": None if row.redacted else payload.get("body"),
                 "sent_at": ts(row.at),
                 "mentions": [] if row.redacted else payload.get("mentions") or [],
-                "attachments": [],  # the contract's shape before attachments land (§8.7)
+                "attachments": [] if row.redacted else payload.get("attachments") or [],
                 "redacted": bool(row.redacted),
                 "redaction": (
                     {"at": tomb.get("at"), "by": tomb.get("by"), "reason": tomb.get("reason")}

@@ -240,7 +240,7 @@ def test_a_report_replay_answers_only_a_member(
 
 def test_a_demoted_moderator_no_longer_decides(reporting: Round) -> None:
     demoted = reporting.owner.patch(
-        f"/projects/maintainer/maity/members/{reporting.lead.id}", {"role": "member"}
+        f"/projects/maintainer/maity/members/{reporting.lead.id}", {"trust": "member"}
     )
     assert demoted.status_code == 200, demoted.text
     refused = report(reporting, proposals=[decided(reporting.owner)])

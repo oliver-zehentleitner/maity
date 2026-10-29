@@ -89,7 +89,7 @@ def test_admin_agent_can_only_patch_onboarding(
     extras: list[dict[str, Any]] = [
         {"name": "changed"},
         {"reason": "mixed"},
-        {"keep_the_why": True},
+        {"memory": {"provider": "keep-the-why"}},
     ]
     for extra in extras:
         assert (
@@ -159,7 +159,7 @@ def test_role_and_coordinator_resolution_is_live(
     factory.membership(migrated, project_id, "admin", human_id=human.id)
     member = flow.agent(make_client, owner)
     assert member.resume().json()["onboarding"]["check_in_with"]["member_id"] == first.id
-    put(owner, {"check_in_with": "role:admin"})
+    put(owner, {"check_in_with": "trust:admin"})
     assert member.resume().json()["onboarding"]["check_in_with"]["member_id"] == human.id
     put(owner, {"check_in_with": later.id})
     assert member.resume().json()["onboarding"]["check_in_with"]["member_id"] == later.id
@@ -186,7 +186,7 @@ def test_first_target_message_checks_in_permanently(
     if address == "chat":
         body.update(type="chat", conversation_id=member.id)
     else:
-        body["to"] = owner.id if address == "direct" else "role:owner"
+        body["to"] = owner.id if address == "direct" else "trust:owner"
     assert member.post("/projects/maintainer/maity/events", body).status_code == 201
     assert "onboarding" not in member.resume().json()
     put(owner, {"check_in_with": member.id})

@@ -23,6 +23,7 @@ from maity_hub import (
     idempotency,
     instances,
     mentions,
+    merged,
     namespace,
     paging,
     ranks,
@@ -42,8 +43,9 @@ from maity_hub.forge import Forge
 from maity_hub.ids import new_id
 from maity_hub.models import Strict, Written, markdown, title
 from maity_hub.namespace import ProjectRoute
-from maity_hub.policy import CLOSED_STATES, REASON_STATES
+from maity_hub.policy import CLOSED_STATES, REASON_STATES, keep_the_why_effective
 from maity_hub.routes.members import AREA
+from maity_hub.scopes import in_admin_team
 from maity_hub.views import (
     human_paused,
     paused,
@@ -168,6 +170,8 @@ class ReportIn(Written):
     # False for a result that is not code: a review, a draft, a decision (§6.6).
     code: bool = True
     done: bool = False
+    # §6.23: validated in code, pydantic's error types are not the contract's reasons.
+    why: Any = None
 
 
 def load_task(conn: Connection, card_id: str, request: Request) -> dict[str, Any]:
@@ -195,6 +199,19 @@ def _member_id(conn: Connection, mine: Membership, principal: str, field: str) -
         membership_id: int = member_row(conn, mine.project.id, principal).id
     except ApiError:
         raise invalid({field: "not_a_member"}) from None
+    return membership_id
+
+
+def _target_id(conn: Connection, mine: Membership, principal: str, field: str) -> int:
+    """`_member_id` for a member a card names as its assignee or arbiter: never a guest,
+    which is no target (§2.3 "Guest")."""
+    try:
+        row = member_row(conn, mine.project.id, principal)
+    except ApiError:
+        raise invalid({field: "not_a_member"}) from None
+    if row.trust == "guest":
+        raise invalid({field: "guest"}, "a guest is never a target")
+    membership_id: int = row.id
     return membership_id
 
 
@@ -300,8 +317,8 @@ def _new_contract(conn: Connection, mine: Membership, body: ContractIn) -> dict[
     arbiter = body.arbiter or mine.project.contract_arbiter
     if arbiter != mine.project.contract_arbiter:
         mine.require("tasks:admin")  # naming another arbiter than the policy's (§6.8)
-    if arbiter != "role:admin":
-        _member_id(conn, mine, arbiter, "contract.arbiter")
+    if arbiter != "trust:admin":
+        _target_id(conn, mine, arbiter, "contract.arbiter")
     watchers = list(dict.fromkeys(body.watchers))
     for watcher in watchers:
         _member_id(conn, mine, watcher, "contract.watchers")
@@ -328,8 +345,8 @@ def _check_contract_place(path: str | None, section: str | None) -> None:
 
 def _is_arbiter(mine: Membership, contract: dict[str, Any]) -> bool:
     arbiter = contract.get("arbiter")
-    if arbiter == "role:admin":
-        return mine.role == "admin"
+    if arbiter == "trust:admin":
+        return in_admin_team(mine.trust, mine.role)
     return bool(arbiter == mine.principal_id)
 
 
@@ -750,7 +767,7 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
         assigned: int | None
         if body.assigned_to is not None:
             mine.require("tasks:admin")
-            assigned = _member_id(conn, mine, body.assigned_to, "assigned_to")
+            assigned = _target_id(conn, mine, body.assigned_to, "assigned_to")
         else:
             # Findings and hand-outs go to the owner of the narrowest area (§6.2).
             assigned = cards.area_owner(conn, mine.project.id, body.area)
@@ -861,7 +878,7 @@ def patch_task(
         card = _project_card(conn, mine, card_id)
         new_assignee: int | None = None
         if "assigned_to" in given and body.assigned_to:
-            new_assignee = _member_id(conn, mine, body.assigned_to, "assigned_to")
+            new_assignee = _target_id(conn, mine, body.assigned_to, "assigned_to")
         # No agent assigns away, cancels or sets back to open a card a human holds
         # (§2.3): before any gate. `done` stays done authority's (§6.4).
         assigns_away = "assigned_to" in given and new_assignee not in (
@@ -1049,6 +1066,8 @@ def patch_task(
             subject=("task", card.id),
         )
         history.stamp(conn, entries, seq)
+        if changed.get("status") == "review":
+            merged.returned_to_review(conn, card.id)  # a merge remembered is told now (§6.6)
         touched_parents: set[str] = set()
         if "parent" in changed:
             touched_parents.update(p for p in (before_card.parent, card.parent) if p is not None)
@@ -1134,7 +1153,7 @@ def claim(
         ):
             mine.require("tasks:admin")
             principal, named = instances.split_address(body.holder)
-            holder_id = _member_id(conn, mine, principal, "holder")
+            holder_id = _target_id(conn, mine, principal, "holder")  # never a guest (§2.3)
             holder_row = conn.execute(
                 select(t.membership).where(t.membership.c.id == holder_id)
             ).one()
@@ -1419,7 +1438,7 @@ def assign(
         mine = membership(conn, caller, slug)
         mine = _locked(conn, mine)
         card = _project_card(conn, mine, card_id)
-        assignee = _member_id(conn, mine, body.assignee, "assignee")
+        assignee = _target_id(conn, mine, body.assignee, "assignee")
         if card.claim_holder not in (None, assignee):
             # Before the scope: no agent, whatever its role, assigns it away (§2.3).
             _refuse_against_a_human(conn, mine, card)
@@ -1673,6 +1692,7 @@ def report(
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         mine = _locked(conn, mine)
+        _check_why(body, mine.project)
         card = _project_card(conn, mine, card_id)
         already_done = card.status == "done"
         if already_done:
@@ -1725,6 +1745,7 @@ def report(
             "reported_at": clock.rfc3339(now),
             # Filled by the probe in the background; never awaited inside a write.
             "code": body.code,
+            "why": body.why,
             "observed": None,
             # A report without code is never probed: nothing to compare (§6.6).
             "mismatch": None if body.code else False,
@@ -1735,6 +1756,8 @@ def report(
             # clear another's work for its own review (§6.18).
             "reported_instances": _reporters(card, mine),
         }
+        if isinstance(body.why, dict) and "ref" in body.why and not card.ktw_ref:
+            values["ktw_ref"] = body.why["ref"]  # §6.23: the card learns where its why lives
         if not already_done:  # §6.6: a done card keeps its closure and claim.
             if closing:
                 values.update({**_closing(card), "status": "done", "closed_at": now})
@@ -1761,7 +1784,7 @@ def report(
             conn,
             mine.project.id,
             "task_reported",
-            list(dict.fromkeys(targets)) + ["role:reviewer", "role:admin"],
+            list(dict.fromkeys(targets)) + ["role:reviewer", "trust:admin"],
             # The persisted status on both sides, so that a reader tells an entry into
             # review from a refresh (§8.2, §6.22); a blocked card stays blocked.
             {**stored, "status_before": status_before, "status_after": card.status},
@@ -1803,6 +1826,36 @@ def _reporters(card: Any, mine: Membership) -> list[dict[str, Any]]:
         ]
     me = {"member_id": mine.principal_id, "instance": mine.instance}
     return [*(r for r in earlier if r != me), me]
+
+
+WHY_REF = re.compile(r"[^\s#]+\.md#[^\s#]+")
+WHY_NONE_MIN = 10
+WHY_REF_MAX = 255  # the card's `ktw_ref` column
+
+
+def _check_why(body: ReportIn, project: Any) -> None:
+    """`why` on a report (§6.23): one shape under both policies; the policy decides presence."""
+    why = body.why
+    if why is None:
+        if body.code and keep_the_why_effective(project) == "required":
+            raise invalid({"why": "required"})
+        return
+    if not body.code:
+        raise invalid({"why": "not_for_no_code"})
+    if isinstance(why, dict) and len(why) == 1:
+        ref, none = why.get("ref"), why.get("none")
+        if isinstance(ref, str):
+            path = ref.split("#", 1)[0]
+            if (
+                len(ref) <= WHY_REF_MAX
+                and WHY_REF.fullmatch(ref)
+                and not path.startswith("/")
+                and ".." not in path.split("/")
+            ):
+                return
+        elif isinstance(none, str) and len(none.strip()) >= WHY_NONE_MIN:
+            return
+    raise invalid({"why": "malformed"})
 
 
 def _check_report(body: ReportIn) -> None:

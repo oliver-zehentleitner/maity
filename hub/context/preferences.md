@@ -28,3 +28,52 @@ proposal keeps one settlement path for every proposal kind.
   signature for one kind's need.
 - Apply preferences in the answer route itself, outside the registry: a
   second path for proposals, which the registry exists to avoid.
+
+## The meat-proxy note says both sides of it, and the dashboard shows the same words
+
+**Id:** 7ac44bcb-278a-4a26-bc55-5857a8666ae5
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the owner's decision in the team chat, 2026-10-29 (the two meanings, the wording, the hint in the dashboard); contract in `docs/api.md` §5.2 "Meat proxy"
+
+The flag stays as it was: a boolean on the human, set only by that human. What changes is the note: it is now
+"This person says: I am a meat proxy. Lead me step by step rather than expecting me to explain; and when you need a human's hands, come to me first." It names the two sides the owner means: a person who would rather be led than asked to explain, and a
+person agents may turn to first when they need a human's hands. The dashboard shows the same sentence under the
+switch, so the person sees what the agents read.
+
+**Reason:** the owner described the mode in both directions and wants agents to take it into account and
+people to understand the switch. It stays context about a person under the rank of §19.4, never a rule. The earlier "say nothing, let the model guess" left both sides to chance.
+
+**Rejected alternatives:**
+- Keep the bare sentence (the earlier decision): models read "meat proxy" in different ways, and only one of the
+  two meanings tends to come through.
+- Two separate switches: the owner sees it as one mode with two sides; two switches would ask people to split
+  what they mean as one.
+
+## "I am a meat proxy" is a flag on the human with one fixed sentence, set by the human alone
+
+**Id:** c2f77cf7-91dc-4954-afe3-67ddb1bde91b
+**Type:** decision
+**Status:** superseded
+**Superseded by:** 7ac44bcb-278a-4a26-bc55-5857a8666ae5
+**Evidence:** inferred
+**Source:** the owner's wish in the team chat (2026-10-28, a checkbox in the personal profile, default off, shown in the agents' briefing, the model's reading left to the model); the coordinator's constraints (a boolean on the human, only the human sets it, a short fixed sentence)
+**Revisit when:** agents are meant to act on it (a rule instead of a remark), or humans want to say more than yes or no
+
+`human.meat_proxy` (default `false`) is set with `PATCH /me` by the human for themselves. The resume packet
+carries it on `me.owner` (the agent's own human) and on every human in `peers` (the humans of its project),
+and while it is `true` adds `meat_proxy_note`, the one sentence "This person says: I am a meat proxy."
+Nothing explains it. An agent's `PATCH /me` with it is `forbidden` (`humans_only`); no admin sets it for another.
+
+**Reason:** the owner wants agents to know this about a person and to make of it what they will, so the hub
+says it and does not interpret it. A boolean with a fixed text keeps what reaches the briefing bounded and
+the same for everyone; it is context, like the preferences, and gives no right.
+
+**Rejected alternatives:**
+- A line in the free-text preferences (§19.4): reaches only the agents of projects that include them, is
+  capped and quoted as the author's prose, and cannot be read by a machine or switched in one click.
+- A note that tells the agent what to do ("treat this person as a relay"): the owner asked for no
+  interpretation, and an instruction from the hub would read as a rule.
+- Next to `language` in the notification settings: that is the mail and notification page, and the flag
+  is not about notifications.

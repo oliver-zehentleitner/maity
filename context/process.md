@@ -431,3 +431,269 @@ already knows what it deploys.
 - A `sitemap.xml` committed to `docs/`: it lists pages by hand and drifts.
 - Listing every `.html` file as the card first said: it would put the brand's loader fragment
   into the sitemap.
+
+## The database CI jobs may run on the maintainer's machine; a fork's code reaches it only through an approval
+
+**Id:** 405c762c-11a2-4a95-a23b-0b2657a7aa8d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's go and the coordinator's brief (2026-10-28); the coordinator approved the plan; the security review of the pull request (2026-10-28) corrected the first version of this entry
+**Revisit when:** the repository stops being public, a job needs a secret of the repository, or hosted runners get as fast as the machine
+
+`ci.yml` lets `hub-sqlite`, `hub-postgresql` and `hub-mariadb` run on a self-hosted runner
+when the repository variable `HUB_RUNNER_LABEL` holds a label prefix (one runner service per job type, see below); unset, they run on GitHub's
+runners. The runner is a user of its own with rootless Docker, no read access to anything
+else on the machine and a firewall rule against local and internal services (IPv4 and
+IPv6); the runner's files, hook and unit are root-owned under /opt and a system unit, not in
+the runner user's home, where a job could replace them. It is not ephemeral, and a
+job-completed hook tidies containers, images, volumes and the workspace.
+Install steps and the trust boundary: `deploy/runner/README.md`.
+
+The condition in `ci.yml` that sends fork pull requests to the hosted runners is **not** a
+protection: a fork's pull request runs the fork's own `ci.yml` and can name the runner
+itself. The protection is the repository setting that requires approval for every outside
+collaborator's workflow run, and the rule to read `.github/` in the diff before approving.
+"Only code of this repository" means every branch of anyone with push access, agents
+included. After a malicious job the machine is reinstalled; the hook is housekeeping.
+
+**Reason:** the database jobs are the long ones and the machine has more cores than a hosted
+runner; with the suite in parallel they use all of them. The repository is public, so a
+runner that runs fork code next to the project's credentials is the risk; the dedicated
+user, the approval rule and the absence of any secret on the machine bound it. Deleting one
+variable is the fallback.
+
+**Rejected alternatives:**
+- An ephemeral runner (a fresh registration per job): cleaner, but it needs a
+  repository-admin token on the machine to register again, the one secret the machine must
+  not hold.
+- The runner under the account of the agents that work on the machine: that account can
+  reach the production cluster and the maintainer's tokens.
+- Docker through the docker group: the `services:` of the jobs need a Docker API, and that
+  group is root on the machine; rootless Docker gives the API without it.
+- Relying on the `runs-on` condition against forks: the fork controls the workflow file.
+- Running every job on the machine: it runs one job at a time (the services bind host ports);
+  the short jobs gain nothing there.
+
+## The runner gets its Python through uv into the tool cache, and starts through `runsvc.sh`
+
+**Id:** 2bede3db-2d8e-4716-851b-0ecc07cb140d
+**Type:** decision
+**Type:** workaround
+**Status:** active
+**Evidence:** confirmed
+**Source:** the first installation of the self-hosted runner, 2026-10-28 (the service exited at once; setup-python found no Python 3.12; pip refused to install); the review of the installer script
+**Revisit when:** setup-python supports Debian, or the database jobs run in a virtual environment on both runner kinds
+**See:** process.md#the-database-ci-jobs-may-run-on-the-maintainers-machine-a-forks-code-reaches-it-only-through-an-approval — 405c762c-11a2-4a95-a23b-0b2657a7aa8d — as of 2026-10-28
+
+The unit starts `bin/runsvc.sh`, not `run.sh`: `run.sh` copies a helper into its own directory on every start, which
+a root-owned runner directory refuses, and the service then exits with status 0 and restarts in a loop.
+`install-python.sh` gives the machine a Python that `setup-python` finds: uv installs 3.12 as the runner user and it is
+linked into the runner's tool cache (`_work/_tool/Python/<version>/x64`); uv's PEP 668 "externally managed" marker is
+removed from that private copy, because `pip install` in the jobs fails with it; the `.path` the runner stored at
+registration (the PATH of root's shell, with directories the runner user may not enter) is replaced by a plain one.
+Everything inside the runner user's own paths is done as that user: a job can leave symlinks there, and root following one
+would write wherever it points.
+
+**Reason:** `setup-python` knows Ubuntu, macOS and Windows; on Debian it fails with "version 3.12 not found". The tool cache
+is the place it looks first, so the workflow stays the same on hosted and on the self-hosted runner. The marker is removed
+only from a copy that belongs to the runner, so no system Python is changed.
+
+**Rejected alternatives:**
+- The database jobs install into a virtual environment (`python -m venv`): the same on both runner kinds and it leaves the
+  runner's Python untouched, but it changes three jobs and every `make` call; the marker route is documented instead and
+  this stays the revisit.
+- The system Python of the machine: Debian 13 ships 3.13, the hub is tested on 3.12.
+- `pip install --break-system-packages` in the jobs: it would leak a self-hosted special case into the shared workflow.
+- Root creating the links and files in the tool cache: the first version did, and the review showed it follows symlinks a
+  job may have left there.
+
+## One runner service per database job type, a label each, three workers per job
+
+**Id:** c2713d54-e602-42a3-8636-693ff3fd2c0b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the first measurements on the self-hosted runner, 2026-10-28 (one Postgres job 11 min 57 s on the machine against about 22 on a hosted runner; nine CI runs queued behind the single runner); the coordinator's go and conditions
+**Revisit when:** the machine's memory or cores change, or hosted runners get as fast as it
+**See:** process.md#the-database-ci-jobs-may-run-on-the-maintainers-machine-a-forks-code-reaches-it-only-through-an-approval — 405c762c-11a2-4a95-a23b-0b2657a7aa8d — as of 2026-10-28
+
+The three database jobs run on three runner services of the machine, `maity-runner@sqlite`, `@pg` and `@maria`, each in
+its own directory with its own registration and the label `<prefix>-<type>`. `ci.yml` asks each job for its own label
+through the repository variable `HUB_RUNNER_LABEL` (the prefix); unset, and for forks, the jobs run hosted. Each service
+sets `PYTEST_ARGS=-n 2` (it was `-n 3` at first, nine workers on eight cores; lowered after the machine went down, see the entry
+on the cap below), so six workers share the eight cores.
+
+**Reason:** one runner takes one job at a time. With every pull request sending three jobs of about twelve minutes each to
+it, nine runs were queued within an hour and the runner was slower per pull request than the hosted ones, which run in
+parallel. A pool of identical runners would fix the queue but let two Postgres jobs run at once, both binding the host
+port 5432 for their service container; a label per job type keeps the ports apart by construction and still lets the three
+jobs of one pull request run side by side. Memory carried it: one job at eight workers peaked at 5.2 GB of 19.9 GB with
+swap unused.
+
+**Trade-off, stated:** the three services run as one user with one rootless Docker. A job can therefore also read and change the
+jobs running at the same time on the other instances (their `GITHUB_TOKEN` in `/proc/<pid>/environ`, their `_work`). The
+boundary stays "the repository's own code only, reinstall after a malicious job"; one user and one Docker per instance would
+close it at the price of three users, three daemons and three times the disk for images. The cleanup hook, which runs in that
+shared Docker, removes only what is stopped, unused or old, never a running job's containers.
+
+**Rejected alternatives:**
+- One runner for everything, as installed first: a queue of hours as soon as several pull requests are open.
+- Several identical runners: the port 5432 and 3306 collision between two jobs of the same type.
+- A random host port for the service containers: it would need the jobs' connection URLs to follow, a change in the shared
+  workflow for the self-hosted case only.
+
+
+## The runner is capped, and it starts with one service
+
+**Id:** a35df240-f14b-4468-8ab2-23b447a08175
+**Type:** incident
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the first run of the three runner services, 2026-10-28 (the machine went down two and a half minutes after three jobs started; memory sampler, job timestamps and the boot log agree on the time); the coordinator's decision that evening
+**Revisit when:** a test with the caps (one service first, someone watching) runs without a stall, or the CI moves to a machine that is not a workstation
+**See:** process.md#one-runner-service-per-database-job-type-a-label-each-three-workers-per-job — c2713d54-e602-42a3-8636-693ff3fd2c0b — as of 2026-10-29
+
+Every runner service carries `CPUQuota=150%`, `Nice=10`, low CPU and I/O weight, `MemoryMax=4G` and `-n 2`; the runner user's whole
+slice, rootless Docker included, is capped at 4 of 8 cores and 8 GB without swap. The three services are started one at a time,
+with the maintainer at the machine and a sampler running.
+
+**Reason:** the first run of three uncapped services (nine workers, three database containers, three installs on eight vCPUs)
+was followed within minutes by the stop of the machine, a VirtualBox guest on the maintainer's workstation, and by the loss of
+three jobs. Memory was not it (one job peaked at 5.2 GB of 19.9 GB). That the cause is CPU starvation of the host is an
+inference: the guest's journal of the crashed boot, read afterwards, ends five minutes after the jobs started with no error at
+all, only two clocksource warnings of 3 s and 13 s gaps (the guest's CPUs did not run: a stall on the host, not a kill inside the
+guest), and earlier crashes happened without CI. The caps make the
+next test survivable whichever it is. The machine does other work: a second crash costs the agents their ops.
+
+**Rejected alternatives:**
+- A lower `-n` alone: it does not bound the database containers or three installs running at once.
+- A cap on the units only: the containers of a rootless Docker run under the user's dockerd, outside the units' cgroups.
+- Running the three services unattended after the first green test: a green test on a quiet machine says little about the
+  load of several pull requests at once.
+
+
+## Rented servers carry the runners for a week, one type each
+
+**Id:** d621283e-1580-4220-8c72-ca1d5804d0aa
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's proposal as relayed by the coordinating agent, 2026-10-29 (the workstation stays for the agents; one to three rented servers act as runners for a week); his go, a Vultr dedicated-CPU plan of 8 cores and 16 GB for one week, was given in the project chat on 2026-10-29
+**Revisit when:** the week is over, or a rented server stalls with the caps in place
+**See:** process.md#the-runner-is-capped-and-it-starts-with-one-service — a35df240-f14b-4468-8ab2-23b447a08175 — as of 2026-10-29
+
+The database jobs move from the maintainer's workstation to up to three rented Ubuntu servers (8 vCPU, 16 GB), one job type
+per server, started with one server and `maria`, with 8 pytest workers on the dedicated profile (`dedicated-profile.sh`). The machine is prepared by `deploy/runner/bootstrap-server.sh` (runner user,
+rootless Docker, a firewall chain for that uid) and the steps are in `deploy/runner/SERVER-SETUP.md`, run by the maintainer.
+The caps of the workstation are replaced by drop-ins sized to the machine: the service may use 7 of 8 cores and 11 GB, the runner user's slice 7.5 cores and 13 GB, no swap.
+
+**Reason:** the stall of 2026-10-28 took down the machine the agents work on; a machine that does nothing else loses
+only CI when it stalls. One type per server keeps a stalled or compromised machine to one type, and each type binds its own host
+port anyway.
+
+**Rejected alternatives:**
+- `pg` first, as planned for the workstation: `maria` is the slowest job (about 26 minutes hosted), so the gain is the biggest and the easiest to measure.
+- The workstation caps unchanged: at 150% CPU per service eight workers would measure the cap, not the machine.
+- All three types on one rented server: one stall or one malicious job takes all three, and the first test would again be
+  the full load.
+- No caps on the rented server: the cause of the stall is not established (see the entry above), and a runaway job should cost CI,
+  not the machine's sshd; one core and about 3 GB stay free.
+- A cloud autoscaling runner service: it needs a standing token with admin rights on the repository (see "Why not an ephemeral runner"
+  in the runner README).
+
+
+## HUB_RUNNER_TYPES: the jobs that go to the machine are named, the default stays all three
+
+**Id:** 62a0fbc3-3f45-42ae-b33a-637373535070
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the plan to start the rented server with one job type only, 2026-10-29; the three `runs-on` expressions of `ci.yml`
+**Revisit when:** all three types have a runner of their own, or the label prefix scheme changes
+**See:** process.md#one-runner-service-per-database-job-type-a-label-each-three-workers-per-job — c2713d54-e602-42a3-8636-693ff3fd2c0b — as of 2026-10-29
+
+An optional repository variable `HUB_RUNNER_TYPES` (a space-separated list of `sqlite`, `pg`, `maria`) names the database jobs that run
+on the machine; unset or empty means all three, as before. A job whose type is not listed stays on a hosted runner.
+
+**Reason:** `HUB_RUNNER_LABEL` alone sends all three jobs to self-hosted labels. With a runner for `maria` only, `hub-sqlite` and
+`hub-postgresql` would queue for a runner that does not exist. A list keeps the default and the fallback (deleting the label variable
+is still the whole fallback) and needs no change to the runners.
+
+The list is matched as whole words (`contains(' <list> ', ' <type> ')`), and anything else (a comma, a stray newline, an unknown
+name) matches nothing, so the job stays hosted: a mistyped variable costs speed, never a queued job waiting for a runner that does
+not exist.
+
+**Rejected alternatives:**
+- One variable per type: three variables to set and to forget, and the fallback is no longer one deletion.
+- One runner registered with all three labels: the three jobs would take turns on it, and the measurement of one type would be mixed
+  with the others.
+- A change of the workflow for the test only, reverted afterwards: a commit to main and a revert for what a variable does.
+
+
+## The runner user is fenced by an owner-match chain on OUTPUT, replies first, loopback closed
+
+**Id:** ca3532c5-f8f1-4687-b467-ee1b129dc603
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** review of the setup package (two defects found by the reviewer, both reproduced in an unprivileged network namespace); re-check after the merge
+**Revisit when:** the runner moves to a different container runtime or network stack, or a rented server shows the rules failing at boot
+**See:** process.md#rented-servers-carry-the-runners-for-a-week-one-type-each — d621283e-1580-4220-8c72-ca1d5804d0aa — as of 2026-10-29
+
+On a rented runner server one firewall chain (`MAITY_RUNNER`, IPv4 and IPv6) is jumped to from `OUTPUT` for packets of the runner user's
+uid. Order: established and related connections return first; then only the two database ports on loopback and the local resolver
+return; then everything else on `lo` is rejected (which includes the machine's own public address, routed over `lo`, so sshd on
+0.0.0.0 stays out of reach); then the private ranges, link-local (the provider's metadata address) and shared address space are
+rejected. The chain is rebuilt at boot by its own unit, which starts before the runner user's manager, and the runner units require
+it, so a failed rule set stops the runner instead of leaving it open.
+
+**Reason:** everything a job runs, rootless Docker and its containers behind slirp4netns included, runs under that one uid in the
+host's network stack, so an owner match is the one place that sees all of it. The first version rejected loopback wholesale after the
+two port exceptions: the replies of the database listener are packets of the same uid to a loopback address and were rejected, and
+the machine's own address went over `lo` untouched. Both were reproduced in a network namespace before the fix.
+
+The runner units get `Requires=`/`After=` on the firewall unit through a drop-in that `install-services.sh` writes only when
+`maity-runner-firewall.service` exists: the same template serves the maintainer's workstation, which has no such unit, and a
+`Requires=` there would keep the runner from ever starting. The firewall unit is ordered `Before=user@<uid>.service` (ordering
+only), so at boot the runner user's rootless dockerd and slirp4netns start after the chain; a failed rule set then stops the runner
+through its own `Requires=`, while the user manager still comes up and runs no job.
+
+**Rejected alternatives:**
+- `Requires=maity-runner-firewall.service` in the `maity-runner@.service` template: the workstation has no firewall unit and would
+  never start its runner.
+- A host firewall (ufw or a general policy): it would also hit sshd and the administrators, and does not single out the runner.
+- A network namespace of its own for the runner: rootless Docker already builds one, and a second layer would have to be reached
+  by the jobs' service containers on the loopback ports.
+- Only the private ranges, without closing `lo`: the machine's own services stay reachable through its public address.
+
+
+## A rented runner server takes SSH keys only, set with a timer that undoes it
+
+**Id:** 834abe07-d857-418d-82a4-0247620a5566
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the first rented runner server (a provider image with root password login on, 2026-10-29); the coordinating agent's go for the change
+**See:** process.md#rented-servers-carry-the-runners-for-a-week-one-type-each — d621283e-1580-4220-8c72-ca1d5804d0aa — as of 2026-10-29
+**Revisit when:** the servers are reached through a bastion or a provider console that makes the public SSH port unnecessary
+
+Right after the bootstrap, a drop-in `00-maity.conf` sets `PasswordAuthentication no`, `KbdInteractiveAuthentication no` and
+`PermitRootLogin prohibit-password`; a systemd timer started first undoes the change after three minutes unless it is stopped after
+both a key login and a refused password login were seen from a second connection.
+
+**Reason:** the machine runs a public repository's CI and sits on a public address with root login by password on: that is the one
+credential that needs no key. The drop-in is named `00-` because sshd takes the first value of an option and the provider's
+`50-cloud-init.conf` sets the password login on. The timer is the second session of the usual advice, made safe against a
+connection that is lost. The window is 180 seconds: long enough for two new logins from another machine, short enough to leave the machine
+exposed only briefly if the change is wrong. The commands name Ubuntu's unit, `ssh` (other distributions call it `sshd`), and the last step stops the
+timer and prints the three effective settings in one command, so a rollback that already ran is seen and not missed.
+
+**Rejected alternatives:**
+- Leaving the provider's default for a week: the password is random but the account is root and the port is open to everyone.
+- Fail2ban or a firewall rule on port 22: it slows guessing, and the password login stays.
+- Another SSH port: obscurity only, and the provider's console and the step list assume 22.
+- Changing `50-cloud-init.conf` or `sshd_config` in place: cloud-init may rewrite its file, and the rollback would have to restore an edit instead of
+  removing one file.
+

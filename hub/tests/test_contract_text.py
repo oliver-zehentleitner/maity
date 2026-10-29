@@ -204,7 +204,7 @@ def test_the_same_place_again_is_no_change(owner: flow.Human, migrated: Engine) 
         conn.execute(
             update(t.card)
             .where(t.card.c.id == card_id)
-            .values(contract={"arbiter": "role:admin", "state": "proposed", "watchers": []})
+            .values(contract={"arbiter": "trust:admin", "state": "proposed", "watchers": []})
         )
     owner.patch(url, {"contract": {"path": "docs/api.md", "section": "6.3"}})
     assert [(e["field"], e["before"], e["after"]) for e in _history(owner, card_id)] == [

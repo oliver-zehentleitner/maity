@@ -117,10 +117,10 @@ def test_cards_and_watches_notify_nobody(
     assert all("reason" not in i for i in got["items"])
 
 
-def test_a_removed_kind_is_invalid(owner: flow.Human) -> None:
+def test_an_unknown_kind_is_invalid(owner: flow.Human) -> None:
     for asked, reason in (
-        ("card", "removed_kind"),
-        ("agent,chat", "removed_kind"),
+        ("card", "unknown"),
+        ("agent,chat", "unknown"),
         ("bogus", "unknown"),
     ):
         refused = owner.get(N, params={"kind": asked})
@@ -128,13 +128,13 @@ def test_a_removed_kind_is_invalid(owner: flow.Human) -> None:
         assert refused.json()["error"]["details"]["fields"] == {"kind": reason}
     head = bell(owner, limit=0)["next_after"]
     marked = owner.post(f"{N}/read", {"up_to": head, "kind": "ticker"})
-    assert marked.json()["error"]["details"]["fields"] == {"kind": "removed_kind"}
+    assert marked.json()["error"]["details"]["fields"] == {"kind": "unknown"}
 
 
 def test_a_request_opened_to_the_admins_reaches_an_admin(
     make_client: ClientFactory, owner: flow.Human, migrated: Engine
 ) -> None:
-    """§18.1: `request_forwarded` that opens the request to `role:admin` is an `inbox`
+    """§18.1: `request_forwarded` that opens the request to `trust:admin` is an `inbox`
     item for a human holding `admin`, though the request was not addressed to them."""
     agent = flow.agent(make_client, owner)
     admin = flow.human(make_client, migrated, "an-admin")
@@ -148,7 +148,7 @@ def test_a_request_opened_to_the_admins_reaches_an_admin(
     assert not [i for i in bell(admin)["items"] if i["kind"] == "inbox"]
     opened = owner.post(
         f"/projects/maintainer/maity/requests/{asked['id']}/forward",
-        {"to": "role:admin", "reason": "yours"},
+        {"to": "trust:admin", "reason": "yours"},
     )
     assert opened.status_code == 200, opened.text
     [found] = [i for i in bell(admin)["items"] if i["kind"] == "inbox"]  # one per request
@@ -160,7 +160,7 @@ def test_a_request_opened_to_the_admins_reaches_an_admin(
     assert not [i for i in bell(owner)["items"] if i["kind"] == "inbox"]  # no longer holds it
     with migrated.begin() as conn:  # the admin loses the role: the item goes with it
         conn.execute(
-            update(t.membership).where(t.membership.c.human_id == admin.id).values(role="member")
+            update(t.membership).where(t.membership.c.human_id == admin.id).values(trust="member")
         )
     assert not [i for i in bell(admin)["items"] if i["kind"] == "inbox"]
 
@@ -180,7 +180,7 @@ def test_a_claim_leaves_the_item_with_the_claiming_admin_only(
     ).json()
     owner.post(
         f"/projects/maintainer/maity/requests/{asked['id']}/forward",
-        {"to": "role:admin", "reason": "yours"},
+        {"to": "trust:admin", "reason": "yours"},
     )
     claimed = admins[0].post(f"/projects/maintainer/maity/requests/{asked['id']}/claim", {})
     assert claimed.status_code == 200, claimed.text
@@ -422,3 +422,109 @@ def test_a_replayed_card_write_carries_watching(
     )
     assert again.headers.get("Idempotent-Replayed") == "true"
     assert first.json()["watching"] is False and again.json()["watching"] is False
+
+
+# --- group chats (§9.2) ----------------------------------------------------------------
+
+
+def group_member(make_client: ClientFactory, engine: Engine, handle: str) -> flow.Human:
+    from tests.test_group_chats import other_human
+
+    return other_human(make_client, engine, handle)
+
+
+def test_a_group_chat_notifies_its_participants(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    from tests.test_group_chats import create, say
+
+    someone = group_member(make_client, migrated, "someone")
+    chat = create(owner, someone.id, title="Release go/no-go").json()
+    assert say(someone, chat["id"], "ship it?").status_code in (200, 201)
+    got = bell(owner)
+    assert got["counts"]["chat"] == 1 and got["by_project"]["maintainer/maity"]["chat"] == 1
+    item = next(i for i in got["items"] if i["kind"] == "chat")
+    assert item["title"] == "Human someone in Release go/no-go"
+    assert item["target"] == {"type": "conversation", "id": chat["id"]}
+    assert item["url"] == f"https://hub.example/#/maintainer/maity/chat/{chat['id']}"
+    marked = owner.post(f"{N}/read", {"ids": [item["id"]]}).json()
+    assert marked["counts"]["chat"] == 0
+    say(owner, chat["id"], "yes")  # the writer's own message notifies nobody but the others
+    assert bell(owner)["counts"]["chat"] == 0
+    assert bell(someone)["counts"]["chat"] == 1
+
+
+def test_an_observer_reads_along_without_notifications(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    from tests.test_group_chats import create, say
+
+    agent = flow.agent(make_client, owner)  # the owner owns it
+    someone = group_member(make_client, migrated, "someone")
+    chat = create(someone, agent.id, title="Agents only").json()
+    assert chat.get("id"), chat
+    say(agent, chat["id"], "working on it")
+    got = bell(owner)
+    assert got["counts"]["chat"] == 0
+    assert not any(i["target"] == {"type": "conversation", "id": chat["id"]} for i in got["items"])
+
+
+def test_a_mention_in_a_group_chat_is_a_mention(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    from tests.test_group_chats import create, say
+
+    someone = group_member(make_client, migrated, "someone")
+    chat = create(owner, someone.id, title="Room").json()
+    say(someone, chat["id"], "@maintainer please look")
+    item = next(i for i in bell(owner)["items"] if i["kind"] in ("chat", "mention"))
+    assert item["kind"] == "mention"
+    assert item["title"] == "Human someone mentioned you in Room"
+
+
+def test_after_leaving_a_group_chat_nothing_more(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    from sqlalchemy import update
+
+    from maity_hub import tables as t
+    from tests.test_group_chats import create, membership_row, say
+
+    someone = group_member(make_client, migrated, "someone")
+    third = group_member(make_client, migrated, "third")
+    chat = create(someone, owner.id, third.id, title="Room").json()
+    say(someone, chat["id"], "before you left")
+    assert bell(owner)["counts"]["chat"] == 1
+    mine = membership_row(migrated, owner.id).id
+    with migrated.begin() as conn:  # the owner left the chat
+        conn.execute(
+            update(t.conversation_participant)
+            .where(
+                t.conversation_participant.c.conversation_id == chat["id"],
+                t.conversation_participant.c.membership_id == mine,
+            )
+            .values(here=None, left_at=clock.now(), reason="left")
+        )
+    say(someone, chat["id"], "after you left")
+    got = bell(owner)
+    # A chat the human left drops out, what came before included (§18.1).
+    assert got["counts"]["chat"] == 0
+    assert not any(i["kind"] == "chat" for i in got["items"])
+
+
+def test_a_group_message_redacted_before_it_is_read_counts_as_the_chat_counts_it(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    from tests.test_group_chats import create, redact, say
+
+    someone = group_member(make_client, migrated, "someone")
+    chat = create(owner, someone.id, title="Room").json()
+    seq = say(someone, chat["id"], "a secret").json()["seq"]
+    assert redact(someone, seq).status_code == 200
+    listed = owner.get("/projects/maintainer/maity/conversations").json()["items"]
+    unread = next(c["unread"] for c in listed if c["id"] == chat["id"])
+    got = bell(owner)
+    assert got["counts"]["chat"] == unread == 1
+    assert got["by_project"]["maintainer/maity"]["chat"] == 1
+    item = next(i for i in got["items"] if i["kind"] == "chat")
+    assert (item["redacted"], item["title"]) == (True, None)

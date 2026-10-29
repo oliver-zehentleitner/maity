@@ -6,12 +6,13 @@ import threading
 import time
 import urllib.request
 from dataclasses import replace
+from datetime import timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 
-from maity_hub import forge, probe
+from maity_hub import clock, forge, probe
 from maity_hub import tables as t
 from maity_hub.config import Settings
 from tests import flow
@@ -22,6 +23,7 @@ SHA = "d91e294c" + "0" * 32
 OTHER = "e" * 40
 TOKEN = "test-token"
 READER = forge.Forge(TOKEN)  # what the app builds from the settings
+REAL_GET = forge.Forge._get
 
 
 class FakeGitHub:
@@ -123,6 +125,7 @@ def _report(**overrides: Any) -> dict[str, Any]:
         },
         "pr_status": "found",
         "pr_unknown_reason": None,
+        "why": {"none": "a test report, nothing to keep"},  # §6.23
     }
     return {**body, **overrides}
 
@@ -165,7 +168,10 @@ def test_a_pull_request_read_has_the_contract_shape(owner: flow.Human, github: F
     ]
 
 
-def test_an_observation_is_cached_for_max_age(owner: flow.Human, github: FakeGitHub) -> None:
+def test_an_observation_is_cached_for_max_age(
+    owner: flow.Human, github: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(probe, "FORCED_FLOOR", 0)  # the floor has its own test
     github.pull(3)
     first = owner.get("/projects/maintainer/maity/probe?pr=3").json()
     cached = owner.get("/projects/maintainer/maity/probe?pr=3").json()
@@ -173,6 +179,26 @@ def test_an_observation_is_cached_for_max_age(owner: flow.Human, github: FakeGit
     assert len(github.calls) == 3  # the pull request, its check runs, its statuses
     forced = owner.get("/projects/maintainer/maity/probe?pr=3&max_age=0").json()
     assert forced["fresh"] is True and len(github.calls) == 6
+
+
+def test_a_forced_read_waits_the_floor(
+    owner: flow.Human, migrated: Engine, github: FakeGitHub
+) -> None:
+    """§11.4: `max_age=0` asks the forge at most once per 30 seconds per project and
+    target; within them the observation answers with `fresh: false`."""
+    github.pull(3)
+    first = owner.get("/projects/maintainer/maity/probe?pr=3&max_age=0").json()
+    again = owner.get("/projects/maintainer/maity/probe?pr=3&max_age=0").json()
+    assert (first["fresh"], again["fresh"]) == (True, False)
+    assert len(github.calls) == 3
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.forge_observation).values(
+                observed_at=clock.now() - timedelta(seconds=probe.FORCED_FLOOR)
+            )
+        )
+    assert owner.get("/projects/maintainer/maity/probe?pr=3&max_age=0").json()["fresh"] is True
+    assert len(github.calls) == 6
 
 
 def test_merged_conflicting_branch_and_tag(owner: flow.Human, github: FakeGitHub) -> None:
@@ -198,9 +224,25 @@ def test_merged_conflicting_branch_and_tag(owner: flow.Human, github: FakeGitHub
     assert missing == {"name": "gone", "head_sha": None, "found": False}
 
 
-def test_an_unanswering_forge_is_probe_unavailable_with_the_last_observation(
+def test_a_spent_rate_limit_is_probe_unavailable_with_retry_at(
     owner: flow.Human, github: FakeGitHub
 ) -> None:
+    """§11.4: while the source's budget is spent the probe says when it reads again."""
+    from datetime import UTC, datetime, timedelta
+
+    at = (datetime.now(UTC) + timedelta(minutes=10)).replace(microsecond=0)
+    github.answers["/repos/acme/maity/pulls/9"] = forge.ForgeUnavailableError(
+        "spent", rate_limited=True, retry_at=at
+    )
+    answer = owner.get("/projects/maintainer/maity/probe?pr=9")
+    assert (answer.status_code, answer.json()["error"]["code"]) == (503, "probe_unavailable")
+    assert answer.json()["error"]["details"]["retry_at"] == clock.rfc3339(at)
+
+
+def test_an_unanswering_forge_is_probe_unavailable_with_the_last_observation(
+    owner: flow.Human, github: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(probe, "FORCED_FLOOR", 0)
     github.answers["/repos/acme/maity/pulls/9"] = forge.ForgeUnavailableError("503")
     first = owner.get("/projects/maintainer/maity/probe?pr=9")
     assert (first.status_code, first.json()["error"]["code"]) == (503, "probe_unavailable")
@@ -230,6 +272,37 @@ def test_an_agent_reads_the_probe_with_project_read(
     assert agent.get("/projects/maintainer/maity/probe?pr=3").json()["pr"]["number"] == 3
 
 
+@pytest.mark.parametrize(
+    ("answer", "reason"), [(True, "private_without_grant"), (None, "no_grant")]
+)
+def test_a_private_repository_is_not_configured_and_only_an_admin_sees_why(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    github: FakeGitHub,
+    monkeypatch: pytest.MonkeyPatch,
+    answer: bool | None,
+    reason: str,
+) -> None:
+    """§11.4: the instance token reads public repositories only."""
+    agent = flow.agent(make_client, owner)
+    sent: list[str] = []
+
+    def send(_self: forge.Forge, path: str, query: Any = None) -> Any:
+        sent.append(path)
+        return None if answer is None else {"private": answer}
+
+    monkeypatch.setattr(forge.Forge, "_get", REAL_GET)
+    monkeypatch.setattr(forge.Forge, "_send", send)
+    monkeypatch.setattr(forge, "_public", {})
+    refused = owner.get("/projects/maintainer/maity/probe?pr=3")
+    assert refused.status_code == 409
+    assert refused.json()["error"]["code"] == "probe_not_configured"
+    assert refused.json()["error"]["details"] == {"reason": reason}
+    hidden = agent.get("/projects/maintainer/maity/probe?pr=3").json()["error"]
+    assert (hidden["code"], hidden["details"]) == ("probe_not_configured", {})
+    assert sent == ["/repos/acme/maity"]
+
+
 # --- the forge client ----------------------------------------------------------------------
 
 
@@ -254,10 +327,10 @@ def test_the_token_never_follows_a_redirect_to_another_host() -> None:
     request = urllib.request.Request("https://api.github.com/repos/a/b")
     with pytest.raises(forge.ForgeUnavailableError):
         handler.redirect_request(request, None, 301, "Moved", {}, "https://evil.example/x")
-    moved = handler.redirect_request(
-        request, None, 301, "Moved", {}, "https://api.github.com/repositories/1"
-    )
-    assert moved.full_url == "https://api.github.com/repositories/1"
+    with pytest.raises(forge.NotCoveredError):  # nor within the API host (§11.4)
+        handler.redirect_request(
+            request, None, 301, "Moved", {}, "https://api.github.com/repositories/1"
+        )
 
 
 # --- reports (§6.6) ------------------------------------------------------------------------
@@ -290,7 +363,7 @@ def test_the_probe_fills_a_report(
     )
     assert observed["branch_head_sha"] == SHA and observed["observed_at"] is not None
     [event] = _events(migrated, "probe_observed")
-    assert event.audience == [f"instance:{agent.id}#{agent.instance}", "role:admin"]  # the holder
+    assert event.audience == [f"instance:{agent.id}#{agent.instance}", "trust:admin"]  # the holder
     assert event.payload == {"task": card_id, "observed": observed, "mismatch": False}
     assert probe.observe_report(migrated, READER, card_id, max_age=60) is False  # nothing new
 
@@ -416,8 +489,9 @@ def test_the_release_is_refreshed_and_turns_ready(
 
 
 def test_whoever_sees_the_merge_first_announces_it(
-    owner: flow.Human, migrated: Engine, github: FakeGitHub
+    owner: flow.Human, migrated: Engine, github: FakeGitHub, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(probe, "FORCED_FLOOR", 0)
     """GET /probe reads the merge before the worker does: the release card still
     gets its probe_observed, and release_ready comes at once, not a sweep later."""
     release = owner.post(
@@ -572,3 +646,36 @@ def test_a_slow_read_that_started_first_never_replaces_a_newer_one(
     probe.observe(migrated, READER, project, "pr", "1", 0)
     stored = probe.last(migrated, project.id, "pr", "1")
     assert stored is not None and stored.data["state"] == "merged"
+
+
+def test_the_worker_waits_for_a_spent_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    """§11.4: the next round is not before the forge's reset, so a spent budget is not
+    asked again every interval."""
+    from datetime import UTC, datetime, timedelta
+
+    held = datetime.now(UTC) + timedelta(hours=1)
+    worker = probe.Worker(None, forge.Forge("ghp_x"), interval=300)  # type: ignore[arg-type]
+    monkeypatch.setattr(forge.Forge, "retry_at", lambda _self: held)
+    assert worker._after(probe.MERGE_INTERVAL) == held
+    monkeypatch.setattr(forge.Forge, "retry_at", lambda _self: None)
+    soon = worker._after(probe.MERGE_INTERVAL)
+    assert soon < held and soon > datetime.now(UTC)
+
+
+def test_each_round_starts_at_another_project() -> None:
+    """A round ends at its first unanswered read; turning the order spreads the reads."""
+    probe._turns.clear()
+    firsts = {probe._rotated(["a", "b", "c"], "sweep")[0] for _ in range(3)}
+    assert firsts == {"a", "b", "c"}
+    assert probe._rotated([], "sweep") == []
+
+
+def test_the_sweep_and_the_merge_round_turn_on_their_own() -> None:
+    """Due together after a reset, the two kinds of round each still reach every
+    project: a shared counter would start one of them at the same project each time."""
+    probe._turns.clear()
+    merges, sweeps = [], []
+    for _ in range(4):
+        merges.append(probe._rotated(["a", "b"], "merges")[0])
+        sweeps.append(probe._rotated(["a", "b"], "sweep")[0])
+    assert set(merges) == {"a", "b"} and set(sweeps) == {"a", "b"}

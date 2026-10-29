@@ -242,7 +242,14 @@ def test_join_refuses_when_already_joined(
 ) -> None:
     assert cli.main(["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", "C"]) == cli.EXIT_ERROR
     out = output(capsys)
-    assert "already holds" in out and fakehub.SECRET not in out
+    assert "this clone (its worktrees share it) already holds" in out
+    assert (
+        fakehub.SECRET not in out
+        and "MAITY_STATE_DIR" in out
+        and "the join code still works" in out
+    )
+    assert "maity resume" not in out
+    assert "<agent-handle>-<name>" in out and "after its session was revoked, delete" in out
     assert not fake.seen
 
 
@@ -280,14 +287,14 @@ def test_resume_sends_the_cursor_and_prints_the_packet(
     assert body["client"].startswith("maity-cli/")
 
 
-def test_wait_prints_the_first_event_and_advances_the_cursor(
+def test_wait_one_prints_the_first_event_and_advances_the_cursor(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
     fake.events = [{"seq": 5, "kind": "message"}, {"seq": 9, "kind": "task_claimed"}]
-    assert cli.main(["wait", "--timeout", "5"]) == cli.EXIT_OK
+    assert cli.main(["wait", "--timeout", "5", "--one"]) == cli.EXIT_OK
     assert json.loads(capsys.readouterr().out)["seq"] == 5
     assert state.load_state(joined)["cursor"] == 5
-    assert cli.main(["wait", "--timeout", "5"]) == cli.EXIT_OK
+    assert cli.main(["wait", "--timeout", "5", "--one"]) == cli.EXIT_OK
     assert json.loads(capsys.readouterr().out)["seq"] == 9
     query = fake.signed()[-1].query
     assert "after=5" in query and "wait=" in query
@@ -729,16 +736,49 @@ def test_a_second_identity_outside_a_clone_gets_its_own_directory(
     assert state.has_credential(base / "agent-b") and state.has_credential(base / "agent-c")
 
 
-def test_the_same_identity_outside_a_clone_is_refused_as_in_a_clone(
+def test_a_named_state_directory_with_a_credential_is_called_a_directory(
+    joined: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
+    monkeypatch.setenv("MAITY_STATE_DIR", str(joined))
+    assert cli.main(["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", "C"]) == cli.EXIT_ERROR
+    out = output(capsys)
+    assert "this directory already holds a session credential" in out
+    assert "this clone" not in out and not fake.seen
+
+
+def test_another_instance_outside_a_clone_gets_a_directory_of_its_own(
     no_clone: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:  # fmt: skip
     line = ["join", f"{fake.url}/join/{fakehub.TOKEN}", "--code", fakehub.CODE, "--no-resume"]
     assert cli.main(line) == cli.EXIT_OK
     monkeypatch.delenv("MAITY_STATE_DIR")
-    fake.join_used = False
-    assert cli.main(line) == cli.EXIT_ERROR
-    assert "this directory already holds a session credential" in capsys.readouterr().err
+    capsys.readouterr()
+    fake.join_used, fake.join_instance = False, "k7mq"
+    assert cli.main(line) == cli.EXIT_OK
+    base = no_clone / ".local" / "state" / "maity" / fake.url.removeprefix("http://")
+    first, second = base / "agent-b", base / "agent-b#k7mq"
+    assert state.has_credential(first) and state.has_credential(second)
+    assert stat.S_IMODE(second.stat().st_mode) == 0o700
+    out = output(capsys)
+    assert f"export MAITY_STATE_DIR='{second}'" in out
+    assert "resume" not in out.split("export MAITY_STATE_DIR")[0]  # never the first's resume
+
+
+def test_another_instance_without_an_instance_id_keeps_its_credential(
+    no_clone: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
+    line = ["join", f"{fake.url}/join/{fakehub.TOKEN}", "--code", fakehub.CODE, "--no-resume"]
+    assert cli.main(line) == cli.EXIT_OK
+    monkeypatch.delenv("MAITY_STATE_DIR")
+    capsys.readouterr()
+    fake.join_used, fake.join_instance = False, None
+    assert cli.main(line) == cli.EXIT_OK
+    out = output(capsys)
+    assert "the hub named no instance" in out and "kept it in" in out
+    assert fakehub.SECRET not in out
 
 
 def test_a_join_page_without_a_handle_keeps_the_refusal(

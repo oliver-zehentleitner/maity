@@ -327,11 +327,12 @@ def observe(engine: Engine, fg: forge.Forge, project_id: str) -> int:
             return 0
         own = forge.repository_of(project.repository_url).lower()
         wanted = [r for r in due(conn, project_id) if (r.repository or "").lower() == own]
+    fg = fg.for_project(project_id)  # the source that covers this project (§11.4)
     reads = 0
     for start in range(0, len(wanted), BATCH):
         batch = wanted[start : start + BATCH]
         at = clock.rfc3339(clock.now())  # when the read started
-        answer = fg.items(
+        answer, public = fg.items(
             forge.repository_of(project.repository_url), sorted({r.number for r in batch})
         )
         reads += 1
@@ -366,6 +367,9 @@ def observe(engine: Engine, fg: forge.Forge, project_id: str) -> int:
                         "forge_url": row.url,
                         "old": old_shown,
                         "new": new_shown,
+                        # Whether the read itself found the repository public: only such
+                        # an observation may reach a page without sign-in (§11.4).
+                        "public": public,
                     },
                     subject=("task", row.card_id),
                 )

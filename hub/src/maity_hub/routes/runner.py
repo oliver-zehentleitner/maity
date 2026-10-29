@@ -527,6 +527,7 @@ def _join_fields(conn: Connection, placement: Any) -> tuple[dict[str, Any], str]
         instances.refuse_over_quota(conn, member)  # either way one more active instance
         return {
             "agent_id": member.agent_id,
+            "trust": member.trust,
             "role": member.role,
             "reports_to": member.reports_to,
             "areas": member.areas,
@@ -548,7 +549,8 @@ def _join_fields(conn: Connection, placement: Any) -> tuple[dict[str, Any], str]
     return {
         "new_agent_handle": placement.new_handle,
         "new_agent_display_name": profile.get("display_name") or placement.new_handle,
-        "role": profile.get("role") or "member",
+        "trust": profile.get("trust") or "member",
+        "role": profile.get("role") or "coder",
         "reports_to": profile.get("reports_to"),
         "areas": profile.get("areas") or [],
         "capabilities": profile.get("capabilities") or [],
@@ -557,7 +559,7 @@ def _join_fields(conn: Connection, placement: Any) -> tuple[dict[str, Any], str]
 
 
 def _owner_audience(conn: Connection, placement: Any) -> list[str]:
-    """`join_picked_up` goes to the agent profile's owner and `role:owner` (§8.2). A
+    """`join_picked_up` goes to the agent profile's owner and `trust:owner` (§8.2). A
     profile the exchange will create is the placement creator's."""
     owner = placement.created_by
     if placement.membership_id is not None:
@@ -566,4 +568,4 @@ def _owner_audience(conn: Connection, placement: Any) -> list[str]:
             .join(t.membership, t.membership.c.agent_id == t.agent_profile.c.id)
             .where(t.membership.c.id == placement.membership_id)
         ).scalar_one()
-    return [f"member:{owner}", "role:owner"]
+    return [f"member:{owner}", "trust:owner"]

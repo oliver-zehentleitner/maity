@@ -194,3 +194,94 @@ empty answer anyway (§8.3).
   off mid-request instead of answering.
 - Pre-pulling the image before the rollout: the migrate hook already
   pulls the same image, so there was nothing to gain.
+
+## An upgrade with a migration stops the hub first
+
+**Id:** d295eb2a-38ad-4e27-9dfa-524bb0963a24
+**Type:** decision
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** the deploy of 2026-10-28 (migration 0060 failed four times with a deadlock against the serving hub); card tsk-q6t6st3hnhcc
+**Revisit when:** migrations take their locks in a fixed order with a lock timeout and retry, or the chart can stop the hub itself
+**See:** kubernetes.md#migrations-as-a-pre-installpre-upgrade-hook-job-not-an-init-container — eced7109-a606-4549-b2f2-962e7436f8a8 — as of 2026-10-28
+
+`deploy/scripts/helm-upgrade.sh` scales the hub to 0, runs `helm upgrade` (the hook Job migrates alone) and
+scales back to the replicas it had on any exit. A release whose migration touches no busy table may use
+plain `helm upgrade`. A migration that alters `project`, `human`, `membership` or another table every
+request reads or writes is written to run with the hub stopped, and the release notes say so.
+
+**Reason:** the hook Job runs while the old pod still serves. Migration 0060 altered several busy tables,
+deadlocked against the old pod's open transactions on PostgreSQL, and the Job failed on all four attempts;
+the same upgrade went through once the hub was stopped. The old pod answers 503 `schema_outdated` as soon
+as the schema has moved, so stopping it first adds almost no downtime.
+
+**Rejected alternatives:**
+- A `lock_timeout` and a retry in the migration alone: it turns a hang into a failure, but while the hub
+  keeps its transactions open the same conflict comes back on every retry.
+- Moving the migration into an init container: with `Recreate` the old pod is gone by then, but it
+  migrates on every pod start and makes a failed migration an outage (the first entry above).
+- A chart hook that scales the Deployment itself: it needs RBAC in the chart and a second hook to restore
+  the replicas, and a failure between the two would leave the hub at 0; a script with a trap keeps that
+  restore in one place.
+
+
+## Mail: the signing key and the SMTP password come from Secrets by reference, the rest are plain values
+
+**Id:** f1c9c8ad-96ad-408d-b536-fdf027c5fe35
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card that put mail live on maity.team (SMTP account, signing key, test send), 2026-10-29, and its review, which found the chart without mail values; docs/api.md §16.2 (the environment wins over the admin settings)
+**Revisit when:** the admin settings can store the SMTP password and signing key themselves for a Kubernetes install, or the chart gets more mail values
+
+The chart takes `mail.signingKeySecret` (`MAITY_MAIL_SIGNING_KEY`) and `mail.passwordSecret` (`MAITY_SMTP_PASSWORD`) as names of
+existing Secrets, like the database URL and the forge token, and `mail.host`, `port`, `tls`, `username`, `from`, `replyTo` as plain
+values. Nothing is rendered without a value, so a release without mail is unchanged. Mail on maity.team went live first as a
+config-only Helm revision with the same variables in `extraEnv`; this wires them into the chart so that a `helm upgrade` with the
+chart's own values cannot drop them. The rendered environment of the live values is the same before and after moving them. Moving the live values from `extraEnv` into
+`mail.*` drops them from `extraEnv` in the same revision: the chart renders both, so the names would appear twice in the container
+env and the later (`extraEnv`) one wins, which hides whether the chart values are in effect. With a host set, port and TLS always
+come from the chart (its defaults included) and win over the admin settings; an operator who wants those in the admin UI sets no host.
+
+**Reason:** the signing key and the password are secrets and stay out of values files; the host, port, TLS mode and addresses are not,
+and are easier to review as values. The reply-to address differs from the sender on purpose: the sending account is a no-reply
+account, and replies should reach a mailbox that is read (the addresses are the operator's choice, the chart has no default). SPF,
+DKIM and DMARC are records at the domain's DNS and not part of the chart or the cluster; they stay with the person who owns the DNS,
+and whether they are set decides whether mail arrives, which the test send shows.
+
+**Rejected alternatives:**
+- Everything through `extraEnv`: it works and carried the first deployment, but a release that forgets the entries sends no mail
+  and nothing says so; the chart already knows the other two secrets by name.
+- The password as a chart value: it would sit in a values file and in the release history.
+- The chart change before the deployment: mail was needed live first, and the chart change needs a review and a deploy of its own.
+
+
+## The instance key is a chart value too: secretKey.existingSecret
+
+**Id:** dbeb3ff3-a9a8-480b-92e8-13fcaa41b8f9
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the coordinating agent's decision after the review of the mail wiring, 2026-10-29 (the contract promised it; the chart README sent it through `extraEnv`); hub/context/persistence.md and notifications.md for what the key seals
+**See:** kubernetes.md#mail-the-signing-key-and-the-smtp-password-come-from-secrets-by-reference-the-rest-are-plain-values — f1c9c8ad-96ad-408d-b536-fdf027c5fe35 — as of 2026-10-29
+**Revisit when:** the hub can rotate the key, or another secret joins the chart's list
+
+`secretKey.existingSecret` (and `key`, default `secret-key`) names the Secret holding `MAITY_SECRET_KEY`, rendered into the hub and the
+migrate Job like the database URL. Without a value nothing is rendered. A release that moves the key from `extraEnv` into it drops it
+from `extraEnv` in the same upgrade; the chart does not deduplicate and the later entry wins. The default key name `secret-key` follows the
+chart's other Secrets (`database-url`, `github-token`, `mail-signing-key`). A Secret created with the first README holds the key as
+`MAITY_SECRET_KEY`; such a release sets `secretKey.key: MAITY_SECRET_KEY` when it moves, otherwise the `secretKeyRef` names a missing key
+and the migrate Job and the hub do not start (loud, nothing is lost).
+
+**Reason:** the key seals what the hub stores at rest (forge webhook secrets, a stored SMTP password, second-factor secrets) and is
+the root of derived keys (notification positions use HKDF of it). A release that loses it, as one with the chart's own values would
+while the key lives only in `extraEnv`, leaves all of that unreadable, and a new key does not bring it back: the loss is worse than
+that of the mail settings and cannot be repaired by setting the variable again.
+
+**Rejected alternatives:**
+- Keeping it in `extraEnv`, as the first chart README did: it works while every upgrade carries the entry and fails silently when one
+  does not.
+- Making it a required value: an install without webhooks or stored passwords does not need it, and the features that do refuse
+  loudly (`secret_key_missing`).
+

@@ -626,6 +626,7 @@ class Cache:
             return _Entry(None, now, repository_url)
         repository = forge.repository_of(repository_url)
         deadline = _now() + FAMILY_DEADLINE
+        reader = reader.for_project(project_id)  # the source that covers it (§11.4)
         try:
             family = walk(reader, repository, deadline)
         except NotConfigured:

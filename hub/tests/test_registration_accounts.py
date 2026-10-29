@@ -44,7 +44,7 @@ def claims(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
     """The verified-address store (#280) as a dict: one address, one account."""
     held: dict[str, str] = {}
 
-    def claim(conn: Any, normalized: str, human_id: str) -> bool:
+    def claim(conn: Any, normalized: str, human_id: str, *, secret_key: bytes | None) -> bool:
         if normalized in held:
             return False
         held[normalized] = human_id
@@ -85,6 +85,7 @@ def complete(engine: Engine, settings: Settings, pending_id: str, **given: Any) 
         "terms_seen": None,
         "terms_accepted": False,
         "source": "203.0.113.7",
+        "secret_key": settings.secret_key,
         **given,
     }
     with engine.begin() as conn:
@@ -129,14 +130,34 @@ def test_completion_makes_an_active_account_and_signs_it_in(
     assert complete(migrated, settings, row.id).kind == "gone"  # used: as if it never was
 
 
-def test_without_the_address_store_nothing_is_created(
+def test_the_account_holds_its_address_as_verified(
     admin: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
-    """The claim fails closed until #280 stores verified addresses (§2.7.1)."""
+    """The completion writes the address through the notification settings' store
+    (§18.4), not through a stand-in."""
+    from maity_hub.notifications import preferences
+
     settings = settings_for(MAITY_REGISTRATION_APPROVAL="automatic")
     row = requested(make_client, migrated, settings)
+    done = complete(migrated, settings, row.id)
+    assert done.kind == "created"
+    with migrated.begin() as conn:
+        view = preferences.view(conn, done.human_id, True)["email"]
+        assert preferences.has_verified_address(conn, "ada@example.com") is True
+    assert (view["address"], view["address_status"]) == ("ada@example.com", "verified")
+
+
+def test_a_taken_address_makes_no_account(
+    admin: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    from maity_hub.notifications import preferences
+
+    settings = settings_for(MAITY_REGISTRATION_APPROVAL="automatic")
+    row = requested(make_client, migrated, settings)
+    holder = flow.human(make_client, migrated, "holder")
+    with migrated.begin() as conn:
+        assert preferences.claim_verified(conn, "ada@example.com", holder.id, secret_key=None)
     assert complete(migrated, settings, row.id).kind == "gone"
-    assert human(migrated, "x") is None
     with migrated.connect() as conn:
         assert conn.execute(select(t.human).where(t.human.c.handle == "ada")).first() is None
     assert pending(migrated)[0].voided_at is not None
@@ -207,10 +228,14 @@ def test_the_names_and_the_terms(
     row = requested(make_client, migrated, settings)
     taken = complete(migrated, settings, row.id, handle="maintainer", terms_seen="2026-10")
     assert (taken.kind, taken.fields) == ("invalid", {"handle": "taken", "terms": "required"})
-    bad = complete(migrated, settings, row.id, handle="A", display_name="")
+    bad = complete(migrated, settings, row.id, handle="A", display_name="", terms_seen="2026-10")
     assert bad.fields == {"handle": "invalid", "display_name": "invalid", "terms": "required"}
     changed = complete(migrated, settings, row.id, terms_seen="2026-09", terms_accepted=True)
     assert changed.kind == "terms_changed" and claims == {}
+    # Terms set while the page was open (it showed none): the version asks first, ahead of
+    # what the form got wrong.
+    newly = complete(migrated, settings, row.id, handle="A", terms_seen=None)
+    assert newly.kind == "terms_changed" and claims == {}
     done = complete(migrated, settings, row.id, terms_seen="2026-10", terms_accepted=True)
     made = human(migrated, done.human_id)
     assert made.terms_version == "2026-10" and made.terms_accepted_at is not None
@@ -247,6 +272,7 @@ def test_two_completions_at_once_create_one_account(
             done = registration_accounts.complete(
                 second, resolver(settings), two.id, password=PASSWORD, handle="ada2",
                 display_name="Ada", terms_seen=None, terms_accepted=False, source="203.0.113.8",
+                secret_key=settings.secret_key,
             )  # fmt: skip
             finished.set()
             return str(done.kind)
@@ -257,6 +283,7 @@ def test_two_completions_at_once_create_one_account(
         done = registration_accounts.complete(
             first, resolver(settings), one.id, password=PASSWORD, handle="ada", display_name="Ada",
             terms_seen=None, terms_accepted=False, source="203.0.113.7",
+            secret_key=settings.secret_key,
         )  # fmt: skip
         assert done.kind == "created"
         waiting = pool.submit(other)
@@ -406,6 +433,7 @@ def test_two_addresses_never_both_take_the_last_place_of_the_hour(
         assert registration_accounts.complete(
             conn, resolver(settings), ada.id, password=PASSWORD, handle="ada",
             display_name="Ada", terms_seen=None, terms_accepted=False, source="203.0.113.7",
+            secret_key=settings.secret_key,
         ).kind == "created"  # fmt: skip
 
     answer = _held(migrated, first, lambda: complete(migrated, settings, bob.id, handle="bob"))
@@ -451,7 +479,7 @@ def test_an_issuer_demoted_during_completion_ends_the_registration(
     def demote(conn: Any) -> None:
         events.lock_project(conn, project_id(migrated))  # as a member change takes it
         conn.execute(
-            update(t.membership).where(t.membership.c.human_id == issuer.id).values(role="member")
+            update(t.membership).where(t.membership.c.human_id == issuer.id).values(trust="member")
         )
 
     assert _held(migrated, demote, lambda: complete(migrated, closed, row.id).kind) == "closed"
@@ -530,6 +558,58 @@ def test_the_admin_lists_and_approves(
     late = admin.post(f"{ADMIN}/{first.human_id}/approve")
     assert late.status_code == 409 and late.json()["error"]["details"]["from"] == "active"
     assert [i["id"] for i in admin.get(ADMIN).json()["items"]] == [second.human_id]
+
+
+def test_a_really_completed_account_is_rejected_with_everything_it_made(
+    admin: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """No `claims` stand-in: the completion claims the address in `notification_settings`
+    as it does for real, the account's mail state exists, and the rejection removes all
+    of it and frees the address."""
+    from maity_hub.mail import outbox
+
+    done, _ = pending_account(make_client, migrated)
+    with migrated.begin() as conn:
+        held = conn.execute(
+            select(t.notification_settings.c.address_normalized).where(
+                t.notification_settings.c.human_id == done.human_id
+            )
+        ).scalar_one()
+        assert held == "ada@example.com"
+        conn.execute(
+            t.notification_mail_state.insert().values(
+                human_id=done.human_id, stamp="x", waiting=False
+            )
+        )
+        conn.execute(
+            t.mail_item_sent.insert().values(
+                human_id=done.human_id, item="e:1", mailed_at=clock.now()
+            )
+        )
+        outbox.enqueue(
+            conn, kind="security", to="ada@example.com", subject="s", body="b\n",
+            human_id=done.human_id,
+        )  # fmt: skip
+    rejected = admin.post(f"{ADMIN}/{done.human_id}/reject", {"reason": "No."})
+    assert rejected.status_code == 200, rejected.text
+    assert human(migrated, done.human_id) is None
+    with migrated.connect() as conn:
+        for table in (
+            t.notification_settings,
+            t.notification_mail_state,
+            t.mail_item_sent,
+            t.mail_outbox,
+            t.account_record,
+            t.human_session,
+        ):
+            left = conn.execute(select(table).where(table.c.human_id == done.human_id)).all()
+            assert left == [], table.name
+        decision = conn.execute(
+            select(t.account_registration.c.status).where(
+                t.account_registration.c.human_id == done.human_id
+            )
+        ).scalar_one()
+    assert decision == "rejected"
 
 
 def test_the_admin_rejects_with_a_reason(

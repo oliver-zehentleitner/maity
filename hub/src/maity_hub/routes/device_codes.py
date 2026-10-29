@@ -20,12 +20,12 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
 from maity_hub import API_VERSION, clock, longpoll
-from maity_hub.auth import device_codes, sessions, sign_in_settings
+from maity_hub.auth import device_codes, second_factor, sessions, sign_in_settings
 from maity_hub.auth.caller import SESSION_COOKIE, Caller, require_secure_transport
 from maity_hub.deps import AnyCaller, engine_of, origin_of, settings_of, wait_of
 from maity_hub.errors import ApiError, forbidden, humans_only, not_found, rate_limited
 from maity_hub.ratelimit import Limiter
-from maity_hub.routes.auth import end_presented, member_of, set_session_cookies
+from maity_hub.routes.auth import end_presented, member_of, pending_answer, set_session_cookies
 
 router = APIRouter(prefix="/auth")
 
@@ -163,6 +163,7 @@ def approve_code(code_id: str, body: Pick, request: Request, caller: AnyCaller) 
             raise not_found()
         if device_codes.status(row, clock.now()) != "redeemed":
             raise ApiError(409, "conflict", "the code is not waiting for an approval")
+        second_factor.require_step_up(conn, settings_of(request), caller)  # §2.8.4
         right = device_codes.approve(conn, row, body.number)
     if not right:
         raise device_codes.code_invalid()  # the wrong pick denied it (number matching)
@@ -279,15 +280,21 @@ def complete_redemption(request: Request) -> JSONResponse:
             raise ApiError(409, "conflict", "the code is not approved")
         end_presented(conn, request.cookies.get(SESSION_COOKIE))
         user_agent = request.headers.get("user-agent")
-        session_id, csrf, _ = device_codes.complete(
-            conn, row, address=origin.address, user_agent=user_agent
+        session_id, csrf, _, state = device_codes.complete(
+            conn, row, address=origin.address, user_agent=user_agent, hub=settings_of(request)
         )
-        device = sessions.remember_device(
-            conn, row.human_id, request.cookies.get(sessions.DEVICE_COOKIE)
-        )
-        member = member_of(conn, row.human_id)
-        next_route = row.next or "/"
-    response = JSONResponse({"member": member, "next": next_route})
+        device = None
+        if state == "full":
+            device = sessions.remember_device(
+                conn, row.human_id, request.cookies.get(sessions.DEVICE_COOKIE)
+            )
+            answer: dict[str, Any] = {
+                "member": member_of(conn, row.human_id),
+                "next": row.next or "/",
+            }
+        else:
+            answer = pending_answer(state)  # the second step is owed (§2.8.2)
+    response = JSONResponse(answer)
     set_session_cookies(response, request, session_id, csrf, device)
     response.delete_cookie(
         PENDING_COOKIE, path=PENDING_PATH, secure=origin.tls, httponly=True, samesite="strict"
@@ -303,5 +310,5 @@ def methods(request: Request) -> JSONResponse:
     """What the login page may show (§2.6.1); nothing about any account."""
     with engine_of(request).begin() as conn:
         device_code = sign_in_settings.device_code_enabled(conn, settings_of(request))
-    # The sign-in link (§2.6.3) is not served yet, so it is never offered.
-    return JSONResponse({"password": True, "device_code": device_code, "email_link": False})
+        email_link = sign_in_settings.view(conn, settings_of(request))["email_link_available"]
+    return JSONResponse({"password": True, "device_code": device_code, "email_link": email_link})
