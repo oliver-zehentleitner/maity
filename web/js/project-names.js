@@ -137,7 +137,8 @@ window.Maity = window.Maity || {};
             if (answer && answer.full_name) { window.location.hash = ctx.projectLink(answer.full_name, "settings"); return; }
             append(M.dom.clear(result), h("p", { class: "ok" }, (to.org ? "Asked the owners of @" + to.handle + ". The project moves when one of them accepts"
               : "Asked " + to.name + ". The project moves when they accept") + " in their inbox; a rename or another transfer withdraws this one."),
-            answer && answer.id ? withdrawButton(ctx, answer.id, result) : null);
+            // Into an organisation the owners' requests are personal (§6.26): withdrawn on /requests.
+            answer && answer.id ? withdrawButton(ctx, answer.id, result, !!to.org) : null);
           } catch (err) {
             if (err.code === "cancelled") status.done();
             else status.fail("Not transferred: ", said(err, to.handle));
@@ -167,13 +168,13 @@ window.Maity = window.Maity || {};
     return box;
   }
 
-  function withdrawButton(ctx, id, result) {
+  function withdrawButton(ctx, id, result, personal) {
     const status = M.statusLine();
     const button = h("button", { type: "button", class: "small", onclick: async () => {
       button.disabled = true;
       status.busy("Withdrawing…");
       try {
-        await M.api.post(ctx.base + "/requests/" + encodeURIComponent(id) + "/withdraw", {});
+        await M.api.post((personal ? "" : ctx.base) + "/requests/" + encodeURIComponent(id) + "/withdraw", {});
         append(M.dom.clear(result), h("p", { class: "ok" }, "Withdrawn."));
       } catch (err) {
         button.disabled = false;

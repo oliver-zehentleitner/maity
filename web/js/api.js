@@ -474,6 +474,8 @@ window.Maity = window.Maity || {};
     return all[slug + "/ticker.json"];
   }
   const personalRequests = () => (fixtures()["personal-requests.json"] || { items: [] }).items;
+  // The owners' requests of one transfer into an organisation, by request id (§6.26).
+  const transferGroups = {};
   const prefs = () => fixtures()["preferences.json"];
   function utf8Bytes(text) {
     let n = 0;
@@ -1478,6 +1480,13 @@ window.Maity = window.Maity || {};
       return personalView(req);
     }],
     ["POST", /^\/requests\/([^/]+)\/(answer|withdraw)$/, (m, body, path) => {
+      // Its asker withdraws a transfer into an organisation, every owner's request with it.
+      const own = m[2] === "withdraw" && transferGroups[m[1]] && personalRequests().find((r) => r.id === m[1] && r.asked_by.member_id === me().member.id);
+      if (own) {
+        if (own.status !== "open") fail(409, "request_not_open", "Request is not open", path);
+        personalRequests().filter((r) => transferGroups[m[1]].includes(r.id) && r.status === "open").forEach((r) => { r.status = "withdrawn"; r.answered_at = nowIso(); });
+        return own;
+      }
       const req = personalRequests().find((r) => r.id === m[1] && (!/^human:/.test(r.to || "") || r.to === "human:" + me().member.id));
       if (!req) fail(404, "not_found", "Not found", path);
       if (req.status !== "open") fail(409, "request_not_open", "Request is not open", path);
@@ -2445,19 +2454,20 @@ window.Maity = window.Maity || {};
           if (mine) mine.full_name = p.full_name;
           return p;
         }
-        const req = { id: localId("req"), kind: "project_transfer", class: "consent", status: "open", title: "Take over " + p.full_name + " into @" + into.handle + " as " + full,
-          summary: me().member.handle + " asks the owners of @" + into.handle + " to take over " + p.full_name + ".", options: [], replies: [{ id: "go", label: "Go" }, { id: "no", label: "No" }],
-          priority: "normal", to: into.id, org: { id: into.id, handle: into.handle }, asked_by: { member_id: me().member.id, display_name: me().member.display_name },
-          created_at: nowIso(), while_open: "wait" };
-        file(m[1], "requests.json", path).items.push(req);
         // §6.26: an admin speaks for themselves; each owner of the organisation
-        // gets a personal consent request carrying the project and the organisation.
+        // gets a personal consent request carrying the project and the
+        // organisation, and nothing is filed in the project (an organisation is
+        // no addressee, §7). Withdrawn by the asker, they go together.
         (fixtures()["personal-requests.json"] = fixtures()["personal-requests.json"] || { items: [] });
-        orgsData().members[into.id].filter((x) => x.role === "owner").forEach((owner) => {
-          personalRequests().push(Object.assign({}, req, { id: localId("req"), to: "human:" + owner.id, personal: true, answer: null,
-            project: { full_name: p.full_name, name: p.name }, org: { id: into.id, handle: into.handle } }));
-        });
-        return Object.assign({}, req);
+        const asked = orgsData().members[into.id].filter((x) => x.role === "owner").map((owner) => ({
+          id: localId("req"), kind: "project_transfer", class: "consent", status: "open", personal: true, answer: null,
+          title: "Take over " + p.full_name + " into @" + into.handle + " as " + full,
+          summary: me().member.handle + " asks the owners of @" + into.handle + " to take over " + p.full_name + ".", options: [],
+          replies: [{ id: "go", label: "Go" }, { id: "no", label: "No" }], priority: "normal", to: "human:" + owner.id,
+          asked_by: { member_id: me().member.id, display_name: me().member.display_name }, task_id: null, task: null,
+          project: { full_name: p.full_name, name: p.name }, org: { id: into.id, handle: into.handle }, created_at: nowIso(), while_open: "wait" }));
+        asked.forEach((r) => { personalRequests().push(r); transferGroups[r.id] = asked.map((x) => x.id); });
+        return Object.assign({}, asked[0]);
       }
       // Out of an organisation to oneself: the caller's call is their word, the move is at once (§6.26).
       if (from && body.to === me().member.id) {

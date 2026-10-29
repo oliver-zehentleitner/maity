@@ -7005,8 +7005,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // the answer is the transfer's request, and the owners' requests are not this human's.
   const crewAsk = await win.Maity.api.post("/projects/" + selfMoved.full_name + "/transfer", { to: "org-oz00crew0001" });
   const crewMine = (await win.Maity.api.getAll("/requests")).items;
-  expect(crewAsk.class === "consent" && crewAsk.org && crewAsk.org.handle === "crew" && !crewMine.some((r) => r.personal && r.org && r.org.handle === "crew"),
-    "transfer: an admin's transfer into an organisation asks its owners, not the admin");
+  const crewProject = (await win.Maity.api.getAll("/projects/" + selfMoved.full_name + "/requests?status=all")).items;
+  expect(crewAsk.class === "consent" && crewAsk.personal && crewAsk.to === "human:hum-olga" && crewAsk.project.full_name === "maintainer/acme-shop"
+    && crewAsk.org.handle === "crew" && !crewMine.some((r) => r.org && r.org.handle === "crew") && !crewProject.some((r) => r.kind === "project_transfer"),
+    "transfer: an admin's transfer into an organisation asks each owner personally, files nothing in the project, and none reaches the admin");
+  const crewBack = await win.Maity.api.post("/requests/" + crewAsk.id + "/withdraw", {});
+  const crewAgain = await win.Maity.api.post("/requests/" + crewAsk.id + "/withdraw", {}).catch((err) => err);
+  expect(crewBack.status === "withdrawn" && crewAgain.code === "request_not_open", "transfer: its asker withdraws it, the owners' requests with it");
   expect(win.Maity.projectNames.said({ code: "invalid_transition", details: { reason: "transfer_stale" } }).message === "the transfer no longer holds; ask again",
     "transfer: a stale transfer is said as invalid_transition with its reason");
 
