@@ -138,7 +138,7 @@ SECTIONS: dict[str, dict[str, Spec]] = {
     },
     "stats": {"items": ("choice", STATS, 1, len(STATS), True)},
     "steps": {
-        "title": ("text", 120, False),
+        "title": ("text", 120, True),
         "items": (
             "list",
             (
@@ -156,7 +156,7 @@ SECTIONS: dict[str, dict[str, Spec]] = {
         ),
     },
     "scales": {
-        "title": ("text", 120, False),
+        "title": ("text", 120, True),
         "items": (
             "list",
             (
@@ -175,7 +175,7 @@ SECTIONS: dict[str, dict[str, Spec]] = {
         ),
     },
     "faq": {
-        "title": ("text", 120, False),
+        "title": ("text", 120, True),
         "items": (
             "list",
             ("object", {"q": ("text", 200, True), "a": ("md", 2000, True)}, True),
@@ -192,12 +192,12 @@ SECTIONS: dict[str, dict[str, Spec]] = {
     "text": {"title": ("text", 120, False), "markdown": ("md", 16 * 1024, True)},
     "activity": {"title": ("text", 120, False), "count": ("int", 1, 20, True)},
     "profiles": {
-        "title": ("text", 120, False),
+        "title": ("text", 120, True),
         "markdown": ("md", 2000, False),
         "handles": ("names", HANDLE, 2, True),
     },
     "explore": {
-        "title": ("text", 120, False),
+        "title": ("text", 120, True),
         "projects": ("names", FULL_NAME, 3, True),
     },
     "collab": {

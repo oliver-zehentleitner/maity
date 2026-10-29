@@ -22,7 +22,11 @@ and updates it in place; the chat's list of conversations re-reads
 `/members` for presence, every 30 seconds, one read at a time (a refresh
 asked for during a read runs once more after it). `/me` is still read every 60 seconds (15 until
 2026-10-28, see 6cb02c3d-063d-473b-b86b-8f8324c11f14) for the counts of every project, which no single project's
-feed carries.
+feed carries. A panel that offers members (the join panel's instances
+and the team's limit) reads them again when it opens, and a view that
+reads the members again sets the list, the index by id and the names
+together (`M.withMembers`): an instance limit raised in the rulebook was
+offered only after a reload (the maintainer's report, tsk-pj6n7sxertx5).
 
 **Reason:** `wait=0` returns the readable set, which for an owner or
 admin is every event of the project; the long-poll returns the

@@ -251,14 +251,20 @@ ALL_TYPES = [
     {
         "type": "scales",
         "enabled": False,
+        "title": "Scales",
         "items": [{"tag": "t", "title": "a", "text": "b", "points": ["p1", "p2"]}],
     },
-    {"type": "faq", "enabled": True, "items": [{"q": "Why?", "a": "Because [here](/login)."}]},
+    {
+        "type": "faq",
+        "enabled": True,
+        "title": "FAQ",
+        "items": [{"q": "Why?", "a": "Because [here](/login)."}],
+    },
     {"type": "cta_band", "enabled": True, "title": "Go", "cta": {"label": "Go", "href": "/login"}},
     text(GOOD),
     {"type": "activity", "enabled": False, "count": 5},
-    {"type": "profiles", "enabled": True, "handles": ["ada"], "markdown": "hi"},
-    {"type": "explore", "enabled": True, "projects": ["ada/maity"]},
+    {"type": "profiles", "enabled": True, "title": "People", "handles": ["ada"], "markdown": "hi"},
+    {"type": "explore", "enabled": True, "title": "Explore", "projects": ["ada/maity"]},
     {
         "type": "collab",
         "enabled": False,
@@ -476,3 +482,25 @@ def test_two_edits_at_once_keep_both_fields(owner: flow.Human, migrated: Engine)
         _race(migrated, owner, language, footer)
         got = owner.get(ADMIN_PATH).json()
         assert (got["default_language"], got["footer"]) == (language, footer)
+
+
+@pytest.mark.parametrize(
+    "section",
+    [
+        {"type": "steps", "items": [{"title": "a", "text": "b"}]},
+        {"type": "scales", "items": [{"tag": "t", "title": "a", "text": "b"}]},
+        {"type": "faq", "items": [{"q": "q", "a": "a"}]},
+        {"type": "profiles", "handles": []},
+        {"type": "explore", "projects": []},
+    ],
+)
+def test_the_title_of_a_section_is_required_except_for_text_and_activity(
+    owner: flow.Human, section: dict[str, Any]
+) -> None:
+    """§16.7: only `text` has an optional title; these five need one (a section of the page
+    that is shown names itself)."""
+    refused = owner.patch(ADMIN_PATH, body({"enabled": True, **section}))
+    assert refused.status_code == 400, refused.text
+    assert field(refused)["pages.en.sections.0.title"] == "required"
+    titled = owner.patch(ADMIN_PATH, body({"enabled": True, "title": "A title", **section}))
+    assert titled.status_code == 200, titled.text
