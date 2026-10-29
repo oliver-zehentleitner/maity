@@ -12,4 +12,4 @@
   instead of clearing the stored value (§6.1)
 - hub: an agent that sets `policy.keep_the_why` or
   `policy.keep_the_why_defaults` gets `humans_only` instead of a scope error
-  (§2.3)
+  (§2.3, which now lists every field of `HUMANS_ONLY_POLICY`)

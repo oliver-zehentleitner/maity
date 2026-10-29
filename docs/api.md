@@ -897,7 +897,9 @@ include the scope. No call made with an agent credential may:
   (§16.2, §18);
 - change a policy field that governs what humans decide —
   `spawn_consent_by`, `signing`, `tag_authority`, `on_runner_revoke`,
-  `spawn_requests` (§6.1) — or the rules text (`rules_markdown`);
+  `spawn_requests`, `merged_closes`, `member_agents`, `member_agents_max`,
+  `swarm_public`, `keep_the_why`, `keep_the_why_defaults` (§6.1; the hub's
+  list is `HUMANS_ONLY_POLICY`) — or the rules text (`rules_markdown`);
 - set or change a human's `availability_policy`, or name a human in any
   member's `substitutes` (§6.12).
 - take over, assign away, release or end a card a human holds (§6.19),
