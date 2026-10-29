@@ -28,6 +28,7 @@ window.Maity = window.Maity || {};
     member: "already a member",
     invited: "invited already",
     length: "1 to 64 characters",
+    mismatch: "not the organisation's handle; read the page again",
   };
   function said(err) {
     const fields = err.code === "invalid" && err.details && err.details.fields;
@@ -46,6 +47,7 @@ window.Maity = window.Maity || {};
       return { message: "it still owns projects that are not archived" + (projects.length ? ": " + projects.join(", ") : "") + "; archive or transfer them first" };
     }
     if (err.code === "rate_limited") return { message: "too many at once; try again later" };
+    if (err.code === "alias_limit") return { message: "the organisation has kept " + ((err.details && err.details.limit) || 8) + " earlier handles, the most it may" };
     return err;
   }
 
@@ -170,7 +172,8 @@ window.Maity = window.Maity || {};
     h("label", { for: "org-invite-role" }, "Role"), role, go, status.el);
     const rows = invitations.map((x) => {
       const line = M.statusLine();
-      const withdraw = h("button", {
+      // An invitation for the role owner is an owner's to withdraw (§6.26).
+      const withdraw = x.role === "owner" && org.my_role !== "owner" ? null : h("button", {
         type: "button",
         onclick: async () => {
           withdraw.disabled = true;

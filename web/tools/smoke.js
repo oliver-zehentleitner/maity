@@ -3489,6 +3489,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main).includes("Invited @carl as admin.") && text(orgInvites()).includes("@carl as admin"), "orgs: an invitation is listed at once");
   btn(orgInvites(), "Withdraw").click(); for (let k = 0; k < 6; k++) await tick();
   expect(text(main).includes("The invitation of @ben was withdrawn.") && !text(orgInvites()).includes("@ben as"), "orgs: a withdrawn invitation leaves the list");
+  // An admin sees no Withdraw on an invitation for the role owner, and the fixture hub refuses it (§6.26).
+  const orgGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/orgs/oz-team" ? orgGet(p).then((o) => Object.assign(o, { my_role: "admin" }))
+    : p === "/orgs/oz-team/members/invitations" ? orgGet(p).then((r) => ({ items: r.items.concat([{ id: "oinv-own", handle: "dora", role: "owner",
+      invited_by: { id: "hum-maintainer", handle: "maintainer" }, created_at: "2026-10-29T10:00:00Z", expires_at: "2026-11-12T10:00:00Z" }]) })) : orgGet(p));
+  await go("#/account/orgs/oz-team"); for (let k = 0; k < 6; k++) await tick();
+  const orgOwnRow = main.querySelectorAll("li.org-invitation").find((li) => text(li).includes("@dora as owner"));
+  expect(orgOwnRow && !btn(orgOwnRow, "Withdraw") && main.querySelectorAll("li.org-invitation").some((li) => btn(li, "Withdraw")) && !main.querySelector("form.org-settings"),
+    "orgs: an admin may withdraw invitations for member and admin, not for owner, and has no settings");
+  win.Maity.api.get = orgGet;
+  const orgOwnInv = await win.Maity.api.post("/orgs/oz-team/members/invitations", { handle: "dora", role: "owner" });
+  expect(!("request_id" in orgOwnInv) && orgOwnInv.handle === "dora", "orgs: an invitation item carries no request id (§6.26)");
+  await win.Maity.api.del("/orgs/oz-team/members/invitations/" + orgOwnInv.id);
+  const orgSaid = win.Maity.orgs.said;
+  expect(orgSaid({ code: "alias_limit", details: { limit: 8 } }).message.includes("8 earlier handles")
+    && orgSaid({ code: "invalid", details: { fields: { confirm: "mismatch" } } }).message === "confirm: not the organisation's handle; read the page again",
+    "orgs: the alias limit and a confirmation that no longer matches in words");
+  await go("#/account/orgs/oz-team"); for (let k = 0; k < 6; k++) await tick();
   byId("org-role-hum-anna").value = "member"; byId("org-role-hum-anna").dispatch("change"); for (let k = 0; k < 6; k++) await tick();
   expect(text(main).includes("@anna is member now.") && byId("org-role-hum-anna").value === "member", "orgs: a role changed");
   byId("org-handle").value = "oz-crew"; byId("org-members-create").checked = true; main.querySelector("form.org-settings").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
@@ -6868,6 +6886,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const json = (status, data) => ({ ok: status < 400, status, statusText: "x",
       headers: { get: (k) => (k === "Maity-Error" && data.error ? data.error.code : k === "Maity-Server-Time" ? HUB_TIME : null) }, json: async () => data });
     if (mode === "expired" && p !== "/openapi.json" && p !== "/auth/methods") return json(401, { error: { code: "unauthenticated", message: "Session ended" } });
+    // 204 No Content: a body that is no JSON at all.
+    if (init.method === "DELETE") return { ok: true, status: 204, statusText: "No Content", headers: { get: (k) => (k === "Maity-Server-Time" ? HUB_TIME : null) },
+      json: async () => { throw new SyntaxError("Unexpected end of JSON input"); } };
     if (init.method === "POST") {
       if (mode === "reject") return json(403, { error: { code: "csrf_mismatch", message: "CSRF token mismatch", details: {} } });
       const r = F["maity/requests.json"].items.find((x) => p.includes(x.id));
@@ -6883,6 +6904,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!main.querySelector(".error"), "API mode against a fake hub renders the inbox");
   expect(Math.abs(win.Maity.api.now() - Date.parse(HUB_TIME)) < 5000, "API mode: the hub's clock from Maity-Server-Time");
   expect(!text(header).includes("Fixtures"), "no fixture label in API mode");
+  let noContent = "unset";
+  try { noContent = await win.Maity.api.del("/orgs/oz-team/members/invitations/oinv-1"); } catch (err) { noContent = err; }
+  expect(noContent === null, "API mode: a 204 answer is a success without a body, not a failure");
   expect(!head.querySelector("script"), "API mode never loads the fixture bundle");
   expect(calls.filter((c) => c.method === "GET").every((c) => !("X-CSRF-Token" in c.headers)), "no CSRF header on GET");
   const ps = byId("inbox-sort"); ps.value = "priority"; ps.dispatch("change"); await tick();

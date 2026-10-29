@@ -1042,7 +1042,8 @@ window.Maity = window.Maity || {};
     M.api.hubHas("POST", "/auth/device-codes").then((yes) => { deviceCodes = yes; }, () => {});
     // Organisations (§6.26) where the hub has them; humans only.
     let orgs = false;
-    if (ctx.me.kind === "human") M.api.hubHas("GET", "/orgs").then((yes) => { orgs = yes; }, () => {});
+    // A machine form that cannot be read keeps the entry (views.md).
+    if (ctx.me.kind === "human") M.api.hubHas("GET", "/orgs").then((yes) => { orgs = yes; }, () => { orgs = true; });
     // The human: their picture, the account, signing out.
     const profile = M.menuButton({
       label: "Your profile: " + ctx.me.display_name,

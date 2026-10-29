@@ -400,6 +400,8 @@ window.Maity = window.Maity || {};
     const objects = [all["me.json"].member].concat((all["agents.json"] || { items: [] }).items,
       ...Object.keys(all).filter((k) => k.endsWith("/members.json")).map((k) => all[k].items));
     objects.filter((x) => x && x.id === id).forEach((x) => { x.avatar_url = url; x.avatar_source = source; });
+    // An organisation's view carries the picture alone: it has no forge source (§6.26).
+    ((all["orgs.json"] || { items: [] }).items).filter((o) => o.id === id).forEach((o) => { o.avatar_url = url; });
     return { avatar_url: url, avatar_source: source };
   }
   function avatarRoute(idOf) {
@@ -443,6 +445,12 @@ window.Maity = window.Maity || {};
   }
   function orgNeeds(org, roles, path) {
     if (!roles.includes(orgRole(org))) fail(403, "forbidden", "not for your role", path, { reason: "org_role" });
+  }
+  // The picture's routes: an owner's, the organisation's id for avatarRoute.
+  function ownerOrg(m, path) {
+    const org = orgOf(m[1], path);
+    orgNeeds(org, ["owner"], path);
+    return org.id;
   }
   const ownAgent = (m, path) => {
     const agent = (fixtures()["agents.json"] || { items: [] }).items.find((a) => a.id === m[1]);
@@ -1147,18 +1155,8 @@ window.Maity = window.Maity || {};
       orgsData().items = orgsData().items.filter((o) => o !== org);
       return null;
     }],
-    ["PUT", /^\/orgs\/([^/]+)\/avatar$/, (m, body, path) => {
-      const org = orgOf(m[1], path);
-      orgNeeds(org, ["owner"], path);
-      org.avatar_url = "uploaded-avatar-" + org.id;
-      return { avatar_url: org.avatar_url, avatar_source: "uploaded" };
-    }],
-    ["DELETE", /^\/orgs\/([^/]+)\/avatar$/, (m, body, path) => {
-      const org = orgOf(m[1], path);
-      orgNeeds(org, ["owner"], path);
-      org.avatar_url = null;
-      return { avatar_url: null, avatar_source: null };
-    }],
+    ["PUT", /^\/orgs\/([^/]+)\/avatar$/, avatarRoute(ownerOrg)],
+    ["DELETE", /^\/orgs\/([^/]+)\/avatar$/, avatarRoute(ownerOrg)],
     ["GET", /^\/orgs\/([^/]+)\/members$/, (m, body, path) => ({ items: orgsData().members[orgOf(m[1], path).id].slice() })],
     ["PATCH", /^\/orgs\/([^/]+)\/members\/([^/]+)$/, (m, body, path) => {
       const org = orgOf(m[1], path);
@@ -1199,7 +1197,7 @@ window.Maity = window.Maity || {};
       if (orgsData().invitations[org.id].some((x) => x.handle === handle)) fail(400, "invalid", "the request does not validate", path, { fields: { handle: "invited" } });
       const at = new Date();
       const item = { id: "oinv-f" + String(++orgInviteSerial).padStart(3, "0"), handle, role: body.role, invited_by: { id: me().member.id, handle: me().member.handle },
-        request_id: "req-of" + String(orgInviteSerial).padStart(3, "0"), created_at: nowIso(),
+        created_at: nowIso(),
         expires_at: new Date(at.getTime() + 14 * 86400000).toISOString().replace(/\.\d{3}Z$/, "Z") };
       orgsData().invitations[org.id].push(item);
       return item;
@@ -1207,6 +1205,9 @@ window.Maity = window.Maity || {};
     ["DELETE", /^\/orgs\/([^/]+)\/members\/invitations\/([^/]+)$/, (m, body, path) => {
       const org = orgOf(m[1], path);
       orgNeeds(org, ["owner", "admin"], path);
+      // An invitation for the role owner is withdrawn by an owner only.
+      const item = orgsData().invitations[org.id].find((x) => x.id === m[2]);
+      if (item && item.role === "owner" && orgRole(org) !== "owner") fail(403, "forbidden", "not for your role", path, { reason: "org_role" });
       orgsData().invitations[org.id] = orgsData().invitations[org.id].filter((x) => x.id !== m[2]);
       return null;
     }],
@@ -2968,6 +2969,8 @@ window.Maity = window.Maity || {};
       if (code === "csrf_mismatch") detail += " (reload the page to get a fresh token)";
       throw new ApiError(detail || ("HTTP " + res.status), res.status, path, code, details);
     }
+    // 204 has no body: a deletion, a removal, a withdrawal (§6.26 among them).
+    if (res.status === 204) return null;
     return res.json();
   }
 

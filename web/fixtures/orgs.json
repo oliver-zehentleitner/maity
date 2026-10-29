@@ -19,7 +19,7 @@
   },
   "invitations": {
     "org-oz00team0001": [
-      { "id": "oinv-0001", "handle": "ben", "role": "member", "invited_by": { "id": "hum-maintainer", "handle": "maintainer" }, "request_id": "req-o001",
+      { "id": "oinv-0001", "handle": "ben", "role": "member", "invited_by": { "id": "hum-maintainer", "handle": "maintainer" },
         "created_at": "2026-10-29T10:00:00Z", "expires_at": "2026-11-12T10:00:00Z" }
     ]
   }

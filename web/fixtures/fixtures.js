@@ -4443,7 +4443,6 @@ window.MAITY_FIXTURES = {
             "handle": "maintainer",
             "id": "hum-maintainer"
           },
-          "request_id": "req-o001",
           "role": "member"
         }
       ]
