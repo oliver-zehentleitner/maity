@@ -280,14 +280,14 @@ def test_resume_sends_the_cursor_and_prints_the_packet(
     assert body["client"].startswith("maity-cli/")
 
 
-def test_wait_prints_the_first_event_and_advances_the_cursor(
+def test_wait_one_prints_the_first_event_and_advances_the_cursor(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
     fake.events = [{"seq": 5, "kind": "message"}, {"seq": 9, "kind": "task_claimed"}]
-    assert cli.main(["wait", "--timeout", "5"]) == cli.EXIT_OK
+    assert cli.main(["wait", "--timeout", "5", "--one"]) == cli.EXIT_OK
     assert json.loads(capsys.readouterr().out)["seq"] == 5
     assert state.load_state(joined)["cursor"] == 5
-    assert cli.main(["wait", "--timeout", "5"]) == cli.EXIT_OK
+    assert cli.main(["wait", "--timeout", "5", "--one"]) == cli.EXIT_OK
     assert json.loads(capsys.readouterr().out)["seq"] == 9
     query = fake.signed()[-1].query
     assert "after=5" in query and "wait=" in query

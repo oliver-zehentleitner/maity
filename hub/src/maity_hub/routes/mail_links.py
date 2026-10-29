@@ -17,6 +17,7 @@ from sqlalchemy import Connection, select
 
 from maity_hub import account_deletion, clock, events
 from maity_hub import tables as t
+from maity_hub.auth import second_factor_reset
 from maity_hub.db import retrying
 from maity_hub.deps import engine_of, settings_of
 from maity_hub.notifications import preferences, tokens
@@ -34,6 +35,14 @@ _WORDS = {
         "unsub_text": "Stop the {kind} mails from Maity.",
         "unsub_button": "Stop these mails",
         "unsub_done": "You will get no more {kind} mails. The settings can switch them on again.",
+        "reset_title": "Reset your two-factor sign-in",
+        "reset_text": "{admin} asked to reset the two-factor sign-in of {name} ({handle}).",
+        "reset_reason": "The reason given:",
+        "reset_button": "Reset my two-factor sign-in",
+        "reset_done": (
+            "Your two-factor sign-in was reset and every session has ended. "
+            "Sign in again and set it up anew."
+        ),
         "dead": "This link no longer works.",
         "delete_title": "Delete my account",
         "delete_text": "This deletes the Maity account {handle}.",
@@ -69,6 +78,16 @@ _WORDS = {
         "unsub_done": (
             "Du bekommst keine {kind}-Mails mehr. "
             "In den Einstellungen lassen sie sich wieder einschalten."
+        ),
+        "reset_title": "Zwei-Faktor-Anmeldung zurücksetzen",
+        "reset_text": (
+            "{admin} möchte die Zwei-Faktor-Anmeldung von {name} ({handle}) zurücksetzen."
+        ),
+        "reset_reason": "Die angegebene Begründung:",
+        "reset_button": "Meine Zwei-Faktor-Anmeldung zurücksetzen",
+        "reset_done": (
+            "Deine Zwei-Faktor-Anmeldung wurde zurückgesetzt, und alle Sitzungen sind "
+            "beendet. Melde dich neu an und richte sie noch einmal ein."
         ),
         "dead": "Dieser Link funktioniert nicht mehr.",
         "delete_title": "Mein Konto löschen",
@@ -106,6 +125,7 @@ def _page(
     status: int = 200,
     more: tuple[str, ...] = (),
     link: tuple[str, str] | None = None,
+    quote: str | None = None,
 ) -> HTMLResponse:
     form = (
         f'<form method="post"><button type="submit">{escape(button)}</button></form>'
@@ -115,11 +135,12 @@ def _page(
     paragraphs = "".join(f"<p>{escape(p)}</p>" for p in (text, *more))
     if link is not None:  # only a link the hub builds from its public URL
         paragraphs += f'<p><a href="{escape(link[1])}">{escape(link[0])}</a></p>'
+    quoted = f"<blockquote>{escape(quote)}</blockquote>" if quote else ""
     html = (
         '<!doctype html><html><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width">'
         f"<title>{escape(title)}</title></head><body>"
-        f"<h1>{escape(title)}</h1>{paragraphs}{form}</body></html>"
+        f"<h1>{escape(title)}</h1>{paragraphs}{quoted}{form}</body></html>"
     )
     # The token is in the address: no page that carries it may leak it in a `Referer`.
     return HTMLResponse(html, status_code=status, headers={"Referrer-Policy": "no-referrer"})
@@ -207,6 +228,35 @@ def unsubscribe_confirm(token: str, request: Request) -> HTMLResponse:
         if kind is None:
             return _dead(words)
         return _page(words["unsub_title"], words["unsub_done"].format(kind=kind))
+
+
+@page_router.get("/mail/second-factor-reset/{token}")
+def reset_page(token: str, request: Request) -> HTMLResponse:
+    hub = settings_of(request)
+    with engine_of(request).begin() as conn:
+        shown = second_factor_reset.page(conn, hub, token)
+        if shown is None:
+            return _dead(_WORDS[_language(conn, request, token)])
+        words = _WORDS[shown["language"] if shown["language"] in _WORDS else "en"]
+        text = words["reset_text"].format(
+            admin=shown["admin"], name=shown["display_name"], handle=shown["handle"]
+        )
+        return _page(
+            words["reset_title"],
+            f"{text} {words['reset_reason']}",
+            button=words["reset_button"],
+            quote=shown["reason"],
+        )
+
+
+@page_router.post("/mail/second-factor-reset/{token}")
+def reset_confirm(token: str, request: Request) -> HTMLResponse:
+    hub = settings_of(request)
+    with engine_of(request).begin() as conn:
+        words = _WORDS[_language(conn, request, token)]
+        if not second_factor_reset.take_effect(conn, hub, token):
+            return _dead(words)
+        return _page(words["reset_title"], words["reset_done"])
 
 
 @page_router.get("/mail/account-deletion/{token}")

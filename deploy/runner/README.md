@@ -14,7 +14,7 @@ runner of its own type: `hub-sqlite` for `[self-hosted, maity-hub-sqlite]`, `hub
 - **One runner service per job type**, so the three jobs of a pull request run side by side, and two
   pull requests queue only per type. A pool of identical runners would let two Postgres jobs run at
   once, both binding the host port 5432 for their service container (`ports: 127.0.0.1:5432`).
-- Each service sets `PYTEST_ARGS=-n 3` in its unit: three workers per job, nine on the machine's
+- Each service sets `PYTEST_ARGS=-n 2` in its unit: two workers per job, six on the machine's
   eight cores. Hosted runners keep `-n auto`.
 - Variable unset or empty: GitHub-hosted (`ubuntu-latest`). **Deleting the variable is the whole
   fallback**, no commit needed. Runs already queued for a self-hosted label keep it, so cancel and
@@ -39,6 +39,26 @@ the repository setting, and nothing else:
   repository, agents included.
 
 After a malicious job the machine is reinstalled; the hook below cannot make it clean.
+
+## What went wrong the first time, and the limits
+
+The first run of the three services (`-n 3` each, no limits, all three started at once) took the machine down two and a half minutes after the
+three database jobs of one pull request started: the VirtualBox guest on the maintainer's workstation stopped, the
+runners vanished mid-job (the jobs ended as "failure" with `make check` unfinished), and the machine was back after
+a reboot with CI runs still queued on the labels. Memory was not the cause (one job peaked at 5.2 GB of 19.9 GB); nine
+workers, three Docker stacks and three installs on eight vCPUs, nothing else left for the host, are the suspect.
+So the machine is capped, not trusted:
+
+- `maity-runner@.service`: `Slice=user-<uid>.slice` (into the capped tree of the runner user), `CPUQuota=150%`, `Nice=10`, `CPUWeight=20`, `IOWeight=20`, `MemoryMax=4G`, no swap,
+  and `PYTEST_ARGS=-n 2`.
+- `user-slice-limits.conf`: one cap for everything the runner user runs, the rootless Docker and its database
+  containers included (the unit's own cap does not reach them, they run under the user's dockerd): at most 4 of 8 cores,
+  low CPU and I/O weight, 8 GB, no swap. `install-services.sh` installs it as a drop-in of `user-<uid>.slice`, and the units sit in that slice (`Slice=`), so the
+  caps add up to the one: check with `systemctl show -p ControlGroup maity-runner@pg` (it must end up under `user-<uid>.slice`).
+- **Start with one service.** `install-services.sh` installs `INSTANCES=pg` by default; start it with the maintainer at
+  the machine and `vmstat 5` running. `sqlite` and `maria` are added one at a time (`INSTANCES=sqlite install-services.sh`,
+  then `install-python.sh`, then `systemctl enable --now`), each only after the previous one ran jobs without a stall. If CI runs are queued on a label whose service is
+  stopped, cancel and rerun them (deleting `HUB_RUNNER_LABEL` does not re-route runs that are already queued).
 
 ## What the machine must be
 
@@ -85,8 +105,8 @@ After a malicious job the machine is reinstalled; the hook below cannot make it 
    registration token from that page (Settings → Actions → Runners; valid for an hour).
 3. As root, with every `maity-runner*` service stopped and no container left in the runner user's Docker (stopping a
    service ends the runner but not the service containers of a job it was running; `docker ps` as the runner user
-   must be empty, the script refuses otherwise): `RUNNER_TOKEN=<token> RUNNER_TARBALL=<tarball> install-services.sh`. For each of
-   `sqlite`, `pg` and `maria` it unpacks the runner to `/opt/actions-runner-<type>`, runs `config.sh` **as the
+   must be empty, the script refuses otherwise): `RUNNER_TOKEN=<token> RUNNER_TARBALL=<tarball> install-services.sh`. For each
+   selected instance (default `pg` only; `INSTANCES="sqlite maria"` adds others later) it unpacks the runner to `/opt/actions-runner-<type>`, runs `config.sh` **as the
    runner user** (as root it refuses: "Must not run with sudo"; with `--disableupdate`, because the runner's
    self-update would write into its own directory, which the runner user may not: update by hand, as root, when
    GitHub asks for a newer version), registers it as `maity-vm-<type>` with the label `maity-hub-<type>`, hands the
@@ -98,14 +118,13 @@ After a malicious job the machine is reinstalled; the hook below cannot make it 
    The units start `bin/runsvc.sh`, not `run.sh` (which writes into the runner's directory), and use
    `KillMode=control-group`. The hook's output is shown in the job log (step "Complete runner"), which anyone
    can read in a public repository.
-4. For each instance, as root, with no job running (it restarts the service; the script refuses otherwise unless
+4. For each instance, as root, with no job running (it restarts the service if it is running and never starts one; the script refuses otherwise unless
    `FORCE=1`): `RUNNER_DIR=/opt/actions-runner-<type> SERVICE=maity-runner@<type> install-python.sh`. The jobs use
    `actions/setup-python` for 3.12, which has no Python for Debian and would fail; the script installs 3.12 with
    uv as the runner user, puts it in the runner's tool cache where `setup-python` looks first, removes uv's PEP 668
    "externally managed" marker from that private copy (without it `pip install` fails in the jobs), and replaces
    the stored `.path`.
-5. `systemctl enable --now maity-runner@sqlite maity-runner@pg maity-runner@maria`; GitHub shows the three
-   runners as Idle.
+5. `systemctl enable --now maity-runner@pg` (the instance(s) you installed, one at a time); GitHub shows it as Idle.
 6. Set the fork-approval setting above, then `HUB_RUNNER_LABEL` to `maity-hub`.
 
 ## Why not an ephemeral runner

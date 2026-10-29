@@ -46,6 +46,8 @@ CONTENT_MAX = 500
 MAILED_KINDS = ("inbox", "chat", "mention")
 # An open matter the dashboard shows and no mail carries (§18.5).
 NEVER_MAILED = ("registration_pending", "mail_disabled")
+# Each of these is a security mail of its own: never batched, never held (§18.5, §2.6.5).
+SECURITY_MAIL = ("session_created", "second_factor_changed", "second_factor_failed")
 
 _WORDS = {
     "en": {
@@ -63,6 +65,10 @@ _WORDS = {
             "Time: {time}\nMethod: {method}\nBrowser: {browser}\nSystem: {os}\n"
             "Address: {ip}\n\nIf this was not you, end it here: {sessions}\n"
         ),
+        "two_factor_body": (
+            "{title}.\n\nTime: {time}\n\n"
+            "If this was not you, sign in and check your account here: {security}\n"
+        ),
     },
     "de": {
         "updates": "{n} Neuigkeiten",
@@ -79,6 +85,10 @@ _WORDS = {
             "Eine neue Sitzung hat sich bei deinem Konto auf {url} angemeldet.\n\n"
             "Zeit: {time}\nMethode: {method}\nBrowser: {browser}\nSystem: {os}\n"
             "Adresse: {ip}\n\nWarst du das nicht? Hier beenden: {sessions}\n"
+        ),
+        "two_factor_body": (
+            "{title}.\n\nZeit: {time}\n\n"
+            "Warst du das nicht? Melde dich an und prüfe dein Konto hier: {security}\n"
         ),
     },
 }
@@ -175,8 +185,11 @@ def for_human(
     queued = 0
     # A new sign-in is a security mail of its own; quiet hours do not hold it (§2.6.5).
     for item in pending:
-        if item.record_type == "session_created" and modes.get("security") == "immediate":
-            _sign_in_mail(conn, row, item, prefs, signing_key, public_url, local)
+        if item.record_type in SECURITY_MAIL and modes.get("security") == "immediate":
+            if item.record_type == "session_created":
+                _sign_in_mail(conn, row, item, prefs, signing_key, public_url, local)
+            else:
+                _two_factor_mail(conn, row, item, prefs, signing_key, public_url, local)
             _mark(conn, human_id, [item])
             queued += 1
     mailable = [i for i in pending if i.kind in MAILED_KINDS]
@@ -444,6 +457,42 @@ def _sign_in_mail(
         human_id=row.human_id,
         to=row.address,
         subject=f"[Maity] {words['sign_in']}",
+        body=body,
+        extra_headers={
+            "List-Unsubscribe": f"<{stop}>",
+            "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+        },
+    )
+
+
+def _two_factor_mail(
+    conn: Connection,
+    row: Any,
+    item: Item,
+    prefs: dict[str, Any],
+    signing_key: bytes,
+    public_url: str,
+    local: datetime,
+) -> None:
+    """A change of the second factor, or wrong codes after a sign-in (§2.8.1): what happened
+    and when, and where to look; never a code, a secret or a link that changes anything."""
+    words = _WORDS[prefs["language"]]
+    record = conn.execute(select(t.account_record).where(t.account_record.c.n == item.record)).one()
+    token = preferences.unsubscribe_token(signing_key, row.human_id, "security", row.epoch)
+    stop = f"{public_url}/mail/unsubscribe/{token}"
+    body = words["two_factor_body"].format(
+        title=item.title,
+        time=record.at.astimezone(local.tzinfo).strftime("%Y-%m-%d %H:%M %Z"),
+        security=f"{public_url}/#/account/security",
+    )
+    body += "\n" + words["stop"].format(kind="security", url=stop)
+    body += "\n\n" + words["only"].format(url=public_url) + "\n"
+    outbox.enqueue(
+        conn,
+        kind="security",
+        human_id=row.human_id,
+        to=row.address,
+        subject=f"[Maity] {item.title}",
         body=body,
         extra_headers={
             "List-Unsubscribe": f"<{stop}>",

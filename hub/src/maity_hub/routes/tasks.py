@@ -200,6 +200,19 @@ def _member_id(conn: Connection, mine: Membership, principal: str, field: str) -
     return membership_id
 
 
+def _target_id(conn: Connection, mine: Membership, principal: str, field: str) -> int:
+    """`_member_id` for a member a card names as its assignee or arbiter: never a guest,
+    which is no target (§2.3 "Guest")."""
+    try:
+        row = member_row(conn, mine.project.id, principal)
+    except ApiError:
+        raise invalid({field: "not_a_member"}) from None
+    if row.trust == "guest":
+        raise invalid({field: "guest"}, "a guest is never a target")
+    membership_id: int = row.id
+    return membership_id
+
+
 def _card(conn: Connection, card_id: str) -> Any:
     return conn.execute(select(t.card).where(t.card.c.id == card_id)).one()
 
@@ -303,7 +316,7 @@ def _new_contract(conn: Connection, mine: Membership, body: ContractIn) -> dict[
     if arbiter != mine.project.contract_arbiter:
         mine.require("tasks:admin")  # naming another arbiter than the policy's (§6.8)
     if arbiter != "trust:admin":
-        _member_id(conn, mine, arbiter, "contract.arbiter")
+        _target_id(conn, mine, arbiter, "contract.arbiter")
     watchers = list(dict.fromkeys(body.watchers))
     for watcher in watchers:
         _member_id(conn, mine, watcher, "contract.watchers")
@@ -752,7 +765,7 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
         assigned: int | None
         if body.assigned_to is not None:
             mine.require("tasks:admin")
-            assigned = _member_id(conn, mine, body.assigned_to, "assigned_to")
+            assigned = _target_id(conn, mine, body.assigned_to, "assigned_to")
         else:
             # Findings and hand-outs go to the owner of the narrowest area (§6.2).
             assigned = cards.area_owner(conn, mine.project.id, body.area)
@@ -863,7 +876,7 @@ def patch_task(
         card = _project_card(conn, mine, card_id)
         new_assignee: int | None = None
         if "assigned_to" in given and body.assigned_to:
-            new_assignee = _member_id(conn, mine, body.assigned_to, "assigned_to")
+            new_assignee = _target_id(conn, mine, body.assigned_to, "assigned_to")
         # No agent assigns away, cancels or sets back to open a card a human holds
         # (§2.3): before any gate. `done` stays done authority's (§6.4).
         assigns_away = "assigned_to" in given and new_assignee not in (
@@ -1138,7 +1151,7 @@ def claim(
         ):
             mine.require("tasks:admin")
             principal, named = instances.split_address(body.holder)
-            holder_id = _member_id(conn, mine, principal, "holder")
+            holder_id = _target_id(conn, mine, principal, "holder")  # never a guest (§2.3)
             holder_row = conn.execute(
                 select(t.membership).where(t.membership.c.id == holder_id)
             ).one()
@@ -1423,7 +1436,7 @@ def assign(
         mine = membership(conn, caller, slug)
         mine = _locked(conn, mine)
         card = _project_card(conn, mine, card_id)
-        assignee = _member_id(conn, mine, body.assignee, "assignee")
+        assignee = _target_id(conn, mine, body.assignee, "assignee")
         if card.claim_holder not in (None, assignee):
             # Before the scope: no agent, whatever its role, assigns it away (§2.3).
             _refuse_against_a_human(conn, mine, card)

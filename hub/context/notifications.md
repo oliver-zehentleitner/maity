@@ -315,3 +315,35 @@ callable keeps `preferences` free of the caller and the hub settings.
   mail mode, which §2.8.4 does not list.
 - Asking only on approval of the held change and on the removal: a change with the password from a
   full session is the main way an address moves, and it is the first thing §2.8.4 lists.
+
+## A change of the second factor and wrong second-factor codes are security items, each mailed on its own
+
+**Id:** 3e9a6f12-8c47-4b05-a1d3-52c7e0b9f8a6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.8.1, §18.1 (the `security` row), §18.5; the implementation of #380, part 3, 2026-10-28
+**Revisit when:** a third kind of security record needs a mail (the list in `mailer.SECURITY_MAIL` and the titles in `items._two_factor_title` are the places), or the security mail of a sign-in and of these records should share one builder
+
+The account records `second_factor_changed` and `second_factor_failed` (`records.SECURITY`)
+become `security` items with the titles of §18.1 (`items._two_factor_title`; a `change` this
+hub does not know reads "Two-factor sign-in changed", never a guess), and the mail pass sends each
+of them as a security mail of its own, as it does a new sign-in: not batched, not held by quiet
+hours, one mail per item (`mail_item_sent`), only while the human's `security` mode is
+`immediate`, with the subject `[Maity] <title>`, the time, the link to Profile → Security and the
+unsubscribe line of the `security` kind. The bell confirms them like the other security items
+(`listing._may_mark`: from a session in good standing that is older than the item). The mail
+carries no code, no secret and no link that changes anything.
+
+**Reason:** the contract says every change of the factor "sends the security mail of §18.5" and
+that security mail is never batched, so the digest path (`_send`) is the wrong one; the sign-in
+alert already has the shape (one item, one mail, its own budget), and the two-factor mail reuses
+it with a different body. Keeping the title as the subject and the body's first line means a
+reader sees what happened without opening the dashboard, which is what these mails are for.
+
+**Rejected alternatives:**
+- Putting these items in the digest like `inbox` items: a change a human did not make would then
+  wait for an hour or a day to be told.
+- One generic security-mail builder for the sign-in and these records: the sign-in's body
+  carries method, browser, system and address and the others do not, so a shared builder would be
+  a switch inside; two short functions are clearer.

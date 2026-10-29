@@ -297,7 +297,13 @@ def _parse_to(conn: Connection, mine: Membership, to: str) -> inbox.Addressee:
         if not inbox.valid_token(to):
             raise invalid({"to": "unknown_role"})
         return inbox.Addressee("role", role=to)
-    return inbox.Addressee("member", member=_member_id(conn, mine, to, "to"))
+    addressee = _member_id(conn, mine, to, "to")
+    trust = conn.execute(
+        select(t.membership.c.trust).where(t.membership.c.id == addressee)
+    ).scalar_one()
+    if trust == "guest":  # a guest answers nothing, so nothing is asked of it (§2.3)
+        raise invalid({"to": "guest"}, "a guest is never asked")
+    return inbox.Addressee("member", member=addressee)
 
 
 def _needs_in_session(

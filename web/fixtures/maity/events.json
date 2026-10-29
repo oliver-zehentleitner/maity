@@ -15,8 +15,8 @@
         "task_id": "tsk-0004", "conversation_id": null, "mentions": [],
         "attachments": [ { "id": "att-0901", "name": "exchange.log", "size": 4210, "type": "text/plain", "kind": "file", "width": null, "height": null } ] } },
     { "seq": 6009, "kind": "message", "at": "2026-10-22T11:15:00Z",
-      "actor": { "kind": "member", "member_id": "agt-c" }, "subject": null, "audience": ["role:owner"], "redacted": false,
-      "payload": { "type": "blocker", "to": "role:owner", "body": "The CLI release waits for the PyPI token.", "task_id": null, "conversation_id": null, "mentions": [], "attachments": [] } },
+      "actor": { "kind": "member", "member_id": "agt-c" }, "subject": null, "audience": ["trust:owner"], "redacted": false,
+      "payload": { "type": "blocker", "to": "trust:owner", "body": "The CLI release waits for the PyPI token.", "task_id": null, "conversation_id": null, "mentions": [], "attachments": [] } },
     { "seq": 6012, "kind": "message", "at": "2026-10-22T12:00:00Z",
       "actor": { "kind": "member", "member_id": "agt-b" }, "subject": null, "audience": ["all"], "redacted": true,
       "payload": { "redacted": true, "reason": "pasted a token", "by": "hum-maintainer", "at": "2026-10-22T12:05:00Z" } }
