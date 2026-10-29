@@ -87,6 +87,7 @@ class Web:
         self.delay = 0.0
         self.in_flight = 0
         self.most = 0
+        self.active: dict[str, int] = {}  # requests still being served, per path
         self.lock = threading.Lock()
         self.sock = socket.socket()
         self.sock.bind(("127.0.0.1", 0))
@@ -118,6 +119,7 @@ class Web:
         with self.lock:
             self.in_flight += 1
             self.most = max(self.most, self.in_flight)
+        target = None
         try:
             data = b""
             conn.settimeout(15)
@@ -128,6 +130,8 @@ class Web:
                 data += chunk
             target = data.split(b" ", 2)[1].decode()
             self.requests.append(target)
+            with self.lock:
+                self.active[target] = self.active.get(target, 0) + 1
             if self.delay:
                 time.sleep(self.delay)
             found = self.routes.get(target)
@@ -146,6 +150,8 @@ class Web:
         finally:
             with self.lock:
                 self.in_flight -= 1
+                if target is not None:
+                    self.active[target] -= 1
             with contextlib.suppress(OSError):
                 conn.close()
 
@@ -643,13 +649,19 @@ def test_simultaneous_reads_are_single_flight_and_release_their_threads(
     repo: Repo, web: Web
 ) -> None:
     """One upstream read; the others wait at most LOCK_WAIT and get `Busy`."""
-    repo.files[".keep-the-why"] = kfile(f"{BASE}/s.json", "r")
-    web.routes["/d/s.json"] = doc()
-    web.delay = 1.5
+    # A path no other test uses: a read another test left running cannot be counted here.
+    path = "/d/single-flight.json"
+    repo.files[".keep-the-why"] = kfile(f"{BASE}/single-flight.json", "r")
+    web.routes[path] = doc()
+    # The upstream read outlasts every waiter by a wide margin, so a slow runner that
+    # starts a thread late cannot turn a waiter into a second reader or a late `Busy`.
+    web.delay = 3.0
     results: list[Any] = []
+    gate = threading.Barrier(30, timeout=10)  # a thread that dies early fails, not hangs
     started = time.monotonic()
 
     def call() -> None:
+        gate.wait()  # all 30 ask together, none after the first read has ended
         try:
             results.append(ktw.CACHE.get(forge.Forge(None), "p1", REPO)[1])
         except ktw.Busy:
@@ -658,21 +670,23 @@ def test_simultaneous_reads_are_single_flight_and_release_their_threads(
     threads = [threading.Thread(target=call) for _ in range(30)]
     for t in threads:
         t.start()
-    time.sleep(ktw.LOCK_WAIT + 0.5)
+    time.sleep(ktw.LOCK_WAIT + 1.0)  # every waiter is done; the reader still waits on the web
     blocked = sum(t.is_alive() for t in threads)
     for t in threads:
         t.join()
     print(
         "SINGLE-FLIGHT upstream",
-        len(web.requests),
+        web.requests.count(path),
         "fresh",
         results.count(True),
-        "threads blocked at 0.5 s",
+        "threads blocked at",
+        ktw.LOCK_WAIT + 1.0,
+        "s",
         blocked,
         "total",
         round(time.monotonic() - started, 2),
     )
-    assert len(web.requests) == 1 and results.count(True) == 1
+    assert web.requests.count(path) == 1 and results.count(True) == 1
     assert results.count("busy") == 29 and blocked == 1
 
 
@@ -780,18 +794,42 @@ def test_waiters_on_a_slow_family_do_not_starve_the_request_threadpool(
     contents reads + 8 rounds of 10 s state reads). Here: a 4 s upstream, 45 waiters,
     then an unrelated sync GET /projects/widget."""
     monkeypatch.setattr(outbound, "TIMEOUT", 10.0)
-    repo.files[".keep-the-why"] = kfile(f"{BASE}/s.json", "r")
-    web.routes["/d/s.json"] = doc()
+    path = "/d/starvation.json"  # a path of its own: a read another test left is not counted
+    repo.files[".keep-the-why"] = kfile(f"{BASE}/starvation.json", "r")
+    web.routes[path] = doc()
     flow.project(owner, "widget", repository={"url": REPO})
     web.delay = 4.0
+    entered = [0]
+    entered_lock = threading.Lock()
+    lock_of = ktw.CACHE._lock
+
+    def counting_lock(project_id: str) -> threading.Lock:
+        with entered_lock:
+            entered[0] += 1
+        return lock_of(project_id)
+
+    monkeypatch.setattr(ktw.CACHE, "_lock", counting_lock)
     threads = [threading.Thread(target=lambda: get(owner)) for _ in range(45)]
     for t in threads:
         t.start()
-    time.sleep(0.5)
+    # Not a fixed sleep: wait until the slow upstream read has begun and at least 40
+    # requests (anyio's worker threads) have reached the per-project lock, so the pool
+    # is really held when the unrelated GET is sent.
+    deadline = time.monotonic() + 10.0
+    while path not in web.requests or entered[0] < 40:
+        assert (
+            time.monotonic() < deadline
+        ), f"upstream reached: {path in web.requests}, at the lock: {entered[0]} of 45"
+        time.sleep(0.01)
     start = time.monotonic()
     status = owner.get("/projects/maintainer/widget").status_code
     waited = time.monotonic() - start
+    # An order, not a wall-clock bound: the unrelated GET has its answer while the family
+    # read is still waiting on the upstream, so it did not queue behind the waiters. The
+    # 4 s upstream leaves a slow runner seconds for the GET, not a fraction of one.
+    reading = web.active.get(path, 0) >= 1 and any(t.is_alive() for t in threads)
     for t in threads:
         t.join()
     print("STARVATION unrelated GET waited", round(waited, 2), "s, status", status)
-    assert waited < 1.0
+    assert status == 200
+    assert reading, f"the unrelated GET waited {waited:.2f} s, until the family read ended"
