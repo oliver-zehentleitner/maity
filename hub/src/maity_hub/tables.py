@@ -534,6 +534,11 @@ membership = Table(
     Column("paused_reason", MARKDOWN_TEXT),
     Column("paused_since", UtcDateTime),
     Column("paused_by", String(ID)),
+    # The pause was set by a manager under `line:lead`, which decides who lifts it (§5.3).
+    Column("paused_line", Boolean, nullable=False, server_default=false()),
+    # The cross-owner `reports_to` edge was consented with a manager's rights and the
+    # boss still holds the role `manager` (§6.2): the member is in the boss's reach.
+    Column("line_consent", Boolean, nullable=False, server_default=false()),
     # What the human told this agent about its job (§3.1); its own and the admins' to read.
     Column("briefing", MARKDOWN_TEXT),
     Column("onboarded_at", UtcDateTime),
@@ -719,6 +724,7 @@ credential = Table(
     Column("paused_reason", MARKDOWN_TEXT),
     Column("paused_since", UtcDateTime),
     Column("paused_by", String(ID)),
+    Column("paused_line", Boolean, nullable=False, server_default=false()),
     UniqueConstraint("membership_id", "instance", name="uq_credential_instance"),
     **MYSQL_TABLE,
 )
@@ -1452,18 +1458,52 @@ conversation_read = Table(
 )
 
 # The instance's landing page (docs/api.md §16.7): one row, written by the instance
-# admin; no row means the default, disabled. `updated_at` and `updated_by` are the record
-# of its changes in this version.
+# admin; no row means the default, disabled. `pages` is per language `{title,
+# description, sections}`, `footer` is shared by all languages. `updated_at` and
+# `updated_by` are the record of its changes in this version.
 instance_landing = Table(
     "instance_landing",
     metadata,
     Column("id", String(16), primary_key=True),
     Column("enabled", Boolean, nullable=False),
-    Column("title", String(120)),
-    Column("markdown", MARKDOWN_TEXT),
-    Column("cta", JSON_VALUE),
+    Column("default_language", String(8), nullable=False),
+    Column("pages", JSON_VALUE, nullable=False),
+    Column("footer", JSON_VALUE),
     Column("updated_at", UtcDateTime, nullable=False),
     Column("updated_by", String(ID)),
+    **MYSQL_TABLE,
+)
+
+# The legal pages (docs/api.md §16.7.1). `instance_legal` is the one row of the setting
+# (the default language and who last wrote it); `legal_version` keeps every text a page
+# ever had, read-only, since a person may have accepted one; `legal_page` says which
+# version is served now, none for a page that is not set.
+instance_legal = Table(
+    "instance_legal",
+    metadata,
+    Column("id", String(16), primary_key=True),
+    Column("default_language", String(8), nullable=False),
+    Column("updated_at", UtcDateTime, nullable=False),
+    Column("updated_by", String(ID)),
+    **MYSQL_TABLE,
+)
+legal_version = Table(
+    "legal_version",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("page", String(16), nullable=False),  # imprint, privacy, terms
+    Column("version", String(20), nullable=False),  # the hub's time of the change, RFC 3339
+    Column("languages", JSON_VALUE, nullable=False),  # {tag: {title, markdown}}
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("created_by", String(ID)),
+    UniqueConstraint("page", "version", name="uq_legal_version_page_version"),
+    **MYSQL_TABLE,
+)
+legal_page = Table(
+    "legal_page",
+    metadata,
+    Column("page", String(16), primary_key=True),
+    Column("current", String(20)),  # the served version; null while the page is not set
     **MYSQL_TABLE,
 )
 

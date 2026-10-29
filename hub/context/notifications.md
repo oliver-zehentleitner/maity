@@ -145,6 +145,14 @@ the batch's seq range instead of a list of every seq. Measured on a local fixtur
 card events and 150 chat messages: 1059 queries and ~110 ms became 13 queries and ~20 ms,
 with the same 601 items. A test keeps the count flat as events grow.
 
+The account records follow the same rule since 2026-10-29: every personal request is an
+inbox item, and `_from_records` read its request and its asker's name per record, three
+queries each. Hub notices made that the slow part of `GET /me/notifications` for a human
+with many of them. It now reads the requests in one query and the askers' names in three
+(`_member_names`, the same names as `_name`). Measured on a local fixture of 120 hub
+notices: 409 queries and ~95 ms became 52 and ~30 ms; a test keeps the count flat as
+personal requests grow.
+
 **Rejected alternatives:**
 - Caching the derived items per human between answers. Every read rule (§18.1) is applied
   as things are now, so a cache would need invalidation on every relation the

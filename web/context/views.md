@@ -607,13 +607,38 @@ features off the page for the rest of its life. Each view reading
 `openapi.json` on its own, as the Ticker did: the same read and the same
 two key forms in several places.
 
+## The inbox is the requests alone; activity is on the bell, the Chat button and /notifications
+
+**Id:** 2ff6afe9-ed47-4ffd-b12d-947cfb7774ca
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's report and decision on tsk-430dnt8s25a8 (the Request updates section slow and noisy, the tab's count against an empty list), relayed by the coordinator, 2026-10-29; docs/api.md §7, §18.2, §18.3
+**Revisit when:** the hub gives the inbox a kind of activity that asks for an answer, or the bell no longer lists everything unread
+
+The inbox, in a project and across them, lists the requests and nothing
+else: the block of unread activity under them (Request updates,
+Conversations, Mentions, Account) is gone. Its history is the Show filter
+(answered, closed). Unread notifications are on the bell, conversations
+on the Chat button, and every notification on `/notifications`, where an
+unread one is in bold with a dot as on the bell and **Mark all read**
+marks up to the head of the first page (§18.3).
+
+**Reason:** the block mostly repeated the hub's notices about agents not
+listening, held the page while it read up to four pages of 50, and made
+read and unread look alike; the inbox is for what asks for an answer.
+
+**Rejected alternative:** keeping the block with read and unread told
+apart: the activity would still sit under the requests and be read on
+every visit, while the bell already shows it.
+
 ## A personal request in the cross-project inbox is labelled Personal and links into no project
 
 **Id:** 2fd5910d-3233-4aca-a16e-8c1cc73d071a
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** docs/api.md §7 (personal requests, PR #232); the coordinator's card tsk-x995qwddkrk2, 2026-10-23; the dashboard's implementation, 2026-10-23
+**Source:** docs/api.md §7 (personal requests, PR #232); the coordinator's card tsk-x995qwddkrk2, 2026-10-23; the dashboard's implementation, 2026-10-23; the coordinator's choice of the count fix on tsk-430dnt8s25a8 (option a), 2026-10-29
 **Revisit when:** the dashboard gets a personal inbox of its own, apart from `/all`
 
 A personal request (`personal: true`, listed only by `GET /requests`) is
@@ -621,12 +646,22 @@ answered and withdrawn on `/requests/{id}/answer` and `…/withdraw`. Its
 badge says "Personal" and its project's name without a link, its card and
 its mentions are text, its free text has no @ picker, and it offers
 Withdraw, which only its human may do. Grouped by project, the personal
-ones come first under "Personal".
+ones come first under "Personal". Since 2026-10-29 a project's own inbox
+lists the open personal requests about that project too, read from
+`GET /requests`: its tab counts them (§18.2), so the list shows what the
+tab says; they keep the label and lead into nothing. The hub has no
+project filter on `GET /requests` (§7), so the project's inbox filters
+what it reads; a failed read is said in the list's status line, never
+shown as an empty list, since a list short of its tab is the bug this
+fixed. The list's own reload follows the inbox count of §18.2
+(`by_project`, `counts.inbox`), which counts those personal requests,
+not `/me`'s `open_requests`, which does not.
 
 **Reason:** the project's routes answer `not_found` for a personal
-request, its project's inbox never lists it, and its human need not be a
-member of that project: every link or member read into the project would
-lead nowhere.
+request, the project's own listing never holds one (§7), and its human
+need not be a member of that project: every link or member read into the
+project would lead nowhere. A tab that counts what its list leaves out
+reads as a bug (the maintainer's report).
 
 **Rejected alternative:** the project's badge and links as for every
 other entry: they lead to an inbox without the request, or to a project
@@ -1412,10 +1447,10 @@ alone: it is not seen without a mouse resting on the button.
 
 **Id:** 057e7277-3eba-4267-93d2-c6b74a5e2ff1
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
 **Source:** the designer's handover on the overview (#6484, tsk-qse9t2b3a9n8), 2026-10-27: the five panels had equal weight and the one thing to act on (open requests) sat bottom left; the maintainer's wish for a Contract link in the project facts (tsk-yhbmz7mjng7n, step 1), 2026-10-27; the dashboard's implementation, 2026-10-27
-**Revisit when:** the hub serves the contract for reading inside Maity, or the badge can be changed without a logged reason
+**Revisit when:** the hub serves the contract for reading inside Maity, or the overview gets other editing in place
 
 Three rows: Waiting for you and Board, then Team and Latest reports,
 then Project and README badge. A member in a list is a chip
@@ -1423,17 +1458,22 @@ then Project and README badge. A member in a list is a chip
 too. The Contract link is `docs/api.md` on the forge at the repository's
 default branch, built only for GitHub and GitLab, whose path shapes are
 known. The badge panel shows the state, the badge and the snippet to
-everyone; an owner or admin is sent to Project settings to change it.
+everyone; an owner or admin is sent to Project settings to change it
+(**Change in Project settings**).
 
 **Reason:** a person opening the overview comes to see whether anything
 waits for them, so that is the first thing, with its action one click
-away. A badge change is a policy change the hub logs with a reason, and
-Settings already asks for it; a second form would duplicate that.
+away. The badge is changed in one place, Project settings, where the
+project's other policy lives. Until #618 a badge change also needed a
+logged reason, which Settings asked for; that argument fell away when
+the badge alone needed none (docs/api.md §6.20, re-checked with the
+coordinator on 2026-10-29), and the one place to change it is what
+remains.
 
 **Rejected alternative:** the designer's radio pills that change the
-badge on the overview: they would need the reason field too, or change a
-logged policy without one. A Contract link guessed for any forge: a
-wrong path shape would be a dead link that looks right.
+badge on the overview: a second place to change one setting, with the
+overview the only view that edits in place. A Contract link guessed for
+any forge: a wrong path shape would be a dead link that looks right.
 
 ## The instance admin area shows one section at a time
 
@@ -1542,7 +1582,8 @@ not hold a token that names nobody yet, which the hub accepts.
 
 **Id:** 1c00024d-a3a6-49bc-ba2e-704359713aeb
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 54a49af9-4763-4b4c-8624-bf2c51a2bc34
 **Evidence:** confirmed
 **Source:** the maintainer's wish to fold the Agents page into Members → Manage (tsk-7v2snhk002ak, chat 2026-10-27); the coordinator's cut into two PRs and its tie to the decided Team page's Members tab (context/members.md f0ca2279: humans and agents in one list, actions per row), 2026-10-27
 **Revisit when:** the Team page's Members tab lands, or a member page of its own takes the actions (tsk-rtb5vjrvbh34)
@@ -1643,7 +1684,8 @@ slug: §6.25 forbade it, since another project may carry that slug by now.
 
 **Id:** 621d28a8-36f5-4ebd-a90a-f7d729d7af34
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 54a49af9-4763-4b4c-8624-bf2c51a2bc34
 **Evidence:** confirmed
 **Source:** the maintainer's wish to fold the Agents page into Members (tsk-7v2snhk002ak, chat 2026-10-27); the coordinator's cut, whose second PR moves joining and the placements and removes the Agents page, 2026-10-27; the decided Team page's Members tab (context/members.md f0ca2279)
 **Revisit when:** the Team page's Members tab lands, or joins get a lifecycle beyond open, used, expired, burned and revoked
@@ -1668,7 +1710,7 @@ views of the same people, with the actions split between them. Seats
 inside the agents' table as rows: a seat is no member yet, and the table
 is read by the hub's member list.
 
-## A member adds their own agents from Members, only where the hub sends the policy field
+## A member adds their own agents from Agents, only where the hub sends the policy field
 
 **Id:** 5cb62418-20f0-465f-b01e-be12e665a07e
 **Type:** decision
@@ -1678,7 +1720,7 @@ is read by the hub's member list.
 **Revisit when:** the hub sends `member_agents` in every project's policy, or §3.1 changes what counts
 
 A human member without `members:admin` sees **+ Add my agent** at the
-head of the agents' table when the project's policy has `member_agents`
+head of Agents (the agents' table on Members before 54a49af9) when the project's policy has `member_agents`
 and it is not `off`. The panel offers only what §3.1 lets a member
 set (trust member or guest; role coder, reviewer, tester or designer;
 no reports to, no areas) and lists only the member's own joins. A line
@@ -1701,7 +1743,7 @@ fails. The button off at the limit: it blocked the replacement §3.1
 keeps open. Counting every open join: an instance's join counted as a
 new agent.
 
-## The team rulebook is in the agent's row, for its owner only
+## The team rulebook is on the agent's card and in its row, for its owner only
 
 **Id:** 49804786-8704-4db6-a473-e348a12a77c5
 **Type:** decision
@@ -1710,13 +1752,14 @@ new agent.
 **Source:** docs/api.md §6.18 (only the human who owns the agent profile sets `team`); the card tsk-xzbk67raztm0, 2026-10-27; the review of PR #473, 2026-10-27
 **Revisit when:** §6.18 lets an admin set a team's rulebook, or the Team page gives teams a place of their own
 
-On Members, an agent's open row holds its **Team rulebook** when the
-viewer owns the agent; nobody else sees it, an admin included. The limit
+On the project's Agents, the card of one's own agent holds its **Team
+rulebook**, and so does its Manage row on Members (since 54a49af9; the row
+alone before); nobody else sees it, an admin included. The limit
 shows the active instances beside it and says that lowering it stops
 none. The lead is chosen among the active instances; one revoked since
 stays chosen, marked revoked. Only the fields that changed are sent. A
-join refused with `instance_quota` links to the row, opened at the
-limit (`/<owner>/<slug>/members/<id>/rulebook`), and does not edit the limit
+join refused with `instance_quota` links to the card, focused at the
+limit (`/<owner>/<slug>/agents/<id>/rulebook`), and does not edit the limit
 in the join panel.
 
 **Reason:** the contract gives the rulebook to the profile's owner
@@ -1756,11 +1799,91 @@ contract takes only a current owner of the project, so the list offers
 exactly those. Parsing `owner/slug/tsk-…` back into a link: §6.25 makes
 the prefix display only.
 
+## One's agents have a page of their own in the gear menu; adding one to a project is that project's join panel
+
+**Id:** 1031c11b-7642-4ed9-87ce-de504b2044fc
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer on the card tsk-hn82893h9sdh, 2026-10-29 (agents belong to their owner and span projects; "add" means the join flow; the account keeps no agents section, one place); docs/api.md §6.3, §3.1, §16.11 (`agents` a reserved first segment)
+**Revisit when:** the hub can make a join for a profile without a project view (a join across projects), or the Team page's Members tab takes the profiles over
+
+`/agents`, in the gear menu beside Runners, lists every agent profile of
+the human (`GET /agents`): its picture, its memberships with trust, role
+and the instances against the team's limit, its name, git identity and
+handle, and its deletion; a new profile at the end. **Add to a project**
+leads to that project's Agents with the join panel open and the
+profile chosen (`/<owner>/<slug>/agents/join?agent=<id>`, since
+54a49af9; Members before it): the one join
+component, where the project's rules (who may bring agents, the
+member's limit, the team's) are known. The profile asked for
+(`?agent=<id>`) is kept across a failed first read of the joins, so
+**Try again** opens the panel with it chosen, as the first open would
+have. The handle is offered only where the hub's machine form names it
+on `PATCH /agents/{id}` (§6.24). `/agents/<id>` marks one profile.
+The account keeps the human's own picture and points to this page; an
+agent's picture stays settable on its card on a project's Agents and in
+its Manage row on Members as well.
+
+**Reason:** an agent is the owner's across projects, so its settings
+need one place that is not a project; and the join panel already knows
+each project's rules, which a second join flow on this page would have
+to repeat.
+
+**Rejected alternative:** a join form of its own on `/agents`: it would
+repeat the project's join rules (§3.1's member limits, the team's
+instance limit) apart from the panel and drift from it. Keeping the
+agents in no project on the account: two places for the same profile.
+
+## A project's tabs: Members a neutral list with Chat, Agents one's own agents, the organisation in the Overview
+
+**Id:** 54a49af9-4763-4b4c-8624-bf2c51a2bc34
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer on the card tsk-3ap6mj5y1k2a, 2026-10-29 (Members neutral with a Chat per entry, the admin's Manage kept as it is; an Agents tab before Runners and Why, the component of /agents filtered to the project; the organigram into the Overview, the Organisation tab gone without a redirect); docs/api.md §16.11 (the project views, `agents` among them, `org` no longer)
+**Revisit when:** the Team page's Members tab lands, or the hub lets an agent's owner pause or remove it without `members:admin`
+
+**Members** lists everyone in the project the same way for every
+viewer: trust and role, presence, owner, joined, paused, a link to the
+member and a **Chat** per entry (one's own agent: its direct chat;
+anyone else: a new group chat with them chosen, `chat/new?with=<id>`,
+where the hub has group chats). With `members:admin` each row keeps
+**Manage**, with the membership form, briefing, picture, rulebook,
+credentials, pause and removal. **Agents** (`/<owner>/<slug>/agents`, for
+humans) shows one's own agents in the project, each as its card on
+`/agents` (`profileCard`, one component), with what belongs to the
+membership under it: the preferences switch, the team's rulebook, the
+credentials, and with `members:admin` the pause and the removal (§6.2
+gives an owner without it neither). The join panel, the open joins, the
+placements and the earlier joins are there; `…/agents/join[?agent=<id>]`
+opens the panel, `…/agents/<id>/rulebook` the limit, and a new project
+lands on Agents. The parts the Members row and the Agents card share
+(rulebook, credentials, picture, pause, removal) are one code,
+`M.memberParts`. The organisation tree is a section of the Overview and
+is redrawn there when a member event arrives. The join panel and the
+placements belong to Agents because both are about one's own agents:
+a join makes one, and where they run is managed by their owner or the
+runner's; a list everybody reads is no place for either.
+
+**Reason:** Members is where one sees who is in the project and talks
+to them; managing one's own agents is a different job, the same one as
+on `/agents`, so it gets that page's component in the project. A tab
+for one computed tree was a page to go to for what the Overview can show.
+
+**Rejected alternative:** the earlier cut (1c00024d, 621d28a8): one's
+own agents opened as **Details** in their rows on Members, the join
+panel at the head of the agents' table, the placements under it, and an
+Organisation tab. It mixed managing one's agents into the team's list,
+and the list looked different to each viewer. A redirect from `…/org`
+to the Overview: the alpha rule, no compatibility routes.
+
 ## A human's picture is set on the account, an agent's in its row on Members; the account keeps only agents no project shows
 
 **Id:** 59aaf51f-c63d-4cb6-966b-85eb8f2c682d
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 1031c11b-7642-4ed9-87ce-de504b2044fc
 **Evidence:** confirmed
 **Source:** the maintainer's wish on the card tsk-th1yq0jtk3yf (an agent's picture belongs to its management, personal settings keep only one's own), 2026-10-28; the coordinator's ruling on the fallback for agents in no project one is in, 2026-10-28
 **Revisit when:** the dashboard gets a page of one's agents outside any project, or §6.10 gives `members:admin` a say over pictures

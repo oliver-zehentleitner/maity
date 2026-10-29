@@ -217,6 +217,8 @@ window.Maity = window.Maity || {};
       h("div", { class: "overview-row overview-row-1" }, parts.requests, parts.board),
       h("div", { class: "overview-row overview-row-2" }, members(ctx), parts.reports),
       h("div", { class: "overview-row overview-row-3" }, project(ctx), badge(ctx)),
+      // Who reports to whom (js/org.js), once the Organisation tab.
+      M.org ? h("div", { class: "overview-row overview-row-4" }, M.org.section(ctx)) : null,
     ];
   }
 
@@ -228,7 +230,9 @@ window.Maity = window.Maity || {};
     // The links and members come from what the header holds; only the
     // counts need the overview call, and a failed one is said where they go.
     // A redraw keeps the focus on the same control (its data-key).
+    let last = [null, null];
     function draw(o, err) {
+      last = [o, err];
       const had = document.activeElement && box.contains(document.activeElement) ? document.activeElement.getAttribute("data-key") : null;
       // A hub without the overview (404) is said quietly, as a fact of that
       // hub, never as an error; any other failure is one. Either stands
@@ -269,7 +273,14 @@ window.Maity = window.Maity || {};
         if (pendingRead) { pendingRead = false; reread(); }
       }
     }
-    ctx.onEvents((events) => { if (events.some((e) => REREAD.test(e.kind))) reread(); });
+    // The organisation follows the members: they are read again, the
+    // counts drawn as they were.
+    ctx.onEvents((events) => {
+      if (events.some((e) => REREAD.test(e.kind))) reread();
+      if (events.some((e) => /^member_/.test(e.kind))) {
+        M.api.getAll(ctx.base + "/members").then((r) => { M.withMembers(ctx, r.items); draw(last[0], last[1]); }, (err) => status.fail("Could not read the members again: ", err));
+      }
+    });
     // §6.11: a viewer who is neither owner nor admin is in few events'
     // audiences, so the view also re-reads every 60 seconds and when the
     // tab comes back; the timer ends with the view, the listener with it.

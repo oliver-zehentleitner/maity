@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any, Literal, cast
 
@@ -601,9 +602,17 @@ def _key(view: dict[str, Any], sort: str) -> list[Any]:
     return [inbox.PRIORITY_RANK[view["priority"]], created, view["id"]]
 
 
-def _page(views: list[dict[str, Any]], sort: str, limit: int, cursor: str | None) -> dict[str, Any]:
+def _page(
+    views: list[dict[str, Any]],
+    sort: str,
+    limit: int,
+    cursor: str | None,
+    render: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Keyset paging: the cursor carries the last entry's position, so an entry that
-    left the list (answered) shifts nothing behind it."""
+    left the list (answered) shifts nothing behind it. With `render`, the entries are
+    light (`_entries`) and only the page is turned into full views: a listing costs the
+    page, not every request it filters."""
     if cursor is not None:
         try:
             raw = json.loads(base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
@@ -621,25 +630,73 @@ def _page(views: list[dict[str, Any]], sort: str, limit: int, cursor: str | None
     if len(views) > limit:
         token = json.dumps({"s": sort, "k": _key(page[-1], sort)})
         next_cursor = base64.urlsafe_b64encode(token.encode()).decode().rstrip("=")
+    if render is not None:
+        page = [render(entry) for entry in page]
     for view in page:
         view.pop("_asker_handle", None)
         view.pop("_created", None)
     return {"items": page, "next_cursor": next_cursor}
 
 
-def _with_handle(conn: Connection, row: Any, view: dict[str, Any]) -> dict[str, Any]:
-    member = conn.execute(select(t.membership).where(t.membership.c.id == row.asked_by)).one()
-    if member.agent_id:
-        handle = conn.execute(
-            select(t.agent_profile.c.handle).where(t.agent_profile.c.id == member.agent_id)
-        ).scalar()
-    else:
-        handle = conn.execute(
-            select(t.human.c.handle).where(t.human.c.id == member.human_id)
-        ).scalar()
-    view["_asker_handle"] = handle or ""
-    view["_created"] = row.created_at
-    return view
+def _asker_handles(conn: Connection, rows: list[Any]) -> dict[int, str]:
+    """The asker's handle for every row, in two queries: what the `agent` sort orders by."""
+    ids = {r.asked_by for r in rows}
+    if not ids:
+        return {}
+    found: dict[int, str] = {}
+    for member_id, handle in conn.execute(
+        select(t.membership.c.id, t.agent_profile.c.handle)
+        .join(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
+        .where(t.membership.c.id.in_(ids))
+    ):
+        found[member_id] = handle or ""
+    for member_id, handle in conn.execute(
+        select(t.membership.c.id, t.human.c.handle)
+        .join(t.human, t.human.c.id == t.membership.c.human_id)
+        .where(t.membership.c.id.in_(ids))
+    ):
+        found[member_id] = handle or ""
+    return found
+
+
+def _entries(
+    conn: Connection,
+    rows: list[Any],
+    extra: Callable[[Any], dict[str, Any]] = lambda _row: {},
+) -> list[dict[str, Any]]:
+    """What sorting and paging need of each row, without its view (`_page`'s `render`);
+    `extra` adds the row's inline fields (`project`)."""
+    handles = _asker_handles(conn, rows)
+    return [
+        {
+            "id": r.id,
+            "priority": r.priority,
+            "_created": r.created_at,
+            "_asker_handle": handles.get(r.asked_by, ""),
+            "_row": r,
+            **extra(r),
+        }
+        for r in rows
+    ]
+
+
+def _in_project(inline: dict[str, Any]) -> Callable[[Any], dict[str, Any]]:
+    """`_entries`' extra for rows of one project: the same inline `project` on each."""
+    return lambda _row: {"project": inline}
+
+
+def _render(conn: Connection) -> Callable[[dict[str, Any]], dict[str, Any]]:
+    """An entry of `_entries` as its full view, the inline `project` kept."""
+
+    def render(entry: dict[str, Any]) -> dict[str, Any]:
+        view = request_view(conn, entry.pop("_row"))
+        if "project" in entry:
+            view["project"] = entry["project"]
+        view["_asker_handle"] = entry["_asker_handle"]
+        view["_created"] = entry["_created"]
+        return view
+
+    return render
 
 
 def _check_status(status: str) -> None:
@@ -672,8 +729,8 @@ def list_requests(
         mine = membership(conn, caller, slug)
         mine.require("project:read")
         rows = _filtered(conn, mine, status=status, class_=class_, asked_by=asked_by, to=to)
-        views = [_with_handle(conn, r, request_view(conn, r)) for r in rows]
-        return JSONResponse(_page(_sorted(views, sort), sort, limit, cursor))
+        entries = _sorted(_entries(conn, rows), sort)
+        return JSONResponse(_page(entries, sort, limit, cursor, _render(conn)))
 
 
 @router.get("/requests")
@@ -715,15 +772,13 @@ def list_all_requests(
                 "name": project.name,
                 "state": project.state,
             }
-            views += [
-                {**_with_handle(conn, r, request_view(conn, r)), "project": inline} for r in rows
-            ]
+            views += _entries(conn, rows, _in_project(inline))
         # Personal requests, member of their project or not (§7). The project listings
         # above never contain them.
         views += _personal_inbox(
             conn, caller, status=status, class_=class_, asked_by=asked_by, to=to
         )
-        return JSONResponse(_page(_sorted(views, sort), sort, limit, cursor))
+        return JSONResponse(_page(_sorted(views, sort), sort, limit, cursor, _render(conn)))
 
 
 @router.get("/projects/{owner}/{slug}/requests/{request_id}")
@@ -1843,10 +1898,11 @@ def _personal_inbox(
         query = query.where(t.request.c.status.in_([s for s in status.split(",") if s]))
     if class_ is not None:
         query = query.where(t.request.c["class"] == class_)
-    views = []
-    for row in conn.execute(query).all():
-        if asked_by is not None and principal_id(conn, row.asked_by) != asked_by:
-            continue  # `me`: a human never asks a personal request
-        inline = _project_inline(conn, row.project_id)
-        views.append({**_with_handle(conn, row, request_view(conn, row)), "project": inline})
-    return views
+    rows = [
+        row
+        for row in conn.execute(query).all()
+        # `me`: a human never asks a personal request
+        if asked_by is None or principal_id(conn, row.asked_by) == asked_by
+    ]
+    inline = {p: _project_inline(conn, p) for p in {row.project_id for row in rows}}
+    return _entries(conn, rows, lambda row: {"project": inline[row.project_id]})

@@ -22,14 +22,13 @@ window.Maity = window.Maity || {};
   // the chat reads its own messages.
   const NAV = [
     { route: "inbox", label: "Inbox" },
-    // Redrawn in place on task_*, request_* and probe_observed (js/overview.js).
+    // Redrawn in place on task_*, request_*, probe_observed and member_* (js/overview.js).
     { route: "overview", label: "Overview" },
     { route: "board", label: "Board", watch: /^task_/, changed: "The board changed." },
     // One card (/<owner>/<slug>/tasks/<id>, an id's link, js/ids.js): the board
     // with that card marked; its tab is the board's.
     { route: "tasks", view: "board", label: "Board", tab: false, current: "board", watch: /^task_/, changed: "The board changed." },
     { route: "members", label: "Members", watch: /^(member_|session_|credential_)/, changed: "The members changed." },
-    { route: "org", label: "Organisation", watch: /^member_/, changed: "The organisation changed." },
     { route: "chat", label: "Chat" },
     // Redrawn in place from the feed (js/messages.js).
     { route: "messages", label: "Messages" },
@@ -39,6 +38,9 @@ window.Maity = window.Maity || {};
     { route: "swarm", label: "Swarm" },
     // No tab: opened from the Chat tab, the Messages view and a chat (js/project-message.js).
     { route: "message", label: "Message the project", tab: false },
+    // One's own agents in the project (js/agents-page.js), the component of
+    // /agents; before Runners and Why (the maintainer, 2026-10-29).
+    { route: "agents", view: "projectAgents", label: "Agents", when: (ctx) => ctx.me.kind === "human", watch: /^(member_|credential_)/, changed: "Your agents changed." },
     // The account-level view is views.runners; this one is the project's.
     { route: "runners", view: "projectRunners", label: "Runners", admin: true, watch: /^runner_/, changed: "The runners changed." },
     // Where the hub knows the Keep the Why export (docs/api.md §6.1, §11.3).
@@ -106,6 +108,8 @@ window.Maity = window.Maity || {};
     if (parts[0] === "account" && parts[1] === "orgs") return { scope: "orgs", args: parts.slice(2) };
     if (parts[0] === "account") return { scope: "account", args: parts.slice(1) };
     if (parts[0] === "runners") return { scope: "runners" };
+    // /agents[/<id>]: one's agent profiles across projects (js/agents-page.js).
+    if (parts[0] === "agents") return { scope: "agents", args: parts.slice(1) };
     if (parts[0] === "observe" && parts[2]) return { scope: "observe", slug: parts[1] + "/" + parts[2], args: parts.slice(3) };
     if (parts[0] === "admin" && !parts[1]) return { scope: "instance-admin" };
     if (parts[1] && !OWN_WORDS.includes(parts[0])) {
@@ -1025,6 +1029,8 @@ window.Maity = window.Maity || {};
       class: "settings-menu",
       face: M.icons.gear(18),
       items: () => [
+        // Agents belong to their owner and span projects (the maintainer, 2026-10-29).
+        ctx.me.kind === "human" ? { label: "Agents", href: "/agents", current: ctx.scope === "agents" } : null,
         { label: "Runners", href: "/runners", current: ctx.scope === "runners" },
         ctx.me.instance_admin ? { label: "Instance administration", href: "/admin", current: ctx.scope === "instance-admin" } : null,
       ].filter(Boolean),
@@ -1059,7 +1065,7 @@ window.Maity = window.Maity || {};
         brandTitle(),
         ctx.scope === "project"
           ? [projectMark(ctx.slug, ctx.project.name, ctx.project), h("span", { class: "project" }, ctx.project.name)]
-          : h("span", { class: "project" }, { new: "New project", account: "Your account", orgs: "Organisations", runners: "Runners", "instance-admin": "Instance administration", observe: "Read along", chats: "Chats" }[ctx.scope] || "Everything waiting for you"),
+          : h("span", { class: "project" }, { new: "New project", account: "Your account", orgs: "Organisations", agents: "Your agents", runners: "Runners", "instance-admin": "Instance administration", observe: "Read along", chats: "Chats" }[ctx.scope] || "Everything waiting for you"),
         M.api.source === "fixtures"
           ? h("span", { class: "source", title: "Data from web/fixtures/, not from the hub. Changes are kept in this tab only." }, "Fixtures")
           : null,
@@ -1116,6 +1122,9 @@ window.Maity = window.Maity || {};
 
   // ---- context ------------------------------------------------------------
 
+  // The project's members as read: the list, the index by id and the names
+  // set together, so no view reads one fresher than the others. Every view
+  // that reads the members again sets them through this (M.withMembers).
   function withMembers(ctx, members) {
     const byId = {};
     members.forEach((m) => { byId[m.id] = m; });
@@ -1252,9 +1261,13 @@ window.Maity = window.Maity || {};
   let quietNote = null;
 
   function watch(ctx, where, item, main) {
+    // The inbox count as §18.2 keeps it (counts.inbox, by_project's inbox),
+    // which counts the personal requests the list holds; /me's open_requests
+    // does not. A hub without notifications: open_requests.
+    const notified = () => M.notify.state.available && M.notify.state.counts;
     const openNow = () => (where.scope === "all"
-      ? ctx.projects.reduce((n, p) => n + (p.open_requests || 0), 0)
-      : (ctx.projects.find((p) => p.full_name === ctx.slug) || {}).open_requests);
+      ? (notified() ? M.notify.state.counts.inbox || 0 : ctx.projects.reduce((n, p) => n + (p.open_requests || 0), 0))
+      : (() => { const p = ctx.projects.find((x) => x.full_name === ctx.slug); return p ? (notified() ? M.notify.projectCount(p).requests : p.open_requests) : undefined; })());
     let seen = openNow();
     const countLine = h("div");
     const changeLine = h("div");
@@ -1458,10 +1471,10 @@ window.Maity = window.Maity || {};
     const item = where.scope === "project" ? NAV.find((n) => n.route === where.route) : null;
     renderHeader(ctx, (item && item.current) || where.route);
     const empty = where.scope === "all" && !ctx.projects.length;
-    const known = ["all", "new", "account", "orgs", "runners", "instance-admin", "observe", "notifications", "chats"].includes(where.scope)
+    const known = ["all", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats"].includes(where.scope)
       || (item && own(M.views, item.view || item.route) && offered(ctx, item));
     let viewName = "unknown";
-    if (["all", "new", "account", "orgs", "runners", "instance-admin", "observe", "notifications", "chats"].includes(where.scope)) viewName = where.scope;
+    if (["all", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats"].includes(where.scope)) viewName = where.scope;
     else if (known) viewName = (item && item.current) || where.route;
     const root = h("section", { class: "view view-" + viewName });
     try {
@@ -1470,7 +1483,7 @@ window.Maity = window.Maity || {};
         // what waits comes first, the way to a project of one's own after it.
         const waiting = (await M.api.getAll("/requests")).items;
         if (seq !== renderSeq) return;
-        if (waiting.length || M.notify.state.available) await M.views.inbox(ctx, root, []);
+        if (waiting.length) await M.views.inbox(ctx, root, []);
         const start = h("div", { class: "no-projects" });
         M.views.noProjects(ctx, start);
         append(root, start);
@@ -1498,6 +1511,8 @@ window.Maity = window.Maity || {};
         await M.views.instanceAdmin(ctx, root);
       } else if (where.scope === "runners") {
         await M.views.runners(ctx, root);
+      } else if (where.scope === "agents") {
+        await M.views.agentsPage(ctx, root, where.args);
       } else if (known) {
         await M.views[item.view || item.route](ctx, root, where.args);
       } else {
@@ -1520,6 +1535,7 @@ window.Maity = window.Maity || {};
     else if (where.scope === "account") label = "Your account";
     else if (where.scope === "orgs") label = where.args && where.args[0] ? "@" + M.orgs.handleOf(where.args[0]) + " · Organisations" : "Organisations";
     else if (where.scope === "runners") label = "Runners";
+    else if (where.scope === "agents") label = "Your agents";
     else if (where.scope === "instance-admin") label = "Instance administration";
     else if (where.scope === "observe") label = "Read along · " + where.slug;
     else if (known) label = item.label + " · " + ctx.project.name;
@@ -1579,6 +1595,7 @@ window.Maity = window.Maity || {};
   }
 
   M.errorBox = errorBox;
+  M.withMembers = withMembers;
   M.logout = logout;
   M.brandTitle = brandTitle;
   M.statusLine = statusLine;

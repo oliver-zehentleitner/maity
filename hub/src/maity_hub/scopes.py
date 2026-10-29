@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 TRUSTS = ("owner", "admin", "member", "guest")
-ROLES = ("coder", "reviewer", "tester", "designer", "ops", "writer", "proxy")
+ROLES = ("coder", "reviewer", "tester", "designer", "ops", "writer", "proxy", "manager")
 # The roles below governance: what a member's own agent may hold (§3.1), and what an
 # admin agent sets on the memberships it manages (§2.3 ᵃ) besides `ops`.
 WORK_ROLES = ("coder", "reviewer", "tester", "designer", "writer")
@@ -20,6 +20,8 @@ _ROLE_SCOPES: dict[str, tuple[str, ...]] = {
     "ops": (*_CODER, "releases:write", "agents:propose", "ticker:post"),
     "writer": _CODER,
     "proxy": _CODER,
+    # The manager leads its line (§2.3 "The manager"): `line:lead` is no governance scope.
+    "manager": (*_CODER, "line:lead"),
 }
 # Trust `owner` and `admin` add these on top of the role's (§2.3).
 GOVERNANCE = (
@@ -58,6 +60,7 @@ SCOPES = (
     "jour_fixe:start",
     "credentials:admin",
     "agents:propose",
+    "line:lead",
 )
 
 

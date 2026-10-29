@@ -58,12 +58,14 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 
 ## K
 - [keep-the-why.md](keep-the-why.md) — the Keep the Why export in memory: read through on request, refreshed in the background for the project view, never stored; the policy stores only what a human set, the provider keeps its boolean column; the commitment's deadline is on the credential, one reconcile function (a minute-sweep, and at once on a policy change) decides what is owed; the why on a report is checked by its shape only, the hub reads no file; a human's explicit value is a policy change even when the view does not move; the installer line is non-interactive and names no agent; the policy fields are humans_only, not a scope; skill.guide is an instance setting, https only; the setup options are a column of the project, the setup cards the hub's, found by their kind
-- [kubernetes.md](kubernetes.md) — one pod with Recreate, no replica count; migrations as a pre-install/pre-upgrade hook Job; readiness on health, liveness on help; a plain Ingress with ingress-nginx defaults (retired upstream); serving only on its own schema head, no rollback downgrade; the mail signing key and the SMTP password come from Secrets by reference; the instance key is a chart value too (secretKey.existingSecret)
+- [kubernetes.md](kubernetes.md) — one pod with Recreate, no replica count; migrations as a pre-install/pre-upgrade hook Job; readiness on health, liveness on help; a plain Ingress with ingress-nginx defaults (retired upstream); serving only on its own schema head, no rollback downgrade; the mail signing key and the SMTP password come from Secrets by reference; the instance key is a chart value too (secretKey.existingSecret); attachments on the k3s setup: a claim the chart mounts and a tar in the same backup run
 
 ## L
+- [landing.md](landing.md) — the landing page is checked against one table of section types and a `PATCH` replaces the fields it names; the legal pages keep every version, a page is served by a pointer and unsetting moves only the pointer
 
 ## M
 - [mail.md](mail.md) — a registration's link is a signed token whose nonce is kept only as a hash, in the mail's own transaction; mail counters from a delivery table, the SMTP conversation on smtplib stage by stage, `tls: none` checked on the resolved pair; the test send counts against no budget, needs `to` until addresses exist, keeps `last_test` unless a connection value really changes; mail through an outbox written in the deciding transaction and sent by a worker, a row claimed by one conditional update that lapses after two minutes; the registration's link page is a router of its own with a form cookie and a same-origin `POST`, the terms version signed with the nonce, each refusal its own status
+- [manager.md](manager.md) — the manager's reach computed on read in `line.py` under the project lock, never stored; a manager's pause marked by `paused_line`, not by `paused_by`; the open points of §2.3 "The manager" as the coordinator ruled them; the depth check skips a boss that does not change
 - [memory.md](memory.md) — memory caps count UTF-8 bytes under the project lock; `q` filters in Python; an agent's community entry is a proposal through the shared mechanism, only a `project:admin` human answers it, soul proposals use the same registry through the profile owner’s personal inbox; `changed_since_cursor` reads the memory events after the cursor; another team's agent gets `not_found` on delete
 
 ## N
@@ -86,7 +88,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 
 ## R
 - [releases.md](releases.md) — readiness recomputed in every write that can change it; `release_ready` gated by a stored flag
-- [requests.md](requests.md) — a personal request is a request row with the asker's project, `personal` tied to `profile_owner` by a CHECK, hidden from every project route but the asker's; `to_human` a snapshot
+- [requests.md](requests.md) — a personal request is a request row with the asker's project, `personal` tied to `profile_owner` by a CHECK, hidden from every project route but the asker's; `to_human` a snapshot; a listing sorts and pages light entries and builds full views only for its page
 
 ## S
 - [serving.md](serving.md) — dashboard optional unless configured explicitly, no dotfiles; local bind by default; no CDN-loaded Swagger UI; the badge template ships with the hub and only the badge and the public swarm page may choose public caching; the landing settings' PATCH alone takes a 256 KiB body; robots.txt and sitemap.xml are routes before the dashboard mount and the root's noindex is the middleware's; the app shell is one route that matches last and the hub's own paths and the reserved words have one list in code, `maity-hub migrate` names a held reserved word

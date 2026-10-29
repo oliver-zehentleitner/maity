@@ -156,6 +156,12 @@ return (`control_character`). Without them a valid page escapes to at most
 three times its size (`\u00e9` for a two-byte character, two `\uXXXX` for a
 four-byte one), and 256 KiB holds every valid page.
 
+Changed on 2026-10-29 (the sections, §16.7; contract: 512 KiB): the landing page now holds up to
+256 KiB of stored text across its languages and sections, and the legal pages 64 KiB per text, so
+the cap of `PATCH /admin/settings/landing` and of `PATCH /admin/settings/legal` is 512 KiB, twice
+the stored limit for the same reason: JSON escaping triples the wire size of a valid text at most,
+and the route checks the stored size itself.
+
 ## uvicorn keeps idle connections 120 s, longer than a proxy's pool
 
 **Id:** ad270d7b-3905-487e-8046-8de7a2a775c4

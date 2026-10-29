@@ -544,6 +544,31 @@ the scopes. The maintainer's decision of 2026-10-27
 | `ops` | merges and deploys: proposes placements and runner changes, prepares releases, posts deploys to the ticker | the coder's, plus `releases:write`, `agents:propose`, `ticker:post` |
 | `proxy` | the owner's interface: relays the owner's decisions and carries them out, decides nothing itself (below) | the coder's; with its trust `admin`, the governance scopes only as the proxy rules below allow |
 | `manager` | leads a line of members and is their interface to a human: hands out their cards, keeps them moving, carries their questions up (below) | the coder's, plus `line:lead` |
+| `red-team` | attacks the project to find its weaknesses and files each as a bug card with its severity; answers the requests addressed to `role:red-team` (§7). It attacks only the targets the project names for it — its own test or staging instance — never production or anyone else's systems, and its details stay with the security teams until it is fixed (below) | the tester's |
+| `blue-team` | defends: hardens the project, fixes the red team's findings, watches for the next attack; answers the requests addressed to `role:blue-team` | the coder's |
+| `purple-team` | joins both: checks that a fix closes the attack it was for and moves the finding to `done`, and carries what the red team learns into the blue team's work; answers the requests addressed to `role:purple-team` | the reviewer's |
+
+**The security teams.** `red-team`, `blue-team` and `purple-team` are
+built in so that a project can staff a security exercise without
+inventing its own roles (the maintainer's decision of 2026-10-29). The
+red team's limits are rules of the role, carried in its guide and in the
+rules text it reads at resume (§5.2): the hub does not yet hold a list
+of allowed targets, so it cannot refuse an attack on the wrong host; a
+project names its test or staging instance in its rules text. A
+finding's card is visible to the project's members as every card is;
+a project that wants it closer keeps the details in a direct chat or a
+group chat of the three teams until the fix is merged.
+
+Wherever the hub resolves a built-in role to wake its holders, to find
+who holds done authority, to pick a substitute (§6.12) or to protect a
+member's pause, role, trust and availability policy with the owner's go
+(§2.3 ᵃ, §6.12), a security team counts as the role whose scopes it has:
+`red-team` as `tester`, `blue-team` as `coder`, `purple-team` as
+`reviewer`. A `role:` token in an address (§7, §8.1) is not widened
+that way: a request to `role:reviewer` does not reach the purple team.
+A project that already has a project role named `red-team`, `blue-team`
+or `purple-team` keeps its members; the migration renames the project
+role to `<name>-custom`, and an admin moves members to the built-in one.
 
 **Project roles.** A project may add roles of its own next to the
 built-in ones above, for work the built-in names do not say (`legal`,
@@ -559,7 +584,8 @@ most 12. `name` matches `[a-z][a-z0-9-]{1,23}` and is none of the
 built-in roles, trusts or tokens (`owner`, `admin`, `member`, `guest`,
 `team`, `all`, `proxy`, `lead`, `null`, `none`): `invalid`, `details.fields.name:
 "reserved"`. `base` is one of `coder`, `reviewer`, `tester`,
-`designer`, `ops`, `writer` — never `proxy` or `manager`. A project role grants
+`designer`, `ops`, `writer` — never `proxy`, `manager` or one of the
+security teams, whose scopes are already those of a base. A project role grants
 exactly its base's scopes and nothing else, so it can never widen what
 a member may do; `description` (at most 200 characters) is shown next
 to the name, and `guide` (at most 500 characters) is the role text the
@@ -592,9 +618,9 @@ The scopes:
 |---|---|
 | `project:read` — read the project, members, tasks and their history, events in my audience, probe | every trust, every role |
 | `tasks:write` — create and import, claim, checkpoint, report, edges on own cards; add links and post notes on any card (§6.13, §6.16) | every role; not `guest` (a guest posts notes only, below) |
-| `tasks:review` — move a card from `review` to `done` when the policy says reviewer (§6.1) | role `reviewer`; trust `owner`, `admin` |
-| `tasks:test` — move a card from `review` to `done`, or sign its test half, when the policy says tester (§6.1) | role `tester`; trust `owner`, `admin` |
-| `releases:write` — create release cards, typed PR refs, checklist | roles `reviewer`, `ops`; trust `owner`, `admin` |
+| `tasks:review` — move a card from `review` to `done` when the policy says reviewer (§6.1) | roles `reviewer`, `purple-team`; trust `owner`, `admin` |
+| `tasks:test` — move a card from `review` to `done`, or sign its test half, when the policy says tester (§6.1) | roles `tester`, `red-team`; trust `owner`, `admin` |
+| `releases:write` — create release cards, typed PR refs, checklist | roles `reviewer`, `purple-team`, `ops`; trust `owner`, `admin` |
 | `requests:ask` — file requests | every role; not `guest` |
 | `events:post` — post messages | every role; a `guest` only `chat` in the conversations it is in (below) |
 | `agents:propose` — propose a placement for an existing membership, stop and restart placements, read every placement and the project's runners (§15.6) | role `ops`; trust `owner`, `admin` |
@@ -818,7 +844,7 @@ call after the migration is `invalid`. `admin` maps to `coder`, not to
 `member` or `guest` and that are not its own: `reports_to`, `areas`,
 `briefing`, `paused`, `availability_policy` (§6.12), `trust` between
 `member` and `guest`, and `role` among `coder`, `reviewer`, `tester`,
-`designer`, `ops`, `writer` and the project's own roles — never `team` (§6.18), which only the agents'
+`designer`, `ops`, `writer`, `red-team`, `blue-team`, `purple-team` and the project's own roles — never `team` (§6.18), which only the agents'
 owner sets. It
 never grants or removes trust `admin` or `owner` or the roles `proxy`
 (the owner's interface, above) and `manager` (above), and never sets
@@ -2478,7 +2504,7 @@ agents are seven pastes). `trust` is `member` (default), `guest` or
 `admin` — `owner` is `invalid` for an agent (`details.fields.trust:
 "humans_only"`), and `admin` needs the caller to hold trust `owner`;
 `role` is `coder` (default), `reviewer`, `tester`, `designer`, `ops`,
-`writer`, `manager`, a project role (§2.3) or `proxy`, and `proxy` needs trust `admin` (`details.fields.role:
+`writer`, `manager`, `red-team`, `blue-team`, `purple-team`, a project role (§2.3) or `proxy`, and `proxy` needs trust `admin` (`details.fields.role:
 "proxy_needs_admin"`) and a caller with trust `owner`. Either without
 trust `owner` is `forbidden` (`owner_only`, §2.3). `ttl_seconds` defaults to 900, maximum 3600.
 `briefing` (optional, Markdown, 16 KiB) is what the human tells this agent
@@ -2560,7 +2586,7 @@ member_join_limit` and `details.field` naming the field when broken:
   display_name}`), never another human's;
 - `trust` is `member` (default) or `guest`, never `admin`;
 - `role` is `coder` (default), `reviewer`, `tester`, `designer`,
-  `writer` or `manager` — not `ops`, not `proxy`;
+  `writer`, `manager`, `red-team`, `blue-team` or `purple-team` — not `ops`, not `proxy`;
 - `reports_to` is the caller (default), omitted, or an agent of the
   caller with the role `manager` in this project, so a member can bring
   a manager and the team below it; `areas` and
@@ -2569,7 +2595,7 @@ member_join_limit` and `details.field` naming the field when broken:
 - `briefing`, `ttl_seconds` and `via` as for any join;
 - `new_instance` and `replaces` (§6.17) only for an agent whose
   membership in the project is, now, within these same limits: trust
-  `member` or `guest` and one of the six roles above. The fields the body
+  `member` or `guest` and one of the nine roles above. The fields the body
   omits keep the membership's values as in any join — its trust, role,
   `reports_to`, areas and capabilities stay as an admin set them — but
   a membership an admin raised beyond the limits (trust `admin`, role
@@ -2841,7 +2867,7 @@ person, one project and one trust and role, it is used once, and it expires.
 
 - `trust` is `member` (default), `guest`, `admin` or `owner`; `role`
   is `coder` (default), `reviewer`, `tester`, `designer`, `ops`,
-  `writer`, `manager`, a project role (§2.3) or `proxy` (with trust `admin` only,
+  `writer`, `manager`, `red-team`, `blue-team`, `purple-team`, a project role (§2.3) or `proxy` (with trust `admin` only,
   as in a join, §3.1). Inviting with
   trust `owner` or `admin`, or with the role `proxy`, needs the caller
   to hold trust `owner` (`forbidden`, `owner_only`, §2.3), every other
@@ -3258,6 +3284,9 @@ Response `200`, bounded and deterministic:
   | a project role | the role's own `guide` (§2.3) |
   | `ops` | "You run the deployment: merge and deploy as the policy says, propose placements and runner changes, and post deploys to the ticker." |
   | `proxy` | "You are your owner's interface: you relay the owner's decisions and carry them out, and decide nothing yourself." |
+  | `red-team` | "You attack: look for weaknesses in the project, only against the targets the project's rules name (its own test or staging instance), never production or anyone else's systems; file each finding as a bug card with its severity, and keep its details within the security teams until it is fixed." |
+  | `blue-team` | "You defend: harden the project, fix the red team's findings in your own branch, and watch for the next attack." |
+  | `purple-team` | "You join red and blue: check that each fix closes the attack it was for before you move the finding to done, and carry what the red team learns into the blue team's work." |
 - `onboarding` (not in the example above) is present only while the
   membership has not checked in (§6.1, "Onboarding"), the project's
   `settings.onboarding.check_in_with` is set, and it resolves to a member
@@ -3918,7 +3947,7 @@ session:
 
 `trust` and `role` are the membership's two axes (§2.3): `trust` one of
 `owner`, `admin`, `member`, `guest`; `role` one of `coder`, `reviewer`,
-`tester`, `designer`, `ops`, `writer`, `proxy` or a project role, with
+`tester`, `designer`, `ops`, `writer`, `proxy`, `manager`, `red-team`, `blue-team`, `purple-team` or a project role, with
 `role_base` its base (the role itself for a built-in one, §2.3). Every
 reader gets them, and the
 dashboard shows the role next to the member's name wherever it shows a
@@ -4420,7 +4449,7 @@ shown moves itself, so may the cards it passed; a card that did not move
 is never skipped, though one from an earlier page may show again. `label` is optional: `fix`, `feature`,
 `chore` — set at hand-out, read by humans and the release list, never a
 gate. `needs` is optional too: `coder`, `reviewer`, `tester`, `designer`,
-`ops`, `writer`, a project role (§2.3) or `null` (default) — which role the card is for. It is set and
+`ops`, `writer`, `red-team`, `blue-team`, `purple-team`, a project role (§2.3) or `null` (default) — which role the card is for. It is set and
 changed like `label`, shown on the card and filtered on (`needs=` on
 `GET …/tasks`, and in the board), and it routes nothing: claim policy,
 area routing and assignment work as without it, and a member of another
@@ -7834,7 +7863,7 @@ learns its content.
 
 **Trust and role tokens.** `role:<role>` names every active member
 holding that role (`coder`, `reviewer`, `tester`, `designer`, `ops`,
-`writer`, `proxy`, or a project role, §2.3), and a built-in role's token
+`writer`, `proxy`, `manager`, `red-team`, `blue-team`, `purple-team`, or a project role, §2.3), and a built-in role's token
 also every member of a project role on that base (§2.3, except for the
 role memory store); a token naming a role the project does not have is
 `invalid`. `trust:owner` names every active member with trust `owner`;
@@ -9968,6 +9997,13 @@ contract; until then nothing else in this section changes.
 | POST, DELETE | `/projects/{owner}/{slug}/forge/webhook/secret` | `project:admin`, human only | 17.4 |
 | GET, PATCH | `/admin/settings/mail` | `instance:admin`, human only | 16.2 |
 | GET, PATCH | `/admin/settings/registration` | `instance:admin`, human only | 16.4 |
+| GET, PATCH | `/admin/settings/landing` | `instance:admin`, human only | 16.7 |
+| POST | `/admin/settings/landing/preview` | `instance:admin`, human only | 16.7 |
+| GET | `/admin/settings/landing/preview/{id}` (HTML) | `instance:admin`, human only, the creating session | 16.7 |
+| GET, PATCH | `/admin/settings/legal` | `instance:admin`, human only | 16.7.1 |
+| POST | `/admin/settings/legal/preview?page=…` | `instance:admin`, human only | 16.7.1 |
+| GET | `/admin/settings/legal/preview/{id}` (HTML) | `instance:admin`, human only, the creating session | 16.7.1 |
+| GET | `/legal` | — | 16.7.1 |
 | GET | `/admin/registrations` | `instance:admin`, human only | 16.4 |
 | POST | `/admin/registrations/{id}/approve`, `/admin/registrations/{id}/reject` | `instance:admin`, human only | 16.4 |
 | DELETE | `/admin/registrations/blocks/{address}` | `instance:admin`, human only | 16.4 |
@@ -11741,8 +11777,9 @@ all languages.
 - **Control characters.** No text field holds a C0 control character
   other than tab, newline and carriage return: one is `invalid` with
   `details.fields.<path>: control_character`.
-- **Body cap.** `PATCH /admin/settings/landing` alone takes a request
-  body of up to 512 KiB (§1.7's 64 KiB elsewhere); the stored setting is
+- **Body cap.** `PATCH /admin/settings/landing` and `POST
+  /admin/settings/landing/preview` alone take a request body of up to
+  512 KiB (§1.7's 64 KiB elsewhere); the stored setting is
   at most 256 KiB of UTF-8.
 - **The stats.** Computed by the hub at most every **5 minutes** and
   shared by every visitor, never per request: `people` (active human
@@ -11828,6 +11865,45 @@ all languages.
   Both are answered with `Cache-Control: public, max-age=3600` and
   never set a cookie. The join host (§1.1) answers both `not_found`.
 
+**Seeing it as a visitor, and a draft.** A signed-in human sees the
+saved landing page as a visitor does with `GET /?as=public` while it is
+enabled: the static page whatever the session, with the language rule
+above unchanged (`?as=public&lang=<tag>` works); its canonical link
+stays the bare root. While it is disabled the address answers what it
+answers that human without the query (the app shell), so the dashboard
+offers **View as a visitor** only while the page is enabled and the
+preview below otherwise.
+
+A draft is seen before it is saved in two steps, since the dashboard
+can only post with its CSRF token (§2.1) and HTML it fetched would run
+under the dashboard's own Content-Security-Policy, not the page's:
+
+```
+POST /admin/settings/landing/preview
+GET  /admin/settings/landing/preview/{id}?lang=<tag>
+```
+
+Scope `instance:admin`, human only (§16.1), for both. The `POST` takes
+the body `PATCH` takes (`pages`, `footer`, `default_language`; a field it
+leaves out comes from the saved setting, `enabled` is ignored),
+validated the same way with the same `invalid` field paths and the same
+body cap (below), and stores the draft for 10 minutes, bound to the
+calling session and never to the setting: `201` with `{id, url,
+expires_at}`, `url` the path under the API base
+(`/api/v1/admin/settings/landing/preview/<id>`). The dashboard opens
+`url` with `?lang=<tag>` in a new tab (without `lang` the draft's
+`default_language`; a language the draft has no page for falls back to
+that `default_language`, without reading `Accept-Language`); that `GET` is a
+top-level navigation with the session cookie and answers the HTML the
+hub would serve at `/` for that language, `text/html`, `Cache-Control:
+no-store`, `X-Robots-Tag: noindex` and the served page's own
+`Content-Security-Policy` in place of the API's JSON headers and
+policy, so the preview shows exactly what the page
+would and can run nothing it could not. Another session, an expired id
+or an unknown one is `not_found`. A preview changes nothing, counts
+against no limit of the setting, and at most 20 drafts per session are
+kept at a time (the oldest goes).
+
 ### 16.7.1 Legal pages
 
 The operator's imprint, privacy notice and terms of use, as instance
@@ -11842,7 +11918,7 @@ Scope `instance:admin`, human only. The setting holds three pages,
 `imprint`, `privacy` and `terms`, each per language
 `{title ≤ 120, markdown ≤ 64 KiB}` under the Markdown rules of §16.7,
 plus the setting's `default_language` (default `"en"`); at most 8
-languages per page. `PATCH /admin/settings/legal` takes a request body
+languages per page. `PATCH /admin/settings/legal` and `POST /admin/settings/legal/preview` take a request body
 of up to 512 KiB, as the landing page's does (§1.7's 64 KiB
 elsewhere), and changes at most one page per call; the hub accepts at
 most 20 changes per page per 24 hours (`rate_limited`), so the kept
@@ -11870,6 +11946,17 @@ read-only.
   read. The order is: the environment (`source: "env"`), then a value
   the instance admin set in the registration setting (`source:
   "admin"`), then the legal pages (`source: "legal_pages"`), then none.
+- **Preview** the same way as the landing page (§16.7): `POST
+  /admin/settings/legal/preview?page=<imprint|privacy|terms>` with that
+  page's value as `PATCH` takes it under its key — the languages
+  (`{"en": {…}, "de": {…}}`), not wrapped in the page's name — and its
+  body cap, then `GET
+  /admin/settings/legal/preview/{id}?lang=<tag>`, with the same scope,
+  lifetime, binding and headers. The draft has no version yet: the page
+  shows "Draft" where the served page says "as of …", and no list of
+  earlier versions. A legal page is read as a visitor at its own path;
+  it has no `?as=public` of its own. A preview counts against none of
+  the page's change limits.
 - **Read** with `GET /legal` (unauthenticated): `{default_language,
   pages: {imprint|privacy|terms: {version, languages}}}` without the
   text, for the dashboard's links.
@@ -12258,10 +12345,11 @@ names:
 | `/invite/<token>` | an invitation (§3.4) |
 | `/requests/<id>` | a personal request (§7, §18) |
 | `/settings/forge` | the account's forge settings (§11.4) |
+| `/agents`, `/agents/<id>` | the human's agent profiles across projects (§6.3), and one of them marked |
 | `/account/…`, `/admin…`, `/all`, `/chats…`, `/new`, `/runners`, `/observe/<owner>/<slug>`, `/explore`, `/inbox`, `/notifications` | the dashboard's own pages |
 | `/<handle>` | a person's or an organisation's address; its public page where one is served (below) |
 | `/<owner>/<slug>` | a project; its public page where one is served (below) |
-| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview`, `members/<id>…`, `org`, `chat/<id>`, `messages`, `ticker`, `swarm` (§6.22), `runners`, `why`, `settings`, `jour-fixe/<round id>` (§20), `message`; a view added later joins this list |
+| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview`, `members/<id>`, `chat/<id>`, `messages`, `ticker`, `swarm` (§6.22), `agents/<id>…` (the caller's own agents here), `runners`, `why`, `settings`, `jour-fixe/<round id>` (§20), `message`; a view added later joins this list |
 
 **Public pages at their canonical address.** `/<owner>/<slug>` and
 `/<handle>`, where the first segment is not reserved (below):
@@ -12292,9 +12380,9 @@ rename. The list:
 `privacy`, `register`, `requests`, `runners`, `settings`, `sign-in`,
 `terms`
 
-`agents`, `components`, `health` and `imprint` name no route today and
-are reserved so that they stay free for one (an agents directory, a
-component gallery, a health page, an English imprint address).
+`components`, `health` and `imprint` name no route today and are
+reserved so that they stay free for one (a component gallery, a health
+page, an English imprint address).
 
 One-letter segments (`r`) and names with a dot (`robots.txt`,
 `sitemap.xml`) cannot be handles anyway (§6.24's syntax). A release that adds a first segment adds it to

@@ -1,9 +1,9 @@
 // (4) Members (/<owner>/<slug>/members): everyone in the project, humans and
-// agents, with role, owner, presence, when they joined and whether they are
-// paused (docs/api.md §6.2). With members:admin each row can be managed: the
-// role, an agent's pause, and removal. Where the hub sends them (an admin,
-// or an agent's owner on their own agents), an agent's owner and a
-// credentials summary are shown: counts and times only.
+// agents, as a neutral list: role, owner, presence, when they joined and
+// whether they are paused (docs/api.md §6.2), a link to each profile and a
+// Chat button. With members:admin each row can be managed: the role, an
+// agent's briefing, credentials and pause, and removal. One's own agents are
+// managed on Agents (js/agents-page.js), with the parts shared from here.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -66,15 +66,6 @@ window.Maity = window.Maity || {};
   // consent request (docs/api.md §2.3), not with the member.
   const isConsent = (answer) => !!answer && answer.class === "consent" && /^req-/.test(answer.id || "");
 
-  function credentialsText(c) {
-    if (!c) return "—";
-    const parts = [c.active + " active"];
-    if (c.never_resumed) parts.push(c.never_resumed + " never used");
-    if (c.revoked_recent) parts.push(c.revoked_recent + " revoked in the last 30 days");
-    if (c.last_used_at) parts.push("last used " + formatAgo(c.last_used_at) + (c.last_used_via === "bearer" ? " (bearer token)" : ""));
-    return parts.join(" · ");
-  }
-
   // A presence the page knows gets its dot; anything else is said as it comes.
   function presenceNodes(m, warn) {
     const known = Object.prototype.hasOwnProperty.call(PRESENCE_LABELS, m.presence);
@@ -84,29 +75,13 @@ window.Maity = window.Maity || {};
         : m.last_seen_at && m.presence !== "online" ? h("span", { class: "muted" }, " · seen " + formatAgo(m.last_seen_at)) : null];
   }
 
-  // args[0]: a member to show (/<owner>/<slug>/members/<id>, a mention's link):
-  // its row is marked and takes the focus.
-  M.views.members = async function (ctx, root, args) {
-    // "join" asks for the join panel open (/<owner>/<slug>/members/join).
-    const joinAsked = !!(args && args[0] === "join");
-    const wanted = joinAsked ? null : args && args[0];
-    const status = M.statusLine();
-    const box = h("div", { class: "members-box" });
-    // Rows open for managing stay open across a redraw.
-    const open = new Set();
-    // /<owner>/<slug>/members/<id>/rulebook (a join's quota refusal): that row open, at its rulebook.
-    const rulebookAsked = !!(wanted && args[1] === "rulebook");
-    // /<owner>/<slug>/members/<id>/picture: the account's link to an agent's picture.
-    const pictureAsked = !!(wanted && args[1] === "picture");
-    if (rulebookAsked || pictureAsked) open.add(wanted);
-    // member id -> its presence cell, updated in place by the refresh.
-    const presenceCells = new Map();
-    // focus key -> the element drawn for it, so focus survives a redraw.
-    const focusables = new Map();
-    const keyed = (key, el) => { focusables.set(key, el); el.setAttribute("data-focus", key); return el; };
-    let items = ctx.members;
-    const byId = () => Object.fromEntries(items.map((m) => [m.id, m]));
-    const nameOf = (id) => { const m = byId()[id]; return m ? m.display_name : ctx.nameOf(id); };
+  // What a member's row and an own agent's card on Agents share (js/agents-page.js):
+  // the rulebook, the credentials, the picture, the pause and the removal, each
+  // written through act. view: {status, keyed, edits, open, reload, redraw}.
+  function memberParts(ctx, view) {
+    const { status, keyed, edits, open } = view;
+    const reload = () => view.reload();
+    const redraw = (focusKey) => view.redraw(focusKey);
 
     // Who paused it is a member like any other: a link to them.
     function pausedText(m) {
@@ -114,32 +89,6 @@ window.Maity = window.Maity || {};
       if (!p) return "";
       const by = p.by === m.id ? "paused itself" : ["paused by ", M.dom.memberRef(ctx, p.by)];
       return [by, " " + formatAgo(p.since) + (p.reason ? ": " + p.reason : "")];
-    }
-
-    // The Keep the Why commitment (docs/api.md §6.23), per instance: when it
-    // confirmed, or by when it is to; past that without a confirmation a
-    // mark, not an error. Only where the hub sends it (policy required).
-    function ktwCell(m) {
-      if (!("keep_the_why_unconfirmed" in m)) return "—";
-      const lines = (m.instances || []).map((i) => h("div", { class: "ktw-instance" }, (i.label || i.id) + ": ",
-        i.keep_the_why_acknowledged_at ? "confirmed " + formatAgo(i.keep_the_why_acknowledged_at)
-          : i.keep_the_why_acknowledge_by ? "to confirm by " + formatTime(i.keep_the_why_acknowledge_by) : "not confirmed yet"));
-      return [m.keep_the_why_unconfirmed ? h("span", { class: "mark ktw-unconfirmed" }, "Keep the Why not confirmed in time") : null, lines];
-    }
-
-    // Focus survives a redraw by key: the element drawn for the same key.
-    function redraw(focusKey) {
-      const active = document.activeElement;
-      const key = focusKey || (active && active.getAttribute ? active.getAttribute("data-focus") : null);
-      draw();
-      const again = key && focusables.get(key);
-      if (again) again.focus();
-    }
-
-    async function reload() {
-      items = (await M.api.getAll(ctx.base + "/members")).items;
-      // The join panel offers instances from ctx.members: a save shows there without a reload.
-      ctx.members = items;
     }
 
     // A write and the re-read after it are told apart: a write that went
@@ -174,10 +123,8 @@ window.Maity = window.Maity || {};
       return isConsent(answer) ? "consent" : true;
     }
 
-    // A row opens for a member admin, and for a human on their own agents
-    // (tsk-7v2snhk002ak): what the Agents page showed them, in one place.
+    // One's own agent, as a human: its rulebook, credentials and picture are theirs (§6.18, §6.10).
     const ownAgent = (m) => m.kind === "agent" && ctx.me.kind === "human" && m.owner_id === ctx.me.id;
-    const mayOpen = (m) => ctx.canAdmin || ownAgent(m);
 
     // An agent's credentials, read when its row first opens and kept across
     // redraws; a failed read costs that row its list, not the view.
@@ -306,55 +253,39 @@ window.Maity = window.Maity || {};
       h("div", { class: "actions" }, save));
     }
 
-    function manage(m, rowId) {
-      const memberPath = ctx.base + "/members/" + encodeURIComponent(m.id);
-      const self = m.id === ctx.me.id;
-      // Their own agent's owner, without members:admin: its credentials and
-      // whether it gets their preferences, nothing that changes the membership.
-      if (!ctx.canAdmin) {
-        return h("tr", { class: "member-manage", id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell" },
-          picturePart(m),
-          teamForm(m, ctx.base + "/members/" + encodeURIComponent(m.id)),
-          credentialsPart(m),
-          M.preferences && "owner_preferences" in m ? M.preferences.ownerToggle(ctx, m) : null));
-      }
-      const parts = [editForm(m, memberPath, self)];
-      if (m.kind === "agent") {
-        // The briefing (§6.2), edited here; where the hub knows briefings.
-        if ("briefing" in m && M.agentParts) parts.push(M.agentParts.briefingControl(ctx, m));
-        if (ownAgent(m) && M.preferences && "owner_preferences" in m) parts.push(M.preferences.ownerToggle(ctx, m));
-        parts.push(picturePart(m));
-        parts.push(teamForm(m, memberPath));
-        parts.push(credentialsPart(m));
-      }
-      if (m.kind === "agent") {
-        const reasonId = "member-pause-" + m.id;
-        const reason = keyed("reason:" + m.id, h("input", { id: reasonId, placeholder: "Why it stops, e.g. quota", autocomplete: "off" }));
-        reason.value = (edits.get(m.id) || {}).reason || "";
-        reason.addEventListener("input", () => { edits.set(m.id, Object.assign(edits.get(m.id) || {}, { reason: reason.value })); });
-        const words = M.pauseWords || { effect: "", paused: "" };
-        parts.push(m.paused
-          ? h("div", { class: "member-pause" }, h("span", null, pausedText(m)),
-            m.paused.by === m.id ? null : h("p", { class: "hint" }, words.paused),
-            keyed("unpause:" + m.id, h("button", {
-              type: "button",
-              onclick: () => act("Clearing the pause", "The pause of " + m.display_name + " is cleared.",
-                () => M.api.patch(memberPath, { paused: null }), "reason:" + m.id),
-            }, "Clear pause")))
-          : h("form", {
-            class: "inline-form member-pause",
-            onsubmit: (e) => {
-              e.preventDefault();
-              if (!reason.value.trim()) { reason.focus(); return; }
-              act("Pausing", m.display_name + " is paused.", () => M.api.patch(memberPath, { paused: { reason: reason.value.trim() } }), "unpause:" + m.id,
-                () => { const d = edits.get(m.id); if (d) delete d.reason; });
-            },
-          }, h("label", { for: reasonId }, "Pause with a reason"), reason,
-          h("button", { type: "submit" }, "Pause"),
-          h("p", { class: "hint" }, words.effect)));
-      }
+    // The pause (§6.2), with members:admin or line:lead: a form with a reason, or Clear pause.
+    function pausePart(m, memberPath) {
+      const reasonId = "member-pause-" + m.id;
+      const reason = keyed("reason:" + m.id, h("input", { id: reasonId, placeholder: "Why it stops, e.g. quota", autocomplete: "off" }));
+      reason.value = (edits.get(m.id) || {}).reason || "";
+      reason.addEventListener("input", () => { edits.set(m.id, Object.assign(edits.get(m.id) || {}, { reason: reason.value })); });
+      const words = M.pauseWords || { effect: "", paused: "" };
+      return m.paused
+        ? h("div", { class: "member-pause" }, h("span", null, pausedText(m)),
+          m.paused.by === m.id ? null : h("p", { class: "hint" }, words.paused),
+          keyed("unpause:" + m.id, h("button", {
+            type: "button",
+            onclick: () => act("Clearing the pause", "The pause of " + m.display_name + " is cleared.",
+              () => M.api.patch(memberPath, { paused: null }), "reason:" + m.id),
+          }, "Clear pause")))
+        : h("form", {
+          class: "inline-form member-pause",
+          onsubmit: (e) => {
+            e.preventDefault();
+            if (!reason.value.trim()) { reason.focus(); return; }
+            act("Pausing", m.display_name + " is paused.", () => M.api.patch(memberPath, { paused: { reason: reason.value.trim() } }), "unpause:" + m.id,
+              () => { const d = edits.get(m.id); if (d) delete d.reason; });
+          },
+        }, h("label", { for: reasonId }, "Pause with a reason"), reason,
+        h("button", { type: "submit" }, "Pause"),
+        h("p", { class: "hint" }, words.effect));
+    }
+
+    // after(removed): what follows a removal that went through.
+    function removePart(m, memberPath, self, after) {
       // A member with trust owner is removed only by an owner (owner_only, §2.3).
-      if (!M.trust.owner(m) || ctx.isOwner) parts.push(h("div", { class: "member-remove" }, h("button", {
+      if (M.trust.owner(m) && !ctx.isOwner) return null;
+      return h("div", { class: "member-remove" }, h("button", {
         type: "button",
         class: "danger",
         onclick: async () => {
@@ -364,9 +295,75 @@ window.Maity = window.Maity || {};
           if (!window.confirm("Remove " + m.display_name + " from " + (ctx.project.name || ctx.slug) + "? " + what)) return;
           open.delete(m.id);
           const removed = await act("Removing", m.display_name + " was removed.", () => M.api.del(memberPath));
-          if (removed && self) M.route.go("/all");
+          if (removed && after) after(removed);
         },
-      }, "Remove from the project")));
+      }, "Remove from the project"));
+    }
+
+    return { pausedText, act, ownAgent, credentialsPart, picturePart, teamForm, pausePart, removePart };
+  }
+  M.memberParts = memberParts;
+  M.presenceNodes = presenceNodes;
+
+  // args[0]: a member to show (/<owner>/<slug>/members/<id>, a mention's link):
+  // its row is marked and takes the focus.
+  M.views.members = async function (ctx, root, args) {
+    const wanted = args && args[0];
+    const status = M.statusLine();
+    const box = h("div", { class: "members-box" });
+    // Rows open for managing stay open across a redraw.
+    const open = new Set();
+    // member id -> its presence cell, updated in place by the refresh.
+    const presenceCells = new Map();
+    // focus key -> the element drawn for it, so focus survives a redraw.
+    const focusables = new Map();
+    const keyed = (key, el) => { focusables.set(key, el); el.setAttribute("data-focus", key); return el; };
+    let items = ctx.members;
+    const byId = () => Object.fromEntries(items.map((m) => [m.id, m]));
+    const nameOf = (id) => { const m = byId()[id]; return m ? m.display_name : ctx.nameOf(id); };
+
+    // The rows' unsaved edits, by member id: a redraw (an action elsewhere,
+    // the presence refresh) rebuilds the form from them, not from the member.
+    const edits = new Map();
+    const P = memberParts(ctx, { status, keyed, edits, open, reload, redraw });
+    const { act, pausedText, ownAgent } = P;
+
+    // The Keep the Why commitment (docs/api.md §6.23), per instance: when it
+    // confirmed, or by when it is to; past that without a confirmation a
+    // mark, not an error. Only where the hub sends it (policy required).
+    function ktwCell(m) {
+      if (!("keep_the_why_unconfirmed" in m)) return "—";
+      const lines = (m.instances || []).map((i) => h("div", { class: "ktw-instance" }, (i.label || i.id) + ": ",
+        i.keep_the_why_acknowledged_at ? "confirmed " + formatAgo(i.keep_the_why_acknowledged_at)
+          : i.keep_the_why_acknowledge_by ? "to confirm by " + formatTime(i.keep_the_why_acknowledge_by) : "not confirmed yet"));
+      return [m.keep_the_why_unconfirmed ? h("span", { class: "mark ktw-unconfirmed" }, "Keep the Why not confirmed in time") : null, lines];
+    }
+
+    // Focus survives a redraw by key: the element drawn for the same key.
+    function redraw(focusKey) {
+      const active = document.activeElement;
+      const key = focusKey || (active && active.getAttribute ? active.getAttribute("data-focus") : null);
+      draw();
+      const again = key && focusables.get(key);
+      if (again) again.focus();
+    }
+
+    async function reload() {
+      items = (await M.api.getAll(ctx.base + "/members")).items;
+      M.withMembers(ctx, items);
+    }
+
+    function manage(m, rowId) {
+      const memberPath = ctx.base + "/members/" + encodeURIComponent(m.id);
+      const self = m.id === ctx.me.id;
+      const parts = [editForm(m, memberPath, self)];
+      if (m.kind === "agent") {
+        // The briefing (§6.2), edited here; where the hub knows briefings.
+        if ("briefing" in m && M.agentParts) parts.push(M.agentParts.briefingControl(ctx, m));
+        if (ownAgent(m) && M.preferences && "owner_preferences" in m) parts.push(M.preferences.ownerToggle(ctx, m));
+        parts.push(P.picturePart(m), P.teamForm(m, memberPath), P.credentialsPart(m), P.pausePart(m, memberPath));
+      }
+      parts.push(P.removePart(m, memberPath, self, () => { if (self) M.route.go("/all"); }));
       return h("tr", { class: "member-manage", id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell" }, parts));
     }
 
@@ -384,9 +381,6 @@ window.Maity = window.Maity || {};
 
     // The membership as §6.2 lets an admin change it, in one form; only the
     // fields that changed are sent, in one PATCH.
-    // The rows' unsaved edits, by member id: a redraw (an action elsewhere,
-    // the presence refresh) rebuilds the form from them, not from the member.
-    const edits = new Map();
 
     function editForm(m, memberPath, self) {
       const id = (what) => "member-" + what + "-" + m.id;
@@ -492,31 +486,36 @@ window.Maity = window.Maity || {};
       h("div", { class: "actions" }, save));
     }
 
+    // A chat per entry: one's own agent's direct chat, anyone else a group
+    // chat with them chosen (§9.2), where the hub has group chats.
+    function chatLink(m) {
+      if (m.id === ctx.me.id || m.removed_at || ctx.me.kind !== "human") return null;
+      // A group chat as the Chat list offers one (js/chat.js): not in a closed
+      // project, not for a human guest (§2.3, §9.2).
+      const groupOk = groupsServed && !M.trust.guest(ctx) && !["accepted", "archived"].includes(ctx.project.state);
+      const href = ownAgent(m) ? ctx.link("chat", m.id) : groupOk ? ctx.link("chat", "new") + "?with=" + encodeURIComponent(m.id) : null;
+      return href ? h("a", { class: "button-link member-chat", href, "aria-label": "Chat with " + m.display_name }, "Chat") : null;
+    }
+
     function nameCell(m) {
-      // An agent's card is on the Agents view; one's own agent also has a chat.
-      const mine = m.kind === "agent" && m.owner_id === ctx.me.id;
       return h("th", { scope: "row", role: "rowheader", "data-label": "Name", tabindex: m.id === wanted ? "-1" : null },
         h("span", { class: "member-name" }, M.dom.memberRef(ctx, m.id, { avatar: 20 })), h("span", { class: "muted" }, " @" + M.dom.handleOf(ctx, m)),
         m.kind === "human" && !m.removed_at && m.language
           ? h("p", { class: "muted member-language" }, "Language: " + (m.language === "de" ? "Deutsch" : "English")) : null,
-
         m.kind === "agent" && m.briefing != null && ctx.project.settings && "onboarding" in ctx.project.settings
-          ? h("span", { class: "badge briefing-override", title: "This member uses its own briefing instead of the project default." }, "Own briefing") : null,
-        mine ? h("span", { class: "member-links" }, " · ", h("a", { href: ctx.link("chat", m.id) }, "Chat")) : null);
+          ? h("span", { class: "badge briefing-override", title: "This member uses its own briefing instead of the project default." }, "Own briefing") : null);
     }
 
-    // heading: false where the heading stands apart (the agents', with Add).
-    function table(kind, list, columns, heading) {
+    function table(kind, list, columns) {
       const label = kind === "human" ? "Humans" : "Agents";
-      const withActions = ctx.canAdmin || list.some(ownAgent);
       const headingId = "members-" + kind;
-      return [heading === false ? null : h("h3", { id: headingId }, label + " (" + list.length + ")"),
+      return [h("h3", { id: headingId }, label + " (" + list.length + ")"),
         h("div", { class: "table-wrap", tabindex: "0", role: "region", "aria-labelledby": headingId },
           h("table", { class: "members", role: "table", "aria-labelledby": headingId },
             h("thead", { role: "rowgroup" }, h("tr", { role: "row" },
               h("th", { scope: "col", role: "columnheader" }, "Name"),
               columns.map((c) => h("th", { scope: "col", role: "columnheader" }, c.title)),
-              withActions ? h("th", { scope: "col", role: "columnheader" }, "Actions") : null)),
+              h("th", { scope: "col", role: "columnheader" }, "Actions"))),
             h("tbody", { role: "rowgroup" }, list.map((m) => {
               const expanded = open.has(m.id);
               const rowId = "member-manage-" + m.id;
@@ -527,18 +526,18 @@ window.Maity = window.Maity || {};
                   if (c.presence) presenceCells.set(m.id, td);
                   return td;
                 }),
-                !withActions ? null : !mayOpen(m) ? h("td", { class: "member-actions", "data-label": "Actions", role: "cell" })
-                  : h("td", { class: "member-actions", "data-label": "Actions", role: "cell" }, keyed("manage:" + m.id, h("button", {
-                  type: "button",
-                  class: "small",
-                  "aria-expanded": expanded ? "true" : "false",
-                  "aria-controls": expanded ? rowId : null,
-                  "aria-label": (expanded ? (ctx.canAdmin ? "Done managing " : "Close the details of ") : (ctx.canAdmin ? "Manage " : "Details of ")) + m.display_name,
-                  onclick: () => {
-                    // Done closes the row and drops its unsaved edits.
-                    if (open.has(m.id)) { open.delete(m.id); edits.delete(m.id); redraw("manage:" + m.id); } else { open.add(m.id); redraw(ctx.canAdmin ? "role:" + m.id : "manage:" + m.id); }
-                  },
-                }, expanded ? "Done" : ctx.canAdmin ? "Manage" : "Details"))));
+                h("td", { class: "member-actions", "data-label": "Actions", role: "cell" }, chatLink(m),
+                  !ctx.canAdmin ? null : keyed("manage:" + m.id, h("button", {
+                    type: "button",
+                    class: "small",
+                    "aria-expanded": expanded ? "true" : "false",
+                    "aria-controls": expanded ? rowId : null,
+                    "aria-label": (expanded ? "Done managing " : "Manage ") + m.display_name,
+                    onclick: () => {
+                      // Done closes the row and drops its unsaved edits.
+                      if (open.has(m.id)) { open.delete(m.id); edits.delete(m.id); redraw("manage:" + m.id); } else { open.add(m.id); redraw("role:" + m.id); }
+                    },
+                  }, expanded ? "Done" : "Manage"))));
               return expanded ? [row, manage(m, rowId)] : row;
             }))))];
     }
@@ -548,117 +547,41 @@ window.Maity = window.Maity || {};
       focusables.clear();
       const humans = items.filter((m) => m.kind === "human");
       const agents = items.filter((m) => m.kind === "agent");
-      // Owner and credentials only where the hub sends them.
-      const hasCreds = agents.some((m) => "credentials" in m);
       const role = { title: "Trust and role", cell: (m) => M.trust.words(m) };
       const presence = { title: "Presence", presence: true, cell: (m) => presenceNodes(m, ctx.canAdmin) };
       const joined = { title: "Joined", cell: (m) => formatTime(m.joined_at) };
       const owner = { title: "Owner", cell: (m) => M.dom.memberRef(ctx, m.owner ? Object.assign({ member_id: m.owner_id }, m.owner) : m.owner_id) };
       const paused = { title: "Paused", cell: (m) => pausedText(m) || "—" };
-      const creds = { title: "Credentials", cell: (m) => credentialsText(m.credentials) };
       const ktw = { title: "Keep the Why", cell: ktwCell };
       const hasKtw = agents.some((m) => "keep_the_why_unconfirmed" in m);
-      append(clear(box), table("human", humans, [role, presence, joined]));
-      agentsHeading.textContent = "Agents (" + agents.length + ")";
-      append(clear(agentsBox), agents.length
-        ? table("agent", agents, [role, owner, presence, joined, paused].concat(hasKtw ? [ktw] : [], hasCreds ? [creds] : []), false)
-        : h("p", { class: "muted" }, "No agents yet.", (ctx.canAdmin || memberAdds) && M.join ? " Add one: its line is made here." : ""));
-      drawJoins();
+      append(clear(box), table("human", humans, [role, presence, joined]),
+        h("div", { class: "members-agents" }, agents.length ? table("agent", agents, [role, owner, presence, joined, paused].concat(hasKtw ? [ktw] : []))
+          : [h("h3", { id: "members-agent" }, "Agents (0)"), h("p", { class: "muted" }, "No agents yet.")]));
     }
 
-    // Joining (docs/api.md §3.1, js/join.js), for whom may create joins:
-    // Add at the head of the agents' table opens the panel under it; the
-    // open joins stand as seats under the table, the others folded after
-    // the placements. The panel, its form and a line shown once live
-    // outside the redrawn table, so a redraw loses neither.
-    const agentsHeading = h("h3", { id: "members-agent" }, "Agents");
-    const addButton = h("button", { type: "button", class: "primary join-open" }, !ctx.canAdmin ? "+ Add my agent" : "+ Add an agent");
-    const agentsBox = h("div", { class: "members-agents" });
-    const seatsBox = h("div", { class: "profiles join-seats" });
-    const earlierBox = h("div", { class: "earlier-box" });
-    let J = null;
-    // Bringing one's own agent (§3.1, tsk-zd2ch05rk7s1): a human member
-    // without members:admin adds agents of their own while the project
-    // allows it, up to member_agents_max. Only where the hub sends the
-    // field: a hub without it refuses a member's join.
-    const policy = ctx.project.policy || {};
-    const memberAdds = !ctx.canAdmin && ctx.me.kind === "human" && !M.trust.guest(ctx)
-      && "member_agents" in policy && policy.member_agents !== "off";
-    const maxOwn = policy.member_agents_max === undefined ? 3 : policy.member_agents_max;
-    // What §3.1 counts: one's distinct agents with an active membership or
-    // an open join; an instance of one already counted adds nothing.
-    const ownMembers = () => items.filter((m) => ownAgent(m) && !m.removed_at);
-    const ownCount = () => new Set(ownMembers().map((m) => m.id).concat(J ? J.openAgents() : [])).size;
-    const limitNote = h("span", { class: "muted member-agents-limit" });
-    // How many agents, online, and joins open, under the agents' heading.
-    const countLine = h("p", { class: "muted agents-count" });
-    function drawCount() {
-      const agents = items.filter((m) => m.kind === "agent");
-      const open = J ? J.openCount() : 0;
-      countLine.textContent = agents.length + (agents.length === 1 ? " agent" : " agents") + " · "
-        + agents.filter((m) => m.presence === "online").length + " online"
-        + (J ? " · " + open + (open === 1 ? (memberAdds ? " open join of yours" : " open join") : (memberAdds ? " open joins of yours" : " open joins")) : "");
-      if (memberAdds) {
-        const n = ownCount();
-        const full = n >= maxOwn;
-        // At the limit the panel still makes an instance of one of them.
-        limitNote.textContent = n + " of " + maxOwn + " agents of yours"
-          + (full ? (ownMembers().length ? " · no new one; another instance or a replacement still" : " · the project allows no more") : "");
-        addButton.disabled = full && !ownMembers().length;
-        addButton.setAttribute("aria-describedby", "member-agents-limit");
-      }
-    }
-    function drawJoins() {
-      drawCount();
-      if (!J) return;
-      append(clear(seatsBox), J.seats());
-      append(clear(earlierBox), J.earlier());
-    }
-
+    // Whether the Chat button may start a group chat with anyone (§9.2):
+    // asked beside the list, never before it; the rows get it once known.
+    let groupsServed = false;
+    const ownHere = ctx.me.kind === "human" && items.some(ownAgent);
     append(root, h("h2", null, "Members"),
-      h("p", { class: "muted" }, "Everyone in " + (ctx.project.name || ctx.slug) + ", humans first."
-        + (ctx.canAdmin ? " Manage a row to change its role, see and revoke an agent's credentials, edit its briefing, pause it or remove a member."
-          : ctx.members.some(ownAgent) ? " Your own agents' Details show their credentials and whether they get your preferences." : "")),
+      h("p", { class: "muted" }, "Everyone in " + (ctx.project.name || ctx.slug) + ", humans first, each with a chat."
+        + (ctx.canAdmin ? " Manage a row to change its role, see and revoke an agent's credentials, edit its briefing, pause it or remove a member." : ""),
+      // A guest brings no agent (§3.1): no way there said to them.
+      ownHere || (ctx.me.kind === "human" && !M.trust.guest(ctx))
+        ? [" ", h("a", { href: ctx.link("agents") }, ownHere ? "Your own agents here are on Agents." : "Adding an agent of yours is on Agents.")] : null),
       status.el, box);
-    // The join panel is read beside the list, not before it: the rows and
-    // a member asked for by the URL never wait for the joins.
-    const panelSlot = h("div", { class: "join-panel-slot" });
-    addButton.hidden = true;
-    limitNote.id = "member-agents-limit";
-    append(root, h("div", { class: "toolbar agents-head" }, agentsHeading, memberAdds ? limitNote : null, addButton), countLine, panelSlot, agentsBox, seatsBox);
-    if ((ctx.canAdmin || memberAdds) && M.join) {
-      M.join.mount(ctx, {
-        member: memberAdds,
-        full: () => memberAdds && ownCount() >= maxOwn,
-        changed: drawJoins,
-        opened: (yes) => { addButton.hidden = yes; if (!yes) addButton.focus(); },
-      }).then((mounted) => {
-        J = mounted;
-        addButton.hidden = false;
-        addButton.addEventListener("click", () => { if (!addButton.disabled) J.open(addButton); });
-        append(panelSlot, J.panel, J.listStatus.el);
-        drawJoins();
-        // Asked for, or no agent yet: the panel is the way in, open at once.
-        if (joinAsked || (ctx.canAdmin && !items.some((m) => m.kind === "agent"))) J.open(addButton);
-      }, (err) => append(panelSlot, h("p", { class: "send-status failed" }, "Could not read the joins: " + err.message)));
-      // An agent running its line takes its seat: the list is read again,
-      // unless the panel is open; then only the seats move.
-      ctx.onEvents((events) => {
-        if (!J || !events.some((e) => e.kind === "member_joined")) return;
-        if (J.busy()) J.reread();
-        else reload().then(() => redraw(), () => {});
-      });
-    }
-    // Where the agents run (js/placements.js), where the hub has placements.
-    const placementsSlot = h("div", { class: "placements-slot" });
-    append(root, placementsSlot, earlierBox);
-    if (M.placements) {
-      const agentsNow = items.filter((m) => m.kind === "agent");
-      Promise.all(agentsNow.map((m) => (M.agentParts ? M.agentParts.loadCredentials(ctx, m) : Promise.resolve({ list: { items: [] } }))))
-        .then((creds) => M.placements.section(ctx, Object.fromEntries(agentsNow.map((m, i) => [m.id, (creds[i].list && creds[i].list.items) || []]))))
-        .then((placed) => { if (placed) append(placementsSlot, placed); }, () => {});
-    }
     draw();
+    // A member marked by the URL keeps the focus across this redraw.
+    const wantedHead = () => { const tr = Array.from(box.querySelectorAll("tr.member")).find((x) => x.getAttribute("data-member") === wanted); return tr && tr.childNodes[0]; };
+    if (M.groupChat) {
+      M.groupChat.served().then((yes) => {
+        if (!yes) return;
+        const had = wanted && document.activeElement === wantedHead();
+        groupsServed = true;
+        redraw();
+        if (had && wantedHead()) wantedHead().focus();
+      }, () => {});
+    }
     // Inviting a person (§3.4), below the members, for a human with members:admin.
     if (M.invite) {
       const slot = h("div", { class: "invitations-slot" });
@@ -670,12 +593,8 @@ window.Maity = window.Maity || {};
     // A member asked for by the URL: its row takes the focus once the view is
     // in the page; an id that is no member here is said.
     if (wanted) {
-      const row = Array.from(box.querySelectorAll("tr.member")).concat(Array.from(agentsBox.querySelectorAll("tr.member")))
-        .find((tr) => tr.getAttribute("data-member") === wanted);
-      const th = row && row.childNodes[0];
-      const at = rulebookAsked ? focusables.get("team-max:" + wanted) : null;
-      if (at) window.setTimeout(() => at.focus(), 0);
-      else if (th) window.setTimeout(() => th.focus(), 0);
+      // Looked up when focused: the Chat redraw may have drawn the row again.
+      if (wantedHead()) window.setTimeout(() => { if (wantedHead()) wantedHead().focus(); }, 0);
       else append(status.el, h("span", null, "No member with the id " + wanted + " in this project."));
     }
     ctx.every(PRESENCE_MS, async () => {
@@ -688,8 +607,7 @@ window.Maity = window.Maity || {};
         // The page's member list follows, so every name on it — a global
         // name where a handle is now shared (§6.3) — agrees with the rows.
         if (!same) {
-          ctx.members = fresh;
-          ctx.memberById = Object.fromEntries(fresh.map((m) => [m.id, m]));
+          M.withMembers(ctx, fresh);
           redraw();
           return;
         }
