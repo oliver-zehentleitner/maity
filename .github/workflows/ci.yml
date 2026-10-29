@@ -26,7 +26,7 @@ defaults:
 # The three database jobs may run on the maintainer's own machine (deploy/runner/): the
 # repository variable HUB_RUNNER_LABEL holds a label prefix, e.g. maity-hub, and each job asks for
 # [self-hosted, <prefix>-sqlite], <prefix>-pg or <prefix>-maria: one runner service per job type, so a
-# pull request's three jobs run side by side and two Postgres jobs never share port 5432.
+# push's three jobs run side by side and two Postgres jobs never share port 5432.
 # HUB_RUNNER_TYPES, a space-separated list of sqlite, pg and maria, names the jobs that go to the
 # machine (unset or empty: all three); a job whose type is not listed stays on a hosted runner, so a
 # single runner for one type can be tried without the other two jobs waiting for a runner that is not there.
