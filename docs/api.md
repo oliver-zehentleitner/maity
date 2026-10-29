@@ -175,7 +175,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `last_instance_admin` | a deletion of their own account by the instance's last admin (§2.9) |
 | 409 | `project_closed` | claim or task creation while the project is `archived`, an import included; there also creating a group chat or adding a participant to one (§9.2), adding a card link and posting a note (§6.13, §6.16), an attachment upload and a message that names one (§8.7) |
 | 409 | `already_linked` | the same forge item or URL is linked on the card already (`details.link`), or the issue is imported on a card that is not closed (`details.task`) (§6.13, §6.14) |
-| 409 | `idempotency_mismatch` | same `Idempotency-Key`, different body |
+| 409 | `idempotency_mismatch` | same `Idempotency-Key`, a different call (method, route, project, path parameters or body) |
 | 409 | `probe_not_configured` | no grant covers the project's repository (§11, §11.4); `details.reason` (`no_grant`, `private_without_grant`, `installation_suspended`, `installation_removed`, `token_rejected`, `unconfirmed`, `repository_moved`) for `project:admin` only; also an import (§6.14) |
 | 409 | `placement_exists` | a second active placement for a membership, or for (runner, clone) in a project (§15.5); `details.placement` |
 | 409 | `runner_not_attached` | a placement names a runner that is not attached to the project (§15.4) |
@@ -251,11 +251,16 @@ session of the same credential replays the same key — and kept for
 
 - Only a successful first call (2xx) is stored; a call that ended in an
   error changed nothing and may simply be repeated. A repeat with the same
-  key and the same body after a success returns the first call's
-  status and resource (the hub stores the body hash, the status code and
-  a reference to the resource, not the full response) with the header
+  key and the same call after a success returns the first call's
+  status and resource (the hub stores the call's hash (method, route, project id, path parameters
+  and body), the status code and a reference to the resource, not the full
+  response) with the header
   `Idempotent-Replayed: true`.
-- A repeat with the same key and a different body is `idempotency_mismatch`.
+- A repeat with the same key and a different call — another method, route, project or
+  path parameter, or another body — is `idempotency_mismatch`. The project counts by its
+  id, so a call through an alias of the same project (§6.24, §6.25) is the same call. A
+  key stored before this rule answers `idempotency_mismatch` on every repeat until it
+  expires (24 hours).
 
 `DELETE` is idempotent by itself, and so is every `PUT` (an avatar,
 §6.10; a watch, §6.4): the key is optional there for every caller. The dashboard may send the header; it

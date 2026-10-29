@@ -1918,3 +1918,27 @@ sensitive call: needless right after a sign-in, and wrong for a
 passwordless account. A modal dialog: the dashboard has none, and a
 slot in place keeps the focus and the context where the human was.
 
+
+## The meat-proxy hint quotes the hub's note as /me carries it, and no text of its own
+
+**Id:** 8eb486bb-357a-477c-aaf5-2a4d51024cc4
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2 `GET /me` ("the dashboard shows it under the switch from here and keeps no copy of its own") and §5.2 "Meat proxy"; the change that replaced the page's own sentence with `meat_proxy_note`
+**Revisit when:** the note gets text per human or a translation, or `/me` stops carrying it
+
+Under the switch **I am a meat proxy** the account quotes
+`meat_proxy_note` from `/me` as text, never through HTML. A hub that
+does not send the field gets the switch and its hint without a quote.
+
+**Reason:** the human should read exactly what the agents that deal
+with them read. Any wording of the page's own drifts from the hub's as
+soon as the note changes, as it did once already.
+
+**Rejected alternative:** keeping the old sentence as a fallback where
+the field is missing: on a hub whose note has changed, it would show
+words the agents no longer read, the drift this avoids. The price is a
+hint without the words on a hub that does not send the note yet.
+Copying the text into the page: the same drift with every change of
+the wording.
