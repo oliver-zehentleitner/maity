@@ -14,7 +14,7 @@ from typing import Any
 
 from sqlalchemy import Connection, select, update
 
-from maity_hub import clock, forge
+from maity_hub import clock, forge, forge_access
 from maity_hub import tables as t
 from maity_hub.events import emit
 
@@ -187,7 +187,8 @@ def probe_configured(conn: Connection, project_id: str, fg: forge.Forge) -> bool
     url = conn.execute(
         select(t.project.c.repository_url).where(t.project.c.id == project_id)
     ).scalar()
-    return fg.configured_for(url)
+    via = forge_access.probe_via(project_id, url, fg.token)
+    return via is not None
 
 
 def _live(conn: Connection, card: Any, fg: forge.Forge) -> dict[str, Any]:

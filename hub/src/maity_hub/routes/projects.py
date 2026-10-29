@@ -31,6 +31,7 @@ from maity_hub import (
 )
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
+from maity_hub.auth import second_factor
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid
 from maity_hub.events import emit, lock_project
@@ -78,6 +79,8 @@ class PolicyIn(Strict):
     jour_fixe: dict[str, Any] | None = None  # replaced as a whole (§20.1)
     jour_fixe_moderators: list[str] | None = None
     takeover_window_minutes: int | None = None
+    member_agents: str | None = None
+    member_agents_max: int | None = None
 
 
 class AbsenceIn(Strict):
@@ -197,6 +200,10 @@ def _apply_policy(
         if not 0 <= change.max_placements <= policy.MAX_PLACEMENTS_MAX:
             errors["policy.max_placements"] = "out_of_range"
         proposed["max_placements"] = change.max_placements
+    if change.member_agents_max is not None:
+        if not 0 <= change.member_agents_max <= policy.MEMBER_AGENTS_MAX_MAX:
+            errors["policy.member_agents_max"] = "out_of_range"
+        proposed["member_agents_max"] = change.member_agents_max
     if change.on_runner_revoke == "keep" and instance_rule == "stop_floor":
         # The operator made stop a floor (§15.3, §16): no project keeps its agents.
         errors["policy.on_runner_revoke"] = "stop_floor"
@@ -688,6 +695,7 @@ def confirm_repository(
             raise humans_only("only the namespace owner confirms the repository")
         if mine.row.human_id != project.owner_id:
             raise forbidden(message="only the project's namespace owner confirms its repository")
+        second_factor.require_step_up(conn, settings_of(request), caller)  # §2.8.4
         if project.repository_url is None or body.url.rstrip("/") != project.repository_url:
             # A co-admin's change between what the owner saw and the click is never
             # confirmed with it.
@@ -718,6 +726,8 @@ HUMANS_ONLY_POLICY = {
     "on_runner_revoke",
     "spawn_requests",
     "merged_closes",  # set by a human with project:admin (§6.1)
+    "member_agents",  # who may bring agents into the project (§3.1, §6.1)
+    "member_agents_max",
 }
 
 

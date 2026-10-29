@@ -151,6 +151,10 @@ def _prs(conn: Connection, project_id: str, since: datetime, member: Any, found:
         .order_by(t.event.c.seq)
     ):
         payload = payload or {}
+        # Only what a read found public reaches this page without sign-in (§11.4); an
+        # event from before the field was written counts as not public.
+        if payload.get("public") is not True:
+            continue
         if (payload.get("new") or {}).get("state") != "merged":
             continue
         key = pull_key(payload.get("forge_url"))
