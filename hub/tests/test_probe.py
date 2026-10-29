@@ -201,6 +201,49 @@ def test_a_forced_read_waits_the_floor(
     assert len(github.calls) == 6
 
 
+def test_the_first_found_release_tag_marks_the_project_released_for_good(
+    owner: flow.Human, migrated: Engine, github: FakeGitHub
+) -> None:
+    """§6.1: `released_at` is set once, by the probe finding a release's tag, whether
+    the release card is done or not; a tag of no release does not count."""
+    github.tag("v9.9.9")
+    assert owner.get("/projects/maintainer/maity/probe?tag=v9.9.9").json()["tag"]["found"]
+    assert _project(migrated).released_at is None
+    release = owner.post(
+        "/projects/maintainer/maity/tasks",
+        {"title": "0.1.0", "kind": "release", "release": {"version": "0.1.0"}},
+    ).json()
+    github.answers["/repos/acme/maity/git/ref/tags/v0.1.0"] = None
+    project_id = _project(migrated).id
+    probe.observe_release(migrated, READER, project_id)
+    assert _project(migrated).released_at is None
+    version = _project(migrated).rules_version
+    github.tag("v0.1.0")
+    probe.observe_release(migrated, READER, project_id, max_age=0)
+    marked = _project(migrated)
+    assert marked.released_at is not None and marked.rules_version == version + 1
+    event = _events(migrated, "state_changed")[-1]
+    assert event.payload == {
+        "old": "build",
+        "new": "build",
+        "reason": None,
+        "released_at": clock.rfc3339(marked.released_at),
+        "rules_version": version + 1,
+    }
+    assert owner.get("/projects/maintainer/maity").json()["released_at"] == clock.rfc3339(
+        marked.released_at
+    )
+    rules = owner.get("/projects/maintainer/maity/rules").text
+    assert f"Released since {marked.released_at.date().isoformat()}." in rules
+    assert "migrations stay backward compatible" in rules
+    # Never cleared, never moved: another read of the tag and a state change keep it.
+    probe.observe_release(migrated, READER, project_id, max_age=0)
+    owner.patch(f"/projects/maintainer/maity/tasks/{release['id']}", {"status": "cancelled"})
+    owner.patch("/projects/maintainer/maity", {"state": "review", "reason": "next"})
+    assert _project(migrated).released_at == marked.released_at
+    assert len([e for e in _events(migrated, "state_changed") if "released_at" in e.payload]) == 1
+
+
 def test_merged_conflicting_branch_and_tag(owner: flow.Human, github: FakeGitHub) -> None:
     github.pull(4, merged=True)
     github.pull(5, head=OTHER, mergeable=False, mergeable_state="dirty")
