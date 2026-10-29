@@ -34,7 +34,7 @@ def test_a_created_project_has_the_contract_shape(owner: flow.Human) -> None:
         owner,
         "maity",
         repository={"url": "https://github.com/oliver-zehentleitner/maity"},
-        keep_the_why=True,
+        memory={"provider": "keep-the-why"},
     )
     assert set(body) == {
         "id",
@@ -52,7 +52,6 @@ def test_a_created_project_has_the_contract_shape(owner: flow.Human) -> None:
         "banner",
         "memory",
         "setup",
-        "keep_the_why",
         "keep_the_why_export",
         "attachments",
         "policy",
@@ -269,22 +268,22 @@ def test_an_admin_agent_cannot_change_state_or_policy(
 def test_owner_text_and_keep_the_why_bump_the_rules_with_rules_changed(
     owner: flow.Human, migrated: Engine
 ) -> None:
-    flow.project(owner, "maity", keep_the_why=False)
+    flow.project(owner, "maity", memory={"provider": "none"})
     owner.patch(
         "/projects/maintainer/maity", {"rules_markdown": "Commit in English.", "reason": "style"}
     )
-    owner.patch("/projects/maintainer/maity", {"keep_the_why": True})
+    owner.patch("/projects/maintainer/maity", {"memory": {"provider": "keep-the-why"}})
     events = _events(migrated, "rules_changed")
     assert [e.payload for e in events] == [{"version": 2, "reason": "style"}, {"version": 3}]
     assert all(e.audience == ["all"] for e in events)
     project = _project_row(migrated, "maity")
     assert (project.rules_version, project.rules_changed_seq) == (3, events[-1].seq)
-    unchanged = owner.patch("/projects/maintainer/maity", {"keep_the_why": True})
+    unchanged = owner.patch("/projects/maintainer/maity", {"memory": {"provider": "keep-the-why"}})
     assert unchanged.json()["rules_version"] == 3
 
 
 def test_the_rules_are_generated_per_role(owner: flow.Human, make_client: ClientFactory) -> None:
-    flow.project(owner, "maity", keep_the_why=True)
+    flow.project(owner, "maity", memory={"provider": "keep-the-why"})
     owner.patch("/projects/maintainer/maity", {"rules_markdown": "Commit in English."})
     rules = owner.get("/projects/maintainer/maity/rules")
     assert rules.headers["content-type"] == "text/markdown; charset=utf-8"

@@ -143,27 +143,21 @@ class MemoryIn(Strict):
 PROVIDERS = ("none", "keep-the-why")
 
 
-def _provider(keep_the_why: bool | None, memory: MemoryIn | None) -> bool | None:
-    """The memory provider a body names as `keep_the_why`'s boolean, or None when it
-    names none (§6.1): `memory.provider` and its alias must agree."""
-    errors: dict[str, str] = {}
+def _provider(memory: MemoryIn | None) -> bool | None:
+    """Whether the body names `keep-the-why` as the memory provider, or None when it names
+    none (§6.1)."""
     named = None if memory is None else memory.provider
-    if named is not None and named not in PROVIDERS:
-        errors["memory.provider"] = "unknown_provider"
-    elif (
-        named is not None and keep_the_why is not None and (named == "keep-the-why") != keep_the_why
-    ):
-        errors["keep_the_why"] = "conflicts_with_memory"
-    if errors:
-        raise invalid(errors)
-    return keep_the_why if named is None else named == "keep-the-why"
+    if named is None:
+        return None
+    if named not in PROVIDERS:
+        raise invalid({"memory.provider": "unknown_provider"})
+    return named == "keep-the-why"
 
 
 class ProjectCreate(Strict):
     slug: str = Field(pattern=SLUG_PATTERN)
     name: str = title()
     repository: RepositoryIn | None = None
-    keep_the_why: bool | None = None
     memory: MemoryIn | None = None
     setup: Any = None  # parsed by setup_cards.parse, for the reasons §6.21 names
     policy: PolicyIn | None = None
@@ -173,7 +167,6 @@ class ProjectPatch(Strict):
     slug: str | None = Field(default=None, pattern=SLUG_PATTERN)  # a rename (§6.25)
     name: str | None = title(default=None)
     repository: RepositoryIn | None = None
-    keep_the_why: bool | None = None
     memory: MemoryIn | None = None
     setup: Any = None
     state: str | None = None
@@ -403,7 +396,7 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
 @router.post("/projects")
 def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -> JSONResponse:
 
-    named = _provider(body.keep_the_why, body.memory)
+    named = _provider(body.memory)
     memory_on = True if named is None else named  # the default provider is keep-the-why (§6.1)
     setup = setup_cards.parse(body.setup, memory_on)
     if body.repository is not None:  # refuse a bad repository before anything is written
@@ -582,7 +575,7 @@ def patch_project(
             # upgraded with the ticker on has no start yet): merges count from now.
             if now_on and (not was_on or ticker.merges_since(conn, project.id) is None):
                 ticker.switched_on(conn, project.id)
-        provider = _provider(body.keep_the_why, body.memory)
+        provider = _provider(body.memory)
         memory_on = project.keep_the_why if provider is None else provider
         new_policy = None
         if "policy" in given and body.policy is not None:
