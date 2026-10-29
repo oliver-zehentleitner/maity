@@ -12,6 +12,7 @@ from maity_hub import (
     availability,
     avatars,
     clock,
+    commitment,
     contract_text,
     forge,
     forge_access,
@@ -191,6 +192,11 @@ def project_language(project: Any) -> str:
     return "de" if (project.settings or {}).get("language") == "de" else "en"
 
 
+def memory_of(project: Any) -> dict[str, str]:
+    """The project's memory provider (§6.1); `keep_the_why` is its boolean alias."""
+    return {"provider": "keep-the-why" if project.keep_the_why else "none"}
+
+
 def project_view(
     project: Any,
     settings: Settings,
@@ -220,6 +226,7 @@ def project_view(
         "repository": repository(project, settings),
         "logo": shown.get("logo", NO_IMAGE),
         "banner": shown.get("banner", NO_IMAGE),
+        "memory": memory_of(project),
         "keep_the_why": project.keep_the_why,
         "keep_the_why_export": export,
         "attachments": stored,
@@ -499,6 +506,9 @@ def member_views(
         if row.agent_id is not None:
             view["team"] = instances.team(conn, row)
             view["instances"] = team_of.get(row.id, [])
+            unconfirmed = commitment.unconfirmed(projects[row.project_id], view["instances"])
+            if unconfirmed is not None:
+                view["keep_the_why_unconfirmed"] = unconfirmed
             if view["instances"] and row.paused_since is None:
                 # The best of its instances' (§5.3).
                 view["presence"] = min(

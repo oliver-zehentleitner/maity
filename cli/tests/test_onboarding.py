@@ -64,6 +64,31 @@ def test_the_briefing_comes_first_and_every_line_is_quoted() -> None:
     assert not any(line.startswith("Next: run") for line in lines)  # only quoted
 
 
+def test_resume_names_this_instance_and_its_siblings() -> None:
+    base = packet()
+    data = {
+        **base,
+        "me": {**base["me"], "instance": "wqe2", "address": "agt-b#wqe2"},
+        "team": [
+            {"id": "k7mq", "address": "agt-b#k7mq", "harness": "Codex", "model": "gpt-5.5",
+             "presence": "online", "paused": None, "lead": True, "claims": 1},
+            {"id": "ap44", "address": "agt-b#ap44", "presence": "offline",
+             "paused": {"reason": "x"}, "lead": False, "claims": 0},
+        ],
+    }  # fmt: skip
+    text = onboarding.render(data)
+    assert "You are agent-b#wqe2 (Agent B), member id agt-b." in text
+    assert (
+        "Other instances of you: agent-b#k7mq (Codex, gpt-5.5, online, 1 claim, lead); "
+        "agent-b#ap44 (offline, 0 claims, paused)"
+    ) in text
+
+
+def test_a_team_of_one_shows_no_sibling_line() -> None:
+    text = onboarding.render({**packet(), "team": []})
+    assert "Other instances" not in text
+
+
 def test_identity_project_rules_and_next_step() -> None:
     text = onboarding.render(packet())
     assert "You are agent-b (Agent B), member id agt-b." in text

@@ -13,7 +13,7 @@ from starlette.concurrency import run_in_threadpool
 
 from maity_hub import account_deletion, avatars, clock
 from maity_hub import tables as t
-from maity_hub.auth import passwords, second_factor, sessions
+from maity_hub.auth import email_links, passwords, second_factor, sessions
 from maity_hub.auth.caller import (
     CSRF_COOKIE,
     SESSION_ABSOLUTE,
@@ -230,6 +230,7 @@ def change_password(body: PasswordChange, request: Request, caller: HumanCaller)
             & (t.human_session.c.id_hash != caller.human_session),
             "password_change",
         )
+        email_links.void_human(conn, row.id)
         url = avatars.urls(conn, [row.id])[row.id]
         return JSONResponse({"member": human_member(row, avatar_url=url)})
 

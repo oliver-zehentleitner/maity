@@ -1343,3 +1343,7 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .org-head h2, .org-head p { margin: 0; }
 .org-page section { margin-top: 20px; }
 .org-role-words { margin-top: 8px; }
+
+/* Another instance's state directory, said before its join line (js/join.js). */
+.instance-note { border-left: 3px solid var(--warn); padding: 4px 0 4px 10px; margin: 8px 0; }
+.instance-note p { margin: 4px 0; }

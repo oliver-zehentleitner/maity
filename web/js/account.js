@@ -147,16 +147,18 @@ window.Maity = window.Maity || {};
   }
   M.profileDelete = profileDelete;
   // §5.2 "Meat proxy": the human's own switch (PATCH /me). The hub tells the
-  // agents that deal with them the one sentence below and nothing more; the
-  // page says exactly that. Where the hub's machine form does not name the
-  // field there is no switch; a machine form that cannot be read keeps it.
-  const MEAT_PROXY_NOTE = "This person says: I am a meat proxy.";
+  // agents that deal with them a note, always the same text, and /me carries
+  // it (member.meat_proxy_note): the page shows exactly that under the switch,
+  // never a copy of its own; a hub that does not send it shows none. Where the
+  // hub's machine form does not name the field there is no switch; a machine
+  // form that cannot be read keeps it.
   async function meatProxySection(ctx) {
     if (ctx.me.kind !== "human") return null;
     const offered = await M.api.hubBody("PATCH", "/me").then((fields) => fields.has("meat_proxy"), () => true);
     if (!offered) return null;
     const status = M.statusLine();
-    const box = h("input", { type: "checkbox", id: "meat-proxy", "aria-describedby": "meat-proxy-hint" });
+    const note = typeof ctx.me.meat_proxy_note === "string" && ctx.me.meat_proxy_note ? ctx.me.meat_proxy_note : null;
+    const box = h("input", { type: "checkbox", id: "meat-proxy", "aria-describedby": note ? "meat-proxy-hint meat-proxy-note" : "meat-proxy-hint" });
     box.checked = !!ctx.me.meat_proxy;
     box.addEventListener("change", async () => {
       const want = box.checked;
@@ -168,7 +170,7 @@ window.Maity = window.Maity || {};
         box.checked = !!ctx.me.meat_proxy;
         status.done();
         append(status.el, h("span", { class: "ok" }, ctx.me.meat_proxy
-          ? "Saved: your agents and the agents of your projects are told \"" + MEAT_PROXY_NOTE + "\""
+          ? (note ? "Saved: your agents and the agents of your projects are told the text above." : "Saved: your agents and the agents of your projects are told.")
           : "Saved: they are no longer told."));
       } catch (err) {
         box.checked = !want;
@@ -180,8 +182,9 @@ window.Maity = window.Maity || {};
     return h("section", { class: "meat-proxy" },
       h("h3", null, "Meat proxy"),
       h("label", { class: "check", for: "meat-proxy" }, box, " I am a meat proxy"),
-      h("p", { class: "hint", id: "meat-proxy-hint" }, "While this is on, your own agents and the agents of every project you are a member of read \""
-        + MEAT_PROXY_NOTE + "\" when they resume. That is all they are told: the hub does not say what it means."),
+      h("p", { class: "hint", id: "meat-proxy-hint" }, "While this is on, your own agents and the agents of every project you are a member of are told so when they resume"
+        + (note ? ", in these words:" : ".")),
+      note ? h("blockquote", { class: "meat-proxy-note", id: "meat-proxy-note" }, h("p", null, note)) : null,
       status.el);
   }
 

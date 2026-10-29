@@ -673,7 +673,6 @@ window.Maity = window.Maity || {};
   // those from account records record "acr-<n>"; a position is "a.b".
   // §18.1 since 2026-10-26: only what the human must react to.
   const KINDS = ["inbox", "chat", "mention", "security"];
-  const REMOVED_KINDS = ["card", "agent", "ticker", "jour_fixe", "keep_the_why", "system", "registration"];
   function notificationCounts() {
     const counts = {};
     KINDS.forEach((k) => { counts[k] = 0; });
@@ -1018,7 +1017,6 @@ window.Maity = window.Maity || {};
       const { counts, by_project: byProject } = notificationCounts();
       const kinds = query.get("kind") ? query.get("kind").split(",") : null;
       (kinds || []).forEach((k) => {
-        if (REMOVED_KINDS.includes(k)) fail(400, "invalid", "the request does not validate", path, { fields: { kind: "removed_kind" } });
         if (!KINDS.includes(k)) fail(400, "invalid", "the request does not validate", path, { fields: { kind: "unknown" } });
       });
       const projects = query.get("project") ? query.get("project").split(",") : null;
@@ -1058,6 +1056,8 @@ window.Maity = window.Maity || {};
     ["POST", /^\/me\/notifications\/read$/, (m, body, path) => {
       const n = fixtures()["notifications.json"];
       if (("ids" in body) === ("up_to" in body)) fail(400, "invalid", "ids or up_to", path, { fields: { body: "invalid" } });
+      // A kind outside the four, one removed earlier included, is unknown (§18.3).
+      if ("kind" in body && !KINDS.includes(body.kind)) fail(400, "invalid", "the request does not validate", path, { fields: { kind: "unknown" } });
       // up_to never reaches a security item: those only by id, from a
       // session allowed to (§18.3); a confirmed sign-in is in good standing.
       n.items.forEach((x) => {
