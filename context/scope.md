@@ -451,7 +451,8 @@ joined) and costs nothing to defend.
 
 **Id:** eec53587-3465-48d8-9c7e-ae24e05e7172
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** cd44707b-7b79-47ae-a78d-586195d465dc
 **Evidence:** confirmed
 **Source:** the maintainer's direction in the project chat, 2026-10-25; contract `docs/api.md` §16.7
 **Revisit when:** an instance needs more than one page of its own (then a small content store, still in the database), or a theme beyond the uploaded logo and banner
@@ -535,7 +536,8 @@ fast adoption and an excellent product, not through licence terms.
 
 **Id:** 4f798011-3707-4fe7-a825-ad2575d6f395
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 3cec0403-a358-440c-81aa-a2be45abf3a4
 **Evidence:** confirmed
 **Source:** the maintainer's request in the project chat, 2026-10-28 (a sitemap for maity.team and maity.dev for the search console); contract `docs/api.md` §16.7 "Search engines"
 **Revisit when:** public projects or discovery pages come (later stage in this file), which would add public URLs worth listing
@@ -616,3 +618,61 @@ must not publish its members by an update.
   their activity would be published by someone else's choice; they show
   only with the project's `swarm_public` and their owner's public
   profile, the rest as a number.
+
+## The landing and legal pages are instance content in sections, rendered by the hub as static HTML
+
+**Id:** cd44707b-7b79-47ae-a78d-586195d465dc
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's direction to the designer, 2026-10-28 (a full landing page, as plain HTML like the public pages, live numbers, a way into sign-in and registration; imprint, privacy notice and terms of use); the designer's section list (Maity, 2026-10-28); contract `docs/api.md` §16.7, §16.7.1
+**See:** scope.md#what-one-instance-says-about-itself-lives-in-its-database-not-in-the-repository — eec53587-3465-48d8-9c7e-ae24e05e7172 — as of 2026-10-28
+
+What an instance says about itself still lives in its database, written
+by its admin, never in the repository. The landing page is now a list
+of typed sections (hero, stats, steps, scales, FAQ, text, …) per
+language instead of one Markdown block, and the hub renders it itself
+as one static HTML page at the root for visitors without a session; the
+dashboard moves to `/app` for them, `/login` and `/register` always
+reach it, and a tiny script carries old `/#/…` links over. The imprint,
+privacy notice and terms of use are three more pages of the same kind,
+versioned, and the terms page feeds the acceptance at registration.
+Live numbers are computed every five minutes; online counts below five
+show as "< 5".
+
+**Reason:** the maintainer wants a full landing page that works without
+script and is found by search engines, and legal pages before opening
+registration. One rendering path in the hub keeps the page, the public
+pages and the legal pages alike and readable by crawlers. Versioned
+terms make the accepted version the one the person could read.
+
+**Rejected alternatives:**
+- Keeping one Markdown block: too little for a page with steps, numbers
+  and questions, and still drawn by script.
+- Legal pages as static files in the repository: the operator's name
+  and address are instance content, not code.
+- Exact small online numbers: with few people, a number like 1 points
+  at a person.
+
+## Search engines may read the landing and legal pages; the rest stays as before
+
+**Id:** 3cec0403-a358-440c-81aa-a2be45abf3a4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** follows from cd44707b; contract `docs/api.md` §16.7 "Search engines"
+**See:** scope.md#only-an-instance-with-a-landing-page-invites-search-engines-and-only-to-its-root — 4f798011-3707-4fe7-a825-ad2575d6f395 — as of 2026-10-28
+
+While the landing page is enabled, `robots.txt` allows the root and the
+legal pages that are set, and the sitemap lists them (plus the public
+pages while those are on); while it is not, only the root with
+`noindex`, as before. The dashboard's scripts and the public reads no
+longer need to be allowed, because the hub renders the page.
+
+**Reason:** the page a crawler should read is now plain HTML; allowing
+script files was only ever a workaround for a page drawn by script.
+
+**Rejected alternatives:**
+- Leaving the old allow list: it would invite crawlers into files that
+  no longer carry the words.
+

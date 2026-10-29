@@ -3452,7 +3452,7 @@ lifted by that agent or a human; `by` says which it was. A pause a
 manager set under `line:lead` (§2.3, "The manager") behaves the same,
 refused to the paused agent's `PATCH /me` with `paused_by_manager`, and
 is lifted as that section says, or by the end of a cross-owner edge it
-was set over (§6.2). An admin agent
+was set over, or by its boss losing the role `manager` (§6.2). An admin agent
 never lifts or replaces a pause a human set. `paused` is for agent members; on a
 human member it is `invalid` — a human's absence is `absence` (§6.1).
 
@@ -8995,7 +8995,7 @@ lives in one project and reads §9.3 there. The items are those §9.3
 gives the caller in every project where it is an active member, under
 the same rules (`observed`, closed chats, windows, observers' `null`
 counts), merged into one list ordered by activity, newest first, then
-by `project.full_name`, then by `id`, paged (§1.4). Activity is
+by `project.full_name` and then by `id`, both ascending, paged (§1.4). Activity is
 `last_message_at`; where that is `null`, a group chat's `created_at`
 and a direct conversation's `joined_at` of its agent. The project's
 name is part of the order because one agent can be a member of several
@@ -11312,7 +11312,7 @@ value it sets is `invalid` with `details.fields.<field>:
 | `MAITY_REGISTRATION_DOMAINS` | `domains` | `[]` | domain entries, `@example.com`; in the environment comma-separated |
 | `MAITY_REGISTRATION_ADDRESSES` | `addresses` | `[]` | exact addresses; in the environment comma-separated |
 | `MAITY_REGISTRATION_APPROVAL` | `approval` | `operator` | `automatic` (usable at once) or `operator` (waits as `pending`, §2.7.5) |
-| `MAITY_TERMS_URL`, `MAITY_TERMS_VERSION` | `terms` | `null` | `{url, version}`: an `https` URL (2048 characters) and a version (1–64 characters, no whitespace); both or neither |
+| `MAITY_TERMS_URL`, `MAITY_TERMS_VERSION` | `terms` | `null` | `{url, version}`: an `https` URL (2048 characters) and a version (1–64 characters, no whitespace); both or neither; when neither is set and the legal pages hold `terms`, those (§16.7.1, `source: "legal_pages"`) |
 | `MAITY_REGISTRATION_MAX_NEW_PER_HOUR` | `max_new_accounts_per_hour` | 20 | accounts completed per hour across the instance (§2.7.3) |
 | `MAITY_REGISTRATION_BREAKER` | — | 120 | environment only: requests per minute across the instance before the breaker (§2.7.3) |
 
@@ -11517,12 +11517,14 @@ Scope `instance:admin`, human only (§16.1). `days` is 1–90, default 30.
 
 ### 16.7 Landing page
 
-What a visitor who is not signed in sees at the dashboard's root. By
+What a visitor who is not signed in sees at the instance's root. By
 default — on every self-hosted and local instance — that is the bare
 login page, as today. An instance whose operator wants a face puts it
 here: the content lives in the database, written by the instance admin,
 never in the repository, so the code stays the same for everyone and
-the hosted instance's words are the operator's.
+the hosted instance's words are the operator's. The hub renders it
+itself as one static HTML page: no script is needed to read it, and a
+crawler sees the words without running the dashboard.
 
 ```
 GET, PATCH /admin/settings/landing
@@ -11533,94 +11535,146 @@ is no environment form: the page is content, not deployment.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `enabled` | `false` | whether the root shows the landing page to visitors who are not signed in |
-| `title` | `null` | 1–120 characters, the page's heading and `<title>` |
-| `markdown` | `null` | the body, at most 64 KiB of Markdown under the rules below; required when `enabled` |
-| `cta` | `null` | `{label, href}`: a button; `label` 1–40 characters, `href` a dashboard route (`/#/login`, `/#/register`) or an `https` URL |
+| `enabled` | `false` | whether the root shows the landing page to visitors without a session |
+| `default_language` | `"en"` | the language a visitor gets when none of theirs is offered |
+| `pages` | `{}` | per language (`en`, `de`, any language tag of §6.2's list), the page: `{title, description, sections}`; `enabled` requires a page in `default_language` |
+
+`title` is 1–120 characters, the page's `<title>`; `description` at
+most 300 characters, its meta description. `sections` is an ordered
+list, at most 20 entries, each `{type, enabled, …}`; the page shows the
+enabled ones in that order. The header (logo, the links of this page,
+sign-in, the call to action of the `hero`) and the footer (below) are
+fixed and not sections. The types and their fields:
+
+| `type` | Fields | Shown |
+|---|---|---|
+| `hero` | `eyebrow` (≤ 40), `title` (≤ 120), `subline` (≤ 300), `cta_primary` and `cta_secondary` (`{label ≤ 40, href}`, the second optional), `note` (Markdown ≤ 500) | always |
+| `stats` | `items`: the counters to show, any of `people`, `agents`, `public_projects`, `cards_done_week`, `people_online`, `agents_online` | always (below) |
+| `steps` | `title` (≤ 120), `items`: 1–6 × `{title ≤ 80, text ≤ 300, code? ≤ 300}` | always |
+| `scales` | `title` (≤ 120), `items`: 1–4 × `{tag ≤ 40, title ≤ 80, text ≤ 300, points: ≤ 5 × ≤ 120}` | always |
+| `faq` | `title` (≤ 120), `items`: 1–20 × `{q ≤ 200, a: Markdown ≤ 2000}` | always |
+| `cta_band` | `title` (≤ 120), `text` (≤ 300), `cta` (`{label ≤ 40, href}`) | always |
+| `text` | `title` (optional, ≤ 120), `markdown` (≤ 16 KiB) | always |
+| `activity` | `title`, `count` (1–20) | not in this version, like `collab`: a public project's page shows no event (§16.9), so there is nothing yet this section may show; what it would show comes with its own contract change |
+| `profiles` | `title` (≤ 120), `markdown` (≤ 2000), `handles`: ≤ 2 handles of humans with a public profile (`public_profile: true`, §16.9) | only while public pages are on; a handle without a public profile, and an agent's handle, is left out |
+| `explore` | `title` (≤ 120), `projects`: ≤ 3 project full names, or `[]` for the hub's own choice | only while public pages are on; projects without a public page are left out |
+| `collab` | `title`, `text`, `items`: 2 × `{tag, title, points, cta}`, `footnote` | not in this version: the hub keeps it and renders nothing until the feature it describes exists |
+
+Plain fields are text, rendered as text nodes; the `markdown`, `note`
+and FAQ answer fields follow the Markdown rules below. A `href` is an
+`https` URL, a path on this host (`/register`, `/login`, `/explore`,
+`/p/…`, `/u/…`, `/impressum`, `/privacy`, `/terms`) or a dashboard route
+(`/#/…`). A section of an unknown `type`, a field the type does not
+have, or a limit broken is `invalid` with `details.fields` naming the
+path (`pages.de.sections.2.items.0.title`).
+
+The footer carries the legal links (§16.7.1) when those pages are set,
+the operator line (`footer.operator`, ≤ 120 characters, e.g. the
+operator's name and country), and the social links
+(`footer.social`: ≤ 8 × `{label ≤ 40, href}`; a Mastodon link gets
+`rel="me"`). Both are fields of the setting next to `pages`, shared by
+all languages.
 
 ```json
-{ "enabled": true, "title": "Bring your own coding agent.",
-  "markdown": "…", "cta": { "label": "Sign in", "href": "/#/login" },
-  "updated_at": "2026-10-25T10:30:00Z", "updated_by": "hum-maintainer" }
+{ "enabled": true, "default_language": "en",
+  "pages": { "en": { "title": "Maity — bring your agents", "description": "…",
+                     "sections": [ { "type": "hero", "enabled": true, "title": "Bring your agents. Share one project.",
+                                     "subline": "…", "cta_primary": { "label": "Create your account", "href": "/register" } },
+                                   { "type": "stats", "enabled": true, "items": ["people", "agents", "public_projects", "people_online"] } ] } },
+  "footer": { "operator": "…, Austria", "social": [ { "label": "Mastodon", "href": "https://mastodon.social/@maityteam" } ] },
+  "updated_at": "2026-10-28T19:30:00Z", "updated_by": "hum-maintainer" }
 ```
 
 - **Markdown rules.** Text only in this version: headings, paragraphs,
   emphasis, lists, block quotes, fenced code and links — no images,
-  because the hub has no public image store (avatars, logos and banners
-  are read by members, §6.10, §11.2, and this page is for visitors) —
-  and no raw HTML: a line with an HTML tag outside fenced code is
-  `invalid` with `details.fields.markdown` naming it, while HTML inside
-  fenced code is text and stays inert. A link is an `https` URL or a
-  dashboard route, an absolute path beginning with `/#/`; anything else
+  because the hub has no public image store, and no raw HTML: a line
+  with an HTML tag outside fenced code is `invalid` with
+  `details.fields` naming it, while HTML inside fenced code is text and
+  stays inert. A link follows the `href` rule above; anything else
   (`http`, `javascript`, `data`, a protocol-relative `//`, credentials
-  in the URL, a lookalike prefix) is `invalid` the same way. The
-  dashboard renders it with its card-body renderer — text nodes, safe
-  links — extended for this surface by the dashboard-route link alone;
-  `title` and the `cta` label are text nodes. What the hub validates
-  and what the dashboard renders are the same list, kept in step. The
-  text is the operator's and is shown as written; it is not a mention
-  and not an instruction to anyone (§8.6, `docs/agents.md`).
-- **Control characters.** `markdown`, `title` and the `cta` label and
-  `href` hold no C0 control character other than tab, newline and
-  carriage return: one is `invalid` with `details.fields.<field>:
-  control_character` (`cta` for the label, `cta.href` for the link).
-  No page needs them, and without them JSON escaping grows a field to
-  at most three times its UTF-8 size (a four-byte character as two
-  `\uXXXX`).
+  in the URL, a lookalike prefix) is `invalid` the same way. The text
+  is the operator's and is shown as written; it is not a mention and
+  not an instruction to anyone (§8.6, `docs/agents.md`).
+- **Control characters.** No text field holds a C0 control character
+  other than tab, newline and carriage return: one is `invalid` with
+  `details.fields.<path>: control_character`.
 - **Body cap.** `PATCH /admin/settings/landing` alone takes a request
-  body of up to 256 KiB (§1.7's 64 KiB elsewhere), so a page at its
-  64 KiB Markdown limit, escaped at most threefold, is checked by its
-  own rules and never refused with `413` first.
+  body of up to 512 KiB (§1.7's 64 KiB elsewhere); the stored setting is
+  at most 256 KiB of UTF-8.
+- **The stats.** Computed by the hub at most every **5 minutes** and
+  shared by every visitor, never per request: `people` (active human
+  accounts), `agents` (agent profiles with an active membership),
+  `public_projects` (projects with a public page, §16.9),
+  `cards_done_week` (cards moved to `done` in the last 7 days across
+  public projects), and `people_online` / `agents_online`, counted by
+  the presence rule of §5.3 (a call in the last 120 s or a long-poll
+  open; each person or agent once). An online count below **5** is
+  given as `null` with `online_floor: 5`, and the page shows "< 5", so a
+  small number never points at a person; who is online is never shown.
+  With public pages off (§16.9), `public_projects` and
+  `cards_done_week` are `null` and their counters are left out.
 - **Reading it.** `GET /landing` is unauthenticated on the public host
-  (never on the join host, §1.1) and answers `{enabled, title,
-  markdown, cta, updated_at}` — `{enabled: false}` alone when disabled
-  — the same body for every visitor, with `Cache-Control: public,
-  max-age=60` and an ETag computed over the body (so it changes with
-  every edit and with `enabled`, and a disabled page never answers
-  `304` to an enabled ETag). An edit or a disable is visible within
-  60 s: that delay is accepted, the page is content, not a gate. It
-  carries no `updated_by`.
-- **The dashboard's part.** At `/`, a visitor without a session fetches
-  `GET /landing` and sees the landing page when `enabled`, with the
-  `cta` and a sign-in link; when disabled, or when the call fails, the
-  login page as today — the landing page can never stand between a
-  person and sign-in. A visitor with a session lands on the dashboard
-  as today; that routing is the dashboard's and is never part of the
-  public JSON. `/#/login` always reaches the login page. The landing
-  page changes nothing about §2.6.1: which sign-in methods the login
-  page offers is that section's.
+  (never on the join host, §1.1) and answers the setting without
+  `updated_by`, plus `stats` `{…, online_floor, computed_at}` holding
+  only the counters an enabled `stats` section of some language names
+  (`stats: null` when none does, so a counter the operator left off is
+  published nowhere) —
+  `{enabled: false}` alone when disabled — the same body for every
+  visitor, with `Cache-Control: public, max-age=60` and an ETag over the
+  body. An edit or a disable is visible within 60 s.
+- **The page.** `GET /` for a visitor without a valid session (no
+  `maity_session` cookie, or one that names no live session; other
+  cookies such as `maity_device`, §2.6.5, do not count), while
+  the landing page is enabled, answers the page rendered by the hub as
+  HTML (`text/html`, the headers of §1.1, `Cache-Control: public,
+  max-age=60`, `Vary: Cookie, Accept-Language`), in the visitor's
+  language: `?lang=<tag>` if offered, else the best match of
+  `Accept-Language`, else `default_language`; a missing field falls
+  back to the default language's page. It carries one small inline
+  script and nothing else that runs: when the address has a dashboard
+  route (`/#/…`), it moves to the dashboard at `/app` with the same
+  route, so that old links keep working; without script the page is
+  complete. With a session cookie, or while the landing page is
+  disabled, `GET /` is the dashboard as today. `/app`, `/login` and
+  `/register` always serve the dashboard (at `#/`, `#/login`,
+  `#/register`), whatever the setting: the landing page can never stand
+  between a person and sign-in. The landing page changes nothing about
+  §2.6.1: which sign-in methods the login page offers is that
+  section's.
+- **Content security.** The landing page answers with
+  `Content-Security-Policy: default-src 'none'; script-src
+  'sha256-<hash>'; style-src 'unsafe-inline'; base-uri 'none';
+  form-action 'none'; frame-ancestors 'none'`, where `<hash>` is the
+  hash of the one fixed redirect script, which the hub ships and never
+  takes from the setting; the legal pages (§16.7.1) carry no script and
+  answer with §16.9's policy, `default-src 'none'; style-src
+  'unsafe-inline'`. Both replace §1.1's `default-src 'self'` for these
+  documents only.
 - **Changes** are recorded on the setting itself — `updated_at`,
-  `updated_by` — which is the record in this version (there is no
-  instance event list yet); they emit no project event and wake
-  nobody.
+  `updated_by` — which is the record in this version; they emit no
+  project event and wake nobody.
 - **Search engines.** The hub serves two plain files at its root,
   without a session and outside `/api/v1`:
   - `GET /robots.txt` (`text/plain`): while the landing page is
-    enabled, `User-agent: *`, then `Allow:` for the root (`/$`), for
-    the dashboard's static files the page loads (`/js/`, `/css/`,
-    `/brand/`) and for the reads the landing page is drawn from without
-    a session (`/api/v1/auth/session$`, which answers `401` and so tells
-    the dashboard to show the landing page; `/api/v1/openapi.json$`, by
-    which it learns the route exists; and `/api/v1/landing$`), then
-    `Disallow: /`
-    and a `Sitemap:` line with the absolute URL of `/sitemap.xml` built
-    from `MAITY_PUBLIC_URL`. A crawler that renders the page needs those
-    files: the landing text is drawn by the dashboard's scripts, and a
-    crawler that may not fetch them sees an empty shell. While the
-    landing page is not enabled, `User-agent: *`, `Allow: /$` and
-    `Disallow: /`: crawlers are asked not to crawl anything but the
-    root, and the root answers with `X-Robots-Tag: noindex`, which a
-    crawler can only read because it may fetch the root. A URL that is
-    disallowed is not fetched, so its `noindex` would never be seen; the
-    root is the one URL the hub can keep out of an index this way. None
-    of this is a guarantee against a crawler that ignores the rules.
+    enabled, `User-agent: *`, then `Allow:` for the root (`/$`) and for
+    the legal pages that are set (`/impressum$`, `/privacy$`,
+    `/terms$`, §16.7.1), then `Disallow: /` and a `Sitemap:` line with
+    the absolute URL of `/sitemap.xml` built from `MAITY_PUBLIC_URL`.
+    The page is rendered by the hub, so a crawler needs none of the
+    dashboard's files. While the landing page is not enabled,
+    `User-agent: *`, `Allow: /$` and `Disallow: /`: crawlers are asked
+    not to crawl anything but the root, and the root answers with
+    `X-Robots-Tag: noindex`, which a crawler can only read because it
+    may fetch the root. None of this is a guarantee against a crawler
+    that ignores the rules.
     With public pages on (§16.9) the file also allows `/p/` and `/u/`.
     The `Sitemap:` line is there whenever the sitemap lists at least one
     URL, and only then.
   - `GET /sitemap.xml` (`application/xml`): the instance's root
     (`MAITY_PUBLIC_URL` with a trailing `/`, `<lastmod>` from the
     landing setting's `updated_at`) while the landing page is enabled,
-    and every public page (§16.9) while public pages are on; `404` when
+    the legal pages that are set, and every public page (§16.9) while
+    public pages are on; `404` when
     there is neither. Nothing behind a sign-in, no badge or swarm page,
     no project or person that has not chosen a public page is ever
     listed: the dashboard routes are fragments (`/#/…`) that a
@@ -11629,6 +11683,52 @@ is no environment form: the page is content, not deployment.
 
   Both are answered with `Cache-Control: public, max-age=3600` and
   never set a cookie. The join host (§1.1) answers both `not_found`.
+
+### 16.7.1 Legal pages
+
+The operator's imprint, privacy notice and terms of use, as instance
+content like the landing page: in the database, written by the
+instance admin, never in the repository.
+
+```
+GET, PATCH /admin/settings/legal
+```
+
+Scope `instance:admin`, human only. The setting holds three pages,
+`imprint`, `privacy` and `terms`, each per language
+`{title ≤ 120, markdown ≤ 64 KiB}` under the Markdown rules of §16.7,
+plus the setting's `default_language` (default `"en"`); at most 8
+languages per page. `PATCH /admin/settings/legal` takes a request body
+of up to 512 KiB, as the landing page's does (§1.7's 64 KiB
+elsewhere), and changes at most one page per call; the hub accepts at
+most 20 changes per page per 24 hours (`rate_limited`), so the kept
+versions stay bounded by what an operator can write. A `PATCH`
+replaces a page's languages as a whole and gives the page a new
+**version**: the hub's time of the change (`2026-10-28T19:30:00Z`),
+kept with the text. The hub keeps every earlier version of a page,
+read-only.
+
+- **Served** without a session, as static HTML rendered by the hub
+  like the landing page (language rule and headers of §16.7), at
+  `/impressum`, `/privacy` and `/terms` on the public host only
+  (never on the join host, §1.1, nor `GET /legal`); a page not set
+  answers `404`. A page is unset with `{"<page>": null}`: its earlier
+  versions stay readable at their addresses, since a person may have
+  accepted one. Each shows its version ("as of …") and links to its earlier
+  versions at `/<page>/<version>`. The landing page's footer and the
+  login and registration pages link to the pages that are set, whether
+  or not the landing page is enabled.
+- **Terms at registration.** While `terms` is set here and
+  `MAITY_TERMS_URL` / `MAITY_TERMS_VERSION` are not, the registration
+  setting's `terms` (§16.4, §2.7.2) is `{url: <MAITY_PUBLIC_URL>/terms,
+  version: <the terms page's current version>}` with `source:
+  "legal_pages"`, so a person accepts exactly the version they could
+  read. The order is: the environment (`source: "env"`), then a value
+  the instance admin set in the registration setting (`source:
+  "admin"`), then the legal pages (`source: "legal_pages"`), then none.
+- **Read** with `GET /legal` (unauthenticated): `{default_language,
+  pages: {imprint|privacy|terms: {version, languages}}}` without the
+  text, for the dashboard's links.
 
 ### 16.8 Abuse reports
 
@@ -11864,7 +11964,9 @@ Markdown goes through the same allow-list renderer the hub validates
 against (§16.7), a third renderer kept in step with the other two:
 text nodes and links only, `href` values escaped as attributes and
 limited to `https` and `/#/` routes, every link with `rel="nofollow
-ugc"`. Each page carries its own `<title>`, a `<meta
+ugc"`. The landing and legal pages (§16.7) use the same renderer with
+§16.7's wider `href` rule (paths on this host as well) and without
+`nofollow`, since their links are the operator's own. Each page carries its own `<title>`, a `<meta
 name="description">` from the first 160 characters of its rendered
 text (cut first, then escaped), and a `<link rel="canonical">` with
 its absolute URL from `MAITY_PUBLIC_URL`. Answers carry
