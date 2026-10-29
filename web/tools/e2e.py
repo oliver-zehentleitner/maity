@@ -288,16 +288,18 @@ def port_taken(port: int) -> bool:
 def start_hub(work: Path, logs: Path, port: int) -> subprocess.Popen:
     """Migrate, create the owner and serve; every output goes to logs/hub.log."""
     base = f"http://127.0.0.1:{port}"
-    # No store for attachments yet (§8.7): the hub starts with them off and the
-    # attachments step checks that case. The upload step waits for messages that
-    # name their attachments (E's #474); with it on main, set MAITY_ATTACHMENT_DIR
-    # here again (card tsk-8h6yzp4f8jqg).
+    # A local store for attachments (§8.7), so the attachments step uploads for real:
+    # messages name their attachments since E's #474, and the sent image is read back
+    # from the hub.
+    attachments = work / "attachments"
+    attachments.mkdir(exist_ok=True)
     env = dict(
         CLEAN_ENV,
         MAITY_DATABASE_URL=f"sqlite:///{work / 'hub.db'}",
         MAITY_BIND=f"127.0.0.1:{port}",
         MAITY_PUBLIC_URL=base,
         MAITY_WEB_DIR=str(WEB),
+        MAITY_ATTACHMENT_DIR=str(attachments),
     )
     log_path = logs / "hub.log"
     with open(log_path, "w") as log:  # the hub keeps its own copy of the descriptor
