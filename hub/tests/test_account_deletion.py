@@ -231,6 +231,19 @@ def test_the_last_owner_of_an_organisation_is_refused_both_times(
     pressed = press(pat, token)
     assert pressed.status_code == 409 and "last owner of an organisation" in pressed.text
     assert deleted_at(migrated, pat.id) is None
+    with migrated.begin() as conn:  # an offer pat made, still open
+        conn.execute(
+            insert(t.org_invitation).values(
+                id="oiv-pats",
+                org_id=org["id"],
+                handle="somebody",
+                role="member",
+                invited_by=pat.id,
+                created_at=moment.at,
+                expires_at=moment.at + timedelta(days=14),
+                live=True,
+            )
+        )
     add_member(migrated, org["id"], other, "owner")  # handed over: the link kept working
     done = press(pat, token)
     assert done.status_code == 200, done.text
@@ -239,6 +252,8 @@ def test_the_last_owner_of_an_organisation_is_refused_both_times(
         left = conn.execute(select(t.org_member.c.human_id, t.org_member.c.role)).all()
         assert [tuple(r) for r in left] == [(other, "owner")]
         assert conn.execute(select(t.org.c.deleted_at)).scalar_one() is None
+        offer = conn.execute(select(t.org_invitation)).one()
+        assert (offer.live, offer.closed_by) == (None, "inviter_deleted")
         assert conn.execute(select(t.handle_register.c.handle)).all()  # handles stay taken
 
 

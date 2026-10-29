@@ -17,7 +17,7 @@ from typing import Any
 
 from sqlalchemy import Table
 
-from maity_hub import account_deletion, avatars, export
+from maity_hub import account_deletion, avatars, export, org_invitations
 from maity_hub import tables as t  # noqa: F401  (registers every table on the metadata)
 from maity_hub.auth import second_factor
 from maity_hub.db import metadata
@@ -83,6 +83,7 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
 DELETION_THROUGH: dict[str, ModuleType] = {
     "agent_profile": agents,  # delete_profile
     "membership": members,  # apply_remove
+    "org_invitation": org_invitations,  # withdraw_by_inviter_everywhere, withdraw_for_human
     "runner": runners,  # remove
 }
 
@@ -100,8 +101,6 @@ DELETION_KEEPS = {
     "instance_secret": f"who changed an instance secret: {_RECORD}",
     "instance_setting": f"who changed an instance setting: {_RECORD}",
     "memory_entry": f"who confirmed a project memory entry: {_RECORD}",
-    "org_invitation": f"who invited to an organisation: {_RECORD}; the open ones are withdrawn "
-    "when the invited or the inviting human goes (§6.26)",
     "project": "an archived project of the namespace stays under its name (§2.9); "
     "the deletion reads projects for `namespace_owner` only",
     "project_alias": "an old project name stays reserved for good (§2.9, §6.25)",

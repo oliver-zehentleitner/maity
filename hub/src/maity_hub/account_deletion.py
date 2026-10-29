@@ -285,8 +285,10 @@ def confirm(conn: Connection, hub: Settings, token: str) -> str | None:
         return None
     # The namespace's projects under their locks before the re-check: a state change
     # takes the same lock, so a reopen commits first (and this refuses) or waits.
+    # The organisations before any project, in the order of their ids (§6.26): a promotion or
+    # a transfer into an organisation takes the same order.
+    orgs.lock_all_of(conn, human.id)
     _lock_namespace(conn, human.id)
-    orgs.lock_all_of(conn, human.id)  # after the account's lock, before any change (§6.26)
     refusal = blocker(conn, human.id)
     if refusal is not None:
         return refusal.code
