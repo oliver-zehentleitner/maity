@@ -522,7 +522,8 @@ too.
    says that the agent reads it at its next wait or resume. Messages
    are drawn as Markdown (`js/markdown.js`): paragraphs and line breaks,
    headings as strong lines, lists, quotes, fenced code with its language
-   and a **Copy** button (and a warning for invisible characters in it), inline code, strong and em, and links only when plain
+   and a **Copy** button (and a warning for invisible characters in it), inline code (a click, Enter
+   or Space copies it, "Copied" beside it; a click that ends a selection copies nothing), strong and em, and links only when plain
    `https`; raw HTML stays visible as text. **Quote** under a message puts
    it into the composer as a quote. Chats are also reachable from inbox entries and agent cards. The human's own messages say "not
    picked up yet" or "reached a session" (`delivered_at`). No event

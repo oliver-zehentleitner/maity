@@ -132,6 +132,31 @@ sanitiser — a dependency from a CDN, and the safety of the page would
 rest on the sanitiser's completeness. Plain text with `pre` wrapping, as
 before — code and lists from agents were unreadable.
 
+## Inline code copies itself on a click; no copy icon beside it
+
+**Id:** e544d587-2aa0-4658-8771-c75e57b29422
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer on the card tsk-rdx6gaqveygx, 2026-10-29 (code from chat messages copied with one click: blocks with a button, inline code by a click or an icon, "Copied" as feedback); the dashboard's implementation, 2026-10-29
+**Revisit when:** people report copying inline code they only meant to select, or a view needs inline code that is not copied
+
+Inline code in rendered Markdown is a button (`role="button"`, focusable,
+named "Copy <code>"): a click, Enter or Space puts its text on the
+clipboard, and "Copied" stands beside it for two seconds as a status. A
+click that ends a selection of text copies nothing, so selecting part of
+it still works. Fenced blocks keep their Copy button, which says
+"Copied" the same way. Both use one clipboard helper with one fallback
+("Copy failed — select the text").
+
+**Reason:** inline code in an agent's message is mostly a command, a
+path or an id, the things one copies; a click on the code itself is the
+shortest way, and it adds nothing to the line.
+
+**Rejected alternative:** a copy icon after every inline code: a button
+per span, which crowds a sentence with several commands and doubles what
+a screen reader reads.
+
 ## A picture is uploaded on the account, checked as the hub checks it, with no preview of the chosen file
 
 **Id:** 3ec853f0-4141-4e81-acdf-c0fee94c920b
