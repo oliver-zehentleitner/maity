@@ -12852,8 +12852,8 @@ class `info` that the hub files and withdraws itself.
 | `kind` | From | Who gets it | Title (the hub composes it; no body) |
 |---|---|---|---|
 | `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and of an agent that is not listening (§5.3); the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7) | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `mail_disabled` the human | `<asker> asks: <request title>`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Mail to <address> disabled after 3 failures`, linking to the notification settings |
-| `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or, once #153 lands, from another participant of a group chat (#153, §9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
-| `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; once #153 lands, a mention in a group chat (#153) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
+| `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or from another participant of a group chat (§9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
+| `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; a mention in a group chat (§9.2) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
 | `security` | the account records `session_created` (#169, §2.6.5) and `email_address_changed` (§18.4); `second_factor_changed` and `second_factor_failed` (§2.8); `forge_access_changed` with `change` `linked` or `token_set` (§11.4) | the human | `New sign-in: <browser> on <os> (<method>)`; `Sign-in address changed`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>`; `Forge access added: <account login> (<source>)` |
 
 The `registration_pending` and `mail_disabled` items ask for an action
@@ -13072,7 +13072,7 @@ rules that make a position safe to resume from:
   and for every human a `mail_disabled` item while the address is
   disabled (§18.1), each until the matter is closed, not until it is
   read. `chat` is the sum of `unread` over the human's
-  conversations (§9; group chats with #153), the same number the chat
+  conversations (§9) and group chats (§9.2), the same number the chat
   list shows. `mention` and `security` count the unread items of that
   kind. `total` is `inbox + chat + mention` — everything but the
   security alerts; the dashboard shows
