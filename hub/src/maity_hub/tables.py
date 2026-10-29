@@ -107,6 +107,40 @@ human = Table(
     # The terms version accepted at registration, and when (§2.7.2); null otherwise.
     Column("terms_version", String(64)),
     Column("terms_accepted_at", UtcDateTime),
+    # Set when the human deleted the account (§2.9): the row stays, so every stored id
+    # resolves and the handle stays taken; everything about the person is gone.
+    Column("deleted_at", UtcDateTime),
+    **MYSQL_TABLE,
+)
+
+# A request to delete the account, waiting for its confirmation by mail (docs/api.md
+# §2.9). `id` is the sha256 of the mailed link's nonce; `live` is true while it may be
+# confirmed and NULL once withdrawn (`withdrawn_by` says what withdrew it), replaced or
+# used: at most one pending request per human, on every engine.
+account_deletion = Table(
+    "account_deletion",
+    metadata,
+    Column("id", String(HEX_SHA256), primary_key=True),
+    _ref("human_id", "human.id", nullable=False),
+    Column("requested_at", UtcDateTime, nullable=False),
+    Column("expires_at", UtcDateTime, nullable=False),
+    Column("withdrawn_at", UtcDateTime),
+    Column("withdrawn_by", String(32)),  # deletion_withdrawn, replaced, password, address
+    Column("used_at", UtcDateTime),
+    Column("live", Boolean),
+    UniqueConstraint("human_id", "live"),
+    CheckConstraint("live IS NOT FALSE", name="live_true_or_null"),
+    **MYSQL_TABLE,
+)
+
+# One row per human, never read for its content: the lock that orders a human caller's
+# transactions (shared, before their first locking statement) against the deletion of the
+# account (exclusive, first), `write_guard` (§2.9). Made by 0076 for existing humans and on
+# first need for later ones.
+account_lock = Table(
+    "account_lock",
+    metadata,
+    _ref("human_id", "human.id", primary_key=True),
     **MYSQL_TABLE,
 )
 

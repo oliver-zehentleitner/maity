@@ -122,6 +122,7 @@ def people(conn: Connection, membership_ids: Iterable[int]) -> dict[int, dict[st
             t.agent_profile.c.handle.label("agent_handle"),
             t.agent_profile.c.owner_id,
             t.human.c.handle.label("human_handle"),
+            t.human.c.deleted_at.label("human_deleted_at"),
             owner.c.handle.label("owner_handle"),
         )
         .select_from(t.membership)
@@ -137,6 +138,8 @@ def people(conn: Connection, membership_ids: Iterable[int]) -> dict[int, dict[st
             "handle": r.agent_handle or r.human_handle,
             **({"name": global_name(r.owner_handle, r.agent_handle)} if r.agent_id else {}),
             "owner_id": r.owner_id if r.agent_id else None,
+            # A deleted account shows no handle (§2.9).
+            **({"handle": None, "deleted": True} if r.human_deleted_at is not None else {}),
         }
         for r in rows
     }

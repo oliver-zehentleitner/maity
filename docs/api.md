@@ -11125,7 +11125,7 @@ Scope `instance:admin`, human only (§16.1). `days` is 1–90, default 30.
 ```json
 { "as_of": "2026-10-25T10:00:00Z", "window_days": 30,
   "totals": { "humans": 41, "humans_pending": 2, "agents": 117, "projects": 12,
-              "instances_online": 23, "humans_with_an_agent": 29 },
+              "instances_online": 23, "humans_with_an_agent": 29, "humans_deleted": 3 },
   "days": [
     { "date": "2026-10-25", "registrations": 3, "new_instances": 2,
       "humans_active": 17, "agents_active": 44,
@@ -11138,7 +11138,9 @@ Scope `instance:admin`, human only (§16.1). `days` is 1–90, default 30.
 - **Totals** are as of `as_of`: humans with `account_status: active`
   (§2.7.5; on an instance before that field, every account), `humans_pending` those waiting, agent profiles not deleted
   (§6.3), projects not `archived`, instances `online` (§6.17), humans
-  who own at least one profile.
+  who own at least one profile, and `humans_deleted`, the accounts
+  deleted by their humans (§2.9, from `deleted_at`; a deleted account is
+  in no other total).
 - **Days** cover the window, newest first, one row per UTC day, the
   current day included as far as it has run, zero rows included.
   `registrations` are accounts whose address was verified (§2.7.1) that

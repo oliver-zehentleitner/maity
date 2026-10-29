@@ -494,8 +494,14 @@ def apply_address(
     session: Any,
 ) -> None:
     """Set the address to verify, or remove it. Setting it again, also the same one,
-    sends a new link and voids the old one."""
+    sends a new link and voids the old one. A change or removal of the verified address
+    withdraws a pending deletion request (§2.9): its link went to that address."""
+    from maity_hub import account_deletion
+
     now = clock.now()
+    verified = row.address is not None and row.address_status in ("verified", "disabled")
+    if verified and wanted != row.address:
+        account_deletion.withdraw(conn, human_id, "address")
     if wanted is None:
         conn.execute(
             update(t.notification_settings)
@@ -574,6 +580,11 @@ def verify(
     owner = str(payload.get("h"))
     if human_id is not None and owner != human_id:
         return False
+    from maity_hub import write_guard
+
+    # The account's lock first, in the order a deletion takes it (§2.9, `write_guard`):
+    # this link's change withdraws a pending deletion.
+    write_guard.share(conn, owner)
     row = conn.execute(
         select(t.notification_settings)
         .where(t.notification_settings.c.human_id == owner)
@@ -620,6 +631,9 @@ def verify(
         )
     )
     if previous is not None and previous != row.pending_address:
+        from maity_hub import account_deletion
+
+        account_deletion.withdraw(conn, owner, "address")  # §2.9
         _tell_old_address(conn, owner, previous, row.pending_address, None, public_url)
     return True
 

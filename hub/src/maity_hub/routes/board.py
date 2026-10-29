@@ -26,6 +26,7 @@ from maity_hub.models import Strict, Written, markdown
 from maity_hub.namespace import ProjectRoute
 from maity_hub.policy import CLOSED_STATES
 from maity_hub.routes.tasks import _locked, _project_card, audience
+from maity_hub.views import shape_deleted
 
 router = APIRouter(route_class=ProjectRoute)
 
@@ -217,13 +218,17 @@ def get_history(
         actors = history.members(conn, (r.actor_membership for r in page))
         next_cursor = paging.cursor(page[-1].at, page[-1].id) if len(rows) > limit else None
         return JSONResponse(
-            {"items": [history.view(r, actors) for r in page], "next_cursor": next_cursor}
+            {
+                "items": shape_deleted(conn, [history.view(r, actors) for r in page]),
+                "next_cursor": next_cursor,
+            }
         )
 
 
 def load_history(conn: Connection, entry_id: str) -> dict[str, Any]:
     row = conn.execute(select(t.card_history).where(t.card_history.c.id == entry_id)).one()
-    return history.view(row, history.members(conn, [row.actor_membership]))
+    entry = history.view(row, history.members(conn, [row.actor_membership]))
+    return dict(shape_deleted(conn, [entry])[0])
 
 
 idempotency.LOADERS["history"] = idempotency.plain(load_history)
@@ -271,7 +276,8 @@ def redact_history(
 
 
 def _note_view(conn: Connection, row: Any) -> dict[str, Any]:
-    return notes.view(row, history.members(conn, [row.author]))
+    note = notes.view(row, history.members(conn, [row.author]))
+    return dict(shape_deleted(conn, [note])[0])
 
 
 def load_note(conn: Connection, note_id: str) -> dict[str, Any]:
@@ -337,7 +343,10 @@ def list_notes(
             paging.cursor(page[-1].created_at, page[-1].id, bound) if len(rows) > limit else None
         )
         return JSONResponse(
-            {"items": [notes.view(r, authors) for r in page], "next_cursor": next_cursor}
+            {
+                "items": shape_deleted(conn, [notes.view(r, authors) for r in page]),
+                "next_cursor": next_cursor,
+            }
         )
 
 
