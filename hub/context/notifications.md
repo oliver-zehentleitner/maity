@@ -593,7 +593,7 @@ settings and a second error code that told a client what it had asked for in the
 **See:** https://github.com/oliver-zehentleitner/maity — 8cfe80ae-02dd-4aef-818a-843126e23397 — as of 2026-10-29
 
 The titles the hub composes for a human (`sign_in`, `address_changed`, `mail_disabled`, the
-asks, the chat and mention lines, the waits) are written in the human's `email.language`, `en`
+asks, the chat and mention lines, the waits, the changes of the second factor and its wrong codes) are written in the human's `email.language`, `en`
 or `de`, read live with the scope (`Scope.language`, `Scope.say`); the notification mails
 take the same language through the same table. What a member wrote (a message, a card, a request
 text, a reason) is shown as written, never translated. `messages.md` 8cfe80ae stays true for

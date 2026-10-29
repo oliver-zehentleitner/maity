@@ -42,6 +42,14 @@ WORDS: dict[str, dict[str, str]] = {
         "unknown_os": "an unknown system",
         "address_changed": "Sign-in address changed",
         "mail_disabled": "Mail to {address} disabled after 3 failures",
+        "tf_enrolled": "Two-factor sign-in turned on",
+        "tf_disabled": "Two-factor sign-in turned off",
+        "tf_recovery_codes": "New recovery codes",
+        "tf_recovery_code_used": "Recovery code used",
+        "tf_reset": "Two-factor sign-in reset by {by}",
+        "tf_instance_off": "Two-factor sign-in turned off for this instance",
+        "tf_changed": "Two-factor sign-in changed",
+        "tf_failed": "Wrong second-factor codes after a sign-in: {browser} on {os}, {ip}",
     },
     "de": {
         "asks": "{who} fragt: {title}",
@@ -56,6 +64,14 @@ WORDS: dict[str, dict[str, str]] = {
         "unknown_os": "ein unbekanntes System",
         "address_changed": "Anmeldeadresse geändert",
         "mail_disabled": "Mail an {address} nach 3 Fehlern deaktiviert",
+        "tf_enrolled": "Zwei-Faktor-Anmeldung eingeschaltet",
+        "tf_disabled": "Zwei-Faktor-Anmeldung ausgeschaltet",
+        "tf_recovery_codes": "Neue Wiederherstellungscodes",
+        "tf_recovery_code_used": "Wiederherstellungscode benutzt",
+        "tf_reset": "Zwei-Faktor-Anmeldung zurückgesetzt von {by}",
+        "tf_instance_off": "Zwei-Faktor-Anmeldung für diese Instanz ausgeschaltet",
+        "tf_changed": "Zwei-Faktor-Anmeldung geändert",
+        "tf_failed": "Falsche Zwei-Faktor-Codes nach einer Anmeldung: {browser} auf {os}, {ip}",
     },
 }
 
@@ -404,18 +420,13 @@ def _request_concerns(look: Lookup, request: Any, mine: Membership, row: Any) ->
 # --- account records -----------------------------------------------------------------
 
 
-def _two_factor_title(data: dict[str, Any]) -> str:
+def _two_factor_title(where: Scope, data: dict[str, Any]) -> str:
     """The bell's line for a change of the second factor (§18.1); a change this hub does
     not know says that the sign-in changed, never a guess."""
-    change, by = data.get("change"), data.get("by")
-    return {
-        "enrolled": "Two-factor sign-in turned on",
-        "disabled": "Two-factor sign-in turned off",
-        "recovery_codes": "New recovery codes",
-        "recovery_code_used": "Recovery code used",
-        "reset": f"Two-factor sign-in reset by {by}",
-        "instance_off": "Two-factor sign-in turned off for this instance",
-    }.get(str(change), "Two-factor sign-in changed")
+    change = f"tf_{data.get('change')}"
+    if change not in WORDS["en"] or change in ("tf_changed", "tf_failed"):
+        change = "tf_changed"
+    return where.say(change, by=data.get("by"))
 
 
 def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
@@ -481,7 +492,7 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
                     kind="security",
                     at=row.at,
                     record=row.n,
-                    title=_cut(_two_factor_title(data)),
+                    title=_cut(_two_factor_title(where, data)),
                     target={"type": "settings", "id": "security"},
                     url=_url(where, "/#/account/security"),
                     read=row.read_at is not None,
@@ -495,9 +506,12 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
                     at=row.at,
                     record=row.n,
                     title=_cut(
-                        "Wrong second-factor codes after a sign-in: "
-                        f"{data.get('browser') or 'a browser'} on "
-                        f"{data.get('os') or 'an unknown system'}, {data.get('ip') or '?'}"
+                        where.say(
+                            "tf_failed",
+                            browser=data.get("browser") or where.say("a_browser"),
+                            os=data.get("os") or where.say("unknown_os"),
+                            ip=data.get("ip") or "?",
+                        )
                     ),
                     target={"type": "settings", "id": "security"},
                     url=_url(where, "/#/account/security"),
