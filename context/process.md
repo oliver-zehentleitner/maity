@@ -621,6 +621,10 @@ on the machine; unset or empty means all three, as before. A job whose type is n
 `hub-postgresql` would queue for a runner that does not exist. A list keeps the default and the fallback (deleting the label variable
 is still the whole fallback) and needs no change to the runners.
 
+The list is matched as whole words (`contains(' <list> ', ' <type> ')`), and anything else (a comma, a stray newline, an unknown
+name) matches nothing, so the job stays hosted: a mistyped variable costs speed, never a queued job waiting for a runner that does
+not exist.
+
 **Rejected alternatives:**
 - One variable per type: three variables to set and to forget, and the fallback is no longer one deletion.
 - One runner registered with all three labels: the three jobs would take turns on it, and the measurement of one type would be mixed
