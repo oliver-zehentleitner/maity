@@ -444,16 +444,25 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
         )
     ).all()
     waiting = _waiting_registrations(conn, rows)
+    # The personal requests and their askers' names in a fixed number of statements, not
+    # three per record: a human with many hub notices reads them all on every call.
+    asked = {
+        (row.data or {}).get("request_id")
+        for row in rows
+        if row.type == "personal_request_created" and row.at >= now - WINDOW
+    }
+    requests_by_id = _by_id(conn, t.request, {r for r in asked if r is not None})
+    names = _member_names(conn, {r.asked_by for r in requests_by_id.values() if r.asked_by})
     items = []
     for row in rows:
         data = row.data or {}
         if row.type == "personal_request_created":
             if row.at < now - WINDOW:
                 continue
-            request = _request(conn, data.get("request_id"))
+            request = requests_by_id.get(str(data.get("request_id")))
             if request is None:
                 continue
-            asker = _name(conn, request.asked_by) if request.asked_by else "Maity"
+            asker = names.get(request.asked_by, "someone") if request.asked_by else "Maity"
             items.append(
                 Item(
                     kind="inbox",
@@ -824,6 +833,45 @@ def _name(conn: Connection, membership_id: int | None) -> str:
     if row is None:
         return "someone"
     return _principal_name(conn, row.human_id or row.agent_id)
+
+
+def _member_names(conn: Connection, membership_ids: set[int]) -> dict[int, str]:
+    """`_name` for many members in three statements; a member not found is left out, and
+    its caller says "someone" as `_name` does."""
+    if not membership_ids:
+        return {}
+    members = conn.execute(
+        select(t.membership.c.id, t.membership.c.human_id, t.membership.c.agent_id).where(
+            t.membership.c.id.in_(membership_ids)
+        )
+    ).all()
+    humans = {m.human_id for m in members if m.human_id}
+    agents = {m.agent_id for m in members if m.agent_id}
+    human_names = dict(
+        conn.execute(
+            select(t.human.c.id, t.human.c.display_name).where(t.human.c.id.in_(humans))
+        ).all()
+        if humans
+        else []
+    )
+    agent_handles = dict(
+        conn.execute(
+            select(t.agent_profile.c.id, t.agent_profile.c.handle).where(
+                t.agent_profile.c.id.in_(agents)
+            )
+        ).all()
+        if agents
+        else []
+    )
+    found: dict[int, str] = {}
+    for m in members:
+        if m.human_id:
+            found[m.id] = str(human_names.get(m.human_id) or m.human_id)
+        elif m.agent_id:
+            found[m.id] = f"{agent_handles.get(m.agent_id) or m.agent_id} (agent)"
+        else:
+            found[m.id] = "someone"
+    return found
 
 
 def _principal_name(conn: Connection, principal: str | None) -> str:

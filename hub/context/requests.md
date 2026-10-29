@@ -52,3 +52,35 @@ outsider the members' ids (§6.2). An agent on `/requests/{id}` gets `humans_onl
 - `personal` derived from `to_kind` alone, without the column: the hub filters on it in
   every project listing, and a boolean says that in one word. The CHECK keeps the two
   from disagreeing.
+
+## A request listing sorts and pages light entries and builds full views only for its page
+
+**Id:** 1a0b7116-3d75-451f-9b49-fcdad7cdeead
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the inbox card tsk-430dnt8s25a8 (the maintainer's report that the inbox loads for seconds), measured on a local fixture before and after, 2026-10-29
+**See:** notifications.md#deriving-items-reads-each-kind-of-lookup-once-per-batch-not-once-per-event — b4a7c2f0-e8c8-4e9d-a093-95f07b4eb411 — as of 2026-10-29
+**Revisit when:** a sort key needs a field of the full view, or a listing must answer more than a page at once
+
+`GET …/requests` and `GET /requests` filter their rows, then turn each into a light
+entry (`_entries`): its id, priority, stored timestamp and the asker's handle, the handles
+read for all rows in two queries. Sorting and keyset paging work on those entries; only
+the entries on the page become full views (`request_view`, through `_page`'s `render`).
+The cursor is unchanged, since it only ever carried those fields.
+
+**Reason:** a full view costs several queries (asker, addressee, holder, card, avatar,
+placement), and the listings built one for every filtered row before cutting the page. So
+the cost grew with every request a human ever had, history included (`status=all`), not
+with what the page shows. On a local fixture of 120 requests the project list went from
+857 queries and ~155 ms to 269 and ~55 ms, and stays at that count for 60 or 120; on a
+server database each query is a round trip, which is where the seconds came from. A test
+keeps the count flat as requests grow.
+
+**Rejected alternatives:**
+- Batching every lookup of `request_view` for a list: the view reads from many helpers
+  that events and single reads share, so a batched variant would be a second form of the
+  same view that has to agree with it, for a cost that the page already bounds.
+- Paging in SQL: the `agent` sort orders by the asker's handle and the filters
+  (`to=me`, `may_read`) are decided in Python, so the database cannot cut the page alone.
+

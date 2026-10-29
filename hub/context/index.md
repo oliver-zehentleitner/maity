@@ -86,7 +86,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 
 ## R
 - [releases.md](releases.md) — readiness recomputed in every write that can change it; `release_ready` gated by a stored flag
-- [requests.md](requests.md) — a personal request is a request row with the asker's project, `personal` tied to `profile_owner` by a CHECK, hidden from every project route but the asker's; `to_human` a snapshot
+- [requests.md](requests.md) — a personal request is a request row with the asker's project, `personal` tied to `profile_owner` by a CHECK, hidden from every project route but the asker's; `to_human` a snapshot; a listing sorts and pages light entries and builds full views only for its page
 
 ## S
 - [serving.md](serving.md) — dashboard optional unless configured explicitly, no dotfiles; local bind by default; no CDN-loaded Swagger UI; the badge template ships with the hub and only the badge and the public swarm page may choose public caching; the landing settings' PATCH alone takes a 256 KiB body; robots.txt and sitemap.xml are routes before the dashboard mount and the root's noindex is the middleware's
