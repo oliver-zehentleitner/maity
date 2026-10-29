@@ -12223,9 +12223,9 @@ rename. The list:
 `privacy`, `register`, `requests`, `runners`, `settings`, `sign-in`,
 `terms`
 
-`components`, `health` and `imprint` name no route today and are
-reserved so that they stay free for one (a component gallery, a health
-page, an English imprint address).
+`agents`, `components`, `health` and `imprint` name no route today and
+are reserved so that they stay free for one (an agents directory, a
+component gallery, a health page, an English imprint address).
 
 One-letter segments (`r`) and names with a dot (`robots.txt`,
 `sitemap.xml`) cannot be handles anyway (§6.24's syntax). A release that adds a first segment adds it to

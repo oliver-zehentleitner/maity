@@ -46,9 +46,11 @@ dashboard's `file://` fixture mode, a development tool, has to find the
 files under `/assets/` (a `<base>`, a development server), settled in
 `web/`.
 
-The reserved first segments live in one place, `docs/api.md` §16.11;
-the hub's list and the dashboard's are derived from it, and a test
-compares them, so the three copies cannot drift apart.
+The reserved first segments live in one place, `docs/api.md` §16.11.
+The hub's list (`namespace.DASHBOARD_WORDS`) and the dashboard's
+(`ORG_RESERVED`) are to be derived from it, with a test that compares
+both with §16.11, so they cannot drift apart; until the implementation
+cards land, both are hand copies of the older list.
 
 **Reason:** Maity is alpha and every caller is one of its own clients,
 so the maintainer chose the best practice outright over carrying
