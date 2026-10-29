@@ -36,7 +36,6 @@ proposal keeps one settlement path for every proposal kind.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the owner's decision in the team chat, 2026-10-29 (the two meanings, the wording, the hint in the dashboard); contract in `docs/api.md` §5.2 "Meat proxy"
-**See:** c2f77cf7-91dc-4954-afe3-67ddb1bde91b
 
 The flag stays as it was: a boolean on the human, set only by that human. What changes is the note: it is now
 "This person says: I am a meat proxy. Lead me step by step rather than expecting me to explain; and when you need a human's hands, come to me first." It names the two sides the owner means: a person who would rather be led than asked to explain, and a
