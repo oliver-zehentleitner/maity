@@ -6821,10 +6821,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("reg-domains").value = "@Example.com\n@example.com"; rgSave(); for (let k = 0; k < 6; k++) await tick();
   expect(JSON.stringify(rgPatches[rgPatches.length - 1]) === JSON.stringify({ domains: ["@example.com"] }) && !rgBox().querySelector('[data-missing="allowlist"]'),
     "registration: a list is sent lower case without duplicates, and the gap is gone");
-  // Approve and reject.
+  // Approve and reject; a decision redraws the counts only, so what is typed in the form and not saved stays.
+  byId("reg-domains").value = "@typed-not-saved.org";
+  const rgDomainsBefore = byId("reg-domains");
   btn(rgBox().querySelector("li.reg-pending-item"), "Approve").click(); for (let k = 0; k < 6; k++) await tick();
-  expect(text(rgBox().querySelector(".reg-pending-list")).includes("Nobody waits for approval") && text(rgBox()).includes("@newcomer is approved."),
+  expect(text(rgBox().querySelector(".reg-pending-list")).includes("Nobody waits for approval") && text(rgBox()).includes("@newcomer is approved.")
+    && text(rgBox().querySelector(".reg-counts")).startsWith("0 waiting for approval"),
     "registration: Approve decides the account, the list and counts follow");
+  expect(byId("reg-domains") === rgDomainsBefore && byId("reg-domains").value === "@typed-not-saved.org",
+    "registration: a decision keeps the settings form as typed, not saved");
+  byId("reg-domains").value = "@example.com";
   byId("reg-block-address").value = "spam@example.org"; rgBox().querySelector("form.reg-block").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(text(rgBox().querySelector("form.reg-block")).includes("spam@example.org may register again"), "registration: a block is lifted by its address");
   win.Maity.api.patch = rgPatch;

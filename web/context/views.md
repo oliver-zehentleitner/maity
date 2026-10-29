@@ -1559,6 +1559,31 @@ saving: the admin would learn of missing mail only by trying. A list of
 blocked addresses kept by the dashboard: it would show only what this
 browser lifted or saw rejected, not what the hub holds.
 
+## A decision on a waiting account refreshes the counts, not the registration form
+
+**Id:** 3f98cded-98a8-45d6-9cff-b92b3f531275
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the review of #660 (P3), web/js/admin-registration.js, docs/api.md §16.4, 2026-10-29
+**See:** views.md — 9e0abafa-9fb3-41ba-b9b0-648e7e9523c0 — as of 2026-10-29
+**Revisit when:** the settings form and the pending list move to separate views, or the hub sends the counts with the decision's answer
+
+After Approve or Reject the Registration section reads
+`GET /admin/settings/registration` again for `pending` and the hour's
+counts, and redraws only those lines with the mode in effect and what is
+missing; the form under them keeps what the admin has typed and not
+saved.
+
+**Reason:** the form and the list share one section; redrawing the form
+from the hub's answer threw away unsaved edits without a word, while
+the only thing a decision changes there is the counts.
+
+**Rejected alternative:** redrawing the whole section after a decision,
+as first built: unsaved edits lost. Redrawing the form only when it is
+unchanged: it needs a comparison of every field with the hub's values
+for nothing the counts alone do not already give.
+
 ## On a phone an opened card is a page of its own; the panel is the card
 
 **Id:** 54f93a4f-7e91-4d69-9b51-ca562daaa9a3
