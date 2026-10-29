@@ -113,3 +113,24 @@ any other policy change.
 is compared. Under `none` the view already reads `optional`, so the change
 would have been dropped silently and the human's intent lost on the next
 switch to `keep-the-why`; this is how the first version behaved.
+
+## The installer line is non-interactive and names no agent
+
+**Id:** e8e57725-6f5a-4922-a151-3d6b0a16a6e5
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** review finding on the policy pull request and the contract owner's ruling, 2026-10-29; `docs/api.md` §5.2, §6.23; keepthewhy.com/installation
+**Revisit when:** the skills installer changes its flags, or the hub learns the installer's id for an agent's harness
+
+`skill.install[0]` is `npx skills add <source> -g -y`: for every project of
+the user, with no prompt.
+
+**Reason:** without flags the installer asks which agents and which scope to
+install for. An agent's shell has no terminal to answer, so the agent stalls
+at the prompt or the installer aborts.
+
+**Rejected alternative:** add `-a <agent>` as the installation guide shows for
+agents. The hub knows only the harness name a session reports (`Claude
+Code`), not the installer's id for it, and a mapping from one to the other
+would be a guess. An agent that needs it finds it through `skill.guide`.

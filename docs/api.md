@@ -6652,10 +6652,10 @@ machine has installed and wherever its session was started:
 
 - `skill` — `name` (`keep-the-why`), `source` (where the skill is
   published), `install` (the ways to get it onto a machine that has no
-  copy, in order: the skills installer, non-interactive and for every
-  project of the user (`-g -y`, so that an agent without a terminal does
-  not stall at its questions), then a plain Git fallback for a machine
-  without Node) and `load` (how to load it, per harness). The
+  copy, in order: the skills installer, non-interactive (`-g -y`: for
+  every project of the user, no prompt, since an agent's shell has no
+  terminal to answer one), then a plain Git fallback for a machine without
+  Node) and `load` (how to load it, per harness). The
   three texts come from the instance setting `MAITY_KTW_SKILL_SOURCE`,
   by default the skill's published `latest` tree; an operator who
   mirrors the skill points it elsewhere. They are instructions to the
