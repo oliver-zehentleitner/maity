@@ -282,7 +282,6 @@ instructions. Whether a fresh instance should start near the present
 with a short summary, and how long a join output may be, is not
 decided; it was raised with the coordinator as a possible card.
 
-
 ## A dump Job that reported success for a dump that never happened
 
 **Id:** 19df9565-836c-4f23-a707-9c72d471b4d1
@@ -303,15 +302,16 @@ did. Whether the runs of 10-22 and 10-23 did cannot be told: the rotation of fou
 change of 10-29 was ten minutes old.
 
 The script now has one command per line, tries `pg_dump` up to five times, requires a non-empty file, removes its own leftovers on any exit
-and stale `.part` files after an hour, so a failed dump is a failed Job. `deploy/scripts/helm-upgrade.sh` also refuses to go on when
-the Job's log contains `pg_dump: error`, because a CronJob in the cluster keeps its old script until the manifest is applied again.
+and stale `.part` files after an hour, so a failed dump is a failed Job, and ends with the line `dump ok: <file> <bytes>`. `deploy/scripts/helm-upgrade.sh`
+reads the log of the pod that succeeded and goes on only when that line is there: a CronJob in the cluster keeps its old script until the
+manifest is applied again, and that script has no such line, so the upgrade stops with the hint to apply the manifest.
 
-**Reason:** a safety net that cannot fail is worse than none, because it is trusted (the suite's fail-loud principle). The retry is a
+**Reason:** a safety net that cannot fail is worse than none, because it is trusted (the suite's fail-loud principle). A check that lets an unreadable log or an old script through is the same problem one level up, so the upgrade script asks for the positive mark and not for the absence of an error: errors that a later try fixed are in the log of a good dump too. The retry is a
 guess about the cause: the database was healthy at the time (no restart, normal checkpoints), the Job pod was seconds old, and the first
 dump ten minutes earlier worked, which fits a pod whose network was not ready yet; that is not proven.
 
 **Rejected alternatives:**
+- Searching the log for `pg_dump: error` in `helm-upgrade.sh` (the first version): it stops a good dump that needed a second try, and lets an unreadable log through.
 - Only the log check in `helm-upgrade.sh`: it protects upgrades, but the nightly dumps would go on failing silently.
 - Only the fixed script: the CronJob in the cluster keeps the old one until someone applies the manifest, so the upgrade script checks too.
 - A separate monitor for empty `.part` files: another thing to run for what the Job's own exit status can say.
-

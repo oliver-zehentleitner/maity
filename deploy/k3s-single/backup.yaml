@@ -48,6 +48,7 @@ spec:
                   find /backups -name 'maity-*.dump.part' -mmin +60 -delete
                   ls -1t /backups/maity-*.dump | tail -n +15 | xargs -r rm --
                   ls -l /backups
+                  echo "dump ok: $f $(stat -c %s "$f")"
               securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
               volumeMounts: [{name: b, mountPath: /backups}]
           volumes: [{name: b, persistentVolumeClaim: {claimName: maity-backups}}]
