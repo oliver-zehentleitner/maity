@@ -390,6 +390,60 @@ reader sees what happened without opening the dashboard, which is what these mai
   carries method, browser, system and address and the others do not, so a shared builder would be
   a switch inside; two short functions are clearer.
 
+## The browser switch defaults to off and the mail time zone to UTC; both are the contract's "the human decides" made concrete
+
+**Id:** 4847d0cc-4ed4-4b92-9efd-c3c98bade6a1
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §18.4 (`browser`, `timezone`); `preferences.DEFAULTS`; a review note on the settings card (tsk-32jx98jzne6z), 2026-10-29
+**Revisit when:** the dashboard asks for the browser's permission before the first `GET` of the settings, or an instance wants another default zone
+
+`DEFAULTS["browser"]["enabled"]` is `False` and `DEFAULTS["email"]["timezone"]` is `"UTC"`. The
+contract names neither value: §18.4 calls `enabled` "the account's wish", which the dashboard
+sets only when the human turns it on and the browser has said yes, and says only that the dashboard
+proposes the browser's zone. Why these two values won is read from that text, not recorded by
+whoever first wrote them.
+
+**Reason:** a `true` default would claim a wish nobody expressed and a permission the browser
+never gave, and the hub cannot know either; `false` is the one value that is never wrong, and the
+dashboard switches it on after the browser's answer. The hub knows no zone for a human who has not
+said one, and every mail time (`daily_at`, `quiet_hours`) needs one; `UTC` is the zone that needs
+no guess and shows in the settings, where the dashboard's proposal replaces it.
+
+**Rejected alternatives:** a `browser.enabled` default of `true`, as the §18.4 example shows (the
+example illustrates a human who already turned it on; as a default it would be a claim without a
+permission); no default for `timezone` (every read would need a "not set" case and the mail pass a
+fallback of its own). Whether either was weighed when the code was written is unknown.
+
+## A second first write of the same human's settings finds the row the first made
+
+**Id:** 7caa2c14-307e-461c-95c8-34aedab837c8
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** a review note on the settings card (tsk-32jx98jzne6z) and the review of #581, 2026-10-29; `tests/test_settings_race.py`
+**Revisit when:** a settings write runs at `REPEATABLE READ`, or the row is made at account creation
+
+`preferences.row_of(lock=True)` reads the row `FOR UPDATE` first; when there is none it inserts it
+in a savepoint, and on an `IntegrityError` (another first write committed in between) it reads and
+locks the row that now exists. Two first `PATCH`es of one human therefore end one after the other,
+instead of the later one answering 500 on the primary key. The deadlock retry of
+`persistence.md` ("Concurrent writes") does not cover this: it runs again after a deadlock, not
+after a duplicate key.
+
+**Reason:** the row is made by the first write only (a read of a human with no row sees the
+defaults and writes nothing), so two first writes are an ordinary case; select first because the
+row is almost always there and the common write should not start with a failing insert. The hub's
+server engines run at `READ COMMITTED` (`db.py`), where a `FOR UPDATE` on a missing key takes no
+gap lock; the race test on PostgreSQL and MariaDB in CI is what shows it.
+
+**Rejected alternatives:** insert first, then lock, as `landing.lock` does (safe at any isolation
+level, but every `PATCH` would run a failing insert in a savepoint for a row that nearly always
+exists; kept as the move if the CI race test shows a deadlock on MariaDB); making the row at
+account creation (a write and a migration over every human for a row the defaults make
+unnecessary, and it would end "a read writes nothing" only in name).
+
 ## A group chat notifies its participants from their current stay; one who left gets nothing from it, what came before included
 
 **Id:** ccc4332d-30be-4bd0-9ccf-26d59194471f

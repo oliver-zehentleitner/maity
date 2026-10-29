@@ -55,11 +55,14 @@ def test_the_defaults_and_who_reads_them(make_client: ClientFactory, migrated: E
     [
         ({"kinds": []}, {"kinds": "read_only"}),
         ({"email": {"address_status": "verified"}}, {"email.address_status": "read_only"}),
-        ({"email": {"kinds": {"security": {"mode": "daily"}}}}, {"email.kinds": "invalid"}),
-        ({"email": {"kinds": {"inbox": {"content": True}}}}, {"email.kinds": "invalid"}),
-        ({"email": {"kinds": {"security": {"mode": None}}}}, {"email.kinds": "invalid"}),
-        ({"email": {"kinds": {"chat": {"mode": None}}}}, {"email.kinds": "invalid"}),
-        ({"email": {"kinds": {"mention": {"mode": 3}}}}, {"email.kinds": "invalid"}),
+        (
+            {"email": {"kinds": {"security": {"mode": "daily"}}}},
+            {"email.kinds.security": "invalid"},
+        ),
+        ({"email": {"kinds": {"inbox": {"content": True}}}}, {"email.kinds.inbox": "invalid"}),
+        ({"email": {"kinds": {"security": {"mode": None}}}}, {"email.kinds.security": "invalid"}),
+        ({"email": {"kinds": {"chat": {"mode": None}}}}, {"email.kinds.chat": "invalid"}),
+        ({"email": {"kinds": {"mention": {"mode": 3}}}}, {"email.kinds.mention": "invalid"}),
         ({"email": {"timezone": "Mars/Base"}}, {"email.timezone": "invalid"}),
         ({"email": {"daily_at": "25:00"}}, {"email.daily_at": "invalid"}),
         ({"email": {"quiet_hours": {"from": "22:00"}}}, {"email.quiet_hours": "invalid"}),
@@ -180,3 +183,11 @@ def test_mail_available_follows_the_instance_settings(
     csrf = client.get("/api/v1/auth/session").json()["csrf_token"]
     owner = flow.Human(client, csrf, human_id)
     assert owner.get(S).json()["mail_available"] is True
+
+
+def test_a_stored_content_of_another_kind_is_not_read() -> None:
+    from maity_hub.notifications import preferences
+
+    merged = preferences._merged({"browser": {"content": {"chat": True, "inbox": True}}})
+    assert "inbox" not in merged["browser"]["content"]
+    assert merged["browser"]["content"]["chat"] is True
