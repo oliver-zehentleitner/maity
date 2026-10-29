@@ -37,6 +37,40 @@ different handles; instances are for a team with the same role.
   of two clones could not be told apart, which is what "individually
   identifiable" rules out.
 
+## A replacing instance takes over what was addressed to its predecessor, but still starts at the head
+
+**Id:** 48f16962-a4b6-463c-b9cd-1ed216bed3d0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** contract owner's decision of 2026-10-29 after the review of #514 (the first session at the project head); contract in `docs/api.md` §5.2 `handover`, §6.17, §8.2
+
+A replacing instance's first session still starts at the project head,
+so it is not woken for the history. In addition, the resume packet
+carries `handover`: what was addressed to the replaced chain (the
+replaced instance and, while it never had a session, its own
+predecessors), to the new instance before its first resume, or to the
+membership, after the chain's last acknowledged cursor; instance-
+addressed events first, at most 50, delivered at least once and waking
+nothing. An address in a message, request or mention that names a
+replaced instance reaches its successor when the event is written, so
+a message to the old address wakes the new one; fields that need an
+active instance (assignment, claim, pause) still refuse it.
+
+**Reason:** a `replaces` join already moves claims, checkpoints and the
+lead role to the new instance. Direct messages to the predecessor
+would otherwise drop out of the normal resume/wait feed (readable
+only through the history, which nobody reads), and the new instance
+would hold the cards without the questions about them.
+
+**Rejected alternatives:**
+- Inherit the predecessor's cursor: the new instance would be woken for
+  everything since the predecessor's last acknowledgement, which can be
+  days. That is exactly what starting at the head was meant to prevent.
+- Leave it as before (head only, history via `GET /events`): it loses
+  messages from the feed silently; the review found it with a
+  reproduction.
+
 ## Each team has a rulebook set by a human: size, work distribution, who a team message wakes, review within the team
 
 **Id:** e42155de-c20d-43cc-a042-4151f860e25d
