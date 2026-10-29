@@ -86,7 +86,9 @@ def _body(key: str, project: Any, hub_url: str, full_name: str) -> str:
             "to change."
         )
     else:
-        snippet = f"[![maity]({hub_url}/badge/{full_name}.svg)]({hub_url}/#/{full_name}/overview)"
+        # The §6.20 snippet with path addresses (§16.11): it stays in a README for good,
+        # and no `/#/…` route is served or redirected.
+        snippet = f"[![maity]({hub_url}/badge/{full_name}.svg)]({hub_url}/{full_name}/overview)"
         what = (
             f"Add the Maity badge to the `README.md` of {repository}:\n\n```markdown\n"
             f"{snippet}\n```\n\nThe badge already serves; this card only puts the snippet "

@@ -169,6 +169,9 @@ The packet's `setup` is read from the cards by kind and status, not from the
 stored id list, so a cancelled or done card drops out without any bookkeeping.
 The body of `setup` is validated in code: the contract names the reasons
 `not_a_boolean` and `unknown_field`, which pydantic's own types would not give.
+The Maity badge card carries the §6.20 snippet with path addresses (§16.11),
+never a hash route: the snippet ends up in a README for good, and the hub serves
+no `/#/…` and no redirect from it.
 
 **Reason:** the options are chosen once at creation and the cards do not change
 them, so the column is the record of the choice, and `cards` being `null` is

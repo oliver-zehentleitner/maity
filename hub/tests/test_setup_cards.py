@@ -66,7 +66,8 @@ def test_the_maity_badge_option_opens_the_badge_and_a_card_with_the_snippet(
     cards = [_card(owner, i) for i in body["setup"]["cards"]]
     assert [c["title"] for c in cards][-1] == TITLES["maity_badge"]
     assert "/badge/maintainer/maity.svg" in cards[-1]["body"]
-    assert "/#/maintainer/maity/overview" in cards[-1]["body"]
+    assert "/maintainer/maity/overview)" in cards[-1]["body"]
+    assert "/#/" not in cards[-1]["body"]  # a path address, never a hash route (§16.11)
 
 
 def test_the_badge_is_on_without_a_repository_and_no_card_exists_yet(owner: flow.Human) -> None:
