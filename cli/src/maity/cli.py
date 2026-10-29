@@ -300,9 +300,14 @@ def cmd_join(args: argparse.Namespace) -> int:
     # (§6.17): this one gets `<handle>#<instance>` beside it, once the exchange names it.
     sibling = derived and state.has_credential(directory)
     if not derived and state.has_credential(directory):
+        where = (
+            "this directory"
+            if os.environ.get(state.STATE_DIR_ENV)
+            else "this clone (its worktrees share it)"
+        )
         _err(
-            f"this clone already holds a session credential ({state.credential_path(directory)})"
-            f"; its worktrees share it. To join another instance of this agent, give it a "
+            f"{where} already holds a session credential ({state.credential_path(directory)})"
+            f". To join another instance of this agent, give it a "
             f"directory of its own and set it for this join and every later command, e.g. "
             f"`export {state.STATE_DIR_ENV}=~/.local/state/maity/<agent-handle>-2`. "
             "Nothing was sent; the join code still works"

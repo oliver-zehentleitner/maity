@@ -242,8 +242,12 @@ def test_join_refuses_when_already_joined(
 ) -> None:
     assert cli.main(["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", "C"]) == cli.EXIT_ERROR
     out = output(capsys)
-    assert "already holds" in out and fakehub.SECRET not in out
-    assert "MAITY_STATE_DIR" in out and "the join code still works" in out
+    assert "this clone (its worktrees share it) already holds" in out
+    assert (
+        fakehub.SECRET not in out
+        and "MAITY_STATE_DIR" in out
+        and "the join code still works" in out
+    )
     assert "maity resume" not in out
     assert not fake.seen
 
@@ -729,6 +733,17 @@ def test_a_second_identity_outside_a_clone_gets_its_own_directory(
     assert cli.main(line) == cli.EXIT_OK
     base = no_clone / ".local" / "state" / "maity" / fake.url.removeprefix("http://")
     assert state.has_credential(base / "agent-b") and state.has_credential(base / "agent-c")
+
+
+def test_a_named_state_directory_with_a_credential_is_called_a_directory(
+    joined: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
+    monkeypatch.setenv("MAITY_STATE_DIR", str(joined))
+    assert cli.main(["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", "C"]) == cli.EXIT_ERROR
+    out = output(capsys)
+    assert "this directory already holds a session credential" in out
+    assert "this clone" not in out and not fake.seen
 
 
 def test_another_instance_outside_a_clone_gets_a_directory_of_its_own(

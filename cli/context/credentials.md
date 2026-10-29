@@ -59,6 +59,7 @@ never have to open it.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
+**Source:** the field report of the first three-instance team (the card "cli: several instances of one agent on one host"), `docs/api.md` §3.3 (`Maity-Instance`), §6.17
 **Revisit when:** the join page names the instance before the exchange, or the CLI keeps several instances in one state directory
 
 When `maity join` runs outside a Git clone and the derived directory
