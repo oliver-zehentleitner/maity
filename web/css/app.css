@@ -1335,6 +1335,15 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .card-family-form { display: grid; gap: 6px; }
 .card-family-form button[type="submit"] { justify-self: start; }
 
+/* Organisations (js/orgs.js). */
+.org-list, .org-member-list, .org-invitation-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.org-item, .org-member, .org-invitation { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; overflow-wrap: anywhere; }
+.org-member-name { flex: 1 1 12em; }
+.org-head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.org-head h2, .org-head p { margin: 0; }
+.org-page section { margin-top: 20px; }
+.org-role-words { margin-top: 8px; }
+
 /* Another instance's state directory, said before its join line (js/join.js). */
 .instance-note { border-left: 3px solid var(--warn); padding: 4px 0 4px 10px; margin: 8px 0; }
 .instance-note p { margin: 4px 0; }

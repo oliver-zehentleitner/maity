@@ -1930,6 +1930,33 @@ passwordless account. A modal dialog: the dashboard has none, and a
 slot in place keeps the focus and the context where the human was.
 
 
+## Organisations live under the account: `#/account/orgs`, not `#/orgs`
+
+**Id:** 73999dde-dbb6-4982-a448-e1441e7a5b6b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §6.25 (one namespace `<owner>/<slug>`, the dashboard's route words reserved as handles) and §6.26; `DASHBOARD_WORDS` in hub/src/maity_hub/namespace.py; the coordinator's approval of the route on the organisations card, 2026-10-29
+**Revisit when:** `orgs` is added to the hub's reserved dashboard words, or organisations get pages of their own beside the account (a public organisation page, §16.9)
+
+The dashboard addresses a project as `#/<owner>/<slug>`, and any first
+word the dashboard does not use itself is read as an owner's handle.
+The organisations view therefore sits under a word the dashboard
+already owns: `#/account/orgs` lists them, `#/account/orgs/<handle>`
+is one of them. It is reached from the profile menu.
+
+**Reason:** `orgs` is not among the hub's reserved handles
+(`DASHBOARD_WORDS`), so a human or an organisation may already be
+called `orgs`; `#/orgs/<x>` would then be that owner's project
+`orgs/<x>` as much as an organisation page. Organisations are a
+human's own business (§6.26, humans only, members only), which is what
+the account holds.
+
+**Rejected alternative:** `#/orgs` and `#/orgs/<handle>`: shorter,
+but ambiguous with a project of an owner named `orgs` unless the hub
+first reserves the word, a change to the hub and to handles that may
+already exist. Putting organisations into the Settings menu: that menu
+holds the hub's and the runners' settings, not the human's memberships.
 ## The meat-proxy hint quotes the hub's note as /me carries it, and no text of its own
 
 **Id:** 8eb486bb-357a-477c-aaf5-2a4d51024cc4

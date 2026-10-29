@@ -95,14 +95,25 @@ kubectl -n "$ns" rollout status deploy/postgres --timeout=180s
 (umask 077; printf 'postgresql://maity:%s@postgres:5432/maity' "$db_password" >"$work/database-url")
 kubectl -n "$ns" create secret generic maity-hub-database --from-file=database-url="$work/database-url"
 
+# The mail settings go through the chart as well: the signing key from a Secret, a loopback SMTP host (no server answers there;
+# nothing is sent in this run, the settings only have to reach the hub as its environment and be accepted by it).
+(umask 077; python3 -c 'import base64, secrets; print(base64.b64encode(secrets.token_bytes(32)).decode(), end="")' >"$work/mail-signing-key")
+kubectl -n "$ns" create secret generic maity-hub-mail --from-file=mail-signing-key="$work/mail-signing-key"
+
 values=(--set image.repository=maity-hub --set image.tag=kind-smoke --set image.pullPolicy=Never
-    --set database.existingSecret=maity-hub-database --set config.publicUrl=https://maity.test)
+    --set database.existingSecret=maity-hub-database --set config.publicUrl=https://maity.test
+    --set mail.signingKeySecret.existingSecret=maity-hub-mail --set mail.host=127.0.0.1 --set mail.port=2525
+    --set mail.tls=none --set mail.from=maity@maity.test)
 
 step "install: the migrate Job runs first, then the hub turns ready"
 helm install hub "$chart" -n "$ns" "${values[@]}" --wait --timeout 10m
 kubectl -n "$ns" logs job/hub-maity-hub-migrate | tee "$work/migrate.log"
 grep -q "schema empty -> " "$work/migrate.log"
 helm test hub -n "$ns" --logs
+
+step "mail: the chart's settings reach the hub as its environment"
+[ "$(kubectl -n "$ns" exec deploy/hub-maity-hub -- sh -c 'printf %s "$MAITY_SMTP_HOST"')" = 127.0.0.1 ]
+kubectl -n "$ns" exec deploy/hub-maity-hub -- sh -c 'test -n "$MAITY_MAIL_SIGNING_KEY"'
 
 step "the NetworkPolicy: the ingress controller's namespace reaches the hub, another one does not"
 allowed="$(reach ingress-nginx)"
