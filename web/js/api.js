@@ -475,7 +475,7 @@ window.Maity = window.Maity || {};
         const ok = ["people", "agents", "public_projects", "cards_done_week", "people_online", "agents_online"];
         if (!Array.isArray(s.items) || s.items.some((x) => !ok.includes(x))) errors[sp + ".items"] = "invalid";
       } else if (s.type === "steps" || s.type === "scales" || s.type === "faq") {
-        landingText(s.title, sp + ".title", 120, s.type !== "faq" || true, errors);
+        landingText(s.title, sp + ".title", 120, true, errors);
         const max = { steps: 6, scales: 4, faq: 20 }[s.type];
         if (!items.length) errors[sp + ".items"] = "too_few";
         if (items.length > max) errors[sp + ".items"] = "too_many";
@@ -507,6 +507,17 @@ window.Maity = window.Maity || {};
     const social = ft.social || [];
     if (social.length > 8) errors["footer.social"] = "too_many";
     social.forEach((x, k) => landingCta(x, "footer.social." + k, true, errors));
+  }
+  // A profile's handle and git identity as §6.3 and §6.24 check them.
+  function agentFields(body, agent, list) {
+    const fields = {};
+    if ("handle" in body && (!agent || body.handle !== agent.handle)) {
+      if (!/^[a-z0-9][a-z0-9-]{1,30}$/.test(body.handle || "")) fields.handle = "string_pattern_mismatch";
+      else if (list.some((a) => a !== agent && a.owner_id === me().member.id && !a.deleted_at && (a.handle === body.handle || (a.aliases || []).includes(body.handle)))) fields.handle = "taken";
+    }
+    const g = body.git_identity;
+    if (g !== undefined && g !== null && (typeof g !== "object" || !String(g.name || "").trim() || !/^[^\s@]+@[^\s@]+$/.test(String(g.email || "")))) fields.git_identity = "invalid";
+    return fields;
   }
   // /agents/{id}/avatar: the profile's owner only; any other is not_found.
   // §6.26 Organisations in fixture mode (fixtures/orgs.json).
@@ -1351,6 +1362,36 @@ window.Maity = window.Maity || {};
     }],
     // A deleted profile (tombstone) is never listed (§6.3).
     ["GET", /^\/agents$/, () => Object.assign({}, fixtures()["agents.json"], { items: fixtures()["agents.json"].items.filter((a) => !a.deleted_at) })],
+    // §6.3: a human's new profile; its handle unique among the owner's profiles.
+    ["POST", /^\/agents$/, (m, body, path) => {
+      if (me().member.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
+      const list = fixtures()["agents.json"].items;
+      const fields = agentFields(body, null, list);
+      if (!body.handle) fields.handle = "string_too_short";
+      if (!body.display_name || !String(body.display_name).trim()) fields.display_name = "string_too_short";
+      if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
+      const agent = { id: localId("agt"), handle: body.handle, name: me().member.handle + "/" + body.handle, display_name: String(body.display_name).trim(),
+        owner_id: me().member.id, git_identity: body.git_identity || null, memberships: [], aliases: [], created_at: nowIso() };
+      list.push(agent);
+      return agent;
+    }],
+    // §6.3, §6.24: the owner changes its name, git identity or handle; an old handle stays an alias.
+    ["PATCH", /^\/agents\/([^/]+)$/, (m, body, path) => {
+      const list = fixtures()["agents.json"].items;
+      const agent = list.find((a) => a.id === m[1] && !a.deleted_at);
+      if (!agent || agent.owner_id !== me().member.id) fail(404, "not_found", "Not found", path);
+      const fields = agentFields(body, agent, list);
+      if ("display_name" in body && !String(body.display_name || "").trim()) fields.display_name = "string_too_short";
+      if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
+      if ("handle" in body && body.handle !== agent.handle) {
+        agent.aliases = (agent.aliases || []).concat(agent.handle);
+        agent.handle = body.handle;
+        agent.name = me().member.handle + "/" + body.handle;
+      }
+      if ("display_name" in body) agent.display_name = String(body.display_name).trim();
+      if ("git_identity" in body) agent.git_identity = body.git_identity;
+      return agent;
+    }],
     // §6.3: the owner deletes a profile. In use (an active membership) only with
     // ?cascade=true, which ends every membership as DELETE …/members/{id} does;
     // then a tombstone with deleted_at, no avatar, no memberships. Again: 200 as it is.
@@ -2011,6 +2052,8 @@ window.Maity = window.Maity || {};
       "/api/v1/orgs/{org}/members/invitations/{invitation_id}": { delete: {} },
       "/api/v1/me/export": { get: {} },
       "/api/v1/me/deletion": { post: {}, delete: {} },
+      "/api/v1/agents": { get: {}, post: {} },
+      "/api/v1/agents/{agent_id}": { get: {}, patch: { requestBody: { content: { "application/json": { schema: { properties: { display_name: {}, git_identity: {}, handle: {} } } } } } }, delete: {} },
       "/api/v1/me": { get: {}, patch: { requestBody: { content: { "application/json": { schema: { properties: { meat_proxy: {} } } } } } } },
       "/api/v1/projects/{owner}/{slug}/attachments": { get: {}, post: {} },
       "/api/v1/requests/{request_id}/answer": { post: {} },
