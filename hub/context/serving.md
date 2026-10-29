@@ -281,7 +281,10 @@ long the hub took from the middleware's first line, and the pattern the answerin
 declared with (`request_stats.route_of`): the route's `path_format`, with the `/api/v1` prefix put
 back where the route's regular expression takes the rest of the path, because the route object's
 own `path` leaves the prefix out (FastAPI 0.159 keeps it in the included router). A request no
-route answered, or one whose route cannot be told from the path, logs `-`. Once a minute
+route answered, or one whose route cannot be told from the path, logs `-`. A project route logs `{owner}/{slug}` as two parameters, as the OpenAPI path has
+them: `ProjectRoute` (`namespace.py`) joins them into one `slug` before the endpoint, but the
+declared pattern is read, not the parameters, and a test holds it for an answered request and for a
+405. Once a minute
 `maity_hub.stats` logs `stats window=60s requests=<n> 5xx=<n> max_ms=<n> pool_open=<n>
 pool_checked_out=<n> pool_max=<n>` (`request_stats.Reporter`); the pool part is `pool=none` where
 the pool cannot be counted.
