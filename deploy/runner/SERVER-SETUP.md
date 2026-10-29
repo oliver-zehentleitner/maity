@@ -34,7 +34,7 @@ the system and sshd.
    print `OK`.
 5. **root, `/root/maity/deploy/runner`:** `RUNNER_TOKEN=<token> RUNNER_TARBALL=/root/<tarball-name> INSTANCES=<type> ./install-services.sh`
    (`<type>`: `maria` on the first server), then `RUNNER_DIR=/opt/actions-runner-<type> SERVICE=maity-runner@<type> ./install-python.sh`.
-6. **root, same directory:** `./dedicated-profile.sh <type>`. It refuses on a machine that is not 8 cores and 16 GB, and prints the
+6. **root, same directory:** `./dedicated-profile.sh <type>`. It refuses on a machine that is not exactly 8 cores and 16 GB, and prints the
    values it set.
 7. **root:** `systemctl enable --now maity-runner@<type>`; GitHub shows the runner as **Idle**. Then check the caps before any job:
    - `systemctl show -p ControlGroup maity-runner@<type>`: it must end under `user-<uid>.slice` (`<uid>`: `id -u gh-runner`).

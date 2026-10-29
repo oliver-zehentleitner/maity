@@ -11,9 +11,10 @@ RU=${RUNNER_USER:-gh-runner}
 WORKERS=${WORKERS:-8}
 CORES=$(nproc)
 MEM_KB=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
-# Only for the size this was written for: eight cores and 16 GB (MemTotal reads a little under 16 GB).
-if [ "$CORES" -lt 8 ] || [ "$MEM_KB" -lt 15000000 ]; then
-  echo "this is for 8 cores and 16 GB; this machine has $CORES cores and $((MEM_KB / 1024)) MB. Not applied." >&2
+# Only for the size this was written for: exactly eight cores and 16 GB. MemTotal reads a little under 16 GB (about 15.6 to 16.4
+# million kB on a VM); the band keeps out an 8 GB and a 32 GB machine, which the numbers below do not fit.
+if [ "$CORES" -ne 8 ] || [ "$MEM_KB" -lt 15000000 ] || [ "$MEM_KB" -gt 17500000 ]; then
+  echo "this is for exactly 8 cores and 16 GB; this machine has $CORES cores and $((MEM_KB / 1024)) MB. Not applied." >&2
   exit 1
 fi
 UID_RU=$(id -u "$RU")
