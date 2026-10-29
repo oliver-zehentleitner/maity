@@ -5,4 +5,3 @@
   time stamp and rotation (the `dump ok:` line carries both sizes), and `restore-attachments.yaml` puts one night's files back.
 - deploy: `helm-upgrade.sh` demands the attachment tar in the dump's mark when `DUMP_REQUIRES_ATTACHMENTS=1` (set it for a release with `attachments.existingClaim`; the old
   backup script has no tar), and the backup Job refuses to write a tar that would not fit twice on the node's disk (the claim's size is not enforced on local-path).
-
