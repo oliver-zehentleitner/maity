@@ -788,6 +788,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("join-agent").value = "agt-b"; byId("join-agent").dispatch("change");
   expect(text(byId("join-quota")) === "1 of 1 instances active; another one is over the team's limit.",
     "team: opening + Add an agent reads the members again, a limit changed elsewhere shows: " + text(byId("join-quota")));
+  // The panel open while the rulebook is saved: its count follows at once, the agent still chosen (antigravity's P3 on #616).
+  const ibOpenRow = main.querySelectorAll("tr.member-manage").find((r) => r.id === "member-manage-agt-b") || await agOpen("agt-b");
+  byId("team-max-agt-b").value = "2"; ibOpenRow.querySelector("form.member-team").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(!main.querySelector(".join-panel").hidden && byId("join-agent").value === "agt-b" && text(byId("join-quota")) === "1 of 2 instances active.",
+    "team: with the panel open, a saved rulebook redraws its count, the agent still chosen: " + text(byId("join-quota")));
+  await win.Maity.api.patch("/projects/maintainer/maity/members/agt-b", { team: { max_instances: 1 } });
   btn(main.querySelector(".join-panel"), "Cancel").click(); await tick();
   // Another owner's agent: no rulebook, even for an admin.
   const tmOthers = win.Maity.api.getAll;
@@ -891,8 +897,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "theme: applied before the first paint, by a script in <head> without defer");
   // Users of this hub (docs/api.md §16.1), for the instance admin only.
   gearButton().click(); await tick();
-  expect(JSON.stringify(gearButton().parentNode.querySelectorAll(".menu-item").map((el) => el.textContent)) === JSON.stringify(["Runners", "Instance administration"])
-    && gearButton().attrs["aria-haspopup"] === "menu", "header: the gear menu has the hub's own: the runners and, for the instance admin, the users");
+  expect(JSON.stringify(gearButton().parentNode.querySelectorAll(".menu-item").map((el) => el.textContent)) === JSON.stringify(["Agents", "Runners", "Instance administration"])
+    && gearButton().attrs["aria-haspopup"] === "menu", "header: the gear menu has one's agents, the runners and, for the instance admin, the users");
   const tabNames = header.querySelectorAll("nav.views a").map((a) => a.textContent.replace(/\d+$/, ""));
   expect(tabNames[tabNames.length - 1] === "Settings" && tabNames.indexOf("Runners") < tabNames.indexOf("Settings")
     && tabNames.indexOf("Why") < tabNames.indexOf("Settings") && tabNames.indexOf("Why") > tabNames.indexOf("Runners"),
@@ -2868,8 +2874,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await fireIntervals(); await tick();
   expect(gets.slice(before).filter((p) => p === "/me").length >= 1, "a request event re-reads /me");
   const realGet4 = win.Maity.api.get;
+  // One more open request: in /me and in §18.2's inbox count, which the list's reload follows.
   const bump = (slug) => (p) => (p === "/me"
     ? realGet2(p).then((m) => { m.projects.find((x) => x.slug === slug).open_requests += 1; return m; })
+    : p === "/me/notifications?limit=0" ? realGet2(p).then((a) => {
+      const by = Object.assign({}, a.by_project), key = "maintainer/" + slug;
+      by[key] = Object.assign({}, by[key], { inbox: ((by[key] || {}).inbox || 0) + 1 });
+      return Object.assign({}, a, { by_project: by, counts: Object.assign({}, a.counts, { inbox: ((a.counts || {}).inbox || 0) + 1 }) });
+    })
     : (p.includes("/events?") ? Promise.resolve({ items: [], cursor: 10004 }) : realGet2(p)));
   // Nothing open on screen: nothing is being read or typed, so the list reloads on its own.
   expect(!main.querySelectorAll("li.entry").some((e) => !e.className.includes("done")), "maity inbox has no open entry here");
@@ -3627,12 +3639,55 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const avHeading = main.querySelector(".picture-heading");
   expect(avHeading && avHeading.getAttribute("tabindex") === "-1" && byId("avatar-file-hum-maintainer") && text(main).includes("Generated from the member id")
     && !btn(main, "Remove the upload"), "picture: the account shows the picture, where it comes from and an upload; nothing to remove yet");
-  const avAgents = main.querySelectorAll(".picture-list li");
-  // agt-x works only in guest/guestlab; an agent added earlier in this run is in no project yet.
-  const avX = avAgents.find((li) => li.getAttribute("data-agent") === "agt-x");
-  expect(avX && byId("avatar-file-agt-x") && text(avX).includes("Spare @maintainer/spare") && text(main).includes("Agents in other projects")
-    && !avAgents.some((li) => /^agt-(a|b|c|d|r|s1)$/.test(li.getAttribute("data-agent"))) && !byId("avatar-file-agt-b"),
-    "picture: the account lists only the agents in no project one is in, each with its upload and global name");
+  // The agents' pictures are on /agents now (tsk-hn82893h9sdh): the account only points there.
+  expect(!main.querySelector(".picture-list") && !byId("avatar-file-agt-x") && main.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/agents" && text(a) === "Your agents"),
+    "picture: the account has no agents of its own any more, a link to Your agents instead");
+  // Your agents (/agents): every profile across projects, its memberships with instances, Add to a project.
+  await go("#/agents"); for (let k = 0; k < 6; k++) await tick();
+  const agCards = () => main.querySelectorAll("li.agent-card");
+  const agCard = (id) => agCards().find((li) => li.getAttribute("data-agent") === id);
+  expect(plainTitle() === "Your agents · Maity" && agCard("agt-x") && agCard("agt-b") && text(agCard("agt-x")).includes("Spare @maintainer/spare")
+    && text(agCard("agt-x")).includes("guest/guestlab") && byId("avatar-file-agt-x") && byId("avatar-file-agt-b"),
+    "agents page: every profile of one's own, by global name, its memberships, each with its picture");
+  expect(text(agCard("agt-b")).includes("maintainer/maity · member · coder") && text(agCard("agt-b")).includes("1 of 1 instance active")
+    && agCard("agt-b").querySelectorAll("a").some((a) => a.getAttribute("href") === "#/maintainer/maity/members/agt-b/rulebook"),
+    "agents page: a membership with trust and role, the instances against the team's limit, the rulebook linked: " + text(agCard("agt-b")).slice(0, 200));
+  byId("agent-add-agt-b").value = "maintainer/maity"; agCard("agt-b").querySelector("form.agent-add").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(win.location.hash === "#/maintainer/maity/members/join?agent=agt-b", "agents page: Add to a project opens that project's join panel for the profile");
+  await go(win.location.hash); for (let k = 0; k < 8; k++) await tick();
+  expect(main.querySelector(".join-panel") && !main.querySelector(".join-panel").hidden && byId("join-agent").value === "agt-b"
+    && !main.querySelector("fieldset.join-instance").hidden, "agents page: there the panel is open with the profile chosen, as an instance where it is a member");
+  btn(main.querySelector(".join-panel"), "Cancel").click(); await tick();
+  // A new profile, a refused handle, then a rename that keeps the old handle as an earlier one.
+  await go("#/agents"); for (let k = 0; k < 6; k++) await tick();
+  byId("agent-new-handle").value = "Bad Handle"; byId("agent-new-name").value = "Bad"; main.querySelector("form.agent-new").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main.querySelector("form.agent-new")).includes("Not created: handle:"), "agents page: a handle the hub refuses is said at the form");
+  byId("agent-new-handle").value = "@helper"; byId("agent-new-name").value = " Helper "; main.querySelector("form.agent-new").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  const agHelper = agCards().find((li) => text(li).includes("Helper @maintainer/helper"));
+  expect(agHelper && text(main).includes("The profile @helper was created") && text(agHelper).includes("In no project yet."), "agents page: a new profile, in no project yet");
+  const agHelperId = agHelper.getAttribute("data-agent");
+  byId("agent-handle-" + agHelperId).value = "agent-b"; agHelper.querySelector("form.agent-edit").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(agHelper.querySelector("form.agent-edit")).includes("Not saved: handle: you have a profile with this handle already"), "agents page: a handle one's other profile has is refused");
+  byId("agent-handle-" + agHelperId).value = "helper-2"; byId("agent-git-name-" + agHelperId).value = "Helper";
+  byId("agent-git-email-" + agHelperId).value = "helper@example.org"; agHelper.querySelector("form.agent-edit").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(text(main).includes("Saved. The old handle @helper still names it as an earlier one.") && text(agCard(agHelperId)).includes("@maintainer/helper-2"),
+    "agents page: renamed with a git identity, the old handle kept as an earlier one");
+  // A hub whose machine form does not name handle on PATCH /agents/{id} (before #523) is offered no rename.
+  const agBody = win.Maity.api.hubBody;
+  win.Maity.api.hubBody = (m, p) => (m === "PATCH" && p === "/agents/{agent_id}" ? Promise.resolve(new Set(["display_name", "git_identity"])) : agBody(m, p));
+  await go("#/all"); await go("#/agents"); for (let k = 0; k < 6; k++) await tick();
+  expect(agCard("agt-b") && byId("agent-name-agt-b") && !byId("agent-handle-agt-b"), "agents page: a hub without renames offers no handle field");
+  win.Maity.api.hubBody = agBody;
+  // A failed first read of the joins: Try again opens the panel with the profile asked for still chosen.
+  const agAll = win.Maity.api.getAll;
+  let agFail = true;
+  win.Maity.api.getAll = (p) => (p === "/projects/maintainer/maity/joins" && agFail ? (agFail = false, Promise.reject(new win.Maity.api.ApiError("down", 503, p, "unavailable", {}))) : agAll(p));
+  await go("#/all"); await go("#/maintainer/maity/members/join?agent=agt-b"); for (let k = 0; k < 8; k++) await tick();
+  btn(main.querySelector(".join-panel"), "Try again").click(); for (let k = 0; k < 8; k++) await tick();
+  expect(!main.querySelector(".join-panel").hidden && byId("join-agent") && byId("join-agent").value === "agt-b", "agents page: Try again keeps the profile asked for");
+  btn(main.querySelector(".join-panel"), "Cancel").click(); await tick();
+  win.Maity.api.getAll = agAll;
+  await go("#/account/picture"); for (let k = 0; k < 4; k++) await tick();
   await pick("avatar-file-hum-maintainer", fakeFile(SVG, 0, "image/svg+xml"));
   expect(!avCalls.length && text(main).includes("Not uploaded: not a PNG, JPEG or WebP image"), "picture: an SVG is refused by its bytes, before sending");
   await pick("avatar-file-hum-maintainer", fakeFile(PNG, 1024 * 1024 + 1));
@@ -5401,13 +5456,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!("keep_the_why" in win.Maity.notify.KIND_WORDS), "keep the why: the owner's notice is a request in the inbox, no notification kind of its own");
   const ktProto = Object.getPrototypeOf(main), ktFocus = ktProto.focus;
   ktProto.focus = function () { document.activeElement = this; };
-  await go("#/account/picture/agt-x"); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
-  const ktAgent = main.querySelectorAll("li.wanted").find((li) => li.getAttribute("data-agent") === "agt-x");
-  expect(ktAgent && main.querySelectorAll("li.wanted").length === 1 && document.activeElement === ktAgent.querySelector(".picture-name"),
-    "keep the why: the account marks the agent the notice is about and starts there");
-  await go("#/account/picture/agt-b"); for (let k = 0; k < 6; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
-  expect(win.location.hash === "#/maintainer/maity/members/agt-b/picture" && main.querySelectorAll("tr.member-manage").some((r) => r.id === "member-manage-agt-b"),
-    "keep the why: an agent in one's own project is led to its row on Members, opened");
+  // /agents/<id>: one profile marked, its title focused, its settings open.
+  await go("#/agents/agt-x"); for (let k = 0; k < 6; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  const ktAgent = main.querySelectorAll("li.agent-card.wanted");
+  expect(ktAgent.length === 1 && ktAgent[0].getAttribute("data-agent") === "agt-x" && document.activeElement === ktAgent[0].querySelector(".agent-card-title")
+    && ktAgent[0].querySelector("details.agent-settings").attrs.open !== undefined, "agents page: /agents/<id> marks that profile, its title focused, its settings open");
   ktProto.focus = ktFocus; document.activeElement = undefined;
 
   // Subtasks (docs/api.md §6.4): children folded under their parent with the hub's counts, a child whose parent
@@ -6501,7 +6554,25 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "inbox: the project's own requests carry no project label in its inbox");
   await go("#/maintainer/sample/inbox"); for (let k = 0; k < 6; k++) await tick();
   expect(!main.querySelectorAll("li.entry").some((li) => text(li).includes("agent-b is not listening")), "inbox: another project's personal request is not listed there");
+  // The personal requests failing to read: the project's own are listed, the failure said, no list quietly short of the tab.
+  win.Maity.api.getAll = (p) => (p === "/requests" ? Promise.reject(new win.Maity.api.ApiError("down", 500, p, "internal")) : waitGetAll(p));
+  await go("#/maintainer/maity/board"); await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
+  expect(main.querySelectorAll("li.entry").length > 0 && text(main).includes("Your personal requests about this project could not be read: down"),
+    "inbox: a failed read of the personal requests is said, the project's own still listed");
   win.Maity.api.getAll = waitGetAll;
+  // The list's own reload follows §18.2's inbox count (by_project), which counts personal requests; /me's open_requests does not.
+  await go("#/maintainer/maity/board"); await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
+  const wrState = win.Maity.notify.state, wrBefore = JSON.stringify(wrState.byProject);
+  const wrRender = [];
+  const wrGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/me/notifications?limit=0" ? wrGet(p).then((a) => {
+    const by = Object.assign({}, a.by_project); by["maintainer/maity"] = Object.assign({}, by["maintainer/maity"], { inbox: ((by["maintainer/maity"] || {}).inbox || 0) + 1 });
+    return Object.assign({}, a, { by_project: by });
+  }) : (wrRender.push(p), wrGet(p)));
+  await fireIntervals(); for (let k = 0; k < 8; k++) await tick();
+  expect(wrBefore !== JSON.stringify(wrState.byProject) && (text(main).includes("1 new request.") || text(main).includes("What waits for you changed")),
+    "inbox: a personal request about the project, counted only in by_project, reloads the list or offers it");
+  win.Maity.api.get = wrGet;
   // All notifications (/notifications): unread in bold with a dot, as on the bell, and Mark all read up to the first page's head.
   const waitWrites = [];
   win.Maity.api.post = (p, b) => { if (p === "/me/notifications/read") waitWrites.push(b); return waitPost(p, b); };
@@ -6917,10 +6988,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   try { await pdDel("/agents/agt-c"); } catch (err) { pdInUse = err; }
   expect(pdInUse && pdInUse.code === "profile_in_use" && pdInUse.details.memberships[0].project === "maintainer/maity",
     "profile: the mock refuses a profile in use without cascade, naming the memberships");
-  // On the account, an agent in no project one is in is deleted there the same way.
-  await go("#/account"); for (let k = 0; k < 6; k++) await tick();
-  const pdX = main.querySelectorAll(".picture-list li").find((li) => li.getAttribute("data-agent") === "agt-x");
-  expect(pdX && pdX.querySelector(".profile-delete-box") && text(pdX).includes("guest/guestlab"), "profile: the account offers the deletion of an agent in other projects");
+  // On Your agents, every profile is deleted the same way.
+  await go("#/agents"); for (let k = 0; k < 6; k++) await tick();
+  const pdX = main.querySelectorAll("li.agent-card").find((li) => li.getAttribute("data-agent") === "agt-x");
+  expect(pdX && pdX.querySelector(".profile-delete-box") && text(pdX).includes("guest/guestlab"), "profile: Your agents offers the deletion of a profile");
   win.Maity.api.del = pdDel;
 
   // §6.26 at the end of fixture mode (it adds a project): out of an organisation into one's own namespace, at once.

@@ -1351,3 +1351,13 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* All notifications: unread in bold with a dot, as on the bell. */
 .waiting-items li.unread a { font-weight: 600; }
 .waiting-items li.unread::before { content: "●"; color: var(--accent); margin-inline-end: 6px; font-size: 0.7rem; }
+
+/* Your agents (js/agents-page.js). */
+.agent-cards, .agent-memberships { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+.agent-memberships { gap: 4px; margin: 8px 0; }
+.agent-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; overflow-wrap: anywhere; }
+.agent-card.wanted { border-color: var(--accent); }
+.agent-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.agent-card-head h3 { margin: 0; }
+.agent-settings { margin-top: 8px; }
+.agent-new { margin-top: 20px; }

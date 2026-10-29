@@ -649,7 +649,13 @@ Withdraw, which only its human may do. Grouped by project, the personal
 ones come first under "Personal". Since 2026-10-29 a project's own inbox
 lists the open personal requests about that project too, read from
 `GET /requests`: its tab counts them (§18.2), so the list shows what the
-tab says; they keep the label and lead into nothing.
+tab says; they keep the label and lead into nothing. The hub has no
+project filter on `GET /requests` (§7), so the project's inbox filters
+what it reads; a failed read is said in the list's status line, never
+shown as an empty list, since a list short of its tab is the bug this
+fixed. The list's own reload follows the inbox count of §18.2
+(`by_project`, `counts.inbox`), which counts those personal requests,
+not `/me`'s `open_requests`, which does not.
 
 **Reason:** the project's routes answer `not_found` for a personal
 request, the project's own listing never holds one (§7), and its human
@@ -1441,10 +1447,10 @@ alone: it is not seen without a mouse resting on the button.
 
 **Id:** 057e7277-3eba-4267-93d2-c6b74a5e2ff1
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
 **Source:** the designer's handover on the overview (#6484, tsk-qse9t2b3a9n8), 2026-10-27: the five panels had equal weight and the one thing to act on (open requests) sat bottom left; the maintainer's wish for a Contract link in the project facts (tsk-yhbmz7mjng7n, step 1), 2026-10-27; the dashboard's implementation, 2026-10-27
-**Revisit when:** the hub serves the contract for reading inside Maity, or the badge can be changed without a logged reason
+**Revisit when:** the hub serves the contract for reading inside Maity, or the overview gets other editing in place
 
 Three rows: Waiting for you and Board, then Team and Latest reports,
 then Project and README badge. A member in a list is a chip
@@ -1452,17 +1458,22 @@ then Project and README badge. A member in a list is a chip
 too. The Contract link is `docs/api.md` on the forge at the repository's
 default branch, built only for GitHub and GitLab, whose path shapes are
 known. The badge panel shows the state, the badge and the snippet to
-everyone; an owner or admin is sent to Project settings to change it.
+everyone; an owner or admin is sent to Project settings to change it
+(**Change in Project settings**).
 
 **Reason:** a person opening the overview comes to see whether anything
 waits for them, so that is the first thing, with its action one click
-away. A badge change is a policy change the hub logs with a reason, and
-Settings already asks for it; a second form would duplicate that.
+away. The badge is changed in one place, Project settings, where the
+project's other policy lives. Until #618 a badge change also needed a
+logged reason, which Settings asked for; that argument fell away when
+the badge alone needed none (docs/api.md §6.20, re-checked with the
+coordinator on 2026-10-29), and the one place to change it is what
+remains.
 
 **Rejected alternative:** the designer's radio pills that change the
-badge on the overview: they would need the reason field too, or change a
-logged policy without one. A Contract link guessed for any forge: a
-wrong path shape would be a dead link that looks right.
+badge on the overview: a second place to change one setting, with the
+overview the only view that edits in place. A Contract link guessed for
+any forge: a wrong path shape would be a dead link that looks right.
 
 ## The instance admin area shows one section at a time
 
@@ -1785,11 +1796,46 @@ contract takes only a current owner of the project, so the list offers
 exactly those. Parsing `owner/slug/tsk-…` back into a link: §6.25 makes
 the prefix display only.
 
+## One's agents have a page of their own in the gear menu; adding one to a project is that project's join panel
+
+**Id:** 1031c11b-7642-4ed9-87ce-de504b2044fc
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer on the card tsk-hn82893h9sdh, 2026-10-29 (agents belong to their owner and span projects; "add" means the join flow; the account keeps no agents section, one place); docs/api.md §6.3, §3.1, §16.11 (`agents` a reserved first segment)
+**Revisit when:** the hub can make a join for a profile without a project view (a join across projects), or the Team page's Members tab takes the profiles over
+
+`/agents`, in the gear menu beside Runners, lists every agent profile of
+the human (`GET /agents`): its picture, its memberships with trust, role
+and the instances against the team's limit, its name, git identity and
+handle, and its deletion; a new profile at the end. **Add to a project**
+leads to that project's Members with the join panel open and the
+profile chosen (`/<owner>/<slug>/members/join?agent=<id>`): the one join
+component, where the project's rules (who may bring agents, the
+member's limit, the team's) are known. The profile asked for
+(`?agent=<id>`) is kept across a failed first read of the joins, so
+**Try again** opens the panel with it chosen, as the first open would
+have. The handle is offered only where the hub's machine form names it
+on `PATCH /agents/{id}` (§6.24). `/agents/<id>` marks one profile.
+The account keeps the human's own picture and points to this page; an
+agent's picture stays settable in its row on Members as well.
+
+**Reason:** an agent is the owner's across projects, so its settings
+need one place that is not a project; and the join panel already knows
+each project's rules, which a second join flow on this page would have
+to repeat.
+
+**Rejected alternative:** a join form of its own on `/agents`: it would
+repeat the project's join rules (§3.1's member limits, the team's
+instance limit) apart from the panel and drift from it. Keeping the
+agents in no project on the account: two places for the same profile.
+
 ## A human's picture is set on the account, an agent's in its row on Members; the account keeps only agents no project shows
 
 **Id:** 59aaf51f-c63d-4cb6-966b-85eb8f2c682d
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 1031c11b-7642-4ed9-87ce-de504b2044fc
 **Evidence:** confirmed
 **Source:** the maintainer's wish on the card tsk-th1yq0jtk3yf (an agent's picture belongs to its management, personal settings keep only one's own), 2026-10-28; the coordinator's ruling on the fallback for agents in no project one is in, 2026-10-28
 **Revisit when:** the dashboard gets a page of one's agents outside any project, or §6.10 gives `members:admin` a say over pictures
