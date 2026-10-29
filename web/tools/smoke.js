@@ -3528,6 +3528,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(orgOwnRow && !btn(orgOwnRow, "Withdraw") && main.querySelectorAll("li.org-invitation").some((li) => btn(li, "Withdraw")) && !main.querySelector("form.org-settings"),
     "orgs: an admin may withdraw invitations for member and admin, not for owner, and has no settings");
   win.Maity.api.get = orgGet;
+  // Suspended (§6.26): no rename and no public page turned on from the form.
+  win.Maity.api.get = (p) => (p === "/orgs/oz-team" ? orgGet(p).then((o) => Object.assign(o, { moderation: { action: "suspend", report_id: "rpt-1", at: "2026-10-29T10:00:00Z" } })) : orgGet(p));
+  await go("#/account/orgs/oz-team"); for (let k = 0; k < 6; k++) await tick();
+  expect(byId("org-handle").disabled && byId("org-public-page").disabled && !byId("org-name").disabled
+    && text(main).includes("its handle cannot change and its public page cannot be turned on"), "orgs: while suspended, the handle and turning the page on are off");
+  win.Maity.api.get = orgGet;
+  // The handle in the address is read as a typed one: decoded, without @, in lowercase.
+  await go("#/account/orgs/%40OZ-Team"); for (let k = 0; k < 6; k++) await tick();
+  expect(plainTitle() === "@oz-team · Organisations · Maity" && text(main).includes("@oz-team · you are owner"),
+    "orgs: an address with @ and capitals opens the organisation, the title as its handle");
   const orgOwnInv = await win.Maity.api.post("/orgs/oz-team/members/invitations", { handle: "dora", role: "owner" });
   expect(!("request_id" in orgOwnInv) && orgOwnInv.handle === "dora", "orgs: an invitation item carries no request id (§6.26)");
   await win.Maity.api.del("/orgs/oz-team/members/invitations/" + orgOwnInv.id);

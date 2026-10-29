@@ -425,6 +425,9 @@ window.Maity = window.Maity || {};
   }
   // /agents/{id}/avatar: the profile's owner only; any other is not_found.
   // §6.26 Organisations in fixture mode (fixtures/orgs.json).
+  // The hub's reserved handles: DASHBOARD_WORDS in hub/src/maity_hub/namespace.py
+  // (docs/api.md §6.25 "Dashboard routes and handles", §16.11 with #601);
+  // change this list with it.
   const ORG_RESERVED = ["account", "admin", "agents", "all", "chats", "components", "invite", "join", "login", "new", "notifications",
     "observe", "p", "register", "requests", "runners", "s", "settings", "sign-in"];
   let orgInviteSerial = 0;

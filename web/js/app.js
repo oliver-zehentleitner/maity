@@ -1526,7 +1526,7 @@ window.Maity = window.Maity || {};
     else if (where.scope === "chats") label = "Chats";
     else if (where.scope === "new") label = "New project";
     else if (where.scope === "account") label = "Your account";
-    else if (where.scope === "orgs") label = where.args && where.args[0] ? "@" + where.args[0] + " · Organisations" : "Organisations";
+    else if (where.scope === "orgs") label = where.args && where.args[0] ? "@" + M.orgs.handleOf(where.args[0]) + " · Organisations" : "Organisations";
     else if (where.scope === "runners") label = "Runners";
     else if (where.scope === "instance-admin") label = "Instance administration";
     else if (where.scope === "observe") label = "Read along · " + where.slug;
