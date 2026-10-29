@@ -722,6 +722,12 @@ protected was sshd on the machine's own address (key-only since step 3b), the on
 containers; the fence matters towards the provider's networks and the metadata service, which stay closed. A dedicated machine without secrets that is
 reinstalled after a malicious job has little behind loopback to protect.
 
+Because loopback is open to the runner user, the self-test at the end of `bootstrap-server.sh` lists every other listener on loopback, on the machine's own
+address or on all addresses (ssh and the resolver excepted) as a note, not as a failure: a new service on the server should show at the next bootstrap
+without blocking it. Rejected for that: a failure for every foreign listener (the distribution's own services would trigger it) and no check at all (the
+"revisit when" of this entry would have no trigger). The probes run for 127.0.0.1, ::1 and the machine's own IPv4 and IPv6 addresses, because traffic to the
+own addresses goes over `lo` and meets the same rule; the `::1` listener probe is skipped, with a note, where a provider has IPv6 off on `lo`.
+
 **Rejected alternatives:**
 - Opening more ports one by one (the database ports and the resolver, as before): the suite picks ports at random, and each new test server would be a new failure.
 - Leaving loopback closed and moving the suite's servers elsewhere: they are in the tests, and a runner that needs the tests changed is not a drop-in for the hosted one.

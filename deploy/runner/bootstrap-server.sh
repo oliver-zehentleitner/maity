@@ -133,6 +133,9 @@ if runuser -u "$RU" -- curl -sS -m 4 -o /dev/null http://169.254.169.254/ 2>/dev
 # containers and on an arbitrary port (the test suite's own servers; the first version closed those and 69 tests failed)
 for hp in "127.0.0.1 5432" "127.0.0.1 3306" "127.0.0.1 34567" "::1 34567"; do
   set -- $hp; host=$1; port=$2
+  if [ "$host" = "::1" ] && ! ip -6 addr show lo 2>/dev/null | grep -q "::1"; then
+    echo "note: IPv6 is off on lo; the ::1 listener probe is skipped"; continue
+  fi
   runuser -u "$RU" -- python3 - "$host" "$port" <<'PY' &
 import socket, sys
 host, port = sys.argv[1], int(sys.argv[2])
@@ -148,10 +151,11 @@ PY
   wait
   [ "$got" = hello ] || { echo "FAIL: $RU gets no answer from a listener of its own on [$host]:$port" >&2; fail=1; }
 done
-# With loopback open for the runner user, a job reaches whatever else listens there. Today that is the resolver (:53) and sshd (:22, shut by the
-# chain); anything else is shown here, as a note and not a failure, so that a new service is seen at the next bootstrap.
-others=$(ss -H -ltnu 2>/dev/null | awk '{n=split($5, a, ":"); port=a[n]; if (($5 ~ /^(127\.|\[::1\]|0\.0\.0\.0|\*|\[::\])/) && port != 22 && port != 53) print $1, $5}' | sort -u)
-[ -z "$others" ] || { echo "note: besides ssh (22, closed to $RU) and the resolver (53), this listens on loopback or on all addresses and is open to $RU:"; echo "$others" | sed 's/^/  /'; }
+# With loopback open for the runner user, a job reaches whatever else listens on loopback or on the machine's own address (that traffic goes
+# over lo as well). Today that is the resolver (:53) and sshd (:22, shut by the chain); anything else is shown here, as a note and not a failure,
+# so that a new service is seen at the next bootstrap.
+others=$(ss -H -ltnu 2>/dev/null | awk -v o4="${own:-none}" -v o6="${own6:-none}" '{n=split($5, a, ":"); port=a[n]; addr=substr($5, 1, length($5) - length(port) - 1); if (($5 ~ /^(127\.|\[::1\]|0\.0\.0\.0|\*|\[::\])/ || addr == o4 || addr == "[" o6 "]") && port != 22 && port != 53) print $1, $5}' | sort -u)
+[ -z "$others" ] || { echo "note: besides ssh (22, closed to $RU) and the resolver (53), this listens on loopback, on the machine's own address or on all addresses and is open to $RU:"; echo "$others" | sed 's/^/  /'; }
 # outbound to the internet and the resolver must still work (the runner downloads, uv installs Python)
 runuser -u "$RU" -- curl -fsS -m 10 -o /dev/null https://github.com || { echo "FAIL: $RU cannot reach github.com (resolver or firewall)" >&2; fail=1; }
 [ "$fail" = 0 ] || exit 1
