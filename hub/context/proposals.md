@@ -109,4 +109,3 @@ admin-agent kind, `org_invitation`) were read and none does anything on `withdra
 - Settling only for a kind that opts in: a kind that forgot to opt in would leave its row open,
   and that fails silently, which is what the rule is there against.
 - Closing an invitation's row from the withdrawal route by hand: the route would then know a kind.
-
