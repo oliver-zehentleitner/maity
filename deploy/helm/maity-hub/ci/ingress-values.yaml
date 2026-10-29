@@ -10,6 +10,8 @@ database:
 forge:
   github:
     existingSecret: maity-hub-secrets
+secretKey:
+  existingSecret: maity-hub-secrets
 mail:
   signingKeySecret:
     existingSecret: maity-hub-secrets

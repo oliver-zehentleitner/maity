@@ -73,6 +73,16 @@ forge:
     existingSecret: ""
     key: github-token
 
+secretKey:
+  # The instance key for secrets the hub stores at rest (MAITY_SECRET_KEY: 32 random bytes, base64; docs/api.md §16.2, §17.4):
+  # the forge webhook's secret, stored SMTP passwords, second-factor secrets. It comes from a Secret that already exists in the
+  # release namespace, and its value never passes through the chart. Empty: none is set, and the features that need it refuse
+  # (`secret_key_missing`). Keep a copy outside the cluster: a new key leaves everything sealed with the old one unreadable.
+  # When you move it here from `extraEnv`, drop it from `extraEnv` in the same upgrade (the chart renders both; the later wins).
+  # A Secret created with the first README holds the key as `MAITY_SECRET_KEY`: set `secretKey.key: MAITY_SECRET_KEY` then.
+  existingSecret: ""
+  key: secret-key
+
 mail:
   # The instance's outgoing mail (docs/api.md §16.2). Nothing is rendered until a value is set: without
   # `signingKeySecret` the hub sends no mail at all, and the settings below only take effect with it.

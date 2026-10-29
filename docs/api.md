@@ -11263,7 +11263,7 @@ environment wins, is shown with `source: "env"`, and a `PATCH` of it is
 | `MAITY_SMTP_ALLOW_PLAINTEXT` | — | **insecure**, environment only, default `false`. With `true`, a `starttls` connection to a server that offers no STARTTLS sends the mail in clear instead of failing — every mail, sign-in links included, then crosses the network readable and changeable by anyone on the path. `AUTH` is still never sent without TLS (a configured username then fails at stage `auth`). While it is `true` the admin view carries `warnings: ["smtp_plaintext_allowed"]` and the hub logs a warning at startup and at every plaintext send. Meant for a test bench only |
 | `MAITY_SMTP_USERNAME` | `username` | `null`: no `AUTH`. With a username, `AUTH` is sent only over TLS. Printable ASCII, as the password (`invalid` otherwise; in the environment the hub stops at startup) |
 | `MAITY_SMTP_PASSWORD` or `MAITY_SMTP_PASSWORD_FILE` | `password` | write-only; `{set, source}` in the answer, `source` `env` or `admin` (above) |
-| `MAITY_SECRET_KEY` | — | 32 bytes, base64; the instance key that encrypts secrets the hub stores (today the admin-set SMTP password). Never returned; `{set}` in the answer as `secret_key` |
+| `MAITY_SECRET_KEY` | — | 32 bytes, base64; the instance key that encrypts secrets the hub stores (the admin-set SMTP password, the forge webhook secret and token, second-factor secrets). Never returned; `{set}` in the answer as `secret_key` |
 | `MAITY_SMTP_FROM` | `from` | `{address, name?}`; the envelope sender and `From:`. In the environment `maity@example.org` or `Maity <maity@example.org>` |
 | `MAITY_SMTP_REPLY_TO` | `reply_to` | `null` or an address |
 | `MAITY_MAIL_MAX_PER_HOUR` | `max_per_hour` | notification mail, all humans together; default 500; over it, mail waits for the next hour and is merged into each human's next mail (§18.5). Security mail does not count here |
@@ -11281,9 +11281,9 @@ values from `mail.host`, `port`, `tls`, `username`, `from` and
 `replyTo`; the secrets never pass through the chart's values. With a
 host set, port and TLS always come from the chart (its defaults
 included) and win over the admin settings (`set_by_environment`). The
-instance key comes from a Secret through the chart's `extraEnv`
-(`secretKeyRef`, see the chart's README). A release that moves these
-variables from `extraEnv` into `mail.*` removes them from `extraEnv` in
+instance key comes from a Secret as well (`secretKey.existingSecret` and
+`key`, default `secret-key`). A release that moves these variables from
+`extraEnv` into `mail.*` and `secretKey` removes them from `extraEnv` in
 the same upgrade: the chart does not deduplicate, and the later entry
 wins.
 

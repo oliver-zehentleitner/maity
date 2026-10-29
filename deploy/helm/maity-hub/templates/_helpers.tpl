@@ -108,7 +108,7 @@ the cluster.
 
 {{/*
 The environment the hub and the migrate Job share. The database URL, the
-forge token, the mail signing key and the SMTP password come from Secrets by reference; their values never pass through
+forge token, the instance key, the mail signing key and the SMTP password come from Secrets by reference; their values never pass through
 the chart.
 */}}
 {{- define "maity-hub.env" -}}
@@ -123,6 +123,13 @@ the chart.
     secretKeyRef:
       name: {{ . }}
       key: {{ $.Values.forge.github.key }}
+{{- end }}
+{{- with .Values.secretKey.existingSecret }}
+- name: MAITY_SECRET_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ . }}
+      key: {{ $.Values.secretKey.key }}
 {{- end }}
 {{- with .Values.mail.signingKeySecret.existingSecret }}
 - name: MAITY_MAIL_SIGNING_KEY
