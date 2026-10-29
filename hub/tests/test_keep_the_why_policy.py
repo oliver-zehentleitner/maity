@@ -123,7 +123,7 @@ def test_the_packet_tells_the_agent_how_to_load_the_skill(
     assert block["enabled"] is True
     assert block["skill"]["name"] == "keep-the-why"
     assert block["skill"]["source"] == SOURCE
-    assert block["skill"]["install"][0] == f"npx skills add {SOURCE}"
+    assert block["skill"]["install"][0] == f"npx skills add {SOURCE} -g -y"
     assert block["skill"]["install"][1].startswith(
         "git clone --depth 1 --branch latest https://github.com/oliver-zehentleitner/keep-the-why"
     )

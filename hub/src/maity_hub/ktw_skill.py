@@ -35,7 +35,9 @@ def skill(settings: Settings) -> dict[str, Any]:
     return {
         "name": SKILL_NAME,
         "source": source,
-        "install": [f"npx skills add {source}", clone],
+        # -g -y: the skills installer asks for agents and scope otherwise, and an agent
+        # without a terminal stalls at that prompt (keepthewhy.com/installation).
+        "install": [f"npx skills add {source} -g -y", clone],
         "load": LOAD,
         "guide": settings.ktw_skill_guide,
     }

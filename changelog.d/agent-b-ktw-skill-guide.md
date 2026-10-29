@@ -6,6 +6,8 @@
 
 ### Changed
 
+- hub: the packet's skills installer line is non-interactive (`-g -y`)
+  (§6.23)
 - hub: an explicit `null` for `policy.keep_the_why` is refused (`unknown`)
   instead of clearing the stored value (§6.1)
 - hub: an agent that sets `policy.keep_the_why` or

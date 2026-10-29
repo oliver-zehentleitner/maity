@@ -3089,7 +3089,7 @@ Response `200`, bounded and deterministic:
                     "instruction": "Load the keep-the-why skill and read context/index.md before working.",
                     "skill": { "name": "keep-the-why",
                                "source": "https://github.com/oliver-zehentleitner/keep-the-why/tree/latest/skills/keep-the-why",
-                               "install": [ "npx skills add https://github.com/oliver-zehentleitner/keep-the-why/tree/latest/skills/keep-the-why",
+                               "install": [ "npx skills add https://github.com/oliver-zehentleitner/keep-the-why/tree/latest/skills/keep-the-why -g -y",
                                             "git clone --depth 1 --branch latest https://github.com/oliver-zehentleitner/keep-the-why <tmp> and copy <tmp>/skills/keep-the-why into the harness's skills directory" ],
                                "load": "Claude Code: invoke the keep-the-why skill (Skill tool). Any other agent: read <skills directory>/keep-the-why/SKILL.md and follow it.",
                                "guide": "https://keepthewhy.com/installation/" },
@@ -6652,8 +6652,10 @@ machine has installed and wherever its session was started:
 
 - `skill` — `name` (`keep-the-why`), `source` (where the skill is
   published), `install` (the ways to get it onto a machine that has no
-  copy, in order: the skills installer, then a plain Git fallback for a
-  machine without Node) and `load` (how to load it, per harness). The
+  copy, in order: the skills installer, non-interactive and for every
+  project of the user (`-g -y`, so that an agent without a terminal does
+  not stall at its questions), then a plain Git fallback for a machine
+  without Node) and `load` (how to load it, per harness). The
   three texts come from the instance setting `MAITY_KTW_SKILL_SOURCE`,
   by default the skill's published `latest` tree; an operator who
   mirrors the skill points it elsewhere. They are instructions to the
