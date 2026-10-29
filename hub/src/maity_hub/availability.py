@@ -46,7 +46,7 @@ def policy_errors(
     gets its go, since a substitute may have left in the meantime."""
     from maity_hub.access import member_row
     from maity_hub.errors import ApiError
-    from maity_hub.scopes import ROLES
+    from maity_hub.scopes import token_known
 
     errors: dict[str, str] = {}
     if policy["on_unavailable"] not in ON_UNAVAILABLE:
@@ -54,8 +54,8 @@ def policy_errors(
     if not 0 <= policy["grace_minutes"] <= GRACE_MAX:
         errors["availability_policy.grace_minutes"] = "out_of_range"
     for entry in policy["substitutes"]:
-        if entry.startswith("role:"):
-            if entry.removeprefix("role:") not in ROLES:
+        if entry.startswith(("role:", "trust:")):
+            if not token_known(entry):
                 errors["availability_policy.substitutes"] = "unknown_role"
             continue
         if entry == (target.agent_id or target.human_id):
@@ -103,7 +103,7 @@ def computed(
             "reason": human.limit_reason,
             "show_reason_in": list(human.limit_show_reason_in or []),
         }
-    if row.agent_id is None and row.role == "owner" and _live(project.absence_until, now):
+    if row.agent_id is None and row.trust == "owner" and _live(project.absence_until, now):
         return {"state": "limited", "until": project.absence_until, "source": "absence"}
     if presence == "offline":
         return {"state": "offline"}
@@ -171,13 +171,14 @@ def view(
 
 def coordinator_ids(conn: Connection, project: Any) -> set[int]:
     """The membership rows that coordinate (§6.1): the named agent, or under the default
-    `role:admin` the project's agent admins."""
-    if project.coordinator == "role:admin":
+    `trust:admin` the project's agent admins."""
+    if project.coordinator == "trust:admin":
         query = select(t.membership.c.id).where(
             t.membership.c.project_id == project.id,
             t.membership.c.active.is_(True),
             t.membership.c.agent_id.isnot(None),
-            t.membership.c.role == "admin",
+            t.membership.c.trust == "admin",
+            t.membership.c.role != "proxy",
         )
     else:
         query = select(t.membership.c.id).where(
@@ -189,8 +190,8 @@ def coordinator_ids(conn: Connection, project: Any) -> set[int]:
 
 
 def coordinator_token(project: Any) -> str:
-    if project.coordinator == "role:admin":
-        return "role:admin"
+    if project.coordinator == "trust:admin":
+        return "trust:admin"
     return f"member:{project.coordinator}"
 
 
@@ -223,10 +224,10 @@ def changed_audience(conn: Connection, row: Any, project: Any) -> list[str]:
     owner = _owner_member(conn, row)
     if owner is not None:
         audience.append(f"member:{owner}")
-    audience.append("role:admin")
+    audience.append("trust:admin")
     audience.append(coordinator_token(project))
     if row.id in coordinator_ids(conn, project):
-        audience.append("role:owner")
+        audience.append("trust:owner")
     return list(dict.fromkeys(audience))
 
 
@@ -395,7 +396,7 @@ def hold_cap(conn: Connection, membership_id: int, now: datetime) -> datetime | 
     held = _live(row.limit_until, now) if row.agent_id is not None else False
     if row.agent_id is None and human is not None:
         held = _live(human.limit_until, now) or (
-            row.role == "owner" and _live(project.absence_until, now)
+            row.trust == "owner" and _live(project.absence_until, now)
         )
     if not held:
         return None
@@ -495,7 +496,7 @@ def absence_changed(conn: Connection, project: Any, until: datetime | None, acto
             select(t.membership)
             .where(
                 t.membership.c.project_id == project.id,
-                t.membership.c.role == "owner",
+                t.membership.c.trust == "owner",
                 t.membership.c.human_id.isnot(None),
                 t.membership.c.active.is_(True),
             )

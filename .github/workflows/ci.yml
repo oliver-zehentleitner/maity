@@ -28,7 +28,7 @@ defaults:
 # [self-hosted, <prefix>-sqlite], <prefix>-pg or <prefix>-maria: one runner service per job type, so a
 # pull request's three jobs run side by side and two Postgres jobs never share port 5432.
 # Unset or empty, and for every pull request from a fork, they run on GitHub-hosted
-# runners; unsetting the variable is the whole fallback.
+# runners; unsetting the variable is the whole fallback. Setup: deploy/runner/README.md.
 jobs:
   # Which parts a pull request touches, from its merge commit against the base it
   # merges into: a suite runs only when its part changed. A push to main, or a

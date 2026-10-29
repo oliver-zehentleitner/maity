@@ -114,6 +114,18 @@ def test_the_profile_delete_downgrade_restores_one_handle_per_owner(engine: Engi
         )
 
 
+def _before(engine: Engine, revision: str) -> str:
+    """The revision `revision` builds on, read from the chain: it is re-chained whenever
+    a migration lands before it."""
+    from alembic.script import ScriptDirectory
+
+    from maity_hub.db import alembic_config
+
+    down = ScriptDirectory.from_config(alembic_config(engine)).get_revision(revision).down_revision
+    assert isinstance(down, str)
+    return down
+
+
 def _before_namespace(engine: Engine) -> str:
     """The revision 0060 builds on. Read from the chain, not written down: 0060 is
     re-chained whenever a migration lands before it."""
@@ -160,8 +172,8 @@ def insert_membership(project_id: str, human_id: str, joined: object, active: ob
     from maity_hub import tables as t
 
     return insert(t.membership).values(
-        project_id=project_id, human_id=human_id, role="owner", areas=["/"], capabilities=[],
-        joined_at=joined, active=active,
+        project_id=project_id, human_id=human_id, trust="owner", role="coder", areas=["/"],
+        capabilities=[], joined_at=joined, active=active,
     )  # fmt: skip
 
 
@@ -198,3 +210,211 @@ def test_the_namespace_migration_stops_on_a_project_without_an_active_human_owne
         migrate(engine)
     # 0060 checks before it changes anything, so a stop leaves no half schema.
     assert current_revision(engine) == _before_namespace(engine)
+
+
+def test_trust_and_role_maps_every_stored_role_and_token_both_ways(engine: Engine) -> None:
+    """0067 (§2.3, #419): memberships, invitations, joins and the stored tokens, written
+    in the new model, go down to the single role and come back."""
+    from datetime import timedelta
+
+    from sqlalchemy import insert, select
+
+    from maity_hub import clock
+    from maity_hub import tables as t
+    from tests import factory
+
+    migrate(engine)
+    now = clock.now()
+    project = factory.project(
+        engine, "split", settings={"onboarding": {"check_in_with": "trust:admin"}}
+    )
+    owner = factory.human(engine, "boss")
+    owner_row = factory.membership(engine, project, "owner", human_id=owner)
+    # An owner whose role is not coder stays an owner on the way down.
+    designer = factory.membership(
+        engine, project, "designer", trust="owner", human_id=factory.human(engine, "maker")
+    )
+    seats = {
+        "admin": ("admin", "coder"),
+        "proxy": ("admin", "proxy"),
+        "reviewer": ("member", "reviewer"),
+        "coder": ("member", "coder"),
+        "tester": ("member", "tester"),
+        "guest": ("guest", "reviewer"),
+    }
+    agents = {
+        name: factory.agent(engine, project, owner, role, trust=trust)
+        for name, (trust, role) in seats.items()
+    }
+    with engine.begin() as conn:
+        conn.execute(
+            t.project.update()
+            .where(t.project.c.id == project)
+            .values(contract_arbiter="trust:admin", coordinator="trust:admin")
+        )
+        conn.execute(
+            t.membership.update()
+            .where(t.membership.c.id == agents["coder"].membership_id)
+            .values(
+                availability_policy={
+                    "on_unavailable": "substitute",
+                    "substitutes": ["trust:admin", "role:reviewer", "role:coder"],
+                    "grace_minutes": 15,
+                }
+            )
+        )
+        conn.execute(
+            insert(t.event).values(
+                project_id=project, kind="message", at=now, payload={}, redacted=False,
+                audience=["trust:owner", "trust:admin", "role:coder", "role:reviewer", "all"],
+            )
+        )  # fmt: skip
+        conn.execute(
+            insert(t.request).values(
+                id="req-split", project_id=project, title="Which?", options=[],
+                priority="normal", to_kind="role", to_role="trust:admin",
+                asked_by=agents["coder"].membership_id, while_open="wait", status="open",
+                created_at=now, forwarding=[{"to": "trust:admin"}],
+                proposal={"kind": "member_change", "action": "patch",
+                          "values": {"trust": "guest", "role": "coder",
+                                     "availability_policy": {"substitutes": ["trust:admin"]}}},
+                **{"class": "decision"},
+            )
+        )  # fmt: skip
+        for n, values in enumerate(({"role": "tester"}, {"trust": "member"})):
+            conn.execute(
+                insert(t.request).values(
+                    id=f"req-half-{n}", project_id=project, title="Change", options=[],
+                    priority="normal", to_kind="owner", asked_by=agents["admin"].membership_id,
+                    while_open="wait", status="open", created_at=now, **{"class": "consent"},
+                    proposal={"kind": "member_change", "action": "patch",
+                              "membership_id": agents["reviewer"].membership_id,
+                              "values": values},
+                )
+            )  # fmt: skip
+        conn.execute(
+            insert(t.invitation).values(
+                id="inv-split", project_id=project, trust="admin", role="coder",
+                token_hash="a" * 64, created_by=owner, created_at=now,
+                expires_at=now + timedelta(days=1),
+            )
+        )  # fmt: skip
+    card = factory.card(engine, project, owner_row, contract={"arbiter": "trust:admin"})
+
+    downgrade(engine, _before(engine, "0067"))
+    with engine.connect() as conn:
+        old: dict[int, str] = {
+            r[0]: r[1] for r in conn.exec_driver_sql("SELECT id, role FROM membership")
+        }
+        assert old[owner_row] == old[designer] == "owner"
+        proposal = conn.execute(
+            select(t.request.c.proposal).where(t.request.c.id == "req-split")
+        ).scalar()
+        assert proposal is not None
+        assert proposal["values"]["availability_policy"] == {"substitutes": ["role:" + "admin"]}
+        # Fail closed: an open member_change consent is withdrawn, never applied in the
+        # single role with a trust × role value.
+        statuses = dict(
+            conn.execute(
+                select(t.request.c.id, t.request.c.status).where(
+                    t.request.c.id.in_(["req-split", "req-half-0", "req-half-1"])
+                )
+            ).all()
+        )
+        assert set(statuses.values()) == {"withdrawn"}
+        # Fail closed: the guest is removed and its credential revoked, never a member.
+        guest = conn.execute(
+            select(t.membership.c.active).where(t.membership.c.id == agents["guest"].membership_id)
+        ).scalar()
+        assert guest is None
+        revoked = conn.execute(
+            select(t.credential.c.revoked_at).where(
+                t.credential.c.membership_id == agents["guest"].membership_id
+            )
+        ).scalar()
+        assert revoked is not None
+        expected = {
+            "admin": "admin", "proxy": "proxy", "reviewer": "reviewer", "coder": "member",
+            "tester": "member", "guest": "member",
+        }  # fmt: skip
+        for name, role in expected.items():
+            assert old[agents[name].membership_id] == role
+        assert conn.exec_driver_sql("SELECT role FROM invitation").scalar() == "admin"
+        row = conn.execute(select(t.project.c.contract_arbiter, t.project.c.coordinator)).one()
+        assert tuple(row) == ("role:" + "admin", "role:" + "admin")  # the old tokens
+        audience = conn.execute(select(t.event.c.audience).where(t.event.c.kind == "message"))
+        assert audience.scalar() == [
+            "role:" + "owner",
+            "role:" + "admin",
+            "role:" + "member",
+            "role:reviewer",
+            "all",
+        ]
+        request = conn.exec_driver_sql(
+            "SELECT to_role FROM request WHERE id = 'req-split'"
+        ).scalar()
+        assert request == "admin"
+
+    migrate(engine)
+    with engine.connect() as conn:
+        rows = conn.execute(select(t.membership.c.id, t.membership.c.trust, t.membership.c.role))
+        back = {r.id: (r.trust, r.role) for r in rows}
+        assert back[owner_row] == back[designer] == ("owner", "coder")
+        proposal = conn.execute(
+            select(t.request.c.proposal).where(t.request.c.id == "req-split")
+        ).scalar()
+        # Withdrawn on the way down, the consent keeps its values as they were.
+        assert proposal is not None and proposal["values"] == {
+            "trust": "guest",
+            "role": "coder",
+            "availability_policy": {"substitutes": ["trust:admin"]},
+        }
+        for name in ("admin", "proxy", "reviewer", "coder"):
+            assert back[agents[name].membership_id] == seats[name]
+        # What the single role could not hold comes back as a member coder.
+        assert back[agents["tester"].membership_id] == ("member", "coder")
+        assert back[agents["guest"].membership_id] == ("member", "coder")
+        row = conn.execute(select(t.project)).one()
+        assert (row.contract_arbiter, row.coordinator) == ("trust:admin", "trust:admin")
+        assert row.settings["onboarding"]["check_in_with"] == "trust:admin"
+        cover = conn.execute(
+            select(t.membership.c.availability_policy).where(
+                t.membership.c.id == agents["coder"].membership_id
+            )
+        ).scalar()
+        assert cover is not None and cover["substitutes"] == [
+            "trust:admin",
+            "role:reviewer",
+            "role:coder",
+        ]
+        audience = conn.execute(select(t.event.c.audience).where(t.event.c.kind == "message"))
+        assert audience.scalar() == [
+            "trust:owner",
+            "trust:admin",
+            "role:coder",
+            "role:reviewer",
+            "all",
+        ]
+        request = conn.execute(
+            select(t.request.c.to_role, t.request.c.forwarding).where(t.request.c.id == "req-split")
+        ).one()
+        assert (request.to_role, request.forwarding) == ("trust:admin", [{"to": "trust:admin"}])
+        invitation = conn.execute(select(t.invitation.c.trust, t.invitation.c.role)).one()
+        assert tuple(invitation) == ("admin", "coder")
+        contract = conn.execute(select(t.card.c.contract).where(t.card.c.id == card)).scalar()
+        assert contract == {"arbiter": "trust:admin"}
+
+
+def test_a_placement_profile_splits_its_role() -> None:
+    """0067 on a placement's `new_profile`, a JSON column the hub reads at the pickup."""
+    import importlib.util
+
+    path = files("maity_hub") / "migrations" / "versions" / "0067_trust_and_role.py"
+    spec = importlib.util.spec_from_file_location("m0067", str(path))
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    up = module._profile_up({"display_name": "X", "role": "admin", "areas": []})
+    assert up == {"display_name": "X", "trust": "admin", "role": "coder", "areas": []}
+    assert module._profile_down(up) == {"display_name": "X", "role": "admin", "areas": []}
+    assert module._profile_up(None) is None

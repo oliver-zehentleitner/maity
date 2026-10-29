@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from pydantic import Field
+from pydantic import Field, StrictBool
 from sqlalchemy import Connection, func, insert, select, update
 
 from maity_hub import (
@@ -34,8 +34,8 @@ from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth.caller import CLOSED_STATUSES, Caller
 from maity_hub.db import retrying
-from maity_hub.deps import AgentCaller, engine_of, settings_of
-from maity_hub.errors import ApiError
+from maity_hub.deps import AgentCaller, AnyCaller, engine_of, settings_of
+from maity_hub.errors import ApiError, forbidden, humans_only, invalid
 from maity_hub.forge import Forge
 from maity_hub.ids import new_id
 from maity_hub.models import Strict
@@ -43,6 +43,7 @@ from maity_hub.namespace import ProjectRoute
 from maity_hub.policy import CLOSED_STATES
 from maity_hub.policy import of as policy_of
 from maity_hub.routes.conversations import conversation_packet
+from maity_hub.routes.me import human_body
 from maity_hub.routes.members import PausedIn, change_of, load_member, set_paused
 from maity_hub.routes.projects import arbiter_text
 from maity_hub.scopes import listed_scopes
@@ -50,6 +51,7 @@ from maity_hub.views import (
     absence,
     event_views,
     git_identity,
+    meat_proxy_view,
     member_views,
     paused,
     principal_id,
@@ -145,7 +147,10 @@ class ResumeIn(Strict):
 
 
 class MePatch(Strict):
-    paused: PausedIn | None
+    """An agent's `paused`, or a human's own profile switches (`meat_proxy`, §5.2)."""
+
+    paused: PausedIn | None = None
+    meat_proxy: StrictBool | None = None
 
 
 def _own_membership(conn: Connection, caller: Caller) -> Membership:
@@ -207,11 +212,14 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
             )
             .values(live=None, ended_at=now)
         )
-        cursor = (
-            body.cursor
-            if body.cursor is not None
-            else (previous.acknowledged_seq if previous else 0)
-        )
+        if body.cursor is not None:
+            cursor = body.cursor
+        elif previous is not None:
+            cursor = previous.acknowledged_seq
+        else:
+            # A new instance (§6.17) starts at the project's head, not at 0: the handover
+            # replaces the backlog, and `GET …/events?after=` still serves the history (§8.3).
+            cursor = events.highest_readable(conn, mine.project.id, mine.row, caller.principal_id)
         session_id = new_id("session")
         conn.execute(
             insert(t.agent_session).values(
@@ -311,13 +319,25 @@ def _packet(
     rules_block: dict[str, Any] = {"version": project.rules_version, "changed": changed}
     if changed or body.supervisor is not None:  # the supervised duty is in every packet
         rules_block["markdown"] = rules.generate(
-            project, mine.role, arbiter_text(conn, project), supervised=body.supervisor is not None
+            project,
+            mine.trust,
+            mine.role,
+            arbiter_text(conn, project),
+            supervised=body.supervisor is not None,
         )
     members = conn.execute(
         select(t.membership).where(
             t.membership.c.project_id == project.id, t.membership.c.active.is_(True)
         )
     ).all()
+    meat_proxies = {
+        row.id: row.meat_proxy
+        for row in conn.execute(
+            select(t.human.c.id, t.human.c.meat_proxy).where(
+                t.human.c.id.in_([m.human_id for m in members if m.human_id is not None])
+            )
+        )
+    }
     peers = []
     areas = []
     for row, view in zip(members, member_views(conn, members), strict=True):
@@ -329,12 +349,16 @@ def _packet(
                     "kind": view["kind"],
                     "handle": view["handle"],
                     **({"name": view["name"]} if "name" in view else {}),  # agents (§6.3)
+                    "trust": view["trust"],
                     "role": view["role"],
                     "areas": view["areas"],
                     "presence": view["presence"],
                     "paused": view["paused"],
                     "availability": view["availability"],  # §6.12
                     "covered_by": view["covered_by"],
+                    **(
+                        meat_proxy_view(meat_proxies[view["id"]]) if view["kind"] == "human" else {}
+                    ),
                 }
             )
     peers.sort(key=lambda p: (p["kind"] != "human", p["handle"]))
@@ -367,7 +391,7 @@ def _packet(
         for view in instances.views(conn, [mine.row], {agent.id: agent.handle}).get(mine.id, [])
         if view["id"] != caller.instance
     ]
-    scopes = listed_scopes(mine.role, "agent")
+    scopes = listed_scopes(mine.trust, mine.role, "agent")
     # Below the rules, never a permission (§19.4); the owner's text once, here or there.
     preferences_block, owner_preferences = preferences.packet(conn, mine, cursor)
     written = briefings.writers(conn, {mine.row.briefing_by} if mine.row.briefing_by else set())
@@ -397,10 +421,11 @@ def _packet(
             "avatar_url": avatars.urls(conn, [agent.id])[agent.id],
             "instance": caller.instance,
             "address": instances.address(agent.id, caller.instance or ""),
-            "owner": {"id": owner.id, "handle": owner.handle},
+            "owner": {"id": owner.id, "handle": owner.handle, **meat_proxy_view(owner.meat_proxy)},
             "git_identity": git_identity(agent),
         },
         "membership": {
+            "trust": mine.trust,
             "role": mine.role,
             "reports_to": principal_id(conn, mine.row.reports_to),
             "areas": mine.row.areas,
@@ -450,7 +475,9 @@ def _packet(
         },
         "conversations": conversation_packet(conn, mine, caller),
         "peers": peers,
-        "operations": operations(project, mine.role, namespace.full_name(conn, project)),
+        "operations": operations(
+            project, mine.trust, mine.role, namespace.full_name(conn, project)
+        ),
     }
 
 
@@ -523,10 +550,10 @@ def _requests_block(conn: Connection, mine: Membership, cursor: int) -> dict[str
     }
 
 
-def operations(project: Any, role: str, full_name: str) -> list[str]:
+def operations(project: Any, trust: str, role: str, full_name: str) -> list[str]:
     allowed = []
     for method, path, scope in OPERATIONS:
-        if scope is not None and scope not in listed_scopes(role, "agent"):
+        if scope is not None and scope not in listed_scopes(trust, role, "agent"):
             continue
         if project.state in CLOSED_STATES and (
             path.endswith("/claim") or (method == "POST" and path.endswith("/tasks"))
@@ -540,9 +567,38 @@ def _credential(conn: Connection, caller: Caller) -> Any:
     return conn.execute(select(t.credential).where(t.credential.c.id == caller.credential_id)).one()
 
 
+def load_human_profile(conn: Connection, human_id: str) -> dict[str, Any]:
+    """A human's `PATCH /me` answer: `/me` as it is now (§5.1), also on a replay."""
+    return {**human_body(conn, human_id), "server_time": clock.rfc3339(clock.now())}
+
+
+idempotency.LOADERS["human_profile"] = idempotency.plain(load_human_profile)
+
+
 @router.patch("/me")
-def patch_me(body: MePatch, request: Request, caller: AgentCaller) -> JSONResponse:
+def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse:
+    given = body.model_fields_set
+
+    def human_action(conn: Connection) -> idempotency.Outcome:
+        if "paused" in given:
+            raise invalid({"paused": "agents_only"})
+        if body.meat_proxy is None:
+            raise invalid({"meat_proxy": "required"}, "nothing to change")
+        assert caller.human_id is not None
+        conn.execute(
+            update(t.human)
+            .where(t.human.c.id == caller.human_id)
+            .values(meat_proxy=body.meat_proxy)
+        )
+        return idempotency.Outcome(
+            200, "human_profile", caller.human_id, load_human_profile(conn, caller.human_id)
+        )
+
     def action(conn: Connection) -> idempotency.Outcome:
+        if "meat_proxy" in given:
+            raise humans_only("only a human sets their own profile")
+        if "paused" not in given:
+            raise invalid({"paused": "required"}, "nothing to change")
         mine = _own_membership(conn, caller)
         credential = _credential(conn, caller)
         for row in (mine.row, credential):
@@ -568,4 +624,8 @@ def patch_me(body: MePatch, request: Request, caller: AgentCaller) -> JSONRespon
         )
         return idempotency.Outcome(200, "member", str(mine.id), load_member(conn, str(mine.id)))
 
-    return idempotency.run(engine_of(request), request, caller, action)
+    if caller.kind not in ("human", "agent"):
+        raise forbidden(message="this endpoint is for humans and agent credentials")
+    return idempotency.run(
+        engine_of(request), request, caller, human_action if caller.kind == "human" else action
+    )

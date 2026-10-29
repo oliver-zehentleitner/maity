@@ -15,8 +15,10 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import Connection, select
 
-from maity_hub import clock
+from maity_hub import account_deletion, clock, events
 from maity_hub import tables as t
+from maity_hub.auth import second_factor_reset
+from maity_hub.db import retrying
 from maity_hub.deps import engine_of, settings_of
 from maity_hub.notifications import preferences, tokens
 from maity_hub.notifications.preferences import KINDS
@@ -33,7 +35,37 @@ _WORDS = {
         "unsub_text": "Stop the {kind} mails from Maity.",
         "unsub_button": "Stop these mails",
         "unsub_done": "You will get no more {kind} mails. The settings can switch them on again.",
+        "reset_title": "Reset your two-factor sign-in",
+        "reset_text": "{admin} asked to reset the two-factor sign-in of {name} ({handle}).",
+        "reset_reason": "The reason given:",
+        "reset_button": "Reset my two-factor sign-in",
+        "reset_done": (
+            "Your two-factor sign-in was reset and every session has ended. "
+            "Sign in again and set it up anew."
+        ),
         "dead": "This link no longer works.",
+        "delete_title": "Delete my account",
+        "delete_text": "This deletes the Maity account {handle}.",
+        "delete_removes": (
+            "Every session ends. Your address, name, picture, languages and settings are "
+            "deleted, your memberships end, your agent profiles are deleted and your "
+            "runners are removed."
+        ),
+        "delete_keeps": (
+            "What you wrote stays in its projects, shown as written by a deleted account. "
+            "Redact it first if you want it gone. Your handle is never given to anyone else."
+        ),
+        "delete_export": "Take your data with you first",
+        "delete_button": "Delete my account",
+        "delete_done": "Your account is deleted. Every session has ended.",
+        "namespace_owner": (
+            "Nothing was deleted: a project in your namespace is not archived. Transfer it "
+            "or archive it first; this link keeps working until it expires."
+        ),
+        "last_instance_admin": (
+            "Nothing was deleted: you are the instance's last admin. This link keeps "
+            "working until it expires."
+        ),
     },
     "de": {
         "verify_title": "Adresse bestätigen",
@@ -47,22 +79,68 @@ _WORDS = {
             "Du bekommst keine {kind}-Mails mehr. "
             "In den Einstellungen lassen sie sich wieder einschalten."
         ),
+        "reset_title": "Zwei-Faktor-Anmeldung zurücksetzen",
+        "reset_text": (
+            "{admin} möchte die Zwei-Faktor-Anmeldung von {name} ({handle}) zurücksetzen."
+        ),
+        "reset_reason": "Die angegebene Begründung:",
+        "reset_button": "Meine Zwei-Faktor-Anmeldung zurücksetzen",
+        "reset_done": (
+            "Deine Zwei-Faktor-Anmeldung wurde zurückgesetzt, und alle Sitzungen sind "
+            "beendet. Melde dich neu an und richte sie noch einmal ein."
+        ),
         "dead": "Dieser Link funktioniert nicht mehr.",
+        "delete_title": "Mein Konto löschen",
+        "delete_text": "Damit wird das Maity-Konto {handle} gelöscht.",
+        "delete_removes": (
+            "Jede Sitzung endet. Deine Adresse, dein Name, dein Bild, deine Sprachen und "
+            "Einstellungen werden gelöscht, deine Mitgliedschaften enden, deine "
+            "Agentenprofile werden gelöscht und deine Runner entfernt."
+        ),
+        "delete_keeps": (
+            "Was du geschrieben hast, bleibt in seinen Projekten, gezeigt als von einem "
+            "gelöschten Konto geschrieben. Schwärze es vorher, wenn es weg soll. Dein "
+            "Handle wird nie an jemand anderen vergeben."
+        ),
+        "delete_export": "Nimm vorher deine Daten mit",
+        "delete_button": "Mein Konto löschen",
+        "delete_done": "Dein Konto ist gelöscht. Jede Sitzung ist beendet.",
+        "namespace_owner": (
+            "Nichts wurde gelöscht: ein Projekt in deinem Namensraum ist nicht archiviert. "
+            "Übertrage oder archiviere es zuerst; dieser Link funktioniert, bis er abläuft."
+        ),
+        "last_instance_admin": (
+            "Nichts wurde gelöscht: du bist der letzte Admin der Instanz. Dieser Link "
+            "funktioniert, bis er abläuft."
+        ),
     },
 }
 
 
-def _page(title: str, text: str, *, button: str | None = None, status: int = 200) -> HTMLResponse:
+def _page(
+    title: str,
+    text: str,
+    *,
+    button: str | None = None,
+    status: int = 200,
+    more: tuple[str, ...] = (),
+    link: tuple[str, str] | None = None,
+    quote: str | None = None,
+) -> HTMLResponse:
     form = (
         f'<form method="post"><button type="submit">{escape(button)}</button></form>'
         if button
         else ""
     )
+    paragraphs = "".join(f"<p>{escape(p)}</p>" for p in (text, *more))
+    if link is not None:  # only a link the hub builds from its public URL
+        paragraphs += f'<p><a href="{escape(link[1])}">{escape(link[0])}</a></p>'
+    quoted = f"<blockquote>{escape(quote)}</blockquote>" if quote else ""
     html = (
         '<!doctype html><html><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width">'
         f"<title>{escape(title)}</title></head><body>"
-        f"<h1>{escape(title)}</h1><p>{escape(text)}</p>{form}</body></html>"
+        f"<h1>{escape(title)}</h1>{paragraphs}{quoted}{form}</body></html>"
     )
     # The token is in the address: no page that carries it may leak it in a `Referer`.
     return HTMLResponse(html, status_code=status, headers={"Referrer-Policy": "no-referrer"})
@@ -150,3 +228,73 @@ def unsubscribe_confirm(token: str, request: Request) -> HTMLResponse:
         if kind is None:
             return _dead(words)
         return _page(words["unsub_title"], words["unsub_done"].format(kind=kind))
+
+
+@page_router.get("/mail/second-factor-reset/{token}")
+def reset_page(token: str, request: Request) -> HTMLResponse:
+    hub = settings_of(request)
+    with engine_of(request).begin() as conn:
+        shown = second_factor_reset.page(conn, hub, token)
+        if shown is None:
+            return _dead(_WORDS[_language(conn, request, token)])
+        words = _WORDS[shown["language"] if shown["language"] in _WORDS else "en"]
+        text = words["reset_text"].format(
+            admin=shown["admin"], name=shown["display_name"], handle=shown["handle"]
+        )
+        return _page(
+            words["reset_title"],
+            f"{text} {words['reset_reason']}",
+            button=words["reset_button"],
+            quote=shown["reason"],
+        )
+
+
+@page_router.post("/mail/second-factor-reset/{token}")
+def reset_confirm(token: str, request: Request) -> HTMLResponse:
+    hub = settings_of(request)
+    with engine_of(request).begin() as conn:
+        words = _WORDS[_language(conn, request, token)]
+        if not second_factor_reset.take_effect(conn, hub, token):
+            return _dead(words)
+        return _page(words["reset_title"], words["reset_done"])
+
+
+@page_router.get("/mail/account-deletion/{token}")
+def account_deletion_page(token: str, request: Request) -> HTMLResponse:
+    """Asks once more (§2.9): the account, what deletion removes and keeps, the export
+    on the dashboard's account page, and the button. Writes nothing."""
+    hub = settings_of(request)
+    with engine_of(request).begin() as conn:
+        words = _WORDS[_language(conn, request, token)]
+        human = account_deletion.page(conn, hub.mail.signing_key, token)
+        if human is None:
+            return _dead(words)
+        return _page(
+            words["delete_title"],
+            words["delete_text"].format(handle=human.handle),
+            more=(words["delete_removes"], words["delete_keeps"]),
+            link=(words["delete_export"], account_deletion.export_url(hub.public_url)),
+            button=words["delete_button"],
+        )
+
+
+@page_router.post("/mail/account-deletion/{token}")
+def account_deletion_confirm(token: str, request: Request) -> HTMLResponse:
+    """Deletes the account in one transaction, or says why it did not (§2.9)."""
+    hub = settings_of(request)
+    with engine_of(request).begin() as conn:
+        # Read before the deletion removes the human's settings, the language with them.
+        words = _WORDS[_language(conn, request, token)]
+
+    def run() -> str | None:
+        with events.transaction(engine_of(request)) as conn:
+            return account_deletion.confirm(conn, hub, token)
+
+    # A deadlock or serialisation failure rolls the whole deletion back; it runs again
+    # (`db.retrying`), so it is never left half done or failed by a transient conflict.
+    outcome = retrying(run)
+    if outcome is None:
+        return _dead(words)
+    if outcome != "deleted":  # `namespace_owner`, `last_instance_admin`: nothing changed
+        return _page(words["delete_title"], words[outcome], status=409)
+    return _page(words["delete_title"], words["delete_done"])

@@ -179,7 +179,9 @@ def reader_row(mine: Any) -> Any:
     row = getattr(mine, "row", None)
     if row is not None:
         return row
-    return SimpleNamespace(id=-1, role="outsider", agent_id=None, human_id=mine.principal_id)
+    return SimpleNamespace(
+        id=-1, trust=None, role="outsider", agent_id=None, human_id=mine.principal_id
+    )
 
 
 def message_readable(conn: Connection, mine: Any, seq: int) -> bool:

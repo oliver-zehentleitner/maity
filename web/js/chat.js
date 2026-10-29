@@ -175,7 +175,8 @@ window.Maity = window.Maity || {};
     const closedProject = ctx.outsider || ["accepted", "archived"].includes(ctx.project.state);
     const el = h("nav", { class: "chat-list-pane", "aria-label": "Conversations" },
       h("div", { class: "toolbar" }, h("h2", null, ctx.outsider ? "Group chats" : "Chat"),
-        closedProject || !groupsServed ? null : h("a", { class: "button small new-group", href: ctx.link("chat", "new") }, "New group chat"),
+        // A human guest creates no group chat (§2.3, §9.2).
+        closedProject || !groupsServed || M.trust.guest(ctx) ? null : h("a", { class: "button small new-group", href: ctx.link("chat", "new") }, "New group chat"),
         // A message to the project is talk too (the maintainer's wish,
         // tsk-r1adgwp0a5dr): it starts here, no longer in the inbox.
         ctx.outsider ? null : h("a", { class: "button small message-project", href: ctx.link("message") }, "Message the project")),

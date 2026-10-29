@@ -7,12 +7,14 @@ from typing import Any
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 
 from maity_hub import avatars, statistics
 from maity_hub import tables as t
 from maity_hub.admin import instance_admin_id
-from maity_hub.deps import HumanCaller, engine_of
+from maity_hub.auth import second_factor_reset
+from maity_hub.deps import HumanCaller, engine_of, settings_of
 from maity_hub.errors import forbidden, invalid
 from maity_hub.views import ts
 
@@ -36,7 +38,8 @@ def list_users(
             raise forbidden("instance:admin")
         if disabled is True:  # no account is disabled before the accounts design (§16.1)
             return JSONResponse({"items": [], "next_cursor": None})
-        query = select(t.human)
+        # A deleted account is not listed: the operator learns only the count (§2.9, §16.6).
+        query = select(t.human).where(t.human.c.deleted_at.is_(None))
         if cursor is not None:
             if not cursor:
                 raise invalid({"cursor": "invalid"})
@@ -105,3 +108,24 @@ def get_statistics(
         if caller.principal_id != instance_admin_id(conn):
             raise forbidden("instance:admin")
         return JSONResponse(statistics.CACHE.get(conn, days))
+
+
+class ResetIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(min_length=1, max_length=second_factor_reset.REASON_MAX + 64)
+
+
+@router.post("/admin/users/{human_id}/second-factor/reset", status_code=202)
+def reset_second_factor(
+    human_id: str, body: ResetIn, request: Request, caller: HumanCaller
+) -> JSONResponse:
+    """§2.8.3: mail the human a link that resets their second factor when they press its
+    button. Nothing changes until then; the admin's own factor is never reset here."""
+    with engine_of(request).begin() as conn:
+        if caller.principal_id != instance_admin_id(conn):
+            raise forbidden("instance:admin")
+        expires = second_factor_reset.request(
+            conn, settings_of(request), caller, human_id, body.reason
+        )
+    return JSONResponse({"expires_at": ts(expires)}, status_code=202)

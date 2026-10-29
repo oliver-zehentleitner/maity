@@ -156,6 +156,7 @@ def _wait() -> tuple[int, str, str]:
             "--timeout",
             str(WAIT_TIMEOUT),
             "--keep-cursor",
+            "--one",  # the event a run is started for, as one object (`_seq`)
         ],
         capture_output=True,
         text=True,

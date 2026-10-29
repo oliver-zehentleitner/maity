@@ -6,10 +6,11 @@ import threading
 import time
 import urllib.request
 from dataclasses import replace
+from datetime import timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 
 from maity_hub import clock, forge, probe
 from maity_hub import tables as t
@@ -166,7 +167,10 @@ def test_a_pull_request_read_has_the_contract_shape(owner: flow.Human, github: F
     ]
 
 
-def test_an_observation_is_cached_for_max_age(owner: flow.Human, github: FakeGitHub) -> None:
+def test_an_observation_is_cached_for_max_age(
+    owner: flow.Human, github: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(probe, "FORCED_FLOOR", 0)  # the floor has its own test
     github.pull(3)
     first = owner.get("/projects/maintainer/maity/probe?pr=3").json()
     cached = owner.get("/projects/maintainer/maity/probe?pr=3").json()
@@ -174,6 +178,26 @@ def test_an_observation_is_cached_for_max_age(owner: flow.Human, github: FakeGit
     assert len(github.calls) == 3  # the pull request, its check runs, its statuses
     forced = owner.get("/projects/maintainer/maity/probe?pr=3&max_age=0").json()
     assert forced["fresh"] is True and len(github.calls) == 6
+
+
+def test_a_forced_read_waits_the_floor(
+    owner: flow.Human, migrated: Engine, github: FakeGitHub
+) -> None:
+    """§11.4: `max_age=0` asks the forge at most once per 30 seconds per project and
+    target; within them the observation answers with `fresh: false`."""
+    github.pull(3)
+    first = owner.get("/projects/maintainer/maity/probe?pr=3&max_age=0").json()
+    again = owner.get("/projects/maintainer/maity/probe?pr=3&max_age=0").json()
+    assert (first["fresh"], again["fresh"]) == (True, False)
+    assert len(github.calls) == 3
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.forge_observation).values(
+                observed_at=clock.now() - timedelta(seconds=probe.FORCED_FLOOR)
+            )
+        )
+    assert owner.get("/projects/maintainer/maity/probe?pr=3&max_age=0").json()["fresh"] is True
+    assert len(github.calls) == 6
 
 
 def test_merged_conflicting_branch_and_tag(owner: flow.Human, github: FakeGitHub) -> None:
@@ -215,8 +239,9 @@ def test_a_spent_rate_limit_is_probe_unavailable_with_retry_at(
 
 
 def test_an_unanswering_forge_is_probe_unavailable_with_the_last_observation(
-    owner: flow.Human, github: FakeGitHub
+    owner: flow.Human, github: FakeGitHub, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(probe, "FORCED_FLOOR", 0)
     github.answers["/repos/acme/maity/pulls/9"] = forge.ForgeUnavailableError("503")
     first = owner.get("/projects/maintainer/maity/probe?pr=9")
     assert (first.status_code, first.json()["error"]["code"]) == (503, "probe_unavailable")
@@ -337,7 +362,7 @@ def test_the_probe_fills_a_report(
     )
     assert observed["branch_head_sha"] == SHA and observed["observed_at"] is not None
     [event] = _events(migrated, "probe_observed")
-    assert event.audience == [f"instance:{agent.id}#{agent.instance}", "role:admin"]  # the holder
+    assert event.audience == [f"instance:{agent.id}#{agent.instance}", "trust:admin"]  # the holder
     assert event.payload == {"task": card_id, "observed": observed, "mismatch": False}
     assert probe.observe_report(migrated, READER, card_id, max_age=60) is False  # nothing new
 
@@ -463,8 +488,9 @@ def test_the_release_is_refreshed_and_turns_ready(
 
 
 def test_whoever_sees_the_merge_first_announces_it(
-    owner: flow.Human, migrated: Engine, github: FakeGitHub
+    owner: flow.Human, migrated: Engine, github: FakeGitHub, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(probe, "FORCED_FLOOR", 0)
     """GET /probe reads the merge before the worker does: the release card still
     gets its probe_observed, and release_ready comes at once, not a sweep later."""
     release = owner.post(

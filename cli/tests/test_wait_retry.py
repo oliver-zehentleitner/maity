@@ -50,7 +50,7 @@ def test_wait_recovers_with_same_cursor(
     fake.routes[("GET", "/api/v1/projects/oliver/maity/events")] = response
     assert cli.main(["wait", "--timeout", "60"]) == cli.EXIT_OK
     captured = capsys.readouterr()
-    assert json.loads(captured.out)["seq"] == 18
+    assert [e["seq"] for e in json.loads(captured.out)] == [18]
     assert captured.err.count(f"hub answered {status}, retrying until the timeout") == 1
     assert len(calls) == 3 and all("after=17&" in query for query in calls)
     assert clock.sleeps == [2, 4]
