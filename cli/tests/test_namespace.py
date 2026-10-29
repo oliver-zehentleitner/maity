@@ -173,6 +173,52 @@ def test_wait_follows_the_move_and_keeps_its_loop_there(
     assert capsys.readouterr().err.count("project is now") == 1
 
 
+def test_wait_follows_a_second_move_from_where_the_first_led(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    third = "/api/v1/projects/oliver-zehentleitner/maity-hub"
+    gone = {"error": {"code": "not_found", "message": "not_found"}}
+    names = iter(["oliver-zehentleitner/maity", "oliver-zehentleitner/maity-hub"])
+    second = iter([(200, {"items": [], "cursor": 0})])
+    last = iter([{"items": [], "cursor": 0}, {"items": [{"seq": 5, "kind": "message"}]}])
+    fake.routes[("GET", "/api/v1/me")] = lambda s: (
+        200, {"projects": [{"slug": "x", "full_name": next(names)}]})  # fmt: skip
+    fake.routes[("GET", f"{P}/events")] = lambda s: (404, gone)
+    fake.routes[("GET", f"{NEW}/events")] = lambda s: next(second, (404, gone))
+    fake.routes[("GET", f"{third}/events")] = lambda s: (200, next(last))
+    assert cli.main(["wait", "--timeout", "60"]) == cli.EXIT_OK
+    assert [s.path for s in fake.signed()] == [
+        f"{P}/events", "/api/v1/me", f"{NEW}/events",
+        f"{NEW}/events", "/api/v1/me", f"{third}/events", f"{third}/events",
+    ]  # fmt: skip
+    assert capsys.readouterr().err.count("project is now") == 2
+    assert (
+        state.load_state(state.resolve_state_dir())["full_name"] == "oliver-zehentleitner/maity-hub"
+    )
+
+
+def test_a_name_that_is_current_again_is_not_rewritten(joined: Path, fake: fakehub.FakeHub) -> None:
+    names = iter(["oliver-zehentleitner/maity", "oliver/maity"])
+    fake.routes[("GET", "/api/v1/me")] = lambda s: (
+        200, {"projects": [{"slug": "maity", "full_name": next(names)}]})  # fmt: skip
+    gone = {"error": {"code": "not_found", "message": "not_found"}}
+    calls = {"old": 0}
+
+    def old_card(seen: fakehub.Seen) -> tuple[int, Any]:
+        calls["old"] += 1
+        return (404, gone) if calls["old"] == 1 else (200, CARD)
+
+    fake.routes[("GET", f"{P}/tasks/tsk-4")] = old_card
+    at_new = iter([(200, CARD)])
+    fake.routes[("GET", f"{NEW}/tasks/tsk-4")] = lambda s: next(at_new, (404, gone))
+    session = cli.Session()
+    session.client.call("GET", session.project_path("tasks", "tsk-4"))  # moved: a → b
+    assert session.client.call("GET", "/projects/oliver/maity/tasks/tsk-4") == CARD  # b → a
+    assert session.client.renamed == {
+        "/projects/oliver-zehentleitner/maity": "/projects/oliver/maity"
+    }
+
+
 class _Clock:
     def __init__(self) -> None:
         self.now = 0.0

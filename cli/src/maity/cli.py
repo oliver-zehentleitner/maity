@@ -218,7 +218,14 @@ class Session:
         self.data["project"] = now.split("/", 1)[1]
         self.save()
         new = self.project_path()
-        self.client.renamed[old] = new
+        # Flat: every old name points at the current one (a→b→c sends a to c in one step),
+        # and a name that is current again is no longer an old one.
+        renamed = self.client.renamed
+        for key, value in list(renamed.items()):
+            if value == old:
+                renamed[key] = new
+        renamed.pop(new, None)
+        renamed[old] = new
         _err(f"project is now {onboarding.inline(now)}; continuing there")
         return new + path[len(old) :]
 
