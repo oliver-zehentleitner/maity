@@ -136,7 +136,7 @@ def lock(conn: Any, secret_key: bytes | None, value: str) -> None:
 def take_lock(conn: Any, table: Any, key: str) -> None:
     """A lock row keyed by `key`, made if absent, then locked until commit. A deletion may
     remove the row between the insert that found it and the lock (`forget_locks`); the
-    lock then finds nothing under READ COMMITTED, so the pair runs once more, and a third
+    lock then finds nothing under READ COMMITTED, so the pair runs once more, and a second
     empty read fails loudly rather than going on unlocked."""
     for _attempt in range(2):
         try:
