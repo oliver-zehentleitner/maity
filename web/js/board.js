@@ -1030,8 +1030,7 @@ window.Maity = window.Maity || {};
     ctx.every(30000, async () => {
       try {
         const fresh = (await M.api.getAll(ctx.base + "/members")).items;
-        ctx.members = fresh;
-        ctx.memberById = Object.fromEntries(fresh.map((m) => [m.id, m]));
+        M.withMembers(ctx, fresh);
         if (filter.silent) draw();
         else columnsBox.querySelectorAll(".holder-presence").forEach((node) => {
           node.parentNode.replaceChild(holderPresence(ctx, node.getAttribute("data-holder")), node);

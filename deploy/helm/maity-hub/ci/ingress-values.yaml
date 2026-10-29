@@ -1,5 +1,5 @@
 # Everything on: Ingress with TLS through cert-manager and a join host, the forge token, the mail
-# settings, a digest.
+# settings, the attachment volume, a digest.
 image:
   repository: ghcr.io/example/maity-hub
   digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
@@ -10,6 +10,10 @@ database:
 forge:
   github:
     existingSecret: maity-hub-secrets
+attachments:
+  existingClaim: maity-attachments
+  mountPath: /data/attachments
+  quotaBytes: 5368709120
 secretKey:
   existingSecret: maity-hub-secrets
 mail:

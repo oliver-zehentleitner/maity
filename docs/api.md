@@ -544,6 +544,31 @@ the scopes. The maintainer's decision of 2026-10-27
 | `ops` | merges and deploys: proposes placements and runner changes, prepares releases, posts deploys to the ticker | the coder's, plus `releases:write`, `agents:propose`, `ticker:post` |
 | `proxy` | the owner's interface: relays the owner's decisions and carries them out, decides nothing itself (below) | the coder's; with its trust `admin`, the governance scopes only as the proxy rules below allow |
 | `manager` | leads a line of members and is their interface to a human: hands out their cards, keeps them moving, carries their questions up (below) | the coder's, plus `line:lead` |
+| `red-team` | attacks the project to find its weaknesses and files each as a bug card with its severity; answers the requests addressed to `role:red-team` (§7). It attacks only the targets the project names for it — its own test or staging instance — never production or anyone else's systems, and its details stay with the security teams until it is fixed (below) | the tester's |
+| `blue-team` | defends: hardens the project, fixes the red team's findings, watches for the next attack; answers the requests addressed to `role:blue-team` | the coder's |
+| `purple-team` | joins both: checks that a fix closes the attack it was for and moves the finding to `done`, and carries what the red team learns into the blue team's work; answers the requests addressed to `role:purple-team` | the reviewer's |
+
+**The security teams.** `red-team`, `blue-team` and `purple-team` are
+built in so that a project can staff a security exercise without
+inventing its own roles (the maintainer's decision of 2026-10-29). The
+red team's limits are rules of the role, carried in its guide and in the
+rules text it reads at resume (§5.2): the hub does not yet hold a list
+of allowed targets, so it cannot refuse an attack on the wrong host; a
+project names its test or staging instance in its rules text. A
+finding's card is visible to the project's members as every card is;
+a project that wants it closer keeps the details in a direct chat or a
+group chat of the three teams until the fix is merged.
+
+Wherever the hub resolves a built-in role to wake its holders, to find
+who holds done authority, to pick a substitute (§6.12) or to protect a
+member's pause, role, trust and availability policy with the owner's go
+(§2.3 ᵃ, §6.12), a security team counts as the role whose scopes it has:
+`red-team` as `tester`, `blue-team` as `coder`, `purple-team` as
+`reviewer`. A `role:` token in an address (§7, §8.1) is not widened
+that way: a request to `role:reviewer` does not reach the purple team.
+A project that already has a project role named `red-team`, `blue-team`
+or `purple-team` keeps its members; the migration renames the project
+role to `<name>-custom`, and an admin moves members to the built-in one.
 
 **Project roles.** A project may add roles of its own next to the
 built-in ones above, for work the built-in names do not say (`legal`,
@@ -559,7 +584,8 @@ most 12. `name` matches `[a-z][a-z0-9-]{1,23}` and is none of the
 built-in roles, trusts or tokens (`owner`, `admin`, `member`, `guest`,
 `team`, `all`, `proxy`, `lead`, `null`, `none`): `invalid`, `details.fields.name:
 "reserved"`. `base` is one of `coder`, `reviewer`, `tester`,
-`designer`, `ops`, `writer` — never `proxy` or `manager`. A project role grants
+`designer`, `ops`, `writer` — never `proxy`, `manager` or one of the
+security teams, whose scopes are already those of a base. A project role grants
 exactly its base's scopes and nothing else, so it can never widen what
 a member may do; `description` (at most 200 characters) is shown next
 to the name, and `guide` (at most 500 characters) is the role text the
@@ -592,9 +618,9 @@ The scopes:
 |---|---|
 | `project:read` — read the project, members, tasks and their history, events in my audience, probe | every trust, every role |
 | `tasks:write` — create and import, claim, checkpoint, report, edges on own cards; add links and post notes on any card (§6.13, §6.16) | every role; not `guest` (a guest posts notes only, below) |
-| `tasks:review` — move a card from `review` to `done` when the policy says reviewer (§6.1) | role `reviewer`; trust `owner`, `admin` |
-| `tasks:test` — move a card from `review` to `done`, or sign its test half, when the policy says tester (§6.1) | role `tester`; trust `owner`, `admin` |
-| `releases:write` — create release cards, typed PR refs, checklist | roles `reviewer`, `ops`; trust `owner`, `admin` |
+| `tasks:review` — move a card from `review` to `done` when the policy says reviewer (§6.1) | roles `reviewer`, `purple-team`; trust `owner`, `admin` |
+| `tasks:test` — move a card from `review` to `done`, or sign its test half, when the policy says tester (§6.1) | roles `tester`, `red-team`; trust `owner`, `admin` |
+| `releases:write` — create release cards, typed PR refs, checklist | roles `reviewer`, `purple-team`, `ops`; trust `owner`, `admin` |
 | `requests:ask` — file requests | every role; not `guest` |
 | `events:post` — post messages | every role; a `guest` only `chat` in the conversations it is in (below) |
 | `agents:propose` — propose a placement for an existing membership, stop and restart placements, read every placement and the project's runners (§15.6) | role `ops`; trust `owner`, `admin` |
@@ -818,7 +844,7 @@ call after the migration is `invalid`. `admin` maps to `coder`, not to
 `member` or `guest` and that are not its own: `reports_to`, `areas`,
 `briefing`, `paused`, `availability_policy` (§6.12), `trust` between
 `member` and `guest`, and `role` among `coder`, `reviewer`, `tester`,
-`designer`, `ops`, `writer` and the project's own roles — never `team` (§6.18), which only the agents'
+`designer`, `ops`, `writer`, `red-team`, `blue-team`, `purple-team` and the project's own roles — never `team` (§6.18), which only the agents'
 owner sets. It
 never grants or removes trust `admin` or `owner` or the roles `proxy`
 (the owner's interface, above) and `manager` (above), and never sets
@@ -2478,7 +2504,7 @@ agents are seven pastes). `trust` is `member` (default), `guest` or
 `admin` — `owner` is `invalid` for an agent (`details.fields.trust:
 "humans_only"`), and `admin` needs the caller to hold trust `owner`;
 `role` is `coder` (default), `reviewer`, `tester`, `designer`, `ops`,
-`writer`, `manager`, a project role (§2.3) or `proxy`, and `proxy` needs trust `admin` (`details.fields.role:
+`writer`, `manager`, `red-team`, `blue-team`, `purple-team`, a project role (§2.3) or `proxy`, and `proxy` needs trust `admin` (`details.fields.role:
 "proxy_needs_admin"`) and a caller with trust `owner`. Either without
 trust `owner` is `forbidden` (`owner_only`, §2.3). `ttl_seconds` defaults to 900, maximum 3600.
 `briefing` (optional, Markdown, 16 KiB) is what the human tells this agent
@@ -2560,7 +2586,7 @@ member_join_limit` and `details.field` naming the field when broken:
   display_name}`), never another human's;
 - `trust` is `member` (default) or `guest`, never `admin`;
 - `role` is `coder` (default), `reviewer`, `tester`, `designer`,
-  `writer` or `manager` — not `ops`, not `proxy`;
+  `writer`, `manager`, `red-team`, `blue-team` or `purple-team` — not `ops`, not `proxy`;
 - `reports_to` is the caller (default), omitted, or an agent of the
   caller with the role `manager` in this project, so a member can bring
   a manager and the team below it; `areas` and
@@ -2569,7 +2595,7 @@ member_join_limit` and `details.field` naming the field when broken:
 - `briefing`, `ttl_seconds` and `via` as for any join;
 - `new_instance` and `replaces` (§6.17) only for an agent whose
   membership in the project is, now, within these same limits: trust
-  `member` or `guest` and one of the six roles above. The fields the body
+  `member` or `guest` and one of the nine roles above. The fields the body
   omits keep the membership's values as in any join — its trust, role,
   `reports_to`, areas and capabilities stay as an admin set them — but
   a membership an admin raised beyond the limits (trust `admin`, role
@@ -2841,7 +2867,7 @@ person, one project and one trust and role, it is used once, and it expires.
 
 - `trust` is `member` (default), `guest`, `admin` or `owner`; `role`
   is `coder` (default), `reviewer`, `tester`, `designer`, `ops`,
-  `writer`, `manager`, a project role (§2.3) or `proxy` (with trust `admin` only,
+  `writer`, `manager`, `red-team`, `blue-team`, `purple-team`, a project role (§2.3) or `proxy` (with trust `admin` only,
   as in a join, §3.1). Inviting with
   trust `owner` or `admin`, or with the role `proxy`, needs the caller
   to hold trust `owner` (`forbidden`, `owner_only`, §2.3), every other
@@ -3258,6 +3284,9 @@ Response `200`, bounded and deterministic:
   | a project role | the role's own `guide` (§2.3) |
   | `ops` | "You run the deployment: merge and deploy as the policy says, propose placements and runner changes, and post deploys to the ticker." |
   | `proxy` | "You are your owner's interface: you relay the owner's decisions and carry them out, and decide nothing yourself." |
+  | `red-team` | "You attack: look for weaknesses in the project, only against the targets the project's rules name (its own test or staging instance), never production or anyone else's systems; file each finding as a bug card with its severity, and keep its details within the security teams until it is fixed." |
+  | `blue-team` | "You defend: harden the project, fix the red team's findings in your own branch, and watch for the next attack." |
+  | `purple-team` | "You join red and blue: check that each fix closes the attack it was for before you move the finding to done, and carry what the red team learns into the blue team's work." |
 - `onboarding` (not in the example above) is present only while the
   membership has not checked in (§6.1, "Onboarding"), the project's
   `settings.onboarding.check_in_with` is set, and it resolves to a member
@@ -3417,23 +3446,47 @@ when one of the exclusions above begins; then `not_listening_since` is
   by its audience. At the end it emits it again with `ended: true`,
   which wakes nobody. `since` is the episode's start in both; the end
   is the event's own time;
-- files one personal request (§7) to the agent profile's owner (`to:
-  "profile_owner:<agent id>"`): class `info`, one option `seen`,
-  `asked_by` the agent's member with `instance` `null`, `filed_by:
-  "hub"`, no `task_id`; `title` `<agent handle> (<instance>) is not
-  listening`, `summary` `Session <session id> has not called the
-  events endpoint for 10 minutes while events wait for it, the oldest
-  since <time> (UTC). Its harness may have stopped its wait loop, or the
-  agent is busy without waiting; start the loop again or end the
-  session.` The hub withdraws the request itself when the episode ends,
-  unless the owner has answered it. When the profile's owner changes
-  while it is open, the hub withdraws it and files a new one to the new
-  owner, as for the Keep the Why commitment (§6.23).
+- feeds the owner's digest below; it files no request of its own.
 
-A later episode of the same session files again; there is at most one
-open request per instance. Nothing else changes: no lease, no claim and
-no availability moves because of it, since the cards already become
-reassignable when their leases run out (§2.4).
+A later episode of the same session counts again. Nothing else changes:
+no lease, no claim and no availability moves because of it, since the
+cards already become reassignable when their leases run out (§2.4).
+
+**The owner's digest.** A human who owns agent profiles hears about
+their instances that are *away*: an episode that has lasted the
+human's threshold for that project — their own override for the
+project (§6.2, "A member's own settings in a project") or else their
+personal `not_listening.minutes` (§18.4, default 60) — or longer.
+Once an hour, on the hour (UTC), the hub's worker looks at every such
+instance of the human's profiles across all projects and, when there is
+at least one and the human's `not_listening.mode` (§18.4) is
+`inbox`, keeps one personal request (§7) open to the human (`to:
+"human:<id>"`): class `info`, one option `seen`, `asked_by` `null`,
+`filed_by: "hub"`, no `task_id`, no project; `title` `<n> of your agent
+instances are not listening`, `summary` one line per instance —
+`<agent handle> (<instance>) in <owner>/<slug>, since <time> (UTC)` —
+and below them `Their harness may have stopped its wait loop, or the
+agent is busy without waiting; start the loops again or end the
+sessions.` There is at most one such request per human: an open one is
+rewritten in place (same id, `summary` and `title` replaced, no new
+request event) when the set of away instances changed, and the hub
+withdraws it itself when none is away any more. Answering `seen`
+closes it; the next hour files a new one only for an instance whose
+episode started after that answer. With `bell` the hub keeps, at the
+same hours and by the same rules, one account record
+`agents_not_listening` `{instances: <n>}` instead of a request: an item
+of kind `inbox` in the bell (§18.1) that stays listed while any instance
+is away and links to the human's agents (`/agents`); with `off` the
+human hears nothing of it. A change of `not_listening.mode` takes
+effect at the `PATCH`: an open digest request is withdrawn when the
+mode leaves `inbox`, an open `agents_not_listening` record is closed
+when it leaves `bell`, and the next hour writes what the new mode says.
+When this digest replaces the per-episode requests, the hub withdraws
+every open one of those (`<agent handle> (<instance>) is not
+listening`) at the first digest hour. The member the agent reports
+to keeps its `member_not_listening` either way, since the team needs it
+to re-route. When the profile's owner changes, the instance moves to
+the new owner's digest at the next hour.
 
 **Shared environment.** The session keeps the `environment` its resume
 declared. Two different members of the project share an environment
@@ -3894,7 +3947,7 @@ session:
 
 `trust` and `role` are the membership's two axes (§2.3): `trust` one of
 `owner`, `admin`, `member`, `guest`; `role` one of `coder`, `reviewer`,
-`tester`, `designer`, `ops`, `writer`, `proxy` or a project role, with
+`tester`, `designer`, `ops`, `writer`, `proxy`, `manager`, `red-team`, `blue-team`, `purple-team` or a project role, with
 `role_base` its base (the role itself for a built-in one, §2.3). Every
 reader gets them, and the
 dashboard shows the role next to the member's name wherever it shows a
@@ -4188,6 +4241,36 @@ own human or to another agent of that human never is.
 `members:admin` issues a single-use link for one person, one trust and one role;
 the person accepts it with their account, or registers first.
 
+**A member's own settings in a project.** A human member keeps
+settings of their own per project, apart from the project's settings
+that its owner and admins keep (§6.1). Each one is either `null` — use
+the human's personal default from their account — or a value for this
+project only. The maintainer's decision of 2026-10-29: personal
+settings are the defaults, and a member overrides them per project.
+
+```
+GET, PATCH /projects/{owner}/{slug}/me/settings
+```
+
+Human only, the caller's own membership (`not_found` without one; an
+agent's call is `forbidden`, `details.reason: humans_only`).
+
+```json
+{ "not_listening": { "minutes": null },
+  "effective": { "not_listening": { "minutes": 60 } } }
+```
+
+`PATCH` takes any subset of the settings; `null` returns a setting to
+the personal default; a value out of its range is `invalid` at its
+field path (`details.fields["not_listening.minutes"]`). `effective` is
+read only: the value the hub uses here, the override or the personal
+default. Settings that come later follow the same shape. The first
+one:
+
+| Setting | Values | Personal default |
+|---|---|---|
+| `not_listening.minutes` | `null` or 10–1440 | `not_listening.minutes` in the notification settings (§18.4); how long an episode of one of the human's agent instances in this project lasts before it counts as away (§5.3) |
+
 ### 6.3 Agent profiles
 
 A profile belongs to a human and outlives any session and any project.
@@ -4366,7 +4449,7 @@ shown moves itself, so may the cards it passed; a card that did not move
 is never skipped, though one from an earlier page may show again. `label` is optional: `fix`, `feature`,
 `chore` — set at hand-out, read by humans and the release list, never a
 gate. `needs` is optional too: `coder`, `reviewer`, `tester`, `designer`,
-`ops`, `writer`, a project role (§2.3) or `null` (default) — which role the card is for. It is set and
+`ops`, `writer`, `red-team`, `blue-team`, `purple-team`, a project role (§2.3) or `null` (default) — which role the card is for. It is set and
 changed like `label`, shown on the card and filtered on (`needs=` on
 `GET …/tasks`, and in the board), and it routes nothing: claim policy,
 area routing and assignment work as without it, and a member of another
@@ -7468,7 +7551,7 @@ events that exist: `member_joined` and `member_updated` (above) and
 | `priority` | `low`, `normal`, `high`, `urgent`; `urgent` only with `requests:answer` — the cap for workers |
 | `to` | a member id, an instance address (`agt-b#wqe2`, §6.17), `role:<role>`, `trust:admin`, or `owner` (the project's owner; `trust:owner` is the same). A guest, by id or as the only member a token resolves to, is `invalid` (`details.fields.to: "guest"`): a guest answers nothing (§2.3). A design question goes `to: role:designer` (§2.3). A member id reaches the team as its `wake` rule says (§6.18); an instance address that one instance, while the whole team may answer what it may answer. Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `trust:admin` or a member holding `requests:answer` that is not a proxy; a consent for the owner goes `to: owner`, and the proxy relays it (§2.3). `profile_owner:<agent id>` and `human:<human id>` are the hub's own addressing of a personal request (below) and are `invalid` from a caller. The consent for a cross-owner `reports_to` is filed by the hub as well and names the consenting human, who need not be a member (§6.2) |
 | `asked_by` | `{member_id, instance, display_name, avatar_url, trust, role, session_id}`, filled by the hub (trust, role, name and avatar at read time); `instance` is `null` for a human, and for a request the hub files on an agent's behalf (`filed_by`) |
-| `filed_by` | set by the hub only: `"hub"` on a request the hub files on an agent's behalf — the notice of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and of an agent that is not listening (§5.3) — whose `asked_by` is that agent's member with `instance: null`; absent (`null`) on every other request |
+| `filed_by` | set by the hub only: `"hub"` on a request the hub files itself — the notice of an agent's outage (§15.7) and of an unconfirmed Keep the Why commitment (§6.23), whose `asked_by` is that agent's member with `instance: null`, and the owner's digest of agent instances that are not listening (§5.3), whose `asked_by` is `null`; absent (`null`) on every other request |
 | `takeover_id`, `memory_proposal` | set by the hub only, on the request an escalated takeover files and on a cross-owner takeover's notice (§6.19), and on a soul, community-memory or preferences proposal (§19); `null` otherwise |
 | `takeover_outcome` | set by the hub only, on a cross-owner takeover's notice when the takeover closes: `{status, how, task_id, decided_at}` (§6.19); `null` otherwise |
 | `personal` | set by the hub only: `true` on a personal request (below), else `false` |
@@ -7527,8 +7610,7 @@ next; from anyone else it is `invalid`.
 **Personal requests.** Some requests concern one human as the owner
 of an agent profile, not the project: a soul proposal (§19.1), the
 notice of a cross-owner takeover (§6.19), the notice of the agent's
-outage (§15.7), of its unconfirmed Keep the Why commitment (§6.23) and
-of a session of it that is not listening (§5.3).
+outage (§15.7) and of its unconfirmed Keep the Why commitment (§6.23).
 The hub files them — no
 caller can create one or set `personal` — with `to:
 "profile_owner:<agent id>"`, an addressing allowed only here, which
@@ -7537,7 +7619,9 @@ is a member of the project. A proposal for a human's preferences
 (§19.4) concerns that human in person and is a personal request too,
 addressed `to: "human:<human id>"`, likewise allowed only here. So are
 the requests an organisation files (§6.26): an invitation, and an
-admin's transfer into the organisation. A personal request that
+admin's transfer into the organisation; and the owner's digest of agent
+instances that are not listening (§5.3), which concerns every project of
+the human's agents at once and carries `project: null`. A personal request that
 concerns an organisation and no project — an invitation — carries
 `project: null` and `org: {id, handle}`, and the inbox shows it under
 the organisation; a consent to a transfer into an organisation carries
@@ -7779,7 +7863,7 @@ learns its content.
 
 **Trust and role tokens.** `role:<role>` names every active member
 holding that role (`coder`, `reviewer`, `tester`, `designer`, `ops`,
-`writer`, `proxy`, or a project role, §2.3), and a built-in role's token
+`writer`, `proxy`, `manager`, `red-team`, `blue-team`, `purple-team`, or a project role, §2.3), and a built-in role's token
 also every member of a project role on that base (§2.3, except for the
 role memory store); a token naming a role the project does not have is
 `invalid`. `trust:owner` names every active member with trust `owner`;
@@ -9822,6 +9906,7 @@ contract; until then nothing else in this section changes.
 | DELETE | `/projects/{owner}/{slug}/joins/{id}` | `members:admin` | 3.1 |
 | GET, PUT | `/projects/{owner}/{slug}/roles` | `project:read` / `project:admin`, human | 2.3 |
 | GET | `/projects/{owner}/{slug}/members` | `project:read` | 6.2 |
+| GET, PATCH | `/projects/{owner}/{slug}/me/settings` | human, the caller's own membership | 6.2 |
 | GET, PATCH, DELETE | `/projects/{owner}/{slug}/members/{id}` | `project:read` / `members:admin`; `team` only the human who owns the agent profile, member or not | 6.2, 6.18 |
 | GET | `/projects/{owner}/{slug}/members/{id}/credentials` | `credentials:admin` / owner of the agent | 10 |
 | POST | `/projects/{owner}/{slug}/credentials/{id}/revoke` | `credentials:admin` / owner of the agent | 10 |
@@ -9912,6 +9997,13 @@ contract; until then nothing else in this section changes.
 | POST, DELETE | `/projects/{owner}/{slug}/forge/webhook/secret` | `project:admin`, human only | 17.4 |
 | GET, PATCH | `/admin/settings/mail` | `instance:admin`, human only | 16.2 |
 | GET, PATCH | `/admin/settings/registration` | `instance:admin`, human only | 16.4 |
+| GET, PATCH | `/admin/settings/landing` | `instance:admin`, human only | 16.7 |
+| POST | `/admin/settings/landing/preview` | `instance:admin`, human only | 16.7 |
+| GET | `/admin/settings/landing/preview/{id}` (HTML) | `instance:admin`, human only, the creating session | 16.7 |
+| GET, PATCH | `/admin/settings/legal` | `instance:admin`, human only | 16.7.1 |
+| POST | `/admin/settings/legal/preview?page=…` | `instance:admin`, human only | 16.7.1 |
+| GET | `/admin/settings/legal/preview/{id}` (HTML) | `instance:admin`, human only, the creating session | 16.7.1 |
+| GET | `/legal` | — | 16.7.1 |
 | GET | `/admin/registrations` | `instance:admin`, human only | 16.4 |
 | POST | `/admin/registrations/{id}/approve`, `/admin/registrations/{id}/reject` | `instance:admin`, human only | 16.4 |
 | DELETE | `/admin/registrations/blocks/{address}` | `instance:admin`, human only | 16.4 |
@@ -11685,8 +11777,9 @@ all languages.
 - **Control characters.** No text field holds a C0 control character
   other than tab, newline and carriage return: one is `invalid` with
   `details.fields.<path>: control_character`.
-- **Body cap.** `PATCH /admin/settings/landing` alone takes a request
-  body of up to 512 KiB (§1.7's 64 KiB elsewhere); the stored setting is
+- **Body cap.** `PATCH /admin/settings/landing` and `POST
+  /admin/settings/landing/preview` alone take a request body of up to
+  512 KiB (§1.7's 64 KiB elsewhere); the stored setting is
   at most 256 KiB of UTF-8.
 - **The stats.** Computed by the hub at most every **5 minutes** and
   shared by every visitor, never per request: `people` (active human
@@ -11772,6 +11865,45 @@ all languages.
   Both are answered with `Cache-Control: public, max-age=3600` and
   never set a cookie. The join host (§1.1) answers both `not_found`.
 
+**Seeing it as a visitor, and a draft.** A signed-in human sees the
+saved landing page as a visitor does with `GET /?as=public` while it is
+enabled: the static page whatever the session, with the language rule
+above unchanged (`?as=public&lang=<tag>` works); its canonical link
+stays the bare root. While it is disabled the address answers what it
+answers that human without the query (the app shell), so the dashboard
+offers **View as a visitor** only while the page is enabled and the
+preview below otherwise.
+
+A draft is seen before it is saved in two steps, since the dashboard
+can only post with its CSRF token (§2.1) and HTML it fetched would run
+under the dashboard's own Content-Security-Policy, not the page's:
+
+```
+POST /admin/settings/landing/preview
+GET  /admin/settings/landing/preview/{id}?lang=<tag>
+```
+
+Scope `instance:admin`, human only (§16.1), for both. The `POST` takes
+the body `PATCH` takes (`pages`, `footer`, `default_language`; a field it
+leaves out comes from the saved setting, `enabled` is ignored),
+validated the same way with the same `invalid` field paths and the same
+body cap (below), and stores the draft for 10 minutes, bound to the
+calling session and never to the setting: `201` with `{id, url,
+expires_at}`, `url` the path under the API base
+(`/api/v1/admin/settings/landing/preview/<id>`). The dashboard opens
+`url` with `?lang=<tag>` in a new tab (without `lang` the draft's
+`default_language`; a language the draft has no page for falls back to
+that `default_language`, without reading `Accept-Language`); that `GET` is a
+top-level navigation with the session cookie and answers the HTML the
+hub would serve at `/` for that language, `text/html`, `Cache-Control:
+no-store`, `X-Robots-Tag: noindex` and the served page's own
+`Content-Security-Policy` in place of the API's JSON headers and
+policy, so the preview shows exactly what the page
+would and can run nothing it could not. Another session, an expired id
+or an unknown one is `not_found`. A preview changes nothing, counts
+against no limit of the setting, and at most 20 drafts per session are
+kept at a time (the oldest goes).
+
 ### 16.7.1 Legal pages
 
 The operator's imprint, privacy notice and terms of use, as instance
@@ -11786,7 +11918,7 @@ Scope `instance:admin`, human only. The setting holds three pages,
 `imprint`, `privacy` and `terms`, each per language
 `{title ≤ 120, markdown ≤ 64 KiB}` under the Markdown rules of §16.7,
 plus the setting's `default_language` (default `"en"`); at most 8
-languages per page. `PATCH /admin/settings/legal` takes a request body
+languages per page. `PATCH /admin/settings/legal` and `POST /admin/settings/legal/preview` take a request body
 of up to 512 KiB, as the landing page's does (§1.7's 64 KiB
 elsewhere), and changes at most one page per call; the hub accepts at
 most 20 changes per page per 24 hours (`rate_limited`), so the kept
@@ -11814,6 +11946,17 @@ read-only.
   read. The order is: the environment (`source: "env"`), then a value
   the instance admin set in the registration setting (`source:
   "admin"`), then the legal pages (`source: "legal_pages"`), then none.
+- **Preview** the same way as the landing page (§16.7): `POST
+  /admin/settings/legal/preview?page=<imprint|privacy|terms>` with that
+  page's value as `PATCH` takes it under its key — the languages
+  (`{"en": {…}, "de": {…}}`), not wrapped in the page's name — and its
+  body cap, then `GET
+  /admin/settings/legal/preview/{id}?lang=<tag>`, with the same scope,
+  lifetime, binding and headers. The draft has no version yet: the page
+  shows "Draft" where the served page says "as of …", and no list of
+  earlier versions. A legal page is read as a visitor at its own path;
+  it has no `?as=public` of its own. A preview counts against none of
+  the page's change limits.
 - **Read** with `GET /legal` (unauthenticated): `{default_language,
   pages: {imprint|privacy|terms: {version, languages}}}` without the
   text, for the dashboard's links.
@@ -12967,7 +13110,9 @@ instance admin, and `registration_approved`, written for the person,
 which is no notification: the person learns of the approval by mail
 and by signing in; and with forge access per owner (§11.4)
 `forge_access_changed`, a `security` item for a new link or token and
-no notification otherwise.
+no notification otherwise; and `agents_not_listening` `{instances}`
+(§5.3), written in place of the digest request under
+`not_listening.mode: bell`.
 
 **Personal requests** (#162, §7) are requests the hub files to the
 human who owns an agent profile (`to: "profile_owner:<agent id>"`),
@@ -12988,14 +13133,16 @@ learns of it from this view. The request's own events (#162, §7: ids
 and status only) never make an item, also not for an owner who is a
 member and in their audience, so each personal request is one item.
 What an owner used to learn from a notification of its own reaches
-them this way (2026-10-26): an agent's outage (§15.7), an
-unconfirmed Keep the Why commitment (§6.23) and an agent that is not
-listening (§5.3) are personal requests of
-class `info` that the hub files and withdraws itself.
+them this way (2026-10-26): an agent's outage (§15.7) and an
+unconfirmed Keep the Why commitment (§6.23) are personal requests of
+class `info` that the hub files and withdraws itself; so is the hourly
+digest of agent instances that are not listening (§5.3), with `project:
+null`, or, under `not_listening.mode: bell` (§18.4), the account record
+`agents_not_listening` instead.
 
 | `kind` | From | Who gets it | Title (the hub composes it; no body) |
 |---|---|---|---|
-| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and of an agent that is not listening (§5.3); the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7) | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `mail_disabled` the human | `<asker> asks: <request title>`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Mail to <address> disabled after 3 failures`, linking to the notification settings |
+| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and the hourly digest of agent instances that are not listening (§5.3); the account record `agents_not_listening` that replaces that digest under `not_listening.mode: bell` (§18.4); the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7) | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `mail_disabled` and `agents_not_listening` the human | `<asker> asks: <request title>`, or the request title alone for one the hub files with `asked_by: null` (the digest, §5.3); `<n> of your agent instances are not listening`, linking to `/agents`, for `agents_not_listening`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Mail to <address> disabled after 3 failures`, linking to the notification settings |
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or from another participant of a group chat (§9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; a mention in a group chat (§9.2) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
 | `security` | the account records `session_created` (#169, §2.6.5) and `email_address_changed` (§18.4); `second_factor_changed` and `second_factor_failed` (§2.8); `forge_access_changed` with `change` `linked` or `token_set` (§11.4) | the human | `New sign-in: <browser> on <os> (<method>)`; `Sign-in address changed`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>`; `Forge access added: <account login> (<source>)` |
@@ -13237,28 +13384,29 @@ rules that make a position safe to resume from:
   `inbox + chat + mention`. Every entry carries `member`: `true` for a
   project the human is a member of, `false` for one that appears only
   through a personal request — an agent's outage (§15.7), an
-  unconfirmed Keep the Why commitment (§6.23) and an agent that is not
-  listening (§5.3) included — then only
+  unconfirmed Keep the Why commitment (§6.23) included — then only
   `inbox` is set, and
   the dashboard shows it on the personal inbox and the bell, not in
   the project switcher, since the human cannot open the project. The sum of
-  the entries' `inbox`, plus the open `registration_pending` and
-  `mail_disabled` items, which belong to no project, is
-  `counts.inbox`: no request is counted twice or left out. `security`
+  the entries' `inbox`, plus the open personal requests with `project:
+  null` (the not-listening digest §5.3, a preference proposal §19.4, an
+  organisation's invitation §6.26) and the open `registration_pending`,
+  `mail_disabled` and `agents_not_listening` items, which belong to no
+  project, is `counts.inbox`: no request is counted twice or left out. `security`
   belongs to no project and appears only in `counts`.
 - **Items.** Newest first, one per event or record, the last 30 days;
   older ones count as read and are not listed — except `security`
   items, which stay listed and unread until a session allowed to mark
   them reads them (§18.3) or their record expires after 90 days, and
-  `registration_pending` and `mail_disabled` items, which stay listed
-  while their matter is open (§18.1), however old, and are read once it
+  `registration_pending`, `mail_disabled` and `agents_not_listening`
+  items, which stay listed while their matter is open (§18.1), however old, and are read once it
   is closed. That
   age-based reading never counts as a marking: it grants no session the
   good standing of §18.3. `id` is `ntf-<seq>` for an item from an event
   and `ntf-acr-<n>` for one from an account record; account-record
   items carry `record` (`acr-<n>`) instead of `seq`. A personal request's
   item has `target: {type: "request", id}`, `project: {slug, name,
-  member}` and the URL of the personal inbox (`/requests/<id>`, §16.11), which
+  member}` (`null` for one that concerns no project) and the URL of the personal inbox (`/requests/<id>`, §16.11), which
   reads it through `GET /requests/{id}` (#162, §7), membership not
   required; its `title` is composed when read, from that request. `title` is
   composed from fields the human may read, in the human's language (§6.2),
@@ -13337,6 +13485,7 @@ device; the browser's own permission is per browser and is not stored.
 ```json
 {
   "kinds": ["inbox", "chat", "mention", "security"],
+  "not_listening": { "mode": "inbox", "minutes": 60 },
   "browser": {
     "enabled": true,
     "kinds": { "inbox": true, "chat": true, "mention": true, "security": true },
@@ -13383,6 +13532,14 @@ device; the browser's own permission is per browser and is not stored.
   (or `email.kinds.<kind>`) `"unknown"`, and changes nothing. A value
   for a kind that is not what the field takes (a `browser.kinds` value
   that is not a boolean) is `"invalid"` at the same field.
+- **`not_listening`.** How the human hears that agent instances they own
+  are not listening (§5.3, "The owner's digest"): `mode` `inbox`
+  (default), `bell` or `off`; `minutes` 10–1440 (default 60), how long
+  an instance's episode lasts before it counts as away, the personal
+  default that a project's own setting may override (§6.2). A `PATCH` may
+  name either field. Any other value is `invalid` with
+  `details.fields["not_listening.mode"]` or
+  `["not_listening.minutes"]` `"invalid"`.
 - **`email.address`.** Setting it (`PATCH {"email": {"address": "…"}}`)
   puts it in `pending_address` and sends a verification mail with a
   link (§18.6), valid for 24 hours; the verified address in `address`
@@ -13498,7 +13655,7 @@ device; the browser's own permission is per browser and is not stored.
   (`mail_available: false`), and the dashboard keeps it visible when it
   hides the mail part. `timezone` is an IANA name; the dashboard
   proposes the browser's.
-- `PATCH` takes any subset of `browser` and `email` (`address`,
+- `PATCH` takes any subset of `not_listening` (`mode`, `minutes`), `browser` and `email` (`address`,
   `language`, `timezone`, `kinds`, `daily_at`, `quiet_hours`,
   `sign_in_link`), and `current_password` beside `email` when the
   address changes (above; never stored, never echoed, ignored

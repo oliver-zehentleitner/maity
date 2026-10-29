@@ -72,6 +72,10 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            {{- if .Values.attachments.existingClaim }}
+            - name: attachments
+              mountPath: {{ .Values.attachments.mountPath | quote }}
+            {{- end }}
             {{- with .Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -79,6 +83,11 @@ spec:
         - name: tmp
           emptyDir:
             sizeLimit: 64Mi
+        {{- if .Values.attachments.existingClaim }}
+        - name: attachments
+          persistentVolumeClaim:
+            claimName: {{ .Values.attachments.existingClaim | quote }}
+        {{- end }}
         {{- with .Values.extraVolumes }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
