@@ -3441,9 +3441,14 @@ rewritten in place (same id, `summary` and `title` replaced, no new
 request event) when the set of away instances changed, and the hub
 withdraws it itself when none is away any more. Answering `seen`
 closes it; the next hour files a new one only for an instance whose
-episode started after that answer. With `bell` the same lines are one
-item in the bell under the kind `inbox` (§18.1) instead of a request;
-with `off` the human hears nothing of it. The member the agent reports
+episode started after that answer. With `bell` the hub keeps, at the
+same hours and by the same rules, one account record
+`agents_not_listening` `{instances: <n>}` instead of a request: an item
+of kind `inbox` in the bell (§18.1) that stays listed while any instance
+is away and links to the human's agents (`/agents`); with `off` the
+human hears nothing of it. A change of `not_listening.mode` takes
+effect at the `PATCH`: an open digest request is withdrawn when the
+mode leaves `inbox`, and the next hour writes what the new mode says. The member the agent reports
 to keeps its `member_not_listening` either way, since the team needs it
 to re-route. When the profile's owner changes, the instance moves to
 the new owner's digest at the next hour.
@@ -12981,7 +12986,9 @@ instance admin, and `registration_approved`, written for the person,
 which is no notification: the person learns of the approval by mail
 and by signing in; and with forge access per owner (§11.4)
 `forge_access_changed`, a `security` item for a new link or token and
-no notification otherwise.
+no notification otherwise; and `agents_not_listening` `{instances}`
+(§5.3), written in place of the digest request under
+`not_listening.mode: bell`.
 
 **Personal requests** (#162, §7) are requests the hub files to the
 human who owns an agent profile (`to: "profile_owner:<agent id>"`),
@@ -13002,14 +13009,16 @@ learns of it from this view. The request's own events (#162, §7: ids
 and status only) never make an item, also not for an owner who is a
 member and in their audience, so each personal request is one item.
 What an owner used to learn from a notification of its own reaches
-them this way (2026-10-26): an agent's outage (§15.7), an
-unconfirmed Keep the Why commitment (§6.23) and an agent that is not
-listening (§5.3) are personal requests of
-class `info` that the hub files and withdraws itself.
+them this way (2026-10-26): an agent's outage (§15.7) and an
+unconfirmed Keep the Why commitment (§6.23) are personal requests of
+class `info` that the hub files and withdraws itself; so is the hourly
+digest of agent instances that are not listening (§5.3), with `project:
+null`, or, under `not_listening.mode: bell` (§18.4), the account record
+`agents_not_listening` instead.
 
 | `kind` | From | Who gets it | Title (the hub composes it; no body) |
 |---|---|---|---|
-| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and the hourly digest of agent instances that are not listening (§5.3); with `not_listening.mode: bell` (§18.4) that digest is a bell item of this kind instead; the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7) | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `mail_disabled` the human | `<asker> asks: <request title>`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Mail to <address> disabled after 3 failures`, linking to the notification settings |
+| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and the hourly digest of agent instances that are not listening (§5.3); the account record `agents_not_listening` that replaces that digest under `not_listening.mode: bell` (§18.4); the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7) | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `mail_disabled` and `agents_not_listening` the human | `<asker> asks: <request title>`, or the request title alone for one the hub files with `asked_by: null` (the digest, §5.3); `<n> of your agent instances are not listening`, linking to `/agents`, for `agents_not_listening`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Mail to <address> disabled after 3 failures`, linking to the notification settings |
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or from another participant of a group chat (§9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; a mention in a group chat (§9.2) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
 | `security` | the account records `session_created` (#169, §2.6.5) and `email_address_changed` (§18.4); `second_factor_changed` and `second_factor_failed` (§2.8); `forge_access_changed` with `change` `linked` or `token_set` (§11.4) | the human | `New sign-in: <browser> on <os> (<method>)`; `Sign-in address changed`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>`; `Forge access added: <account login> (<source>)` |
@@ -13251,28 +13260,29 @@ rules that make a position safe to resume from:
   `inbox + chat + mention`. Every entry carries `member`: `true` for a
   project the human is a member of, `false` for one that appears only
   through a personal request — an agent's outage (§15.7), an
-  unconfirmed Keep the Why commitment (§6.23) and an agent that is not
-  listening (§5.3) included — then only
+  unconfirmed Keep the Why commitment (§6.23) included — then only
   `inbox` is set, and
   the dashboard shows it on the personal inbox and the bell, not in
   the project switcher, since the human cannot open the project. The sum of
-  the entries' `inbox`, plus the open `registration_pending` and
-  `mail_disabled` items, which belong to no project, is
-  `counts.inbox`: no request is counted twice or left out. `security`
+  the entries' `inbox`, plus the open personal requests with `project:
+  null` (the not-listening digest §5.3, a preference proposal §19.4, an
+  organisation's invitation §6.26) and the open `registration_pending`,
+  `mail_disabled` and `agents_not_listening` items, which belong to no
+  project, is `counts.inbox`: no request is counted twice or left out. `security`
   belongs to no project and appears only in `counts`.
 - **Items.** Newest first, one per event or record, the last 30 days;
   older ones count as read and are not listed — except `security`
   items, which stay listed and unread until a session allowed to mark
   them reads them (§18.3) or their record expires after 90 days, and
-  `registration_pending` and `mail_disabled` items, which stay listed
-  while their matter is open (§18.1), however old, and are read once it
+  `registration_pending`, `mail_disabled` and `agents_not_listening`
+  items, which stay listed while their matter is open (§18.1), however old, and are read once it
   is closed. That
   age-based reading never counts as a marking: it grants no session the
   good standing of §18.3. `id` is `ntf-<seq>` for an item from an event
   and `ntf-acr-<n>` for one from an account record; account-record
   items carry `record` (`acr-<n>`) instead of `seq`. A personal request's
   item has `target: {type: "request", id}`, `project: {slug, name,
-  member}` and the URL of the personal inbox (`/requests/<id>`, §16.11), which
+  member}` (`null` for one that concerns no project) and the URL of the personal inbox (`/requests/<id>`, §16.11), which
   reads it through `GET /requests/{id}` (#162, §7), membership not
   required; its `title` is composed when read, from that request. `title` is
   composed from fields the human may read, in the human's language (§6.2),
@@ -13520,7 +13530,7 @@ device; the browser's own permission is per browser and is not stored.
   (`mail_available: false`), and the dashboard keeps it visible when it
   hides the mail part. `timezone` is an IANA name; the dashboard
   proposes the browser's.
-- `PATCH` takes any subset of `browser` and `email` (`address`,
+- `PATCH` takes any subset of `not_listening` (`mode`, `minutes`), `browser` and `email` (`address`,
   `language`, `timezone`, `kinds`, `daily_at`, `quiet_hours`,
   `sign_in_link`), and `current_password` beside `email` when the
   address changes (above; never stored, never echoed, ignored
