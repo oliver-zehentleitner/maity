@@ -285,6 +285,48 @@ the incident of 2026-10-26 showed does not scale.
 - Letting mails over the instance budget wait in the outbox: simpler, but it can mean two
   mails where §18.5 asks for one (the first version, changed before review).
 
+## A page of the bell is cut from items derived only as far as the page reaches; no cache
+
+**Id:** 24ca001c-ff28-4df3-8af1-ba6ef6d567b6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** tsk-svhatnxrtqn8; Traefik access log of 2026-10-28 17:51-18:21 UTC (`GET /me/notifications` p50 1.0 s, p95 1.9 s, n=482); the local measurement in `hub/scripts/measure_notifications.py`
+**Revisit when:** a listing needs the number of all matching items or a total over chat items, or `derive_page` and `derive` diverge in a test
+
+`GET /me/notifications` derived every item of 30 days on every call, and every message an
+agent sends its owner in a direct chat is one. The cost was linear in those messages (about
+80 ms per 1,000 items, 1.2 s at 30,000), not in the projects or the queries; the counts, the
+position and the twenty views together took under 100 ms. A page needs `limit` items and to
+know whether one more follows, and the counts read no chat item (`chat` comes from the chats'
+own marks). So `items.derive_page` derives everything that is not a plain chat message (requests,
+mentions, account records: few, and they feed the counts), and of the plain chat messages
+only the first `limit + 1` per project that the filters, the cursor or `after` accept, read
+from the database in the order the listing uses (`at`, then `seq`), in chunks that grow
+while a filter such as `unread` rejects them. A message whose payload text has a `member_id`
+and the human's id is derived with the rest, since it may mention them; the text test only
+selects, `_classify` decides. `scope` and the unread-chat count read their rows in one query
+each instead of one per membership and per agent, and a page reads each project and actor once.
+Measured on SQLite with 10 projects and 30,000 chat items: 1.16 s before, 0.1 s after.
+
+**Reason:** the answer is a function of the page, so the work should be too; a cache would
+answer from the past (a read mark, a claimed request or a rename that the stamp does not
+see) and only helps while nothing moves, which on a busy team is rarely. `tests/test_notifications_page.py`
+keeps the two honest: for every filter, page size and the cursor through items of one
+timestamp, and for `after` chains, the bounded pages equal the pages cut from `derive`.
+
+**Rejected alternatives:**
+- A cache of the derived items keyed by `listing.stamp`: the stamp does not see a request
+  claimed by another admin, a rename or the sliding 30-day window, and it misses on every new
+  message, which is when the bell is polled most.
+- Cheaper work per item (fewer JSON decodes, fewer lookups): at best a factor of two on a cost
+  that stays linear in the history.
+- Filtering chat messages by the human in SQL: a chat message names its addressee in `to`,
+  so every message of the human's own chats matches and nothing is saved.
+
+**Known limit:** a filter that rejects almost every chat (`unread` after everything was read)
+still reads all of a project's chat rows in the window, in chunks, as the old derivation did.
+
 ## Changing or removing the verified address, and approving a held change, take the step-up the caller gives in
 
 **Id:** b4c0e7a3-61d8-4f29-9a5e-0d83f7b1c2e6

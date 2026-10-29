@@ -5,7 +5,8 @@
     "handle": "maintainer",
     "display_name": "Maintainer",
     "instance_admin": true,
-    "meat_proxy": false
+    "meat_proxy": false,
+    "deletion": null
   },
   "projects": [
     {

@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy import Connection
 
 from maity_hub import instance_settings as store
-from maity_hub.auth import device_codes
+from maity_hub.auth import device_codes, email_links
 from maity_hub.config import SECOND_FACTOR_POLICIES, Settings
 from maity_hub.errors import invalid
 from maity_hub.mail import settings as mail
@@ -57,9 +57,8 @@ def view(conn: Connection, hub: Settings) -> dict[str, Any]:
     resolved = mail.resolve(conn, hub.mail, hub.secret_key)
     if not (resolved.complete and resolved.enabled):
         link_missing.append("mail")
-    # The sign-in link itself (§2.6.3) is a card of its own; until it is built, the
-    # login page has nothing to offer.
-    link_missing.append("not_implemented")
+    if not hub.mail.signing_key:
+        link_missing.append("signing_key")
     # The second factor seals its secrets with the instance key (§2.8.1).
     missing = [*link_missing, *([] if hub.secret_key else ["secret_key"])]
     return {
@@ -94,6 +93,8 @@ def patch(conn: Connection, hub: Settings, body: dict[str, Any], by: str) -> Non
     if not resolve(conn, hub)["device_code"][0]:
         # A method switched off voids its open codes at once (§2.6.5).
         device_codes.void_open(conn)
+    if not resolve(conn, hub)["email_link"][0]:
+        email_links.void_open(conn)
     note_second_factor(conn, hub, by)
 
 
@@ -120,3 +121,7 @@ def device_code_enabled(conn: Connection, hub: Settings) -> bool:
 
 def second_factor_policy(conn: Connection, hub: Settings) -> str:
     return str(resolve(conn, hub)["second_factor"][0])
+
+
+def email_link_enabled(conn: Connection, hub: Settings) -> bool:
+    return bool(resolve(conn, hub)["email_link"][0])
