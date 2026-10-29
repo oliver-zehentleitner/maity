@@ -11281,9 +11281,9 @@ values from `mail.host`, `port`, `tls`, `username`, `from` and
 `replyTo`; the secrets never pass through the chart's values. With a
 host set, port and TLS always come from the chart (its defaults
 included) and win over the admin settings (`set_by_environment`). The
-instance key comes from a Secret through the chart's `extraEnv`
-(`secretKeyRef`, see the chart's README). A release that moves these
-variables from `extraEnv` into `mail.*` removes them from `extraEnv` in
+instance key comes from a Secret as well (`secretKey.existingSecret` and
+`key`, default `secret-key`). A release that moves these variables from
+`extraEnv` into `mail.*` and `secretKey` removes them from `extraEnv` in
 the same upgrade: the chart does not deduplicate, and the later entry
 wins.
 

@@ -256,3 +256,29 @@ and whether they are set decides whether mail arrives, which the test send shows
 - The password as a chart value: it would sit in a values file and in the release history.
 - The chart change before the deployment: mail was needed live first, and the chart change needs a review and a deploy of its own.
 
+
+## The instance key is a chart value too: secretKey.existingSecret
+
+**Id:** dbeb3ff3-a9a8-480b-92e8-13fcaa41b8f9
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the coordinating agent's decision after the review of the mail wiring, 2026-10-29 (the contract promised it; the chart README sent it through `extraEnv`); hub/context/persistence.md and notifications.md for what the key seals
+**See:** kubernetes.md#mail-the-signing-key-and-the-smtp-password-come-from-secrets-by-reference-the-rest-are-plain-values — f1c9c8ad-96ad-408d-b536-fdf027c5fe35 — as of 2026-10-29
+**Revisit when:** the hub can rotate the key, or another secret joins the chart's list
+
+`secretKey.existingSecret` (and `key`, default `secret-key`) names the Secret holding `MAITY_SECRET_KEY`, rendered into the hub and the
+migrate Job like the database URL. Without a value nothing is rendered. A release that moves the key from `extraEnv` into it drops it
+from `extraEnv` in the same upgrade; the chart does not deduplicate and the later entry wins.
+
+**Reason:** the key seals what the hub stores at rest (forge webhook secrets, a stored SMTP password, second-factor secrets) and is
+the root of derived keys (notification positions use HKDF of it). A release that loses it, as one with the chart's own values would
+while the key lives only in `extraEnv`, leaves all of that unreadable, and a new key does not bring it back: the loss is worse than
+that of the mail settings and cannot be repaired by setting the variable again.
+
+**Rejected alternatives:**
+- Keeping it in `extraEnv`, as the first chart README did: it works while every upgrade carries the entry and fails silently when one
+  does not.
+- Making it a required value: an install without webhooks or stored passwords does not need it, and the features that do refuse
+  loudly (`secret_key_missing`).
+
