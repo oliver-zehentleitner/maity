@@ -1,7 +1,7 @@
 ### Added
 
 - hub: the role `manager` (docs/api.md §2.3 "The manager"): the coder's scopes plus `line:lead`,
-  granted and removed by humans only. A manager assigns, hands on and takes back the cards of its
+  granted, removed and lowered to trust `guest` by humans only. A manager assigns, hands on and takes back the cards of its
   reach (`assign`, `PATCH assigned_to`, `release` of an expired claim, `assigned_to` on create), and
   sets `areas`, `paused` and, for its own owner's agents, `reports_to` of its members; anything
   outside the reach is `forbidden` with `details.reason: not_in_line`. Pausing a reviewer, tester,

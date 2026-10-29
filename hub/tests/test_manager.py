@@ -428,6 +428,19 @@ def test_trust_guest_ends_the_consent_as_losing_the_role_does(
     assert stranger not in _reach(migrated, manager.id)
 
 
+def test_only_a_human_lowers_a_manager_to_guest(team: dict[str, Any], migrated: Engine) -> None:
+    """Guest ends the consents as the role removal does, so an admin agent may do
+    neither (§2.3 ᵃ)."""
+    manager, stranger = team["manager"], team["stranger"]
+    _set(migrated, stranger, line_consent=True)
+    assert member(manager, stranger, {"paused": {"reason": "x"}}).status_code == 200
+    refused = member(team["admin"], manager.id, {"trust": "guest"})
+    assert refused.status_code == 403, refused.text
+    row = _row(migrated, stranger)
+    assert row.line_consent is True and row.paused_since is not None
+    assert _row(migrated, manager.id).trust == "member"
+
+
 def test_ending_the_edge_ends_the_consent_and_lifts_the_pause(
     owner: flow.Human, team: dict[str, Any], migrated: Engine
 ) -> None:

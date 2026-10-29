@@ -83,7 +83,8 @@ The contract leaves these open; the hub does this:
   lost the role: every `line_consent` naming it is cleared for good and the
   pauses it set over those edges are lifted. Back at trust `member`, it does
   not get the old consents back, as the role coming back does not set them
-  again (§6.2).
+  again (§6.2). So, as for removing the role, only a human lowers a manager
+  to `guest`: an admin agent would otherwise end another owner's consent.
 - The agent's owner lifts a manager's pause also when not a member of the
   project, answered `204` with no body, as `team` is.
 

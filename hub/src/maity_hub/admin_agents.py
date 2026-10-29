@@ -70,6 +70,9 @@ def check_patch(mine: Membership, target: Any, body: Any, given: set[str]) -> No
         raise humans_only("the proxy and the manager are a human's to give")
     if body.role is not None and body.role != target.role and target.role == "manager":
         raise humans_only("only a human removes the role manager")
+    if body.trust == "guest" and target.trust != "guest" and target.role == "manager":
+        # Trust guest ends a manager's rights as the role removal does (§6.2).
+        raise humans_only("only a human lowers a manager to guest")
     if "paused" in given:
         _check_pause(target, mine.principal_id, body.paused is None)
 
