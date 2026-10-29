@@ -43,6 +43,7 @@ PREFIXES = {
     "jour_fixe_answer": "jfa",
     "takeover": "tko",
     "attachment": "att",
+    "abuse_report": "rpt",
 }
 
 

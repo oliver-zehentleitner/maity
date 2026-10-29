@@ -7,7 +7,7 @@ no earlier time is recorded anywhere. A project without such a tag stays `null`.
 emitted for the backfill.
 
 Revision ID: 0097
-Revises: 0094
+Revises: 0095
 Create Date: 2026-10-29
 """
 
@@ -20,7 +20,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql
 
 revision: str = "0097"
-down_revision: str | None = "0094"
+down_revision: str | None = "0095"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
