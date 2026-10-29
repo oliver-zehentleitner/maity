@@ -8,7 +8,7 @@ disabled. The legal pages get their three tables: the setting, every version of 
 the version served now. Downgrading restores the old columns from the `en` page, as far as
 it has the old shape; the legal tables go with their texts.
 
-Revision ID: 0087
+Revision ID: 0090
 Revises: 0086
 Create Date: 2026-10-29
 """
@@ -20,7 +20,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import mysql, postgresql
 
-revision: str = "0087"
+revision: str = "0090"
 down_revision: str | None = "0086"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

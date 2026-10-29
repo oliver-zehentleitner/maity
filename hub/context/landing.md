@@ -17,7 +17,7 @@ section with an unknown type or field, a missing required field, a broken limit 
 is stored as `pages` per language and `footer`, at most 256 KiB, and a `PATCH` replaces each top-level
 field it names as a whole (`pages` too) and keeps the others: a client that sends the whole state gets
 what it sent, and one that sends only `footer` does not lose the pages. `enabled` needs a page in
-`default_language`. Migration 0087 carries the old one-body landing over as the `en` page (a `hero`
+`default_language`. Migration 0090 carries the old one-body landing over as the `en` page (a `hero`
 with the title and call to action, a `text` section with the Markdown).
 
 **Reason:** the contract lists eleven types with limits; one table keeps the limits, the errors and

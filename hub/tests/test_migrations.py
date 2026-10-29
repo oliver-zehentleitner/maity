@@ -471,12 +471,12 @@ def test_settings_stored_for_removed_notification_kinds_are_deleted(engine: Engi
 
 
 def test_the_old_landing_body_is_carried_into_the_first_section_page(engine: Engine) -> None:
-    """0087 (§16.7): the title, call to action and Markdown of the one-body landing become
+    """0090 (§16.7): the title, call to action and Markdown of the one-body landing become
     the `en` page, a `hero` and a `text` section; a landing that held nothing stays off,
     and going back restores the old columns from that page."""
     import sqlalchemy as sa
 
-    migrate(engine, _before(engine, "0087"))
+    migrate(engine, _before(engine, "0090"))
     old = sa.table(
         "instance_landing",
         sa.column("id", sa.String),
@@ -528,7 +528,7 @@ def test_the_old_landing_body_is_carried_into_the_first_section_page(engine: Eng
             ],
         }
     }
-    downgrade(engine, _before(engine, "0087"))
+    downgrade(engine, _before(engine, "0090"))
     with engine.connect() as conn:
         back = conn.execute(sa.select(old.c.enabled, old.c.title, old.c.markdown, old.c.cta)).one()
     assert tuple(back) == (True, "Bring your agent", "# Hi", cta)
