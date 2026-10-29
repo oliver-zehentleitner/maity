@@ -78,6 +78,7 @@ def test_one_document_to_save(owner: flow.Human) -> None:
         "forge_links",
         "organisations",
         "abuse_reports",
+        "organisation_invitations",
         "runners",
         "agent_profiles",
         "memberships",
@@ -309,3 +310,35 @@ def test_the_organisations_are_handle_role_and_when_they_joined(
         ("their-team", "admin"),
     ]
     assert set(shown[0]) == {"handle", "role", "joined"}
+
+
+def test_the_invitations_a_human_sent_are_in_their_export(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    from tests.test_orgs import make_org
+
+    who = flow.human(make_client, migrated)
+    make_org(who, "my-team", "My Team")
+    flow.human(make_client, migrated, "guest")
+    first = who.post("/orgs/my-team/members/invitations", {"handle": "guest", "role": "admin"})
+    second = who.post(
+        "/orgs/my-team/members/invitations", {"handle": "nobody-here", "role": "member"}
+    )
+    assert first.status_code == second.status_code == 202
+    assert who.delete(f"/orgs/my-team/members/invitations/{first.json()['id']}").status_code == 204
+    shown = who.get("/me/export").json()["organisation_invitations"]
+    assert [(i["handle"], i["role"], i["status"]) for i in shown] == [
+        ("guest", "admin", "revoked"),
+        ("nobody-here", "member", "open"),
+    ]
+    assert all(i["organisation"] == "my-team" for i in shown)
+    assert set(shown[0]) == {
+        "organisation",
+        "handle",
+        "role",
+        "status",
+        "created",
+        "expires",
+        "closed",
+    }
+    assert "request" not in str(shown)

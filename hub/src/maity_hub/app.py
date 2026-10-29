@@ -28,6 +28,7 @@ from maity_hub import (
     longpoll,  # noqa: F401  (subscribes the long-poll to new events)
     namespace,
     not_listening,
+    org_invitations,
     probe,
     registration_accounts,
     reports,
@@ -186,6 +187,9 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         # An open report expires and a closed one's content goes on time (§16.8).
         reports_worker = reports.Worker(engine)
         reports_worker.start()
+        # An organisation's invitation expires without anybody calling (docs/api.md §6.26).
+        invitations_worker = org_invitations.Worker(engine)
+        invitations_worker.start()
         from maity_hub.jourfixe import worker as jour_fixe_worker
 
         jour_fixe_clock = jour_fixe_worker.Worker(engine)  # the schedule acts on its own
@@ -213,6 +217,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         takeover_worker.stop()
         jour_fixe_clock.stop()
         reports_worker.stop()
+        invitations_worker.stop()
         registrations_worker.stop()
         commitment_worker.stop()
         availability_worker.stop()

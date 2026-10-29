@@ -397,11 +397,9 @@ def delete_account(conn: Connection, hub: Settings, human_id: str) -> None:
     _leave_projects(conn, human_id)
     # Its memberships in organisations end (§2.9, §6.26); the check that it is nobody's last
     # owner is `blocker`, made under the organisations' locks.
-    conn.execute(
-        update(t.org_invitation)
-        .where(t.org_invitation.c.invited_by == human_id, t.org_invitation.c.live.is_(True))
-        .values(live=None, closed_at=now, closed_by="inviter_deleted")
-    )
+    from maity_hub import org_invitations
+
+    org_invitations.withdraw_by_inviter_everywhere(conn, human_id, "inviter_deleted")
     conn.execute(delete(t.org_member).where(t.org_member.c.human_id == human_id))
     # The personal requests last, once removing the profiles cannot file another.
     _withdraw_personal(conn, human_id)
@@ -417,8 +415,11 @@ def _withdraw_personal(conn: Connection, human_id: str) -> None:
     """Its open personal requests are withdrawn (§7). Open cross-owner `reports_to`
     consents (§6.2) do not exist in this hub yet: nothing files them, so there is
     nothing to withdraw."""
+    from maity_hub import org_invitations
     from maity_hub.routes.requests import close_request
 
+    # An organisation's invitations to the human first: they have no project to lock (§6.26).
+    org_invitations.withdraw_for_human(conn, human_id, "invitee_deleted")
     for request_id in _ids(
         conn,
         select(t.request.c.id)
@@ -432,7 +433,8 @@ def _withdraw_personal(conn: Connection, human_id: str) -> None:
         project_id = conn.execute(
             select(t.request.c.project_id).where(t.request.c.id == request_id)
         ).scalar_one()
-        lock_project(conn, project_id)
+        if project_id is not None:
+            lock_project(conn, project_id)
         close_request(conn, request_id, "withdrawn", None, reason="the account was deleted")
 
 
