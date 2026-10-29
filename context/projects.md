@@ -143,7 +143,6 @@ reach.
 - A redirect to shields.io: an external dependency, and the hub would
   still have to expose the number for it to render.
 
-
 ## Changing the project badge needs no reason
 
 **Id:** edccf213-6a0c-40e7-b448-ac1413eb3321
@@ -170,6 +169,7 @@ do what or how cards move.
 - Keeping the reason for the badge like for every policy field (the
   state before): it asked for an audit note on a choice that guards
   nothing.
+
 ## The memory provider is chosen at creation, Keep the Why preselected; the setup is an agent's work through cards and pull requests
 
 **Id:** 822d63b0-99da-4092-aaef-93c0674934a2
