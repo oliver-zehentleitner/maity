@@ -2381,7 +2381,6 @@ window.MAITY_FIXTURES = {
     "created_at": "2026-10-21T07:50:00Z",
     "full_name": "maintainer/maity",
     "id": "prj-maity0000001",
-    "keep_the_why": true,
     "keep_the_why_export": {
       "error": null,
       "family_truncated": false,
@@ -5098,7 +5097,6 @@ window.MAITY_FIXTURES = {
     "created_at": "2026-09-02T10:00:00Z",
     "full_name": "maintainer/sample",
     "id": "prj-sample000001",
-    "keep_the_why": false,
     "keep_the_why_export": null,
     "legacy_slug": "sample",
     "logo": {

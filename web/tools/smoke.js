@@ -4088,19 +4088,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && text(main.querySelector("section.memory-panel")).includes("The cards are made when the project gets a repository."),
     "settings: options chosen without a repository wait for it");
   await projectSettings();
-  // The keep_the_why alias of a hub before §6.21 is gone (tsk-qeh64f8gpvnd): such a hub is offered neither memory nor the alias.
+  // The boolean keep_the_why alias of memory.provider is gone from the hub (#606): the mock refuses it too.
   const akGet = win.Maity.api.get;
-  win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.resolve({ paths: { "/api/v1/projects": { post: { requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/P" } } } } } } },
-    components: { schemas: { P: { properties: { slug: {}, name: {}, repository: {}, keep_the_why: {}, policy: {} } } } } }) : akGet(p));
-  win.Maity.api.forgetRoutes();
-  await go("#/new"); await tick();
-  byId("project-name").value = "Alias Hub"; byId("project-name").dispatch("input"); byId("project-preset").value = "hierarchical";
-  expect(!byId("project-memory") && !main.querySelector("fieldset.project-setup"),
-    "create: a hub that knows only the old keep_the_why is offered no project memory");
-  main.querySelector("form").dispatch("submit"); await tick(); await tick();
-  expect(JSON.stringify(posts[posts.length - 1][1]) === JSON.stringify({ slug: "alias-hub", name: "Alias Hub", policy: { preset: "hierarchical" } }),
-    "create: and sends no keep_the_why");
-  win.onhashchange(); for (let k = 0; k < 4; k++) await tick();
+  const akRefused = await win.Maity.api.post("/projects", { slug: "alias-hub", name: "Alias Hub", keep_the_why: true }).catch((err) => err);
+  const akPatched = await win.Maity.api.patch("/projects/maintainer/maity", { keep_the_why: false }).catch((err) => err);
+  const akView = await win.Maity.api.get("/projects/maintainer/maity");
+  expect(akRefused.code === "invalid" && akRefused.details.fields.keep_the_why === "extra_forbidden"
+    && akPatched.code === "invalid" && akPatched.details.fields.keep_the_why === "extra_forbidden" && !("keep_the_why" in akView),
+    "create: the mock refuses the old keep_the_why alias in POST and PATCH, and the project view has none");
   // A machine form that cannot be read: no choice offered, and the form says the hub's defaults apply.
   win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.reject(new win.Maity.api.ApiError("bad gateway", 502, p, "unavailable")) : akGet(p));
   win.Maity.api.forgetRoutes();
