@@ -404,9 +404,10 @@ stay in the chat is current (`here`) and whose stay began before the message (`s
 never for the writer, never for an observer, who reads along and is not addressed (§9.2). Someone
 who has left gets nothing from the chat, what was said while they were in it included, and a
 rejoin does not bring back what was said while they were away. `counts.chat` adds the group chats
-to the direct ones through the chat list's own `conversation_list._unread`, in one batch for all
-the stays, so that it is the number the list shows by construction and not by a second copy of
-the rule.
+to the direct ones (`listing._unread_groups`, per stay: the others' messages after both the stay
+began and the read mark, tombstones included), the number the chat list shows; a test compares
+the two. The count costs two queries per group chat, which the bell's counts will take from the
+chat list's batched `unread` instead (#560).
 
 **Reason:** §18.1 names the participants as recipients. A former participant no longer reads the
 chat (`…/messages` answers `not_found`, the list does not show it, §9.2), so an item for an
@@ -419,6 +420,6 @@ the chat's own window.
   disagree with the count.
 - Notifying the owner who reads along as an observer: §9.2 makes an observer a reader, not an
   addressee.
-- Counting each stay with a query of its own in `listing`: it was written first and costs two
-  queries per group chat on every bell answer, the long-poll included; the list's batched count
-  does the same in chunks.
+- Reusing the chat list's batched `conversation_list._unread` for the count right here: it would
+  make the number the list's by construction, but the bell's counts are being moved onto the
+  list's `unread_chats` in #560, so a second change to the same lines would only conflict.
