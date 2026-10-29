@@ -1122,6 +1122,9 @@ window.Maity = window.Maity || {};
 
   // ---- context ------------------------------------------------------------
 
+  // The project's members as read: the list, the index by id and the names
+  // set together, so no view reads one fresher than the others. Every view
+  // that reads the members again sets them through this (M.withMembers).
   function withMembers(ctx, members) {
     const byId = {};
     members.forEach((m) => { byId[m.id] = m; });
@@ -1588,6 +1591,7 @@ window.Maity = window.Maity || {};
   }
 
   M.errorBox = errorBox;
+  M.withMembers = withMembers;
   M.logout = logout;
   M.brandTitle = brandTitle;
   M.statusLine = statusLine;

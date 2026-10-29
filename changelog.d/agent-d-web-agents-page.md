@@ -10,3 +10,8 @@
 
 - web: the account's **Agents in other projects** and `/account/picture/<agent id>`; an agent's
   picture, name and deletion are on Your agents.
+
+### Fixed
+
+- web: an open join panel redraws its instance count when the rulebook is saved, the chosen agent
+  kept; every view that reads the members again sets the list and its index by id together.

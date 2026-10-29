@@ -141,7 +141,7 @@ window.Maity = window.Maity || {};
     replaced.addEventListener("change", () => { replaceOne.checked = true; another.checked = false; });
     // The project's members read again, for the instances a choice offers.
     async function rereadMembers() {
-      try { ctx.members = (await M.api.getAll(ctx.base + "/members")).items; } catch (ignored) { /* the refusal shown says enough */ }
+      try { M.withMembers(ctx, (await M.api.getAll(ctx.base + "/members")).items); } catch (ignored) { /* the refusal shown says enough */ }
     }
 
     const own = !!hooks.member;
@@ -300,7 +300,7 @@ window.Maity = window.Maity || {};
             if (saysMember) saidMember.add(agent.id);
             if (notMember) saidMember.delete(agent.id);
             await rereadMembers();
-            if (notMember) ctx.members = ctx.members.filter((m) => m.id !== agent.id);
+            if (notMember) M.withMembers(ctx, ctx.members.filter((m) => m.id !== agent.id));
             showAgent();
             if (saysMember) status.fail("No join created: ", { message: "this agent is already a member of the project. "
               + "Choose whether the line starts another instance or replaces one, then create it." });
@@ -467,7 +467,10 @@ window.Maity = window.Maity || {};
     // A join that expires while the view is open moves on without a reload.
     ctx.every(EXPIRY_MS, () => { if (keyOf(joins, M.api.now()) !== shownKey) changed(); });
 
-    return { open, close, seats, earlier, openCount, openAgents, reread };
+    // The members changed under an open panel (a rulebook saved on Members):
+    // the choice drawn again from them, the chosen agent and instance kept.
+    const refresh = () => { if (!panel.hidden) showAgent(); };
+    return { open, close, seats, earlier, openCount, openAgents, reread, refresh };
   }
 
   // On a page the router has not attached yet (a direct /<owner>/<slug>/members/join), the
@@ -546,6 +549,7 @@ window.Maity = window.Maity || {};
       openAgents: () => (impl ? impl.openAgents() : []),
       // A failed first read keeps its Try again.
       reread: () => (impl ? impl.reread() : Promise.resolve()),
+      refresh: () => { if (impl) impl.refresh(); },
       // An open panel holds a form being filled in or a line shown once: a
       // redraw of the view would lose either.
       busy: () => !panel.hidden,

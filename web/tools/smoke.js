@@ -785,6 +785,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("join-agent").value = "agt-b"; byId("join-agent").dispatch("change");
   expect(text(byId("join-quota")) === "1 of 1 instances active; another one is over the team's limit.",
     "team: opening + Add an agent reads the members again, a limit changed elsewhere shows: " + text(byId("join-quota")));
+  // The panel open while the rulebook is saved: its count follows at once, the agent still chosen (antigravity's P3 on #616).
+  const ibOpenRow = main.querySelectorAll("tr.member-manage").find((r) => r.id === "member-manage-agt-b") || await agOpen("agt-b");
+  byId("team-max-agt-b").value = "2"; ibOpenRow.querySelector("form.member-team").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(!main.querySelector(".join-panel").hidden && byId("join-agent").value === "agt-b" && text(byId("join-quota")) === "1 of 2 instances active.",
+    "team: with the panel open, a saved rulebook redraws its count, the agent still chosen: " + text(byId("join-quota")));
+  await win.Maity.api.patch("/projects/maintainer/maity/members/agt-b", { team: { max_instances: 1 } });
   btn(main.querySelector(".join-panel"), "Cancel").click(); await tick();
   // Another owner's agent: no rulebook, even for an admin.
   const tmOthers = win.Maity.api.getAll;

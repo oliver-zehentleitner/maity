@@ -139,7 +139,7 @@ window.Maity = window.Maity || {};
     async function reload() {
       items = (await M.api.getAll(ctx.base + "/members")).items;
       // The join panel offers instances from ctx.members: a save shows there without a reload.
-      ctx.members = items;
+      M.withMembers(ctx, items);
     }
 
     // A write and the re-read after it are told apart: a write that went
@@ -613,6 +613,8 @@ window.Maity = window.Maity || {};
       if (!J) return;
       append(clear(seatsBox), J.seats());
       append(clear(earlierBox), J.earlier());
+      // An open panel's choice follows the members just read (a saved rulebook).
+      J.refresh();
     }
 
     append(root, h("h2", null, "Members"),
@@ -689,8 +691,7 @@ window.Maity = window.Maity || {};
         // The page's member list follows, so every name on it — a global
         // name where a handle is now shared (§6.3) — agrees with the rows.
         if (!same) {
-          ctx.members = fresh;
-          ctx.memberById = Object.fromEntries(fresh.map((m) => [m.id, m]));
+          M.withMembers(ctx, fresh);
           redraw();
           return;
         }
