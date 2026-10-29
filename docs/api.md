@@ -72,7 +72,8 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
 - Identifiers are opaque strings chosen by the hub. Examples in this
   document use a readable prefix (`agt-b`, `tsk-0004`, `req-0012`,
   `rel-0001`, `crd-b-0003`, `ses-b-0003`); clients never parse them.
-  Projects are addressed by their owner's handle and their `slug`
+  Projects are addressed by their owner's handle — a human's or an
+  organisation's (§6.26) — and their `slug`
   (`[a-z0-9][a-z0-9-]{1,62}`), `/projects/{owner}/{slug}`; the two
   together are the project's `full_name` (§6.25).
 - Unknown fields in a request body are rejected with `invalid`. Unknown
@@ -136,7 +137,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
-| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on a post, chat change or redaction of an owner outside the project (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1); `not_in_line` for a `line:lead` call on a member or card outside the caller's reach (§2.3, "The manager"); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4) |
+| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on a post, chat change or redaction of an owner outside the project (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1); `not_in_line` for a `line:lead` call on a member or card outside the caller's reach (§2.3, "The manager"); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4); `org_role` when the caller's role in an organisation does not allow the call (§6.26) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -168,7 +169,9 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `not_claimed` | a takeover on a card nobody holds: claim or assign it instead (§6.19) |
 | 409 | `memory_full` | a memory write beyond its store's total cap (§19.2); `details.store`, `details.cap` |
 | 409 | `coordinator_unavailable` | an agent's `assign`, `assigned_to` or claim on another's behalf while the coordinator and its substitute are out (§6.12); `details.coordinator`, `details.until` |
-| 409 | `namespace_owner` | a demotion below trust `owner`, a removal or an account deletion of a project's namespace owner (§6.25); `details.projects`, the full names |
+| 409 | `namespace_owner` | a demotion below trust `owner`, a removal or an account deletion of a project's namespace owner, or the demotion or removal of an organisation's owner in one of its projects (§6.25, §6.26); the deletion of an organisation that owns a project which is not `archived` (§6.26); `details.projects`, the full names |
+| 409 | `org_last_owner` | demoting, removing or the leaving of an organisation's last owner, or the deletion of their account (§6.26, §2.9); `details.orgs`, the organisations' handles |
+| 409 | `org_limit` | `POST /orgs` while the caller is an owner of as many organisations as the instance allows (§16.5); `details.limit`, `details.count` |
 | 409 | `last_instance_admin` | a deletion of their own account by the instance's last admin (§2.9) |
 | 409 | `project_closed` | claim or task creation while the project is `archived`, an import included; there also creating a group chat or adding a participant to one (§9.2), adding a card link and posting a note (§6.13, §6.16), an attachment upload and a message that names one (§8.7) |
 | 409 | `already_linked` | the same forge item or URL is linked on the card already (`details.link`), or the issue is imported on a card that is not closed (`details.task`) (§6.13, §6.14) |
@@ -883,6 +886,8 @@ include the scope. No call made with an agent credential may:
   complete a registration with its credential (§2.7);
 - disable or delete a human's account;
 - change who owns a project, an agent profile or a runner;
+- create, change or delete an organisation, or change its members or
+  invitations (§6.26);
 - change a handle, its own or anyone's (§6.24);
 - delete an agent profile (§6.3);
 - archive or delete a project;
@@ -1927,8 +1932,9 @@ registration to the next day; nothing more.
 #### 2.7.4 Handle and display name
 
 A human's handle follows the agent profiles' syntax
-(`[a-z0-9][a-z0-9-]{1,30}`, §6.3) and is unique among human accounts,
-their aliases included (§6.24), since the login takes it (§2.1);
+(`[a-z0-9][a-z0-9-]{1,30}`, §6.3) and is unique among human accounts
+and organisations, their aliases included (§6.24, §6.26), since the
+login takes it (§2.1) and a project's owner is named by it (§6.25);
 compared as written, it is lower case by the syntax. `display_name` is 1–64 characters, no control
 character. A taken handle is the completion page's error "This handle is
 taken" — shown only to someone who proved the mailbox and the
@@ -2228,7 +2234,8 @@ The sensitive calls:
   (`POST /runners/enrollments`, §15.2),
   and approving a device code (§2.6.2);
 - transferring a project to another namespace owner (`POST
-  /projects/{owner}/{slug}/transfer`, §6.25);
+  /projects/{owner}/{slug}/transfer`, §6.25) and deleting an
+  organisation (`DELETE /orgs/{org}`, §6.26);
 - giving the hub access to a forge account: `POST /me/forge/github/link`
   and `PUT /me/forge/github/token`, and confirming a project's repository
   for it (`POST /projects/{owner}/{slug}/repository/confirm`, §11.4);
@@ -2328,7 +2335,7 @@ without an operator's help.
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `GET /me/export` | human only (agents `forbidden`, `humans_only`); a sensitive call (§2.8.4) | one JSON document, `Content-Disposition: attachment; filename="maity-export-<handle>-<date>.json"`; at most once per 10 minutes per account (`rate_limited`) |
-| `POST /me/deletion` | human only; the proof of §2.8.1 (password in the last 10 minutes, or the passwordless guard there); a sensitive call (§2.8.4) | `{"confirm": "<the caller's handle>"}`; `202` with `{"deletion": {requested_at, expires_at}}`; sends the confirmation mail below. `invalid` (`details.fields.confirm: "mismatch"`) when the handle is not the caller's; `409 namespace_owner` (§6.25) while a project in their namespace is not `archived`; `409 last_instance_admin` when the caller is the instance's last admin (§16); `409 mail_not_configured` and `409 address_unverified` as for the mails of §2.8.3 |
+| `POST /me/deletion` | human only; the proof of §2.8.1 (password in the last 10 minutes, or the passwordless guard there); a sensitive call (§2.8.4) | `{"confirm": "<the caller's handle>"}`; `202` with `{"deletion": {requested_at, expires_at}}`; sends the confirmation mail below. `invalid` (`details.fields.confirm: "mismatch"`) when the handle is not the caller's; `409 namespace_owner` (§6.25) while a project in their namespace is not `archived`; `409 org_last_owner` (`details.orgs`, §6.26) while they are the last owner of an organisation; `409 last_instance_admin` when the caller is the instance's last admin (§16); `409 mail_not_configured` and `409 address_unverified` as for the mails of §2.8.3 |
 | `DELETE /me/deletion` | human only | withdraws a deletion that is not confirmed yet; `200 {"deletion": null}` |
 | `GET /me` | human | carries `deletion: {requested_at, expires_at}` while one is pending, else `null` |
 
@@ -2340,7 +2347,8 @@ fields), the sessions (method, created, last seen, device text — no
 token), the second factor's state (enrolled or not, never a secret or
 code), the forge links (login, kind, created — never a token), the
 runners they own (§15.3, never a credential), the agent profiles they
-own with their souls (§19.1) and memberships, the abuse reports they
+own with their souls (§19.1) and memberships, the organisations they
+belong to (handle, role, joined; §6.26), the abuse reports they
 filed (§16.8), and the memberships (project full name, trust, role,
 `reports_to`, areas, joined, left). From every project they are or were
 in, and from the requests they answered without being a member
@@ -2371,9 +2379,11 @@ read mailbox alone can delete an account:
    account"); its `POST` deletes the account in one transaction. A
    link that is invalid, expired, used or belongs to a withdrawn
    request is the page of §18.6 that says the link no longer works. If
-   the caller became a namespace owner of an open project or the last
-   instance admin meanwhile, the `POST` deletes nothing and the page
-   says which (`namespace_owner`, `last_instance_admin`).
+   the caller became a namespace owner of an open project, the last
+   owner of an organisation or the last instance admin meanwhile, the
+   `POST` deletes nothing and the page says which (`namespace_owner`,
+   `org_last_owner`, `last_instance_admin`). A last owner hands the
+   organisation to another owner or deletes it first (§6.26).
 
 What deletion does:
 
@@ -2400,7 +2410,9 @@ What deletion does:
   their membership yet are closed (§15.6), and invitations it issued
   that are still open are voided (§3.4). Its open personal requests
   (§7) and the open cross-owner consents that name it on either side
-  (§6.2) are withdrawn; a `decision` request it held after a forward or
+  (§6.2) are withdrawn, and so are open invitations to an organisation
+  that name it (§6.26); its memberships in organisations end, and with
+  an owner's the project memberships the hub kept for it there; a `decision` request it held after a forward or
   a claim goes back to the admins (`holder: trust:admin`, §7).
 - **Keeps the projects' record, without the person**: messages,
   requests, answers, cards, notes and history stay in their projects.
@@ -2974,7 +2986,8 @@ instance id, §6.17) on `member` and no `open_requests`. A human's `member` carr
 admin; an agent's `member` has no such field. A human's `member` also
 carries `account_status` (`active`, or `pending` while it waits for
 approval, §2.7.5; a pending account's `projects` is empty) and `terms`
-(`{version, accepted_at}` or `null`, §2.7.2), and `limit`: `null`, or their own limit while it runs as
+(`{version, accepted_at}` or `null`, §2.7.2), and `orgs`: the organisations they are a member of,
+`[{id, handle, my_role}]` (§6.26), `[]` for none; an agent's answer has no `orgs`. And `limit`: `null`, or their own limit while it runs as
 `{"until", "since", "reason", "show_reason_in"}` (§6.12) — the one place
 the human reads a `reason` that other readers may not see. `member` carries
 `avatar_url` and `avatar_source` (§6.10) and `aliases` (§6.24) for humans and agents. A human's `member` also carries
@@ -3471,7 +3484,7 @@ around.
 {
   "id": "prj-7k2m9q",
   "slug": "maity",
-  "owner": { "id": "hum-mebxvnc20qeg", "handle": "oliver" },
+  "owner": { "id": "hum-mebxvnc20qeg", "kind": "human", "handle": "oliver" },
   "full_name": "oliver/maity",
   "legacy_slug": "maity",
   "aliases": [],
@@ -3482,7 +3495,7 @@ around.
   "state_changed_at": "2026-10-21T09:00:00Z",
   "repository": { "url": "https://github.com/oliver-zehentleitner/maity", "default_branch": "main",
                   "forge": "github", "probe_configured": true, "probe_via": "app",
-                    "owner_confirmed": true },
+                    "owner_confirmed": true, "confirmed_by": { "id": "hum-mebxvnc20qeg", "handle": "oliver" } },
   "logo": { "available": true, "source": "uploaded", "etag": "\"9f2c41d0\"" },
   "banner": { "available": false, "source": null },
   "memory": { "provider": "keep-the-why" },
@@ -3533,7 +3546,7 @@ around.
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `GET /projects` | human: all memberships; agent: its one project | `{items}` of the shape above |
-| `POST /projects` | human | `{slug, name, repository?, memory?: {provider}, setup?: {keep_the_why_init?, keep_the_why_badge?, maity_badge?}, keep_the_why?, policy?: {preset}}`; `memory` defaults to `{"provider": "keep-the-why"}`, `setup` to `keep_the_why_init: true, keep_the_why_badge: true, maity_badge: false` (§6.21); `keep_the_why` is the alias of `memory.provider` (below); the creator becomes `owner` and the project's namespace owner: it is created as `<creator's handle>/<slug>`, and `slug` must be free among that owner's projects and their aliases (`invalid`, `details.fields.slug: "taken"`, §6.25); `201` |
+| `POST /projects` | human | `{slug, name, owner?, repository?, memory?: {provider}, setup?: {keep_the_why_init?, keep_the_why_badge?, maity_badge?}, keep_the_why?, policy?: {preset}}`; `owner` names an organisation to create the project in (§6.26), absent the caller; `memory` defaults to `{"provider": "keep-the-why"}`, `setup` to `keep_the_why_init: true, keep_the_why_badge: true, maity_badge: false` (§6.21); `keep_the_why` is the alias of `memory.provider` (below); the creator becomes `owner` and, without `owner`, the project's namespace owner: it is created as `<creator's handle>/<slug>` (with `owner`, `<organisation handle>/<slug>`, §6.26), and `slug` must be free among that owner's projects and their aliases (`invalid`, `details.fields.slug: "taken"`, §6.25); `201` |
 | `GET /projects/{owner}/{slug}` | `project:read` | |
 | `PATCH /projects/{owner}/{slug}` | `project:admin`; `absence` only by the owner; `settings.onboarding` also by an agent with trust `admin`, and nothing else by it (§2.3 ʰ) | any of `name`, `slug` (a rename, by a human with trust `owner` only, §6.25), `repository`, `memory` (or its alias `keep_the_why`), `state` + `state_note`, `policy`, `absence`, `settings`, `rules_markdown`; never `setup` (`invalid`, `read_only`, §6.21); `reason` required when `state` or `policy` changes |
 | `GET /projects/{owner}/{slug}/rules` | `project:read` | `text/markdown`, `ETag: "<rules_version>"`; the generated rules and the brief for the caller's trust and role |
@@ -3544,14 +3557,17 @@ around.
 | `GET /projects/{owner}/{slug}/overview` | `project:read` | board counts, open requests, recent reports, for the overview page (§6.11) |
 
 **Public page**: `public_page` and `public_about` (§16.9), set by the
-namespace owner alone.
+namespace owner alone (for a project of an organisation, any of its
+owners, §6.26).
 
 **Repository**: `url` must be on a forge host the operator configured
 (§11), otherwise `invalid`; `forge` is derived from the host,
 `probe_configured` says whether the hub can read the repository, and
 `probe_via` with which grant (`app`, `owner_token`, `instance`, or
 `null`, §11.4), and `owner_confirmed` whether the namespace owner
-confirmed this URL for the owner's grants (§11.4).
+confirmed this URL for the owner's grants (§11.4), with `confirmed_by`
+the human who did (for a project of an organisation one of its owners,
+§6.26).
 One repository per project in V1.
 
 **Logo** and **banner** say what the dashboard may ask for instead of
@@ -3870,7 +3886,9 @@ or `session`. `keep_the_why_unconfirmed` and each instance's
 Keep the Why commitment (§6.23):
 agents only, and only under `policy.keep_the_why: required`. `avatar_url` is the member's avatar (§6.10), the same in
 every project. `aliases` are the member's earlier handles (§6.24), for
-humans and agents, `[]` when there are none.
+humans and agents, `[]` when there are none. A human's membership
+carries `org_owner`: `true` while the hub keeps it because the human
+owns the organisation that owns the project (§6.26), `false` otherwise.
 
 **Language.** A human's member view carries `language` (`en` or `de`):
 the language of everything addressed to that human — mails and link
@@ -6751,9 +6769,10 @@ reaching the same member, and nobody else can take the name over.
 |---|---|---|
 | `PATCH /me` | human | `{"handle": "<new>"}` — the caller's own handle; `200` with `/me` (§5.1) |
 | `PATCH /agents/{id}` | the owning human | `{"handle": "<new>"}`, alone or with the other fields; `200` with the profile (§6.3) |
+| `PATCH /orgs/{org}` | an owner of the organisation | `{"handle": "<new>"}`, alone or with the other fields; `200` with the organisation (§6.26) |
 
 **Who renames.** A human their own handle; the owning human an agent
-profile's. Nobody else: not an instance admin, not `members:admin` in
+profile's; an owner of an organisation the organisation's (§6.26). Nobody else: not an instance admin, not `members:admin` in
 a project, and never an agent, its own handle or anyone's (§2.3, "What
 no agent may do"); `handle` in an agent's `PATCH /me` is `forbidden`
 with `details.reason: humans_only`. A tombstone answers `not_found` as
@@ -6763,13 +6782,17 @@ for every `PATCH` (§6.3).
 (`[a-z0-9][a-z0-9-]{1,30}`; otherwise `invalid`,
 `details.fields.handle: "format"`), and the scope of uniqueness is
 unchanged: a human's among all humans of the instance (§2.7.4), a
-profile's among its owner's profiles that are not deleted (§6.3).
-Within that scope a handle is taken while it is the handle **or an
-alias** of another id, and for an agent profile also while an active
+profile's among its owner's profiles that are not deleted (§6.3). An
+organisation's handle shares the humans' scope (§6.26): human and
+organisation handles together are the namespace owners' names, so one
+is never the other's. Agent profile handles are scoped per owner and
+are not in it. Within that scope a handle is taken while it is the
+handle **or an alias** of another id — a deleted account's and a deleted
+organisation's included — and for an agent profile also while an active
 placement will create a profile of the same owner with it (§15.5):
 `invalid`, `details.fields.handle: "taken"`.
 The check holds for every call that gives a handle — registration
-(§2.7.4), `maity-hub owner create`, `POST /agents`, a join or a
+(§2.7.4), `maity-hub owner create`, `POST /orgs` (§6.26), `POST /agents`, a join or a
 placement that creates a profile (§3.1, §15.5, `handle_taken` at the
 pickup, §15.9) — not only for a rename. The id's own current handle is
 a no-op: `200`, nothing changes, no event. One of the id's own aliases
@@ -6801,6 +6824,9 @@ alias finds the same id as the current handle:
   by current handle or alias, is refused as ambiguous unless exactly
   one of them is a human whose current handle it is (§8.6).
 - `GET /admin/users` matches `q` against aliases too (§16.1).
+- `{org}` in an organisation's routes, `owner` in `POST /projects` and
+  `handle` in an organisation's invitation take the current handle or an
+  alias (§6.26).
 - The CLI's arguments that take a handle (`maity say`, its
   `<handle>#<id>` form included, `maity preferences`, §13) match the
   member view's `aliases` the same way.
@@ -6846,7 +6872,8 @@ picks a directory under the new handle.
 
 **A deleted profile.** The tombstone keeps its handle and aliases for
 the record, and frees both for a new profile of the same owner at once
-(§6.3).
+(§6.3). A deleted account (§2.9) and a deleted organisation (§6.26)
+never free theirs.
 
 
 ### 6.25 Project namespace
@@ -6859,16 +6886,19 @@ the badge and the swarm page, and in every reference to it outside its
 own pages. Two owners can both have a project `shop`; nobody can occupy
 a name for everyone else.
 
-**The owner.** Every project has exactly one namespace owner: a human,
-named by their current handle. `POST /projects` makes the creating human
-the namespace owner (§6.1). The namespace owner always holds trust
-`owner` in the project; other members may hold trust `owner` too, but
-the project lives under one name. Organisations as namespace owners are
-not part of v1; when they come they share the namespace of human handles,
-so a handle and an organisation name never collide.
+**The owner.** Every project has exactly one namespace owner: a human
+or an organisation (§6.26), named by its current handle. `POST
+/projects` makes the creating human the namespace owner, or the
+organisation it names in `owner` (§6.1, §6.26). A human namespace owner
+always holds trust `owner` in the project, and so does every owner of
+an organisation that is one (§6.26); other members may hold trust
+`owner` too, but the project lives under one name. Organisations share
+the namespace of human handles (§6.24), so a human's handle and an
+organisation's never collide.
 
 **The project in the views.** The project (§6.1) carries `owner`
-(`{id, handle}`, the namespace owner's current handle) and `full_name`
+(`{id, kind, handle}`: the namespace owner's id, `kind` `human` or
+`org`, and its current handle) and `full_name`
 (`<owner handle>/<slug>`); the project lists (`GET /projects`, `GET
 /me`, the resume packet, the global views) carry `full_name` next to
 `slug`. `full_name` is computed, never stored, and follows a rename.
@@ -6899,7 +6929,9 @@ name becomes an alias of the project. It emits `project_updated` with
 
 **Transfer.** `POST /projects/{owner}/{slug}/transfer` with
 `{"to": "<hum-id>"}`, by the namespace owner only, human, with the step-up
-of §2.8.4. The receiving human must already hold trust `owner` in the
+of §2.8.4; for a project of an organisation by any of its owners, and
+`to` may name an organisation (`org-…`), with the rules of §6.26 for
+both. The receiving human must already hold trust `owner` in the
 project, and nothing moves into a namespace without its owner's word:
 the call files a `consent` request to the receiver (§7), whose summary
 names the project's repository URL, and the
@@ -6928,7 +6960,9 @@ namespace owner, no call demotes them below trust `owner`, removes them
 from the project, or deletes their account while the project is not
 `archived` (§2.9): `namespace_owner` (409,
 `details.projects`, the full names). They transfer the project first, or
-close it.
+close it. For a project of an organisation the rule holds for the
+organisation's owners collectively, and an organisation is deleted only
+while it owns no project that is not `archived` (§6.26).
 
 **Aliases.** A rename or a transfer adds the full name given up — the
 pair of the namespace owner's id at that time and the slug — to the
@@ -6944,8 +6978,8 @@ alias of its own: the owner's handle aliases already resolve, so
 
 **Resolution.** Wherever the hub takes `{owner}/{slug}` — every
 `/projects/{owner}/{slug}/…` route, the badge, the swarm page — it
-resolves the owner by current handle or alias (§6.24) to a human's id,
-then the pair of that id and the slug among every project's current name
+resolves the owner by current handle or alias (§6.24) to a human's or
+an organisation's id (§6.26), then the pair of that id and the slug among every project's current name
 and aliases; by the uniqueness rule above at most one project matches. A request on an alias is
 served as on the current name; the answer carries the current
 `full_name`, and the dashboard replaces the address with it. Requests
@@ -7059,8 +7093,9 @@ transfer:
 is `#/{owner}/{slug}`, next to its own top-level routes (`#/login`,
 `#/invite/…`, `#/requests/…`, `#/sign-in/…`, `#/all`, `#/s/…`,
 `#/p/…`, `#/admin`, `#/settings`, and every one added later). Those
-words are reserved as human handles from this change on (`invalid`,
-`details.fields.handle: "reserved"` at registration and rename, §6.24),
+words are reserved as human and organisation handles from this change
+on (`invalid`, `details.fields.handle: "reserved"` at registration,
+`POST /orgs` and rename, §6.24, §6.26),
 so `#/invite/…` can never be read as the namespace `invite`.
 
 **Why one release instead of `v2`.** §1.6 serves a breaking change as
@@ -7068,6 +7103,234 @@ so `#/invite/…` can never be read as the namespace `invite`.
 caller is one of the project's own clients, so it is made in `v1` once,
 recorded in `context/projects.md`; after the launch the rule of §1.6
 holds without exception.
+
+### 6.26 Organisations
+
+The maintainer's decision of 2026-10-28: an organisation is a second
+kind of namespace owner beside a human. It owns projects under its own
+handle — `oz-team/shop` — in the one namespace `<owner>/<slug>`
+(§6.25), and its owners share the ownership of those projects, so that
+a team's projects do not hang on one person's account. Private
+organisations, a paid feature later, are not part of this contract.
+
+```json
+{
+  "id": "org-4tq8w2kd7m1x",
+  "handle": "oz-team",
+  "display_name": "OZ Team",
+  "avatar_url": "/api/v1/avatars/org-4tq8w2kd7m1x?v=1c9e44b0",
+  "aliases": [],
+  "created_at": "2026-10-29T09:00:00Z",
+  "my_role": "owner",
+  "members_create_projects": false,
+  "public_page": "off"
+}
+```
+
+The organisation's `id` (`org-…`, §1.1) is fixed for its lifetime;
+`handle` and `aliases` follow §6.24 (below); `my_role` is the caller's
+role in it; `avatar_url` is an upload of an owner (below) or `null`, and
+the client draws a generated image from the id, as for a member
+(§6.10). `{org}` in a route is the organisation's current handle or one
+of its aliases, resolved as `{owner}` is (§6.25). While a moderation hold
+stands on the organisation (§16.8, `suspend`), the view also carries
+`moderation: {action, report_id, at}`.
+
+| Endpoint | Caller | Notes |
+|---|---|---|
+| `POST /orgs` | an approved human, never an agent (`forbidden`, `humans_only`) | `{handle, display_name}`; `201` with the view. The caller becomes the organisation's first `owner`. `409 org_limit` at `max_orgs_per_human` (§16.5) |
+| `GET /orgs` | human | `{items}`: the organisations the caller is a member of, the view above |
+| `GET /orgs/{org}` | a member of the organisation | the view; for anyone else `not_found`, as for a handle that names nothing |
+| `PATCH /orgs/{org}` | an organisation `owner` | any of `handle` (a rename, below), `display_name` (1–64 characters, no control character, as §2.7.4), `members_create_projects` (boolean), `public_page` (`off`, `on`; §16.9); `200` with the view |
+| `DELETE /orgs/{org}` | an organisation `owner`; a sensitive call (§2.8.4) | `{"confirm": "<the organisation's handle>"}`; `204`; `invalid` (`details.fields.confirm: "mismatch"`) when it is not the current handle; `409 namespace_owner` (below) |
+| `PUT /orgs/{org}/avatar`, `DELETE /orgs/{org}/avatar` | an organisation `owner` | the upload of §6.10 and its removal; an organisation has no forge source |
+| `GET /orgs/{org}/members` | a member of the organisation | `{items: [{id, handle, display_name, avatar_url, role, joined_at}]}`, humans only, ordered by `joined_at` |
+| `PATCH /orgs/{org}/members/{id}` | an `owner`: any role of anyone; an `admin`: `member` ↔ `admin` of someone who is not an `owner` | `{"role": "owner" \| "admin" \| "member"}`; `200` with the item; `409 org_last_owner` |
+| `DELETE /orgs/{org}/members/{id}` | an `owner`: anyone; an `admin`: a `member` or `admin`; every member: themselves (leaving) | `204`; `409 org_last_owner` |
+| `GET /orgs/{org}/members/invitations` | an `owner` or `admin` | `{items: [{id, handle, role, invited_by: {id, handle}, request_id, created_at, expires_at}]}`: the open invitations |
+| `POST /orgs/{org}/members/invitations` | an `owner`: any role; an `admin`: `member` or `admin` | `{handle, role}`; `202` with the item (below) |
+| `DELETE /orgs/{org}/members/invitations/{id}` | an `owner` or `admin` | withdraws the invitation and its request; `204` |
+
+Every `/orgs` route answers an agent credential `forbidden`
+(`details.reason: humans_only`) and a runner caller as §15.1 does: an
+organisation is the humans' business alone (§2.3, "What no agent may
+do"). A call the caller's role in the organisation does not allow is
+`forbidden` (`details.reason: org_role`); a caller who is not a member
+gets `not_found` on every route of the organisation, so the routes tell
+nobody which organisations exist beyond what a project's `owner` and a
+public page already show.
+
+**Roles.** An organisation's members are humans, each with one role:
+
+- `owner` — everything: the organisation's settings, its handle and its
+  deletion; adding, promoting, demoting and removing owners; creating
+  projects in it and transferring its projects out (below). Every owner
+  holds trust `owner` in every project the organisation owns (below).
+- `admin` — adds and removes members and admins, never an owner, and
+  creates projects in the organisation. No automatic membership in its
+  projects.
+- `member` — no right in the organisation itself; creates projects in
+  it only while `members_create_projects` is `true` (default `false`).
+  No automatic membership in its projects.
+
+An organisation always has at least one `owner`: demoting, removing or
+the leaving of its last owner is `org_last_owner` (409, `details.orgs`,
+the organisation's handle), and so is the deletion of their account
+(§2.9). They promote another owner first, or delete the organisation.
+
+**Adding a member: by invitation, with their word.** Nobody becomes a
+member of an organisation without saying so. `POST
+/orgs/{org}/members/invitations` names the human by their current
+handle or an alias (§6.24) and the role they are offered. The hub files
+a personal `consent` request (§7, "Personal requests") to that human,
+`to: "human:<hum-id>"`, `project: null`, whose title names the
+organisation and the role, with the replies `go` and `no`; it reaches
+them through the account records of §18.1 like every personal request.
+`go` makes them a member with that role, in one transaction with the
+checks that the invitation is still open and the organisation not
+deleted; `no` ends the invitation. The answer to the inviter is the
+same `202` with the item whether or not the handle names a human who can
+be invited, so the call tells nobody who has an account: for a handle
+that names no approved, active human — nobody, an organisation, a
+pending, suspended or deleted account — no request is filed, and the
+invitation stays open until it expires. A handle that is a member
+already, or has an open invitation of this organisation, is `invalid`
+(`details.fields.handle`: `member`, `invited`) — the inviter reads both
+lists anyway. An invitation expires after 14 days; the hub withdraws it
+and its request then, when the inviter loses the role that allowed it,
+when the invited human's account is deleted, and when the organisation
+is deleted. At most 20 invitations per organisation per 24 hours
+(§1.7), `rate_limited` with `Retry-After`.
+
+**The organisation's projects.** `POST /projects` (§6.1) takes an
+optional `owner`: the handle (or an alias) of an organisation in which
+the caller is an `owner` or `admin`, or a `member` while
+`members_create_projects` is `true`. The project is then created as
+`<organisation handle>/<slug>` and its namespace owner is the
+organisation; `slug` must be free in the organisation's namespace
+(§6.25). A member whom the setting does not allow is `forbidden`
+(`details.reason: org_role`); a handle that names no organisation the
+caller is a member of is `invalid` (`details.fields.owner: "unknown"`),
+the same for every such handle. `owner` naming the caller's own handle,
+or absent, is the default of §6.1. The creating human joins the
+project with trust `owner` as every creator does (§6.1); for one who is
+not an organisation owner that is an ordinary membership, which no
+organisation role keeps or ends.
+
+**Organisation owners in its projects.** The hub keeps every
+organisation `owner` a member with trust `owner` of every project the
+organisation owns:
+
+- An owner who is not a member of the project joins it (`member_joined`,
+  trust `owner`, the role a creator gets, §6.1); an owner who is a member
+  with a lower trust is raised to `owner` (`member_updated`, `changed:
+  ["trust"]`). The member view (§6.2) carries `org_owner: true` on such
+  a membership, `false` on every other.
+- This holds when the project is created or transferred into the
+  organisation, and when a human becomes an owner later — by an
+  invitation's `go` or a promotion — for every project the organisation
+  owns at that moment.
+- When a human stops being an owner — demoted, removed, leaving, their
+  account deleted — or the project leaves the organisation (below), each
+  membership the hub created for them ends as a removal does (§6.2), and
+  a membership they held before the hub raised it keeps the trust it had
+  then. An owner who holds the project's membership independently keeps
+  it that way.
+- "The namespace owner stays an owner" (§6.25) holds for the
+  organisation's owners collectively: while a human is an owner of the
+  organisation, no call demotes them below trust `owner` in one of its
+  projects or removes them from it: `namespace_owner` (409,
+  `details.projects`). They stop being an owner of the organisation
+  first. A project of an organisation therefore always has at least one
+  member with trust `owner`.
+
+Organisation admins and members get no membership from their role:
+they are members of a project exactly when someone added them to it.
+
+**Where §6.25 and the rest of this document give a call to the
+namespace owner**, for a project of an organisation every owner of the
+organisation makes it, as a human acting directly: the transfer (below),
+`public_page` and `public_about` (§16.9), and the repository's
+confirmation (§11.4). An organisation holds no forge grant of its own:
+the owner who confirms the repository lends theirs, is recorded as
+`confirmed_by`, and the confirmation is reset when they stop being an
+owner (§11.4). An installation of the forge's App on a forge
+organisation stays a follow-up (§11.4, "Follow-up").
+
+**Transfer into and out of an organisation** (§6.25, `POST
+/projects/{owner}/{slug}/transfer`, with the step-up of §2.8.4). `to`
+names a human (`hum-…`) or an organisation (`org-…`).
+
+- **Into an organisation.** The caller — the namespace owner, or for a
+  project of another organisation one of its owners — must be an
+  `owner` or `admin` of the receiving organisation; otherwise
+  `forbidden` (`details.reason: org_role`). An `owner` of the receiving
+  organisation speaks for it: no consent request is filed, and the move
+  happens in the call itself, with the checks of §6.25 (the slug free in
+  the organisation's namespace); `200` with the project. An `admin`
+  speaks only for themselves: the hub files a personal `consent`
+  request (§7) to each owner of the receiving organisation, bound as in
+  §6.25, and the first owner's `go` moves the project; it withdraws the
+  others. A `no` closes that owner's request alone; when every owner's
+  request is closed without a `go`, the transfer is withdrawn. The `go`
+  also checks that its answerer is still an owner and the caller still
+  an `owner` or `admin` of the organisation, else `transfer_stale` as
+  in §6.25.
+- **Out of an organisation.** Any owner of the organisation transfers
+  the project, to a human or to another organisation. To a human, the
+  receiver must hold trust `owner` in the project and consents as in
+  §6.25; an owner who transfers the project to themselves needs no
+  request, since their call is their word. To another organisation, the
+  rule of the first point applies.
+- At the move the hub makes the receiving organisation's owners owners
+  of the project (above) and ends the memberships it kept for the
+  sending organisation's owners (above) — a receiving human's own
+  membership becomes an ordinary one and keeps trust `owner`. Everything
+  else of §6.25 applies unchanged: at most one open transfer per
+  project, the old full name an alias, `project_updated` and the
+  ticker's `rename` item, `owner_confirmed` reset (§11.4) and
+  `public_page` set to `off` (§16.9), which the consent request says.
+
+**Rename.** `PATCH /orgs/{org}` with `{"handle": "<new>"}`, by an
+organisation owner, under every rule of §6.24: the syntax, the reserved
+words (§6.25, "Dashboard routes and handles"), the uniqueness among
+human and organisation handles and their aliases, the old handle an
+alias of the organisation's id (at most 8, `alias_limit`; at most 3
+renames per 24 hours per organisation, `rate_limited`), an alias taken
+back, a no-op for the current handle. The organisation's projects need
+no alias of their own (§6.25, "Aliases"): `<old handle>/<slug>` reaches
+the same project. In each project of the organisation the rename emits
+`project_updated` with `fields: {owner, full_name}` and a ticker item of
+type `rename` (`oz-team/shop is now oz/shop`, §17.1), written as for a
+handle rename (§6.24).
+
+**Deletion.** `DELETE /orgs/{org}`, by an owner, with the step-up of
+§2.8.4, only while the organisation owns no project that is not
+`archived`: `namespace_owner` (409, `details.projects`, the full
+names). The owners transfer those projects or close them first. The
+deletion ends every membership in the organisation and the memberships
+the hub kept for its owners (above); every archived project stays
+archived under its name, as §2.9 keeps an account's. Open invitations
+and open transfers into the organisation are withdrawn. The avatar and
+the public page are deleted. The organisation's row stays with its id
+and `deleted_at`, so that every stored id keeps resolving, and its
+handle and aliases stay reserved for good (§6.24): an old link and an
+old project name (§6.25) never come to mean someone else.
+
+**Agents and runners.** An organisation owns no agent profile and no
+runner: an agent's global name is always `<human handle>/<agent handle>`
+(§6.3), and a runner belongs to a human (§15.3). An agent in a project of
+an organisation works as in any other project; its credential is bound
+to the project (§2.2), and the namespace is no concern of it.
+
+**Events and the inbox.** Changes of an organisation — its settings,
+handle, members and roles — are not project events and write no ticker
+item: an organisation has no project behind it. What needs a human's
+answer reaches them as a personal request in their inbox (§7, §18.1):
+an invitation, and an admin's transfer into the organisation. What an
+organisation change does to its projects shows there with the project
+events that exist: `member_joined` and `member_updated` (above) and
+`project_updated` (rename, transfer). Nothing else notifies anyone.
 
 ## 7. Requests to humans (the inbox)
 
@@ -7130,7 +7393,7 @@ holds without exception.
 |---|---|---|
 | `POST /projects/{owner}/{slug}/requests` | `requests:ask` | `{class, title, summary?, tried?, options?, priority?, to?, task_id?, while_open?, needs_in_session?, on_behalf_of?, ktw_ref?, humans_only?, action?}`; `201`. `humans_only` is validated against `to` before the holder is set (above). With `task_id`, `while_open: wait` and the asker holding the card, the card goes to `blocked` with `blocked_by_request` and remembers its status |
 | `GET /projects/{owner}/{slug}/requests` | `project:read` | filters `status` (default `open`; comma list or `all`), `class`, `asked_by` (`me` or a member id), `to` (default `me`; `all` for everything the caller may see); `sort` = `priority` (urgent→low, then oldest first), `date` (newest first), `agent` (asker handle, then oldest first); paged. `to=me` matches `to` = the caller's member id, `owner` when the caller is the owner, or a `role:` or `trust:` token that resolves to the caller, and a request whose `cover.by` is the caller (§6.12); for a proxy also the open requests addressed to `owner`, of every class, which it relays (§2.3). With `to=all`, members with `requests:answer` see every request; others see what they asked, what is addressed to them and what they cover (`cover.by`) |
-| `GET /requests` | human | the cross-project inbox: the same listing across every membership of the caller, same filters and defaults, paged; each item carries `project: {slug, name, state}`. It also lists the cross-owner `reports_to` requests addressed to the caller in projects they are not a member of (§6.2). The dashboard's `?scope=all` is accepted and means the same |
+| `GET /requests` | human | the cross-project inbox: the same listing across every membership of the caller, same filters and defaults, paged; each item carries `project: {slug, name, state}`, or `project: null` and `org: {id, handle}` for a personal request of an organisation (below, §6.26). It also lists the cross-owner `reports_to` requests addressed to the caller in projects they are not a member of (§6.2). The dashboard's `?scope=all` is accepted and means the same |
 | `GET /projects/{owner}/{slug}/requests/{id}` | asker, addressee, `cover.by` (§6.12) or `requests:answer`; for a personal request the asker only | the addressee of a cross-owner `reports_to` request may read it without a membership (§6.2) |
 | `GET /requests/{id}`, `POST /requests/{id}/answer`, `POST /requests/{id}/withdraw` | human | a personal request addressed to the caller (below), `GET` also once it is answered or withdrawn; any other id is `not_found` |
 | `POST /projects/{owner}/{slug}/requests/{id}/answer` | `requests:answer` (a proxy only as a relay, §2.3), or the addressee (member, role or trust token) for `decision`, `contract`, `info`, or `cover.by` as the addressee would (§6.12); a cross-owner `reports_to` request only its addressee, member or not (§6.2); a personal request is `not_found` here, as for `GET` (below) | exactly one of `{"reply_id"}`, `{"text"}`, `{"talk": true}`; `text` may accompany `reply_id`; `request_not_open` otherwise; `self_answer` when the answerer asked it or it was filed on their behalf. `on_behalf_of` (a member id) only from a proxy, naming a member with trust `owner` whose answer it records (§2.3); from anyone else `invalid` (`details.fields.on_behalf_of: "proxy_only"`), and a proxy's answer without it, of any class, is `forbidden` (`proxy_relays_only`); a request carrying `action` only a human with trust `owner` answers, directly, and any other answer is `forbidden` (`action_needs_owner`, §2.3) |
@@ -7176,9 +7439,14 @@ caller can create one or set `personal` — with `to:
 resolves to the human who owns that profile, whether or not that human
 is a member of the project. A proposal for a human's preferences
 (§19.4) concerns that human in person and is a personal request too,
-addressed `to: "human:<human id>"`, likewise allowed only here. Below,
-"the owner" of a personal request is the human it is addressed to. A
-personal request is in the owner's **personal inbox**, not in the
+addressed `to: "human:<human id>"`, likewise allowed only here. So are
+the requests an organisation files (§6.26): an invitation, and an
+admin's transfer into the organisation. A personal request that
+concerns an organisation and no project — an invitation — carries
+`project: null` and `org: {id, handle}`, and the inbox shows it under
+the organisation; every other personal request carries `org: null`.
+Below, "the owner" of a personal request is the human it is addressed
+to. A personal request is in the owner's **personal inbox**, not in the
 project's request list:
 
 - `GET /projects/{owner}/{slug}/requests` never lists it, whatever `to` and
@@ -9174,7 +9442,10 @@ below):
 
 Only the namespace owner's grants count: a grant of another member,
 another `owner` of the project included, is never used for this
-project.
+project. An organisation (§6.26) holds no grant of its own: for a
+project of an organisation, "the namespace owner's grants" in this
+section are those of the organisation owner who confirmed the
+repository (below), and nobody else's.
 
 **The owner confirms the repository.** A grant of the owner (sources 1
 and 2) is used for a project only while the project's `repository.url`
@@ -9200,6 +9471,18 @@ it read with the owner's access. A transfer (§6.25) resets
 once they confirm the repository, and the transfer's consent request
 (§6.25) names the repository URL, so the receiver sees what they would
 be asked to grant. The old owner's grants stop with the transfer.
+
+`repository` also carries `confirmed_by`: `{id, handle}` of the human
+whose grants the confirmation put to use, or `null` while
+`owner_confirmed` is `false`. For a project of a human it is the
+namespace owner. For a project of an organisation any owner of the
+organisation confirms, under the same rules, with their own grants:
+the hub records them as `confirmed_by` and uses their grants alone. A
+later confirmation by another owner replaces them. When the human
+named in `confirmed_by` stops being an owner of the organisation —
+demoted, removed, leaving, their account deleted — `owner_confirmed` is
+reset to `false` and `confirmed_by` to `null`, as on a transfer, and
+their grants stop at once; another owner confirms again.
 
 **When a source covers a repository.** The hub decides it per source,
 on the first read and again on every refresh of the repository (at most
@@ -9280,8 +9563,9 @@ repository it includes.
   with access to one repository would pass it and the hub would then
   read every repository of the installation. Installations on an
   organisation are not linked in v1 (`403 forbidden`, `details.reason:
-  organisation_installation`); organisations are no namespace owners yet
-  (§6.25). The user token is used for this one check and discarded,
+  organisation_installation`), also now that Maity has organisations of
+  its own (§6.26; "Follow-up" below): a project of a Maity organisation
+  is read with the grants of the owner who confirmed it (above). The user token is used for this one check and discarded,
   never stored. An installation of another account is refused (`403
   forbidden`, `details.reason: installation_not_yours`), so nobody links
   an installation by guessing or copying its id. A missing, expired, used or foreign `state` is
@@ -9364,6 +9648,14 @@ of an owner's projects, a forced fresh read (`max_age=0`, §11) is made
 at most once per 30 seconds per project and target; within that time
 the cached observation is answered with `fresh: false`.
 
+**Follow-up: organisations.** Maity's organisations (§6.26) and the
+forge's are not linked here. An installation of the App on a forge
+organisation stays refused (`organisation_installation`, above); a
+project of a Maity organisation uses the grants of the owner who
+confirmed it (above). Whether an installation on a forge organisation
+may serve a Maity organisation's projects is open for its own
+contract; until then nothing else in this section changes.
+
 ## 12. Endpoint index
 
 | Method | Path | Scope | § |
@@ -9400,6 +9692,7 @@ the cached observation is answered with `fresh: false`.
 | POST | `/reports` | any signed-in human or agent | 16.8 |
 | GET | `/me/reports` | any | 16.8 |
 | GET | `/admin/reports`, `/admin/reports/{id}` | `instance:admin`, human | 16.8 |
+| GET | `/admin/orgs` | `instance:admin`, human only | 16.10 |
 | POST | `/admin/reports/{id}/resolve` | `instance:admin`, human | 16.8 |
 | GET | `/me` | any | 5.1 |
 | POST | `/me/resume` | agent | 5.2 |
@@ -9412,7 +9705,14 @@ the cached observation is answered with `fresh: false`.
 | GET, PATCH, DELETE | `/agents/{id}` | owner | 6.3 |
 | GET, POST | `/projects` | human (GET: any) | 6.1 |
 | GET, PATCH | `/projects/{owner}/{slug}` | `project:read` / `project:admin`; `slug` by a human with trust `owner` | 6.1, 6.25 |
-| POST | `/projects/{owner}/{slug}/transfer` | the namespace owner, human, step-up | 6.25 |
+| POST | `/projects/{owner}/{slug}/transfer` | the namespace owner, human (for a project of an organisation any of its owners), step-up | 6.25, 6.26 |
+| GET, POST | `/orgs` | human (POST: an approved human) | 6.26 |
+| GET, PATCH, DELETE | `/orgs/{org}` | a member / an owner; DELETE step-up | 6.26 |
+| PUT, DELETE | `/orgs/{org}/avatar` | an owner of the organisation | 6.26 |
+| GET | `/orgs/{org}/members` | a member of the organisation | 6.26 |
+| PATCH, DELETE | `/orgs/{org}/members/{id}` | an owner; an admin for members and admins; DELETE also the member themselves | 6.26 |
+| GET, POST | `/orgs/{org}/members/invitations` | an owner or admin | 6.26 |
+| DELETE | `/orgs/{org}/members/invitations/{id}` | an owner or admin | 6.26 |
 | GET | `/projects/{owner}/{slug}/rules` | `project:read` | 6.9 |
 | GET, POST | `/projects/{owner}/{slug}/joins` | `members:admin` | 3.1 |
 | DELETE | `/projects/{owner}/{slug}/joins/{id}` | `members:admin` | 3.1 |
@@ -9518,7 +9818,7 @@ the cached observation is answered with `fresh: false`.
 | DELETE | `/me/forge/github/links/{id}` | human | 11.4 |
 | PUT, DELETE | `/me/forge/github/token` | human | 11.4 |
 | GET | `/forge/github/setup` | human (cookie) | 11.4 |
-| POST | `/projects/{owner}/{slug}/repository/confirm` | the namespace owner, human | 11.4 |
+| POST | `/projects/{owner}/{slug}/repository/confirm` | the namespace owner, human (for a project of an organisation any of its owners) | 11.4, 6.26 |
 | POST | `/me/notifications/read` | human | 18.3 |
 | GET, PATCH | `/me/notification-settings` | human | 18.4 |
 | POST | `/me/notification-settings/email/verify` | human | 18.4 |
@@ -11071,17 +11371,22 @@ values with the source rules of §16.2, as in §16.4.
 | Environment | Field | Default | Meaning |
 |---|---|---|---|
 | `MAITY_MAX_AGENTS_PER_HUMAN` | `max_agents_per_human` | 100 | agent profiles one human may hold that are not deleted (§6.3): an integer 1–10000, or the string `unlimited` for no limit; in the environment the same spellings, an unset or empty variable means not set by the environment |
+| `MAITY_MAX_ORGS_PER_HUMAN` | `max_orgs_per_human` | 5 | organisations that are not deleted in which one human is an `owner` (§6.26): an integer 1–10000, or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 
 ```json
 { "max_agents_per_human": { "value": 100, "source": "default" },
-  "humans_at_limit": 0 }
+  "humans_at_limit": 0,
+  "max_orgs_per_human": { "value": 5, "source": "default" },
+  "humans_at_org_limit": 0 }
 ```
 
 `null` keeps the meaning of §16.2 here too: a `PATCH` with
 `max_agents_per_human: null` restores the default and the source
 `default`; "no limit" is the value `unlimited`, stored as the admin's
 value with `source: "admin"`. `humans_at_limit` is read-only (a `PATCH`
-naming it is `invalid`, `read_only`) and `0` under `unlimited`.
+naming it is `invalid`, `read_only`) and `0` under `unlimited`; so is
+`humans_at_org_limit` for `max_orgs_per_human`, which takes `null` and
+`unlimited` the same way.
 
 - **What it gates.** Two creations: `POST /agents`, and
   `POST /projects/{owner}/{slug}/joins` when it names a new handle and so
@@ -11097,11 +11402,17 @@ naming it is `invalid`, `read_only`) and `0` under `unlimited`.
   (`max_placements` per project, §6.1) work at and over the value. A
   join link that expires or is revoked unused leaves its profile, and
   that profile counts until its owner deletes it (§6.3).
-- **Lowering it** never deletes or pauses anything: an owner over the
-  new value keeps every profile and creates no new one until they are
+- **What `max_orgs_per_human` gates.** `POST /orgs` alone: the creation
+  that would make the caller an owner of more organisations than the
+  value is `org_limit` (409, `details.limit`, `details.count`), counted
+  and inserted in one atomic step per human as above. Becoming an owner
+  otherwise — an invitation's `go`, a promotion (§6.26) — is not
+  refused, and counts from then on.
+- **Lowering either value** never deletes or pauses anything: an owner over the
+  new value keeps every profile or organisation and creates no new one until they are
   under it again (the tolerant rule of `context/scope.md`).
-  `humans_at_limit` counts the owners at or over the value, for the
-  admin's eye.
+  `humans_at_limit` and `humans_at_org_limit` count the humans at or
+  over each value, for the admin's eye.
 - **Why per human.** The hosted instance needs a ceiling against runaway
   creation and the mistakes of scripts, and the seat of the hosted
   offering is the human, never the agent (`context/scope.md`); a limit
@@ -11370,9 +11681,23 @@ report with `action` and `at`.
   profile it owns; for a `message` or `card` report the account of the
   author recorded in the snapshot (an agent's owner); for a `project`
   report the project's namespace owner at the time of the report
-  (§6.25). An account that no longer exists makes `suspend` `invalid`
+  (§6.25) when that is a human. An account that no longer exists makes `suspend` `invalid`
   (`details.reason: no_account`). Lifting a suspension is an operator
   command, `maity-hub account unsuspend --handle X`.
+  For a `project` report on a project of an organisation (§6.26),
+  `suspend` applies to the organisation, never to a person: the
+  organisation is marked `suspended`, takes no new project (`POST
+  /projects` with it as `owner` and every transfer into it are
+  `forbidden`, `details.reason: moderation_hold`), its `public_page` is
+  set to `off` (§16.9), and each of its projects that is not `archived`
+  is archived as `remove` archives a project, with the same hold. The
+  accounts of its owners, admins and members stay untouched: suspending
+  a person is a separate report and a deliberate action on that person.
+  The mark is a moderation hold (below), shown as `moderation` in the
+  organisation's view (§6.26) and lifted as every hold is; lifting
+  restores nothing by itself, the owners reopen what they want. A
+  deleted organisation makes `suspend` `invalid` (`details.reason:
+  no_org`).
 
 **A moderation hold.** `hide` and `remove` leave a hold on the target,
 `moderation: {action, report_id, at}`, shown in its view to whoever may
@@ -11388,7 +11713,16 @@ changes what they want. A redaction is not undone by lifting.
 
 Every action but `dismiss` sends the affected account's owner a
 personal request (§7, class `info`, `filed_by: "hub"`) that names the
-action and the note, never the reporter.
+action and the note, never the reporter; for an organisation's
+suspension, and for an action on a project of an organisation, every
+owner of the organisation gets it.
+
+**Follow-up: organisations as a target.** A report names a profile, a
+project, a message or a card; an organisation itself — its handle,
+display name, avatar or page — is not yet a `target.type`. Until it is,
+moderation of an organisation goes through a report on one of its
+projects (`suspend`, above), and instance admins see organisations in
+`GET /admin/orgs` (§16.10).
 
 **Limits.** At most 20 reports per account per 24 hours and 3 per
 target per account (`rate_limited`); a report on one's own content is
@@ -11402,6 +11736,7 @@ The maintainer's decision of 2026-10-28: projects and people that choose
 to be public get pages a search engine can read — plain HTML, no
 script, no session — so that an instance is found by what is on it. A
 page exists only by its owner's choice; nothing is public by default.
+Organisations (§6.26) have pages too, by the same choice.
 
 **The instance.** `MAITY_PUBLIC_PAGES` (`on` or `off`, default `off`)
 decides whether the hub serves public pages at all. Off, every route
@@ -11411,7 +11746,8 @@ unless its operator says so.
 
 **A project's page.** `GET /p/{owner}/{slug}`, while the project's
 `public_page` is `on`. Both fields are on the project (§6.1), not in
-its policy, and only the namespace owner (§6.25), a human, sets them
+its policy, and only the namespace owner (§6.25), a human — for a
+project of an organisation any of its owners (§6.26) — sets them
 with `PATCH /projects/{owner}/{slug}`, which emits `project_updated`:
 the page is published under the namespace owner's name, so its words
 and its existence are theirs.
@@ -11444,11 +11780,25 @@ The page shows the `display_name`, the `handle`, `public_bio`, and the
 projects with a public page in which they are a member. No address, no
 session, no agent of theirs beyond those the project pages show.
 
+**An organisation's page.** `GET /u/{handle}` with an organisation's
+handle, while the organisation's `public_page` is `on` — human and
+organisation handles share one namespace (§6.24), so the route names
+one or the other. An owner of the organisation sets `public_page`
+(`off` by default, `on`) with `PATCH /orgs/{org}` (§6.26). The page
+shows the `display_name`, the `handle` and the organisation's projects
+whose own `public_page` is `on`, each with a link to its page. The
+avatar is not on it, since a page carries no image (below). The
+organisation's members are never shown: who belongs to it is not
+public, whatever its page says; a project's page still shows its own
+members by their own choice (above). Without `public_page: on` the route
+answers as for an unknown handle (below).
+
 **What is never served.** A page answers one uniform `not_found`,
 before any ETag is considered, while it is off; for an unknown name;
 for an `archived` project; for a target hidden by moderation (§16.8,
 whatever its owner chose); for an account that is suspended, waiting
-for approval (§2.7.5) or deleted; and for any old name. There are no
+for approval (§2.7.5) or deleted; for a deleted organisation; and for
+any old name. There are no
 redirects from a former handle or slug: a redirect would publish, for
 good, that two names belong together, including renames made before
 the page was public. Each of these cases is a change of input for
@@ -11470,7 +11820,7 @@ rendered, as the maintainer asked (2026-10-28):
 Removing something is never left to the interval. Under either
 setting, a change that takes anything off a page — a page that stops
 being public (above), a member or agent owner who makes their profile
-private, `swarm_public` turned off, a person suspended or hidden, a
+private, an organisation's page turned off, `swarm_public` turned off, a person suspended or hidden, a
 repository that turns private, and any edit of a text shown on a page
 — `public_about`, `public_bio`, a `display_name`, a `handle`, a
 project's `name` or `full_name` (an edit replaces what was there) — renders every page it touches at once, in the same
@@ -11500,8 +11850,9 @@ is served. The rate limit is the badge's bucket (§6.20). The join host
 answers `not_found`.
 
 **The dashboard** offers `public_page` and `public_about` in the
-project's settings to its namespace owner, and `public_profile` and
-`public_bio` in Your account, each with a link to the page and the
+project's settings to its namespace owner (to an organisation's owners
+for its projects), `public_page` in an organisation's settings to its
+owners, and `public_profile` and `public_bio` in Your account, each with a link to the page and the
 note that it is public to everyone. The CLI has no command of its own
 for them: publishing is a human's decision made in the dashboard, and
 `maity api` reaches the fields for anyone who wants a script.
@@ -11514,6 +11865,40 @@ landing page as before for the root; public pages are listed whether or
 not the landing page is enabled. Above 50,000 URLs or 50 MB the hub
 serves a sitemap index at `/sitemap.xml` and the parts at
 `/sitemap-<n>.xml`.
+
+### 16.10 `GET /admin/orgs`
+
+Scope `instance:admin`, human only, as §16.1; an agent or runner
+credential is `forbidden`. The organisations of the instance (§6.26),
+read-only, paged (§1.4), ordered by `handle`. Moderation of an
+organisation goes through a report on one of its projects (§16.8,
+`suspend`); there is no admin write here.
+
+| Query | Meaning |
+|---|---|
+| `q` | 1–64 characters; case-insensitive substring of `handle`, an alias (§6.24) or `display_name`; otherwise `invalid` |
+| `suspended` | `true` or `false`; omitted: both |
+| `limit`, `cursor` | §1.4 |
+
+```json
+{
+  "items": [
+    { "id": "org-4tq8w2kd7m1x", "handle": "oz-team", "display_name": "OZ Team",
+      "created_at": "2026-10-29T09:00:00Z", "owners": ["oliver", "oz"],
+      "projects": 3, "suspended": false }
+  ],
+  "next_cursor": null
+}
+```
+
+- `owners` lists the current handles of the organisation's owners;
+  admins and members are not listed. `projects` counts the projects the
+  organisation owns, `archived` ones included. Counts and handles only:
+  which projects and what is in them is not part of this answer.
+- `suspended` is `true` while a moderation hold of §16.8 stands on the
+  organisation.
+- A deleted organisation is not listed.
+- The read is not an event, as §16.1.
 
 ## 17. The change ticker
 
@@ -12228,7 +12613,9 @@ the request's project. They
 reach the human through account records, never through an event's
 audience: every state change of one — filed, answered, withdrawn —
 writes one account record of the addressed human, `{request_id,
-project, status}` and nothing of the request's content. The
+project, org, status}` and nothing of the request's content (`project:
+null` and `org: {id, handle}` for one that concerns an organisation
+and no project, §7, §6.26; else `org: null`). The
 `personal_request_created` record is the human's `inbox` item for it;
 the other two only move the position (§18.2) and close the count. So a
 personal request has the same id scheme, position and read flag as
