@@ -117,6 +117,8 @@ async def login(body: Login, request: Request) -> JSONResponse:
                 raise unauthenticated("handle or password is wrong")
             if row.deleted_at is not None:  # a deleted account never signs in (§2.9)
                 raise unauthenticated("handle or password is wrong")
+            if row.suspended_at is not None:  # nor a suspended one, told nothing more (§16.8)
+                raise unauthenticated("handle or password is wrong")
             sessions.forget_expired_addresses(conn)
             end_presented(conn, presented)
             session_id, csrf, _, state = second_factor.begin(

@@ -581,12 +581,35 @@ def _tombstone(
 ) -> None:
     """The one mutation the log allows, itself on record (§8.5); a second redaction of
     the same event changes nothing."""
+    tombstone(
+        conn,
+        mine.project.id,
+        row,
+        reason,
+        audience,
+        mine.principal_id,
+        caller.actor(mine.id),
+        store,
+    )
+
+
+def tombstone(
+    conn: Connection,
+    project_id: str,
+    row: Any,
+    reason: str,
+    audience: list[str],
+    by: str | None,
+    actor: events.Actor,
+    store: attachment_store.LocalStore | None = None,
+) -> None:
+    """`_tombstone` by any actor: moderation redacts as the hub, `by` null (§16.8)."""
     if row.redacted:
         return
-    tombstone = {
+    stone = {
         "redacted": True,
         "reason": reason,
-        "by": mine.principal_id,
+        "by": by,
         "at": clock.rfc3339(clock.now()),
     }
     # Only the first of two concurrent redactions writes and is announced; the other
@@ -594,12 +617,12 @@ def _tombstone(
     won = conn.execute(
         update(t.event)
         .where(t.event.c.seq == row.seq, t.event.c.redacted.is_(False))
-        .values(payload=tombstone, redacted=True)
+        .values(payload=stone, redacted=True)
     ).rowcount
     if won != 1:
         return
     if row.kind == "message":
-        attachments.redact_message(conn, row.seq, mine.principal_id, store)
+        attachments.redact_message(conn, row.seq, by, store)
     marker = (row.payload or {}).get("jour_fixe") if row.kind == "message" else None
     if marker:  # a round's statement or post: its copy in the round goes with it (§20.8)
         from maity_hub.jourfixe import exchange
@@ -607,16 +630,16 @@ def _tombstone(
         exchange.redact_copy(
             conn,
             marker,
-            {k: v for k, v in tombstone.items() if k != "redacted"},
-            caller.actor(mine.id),
+            {k: v for k, v in stone.items() if k != "redacted"},
+            actor,
         )
     events.emit(
         conn,
-        mine.project.id,
+        project_id,
         "event_redacted",
         audience,
         {"seq": row.seq, "reason": reason},
-        actor=caller.actor(mine.id),
+        actor=actor,
         subject=("event", str(row.seq)),
         # A chat's notice is the chat's, as the message was: no see-all reaches it.
         conversation_id=row.conversation_id,

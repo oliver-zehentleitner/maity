@@ -21,6 +21,7 @@ from maity_hub import (
     idempotency,
     images,
     ktw,
+    moderation,
     namespace,
     onboarding,
     placements,
@@ -36,7 +37,7 @@ from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth import second_factor
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid
-from maity_hub.events import emit, lock_project
+from maity_hub.events import Actor, emit, lock_project
 from maity_hub.ids import new_id
 from maity_hub.models import SLUG_PATTERN, Strict, markdown, title
 from maity_hub.namespace import ProjectRoute
@@ -180,6 +181,52 @@ class ProjectPatch(Strict):
 
 def _load(conn: Connection, project_id: str) -> Any:
     return conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
+
+
+# What a public project shows outside it (§6.20, §16.8): `hide` turns these off.
+PUBLIC_OFF = {"badge": "off", "swarm_public": "off"}
+
+
+def hide_by_moderation(conn: Connection, project_id: str, reason: str, actor: Actor) -> None:
+    """`hide` on a project (§16.8): members-only, its README badge and public swarm page
+    off, with the `policy_changed` a `PATCH` would write."""
+    project = lock_project(conn, project_id)
+    current = policy.of(project)
+    new = {**current, **PUBLIC_OFF}
+    if new == current:
+        return
+    conn.execute(
+        update(t.project).where(t.project.c.id == project_id).values(**policy.columns(new))
+    )
+    rules.bump(
+        conn,
+        project,
+        "policy_changed",
+        BROADCAST,
+        {"old": current, "new": new, "reason": reason},
+        actor=actor,
+    )
+
+
+def archive_by_moderation(conn: Connection, project_id: str, reason: str, actor: Actor) -> None:
+    """`remove` on a project (§16.8): archived as a `PATCH {state: archived}` archives it."""
+    project = lock_project(conn, project_id)
+    if project.state == "archived":
+        return
+    conn.execute(
+        update(t.project)
+        .where(t.project.c.id == project_id)
+        .values(state="archived", state_changed_at=clock.now())
+    )
+    rules.bump(
+        conn,
+        project,
+        "state_changed",
+        BROADCAST,
+        {"old": project.state, "new": "archived", "reason": reason},
+        actor=actor,
+    )
+    placements.project_archived(conn, project_id, actor, None)
 
 
 def _repository_columns(repository: RepositoryIn | None) -> dict[str, Any]:
@@ -341,7 +388,7 @@ def _view(conn: Connection, project: Any, request: Request) -> dict[str, Any]:
     shown = images.views(conn, [project.id])[project.id]
     owner = namespace.owner_of(conn, project)["handle"]
     aliases = namespace.aliases_of(conn, project.id)
-    return project_view(
+    view = project_view(
         project,
         settings_of(request),
         owner,
@@ -350,6 +397,10 @@ def _view(conn: Connection, project: Any, request: Request) -> dict[str, Any]:
         aliases,
         _stored(conn, project, request),
     )
+    held = moderation.view(moderation.hold(conn, "project", project.id))
+    if held is not None:  # only while a hold stands (§16.8)
+        view["moderation"] = held
+    return view
 
 
 def load_project(conn: Connection, project_id: str, request: Request) -> dict[str, Any]:
@@ -610,6 +661,7 @@ def patch_project(
         )
         if needs_reason and not body.reason:
             raise invalid({"reason": "required"}, "a change of state or policy needs a reason")
+        _refuse_against_a_hold(conn, project, state_changes, new_policy)
         if values:
             conn.execute(update(t.project).where(t.project.c.id == project.id).values(**values))
         if settings_changed:
@@ -847,6 +899,27 @@ HUMANS_ONLY_POLICY = {
     "keep_the_why",  # whether the project requires Keep the Why (§6.23)
     "keep_the_why_defaults",
 }
+
+
+def _refuse_against_a_hold(
+    conn: Connection,
+    project: Any,
+    state_changes: bool,
+    new_policy: dict[str, Any] | None,
+) -> None:
+    """A moderation hold (§16.8): a hidden or removed project stays members-only, and a
+    removed one stays archived, until an instance admin lifts the hold. Only what this
+    PATCH turns on is refused: a surface left as it was blocks no other policy change."""
+    found = moderation.hold(conn, "project", project.id)
+    if found is None:
+        return
+    current = policy.of(project)
+    if new_policy is not None and any(
+        new_policy[k] != off and new_policy[k] != current[k] for k, off in PUBLIC_OFF.items()
+    ):
+        raise moderation.held()
+    if state_changes and found.action == "remove":
+        raise moderation.held()
 
 
 def _refuse_for_agents(mine: Membership, body: Any, given: set[str]) -> None:

@@ -110,6 +110,10 @@ human = Table(
     # Set when the human deleted the account (§2.9): the row stays, so every stored id
     # resolves and the handle stays taken; everything about the person is gone.
     Column("deleted_at", UtcDateTime),
+    # Set while an instance admin's `suspend` stands (§16.8), with the report it came from;
+    # only the operator's `maity-hub account unsuspend` clears them.
+    Column("suspended_at", UtcDateTime),
+    Column("suspended_report", String(ID)),
     **MYSQL_TABLE,
 )
 
@@ -1372,6 +1376,9 @@ event = Table(
     # A human who is no member of the project (§8.1: the owner deleting a profile with
     # `cascade`, §6.3), with `actor_membership` null; no foreign key either.
     Column("actor_human_id", String(ID)),
+    # The abuse report a moderation change was made for (§16.8), with every other actor
+    # column null; no foreign key either.
+    Column("actor_report_id", String(ID)),
     Column("subject_type", String(32)),
     # An id, or a deploy's `<environment>@<sha>` (§17.1).
     Column("subject_id", String(255)),
@@ -1926,7 +1933,7 @@ abuse_report = Table(
     Column("text", Text),
     Column("snapshot", JSON_VALUE),
     Column("status", String(16), nullable=False),  # open, resolved, expired
-    Column("action", String(16)),  # dismiss (PR2: hide, remove, suspend)
+    Column("action", String(16)),  # dismiss, hide, remove, suspend
     Column("note", MARKDOWN_TEXT),
     Column("resolved_by", String(ID)),  # the instance admin who resolved it last
     Column("resolved_at", UtcDateTime),
@@ -1934,5 +1941,22 @@ abuse_report = Table(
     Column("purged_at", UtcDateTime),
     Column("created_at", UtcDateTime, nullable=False),
     Index("ix_abuse_report_status_created", "status", "created_at"),
+    **MYSQL_TABLE,
+)
+
+# What a report's `hide` or `remove` holds on its target (docs/api.md §16.8): ordinary
+# writes cannot undo it while the row exists; resolving the report again replaces or (with
+# `dismiss`) lifts it. `target_id` is the stable id: a project's id (not its full name, which
+# a rename changes), a card's id, `<project id>/<seq>` for a message, a principal's id for a
+# profile.
+moderation_hold = Table(
+    "moderation_hold",
+    metadata,
+    _ref("report_id", "abuse_report.id", primary_key=True),
+    Column("target_type", String(16), nullable=False),
+    Column("target_id", String(255), nullable=False),
+    Column("action", String(16), nullable=False),  # hide, remove
+    Column("at", UtcDateTime, nullable=False),
+    Index("ix_moderation_hold_target", "target_type", "target_id"),
     **MYSQL_TABLE,
 )

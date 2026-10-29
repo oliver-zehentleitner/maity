@@ -130,7 +130,8 @@ def test_three_per_target_and_twenty_a_day(team: dict[str, Any], migrated: Engin
     card = {"type": "card", "id": a_card(team, migrated), "project": PROJECT}
     for _ in range(3):
         assert report(pat, card).status_code == 201
-    assert report(pat, card).status_code == 429
+    fourth = report(pat, card)
+    assert fourth.status_code == 429 and "Retry-After" not in fourth.headers  # for good
     for _ in range(17):  # 3 + 17 = 20 today
         other = {"type": "card", "id": a_card(team, migrated), "project": PROJECT}
         assert report(pat, other).status_code == 201
@@ -181,14 +182,12 @@ def test_the_reporter_sees_status_and_action_only(team: dict[str, Any], migrated
     assert team["stranger"].get("/me/reports").json()["items"] == []
 
 
-def test_resolving_dismisses_only_yet_and_replaces_its_action(
-    team: dict[str, Any], migrated: Engine
-) -> None:
+def test_resolving_again_replaces_its_action(team: dict[str, Any], migrated: Engine) -> None:
     made = report(team["pat"], {"type": "project", "id": PROJECT}).json()
     path = f"/admin/reports/{made['id']}/resolve"
-    later = team["owner"].post(path, {"action": "hide"})
-    assert later.status_code == 400
-    assert later.json()["error"]["details"]["fields"] == {"action": "not_available"}
+    unknown = team["owner"].post(path, {"action": "ban"})
+    assert unknown.status_code == 400
+    assert unknown.json()["error"]["details"]["fields"] == {"action": "unknown"}
     first = team["owner"].post(path, {"action": "dismiss", "note": "first"}).json()
     again = team["owner"].post(path, {"action": "dismiss", "note": "second"}).json()
     assert again["note"] == "second" and again["closed_at"] == first["closed_at"]
@@ -232,6 +231,9 @@ def test_an_agent_reports_in_its_own_project_and_counts_for_its_owner(
         row = conn.execute(select(t.abuse_report)).one()
     assert (row.reporter, row.account_id) == (agent.id, team["owner"].id)
     assert [r["id"] for r in agent.get("/me/reports").json()["items"]] == [made.json()["id"]]
+    # Its owner reads it too, as the export holds it (§16.8).
+    owned = team["owner"].get("/me/reports").json()["items"]
+    assert [r["id"] for r in owned] == [made.json()["id"]]
 
 
 def test_the_export_holds_the_accounts_reports(team: dict[str, Any], migrated: Engine) -> None:
