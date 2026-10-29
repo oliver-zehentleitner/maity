@@ -709,15 +709,24 @@ timer and prints the three effective settings in one command, so a rollback that
 **See:** process.md#the-runner-user-is-fenced-by-an-owner-match-chain-on-output-replies-first-loopback-closed — ca3532c5-f8f1-4687-b467-ee1b129dc603 — as of 2026-10-29
 **Revisit when:** a job runs something that should not reach the machine's own services, or the servers carry anything besides sshd on loopback
 
-The chain for the runner user's uid rejects `ssh` (port 22) over loopback and over the machine's own address, lets the rest of loopback through, and
-keeps the metadata service, the private ranges and shared address space closed. This replaces "loopback closed except the database ports and the
-resolver" from the entry it points to; that entry is `superseded` by this one for the loopback rules; the rest of its fence (the owner match on OUTPUT, replies first, the closed metadata service and private networks) stands.
+The runner user is fenced by one chain, `MAITY_RUNNER`, that the `OUTPUT` chain jumps to for packets of that user's uid (an owner match: everything its jobs
+start, rootless Docker and the containers behind slirp4netns included, runs under that uid in the host's network stack). In it, packets of connections that
+exist already (replies) go first, so that a listener's answers are not judged as new traffic; `ssh` (port 22) is rejected over loopback and over the machine's own
+address (routed over `lo`); the rest of loopback is the job's own; and the metadata service, the private ranges and shared address space are rejected. These
+parts, the owner match on `OUTPUT` and replies first, are this entry's own decision now, taken over unchanged from the entry it supersedes; what changes is
+loopback: "closed except the database ports and the resolver" becomes "open except ssh".
 
 **Reason:** the suite starts servers of its own on loopback on any port (outbound-request tests, a TLS server with a wrong certificate, a mail
 server for the notification tests), which the closed loopback refused: 69 tests failed that pass on a hosted runner. What the closed loopback
 protected was sshd on the machine's own address (key-only since step 3b), the only service on the machine besides the resolver and the job's own
 containers; the fence matters towards the provider's networks and the metadata service, which stay closed. A dedicated machine without secrets that is
 reinstalled after a malicious job has little behind loopback to protect.
+
+Because loopback is open to the runner user, the self-test at the end of `bootstrap-server.sh` lists every other listener on loopback, on the machine's own
+address or on all addresses (ssh and the resolver excepted) as a note, not as a failure: a new service on the server should show at the next bootstrap
+without blocking it. Rejected for that: a failure for every foreign listener (the distribution's own services would trigger it) and no check at all (the
+"revisit when" of this entry would have no trigger). The probes run for 127.0.0.1, ::1 and the machine's own IPv4 and IPv6 addresses, because traffic to the
+own addresses goes over `lo` and meets the same rule; the `::1` listener probe is skipped, with a note, where a provider has IPv6 off on `lo`.
 
 **Rejected alternatives:**
 - Opening more ports one by one (the database ports and the resolver, as before): the suite picks ports at random, and each new test server would be a new failure.
