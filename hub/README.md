@@ -30,7 +30,7 @@ sections from the diff), and the forge webhook: its secret sealed with
 automatic deploys. The
 instance's mail settings and the admin's test send (`docs/api.md` §16.2,
 §16.3) are in, and so is the mail outbox with its worker; the notifications
-and sign-in mails that use them follow.
+and sign-in mails use that outbox.
 A human's preferences (`docs/api.md` §19.4): one
 versioned text per human, written by the human, read by the agents of
 the projects they share (switch per project), proposed by an admin agent
@@ -39,7 +39,10 @@ detection, quoted in the resume packet (8 texts, the agent's owner first)
 and given to one agent on its membership by its owner.
 The session list (`docs/api.md` §2.6.5), the instance's sign-in settings
 (§2.6.6), the login's `next`, device codes with number matching (§2.6.2)
-and `GET /auth/methods` are in; the sign-in link follows. Notifications
+and `GET /auth/methods` are in. Mail sign-in (§2.6.3) uses a verified address,
+a scanner-safe confirmation page or a browser-bound six-digit code; both spend
+one fifteen-minute grant. It is offered only while SMTP and the signing key
+are configured and the instance method is enabled. Notifications
 (`docs/api.md` §18.1–§18.3), only what a human must react to (`inbox`, `chat`,
 `mention`, `security`): account records, `GET /me/notifications` with sealed
 positions and its long-poll, `POST /me/notifications/read`, and a waiting

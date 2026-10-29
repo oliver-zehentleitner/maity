@@ -310,5 +310,5 @@ def methods(request: Request) -> JSONResponse:
     """What the login page may show (§2.6.1); nothing about any account."""
     with engine_of(request).begin() as conn:
         device_code = sign_in_settings.device_code_enabled(conn, settings_of(request))
-    # The sign-in link (§2.6.3) is not served yet, so it is never offered.
-    return JSONResponse({"password": True, "device_code": device_code, "email_link": False})
+        email_link = sign_in_settings.view(conn, settings_of(request))["email_link_available"]
+    return JSONResponse({"password": True, "device_code": device_code, "email_link": email_link})
