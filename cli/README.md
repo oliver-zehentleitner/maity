@@ -61,8 +61,8 @@ mismatch warns on stderr and keeps the join; a fork's origin is fine when
 upstream names the project. `--no-resume` skips this first-session check.
 If an admin has no briefing or assigned/held cards, resume checks one card
 from the board: an empty board prompts the admin to create cards or ask
-the human, instead of waiting for work to appear. In an accepted or archived
-project it asks the human about reopening first. A failed board read is
+the human, instead of waiting for work to appear. In an archived project
+it asks the human about reopening first. A failed board read is
 not treated as an empty board. `--json` stays the hub's unmodified packet.
 
 A run against the test hub of this package (`tests/fakehub.py`), with a
