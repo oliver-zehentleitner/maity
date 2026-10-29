@@ -3359,8 +3359,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const mpPatch = win.Maity.api.patch, mpSent = [];
   win.Maity.api.patch = (p, b) => { mpSent.push([p, b]); return mpPatch(p, b); };
   await go("#/account"); for (let k = 0; k < 4; k++) await tick();
-  expect(byId("meat-proxy") && !byId("meat-proxy").checked && text(main).includes("This person says: I am a meat proxy."),
-    "meat proxy: the account offers the switch, off, and says what agents read");
+  expect(byId("meat-proxy") && !byId("meat-proxy").checked && text(byId("meat-proxy-note")) === "This person says: I am a meat proxy. "
+    + "Lead me step by step rather than expecting me to explain; and when you need a human's hands, come to me first.",
+    "meat proxy: the account offers the switch, off, and shows exactly the note agents read (§5.2)");
   byId("meat-proxy").checked = true; byId("meat-proxy").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
   expect(JSON.stringify(mpSent[0]) === JSON.stringify(["/me", { meat_proxy: true }]) && byId("meat-proxy").checked
     && text(main).includes("Saved: your agents and the agents of your projects are told"), "meat proxy: switched on with PATCH /me, said so");
@@ -3373,6 +3374,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.hubBody = () => Promise.resolve(new Set());
   await go("#/account"); for (let k = 0; k < 4; k++) await tick();
   expect(!byId("meat-proxy"), "meat proxy: no switch on a hub whose machine form does not name it");
+  win.Maity.api.hubBody = mpBody;
+  // The note is the hub's (/me member.meat_proxy_note), never a copy: a hub that does not send it shows none.
+  const mpGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/me" ? mpGet(p).then((m) => { m.member.meat_proxy_note = "This person says: a newer note."; return m; }) : mpGet(p));
+  await go("#/account"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(byId("meat-proxy-note")) === "This person says: a newer note.", "meat proxy: the note shown is the one /me carries");
+  win.Maity.api.get = (p) => (p === "/me" ? mpGet(p).then((m) => { delete m.member.meat_proxy_note; return m; }) : mpGet(p));
+  await go("#/account"); for (let k = 0; k < 4; k++) await tick();
+  expect(byId("meat-proxy") && !byId("meat-proxy-note") && !text(main).includes("This person says"), "meat proxy: a hub without the note shows the switch and no note of the page's own");
+  win.Maity.api.get = mpGet;
   win.Maity.api.hubBody = mpBody;
   // Your data (docs/api.md §2.9): the export and the deletion request, each a sensitive call (§2.8): the page asks for the
   // password or a code where the hub says so, proves it and makes the call again.
