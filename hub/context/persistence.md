@@ -617,6 +617,14 @@ On MariaDB there is no server-side statement timeout to set per session, so the 
 bound is the driver's `read_timeout`; without it a hung statement on `alembic_version` would hold
 the probe's thread for good.
 
+Every PostgreSQL connection sets `application_name` (`maity-hub` for the serving hub,
+`maity-hub-health` for the probe, `maity-hub-cli` for `migrate` and the other commands), so
+`pg_stat_activity` says who holds a connection. In the incident of 2026-10-26 the diagnosis was
+blocked and cost about 30 minutes (card tsk-ftnk7d1p5117); the name is the cheap half of that
+fix, the read access to the view is the operator's. MariaDB and SQLite set none. **Rejected
+alternative:** the pod name in the name now: the hub runs one pod until after the launch, and the
+name is one constant to extend when a second pod exists.
+
 The probe test used to compare engines with `is`, which held on SQLite (one engine) and failed on
 MariaDB, where the probe has an engine of its own. It now takes a real pool of one connection,
 holds it, and expects `/health` to answer anyway; it is skipped on SQLite, which has nothing to
