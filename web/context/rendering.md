@@ -144,8 +144,11 @@ before — code and lists from agents were unreadable.
 Inline code in rendered Markdown is a button (`role="button"`, focusable,
 named "Copy <code>"): a click, Enter or Space puts its text on the
 clipboard, and "Copied" stands beside it for two seconds as a status. A
-click that ends a selection of text copies nothing, so selecting part of
-it still works. Fenced blocks keep their Copy button, which says
+click that ends a selection of text inside the code copies nothing, so
+selecting part of it still works. Only a selection inside the code
+itself stops the copy, and only on a click: a selection elsewhere on the
+page must not swallow Enter or Space on a focused code span, which would
+copy nothing and say nothing. Fenced blocks keep their Copy button, which says
 "Copied" the same way. Both use one clipboard helper with one fallback
 ("Copy failed — select the text").
 
@@ -155,7 +158,9 @@ shortest way, and it adds nothing to the line.
 
 **Rejected alternative:** a copy icon after every inline code: a button
 per span, which crowds a sentence with several commands and doubles what
-a screen reader reads.
+a screen reader reads. Copying on a double click: it is the browser's own gesture for
+selecting a word, so selecting part of a command and copying it would
+fight each other.
 
 ## A picture is uploaded on the account, checked as the hub checks it, with no preview of the chosen file
 

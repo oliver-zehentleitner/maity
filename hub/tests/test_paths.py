@@ -28,7 +28,7 @@ def _words(after: str, until: str) -> set[str]:
 
 
 def test_the_reserved_first_segments_are_the_contracts() -> None:
-    listed = _words("The list:", "`agents`, `components`")
+    listed = _words("The list:", "`components`, `health` and `imprint` name no route")
     assert frozenset(listed) == paths.RESERVED_FIRST
 
 

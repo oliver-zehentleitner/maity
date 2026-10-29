@@ -192,7 +192,7 @@ window.Maity = window.Maity || {};
           status.done();
           // A new project has nothing waiting yet; its next step is to
           // join an agent, which the Agents view offers when it is empty.
-          M.route.go(ctx.projectLink(created.full_name, "members"));
+          M.route.go(ctx.projectLink(created.full_name, "agents"));
         } catch (err) {
           submit.disabled = false;
           const fields = err.code === "invalid" && err.details && err.details.fields ? err.details.fields : null;

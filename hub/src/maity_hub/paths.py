@@ -12,8 +12,8 @@ import re
 import unicodedata
 
 # A human's or an organisation's handle is never one of these (§16.11), now or later.
-# `agents`, `components`, `health` and `imprint` name no route today and are held back so
-# that they stay free for one.
+# `components`, `health` and `imprint` name no route today and are held back so that they
+# stay free for one.
 RESERVED_FIRST = frozenset(
     {
         "account", "admin", "agents", "all", "api", "assets", "badge", "chats", "components",
@@ -27,8 +27,8 @@ RESERVED_FIRST = frozenset(
 # one of them, so that `/<owner>/<word>` stays free for pages of an owner's own.
 PROJECT_VIEWS = frozenset(
     {
-        "board", "chat", "inbox", "jour-fixe", "members", "message", "messages", "org", "overview",
-        "runners", "settings", "swarm", "tasks", "ticker", "why",
+        "agents", "board", "chat", "inbox", "jour-fixe", "members", "message", "messages",
+        "overview", "runners", "settings", "swarm", "tasks", "ticker", "why",
     }
 )  # fmt: skip
 

@@ -24,18 +24,22 @@ window.Maity = window.Maity || {};
   }
 
   // Inline code copies itself on a click, or Enter or Space (the maintainer,
-  // tsk-rdx6gaqveygx); a click that ends a selection of it copies nothing.
+  // tsk-rdx6gaqveygx); a click that ends a selection inside it copies nothing.
   // "Copied" stands beside it for two seconds, a status for a screen reader.
   function inlineCode(text) {
     const said = h("span", { class: "md-copied", role: "status" });
     const copy = async () => {
-      const chosen = window.getSelection ? String(window.getSelection() || "") : "";
-      if (chosen) return;
       said.textContent = await copied(text);
       window.setTimeout(() => { said.textContent = ""; }, 2000);
     };
+    // Only a click that ends a selection inside this code is a selection,
+    // not a copy; one elsewhere on the page never swallows a key.
+    const selectedHere = () => {
+      const sel = window.getSelection ? window.getSelection() : null;
+      return !!sel && !sel.isCollapsed && String(sel) !== "" && typeof sel.containsNode === "function" && sel.containsNode(code, true);
+    };
     const code = h("code", { class: "md-inline-copy", tabindex: "0", role: "button", title: "Click to copy", "aria-label": "Copy " + text,
-      onclick: copy,
+      onclick: () => { if (!selectedHere()) copy(); },
       onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); copy(); } } }, text);
     return [code, said];
   }

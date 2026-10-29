@@ -1,5 +1,6 @@
-// (4) Organisation: an indented tree computed from reports_to and area
-// ownership on every render; nothing chart-shaped is stored or fetched.
+// The organigram, a section of Overview (js/overview.js; the maintainer,
+// 2026-10-29): an indented tree computed from reports_to and area ownership
+// on every render; nothing chart-shaped is stored or fetched.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -77,13 +78,14 @@ window.Maity = window.Maity || {};
       kids.length ? h("ul", null, kids.map((k) => node(ctx, k, tree))) : null);
   }
 
-  M.views.org = async function (ctx, root) {
-    const tree = buildTree(ctx.members);
-    append(root, h("h2", null, "Organisation"),
-      h("p", { class: "muted" }, "Policy: " + ctx.project.policy.preset
-        + ". Computed from who reports to whom and who owns which area."),
-      h("ul", { class: "org-tree" }, tree.roots.map((m) => node(ctx, m, tree))));
-  };
+  function section(ctx) {
+    const tree = buildTree(ctx.members || []);
+    return h("section", { class: "overview-part overview-org", "aria-labelledby": "overview-org" },
+      h("div", { class: "overview-head" }, h("h3", { id: "overview-org" }, "Organisation"),
+        h("span", { class: "muted" }, "· Policy: " + ctx.project.policy.preset)),
+      h("p", { class: "muted" }, "Computed from who reports to whom and who owns which area."),
+      tree.roots.length ? h("ul", { class: "org-tree" }, tree.roots.map((m) => node(ctx, m, tree))) : h("p", { class: "muted" }, "No members."));
+  }
 
-  M.org = { buildTree, contains };
+  M.org = { buildTree, contains, section };
 })(window.Maity);
