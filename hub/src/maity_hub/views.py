@@ -379,6 +379,19 @@ def _sharing(conn: Connection, rows: Sequence[Any]) -> dict[int, list[dict[str, 
     return found
 
 
+def _owners_of(conn: Connection, membership_ids: set[int]) -> dict[int, str]:
+    """The owner of each membership: its agent's profile owner, or the human itself."""
+    if not membership_ids:
+        return {}
+    m = t.membership.c
+    rows = conn.execute(
+        select(m.id, m.agent_id, m.human_id, t.agent_profile.c.owner_id)
+        .select_from(t.membership.outerjoin(t.agent_profile, t.agent_profile.c.id == m.agent_id))
+        .where(m.id.in_(membership_ids))
+    )
+    return {r.id: r.owner_id if r.agent_id is not None else r.human_id for r in rows}
+
+
 def member_views(
     conn: Connection,
     rows: Sequence[Any],
@@ -408,6 +421,7 @@ def member_views(
         else {}
     )
     principals = principal_ids(conn, (r.reports_to for r in rows))
+    boss_owners = _owners_of(conn, {r.reports_to for r in rows if r.reports_to is not None})
     pictures = avatars.urls(conn, [*agent_ids, *human_ids])
     live, latest_of = _sessions(conn, {r.id for r in rows if r.agent_id is not None})
     placed = _placements(conn, {r.id for r in rows if r.agent_id is not None})
@@ -451,6 +465,11 @@ def member_views(
             "trust": row.trust,
             "role": row.role,
             "reports_to": principals.get(row.reports_to) if row.reports_to is not None else None,
+            # The edge's owners differ (§6.2 "The marker"); `owner_id` says whose it is.
+            "cross_owner": row.reports_to is not None
+            and boss_owners.get(row.reports_to)
+            != (agents[row.agent_id].owner_id if row.agent_id else row.human_id),
+            "line_consent": bool(row.line_consent),
             "areas": row.areas,
             "capabilities": row.capabilities,
         }

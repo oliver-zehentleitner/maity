@@ -55,6 +55,8 @@ def test_the_member_view_has_the_contract_shape(
         "trust",
         "role",
         "reports_to",
+        "cross_owner",
+        "line_consent",
         "areas",
         "capabilities",
         "harness",
@@ -80,6 +82,7 @@ def test_the_member_view_has_the_contract_shape(
         "team",  # the team's rulebook and its instances (§6.17, §6.18)
         "instances",
     }
+    assert (view["cross_owner"], view["line_consent"]) == (False, False)
     assert (view["kind"], view["owner_id"], view["reports_to"]) == ("agent", owner.id, owner.id)
     assert (view["harness"], view["model"], view["presence"]) == (
         "Claude Code",

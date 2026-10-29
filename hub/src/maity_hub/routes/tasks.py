@@ -22,6 +22,7 @@ from maity_hub import (
     contract_text,
     idempotency,
     instances,
+    line,
     mentions,
     merged,
     namespace,
@@ -211,6 +212,20 @@ def _target_id(conn: Connection, mine: Membership, principal: str, field: str) -
         raise invalid({field: "guest"}, "a guest is never a target")
     membership_id: int = row.id
     return membership_id
+
+
+def _line_lead(mine: Membership) -> bool:
+    return not mine.may("tasks:admin") and mine.may("line:lead")
+
+
+def _require_assigner(conn: Connection, mine: Membership, *touched: int | None) -> None:
+    """`tasks:admin`, or `line:lead` with every member the move touches the caller or in
+    its reach (`not_in_line` otherwise, §2.3 "The manager"). The caller holds the
+    project lock, so the reach is the one the write lands on."""
+    if _line_lead(mine):
+        line.require_reach(conn, mine, *touched)
+        return
+    mine.require("tasks:admin")
 
 
 def _card(conn: Connection, card_id: str) -> Any:
@@ -764,8 +779,8 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
             extra = {"contract": _new_contract(conn, mine, body.contract or ContractIn())}
         assigned: int | None
         if body.assigned_to is not None:
-            mine.require("tasks:admin")
             assigned = _target_id(conn, mine, body.assigned_to, "assigned_to")
+            _require_assigner(conn, mine, assigned)
         else:
             # Findings and hand-outs go to the owner of the narrowest area (§6.2).
             assigned = cards.area_owner(conn, mine.project.id, body.area)
@@ -905,8 +920,11 @@ def patch_task(
             given == {"release"} and card.kind == "release" and mine.may("releases:write")
         )
         editor = cards.holds(mine, card) or card.created_by == mine.id or mine.may("tasks:admin")
+        # `assigned_to` alone is also a manager's within its reach (§2.3 "The manager").
+        line_assign = given == {"assigned_to"} and _line_lead(mine)
         if (
             not editor
+            and not line_assign
             and not arbiter_move
             and not release_edit
             and not (review_move and cards.has_done_authority(mine, card))
@@ -955,7 +973,7 @@ def patch_task(
             _check_area(body.area)
             values["area"] = body.area
         if "assigned_to" in given:
-            mine.require("tasks:admin")
+            _require_assigner(conn, mine, new_assignee, card.assigned_to, card.claim_holder)
             if assigns_away and not cards.holds(mine, card):
                 takeovers.guard_move(conn, mine, card)
             values["assigned_to"] = new_assignee
@@ -1300,7 +1318,8 @@ def release(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSO
             if cards.sibling_holds(mine, card) and not (mine.may("tasks:admin") or lead):
                 raise _not_holder(card)
             if not lead:
-                mine.require("tasks:admin")
+                # A manager releases an expired claim held in its reach (§2.3).
+                _require_assigner(conn, mine, card.claim_holder)
             # An agent takes a card only through a takeover while the lease runs (§6.19).
             takeovers.guard_move(conn, mine, card)
             if not _lease_expired(card):
@@ -1440,13 +1459,17 @@ def assign(
         if card.claim_holder not in (None, assignee):
             # Before the scope: no agent, whatever its role, assigns it away (§2.3).
             _refuse_against_a_human(conn, mine, card)
-        if not mine.may("tasks:admin"):
-            if not _leads_within_team(mine, card, body.assignee):
-                mine.require("tasks:admin")
+        if mine.may("tasks:admin"):
+            pass
+        elif _leads_within_team(mine, card, body.assignee):
             # The lead hands out its team's cards nobody holds; a held card moves only
             # through a takeover (§6.18, §6.19), a human's never (§2.3).
             if card.claim_holder is not None:
                 raise _held(conn, card)
+        else:
+            # A manager moves a card among itself and its reach, an expired claim
+            # included (§2.3 "The manager"): every member it touches in the reach.
+            _require_assigner(conn, mine, assignee, card.assigned_to, card.claim_holder)
         assignee_row = conn.execute(select(t.membership).where(t.membership.c.id == assignee)).one()
         takes = card.claim_holder is not None and card.claim_holder != assignee
         if body.instance is not None:

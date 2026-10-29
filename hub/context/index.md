@@ -61,6 +61,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 
 ## M
 - [mail.md](mail.md) — a registration's link is a signed token whose nonce is kept only as a hash, in the mail's own transaction; mail counters from a delivery table, the SMTP conversation on smtplib stage by stage, `tls: none` checked on the resolved pair; the test send counts against no budget, needs `to` until addresses exist, keeps `last_test` unless a connection value really changes; mail through an outbox written in the deciding transaction and sent by a worker, a row claimed by one conditional update that lapses after two minutes; the registration's link page is a router of its own with a form cookie and a same-origin `POST`, the terms version signed with the nonce, each refusal its own status
+- [manager.md](manager.md) — the manager's reach computed on read in `line.py` under the project lock, never stored; a manager's pause marked by `paused_line`, not by `paused_by`; the open points of §2.3 "The manager" as the coordinator ruled them; the depth check skips a boss that does not change
 - [memory.md](memory.md) — memory caps count UTF-8 bytes under the project lock; `q` filters in Python; an agent's community entry is a proposal through the shared mechanism, only a `project:admin` human answers it, soul proposals use the same registry through the profile owner’s personal inbox; `changed_since_cursor` reads the memory events after the cursor; another team's agent gets `not_found` on delete
 
 ## N
