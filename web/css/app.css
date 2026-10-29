@@ -1364,3 +1364,8 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .agent-card-head h3 { margin: 0; }
 .agent-settings { margin-top: 8px; }
 .agent-new { margin-top: 20px; }
+/* A project's Agents: what belongs to the membership, under the card. */
+.agent-here { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
+.agent-here h4 { margin: 0 0 4px; }
+.member-actions { white-space: nowrap; }
+.member-actions .member-chat + button { margin-left: 6px; }
