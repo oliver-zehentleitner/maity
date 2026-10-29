@@ -152,7 +152,6 @@ EXPORT_LEAVES_OUT = {
     "memory_entry": _UNLISTED,
     "notification_mail_state": _BOOKKEEPING,
     "notification_position": _BOOKKEEPING,
-    "org_invitation": f"an organisation's offer, not the caller's data; {_UNLISTED}",
     "notification_read": _BOOKKEEPING,
     "pending_registration": _SECRET,  # the password chosen with it
     "placement": _UNLISTED,

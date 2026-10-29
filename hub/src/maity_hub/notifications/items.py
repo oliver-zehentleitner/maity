@@ -17,7 +17,7 @@ from maity_hub import avatars, clock, events, inbox, namespace
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.notifications import records
-from maity_hub.views import human_languages
+from maity_hub.views import deleted, deleted_person, human_languages
 
 WINDOW = timedelta(days=30)
 KINDS = ("inbox", "chat", "mention", "security")
@@ -669,12 +669,16 @@ def _shared_actor(
 
 
 def _human_name(conn: Connection, human_id: str | None) -> str:
-    """The display name of the human who invites to an organisation; "Maity" for a request
-    the hub files on nobody's behalf."""
+    """The display name of the human who invites to an organisation, "Deleted account" once
+    they deleted theirs (§2.9); "Maity" for a request the hub files on nobody's behalf."""
     if human_id is None:
         return "Maity"
-    name = conn.execute(select(t.human.c.display_name).where(t.human.c.id == human_id)).scalar()
-    return str(name) if name is not None else "Maity"
+    row = conn.execute(
+        select(t.human.c.display_name, t.human.c.deleted_at).where(t.human.c.id == human_id)
+    ).first()
+    if row is None:
+        return "Maity"
+    return str(deleted_person()["display_name"]) if deleted(row) else str(row.display_name)
 
 
 def _actor(conn: Connection, membership_id: int | None) -> dict[str, Any] | None:

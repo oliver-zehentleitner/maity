@@ -312,3 +312,19 @@ def test_the_deletion_of_either_side_withdraws_the_invitations(
     with migrated.connect() as conn:
         reasons = sorted(r.closed_by for r in conn.execute(select(t.org_invitation)).all())
     assert reasons == ["invitee_deleted", "inviter_deleted"]
+
+
+def test_a_deleted_inviter_is_shown_as_a_deleted_account(
+    make_client: ClientFactory, migrated: Engine, owner: flow.Human
+) -> None:
+    make_org(owner)
+    guest = flow.human(make_client, migrated, "guest")
+    invite(owner, "guest")
+    before = [i for i in guest.get("/me/notifications").json()["items"] if i["kind"] == "inbox"]
+    assert "Maintainer" in before[0]["title"] or "maintainer" in before[0]["title"].lower()
+    with migrated.begin() as conn:
+        conn.execute(update(t.human).where(t.human.c.id == owner.id).values(deleted_at=clock.now()))
+    after = [i for i in guest.get("/me/notifications").json()["items"] if i["kind"] == "inbox"]
+    assert "Deleted account" in after[0]["title"] and "aintainer" not in after[0]["title"]
+    [pending] = requests_of(guest)
+    assert pending["asked_by"]["display_name"] == "Deleted account"

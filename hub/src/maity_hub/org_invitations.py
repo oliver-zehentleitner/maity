@@ -313,17 +313,19 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
     if invitation.expires_at <= clock.now():
         raise _stale(s.request.id, "the invitation has expired")
     human_id = proposal["to"]
+    closed = conn.execute(
+        update(t.org_invitation)
+        .where(t.org_invitation.c.id == invitation.id, t.org_invitation.c.live.is_(True))
+        .values(live=None, closed_at=clock.now(), closed_by="accepted")
+    ).rowcount
+    if closed != 1:  # closed meanwhile by a path that holds no organisation lock
+        raise _stale(s.request.id, "the invitation is no longer open")
     if orgs.role_of(conn, org.id, human_id) is None:
         conn.execute(
             insert(t.org_member).values(
                 org_id=org.id, human_id=human_id, role=invitation.role, joined_at=clock.now()
             )
         )
-    conn.execute(
-        update(t.org_invitation)
-        .where(t.org_invitation.c.id == invitation.id)
-        .values(live=None, closed_at=clock.now(), closed_by="accepted")
-    )
     # Every other open invitation of this organisation whose request went to this human is
     # withdrawn now, so a later `go` finds nothing open (two names, two invitations).
     others = conn.execute(

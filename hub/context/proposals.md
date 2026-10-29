@@ -82,3 +82,31 @@ the state in agreement, and placements already behave this way.
 **Rejected alternative:** record the outcome (the answer stands, the
 change is skipped, with a note). The human's answer would be kept, but
 the request would then say `go` for something that never happened.
+
+## Every kind treats `withdrawn` as a no-op or a clean-up: the addressee's withdrawal settles it
+
+**Id:** f750b211-cee5-4ec7-9d64-625f21b8aaf3
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §6.26 (the invited human's withdrawal counts as their `no`), §7; the review of tsk-whe4wv1jpsae part 2, 2026-10-29
+**Revisit when:** a kind has a side effect that must not run when the addressee takes the request back, or `POST /requests/{id}/withdraw` stops settling
+
+`withdraw_personal` (`POST /requests/{id}/withdraw`, the addressee of a personal request) now runs
+`proposals.settle` with the outcome `withdrawn`, as the project route and `close_request` always
+did. Before, a personal request's withdrawal closed the row and nothing else, which was harmless
+while no personal kind had anything to undo; an organisation's invitation does (its row stays
+open otherwise). So a kind's `settle` must treat `withdrawn` as a no-op or as a clean-up of what the
+request filed, never as an answer, and never raise on it: the addressee's withdrawal is the same
+call as the hub's own close.
+
+**Reason:** the withdrawal is a close like the others and a settle that is not told of it leaves
+the thing it was filed for open (an invitation nobody can answer any more, still counted and
+listed). The kinds that exist (`project_transfer`, `preferences`, takeovers, memory, the
+admin-agent kind, `org_invitation`) were read and none does anything on `withdrawn` but close or ignore.
+
+**Rejected alternatives:**
+- Settling only for a kind that opts in: a kind that forgot to opt in would leave its row open,
+  and that fails silently, which is what the rule is there against.
+- Closing an invitation's row from the withdrawal route by hand: the route would then know a kind.
+

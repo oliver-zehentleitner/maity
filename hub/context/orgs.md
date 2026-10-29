@@ -126,8 +126,8 @@ may have no project.
 **Id:** 506a6ea2-4f34-4174-a86f-09c3c5c66200
 **Type:** decision
 **Status:** active
-**Evidence:** inferred
-**Source:** `docs/api.md` §6.26 "Adding a member"; the implementation of tsk-whe4wv1jpsae (part 2)
+**Evidence:** confirmed
+**Source:** `docs/api.md` §6.26 "Adding a member" (contract #585, the coordinator's rules for who withdraws an invitation and when); the implementation of tsk-whe4wv1jpsae (part 2)
 **Revisit when:** an invitation gets a second way to be answered, or the aliases of §6.24 let two names reach one human, which the contract's "two open invitations" rule is written for
 
 `org_invitations.close` sets the row closed (`live` NULL, `closed_by` the reason: `revoked`,
