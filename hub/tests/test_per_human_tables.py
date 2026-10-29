@@ -9,6 +9,7 @@ and has no foreign key is decided there, so a new one fails until it is."""
 
 from __future__ import annotations
 
+import ast
 import inspect
 import re
 from types import ModuleType
@@ -187,8 +188,23 @@ HUMAN_TABLES = sorted(
 )
 
 
+def _code_of(module: ModuleType) -> str:
+    """The module's code without comments and docstrings: a table named only in prose is
+    not handled."""
+    tree = ast.parse(inspect.getsource(module))
+    for node in ast.walk(tree):
+        body = getattr(node, "body", None)
+        first = body[0] if isinstance(body, list) and body else None
+        docstring = isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant)
+        if docstring and isinstance(first.value.value, str):  # type: ignore[union-attr]
+            node.body = body[1:] or [ast.Pass()]  # type: ignore[attr-defined, index]
+    return ast.unparse(tree)
+
+
 def _named_in(module: ModuleType, table: str) -> bool:
-    return f"t.{table}" in inspect.getsource(module)
+    """`t.<table>` in the module's code, as a whole name: `t.email_sign_in` is not named by
+    `t.email_sign_in_day`."""
+    return re.search(rf"\bt\.{table}\b", _code_of(module)) is not None
 
 
 def test_every_column_that_looks_like_a_person_is_decided() -> None:

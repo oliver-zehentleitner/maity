@@ -205,7 +205,7 @@ transaction or a restore could leave out of step.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the review of #586, where forge links (#567) and mail sign-in links (#550) had landed after the deletion and were not removed by it; the coordinator's card for a schema check; the review of #607 (columns without a foreign key, the delegated removals, `project`)
-**Revisit when:** a column names a person under a name the pattern does not catch, or the deletion or export moves its statements out of the modules the test reads
+**Revisit when:** a column names a person under a name the pattern does not catch, a table behind `membership` or `agent_profile` holds a person's data that their removal does not reach, or the deletion or export moves its statements out of the modules the test reads
 
 `tests/test_per_human_tables.py` walks the schema. A table names a human
 through a foreign key to `human`, a column called `human_id`, or a column
@@ -225,7 +225,15 @@ reason; and the same for `export.py`, `EXPORT_THROUGH` and
 `EXPORT_LEAVES_OUT`. A list entry for a column or table that is gone, no
 longer names a human, or that the code handles after all, fails as
 stale. `project` is kept on purpose, not covered because the deletion
-happens to read it.
+happens to read it. "Named" means `t.<table>` as a whole name in the
+module's code, comments and docstrings left out: `t.email_sign_in` is
+not named by `t.email_sign_in_day`.
+
+The walk is one hop. Tables that reach a person only through
+`membership` (`card_watch`, `member_briefing`, `conversation_read`,
+`presence_minute`, …) or through `agent_profile` are not checked: they
+are the removal's (§6.2) and the profile deletion's (§6.3), which the
+deletion hands them to.
 
 The test checks that a table is decided, not that the decision is right:
 whether a statement covers the right column stays the reviewer's to see.
