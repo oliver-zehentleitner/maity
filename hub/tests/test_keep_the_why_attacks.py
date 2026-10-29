@@ -651,7 +651,7 @@ def test_simultaneous_reads_are_single_flight_and_release_their_threads(
     # starts a thread late cannot turn a waiter into a second reader or a late `Busy`.
     web.delay = 3.0
     results: list[Any] = []
-    gate = threading.Barrier(30)
+    gate = threading.Barrier(30, timeout=10)  # a thread that dies early fails, not hangs
     started = time.monotonic()
 
     def call() -> None:
