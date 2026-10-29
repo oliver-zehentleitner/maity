@@ -5,3 +5,6 @@
   stays in them (§2.9), nor any address that once started a registration. The key comes
   from `MAITY_SECRET_KEY`, else from a random pepper the hub stores at first use.
   Migration 0085 makes both tables again; their old rows are only locks and go.
+- hub: an account deletion also removes the lock rows of the account's addresses (§2.9).
+- hub: a verification whose claim the unique constraint catches answers as a dead link,
+  not with an error.

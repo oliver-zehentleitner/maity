@@ -257,12 +257,7 @@ def _fresh_process_state() -> Iterator[None]:
 
 @pytest.fixture
 def migrated(engine: Engine, _migrated_sqlite_file: Path | None) -> Engine:
-    from maity_hub.mail import address
-
     migrate_fast(engine, _migrated_sqlite_file)
-    # What the hub makes at the first verification or registration, made here for the
-    # tests that claim or lock an address without going through a route.
-    address.prepare(engine, None)
     return engine
 
 

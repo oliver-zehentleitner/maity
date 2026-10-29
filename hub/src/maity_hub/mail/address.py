@@ -17,7 +17,7 @@ from typing import Any
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from sqlalchemy import Engine, insert, select
+from sqlalchemy import Engine, delete, insert, select
 from sqlalchemy.exc import IntegrityError
 
 from maity_hub import instance_settings as store
@@ -68,6 +68,9 @@ def prepare(engine: Engine, secret_key: bytes | None) -> None:
     """Make the stored pepper at first use, before the caller's transaction that locks:
     insert if absent, and on a concurrent first use keep the winner's."""
     if secret_key is not None:
+        with engine.begin() as conn:  # no longer used once an instance key is set
+            if store.sealed(conn, LOCK_PEPPER) is not None:
+                store.put_sealed(conn, LOCK_PEPPER, None, None)
         return
     with engine.begin() as conn:
         if store.sealed(conn, LOCK_PEPPER) is not None:
@@ -79,21 +82,48 @@ def prepare(engine: Engine, secret_key: bytes | None) -> None:
         pass  # another request or replica made it first; its pepper stands
 
 
+def _hmac_key(conn: Any, secret_key: bytes | None) -> bytes | None:
+    if secret_key is not None:
+        info = LOCK_PURPOSE.encode()
+        derived: bytes = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=info).derive(
+            secret_key
+        )
+        return derived
+    stored = store.sealed(conn, LOCK_PEPPER)
+    return stored if stored is not None and len(stored) == 32 else None
+
+
 def lock_key(conn: Any, secret_key: bytes | None, value: str) -> str:
     """What a per-address lock row is stored under: an HMAC of the normalized address,
     never the address itself, so a lock outlives no account's address (§2.9). The key
     comes from `MAITY_SECRET_KEY` (HKDF) when it is set, else from the stored pepper;
     every caller must pass the same `secret_key`, or one address would get two rows."""
-    if secret_key is not None:
-        info = LOCK_PURPOSE.encode()
-        key: bytes | None = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=info).derive(
-            secret_key
-        )
-    else:
-        key = store.sealed(conn, LOCK_PEPPER)
-    if not key:
+    key = _hmac_key(conn, secret_key)
+    if key is None:
         raise RuntimeError("the address lock pepper is not prepared")
     return hmac.new(key, normalized(value).encode(), hashlib.sha256).hexdigest()
+
+
+def forget_locks(conn: Any, secret_key: bytes | None, values: set[str]) -> None:
+    """Remove the lock rows of these addresses where nothing else needs them, for an
+    account deletion (§2.9): without an instance key the pepper sits in the same
+    database, so a row would still let a full dump confirm a guessed address. A row is
+    made again at its next use, so no serialisation is lost; one for an address with a
+    pending registration stays. Without a key there can be no row to remove."""
+    key = _hmac_key(conn, secret_key)
+    if key is None or not values:
+        return
+    digests = {hmac.new(key, normalized(v).encode(), hashlib.sha256).hexdigest(): v for v in values}
+    conn.execute(delete(t.address_lock).where(t.address_lock.c.digest.in_(digests)))
+    waiting = set(
+        conn.execute(
+            select(t.pending_registration.c.address_normalized).where(
+                t.pending_registration.c.address_normalized.in_({normalized(v) for v in values})
+            )
+        ).scalars()
+    )
+    free = [d for d, v in digests.items() if normalized(v) not in waiting]
+    conn.execute(delete(t.registration_lock).where(t.registration_lock.c.digest.in_(free)))
 
 
 def lock(conn: Any, secret_key: bytes | None, value: str) -> None:

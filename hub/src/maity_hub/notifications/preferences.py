@@ -608,23 +608,27 @@ def verify(
     if taken is not None:
         return False
     previous = row.address if row.address_status in ("verified", "disabled") else None
-    conn.execute(
-        update(t.notification_settings)
-        .where(t.notification_settings.c.human_id == owner)
-        .values(
-            address_normalized=claimed,
-            address=row.pending_address,
-            address_status="verified",
-            verified_at=now,
-            pending_address=None,
-            pending_nonce=None,
-            pending_expires_at=None,
-            hard_failures=0,
-            disabled_at=None,
-            epoch=row.epoch + (1 if previous and previous != row.pending_address else 0),
-            updated_at=now,
-        )
-    )
+    try:
+        with conn.begin_nested():
+            conn.execute(
+                update(t.notification_settings)
+                .where(t.notification_settings.c.human_id == owner)
+                .values(
+                    address_normalized=claimed,
+                    address=row.pending_address,
+                    address_status="verified",
+                    verified_at=now,
+                    pending_address=None,
+                    pending_nonce=None,
+                    pending_expires_at=None,
+                    hard_failures=0,
+                    disabled_at=None,
+                    epoch=row.epoch + (1 if previous and previous != row.pending_address else 0),
+                    updated_at=now,
+                )
+            )
+    except IntegrityError:  # the unique constraint caught what the lock did not
+        return False
     if previous is not None and previous != row.pending_address:
         from maity_hub import account_deletion
 

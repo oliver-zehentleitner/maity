@@ -260,7 +260,27 @@ routes that lock call it before their transaction. Every caller passes the
 instance's `secret_key`, with no default: two callers on different keys
 would give one address two rows, and the lock would serialize nothing.
 The instance-wide registration budget's key (`BUDGET_LOCK`) goes through
-the same function.
+the same function. In addition, an account deletion removes the lock rows
+of the account's addresses (`addresses.forget_locks`): the `address_lock`
+row of each, and the `registration_lock` row where no pending
+registration needs it; a row is made again at its next use.
+
+**Limit:** without `MAITY_SECRET_KEY` the pepper sits unsealed in
+`instance_secret`, in the same database as the digests. A dump of the
+lock tables alone gives no address back; a dump of the whole database
+does, for a guessed address, by trying. That is why the deletion removes
+the account's rows too: a remaining digest would be pseudonymous under
+the pepper, not anonymous. With the instance key set, the key never
+touches the database.
+
+**A key change:** setting, changing or removing `MAITY_SECRET_KEY` gives
+every address a new digest. The old rows are orphans and harmless, since
+nothing reads them; the pepper is removed once a key is set (`prepare`).
+While callers run on different keys (a rollout that mixes them), the lock
+serializes nothing and only the unique constraint on
+`notification_settings.address_normalized` catches a second claim: both
+`claim_verified` and `verify` answer it as a lost claim or a dead link,
+never an error.
 
 **Reason:** the rows are only locks. Nothing reads their value, so a
 digest serves equally, and no address outlives its account, nor stays
@@ -268,8 +288,9 @@ for good because someone once started a registration. A missing key is
 an error, not a weaker key.
 
 **Rejected alternatives:**
-- Deleting only the deleted account's lock rows: the addresses of people
-  who never got an account would stay in clear.
+- Deleting the deleted account's lock rows instead of keying them by a
+  digest: the addresses of people who never got an account would stay in
+  clear. The deletion does it in addition.
 - A plain SHA-256 of the address: an address is guessable, so a dump of
   the table would give the addresses back by trying.
 - Creating the pepper inside the lock: the lock runs in the caller's
