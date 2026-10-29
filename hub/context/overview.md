@@ -9,12 +9,14 @@ Why `GET /projects/{owner}/{slug}/overview` (`docs/api.md` §6.11,
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** `docs/api.md` §6.11 ("Why one endpoint, and only for these three", approved by the maintainer on 2026-10-22); the implementation of the card (#590)
-**Revisit when:** the overview needs a part that has a cheap source elsewhere, or the request list's visibility rule moves out of `_filtered`
+**Source:** the contract PR #189 (2026-10-22), `docs/api.md` §6.11 ("Why one endpoint, and only for these three", approved by the maintainer); the implementation of the card (#590) and its review (seq 11091, the deleted reporter)
+**Revisit when:** the overview needs a part that has a cheap source elsewhere, the request list's visibility rule moves out of `_filtered`, or a project holds so many reported cards that `latest_reports`, which reads them all and sorts them in Python, gets slow
 
 The endpoint returns the board's column counts, the open requests as
 counts (never a title), and the latest report per card, taken from the
-card's `report` field. It repeats no member view: a reporter is
+card's `report` field, read for every reported card of the project and
+sorted in Python by `reported_at`, then cut to `limit`. It repeats no
+member view: a reporter is
 `{member_id, handle, display_name, avatar_url}`, and a deleted account is
 shown as `Deleted account` (§2.9). The request counts go through the
 same `_filtered` that `GET …/requests?status=open&to=all` uses, so a
