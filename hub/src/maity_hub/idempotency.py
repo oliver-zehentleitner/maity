@@ -4,12 +4,14 @@ The key is unique per caller (an agent's credential, or a human) and kept
 for 24 hours. A repeat with the same body answers with the first call's
 status and the resource as it is now, marked `Idempotent-Replayed: true`;
 the hub stores a reference to the resource, not the response. A repeat
-with a different body is `idempotency_mismatch`.
+with a different body, or on another method, route or resource, another
+project's included, is `idempotency_mismatch`.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import timedelta
@@ -20,7 +22,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, Engine, delete, insert, select
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock, events
+from maity_hub import clock, events, namespace
 from maity_hub import tables as t
 from maity_hub.auth.caller import Caller
 from maity_hub.db import retrying
@@ -68,6 +70,23 @@ def key_for(request: Request, caller: Caller) -> str | None:
     return key
 
 
+def fingerprint(conn: Connection, request: Request) -> str:
+    """What a repeat must match: the method, the route, its path parameters and the body.
+    The project is named by its id, so its current name and an old one (§6.25) are the
+    same call, and the same key in another project is not."""
+    route = request.scope.get("route")
+    template = getattr(route, "path", None) or request.url.path
+    params = dict(request.path_params)
+    slug = params.get("slug")
+    if isinstance(slug, str):
+        project = namespace.resolve(conn, slug)
+        if project is not None:
+            params["slug"] = project.id
+    head = json.dumps([request.method, template, sorted(params.items())])
+    body: bytes = request.scope["state"].get("body", b"")
+    return hashlib.sha256(head.encode() + b"\n" + body).hexdigest()
+
+
 def run(
     engine: Engine,
     request: Request,
@@ -80,12 +99,12 @@ def run(
     the events it emits are announced once the transaction committed.
     """
     key = key_for(request, caller)
-    body_hash = hashlib.sha256(request.scope["state"].get("body", b"")).hexdigest()
     who = caller.idempotency_caller
 
     def attempt() -> JSONResponse | None:
         try:
             with events.transaction(engine) as conn:
+                body_hash = fingerprint(conn, request) if key else ""
                 replay = _replay(conn, who, key, body_hash, request) if key else None
                 if replay is not None:
                     return replay
@@ -118,13 +137,12 @@ class _KeyTaken(Exception):
 def replay_first(engine: Engine, request: Request, caller: Caller) -> JSONResponse | None:
     """The stored answer when this request repeats a stored one, before a route does
     work a repeat must not do again (an avatar's decode, its rate, §6.10): `None` when
-    there is no key or nothing stored, `idempotency_mismatch` for another body."""
+    there is no key or nothing stored, `idempotency_mismatch` for another call."""
     key = key_for(request, caller)
     if key is None:
         return None
-    body_hash = hashlib.sha256(request.scope["state"].get("body", b"")).hexdigest()
     with engine.begin() as conn:
-        return _replay(conn, caller.idempotency_caller, key, body_hash, request)
+        return _replay(conn, caller.idempotency_caller, key, fingerprint(conn, request), request)
 
 
 def _replay(
@@ -141,7 +159,9 @@ def _replay(
         return None
     if row.body_hash != body_hash:
         raise ApiError(
-            409, "idempotency_mismatch", "this Idempotency-Key was used with a different body"
+            409,
+            "idempotency_mismatch",
+            "this Idempotency-Key was used with a different body, method, route or resource",
         )
     body: dict[str, Any] = {}
     if row.resource_type is not None and row.resource_id is not None:
