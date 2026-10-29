@@ -876,7 +876,7 @@ the human would see fields that do nothing.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision on project memory and setup cards (docs/api.md §6.1, §6.21, contract #339), 2026-10-25; the card tsk-c8jt63tnztqj (provider read only after creation, the badge policy editable with its snippet in Project settings); hub/src/maity_hub/models.py (`extra="forbid"`: a hub refuses a body field it does not know); the dashboard's implementation, 2026-10-25
+**Source:** the maintainer's decision on project memory and setup cards (docs/api.md §6.1, §6.21, contract #339), 2026-10-25; the card tsk-c8jt63tnztqj (provider read only after creation, the badge policy editable with its snippet in Project settings); hub/src/maity_hub/models.py (`extra="forbid"`: a hub refuses a body field it does not know); the dashboard's implementation, 2026-10-25; the before-launch cleanup (tsk-wgg2t8ngx9xg, tsk-qeh64f8gpvnd), 2026-10-29
 **Revisit when:** a second provider arrives, the hub sets something up on a provider change, or the overview gets its badge section (§6.20 names the overview for the snippet)
 
 The create form has **Project memory** (Keep the Why preselected, None)
@@ -901,6 +901,14 @@ would invite a change whose consequences the hub does not carry out.
 Sending `memory` and `setup` always: a creation on an older hub would
 fail. Inferring support from a project's view having `memory`: a human
 without projects has no view to look at.
+
+Until 2026-10-29 the form also sent the `keep_the_why` boolean to a hub
+that knew the provider only under that alias (before §6.21). It no
+longer does: such a hub is offered no project memory. **Reason:** the
+maintainer's rule for the alpha is to delete compatibility layers before
+launch, and no hub before §6.21 is running. **Rejected alternative:**
+keeping the alias: a third branch in the form for a hub nobody runs.
+The fixture hub still accepts the alias until the hub drops it.
 
 ## Statistics sum counts of things over the window and show people by their busiest day
 
@@ -1133,7 +1141,8 @@ an anchor. Waiting for a hub-made URL: none is in the contract.
 
 **Id:** be999be7-325a-4fcf-954a-2bdadb6e6f84
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** none — the notification kind `keep_the_why` was removed on 2026-10-26 (docs/api.md §18.2, "No longer notifications"), so the dashboard has no such item to link anywhere; an unconfirmed commitment now reaches the owner as a request in the inbox (§6.23), linked like every request
 **Evidence:** confirmed
 **Source:** docs/api.md §6.23 and §18.2; the coordinator's ruling of 2026-10-25 on the item's target and the interim place (tsk-bq6q65910g13); the dashboard's implementation, 2026-10-26
 **Revisit when:** the dashboard gets a page of one's agents outside any project

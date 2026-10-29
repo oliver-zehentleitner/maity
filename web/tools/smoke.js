@@ -6322,6 +6322,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!openMatterLeak, "notifications: the mock answers no fixture-only field");
   const narrowRefused = await win.Maity.api.get("/me/notifications?kind=card").catch((err) => err);
   expect(narrowRefused.code === "invalid" && narrowRefused.details.fields.kind === "unknown", "notifications: a kind removed earlier is unknown to the mock, as to the hub");
+  const readRefused = await win.Maity.api.post("/me/notifications/read", { up_to: "999", kind: "ticker" }).catch((err) => err);
+  expect(readRefused.code === "invalid" && readRefused.details.fields.kind === "unknown", "notifications: marking read by a removed kind is unknown too");
   const waitCalls = [], waitWrites = [], waitDisposers = [];
   let waitFilter = "", waitVersion = 0, waitRelease = null, waitPolls = 0;
   win.Maity.notify.state.available = true;
