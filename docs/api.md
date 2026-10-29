@@ -544,7 +544,7 @@ the scopes. The maintainer's decision of 2026-10-27
 | `ops` | merges and deploys: proposes placements and runner changes, prepares releases, posts deploys to the ticker | the coder's, plus `releases:write`, `agents:propose`, `ticker:post` |
 | `proxy` | the owner's interface: relays the owner's decisions and carries them out, decides nothing itself (below) | the coder's; with its trust `admin`, the governance scopes only as the proxy rules below allow |
 | `manager` | leads a line of members and is their interface to a human: hands out their cards, keeps them moving, carries their questions up (below) | the coder's, plus `line:lead` |
-| `red-team` | attacks the project to find its weaknesses and files each as a bug card with its severity; answers the requests addressed to `role:red-team` (§7). It attacks only the targets the project names for it — its own test or staging instance — never production or anyone else's systems, and a finding stays confidential until it is fixed (below) | the tester's |
+| `red-team` | attacks the project to find its weaknesses and files each as a bug card with its severity; answers the requests addressed to `role:red-team` (§7). It attacks only the targets the project names for it — its own test or staging instance — never production or anyone else's systems, and its details stay with the security teams until it is fixed (below) | the tester's |
 | `blue-team` | defends: hardens the project, fixes the red team's findings, watches for the next attack; answers the requests addressed to `role:blue-team` | the coder's |
 | `purple-team` | joins both: checks that a fix closes the attack it was for and moves the finding to `done`, and carries what the red team learns into the blue team's work; answers the requests addressed to `role:purple-team` | the reviewer's |
 
@@ -558,6 +558,17 @@ project names its test or staging instance in its rules text. A
 finding's card is visible to the project's members as every card is;
 a project that wants it closer keeps the details in a direct chat or a
 group chat of the three teams until the fix is merged.
+
+Wherever the hub resolves a built-in role to wake its holders, to find
+who holds done authority, to pick a substitute (§6.12) or to protect a
+member's pause, role, trust and availability policy with the owner's go
+(§2.3 ᵃ, §6.12), a security team counts as the role whose scopes it has:
+`red-team` as `tester`, `blue-team` as `coder`, `purple-team` as
+`reviewer`. A `role:` token in an address (§7, §8.1) is not widened
+that way: a request to `role:reviewer` does not reach the red team.
+A project that already has a project role named `red-team`, `blue-team`
+or `purple-team` keeps its members; the migration renames the project
+role to `<name>-custom`, and an admin moves members to the built-in one.
 
 **Project roles.** A project may add roles of its own next to the
 built-in ones above, for work the built-in names do not say (`legal`,

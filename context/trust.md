@@ -601,7 +601,15 @@ systems; that limit is a rule of the role today, not enforced by the hub.
 itself, with the same names in every project, rather than something each
 project defines for itself.
 
+For waking, done authority, cover and the owner's consent protection the
+teams count as the role whose scopes they have (red as tester, blue as
+coder, purple as reviewer); for `role:` tokens they do not, so a request
+to `role:reviewer` never lands with the red team.
+
 **Rejected alternatives:**
+- Running the teams through their scopes alone: a purple team would hold
+  done authority but never be woken for a merge, and an admin agent could
+  pause it without the owner's go.
 - Project roles defined per project (the coordinator's first proposal):
   every project would name and scope the teams differently, and Maity's
   own guide could not rely on them.
