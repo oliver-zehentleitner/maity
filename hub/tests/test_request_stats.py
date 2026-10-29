@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from typing import Any
 
 import pytest
@@ -12,7 +13,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 
 from maity_hub import db, request_stats
-from tests.conftest import ClientFactory
+from maity_hub.app import create_app
+from maity_hub.config import Settings
 
 ACCESS = "maity_hub.access"
 
@@ -155,6 +157,14 @@ def test_the_reporter_logs_once_per_interval_and_stops(
     assert lines and lines[0].startswith("stats window=0.05s requests=1 5xx=1 max_ms=3 ")
 
 
-def test_the_serving_hub_starts_and_stops_its_reporter(make_client: ClientFactory) -> None:
-    with make_client():  # the lifespan runs with the client
-        pass
+def stats_threads() -> list[threading.Thread]:
+    return [t for t in threading.enumerate() if t.name == "maity-stats" and t.is_alive()]
+
+
+def test_the_serving_hub_starts_and_stops_its_reporter(
+    settings: Settings, migrated: Engine
+) -> None:
+    before = len(stats_threads())
+    with TestClient(create_app(settings, migrated)):  # the lifespan runs inside `with`
+        assert len(stats_threads()) == before + 1
+    assert len(stats_threads()) == before
