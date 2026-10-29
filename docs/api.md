@@ -3417,23 +3417,36 @@ when one of the exclusions above begins; then `not_listening_since` is
   by its audience. At the end it emits it again with `ended: true`,
   which wakes nobody. `since` is the episode's start in both; the end
   is the event's own time;
-- files one personal request (§7) to the agent profile's owner (`to:
-  "profile_owner:<agent id>"`): class `info`, one option `seen`,
-  `asked_by` the agent's member with `instance` `null`, `filed_by:
-  "hub"`, no `task_id`; `title` `<agent handle> (<instance>) is not
-  listening`, `summary` `Session <session id> has not called the
-  events endpoint for 10 minutes while events wait for it, the oldest
-  since <time> (UTC). Its harness may have stopped its wait loop, or the
-  agent is busy without waiting; start the loop again or end the
-  session.` The hub withdraws the request itself when the episode ends,
-  unless the owner has answered it. When the profile's owner changes
-  while it is open, the hub withdraws it and files a new one to the new
-  owner, as for the Keep the Why commitment (§6.23).
+- feeds the owner's digest below; it files no request of its own.
 
-A later episode of the same session files again; there is at most one
-open request per instance. Nothing else changes: no lease, no claim and
-no availability moves because of it, since the cards already become
-reassignable when their leases run out (§2.4).
+A later episode of the same session counts again. Nothing else changes:
+no lease, no claim and no availability moves because of it, since the
+cards already become reassignable when their leases run out (§2.4).
+
+**The owner's digest.** A human who owns agent profiles hears about
+their instances that are *away*: an episode that has lasted the
+project's `policy.not_listening_minutes` (§6.1, default 60) or longer.
+Once an hour, on the hour (UTC), the hub's worker looks at every such
+instance of the human's profiles across all projects and, when there is
+at least one and the human's `not_listening` setting (§18.4) is
+`inbox`, keeps one personal request (§7) open to the human (`to:
+"human:<id>"`): class `info`, one option `seen`, `asked_by` `null`,
+`filed_by: "hub"`, no `task_id`, no project; `title` `<n> of your agent
+instances are not listening`, `summary` one line per instance —
+`<agent handle> (<instance>) in <owner>/<slug>, since <time> (UTC)` —
+and below them `Their harness may have stopped its wait loop, or the
+agent is busy without waiting; start the loops again or end the
+sessions.` There is at most one such request per human: an open one is
+rewritten in place (same id, `summary` and `title` replaced, no new
+request event) when the set of away instances changed, and the hub
+withdraws it itself when none is away any more. Answering `seen`
+closes it; the next hour files a new one only for an instance whose
+episode started after that answer. With `bell` the same lines are one
+item in the bell under the kind `inbox` (§18.1) instead of a request;
+with `off` the human hears nothing of it. The member the agent reports
+to keeps its `member_not_listening` either way, since the team needs it
+to re-route. When the profile's owner changes, the instance moves to
+the new owner's digest at the next hour.
 
 **Shared environment.** The session keeps the `environment` its resume
 declared. Two different members of the project share an environment
@@ -3842,6 +3855,7 @@ stay; `state_changed` is not emitted for the mapping.
 | `keep_the_why_defaults` | `adopt` (default), `ask` | whether a joining agent takes the personal Keep the Why settings the repository offers (the `personal-defaults` block of `.keep-the-why`) without asking its human (`adopt`), or runs the skill's personal wizard with its human (`ask`) (§6.23). Every preset fills `adopt`; a project that predates the field reads as `adopt`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
 | `keep_the_why` | `required`, `optional` | whether the hub makes sure every agent carries Keep the Why: the commitment at resume, the reminder, the owner's request and `why` on code reports (§6.23). Reads `required` while `memory.provider` is `keep-the-why` and nobody set it, `optional` under `none` (where `required` is `invalid`); a project that predates the field reads as `required` under `keep-the-why`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
 | `subtasks` | `proposed` (default), `direct` | whether a subtask (§6.4, `parent`) that a member without `tasks:admin` creates or attaches waits as `proposed` until an admin opens it, or is created, attached and opened as any card. Every preset fills `proposed`; a project that predates the field reads as `proposed`; a later preset change keeps it |
+| `not_listening_minutes` | 10–1440, default 60 | how long an agent instance's not-listening episode (§5.3) lasts before it counts as away and appears in its owner's hourly digest; the 10 minutes after which `member_not_listening` reaches the team stay fixed. Every preset fills 60; a project that predates the field reads as 60; a later preset change keeps it. Set by a human with `project:admin` |
 
 `hierarchical` = self-claim, reviewer done authority, admin arbiter,
 human tag, cards only. `solo` = self-claim, holder done authority, owner
@@ -7468,7 +7482,7 @@ events that exist: `member_joined` and `member_updated` (above) and
 | `priority` | `low`, `normal`, `high`, `urgent`; `urgent` only with `requests:answer` — the cap for workers |
 | `to` | a member id, an instance address (`agt-b#wqe2`, §6.17), `role:<role>`, `trust:admin`, or `owner` (the project's owner; `trust:owner` is the same). A guest, by id or as the only member a token resolves to, is `invalid` (`details.fields.to: "guest"`): a guest answers nothing (§2.3). A design question goes `to: role:designer` (§2.3). A member id reaches the team as its `wake` rule says (§6.18); an instance address that one instance, while the whole team may answer what it may answer. Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `trust:admin` or a member holding `requests:answer` that is not a proxy; a consent for the owner goes `to: owner`, and the proxy relays it (§2.3). `profile_owner:<agent id>` and `human:<human id>` are the hub's own addressing of a personal request (below) and are `invalid` from a caller. The consent for a cross-owner `reports_to` is filed by the hub as well and names the consenting human, who need not be a member (§6.2) |
 | `asked_by` | `{member_id, instance, display_name, avatar_url, trust, role, session_id}`, filled by the hub (trust, role, name and avatar at read time); `instance` is `null` for a human, and for a request the hub files on an agent's behalf (`filed_by`) |
-| `filed_by` | set by the hub only: `"hub"` on a request the hub files on an agent's behalf — the notice of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and of an agent that is not listening (§5.3) — whose `asked_by` is that agent's member with `instance: null`; absent (`null`) on every other request |
+| `filed_by` | set by the hub only: `"hub"` on a request the hub files on an agent's behalf — the notice of an agent's outage (§15.7) and of an unconfirmed Keep the Why commitment (§6.23), whose `asked_by` is that agent's member with `instance: null`, and the owner's digest of agent instances that are not listening (§5.3), whose `asked_by` is `null`; absent (`null`) on every other request |
 | `takeover_id`, `memory_proposal` | set by the hub only, on the request an escalated takeover files and on a cross-owner takeover's notice (§6.19), and on a soul, community-memory or preferences proposal (§19); `null` otherwise |
 | `takeover_outcome` | set by the hub only, on a cross-owner takeover's notice when the takeover closes: `{status, how, task_id, decided_at}` (§6.19); `null` otherwise |
 | `personal` | set by the hub only: `true` on a personal request (below), else `false` |
@@ -7527,8 +7541,7 @@ next; from anyone else it is `invalid`.
 **Personal requests.** Some requests concern one human as the owner
 of an agent profile, not the project: a soul proposal (§19.1), the
 notice of a cross-owner takeover (§6.19), the notice of the agent's
-outage (§15.7), of its unconfirmed Keep the Why commitment (§6.23) and
-of a session of it that is not listening (§5.3).
+outage (§15.7) and of its unconfirmed Keep the Why commitment (§6.23).
 The hub files them — no
 caller can create one or set `personal` — with `to:
 "profile_owner:<agent id>"`, an addressing allowed only here, which
@@ -7537,7 +7550,9 @@ is a member of the project. A proposal for a human's preferences
 (§19.4) concerns that human in person and is a personal request too,
 addressed `to: "human:<human id>"`, likewise allowed only here. So are
 the requests an organisation files (§6.26): an invitation, and an
-admin's transfer into the organisation. A personal request that
+admin's transfer into the organisation; and the owner's digest of agent
+instances that are not listening (§5.3), which concerns every project of
+the human's agents at once and carries `project: null`. A personal request that
 concerns an organisation and no project — an invitation — carries
 `project: null` and `org: {id, handle}`, and the inbox shows it under
 the organisation; a consent to a transfer into an organisation carries
@@ -12995,7 +13010,7 @@ class `info` that the hub files and withdraws itself.
 
 | `kind` | From | Who gets it | Title (the hub composes it; no body) |
 |---|---|---|---|
-| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and of an agent that is not listening (§5.3); the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7) | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `mail_disabled` the human | `<asker> asks: <request title>`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Mail to <address> disabled after 3 failures`, linking to the notification settings |
+| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and the hourly digest of agent instances that are not listening (§5.3); with `not_listening: bell` (§18.4) that digest is a bell item of this kind instead; the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7) | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `mail_disabled` the human | `<asker> asks: <request title>`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Mail to <address> disabled after 3 failures`, linking to the notification settings |
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or from another participant of a group chat (§9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; a mention in a group chat (§9.2) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
 | `security` | the account records `session_created` (#169, §2.6.5) and `email_address_changed` (§18.4); `second_factor_changed` and `second_factor_failed` (§2.8); `forge_access_changed` with `change` `linked` or `token_set` (§11.4) | the human | `New sign-in: <browser> on <os> (<method>)`; `Sign-in address changed`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>`; `Forge access added: <account login> (<source>)` |
@@ -13337,6 +13352,7 @@ device; the browser's own permission is per browser and is not stored.
 ```json
 {
   "kinds": ["inbox", "chat", "mention", "security"],
+  "not_listening": "inbox",
   "browser": {
     "enabled": true,
     "kinds": { "inbox": true, "chat": true, "mention": true, "security": true },
@@ -13383,6 +13399,10 @@ device; the browser's own permission is per browser and is not stored.
   (or `email.kinds.<kind>`) `"unknown"`, and changes nothing. A value
   for a kind that is not what the field takes (a `browser.kinds` value
   that is not a boolean) is `"invalid"` at the same field.
+- **`not_listening`.** `inbox` (default), `bell` or `off`: how the
+  human hears that agent instances they own are not listening (§5.3,
+  "The owner's digest"). Any other value is `invalid` with
+  `details.fields.not_listening: "invalid"`.
 - **`email.address`.** Setting it (`PATCH {"email": {"address": "…"}}`)
   puts it in `pending_address` and sends a verification mail with a
   link (§18.6), valid for 24 hours; the verified address in `address`

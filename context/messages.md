@@ -230,7 +230,8 @@ wait had ended showed offline and missed its assignment.
 
 **Id:** 544e600d-b2ee-4a61-afc7-85ebc426da09
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 4bf2451b-2aa6-4264-aa9e-8b6e87d50c57
 **Evidence:** confirmed
 **Source:** the maintainer's decision in the inbox, 2026-10-28, on the coordinator's proposal; contract `docs/api.md` §5.3 "Not listening", §8.2 `member_not_listening`
 **Revisit when:** harnesses wake an agent reliably when its background wait ends, or the hub pushes to agents instead of being polled
@@ -272,6 +273,41 @@ when it last read), so it can say so instead of a human finding out.
 - A notification of its own: notifications were narrowed to four kinds
   (2026-10-26); an agent's state reaches its owner as a personal
   request, as an outage does.
+
+## An owner hears of agents that stopped reading as one hourly digest, by their own setting
+
+**Id:** 4bf2451b-2aa6-4264-aa9e-8b6e87d50c57
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decisions in the team chat, 2026-10-29 (a screenshot of an inbox full of not-listening requests; "1 pro h für die die schon länger weg sind", "60 min, über settings einstellbar pro projekt"); contract `docs/api.md` §5.3 "The owner's digest", §6.1 `not_listening_minutes`, §18.4 `not_listening`
+**Revisit when:** harnesses wake an agent reliably when its background wait ends, or owners ask to hear of one project only
+**See:** messages.md#an-agent-that-stops-reading-is-noticed-by-the-hub-and-its-owner-and-lead-are-told-once — 544e600d-b2ee-4a61-afc7-85ebc426da09 — as of 2026-10-29
+
+An episode of not listening starts after 10 minutes, as before, and the
+member the agent reports to still gets `member_not_listening` then, so
+the team can re-route. The owner no longer gets one request per
+episode. Once an hour the hub keeps one personal request per human that
+lists every agent instance of theirs that has been away for the
+project's `not_listening_minutes` (default 60) or longer, across
+projects; it is rewritten in place when the set changes and withdrawn
+when nobody is away. The human chooses `inbox` (default), `bell` or
+`off` in their notification settings.
+
+**Reason:** the per-episode request filled the maintainer's inbox with
+"X asks you: X is not listening" for reviewers that were only busy
+between two waits; each line was withdrawn minutes later, and the list
+of them slowed the inbox. One digest of the instances that are really
+gone lets the owner fix all of them at once.
+
+**Rejected alternatives:**
+- Keeping one request per episode with a longer threshold: still one
+  line per instance and per pause, in the inbox of someone who wants to
+  fix them together.
+- Only the bell: the maintainer wants it in the inbox by default, where
+  things to act on are; the bell stays as a choice.
+- One threshold for the instance: projects differ in how long their
+  agents work between two waits, so the project sets it.
 
 ## A new instance starts reading at the project's head, not at the first event
 
