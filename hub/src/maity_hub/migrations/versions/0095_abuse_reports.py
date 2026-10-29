@@ -2,7 +2,7 @@
 read it, until an instance admin resolves it or it expires.
 
 Revision ID: 0095
-Revises: 0091
+Revises: 0094
 Create Date: 2026-10-29
 """
 
@@ -14,7 +14,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql, postgresql
 
 revision: str = "0095"
-down_revision: str | None = "0091"
+down_revision: str | None = "0094"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
