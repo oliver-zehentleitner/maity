@@ -423,6 +423,91 @@ window.Maity = window.Maity || {};
       return setAvatar(id, uploaded[key], "uploaded");
     };
   }
+  // §16.7's checks of a landing page and its footer, each at its path.
+  const LANDING_TYPES = {
+    hero: ["eyebrow", "title", "subline", "cta_primary", "cta_secondary", "note"], stats: ["items"], steps: ["title", "items"],
+    scales: ["title", "items"], faq: ["title", "items"], cta_band: ["title", "text", "cta"], text: ["title", "markdown"],
+    activity: ["title", "count"], profiles: ["title", "markdown", "handles"], explore: ["title", "projects"],
+    collab: ["title", "text", "items", "footnote"],
+  };
+  const landingHref = (t) => typeof t === "string" && ((/^\/(?!\/)[A-Za-z0-9._~%\/?=&-]*$/.test(t)) || /^https:\/\/[^\s/@]+(\/[^\s]*)?$/.test(t));
+  function landingText(x, path, max, required, errors) {
+    if (x === undefined || x === null || x === "") { if (required) errors[path] = "required"; return; }
+    if (typeof x !== "string") errors[path] = "invalid";
+    else if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(x)) errors[path] = "control_character";
+    else if ([...x].length > max) errors[path] = "too_long";
+  }
+  function landingMarkdown(x, path, max, required, errors) {
+    landingText(x, path, max, required, errors);
+    if (errors[path] || typeof x !== "string") return;
+    let fence = null;
+    x.replace(/\r\n?/g, "\n").split("\n").some((line) => {
+      if (fence) { if (line.trim().startsWith(fence)) fence = null; return false; }
+      const f = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+      if (f) { fence = f[1]; return false; }
+      if (/<\/?[A-Za-z][^>]*>/.test(line) || /!\[/.test(line)) { errors[path] = "html"; return true; }
+      if ([...line.matchAll(/\]\(([^)\s]*)\)/g)].some((y) => !landingHref(y[1]))) { errors[path] = "invalid_href"; return true; }
+      return false;
+    });
+  }
+  function landingCta(x, path, required, errors) {
+    if (x === undefined || x === null) { if (required) errors[path] = "required"; return; }
+    landingText(x.label, path + ".label", 40, true, errors);
+    if (!landingHref(x.href)) errors[path + ".href"] = "invalid_href";
+  }
+  function landingPage(pg, at, errors) {
+    if (!pg || typeof pg !== "object") { errors[at] = "invalid"; return; }
+    landingText(pg.title, at + ".title", 120, true, errors);
+    landingText(pg.description, at + ".description", 300, false, errors);
+    const sections = pg.sections || [];
+    if (sections.length > 20) errors[at + ".sections"] = "too_many";
+    sections.forEach((s, i) => {
+      const sp = at + ".sections." + i;
+      const known = LANDING_TYPES[s.type];
+      if (!known) { errors[sp + ".type"] = "unknown_type"; return; }
+      Object.keys(s).forEach((k) => { if (k !== "type" && k !== "enabled" && !known.includes(k)) errors[sp + "." + k] = "extra_forbidden"; });
+      const items = s.items || [];
+      if (s.type === "hero") {
+        landingText(s.eyebrow, sp + ".eyebrow", 40, false, errors); landingText(s.title, sp + ".title", 120, true, errors);
+        landingText(s.subline, sp + ".subline", 300, false, errors); landingCta(s.cta_primary, sp + ".cta_primary", true, errors);
+        landingCta(s.cta_secondary, sp + ".cta_secondary", false, errors); landingMarkdown(s.note, sp + ".note", 500, false, errors);
+      } else if (s.type === "stats") {
+        const ok = ["people", "agents", "public_projects", "cards_done_week", "people_online", "agents_online"];
+        if (!Array.isArray(s.items) || s.items.some((x) => !ok.includes(x))) errors[sp + ".items"] = "invalid";
+      } else if (s.type === "steps" || s.type === "scales" || s.type === "faq") {
+        landingText(s.title, sp + ".title", 120, s.type !== "faq" || true, errors);
+        const max = { steps: 6, scales: 4, faq: 20 }[s.type];
+        if (!items.length) errors[sp + ".items"] = "too_few";
+        if (items.length > max) errors[sp + ".items"] = "too_many";
+        items.forEach((x, k) => {
+          const ip = sp + ".items." + k;
+          if (s.type === "steps") { landingText(x.title, ip + ".title", 80, true, errors); landingText(x.text, ip + ".text", 300, true, errors); landingText(x.code, ip + ".code", 300, false, errors); }
+          if (s.type === "scales") {
+            landingText(x.tag, ip + ".tag", 40, true, errors); landingText(x.title, ip + ".title", 80, true, errors); landingText(x.text, ip + ".text", 300, true, errors);
+            if ((x.points || []).length > 5) errors[ip + ".points"] = "too_many";
+            (x.points || []).forEach((pt, n) => landingText(pt, ip + ".points." + n, 120, true, errors));
+          }
+          if (s.type === "faq") { landingText(x.q, ip + ".q", 200, true, errors); landingMarkdown(x.a, ip + ".a", 2000, true, errors); }
+        });
+      } else if (s.type === "cta_band") {
+        landingText(s.title, sp + ".title", 120, true, errors); landingText(s.text, sp + ".text", 300, false, errors); landingCta(s.cta, sp + ".cta", true, errors);
+      } else if (s.type === "text") {
+        landingText(s.title, sp + ".title", 120, false, errors); landingMarkdown(s.markdown, sp + ".markdown", 16384, true, errors);
+      } else if (s.type === "profiles") {
+        landingText(s.title, sp + ".title", 120, true, errors); landingMarkdown(s.markdown, sp + ".markdown", 2000, false, errors);
+        if ((s.handles || []).length > 2) errors[sp + ".handles"] = "too_many";
+      } else if (s.type === "explore") {
+        landingText(s.title, sp + ".title", 120, true, errors);
+        if ((s.projects || []).length > 3) errors[sp + ".projects"] = "too_many";
+      }
+    });
+  }
+  function landingFooter(ft, errors) {
+    landingText(ft.operator, "footer.operator", 120, false, errors);
+    const social = ft.social || [];
+    if (social.length > 8) errors["footer.social"] = "too_many";
+    social.forEach((x, k) => landingCta(x, "footer.social." + k, true, errors));
+  }
   // /agents/{id}/avatar: the profile's owner only; any other is not_found.
   // §6.26 Organisations in fixture mode (fixtures/orgs.json).
   // The hub's reserved handles: DASHBOARD_WORDS in hub/src/maity_hub/namespace.py
@@ -1784,15 +1869,8 @@ window.Maity = window.Maity || {};
       }
       return Object.assign({}, base, { window_days: n, days });
     }],
-    // §16.7: the public landing page — fixtures/landing.json, off as on
-    // every fresh instance; ?landing=on shows it, ?landing=fail fails; the admin's settings
-    // checked as the hub checks them (hub/src/maity_hub/landing.py).
-    ["GET", /^\/landing$/, (m, body, path) => {
-      if (params.get("landing") === "fail") fail(503, "unavailable", "the hub is unavailable", path);
-      const v = fixtures()["landing.json"];
-      if (!(v.enabled || params.get("landing") === "on")) return { enabled: false };
-      return { enabled: true, title: v.title, markdown: v.markdown, cta: v.cta, updated_at: v.updated_at };
-    }],
+    // §16.7: the landing page in sections per language, §16.7.1 the legal
+    // pages, checked as the hub checks them, each refusal at its field path.
     ["GET", /^\/admin\/settings\/landing$/, (m, body, path) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
       return fixtures()["landing.json"];
@@ -1801,34 +1879,55 @@ window.Maity = window.Maity || {};
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
       const v = Object.assign({}, fixtures()["landing.json"]);
       const errors = {};
-      const target = (t) => (/^\/(?!\/)[A-Za-z0-9._~%\/?=&-]*$/.test(t) && M.route.isRoute(t)) || /^https:\/\/[^\s/@]+(\/[^\s]*)?$/.test(t);
-      Object.entries(body).forEach(([k, x]) => {
-        if (!["enabled", "title", "markdown", "cta"].includes(k)) errors[k] = "extra_forbidden";
-        else if (k === "enabled") { if (typeof x === "boolean") v.enabled = x; else errors.enabled = "invalid"; }
-        else if (x === null) v[k] = null;
-        else if (k === "title") { if (typeof x === "string" && x.trim() && x.length <= 120) v.title = x.trim(); else errors.title = "invalid"; }
-        else if (k === "markdown") {
-          let fence = null, bad = null;
-          String(x).replace(/\r\n?/g, "\n").split("\n").some((line, i) => {
-            if (fence) { if (line.trim().startsWith(fence)) fence = null; return false; }
-            const f = /^ {0,3}(`{3,}|~{3,})/.exec(line);
-            if (f) { fence = f[1]; return false; }
-            const links = [...line.matchAll(/\]\(([^)\s]*)\)/g)].map((y) => y[1]);
-            if (/<\/?[A-Za-z][^>]*>/.test(line) || /!\[/.test(line) || links.some((t) => !target(t))) { bad = "line " + (i + 1); return true; }
-            return false;
-          });
-          if (bad) errors.markdown = bad; else v.markdown = x;
-        } else if (k === "cta") {
-          if (!x.label || !String(x.label).trim()) errors.cta = "invalid";
-          else if (!target(x.href || "")) errors["cta.href"] = "invalid";
-          else v.cta = { label: String(x.label).trim(), href: x.href };
-        }
-      });
-      if (!Object.keys(errors).length && v.enabled && !v.markdown) errors.markdown = "required";
+      Object.keys(body).forEach((k) => { if (!["enabled", "default_language", "pages", "footer"].includes(k)) errors[k] = "extra_forbidden"; });
+      if ("enabled" in body && typeof body.enabled !== "boolean") errors.enabled = "invalid";
+      if ("pages" in body) Object.entries(body.pages || {}).forEach(([lang, pg]) => landingPage(pg, "pages." + lang, errors));
+      if ("footer" in body) landingFooter(body.footer || {}, errors);
+      ["enabled", "default_language", "pages", "footer"].forEach((k) => { if (k in body) v[k] = body[k]; });
+      if (!Object.keys(errors).length && v.enabled && !(v.pages || {})[v.default_language]) errors.default_language = "default_language_missing";
       if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
       v.updated_at = nowIso(); v.updated_by = me().member.id;
-      fixtures()["landing.json"] = v;
+      fixtures()["landing.json"] = JSON.parse(JSON.stringify(v));
       return v;
+    }],
+    ["GET", /^\/admin\/settings\/legal$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      return fixtures()["legal.json"];
+    }],
+    ["PATCH", /^\/admin\/settings\/legal$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      const v = fixtures()["legal.json"];
+      const named = Object.keys(body).filter((k) => ["imprint", "privacy", "terms"].includes(k));
+      const errors = {};
+      Object.keys(body).forEach((k) => { if (!["imprint", "privacy", "terms", "default_language"].includes(k)) errors[k] = "extra_forbidden"; });
+      if (named.length > 1) errors[named[1]] = "one_page_per_call";
+      named.forEach((page) => {
+        if (body[page] === null) return;
+        const langs = Object.entries(body[page] || {});
+        if (langs.length > 8) errors[page] = "too_many";
+        langs.forEach(([lang, x]) => {
+          const at = page + "." + lang;
+          if (!/^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(lang)) errors[at] = "invalid";
+          landingText(x && x.title, at + ".title", 120, true, errors);
+          landingMarkdown(x && x.markdown, at + ".markdown", 65536, true, errors);
+        });
+      });
+      if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
+      if ("default_language" in body) v.default_language = body.default_language;
+      named.forEach((page) => {
+        const was = v.pages[page];
+        v.pages[page] = body[page] === null ? null
+          : { version: nowIso(), languages: body[page], versions: was ? [was.version].concat(was.versions || []) : [] };
+      });
+      v.updated_at = nowIso(); v.updated_by = me().member.id;
+      return v;
+    }],
+    // Unauthenticated: which legal pages are set, for the dashboard's links.
+    ["GET", /^\/legal$/, () => {
+      const v = fixtures()["legal.json"];
+      const pages = {};
+      Object.entries(v.pages).forEach(([k, x]) => { if (x) pages[k] = { version: x.version, languages: Object.keys(x.languages) }; });
+      return { default_language: v.default_language, pages };
     }],
     // §6.22: the members' swarm (fixtures/<slug>/swarm.json) and its public
     // reduction where policy.swarm_public is on: agents only, no ids, no
@@ -1865,7 +1964,8 @@ window.Maity = window.Maity || {};
       "/api/v1/admin/users": { get: {} },
       "/api/v1/admin/statistics": { get: {} },
       "/api/v1/admin/settings/landing": { get: {}, patch: {} },
-      "/api/v1/landing": { get: {} },
+      "/api/v1/admin/settings/legal": { get: {}, patch: {} },
+      "/api/v1/legal": { get: {} },
       "/api/v1/admin/settings/mail": { get: {}, patch: {} },
       "/api/v1/admin/settings/mail/test": { post: {} },
       "/api/v1/health": { get: {} },
@@ -2961,7 +3061,7 @@ window.Maity = window.Maity || {};
       // The hub serves its machine form and the landing page without a session.
       // Signed out, the fixture hub still answers what a visitor calls, and the
       // device codes, whose other side this one tab plays too.
-      if (!fixtureSignedIn && !/^\/auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code|device-codes(\/.*)?)$/.test(path) && path !== "/landing" && path !== "/openapi.json" && !path.startsWith("/swarm/") && !path.startsWith("/invitations/")) {
+      if (!fixtureSignedIn && !/^\/auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code|device-codes(\/.*)?)$/.test(path) && path !== "/legal" && path !== "/openapi.json" && !path.startsWith("/swarm/") && !path.startsWith("/invitations/")) {
         fail(401, "unauthenticated", "Not signed in", fullPath);
       }
       path = namespaced(path, fullPath);
@@ -3086,7 +3186,7 @@ window.Maity = window.Maity || {};
   // visitor by design; every other /auth/* call is the session's own.
   // The path carries its query (the device-login wait, ?wait=0): a public
   // route ends at the path, whatever query follows.
-  const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code)|landing|openapi\.json|swarm\/[^?]*|invitations\/[^/?]+)(\?|$)/;
+  const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code)|legal|openapi\.json|swarm\/[^?]*|invitations\/[^/?]+)(\?|$)/;
 
   // Every page of a list, following next_cursor (docs/api.md §1.4).
   async function getAll(path) {

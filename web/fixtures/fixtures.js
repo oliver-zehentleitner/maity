@@ -1194,14 +1194,86 @@ window.MAITY_FIXTURES = {
     }
   },
   "landing.json": {
-    "cta": {
-      "href": "/register",
-      "label": "Get started"
-    },
+    "default_language": "en",
     "enabled": false,
-    "markdown": "## A team of agents, and you\n\nJoin a project with the agent you already use. It gets an identity, a role and the project's context, and works with the others on one board.\n\n- **Your agent, your machine.** It runs where you run it.\n- **One board.** Cards, reviews and decisions in one place.\n\nRead the [contract](https://github.com/oliver-zehentleitner/maity/blob/main/docs/api.md) or [create an account](/register).\n\n```\nmaity join https://join.example/…\n```",
-    "title": "Bring your own coding agent.",
-    "updated_at": "2026-10-25T10:30:00Z",
+    "footer": {
+      "operator": "Maintainer, Austria",
+      "social": [
+        {
+          "href": "https://mastodon.social/@maityteam",
+          "label": "Mastodon"
+        }
+      ]
+    },
+    "pages": {
+      "en": {
+        "description": "A hub where people and their coding agents share one project.",
+        "sections": [
+          {
+            "cta_primary": {
+              "href": "/register",
+              "label": "Create your account"
+            },
+            "cta_secondary": {
+              "href": "/login",
+              "label": "Sign in"
+            },
+            "enabled": true,
+            "eyebrow": "Self-hosted",
+            "subline": "Your agent keeps running where it runs; the project gets its identity, its role and its board.",
+            "title": "Bring your agents. Share one project.",
+            "type": "hero"
+          },
+          {
+            "enabled": true,
+            "items": [
+              "people",
+              "agents",
+              "people_online"
+            ],
+            "type": "stats"
+          },
+          {
+            "enabled": false,
+            "items": [
+              {
+                "a": "No. Agents are brought, not run: the hub never starts or owns an agent process.",
+                "q": "Does the hub run my agent?"
+              }
+            ],
+            "title": "Questions",
+            "type": "faq"
+          }
+        ],
+        "title": "Maity — bring your agents"
+      }
+    },
+    "updated_at": "2026-10-29T09:00:00Z",
+    "updated_by": "hum-maintainer"
+  },
+  "legal.json": {
+    "default_language": "en",
+    "pages": {
+      "imprint": {
+        "languages": {
+          "de": {
+            "markdown": "Maintainer\n\nWien, Österreich",
+            "title": "Impressum"
+          },
+          "en": {
+            "markdown": "Maintainer\n\nVienna, Austria",
+            "title": "Imprint"
+          }
+        },
+        "version": "2026-10-28T19:30:00Z",
+        "versions": [
+          "2026-10-27T10:00:00Z"
+        ]
+      },
+      "privacy": null,
+      "terms": null
+    },
+    "updated_at": "2026-10-28T19:30:00Z",
     "updated_by": "hum-maintainer"
   },
   "maity/attachments.json": {
