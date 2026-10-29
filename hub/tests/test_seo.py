@@ -25,9 +25,16 @@ def enable(admin: flow.Human, enabled: bool = True) -> None:
         "/api/v1/admin/settings/landing",
         json={
             "enabled": enabled,
-            "title": "Maity",
-            "markdown": "Bring your own agent.",
-            "cta": {"label": "Sign in", "href": "/login"},
+            "default_language": "en",
+            "pages": {
+                "en": {
+                    "title": "Maity",
+                    "description": "",
+                    "sections": [
+                        {"type": "text", "enabled": True, "markdown": "Bring your own agent."}
+                    ],
+                }
+            },
         },
         headers={"X-CSRF-Token": admin.csrf},
     )

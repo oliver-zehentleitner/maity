@@ -717,5 +717,8 @@ the inbox.
   30) and returning humans; derived from what the hub holds, counts only,
   computed at most once an hour. Human only, `instance:admin`.
 - `GET /api/v1/landing` — the instance's landing page for visitors (§16.7):
-  `{enabled, title, markdown, cta, updated_at}`, or `{enabled: false}`; public,
-  cached a minute. The instance admin edits it at `/api/v1/admin/settings/landing`.
+  `{enabled, default_language, pages, footer, updated_at}` (per language
+  `{title, description, sections}`), or `{enabled: false}`; public, cached a
+  minute. The instance admin edits it at `/api/v1/admin/settings/landing`, and
+  the legal pages (imprint, privacy notice, terms, each with its versions) at
+  `/api/v1/admin/settings/legal`; `GET /api/v1/legal` says which are set (§16.7.1).
