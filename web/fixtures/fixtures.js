@@ -4578,9 +4578,9 @@ window.MAITY_FIXTURES = {
         "personal": true,
         "priority": "normal",
         "project": {
-          "full_name": "maintainer/maity",
-          "name": "Maity",
-          "slug": "maity",
+          "full_name": "ada/elsewhere",
+          "name": "Elsewhere",
+          "slug": "elsewhere",
           "state": "build"
         },
         "replies": [

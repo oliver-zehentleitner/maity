@@ -21,7 +21,8 @@ case "$*" in
   *"logs"*)
     [ "$FAIL" = logs_unreadable ] && { echo "error: pod gone" >&2; exit 1; }
     [ "$FAIL" = dump_retry ] && echo "pg_dump: error: connection to server failed: Connection refused"
-    [ "$FAIL" = dump_nomark ] || echo "dump ok: /backups/maity-20261029T000000Z.dump 4048709"
+    if [ "$FAIL" = dump_notar ]; then echo "dump ok: /backups/maity-20261029T000000Z.dump 4048709"
+    elif [ "$FAIL" != dump_nomark ]; then echo "dump ok: /backups/maity-20261029T000000Z.dump 4048709 attachments 10240"; fi
     exit 0;;
   *"delete job"*)           exit 0;;
   *"scale"*)
@@ -57,7 +58,7 @@ run() { # name, FAIL value, initial replicas, expected exit, expect helm (yes/no
   echo pod/hub-1 > "$STUB_STATE/pods"; : > "$STUB_STATE/log"
   [ "$initial" = 0 ] && [ "$podsleft" != yes ] && : > "$STUB_STATE/pods"
   local t0=$SECONDS
-  PATH="$work/bin:$PATH" FAIL=$fail STOP_TIMEOUT=4 DUMP_TIMEOUT=$dumptimeout DUMP_CRONJOB=dump \
+  PATH="$work/bin:$PATH" FAIL=$fail STOP_TIMEOUT=4 DUMP_TIMEOUT=$dumptimeout DUMP_REQUIRES_ATTACHMENTS=${REQ_ATT:-0} DUMP_CRONJOB=dump \
     "$here/helm-upgrade.sh" -f values.yaml >"$STUB_STATE/out" 2>&1
   local got=$? ran=no took=$((SECONDS - t0)); grep -q '^helm ' "$STUB_STATE/log" && ran=yes
   local end; end=$(cat "$STUB_STATE/replicas")
@@ -75,6 +76,9 @@ run all_good   none       1 0 yes 1
 run dump       dump       1 1 no  1
 run job_failed job_failed 1 1 no  1 "" 5
 run bad_timeout none 1 1 no  1 "" "" 5m
+run dump_notar_ok dump_notar 1 0 yes 1
+REQ_ATT=1 run dump_notar_required dump_notar 1 1 no  1
+REQ_ATT=1 run dump_tar_required_ok none 1 0 yes 1
 run dump_nomark dump_nomark 1 1 no  1
 run dump_retry dump_retry 1 0 yes 1
 run logs_unreadable logs_unreadable 1 1 no  1
