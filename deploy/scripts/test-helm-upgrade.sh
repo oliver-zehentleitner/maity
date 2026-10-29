@@ -51,13 +51,13 @@ chmod +x "$work/bin/"*
 
 failures=0
 run() { # name, FAIL value, initial replicas, expected exit, expect helm (yes/no), expected final replicas, [pods left], [max seconds]
-  local name=$1 fail=$2 initial=$3 want=$4 helm=$5 final=$6 podsleft=${7:-} maxsecs=${8:-}
+  local name=$1 fail=$2 initial=$3 want=$4 helm=$5 final=$6 podsleft=${7:-} maxsecs=${8:-} dumptimeout=${9:-20}
   export STUB_STATE="$work/$name"; mkdir -p "$STUB_STATE"
   echo "$initial" > "$STUB_STATE/initial"; echo "$initial" > "$STUB_STATE/replicas"
   echo pod/hub-1 > "$STUB_STATE/pods"; : > "$STUB_STATE/log"
   [ "$initial" = 0 ] && [ "$podsleft" != yes ] && : > "$STUB_STATE/pods"
   local t0=$SECONDS
-  PATH="$work/bin:$PATH" FAIL=$fail STOP_TIMEOUT=4 DUMP_TIMEOUT=20 DUMP_CRONJOB=dump \
+  PATH="$work/bin:$PATH" FAIL=$fail STOP_TIMEOUT=4 DUMP_TIMEOUT=$dumptimeout DUMP_CRONJOB=dump \
     "$here/helm-upgrade.sh" -f values.yaml >"$STUB_STATE/out" 2>&1
   local got=$? ran=no took=$((SECONDS - t0)); grep -q '^helm ' "$STUB_STATE/log" && ran=yes
   local end; end=$(cat "$STUB_STATE/replicas")
@@ -74,6 +74,7 @@ run() { # name, FAIL value, initial replicas, expected exit, expect helm (yes/no
 run all_good   none       1 0 yes 1
 run dump       dump       1 1 no  1
 run job_failed job_failed 1 1 no  1 "" 5
+run bad_timeout none 1 1 no  1 "" "" 5m
 run dump_nomark dump_nomark 1 1 no  1
 run dump_retry dump_retry 1 0 yes 1
 run logs_unreadable logs_unreadable 1 1 no  1

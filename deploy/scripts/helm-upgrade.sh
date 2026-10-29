@@ -48,6 +48,9 @@ on_exit() {
 trap on_exit EXIT
 trap 'exit 130' INT TERM
 
+case "${DUMP_TIMEOUT:-300}" in
+  *[!0-9]*|'') echo "DUMP_TIMEOUT must be a number of seconds, not '${DUMP_TIMEOUT}'; nothing was changed" >&2; exit 1;;
+esac
 if [ -n "${DUMP_CRONJOB:-}" ]; then
   job="pre-upgrade-$(date +%H%M%S)"
   # Complete or Failed, whichever comes first: `kubectl wait` takes one condition and would sit out its whole timeout on a failed Job.
