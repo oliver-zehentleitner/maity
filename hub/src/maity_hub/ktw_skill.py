@@ -1,7 +1,8 @@
 """What a joining agent is told to load Keep the Why (docs/api.md §6.23).
 
 The texts are instructions to the agent, rendered as text: the hub and the CLI never
-run them. They come from the instance setting `MAITY_KTW_SKILL_SOURCE`.
+run them. They come from the instance settings `MAITY_KTW_SKILL_SOURCE` and
+`MAITY_KTW_SKILL_GUIDE`.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ LOAD = (
 
 
 def skill(settings: Settings) -> dict[str, Any]:
-    """`name`, `source`, `install` and `load` (§6.23). The Git fallback is derived from a
+    """`name`, `source`, `install`, `load` and `guide` (§6.23). The Git fallback is derived from a
     `/tree/<branch>/<path>` source and is the source itself otherwise."""
     source = settings.ktw_skill_source
     repository, _, tree = source.partition("/tree/")
@@ -36,6 +37,7 @@ def skill(settings: Settings) -> dict[str, Any]:
         "source": source,
         "install": [f"npx skills add {source}", clone],
         "load": LOAD,
+        "guide": settings.ktw_skill_guide,
     }
 
 

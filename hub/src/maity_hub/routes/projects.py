@@ -800,6 +800,8 @@ HUMANS_ONLY_POLICY = {
     "merged_closes",  # set by a human with project:admin (§6.1)
     "member_agents",  # who may bring agents into the project (§3.1, §6.1)
     "member_agents_max",
+    "keep_the_why",  # whether the project requires Keep the Why (§6.23)
+    "keep_the_why_defaults",
 }
 
 
