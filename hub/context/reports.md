@@ -196,18 +196,30 @@ report's hold.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** review of #663 (a race between a suspension and a credential issue), the lead's ruling, 2026-10-29; `hub/tests/test_moderation.py` `test_an_issue_waits_for_a_suspension_in_progress`
+**Source:** reviews of #663 (a race between a suspension and a credential issue; two lock-order inversions), the lead's rulings, 2026-10-29; `hub/tests/test_moderation.py`: `test_an_issue_waits_for_a_suspension_in_progress`, `test_an_exchange_takes_the_account_lock_before_any_other`, `test_a_suspension_locks_projects_before_the_human`
 
 `moderation.suspend` takes the account's `account_lock` exclusively
 (`account_deletion.lock_account`) before it changes anything, as a
 deletion does (§2.9). `moderation.refuse_suspended` takes the same lock
 shared (`write_guard.share`) and only then reads `suspended_at`. An
 issue that starts while a suspension is in progress therefore waits for
-it, and then refuses. The issuers (join exchange, runner pairing,
-device-code completion, placement rejoin) call it before any other lock,
-because the suspension, holding the account lock, goes on to lock
-sessions, credentials and codes. `write_guard.hold` refuses a suspended
-account as it refuses a deleted one.
+it, and then refuses. `write_guard.hold` refuses a suspended account as
+it refuses a deleted one.
+
+The lock order is account, then project, then the human's own rows
+(sessions, the human row):
+
+- The suspension takes the account lock first. Then it revokes the agent
+  and runner credentials, which lock their projects. Only after that does
+  it end the sessions, void the mailed links and update the human row,
+  because ordinary project work locks the project before the human.
+- Every issuer takes the account lock before its other locks:
+  - The join exchange and the runner pairing take it shared right after
+    reading their link or enrollment, before the profile check and the
+    attempt slot. The refusal itself stays in `_consume`, after the code
+    has matched.
+  - Device-code completion and placement rejoin call `refuse_suspended`
+    before the code's row lock or the project lock.
 
 **Rejected alternative:** only reading the column. A read does not wait
 for an uncommitted suspension, so an issue could see the account

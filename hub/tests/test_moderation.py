@@ -4,14 +4,17 @@ suspension that ends every way in."""
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select, update
+from sqlalchemy import Engine, event, select, update
 
 from maity_hub import moderation
 from maity_hub import tables as t
 from maity_hub.errors import ApiError
+from maity_hub.write_guard import locking
 from tests import factory, flow
 from tests import test_runners as runners
 from tests.conftest import ClientFactory
@@ -226,6 +229,64 @@ def test_an_issue_waits_for_a_suspension_in_progress(
         with pytest.raises(ApiError) as refused:
             finished(step)
         assert refused.value.code == "account_suspended"
+
+
+@contextmanager
+def transactions(engine: Engine) -> Iterator[list[list[str]]]:
+    """The statements each transaction on `engine` runs inside the block."""
+    seen: list[list[str]] = []
+
+    def begin(conn: Any) -> None:
+        seen.append([])
+
+    def statement(conn: Any, cursor: Any, text: str, *args: Any) -> None:
+        if seen:
+            seen[-1].append(text)
+
+    event.listen(engine, "begin", begin)
+    event.listen(engine, "before_cursor_execute", statement)
+    try:
+        yield seen
+    finally:
+        event.remove(engine, "begin", begin)
+        event.remove(engine, "before_cursor_execute", statement)
+
+
+def test_an_exchange_takes_the_account_lock_before_any_other(
+    team: dict[str, Any], make_client: ClientFactory, migrated: Engine
+) -> None:
+    """A join exchange and a runner pairing lock the issuing account first, the order a
+    suspension and a deletion take (§2.9), before their link's or enrollment's rows."""
+    owner = team["owner"]
+    created, enrolled = flow.join(owner, "maity"), runners.enroll(owner)
+    exchanges: list[tuple[Callable[[Any, dict[str, Any]], Any], dict[str, Any], str]] = [
+        (flow.exchange, created, "join_link"),
+        (runners.exchange, enrolled, "runner_enrollment"),
+    ]
+    for exchange, made, row in exchanges:
+        with transactions(migrated) as seen:
+            assert exchange(make_client(), made).status_code == 201
+        [statements] = [s for s in seen if any(f"UPDATE {row}" in x for x in s)]
+        first = next(i for i, x in enumerate(statements) if locking(x) and "account_lock" not in x)
+        assert any("FROM account_lock" in x for x in statements[:first]), statements
+
+
+def test_a_suspension_locks_projects_before_the_human(
+    team: dict[str, Any], make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The credentials go first, which lock their projects; the human's sessions and row
+    last, the order project work takes (project, then human)."""
+    pat = team["pat"]
+    flow.agent(make_client, pat, PROJECT)
+    runners.paired(make_client, pat)
+    with transactions(migrated) as seen, migrated.begin() as conn:
+        moderation.suspend(conn, pat.id, "rpt-000000000000")
+    [statements] = [s for s in seen if any("UPDATE human_session" in x for x in s)]
+    revoked = [i for i, x in enumerate(statements) if x.startswith("UPDATE credential")]
+    paired = [i for i, x in enumerate(statements) if x.startswith("UPDATE runner_credential")]
+    human = [i for i, x in enumerate(statements) if x.startswith("UPDATE human")]
+    assert revoked and paired and human, statements
+    assert max(revoked + paired) < min(human), statements
 
 
 def test_an_agent_on_a_public_swarm_page_can_be_reported_by_its_name(

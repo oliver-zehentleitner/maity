@@ -29,6 +29,7 @@ from maity_hub import (
     paging,
     placements,
     runner_revoke,
+    write_guard,
 )
 from maity_hub import tables as t
 from maity_hub.access import membership
@@ -379,6 +380,9 @@ async def pair(token: str, body: Pair, request: Request) -> Response:
         """The credential facts, or None for a wrong code (recorded and committed)."""
         with events.transaction(engine) as conn:
             row = _usable(conn, token)
+            # The creator's account lock before any other (§2.9): a suspension or a
+            # deletion takes it first; `_consume` refuses a suspended account under it.
+            write_guard.share(conn, row.created_by)
             # One conditional UPDATE takes an attempt slot before the comparison,
             # exactly as the join exchange does (routes/joins.py).
             now = clock.now()

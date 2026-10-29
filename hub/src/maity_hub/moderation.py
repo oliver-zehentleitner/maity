@@ -167,16 +167,11 @@ def suspensions(conn: Connection, rows: Any, owner_of: dict[str, str]) -> dict[i
 def suspend(conn: Connection, human_id: str, report_id: str) -> None:
     """The account signs in no more, and every session and credential it holds ends at
     once: its agents' credentials and its runners' credentials, so its placements stop.
-    The account lock comes first and exclusively, as for a deletion (§2.9), so no issue
-    that read the account before this commits hands out a credential after it."""
+    The order is a deletion's (§2.9): the account lock first and exclusively, so no issue
+    that read the account before this commits hands out a credential after it; then the
+    credentials, which lock their projects; the human's own rows last, as project work
+    locks the project before the human."""
     account_deletion.lock_account(conn, human_id)
-    conn.execute(
-        update(t.human)
-        .where(t.human.c.id == human_id, t.human.c.suspended_at.is_(None))
-        .values(suspended_at=clock.now(), suspended_report=report_id)
-    )
-    sessions.end_where(conn, t.human_session.c.human_id == human_id, ENDED_BY)
-    email_links.void_human(conn, human_id)  # a mailed sign-in link or code dies too
     m, c = t.membership.c, t.credential.c
     agents = select(t.agent_profile.c.id).where(t.agent_profile.c.owner_id == human_id)
     credentials = conn.execute(
@@ -196,6 +191,13 @@ def suspend(conn: Connection, human_id: str, report_id: str) -> None:
     ).scalars()
     for credential_id in list(runner_credentials):
         leaks.revoke_runner_credential(conn, credential_id, REVOKED_REASON, None)
+    sessions.end_where(conn, t.human_session.c.human_id == human_id, ENDED_BY)
+    email_links.void_human(conn, human_id)  # a mailed sign-in link or code dies too
+    conn.execute(
+        update(t.human)
+        .where(t.human.c.id == human_id, t.human.c.suspended_at.is_(None))
+        .values(suspended_at=clock.now(), suspended_report=report_id)
+    )
 
 
 def unsuspend(conn: Connection, human_id: str) -> bool:
