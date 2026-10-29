@@ -338,21 +338,19 @@ the creator or the organisation it names; a slug is unique within that
 namespace only. A
 rename or a transfer keeps the old full name as an alias that is never
 given away; a request on an alias is served like one on the current
-name. The one-segment API routes are dropped in the same release, hub
-and CLI together, and an older CLI is told `client_outdated` instead of
-being misrouted. That works without guessing because a slug may never be
-one of the words that follow a project in a route, so an old path always
-shows a route word where a new one has a slug; for the same reason the
-dashboard's own route words are reserved as handles. Badges, the swarm
-page, the dashboard's `#/p/…` and the forge webhook keep their old
-addresses, because those sit where the hub cannot rewrite them, and
-answer an unknown or unserved slug exactly as before, so they reveal no
-project. A transfer needs the receiver's consent, and the namespace
-owner cannot be demoted or removed while the project lives under their
-name.
+name. The one-segment API routes are gone; an old path is simply
+`not_found` (the path-routing decision of 2026-10-29,
+e34ae588-4dbc-423c-8da8-29fc62436cb5, removed the `client_outdated`
+answer, the frozen `legacy_slug` and the old badge, swarm, `#/p/…` and
+webhook addresses that had been kept during the move). A slug may never
+be one of the words that follow a project in a route, and the
+dashboard's first path segments are reserved as handles (§16.11). A
+transfer needs the receiver's consent, and the namespace owner cannot be
+demoted or removed while the project lives under their name.
 The revisit point on organisations was settled by the organisations
 decision of 2026-10-28: they share this namespace as a second kind of
-owner.
+owner. The aliases from a rename or a transfer stay (see e34ae588 for
+why they are a feature, not legacy).
 
 **Reason:** with self-registration on maity.team an instance-wide slug
 would let the first comer own `shop` or `blog` for everyone, the
@@ -451,8 +449,9 @@ read-only board, the team with the org chart, the swarm and the ticker;
 cards labelled 'security' stay internal until done. Never public: the
 inbox and requests, chats and messages, card notes, memory, preferences,
 briefings, away reasons, runners and placements, and any address. The
-owner's address `#/<owner>` is a public profile: avatar, name, public
-projects and their own agents with presence.
+owner's address `/<owner>` (the path-routing decision of 2026-10-29,
+e34ae588-4dbc-423c-8da8-29fc62436cb5) is a public profile: avatar, name,
+public projects and their own agents with presence.
 
 **Reason:** the maintainer orients the hosted offering on the forge
 model, where public is the free default and privacy is paid for; the
