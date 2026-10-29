@@ -600,3 +600,33 @@ port anyway.
   a test shows what the machine holds.
 - A cloud autoscaling runner service: it needs a standing token with admin rights on the repository (see "Why not an ephemeral runner"
   in the runner README).
+
+
+## The runner user is fenced by an owner-match chain on OUTPUT, replies first, loopback closed
+
+**Id:** ca3532c5-f8f1-4687-b467-ee1b129dc603
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** review of the setup package (two defects found by the reviewer, both reproduced in an unprivileged network namespace); re-check after the merge
+**Revisit when:** the runner moves to a different container runtime or network stack, or a rented server shows the rules failing at boot
+**See:** process.md#rented-servers-carry-the-runners-for-a-week-one-type-each — d621283e-1580-4220-8c72-ca1d5804d0aa — as of 2026-10-29
+
+On a rented runner server one firewall chain (`MAITY_RUNNER`, IPv4 and IPv6) is jumped to from `OUTPUT` for packets of the runner user's
+uid. Order: established and related connections return first; then only the two database ports on loopback and the local resolver
+return; then everything else on `lo` is rejected (which includes the machine's own public address, routed over `lo`, so sshd on
+0.0.0.0 stays out of reach); then the private ranges, link-local (the provider's metadata address) and shared address space are
+rejected. The chain is rebuilt at boot by its own unit, which starts before the runner user's manager, and the runner units require
+it, so a failed rule set stops the runner instead of leaving it open.
+
+**Reason:** everything a job runs, rootless Docker and its containers behind slirp4netns included, runs under that one uid in the
+host's network stack, so an owner match is the one place that sees all of it. The first version rejected loopback wholesale after the
+two port exceptions: the replies of the database listener are packets of the same uid to a loopback address and were rejected, and
+the machine's own address went over `lo` untouched. Both were reproduced in a network namespace before the fix.
+
+**Rejected alternatives:**
+- A host firewall (ufw or a general policy): it would also hit sshd and the administrators, and does not single out the runner.
+- A network namespace of its own for the runner: rootless Docker already builds one, and a second layer would have to be reached
+  by the jobs' service containers on the loopback ports.
+- Only the private ranges, without closing `lo`: the machine's own services stay reachable through its public address.
+

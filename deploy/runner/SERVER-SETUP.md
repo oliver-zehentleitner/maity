@@ -45,11 +45,12 @@ the runner user runs. A dedicated machine could take more; the first week is not
 
 ## What the bootstrap does and what it does not
 
-It installs Docker from Docker's own repository (the key's fingerprint is checked, the script stops on any other),
+It installs Docker from Docker's own repository (the key file must hold exactly one key and its fingerprint is checked, the script stops otherwise),
 switches the system Docker off, creates `gh-runner` without a password or sudo, turns on lingering, installs rootless
 Docker for it, allows `rootlesskit` the user namespaces Ubuntu 24.04 denies by default, and installs a firewall chain
-`MAITY_RUNNER` for that uid (IPv4 and IPv6, rebuilt at boot by `maity-runner-firewall.service`). It then tests what it built: the user cannot `sudo`,
-cannot reach `127.0.0.1:22`, its own public address on port 22 or `169.254.169.254`, gets answers from a listener of its own
+`MAITY_RUNNER` for that uid (IPv4 and IPv6, rebuilt at boot by `maity-runner-firewall.service`, which starts before the user manager of
+the runner user; `install-services.sh` makes the runner units require it and start after it, so a failed rule set stops the runner). It then tests what it built: the user cannot `sudo`,
+cannot reach `127.0.0.1:22`, `[::1]:22`, its own public address on port 22 or `169.254.169.254`, gets answers from a listener of its own
 on the database ports 5432 and 3306 (the path of a job to its service container), and can reach `github.com`.
 
 It does not harden SSH, set up updates or watch the machine: the provider's image and Ubuntu's unattended upgrades are what

@@ -23,6 +23,9 @@ apt-get install -y -qq ca-certificates curl gnupg uidmap dbus-user-session slirp
 # checked here and the script stops on any other.
 install -d -m 755 /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+# signed-by= trusts every key in the file, so the file must hold exactly one, and it must be Docker's.
+[ "$(gpg --show-keys --with-colons /etc/apt/keyrings/docker.asc | grep -c '^pub:')" = 1 ] \
+  || { echo "the Docker key file holds more than one key" >&2; rm -f /etc/apt/keyrings/docker.asc; exit 1; }
 fpr=$(gpg --show-keys --with-colons /etc/apt/keyrings/docker.asc | awk -F: '/^fpr:/ {print $10; exit}')
 [ "$fpr" = "9DC858229FC7DD38854AE2D88D81803C0EBFCD88" ] || { echo "unexpected Docker key fingerprint: $fpr" >&2; rm -f /etc/apt/keyrings/docker.asc; exit 1; }
 chmod 644 /etc/apt/keyrings/docker.asc
@@ -94,10 +97,14 @@ iptables  -A MAITY_RUNNER -d 127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
 ip6tables -A MAITY_RUNNER -d ::1/128,fc00::/7,fe80::/10 -j REJECT
 EOF
 chmod 755 /usr/local/sbin/maity-runner-firewall.sh
-cat > /etc/systemd/system/maity-runner-firewall.service <<'EOF'
+# Before the user manager of the runner user: its rootless dockerd (slirp4netns) must not start before the rules. The runner
+# units get Requires= and After= on this one from install-services.sh, so a failed rule set stops the runner instead of
+# leaving it without the chain.
+cat > /etc/systemd/system/maity-runner-firewall.service <<EOF
 [Unit]
 Description=Firewall rules for the runner user (maity)
 After=network.target
+Before=user@$UID_RU.service
 
 [Service]
 Type=oneshot
@@ -115,6 +122,7 @@ fail=0
 # the user must not become root, and must not reach loopback services or the metadata address
 if runuser -u "$RU" -- sudo -n true 2>/dev/null; then echo "FAIL: $RU can sudo" >&2; fail=1; fi
 if runuser -u "$RU" -- bash -c 'exec 3<>/dev/tcp/127.0.0.1/22' 2>/dev/null; then echo "FAIL: $RU reaches 127.0.0.1:22" >&2; fail=1; fi
+if runuser -u "$RU" -- bash -c 'exec 3<>/dev/tcp/::1/22' 2>/dev/null; then echo "FAIL: $RU reaches [::1]:22" >&2; fail=1; fi
 if runuser -u "$RU" -- curl -sS -m 4 -o /dev/null http://169.254.169.254/ 2>/dev/null; then echo "FAIL: $RU reaches 169.254.169.254" >&2; fail=1; fi
 # the jobs' own path must work: a listener of the runner user on a database port answers a client of the same user (the
 # replies are packets of that uid to loopback; the first version of the chain rejected them)
