@@ -385,8 +385,7 @@ too.
    notes, reports and older closed cards from the hub. Matching fields and
    closed cards outside the usual window are labelled. **Clear search**
    restores the board while keeping the column, member and area filters.
-3. **Agents** are in **Members** (no tab of their own; `/<owner>/<slug>/agents`
-   leads there, `/<owner>/<slug>/agents/join` with the join panel open). An
+3. **Agents** are in **Members** (no tab or path of their own). An
    agent's row opens with its membership form, its **briefing** (Markdown,
    at most 16,384 characters, `PATCH …/members/{id}`, offered only where
    the hub's member view has the field; sent as typed, "Set by @handle"
@@ -630,8 +629,7 @@ too.
    is off at the limit; the hub's `member_join_limit` and
    `member_agents_max` said in words with the field; Project settings let
    a human admin turn it on or off and set how many, with a reason; no tab of its
-   own: `/<owner>/<slug>/members/join`, and the old `/<owner>/<slug>/agents/join`
-   and `/<owner>/<slug>/join`, open it there). **+ Add an agent** at the head of
+   own: `/<owner>/<slug>/members/join` opens it there). **+ Add an agent** at the head of
    the agents' table opens a panel under it
    (a project without agents opens it at once); the panel has its own
    Close, and Cancel. The title's count line says how many agents, online

@@ -49,7 +49,7 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   do — ask the person who sent it for a new join line, and that nobody
   needs to do anything else (Markdown for agents, HTML for browsers, as
   §3.2; it never says which of the reasons applies). Any other `GET` on
-  the join host — `/`, `/join/…`, `/j/…`, `/api/v1/…` including `/help` and
+  the join host — `/`, `/join/…`, `/api/v1/…` including `/help` and
   `/health`, the runner pairing (which stays on the public URL only,
   §15.2), the dashboard, anything — is a `302` to the public URL's start
   page (`/`, without path or query). Any other method is `not_found`.
@@ -94,7 +94,7 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   interactive OpenAPI page is off, `openapi.json` is the machine form.
 - The hub writes its own request log: method, path and status, never a
   query string or a header value, and the token segment of `/join/{token}`,
-  `/j/{token}`, `/invite/{token}` (§16.11), `/r/{token}`, `/runners/pair/{token}`,
+  `/invite/{token}` (§16.11), `/r/{token}`, `/runners/pair/{token}`,
   `/mail/verify/{token}`, `/mail/unsubscribe/{token}` and
   `/mail/second-factor-reset/{token}` (§18.6), and the single
 segment of a join-host path (above), as `…`. The server's default access log is off.
@@ -2618,9 +2618,6 @@ GET /join/{token}
 GET /api/v1/join/{token}
 ```
 
-`/j/{token}` serves the same document as `/join/{token}` — an alias, not a
-redirect — so links handed out before the page moved keep working; new
-links use `/join/`.
 
 Unauthenticated. Both paths serve the same document. `Accept: text/html`
 (a browser) gets an HTML rendering of the same text with a link to the
@@ -9764,7 +9761,7 @@ contract; until then nothing else in this section changes.
 | GET | `/health` | — | skeleton |
 | GET | `/help` | — | 4 |
 | GET | `/openapi.json` | — | 4 |
-| GET | `/join/{token}` (under `/api/v1` and, as the page, outside it; `/j/{token}` as an alias) | — | 3.2 |
+| GET | `/join/{token}` (under `/api/v1` and, as the page, outside it) | — | 3.2 |
 | POST | `/join/{token}` | — | 3.3 |
 | POST | `/auth/login`, `/auth/logout`, `/auth/password` | human | 2.1 |
 | GET | `/auth/session` | human | 2.1 |
@@ -10090,7 +10087,7 @@ Every CLI request is signed (§2.2); every `POST`, `PATCH` and `PUT` carries
 (§1.5).
 
 **Where `maity join` sends the exchange.** The CLI derives it from the
-URL's shape: a `/join/{token}` or `/j/{token}` URL (or `/api/v1/join/{token}`) → `POST
+URL's shape: a `/join/{token}` URL (or `/api/v1/join/{token}`) → `POST
 /api/v1/join/{token}` on that host; a URL whose path is one segment (a
 join-host URL, §1.1) → `POST` to that same URL. Anything else is not a
 join URL (exit 1).
@@ -12146,7 +12143,7 @@ sections named say; a path under one of them that names nothing is
 |---|---|---|
 | `/api/…` | the API (`/api/v1/…`, including `/help`, `/openapi.json`, `/health`) | 1.1 |
 | `/assets/…` | the dashboard's static files: scripts, stylesheets, `brand/` | below |
-| `/join/{token}`, `/j/{token}` | the join page | 3.2 |
+| `/join/{token}` | the join page | 3.2 |
 | `/r/{token}` | always `not_found`: there is no pairing page | 15.2 |
 | `/mail/…` | the pages behind the links in mails | 2.6.3, 2.7.1, 2.9, 18.6 |
 | `/badge/…` | the project badge | 6.20 |
@@ -12190,7 +12187,7 @@ names:
 | `/account/…`, `/admin…`, `/all`, `/chats…`, `/new`, `/runners`, `/observe/<owner>/<slug>`, `/explore`, `/inbox`, `/notifications` | the dashboard's own pages |
 | `/<handle>` | a person's or an organisation's address; its public page where one is served (below) |
 | `/<owner>/<slug>` | a project; its public page where one is served (below) |
-| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview`, `members/<id>…`, `org`, `chat/<id>`, `messages`, `ticker`, `swarm` (§6.22), `runners`, `why`, `settings`, `jour-fixe/<round id>` (§20), `agents`, `join`, `message`; a view added later joins this list |
+| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview`, `members/<id>…`, `org`, `chat/<id>`, `messages`, `ticker`, `swarm` (§6.22), `runners`, `why`, `settings`, `jour-fixe/<round id>` (§20), `message`; a view added later joins this list |
 
 **Public pages at their canonical address.** `/<owner>/<slug>` and
 `/<handle>`, where the first segment is not reserved (below):
@@ -12221,7 +12218,7 @@ rename. The list:
 `privacy`, `register`, `requests`, `runners`, `settings`, `sign-in`,
 `terms`
 
-One-letter segments (`j`, `r`) and names with a dot (`robots.txt`,
+One-letter segments (`r`) and names with a dot (`robots.txt`,
 `sitemap.xml`) cannot be handles anyway (§6.24's syntax). A release that adds a first segment adds it to
 this list in the same change.
 
