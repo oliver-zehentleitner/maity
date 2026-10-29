@@ -98,7 +98,8 @@ def test_unclaim_calls_release_on_the_card(
 
 def test_card_ids_are_one_path_segment(joined: Path, fake: fakehub.FakeHub) -> None:
     cli.main(["claim", "../members/agt-a"])
-    assert last(fake).path == "/api/v1/projects/oliver/maity/tasks/..%2Fmembers%2Fagt-a/claim"
+    # The 404 asks `GET /me` whether the project moved (§6.25); the claim went out first.
+    assert fake.signed()[0].path == "/api/v1/projects/oliver/maity/tasks/..%2Fmembers%2Fagt-a/claim"
 
 
 # --- checkpoint ------------------------------------------------------------------------------

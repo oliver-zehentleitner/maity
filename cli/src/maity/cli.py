@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import dataclasses
 import errno
 import hashlib
 import json
@@ -89,6 +90,51 @@ def _print_json(data: Any) -> None:
 _FULL_NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,62}/[a-z0-9][a-z0-9-]{0,62}", re.ASCII)
 
 
+@dataclasses.dataclass
+class ProjectClient(hub.Client):
+    """A client that follows its project to a new full name (§6.25). A `not_found` on a path
+    under the project asks `moved` once where the project is now; when it answers, the call
+    is repeated there, and every later path under the old name goes to the new one, the
+    wait loop's path built before the move included. A call with a timeout keeps to it: the
+    lookup and the repeat share what is left of it."""
+
+    moved: Callable[[str, float | None], str | None] | None = dataclasses.field(
+        default=None, repr=False
+    )
+    renamed: dict[str, str] = dataclasses.field(default_factory=dict, repr=False)
+
+    def call(
+        self,
+        method: str,
+        path: str,
+        query: Sequence[tuple[str, str]] = (),
+        body: Any = None,
+        timeout: float | None = None,
+        raw: bytes | None = None,
+        content_type: str | None = None,
+    ) -> Any:
+        path = _renamed(path, self.renamed)
+        started = time.monotonic()
+        try:
+            return super().call(method, path, query, body, timeout, raw, content_type)
+        except hub.HubError as exc:
+            if exc.code != "not_found" or self.moved is None:
+                raise
+            left = None if timeout is None else timeout - (time.monotonic() - started)
+            moved = self.moved(path, left) if left is None or left > 0 else None
+            left = None if timeout is None else timeout - (time.monotonic() - started)
+            if moved is None or (left is not None and left <= 0):
+                raise
+            return super().call(method, moved, query, body, left, raw, content_type)
+
+
+def _renamed(path: str, renamed: dict[str, str]) -> str:
+    for old, new in renamed.items():
+        if path == old or path.startswith(old + "/"):
+            return new + path[len(old) :]
+    return path
+
+
 class Session:
     """A joined clone: its state directory, its state, and a signing client for its hub.
     `on_request` is this command's `--on-request`, set once by `main` (§2.3)."""
@@ -110,7 +156,9 @@ class Session:
                 "this clone holds a credential but no hub URL; run `maity resume --hub <url>`"
             )
         key = sign.signing_key(state.read_credential(self.dir))
-        self.client = hub.Client(hub.hub_base(stored), key, on_request=Session.on_request)
+        self.client = ProjectClient(
+            hub.hub_base(stored), key, on_request=Session.on_request, moved=self._moved
+        )
 
     @property
     def project(self) -> str:
@@ -146,6 +194,33 @@ class Session:
     def project_path(self, *parts: str) -> str:
         owner, slug = self.project.split("/", 1)
         return "/".join(["", "projects", *map(hub.segment, (owner, slug, *parts))])
+
+    def _moved(self, path: str, timeout: float | None) -> str | None:
+        """Where `path` is now, when the project answered `not_found` because it has a new
+        full name (a rename of the owner or the project, a transfer): read from `GET /me`,
+        which names an agent's one project, kept in state and said once. None for a path
+        outside the project, an unchanged name, or a `/me` that does not say."""
+        full_name = self.data.get("full_name")
+        if not isinstance(full_name, str) or not _FULL_NAME.fullmatch(full_name):
+            return None
+        old = self.project_path()
+        if path != old and not path.startswith(old + "/"):
+            return None
+        try:
+            me = self.client.call("GET", "/me", timeout=timeout)
+        except hub.HubError:
+            return None
+        projects = [p for p in (_field(me, "projects") or []) if isinstance(p, dict)]
+        now = projects[0].get("full_name") if len(projects) == 1 else None
+        if not isinstance(now, str) or not _FULL_NAME.fullmatch(now) or now == full_name:
+            return None
+        self.data["full_name"] = now
+        self.data["project"] = now.split("/", 1)[1]
+        self.save()
+        new = self.project_path()
+        self.client.renamed[old] = new
+        _err(f"project is now {onboarding.inline(now)}; continuing there")
+        return new + path[len(old) :]
 
     def save(self) -> None:
         state.save_state(self.dir, self.data)
