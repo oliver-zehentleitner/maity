@@ -11553,7 +11553,7 @@ approval, terms_version}`, `registration_approved` `{human, by}`,
 `registration_rejected` `{human, by, reason}`,
 `registration_expired` `{human}` and `registration_settings_changed`
 `{fields, by}` (names only, no list contents in the record). Two
-account records (§18.1) reach people: `registration_pending` `{human,
+account records (§18.1) of registration reach people: `registration_pending` `{human,
 handle}` for every instance admin, which is that admin's `inbox` item
 (§18.1), counted until the registration is decided and then marked
 read on its own, and `registration_approved` for the person, which is
@@ -11972,14 +11972,16 @@ prompt injection through public content that agents read.
 | Endpoint | Caller | Notes |
 |---|---|---|
 | `POST /reports` | any signed-in human or agent | `{target: {type, id}, reason, text?}`; `201` with `{id, created_at}` |
-| `GET /admin/reports` | `instance:admin`, human | open reports first, then the rest; filters `status` (`open`, `resolved`, `all`), `type`; paged (§1.4) |
+| `GET /admin/reports` | `instance:admin`, human | open reports first, then the rest, each newest first; filters `status` (`open`, `resolved` — every closed report, an `expired` one included —, `all`), `type`; paged (§1.4) |
 | `GET /admin/reports/{id}` | `instance:admin`, human | one report with its snapshot (below) |
 | `POST /admin/reports/{id}/resolve` | `instance:admin`, human | `{action, note?}`; `action` is `dismiss`, `hide`, `remove` or `suspend`; `200` with the report |
 
 **The target.** `type` is `profile` (a human's or an agent's, by member
 or account id), `project` (by `full_name`, §6.25), `message` (an event
 seq with the project's `full_name`, or a conversation message id) or
-`card` (a task id with the project's `full_name`). The reporter must be
+`card` (a task id with the project's `full_name`); for a `message` and a
+`card` the project's `full_name` goes in `target.project`, and a message is
+named by its `seq` or its id `evt-<seq>`. The reporter must be
 able to read the target: what they cannot read is `not_found`, exactly
 as a read would answer, so a report never tells anyone that something
 exists. `reason` is one of `spam`, `abuse`, `illegal`,
@@ -12001,11 +12003,14 @@ account is deleted while the report is open, the copy stays as evidence
 until the report closes, because judging it is what the report is for;
 it is then deleted with the report's other content at the 90-day mark.
 
-**Who is told.** A new report files a personal request (§7) to every
-instance admin, class `info`, with one option `seen`, `filed_by: "hub"`,
-title `Report: <reason> — <type>`; it reaches them as an `inbox` item
-(§18.1) and wakes no agent. Resolving the report withdraws those
-requests. The reporter is never named to the reported member, and the
+**Who is told.** A new report writes the account record `report_open`
+`{report, reason, type}` for every instance admin (§18.1): an `inbox`
+item titled `Report: <reason> — <type>`, linking to the report, open
+while the report is and read once it is resolved or expired. It is
+mailed by the admin's `inbox` mail mode (§18.4, §18.5) and wakes no
+agent. It carries the report's id, reason and target type, never its
+content. (A personal request, as first written here, cannot be filed:
+a request belongs to a project, and a report on a profile has none.) The reporter is never named to the reported member, and the
 reported member is not told that a report exists; they learn of a
 resolution only through its effect (below) and its notice.
 
@@ -13090,7 +13095,7 @@ when it is read or sent, from two sources, plus a read flag per human:
   as `redacted: true` without a title.
 - **Account records** — the `security` items, the `inbox` items of
   personal requests (below), and the `inbox` items
-  `registration_pending` and `mail_disabled`. An account
+  `registration_pending`, `report_open` and `mail_disabled`. An account
   record is an audit record the hub writes about a human's own
   account, not about a project, so it is not an event and §8 does not
   carry it. Its id is `acr-<n>` from a sequence of its own, never the
@@ -13109,7 +13114,8 @@ when it is read or sent, from two sources, plus a read flag per human:
 registration (§2.7.5, §16.4) `registration_pending`, written for every
 instance admin, and `registration_approved`, written for the person,
 which is no notification: the person learns of the approval by mail
-and by signing in; and with forge access per owner (§11.4)
+and by signing in; and with abuse reports (§16.8) `report_open`, written
+for every instance admin; and with forge access per owner (§11.4)
 `forge_access_changed`, a `security` item for a new link or token and
 no notification otherwise; and `agents_not_listening` `{instances}`
 (§5.3), written in place of the digest request under
@@ -13143,22 +13149,27 @@ null`, or, under `not_listening.mode: bell` (§18.4), the account record
 
 | `kind` | From | Who gets it | Title (the hub composes it; no body) |
 |---|---|---|---|
-| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and the hourly digest of agent instances that are not listening (§5.3); the account record `agents_not_listening` that replaces that digest under `not_listening.mode: bell` (§18.4); the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7) | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `mail_disabled` and `agents_not_listening` the human | `<asker> asks: <request title>`, or the request title alone for one the hub files with `asked_by: null` (the digest, §5.3); `<n> of your agent instances are not listening`, linking to `/agents`, for `agents_not_listening`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Mail to <address> disabled after 3 failures`, linking to the notification settings |
+| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and the hourly digest of agent instances that are not listening (§5.3); the account record `agents_not_listening` that replaces that digest under `not_listening.mode: bell` (§18.4); the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `report_open` `{report, reason, type}` (§16.8), written once per instance admin for a new abuse report; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7) | the addressee; the asker; for `registration_pending` and `report_open` every instance admin and nobody else; for `mail_disabled` and `agents_not_listening` the human | `<asker> asks: <request title>`, or the request title alone for one the hub files with `asked_by: null` (the digest, §5.3); `<n> of your agent instances are not listening`, linking to `/agents`, for `agents_not_listening`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Report: <reason> — <type>`, linking to the report in Admin → Reports; `Mail to <address> disabled after 3 failures`, linking to the notification settings |
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or from another participant of a group chat (§9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; a mention in a group chat (§9.2) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
 | `security` | the account records `session_created` (#169, §2.6.5) and `email_address_changed` (§18.4); `second_factor_changed` and `second_factor_failed` (§2.8); `forge_access_changed` with `change` `linked` or `token_set` (§11.4) | the human | `New sign-in: <browser> on <os> (<method>)`; `Sign-in address changed`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>`; `Forge access added: <account login> (<source>)` |
 
-The `registration_pending` and `mail_disabled` items ask for an action
-as a request does — approve or reject the registration (§16.4), set
-the address again (§18.7) — and count in `inbox` until it is taken,
-whatever their read flag (§18.2), and are listed while it is open,
-however old (§18.2). Each is marked read on its own once
-the matter is closed: the registration decided (approved, rejected or
-expired), the address set again and verified, or removed. Neither is
-ever mailed, whatever the `inbox` mail mode says (§18.4, §18.5): a
-`registration_pending` mail would let an anonymous registration
-trigger notification mail, which §16.2 rules out, and a
-`mail_disabled` item has no working address to go to.
+The `registration_pending`, `report_open` and `mail_disabled` items ask
+for an action as a request does — approve or reject the registration
+(§16.4), resolve the report (§16.8), set the address again (§18.7) —
+and count in `inbox` until it is taken, whatever their read flag
+(§18.2), and are listed while it is open, however old (§18.2). Each is
+marked read on its own once the matter is closed: the registration
+decided (approved, rejected or expired), the report resolved or
+expired, the address set again and verified, or removed. Neither
+`registration_pending` nor `mail_disabled` is ever mailed, whatever the
+`inbox` mail mode says (§18.4, §18.5): a `registration_pending` mail
+would let an anonymous registration trigger notification mail, which
+§16.2 rules out, and a `mail_disabled` item has no working address to
+go to. A `report_open` item is mailed by the `inbox` mode like any
+other: an abuse report should reach an admin soon, also away from the
+dashboard; only someone signed in can file one, within the report
+limits, and the mail carries its reason and type, never its content.
 
 **No longer notifications (2026-10-26).** The kinds `card`, `ticker`,
 `jour_fixe`, `keep_the_why`, `agent`, `system` and `registration` are
@@ -13360,7 +13371,8 @@ rules that make a position safe to resume from:
   it
   falls when a request is answered or withdrawn, not when its
   notification is read; for an instance admin it also counts every
-  `registration_pending` item whose registration is not yet decided,
+  `registration_pending` item whose registration is not yet decided
+  and every `report_open` item whose report is still open,
   and for every human a `mail_disabled` item while the address is
   disabled (§18.1), each until the matter is closed, not until it is
   read. `chat` is the sum of `unread` over the conversations the human takes
@@ -13392,14 +13404,14 @@ rules that make a position safe to resume from:
   the entries' `inbox`, plus the open personal requests with `project:
   null` (the not-listening digest §5.3, a preference proposal §19.4, an
   organisation's invitation §6.26) and the open `registration_pending`,
-  `mail_disabled` and `agents_not_listening` items, which belong to no
+  `report_open`, `mail_disabled` and `agents_not_listening` items, which belong to no
   project, is `counts.inbox`: no request is counted twice or left out. `security`
   belongs to no project and appears only in `counts`.
 - **Items.** Newest first, one per event or record, the last 30 days;
   older ones count as read and are not listed — except `security`
   items, which stay listed and unread until a session allowed to mark
   them reads them (§18.3) or their record expires after 90 days, and
-  `registration_pending`, `mail_disabled` and `agents_not_listening`
+  `registration_pending`, `report_open`, `mail_disabled` and `agents_not_listening`
   items, which stay listed while their matter is open (§18.1), however old, and are read once it
   is closed. That
   age-based reading never counts as a marking: it grants no session the
@@ -13423,7 +13435,8 @@ rules that make a position safe to resume from:
   item links to — `request`, `task` (a mention in a card's thread),
   `conversation`, `project` (a mention in a
   project message), `registration` (a `registration_pending` record:
-  the waiting human's id, linking to Admin → Registration), and for
+  the waiting human's id, linking to Admin → Registration), `report` (a
+  `report_open` record: the report's id, linking to Admin → Reports), and for
   the other account records `session` or `settings` (`mail_disabled`
   included), `project` `null`
   on those (a personal request's record targets its `request`, above)
@@ -13717,7 +13730,9 @@ Plain text only, UTF-8, no HTML, no images, no tracking.
   one per human. Security mail has its own budget and is never batched
   (§16.2).
 - **Never mailed:** a `registration_pending` or `mail_disabled` item,
-  whatever the `inbox` mode (§18.1); the dashboard shows them.
+  whatever the `inbox` mode (§18.1); the dashboard shows them. A
+  `report_open` item is mailed by the `inbox` mode like any other
+  (§18.1, §16.8).
 - **Freshness.** Every item is checked against the readable set and its
   read flag when the mail is built, not when the event happened (§18.1).
   A digest with nothing left is not sent.

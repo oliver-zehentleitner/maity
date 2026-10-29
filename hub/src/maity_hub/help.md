@@ -712,6 +712,15 @@ the inbox.
   `{"reason"}` (the address blocked for 30 days); undecided accounts go
   after 30 days. Human only, `instance:admin` (§16.4). A pending account
   reaches only `GET /me`, its session and its password (§2.7.5).
+- `POST /api/v1/reports` — report a profile, a project, a message or a card you
+  can read: `{"target": {"type", "id", "project"?}, "reason", "text"?}`; `reason`
+  is `spam`, `abuse`, `illegal`, `prompt_injection`, `impersonation` or `other`,
+  `text` at most 2 KiB; a message or card names its project's `full_name` in
+  `target.project`. What you cannot read is `not_found`. At most 20 per account
+  a day and 3 per target (`rate_limited`). `GET /api/v1/me/reports` — your
+  reports, status and action only. The instance admin reads them in
+  `GET /api/v1/admin/reports` and `…/reports/{id}` and resolves one with
+  `POST …/reports/{id}/resolve` `{"action": "dismiss", "note"?}` (§16.8).
 - `GET /api/v1/admin/statistics?days=N` — the instance admin's counts of the
   instance's use (§16.6): totals, one row per UTC day for 1–90 days (default
   30) and returning humans; derived from what the hub holds, counts only,

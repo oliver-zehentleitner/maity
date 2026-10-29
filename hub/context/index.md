@@ -88,6 +88,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 
 ## R
 - [releases.md](releases.md) — readiness recomputed in every write that can change it; `release_ready` gated by a stored flag
+- [reports.md](reports.md) — abuse reports: the instance admin hears of one through a mailed `report_open` account record, not a personal request; a report reads its target through the read paths, so a refusal is the read's `not_found`; the limits count the stored reports under the account's row lock; retention empties the content and keeps the row
 - [requests.md](requests.md) — a personal request is a request row with the asker's project, `personal` tied to `profile_owner` by a CHECK, hidden from every project route but the asker's; `to_human` a snapshot; a listing sorts and pages light entries and builds full views only for its page
 
 ## S

@@ -76,6 +76,7 @@ def test_one_document_to_save(owner: flow.Human) -> None:
         "sessions",
         "second_factor",
         "forge_links",
+        "abuse_reports",
         "runners",
         "agent_profiles",
         "memberships",

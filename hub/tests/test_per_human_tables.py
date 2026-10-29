@@ -32,6 +32,7 @@ LOOKS_LIKE_A_PERSON = re.compile(r"human|_by$|^owner_id$|^caller$|^address")
 # Whether each such column without a foreign key names a human (True), or is something
 # else that only looks like one (False): a reason, a time, a mode, a session's id.
 NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
+    ("abuse_report", "resolved_by"): True,  # the instance admin
     ("account_deletion", "withdrawn_by"): False,  # why: `replaced`, `password_change`, …
     ("account_record", "read_by"): True,
     ("account_registration", "address"): True,
@@ -90,6 +91,8 @@ DELETION_THROUGH: dict[str, ModuleType] = {
 # stays, and every view shows it as `Deleted account` (§2.9).
 _RECORD = "the projects' or the instance's record, kept without the person (§2.9)"
 DELETION_KEEPS = {
+    "abuse_report": "the instance's moderation record; its copy is emptied 90 days after the "
+    "report closes, a deleted author's included (§16.8)",
     "attachment": f"who deleted an attachment: {_RECORD}",
     "conversation_participant": f"who added or removed a participant: {_RECORD}",
     "credential": f"who paused or revoked an agent's credential: {_RECORD}",
