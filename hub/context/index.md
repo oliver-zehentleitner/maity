@@ -72,6 +72,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 
 ## O
 - [outbound.md](outbound.md) — reads whose host comes from data resolve once and connect to the checked address; `routable()` beyond `is_global`; seams instead of a TLS server in tests
+- [overview.md](overview.md) — the project overview returns counts and facts only, each read through the path its list uses; reports from the card's `report`, no member view repeated, a deleted account shown as such
 
 ## P
 - [packaging.md](packaging.md) — `src/` layout with migrations and `/help` as package data; all three drivers by default; the image's SQLite data volume; the tested set pinned with hashes via `uv pip compile --universal`; Pillow 13 for the avatar decoder (the 12.x pin superseded), the size read before Pillow; cryptography held to one major release for the stored secrets; the wheel carries the dashboard; the image sets MALLOC_ARENA_MAX=2 because the process grew through fragmented arenas

@@ -1,7 +1,7 @@
 """A card imported from a forge issue says which (docs/api.md §6.14).
 
 Revision ID: 0082
-Revises: 0077
+Revises: 0080
 Create Date: 2026-10-29
 """
 
@@ -12,7 +12,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "0082"
-down_revision: str | None = "0077"
+down_revision: str | None = "0080"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

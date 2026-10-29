@@ -5,9 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 
-from maity_hub import forge
+from maity_hub import clock, forge
 from maity_hub import tables as t
 from maity_hub.board import importing
 from tests import factory, flow
@@ -152,6 +152,37 @@ class IssueForge(forge.Forge):
         if self.fail:
             raise forge.ForgeUnavailableError("down")
         return self.found
+
+
+def test_a_report_by_a_deleted_account_shows_no_handle(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§2.9: where a payload shows a person, a deleted account is `Deleted account`."""
+    agent = flow.agent(make_client, owner)
+    card = task(owner)
+    agent.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
+    reported = agent.post(
+        f"/projects/maintainer/maity/tasks/{card['id']}/report",
+        {"summary": "done", "code": False, "pr_status": "none"},
+    )
+    assert reported.status_code == 200, reported.text
+    pat = factory.human(migrated, "pat")
+    with migrated.begin() as conn:  # the report as a human wrote it, the account deleted since
+        row = conn.execute(select(t.card.c.report).where(t.card.c.id == card["id"])).one()
+        conn.execute(
+            update(t.card)
+            .where(t.card.c.id == card["id"])
+            .values(report={**row.report, "reported_by": pat})
+        )
+        conn.execute(update(t.human).where(t.human.c.id == pat).values(deleted_at=clock.now()))
+    shown = owner.get("/projects/maintainer/maity/overview").json()["reports"][0]
+    assert shown["reported_by"] == {
+        "member_id": pat,
+        "display_name": "Deleted account",
+        "handle": None,
+        "avatar_url": None,
+        "deleted": True,
+    }
 
 
 def issue(**changes: Any) -> dict[str, Any]:
@@ -365,3 +396,21 @@ def test_a_removed_human_cannot_replay_an_import(
     assert owner.delete(f"/projects/maintainer/maity/members/{second.id}").status_code == 200
     again = second.client.post(path, json={"issue_url": ISSUE}, headers=keyed)
     assert again.status_code == 404, again.text  # never the card as it is now
+
+
+def test_a_key_used_again_in_another_project_is_a_mismatch_not_a_replay(
+    owner: flow.Human, forged: list[IssueForge]
+) -> None:
+    """§1.5: a human's key spans their projects; the second import must not replay the
+    first project's card."""
+    flow.project(owner, slug="other", repository={"url": REPOSITORY})
+    keyed = {"X-CSRF-Token": owner.csrf, "Idempotency-Key": "one-key-two-projects-1"}
+    first = owner.client.post(
+        "/api/v1/projects/maintainer/maity/tasks/import", json={"issue_url": ISSUE}, headers=keyed
+    )
+    assert first.status_code == 201, first.text
+    other = owner.client.post(
+        "/api/v1/projects/maintainer/other/tasks/import", json={"issue_url": ISSUE}, headers=keyed
+    )
+    assert other.status_code == 409, other.text
+    assert other.json()["error"]["code"] == "idempotency_mismatch"

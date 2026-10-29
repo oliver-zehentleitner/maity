@@ -12,7 +12,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, func, or_, select
 
-from maity_hub import avatars, cards, clock, inbox
+from maity_hub import avatars, cards, clock, inbox, views
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.deps import AnyCaller, engine_of
@@ -65,10 +65,13 @@ def _reporters(conn: Connection, member_ids: set[str]) -> dict[str, dict[str, An
             found[row.id] = {"handle": row.handle, "display_name": row.display_name}
     if humans:
         for row in conn.execute(select(t.human).where(t.human.c.id.in_(humans))):
-            found[row.id] = {"handle": row.handle, "display_name": row.display_name}
+            if views.deleted(row):  # a deleted account shows no handle (§2.9)
+                found[row.id] = views.deleted_person()
+            else:
+                found[row.id] = {"handle": row.handle, "display_name": row.display_name}
     pictures = avatars.urls(conn, list(found))
     return {
-        member_id: {"member_id": member_id, **shown, "avatar_url": pictures[member_id]}
+        member_id: {"member_id": member_id, "avatar_url": pictures[member_id], **shown}
         for member_id, shown in found.items()
     }
 
