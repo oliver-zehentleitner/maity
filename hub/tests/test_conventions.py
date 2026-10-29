@@ -190,7 +190,7 @@ def test_health_says_database_unavailable_without_driver_text(
     from maity_hub.db import make_engine
 
     client = make_client()
-    client.app.state.engine = make_engine(  # type: ignore[attr-defined]
+    client.app.state.health_engine = make_engine(  # type: ignore[attr-defined]
         f"sqlite:///{tmp_path / 'missing' / 'dir' / 'hub.db'}"
     )
     response = client.get("/api/v1/health")
