@@ -300,6 +300,26 @@ def test_a_join_needs_a_recent_factor(
     assert refused.json()["error"]["details"]["reason"] == "step_up_required"
 
 
+def test_the_export_needs_a_recent_factor_and_shows_the_state_only(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """§2.9 and §2.8.4: the export is a sensitive call; it shows that a factor is
+    enrolled and how many recovery codes are left, never the secret or a code."""
+    human = signed_in(make_client, migrated)
+    secret, codes = enrol(human, moment)
+    moment.move(minutes=11)
+    refused = human.get("/me/export")
+    assert refused.status_code == 403
+    assert refused.json()["error"]["details"]["reason"] == "step_up_required"
+    assert human.post("/auth/second-factor/verify", {"code": code_now(secret, moment.at)})
+    exported = human.get("/me/export")
+    assert exported.status_code == 200, exported.text
+    assert exported.json()["second_factor"] == {"enrolled": True, "recovery_codes_left": 10}
+    text = exported.text
+    assert base64.b32encode(secret).decode().rstrip("=") not in text
+    assert not any(code in text for code in codes)
+
+
 def test_the_registration_and_landing_settings_need_a_recent_factor(
     make_client: ClientFactory, migrated: Engine, moment: Clock
 ) -> None:

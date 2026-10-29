@@ -390,8 +390,10 @@ window.Maity = window.Maity || {};
     const status = statusLine();
     const briefing = h("textarea", { id: "onboarding-briefing", rows: "6", "aria-describedby": "onboarding-hint" }, current.briefing || "");
     const choices = [{ value: "", label: "No check-in" }, { value: "coordinator", label: "Coordinator" }]
-      .concat(["owner", "admin", "member", "reviewer", "proxy"].map((role) => ({ value: "role:" + role, label: "Role: " + role })))
-      .concat(ctx.members.filter((m) => !m.removed_at).map((m) => ({ value: m.id, label: "Member: @" + M.dom.handleOf(ctx, m) + " (" + m.kind + ")" })));
+      // §6.1: trust:owner, trust:admin or a role; never a guest (§2.3).
+      .concat(["owner", "admin"].map((trust) => ({ value: "trust:" + trust, label: "Trust: every " + trust })))
+      .concat(M.trust.ROLES.map((role) => ({ value: "role:" + role, label: "Role: every " + role })))
+      .concat(ctx.members.filter((m) => !m.removed_at && !M.trust.guest(m)).map((m) => ({ value: m.id, label: "Member: @" + M.dom.handleOf(ctx, m) + " (" + m.kind + ")" })));
     if (current.check_in_with && !choices.some((c) => c.value === current.check_in_with)) {
       choices.push({ value: current.check_in_with, label: "Unavailable member: " + current.check_in_with });
     }
@@ -1199,11 +1201,12 @@ window.Maity = window.Maity || {};
       throw new M.api.ApiError("You are not a member of the project " + where.slug, 404, "/me", "not_found");
     }
     ctx.slug = where.slug;
+    // Trust × role (docs/api.md §2.3): owner and admin hold project:admin and
+    // members:admin for a human; absence is the owner's alone.
+    ctx.trust = mine.trust;
     ctx.role = mine.role;
-    // A human's owner and admin memberships hold project:admin and
-    // members:admin (docs/api.md §2.3); absence is the owner's alone.
-    ctx.canAdmin = mine.role === "owner" || mine.role === "admin";
-    ctx.isOwner = mine.role === "owner";
+    ctx.canAdmin = M.trust.governs(mine);
+    ctx.isOwner = M.trust.owner(mine);
     ctx.base = "/projects/" + M.api.projectPath(where.slug);
     ctx.link = (view, ...rest) => projectLink(where.slug, view, ...rest);
     // The event head is read before the view's data, so that nothing that
@@ -1227,7 +1230,7 @@ window.Maity = window.Maity || {};
     const mine = ctx.projects.find((p) => p.full_name === slug);
     if (!mine) throw new M.api.ApiError("You are not a member of the project " + slug, 404, "/me", "not_found");
     const pctx = Object.assign({}, ctx, {
-      slug, role: mine.role, canAdmin: mine.role === "owner" || mine.role === "admin", isOwner: mine.role === "owner",
+      slug, trust: mine.trust, role: mine.role, canAdmin: M.trust.governs(mine), isOwner: M.trust.owner(mine),
       base: "/projects/" + M.api.projectPath(slug), listeners: [], outsider: false,
     });
     pctx.onEvents = (fn) => { pctx.listeners.push(fn); };

@@ -87,7 +87,7 @@
             "member_id": "agt-a",
             "why": [
               "contract_implementer:13",
-              "role:admin"
+              "trust:admin"
             ],
             "wake": true,
             "muted": false
