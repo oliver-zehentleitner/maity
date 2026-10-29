@@ -27,7 +27,7 @@ SECURITY = (
 # The forge access changes that are a `security` item; the others are no notification.
 FORGE_ADDED = ("linked", "token_set")
 # Records that are `inbox` items, open until their matter is closed (§18.1).
-INBOX = ("registration_pending", "mail_disabled")
+INBOX = ("registration_pending", "mail_disabled", "agents_not_listening")
 PERSONAL = (
     "personal_request_created",
     "personal_request_answered",

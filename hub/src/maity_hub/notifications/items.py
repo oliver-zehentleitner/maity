@@ -42,6 +42,7 @@ WORDS: dict[str, dict[str, str]] = {
         "unknown_os": "an unknown system",
         "address_changed": "Sign-in address changed",
         "mail_disabled": "Mail to {address} disabled after 3 failures",
+        "not_listening": "{n} of your agent instances are not listening",
         "tf_enrolled": "Two-factor sign-in turned on",
         "tf_disabled": "Two-factor sign-in turned off",
         "tf_recovery_codes": "New recovery codes",
@@ -66,6 +67,7 @@ WORDS: dict[str, dict[str, str]] = {
         "unknown_os": "einem unbekannten System",
         "address_changed": "Anmeldeadresse geändert",
         "mail_disabled": "Mail an {address} nach 3 Fehlern deaktiviert",
+        "not_listening": "{n} deiner Agent-Instanzen hören nicht zu",
         "tf_enrolled": "Zwei-Faktor-Anmeldung eingeschaltet",
         "tf_disabled": "Zwei-Faktor-Anmeldung ausgeschaltet",
         "tf_recovery_codes": "Neue Wiederherstellungscodes",
@@ -444,6 +446,10 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
         )
     ).all()
     waiting = _waiting_registrations(conn, rows)
+    # Only the newest `agents_not_listening` record can be open; the older ones ended.
+    newest_away_record = max(
+        (row.n for row in rows if row.type == "agents_not_listening"), default=None
+    )
     # The personal requests and their askers' names in a fixed number of statements, not
     # three per record: a human with many hub notices reads them all on every call.
     asked = {
@@ -585,6 +591,30 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
                     open=pending,
                 )
             )
+        elif row.type == "agents_not_listening" and row.n == newest_away_record:
+            # Listed while any instance is away, with the count as it is now (§5.3,
+            # §18.1): the record marks only when it began, the rest is read live.
+            from maity_hub import not_listening_digest
+            from maity_hub.notifications import preferences
+
+            away = not_listening_digest.away_of(conn, where.human_id, now)
+            if (
+                away
+                and preferences.preferences(conn, where.human_id)["not_listening"]["mode"] == "bell"
+            ):
+                items.append(
+                    Item(
+                        kind="inbox",
+                        at=row.at,
+                        record=row.n,
+                        title=_cut(where.say("not_listening", n=len(away))),
+                        target={"type": "agents"},
+                        url=_url(where, "/agents"),
+                        read=False,
+                        record_type=row.type,
+                        open=True,
+                    )
+                )
         elif row.type == "mail_disabled" and row.at >= now - WINDOW:
             # TODO(#280): listed and counted while the address stays disabled, however old,
             # and read once it is set again (§18.1, §18.7); the address state comes with

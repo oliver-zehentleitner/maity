@@ -33,6 +33,7 @@ from maity_hub import (
     longpoll,  # noqa: F401  (subscribes the long-poll to new events)
     namespace,
     not_listening,
+    not_listening_digest,
     paths,
     probe,
     registration_accounts,
@@ -168,6 +169,9 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         # A session that stopped reading is noticed without anybody asking (§5.3).
         not_listening_worker = not_listening.Worker(engine)
         not_listening_worker.start()
+        # The owners' digest of instances that are away, on the hour (§5.3).
+        digest_worker = not_listening_digest.Worker(engine)
+        digest_worker.start()
         commitment_worker = commitment.Worker(engine)
         commitment_worker.start()
         registrations_worker = registration_accounts.Worker(engine)
@@ -202,6 +206,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         commitment_worker.stop()
         availability_worker.stop()
         not_listening_worker.stop()
+        digest_worker.stop()
         image_worker.stop()
         if worker is not None:
             worker.stop()
