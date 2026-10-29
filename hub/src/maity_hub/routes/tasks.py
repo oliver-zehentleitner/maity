@@ -43,7 +43,7 @@ from maity_hub.forge import Forge
 from maity_hub.ids import new_id
 from maity_hub.models import Strict, Written, markdown, title
 from maity_hub.namespace import ProjectRoute
-from maity_hub.policy import CLOSED_STATES, REASON_STATES
+from maity_hub.policy import CLOSED_STATES, REASON_STATES, keep_the_why_effective
 from maity_hub.routes.members import AREA
 from maity_hub.scopes import in_admin_team
 from maity_hub.views import (
@@ -170,6 +170,8 @@ class ReportIn(Written):
     # False for a result that is not code: a review, a draft, a decision (§6.6).
     code: bool = True
     done: bool = False
+    # §6.23: validated in code, pydantic's error types are not the contract's reasons.
+    why: Any = None
 
 
 def load_task(conn: Connection, card_id: str, request: Request) -> dict[str, Any]:
@@ -1690,6 +1692,7 @@ def report(
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         mine = _locked(conn, mine)
+        _check_why(body, mine.project)
         card = _project_card(conn, mine, card_id)
         already_done = card.status == "done"
         if already_done:
@@ -1742,6 +1745,7 @@ def report(
             "reported_at": clock.rfc3339(now),
             # Filled by the probe in the background; never awaited inside a write.
             "code": body.code,
+            "why": body.why,
             "observed": None,
             # A report without code is never probed: nothing to compare (§6.6).
             "mismatch": None if body.code else False,
@@ -1752,6 +1756,8 @@ def report(
             # clear another's work for its own review (§6.18).
             "reported_instances": _reporters(card, mine),
         }
+        if isinstance(body.why, dict) and "ref" in body.why and not card.ktw_ref:
+            values["ktw_ref"] = body.why["ref"]  # §6.23: the card learns where its why lives
         if not already_done:  # §6.6: a done card keeps its closure and claim.
             if closing:
                 values.update({**_closing(card), "status": "done", "closed_at": now})
@@ -1820,6 +1826,30 @@ def _reporters(card: Any, mine: Membership) -> list[dict[str, Any]]:
         ]
     me = {"member_id": mine.principal_id, "instance": mine.instance}
     return [*(r for r in earlier if r != me), me]
+
+
+WHY_REF = re.compile(r"[^\s#]+\.md#[^\s#]+")
+WHY_NONE_MIN = 10
+
+
+def _check_why(body: ReportIn, project: Any) -> None:
+    """`why` on a report (§6.23): one shape under both policies; the policy decides presence."""
+    why = body.why
+    if why is None:
+        if body.code and keep_the_why_effective(project) == "required":
+            raise invalid({"why": "required"})
+        return
+    if not body.code:
+        raise invalid({"why": "not_for_no_code"})
+    if isinstance(why, dict) and len(why) == 1:
+        ref, none = why.get("ref"), why.get("none")
+        if isinstance(ref, str):
+            path = ref.split("#", 1)[0]
+            if WHY_REF.fullmatch(ref) and not path.startswith("/") and ".." not in path.split("/"):
+                return
+        elif isinstance(none, str) and len(none.strip()) >= WHY_NONE_MIN:
+            return
+    raise invalid({"why": "malformed"})
 
 
 def _check_report(body: ReportIn) -> None:

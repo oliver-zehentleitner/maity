@@ -86,3 +86,58 @@ text already read.
   that must agree, for one provider and one alias.
 - Accept any URL scheme for the skill source: the value ends up in an
   agent's instructions, so a `file:` or `javascript:` source is refused.
+
+## The commitment's deadline is fixed on the credential; a minute-sweep and the policy change reconcile what is owed
+
+**Id:** 2ac9f413-eaad-4e40-9637-af4430cb0128
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session of the commitment pull request of the memory-provider card, 2026-10-28; `docs/api.md` §6.23
+**Revisit when:** a deadline or an owner's request has to be visible without a credential row, or the sweep's one-minute delay is a problem for a withdrawal
+
+An instance is a credential, so its commitment lives on the credential row:
+when it confirmed and in which session, its deadline `acknowledge_by`, the
+time of the reminder and the id of the owner's request. The first resume under
+`required` sets the deadline once; later resumes change nothing. One
+reconcile function does the rest, and a worker runs it once a minute for
+projects that still have an unconfirmed instance with a deadline: it sends the
+reminder to an instance with an open session, files the owner's request 30
+minutes after the deadline, and withdraws that request when its cause has ended
+(the instance revoked or replaced, the membership ended, the profile deleted,
+the policy `optional`, the provider `none`). A change of the policy or the
+provider runs it at once. A new owner of the profile gets the request, the
+old owner's is withdrawn.
+
+**Reason:** the causes that end a request live in many modules (credentials,
+memberships, profile deletion, ownership); one function that compares the
+state to what is owed cannot miss one, where a hook in each place can. The
+policy change is the one a human watches, so it runs at once; the other causes
+wait for the next sweep, at most a minute.
+
+**Rejected alternatives:**
+- A withdrawal hook in every place that ends a cause: seven places, and a
+  missed one leaves the owner with a request about something that is over.
+- Remind at the next resume only: an agent that is already working would never
+  hear of its deadline.
+
+## The why on a report is validated by the hub in code, and only its shape is checked
+
+**Id:** 71939c22-e16b-42ba-9621-8454bb93d0ae
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session of the commitment pull request of the memory-provider card, 2026-10-28; `docs/api.md` §6.23
+**Revisit when:** the hub may read the repository of a report's pull request, or the contract asks the hub to resolve a `ref`
+
+`why` on a code report is validated in `_check_why`, not in the request model:
+pydantic's error types are not the reasons the contract names (`malformed`,
+`not_for_no_code`, `required`). The hub checks the shape (`ref` as
+`<path>.md#<id>` with a relative path, or `none` with at least 10 characters)
+and the policy's rule on when `why` is required. It does not read the file:
+the repository is not the hub's to read, and the review is the gate that the
+entry exists.
+
+**Rejected alternative:** refuse a `ref` the hub cannot resolve. That would need
+the probe to read the pull request's head and would fail reports whenever the
+forge is slow.
