@@ -159,11 +159,26 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
         .values(last_seen_at=now)
     )
     if renew:
-        # A human holder works in the dashboard; its calls renew its leases too (§6.5).
+        # A human holder works in the dashboard; its calls renew its leases too (§6.5). Only
+        # the memberships that hold an open claim have a lease to renew: reading the rest
+        # (the hold, the human, the project) and updating nothing would cost a human of
+        # many projects several statements each on every request, to renew nothing.
+        claimed = (
+            select(t.card.c.id)
+            .where(
+                t.card.c.claim_holder == t.membership.c.id,
+                t.card.c.status.notin_(CLOSED_STATUSES),
+            )
+            .exists()
+        )
         memberships = conn.execute(
             select(t.membership.c.id, t.project.c.lease_seconds)
             .join(t.project, t.project.c.id == t.membership.c.project_id)
-            .where(t.membership.c.human_id == row.human_id, t.membership.c.active.is_(True))
+            .where(
+                t.membership.c.human_id == row.human_id,
+                t.membership.c.active.is_(True),
+                claimed,
+            )
         ).all()
         for membership_id, lease in memberships:
             conn.execute(

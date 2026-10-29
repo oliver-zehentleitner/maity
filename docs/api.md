@@ -129,7 +129,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 
 | HTTP | `code` | When |
 |---|---|---|
-| 400 | `invalid` | body or query does not validate; `details.fields` maps field → reason. Among the reasons: `set_by_environment` (§16.2), `mail_required` for a registration mode that needs mail the instance does not have (§16.4), `required` on `why` for a code report under `policy.keep_the_why: required` (§6.23), `removed_kind` for a notification kind removed on 2026-10-26 (§18.2, §18.3, §18.4) |
+| 400 | `invalid` | body or query does not validate; `details.fields` maps field → reason. Among the reasons: `set_by_environment` (§16.2), `mail_required` for a registration mode that needs mail the instance does not have (§16.4), `required` on `why` for a code report under `policy.keep_the_why: required` (§6.23) |
 | 400 | `credential_in_payload` | the body or query string contains a string in the hub's credential format (§2.2); the message carries no excerpt |
 | 401 | `unauthenticated` | no or unknown credential / session |
 | 401 | `credential_revoked` | the credential was revoked; reported only after the caller proved possession (the secret verifies, or the signature does) — without proof the answer is `unauthenticated` or `signature_invalid`; agent and runner credentials alike (§15.1) |
@@ -11251,7 +11251,7 @@ environment wins, is shown with `source: "env"`, and a `PATCH` of it is
   is set) and the password comes from the database, the admin view
   carries `warnings: ["smtp_password_in_database"]` and the hub logs the
   same warning at startup: a cluster has Secrets, and the password
-  belongs in one (`mail.smtp.existingSecret`, below). `GET /health`
+  belongs in one (`mail.passwordSecret`, below). `GET /health`
   does not carry it: it tells anonymous callers nothing about the
   configuration.
 
@@ -11263,7 +11263,7 @@ environment wins, is shown with `source: "env"`, and a `PATCH` of it is
 | `MAITY_SMTP_ALLOW_PLAINTEXT` | — | **insecure**, environment only, default `false`. With `true`, a `starttls` connection to a server that offers no STARTTLS sends the mail in clear instead of failing — every mail, sign-in links included, then crosses the network readable and changeable by anyone on the path. `AUTH` is still never sent without TLS (a configured username then fails at stage `auth`). While it is `true` the admin view carries `warnings: ["smtp_plaintext_allowed"]` and the hub logs a warning at startup and at every plaintext send. Meant for a test bench only |
 | `MAITY_SMTP_USERNAME` | `username` | `null`: no `AUTH`. With a username, `AUTH` is sent only over TLS. Printable ASCII, as the password (`invalid` otherwise; in the environment the hub stops at startup) |
 | `MAITY_SMTP_PASSWORD` or `MAITY_SMTP_PASSWORD_FILE` | `password` | write-only; `{set, source}` in the answer, `source` `env` or `admin` (above) |
-| `MAITY_SECRET_KEY` | — | 32 bytes, base64; the instance key that encrypts secrets the hub stores (today the admin-set SMTP password). Never returned; `{set}` in the answer as `secret_key` |
+| `MAITY_SECRET_KEY` | — | 32 bytes, base64; the instance key that encrypts secrets the hub stores (the admin-set SMTP password, the forge webhook secret and token, second-factor secrets). Never returned; `{set}` in the answer as `secret_key` |
 | `MAITY_SMTP_FROM` | `from` | `{address, name?}`; the envelope sender and `From:`. In the environment `maity@example.org` or `Maity <maity@example.org>` |
 | `MAITY_SMTP_REPLY_TO` | `reply_to` | `null` or an address |
 | `MAITY_MAIL_MAX_PER_HOUR` | `max_per_hour` | notification mail, all humans together; default 500; over it, mail waits for the next hour and is merged into each human's next mail (§18.5). Security mail does not count here |
@@ -11273,11 +11273,19 @@ environment wins, is shown with `source: "env"`, and a `PATCH` of it is
 | — | `enabled` | `false` stops every mail — notification, verification and security — without losing the settings; the test send still works |
 | `MAITY_MAIL_SIGNING_KEY` | — | 32 bytes or more, base64; signs the links of §18.6. Without it the hub sends no mail (`complete: false`, `missing: ["signing_key"]`). Never returned |
 
-In the Helm chart the password, the signing key and the instance key
-come from a Secret by reference, as the database URL does
-(`mail.smtp.existingSecret` with the keys `smtp-password`,
-`mail-signing-key` and `secret-key`), and the other values from
-`config.mail.*`; they never pass through the chart's values.
+In the Helm chart the password and the signing key come from a Secret
+by reference, as the database URL does (`mail.passwordSecret` and
+`mail.signingKeySecret`, each with `existingSecret` and `key`, the keys
+defaulting to `smtp-password` and `mail-signing-key`), and the other
+values from `mail.host`, `port`, `tls`, `username`, `from` and
+`replyTo`; the secrets never pass through the chart's values. With a
+host set, port and TLS always come from the chart (its defaults
+included) and win over the admin settings (`set_by_environment`). The
+instance key comes from a Secret as well (`secretKey.existingSecret` and
+`key`, default `secret-key`). A release that moves these variables from
+`extraEnv` into `mail.*` and `secretKey` removes them from `extraEnv` in
+the same upgrade: the chart does not deduplicate, and the later entry
+wins.
 
 ```
 GET /admin/settings/mail
@@ -12902,7 +12910,7 @@ no membership.
 | `limit` | 0–50, default 20; `0` lists no item and answers the counts, `by_project` and `next_after` only (below) |
 | `cursor` | §1.4, older items |
 | `unread` | `true`: unread items only |
-| `kind`, `project` | filters; comma lists. `kind` takes `inbox`, `chat`, `mention`, `security`; a kind removed on 2026-10-26 (§18.1) is `invalid` with `details.fields.kind: "removed_kind"`, any other value `"unknown"` |
+| `kind`, `project` | filters; comma lists. `kind` takes `inbox`, `chat`, `mention`, `security`; any other value is `invalid` with `details.fields.kind: "unknown"` |
 | `after` | an opaque position (below), the `next_after` of an earlier answer passed back unchanged: only items past it, oldest first — for the browser notifications (§18.8) |
 | `wait` | 0–55 with `after`: hold the request until an item past `after` exists, as §8.3. A cookie session holds one such long-poll beside its one events long-poll; a second one supersedes the first (`superseded: true`) |
 
@@ -13167,7 +13175,7 @@ item's `seq`, never backwards — the same as reading the conversation
 (§9); an observer has no chat items and moves no mark. `inbox` items
 other than the two open matters below are marked read, and the open
 requests stay open (§18.2). A `kind`
-removed on 2026-10-26 is `invalid` as in §18.2. A `security` item about a
+that is not one of them is `invalid` as in §18.2. A `security` item about a
 new session (`session_created`, #169 §2.6.5) is marked read only from a
 session that existed before that sign-in and is itself in good
 standing (signed in by password, or its own `session_created` item
@@ -13238,17 +13246,11 @@ device; the browser's own permission is per browser and is not stored.
   pop-up; the item is always in the bell (§18.1).
 - **The kinds.** `kinds` at the top, `browser.kinds` and `email.kinds`
   name exactly `inbox`, `chat`, `mention` and `security` (§18.1).
-  Settings stored before 2026-10-26 may still hold `card`, `agent`,
-  `keep_the_why`, `ticker`, `jour_fixe`, `system` or `registration`: the
-  hub drops them when it reads the settings — a `GET` never shows them
-  and they govern nothing — and deletes them from storage with the
-  account's next `PATCH` of the settings. A `PATCH` that names one of
-  them in `browser.kinds` or `email.kinds` is `invalid` with
-  `details.fields["browser.kinds.<kind>"]` (or `email.kinds.<kind>`)
-  `"removed_kind"`, and changes nothing; any other unknown kind is
-  `"unknown"`. A value for a kind that is not what the field takes (a
-  `browser.kinds` value that is not a boolean) is `"invalid"` at the
-  same field.
+  A `PATCH` that names any other kind in `browser.kinds` or
+  `email.kinds` is `invalid` with `details.fields["browser.kinds.<kind>"]`
+  (or `email.kinds.<kind>`) `"unknown"`, and changes nothing. A value
+  for a kind that is not what the field takes (a `browser.kinds` value
+  that is not a boolean) is `"invalid"` at the same field.
 - **`email.address`.** Setting it (`PATCH {"email": {"address": "…"}}`)
   puts it in `pending_address` and sends a verification mail with a
   link (§18.6), valid for 24 hours; the verified address in `address`
@@ -13454,8 +13456,7 @@ withdrawn or replaced (§2.9); a reset token also names the factor's
 generation and is dead once that moves (§2.8.1, §2.8.3); an
 unsubscribe token stays valid until the human's `epoch` moves, which
 happens when the address changes or is removed. An unsubscribe token
-for a kind removed on 2026-10-26 (§18.1), from a mail sent before,
-counts as invalid: those mails are no longer sent. An invalid, expired
+for a kind this hub does not know counts as invalid. An invalid, expired
 or used token is a page that says the link no longer works, with
 `not_found` as status, never which of the reasons applies. The pages
 are rendered in the human's `language`, carry the headers of §1.1, and
