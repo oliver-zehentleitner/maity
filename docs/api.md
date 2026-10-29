@@ -13130,7 +13130,8 @@ rules that make a position safe to resume from:
   member}` and the URL of the personal inbox (`/#/requests/<id>`), which
   reads it through `GET /requests/{id}` (#162, §7), membership not
   required; its `title` is composed when read, from that request. `title` is
-  composed from fields the human may read, at most 200 characters, text
+  composed from fields the human may read, in the human's language (§6.2),
+  at most 200 characters, text
   only (rendered as text, `web/context/rendering.md`); it never carries
   a request's `summary`, a card's `body`, a report, a checkpoint or a
   message body. `content` is the one exception, and only on `chat`
