@@ -16,13 +16,15 @@ from tests.test_tasks import task
 
 REPOSITORY = "https://github.com/oliver-zehentleitner/maity"
 ISSUE = f"{REPOSITORY}/issues/41"
+# No setup cards (§6.21): the board starts empty, so the counts are the tests' own.
+NO_SETUP = {"keep_the_why_init": False, "keep_the_why_badge": False, "maity_badge": False}
 ZWSP = "​"
 
 
 @pytest.fixture
 def owner(make_client: ClientFactory, migrated: Engine) -> flow.Human:
     human = flow.human(make_client, migrated)
-    flow.project(human, repository={"url": REPOSITORY})
+    flow.project(human, repository={"url": REPOSITORY}, setup=NO_SETUP)
     return human
 
 
@@ -403,7 +405,7 @@ def test_a_key_used_again_in_another_project_is_a_mismatch_not_a_replay(
 ) -> None:
     """§1.5: a human's key spans their projects; the second import must not replay the
     first project's card."""
-    flow.project(owner, slug="other", repository={"url": REPOSITORY})
+    flow.project(owner, slug="other", repository={"url": REPOSITORY}, setup=NO_SETUP)
     keyed = {"X-CSRF-Token": owner.csrf, "Idempotency-Key": "one-key-two-projects-1"}
     first = owner.client.post(
         "/api/v1/projects/maintainer/maity/tasks/import", json={"issue_url": ISSUE}, headers=keyed

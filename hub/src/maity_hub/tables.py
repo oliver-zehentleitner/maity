@@ -479,6 +479,9 @@ project = Table(
     # joining agent adopts the repository's personal defaults (§6.1, §6.23).
     Column("keep_the_why_policy", String(16)),
     Column("keep_the_why_defaults", String(8), nullable=False, server_default="adopt"),
+    # The setup options chosen at creation and the ids of the cards made for them
+    # (§6.21); NULL for a project that predates the field.
+    Column("setup", JSON_VALUE),
     # The jour fixe (§20.1, §20.2): the schedule, the explicit moderator order, the day
     # its weekly interval counts from, and the last slot the hub handled.
     Column("jour_fixe", JSON_VALUE),
