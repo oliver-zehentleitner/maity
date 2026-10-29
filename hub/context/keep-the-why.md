@@ -66,8 +66,11 @@ each member's last good export.
 and nobody set it, `optional` under `none`. The column `keep_the_why_policy`
 holds only a human's own value and is `NULL` otherwise; the policy object
 carries the effective value, and `policy.columns()` never writes it back. The
-provider stays in the boolean `keep_the_why`; `memory.provider` is derived from
-it, so no data migration and no second source of truth. A project's
+provider stays in the boolean column `keep_the_why`; `memory.provider` is derived
+from it, so no data migration and no second source of truth. The column is
+storage only: since the cleanup before launch (2026-10-29) the API no longer
+takes or shows a boolean `keep_the_why` next to `memory.provider`; only
+`memory` names the provider. A project's
 `keep_the_why_defaults` is a plain column with the default `adopt`.
 `MAITY_KTW_SKILL_SOURCE` must be an `https` URL and the hub stops at start
 otherwise: the three texts it produces are instructions that an agent reads.
@@ -76,14 +79,17 @@ otherwise: the three texts it produces are instructions that an agent reads.
 object. Storing the effective value would freeze the default on the first
 unrelated policy change (a badge, a preset), so a project on `none` would
 come back from `none` as `optional` instead of `required`. A provider
-column would have had to be kept equal to the boolean the view and the rules
-text already read.
+column would have had to be kept equal to the boolean the rules text and the
+packet already read.
 
 **Rejected alternatives:**
 - Store the effective value in every policy write: freezes the default, as
   above.
 - A `memory_provider` string column with the boolean as a mirror: two columns
-  that must agree, for one provider and one alias.
+  that must agree, for one provider. Replacing the boolean by a string column
+  when the alias went was left out too: one provider fits a boolean, and a
+  migration buys nothing until a second provider exists (its revisit
+  condition).
 - Accept any URL scheme for the skill source: the value ends up in an
   agent's instructions, so a `file:` or `javascript:` source is refused.
 
