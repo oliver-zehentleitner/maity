@@ -3019,7 +3019,9 @@ the hub uses the cursor mirrored from the instance's last session
 (§8.3); an instance's first session — a new instance, one that
 `replaces` another included (§6.17) — starts at the project's current
 head instead of `0`, so a new instance is not woken for the whole
-history. The history stays readable with `GET …/events?after=`.
+history. The history stays readable with `GET …/events?after=`. What
+was addressed to the instance a replacing instance replaced, and never
+acknowledged by it, comes in the packet's `handover` (below).
 `harness`, `harness_version` and `model` may be omitted when the agent
 cannot know them; the hub stores `null`, never answers `invalid` for
 their absence, and the session shows them as unknown. `client` is
@@ -3137,6 +3139,20 @@ Response `200`, bounded and deterministic:
   `conversations` instead, so a busy chat cannot push the work out of a
   bounded packet. A message's attachments appear in its payload as
   metadata — name, size, type, id — never as content (§8.7).
+- `handover` (not in the example above) is only in the first packet of
+  an instance that `replaces` another (§6.17), and only there:
+  `{from, after, items, truncated}`. `from` is the replaced instance's
+  id; `after` is the cursor it last acknowledged (§8.3), or the `seq`
+  of the exchange that created it when it never had a session. `items`
+  are the events with `seq` above `after` and up to `events.after` that
+  this membership may read and whose audience names the replaced
+  instance (`instance:<member>#<from>`) or the membership
+  (`member:<id>`); group-chat messages that do not mention this member
+  are left out as in `events.items`. At most 50, oldest first;
+  `truncated: true` means page on with `GET …/events?after=`. They do
+  not move `events.after` and wake nothing: they are what the
+  predecessor left undone, read once at the start. The CLI prints them
+  under "handed over from <handle>#<from>".
 - `conversations` lists every conversation this agent is in: its direct
   one with its owner, and the group chats it participates in, newest
   activity first, at most 50. `unread` and `mentions_unread` are as in
@@ -5902,7 +5918,12 @@ otherwise), or `replaces: "<id>"` gives a new instance in place of an
 existing one — at the exchange the replaced instance's credential is
 revoked (`revoked_reason: replaced`), and its claims, its checkpoints
 and its place as lead move to the new instance, each card with a
-`task_claimed` event naming `replaces`. The new instance gets a new id;
+`task_claimed` event naming `replaces`. What was addressed to the
+replaced instance follows it: the events it never acknowledged come in
+the new instance's first resume packet as `handover` (§5.2), and an
+instance address or audience token naming it that is written after the
+exchange names the instance that replaced it, along a chain of
+replacements (§8.2). The new instance gets a new id;
 its view names the old one in `replaces`. A join without either for an
 existing member is `invalid` (`details.fields.instance: "required"`).
 A runner's rejoin (§15.9) is the one exception: it replaces an instance
@@ -7427,7 +7448,11 @@ stored audiences and addresses (§2.3, "Migration").
 **Instances in the audience.** An audience token `member:<id>` names
 the team: every instance of the membership reads the event. The token
 `instance:<member id>#<id>` names one instance; the event stays readable
-by the whole team and wakes only that instance. Where the table says
+by the whole team and wakes only that instance. A token or address
+naming an instance that was replaced (§6.17) is written as the token of
+the instance that replaced it, along the chain, so a message to the old
+address wakes its successor; an instance revoked without a replacement
+keeps its token, and the event wakes nobody. Where the table says
 "holder", the audience holds the holding instance's token; "assignee"
 is the `assigned_instance` when one is set, the team otherwise; an
 asker is the asking instance. A message, request or mention addressed
