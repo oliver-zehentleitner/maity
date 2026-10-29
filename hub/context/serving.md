@@ -221,7 +221,7 @@ without a restart.
 **Status:** active
 **Evidence:** inferred
 **Source:** `docs/api.md` §16.11 and the maintainer's decision of 2026-10-29 behind it (the contract owner's `context/routing.md`, root context); the way to serve it is the implementer's
-**Revisit when:** the hub renders a dashboard page itself beyond the public pages, a handle may legitimately be a first segment the hub uses, or the dashboard gets a build step that changes which files it ships
+**Revisit when:** the hub renders a dashboard page itself beyond the public pages, a handle may legitimately be a first segment the hub uses, or the dashboard gets a build step that changes which files it ships, or public pages (§16.9) arrive at `/<owner>/<slug>` and `/<handle>`: the shell sends `noindex` on every path of its own, and those pages are listed in the sitemap, so the shell must not claim them
 **See:** https://github.com/oliver-zehentleitner/maity — e34ae588-4dbc-423c-8da8-29fc62436cb5 — as of 2026-10-29
 
 `app._mount_web` mounts `/assets` on the dashboard directory (`AssetFiles`: only `css/`, `js/` and `brand/`,
@@ -251,5 +251,6 @@ create humans with handles such as `admin` without going through the CLI.
 - A middleware that rewrites unknown paths to `/index.html`: it hides the shell from the router, from the 404
   envelope and from the tests that read routes, and would have to know the hub's paths as well.
 - Refusing to start on a held reserved word, as the contract words it: right for a release, but it would stop
-  every test database that holds a human named `admin`, and the operator is told at `migrate` anyway; confirm with
-  the contract owner whether the stricter reading is wanted.
+  every test database that holds a human named `admin`, and the operator is told at `migrate` anyway. The contract
+  owner (oz-agent-a) decided on 2026-10-29 that `migrate` refuses and the start only logs, and aligns the
+  contract text with it.
