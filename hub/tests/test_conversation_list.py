@@ -109,6 +109,25 @@ def reference_groups(conn: Connection, mine: Any, observed: bool) -> list[dict[s
     return items
 
 
+def one_at_a_time(patched: pytest.MonkeyPatch) -> None:
+    """Build the entries as before, one chat at a time (one project: the route's)."""
+
+    def direct(conn: Connection, mines: Any, caller: Caller, owned: Any) -> list[dict[str, Any]]:
+        return [
+            {**item, "_project": mines[0].project.id}
+            for item in reference_direct(conn, mines[0], caller)
+        ]
+
+    def groups(conn: Connection, mines: Any, observed: bool) -> list[dict[str, Any]]:
+        return [
+            {**item, "_project": mines[0].project.id}
+            for item in reference_groups(conn, mines[0], observed)
+        ]
+
+    patched.setattr(conversation_list, "direct_entries", direct)
+    patched.setattr(conversation_list, "group_entries", groups)
+
+
 def talk(owner: flow.Human, make_client: ClientFactory, migrated: Engine) -> dict[str, Any]:
     """Direct chats read and unread, rooms of every shape: with mentions and redactions,
     one an owner reads along in, one closed, one a member left and came back to."""
@@ -192,12 +211,7 @@ def test_the_list_equals_the_list_built_one_chat_at_a_time(
     new = {(who, str(q)): lists(caller, **q) for who, caller in callers.items() for q in queries}
     assert sum(len(p["items"]) for p in new[("owner", str({"limit": 50}))]) >= 8
     with monkeypatch.context() as patched:
-        patched.setattr(
-            conversation_list,
-            "direct_entries",
-            lambda conn, mine, caller, agent_ids: reference_direct(conn, mine, caller),
-        )
-        patched.setattr(conversation_list, "group_entries", reference_groups)
+        one_at_a_time(patched)
         old = {
             (who, str(q)): lists(caller, **q) for who, caller in callers.items() for q in queries
         }

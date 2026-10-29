@@ -203,7 +203,9 @@ def _check_browser(given: Any, errors: dict[str, str]) -> dict[str, Any]:
                 if all(isinstance(v, bool) for v in value.values()):
                     out[key] = value
                 else:
-                    errors["browser.kinds"] = "invalid"
+                    for kind, setting in value.items():
+                        if not isinstance(setting, bool):
+                            errors[f"browser.kinds.{kind}"] = "invalid"
         elif key == "content" and isinstance(value, dict) and set(value) <= set(CONTENT_KINDS):
             if all(isinstance(v, bool) for v in value.values()):
                 out[key] = value
