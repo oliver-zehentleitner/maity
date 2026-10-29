@@ -75,10 +75,11 @@ window.Maity = window.Maity || {};
     const p = req.project || { full_name: req.slug, name: names.project(req) };
     // A personal request (§7) is the human's, not the project's: no link to
     // a project inbox that never lists it, and maybe one is not a member of.
-    // One without a project (an organisation's invitation, §6.26) names the
-    // organisation where the request carries it, otherwise nothing more.
+    // One with a project (a transfer into an organisation, §6.26) names the
+    // project; one without (an organisation's invitation) the organisation
+    // where the request carries it, otherwise nothing more.
     if (req.personal) {
-      const of = req.org ? "@" + req.org.handle : p.name;
+      const of = p.name || (req.org ? "@" + req.org.handle : "");
       return h("span", { class: "project-label personal" }, "Personal", of ? h("span", { class: "muted" }, " · " + of) : null);
     }
     return h("a", { class: "project-label", href: ctx.projectLink(p.full_name, "inbox") },
@@ -96,7 +97,7 @@ window.Maity = window.Maity || {};
     },
     // The project's badge stands before the entry, as a link; its name is
     // also the start of this button's name, for whom the badge is not seen.
-    ctx.scope === "all" ? h("span", { class: "visually-hidden" }, (req.personal ? "Personal, " : "") + (names.project(req) || (req.org ? "@" + req.org.handle : "")) + ": ") : null,
+    ctx.scope === "all" ? h("span", { class: "visually-hidden" }, (req.personal ? "Personal, " : "") + (names.project(req) || (req.org ? "@" + req.org.handle : "")) + (req.project && req.org ? ", into @" + req.org.handle : "") + ": ") : null,
     h("span", { class: "prio prio-" + req.priority }, req.priority),
     h("span", { class: "kind" }, CLASS_LABELS[req.class] || req.class),
     h("span", { class: "title" }, req.title),
@@ -148,8 +149,13 @@ window.Maity = window.Maity || {};
     const titleRefs = M.ids.refs(req.title, at);
 
     append(body, h("dl", { class: "facts" },
-      ctx.scope === "all" && req.personal && req.org
+      ctx.scope === "all" && req.personal && req.org && !req.project
         ? [h("dt", null, "Organisation"), h("dd", null, "@" + req.org.handle + " — a personal request: for you, not for a project")]
+        : null,
+      // A transfer into an organisation: the project, and the organisation it would move into.
+      ctx.scope === "all" && req.personal && req.org && req.project
+        ? [h("dt", null, "Project"), h("dd", null, names.project(req) + " — a personal request: for you as an owner of @" + req.org.handle),
+          h("dt", null, "Into"), h("dd", null, "@" + req.org.handle)]
         : null,
       ctx.scope === "all" && req.personal && !req.org && names.project(req)
         ? [h("dt", null, "Project"), h("dd", null, names.project(req) + " — a personal request: for you as the owner of the agent, not for the project")]

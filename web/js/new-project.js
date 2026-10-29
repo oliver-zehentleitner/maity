@@ -76,7 +76,8 @@ window.Maity = window.Maity || {};
     // §6.26: the owner, where the hub takes it and the human is in an
     // organisation that lets them create projects; otherwise not offered.
     const orgs = fields.has("owner")
-      ? await M.api.get("/orgs").then((r) => r.items.filter((o) => o.my_role !== "member" || o.members_create_projects)).catch(() => [])
+      // A suspended organisation takes no new project (§6.26).
+      ? await M.api.get("/orgs").then((r) => r.items.filter((o) => !o.moderation && (o.my_role !== "member" || o.members_create_projects))).catch(() => [])
       : [];
     const owner = field("project-owner", "Owner",
       h("select", { id: "project-owner" },
@@ -201,6 +202,8 @@ window.Maity = window.Maity || {};
             else status.done();
           } else if (err.code === "forbidden" && err.details && err.details.reason === "org_role") {
             status.fail("Not created: ", { message: "this organisation lets only its owners and admins create projects" });
+          } else if (err.code === "forbidden" && err.details && err.details.reason === "moderation_hold") {
+            status.fail("Not created: ", { message: "this organisation is suspended and takes no new project" });
           } else {
             status.fail("Not created: ", err);
           }

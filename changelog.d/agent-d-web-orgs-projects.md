@@ -13,6 +13,6 @@
 
 ### Fixed
 
-- web: a personal request without a project (an organisation's invitation, a transfer into an
-  organisation) no longer breaks the inbox; it reads as Personal and names the organisation where
-  the request carries it.
+- web: a personal request without a project (an organisation's invitation) no longer breaks the
+  inbox; it reads as Personal and names the organisation where the request carries it. A transfer
+  into an organisation, which carries the project and the organisation, names both.

@@ -1464,7 +1464,8 @@ window.Maity = window.Maity || {};
       items: me().projects.flatMap((p) => openFor(p.slug).map((r) => Object.assign(
         { project: { slug: project(p.slug, "").slug, full_name: p.full_name, name: p.name, state: project(p.slug, "").state } }, r)))
         // A list shows no proposal (§7, §19.4): GET /requests/{id} has it.
-        .concat(personalRequests().filter((r) => r.status === "open").map((r) => {
+        // A personal request addressed to another human is theirs, not this one's.
+        .concat(personalRequests().filter((r) => r.status === "open" && (!/^human:/.test(r.to || "") || r.to === "human:" + me().member.id)).map((r) => {
           const listed = Object.assign({}, r);
           delete listed.memory_proposal;
           return listed;
@@ -1472,12 +1473,12 @@ window.Maity = window.Maity || {};
       next_cursor: null,
     })],
     ["GET", /^\/requests\/([^/]+)$/, (m, body, path) => {
-      const req = personalRequests().find((r) => r.id === m[1]);
+      const req = personalRequests().find((r) => r.id === m[1] && (!/^human:/.test(r.to || "") || r.to === "human:" + me().member.id));
       if (!req) fail(404, "not_found", "Not found", path);
       return personalView(req);
     }],
     ["POST", /^\/requests\/([^/]+)\/(answer|withdraw)$/, (m, body, path) => {
-      const req = personalRequests().find((r) => r.id === m[1]);
+      const req = personalRequests().find((r) => r.id === m[1] && (!/^human:/.test(r.to || "") || r.to === "human:" + me().member.id));
       if (!req) fail(404, "not_found", "Not found", path);
       if (req.status !== "open") fail(409, "request_not_open", "Request is not open", path);
       const proposal = req.memory_proposal && req.memory_proposal.store === "preferences" ? req.memory_proposal : null;
@@ -1517,6 +1518,7 @@ window.Maity = window.Maity || {};
         org = orgsData().items.find((o) => (o.handle === body.owner || (o.aliases || []).includes(body.owner)) && orgRole(o));
         if (!org) fields.owner = "unknown";
         else if (orgRole(org) === "member" && !org.members_create_projects) fail(403, "forbidden", "not for your role", path, { reason: "org_role" });
+        else if (org.moderation) fail(403, "forbidden", "the organisation is suspended", path, { reason: "moderation_hold" });
       }
       const space = org ? org.handle : me().member.handle;
       if (!SLUG.test(body.slug || "")) fields.slug = "string_pattern_mismatch";
@@ -2432,6 +2434,7 @@ window.Maity = window.Maity || {};
         const into = orgsData().items.find((o) => o.id === body.to);
         if (!into || !["owner", "admin"].includes(orgRole(into))) fail(403, "forbidden", "not for your role", path, { reason: "org_role" });
         if (into === from) fail(400, "invalid", "the project is here already", path, { fields: { to: "self" } });
+        if (into.moderation) fail(403, "forbidden", "the organisation is suspended", path, { reason: "moderation_hold" });
         const full = into.handle + "/" + p.slug;
         renameCheck(p, path, full);
         if (slugOfFull(full)) fail(400, "invalid", "taken", path, { fields: { slug: "taken" } });
@@ -2447,7 +2450,25 @@ window.Maity = window.Maity || {};
           priority: "normal", to: into.id, org: { id: into.id, handle: into.handle }, asked_by: { member_id: me().member.id, display_name: me().member.display_name },
           created_at: nowIso(), while_open: "wait" };
         file(m[1], "requests.json", path).items.push(req);
+        // §6.26: an admin speaks for themselves; each owner of the organisation
+        // gets a personal consent request carrying the project and the organisation.
+        (fixtures()["personal-requests.json"] = fixtures()["personal-requests.json"] || { items: [] });
+        orgsData().members[into.id].filter((x) => x.role === "owner").forEach((owner) => {
+          personalRequests().push(Object.assign({}, req, { id: localId("req"), to: "human:" + owner.id, personal: true, answer: null,
+            project: { full_name: p.full_name, name: p.name }, org: { id: into.id, handle: into.handle } }));
+        });
         return Object.assign({}, req);
+      }
+      // Out of an organisation to oneself: the caller's call is their word, the move is at once (§6.26).
+      if (from && body.to === me().member.id) {
+        const full = me().member.handle + "/" + p.slug;
+        renameCheck(p, path, full);
+        if (slugOfFull(full)) fail(400, "invalid", "taken", path, { fields: { slug: "taken" } });
+        renamed(p, full);
+        p.owner = { id: me().member.id, handle: me().member.handle };
+        const mine = me().projects.find((x) => x.slug === m[1]);
+        if (mine) mine.full_name = p.full_name;
+        return p;
       }
       const to = file(m[1], "members.json", path).items.find((x) => x.id === body.to && x.kind === "human" && x.trust === "owner");
       if (body.to === me().member.id) fail(400, "invalid", "the project is here already", path, { fields: { to: "self" } });

@@ -20,7 +20,7 @@ window.Maity = window.Maity || {};
     if (fields && fields.to === "not_an_owner") return { message: "the receiver has to be an owner of the project first" };
     if (err.code === "forbidden" && err.details && err.details.reason === "org_role") return { message: "only an owner or admin of that organisation can move a project into it" };
     if (err.code === "forbidden" && err.details && err.details.reason === "moderation_hold") return { message: "that organisation is suspended and takes no project now" };
-    if (err.code === "transfer_stale") return { message: "the transfer no longer holds; ask again" };
+    if (err.code === "invalid_transition" && err.details && err.details.reason === "transfer_stale") return { message: "the transfer no longer holds; ask again" };
     if (err.code === "alias_limit") return { message: "the project has kept " + ((err.details && err.details.limit) || 8) + " earlier names, the most it may" };
     if (err.code === "rate_limited") return { message: "at most 3 renames and transfers a day; try again tomorrow" };
     if (err.code === "forbidden" && err.details && err.details.reason === "step_up_required") {
@@ -159,7 +159,8 @@ window.Maity = window.Maity || {};
       M.api.hubHas("GET", "/orgs")
         .then((yes) => (yes ? M.api.get("/orgs") : { items: [] }))
         .then((r) => {
-          const orgs = r.items.filter((o) => ["owner", "admin"].includes(o.my_role) && o.id !== p.owner.id);
+          // A suspended organisation takes no transfer in (§6.26).
+          const orgs = r.items.filter((o) => ["owner", "admin"].includes(o.my_role) && o.id !== p.owner.id && !o.moderation);
           if (orgs.length) fill(orgs);
         }, () => {});
     }
