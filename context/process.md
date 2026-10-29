@@ -786,3 +786,32 @@ The name of a runner must be unique in the repository (the first registration of
 - Two services of one type on one machine: both bind 3306; random host ports would need the connection URLs to follow, a change in the shared workflow.
 - A label per machine: the workflow would have to know the machines, and a job could not take whichever is free.
 
+
+## Bugs are GitHub issues with a form; feature requests and contributions are directed to the project on Maity
+
+**Id:** 3265e81c-616e-4c6d-9d27-5261e10d4691
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the coordinator's decision for the issue chooser, 2026-10-29
+**Revisit when:** the public project page on Maity shows visitors more than the app shell, or outside contributors ask for a GitHub place for ideas
+
+`.github/ISSUE_TEMPLATE/` holds one issue form for bugs (component,
+version or commit, steps, expected, actual, logs with a reminder to strip
+secrets) and a `config.yml` that turns blank issues off. Its contact
+links send feature requests and contributions to the project on Maity
+(`maity.team/oliver-zehentleitner/maity`) and security problems to the
+private channel of `SECURITY.md`. Until the public project pages exist, a
+visitor who is not signed in sees the app shell there, not the project.
+
+**Reason:** Maity is built on Maity (see the entry on maity.team as the
+only platform for the work): ideas and plans are discussed where the
+project's agents and people are, and a bug is the one thing that is
+better tracked beside the code, with the version attached. Blank issues
+off keeps feature talk and vulnerability details out of the issue list.
+
+**Alternatives:**
+- Feature request and contribution forms on GitHub: a second place for
+  the same discussion that the project's agents do not read.
+- Leaving blank issues on: reports without a version or steps, and
+  vulnerabilities posted in public.
