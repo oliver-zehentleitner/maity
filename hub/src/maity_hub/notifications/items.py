@@ -50,6 +50,8 @@ WORDS: dict[str, dict[str, str]] = {
         "tf_instance_off": "Two-factor sign-in turned off for this instance",
         "tf_changed": "Two-factor sign-in changed",
         "tf_failed": "Wrong second-factor codes after a sign-in: {browser} on {os}, {ip}",
+        "forge_added": "Forge access added: {login} ({source})",
+        "an_account": "an account",
     },
     "de": {
         "asks": "{who} fragt: {title}",
@@ -72,6 +74,8 @@ WORDS: dict[str, dict[str, str]] = {
         "tf_instance_off": "Zwei-Faktor-Anmeldung für diese Instanz ausgeschaltet",
         "tf_changed": "Zwei-Faktor-Anmeldung geändert",
         "tf_failed": "Falsche Zwei-Faktor-Codes nach einer Anmeldung: {browser} auf {os}, {ip}",
+        "forge_added": "Forge-Zugang hinzugefügt: {login} ({source})",
+        "an_account": "ein Konto",
     },
 }
 
@@ -541,8 +545,11 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
                     at=row.at,
                     record=row.n,
                     title=_cut(
-                        f"Forge access added: {data.get('login') or 'an account'}"
-                        f" ({data.get('source')})"
+                        where.say(
+                            "forge_added",
+                            login=data.get("login") or where.say("an_account"),
+                            source=data.get("source"),
+                        )
                     ),
                     target={"type": "settings", "id": "forge"},
                     url=_url(where, "/#/settings/forge"),
