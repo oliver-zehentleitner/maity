@@ -59,6 +59,30 @@ immutable. Counting the versions needs no counter row that could drift from them
 - A `deleted` flag on the version row for an unset page: the question "which version is served" would
   then need the newest row without a flag, and an unset page set again would reuse a flagged row.
 
+## Migration 0090 makes a `hero` only when the old landing had both a title and a call to action
+
+**Id:** 3a007583-49e3-484a-b2e4-0049619c01af
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the review of the landing sections change, 2026-10-29: `_carried` made a `hero` from a title alone or a call to action alone, which `landing.check` refuses with `cta_primary` or `title: required`
+**Revisit when:** `hero` gets optional fields, or the migration has no stored landing left to carry
+**See:** landing.md#the-landing-page-is-checked-against-one-table-of-section-types-and-a-patch-replaces-the-fields-it-names — 3a452a0c-b2cc-4313-abba-b7e5d33cb05a — as of 2026-10-29
+
+The old schema allowed `title` and `cta` to be null; a `hero` needs both (§16.7). `_carried` now
+builds the `hero` only when both are there. With a title alone the title is the page's own title and
+no hero is made; with a call to action alone it is left out, since a `hero` or a `cta_band` without
+a title would need an invented one; the Markdown becomes a `text` section either way. A migrated
+page therefore passes the check of the setting, and the editor can read it and write it back
+unchanged.
+
+**Reason:** a stored state the setting itself would refuse breaks the round trip of the editor and
+puts a section without a required field in front of the renderer.
+
+**Rejected alternatives:**
+- Filling the missing hero field with a placeholder: made-up words on the operator's public page.
+- Loosening the check for migrated pages: two rules of validity for one page.
+
 ## The hub renders the landing page and the legal pages itself, as documents with no script, no image and a policy of their own
 
 **Id:** 7b1e4c52-5a86-4f0e-9d3b-0c2a6e8f1d47
