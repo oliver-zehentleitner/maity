@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import logging
 import re
 from datetime import timedelta
 from typing import Any
@@ -419,3 +420,17 @@ def test_the_session_names_the_link_or_the_code(
             select(t.human_session.c.method).where(t.human_session.c.human_id == human)
         ).scalars()
         assert sorted(methods) == ["email_code", "email_link"]
+
+
+def test_the_access_log_masks_the_sign_in_token(
+    make_client: ClientFactory, migrated: Engine, caplog: pytest.LogCaptureFixture
+) -> None:
+    client, _ = setup(make_client, migrated)
+    ask(client)
+    url, _ = mail(migrated)
+    token = url.removeprefix("/mail/sign-in/")
+    with caplog.at_level(logging.INFO, logger="maity_hub.access"):
+        assert client.get(url).status_code == 200
+    lines = [r.getMessage() for r in caplog.records if r.name == "maity_hub.access"]
+    assert lines and all(token not in line for line in lines)
+    assert any("/mail/sign-in/…" in line for line in lines)
