@@ -650,7 +650,15 @@ host's network stack, so an owner match is the one place that sees all of it. Th
 two port exceptions: the replies of the database listener are packets of the same uid to a loopback address and were rejected, and
 the machine's own address went over `lo` untouched. Both were reproduced in a network namespace before the fix.
 
+The runner units get `Requires=`/`After=` on the firewall unit through a drop-in that `install-services.sh` writes only when
+`maity-runner-firewall.service` exists: the same template serves the maintainer's workstation, which has no such unit, and a
+`Requires=` there would keep the runner from ever starting. The firewall unit is ordered `Before=user@<uid>.service` (ordering
+only), so at boot the runner user's rootless dockerd and slirp4netns start after the chain; a failed rule set then stops the runner
+through its own `Requires=`, while the user manager still comes up and runs no job.
+
 **Rejected alternatives:**
+- `Requires=maity-runner-firewall.service` in the `maity-runner@.service` template: the workstation has no firewall unit and would
+  never start its runner.
 - A host firewall (ufw or a general policy): it would also hit sshd and the administrators, and does not single out the runner.
 - A network namespace of its own for the runner: rootless Docker already builds one, and a second layer would have to be reached
   by the jobs' service containers on the loopback ports.
