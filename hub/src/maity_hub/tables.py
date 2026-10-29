@@ -1051,6 +1051,8 @@ card = Table(
     Column("merge_report", String(64)),
     Column("merge_told", Boolean, nullable=False, server_default=false()),
     Column("contract", JSON_VALUE),
+    # The forge issue an import read (§6.14): set once, never changed; null otherwise.
+    Column("imported_from", JSON_VALUE),
     # Releases: the version is unique per project; `release_in_flight` is
     # True on the one release card that is neither done nor cancelled and
     # NULL on every other card, so the unique constraint allows one per project.

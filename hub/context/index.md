@@ -29,7 +29,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 - [availability.md](availability.md) — availability computed on read, the announced state stored and reconciled under the project lock by requests and a one-minute sweep; an agent's first look a silent baseline; a limit only lengthens leases; a human's limit on the account
 
 ## B
-- [board.md](board.md) — batched forge reads; event-linked and authored-only mirror history; final-state subtask approval and graph checks; computed child counts; completion-error compatibility
+- [board.md](board.md) — batched forge reads; event-linked and authored-only mirror history; final-state subtask approval and graph checks; computed child counts; completion-error compatibility; the import is a create through the same path, its own rules before it; an import authorizes, replays, reads the forge, checks the forge's text, then creates; an imported issue is one issue in any case
 
 ## C
 
@@ -72,6 +72,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 
 ## O
 - [outbound.md](outbound.md) — reads whose host comes from data resolve once and connect to the checked address; `routable()` beyond `is_global`; seams instead of a TLS server in tests
+- [overview.md](overview.md) — the project overview returns counts and facts only, each read through the path its list uses; reports from the card's `report`, no member view repeated, a deleted account shown as such
 
 ## P
 - [packaging.md](packaging.md) — `src/` layout with migrations and `/help` as package data; all three drivers by default; the image's SQLite data volume; the tested set pinned with hashes via `uv pip compile --universal`; Pillow 13 for the avatar decoder (the 12.x pin superseded), the size read before Pillow; cryptography held to one major release for the stored secrets; the wheel carries the dashboard; the image sets MALLOC_ARENA_MAX=2 because the process grew through fragmented arenas
