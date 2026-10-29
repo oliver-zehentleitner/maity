@@ -443,3 +443,37 @@ level, but every `PATCH` would run a failing insert in a savepoint for a row tha
 exists; kept as the move if the CI race test shows a deadlock on MariaDB); making the row at
 account creation (a write and a migration over every human for a row the defaults make
 unnecessary, and it would end "a read writes nothing" only in name).
+
+## A group chat notifies its participants from their current stay; one who left gets nothing from it, what came before included
+
+**Id:** ccc4332d-30be-4bd0-9ccf-26d59194471f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §9.2, §18.1, §18.2; the implementation of #556 (`Lookup.inside`, `listing._unread_groups`) and its review, 2026-10-29
+**Revisit when:** a former participant may read the chat they left, or an observer should be told about a chat
+
+A message in a group chat becomes a `chat` item (or a `mention` item) for a participant whose
+stay in the chat is current (`here`) and whose stay began before the message (`seq > window_after`);
+never for the writer, never for an observer, who reads along and is not addressed (§9.2). Someone
+who has left gets nothing from the chat, what was said while they were in it included, and a
+rejoin does not bring back what was said while they were away. `counts.chat` adds the group chats
+to the direct ones (`listing._unread_groups`, per stay: the others' messages after both the stay
+began and the read mark, tombstones included), the number the chat list shows; a test compares
+the two. The count costs two queries per group chat, which the bell's counts will take from the
+chat list's batched `unread` instead (#560).
+
+**Reason:** §18.1 names the participants as recipients. A former participant no longer reads the
+chat (`…/messages` answers `not_found`, the list does not show it, §9.2), so an item for an
+earlier message would link to a chat it cannot open, and `counts.chat` must equal the list's
+`unread`, which drops the chat too. The stay's `window_after` bounds the items the way it bounds
+the chat's own window.
+
+**Rejected alternatives:**
+- Keeping the earlier items until their 30 days run out: they would point at `not_found` and
+  disagree with the count.
+- Notifying the owner who reads along as an observer: §9.2 makes an observer a reader, not an
+  addressee.
+- Reusing the chat list's batched `conversation_list._unread` for the count right here: it would
+  make the number the list's by construction, but the bell's counts are being moved onto the
+  list's `unread_chats` in #560, so a second change to the same lines would only conflict.
