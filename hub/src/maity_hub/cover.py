@@ -18,7 +18,7 @@ from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.errors import ApiError
 from maity_hub.events import Actor, emit
-from maity_hub.scopes import has_scope
+from maity_hub.scopes import has_scope, in_admin_team
 
 HELD = ("in_progress", "blocked", "review")  # the cards a member holds that cover moves
 
@@ -45,7 +45,9 @@ def _handle(conn: Connection, row: Any) -> str:
 
 def cover_order(conn: Connection, project: Any, row: Any) -> list[Any]:
     """The policy's `substitutes`, expanded: `role:<role>` is that role's agent members by
-    handle (a human covers only when named), never the member itself, each once."""
+    handle, `trust:admin` the admin agents (§2.3), a human only when named; never the
+    member itself, each once. Every entry is checked again as it stands now: one that
+    has become a guest or a proxy since the policy was set does not cover (§6.12)."""
     from maity_hub import availability
 
     members = conn.execute(
@@ -60,11 +62,16 @@ def cover_order(conn: Connection, project: Any, row: Any) -> list[Any]:
             role = entry.removeprefix("role:")
             agents = [m for m in members if m.agent_id and m.role == role]
             order += sorted(agents, key=lambda m: _handle(conn, m))
+        elif entry == "trust:admin":
+            agents = [m for m in members if m.agent_id and in_admin_team(m.trust, m.role)]
+            order += sorted(agents, key=lambda m: _handle(conn, m))
         elif entry in by_principal:
             order.append(by_principal[entry])
     seen: set[int] = set()
     shown = []
     for member in order:
+        if member.trust == "guest" or member.role == "proxy":
+            continue  # never a substitute, whatever the policy said when it was set
         if member.id != row.id and member.id not in seen:
             seen.add(member.id)
             shown.append(member)
@@ -91,28 +98,45 @@ def available(conn: Connection, project: Any, rows: list[Any], now: datetime) ->
 # --- who may take what -----------------------------------------------------------------------
 
 
-def may_take_card(project: Any, card: Any, sub: Any) -> bool:
-    """Never its own review: a `review` card moves to the substitute as its author, and
-    under reviewer or admin done authority never to one that holds that authority."""
-    if card.status != "review" or project.done_authority == "holder":
+# The scopes that hold each done authority (§6.4): a substitute holding one of them never
+# takes a `review` card it would then review or test itself.
+DONE_SCOPES = {
+    "reviewer": ("tasks:review",),
+    "tester": ("tasks:test",),
+    "reviewer_and_tester": ("tasks:review", "tasks:test"),
+    "admin": ("tasks:admin",),
+}
+
+
+def may_take_card(conn: Connection, project: Any, card: Any, sub: Any) -> bool:
+    """A card with an open takeover (an objection hold included) stays with the covered
+    member: the takeover's `from` is not rewritten under it (§6.12, §6.19). Never its own
+    review: a `review` card moves to the substitute as its author, and never to one that
+    holds the done authority, with its own trust and role (§6.12)."""
+    from maity_hub import takeovers
+
+    if takeovers.open_on(conn, card.id) is not None:
+        return False
+    if card.status != "review":
         return True
-    scope = "tasks:review" if project.done_authority == "reviewer" else "tasks:admin"
-    return not has_scope(sub.role, _kind(sub), scope)
+    held = DONE_SCOPES.get(project.done_authority, ())
+    return not any(has_scope(sub.trust, sub.role, _kind(sub), scope) for scope in held)
 
 
 def may_take_request(project: Any, request: Any, covered: Any, sub: Any) -> bool:
-    """A substitute answers as the addressee would, with its own role (§6.12, §2.3)."""
+    """A substitute answers as the addressee would, with its own trust and role; cover
+    moves no scope (§6.12, §2.3)."""
     from maity_hub import inbox
 
     if sub.id in (request.asked_by, request.on_behalf_of):
         return False  # never its own question
     klass = getattr(request, "class")
-    # Every request to the project's owner — `owner`, `role:owner` or their member id —
+    # Every request to the project's owner — `owner`, `trust:owner` or their member id —
     # is an owner decision and moves only to a human (§6.12).
     to_owner = (
         request.to_kind == "owner"
-        or (request.to_kind == "role" and request.to_role == "owner")
-        or (covered.role == "owner" and covered.human_id is not None)
+        or (request.to_kind == "role" and request.to_role == "trust:owner")
+        or (covered.trust == "owner" and covered.human_id is not None)
     )
     if (to_owner or covered.agent_id is None and klass in ("consent", "contract")) and sub.agent_id:
         return False  # an owner decision, or what only a human may do
@@ -120,7 +144,9 @@ def may_take_request(project: Any, request: Any, covered: Any, sub: Any) -> bool
     # (`proposals.Answerer`), and a substitute who could not answer is skipped.
     rule = proposals.answerer(request)
     scope = rule.scope if rule is not None else "requests:answer"
-    if (klass == "consent" or rule is not None) and not has_scope(sub.role, _kind(sub), scope):
+    if (klass == "consent" or rule is not None) and not has_scope(
+        sub.trust, sub.role, _kind(sub), scope
+    ):
         return False
     if rule is not None and rule.humans_only and sub.agent_id:
         return False
@@ -148,10 +174,10 @@ def _cover_set(conn: Connection, project: Any, row: Any) -> tuple[list[Any], lis
         .order_by(t.card.c.created_at, t.card.c.id)
     ).all()
     addressed = [t.request.c.to_member == row.id]
-    if row.role == "owner" and row.human_id is not None:
+    if row.trust == "owner" and row.human_id is not None:
         addressed += [
             t.request.c.to_kind == "owner",
-            and_(t.request.c.to_kind == "role", t.request.c.to_role == "owner"),
+            and_(t.request.c.to_kind == "role", t.request.c.to_role == "trust:owner"),
         ]
     requests = conn.execute(
         select(t.request)
@@ -199,7 +225,7 @@ def start(conn: Connection, row: Any, actor: Actor | None) -> str:
     for card in cards:
         holds = card.claim_holder == row.id
         for sub in ready:
-            if not may_take_card(project, card, sub):
+            if not may_take_card(conn, project, card, sub):
                 continue
             try:
                 instance = _instance(conn, sub) if holds else None
@@ -277,7 +303,10 @@ def _move_card(
             lease_until=now + timedelta(seconds=project.lease_seconds),
         )
     else:
-        values.update(assigned_to=sub.id, assigned_instance=None)
+        from maity_hub.routes.tasks import _assigned_instance
+
+        # The substitute's team distribution picks the instance, as on an assignment.
+        values.update(assigned_to=sub.id, assigned_instance=_assigned_instance(conn, sub.id))
     conn.execute(update(t.card).where(t.card.c.id == card.id).values(**values))
     _announce_card(conn, project, card.id, actor)
 

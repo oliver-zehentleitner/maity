@@ -119,8 +119,8 @@ would have to find every copy.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** implementation session, 2026-10-23 (availability stage 2, cover)
-**See:** https://github.com/oliver-zehentleitner/maity — 10798a45-310b-4c30-859f-30fea2454ece — as of 2026-10-23
+**Source:** implementation session, 2026-10-23 (availability stage 2, cover); the review of #285 by oz-agent-h (a return overwrote a third party's claim)
+**See:** https://github.com/oliver-zehentleitner/maity — 10798a45-310b-4c30-859f-30fea2454ece — as of 2026-10-29
 **Revisit when:** a moved item needs to show after the return who once covered it
 
 The membership stores its cover state (`wait`, `covered` by whom since
@@ -128,7 +128,10 @@ when, `none_available`). Each card and request a cover moves, and each
 card area routing sends to the substitute meanwhile, carries
 `cover: {for, by, since}` with that run's start. On return only the items
 of that run are settled: what the substitute touched stays with it,
-everything else goes back, and `cover` is cleared on both.
+everything else goes back, and `cover` is cleared on both. An item that
+left the substitute meanwhile (the card reassigned, or claimed by a
+third member) has its `cover` cleared and is never returned, so the
+return never overwrites somebody else's claim or assignment.
 
 **Reason:** a kept card that kept its `cover` would look covered forever:
 the next cover of its new holder would skip it, and a later return of
@@ -141,6 +144,9 @@ from the next without a table of its own.
   already record it.
 - A table of cover runs with their items: a second place to keep in step
   with the cards and requests, for what one timestamp already names.
+- Checking only `cover.by` at the return: a card that had moved on to a
+  third member still carried the run's `cover`, so the return took it
+  from that member and overwrote an active claim.
 
 ## Only a substitute that took something hears cover_started; what nobody could take is named once
 
@@ -167,3 +173,67 @@ events and see `left` once.
 **Rejected alternative:** one `cover_started` per listed entry, taken or
 not: wakes members with nothing to do, and the contract names the event
 by the substitute that covers.
+
+## A substitute is chosen by the answer rule of a proposal's kind, not by `requests:answer` alone
+
+**Id:** 4a789780-f18f-42fd-b51a-e2aa846eaf2c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the review of #285 by oz-agent-h (a delegated decision stalled at a substitute that got 403)
+**Revisit when:** a proposal kind's answer rule depends on more than a scope and `humans_only`
+
+For a `consent` request or a request that carries a proposal, the cover
+order is walked with the kind's answer rule (`proposals.answerer`): the
+entry must hold the rule's scope, with its own trust and role, and be a
+human where the rule says `humans_only`. An entry that could not answer
+is skipped, and the next one is tried; with nobody left, the request
+stays with the covered member and is named in `left`.
+
+**Reason:** `requests:answer` alone let a substitute take a request it
+would then answer with `403`. The decision stalled there for the whole
+cover, while the next member in the order, who could have answered, was
+never asked.
+
+**Rejected alternative:** check only `requests:answer` and let the
+answer fail: the request is moved to someone who cannot settle it.
+
+## A substitute acts with its own trust and role; cover transfers no scope
+
+**Id:** 85937747-12e7-42bd-98d7-6fd923e18ef0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's ruling on the cover's rights against trust × role, the manager and takeovers, 2026-10-29 (the draft for the PR that replaces #285, and its two open points)
+**See:** https://github.com/oliver-zehentleitner/maity — 10798a45-310b-4c30-859f-30fea2454ece — as of 2026-10-29
+**Revisit when:** requests carry an `action` (§2.3, `action_needs_owner`: such a request then moves only to a human with trust `owner`), or cover is to move a manager's `line:lead`
+
+Every check on a substitute reads its own trust and role
+(`has_scope(trust, role, kind, scope)`), never the covered member's:
+- The cover order is checked as it stands when the cover runs: an entry
+  that has become a guest or a proxy since the policy was set is
+  skipped, as a guest or a proxy never covers.
+- An owner decision (`owner`, `trust:owner` or the owner's member id)
+  moves only to a human entry; a human's `consent`, `contract` and
+  `humans_only` requests only to a human.
+- A `review` card never goes to an entry that holds the done authority
+  (`tasks:review`, `tasks:test`, `tasks:admin` by `done_authority`).
+- A card with an open takeover, an objection hold included, stays with
+  the covered member (`left`); the takeover's `from` is not rewritten.
+- A substitute gets no `line:lead`: a manager's cards and requests move
+  like anyone's, and the reach, read from `reports_to`, is unchanged.
+- A new takeover by an agent is held by the coordinator gate as `assign`
+  is; `respond`, `escalate` and `withdraw` are not, nor are humans.
+
+**Reason:** cover is the member's own policy acting during its outage,
+not a grant: a substitute that acted with the covered member's rights
+would hold, for a while, scopes nobody gave it. A takeover moves a card
+on an agent's initiative exactly as an assignment does, so the gate that
+holds one holds the other.
+
+**Rejected alternatives:**
+- Moving a card under takeover and rewriting the takeover to the
+  substitute: the holder of an objection would argue with someone who
+  never held the card.
+- Gating every takeover call while the coordinator is out: a holder
+  could then not answer or object to one that was already open.

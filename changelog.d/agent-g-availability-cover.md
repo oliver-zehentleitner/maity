@@ -11,5 +11,10 @@
   found nobody tries again.
 - hub: the coordinator gate — while the coordinator (and its
   `coordinator_substitute`) is out beyond its grace, an agent's `assign`,
-  `assigned_to` and claim on another's behalf answer
+  `assigned_to`, claim on another's behalf and new takeover answer
   `coordinator_unavailable`; humans are not gated.
+- hub: a substitute acts with its own trust and role: an entry that has
+  become a guest or a proxy does not cover, owner decisions (`trust:owner`
+  included) go to humans only, a `review` card never to a holder of the
+  done authority, and a card under an open takeover stays with the
+  covered member (`left`).
