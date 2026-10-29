@@ -97,7 +97,7 @@ def test_an_address_with_an_account_gets_a_note_and_no_link(
     client = open_hub(make_client, migrated)
     holder = factory.human(migrated, "holder")
     with migrated.begin() as conn:
-        assert preferences.claim_verified(conn, "ada@example.com", holder)
+        assert preferences.claim_verified(conn, "ada@example.com", holder, secret_key=None)
     client.post(
         "/api/v1/auth/register",
         json={"address": "Ada@Example.com", "password": "a long enough password 1"},

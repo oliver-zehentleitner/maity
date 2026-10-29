@@ -386,13 +386,13 @@ def test_an_addresses_pending_registrations_change_one_at_a_time(migrated: Engin
     def take() -> None:
         with second.begin():
             started.set()
-            routes.lock_address(second, "race@example.com")
+            routes.lock_address(second, None, "race@example.com")
             locked.set()
 
     pool = ThreadPoolExecutor(max_workers=1)
     first_tx = first.begin()
     try:
-        routes.lock_address(first, "race@example.com")
+        routes.lock_address(first, None, "race@example.com")
         waiting = pool.submit(take)
         assert started.wait(timeout=10)  # the worker runs and is about to take the lock
         assert not locked.wait(timeout=0.5)  # held by the first transaction

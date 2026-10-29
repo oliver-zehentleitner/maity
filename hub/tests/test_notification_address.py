@@ -381,8 +381,14 @@ def test_a_registration_claims_its_address_once(migrated: Engine) -> None:
     first = factory.human(migrated, "first")
     second = factory.human(migrated, "second")
     with migrated.begin() as conn:
-        assert registration_accounts.claim_address(conn, "ada@example.com", first) is True
-        assert registration_accounts.claim_address(conn, "ada@example.com", second) is False
+        assert (
+            registration_accounts.claim_address(conn, "ada@example.com", first, secret_key=None)
+            is True
+        )
+        assert (
+            registration_accounts.claim_address(conn, "ada@example.com", second, secret_key=None)
+            is False
+        )
         assert preferences.has_verified_address(conn, "ada@example.com") is True
         assert preferences.has_verified_address(conn, "grace@example.com") is False
         view = preferences.view(conn, first, True)["email"]
@@ -404,7 +410,9 @@ def test_a_claimed_address_blocks_a_verification_for_another_account(
 
     holder = factory.human(migrated, "holder")
     with migrated.begin() as conn:
-        assert registration_accounts.claim_address(conn, "shared@example.org", holder)
+        assert registration_accounts.claim_address(
+            conn, "shared@example.org", holder, secret_key=None
+        )
     owner = with_mail(make_client, migrated)
     owner.patch(S, {"email": {"address": "Shared@Example.org"}})
     token = link(outbox_rows(migrated)[-1], "verify")

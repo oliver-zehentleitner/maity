@@ -154,6 +154,7 @@ def _store(
     normalized = registration.normalized(given)
     pair = f"{normalized}\x00{source}"
     over = BY_PAIR_SHORT.hit(pair) or BY_PAIR_DAY.hit(pair) or BY_ADDRESS_DAY.hit(normalized)
+    address.prepare(engine, hub.secret_key)  # before the lock's transaction
     with engine.begin() as conn:
         now = clock.now()
         conn.execute(
@@ -178,7 +179,7 @@ def _store(
                 conn, kind="already_registered", to=given, language=language, hub=hub
             )
             return
-        lock_address(conn, normalized)
+        lock_address(conn, hub.secret_key, normalized)
         _void_earlier(conn, normalized, source, now)
         pending_id = new_id("pending_registration")
         terms = resolved.value("terms")
@@ -207,19 +208,21 @@ def _has_account(conn: Connection, normalized: str) -> bool:
     return preferences.has_verified_address(conn, normalized)
 
 
-def lock_address(conn: Connection, normalized: str) -> None:
+def lock_address(conn: Connection, secret_key: bytes | None, normalized: str) -> None:
     """Serialise what changes one address's pending registrations (§2.7.1): its row in
     `registration_lock`, made if absent, then locked until commit. Two requests for one
     address cannot both count four live ones and leave six, or both stay live from one
-    source. The claim at completion takes the account address lock (§18.4) as well."""
+    source. The claim at completion takes the account address lock (§18.4) as well. The
+    row holds the address's HMAC, never the address (`addresses.lock_key`)."""
+    key = address.lock_key(conn, secret_key, normalized)
     try:
         with conn.begin_nested():
-            conn.execute(insert(t.registration_lock).values(address_normalized=normalized))
+            conn.execute(insert(t.registration_lock).values(digest=key))
     except IntegrityError:
         pass  # it exists; lock it below
     conn.execute(
-        select(t.registration_lock.c.address_normalized)
-        .where(t.registration_lock.c.address_normalized == normalized)
+        select(t.registration_lock.c.digest)
+        .where(t.registration_lock.c.digest == key)
         .with_for_update()
     )
 

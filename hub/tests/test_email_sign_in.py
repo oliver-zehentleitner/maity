@@ -40,7 +40,7 @@ def setup(make_client: ClientFactory, engine: Engine, **env: str) -> tuple[Any, 
     )
     human = factory.human(engine, "ada")
     with engine.begin() as conn:
-        assert preferences.claim_verified(conn, "ada@example.com", human)
+        assert preferences.claim_verified(conn, "ada@example.com", human, secret_key=None)
     return make_client(mail=hub.mail, secret_key=b"k" * 32), human
 
 

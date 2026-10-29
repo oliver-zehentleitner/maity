@@ -564,6 +564,7 @@ def verify(
     signing_key: bytes | None,
     public_url: str,
     *,
+    secret_key: bytes | None,
     human_id: str | None = None,
 ) -> bool:
     """Confirm an address from its link; False for every link that does not work, never
@@ -597,7 +598,7 @@ def verify(
     # One account per address: the claim, under the per-address lock (§18.4). A link for
     # an address another account verified meanwhile is a dead link, never why.
     claimed = addresses.normalized(row.pending_address)
-    addresses.lock(conn, claimed)
+    addresses.lock(conn, secret_key, claimed)
     taken = conn.execute(
         select(t.notification_settings.c.human_id).where(
             t.notification_settings.c.address_normalized == claimed,
@@ -632,11 +633,13 @@ def verify(
     return True
 
 
-def claim_verified(conn: Connection, normalized: str, human_id: str) -> bool:
+def claim_verified(
+    conn: Connection, normalized: str, human_id: str, *, secret_key: bytes | None
+) -> bool:
     """Write `normalized` as the human's verified address, as a registration's completion
     does (§2.7.1, §18.4), under the per-address lock: False when another account holds
     it. The human has no settings yet; the defaults apply."""
-    addresses.lock(conn, normalized)
+    addresses.lock(conn, secret_key, normalized)
     taken = conn.execute(
         select(t.notification_settings.c.human_id).where(
             t.notification_settings.c.address_normalized == normalized
