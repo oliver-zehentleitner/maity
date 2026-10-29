@@ -42,8 +42,8 @@ The flag stays as it was: a boolean on the human, set only by that human. What c
 person agents may turn to first when they need a human's hands. The dashboard shows the same sentence under the
 switch, so the person sees what the agents read.
 
-**Reason:** the owner described the mode in both directions and wants agents to act on it and people to
-understand the switch. The earlier "say nothing, let the model guess" left both sides to chance.
+**Reason:** the owner described the mode in both directions and wants agents to take it into account and
+people to understand the switch. It stays context about a person under the rank of §19.4, never a rule. The earlier "say nothing, let the model guess" left both sides to chance.
 
 **Rejected alternatives:**
 - Keep the bare sentence (the earlier decision): models read "meat proxy" in different ways, and only one of the

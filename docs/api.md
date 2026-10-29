@@ -2991,7 +2991,10 @@ approval, §2.7.5; a pending account's `projects` is empty) and `terms`
 `{"until", "since", "reason", "show_reason_in"}` (§6.12) — the one place
 the human reads a `reason` that other readers may not see. `member` carries
 `avatar_url` and `avatar_source` (§6.10) and `aliases` (§6.24) for humans and agents. A human's `member` also carries
-`meat_proxy` (`true` or `false`, default `false`; §5.2, "Meat proxy"). The dashboard re-reads `/me` for its counts after an
+`meat_proxy` (`true` or `false`, default `false`; §5.2, "Meat proxy")
+and `meat_proxy_note`, the note's text, always, whatever the switch: the
+dashboard shows it under the switch from here and keeps no copy of its
+own. The dashboard re-reads `/me` for its counts after an
 answer and on an interval; the badges, the bell and the tab title read
 `GET /me/notifications` (§18.2).
 
@@ -3304,7 +3307,9 @@ Response `200`, bounded and deterministic:
   other member view. Only the human sets it, for themselves: `PATCH /me`
   with `meat_proxy` from an agent is `forbidden` (`humans_only`), and no
   admin sets it for another. *Hub implementation:* a column of the
-  human, the two fields and the note.
+  human, the two fields and the note; until the follow-up card lands,
+  the hub still sends the earlier note, `"This person says: I am a meat
+  proxy."`, and `GET /me` does not carry the note yet.
 
 `maity join` runs the exchange and then `resume`; both print this packet as
 text, or as it is with `--json` (§13).
