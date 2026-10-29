@@ -378,22 +378,36 @@ def cmd_join(args: argparse.Namespace) -> int:
     except state.StateError as outside:
         directory = _identity_dir(url, target, outside)
         derived = True
-    if state.has_credential(directory):
-        where = "this directory" if derived else "this clone"
+    # A derived directory that holds a credential belongs to another instance of this agent
+    # (§6.17): this one gets `<handle>#<instance>` beside it, once the exchange names it.
+    sibling = derived and state.has_credential(directory)
+    if not derived and state.has_credential(directory):
+        where = (
+            "this directory"
+            if os.environ.get(state.STATE_DIR_ENV)
+            else "this clone (its worktrees share it)"
+        )
         _err(
-            f"{where} already holds a session credential ({state.credential_path(directory)}); "
-            "run `maity resume`, or revoke the session in the dashboard and delete that file "
-            "before joining again"
+            f"{where} already holds a session credential ({state.credential_path(directory)})"
+            ". For another instance of this agent, give it a directory of its own and set it "
+            "for this join and every later command "
+            f"(`export {state.STATE_DIR_ENV}=~/.local/state/maity/<agent-handle>-<name>`); "
+            "for this instance after its session was revoked, delete that file and join again. "
+            "Nothing was sent; the join code still works"
         )
         return EXIT_ERROR
-    # Before the exchange: the code works once, so a directory that would refuse the
-    # credential afterwards must refuse it now, while the join can still be retried.
-    was = state.prepare_for_join(directory)
-    if was is not None:
-        _err(f"set {directory} to mode 0700 (it was {was:04o}): it will hold the credential")
+    if not sibling:
+        # Before the exchange: the code works once, so a directory that would refuse the
+        # credential afterwards must refuse it now, while the join can still be retried.
+        was = state.prepare_for_join(directory)
+        if was is not None:
+            _err(f"set {directory} to mode 0700 (it was {was:04o}): it will hold the credential")
     result = hub.exchange(target, code.strip(), client=args.client or hub.CLIENT)
     base = hub.accept_hub(url, result.hub)  # before anything is kept
     try:
+        if sibling:
+            directory = _instance_dir(directory, result.instance)
+            state.prepare_for_join(directory)
         path = state.write_credential(directory, result.credential)
     except (state.StateError, OSError) as exc:  # the join is spent: keep the credential
         path = state.rescue_credential(result.credential)
@@ -450,6 +464,22 @@ def cmd_join(args: argparse.Namespace) -> int:
 
 # The join page's table row naming the agent (docs/join-page.md, §3.2).
 _PAGE_HANDLE = re.compile(r"^\| Your handle \| `([a-z0-9][a-z0-9-]{1,62})` \|$", re.MULTILINE)
+
+
+# An agent instance id (§6.17).
+_INSTANCE = re.compile(r"[2-9a-hjkmnp-z]{4,5}", re.ASCII)
+
+
+def _instance_dir(taken: Path, instance: str | None) -> Path:
+    """`<handle>#<instance>` beside the derived directory another instance holds. A hub that
+    names no instance, or a directory that already holds a credential, refuses: the caller
+    rescues the spent credential."""
+    if not isinstance(instance, str) or not _INSTANCE.fullmatch(instance):
+        raise state.StateError(f"{taken} holds another credential and the hub named no instance")
+    directory = taken.with_name(f"{taken.name}#{instance}")
+    if state.has_credential(directory):
+        raise state.StateError(f"{directory} already holds a credential")
+    return directory
 
 
 def _identity_dir(url: str, target: str, outside: Exception) -> Path:
@@ -1489,7 +1519,11 @@ def cmd_messages(args: argparse.Namespace) -> int:
     show = onboarding.inline
 
     def who(member: Any) -> str:
-        return show(handles.get(member, member) if isinstance(member, str) else member)
+        if not isinstance(member, str):
+            return show(member)
+        # An instance address (§6.17) names the member before the `#`.
+        member_id, sep, instance = member.partition("#")
+        return show(handles.get(member_id, member_id) + sep + instance)
 
     if not items:
         print("no messages")
