@@ -40,6 +40,17 @@ def org_role() -> ApiError:
     )
 
 
+def project_moved() -> ApiError:
+    """The project changed its owning organisation between the read and its lock, so the new
+    organisation's row was not locked first (§6.26): the call is to be made again."""
+    return ApiError(
+        409,
+        "invalid_transition",
+        "the project moved to another owner meanwhile: try again",
+        {"reason": "project_moved"},
+    )
+
+
 def last_owner(handle: str) -> ApiError:
     return ApiError(
         409,

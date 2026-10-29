@@ -864,6 +864,8 @@ def answer(
         if found.project.owner_org_id is not None:  # a transfer out of it moves the owners'
             orgs.lock(conn, found.project.owner_org_id)  # seats: the organisation's row first
         mine = _locked(conn, found)
+        if mine.project.owner_org_id != found.project.owner_org_id:
+            raise orgs.project_moved()  # moved meanwhile: its new owner is unlocked
         row = _project_request(conn, mine, request_id)
         if row.filed_by == "hub":
             raise not_found()  # no asker reads a hub notice through the project (§7)
@@ -1197,6 +1199,8 @@ def withdraw(
         if found.project.owner_org_id is not None:
             orgs.lock(conn, found.project.owner_org_id)
         mine = _locked(conn, found)
+        if mine.project.owner_org_id != found.project.owner_org_id:
+            raise orgs.project_moved()
         row = _project_request(conn, mine, request_id)
         # Only its human, or the hub, withdraws a personal request (§7); the one who started a
         # transfer into an organisation withdraws the requests that carry it (§6.26).

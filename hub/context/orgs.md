@@ -247,7 +247,17 @@ single request to the organisation as a whole would need a rule for who may answ
 the one §6.26 fixes ("the organisation's row is always locked before any project's"), kept by every
 path so that a promotion, a transfer and an account deletion never wait on each other.
 
+Who has no role in the receiving organisation gets `400 to: unknown`, not `403 org_role`, as one who
+names an organisation that does not exist: otherwise the transfer would tell that an organisation with
+this id exists. Only a `member` of it, who knows it, gets `org_role`. `owner_org_id` is read before
+the locks (`membership()`), so after `lock_project` the routes check that the owning organisation is
+still the one they locked and stop with `409 project_moved` if it is not; the other order (the new
+organisation after the project) would break the organisation-then-project rule.
+
 **Rejected alternatives:**
+- `403 org_role` for every non-owner of the receiving organisation: a way to find which organisations exist.
+- Locking the organisation again after the project, or the project before the organisations: both
+  break the order that keeps a promotion, a transfer and a deletion from waiting on each other.
 - One consent request for the organisation, answered by any owner: the request would have no
   addressee to count it in an inbox, and a refusal by one owner would close it for the others.
 - Letting the project route answer the personal requests: it is the personal inbox's route, and the
