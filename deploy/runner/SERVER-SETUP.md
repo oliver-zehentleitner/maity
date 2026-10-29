@@ -38,7 +38,7 @@ the system and sshd.
    `Permission denied (publickey)`. Only then, on the server, in one command that fails loudly:
    `systemctl stop ssh-harden-rollback.timer && sshd -T | grep -E '^(passwordauthentication|kbdinteractiveauthentication|permitrootlogin) '`
    It must print `passwordauthentication no`, `kbdinteractiveauthentication no` and `permitrootlogin without-password` (sshd's spelling of
-   prohibit-password). If `stop` says the unit is not loaded, the three minutes ran out and the change was undone: do the step again, faster.
+   prohibit-password). If `stop` says the unit is not loaded, either the three minutes ran out (then the change was undone: repeat step 3b, faster) or the timer was already stopped. In both cases check `sshd -T` alone with the `grep` above.
    (`00-` sorts before the provider's `50-cloud-init.conf`, and the first value of an option wins; the last command shows it on the machine.)
 4. **root, `/root`:** `curl -fsSLO <tarball-url> && echo "<sha256>  $(basename <tarball-url>)" | sha256sum -c`. It must
    print `OK`.
