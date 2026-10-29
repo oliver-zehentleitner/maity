@@ -13076,9 +13076,13 @@ rules that make a position safe to resume from:
   `registration_pending` item whose registration is not yet decided,
   and for every human a `mail_disabled` item while the address is
   disabled (§18.1), each until the matter is closed, not until it is
-  read. `chat` is the sum of `unread` over the human's
-  conversations (§9) and group chats (§9.2), the same number the chat
-  list shows. `mention` and `security` count the unread items of that
+  read. `chat` is the sum of `unread` over the conversations the human takes
+  part in: its direct conversations with its agents and the group chats
+  it is a participant of (§9; group chats with #153), in every project
+  of its memberships. A group chat the human only reads along in as an
+  agent's owner counts nothing. It is the same number as
+  `totals.unread` of `GET /me/conversations` (§9.3), the hub computes
+  both with one function. `mention` and `security` count the unread items of that
   kind. `total` is `inbox + chat + mention` — everything but the
   security alerts; the dashboard shows
   it in the tab title as `(6) maity` and nothing when it is `0`.
@@ -13236,7 +13240,9 @@ device; the browser's own permission is per browser and is not stored.
   name exactly `inbox`, `chat`, `mention` and `security` (§18.1).
   A `PATCH` that names any other kind in `browser.kinds` or
   `email.kinds` is `invalid` with `details.fields["browser.kinds.<kind>"]`
-  (or `email.kinds.<kind>`) `"unknown"`, and changes nothing.
+  (or `email.kinds.<kind>`) `"unknown"`, and changes nothing. A value
+  for a kind that is not what the field takes (a `browser.kinds` value
+  that is not a boolean) is `"invalid"` at the same field.
 - **`email.address`.** Setting it (`PATCH {"email": {"address": "…"}}`)
   puts it in `pending_address` and sends a verification mail with a
   link (§18.6), valid for 24 hours; the verified address in `address`
