@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from maity_hub import clock, forge, outbound
+from maity_hub import bounded, clock, forge, outbound
 
 log = logging.getLogger(__name__)
 
@@ -552,6 +552,11 @@ class _Entry:
     repository_url: str | None
 
 
+# The projects whose answers are kept, the newest read first; an older one is read anew
+# on its next view (a member's last good read goes with it).
+PROJECTS_KEPT = 256
+
+
 @dataclass
 class Cache:
     """The answers per project, in memory; the last good read of each member until the hub
@@ -571,8 +576,16 @@ class Cache:
     def forget(self, project_id: str) -> None:
         with self.guard:
             self.entries.pop(project_id, None)
-            for key in [k for k in self.last_good if k[0] == project_id]:
-                del self.last_good[key]
+            self._drop(project_id)
+
+    def _drop(self, project_id: str) -> None:
+        """The project's last good reads, and its lock unless a read holds it now. The
+        caller holds `guard`."""
+        for key in [k for k in self.last_good if k[0] == project_id]:
+            del self.last_good[key]
+        lock = self.locks.get(project_id)
+        if lock is not None and not lock.locked():
+            del self.locks[project_id]
 
     def cached(self, project_id: str) -> _Entry | None:
         with self.guard:
@@ -612,7 +625,8 @@ class Cache:
                 return entry, False
             entry = self._read(reader, project_id, repository_url, entry)
             with self.guard:
-                self.entries[project_id] = entry
+                for gone in bounded.put(self.entries, project_id, entry, PROJECTS_KEPT):
+                    self._drop(gone)
             return entry, True
         finally:
             lock.release()
@@ -645,10 +659,11 @@ class Cache:
             if (member.error or {}).get("reason") == "location_not_followed":
                 continue  # its path is location text, never read: no last good read
             key = (project_id, member.path)
-            if member.read is not None:
-                self.last_good[key] = (member.read, member.observed_at)
-            elif member.error is not None and key in self.last_good:
-                member.read, _at = self.last_good[key]
+            with self.guard:  # another project's eviction may walk `last_good` meanwhile
+                if member.read is not None:
+                    self.last_good[key] = (member.read, member.observed_at)
+                elif member.error is not None and key in self.last_good:
+                    member.read, _at = self.last_good[key]
         return _Entry(Snapshot(observed, family.members, family.truncated), now, repository_url)
 
 

@@ -25,7 +25,7 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, delete, insert, select, update
 
-from maity_hub import clock, events, forge, outbound
+from maity_hub import bounded, clock, events, forge, outbound
 from maity_hub import tables as t
 
 log = logging.getLogger(__name__)
@@ -273,6 +273,9 @@ _unavailable_until: dict[tuple[str, str], float] = {}
 _failures: dict[tuple[str, str], tuple[int, float]] = {}  # (count, next try)
 _flights: dict[tuple[str, str], threading.Lock] = {}
 _guard = threading.Lock()
+# Per map, the (project, kind) kept, the newest written first. A dropped wait or
+# backoff costs one more read of the forge; a gate in use is never dropped.
+KEPT = 4096
 
 
 def _now() -> float:
@@ -288,7 +291,11 @@ def reset() -> None:
 
 def _flight(key: tuple[str, str]) -> threading.Lock:
     with _guard:
-        return _flights.setdefault(key, threading.Lock())
+        gate = _flights.get(key)
+        if gate is None:
+            gate = threading.Lock()
+        bounded.put(_flights, key, gate, KEPT, stays=lambda held: held.locked())
+        return gate
 
 
 def read_through(engine: Engine, reader: forge.Forge, project_id: str, kind: str) -> bool:
@@ -305,14 +312,16 @@ def read_through(engine: Engine, reader: forge.Forge, project_id: str, kind: str
             return False
         answered = refresh(engine, reader, project_id, kind)
         if not answered:
-            _unavailable_until[key] = _now() + NEGATIVE
+            with _guard:
+                bounded.put(_unavailable_until, key, _now() + NEGATIVE, KEPT)
         return answered
 
 
 def _failed(key: tuple[str, str]) -> None:
-    count = _failures.get(key, (0, 0.0))[0] + 1
-    delay = min(INTERVAL * 2 ** (count - 1), BACKOFF_MAX)
-    _failures[key] = (count, _now() + delay)
+    with _guard:
+        count = _failures.get(key, (0, 0.0))[0] + 1
+        delay = min(INTERVAL * 2 ** (count - 1), BACKOFF_MAX)
+        bounded.put(_failures, key, (count, _now() + delay), KEPT)
 
 
 def refresh(engine: Engine, reader: forge.Forge, project_id: str, kind: str) -> bool:
@@ -331,7 +340,8 @@ def refresh(engine: Engine, reader: forge.Forge, project_id: str, kind: str) -> 
     except Unavailable:
         _failed((project_id, kind))
         return False
-    _failures.pop((project_id, kind), None)
+    with _guard:
+        _failures.pop((project_id, kind), None)
     with events.transaction(engine) as conn:
         events.lock_project(conn, project_id)
         still = conn.execute(
