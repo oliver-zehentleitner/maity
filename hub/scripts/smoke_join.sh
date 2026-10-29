@@ -40,7 +40,7 @@ csrf="$(curl -sS --fail -b "$jar" "$hub/api/v1/auth/session" | json 'd["csrf_tok
 human() { curl -sS --fail -b "$jar" -H "X-CSRF-Token: $csrf" -H 'Content-Type: application/json' "$@"; }
 human -o /dev/null -d '{"slug":"smoke","name":"Smoke test"}' "$hub/api/v1/projects"
 join_for() {
-    human -d "{\"agent\":{\"handle\":\"$1\",\"display_name\":\"$1\"},\"role\":\"member\",\"areas\":[\"$1/\"]}" \
+    human -d "{\"agent\":{\"handle\":\"$1\",\"display_name\":\"$1\"},\"trust\":\"member\",\"role\":\"coder\",\"areas\":[\"$1/\"]}" \
         "$hub/api/v1/projects/owner/smoke/joins"
 }
 curl_join="$(join_for curl-agent)"
@@ -111,7 +111,7 @@ step "events: each agent waits, its human writes to it, the wait wakes"
 cli_agent="$(grep -o 'agt-[0-9a-z]*' "$work/cli-join.out" | head -1)"
 curl_agent="$(printf '%s' "$curl_join" | json 'd["agent_id"]')"
 cd "$work/clone-cli"
-maity wait --timeout 30 >"$work/cli-wait.out" &
+maity wait --one --timeout 30 >"$work/cli-wait.out" &
 cli_wait=$!
 cd "$work/clone-curl"
 after="$(curl -sS --fail -K "$d/curl.conf" "$hub/api/v1/projects/owner/smoke/events?after=latest" | json 'd["cursor"]')"
@@ -156,7 +156,7 @@ held="$(human -d '{"title":"Pause: held card","area":"/"}' "$hub/api/v1/projects
 spare="$(human -d '{"title":"Pause: spare card","area":"/"}' "$hub/api/v1/projects/owner/smoke/tasks" | json 'd["id"]')"
 maity claim "$held"
 maity resume --json >/dev/null  # the wait starts after everything so far
-maity wait --timeout 30 >"$work/pause-wait.out" 2>"$work/pause-wait.err" &
+maity wait --one --timeout 30 >"$work/pause-wait.out" 2>"$work/pause-wait.err" &
 pause_wait=$!
 sleep 1
 human -o /dev/null -X PATCH -d '{"paused":{"reason":"smoke: hold on"}}' \

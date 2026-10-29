@@ -143,8 +143,8 @@ def test_an_agent_declares_its_limit_and_its_next_resume_clears_it(
         "source": "self",
         "cover": None,  # within the grace
     }
-    # Its boss and its human (the same here), the admins, the coordinator (role:admin).
-    assert started[0].audience == [f"member:{owner.id}", "role:admin"]
+    # Its boss and its human (the same here), the admins, the coordinator (trust:admin).
+    assert started[0].audience == [f"member:{owner.id}", "trust:admin"]
 
     now[0] += timedelta(minutes=5)
     agent.resume(harness="Claude Code")
@@ -240,7 +240,7 @@ def test_a_limit_passes_and_the_coordinator_is_told(
     ended = events(migrated, "member_limit_ended")
     assert len(ended) == 1
     assert ended[0].payload == {"member_id": agent.id, "until": z(until), "harness": "Claude Code"}
-    assert ended[0].audience == ["role:admin", f"member:{owner.id}"]
+    assert ended[0].audience == ["trust:admin", f"member:{owner.id}"]
     view = member(owner, agent.id)
     assert view["availability"]["state"] == "offline"  # still out: no new announcement
     about_it = [
@@ -434,7 +434,7 @@ def test_the_coordinator_seats_are_policy_fields_kept_by_a_preset(
     lead = flow.agent(make_client, owner, role="admin")
     worker = flow.agent(make_client, owner)
     policy = owner.get("/projects/maintainer/maity").json()["policy"]
-    assert policy["coordinator"] == "role:admin" and policy["coordinator_substitute"] is None
+    assert policy["coordinator"] == "trust:admin" and policy["coordinator_substitute"] is None
 
     def refused(change: dict[str, Any]) -> Any:
         response = owner.patch("/projects/maintainer/maity", {"policy": change, "reason": "test"})
@@ -459,13 +459,13 @@ def test_the_coordinator_seats_are_policy_fields_kept_by_a_preset(
     owner.delete(f"/projects/maintainer/maity/members/{worker.id}")
     owner.delete(f"/projects/maintainer/maity/members/{lead.id}")
     policy = owner.get("/projects/maintainer/maity").json()["policy"]
-    assert policy["coordinator"] == "role:admin" and policy["coordinator_substitute"] is None
+    assert policy["coordinator"] == "trust:admin" and policy["coordinator_substitute"] is None
     reset = [
         e for e in events(migrated, "policy_changed") if e.payload["reason"] == "member_removed"
     ]
     assert [
         (e.payload["new"]["coordinator"], e.payload["new"]["coordinator_substitute"]) for e in reset
-    ] == [("role:admin", lead.id), ("role:admin", None)]
+    ] == [("trust:admin", lead.id), ("trust:admin", None)]
 
 
 def test_the_coordinator_going_out_also_tells_the_owners(
@@ -475,7 +475,7 @@ def test_the_coordinator_going_out_also_tells_the_owners(
     lead.resume()
     lead.post("/me/limit", {"until": z(now[0] + timedelta(hours=1))})
     changed = events(migrated, "member_availability_changed")[-1]
-    assert changed.audience == [f"member:{owner.id}", "role:admin", "role:owner"]
+    assert changed.audience == [f"member:{owner.id}", "trust:admin", "trust:owner"]
 
 
 # --- a runner's rate limit (§15.7) ------------------------------------------------------------
@@ -714,5 +714,5 @@ def test_one_removal_resets_every_policy_seat_in_one_policy_changed(
     ]
     assert len(reset) == 1
     new = reset[0].payload["new"]
-    assert (new["coordinator"], new["contract_arbiter"]) == ("role:admin", "role:admin")
+    assert (new["coordinator"], new["contract_arbiter"]) == ("trust:admin", "trust:admin")
     assert f"member:{owner.id}" in reset[0].audience

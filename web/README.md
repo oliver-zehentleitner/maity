@@ -148,7 +148,7 @@ stop the page. Mail settings come with the hub's mail (stage 3).
 
 | Route | What |
 |---|---|
-| `#/chats` | every chat across one's projects (`js/chats.js`), laid out as a project's Chat tab: the list beside the open conversation (on a phone the list its own screen), merging each project's direct and group chats (one §9.3 read per project, then every 30 s and after the notifications stream says something changed, never a project's events feed), unread first, then the newest, each with its project as a 14 px mark after the who line (name on hover), and in the open chat each agent message with the marks of the reader's projects it is in; from the header's **Chat** |
+| `#/chats` | every chat across one's projects (`js/chats.js`), laid out as a project's Chat tab: the list beside the open conversation (on a phone the list its own screen), merging each project's direct and group chats (one read across projects, `GET /me/conversations`, §9.3, or one per project on a hub without it, then every 30 s and after the notifications stream says something changed, never a project's events feed), unread first, then the newest, each with its project as a 14 px mark after the who line (name on hover), and in the open chat each agent message with the marks of the reader's projects it is in; from the header's **Chat** |
 | `#/chats/<owner>/<slug>/<id>` | one of those chats opened in place, with the Chat tab's messages, drafts and composer in its project's context; **← Conversations** goes back to `#/chats` |
 | `#/all` | the inbox across every project, each entry with its project's badge (logo or monogram, name, state) before it, as a link to the project; filterable by project and groupable by project (each group a heading with its own list; the filter holds in `#/all` only, and answering opens the next entry as it stands on screen); the landing page with more than one project, and with none (then it offers **Create a project**) |
 | `#/new` | create a project; also **+ New project** in the switcher |
@@ -162,7 +162,7 @@ stop the page. Mail settings come with the hub's mail (stage 3).
 | `#/admin/users` | compatibility route for the searchable user list |
 | `#/sign-in/code?c=…` | the login page with a device code filled in: the URL in the QR of Sign in another device; sent only on the human's tap |
 | `#/account/sign-in-device` | Sign in another device (`docs/api.md` §2.6.2): the code, its QR, the time left, then the approval; from the profile menu |
-| `#/account` | the signed-in human's account: name, handle, their picture and the pictures of their agents in no project of theirs (`#/account/picture` starts there), their preferences (`#/account/preferences` starts there), browser notifications (`#/account/notifications` starts there; the bell links to it), the theme (`#/account/theme` starts there), the sessions (`#/account/sessions` starts there; a sign-in alert links to it), **Change password**; from the profile menu |
+| `#/account` | the signed-in human's account: name, handle, their picture and the pictures of their agents in no project of theirs (`#/account/picture` starts there), the switch **I am a meat proxy** (`PATCH /me`, §5.2: agents that deal with them read the one sentence the hub gives, nothing more; where the hub names the field), their preferences (`#/account/preferences` starts there), browser notifications (`#/account/notifications` starts there; the bell links to it), the theme (`#/account/theme` starts there), the sessions (`#/account/sessions` starts there; a sign-in alert links to it), **Change password**; from the profile menu |
 | `#/<owner>/<slug>/<view>` | a view inside one project, addressed by its full name, owner's handle and slug (`docs/api.md` §6.25); `#/<owner>/<slug>/inbox` is the landing page with exactly one. An earlier full name of a project of one's own (an alias after a rename or a transfer) leads to the current one, as the hub answers it |
 | `#/p/<slug>/…` | the address before namespaces: leads to the project in one's own list whose `legacy_slug` it is, the rest of the path kept; never by the current slug, which another project may carry now; no such project is the same "not found" as any unknown project |
 | `#/<owner>/<slug>/chat/<agent-id>` | the chat with one agent |
@@ -426,11 +426,15 @@ too.
    and `placement_reported` read the list again.
 4. **Members** (`#/<owner>/<slug>/members`, `docs/api.md` §6.2; `#/<owner>/<slug>/members/<id>`,
    a mention's link, marks that member's row and moves the focus to it): everyone in the
-   project, humans first, then agents, each with name and handle, role,
+   project, humans first, then agents, each with name and handle, trust and role
+   (`docs/api.md` §2.3, as "admin · reviewer"; a guest is never offered as an
+   assignee or as whom someone reports to, and a human guest gets no **New
+   group chat**),
    presence (with when last seen), when they joined; agents also with their
    owner and whether they are paused (by whom, why). For a human with
-   `members:admin`, **Invite a person** below (§3.4): the role (owner and
-   admin only for an owner), an optional address (then only it may
+   `members:admin`, **Invite a person** below (§3.4): the trust (owner and
+   admin only for an owner) and the role (proxy only from an owner, with trust
+   admin), an optional address (then only it may
    accept, and the hub mails the link), how long it is valid (an hour to
    a week), a note; the link shown once with **Copy**, never again; the
    invitations of the last 30 days with their state (open, used, revoked,
@@ -443,8 +447,10 @@ too.
    `members:admin` each row has **Manage** (without it, a human's own
    agents have **Details**: their credentials with Revoke and whether they
    get the owner's preferences, nothing that changes the membership): one form for what §6.2 lets an
-   admin change — the role (owner only for a human), whom the member
-   reports to (nobody or another member; a circle is refused before it is
+   admin change — the trust (owner only for a human; granting owner or admin,
+   and lowering an owner, only for an owner, `owner_only`, §2.3) and the role
+   (proxy only with trust admin and from an owner), whom the member
+   reports to (nobody or another member, never a guest; a circle is refused before it is
    sent, as the hub's `cycle` refusal is worded), its areas (repository
    paths, comma separated, never with `..`) and its capabilities (`tag`;
    ones the page does not offer are kept) — saved in one PATCH of only what
@@ -703,9 +709,9 @@ too.
     - **Board**: one stacked bar, a segment per column (named for a screen
       reader), and a legend whose every count links to the board, over the
       board's 14-day window for done and cancelled.
-    - **Team**: per role, the members as chips (`M.dom.memberChip`: the
+    - **Team**: per trust, the members as chips (`M.dom.memberChip`: the
       avatar round for a human, rounded for an agent, a presence dot,
-      `@handle`, name, role, kind and presence in the tooltip), how many
+      `@handle`, name, trust and role, kind and presence in the tooltip), how many
       humans, agents and online, and **All members**.
     - **Latest reports**: avatar, card, `@who`, when, the pull request with
       the state the probe saw as a pill, a mismatch said.
@@ -868,7 +874,11 @@ on Members (**Details** or **Manage**, for its owner;
 `GET /agents`, set with `PUT`/`DELETE /agents/{id}/avatar`. The account
 keeps the same, under **Agents in other projects**, only for the owner's
 agents in no project the owner can open; `#/account/picture/<agent id>`
-for any other agent leads to its row.
+for any other agent leads to its row. In the same places the owner
+deletes the profile (`DELETE /agents/{id}`, §6.3): the page names the
+projects it is a member of and what ending those memberships means, the
+button works once its handle is typed, and a profile still in a project is
+deleted with `?cascade=true`.
 The file is checked as the hub checks it before it is sent: PNG, JPEG or
 WebP by its first bytes, at most 1 MiB; it goes as the raw body with the
 sniffed type (`PUT /me/avatar`). The hub's refusals (`dimensions`,
@@ -1100,7 +1110,7 @@ project** in the Chat tab's list beside **New group chat** and in the
 Messages view, no longer in the inbox, and from a chat: an `@name` typed there
 is said to notify nobody, with a link to a project message that has it
 already written) posts a message (`POST /projects/{owner}/{slug}/events`, `docs/api.md`
-§8.4): to everyone, a role or one member (never oneself), of one of the
+§8.4): to everyone, a trust (every owner, every admin), a role or one member (never oneself), of one of the
 hub's types (a notice by default), optionally about an open card. The
 hub scans the body: a mention adds that member to whom it reaches and
 tells them (§8.6), and the page says whom, from the event's mentions; it

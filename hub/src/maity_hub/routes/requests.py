@@ -5,7 +5,8 @@ from __future__ import annotations
 import base64
 import json
 import logging
-from typing import Any, Literal
+from types import SimpleNamespace
+from typing import Any, Literal, cast
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
@@ -36,7 +37,8 @@ from maity_hub.models import Strict, Written, markdown, title
 from maity_hub.namespace import ProjectRoute
 from maity_hub.notifications import records
 from maity_hub.replies import replies
-from maity_hub.views import principal_id, ts
+from maity_hub.scopes import tokens_of
+from maity_hub.views import deleted, deleted_person, principal_id, shape_deleted, ts
 
 log = logging.getLogger(__name__)
 router = APIRouter(route_class=ProjectRoute)
@@ -108,14 +110,24 @@ def _person(conn: Connection, membership_id: int | None, session_id: str | None)
             select(t.agent_profile.c.display_name).where(t.agent_profile.c.id == row.agent_id)
         ).scalar()
     else:
-        name = conn.execute(
-            select(t.human.c.display_name).where(t.human.c.id == row.human_id)
-        ).scalar()
+        human = conn.execute(
+            select(t.human.c.display_name, t.human.c.deleted_at).where(t.human.c.id == row.human_id)
+        ).one()
+        if deleted(human):  # §2.9: the field's shape, without the person
+            return {
+                "member_id": row.human_id,
+                **deleted_person(),
+                "trust": row.trust,
+                "role": row.role,
+                "session_id": session_id,
+            }
+        name = human.display_name
     member_id = row.agent_id or row.human_id
     return {
         "member_id": member_id,
         "display_name": name,
         "avatar_url": avatars.urls(conn, [member_id])[member_id],
+        "trust": row.trust,
         "role": row.role,
         "session_id": session_id,
     }
@@ -141,6 +153,9 @@ def _with_avatar(conn: Connection, needs: dict[str, Any] | None) -> dict[str, An
     if needs is None:
         return None
     member_id = needs["member_id"]
+    [shaped] = shape_deleted(conn, [needs])  # a deleted account as one (§2.9)
+    if shaped.get("deleted"):
+        return dict(shaped)
     return {**needs, "avatar_url": avatars.urls(conn, [member_id])[member_id]}
 
 
@@ -195,18 +210,20 @@ def request_view(conn: Connection, row: Any, *, with_proposal: bool = False) -> 
     shown = proposals.view(conn, row) if with_proposal else {}
     if shown.keys() & view.keys():  # a kind adds its own fields, it never replaces one
         raise ValueError(f"a proposal view repeats {sorted(shown.keys() & view.keys())}")
-    return view | shown
+    # A deleted account in the stored mentions or answer is shown as one (§2.9).
+    [shaped] = shape_deleted(conn, [view | shown])
+    return dict(shaped)
 
 
 def _holder(conn: Connection, row: Any) -> str:
     """Who holds the request now (§7): `to` until its first forward, then a member id, or
-    `role:admin` while it is open to the admins and nobody has claimed it."""
+    `trust:admin` while it is open to the admins and nobody has claimed it."""
     if row.holder_member is not None:
         found = principal_id(conn, row.holder_member)
         assert found is not None
         return found
     if row.holder_pool:
-        return "role:admin"
+        return "trust:admin"
     return inbox.addressee_of(row).text(conn)
 
 
@@ -276,12 +293,17 @@ def _parse_to(conn: Connection, mine: Membership, to: str) -> inbox.Addressee:
         raise invalid({"to": "hub_only"}, "personal requests are filed by the hub")
     if to == "owner":
         return inbox.Addressee("owner")
-    if to.startswith("role:"):
-        role = to.removeprefix("role:")
-        if not inbox.valid_role(role):
+    if to.startswith(("role:", "trust:")):
+        if not inbox.valid_token(to):
             raise invalid({"to": "unknown_role"})
-        return inbox.Addressee("role", role=role)
-    return inbox.Addressee("member", member=_member_id(conn, mine, to, "to"))
+        return inbox.Addressee("role", role=to)
+    addressee = _member_id(conn, mine, to, "to")
+    trust = conn.execute(
+        select(t.membership.c.trust).where(t.membership.c.id == addressee)
+    ).scalar_one()
+    if trust == "guest":  # a guest answers nothing, so nothing is asked of it (§2.3)
+        raise invalid({"to": "guest"}, "a guest is never asked")
+    return inbox.Addressee("member", member=addressee)
 
 
 def _needs_in_session(
@@ -466,10 +488,10 @@ def _addressee_audience(conn: Connection, mine: Membership, to: inbox.Addressee)
 
 def _audience_of(conn: Connection, project_id: str, to: inbox.Addressee) -> list[str]:
     if to.kind == "role":
-        return [f"role:{to.role}"]
+        return [str(to.role)]
     if to.kind == "owner":
         owner = inbox.owner_membership(conn, project_id)
-        return [f"member:{owner.human_id}"] if owner else ["role:owner"]
+        return [f"member:{owner.human_id}"] if owner else ["trust:owner"]
     return [f"member:{principal_id(conn, to.member)}"]
 
 
@@ -928,7 +950,8 @@ def _holder_audience(conn: Connection, mine: Membership, row: Any) -> list[str]:
         humans = conn.execute(
             select(t.membership.c.human_id).where(
                 t.membership.c.project_id == row.project_id,
-                t.membership.c.role == "admin",
+                t.membership.c.trust == "admin",
+                t.membership.c.role != "proxy",  # the pool is the admin team's (§2.3)
                 t.membership.c.human_id.is_not(None),
                 t.membership.c.active.is_(True),
             )
@@ -973,12 +996,12 @@ def _originally_for(row: Any, member: Any) -> bool:
     if row.to_kind == "member":
         return bool(row.to_member == member.id)
     if row.to_kind == "owner":
-        return bool(member.role == "owner")
-    return bool(row.to_kind == "role" and row.to_role == member.role)
+        return bool(member.trust == "owner")
+    return bool(row.to_kind == "role" and row.to_role in tokens_of(member.trust, member.role))
 
 
 def _pool_open() -> Any:
-    """The request is open to the admins: opened by a forward, or filed `to: role:admin`
+    """The request is open to the admins: opened by a forward, or filed `to: trust:admin`
     and not yet forwarded or claimed (§7)."""
     return or_(
         t.request.c.holder_pool.is_(True),
@@ -986,7 +1009,7 @@ def _pool_open() -> Any:
             t.request.c.holder_member.is_(None),
             t.request.c.holder_pool.is_(None),
             t.request.c.to_kind == "role",
-            t.request.c.to_role == "admin",
+            t.request.c.to_role == "trust:admin",
         ),
     )
 
@@ -1013,7 +1036,7 @@ def forward(
         if not _holds(conn, row, mine):
             raise _not_holder()
         values: dict[str, Any]
-        if body.to == "role:admin":
+        if body.to == "trust:admin":
             target_id = None
             values = {"holder_member": None, "holder_pool": True}
         else:
@@ -1027,7 +1050,7 @@ def forward(
             ):
                 raise invalid({"to": "self"}, "nobody holds a request it asked or holds already")
             original = _originally_for(row, target)
-            if target.role != "admin" and not original:
+            if "trust:admin" not in tokens_of(target.trust, target.role) and not original:
                 raise invalid({"to": "not_admin"}, "a member holding admin, or the addressee")
             if target.agent_id is not None and inbox.humans_only(row):
                 raise humans_only("a humans_only request goes to a human or to the admins")
@@ -1068,7 +1091,7 @@ def claim(slug: str, request_id: str, request: Request, caller: AnyCaller) -> JS
     def action(conn: Connection) -> idempotency.Outcome:
         mine = _locked_member(conn, caller, slug)
         row = _open_decision(conn, mine, request_id)
-        if mine.role != "admin":
+        if "trust:admin" not in tokens_of(mine.trust, mine.role):
             raise ApiError(
                 403, "forbidden", "only an admin claims from the pool", {"reason": "not_admin"}
             )
@@ -1165,6 +1188,39 @@ def withdraw(
         return idempotency.Outcome(200, "request", row.id, view)
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+def return_to_pool(conn: Connection, request_id: str, by: str, reason: str) -> None:
+    """Give an open `decision` request its holder can no longer hold back to the admins
+    (`holder: trust:admin`, §7), from inside the hub: a step `opened` in `forwarding` and
+    `request_forwarded`, as a forward to the pool would write, with the hub as actor."""
+    row = _row(conn, request_id)
+    if row.status != "open" or row.holder_member is None:
+        return
+    project = lock_project(conn, row.project_id)
+    steps = _step(conn, row, "opened", "trust:admin", by, reason)
+    conn.execute(
+        update(t.request)
+        .where(t.request.c.id == row.id)
+        .values(
+            holder_member=None,
+            holder_pool=True,
+            forwarding=steps,
+            changed_by_credential=None,
+            changed_via=None,
+        )
+    )
+    after = _row(conn, row.id)
+    view = request_view(conn, after)
+    where = cast(Membership, SimpleNamespace(project=project))  # only the project is read
+    emit(
+        conn,
+        row.project_id,
+        "request_forwarded",
+        _forwarding_audience(conn, where, row, after),
+        {**view, "step": steps[-1]},
+        subject=("request", row.id),
+    )
 
 
 def close_request(
@@ -1335,7 +1391,7 @@ def file_proposal(
 ) -> str:
     """A request the hub files on someone's behalf that carries a proposal of a registered
     kind: any class, addressee and options, unlike `file_consent` (§6.19's escalation is a
-    `decision` to `role:admin` with `transfer` and `keep`); returns its id."""
+    `decision` to `trust:admin` with `transfer` and `keep`); returns its id."""
     proposals.check_kind(proposal)
     request_id = new_id("request")
     conn.execute(

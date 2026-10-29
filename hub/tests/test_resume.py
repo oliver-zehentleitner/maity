@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, func, select
 
 from maity_hub import tables as t
 from tests import factory, flow
@@ -61,9 +61,10 @@ def test_the_packet_has_every_part_of_the_contract(
     assert packet["api_version"] == "v1"
     assert set(packet["session"]) == {"id", "started_at", "harness", "model", "client"}
     assert packet["hints"] == {"duty": "self", "wait_timeout": 540}  # Claude Code
-    assert packet["me"]["owner"] == {"id": owner.id, "handle": "maintainer"}
+    assert packet["me"]["owner"] == {"id": owner.id, "handle": "maintainer", "meat_proxy": False}
     assert packet["membership"] == {
-        "role": "member",
+        "trust": "member",
+        "role": "coder",
         "reports_to": owner.id,
         "areas": ["hub/"],
         "capabilities": [],
@@ -108,11 +109,13 @@ def test_the_packet_has_every_part_of_the_contract(
             "member_id": owner.id,
             "kind": "human",
             "handle": "maintainer",
-            "role": "owner",
+            "trust": "owner",
+            "role": "coder",
             "areas": ["/"],
             "presence": "online",
             "paused": None,
             "covered_by": None,
+            "meat_proxy": False,
         }
     ]
     assert "GET /projects/maintainer/maity/members" in packet["operations"]
@@ -181,7 +184,7 @@ def test_the_cursor_is_mirrored_and_the_own_start_is_skipped(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
     agent = flow.agent(make_client, owner)
-    packet = agent.resume().json()
+    packet = agent.resume(cursor=0).json()
     events = packet["events"]
     assert events["after"] == 0
     kinds = [e["kind"] for e in events["items"]]
@@ -195,6 +198,19 @@ def test_the_cursor_is_mirrored_and_the_own_start_is_skipped(
     later = agent.resume(cursor=events["cursor"]).json()["events"]
     assert later["after"] == events["cursor"]
     assert [e["kind"] for e in later["items"]] == ["state_changed"]
+
+
+def test_a_new_instance_starts_at_the_head_of_the_project(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = flow.agent(make_client, owner)
+    with migrated.connect() as conn:
+        head = conn.execute(select(func.max(t.event.c.seq))).scalar_one()
+    events = agent.resume().json()["events"]
+    assert events["after"] == head and events["items"] == []
+    assert events["cursor"] >= head
+    # The history stays available on request.
+    assert agent.resume(cursor=0).json()["events"]["items"]
 
 
 def test_without_a_cursor_the_last_acknowledged_one_is_used(

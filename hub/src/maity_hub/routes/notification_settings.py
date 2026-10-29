@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, select
 
 from maity_hub import tables as t
+from maity_hub.auth import second_factor
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, engine_of, origin_of, settings_of
 from maity_hub.errors import forbidden, humans_only, invalid, not_found
@@ -79,6 +80,7 @@ def patch_settings(
             mail_ready=_mail_ready(conn, request),
             wrong_password=wrong_password,
             password_blocked=password_blocked,
+            step_up=lambda: second_factor.require_step_up(conn, hub, caller),  # §2.8.4
         )
         answer = preferences.view(conn, human.id, _mail_ready(conn, request))
     return JSONResponse(answer, status_code=status)
@@ -135,5 +137,6 @@ def _decide(
             approve=approve,
             signing_key=hub.mail.signing_key,
             public_url=hub.public_url,
+            step_up=lambda: second_factor.require_step_up(conn, hub, caller),  # §2.8.4
         )
         return JSONResponse(preferences.view(conn, human.id, _mail_ready(conn, request)))

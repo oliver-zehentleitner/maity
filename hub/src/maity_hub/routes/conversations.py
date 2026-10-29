@@ -41,7 +41,7 @@ from maity_hub.routes.events import (
     remember_read,
     writer,
 )
-from maity_hub.views import principal_id, sees_chat_reasons, ts
+from maity_hub.views import principal_id, sees_chat_reasons, shape_deleted, ts
 
 router = APIRouter(route_class=ProjectRoute)
 
@@ -90,7 +90,8 @@ class Outsider:
     principal_id: str
     kind: str = "human"
     id: int = -1  # names no membership row
-    role: str | None = None  # holds no role in the project
+    trust: str | None = None  # holds no trust in the project
+    role: str | None = None  # nor a role
 
     def may(self, scope: str) -> bool:
         del scope
@@ -170,9 +171,10 @@ def message_views(conn: Connection, rows: list[Any], reader: Any = None) -> list
     )
     # A message from an agent names its instance (§9, §6.17); a human's has none.
     instance_of = instances.instances_of(conn, [r.actor_credential_id for r in rows])
+    # A deleted account among the mentions is shown as one (§2.9).
+    payloads = shape_deleted(conn, [r.payload or {} for r in rows])
     views = []
-    for row in rows:
-        payload = row.payload or {}
+    for row, payload in zip(rows, payloads, strict=True):
         group = group_chats.is_group(row.conversation_id)
         view: dict[str, Any] = {
             "id": f"evt-{row.seq}",
@@ -469,6 +471,8 @@ def create_group(slug: str, body: GroupIn, request: Request, caller: AnyCaller) 
         mine = membership(conn, caller, slug)  # as of the lock
         if mine.kind != "human":  # the hub's jour fixe thread is no route (§20.5)
             raise humans_only("only a human creates a group chat")
+        if mine.trust == "guest":  # a guest chats where it is invited (§2.3, §9.2)
+            raise forbidden("events:post", "a guest creates no group chat")
         conversation_id = group_chats.create(
             conn,
             mine.project,

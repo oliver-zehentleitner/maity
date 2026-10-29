@@ -254,6 +254,9 @@ def test_resume_carries_memory_first_and_says_when_it_changed(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
     agent = flow.agent(make_client, owner)
+    # The first session starts at the head (§5.2): "changed after the resume's cursor"
+    # (§19.3) needs a session before the changes.
+    agent.resume()
     put_soul(owner, agent.id, "You prefer small pull requests.")
     for n in range(3):
         added(agent, f"{n} " + "x" * 2000)
@@ -291,7 +294,7 @@ def test_soul_changed_reaches_every_project_and_the_owner_outside_it(
     with migrated.begin() as conn:  # the owner leaves the first project
         conn.execute(
             update(t.membership)
-            .where(t.membership.c.human_id == owner.id, t.membership.c.role == "owner")
+            .where(t.membership.c.human_id == owner.id, t.membership.c.trust == "owner")
             .where(
                 t.membership.c.project_id
                 == select(t.project.c.id).where(t.project.c.slug == "maity").scalar_subquery()
@@ -505,7 +508,7 @@ def test_a_replay_answers_only_a_caller_who_still_reads_the_entry(
     assert first.status_code == 200, first.text
     with migrated.begin() as conn:  # the admin is an admin no longer
         conn.execute(
-            update(t.membership).where(t.membership.c.human_id == admin.id).values(role="member")
+            update(t.membership).where(t.membership.c.human_id == admin.id).values(trust="member")
         )
     again = admin.client.request("DELETE", url, json={"reason": "stale"}, headers=key)
     assert again.status_code == 404

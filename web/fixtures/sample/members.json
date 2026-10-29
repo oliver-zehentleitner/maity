@@ -5,7 +5,8 @@
       "kind": "human",
       "handle": "maintainer",
       "display_name": "Maintainer",
-      "role": "owner",
+      "trust": "owner",
+      "role": "coder",
       "reports_to": null,
       "areas": [
         "/"
@@ -23,7 +24,8 @@
       "name": "maintainer/shop-dev",
       "display_name": "Shop Dev",
       "owner_id": "hum-maintainer",
-      "role": "member",
+      "trust": "member",
+      "role": "coder",
       "reports_to": null,
       "areas": [
         "src/"
@@ -51,7 +53,8 @@
       "name": "anna/shop-dev",
       "display_name": "Anna's Shop Dev",
       "owner_id": "hum-anna",
-      "role": "member",
+      "trust": "member",
+      "role": "coder",
       "reports_to": null,
       "areas": [
         "web/"

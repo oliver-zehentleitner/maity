@@ -202,7 +202,7 @@ def test_an_enrollment_attaches_at_the_exchange(
         conn.execute(
             update(t.membership)
             .where(t.membership.c.project_id == sample, t.membership.c.human_id == owner.id)
-            .values(role="member")
+            .values(trust="member")
         )
     response = exchange(make_client(), created)
     assert response.headers["Maity-Attached"] == "maintainer/maity"
@@ -416,7 +416,7 @@ def test_a_revocation_is_announced_in_every_attached_project(
             for e in owner.get(f"/projects/maintainer/{slug}/events?after=0").json()["items"]
             if e["kind"] == "runner_credential_revoked"
         ]
-        assert revoked["audience"] == ["role:owner"]
+        assert revoked["audience"] == ["trust:owner"]
         assert revoked["payload"] == {
             "runner_id": runner.id,
             "credential_id": runner.credential_id,
@@ -464,7 +464,7 @@ def test_a_runner_as_an_event_actor(
             conn,
             project_id,
             "notice_for_test",
-            ["role:owner"],
+            ["trust:owner"],
             {},
             actor=Actor(
                 membership_id=None,

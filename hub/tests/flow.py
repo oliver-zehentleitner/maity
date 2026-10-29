@@ -86,6 +86,8 @@ def project(owner: Human, slug: str = "maity", **body: Any) -> dict[str, Any]:
 
 def join(owner: Human, slug: str, **body: Any) -> dict[str, Any]:
     body.setdefault("agent", {"handle": f"agent-{_n()}", "display_name": "An agent"})
+    if "role" in body and "trust" not in body:  # a single-role name, as most tests say it
+        body["trust"], body["role"] = factory.trust_and_role(body["role"])
     name = slug if "/" in slug else f"maintainer/{slug}"  # a full name, or the maintainer's
     response = owner.post(f"/projects/{name}/joins", body)
     assert response.status_code == 201, response.text

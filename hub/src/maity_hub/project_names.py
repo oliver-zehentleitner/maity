@@ -80,7 +80,7 @@ def rename(
     project = mine.project
     if mine.kind != "human":
         raise humans_only("a project is renamed by a human")
-    if mine.role != "owner":
+    if mine.trust != "owner":
         raise forbidden(message="a project is renamed by an owner")
     if slug == project.slug:
         return False
@@ -100,7 +100,7 @@ def _receiver(conn: Connection, project_id: str, human_id: str) -> Any:
         select(t.membership).where(
             t.membership.c.project_id == project_id,
             t.membership.c.human_id == human_id,
-            t.membership.c.role == "owner",
+            t.membership.c.trust == "owner",
             t.membership.c.active.is_(True),
         )
     ).first()
