@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from importlib.resources import files
@@ -10,7 +11,7 @@ from pathlib import Path
 from string import Template
 
 from fastapi import APIRouter, FastAPI, Request, Response
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import Engine
 from sqlalchemy.exc import SQLAlchemyError
@@ -363,6 +364,21 @@ class AssetFiles(StaticFiles):
         return await super().get_response(path, scope)
 
 
+BASE = b'<base href="/assets/">'
+_HEAD = re.compile(rb"<head(?:\s[^>]*)?>", re.IGNORECASE)
+
+
+def shell_document(page: bytes) -> bytes:
+    """`index.html` with `<base href="/assets/">` right after `<head>`: the file names its
+    scripts, stylesheets and brand files relative to itself, so that it also opens from
+    `file://` in fixture mode; served at any depth of a path, the base makes them load
+    from `/assets/` (§16.11 leaves a `<base>` to the dashboard)."""
+    opened = _HEAD.search(page)
+    if opened is None:
+        return page
+    return page[: opened.end()] + BASE + page[opened.end() :]
+
+
 class ShellRoute(BaseRoute):
     """The app shell for every path the hub does not answer itself (§16.11).
 
@@ -386,7 +402,9 @@ class ShellRoute(BaseRoute):
             headers = dict(SHELL_HEADERS)
             if scope.get("path") == "/":
                 del headers["X-Robots-Tag"]  # the root's is the middleware's (§16.7)
-            response = FileResponse(self.index, media_type="text/html", headers=headers)
+            response = Response(
+                shell_document(self.index.read_bytes()), media_type="text/html", headers=headers
+            )
         else:
             response = error_response(404, "not_found", "no such resource")
         await response(scope, receive, send)

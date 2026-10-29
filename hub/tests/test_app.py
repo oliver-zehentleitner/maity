@@ -73,6 +73,27 @@ def test_the_shell_is_served_at_the_root_and_at_every_dashboard_path(
     assert client.head("/login").status_code == 200
 
 
+def test_the_shell_carries_a_base_so_its_relative_files_load_from_assets_at_any_depth(
+    client: TestClient, web_dir: Path
+) -> None:
+    (web_dir / "js").mkdir()
+    (web_dir / "js" / "app.js").write_text("// dashboard")
+    for path in ("/", "/a/b/c", "/maintainer/maity/board"):
+        page = client.get(path).text
+        assert page.index("<head>") + len("<head>") == page.index('<base href="/assets/">'), path
+        assert 'src="js/app.js"' in page  # the file itself stays relative (fixture mode)
+    assert client.get("/assets/js/app.js").text == "// dashboard"
+
+
+def test_a_page_without_a_head_is_served_as_it_is() -> None:
+    from maity_hub.app import shell_document
+
+    assert shell_document(b"<p>x</p>") == b"<p>x</p>"
+    assert (
+        shell_document(b"<HEAD lang=x><title/>") == b'<HEAD lang=x><base href="/assets/"><title/>'
+    )
+
+
 def test_built_files_are_served_under_assets(client: TestClient, web_dir: Path) -> None:
     (web_dir / "js").mkdir()
     (web_dir / "js" / "app.js").write_text("// dashboard")

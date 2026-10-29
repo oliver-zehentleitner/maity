@@ -18,4 +18,4 @@
 - hub: the paths from before the namespace and the hash routes: `/j/<token>`, the `426
   client_outdated` and `410 project_path_outdated` answers, the redirects of the old badge and
   public swarm addresses, the forge webhook's one-segment address, and `legacy_slug` (the field
-  of the project view and, with migration 0085, the column). No redirect leads from an old link.
+  of the project view and, with migration 0086, the column). No redirect leads from an old link.
