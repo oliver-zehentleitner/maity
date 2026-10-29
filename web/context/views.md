@@ -1500,6 +1500,34 @@ were not asked for. The older Users page at `/admin/users` was removed
 before launch with the other compatibility routes, so that address is
 now no view at all.
 
+## Registration in the admin area: missing beside the fields, a block lifted by its typed address
+
+**Id:** 9e0abafa-9fb3-41ba-b9b0-648e7e9523c0
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §16.4, §2.7, §2.7.5; the card tsk-64tktcnndzk3 (the maintainer found no registration setting, 2026-10-29); the dashboard's implementation, 2026-10-29
+**Revisit when:** the hub lists blocked addresses, or approval gets mails of its own (#280)
+
+The Registration section says first what the hub does now
+(`effective_mode`) and, beside the fields, in words what keeps
+registration from working (`missing`: mail, an empty allowlist). A value
+the environment sets, or terms that come from the legal pages, is shown
+with its source and not offered. Lifting a block takes a typed address,
+since the hub has `DELETE /admin/registrations/blocks/{address}` but no
+list of blocks.
+
+**Reason:** a mode that is set but not in effect (no mail) looks like
+open registration that does not work; saying the gap where the admin is
+looking avoids searching for it. A field the hub would refuse
+(`set_by_environment`) is no choice. Without a list, a typed address is
+the only way to the endpoint.
+
+**Rejected alternative:** the mode alone, with the hub's refusal on
+saving: the admin would learn of missing mail only by trying. A list of
+blocked addresses kept by the dashboard: it would show only what this
+browser lifted or saw rejected, not what the hub holds.
+
 ## On a phone an opened card is a page of its own; the panel is the card
 
 **Id:** 54f93a4f-7e91-4d69-9b51-ca562daaa9a3
