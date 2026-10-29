@@ -5143,7 +5143,7 @@ window.MAITY_FIXTURES = {
     "slug": "sample",
     "state": "review",
     "state_changed_at": "2026-10-20T16:00:00Z",
-    "state_note": "Release 2.3 frozen; fixes only after the tag."
+    "state_note": "Release 2.3 in review; fixes only after the tag."
   },
   "sample/requests.json": {
     "items": [
@@ -5194,9 +5194,9 @@ window.MAITY_FIXTURES = {
           "title": "Checkout rounding"
         },
         "task_id": "tsk-0021",
-        "title": "Ship the checkout rounding fix into the frozen 2.3?",
+        "title": "Ship the checkout rounding fix into 2.3 while it is in review?",
         "to": "owner",
-        "tried": "Fix and regression test are on a branch; the review allows fixes only after the tag.",
+        "tried": "Fix and regression test are on a branch; in review, fixes ship only after the tag.",
         "while_open": "wait"
       }
     ],
