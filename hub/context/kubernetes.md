@@ -269,7 +269,10 @@ and whether they are set decides whether mail arrives, which the test send shows
 
 `secretKey.existingSecret` (and `key`, default `secret-key`) names the Secret holding `MAITY_SECRET_KEY`, rendered into the hub and the
 migrate Job like the database URL. Without a value nothing is rendered. A release that moves the key from `extraEnv` into it drops it
-from `extraEnv` in the same upgrade; the chart does not deduplicate and the later entry wins.
+from `extraEnv` in the same upgrade; the chart does not deduplicate and the later entry wins. The default key name `secret-key` follows the
+chart's other Secrets (`database-url`, `github-token`, `mail-signing-key`). A Secret created with the first README holds the key as
+`MAITY_SECRET_KEY`; such a release sets `secretKey.key: MAITY_SECRET_KEY` when it moves, otherwise the `secretKeyRef` names a missing key
+and the migrate Job and the hub do not start (loud, nothing is lost).
 
 **Reason:** the key seals what the hub stores at rest (forge webhook secrets, a stored SMTP password, second-factor secrets) and is
 the root of derived keys (notification positions use HKDF of it). A release that loses it, as one with the chart's own values would
