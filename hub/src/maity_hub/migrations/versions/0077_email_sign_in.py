@@ -53,6 +53,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # The tables take their indexes along; MariaDB refuses to drop an index a foreign key
+    # needs first (as 0073 does).
     op.drop_table("email_sign_in_day")
-    op.drop_index("ix_email_sign_in_human_id", table_name="email_sign_in")
     op.drop_table("email_sign_in")
