@@ -172,7 +172,7 @@ window.Maity = window.Maity || {};
     };
     // A closed project takes no new group chat (§9.2).
     // nor one read along from outside the project.
-    const closedProject = ctx.outsider || ["accepted", "archived"].includes(ctx.project.state);
+    const closedProject = ctx.outsider || ctx.project.state === "archived";
     const el = h("nav", { class: "chat-list-pane", "aria-label": "Conversations" },
       h("div", { class: "toolbar" }, h("h2", null, ctx.outsider ? "Group chats" : "Chat"),
         // A human guest creates no group chat (§2.3, §9.2).

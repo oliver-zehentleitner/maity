@@ -48,7 +48,7 @@ PAGE_DEFAULT, PAGE_MAX = 50, 200
 
 class InvitationIn(Strict):
     trust: Literal["owner", "admin", "member", "guest"] = "member"
-    role: Literal["coder", "reviewer", "tester", "designer", "ops", "proxy"] = "coder"
+    role: Literal["coder", "reviewer", "tester", "designer", "ops", "proxy", "manager"] = "coder"
     address: str | None = None
     ttl_seconds: int = invitations.TTL_DEFAULT
     note: str | None = None
@@ -254,7 +254,9 @@ async def invitation_page(token: str, request: Request) -> JSONResponse:
                 select(t.human.c.display_name).where(t.human.c.id == row.created_by)
             ).scalar()
             env = hub.registration or registration.RegistrationEnvironment()
-            resolved = registration.resolve(conn, env, registration.mail_ready(conn, hub))
+            resolved = registration.resolve(
+                conn, env, registration.mail_ready(conn, hub), hub.public_url
+            )
             return {
                 "project": {
                     "slug": project.slug,

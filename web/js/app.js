@@ -22,14 +22,13 @@ window.Maity = window.Maity || {};
   // the chat reads its own messages.
   const NAV = [
     { route: "inbox", label: "Inbox" },
-    // Redrawn in place on task_*, request_* and probe_observed (js/overview.js).
+    // Redrawn in place on task_*, request_*, probe_observed and member_* (js/overview.js).
     { route: "overview", label: "Overview" },
     { route: "board", label: "Board", watch: /^task_/, changed: "The board changed." },
     // One card (/<owner>/<slug>/tasks/<id>, an id's link, js/ids.js): the board
     // with that card marked; its tab is the board's.
     { route: "tasks", view: "board", label: "Board", tab: false, current: "board", watch: /^task_/, changed: "The board changed." },
     { route: "members", label: "Members", watch: /^(member_|session_|credential_)/, changed: "The members changed." },
-    { route: "org", label: "Organisation", watch: /^member_/, changed: "The organisation changed." },
     { route: "chat", label: "Chat" },
     // Redrawn in place from the feed (js/messages.js).
     { route: "messages", label: "Messages" },
@@ -39,6 +38,9 @@ window.Maity = window.Maity || {};
     { route: "swarm", label: "Swarm" },
     // No tab: opened from the Chat tab, the Messages view and a chat (js/project-message.js).
     { route: "message", label: "Message the project", tab: false },
+    // One's own agents in the project (js/agents-page.js), the component of
+    // /agents; before Runners and Why (the maintainer, 2026-10-29).
+    { route: "agents", view: "projectAgents", label: "Agents", when: (ctx) => ctx.me.kind === "human", watch: /^(member_|credential_)/, changed: "Your agents changed." },
     // The account-level view is views.runners; this one is the project's.
     { route: "runners", view: "projectRunners", label: "Runners", admin: true, watch: /^runner_/, changed: "The runners changed." },
     // Where the hub knows the Keep the Why export (docs/api.md §6.1, §11.3).
@@ -49,12 +51,13 @@ window.Maity = window.Maity || {};
   ];
   const offered = (ctx, item) => (!item.admin || ctx.canAdmin) && (!item.when || item.when(ctx));
 
-  const STATES = ["build", "freeze", "fixes-only", "accepted", "archived"];
+  // docs/api.md §6.1; moving to launch is the owner's go.
+  const STATES = ["plan", "build", "review", "launch", "archived"];
   const STATE_LABELS = {
+    plan: "Plan",
     build: "Build",
-    freeze: "Freeze",
-    "fixes-only": "Fixes only",
-    accepted: "Accepted",
+    review: "Review",
+    launch: "Launch",
     archived: "Archived",
   };
 
@@ -175,6 +178,20 @@ window.Maity = window.Maity || {};
 
   function stateBadge(state, note) {
     return h("span", { class: "state state-" + state, title: note || "" }, STATE_LABELS[state] || state);
+  }
+
+  // The released mark (docs/api.md §6.1): set once with the first release
+  // tag, never cleared; shown beside the state wherever the state is.
+  const RELEASED_RULES = "interfaces change only with versioning and a stated transition period, "
+    + "migrations stay backward compatible, and the release checklist is required";
+  function releasedDay(project) {
+    const d = new Date(project.released_at);
+    return Number.isNaN(d.getTime()) ? project.released_at
+      : d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  }
+  function releasedMark(project) {
+    if (!project || !project.released_at) return null;
+    return h("span", { class: "state released", title: "Released since " + releasedDay(project) + ": " + RELEASED_RULES + "." }, "Released");
   }
 
   // ---- sign-in ------------------------------------------------------------
@@ -462,7 +479,12 @@ window.Maity = window.Maity || {};
 
     if (ctx.canAdmin) {
       const state = h("select", { id: "state-select" },
-        STATES.map((s) => h("option", { value: s, selected: s === ctx.project.state }, STATE_LABELS[s])));
+        STATES.map((s) => h("option", {
+          value: s,
+          selected: s === ctx.project.state,
+          // Only the owner moves the project to launch; an admin may leave it.
+          disabled: s === "launch" && !ctx.isOwner && ctx.project.state !== "launch",
+        }, STATE_LABELS[s])));
       const note = h("input", { id: "state-note", value: ctx.project.state_note || "", placeholder: "What this state means right now" });
       const reason = h("input", { id: "state-reason", required: true, placeholder: "Why it changes (logged)" });
       append(panel, h("form", {
@@ -474,6 +496,9 @@ window.Maity = window.Maity || {};
         },
       },
       h("h2", { class: "panel-title" }, "Project state"),
+      ctx.project.released_at
+        ? h("p", { class: "released-note" }, "Released since " + releasedDay(ctx.project) + ", for good: " + RELEASED_RULES + ".")
+        : null,
       h("label", { for: "state-select" }, "State"), state,
       h("label", { for: "state-note" }, "Note"), note,
       h("label", { for: "state-reason" }, "Reason"), reason,
@@ -1076,6 +1101,7 @@ window.Maity = window.Maity || {};
         ctx.scope === "project"
           ? h("div", { class: "project-state", role: "group", "aria-label": "State and absence" },
             stateBadge(ctx.project.state, ctx.project.state_note),
+            releasedMark(ctx.project),
             absence ? h("span", { class: "state away", title: absence.scope }, "Away until " + formatTime(absence.until)) : null)
           : null),
       ctx.scope === "project" && ctx.project.state_note ? h("p", { class: "state-note" }, ctx.project.state_note) : null,
@@ -1169,6 +1195,8 @@ window.Maity = window.Maity || {};
       scope: where.scope,
       projectLink,
       stateLabel: (state) => STATE_LABELS[state] || state,
+      stateBadge,
+      releasedMark,
       refresh: render,
       markSeen: () => {},
       // Once the session ended, a view still drawing starts nothing more.
@@ -1259,9 +1287,13 @@ window.Maity = window.Maity || {};
   let quietNote = null;
 
   function watch(ctx, where, item, main) {
+    // The inbox count as §18.2 keeps it (counts.inbox, by_project's inbox),
+    // which counts the personal requests the list holds; /me's open_requests
+    // does not. A hub without notifications: open_requests.
+    const notified = () => M.notify.state.available && M.notify.state.counts;
     const openNow = () => (where.scope === "all"
-      ? ctx.projects.reduce((n, p) => n + (p.open_requests || 0), 0)
-      : (ctx.projects.find((p) => p.full_name === ctx.slug) || {}).open_requests);
+      ? (notified() ? M.notify.state.counts.inbox || 0 : ctx.projects.reduce((n, p) => n + (p.open_requests || 0), 0))
+      : (() => { const p = ctx.projects.find((x) => x.full_name === ctx.slug); return p ? (notified() ? M.notify.projectCount(p).requests : p.open_requests) : undefined; })());
     let seen = openNow();
     const countLine = h("div");
     const changeLine = h("div");
@@ -1471,7 +1503,7 @@ window.Maity = window.Maity || {};
         // what waits comes first, the way to a project of one's own after it.
         const waiting = (await M.api.getAll("/requests")).items;
         if (seq !== renderSeq) return;
-        if (waiting.length || M.notify.state.available) await M.views.inbox(ctx, root, []);
+        if (waiting.length) await M.views.inbox(ctx, root, []);
         const start = h("div", { class: "no-projects" });
         M.views.noProjects(ctx, start);
         append(root, start);

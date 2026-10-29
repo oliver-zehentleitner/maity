@@ -550,7 +550,7 @@ def create_project(run: Run, page: Page, name: str, slug: str) -> None:
     page.get_by_label("Name").fill(name)
     expect(page.get_by_label("Slug")).to_have_value(slug)  # proposed from the name
     page.get_by_role("button", name="Create project", exact=True).click()
-    expect(page).to_have_url(re.compile(rf"/{OWNER}/{slug}/members$"))
+    expect(page).to_have_url(re.compile(rf"/{OWNER}/{slug}/agents$"))
     expect(page.locator("header .project")).to_have_text(name)
 
 
@@ -562,11 +562,11 @@ def join_line(
     display: str = "E2E Agent",
     role: str = "coder",
 ) -> tuple[str, str]:
-    """Create a join line in the join panel on Members; a new profile when handle is given."""
-    view_tab(page, "Members").click()
-    expect(page).to_have_url(re.compile(rf"/{OWNER}/{slug}/members$"))
-    # A project without agents opens the panel itself; otherwise the agents'
-    # heading's button does. The panel is read beside the list, after it: wait
+    """Create a join line in the join panel on Agents; a new profile when handle is given."""
+    view_tab(page, "Agents").click()
+    expect(page).to_have_url(re.compile(rf"/{OWNER}/{slug}/agents$"))
+    # A project without an agent of one's own opens the panel itself;
+    # otherwise the button at the head does. The panel is read beside the list, after it: wait
     # for one of the two, since the count line is drawn before either, and an
     # instant look could see neither and click a button that stays hidden.
     panel = page.locator(".join-panel")
@@ -969,8 +969,9 @@ def scenario(run: Run, page: Page) -> None:
     tabs = (
         ("inbox", "Inbox"),
         ("board", "Board"),
+        ("overview", "Overview"),
         ("members", "Members"),
-        ("org", "Organisation"),
+        ("agents", "Agents"),
     )
     # Why, where the hub offers it (its 409 ktw_not_configured is expected here).
     if view_tab(page, "Why").count():
@@ -1013,6 +1014,7 @@ def scenario(run: Run, page: Page) -> None:
     no_problems(run, "phone width")
 
     users_step(run, page)
+    registration_admin_step(run, page)
     join_expiry_step(run, page)
     change_password(run, page)
     picture_step(run, page)
@@ -1364,15 +1366,15 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
 
     briefing_step(run, page, alpha, agent_id)
 
-    run.step("state and absence: the owner freezes the project; the agent's resume shows it")
+    run.step("state and absence: the owner moves the project to review; the agent's resume shows it")
     cursor = run.api(alpha, "GET", "/projects/owner/e2e-alpha/events", after="latest", wait=0)["cursor"]
     project_settings(page)
-    page.locator("#state-select").select_option("freeze")
-    page.locator("#state-note").fill("e2e freeze: fixes only")
+    page.locator("#state-select").select_option("review")
+    page.locator("#state-note").fill("e2e review: fixes only")
     page.locator("#state-reason").fill("e2e: release candidate")
     page.get_by_role("button", name="Change state", exact=True).click()
-    expect(page.locator("header .state")).to_have_text("Freeze")
-    expect(page.locator("header .state-note")).to_have_text("e2e freeze: fixes only")
+    expect(page.locator("header .state")).to_have_text("Review")
+    expect(page.locator("header .state-note")).to_have_text("e2e review: fixes only")
     project_settings(page)
     # Availability caps an absence at 90 days. Choose next week in the browser's
     # local timezone so this scenario remains valid as the calendar moves on.
@@ -1416,20 +1418,20 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     expect(menu).to_be_hidden()
     expect(profile).to_be_focused()
     page.set_viewport_size({"width": 1280, "height": 900})
-    # The switcher's state dot: frozen Alpha differs from Beta, which builds.
+    # The switcher's state dot: Alpha in review differs from Beta, which builds.
     dots = page.evaluate("""() => ["E2E Alpha", "E2E Beta"].map(name => {
       const chip = Array.from(document.querySelectorAll("nav.switcher a")).find(a => a.textContent.includes(name));
       return getComputedStyle(chip.querySelector(".dot")).backgroundColor;
     })""")
-    assert dots[0] != dots[1], f"the switcher shows one colour for freeze and build: {dots}"
-    run.shot(page, "freeze-absence")
-    run.a11y(page, "header in freeze with absence")
-    view_tab(page, "Organisation").click()
-    expect(page.locator("main section.view-org")).to_be_visible()
-    run.a11y(page, "organisation")
+    assert dots[0] != dots[1], f"the switcher shows one colour for review and build: {dots}"
+    run.shot(page, "review-absence")
+    run.a11y(page, "header in review with absence")
+    view_tab(page, "Overview").click()
+    expect(page.locator("main section.view-overview .org-tree")).to_be_visible()
+    run.a11y(page, "overview with the organisation")
     project = json.loads(run.maity(alpha, "resume", "--json"))["project"]
     print(f"   resume: state {project['state']}, absence {project['absence']}")
-    assert project["state"] == "freeze" and project["state_note"] == "e2e freeze: fixes only", (
+    assert project["state"] == "review" and project["state_note"] == "e2e review: fixes only", (
         project
     )
     assert (project.get("absence") or {}).get("scope") == "e2e: the admins decide merges", project
@@ -1440,7 +1442,7 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     payload = change["payload"]
     assert (payload["old"], payload["new"], payload["reason"]) == (
         "build",
-        "freeze",
+        "review",
         "e2e: release candidate",
     ), change
     project_settings(page)
@@ -2252,6 +2254,34 @@ def users_step(run: Run, page: Page) -> None:
     no_problems(run, "users")
 
 
+def registration_admin_step(run: Run, page: Page) -> None:
+    """Instance administration → Registration (docs/api.md §16.4): the mode needs mail."""
+    me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
+    if not me.get("instance_admin"):
+        return
+    run.step("registration: the admin opens the settings; allowlist needs mail, a list is saved")
+    page.goto(f"{run.base}/admin")
+    page.locator("nav.admin-nav").get_by_role("button", name="Registration", exact=True).click()
+    section = page.locator("section.admin-section[aria-label='Registration']")
+    expect(section.locator(".reg-effective")).to_have_text("Registration now: closed.")
+    form = section.locator("form.reg-form")
+    # This hub has no mail: the hub refuses the mode, said at its field.
+    page.locator("#reg-mode").select_option("allowlist")
+    form.get_by_role("button", name="Save", exact=True).click()
+    expect(page.locator("#reg-mode-error")).to_have_text("needs complete, enabled mail (Mail settings)")
+    # That refusal is the expected answer here, not a problem of the page.
+    refused = "PATCH /api/v1/admin/settings/registration answered 400"
+    run.problems = [p for p in run.problems if p != refused]
+    page.locator("#reg-mode").select_option("closed")
+    page.locator("#reg-domains").fill("@example.com")
+    form.get_by_role("button", name="Save", exact=True).click()
+    expect(form).to_contain_text("Saved.")
+    expect(page.locator("#reg-domains")).to_have_value("@example.com")
+    run.shot(page, "registration-admin")
+    run.a11y(page, "registration admin")
+    no_problems(run, "registration admin")
+
+
 def join_expiry_step(run: Run, page: Page) -> None:
     """A join that expires while Agents is open leaves the seats for the record, without Revoke."""
     run.step("joins: a join expires while the view is open; it is listed as expired, without Revoke")
@@ -2260,9 +2290,9 @@ def join_expiry_step(run: Run, page: Page) -> None:
     second = other.new_page()
     watch_page(run, second)
     second.clock.install()
-    second.goto(f"{run.base}/owner/e2e-alpha/members/join")
-    # A direct navigation to Members with the join panel open: the focus in its first field.
-    expect(second).to_have_url(re.compile(r"/owner/e2e-alpha/members/join$"))
+    second.goto(f"{run.base}/owner/e2e-alpha/agents/join")
+    # A direct navigation to Agents with the join panel open: the focus in its first field.
+    expect(second).to_have_url(re.compile(r"/owner/e2e-alpha/agents/join$"))
     expect(second.locator("#join-agent")).to_be_focused()
     # A new profile: the existing one is a member here already.
     second.locator("#join-agent").select_option("")
@@ -2350,14 +2380,10 @@ def members_step(run: Run, page: Page) -> None:
     expect(humans.locator("tr.member")).to_contain_text("owner")
     row = agents.locator("tr.member", has_text="E2E Agent")
     expect(row.locator("td").nth(0)).to_contain_text("member")
-    # Owner and credentials only where the hub sends them (members:admin).
-    listed = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/members").json()["items"]
+    # A neutral list: no credentials column (they are in Manage and on Agents), a Chat per entry.
     header = agents.locator("thead th")
-    if any("credentials" in m for m in listed):
-        expect(header.filter(has_text="Credentials")).to_have_count(1)
-        expect(row).to_contain_text("active")
-    else:
-        expect(header.filter(has_text="Credentials")).to_have_count(0)
+    expect(header.filter(has_text="Credentials")).to_have_count(0)
+    expect(row.locator("a.member-chat")).to_have_count(1)
     run.a11y(page, "members")
     row.get_by_role("button", name="Manage E2E Agent").click()
     manage = page.locator("tr.member-manage")
@@ -2372,7 +2398,7 @@ def members_step(run: Run, page: Page) -> None:
     manage.locator("select[id^=member-reports-]").select_option(label="Owner (@owner)")
     manage.get_by_role("button", name="Save changes", exact=True).click()
     expect(page.locator("main section.view-members > .send-status")).to_contain_text("Saved for E2E Agent: reports to.")
-    view_tab(page, "Organisation").click()
+    view_tab(page, "Overview").click()
     owner_node = page.locator(".org-tree > li", has=page.locator(".org-node strong", has_text="Owner"))
     expect(owner_node.locator("ul .org-node")).to_contain_text("E2E Agent")
     view_tab(page, "Members").click()

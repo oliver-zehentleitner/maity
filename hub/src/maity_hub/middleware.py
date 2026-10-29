@@ -22,7 +22,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.routing import Match
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from maity_hub import clock, events, forge_webhook, join_host, landing, net
+from maity_hub import clock, events, forge_webhook, join_host, net
 from maity_hub.auth import credentials
 from maity_hub.auth.leaks import revoke_leaked
 from maity_hub.config import Settings
@@ -39,14 +39,17 @@ IMAGE_CAP = 1024 * 1024
 _IMAGE_UPLOAD = re.compile(
     r"^/api/v1/(projects/[^/]+/[^/]+/(logo|banner)|me/avatar|agents/[^/]+/avatar)$"
 )
-# The landing page's Markdown may be 64 KiB decoded (§16.7); JSON escaping can grow it up
-# to four times on the wire, so its PATCH alone takes a larger body.
-LANDING_CAP = 256 * 1024
+# The landing page and the legal pages may hold 256 KiB and 64 KiB-per-text of Markdown
+# (§16.7, §16.7.1); JSON escaping can grow it on the wire, so their PATCH alone takes a
+# larger body, 512 KiB.
+LANDING_CAP = 512 * 1024
 # An attachment upload is one raw file of up to 10 MiB (§8.7); the body cap of §1.7 does not
 # apply to it, the file cap does.
 ATTACHMENT_CAP = 10 * 1024 * 1024
 _ATTACHMENT_UPLOAD = re.compile(r"^/api/v1/projects/[^/]+/[^/]+/attachments$")
-_LANDING_SETTINGS = "/api/v1/admin/settings/landing"
+_LANDING_SETTINGS = ("/api/v1/admin/settings/landing", "/api/v1/admin/settings/legal")
+# The drafts a preview takes are as large as the setting they preview (§16.7, §16.7.1).
+_LANDING_PREVIEWS = tuple(f"{path}/preview" for path in _LANDING_SETTINGS)
 CSP = "default-src 'self'"
 # The private Cache-Control a route may set instead of no-store: the project images
 # (images.HEADERS) and the avatars, revalidated on every use (avatars.HEADERS).
@@ -54,7 +57,8 @@ ROUTE_CACHE = frozenset({b"private, max-age=21600", b"private, no-cache", b"no-c
 # The answers a visitor without a session may cache: the badge, the swarm page and the
 # instance's landing page (§16.7).
 PUBLIC_PATHS = re.compile(
-    r"/badge/(?:[^/]+/)?[^/]+\.svg|/api/v1/swarm/(?:[^/]+/)?[^/]+|/api/v1/landing"
+    r"/badge/(?:[^/]+/)?[^/]+\.svg|/api/v1/swarm/(?:[^/]+/)?[^/]+|/api/v1/landing|/api/v1/legal"
+    r"|/|/(?:impressum|privacy|terms)(?:/[^/]+)?"
 )
 # The two plain files a crawler asks for (§16.7), cached for an hour.
 SEO_PATHS = re.compile(r"/robots\.txt|/sitemap\.xml")
@@ -65,14 +69,6 @@ class HubMiddleware:
         self.app = app
         self.settings = settings
         self.engine = engine
-
-    def _landing_off(self) -> bool:
-        """Whether the landing page is not enabled; an unreadable setting counts as off."""
-        try:
-            with self.engine.connect() as conn:
-                return not landing.stored(conn)["enabled"]
-        except Exception:
-            return True
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -85,20 +81,12 @@ class HubMiddleware:
         scope["state"]["on_join_host"] = on_join_host
         path = scope.get("path", "")
         public: bytes | None = None
-        if not on_join_host and scope.get("method") == "GET":
+        if not on_join_host and scope.get("method") in ("GET", "HEAD"):
             if PUBLIC_PATHS.fullmatch(path):
                 public = b"public, max-age=60"
             elif SEO_PATHS.fullmatch(path):
                 public = b"public, max-age=3600"  # robots.txt and sitemap.xml (§16.7)
-        # While the landing page is not enabled, the root asks to be kept out of an index; a
-        # crawler can read it only because robots.txt lets it fetch the root (§16.7).
-        noindex = (
-            not on_join_host
-            and scope.get("method") in ("GET", "HEAD")
-            and path == "/"
-            and await run_in_threadpool(self._landing_off)
-        )
-        send = _with_headers(send, public=public, noindex=noindex)
+        send = _with_headers(send, public=public)
 
         if not on_join_host and forge_webhook.matches(scope):
             # Signed, not authenticated, and limited before its body is read (§17.4).
@@ -281,7 +269,9 @@ def _body_cap(scope: Scope) -> tuple[int, Callable[[Scope, Receive, Send], Await
         return IMAGE_CAP, _image_too_large
     if method == "POST" and _ATTACHMENT_UPLOAD.match(path):
         return ATTACHMENT_CAP, functools.partial(_too_large, cap=ATTACHMENT_CAP)
-    if method == "PATCH" and path == _LANDING_SETTINGS:
+    if (method == "PATCH" and path in _LANDING_SETTINGS) or (
+        method == "POST" and path in _LANDING_PREVIEWS
+    ):
         return LANDING_CAP, functools.partial(_too_large, cap=LANDING_CAP)
     return BODY_CAP, _too_large
 
@@ -301,14 +291,13 @@ async def _image_too_large(scope: Scope, receive: Receive, send: Send) -> None:
     access.info("%s %s %s", scope.get("method"), _logged_path(scope), 400)
 
 
-def _with_headers(send: Send, *, public: bytes | None = None, noindex: bool = False) -> Send:
+def _with_headers(send: Send, *, public: bytes | None = None) -> Send:
     """`public` is the one caching a successful answer of this path may choose."""
 
     async def wrapped(message: MutableMapping[str, Any]) -> None:
         if message["type"] == "http.response.start":
             given = message.get("headers", [])
-            dropped = _SET | {b"x-robots-tag"} if noindex else _SET
-            headers = [(k, v) for k, v in given if k.lower() not in dropped]
+            headers = [(k, v) for k, v in given if k.lower() not in _SET]
             content_type = next((v for k, v in given if k.lower() == b"content-type"), b"")
             # Every answer is no-store, except the caching a route may choose from
             # ROUTE_CACHE: the logo, banner and avatars, revalidated by ETag (§1.1, §11.2,
@@ -324,10 +313,10 @@ def _with_headers(send: Send, *, public: bytes | None = None, noindex: bool = Fa
                 (b"cache-control", cache),
                 (b"x-content-type-options", b"nosniff"),
             ]
-            if content_type.startswith(b"text/html"):
+            if content_type.startswith(b"text/html") and not any(
+                k.lower() == b"content-security-policy" for k, _ in headers
+            ):  # the landing and legal pages bring a stricter one of their own (§16.7)
                 headers.append((b"content-security-policy", CSP.encode()))
-            if noindex:
-                headers.append((b"x-robots-tag", b"noindex"))
             message["headers"] = headers
         await send(message)
 

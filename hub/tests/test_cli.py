@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -242,6 +243,33 @@ def test_serve_keeps_idle_connections_longer_than_a_proxy_does(
     )
     assert main(["serve"]) == 0
     assert seen == [cli.KEEP_ALIVE_SECONDS] and cli.KEEP_ALIVE_SECONDS > 90  # Traefik's pool
+
+
+def test_serve_runs_on_an_engine_built_from_the_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The pool and the PostgreSQL timeouts of the environment reach the engine the served app
+    runs on: `serve` once built its own engine from the URL alone and ignored all of them."""
+    from maity_hub import cli
+    from tests.test_db_pool import captured_connect_args
+
+    monkeypatch.setenv("MAITY_DATABASE_URL", "postgresql+psycopg://u:p@localhost/h")
+    monkeypatch.setenv("MAITY_DB_POOL_SIZE", "7")
+    monkeypatch.setenv("MAITY_DB_MAX_OVERFLOW", "3")
+    monkeypatch.setenv("MAITY_DB_POOL_RECYCLE", "60")
+    monkeypatch.setenv("MAITY_DB_STATEMENT_TIMEOUT", "11")
+    monkeypatch.setenv("MAITY_DB_IDLE_IN_TRANSACTION_TIMEOUT", "22")
+    monkeypatch.setattr(cli, "require_current_schema", lambda engine: None)
+    served: list[Any] = []
+    monkeypatch.setattr(
+        cli._Server, "run", lambda self, sockets=None: served.append(self.config.app.state.engine)
+    )
+    assert main(["serve"]) == 0
+    pool: Any = served[0].pool
+    assert (pool.size(), pool._max_overflow, pool._recycle) == (7, 3, 60)
+    assert captured_connect_args(served[0])["options"] == (
+        "-c statement_timeout=11000 -c idle_in_transaction_session_timeout=22000"
+    )
 
 
 def _stdin(monkeypatch: pytest.MonkeyPatch, text: str) -> None:

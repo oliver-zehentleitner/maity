@@ -20,7 +20,7 @@ from typing import Any
 
 from sqlalchemy import Connection, select
 
-from maity_hub import proposals
+from maity_hub import line, proposals
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth.caller import Caller
@@ -67,14 +67,29 @@ def check_patch(mine: Membership, target: Any, body: Any, given: set[str]) -> No
     if body.trust is not None and body.trust not in AGENT_TRUSTS:
         raise humans_only("an admin agent moves trust between member and guest only")
     if body.role is not None and body.role not in AGENT_ROLES:
-        raise humans_only("the proxy is the owner's interface: a human's to give")
+        raise humans_only("the proxy and the manager are a human's to give")
+    if body.role is not None and body.role != target.role and target.role == "manager":
+        raise humans_only("only a human removes the role manager")
+    if body.trust == "guest" and target.trust != "guest" and target.role == "manager":
+        # Trust guest ends a manager's rights as the role removal does (§6.2).
+        raise humans_only("only a human lowers a manager to guest")
     if "paused" in given:
-        _check_pause(target, mine.principal_id)
+        _check_pause(target, mine.principal_id, body.paused is None)
 
 
-def _check_pause(target: Any, agent_id: str) -> None:
+def _check_pause(target: Any, agent_id: str, lifting: bool = False) -> None:
     """Who lifts or replaces a pause: a human's only a human, another agent's only that
-    agent or a human (§2.3 ᵃ)."""
+    agent or a human (§2.3 ᵃ). An agent manager's pause an admin agent lifts, but does not
+    replace (§5.3); a human manager's is a human's pause like any other."""
+    if (
+        target.paused_since is not None
+        and target.paused_line
+        and target.paused_by != agent_id
+        and not _paused_by_a_human(target)
+    ):
+        if lifting:
+            return
+        raise forbidden("members:admin", "a pause a manager set is lifted, not replaced")
     if _paused_by_a_human(target):
         raise humans_only("a pause a human set is a human's to lift or replace")
     if _pause_of_another_agent(target, agent_id):
@@ -83,10 +98,10 @@ def _check_pause(target: Any, agent_id: str) -> None:
         )
 
 
-def check_instance_pause(credential: Any, agent_id: str) -> None:
+def check_instance_pause(credential: Any, agent_id: str, lifting: bool = False) -> None:
     """The same rule for one agent instance's own pause, stored on its credential
     (§5.3, §6.17)."""
-    _check_pause(credential, agent_id)
+    _check_pause(credential, agent_id, lifting)
 
 
 def _is_arbiter(project: Any, target: Any) -> bool:
@@ -199,7 +214,7 @@ def _still_allowed(conn: Connection, proposer: Any, target: Any, proposal: dict[
         return
     if proposal["pause"][0]:
         try:
-            _check_pause(target, proposer.agent_id)
+            _check_pause(target, proposer.agent_id, proposal["pause"][1] is None)
         except ApiError:
             raise ApiError(
                 409, "pause_changed", "the pause is someone else's now; the go cannot touch it"
@@ -207,6 +222,8 @@ def _still_allowed(conn: Connection, proposer: Any, target: Any, proposal: dict[
     boss = proposal["values"].get("reports_to")
     if boss is not None and target.id in members.chain(conn, boss):
         raise invalid({"reports_to": "cycle"}, "the chain made a cycle in the meantime")
+    if boss is not None and not line.fits(conn, target.project_id, boss, target.id):
+        raise line.too_deep()  # the chain grew while the request waited (§2.3 "Depth")
     cover = proposal["values"].get("availability_policy")
     if cover is not None:
         from maity_hub import availability

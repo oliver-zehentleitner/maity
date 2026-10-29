@@ -15,7 +15,7 @@ window.Maity = window.Maity || {};
 
   const FILE_MAX = 10 * 1024 * 1024;
   const PER_MESSAGE = 10;
-  const CLOSED_STATES = ["accepted", "archived"];
+  const CLOSED_STATES = ["archived"];
   // The types the hub re-encodes an image to (§8.7): only these inline.
   const INLINE_TYPES = ["image/png", "image/jpeg", "image/webp"];
   // A hub that answered 404 or 405 to attachments has none, and one that

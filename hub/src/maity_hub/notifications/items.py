@@ -37,6 +37,8 @@ WORDS: dict[str, dict[str, str]] = {
         "chat": "{who} in {chat}",
         "mentioned": "{who} mentioned you in {chat}",
         "waits": "{handle} waits for approval",
+        "reported": "Report: {reason} — {type}",
+        "moderated": "Moderation: {action} — {type}",
         "sign_in": "New sign-in: {browser} on {os} ({method})",
         "a_browser": "a browser",
         "unknown_os": "an unknown system",
@@ -61,6 +63,8 @@ WORDS: dict[str, dict[str, str]] = {
         "chat": "{who} in {chat}",
         "mentioned": "{who} hat dich in {chat} erwähnt",
         "waits": "{handle} wartet auf Freigabe",
+        "reported": "Meldung: {reason} — {type}",
+        "moderated": "Moderation: {action} — {type}",
         "sign_in": "Neue Anmeldung: {browser} auf {os} ({method})",
         "a_browser": "ein Browser",
         "unknown_os": "einem unbekannten System",
@@ -97,6 +101,7 @@ class Item:
     record_type: str | None = None
     session_id: str | None = None  # a security item's session
     open: bool = False  # an inbox item from a record whose matter is not yet closed
+    urgent: bool = False  # mailed at once whatever the kind's mode (§18.5)
 
     @property
     def id(self) -> str:
@@ -439,21 +444,31 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
             t.account_record.c.human_id == where.human_id,
             t.account_record.c.at >= now - records.KEPT,
             t.account_record.c.type.in_(
-                (*records.SECURITY, *records.INBOX, "personal_request_created")
+                (*records.SECURITY, *records.INBOX, *records.NOTICES, "personal_request_created")
             ),
         )
     ).all()
     waiting = _waiting_registrations(conn, rows)
+    open_reports = _open_reports(conn, rows)
+    # The personal requests and their askers' names in a fixed number of statements, not
+    # three per record: a human with many hub notices reads them all on every call.
+    asked = {
+        (row.data or {}).get("request_id")
+        for row in rows
+        if row.type == "personal_request_created" and row.at >= now - WINDOW
+    }
+    requests_by_id = _by_id(conn, t.request, {r for r in asked if r is not None})
+    names = _member_names(conn, {r.asked_by for r in requests_by_id.values() if r.asked_by})
     items = []
     for row in rows:
         data = row.data or {}
         if row.type == "personal_request_created":
             if row.at < now - WINDOW:
                 continue
-            request = _request(conn, data.get("request_id"))
+            request = requests_by_id.get(str(data.get("request_id")))
             if request is None:
                 continue
-            asker = _name(conn, request.asked_by) if request.asked_by else "Maity"
+            asker = names.get(request.asked_by, "someone") if request.asked_by else "Maity"
             items.append(
                 Item(
                     kind="inbox",
@@ -576,6 +591,48 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
                     open=pending,
                 )
             )
+        elif row.type == "report_open":
+            # Listed while the report is open, however old, and read once it is resolved or
+            # expired (§16.8, §18.1); no read mark closes it.
+            report = str(data.get("report"))
+            pending = report in open_reports
+            if not pending and row.at < now - WINDOW:
+                continue
+            items.append(
+                Item(
+                    kind="inbox",
+                    at=row.at,
+                    record=row.n,
+                    title=_cut(
+                        where.say("reported", reason=data.get("reason"), type=data.get("type"))
+                    ),
+                    target={"type": "report", "id": report},
+                    url=_url(where, f"/admin/reports/{report}"),
+                    read=not pending,
+                    record_type=row.type,
+                    open=pending,
+                )
+            )
+        elif row.type == "moderation_applied" and row.at >= now - WINDOW:
+            # The affected account's notice of an action on its content (§16.8): the
+            # action and the note, never the reporter. Read by a read mark as any notice:
+            # nothing in it is the human's to act on.
+            title = where.say("moderated", action=data.get("action"), type=data.get("type"))
+            if data.get("note"):
+                title = f"{title}: {data['note']}"
+            items.append(
+                Item(
+                    kind="inbox",
+                    at=row.at,
+                    record=row.n,
+                    title=_cut(title),
+                    target={"type": "moderation", "id": str(data.get("report"))},
+                    url=_url(where, "/account"),
+                    read=row.read_at is not None,
+                    record_type=row.type,
+                    urgent=data.get("action") == "suspend",
+                )
+            )
         elif row.type == "mail_disabled" and row.at >= now - WINDOW:
             # TODO(#280): listed and counted while the address stays disabled, however old,
             # and read once it is set again (§18.1, §18.7); the address state comes with
@@ -595,6 +652,20 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
                 )
             )
     return items
+
+
+def _open_reports(conn: Connection, rows: Sequence[Any]) -> set[str]:
+    """The reports of these `report_open` records that are still open (§16.8)."""
+    wanted = {str((row.data or {}).get("report")) for row in rows if row.type == "report_open"}
+    if not wanted:
+        return set()
+    return set(
+        conn.execute(
+            select(t.abuse_report.c.id).where(
+                t.abuse_report.c.id.in_(wanted), t.abuse_report.c.status == "open"
+            )
+        ).scalars()
+    )
 
 
 def _waiting_registrations(conn: Connection, rows: Sequence[Any]) -> set[str]:
@@ -824,6 +895,45 @@ def _name(conn: Connection, membership_id: int | None) -> str:
     if row is None:
         return "someone"
     return _principal_name(conn, row.human_id or row.agent_id)
+
+
+def _member_names(conn: Connection, membership_ids: set[int]) -> dict[int, str]:
+    """`_name` for many members in three statements; a member not found is left out, and
+    its caller says "someone" as `_name` does."""
+    if not membership_ids:
+        return {}
+    members = conn.execute(
+        select(t.membership.c.id, t.membership.c.human_id, t.membership.c.agent_id).where(
+            t.membership.c.id.in_(membership_ids)
+        )
+    ).all()
+    humans = {m.human_id for m in members if m.human_id}
+    agents = {m.agent_id for m in members if m.agent_id}
+    human_names = dict(
+        conn.execute(
+            select(t.human.c.id, t.human.c.display_name).where(t.human.c.id.in_(humans))
+        ).all()
+        if humans
+        else []
+    )
+    agent_handles = dict(
+        conn.execute(
+            select(t.agent_profile.c.id, t.agent_profile.c.handle).where(
+                t.agent_profile.c.id.in_(agents)
+            )
+        ).all()
+        if agents
+        else []
+    )
+    found: dict[int, str] = {}
+    for m in members:
+        if m.human_id:
+            found[m.id] = str(human_names.get(m.human_id) or m.human_id)
+        elif m.agent_id:
+            found[m.id] = f"{agent_handles.get(m.agent_id) or m.agent_id} (agent)"
+        else:
+            found[m.id] = "someone"
+    return found
 
 
 def _principal_name(conn: Connection, principal: str | None) -> str:

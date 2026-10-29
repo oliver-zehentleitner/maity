@@ -66,6 +66,8 @@ window.Maity = window.Maity || {};
     invalid_href: "not an https URL or a path on this host", unknown_type: "not a section this hub knows", extra_forbidden: "not a field of this section",
     too_many: "too many", too_few: "at least one is needed", invalid: "not valid here", default_language_missing: "the default language has no page",
     rate_limited: "changed too often today",
+    // §16.7: the stored setting is at most 256 KiB of UTF-8.
+    too_large: "the page is too large: at most 256 KiB stored, all languages together",
   };
   const reasonText = (r) => REASONS[r] || String(r).replace(/_/g, " ");
 
@@ -194,6 +196,8 @@ window.Maity = window.Maity || {};
   function showErrors(errors, err, status) {
     Object.values(errors).forEach((e) => { e.textContent = ""; });
     const fields = err && err.code === "invalid" && err.details && err.details.fields;
+    // A request over the hub's cap (§16.7: 512 KiB for these two calls) never reaches the checks.
+    if (err && err.code === "payload_too_large") { status.fail("Not saved: ", { message: "the draft is larger than the hub takes in one request (512 KiB)" }); return; }
     if (!fields) { status.fail("Not saved: ", err); return; }
     const rest = [];
     let first = null;
@@ -206,7 +210,8 @@ window.Maity = window.Maity || {};
     if (input && input.focus) input.focus();
   }
 
-  // A draft opened as the hub would serve it (§16.7, §16.7.1): stored by a
+  // A draft opened as the hub would serve it (§16.7, §16.7.1; a legal page's
+  // draft is its languages alone, the page named in ?page=): stored by a
   // POST with the CSRF token, then opened by its url in a tab of its own, a
   // top-level page under the page's own policy. The tab is opened at the
   // click, before the hub answers, so no pop-up blocker stops it.
@@ -363,7 +368,7 @@ window.Maity = window.Maity || {};
         control(f("markdown", "Text (Markdown)", "md", 65536), draft[lang], key + "." + lang + ".markdown", errors, draw),
         small("Remove this language", () => { delete draft[lang]; }, false, draw)] : h("p", { class: "muted" }, "No language yet: add one to write the page."),
       h("div", { class: "actions" }, save,
-        lang ? h("button", { type: "button", onclick: () => preview(LEGAL + "/preview?page=" + key, { [key]: draft }, lang, status, errors) }, "Preview the draft") : null,
+        lang ? h("button", { type: "button", onclick: () => preview(LEGAL + "/preview?page=" + key, draft, lang, status, errors) }, "Preview the draft") : null,
         unset), status.el);
       append(clear(body), form);
     };

@@ -9,7 +9,16 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, select
 
-from maity_hub import account_deletion, avatars, clock, events, export, images, namespace
+from maity_hub import (
+    account_deletion,
+    avatars,
+    clock,
+    events,
+    export,
+    images,
+    moderation,
+    namespace,
+)
 from maity_hub import tables as t
 from maity_hub.admin import is_instance_admin
 from maity_hub.auth import second_factor
@@ -72,6 +81,12 @@ def human_body(conn: Connection, human_id: str) -> dict[str, Any]:
             ),
             # The human's own limit, with the reason other readers may not see (§6.12).
             "limit": limit_view(human),
+            # Only while a moderation hold stands on the profile (§16.8).
+            **(
+                {"moderation": held}
+                if (held := moderation.holds_of(conn, "profile", [human.id]).get(human.id))
+                else {}
+            ),
         },
         # A pending account is a member of nothing (§2.7.5).
         "projects": _human_projects(conn, human.id) if human.account_status == "active" else [],

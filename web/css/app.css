@@ -14,7 +14,8 @@
   --high: #b42318;
   --normal: #8a5a00;
   --low: #4a5a6a;
-  --ok: #1a7f37;
+  --ok: #177633; /* 5.33:1 on --bg, 5.71:1 on --surface, 5.0:1 on --surface-2 (WCAG AA, a panel's status line) */
+  --plan: #7a45d6; /* the plan state: 5.36:1 on --bg, 5.75:1 on --surface (WCAG AA) */
   --warn: #9a6700;
   --bad: #b42318;
   --flag-bg: #fff6dd;
@@ -50,6 +51,7 @@
     --normal: #e3b341;
     --low: #9aa4ae;
     --ok: #3fb950;
+    --plan: #b392f0;
     --warn: #d29922;
     --bad: #ff7b72;
     --flag-bg: #2d2610;
@@ -75,6 +77,7 @@
   --normal: #e3b341;
   --low: #9aa4ae;
   --ok: #3fb950;
+  --plan: #b392f0;
   --warn: #d29922;
   --bad: #ff7b72;
   --flag-bg: #2d2610;
@@ -210,10 +213,12 @@ main:has(> .page-loading, > .page-failed) { flex: 1; display: flex; flex-directi
   white-space: nowrap;
 }
 
+.state-plan { color: var(--plan); }
 .state-build { color: var(--accent); }
-.state-freeze, .state-fixes-only { color: var(--warn); }
-.state-accepted { color: var(--ok); }
+.state-review { color: var(--warn); }
+.state-launch { color: var(--ok); }
 .state-archived { color: var(--muted); }
+.state.released { color: var(--text); border-style: double; border-width: 3px; }
 .source { color: var(--warn); border-style: dashed; }
 
 .state-note { margin: 4px 0 0; font-size: 0.85rem; color: var(--muted); }
@@ -259,9 +264,10 @@ nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); 
 .switcher a[aria-current="page"] { border-color: var(--accent); background: var(--surface-2); }
 .switcher .count { margin-left: 0; }
 
+.dot.state-dot-plan { background: var(--plan); }
 .dot.state-dot-build { background: var(--accent); }
-.dot.state-dot-freeze, .dot.state-dot-fixes-only { background: var(--warn); }
-.dot.state-dot-accepted { background: var(--ok); }
+.dot.state-dot-review { background: var(--warn); }
+.dot.state-dot-launch { background: var(--ok); }
 .dot.state-dot-archived { background: var(--muted); }
 
 main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
@@ -726,6 +732,9 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .md ul, .md ol { margin: 4px 0 6px; padding-inline-start: 20px; }
 .md blockquote { margin: 4px 0 6px; padding-inline-start: 10px; border-inline-start: 3px solid var(--border); color: var(--muted); }
 .md code { font-family: var(--mono); font-size: 0.88em; background: var(--surface-2); padding: 0 3px; border-radius: 3px; }
+.md code.md-inline-copy { cursor: copy; }
+.md code.md-inline-copy:hover { outline: 1px solid var(--border); }
+.md-copied:not(:empty) { margin-inline-start: 4px; font-size: 0.75rem; color: var(--ok); }
 .md .md-h { margin: 6px 0 4px; }
 .md .md-h1 { font-size: 1.05rem; }
 .md .md-h2 { font-size: 1rem; }
@@ -1359,6 +1368,9 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .lp-field { margin: 6px 0; }
 .lg-page { margin-top: 16px; }
 .legal-links { margin-top: 16px; text-align: center; }
+/* All notifications: unread in bold with a dot, as on the bell. */
+.waiting-items li.unread a { font-weight: 600; }
+.waiting-items li.unread::before { content: "●"; color: var(--accent); margin-inline-end: 6px; font-size: 0.7rem; }
 
 /* Your agents (js/agents-page.js). */
 .agent-cards, .agent-memberships { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
@@ -1369,3 +1381,8 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .agent-card-head h3 { margin: 0; }
 .agent-settings { margin-top: 8px; }
 .agent-new { margin-top: 20px; }
+/* A project's Agents: what belongs to the membership, under the card. */
+.agent-here { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
+.agent-here h4 { margin: 0 0 4px; }
+.member-actions { white-space: nowrap; }
+.member-actions .member-chat + button { margin-left: 6px; }

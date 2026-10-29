@@ -19,7 +19,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import API_VERSION, clock, longpoll, paths
+from maity_hub import API_VERSION, clock, longpoll, moderation, paths, registration
 from maity_hub.auth import device_codes, second_factor, sessions, sign_in_settings
 from maity_hub.auth.caller import SESSION_COOKIE, Caller, require_secure_transport
 from maity_hub.deps import AnyCaller, engine_of, origin_of, settings_of, wait_of
@@ -273,6 +273,11 @@ def complete_redemption(request: Request) -> JSONResponse:
     origin = origin_of(request)
     pending = request.cookies.get(PENDING_COOKIE)
     with engine_of(request).begin() as conn:
+        # A suspended account first (§16.8), before the state, and before the code's row
+        # lock: the suspension holds the account lock when it denies the open codes.
+        seen = device_codes.of_pending(conn, pending)
+        if seen is not None:
+            moderation.refuse_suspended(conn, seen.human_id)
         row = device_codes.of_pending(conn, pending, lock=True)
         if row is None:
             raise not_found()
@@ -307,8 +312,27 @@ def complete_redemption(request: Request) -> JSONResponse:
 
 @router.get("/methods")
 def methods(request: Request) -> JSONResponse:
-    """What the login page may show (§2.6.1); nothing about any account."""
+    """What the login page may show (§2.6.1); nothing about any account. `registration`
+    is the mode in effect (§2.7: `allowlist` with an entry or `open`, with complete, enabled
+    mail, which `effective_mode` already folds in), never the entries of the lists; `terms` the
+    instance's or `null`."""
+    hub = settings_of(request)
     with engine_of(request).begin() as conn:
-        device_code = sign_in_settings.device_code_enabled(conn, settings_of(request))
-        email_link = sign_in_settings.view(conn, settings_of(request))["email_link_available"]
-    return JSONResponse({"password": True, "device_code": device_code, "email_link": email_link})
+        device_code = sign_in_settings.device_code_enabled(conn, hub)
+        email_link = sign_in_settings.view(conn, hub)["email_link_available"]
+        env = hub.registration or registration.RegistrationEnvironment()
+        resolved = registration.resolve(
+            conn, env, registration.mail_ready(conn, hub), hub.public_url
+        )
+    terms = resolved.value("terms")
+    return JSONResponse(
+        {
+            "password": True,
+            "device_code": device_code,
+            "email_link": email_link,
+            # An allowlist with both lists empty admits nobody: no way in is shown (§2.7).
+            "registration": resolved.effective_mode in ("allowlist", "open")
+            and "allowlist" not in resolved.missing,
+            "terms": terms if isinstance(terms, dict) else None,
+        }
+    )

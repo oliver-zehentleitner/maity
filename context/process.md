@@ -450,7 +450,7 @@ the runner user's home, where a job could replace them. It is not ephemeral, and
 job-completed hook tidies containers, images, volumes and the workspace.
 Install steps and the trust boundary: `deploy/runner/README.md`.
 
-The condition in `ci.yml` that sends fork pull requests to the hosted runners is **not** a
+The condition in `ci.yml` that sends fork pull requests to the hosted runners (since the entry "Only a push to main goes to the rented runner", every pull request) is **not** a
 protection: a fork's pull request runs the fork's own `ci.yml` and can name the runner
 itself. The protection is the repository setting that requires approval for every outside
 collaborator's workflow run, and the rule to read `.github/` in the diff before approving.
@@ -520,7 +520,7 @@ only from a copy that belongs to the runner, so no system Python is changed.
 
 The three database jobs run on three runner services of the machine, `maity-runner@sqlite`, `@pg` and `@maria`, each in
 its own directory with its own registration and the label `<prefix>-<type>`. `ci.yml` asks each job for its own label
-through the repository variable `HUB_RUNNER_LABEL` (the prefix); unset, and for forks, the jobs run hosted. Each service
+through the repository variable `HUB_RUNNER_LABEL` (the prefix); unset, and for every pull request (all of them since the entry "Only a push to main goes to the rented runner"), the jobs run hosted. Each service
 sets `PYTEST_ARGS=-n 2` (it was `-n 3` at first, nine workers on eight cores; lowered after the machine went down, see the entry
 on the cap below), so six workers share the eight cores.
 
@@ -636,8 +636,9 @@ not exist.
 
 **Id:** ca3532c5-f8f1-4687-b467-ee1b129dc603
 **Type:** decision
-**Status:** active
+**Status:** superseded
 **Evidence:** inferred
+**Superseded by:** 41cea0a5-28af-4a1a-87ad-aad00c580b77
 **Source:** review of the setup package (two defects found by the reviewer, both reproduced in an unprivileged network namespace); re-check after the merge
 **Revisit when:** the runner moves to a different container runtime or network stack, or a rented server shows the rules failing at boot
 **See:** process.md#rented-servers-carry-the-runners-for-a-week-one-type-each — d621283e-1580-4220-8c72-ca1d5804d0aa — as of 2026-10-29
@@ -697,3 +698,120 @@ timer and prints the three effective settings in one command, so a rollback that
 - Changing `50-cloud-init.conf` or `sshd_config` in place: cloud-init may rewrite its file, and the rollback would have to restore an edit instead of
   removing one file.
 
+
+## Loopback is the job's own on a rented runner; ssh, the metadata service and the private networks stay closed
+
+**Id:** 41cea0a5-28af-4a1a-87ad-aad00c580b77
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the first run of the database job on the rented server (2026-10-29): 69 of 3,241 tests failed that pass on the hosted runner, a probe as the runner user (a listener and a client on 127.0.0.1:34567 and :8025 were refused, :5432 worked, root worked), and the rules rebuilt in an unprivileged network namespace; the maintainer's decision for this option on 2026-10-29, relayed by the coordinating agent
+**See:** process.md#the-runner-user-is-fenced-by-an-owner-match-chain-on-output-replies-first-loopback-closed — ca3532c5-f8f1-4687-b467-ee1b129dc603 — as of 2026-10-29
+**Revisit when:** a job runs something that should not reach the machine's own services, or the servers carry anything besides sshd on loopback
+
+The runner user is fenced by one chain, `MAITY_RUNNER`, that the `OUTPUT` chain jumps to for packets of that user's uid (an owner match: everything its jobs
+start, rootless Docker and the containers behind slirp4netns included, runs under that uid in the host's network stack). In it, packets of connections that
+exist already (replies) go first, so that a listener's answers are not judged as new traffic; `ssh` (port 22) is rejected over loopback and over the machine's own
+address (routed over `lo`); the rest of loopback is the job's own; and the metadata service, the private ranges and shared address space are rejected. These
+parts, the owner match on `OUTPUT` and replies first, are this entry's own decision now, taken over unchanged from the entry it supersedes; what changes is
+loopback: "closed except the database ports and the resolver" becomes "open except ssh".
+
+**Reason:** the suite starts servers of its own on loopback on any port (outbound-request tests, a TLS server with a wrong certificate, a mail
+server for the notification tests), which the closed loopback refused: 69 tests failed that pass on a hosted runner. What the closed loopback
+protected was sshd on the machine's own address (key-only since step 3b), the only service on the machine besides the resolver and the job's own
+containers; the fence matters towards the provider's networks and the metadata service, which stay closed. A dedicated machine without secrets that is
+reinstalled after a malicious job has little behind loopback to protect.
+
+Because loopback is open to the runner user, the self-test at the end of `bootstrap-server.sh` lists every other listener on loopback, on the machine's own
+address or on all addresses (ssh and the resolver excepted) as a note, not as a failure: a new service on the server should show at the next bootstrap
+without blocking it. Rejected for that: a failure for every foreign listener (the distribution's own services would trigger it) and no check at all (the
+"revisit when" of this entry would have no trigger). The probes run for 127.0.0.1, ::1 and the machine's own IPv4 and IPv6 addresses, because traffic to the
+own addresses goes over `lo` and meets the same rule; the `::1` listener probe is skipped, with a note, where a provider has IPv6 off on `lo`.
+
+**Rejected alternatives:**
+- Opening more ports one by one (the database ports and the resolver, as before): the suite picks ports at random, and each new test server would be a new failure.
+- Leaving loopback closed and moving the suite's servers elsewhere: they are in the tests, and a runner that needs the tests changed is not a drop-in for the hosted one.
+- A network namespace per job: it would give the job its own loopback and keep the machine's closed, but rootless Docker already builds one, and a second layer would
+  have to reach the service containers' loopback ports.
+- Dropping the fence altogether: the metadata service and the provider's private networks are what a job must not reach.
+
+
+## Only a push to main goes to the rented runner; pull requests stay hosted
+
+**Id:** 2f1a3417-3e68-4241-a9b2-c113b7d2b93b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the queue at 16:15 UTC on 2026-10-29: one MariaDB job ran on the rented server, eleven waited, the oldest since 14:42, and four of the waiting runs were on `main`; the coordinating agent's decision for this option, the same day
+**See:** process.md#one-runner-service-per-database-job-type-a-label-each-three-workers-per-job — c2713d54-e602-42a3-8636-693ff3fd2c0b — as of 2026-10-29
+**See:** process.md#the-database-ci-jobs-may-run-on-the-maintainers-machine-a-forks-code-reaches-it-only-through-an-approval — 405c762c-11a2-4a95-a23b-0b2657a7aa8d — as of 2026-10-29
+**Revisit when:** there are enough rented runners per job type for the queue of pull requests (one machine per concurrent job), or the jobs get random host ports
+
+In `ci.yml` the three database jobs go to the rented machine only when the event is a `push` (to `main`); a `pull_request`, from this repository or from a fork, runs on a
+hosted runner. The old condition (a pull request from this repository goes to the machine, one from a fork does not) is gone.
+
+**Reason:** a runner does one job at a time and a job type has one runner, because the services bind the host ports 5432 and 3306. With pull requests on it
+the queue of the MariaDB job reached eleven (about two hours of work) and `main`, whose checks are what a deploy waits for, queued behind pull requests
+for over an hour. Hosted runners run pull requests in parallel, at about twice the time per job. The check that a merge is green is the one worth having
+faster. This does not change the trust boundary: a pull request can change `ci.yml` and ask for the machine itself, so the approval setting for outside
+contributors stays.
+
+**Rejected alternatives:**
+- Deleting the runner variable (everything hosted): safe, and it removes the queue, but the machine would do nothing.
+- More runners for the same job type on one machine: two MariaDB jobs would both bind 3306 (random host ports would need the connection URLs to follow, a change in the shared workflow).
+- A priority for `main` over pull requests: GitHub's queue has none for self-hosted runners; the split by event is what the workflow can say.
+- Pull requests from this repository stay on the machine and `main` is brought forward (with `concurrency` or a runner group for `main`): `concurrency` orders within one group
+  and does not prioritise across groups, and a second runner group for `main` needs a second runner per job type with ports of its own, the same problem as more runners on one machine.
+- More rented machines: one more concurrent job each, at a cost; reasonable once the measured gain is clear and the pull request queue is the problem.
+
+
+## A second rented machine serves the same job type under the same label and its own name
+
+**Id:** 2020c6e7-f289-4d55-858a-5438c8bba239
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's decision to add a second runner machine (2026-10-29), after the queue of the MariaDB job (eleven waiting, the oldest for an hour and a half) showed one runner per job type to be the bottleneck
+**See:** process.md#only-a-push-to-main-goes-to-the-rented-runner-pull-requests-stay-hosted — 2f1a3417-3e68-4241-a9b2-c113b7d2b93b — as of 2026-10-29
+**Revisit when:** the queue is short again, or a job gets random host ports so that two jobs can share a machine
+
+A second machine registers the same label (`maity-hub-maria`) and a name of its own (`RUNNER_NAME_PREFIX`, for example `maity-srv2` giving `maity-srv2-maria`). GitHub hands
+a job to whichever runner with that label is free, so two MariaDB jobs run at once, one per machine.
+
+**Reason:** a machine runs one job of a type at a time because the service containers bind the host ports 5432 and 3306; more concurrent jobs of a type need more machines.
+The name of a runner must be unique in the repository (the first registration of the same name failed on the old workstation runners), the label is meant to be shared.
+
+**Rejected alternatives:**
+- A runner per job type on each machine, with the types spread over the machines (the first plan): it does not shorten the queue of the one slow job.
+- Two services of one type on one machine: both bind 3306; random host ports would need the connection URLs to follow, a change in the shared workflow.
+- A label per machine: the workflow would have to know the machines, and a job could not take whichever is free.
+
+
+## Bugs are GitHub issues with a form; feature requests and contributions are directed to the project on Maity
+
+**Id:** 3265e81c-616e-4c6d-9d27-5261e10d4691
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request on card tsk-mj2arrc90pgj, 2026-10-29; the wording of the forms is the implementer's
+**Revisit when:** the public project page on Maity shows visitors more than the app shell, or outside contributors ask for a GitHub place for ideas
+
+`.github/ISSUE_TEMPLATE/` holds one issue form for bugs (component,
+version or commit, steps, expected, actual, logs with a reminder to strip
+secrets) and a `config.yml` that turns blank issues off. Its contact
+links send feature requests and contributions to the project on Maity
+(`maity.team/oliver-zehentleitner/maity`) and security problems to the
+private channel of `SECURITY.md`. Until the public project pages exist, a
+visitor who is not signed in sees the app shell there, not the project.
+
+**Reason:** Maity is built on Maity (see the entry on maity.team as the
+only platform for the work): ideas and plans are discussed where the
+project's agents and people are, and a bug is the one thing that is
+better tracked beside the code, with the version attached. Blank issues
+off keeps feature talk and vulnerability details out of the issue list.
+
+**Alternatives:**
+- Feature request and contribution forms on GitHub: a second place for
+  the same discussion that the project's agents do not read.
+- Leaving blank issues on: reports without a version or steps, and
+  vulnerabilities posted in public.
