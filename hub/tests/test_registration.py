@@ -215,7 +215,7 @@ def test_the_login_page_learns_whether_it_offers_registration(
     make_client: ClientFactory, migrated: Engine, mode: str, mail: bool, offered: bool
 ) -> None:
     """`registration` is true only for `allowlist` or `open` with complete, enabled mail;
-    nothing about the lists or any account."""
+    nothing about the lists' entries or any account."""
     env = {"MAITY_REGISTRATION": mode, "MAITY_REGISTRATION_DOMAINS": "@example.com"}
     if mail:
         env.update(MAITY_MAIL_SIGNING_KEY=SIGNING, **MAIL)
