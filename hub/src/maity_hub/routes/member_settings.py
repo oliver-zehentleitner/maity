@@ -65,20 +65,24 @@ def get_own_settings(slug: str, request: Request, caller: AnyCaller) -> JSONResp
 def patch_own_settings(
     slug: str, request: Request, caller: AnyCaller, body: Annotated[dict[str, Any], Body()]
 ) -> JSONResponse:
-    errors: dict[str, str] = {}
-    for key in body:
-        if key not in SETTINGS:
-            errors[key] = "extra_forbidden"
-    given = body.get("not_listening")
-    if "not_listening" in body:
-        if not isinstance(given, dict) or not set(given) <= {"minutes"}:
-            errors["not_listening"] = "invalid"
-        elif given.get("minutes") is not None and not preferences.minutes_valid(given["minutes"]):
-            errors["not_listening.minutes"] = "invalid"
-    if errors:
-        raise invalid(errors)
     with engine_of(request).begin() as conn:
+        # Who may call and on which membership first, as `GET` does: a stranger's body is
+        # never judged, it learns nothing but `not_found`.
         mine, human_id = _mine(conn, caller, slug)
+        errors: dict[str, str] = {}
+        for key in body:
+            if key not in SETTINGS:
+                errors[key] = "extra_forbidden"
+        given = body.get("not_listening")
+        if "not_listening" in body:
+            if not isinstance(given, dict) or not set(given) <= {"minutes"}:
+                errors["not_listening"] = "invalid"
+            elif given.get("minutes") is not None and not preferences.minutes_valid(
+                given["minutes"]
+            ):
+                errors["not_listening.minutes"] = "invalid"
+        if errors:
+            raise invalid(errors)
         stored = dict(mine.row.own_settings or {})
         if isinstance(given, dict) and "minutes" in given:
             stored["not_listening"] = {"minutes": given["minutes"]}  # `null`: the default

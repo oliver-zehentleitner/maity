@@ -113,3 +113,7 @@ def test_only_a_human_member_has_own_settings(
     assert (
         stranger.patch(f"{BASE}/me/settings", {"not_listening": {"minutes": 30}}).status_code == 404
     )
+    # Who may call is decided before the body: a bad body from them says nothing more.
+    bad = stranger.patch(f"{BASE}/me/settings", {"not_listening": {"minutes": 1}})
+    assert bad.status_code == 404
+    assert agent.patch(f"{BASE}/me/settings", {"bogus": 1}).status_code == 403
