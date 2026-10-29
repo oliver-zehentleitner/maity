@@ -1,6 +1,7 @@
 # The certificate for the apex, www and the join host, and the www → apex
-# redirect. Replace maity.example.org with your host name (four places, plus
-# the regex). Drop join.maity.example.org if you do not use ingress.joinHost.
+# redirect. Replace maity.example.org with your host name (every
+# occurrence, plus the regex). Drop join.maity.example.org if you do not
+# use ingress.joinHost.
 # The hub's own Ingress comes from the chart (hub-values.yaml) and uses the
 # same Secret.
 apiVersion: cert-manager.io/v1

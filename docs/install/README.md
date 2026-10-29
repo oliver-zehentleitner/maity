@@ -250,6 +250,10 @@ kubectl apply -f deploy/k3s-single/postgres.yaml -f deploy/k3s-single/postgres-n
 kubectl -n maity get certificate maity-tls   # READY True after the HTTP-01 challenge
 ```
 
+Adding the join host to a running installation: extend the Certificate and
+wait until it is `Ready`, delete any Ingress of your own that routes the join
+host, then `helm upgrade` with `ingress.joinHost`, in that order.
+
 **6. The hub.** Set the image digest in `hub-values.yaml`, then:
 
 ```sh

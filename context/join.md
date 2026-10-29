@@ -262,13 +262,22 @@ method `not_found`). The hand-made objects are deleted first, then the
 chart is upgraded with the same image, so a host never has two owners;
 `cert.yaml` carries `join.` in its names for new installs.
 
-**Reason:** the path list in the Ingress duplicated what the hub already
-decides, and sent `/` and `/api/v1/health` on to the public app, which
-the contract says the join host must not do. One owner of the routing
-(the hub) and one of the objects (the chart) leaves nothing to drift.
+**Reason:** the hand-made objects differed from the contract (§1.1,
+§15.2) in three ways: the catch-all redirect was a 307 where the contract
+says 302 to the start page; a non-`GET` was redirected where the contract
+says `not_found`; and the path list passed runner pairing, `/help` and
+`/health` through to the public app, which the join host does not have.
+One owner of the routing (the hub) and one of the objects (the chart)
+leaves nothing to drift.
+
+**Constraint for a running installation:** the Certificate must name the
+join host and be `Ready` before the hand-made objects are deleted; then
+delete them, then `helm upgrade` with `ingress.joinHost`. Out of that
+order the host answers with the wrong certificate or 404 in between.
 
 **Alternatives:**
 - Keep the path-split Ingresses beside the chart: two definitions of what
-  the join host serves, and the redirect keeps answering `/`.
+  the join host serves, one of them with the wrong status codes and the
+  wrong routes.
 - A chart value for the Middleware: the hub's own 302 makes it
   unnecessary.
