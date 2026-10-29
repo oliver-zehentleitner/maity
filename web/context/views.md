@@ -607,13 +607,38 @@ features off the page for the rest of its life. Each view reading
 `openapi.json` on its own, as the Ticker did: the same read and the same
 two key forms in several places.
 
+## The inbox is the requests alone; activity is on the bell, the Chat button and /notifications
+
+**Id:** 2ff6afe9-ed47-4ffd-b12d-947cfb7774ca
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's report and decision on tsk-430dnt8s25a8 (the Request updates section slow and noisy, the tab's count against an empty list), relayed by the coordinator, 2026-10-29; docs/api.md §7, §18.2, §18.3
+**Revisit when:** the hub gives the inbox a kind of activity that asks for an answer, or the bell no longer lists everything unread
+
+The inbox, in a project and across them, lists the requests and nothing
+else: the block of unread activity under them (Request updates,
+Conversations, Mentions, Account) is gone. Its history is the Show filter
+(answered, closed). Unread notifications are on the bell, conversations
+on the Chat button, and every notification on `/notifications`, where an
+unread one is in bold with a dot as on the bell and **Mark all read**
+marks up to the head of the first page (§18.3).
+
+**Reason:** the block mostly repeated the hub's notices about agents not
+listening, held the page while it read up to four pages of 50, and made
+read and unread look alike; the inbox is for what asks for an answer.
+
+**Rejected alternative:** keeping the block with read and unread told
+apart: the activity would still sit under the requests and be read on
+every visit, while the bell already shows it.
+
 ## A personal request in the cross-project inbox is labelled Personal and links into no project
 
 **Id:** 2fd5910d-3233-4aca-a16e-8c1cc73d071a
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** docs/api.md §7 (personal requests, PR #232); the coordinator's card tsk-x995qwddkrk2, 2026-10-23; the dashboard's implementation, 2026-10-23
+**Source:** docs/api.md §7 (personal requests, PR #232); the coordinator's card tsk-x995qwddkrk2, 2026-10-23; the dashboard's implementation, 2026-10-23; the coordinator's choice of the count fix on tsk-430dnt8s25a8 (option a), 2026-10-29
 **Revisit when:** the dashboard gets a personal inbox of its own, apart from `/all`
 
 A personal request (`personal: true`, listed only by `GET /requests`) is
@@ -621,12 +646,16 @@ answered and withdrawn on `/requests/{id}/answer` and `…/withdraw`. Its
 badge says "Personal" and its project's name without a link, its card and
 its mentions are text, its free text has no @ picker, and it offers
 Withdraw, which only its human may do. Grouped by project, the personal
-ones come first under "Personal".
+ones come first under "Personal". Since 2026-10-29 a project's own inbox
+lists the open personal requests about that project too, read from
+`GET /requests`: its tab counts them (§18.2), so the list shows what the
+tab says; they keep the label and lead into nothing.
 
 **Reason:** the project's routes answer `not_found` for a personal
-request, its project's inbox never lists it, and its human need not be a
-member of that project: every link or member read into the project would
-lead nowhere.
+request, the project's own listing never holds one (§7), and its human
+need not be a member of that project: every link or member read into the
+project would lead nowhere. A tab that counts what its list leaves out
+reads as a bug (the maintainer's report).
 
 **Rejected alternative:** the project's badge and links as for every
 other entry: they lead to an inbox without the request, or to a project
