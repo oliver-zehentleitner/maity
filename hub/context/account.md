@@ -225,7 +225,12 @@ reason; and the same for `export.py`, `EXPORT_THROUGH` and
 `EXPORT_LEAVES_OUT`. A list entry for a column or table that is gone, no
 longer names a human, or that the code handles after all, fails as
 stale. `project` is kept on purpose, not covered because the deletion
-happens to read it. "Named" means `t.<table>` as a whole name in the
+happens to read it: it is the one keep the deletion module also names
+(it reads projects to find what the human owns, for `namespace_owner`,
+but never deletes or blanks the row), so the stale check exempts exactly
+`project` by name (`KEPT_THOUGH_READ`) rather than dropping the "handled
+after all" check, and any other table the deletion starts to handle
+still fails while it sits in `DELETION_KEEPS`. "Named" means `t.<table>` as a whole name in the
 module's code, comments and docstrings left out: `t.email_sign_in` is
 not named by `t.email_sign_in_day`.
 
@@ -251,6 +256,9 @@ the time the table is added.
   as the review proposed: the same enforcement, but about 45 column
   definitions touched for it, against one registry next to the test that
   reads it.
+- Dropping the "handled after all" check for every keep, to let
+  `project` pass: a handled table could then hide in `DELETION_KEEPS`
+  unnoticed.
 - Counting only foreign keys and `human_id`: principal ids in plain
   strings (`paused_by`, `caller`, `actor_human_id`) and addresses passed
   through unseen.

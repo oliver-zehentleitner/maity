@@ -110,6 +110,10 @@ DELETION_KEEPS = {
     "runner_credential": f"who revoked a runner's credential: {_RECORD}",
 }
 
+# The one table in DELETION_KEEPS that the deletion also names: it reads projects to find
+# what the human owns (`namespace_owner`), but never deletes or blanks the row.
+KEPT_THOUGH_READ = {"project"}
+
 # Tables the export reads through another module rather than in `export.py` itself.
 EXPORT_THROUGH: dict[str, ModuleType] = {
     "avatar_image": avatars,  # the avatar URL, never the image
@@ -244,7 +248,10 @@ def test_the_lists_name_only_what_they_must() -> None:
     for key in NAMES_A_HUMAN:
         assert key in columns and _looks_like_a_person(columns[key]), key
     for table in DELETION_KEEPS:
-        assert table in HUMAN_TABLES, table
+        read_only = table in KEPT_THOUGH_READ  # named, but never deleted or blanked
+        assert table in HUMAN_TABLES and (
+            read_only or not _named_in(account_deletion, table)
+        ), table
     for table, module in DELETION_THROUGH.items():
         assert table in HUMAN_TABLES and _named_in(module, table), table
     for table in EXPORT_LEAVES_OUT:
