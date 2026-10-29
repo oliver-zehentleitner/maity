@@ -5003,7 +5003,10 @@ runner credential is `forbidden` (§15.1).
 - a caller with `members:admin` in a project where an agent profile the
   member owns is a member — the agent's owner is shown to admins only
   (§6.2), and so is the owner's picture;
-- an instance admin (§16), for a human's avatar.
+- an instance admin (§16), for a human's avatar;
+- for an organisation's avatar (`org-…`, §6.26): the members of the
+  organisation and the members of every project it owns, and nobody
+  else.
 
 Any other caller gets `not_found`, as for an id that does not exist: the
 endpoint does not tell whether an account exists. The hub authorizes
@@ -7141,14 +7144,14 @@ stands on the organisation (§16.8, `suspend`), the view also carries
 | `POST /orgs` | an approved human, never an agent (`forbidden`, `humans_only`) | `{handle, display_name}`; `201` with the view. The caller becomes the organisation's first `owner`. `409 org_limit` at `max_orgs_per_human` (§16.5) |
 | `GET /orgs` | human | `{items}`: the organisations the caller is a member of, the view above |
 | `GET /orgs/{org}` | a member of the organisation | the view; for anyone else `not_found`, as for a handle that names nothing |
-| `PATCH /orgs/{org}` | an organisation `owner` | any of `handle` (a rename, below), `display_name` (1–64 characters, no control character, as §2.7.4), `members_create_projects` (boolean), `public_page` (`off`, `on`; §16.9); `200` with the view |
+| `PATCH /orgs/{org}` | an organisation `owner` | any of `handle` (a rename, below), `display_name` (1–64 characters, no control character, as §2.7.4), `members_create_projects` (boolean), `public_page` (`off`, `on`; §16.9); `200` with the view. While the organisation is suspended (below) `public_page: on` and `handle` are `forbidden` (`details.reason: moderation_hold`) |
 | `DELETE /orgs/{org}` | an organisation `owner`; a sensitive call (§2.8.4) | `{"confirm": "<the organisation's handle>"}`; `204`; `invalid` (`details.fields.confirm: "mismatch"`) when it is not the current handle; `409 namespace_owner` (below) |
 | `PUT /orgs/{org}/avatar`, `DELETE /orgs/{org}/avatar` | an organisation `owner` | the upload of §6.10 and its removal; an organisation has no forge source |
 | `GET /orgs/{org}/members` | a member of the organisation | `{items: [{id, handle, display_name, avatar_url, role, joined_at}]}`, humans only, ordered by `joined_at` |
 | `PATCH /orgs/{org}/members/{id}` | an `owner`: any role of anyone; an `admin`: `member` ↔ `admin` of someone who is not an `owner` | `{"role": "owner" \| "admin" \| "member"}`; `200` with the item; `409 org_last_owner` |
 | `DELETE /orgs/{org}/members/{id}` | an `owner`: anyone; an `admin`: a `member` or `admin`; every member: themselves (leaving) | `204`; `409 org_last_owner` |
 | `GET /orgs/{org}/members/invitations` | an `owner` or `admin` | `{items: [{id, handle, role, invited_by: {id, handle}, request_id, created_at, expires_at}]}`: the open invitations |
-| `POST /orgs/{org}/members/invitations` | an `owner`: any role; an `admin`: `member` or `admin` | `{handle, role}`; `202` with the item (below) |
+| `POST /orgs/{org}/members/invitations` | an `owner`: any role; an `admin`: `member` or `admin` | `{handle, role}`; `202` with the item (below); while the organisation is suspended `forbidden` (`details.reason: moderation_hold`) |
 | `DELETE /orgs/{org}/members/invitations/{id}` | an `owner` or `admin` | withdraws the invitation and its request; `204` |
 
 Every `/orgs` route answers an agent credential `forbidden`
@@ -7159,6 +7162,13 @@ do"). A call the caller's role in the organisation does not allow is
 gets `not_found` on every route of the organisation, so the routes tell
 nobody which organisations exist beyond what a project's `owner` and a
 public page already show.
+
+**Suspended.** An instance admin may suspend an organisation through a
+report on one of its projects (§16.8). While it is suspended it takes
+no new project and no transfer in, its page is off, and a `PATCH` that
+turns `public_page` on or renames it and every new invitation are
+`forbidden` (`details.reason: moderation_hold`). Changes of its members
+and roles, removing its avatar, and deleting it stay allowed.
 
 **Roles.** An organisation's members are humans, each with one role:
 
@@ -7188,7 +7198,8 @@ organisation and the role, with the replies `go` and `no`; it reaches
 them through the account records of §18.1 like every personal request.
 `go` makes them a member with that role, in one transaction with the
 checks that the invitation is still open and the organisation not
-deleted; `no` ends the invitation. The answer to the inviter is the
+deleted; `no` ends the invitation, and so does the invited human's
+withdrawal of their own request (§7). The answer to the inviter is the
 same `202` with the item whether or not the handle names a human who can
 be invited, so the call tells nobody who has an account: for a handle
 that names no approved, active human — nobody, an organisation, a
@@ -7197,9 +7208,11 @@ invitation stays open until it expires. A handle that is a member
 already, or has an open invitation of this organisation, is `invalid`
 (`details.fields.handle`: `member`, `invited`) — the inviter reads both
 lists anyway. An invitation expires after 14 days; the hub withdraws it
-and its request then, when the inviter loses the role that allowed it,
-when the invited human's account is deleted, and when the organisation
-is deleted. At most 20 invitations per organisation per 24 hours
+and its request then, when the invited human's account is deleted, when
+the organisation is deleted, and when the inviter loses the role that
+allowed it: an owner demoted to `admin` loses only their open
+invitations for the role `owner`; demoted to `member`, leaving or
+removed, they lose all of their open invitations. At most 20 invitations per organisation per 24 hours
 (§1.7), `rate_limited` with `Retry-After`.
 
 **The organisation's projects.** `POST /projects` (§6.1) takes an
@@ -7224,18 +7237,22 @@ organisation owns:
 - An owner who is not a member of the project joins it (`member_joined`,
   trust `owner`, the role a creator gets, §6.1); an owner who is a member
   with a lower trust is raised to `owner` (`member_updated`, `changed:
-  ["trust"]`). The member view (§6.2) carries `org_owner: true` on such
-  a membership, `false` on every other.
+  ["trust"]`); an owner who holds trust `owner` already keeps it. The
+  member view (§6.2) carries `org_owner`: `true` exactly while the
+  human is an owner of the organisation that owns the project, `false`
+  otherwise. A creator who is an owner of the organisation when they
+  create the project holds a membership the hub keeps, as one who
+  joined by this rule.
 - This holds when the project is created or transferred into the
   organisation, and when a human becomes an owner later — by an
   invitation's `go` or a promotion — for every project the organisation
   owns at that moment.
 - When a human stops being an owner — demoted, removed, leaving, their
-  account deleted — or the project leaves the organisation (below), each
-  membership the hub created for them ends as a removal does (§6.2), and
-  a membership they held before the hub raised it keeps the trust it had
-  then. An owner who holds the project's membership independently keeps
-  it that way.
+  account deleted — or the project leaves the organisation (below),
+  `org_owner` falls to `false`, and each membership the hub created for
+  them ends as a removal does (§6.2). A membership they held before
+  stays, with the trust it had then: one raised by the hub returns to
+  its earlier trust, one that held trust `owner` of its own keeps it.
 - "The namespace owner stays an owner" (§6.25) holds for the
   organisation's owners collectively: while a human is an owner of the
   organisation, no call demotes them below trust `owner` in one of its
@@ -7270,12 +7287,18 @@ names a human (`hum-…`) or an organisation (`org-…`).
   the organisation's namespace); `200` with the project. An `admin`
   speaks only for themselves: the hub files a personal `consent`
   request (§7) to each owner of the receiving organisation, bound as in
-  §6.25, and the first owner's `go` moves the project; it withdraws the
-  others. A `no` closes that owner's request alone; when every owner's
-  request is closed without a `go`, the transfer is withdrawn. The `go`
-  also checks that its answerer is still an owner and the caller still
-  an `owner` or `admin` of the organisation, else `transfer_stale` as
-  in §6.25.
+  §6.25, carrying both `project` and `org: {id, handle}` (the receiving
+  organisation), and the first owner's `go` moves the project; it
+  withdraws the others. A `no` closes that owner's request alone, and an
+  owner's withdrawal of their own request counts as their `no`; the
+  transfer ends only once no owner has said `go` and every request is
+  closed. The human who started the transfer withdraws it as in §6.25,
+  which withdraws every one of the requests. The `go` also checks that
+  its answerer is still an owner and the caller still an `owner` or
+  `admin` of the organisation, else `transfer_stale` as in §6.25, and
+  that the organisation is not suspended, else `forbidden`
+  (`details.reason: moderation_hold`). Suspending the organisation
+  withdraws every open transfer into it (§16.8).
 - **Out of an organisation.** Any owner of the organisation transfers
   the project, to a human or to another organisation. To a human, the
   receiver must hold trust `owner` in the project and consents as in
@@ -7393,7 +7416,7 @@ events that exist: `member_joined` and `member_updated` (above) and
 |---|---|---|
 | `POST /projects/{owner}/{slug}/requests` | `requests:ask` | `{class, title, summary?, tried?, options?, priority?, to?, task_id?, while_open?, needs_in_session?, on_behalf_of?, ktw_ref?, humans_only?, action?}`; `201`. `humans_only` is validated against `to` before the holder is set (above). With `task_id`, `while_open: wait` and the asker holding the card, the card goes to `blocked` with `blocked_by_request` and remembers its status |
 | `GET /projects/{owner}/{slug}/requests` | `project:read` | filters `status` (default `open`; comma list or `all`), `class`, `asked_by` (`me` or a member id), `to` (default `me`; `all` for everything the caller may see); `sort` = `priority` (urgent→low, then oldest first), `date` (newest first), `agent` (asker handle, then oldest first); paged. `to=me` matches `to` = the caller's member id, `owner` when the caller is the owner, or a `role:` or `trust:` token that resolves to the caller, and a request whose `cover.by` is the caller (§6.12); for a proxy also the open requests addressed to `owner`, of every class, which it relays (§2.3). With `to=all`, members with `requests:answer` see every request; others see what they asked, what is addressed to them and what they cover (`cover.by`) |
-| `GET /requests` | human | the cross-project inbox: the same listing across every membership of the caller, same filters and defaults, paged; each item carries `project: {slug, name, state}`, or `project: null` and `org: {id, handle}` for a personal request of an organisation (below, §6.26). It also lists the cross-owner `reports_to` requests addressed to the caller in projects they are not a member of (§6.2). The dashboard's `?scope=all` is accepted and means the same |
+| `GET /requests` | human | the cross-project inbox: the same listing across every membership of the caller, same filters and defaults, paged; each item carries `project: {slug, name, state}`, or `project: null` and `org: {id, handle}` for a personal request of an organisation (below, §6.26). It also lists the cross-owner `reports_to` requests addressed to the caller in projects they are not a member of (§6.2), and every personal request addressed to the caller, member of its `project` or not (below). The dashboard's `?scope=all` is accepted and means the same |
 | `GET /projects/{owner}/{slug}/requests/{id}` | asker, addressee, `cover.by` (§6.12) or `requests:answer`; for a personal request the asker only | the addressee of a cross-owner `reports_to` request may read it without a membership (§6.2) |
 | `GET /requests/{id}`, `POST /requests/{id}/answer`, `POST /requests/{id}/withdraw` | human | a personal request addressed to the caller (below), `GET` also once it is answered or withdrawn; any other id is `not_found` |
 | `POST /projects/{owner}/{slug}/requests/{id}/answer` | `requests:answer` (a proxy only as a relay, §2.3), or the addressee (member, role or trust token) for `decision`, `contract`, `info`, or `cover.by` as the addressee would (§6.12); a cross-owner `reports_to` request only its addressee, member or not (§6.2); a personal request is `not_found` here, as for `GET` (below) | exactly one of `{"reply_id"}`, `{"text"}`, `{"talk": true}`; `text` may accompany `reply_id`; `request_not_open` otherwise; `self_answer` when the answerer asked it or it was filed on their behalf. `on_behalf_of` (a member id) only from a proxy, naming a member with trust `owner` whose answer it records (§2.3); from anyone else `invalid` (`details.fields.on_behalf_of: "proxy_only"`), and a proxy's answer without it, of any class, is `forbidden` (`proxy_relays_only`); a request carrying `action` only a human with trust `owner` answers, directly, and any other answer is `forbidden` (`action_needs_owner`, §2.3) |
@@ -7444,7 +7467,9 @@ the requests an organisation files (§6.26): an invitation, and an
 admin's transfer into the organisation. A personal request that
 concerns an organisation and no project — an invitation — carries
 `project: null` and `org: {id, handle}`, and the inbox shows it under
-the organisation; every other personal request carries `org: null`.
+the organisation; a consent to a transfer into an organisation carries
+both its `project` and `org: {id, handle}`, the receiving organisation;
+every other personal request carries `org: null`.
 Below, "the owner" of a personal request is the human it is addressed
 to. A personal request is in the owner's **personal inbox**, not in the
 project's request list:
@@ -11689,8 +11714,13 @@ report with `action` and `at`.
   organisation is marked `suspended`, takes no new project (`POST
   /projects` with it as `owner` and every transfer into it are
   `forbidden`, `details.reason: moderation_hold`), its `public_page` is
-  set to `off` (§16.9), and each of its projects that is not `archived`
-  is archived as `remove` archives a project, with the same hold. The
+  set to `off` (§16.9), every open transfer into it is withdrawn (a `go`
+  on one still open is refused the same way), and each of its projects
+  that is not `archived` is archived as `remove` archives a project,
+  with the same hold. While it is suspended, `public_page: on`, a rename
+  and new invitations are refused as well (`moderation_hold`); changes
+  of its members, removing its avatar and deleting it stay allowed
+  (§6.26). The
   accounts of its owners, admins and members stay untouched: suspending
   a person is a separate report and a deliberate action on that person.
   The mark is a moderation hold (below), shown as `moderation` in the
@@ -11700,6 +11730,7 @@ report with `action` and `at`.
   no_org`).
 
 **A moderation hold.** `hide` and `remove` leave a hold on the target,
+and so does `suspend` on an organisation (above):
 `moderation: {action, report_id, at}`, shown in its view to whoever may
 read it. While a hold stands, ordinary writes cannot undo it: making a
 hidden project or profile public again, restoring a reset avatar or
@@ -11797,8 +11828,8 @@ answers as for an unknown handle (below).
 before any ETag is considered, while it is off; for an unknown name;
 for an `archived` project; for a target hidden by moderation (§16.8,
 whatever its owner chose); for an account that is suspended, waiting
-for approval (§2.7.5) or deleted; for a deleted organisation; and for
-any old name. There are no
+for approval (§2.7.5) or deleted; for a suspended or deleted
+organisation; and for any old name. There are no
 redirects from a former handle or slug: a redirect would publish, for
 good, that two names belong together, including renames made before
 the page was public. Each of these cases is a change of input for
@@ -12613,9 +12644,9 @@ the request's project. They
 reach the human through account records, never through an event's
 audience: every state change of one — filed, answered, withdrawn —
 writes one account record of the addressed human, `{request_id,
-project, org, status}` and nothing of the request's content (`project:
-null` and `org: {id, handle}` for one that concerns an organisation
-and no project, §7, §6.26; else `org: null`). The
+project, org, status}` and nothing of the request's content (`org: {id, handle}` for one that concerns an organisation, with
+`project: null` when no project is concerned, §7, §6.26; else `org:
+null`). The
 `personal_request_created` record is the human's `inbox` item for it;
 the other two only move the position (§18.2) and close the count. So a
 personal request has the same id scheme, position and read flag as
