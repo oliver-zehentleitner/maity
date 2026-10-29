@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterator
 from datetime import timedelta
 from typing import Any
@@ -10,7 +11,7 @@ import pytest
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
-from sqlalchemy import Connection, Engine, insert
+from sqlalchemy import Connection, Engine, insert, update
 from starlette.routing import Mount
 
 from maity_hub import clock, idempotency
@@ -146,6 +147,22 @@ def test_a_repeat_with_another_body_is_a_mismatch(client: TestClient, agent: fac
     response = client.post("/api/v1/probe", json={"a": 2}, headers=_auth(agent) | KEY)
     assert response.status_code == 409
     assert response.headers["Maity-Error"] == "idempotency_mismatch"
+    assert len(CALLS) == 1
+
+
+def test_a_key_stored_before_the_call_hash_is_a_mismatch(
+    client: TestClient, agent: factory.Agent, migrated: Engine
+) -> None:
+    """A key stored with the body's hash alone, as before the call's hash (§1.5), answers
+    `idempotency_mismatch` on every repeat until it expires."""
+    client.post("/api/v1/probe", json={"a": 1}, headers=_auth(agent) | KEY)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.idempotency_key).values(body_hash=hashlib.sha256(b'{"a":1}').hexdigest())
+        )
+    again = client.post("/api/v1/probe", json={"a": 1}, headers=_auth(agent) | KEY)
+    assert again.status_code == 409
+    assert again.headers["Maity-Error"] == "idempotency_mismatch"
     assert len(CALLS) == 1
 
 
