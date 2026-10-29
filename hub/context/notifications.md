@@ -305,8 +305,10 @@ only the first `limit + 1` per project that the filters, the cursor or `after` a
 from the database in the order the listing uses (`at`, then `seq`), in chunks that grow
 while a filter such as `unread` rejects them. A message whose payload text has a `member_id`
 and the human's id is derived with the rest, since it may mention them; the text test only
-selects, `_classify` decides. `scope` and the unread-chat count read their rows in one query
-each instead of one per membership and per agent, and a page reads each project and actor once.
+selects, `_classify` decides. `scope` reads its rows in one query instead of one per membership
+and per agent, and a page reads each project and actor once. The unread-chat count (`counts.chat`)
+is no longer read here: it comes from `conversation_list.unread_chats`, shared with
+`totals.unread` of `GET /me/conversations` and counting group chats too (see events.md a7fca6c0).
 Measured on SQLite with 10 projects and 30,000 chat items: 1.16 s before, 0.1 s after.
 
 **Reason:** the answer is a function of the page, so the work should be too; a cache would
