@@ -48,6 +48,8 @@ LANDING_CAP = 512 * 1024
 ATTACHMENT_CAP = 10 * 1024 * 1024
 _ATTACHMENT_UPLOAD = re.compile(r"^/api/v1/projects/[^/]+/[^/]+/attachments$")
 _LANDING_SETTINGS = ("/api/v1/admin/settings/landing", "/api/v1/admin/settings/legal")
+# The drafts a preview takes are as large as the setting they preview (§16.7, §16.7.1).
+_LANDING_PREVIEWS = tuple(f"{path}/preview" for path in _LANDING_SETTINGS)
 CSP = "default-src 'self'"
 # The private Cache-Control a route may set instead of no-store: the project images
 # (images.HEADERS) and the avatars, revalidated on every use (avatars.HEADERS).
@@ -267,7 +269,9 @@ def _body_cap(scope: Scope) -> tuple[int, Callable[[Scope, Receive, Send], Await
         return IMAGE_CAP, _image_too_large
     if method == "POST" and _ATTACHMENT_UPLOAD.match(path):
         return ATTACHMENT_CAP, functools.partial(_too_large, cap=ATTACHMENT_CAP)
-    if method == "PATCH" and path in _LANDING_SETTINGS:
+    if (method == "PATCH" and path in _LANDING_SETTINGS) or (
+        method == "POST" and path in _LANDING_PREVIEWS
+    ):
         return LANDING_CAP, functools.partial(_too_large, cap=LANDING_CAP)
     return BODY_CAP, _too_large
 

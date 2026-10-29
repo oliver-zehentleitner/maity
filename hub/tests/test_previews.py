@@ -200,3 +200,18 @@ def test_a_draft_is_shown_in_its_default_language_not_the_browsers(owner: flow.H
     assert "<title>Deutscher Entwurf</title>" in german.text  # `Accept-Language` is not read
     assert "<title>English draft</title>" in owner.client.get(f"{path}?lang=en").text
     assert "<title>Deutscher Entwurf</title>" in owner.client.get(f"{path}?lang=fr").text
+
+
+def test_a_draft_may_be_as_large_as_the_setting_it_previews(owner: flow.Human) -> None:
+    """§16.7: the 512 KiB cap of the PATCH holds for the two preview POSTs; past it is 413."""
+    wide = {"type": "text", "enabled": True, "markdown": "x" * (300 * 1024)}
+    fits = owner.post(f"{ADMIN}/preview", {"pages": {"en": {"title": "T", "sections": [wide]}}})
+    assert fits.status_code == 400  # past the stored 256 KiB: invalid, not too large
+    assert fits.json()["error"]["code"] == "invalid"
+    huge = {"type": "text", "enabled": True, "markdown": "x" * (513 * 1024)}
+    over = owner.post(f"{ADMIN}/preview", {"pages": {"en": {"title": "T", "sections": [huge]}}})
+    assert (over.status_code, over.json()["error"]["code"]) == (413, "payload_too_large")
+    legal = owner.post(
+        f"{LEGAL}/preview?page=terms", {"en": {"title": "T", "markdown": "x" * (513 * 1024)}}
+    )
+    assert (legal.status_code, legal.json()["error"]["code"]) == (413, "payload_too_large")

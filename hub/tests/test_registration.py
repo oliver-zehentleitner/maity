@@ -177,6 +177,8 @@ def test_the_terms_come_from_the_environment_then_the_admin_then_the_legal_pages
         "value": {"url": "https://hub.example/terms", "version": version},
         "source": "legal_pages",
     }
+    shown = owner.client.get("/api/v1/auth/methods").json()["terms"]  # the login page's too
+    assert shown == {"url": "https://hub.example/terms", "version": version}
     owner.patch(SETTINGS, {"terms": {"url": "https://example.com/terms", "version": "2026-10"}})
     assert owner.get(SETTINGS).json()["terms"]["source"] == "admin"
     owner.patch(SETTINGS, {"terms": None})

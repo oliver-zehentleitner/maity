@@ -316,7 +316,9 @@ def methods(request: Request) -> JSONResponse:
         device_code = sign_in_settings.device_code_enabled(conn, hub)
         email_link = sign_in_settings.view(conn, hub)["email_link_available"]
         env = hub.registration or registration.RegistrationEnvironment()
-        resolved = registration.resolve(conn, env, registration.mail_ready(conn, hub))
+        resolved = registration.resolve(
+            conn, env, registration.mail_ready(conn, hub), hub.public_url
+        )
     terms = resolved.value("terms")
     return JSONResponse(
         {
