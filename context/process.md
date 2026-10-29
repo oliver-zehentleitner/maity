@@ -668,3 +668,28 @@ through its own `Requires=`, while the user manager still comes up and runs no j
   by the jobs' service containers on the loopback ports.
 - Only the private ranges, without closing `lo`: the machine's own services stay reachable through its public address.
 
+
+## A rented runner server takes SSH keys only, set with a timer that undoes it
+
+**Id:** 834abe07-d857-418d-82a4-0247620a5566
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the first rented runner server (a provider image with root password login on, 2026-10-29); the coordinating agent's go for the change
+**See:** process.md#rented-servers-carry-the-runners-for-a-week-one-type-each — d621283e-1580-4220-8c72-ca1d5804d0aa — as of 2026-10-29
+**Revisit when:** the servers are reached through a bastion or a provider console that makes the public SSH port unnecessary
+
+Right after the bootstrap, a drop-in `00-maity.conf` sets `PasswordAuthentication no`, `KbdInteractiveAuthentication no` and
+`PermitRootLogin prohibit-password`; a systemd timer started first undoes the change after three minutes unless it is stopped after
+both a key login and a refused password login were seen from a second connection.
+
+**Reason:** the machine runs a public repository's CI and sits on a public address with root login by password on: that is the one
+credential that needs no key. The drop-in is named `00-` because sshd takes the first value of an option and the provider's
+`50-cloud-init.conf` sets the password login on. The timer is the second session of the usual advice, made safe against a
+connection that is lost.
+
+**Rejected alternatives:**
+- Leaving the provider's default for a week: the password is random but the account is root and the port is open to everyone.
+- Fail2ban or a firewall rule on port 22: it slows guessing, and the password login stays.
+- Another SSH port: obscurity only, and the provider's console and the step list assume 22.
+

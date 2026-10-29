@@ -30,6 +30,13 @@ the system and sshd.
    (`<sha>`: the commit the ops agent names; the scripts are read at that commit, not at whatever `main` is later).
 3. **root, `/root/maity/deploy/runner`:** `./bootstrap-server.sh`. It ends with `ok:` or with a `FAIL:` line (stop and
    report that line).
+3b. **root, any directory (right after the bootstrap, before any runner exists):** switch off password login for root. A timer undoes the change after
+   three minutes unless you stop it, so a mistake cannot lock you out:
+   `systemd-run --quiet --on-active=180 --unit=ssh-harden-rollback /bin/sh -c 'rm -f /etc/ssh/sshd_config.d/00-maity.conf; systemctl reload ssh'`, then
+   `printf 'PasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin prohibit-password\n' > /etc/ssh/sshd_config.d/00-maity.conf && sshd -t && systemctl reload ssh`.
+   **From another machine, new connections:** `ssh root@<ip> true` must work, and `ssh -o PubkeyAuthentication=no root@<ip> true` must end with
+   `Permission denied (publickey)`. Only then `systemctl stop ssh-harden-rollback.timer` on the server. (`00-` sorts before the provider's
+   `50-cloud-init.conf`, and the first value of an option wins.)
 4. **root, `/root`:** `curl -fsSLO <tarball-url> && echo "<sha256>  $(basename <tarball-url>)" | sha256sum -c`. It must
    print `OK`.
 5. **root, `/root/maity/deploy/runner`:** `RUNNER_TOKEN=<token> RUNNER_TARBALL=/root/<tarball-name> INSTANCES=<type> ./install-services.sh`
@@ -59,6 +66,6 @@ the runner user; `install-services.sh` makes the runner units require it and sta
 cannot reach `127.0.0.1:22`, `[::1]:22`, its own public address on port 22 or `169.254.169.254`, gets answers from a listener of its own
 on the database ports 5432 and 3306 (the path of a job to its service container), and can reach `github.com`.
 
-It does not harden SSH, set up updates or watch the machine: the provider's image and Ubuntu's unattended upgrades are what
+It does not harden SSH (step 3b does), set up updates or watch the machine: the provider's image and Ubuntu's unattended upgrades are what
 there is for a week. It was written without a fresh machine to run it on; the first server is its first run, and a `FAIL`
 there is a bug to fix in the script, not a reason to loosen a check.
