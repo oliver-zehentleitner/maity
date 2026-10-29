@@ -28,6 +28,7 @@ from maity_hub import (
     project_names,
     releases,
     rules,
+    setup_cards,
     ticker,
 )
 from maity_hub import tables as t
@@ -158,6 +159,7 @@ class ProjectCreate(Strict):
     name: str = title()
     repository: RepositoryIn | None = None
     memory: MemoryIn | None = None
+    setup: Any = None  # parsed by setup_cards.parse, for the reasons §6.21 names
     policy: PolicyIn | None = None
 
 
@@ -166,6 +168,7 @@ class ProjectPatch(Strict):
     name: str | None = title(default=None)
     repository: RepositoryIn | None = None
     memory: MemoryIn | None = None
+    setup: Any = None
     state: str | None = None
     state_note: str | None = markdown(default=None)
     policy: PolicyIn | None = None
@@ -395,6 +398,9 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
 
     named = _provider(body.memory)
     memory_on = True if named is None else named  # the default provider is keep-the-why (§6.1)
+    setup = setup_cards.parse(body.setup, memory_on)
+    if body.repository is not None:  # refuse a bad repository before anything is written
+        _repository_columns(body.repository)
     words = namespace.app_words(request.app)
     owner_id = caller.human_id
     assert owner_id is not None  # a human caller
@@ -410,6 +416,8 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
         now = clock.now()
         project_id = new_id("project")
         filled = policy.filled("hierarchical", caller.principal_id)
+        if setup["maity_badge"]:  # the creating human's choice, no policy_changed (§6.21)
+            filled["badge"] = "members"
         conn.execute(
             insert(t.project).values(
                 id=project_id,
@@ -419,6 +427,7 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
                 state="build",
                 state_changed_at=now,
                 keep_the_why=memory_on,
+                setup=setup_cards.stored(setup),
                 **_repository_columns(body.repository),
                 **policy.columns(filled),
                 settings={"release_checklist": []},
@@ -468,6 +477,16 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
             subject=("member", caller.principal_id),
         )
         project = _load(conn, project_id)
+        if project.repository_url is not None:
+            setup_cards.create(
+                conn,
+                project,
+                settings_of(request).public_url,
+                owner,
+                caller.actor(owner),
+                reader_of(request),
+            )
+            project = _load(conn, project_id)
         return idempotency.Outcome(201, "project", project_id, _view(conn, project, request))
 
     return idempotency.run(engine_of(request), request, caller, action)
@@ -489,6 +508,8 @@ def patch_project(
     words = namespace.app_words(request.app)
 
     def action(conn: Connection) -> idempotency.Outcome:
+        if "setup" in given:
+            raise invalid({"setup": "read_only"}, "the setup options are set at creation only")
         mine = membership(conn, caller, slug)
         # Membership's project snapshot may precede another writer's commit. Merge settings
         # and make policy/event decisions from the current row under the shared project lock.
@@ -630,6 +651,20 @@ def patch_project(
                 .values(state_note=body.state_note)
             )
             rules_inputs_changed = True
+        if "repository" in given and project.repository_url is None:
+            # The first repository opens the setup cards (§6.21), judged by the state this
+            # PATCH leaves: a body that also archives opens none, one that also brings the
+            # project back opens them, and they come after its state_changed.
+            fresh = _load(conn, project.id)
+            if (
+                fresh.repository_url is not None
+                and fresh.state != "archived"
+                and isinstance(fresh.setup, dict)
+                and fresh.setup.get("cards") is None
+            ):
+                setup_cards.create(
+                    conn, fresh, settings_of(request).public_url, mine.id, actor, reader_of(request)
+                )
         if new_policy is None and explicit_changes:
             conn.execute(update(t.project).where(t.project.c.id == project.id).values(**explicit))
             # The view may not move (`optional` under a provider that is off reads the
