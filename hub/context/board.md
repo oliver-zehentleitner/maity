@@ -187,14 +187,19 @@ without giving dependency-only callers any new information.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** implementation session, 2026-10-23 (the card import)
-**Revisit when:** the import needs a rule the create does not have, beyond the forge read and `imported_from`
+**Source:** implementation session, 2026-10-23 (the card import); the review rounds of #271
+**Revisit when:** a rule of the import moves into `create_card`, or the create needs a rule the import must not have
 
 `POST …/tasks/import` reads the issue first, outside any transaction, then
 builds the request a member would have sent (title, quoted body, the one
 issue link) and runs it through `create_card`, the body of `POST …/tasks`,
 which also takes `imported_from` and the link's observation from that
-read. A body over the cap is cut at a line boundary.
+read. A body over the cap is cut at a line boundary. The import's own
+rules stay in its route, before `create_card`: the replay before the forge
+read, the reader of the project's own repository, the credential check on
+the forge's text (see the entry on the order below), and in `create_card`
+only the one check that needs the project lock, `already_linked` for an
+issue imported on a card not yet closed.
 
 **Reason:** the contract makes the import a create in every respect: the
 project state and its reason rule, a paused member, the assignment, the
@@ -203,3 +208,53 @@ when the create changes.
 
 **Rejected alternative:** an import route with its own insert: every rule
 of the create copied, and a later change to the create missed there.
+
+## An import authorizes, then replays, then reads the forge, then checks the forge's text, then creates
+
+**Id:** d6c26710-0145-4701-af55-d6198650b4d9
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the two review rounds of #271 (a replay that bypassed a removed membership; a retry that needed the forge again; a credential in an issue stored unchecked)
+**Revisit when:** the replay moves into `idempotency.run` before the action for every route, or the inbound credential check learns to see text the hub fetches itself
+
+The route runs, in this order: the membership and `tasks:write`; the
+replay of a stored call with the same key (`idempotency.replay_first`);
+the forge read with the project's reader; the credential check on the
+issue's title, body and author login; then `create_card` inside the
+idempotent transaction.
+
+**Reason:** a replay must not be a way around access that was removed
+since the first call, so the check comes first. A lost answer must be
+repeatable while the forge is down, so the replay comes before the read.
+The forge's text never passed the middleware that refuses a credential in
+a request body, so the route checks it and revokes what it finds as a
+leak before anything is stored.
+
+**Rejected alternatives:**
+- The replay first, as `idempotency.run` does for routes without a forge
+  read: a removed member got the card back.
+- The forge read first: a retry after a lost answer failed while the forge
+  was down, although the card existed.
+- Storing the forge's text unchecked: a credential pasted into an issue
+  would be copied into the board and its events.
+
+## An imported issue is the same issue whatever case its URL is written in
+
+**Id:** e8ecf68b-40ea-4ef3-8538-80aed1b10334
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the #271 review (one issue imported twice through URLs differing in case); GitHub treats owner and repository names case-insensitively
+**Revisit when:** the hub supports a forge whose owner or repository names are case-sensitive
+
+`already_linked` compares the stored `imported_from.forge_url` with the
+new one ignoring case.
+
+**Reason:** GitHub's owner and repository names ignore case, so
+`Acme/Widget#1` and `acme/widget#1` are one issue. The project lock keeps
+two imports from racing only when their strings are the same; an exact
+comparison would let the same issue be imported twice.
+
+**Rejected alternative:** the exact comparison the first version made:
+it let the same issue be imported twice through two spellings of its URL.

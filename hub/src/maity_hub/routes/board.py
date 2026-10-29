@@ -22,7 +22,14 @@ from maity_hub.auth.caller import Caller
 from maity_hub.auth.leaks import revoke_leaked
 from maity_hub.board import history, importing, links, notes
 from maity_hub.deps import AnyCaller, engine_of, reader_of
-from maity_hub.errors import ApiError, humans_only, invalid, not_found, rate_limited
+from maity_hub.errors import (
+    ApiError,
+    humans_only,
+    invalid,
+    not_found,
+    probe_not_configured,
+    rate_limited,
+)
 from maity_hub.events import emit, on_rollback, transaction
 from maity_hub.ids import new_id
 from maity_hub.models import Strict, Written, markdown
@@ -514,12 +521,11 @@ def _refuse_credentials(request: Request, issue: dict[str, Any]) -> None:
     )
 
 
-@router.post("/projects/{slug}/tasks/import")
+@router.post("/projects/{owner}/{slug}/tasks/import")
 def import_issue(slug: str, body: ImportIn, request: Request, caller: AnyCaller) -> JSONResponse:
     """The one write that reads the forge before it answers: the card cannot exist
     without its title. The read runs before the transaction; nothing is stored when
     it fails."""
-    fg = reader_of(request)
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
         mine.require("tasks:write")
@@ -529,21 +535,27 @@ def import_issue(slug: str, body: ImportIn, request: Request, caller: AnyCaller)
     if replayed is not None:
         return replayed
     project = mine.project
+    # The project's own reader (§11.4): the owner's grant for its repository, or the
+    # operator's token for a public one.
+    fg = reader_of(request).for_project(project.id)
     try:
         ref = links.parse_forge(body.issue_url, "issue", project.repository_url)
     except links.LinkError as error:
         raise invalid({"issue_url": error.code}) from None
     if not links.is_own_repository(ref, project.repository_url):
         raise invalid({"issue_url": "foreign_repository"})  # the hub reads only its own
+    admin = mine.may("project:admin")
     if not fg.configured_for(project.repository_url):
-        raise ApiError(
-            409, "probe_not_configured", "the hub holds no forge token for this repository"
-        )
+        raise probe_not_configured((fg.refused or "no_grant") if admin else None)
     at = clock.rfc3339(clock.now())
     try:
         issue = fg.issue(ref.repository, ref.number)
-    except forge.ForgeUnavailableError:
-        raise ApiError(503, "probe_unavailable", "the forge did not answer") from None
+    except forge.NotCoveredError as error:
+        raise probe_not_configured(error.reason if admin else None) from None
+    except forge.ForgeUnavailableError as error:
+        # A spent budget says when the forge is read again (§11.4).
+        details = {"retry_at": clock.rfc3339(error.retry_at)} if error.retry_at else None
+        raise ApiError(503, "probe_unavailable", "the forge did not answer", details) from None
     if issue is None:
         raise invalid({"issue_url": "not_found_on_forge"})
     if issue["is_pull_request"]:

@@ -1,4 +1,4 @@
-"""`GET /projects/{slug}/overview` (docs/api.md §6.11): what the project overview cannot
+"""`GET /projects/{owner}/{slug}/overview` (docs/api.md §6.11): what the project overview cannot
 get cheaply from the reads that exist — the board's column counts, the open requests
 the caller may see, and the latest reports. Counts and facts only, read at call time in
 one transaction; no title of a request, no member view repeated."""
@@ -17,9 +17,10 @@ from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import invalid
+from maity_hub.namespace import ProjectRoute
 from maity_hub.routes.requests import _filtered
 
-router = APIRouter()
+router = APIRouter(route_class=ProjectRoute)
 
 REPORTS_DEFAULT, REPORTS_MAX = 10, 50
 
@@ -123,7 +124,7 @@ def latest_reports(conn: Connection, project_id: str, limit: int) -> list[dict[s
     return shown
 
 
-@router.get("/projects/{slug}/overview")
+@router.get("/projects/{owner}/{slug}/overview")
 def overview(
     slug: str,
     request: Request,

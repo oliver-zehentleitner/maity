@@ -35,8 +35,8 @@ def test_the_overview_counts_the_board_with_the_boards_window(
     task(owner)
     task(owner, status="proposed")
     old = task(owner)
-    owner.patch(f"/projects/maity/tasks/{old['id']}", {"status": "cancelled"})
-    body = owner.get("/projects/maity/overview").json()
+    owner.patch(f"/projects/maintainer/maity/tasks/{old['id']}", {"status": "cancelled"})
+    body = owner.get("/projects/maintainer/maity/overview").json()
     assert body["board"] == {
         "counts": {
             "proposed": 1,
@@ -49,10 +49,12 @@ def test_the_overview_counts_the_board_with_the_boards_window(
         },
         "closed_after": None,
     }
-    later = owner.get("/projects/maity/overview?closed_after=2999-01-01T00:00:00Z").json()
+    later = owner.get(
+        "/projects/maintainer/maity/overview?closed_after=2999-01-01T00:00:00Z"
+    ).json()
     assert later["board"]["counts"]["cancelled"] == 0 and later["board"]["counts"]["open"] == 1
     assert later["board"]["closed_after"] == "2999-01-01T00:00:00Z"
-    refused = owner.get("/projects/maity/overview?closed_after=2026-01-01T00:00:00")
+    refused = owner.get("/projects/maintainer/maity/overview?closed_after=2026-01-01T00:00:00")
     assert refused.json()["error"]["details"]["fields"] == {"closed_after": "needs_a_zone"}
 
 
@@ -62,19 +64,21 @@ def test_the_overview_counts_only_requests_the_caller_may_see(
     asker = flow.agent(make_client, owner)
     other = flow.agent(make_client, owner)
     asker.post(
-        "/projects/maity/requests",
+        "/projects/maintainer/maity/requests",
         {"class": "decision", "title": "Which?", "to": "owner", "priority": "high"},
     )
     asker.post(
-        "/projects/maity/requests",
+        "/projects/maintainer/maity/requests",
         {"class": "info", "title": "FYI", "to": other.id},
     )
-    mine = owner.get("/projects/maity/overview").json()["requests"]
+    mine = owner.get("/projects/maintainer/maity/overview").json()["requests"]
     assert mine["open"] == 2 and mine["to_me"] == 1
     assert mine["by_priority"]["high"] == 1 and mine["oldest_open_at"] is not None
-    theirs = other.get("/projects/maity/overview").json()["requests"]
+    theirs = other.get("/projects/maintainer/maity/overview").json()["requests"]
     assert (theirs["open"], theirs["to_me"]) == (1, 1)
-    none = flow.agent(make_client, owner).get("/projects/maity/overview").json()["requests"]
+    none = (
+        flow.agent(make_client, owner).get("/projects/maintainer/maity/overview").json()["requests"]
+    )
     assert none == {
         "open": 0,
         "to_me": 0,
@@ -89,13 +93,13 @@ def test_the_overview_lists_the_latest_reports_newest_first(
     agent = flow.agent(make_client, owner)
     first, second = task(owner, label="feature"), task(owner)
     for card in (first, second):
-        agent.post(f"/projects/maity/tasks/{card['id']}/claim", {})
+        agent.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
         response = agent.post(
-            f"/projects/maity/tasks/{card['id']}/report",
+            f"/projects/maintainer/maity/tasks/{card['id']}/report",
             {"summary": "done", "code": False, "pr_status": "none"},
         )
         assert response.status_code == 200, response.text
-    reports = owner.get("/projects/maity/overview").json()["reports"]
+    reports = owner.get("/projects/maintainer/maity/overview").json()["reports"]
     assert [r["task"]["id"] for r in reports] == [second["id"], first["id"]]
     shown = reports[1]
     assert shown["task"] == {
@@ -113,10 +117,10 @@ def test_the_overview_lists_the_latest_reports_newest_first(
         None,
         None,
     )
-    assert len(owner.get("/projects/maity/overview?limit=1").json()["reports"]) == 1
+    assert len(owner.get("/projects/maintainer/maity/overview?limit=1").json()["reports"]) == 1
     # A removed member keeps its handle and name.
-    owner.delete(f"/projects/maity/members/{agent.id}")
-    again = owner.get("/projects/maity/overview").json()["reports"]
+    owner.delete(f"/projects/maintainer/maity/members/{agent.id}")
+    again = owner.get("/projects/maintainer/maity/overview").json()["reports"]
     assert again[0]["reported_by"]["handle"] == shown["reported_by"]["handle"]
 
 
@@ -125,9 +129,13 @@ def test_the_overview_lists_the_latest_reports_newest_first(
 
 class IssueForge(forge.Forge):
     def __init__(
-        self, found: dict[str, Any] | None, fail: bool = False, token: str | None = "token"
+        self,
+        found: dict[str, Any] | None,
+        fail: bool = False,
+        token: str | None = "token",
+        refused: str | None = None,
     ) -> None:
-        super().__init__(token)
+        super().__init__(token, refused=refused)
         self.found, self.fail = found, fail
         self.asked: list[tuple[str, int]] = []
 
@@ -160,7 +168,7 @@ def forged(monkeypatch: pytest.MonkeyPatch) -> list[IssueForge]:
 
 
 def imported(who: Any, **body: Any) -> Any:
-    return who.post("/projects/maity/tasks/import", {"issue_url": ISSUE, **body})
+    return who.post("/projects/maintainer/maity/tasks/import", {"issue_url": ISSUE, **body})
 
 
 def test_an_import_quotes_the_issue_and_neutralises_every_at(
@@ -187,7 +195,7 @@ def test_an_import_quotes_the_issue_and_neutralises_every_at(
     # Importing it again while that card is open is already_linked.
     again = imported(owner)
     assert again.status_code == 409 and again.json()["error"]["details"]["task"] == card["id"]
-    owner.patch(f"/projects/maity/tasks/{card['id']}", {"status": "cancelled"})
+    owner.patch(f"/projects/maintainer/maity/tasks/{card['id']}", {"status": "cancelled"})
     assert imported(owner).status_code == 201
 
 
@@ -205,7 +213,7 @@ def test_no_at_from_the_forge_ever_resolves_even_after_an_edit(
     card = imported(owner).json()
     assert f"@{ZWSP}maintainer" in card["body"] and card["mentions"] == []
     edited = card["body"] + "\n\nOne more line by the maintainer."
-    response = owner.patch(f"/projects/maity/tasks/{card['id']}", {"body": edited})
+    response = owner.patch(f"/projects/maintainer/maity/tasks/{card['id']}", {"body": edited})
     assert response.status_code == 200, response.text
     assert response.json()["mentions"] == []
     with migrated.connect() as conn:
@@ -231,7 +239,7 @@ def test_what_the_import_refuses(
     owner: flow.Human, forged: list[IssueForge], url: str, found: Any, code: str
 ) -> None:
     forged[0] = IssueForge(found)
-    response = owner.post("/projects/maity/tasks/import", {"issue_url": url})
+    response = owner.post("/projects/maintainer/maity/tasks/import", {"issue_url": url})
     assert response.status_code == 400, response.text
     assert response.json()["error"]["details"]["fields"] == {"issue_url": code}
 
@@ -250,10 +258,29 @@ def test_the_import_needs_the_probe_and_stores_nothing_when_the_forge_fails(
         assert conn.execute(select(t.card)).first() is None
 
 
+def test_an_import_says_why_the_projects_reader_refuses(
+    owner: flow.Human, forged: list[IssueForge], migrated: Engine
+) -> None:
+    """The project's own reader (§11.4): a refused one is `probe_not_configured`, with
+    the reason for a project admin."""
+    refusing = IssueForge(issue(), refused="private_without_grant")
+    forged[0] = refusing
+    refused = imported(owner)
+    assert refused.status_code == 409, refused.text
+    error = refused.json()["error"]
+    assert (error["code"], error["details"]) == (
+        "probe_not_configured",
+        {"reason": "private_without_grant"},
+    )
+    assert refusing.asked == []
+    with migrated.connect() as conn:
+        assert conn.execute(select(t.card)).first() is None
+
+
 def test_an_import_is_a_create(
     owner: flow.Human, forged: list[IssueForge], migrated: Engine
 ) -> None:
-    owner.patch("/projects/maity", {"state": "freeze", "reason": "release"})
+    owner.patch("/projects/maintainer/maity", {"state": "freeze", "reason": "release"})
     assert imported(owner).json()["error"]["details"]["fields"] == {"reason": "required"}
     card = imported(owner, reason="the release needs it").json()
     with migrated.connect() as conn:
@@ -284,7 +311,7 @@ def test_a_replayed_import_answers_without_reading_the_forge(
 ) -> None:
     agent = flow.agent(make_client, owner)
     keyed = agent.auth | {"Idempotency-Key": "replayed-import-0001"}
-    path = "/api/v1/projects/maity/tasks/import"
+    path = "/api/v1/projects/maintainer/maity/tasks/import"
     first = agent.client.post(path, json={"issue_url": ISSUE}, headers=keyed)
     assert first.status_code == 201, first.text
     forged[0] = IssueForge(None, fail=True)  # the forge is down now
@@ -300,7 +327,7 @@ def test_the_same_issue_in_another_case_is_already_linked(
 ) -> None:
     assert imported(owner).status_code == 201
     shouted = owner.post(
-        "/projects/maity/tasks/import",
+        "/projects/maintainer/maity/tasks/import",
         {"issue_url": "https://github.com/Oliver-Zehentleitner/MAITY/issues/41"},
     )
     assert shouted.status_code == 409, shouted.text
@@ -315,9 +342,9 @@ def test_a_removed_human_cannot_replay_an_import(
     second = flow.human(make_client, migrated, handle="second")
     factory.membership(migrated, project_id, role="member", human_id=second.id)
     keyed = {"X-CSRF-Token": second.csrf, "Idempotency-Key": "replay-after-removal-01"}
-    path = "/api/v1/projects/maity/tasks/import"
+    path = "/api/v1/projects/maintainer/maity/tasks/import"
     first = second.client.post(path, json={"issue_url": ISSUE}, headers=keyed)
     assert first.status_code == 201, first.text
-    assert owner.delete(f"/projects/maity/members/{second.id}").status_code == 200
+    assert owner.delete(f"/projects/maintainer/maity/members/{second.id}").status_code == 200
     again = second.client.post(path, json={"issue_url": ISSUE}, headers=keyed)
     assert again.status_code == 404, again.text  # never the card as it is now
