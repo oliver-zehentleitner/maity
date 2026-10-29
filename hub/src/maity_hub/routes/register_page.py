@@ -29,6 +29,7 @@ from maity_hub.auth import sessions
 from maity_hub.auth.caller import SESSION_COOKIE, require_secure_transport
 from maity_hub.deps import engine_of, origin_of, settings_of
 from maity_hub.errors import ApiError, rate_limited
+from maity_hub.mail import address as addresses
 from maity_hub.notifications import tokens
 from maity_hub.routes.auth import LOGIN_BY_ADDRESS, end_presented, set_session_cookies
 
@@ -278,6 +279,7 @@ def _complete(request: Request, token: str, fields: dict[str, str]) -> Outcome |
     (a wrong password counted, a pending registration voided)."""
     hub = settings_of(request)
     origin = origin_of(request)
+    addresses.prepare(engine_of(request), hub.secret_key)  # before the locks' transaction
     with engine_of(request).begin() as conn:
         found = _pending(conn, request, token)
         if found is None:
@@ -294,6 +296,7 @@ def _complete(request: Request, token: str, fields: dict[str, str]) -> Outcome |
             terms_seen=_seen_terms(hub, str(payload["n"]), fields.get("terms_seen", "")),
             terms_accepted=fields.get("terms_accepted") == "1",
             source=origin.address,
+            secret_key=hub.secret_key,
             user_agent=request.headers.get("user-agent"),
         )
         device = None

@@ -387,7 +387,7 @@ def delete_account(conn: Connection, hub: Settings, human_id: str) -> None:
     # The personal requests last, once removing the profiles cannot file another.
     _withdraw_personal(conn, human_id)
     _end_access(conn, hub, human_id)
-    _remove_person(conn, human_id)
+    _remove_person(conn, human_id, hub.secret_key)
 
 
 def _ids(conn: Connection, query: Any) -> list[str]:
@@ -509,7 +509,7 @@ def _end_access(conn: Connection, hub: Settings, human_id: str) -> None:
     )
 
 
-def _remove_person(conn: Connection, human_id: str) -> None:
+def _remove_person(conn: Connection, human_id: str, secret_key: bytes | None) -> None:
     """The address, picture, languages, preferences and notification settings go, with
     the account's own records and its declared limit; the row stays with `deleted_at`,
     its handle taken for good (§2.9). The row is written last: ordinary work locks it
@@ -517,7 +517,9 @@ def _remove_person(conn: Connection, human_id: str) -> None:
     wrote into events before it is shaped when read (`views.shape_deleted`). The hub has no
     public profile or static pages of a human yet (§16.9), and no handle aliases
     (§6.24)."""
-    _forget_mail(conn, human_id, _addresses(conn, human_id))
+    known = _addresses(conn, human_id)
+    _forget_mail(conn, human_id, known)  # its pending registrations go here too
+    addresses.forget_locks(conn, secret_key, known)
     for table in (
         t.notification_settings,  # the address, the language, the mail settings
         t.preferences_version,
