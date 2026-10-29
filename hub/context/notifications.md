@@ -263,7 +263,13 @@ The instance-wide registration budget's key (`BUDGET_LOCK`) goes through
 the same function. In addition, an account deletion removes the lock rows
 of the account's addresses (`addresses.forget_locks`): the `address_lock`
 row of each, and the `registration_lock` row where no pending
-registration needs it; a row is made again at its next use.
+registration needs it; a row is made again at its next use. A deletion
+can remove a row between the insert that found it and another caller's
+lock, whose `SELECT … FOR UPDATE` then finds nothing under READ
+COMMITTED; `take_lock` runs the insert and the lock once more, and a
+second empty read fails loudly rather than going on unlocked. Keeping the
+rows instead was rejected: with the pepper in the same database a row
+confirms a guessed address.
 
 **Limit:** without `MAITY_SECRET_KEY` the pepper sits unsealed in
 `instance_secret`, in the same database as the digests. A dump of the

@@ -17,7 +17,6 @@ from fastapi import APIRouter, BackgroundTasks, Body, Query, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import Connection, Engine, and_, delete, insert, or_, select, update
-from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
 from maity_hub import (
@@ -214,17 +213,7 @@ def lock_address(conn: Connection, secret_key: bytes | None, normalized: str) ->
     address cannot both count four live ones and leave six, or both stay live from one
     source. The claim at completion takes the account address lock (§18.4) as well. The
     row holds the address's HMAC, never the address (`addresses.lock_key`)."""
-    key = address.lock_key(conn, secret_key, normalized)
-    try:
-        with conn.begin_nested():
-            conn.execute(insert(t.registration_lock).values(digest=key))
-    except IntegrityError:
-        pass  # it exists; lock it below
-    conn.execute(
-        select(t.registration_lock.c.digest)
-        .where(t.registration_lock.c.digest == key)
-        .with_for_update()
-    )
+    address.take_lock(conn, t.registration_lock, address.lock_key(conn, secret_key, normalized))
 
 
 def _void_earlier(conn: Connection, normalized: str, source: str, now: Any) -> None:

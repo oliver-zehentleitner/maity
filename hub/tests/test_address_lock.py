@@ -4,9 +4,10 @@ address: a lock row outlives no account's address (§2.9)."""
 from __future__ import annotations
 
 import re
+from typing import Any
 
 import pytest
-from sqlalchemy import Engine, delete, select
+from sqlalchemy import Engine, delete, event, select
 
 from maity_hub import instance_settings as store
 from maity_hub import registration_accounts
@@ -112,3 +113,40 @@ def test_after_a_deletion_no_table_holds_the_address_or_its_lock(
                 if address in text.lower() or digest in text:
                     found.append(table.name)
     assert found == []
+
+
+def _vanishing(engine: Engine, times: int) -> Any:
+    """Delete the lock row right before the lock reads it, `times` times: a deletion's
+    `forget_locks` committing between the insert that found the row and the lock."""
+    left = {"n": times}
+
+    def before(conn: Any, cursor: Any, statement: str, *_: Any) -> None:
+        if left["n"] and statement.lstrip().upper().startswith("SELECT ADDRESS_LOCK.DIGEST"):
+            left["n"] -= 1
+            cursor.execute("DELETE FROM address_lock")
+
+    event.listen(engine, "before_cursor_execute", before)
+    return before
+
+
+def test_a_lock_row_removed_before_the_lock_is_made_again(migrated: Engine) -> None:
+    addresses.prepare(migrated, None)
+    before = _vanishing(migrated, 1)
+    try:
+        with migrated.begin() as conn:
+            addresses.lock(conn, None, "ada@example.com")
+            held = conn.execute(select(t.address_lock.c.digest)).scalars().all()
+    finally:
+        event.remove(migrated, "before_cursor_execute", before)
+    with migrated.connect() as conn:
+        assert held == [addresses.lock_key(conn, None, "ada@example.com")]
+
+
+def test_a_lock_row_that_keeps_vanishing_fails_loudly(migrated: Engine) -> None:
+    addresses.prepare(migrated, None)
+    before = _vanishing(migrated, 5)
+    try:
+        with migrated.begin() as conn, pytest.raises(RuntimeError):
+            addresses.lock(conn, None, "ada@example.com")
+    finally:
+        event.remove(migrated, "before_cursor_execute", before)

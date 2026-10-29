@@ -130,12 +130,23 @@ def lock(conn: Any, secret_key: bytes | None, value: str) -> None:
     """The per-address lock that verifying, changing and registering an address take
     (§18.4, §2.7.1): the address's row in `address_lock`, made if absent, then locked
     until commit."""
-    key = lock_key(conn, secret_key, value)
-    try:
-        with conn.begin_nested():
-            conn.execute(insert(t.address_lock).values(digest=key))
-    except IntegrityError:
-        pass  # it exists; lock it below
-    conn.execute(
-        select(t.address_lock.c.digest).where(t.address_lock.c.digest == key).with_for_update()
-    )
+    take_lock(conn, t.address_lock, lock_key(conn, secret_key, value))
+
+
+def take_lock(conn: Any, table: Any, key: str) -> None:
+    """A lock row keyed by `key`, made if absent, then locked until commit. A deletion may
+    remove the row between the insert that found it and the lock (`forget_locks`); the
+    lock then finds nothing under READ COMMITTED, so the pair runs once more, and a third
+    empty read fails loudly rather than going on unlocked."""
+    for _attempt in range(2):
+        try:
+            with conn.begin_nested():
+                conn.execute(insert(table).values(digest=key))
+        except IntegrityError:
+            pass  # it exists; lock it below
+        found = conn.execute(
+            select(table.c.digest).where(table.c.digest == key).with_for_update()
+        ).first()
+        if found is not None:
+            return
+    raise RuntimeError(f"the lock row in {table.name} vanished twice")
