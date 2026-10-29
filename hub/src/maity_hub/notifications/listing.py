@@ -13,7 +13,7 @@ from typing import Any
 from sqlalchemy import Connection, and_, func, insert, select, update
 from sqlalchemy.dialects import postgresql, sqlite
 
-from maity_hub import clock, conversation_list, namespace
+from maity_hub import clock, namespace
 from maity_hub import tables as t
 from maity_hub.auth import sessions
 from maity_hub.notifications import records
@@ -76,22 +76,38 @@ def _unread_chats(conn: Connection, mine: Any) -> int:
 
 
 def _unread_groups(conn: Connection, mine: Any) -> int:
-    """Per group chat of the member's current stay: the chat list's own `unread`, which
-    counts the others' messages after both the stay began and the member's read mark, a
-    redacted one's tombstone included, in one batch for all the stays (§9.2, §18.2)."""
-    windows = dict(
-        conn.execute(
-            select(
-                t.conversation_participant.c.conversation_id,
-                t.conversation_participant.c.window_after,
-            ).where(
-                t.conversation_participant.c.membership_id == mine.id,
-                t.conversation_participant.c.here.is_(True),
+    """Per group chat of the member's current stay: the others' messages after both the
+    stay began and the member's read mark, a redacted one's tombstone included, as the
+    chat's own `unread` counts it (§9.2, §18.2)."""
+    stays = conn.execute(
+        select(
+            t.conversation_participant.c.conversation_id,
+            t.conversation_participant.c.window_after,
+        ).where(
+            t.conversation_participant.c.membership_id == mine.id,
+            t.conversation_participant.c.here.is_(True),
+        )
+    ).all()
+    unread = 0
+    for conversation_id, window in stays:
+        seen = conn.execute(
+            select(t.conversation_read.c.last_seq).where(
+                t.conversation_read.c.reader == mine.id,
+                t.conversation_read.c.conversation_id == conversation_id,
             )
-        ).all()
-    )
-    unread, _ = conversation_list._unread(conn, mine, windows)
-    return sum(unread.values())
+        ).scalar()
+        unread += int(
+            conn.execute(
+                select(func.count()).where(
+                    t.event.c.project_id == mine.project.id,
+                    t.event.c.kind == "message",
+                    t.event.c.conversation_id == conversation_id,
+                    t.event.c.seq > max(window, seen or 0),
+                    t.event.c.actor_membership != mine.id,
+                )
+            ).scalar_one()
+        )
+    return unread
 
 
 def _unread_direct(conn: Connection, mine: Any) -> int:
