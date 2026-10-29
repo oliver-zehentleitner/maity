@@ -12,7 +12,7 @@ stalled machine takes down one type, not all. The first server runs **`maria`** 
 and the easiest to measure) on the dedicated profile below, with 8 pytest workers; add the next only after the first one
 ran jobs without a stall. A server that runs two types is the same procedure with `INSTANCES="pg maria"`, one at a time.
 
-The machine: Ubuntu 22.04 or 24.04, 8 vCPU, 16 GB, nothing else on it, SSH by key only, no other user, no secrets of the
+The machine: Ubuntu 22.04 or 24.04, 8 vCPU, 16 GB, nothing else on it, SSH by key only (after step 3b), no other user, no secrets of the
 project on it. The caps of [README.md](README.md) ("limits") are for a workstation and would throttle this machine to a fraction of itself
 (150% CPU per service, `-n 2`). `dedicated-profile.sh` raises them to the size of the machine and keeps them as a fence: the service
 may use 7 of 8 cores and 11 GB, everything the runner user runs 7.5 cores and 13 GB, no swap, so one core and about 3 GB stay for
@@ -30,13 +30,16 @@ the system and sshd.
    (`<sha>`: the commit the ops agent names; the scripts are read at that commit, not at whatever `main` is later).
 3. **root, `/root/maity/deploy/runner`:** `./bootstrap-server.sh`. It ends with `ok:` or with a `FAIL:` line (stop and
    report that line).
-3b. **root, any directory (right after the bootstrap, before any runner exists):** switch off password login for root. A timer undoes the change after
-   three minutes unless you stop it, so a mistake cannot lock you out:
-   `systemd-run --quiet --on-active=180 --unit=ssh-harden-rollback /bin/sh -c 'rm -f /etc/ssh/sshd_config.d/00-maity.conf; systemctl reload ssh'`, then
-   `printf 'PasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin prohibit-password\n' > /etc/ssh/sshd_config.d/00-maity.conf && sshd -t && systemctl reload ssh`.
+3b. **root, any directory (right after the bootstrap, before any runner exists):** switch off password login (for every user, root included). A timer
+   undoes the change after three minutes unless you stop it, so a mistake cannot lock you out. One command, so that the drop-in is never written
+   without the timer (`ssh` is Ubuntu's unit name):
+   `systemctl reset-failed ssh-harden-rollback.service 2>/dev/null; systemd-run --quiet --on-active=180 --unit=ssh-harden-rollback /bin/sh -c 'rm -f /etc/ssh/sshd_config.d/00-maity.conf; systemctl reload ssh' && printf 'PasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin prohibit-password\n' > /etc/ssh/sshd_config.d/00-maity.conf && sshd -t && systemctl reload ssh`.
    **From another machine, new connections:** `ssh root@<ip> true` must work, and `ssh -o PubkeyAuthentication=no root@<ip> true` must end with
-   `Permission denied (publickey)`. Only then `systemctl stop ssh-harden-rollback.timer` on the server. (`00-` sorts before the provider's
-   `50-cloud-init.conf`, and the first value of an option wins.)
+   `Permission denied (publickey)`. Only then, on the server, in one command that fails loudly:
+   `systemctl stop ssh-harden-rollback.timer && sshd -T | grep -E '^(passwordauthentication|kbdinteractiveauthentication|permitrootlogin) '`
+   It must print `passwordauthentication no`, `kbdinteractiveauthentication no` and `permitrootlogin without-password` (sshd's spelling of
+   prohibit-password). If `stop` says the unit is not loaded, the three minutes ran out and the change was undone: do the step again, faster.
+   (`00-` sorts before the provider's `50-cloud-init.conf`, and the first value of an option wins; the last command shows it on the machine.)
 4. **root, `/root`:** `curl -fsSLO <tarball-url> && echo "<sha256>  $(basename <tarball-url>)" | sha256sum -c`. It must
    print `OK`.
 5. **root, `/root/maity/deploy/runner`:** `RUNNER_TOKEN=<token> RUNNER_TARBALL=/root/<tarball-name> INSTANCES=<type> ./install-services.sh`

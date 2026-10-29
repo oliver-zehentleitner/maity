@@ -686,10 +686,14 @@ both a key login and a refused password login were seen from a second connection
 **Reason:** the machine runs a public repository's CI and sits on a public address with root login by password on: that is the one
 credential that needs no key. The drop-in is named `00-` because sshd takes the first value of an option and the provider's
 `50-cloud-init.conf` sets the password login on. The timer is the second session of the usual advice, made safe against a
-connection that is lost.
+connection that is lost. The window is 180 seconds: long enough for two new logins from another machine, short enough to leave the machine
+exposed only briefly if the change is wrong. The commands name Ubuntu's unit, `ssh` (other distributions call it `sshd`), and the last step stops the
+timer and prints the three effective settings in one command, so a rollback that already ran is seen and not missed.
 
 **Rejected alternatives:**
 - Leaving the provider's default for a week: the password is random but the account is root and the port is open to everyone.
 - Fail2ban or a firewall rule on port 22: it slows guessing, and the password login stays.
 - Another SSH port: obscurity only, and the provider's console and the step list assume 22.
+- Changing `50-cloud-init.conf` or `sshd_config` in place: cloud-init may rewrite its file, and the rollback would have to restore an edit instead of
+  removing one file.
 
