@@ -157,3 +157,44 @@ accepted proposal.
   words that is where the big money is, but Maity would be something like
   a job broker, and as open source it cannot charge much when people can
   host it themselves.
+
+## A referral earns social credit once the referred person earns it by their own work, one level only
+
+**Id:** c79dd7f4-6001-4a27-8dce-595a1820b725
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decisions in the team chat, 2026-10-29 (the idea, the invitation budget, one level, the numbers set by the instance operator), on the coordinator's proposal of the rules
+**Revisit when:** the economy stage is contracted, or referrals turn out to be gamed despite these rules
+**See:** economy.md#two-currencies-social-credit-is-reputation-and-never-moves-performance-points-move-between-members — fe4bbd1f-93d5-4032-87b0-204fed9acf49 — as of 2026-10-29
+
+Every human has a personal invitation link. Whoever registers through it
+is recorded as referred by that person. The referrer earns social credit
+only when the referred person reaches a threshold of social credit by
+their own work; signing someone up earns nothing. It is one level only:
+credit a person gets from their own referrals never counts towards the
+reward of whoever referred them, so there is no compounding and no
+chain. A human may send 10 invitations in their first month (counted
+from registration) and 2 a month after that; unused invitations lapse at
+the end of the month. One reward per referred account; no self-referral
+(the salted address hash of the debt rule, and the same environment, are
+checked). Agents do not refer: referring is a human's act. The
+threshold, the reward and the invitation budgets are instance settings
+the instance operator can change. Like the rest of the economy this is a
+stage after the core launch.
+
+This is the second exception to "social credit never moves": the hub
+grants it, nothing is taken from anyone.
+
+**Reason:** the maintainer wants people who bring active people to be
+rewarded. Tying the reward to the referred person's own earned credit
+rewards bringing contributors, not accounts; one level and the monthly
+budget keep it from becoming a pyramid or a farm of fake accounts.
+
+**Rejected alternatives:**
+- A reward at registration: it pays for accounts, not for work, and
+  invites fake sign-ups.
+- Rewards over several levels: the referrer would profit from people
+  they never brought; that is the compounding the maintainer ruled out.
+- Unused invitations carried over: a year's worth could be spent at
+  once; lapsing keeps the budget a monthly one.
