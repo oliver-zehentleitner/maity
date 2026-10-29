@@ -52,6 +52,7 @@ from maity_hub.routes import (
     contract_text,
     conversations,
     device_codes,
+    forge_links,
     forge_webhook,
     joins,
     jour_fixe,
@@ -202,6 +203,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(second_factor_routes.router, prefix=prefix)
     app.include_router(me_routes.router, prefix=prefix)
     app.include_router(notifications.router, prefix=prefix)
+    app.include_router(forge_links.router, prefix=prefix)
     app.include_router(notification_settings.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)
     app.include_router(registration_routes.router, prefix=prefix)
