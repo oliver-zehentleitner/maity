@@ -6798,7 +6798,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && text(rgBox().querySelector(".reg-effective")) === "Registration now: allowlist." && text(rgBox()).includes("Saved."),
     "registration: only the mode is sent; an empty allowlist is said beside the fields");
   byId("reg-domains").value = "example.com"; rgSave(); for (let k = 0; k < 6; k++) await tick();
-  expect(text(byId("reg-domains-error")).includes("entry 1 is not valid"), "registration: the hub's refusal of a list entry is said at the list, by its number");
+  expect(text(byId("reg-domains-error")) === "entry 1 is not valid", "registration: the hub's refusal of a list entry is said at the list, by its number");
+  // The hub's own shape (registration.py): `addresses.<index>` for a bad entry, the second here.
+  const rgReal = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => (p === "/admin/settings/registration"
+    ? Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { "addresses.1": "invalid" } })) : rgReal(p, b));
+  byId("reg-domains").value = ""; byId("reg-addresses").value = "ada@example.org\nnot an address"; rgSave(); for (let k = 0; k < 6; k++) await tick();
+  expect(text(byId("reg-addresses-error")) === "entry 2 is not valid" && text(rgBox().querySelector("form.reg-form")).includes("addresses: entry 2 is not valid"),
+    "registration: the hub's addresses.<index> is said at the addresses, by its number");
+  win.Maity.api.patch = rgReal;
+  byId("reg-addresses").value = "";
   byId("reg-domains").value = "@Example.com\n@example.com"; rgSave(); for (let k = 0; k < 6; k++) await tick();
   expect(JSON.stringify(rgPatches[rgPatches.length - 1]) === JSON.stringify({ domains: ["@example.com"] }) && !rgBox().querySelector('[data-missing="allowlist"]'),
     "registration: a list is sent lower case without duplicates, and the gap is gone");

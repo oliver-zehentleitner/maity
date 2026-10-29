@@ -35,10 +35,17 @@ window.Maity = window.Maity || {};
     invalid: "not a valid value",
     extra_forbidden: "not known to this hub",
   };
+  // A list entry the hub refuses is named `domains.<index>` or
+  // `addresses.<index>` (§16.4): said as "entry N is not valid".
+  const ENTRY = /^(domains|addresses)\.(\d+)$/;
+  const fieldWords = (f, r) => {
+    const entry = ENTRY.exec(f);
+    return entry ? "entry " + (Number(entry[2]) + 1) + " is not valid" : REASONS[r] || r;
+  };
   const said = (err) => {
     const fields = err.code === "invalid" && err.details && err.details.fields;
     if (!fields) return err;
-    return { message: Object.entries(fields).map(([f, r]) => f.replace(/_/g, " ") + ": " + (REASONS[r] || (/^\d+$/.test(String(r)) ? "entry " + (Number(r) + 1) + " is not valid" : r))).join("; ") };
+    return { message: Object.entries(fields).map(([f, r]) => f.replace(ENTRY, "$1").replace(/_/g, " ") + ": " + fieldWords(f, r)).join("; ") };
   };
   // A list typed one per line or comma separated, trimmed, without blanks.
   const listOf = (text) => [...new Set(text.split(/[\n,]/).map((x) => x.trim().toLowerCase()).filter(Boolean))];
@@ -129,8 +136,11 @@ window.Maity = window.Maity || {};
             const fields = err.code === "invalid" && err.details && err.details.fields;
             if (fields) {
               if (fields.mode) errors.mode.textContent = REASONS[fields.mode] || fields.mode;
-              if (fields.domains) errors.domains.textContent = said({ code: "invalid", details: { fields: { domains: fields.domains } } }).message;
-              if (fields.addresses) errors.addresses.textContent = said({ code: "invalid", details: { fields: { addresses: fields.addresses } } }).message;
+              // A list's own refusal or one of its entries' (`domains.<index>`), at the list.
+              Object.entries(fields).forEach(([f, r]) => {
+                const list = f === "domains" || f === "addresses" ? f : (ENTRY.exec(f) || [])[1];
+                if (list) errors[list].textContent = fieldWords(f, r);
+              });
               if (fields.terms) errors.terms.textContent = REASONS[fields.terms] || fields.terms;
               if (fields.max_new_accounts_per_hour) errors.max.textContent = REASONS[fields.max_new_accounts_per_hour] || fields.max_new_accounts_per_hour;
             }

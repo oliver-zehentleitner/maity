@@ -1382,8 +1382,10 @@ window.Maity = window.Maity || {};
       ["domains", "addresses"].forEach((k) => {
         if (!(k in body)) return;
         const shape = k === "domains" ? /^@[a-z0-9.-]+\.[a-z]{2,}$/i : /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i;
-        const bad = Array.isArray(body[k]) ? body[k].findIndex((x) => !shape.test(String(x))) : 0;
-        if (bad >= 0) fields[k] = String(bad);
+        // As the hub: a list that is no list is `<field>`, a bad entry `<field>.<index>` (§16.4).
+        if (!Array.isArray(body[k])) { fields[k] = "invalid"; return; }
+        const bad = body[k].findIndex((x) => !shape.test(String(x)));
+        if (bad >= 0) fields[k + "." + bad] = "invalid";
       });
       if ("approval" in body && !["operator", "automatic"].includes(body.approval)) fields.approval = "invalid";
       if ("terms" in body && body.terms !== null && !(body.terms && /^https:\/\/\S+$/.test(body.terms.url || "") && /^\S{1,64}$/.test(body.terms.version || ""))) fields.terms = "invalid";
