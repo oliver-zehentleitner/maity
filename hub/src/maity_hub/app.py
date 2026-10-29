@@ -3,21 +3,16 @@
 from __future__ import annotations
 
 import logging
-import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from importlib.resources import files
-from pathlib import Path
 from string import Template
 
 from fastapi import APIRouter, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy import Engine
 from sqlalchemy.exc import SQLAlchemyError
-from starlette.exceptions import HTTPException
-from starlette.routing import BaseRoute, Match, Mount
-from starlette.types import Receive, Scope, Send
+from starlette.routing import Mount
 
 from maity_hub import (
     API_VERSION,
@@ -33,7 +28,6 @@ from maity_hub import (
     longpoll,  # noqa: F401  (subscribes the long-poll to new events)
     namespace,
     not_listening,
-    paths,
     probe,
     registration_accounts,
     takeovers,
@@ -74,6 +68,7 @@ from maity_hub.routes import (
     notification_settings,
     notifications,
     overview,
+    pages,
     placements,
     preferences,
     project_images,
@@ -102,6 +97,7 @@ from maity_hub.routes import probe as probe_routes
 from maity_hub.routes import registration as registration_routes
 from maity_hub.routes import second_factor as second_factor_routes
 from maity_hub.routes import takeovers as takeover_routes
+from maity_hub.shell import AssetFiles, ShellRoute
 
 log = logging.getLogger(__name__)
 
@@ -274,6 +270,8 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(register_page.page_router)  # the registration's link page, likewise
     app.include_router(badges.router)  # public /badge/*.svg, before the dashboard
     app.include_router(seo.router)  # /robots.txt and /sitemap.xml, before the dashboard
+    app.include_router(pages.page_router)  # `/` and the legal pages, before the app shell
+    app.include_router(pages.page_router)  # `/` and the legal pages, before the app shell
     app.include_router(swarm.router, prefix=prefix)  # the members' and the public swarm page
     _mount_web(app, settings)
     if settings.public_url_guessed:
@@ -347,79 +345,12 @@ def _api_router() -> APIRouter:
     return router
 
 
-# The built files the dashboard names under `/assets/` (§16.11): web/'s three directories of
-# scripts, stylesheets and brand files. Everything else in web/ (the page itself, fixtures,
-# tools, the README, context/) is not served as a file.
-ASSET_DIRS = frozenset({"brand", "css", "js"})
-SHELL_HEADERS = {
-    "Cache-Control": "no-cache",  # small, and it must follow a deploy at once (§16.11)
-    "X-Robots-Tag": "noindex",
-}
-
-
-class AssetFiles(StaticFiles):
-    """The files under `/assets/`: scripts, stylesheets and brand files, no dotfiles."""
-
-    async def get_response(self, path: str, scope: Scope) -> Response:
-        # `path` is normalised; the root arrives as ".".
-        parts = [part for part in path.replace("\\", "/").split("/") if part != "."]
-        if len(parts) < 2 or parts[0] not in ASSET_DIRS or any(p.startswith(".") for p in parts):
-            raise HTTPException(status_code=404)
-        return await super().get_response(path, scope)
-
-
-BASE = b'<base href="/assets/">'
-_HEAD = re.compile(rb"<head(?:\s[^>]*)?>", re.IGNORECASE)
-
-
-def shell_document(page: bytes) -> bytes:
-    """`index.html` with `<base href="/assets/">` right after `<head>`: the file names its
-    scripts, stylesheets and brand files relative to itself, so that it also opens from
-    `file://` in fixture mode; served at any depth of a path, the base makes them load
-    from `/assets/` (§16.11 leaves a `<base>` to the dashboard)."""
-    opened = _HEAD.search(page)
-    if opened is None:
-        return page
-    return page[: opened.end()] + BASE + page[opened.end() :]
-
-
-class ShellRoute(BaseRoute):
-    """The app shell for every path the hub does not answer itself (§16.11).
-
-    A route of its own, matching last, so that a wrong method on a hub path is still the
-    router's `405` and an unknown hub path is `not_found`, not the shell. Any method but
-    `GET` and `HEAD` on a path that is the shell's is `not_found`.
-    """
-
-    def __init__(self, index: Path) -> None:
-        self.index = index
-        self.name = "shell"
-
-    def matches(self, scope: Scope) -> tuple[Match, Scope]:
-        if scope["type"] != "http" or paths.is_hub_path(scope.get("path", "")):
-            return Match.NONE, {}
-        return Match.FULL, {}
-
-    async def handle(self, scope: Scope, receive: Receive, send: Send) -> None:
-        response: Response
-        if scope["method"] in ("GET", "HEAD"):
-            headers = dict(SHELL_HEADERS)
-            if scope.get("path") == "/":
-                del headers["X-Robots-Tag"]  # the root's is the middleware's (§16.7)
-            response = Response(
-                shell_document(self.index.read_bytes()), media_type="text/html", headers=headers
-            )
-        else:
-            response = error_response(404, "not_found", "no such resource")
-        await response(scope, receive, send)
-
-
 def _mount_web(app: FastAPI, settings: Settings) -> None:
     web_dir = settings.web_dir
     if web_dir is not None and web_dir.is_dir():
         # Mounted last: the API routes above take precedence over files.
         app.router.routes.append(Mount("/assets", app=AssetFiles(directory=web_dir), name="assets"))
-        app.router.routes.append(ShellRoute(web_dir / "index.html"))
+        app.router.routes.append(ShellRoute(web_dir))
     elif settings.web_dir_required:
         raise ConfigError(f"MAITY_WEB_DIR {web_dir} is not a directory")
     elif web_dir is None:

@@ -146,7 +146,9 @@ def _pending(conn: Connection, request: Request, token: str) -> tuple[Any, dict[
 def _terms(conn: Connection, request: Request) -> dict[str, str] | None:
     hub = settings_of(request)
     env = hub.registration or registration.RegistrationEnvironment()
-    found = registration.resolve(conn, env, registration.mail_ready(conn, hub)).value("terms")
+    found = registration.resolve(
+        conn, env, registration.mail_ready(conn, hub), hub.public_url
+    ).value("terms")
     return found if isinstance(found, dict) else None
 
 
@@ -288,7 +290,7 @@ def _complete(request: Request, token: str, fields: dict[str, str]) -> Outcome |
         env = hub.registration or registration.RegistrationEnvironment()
         done = registration_accounts.complete(
             conn,
-            lambda c: registration.resolve(c, env, registration.mail_ready(c, hub)),
+            lambda c: registration.resolve(c, env, registration.mail_ready(c, hub), hub.public_url),
             row.id,
             password=fields.get("password", ""),
             handle=fields.get("handle", "").strip(),

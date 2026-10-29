@@ -94,6 +94,7 @@ def test_the_admin_publishes_it_and_the_etag_follows(
         "pages": {"en": page(HERO, text(GOOD))},
         "footer": footer,
         "updated_at": saved.json()["updated_at"],
+        "stats": None,  # no enabled `stats` section names a counter
     }
     tag = shown.headers["etag"]
     assert tag != off_tag

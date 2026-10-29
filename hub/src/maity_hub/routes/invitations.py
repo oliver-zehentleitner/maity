@@ -254,7 +254,9 @@ async def invitation_page(token: str, request: Request) -> JSONResponse:
                 select(t.human.c.display_name).where(t.human.c.id == row.created_by)
             ).scalar()
             env = hub.registration or registration.RegistrationEnvironment()
-            resolved = registration.resolve(conn, env, registration.mail_ready(conn, hub))
+            resolved = registration.resolve(
+                conn, env, registration.mail_ready(conn, hub), hub.public_url
+            )
             return {
                 "project": {
                     "slug": project.slug,

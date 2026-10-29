@@ -1498,6 +1498,23 @@ legal_page = Table(
     **MYSQL_TABLE,
 )
 
+# A draft of the landing page or of a legal page, seen before it is saved (docs/api.md
+# §16.7, §16.7.1): bound to the admin's session and never to the setting, kept for ten
+# minutes, at most twenty per session.
+preview_draft = Table(
+    "preview_draft",
+    metadata,
+    Column("id", String(32), primary_key=True),
+    Column("session", String(64), nullable=False),  # the id hash of the admin's session
+    Column("kind", String(8), nullable=False),  # landing, legal
+    Column("page", String(16)),  # the legal page; null for the landing page
+    Column("payload", JSON_VALUE, nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("expires_at", UtcDateTime, nullable=False),
+    Index("ix_preview_draft_session", "session", "created_at"),
+    **MYSQL_TABLE,
+)
+
 # --- probe --------------------------------------------------------------------------------
 
 # A member's picture (§6.10): keyed by the account or profile id (`hum-`/`agt-`), the

@@ -241,11 +241,24 @@ class Resolved:
         )
 
 
-def resolve(conn: Connection, env: RegistrationEnvironment, mail_ready: bool) -> Resolved:
+def resolve(
+    conn: Connection, env: RegistrationEnvironment, mail_ready: bool, public_url: str = ""
+) -> Resolved:
     stored = store.stored(conn, SECTION)
     values = {
         name: store.effective(f"{SECTION}.{name}", env.value(name), stored) for name in FIELDS
     }
+    if values["terms"][1] == "default":  # none from the environment, none set by the admin
+        current = conn.execute(
+            select(t.legal_page.c.current).where(t.legal_page.c.page == "terms")
+        ).scalar()
+        if current is not None and public_url:
+            # The terms page, so that a person accepts exactly the version they could read
+            # (§16.7.1): the order is the environment, the admin's value, the legal pages.
+            values["terms"] = (
+                {"url": f"{public_url.rstrip('/')}/terms", "version": current},
+                "legal_pages",
+            )
     return Resolved(values, mail_ready)
 
 

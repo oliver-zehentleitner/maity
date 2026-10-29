@@ -163,6 +163,44 @@ def test_the_admin_sets_lists_terms_and_approval(
     assert emptied["missing"] == ["allowlist"]
 
 
+def test_the_terms_come_from_the_environment_then_the_admin_then_the_legal_pages(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§16.7.1: while the `terms` page is set and neither the environment nor the admin gave
+    the terms, they are the page and its version, `source: legal_pages`."""
+    owner = admin(make_client, migrated, hub(MAITY_MAIL_SIGNING_KEY=SIGNING, **MAIL))
+    assert owner.get(SETTINGS).json()["terms"] == {"value": None, "source": "default"}
+    page = {"en": {"title": "Terms", "markdown": "Be kind."}}
+    saved = owner.patch("/admin/settings/legal", {"terms": page}).json()
+    version = saved["pages"]["terms"]["version"]
+    assert owner.get(SETTINGS).json()["terms"] == {
+        "value": {"url": "https://hub.example/terms", "version": version},
+        "source": "legal_pages",
+    }
+    owner.patch(SETTINGS, {"terms": {"url": "https://example.com/terms", "version": "2026-10"}})
+    assert owner.get(SETTINGS).json()["terms"]["source"] == "admin"
+    owner.patch(SETTINGS, {"terms": None})
+    owner.patch("/admin/settings/legal", {"terms": None})  # unset: no terms again
+    assert owner.get(SETTINGS).json()["terms"] == {"value": None, "source": "default"}
+
+
+def test_the_environment_terms_win_over_the_legal_pages(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    settings = hub(
+        MAITY_TERMS_URL="https://example.com/t",
+        MAITY_TERMS_VERSION="v9",
+        **MAIL,
+        MAITY_MAIL_SIGNING_KEY=SIGNING,
+    )
+    owner = admin(make_client, migrated, settings)
+    owner.patch("/admin/settings/legal", {"terms": {"en": {"title": "T", "markdown": "x"}}})
+    assert owner.get(SETTINGS).json()["terms"] == {
+        "value": {"url": "https://example.com/t", "version": "v9"},
+        "source": "env",
+    }
+
+
 def test_the_environment_wins_and_cannot_be_patched(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
