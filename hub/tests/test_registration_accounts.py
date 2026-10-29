@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import clock, events, registration, registration_accounts, registration_mail
+from maity_hub import clock, events, paths, registration, registration_accounts, registration_mail
 from maity_hub import tables as t
 from maity_hub.config import Settings
 from maity_hub.routes import registration as routes
@@ -311,10 +311,17 @@ def test_nobody_registers_before_the_operators_account_exists(
 def test_the_next_path_follows_the_dashboard_rule(
     admin: flow.Human, make_client: ClientFactory, migrated: Engine, claims: dict[str, str]
 ) -> None:
-    """§2.6.5: anything but `/` or a dashboard route becomes `/`, silently."""
-    for bad in ("https://evil.example/", "/\t//evil.example", "/#/a//b", "/#/x#y", "/#/a b"):
-        assert registration.safe_next(bad) == "/", bad
-    assert registration.safe_next("/#/projects/maintainer/maity") == "/#/projects/maintainer/maity"
+    """§2.6.5: anything but a dashboard path becomes `/`, silently."""
+    for bad in (
+        "https://evil.example/",
+        "/\t//evil.example",
+        "/a//b",
+        "/x#y",
+        "/a b",
+        "/api/v1/me",
+    ):
+        assert paths.safe_next(bad) == "/", bad
+    assert paths.safe_next("/maintainer/maity/board") == "/maintainer/maity/board"
     settings = settings_for(MAITY_REGISTRATION_APPROVAL="automatic")
     client = make_client(mail=settings.mail, registration=settings.registration)
     answer = client.post(
@@ -498,7 +505,7 @@ def pending_account(
     settings = settings_for()  # approval: operator, the default
     row = requested(make_client, engine, settings, address)
     done = complete(engine, settings, row.id, handle=handle, user_agent=FIREFOX)
-    assert (done.kind, done.account_status, done.next) == ("created", "pending", "/#/pending")
+    assert (done.kind, done.account_status, done.next) == ("created", "pending", "/account/pending")
     return done, signed_in(make_client, done)
 
 

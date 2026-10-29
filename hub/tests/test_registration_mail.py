@@ -34,7 +34,7 @@ def test_the_confirmation_link_is_a_signed_token_with_a_nonce_kept_as_a_hash(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
     client = open_hub(make_client, migrated)
-    register(client, "Ada@Example.com", next="/#/projects")
+    register(client, "Ada@Example.com", next="/projects")
     [row] = pending(migrated)
     [mail] = mails(migrated)
     assert (mail.kind, mail.recipient, mail.human_id) == ("registration", "Ada@Example.com", None)
@@ -108,7 +108,7 @@ def test_an_address_with_an_account_gets_a_note_and_no_link(
     assert pending(migrated) == []  # no pending registration for it
     [mail] = mails(migrated)
     assert mail.recipient == "Ada@Example.com" and mail.kind == "registration"
-    assert "Du hast schon eins: melde dich an unter https://hub.example/#/login" in mail.body
+    assert "Du hast schon eins: melde dich an unter https://hub.example/login" in mail.body
     assert "mail/register" not in mail.body and "holder" not in mail.body  # no link, no handle
 
 

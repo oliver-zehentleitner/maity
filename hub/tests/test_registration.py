@@ -232,13 +232,13 @@ def test_a_registration_answers_202_and_waits_as_pending(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
     client = open_hub(make_client, migrated)
-    answer = register(client, " Ada@Example.com ", next="/#/projects")
+    answer = register(client, " Ada@Example.com ", next="/projects")
     assert (answer.status_code, answer.json()) == (202, {"expires_in": 86400})
     [row] = pending(migrated)
     assert (row.address, row.address_normalized, row.next) == (
         "Ada@Example.com",
         "ada@example.com",
-        "/#/projects",
+        "/projects",
     )
     assert row.password_hash != PASSWORD and row.expires_at - row.created_at == timedelta(hours=24)
     assert [(s.kind, s.pending_id) for s in SENT] == [("register_link", row.id)]

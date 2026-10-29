@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy import Engine, insert, select
 
 from maity_hub import clock, namespace
+from maity_hub import paths as hub_paths
 from maity_hub import tables as t
 from maity_hub.registration_accounts import check_names
 from tests import factory, flow
@@ -22,7 +23,7 @@ def test_a_project_lives_in_its_creators_namespace(owner: flow.Human) -> None:
     body = flow.project(owner, "maity")
     assert body["full_name"] == "maintainer/maity"
     assert body["owner"] == {"id": owner.id, "handle": "maintainer"}
-    assert body["id"].startswith("prj-") and body["legacy_slug"] is None
+    assert body["id"].startswith("prj-") and "legacy_slug" not in body
     assert owner.get("/projects/maintainer/maity").json()["id"] == body["id"]
     listed = owner.get("/projects").json()["items"]
     assert [p["full_name"] for p in listed] == ["maintainer/maity"]
@@ -78,42 +79,18 @@ def test_the_route_words_come_from_the_routes() -> None:
     assert namespace.route_words(paths) == frozenset({"tasks"})
 
 
-@pytest.mark.parametrize(
-    ("path", "outdated"),
-    [
-        ("/api/v1/projects/maity", True),
-        ("/api/v1/projects/maity/tasks", True),
-        ("/api/v1/projects/never-was/tasks/tsk-1", True),
-        ("/api/v1/projects", False),
-        ("/api/v1/projects/maintainer/maity", False),
-        ("/api/v1/projects/maintainer/maity/tasks", False),
-        ("/api/v1/me", False),
-    ],
-)
-def test_an_old_path_is_told_apart_without_a_lookup(path: str, outdated: bool) -> None:
-    assert namespace.outdated(path, frozenset({"tasks", "forge"})) is outdated
-
-
 @pytest.mark.parametrize("slug", ["maity", "never-was"])
-def test_an_old_path_answers_the_cli_with_an_upgrade_and_says_nothing_about_the_project(
+def test_an_old_path_is_not_found_and_says_nothing_about_the_project(
     owner: flow.Human, slug: str
 ) -> None:
+    """The one-segment form from before the namespace is gone, not answered with an
+    upgrade hint (§16.11, alpha): `not_found`, whether the slug ever existed or not."""
     flow.project(owner, "maity")
-    old = owner.client.get(
-        f"/api/v1/projects/{slug}/tasks", headers={"User-Agent": "maity-cli/0.1.0a1"}
-    )
-    assert old.status_code == 426
-    error = old.json()["error"]
-    assert error["code"] == "client_outdated"
-    assert error["details"]["minimum"] == namespace.CLI_MINIMUM
-    assert "install" in error["details"]
-    other = owner.client.get(f"/api/v1/projects/{slug}", headers={"User-Agent": "curl/8"})
-    assert other.status_code == 410
-    assert other.json()["error"] == {
-        "code": "project_path_outdated",
-        "message": "projects are addressed as /projects/{owner}/{slug} (docs/api.md §6.25)",
-        "details": {},
-    }
+    for agent in ("maity-cli/0.1.0a1", "curl/8"):
+        for path in (f"/api/v1/projects/{slug}", f"/api/v1/projects/{slug}/tasks"):
+            old = owner.client.get(path, headers={"User-Agent": agent})
+            assert old.status_code == 404, (agent, path)
+            assert old.json()["error"]["code"] == "not_found"
 
 
 def test_an_agent_reaches_its_own_project_only(
@@ -136,8 +113,8 @@ def test_the_resume_names_the_project_by_its_full_name(
     assert "GET /projects/maintainer/maity/tasks" in packet["operations"]
 
 
-@pytest.mark.parametrize("handle", sorted(namespace.DASHBOARD_WORDS))
-def test_a_dashboard_route_word_is_no_handle(migrated: Engine, handle: str) -> None:
+@pytest.mark.parametrize("handle", sorted(hub_paths.RESERVED_FIRST))
+def test_a_reserved_first_segment_is_no_handle(migrated: Engine, handle: str) -> None:
     with migrated.connect() as conn:
         assert check_names(conn, handle, "Someone").get("handle") in ("reserved", "invalid")
 
@@ -156,35 +133,13 @@ def _public_badge(owner: flow.Human) -> None:
     assert response.status_code == 200, response.text
 
 
-def test_the_badge_lives_under_the_full_name_and_the_old_address_moves_there(
-    make_client: ClientFactory, migrated: Engine, owner: flow.Human
+def test_the_badge_lives_under_the_full_name_and_the_one_segment_address_is_gone(
+    make_client: ClientFactory, owner: flow.Human
 ) -> None:
-    from sqlalchemy import update
-
-    project = flow.project(owner, "maity")
+    flow.project(owner, "maity")
     _public_badge(owner)
     public = make_client()
     assert public.get("/badge/maintainer/maity.svg").status_code == 200
-    # A project from before the namespace keeps its old badge address, as a redirect.
-    with migrated.begin() as conn:
-        conn.execute(
-            update(t.project).where(t.project.c.id == project["id"]).values(legacy_slug="maity")
-        )
-    moved = public.get("/badge/maity.svg", follow_redirects=False)
-    assert moved.status_code == 301
-    assert moved.headers["location"] == "/badge/maintainer/maity.svg"
-    # An old address no project has answers as any badge not served.
+    # The address from before the namespace is not kept, not even as a redirect (§16.11).
+    assert public.get("/badge/maity.svg", follow_redirects=False).status_code == 404
     assert public.get("/badge/never-was.svg").status_code == 404
-
-
-def test_the_old_badge_of_a_project_not_served_does_not_redirect(
-    make_client: ClientFactory, migrated: Engine, owner: flow.Human
-) -> None:
-    from sqlalchemy import update
-
-    project = flow.project(owner, "maity")
-    with migrated.begin() as conn:
-        conn.execute(
-            update(t.project).where(t.project.c.id == project["id"]).values(legacy_slug="maity")
-        )
-    assert make_client().get("/badge/maity.svg", follow_redirects=False).status_code == 404

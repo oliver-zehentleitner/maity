@@ -135,7 +135,7 @@ def test_the_briefing_reaches_the_agent_in_every_packet_and_never_the_join_page(
 ) -> None:
     created = flow.join(owner, "maity", briefing=BRIEFING)
     token = created["join_url"].rsplit("/", 1)[1]
-    page = make_client().get(f"/j/{token}").text
+    page = make_client().get(f"/join/{token}").text
     assert "second pair of eyes" not in page
     agent = flow.agent(make_client, owner, briefing=BRIEFING)
     assert agent.resume().json()["membership"]["briefing"] == BRIEFING

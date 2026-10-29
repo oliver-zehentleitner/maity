@@ -85,7 +85,7 @@ def deliver(
     return client.post(path, content=raw, headers=headers)
 
 
-UNKNOWN = "/api/v1/projects/nope/forge/webhook"
+UNKNOWN = "/api/v1/projects/maintainer/nope/forge/webhook"
 
 
 def jobs(owner: flow.Human) -> list[Any]:
@@ -161,7 +161,7 @@ def test_refusals_look_alike_whether_the_project_exists_or_not(owner: flow.Human
     secret(owner)
     unsigned = deliver(owner.client, {}, None)
     wrong = deliver(owner.client, {}, "not the secret")
-    nobody = deliver(owner.client, {}, "x", path="/api/v1/projects/nope/forge/webhook")
+    nobody = deliver(owner.client, {}, "x", path="/api/v1/projects/maintainer/nope/forge/webhook")
     for response in (unsigned, wrong, nobody):
         assert response.status_code == 401
         assert response.json()["error"] == {
@@ -314,7 +314,9 @@ def test_sixty_held_bodies_on_one_slug_refuse_any_other_alike(
     # Oracle 2 of the re-check: whether the held slug exists changed the 61st answer.
     secret(owner)
     slug_path = HOOK if known else UNKNOWN
-    early, read = held(migrated, [slug_path] * 60 + ["/api/v1/projects/random-one/forge/webhook"])
+    early, read = held(
+        migrated, [slug_path] * 60 + ["/api/v1/projects/maintainer/random-one/forge/webhook"]
+    )
     assert (early, read) == ([429], 60)
 
 

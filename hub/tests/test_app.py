@@ -55,33 +55,96 @@ def test_no_swagger_ui_but_the_openapi_document(client: TestClient) -> None:
     assert client.get("/api/v1/openapi.json").status_code == 200
 
 
-def test_dashboard_is_served_at_the_root(client: TestClient, web_dir: Path) -> None:
-    (web_dir / "app.js").write_text("// dashboard")
-    assert "<title>dashboard</title>" in client.get("/").text
-    assert client.get("/app.js").text == "// dashboard"
+def test_the_shell_is_served_at_the_root_and_at_every_dashboard_path(
+    client: TestClient, web_dir: Path
+) -> None:
+    for path in ("/", "/login", "/maintainer/maity/board", "/a/b/c/d", "/no-such-page"):
+        response = client.get(path)
+        assert response.status_code == 200, path
+        assert "<title>dashboard</title>" in response.text
+        assert response.headers["content-type"].startswith("text/html")
+        assert response.headers["cache-control"] == "no-cache"
+        assert response.headers["x-content-type-options"] == "nosniff"
+        assert response.headers["content-security-policy"] == "default-src 'self'"
+        assert "set-cookie" not in response.headers
+    # The root's `noindex` is the middleware's, while the landing page is off (§16.7); every
+    # other path of the shell carries its own.
+    assert client.get("/maintainer/maity/board").headers["x-robots-tag"] == "noindex"
+    assert client.head("/login").status_code == 200
+
+
+def test_the_shell_carries_a_base_so_its_relative_files_load_from_assets_at_any_depth(
+    client: TestClient, web_dir: Path
+) -> None:
+    (web_dir / "js").mkdir()
+    (web_dir / "js" / "app.js").write_text("// dashboard")
+    for path in ("/", "/a/b/c", "/maintainer/maity/board"):
+        page = client.get(path).text
+        assert page.index("<head>") + len("<head>") == page.index('<base href="/assets/">'), path
+        assert 'src="js/app.js"' in page  # the file itself stays relative (fixture mode)
+    assert client.get("/assets/js/app.js").text == "// dashboard"
+
+
+def test_a_page_without_a_head_is_served_as_it_is() -> None:
+    from maity_hub.app import shell_document
+
+    assert shell_document(b"<p>x</p>") == b"<p>x</p>"
+    assert (
+        shell_document(b"<HEAD lang=x><title/>") == b'<HEAD lang=x><base href="/assets/"><title/>'
+    )
+
+
+def test_built_files_are_served_under_assets(client: TestClient, web_dir: Path) -> None:
+    (web_dir / "js").mkdir()
+    (web_dir / "js" / "app.js").write_text("// dashboard")
+    (web_dir / "brand").mkdir()
+    (web_dir / "brand" / "logo.svg").write_text("<svg/>")
+    assert client.get("/assets/js/app.js").text == "// dashboard"
+    assert client.get("/assets/brand/logo.svg").status_code == 200
+    # The old place of a file is not a file any more: it is a dashboard path, the shell.
+    old = client.get("/js/app.js")
+    assert old.status_code == 200 and "<title>dashboard</title>" in old.text
 
 
 @pytest.mark.parametrize(
     "path",
     [
-        "/.env",
-        "/.git/config",
-        "/assets/.secret",
+        "/assets/index.html",
+        "/assets/.env",
+        "/assets/js/.secret",
+        "/assets/fixtures/me.json",
+        "/assets/tools/serve.py",
+        "/assets/README.md",
+        "/assets/",
+        "/assets",
         "/api/v1/page.html",
         "/api/x",
-        "/fixtures/me.json",
-        "/tools/serve.py",
     ],
 )
-def test_dotfiles_and_the_api_prefix_are_never_served_as_files(
+def test_nothing_but_the_built_files_is_served_as_a_file(
     client: TestClient, web_dir: Path, path: str
 ) -> None:
-    target = web_dir / path.lstrip("/")
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text("must not leak")
+    for name in (".env", "js/.secret", "fixtures/me.json", "tools/serve.py", "README.md"):
+        target = web_dir / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("must not leak")
     response = client.get(path)
     assert response.status_code == 404
-    assert "must not leak" not in response.text
+    assert "must not leak" not in response.text and "<title>dashboard</title>" not in response.text
+
+
+def test_a_hub_path_that_names_nothing_is_not_the_shell(client: TestClient) -> None:
+    for path in ("/mail/nothing/here", "/badge/x", "/join", "/r/token", "/impressum/1"):
+        response = client.get(path)
+        assert response.status_code == 404, path
+        assert "<title>dashboard</title>" not in response.text, path
+
+
+def test_any_other_method_on_a_shell_path_is_not_found(client: TestClient) -> None:
+    for method in ("post", "put", "patch", "delete"):
+        response = getattr(client, method)("/maintainer/maity/board")
+        assert response.status_code == 404, method
+        assert response.json()["error"]["code"] == "not_found"
 
 
 def test_refuses_to_start_on_an_unmigrated_database(settings: Settings, engine: Engine) -> None:
@@ -123,7 +186,7 @@ def test_the_default_dashboard_is_served(database_url: str, migrated: Engine) ->
     with TestClient(create_app(settings, migrated)) as client:
         root = client.get("/")
         assert root.status_code == 200 and "<title>" in root.text
-        assert client.get("/js/app.js").status_code == 200
+        assert client.get("/assets/js/app.js").status_code == 200
 
 
 def test_driver_reason_names_a_category_and_never_the_driver_text() -> None:

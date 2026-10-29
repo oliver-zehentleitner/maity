@@ -465,7 +465,7 @@ window.Maity = window.Maity || {};
     return { open, close, seats, earlier, openCount, openAgents, reread };
   }
 
-  // On a page the router has not attached yet (a direct #/agents/join), the
+  // On a page the router has not attached yet (a direct /<owner>/<slug>/members/join), the
   // focus waits until it is in the document.
   function focusSoon(el) {
     if (el.isConnected === false) window.setTimeout(() => { if (el.isConnected !== false) el.focus(); }, 0);
@@ -548,9 +548,4 @@ window.Maity = window.Maity || {};
   }
 
   M.join = { mount };
-  // #/<owner>/<slug>/join, from before joining moved: Members, the panel open.
-  M.views.join = async function (ctx, root) {
-    if (window.history && window.history.replaceState) window.history.replaceState(null, "", ctx.link("members", "join"));
-    await M.views.members(ctx, root, ["join"]);
-  };
 })(window.Maity);
