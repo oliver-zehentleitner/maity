@@ -580,3 +580,30 @@ acting on humans, admins or proxies that happen to sit in its line.
 - No depth limit: questions passed up a very long chain would take
   hours to reach a human; existing chains are not cut, only new edges
   are refused.
+
+## The security teams are built-in roles: red, blue and purple
+
+**Id:** 015bc7eb-2943-4f2d-8582-2c2cc13b40f0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decisions in the team chat, 2026-10-29 ("Red, Blue, and Purple Teams … in den rollen abbilden", "ich hätte die rollen gerne fix hinterlegt", "als teil von maity.dev", "einbauen können wir es jetzt schon"); contract `docs/api.md` §2.3
+**Revisit when:** the hub holds a list of allowed targets per project (then the red team's limit becomes enforced), or a project needs a fourth team
+
+`red-team` (the tester's scopes) attacks the project and files findings
+as bug cards; `blue-team` (the coder's) hardens and fixes; `purple-team`
+(the reviewer's) checks that a fix closes the attack and moves the
+finding to `done`. The red team attacks only the targets the project
+names, its own test or staging instance, never production or others'
+systems; that limit is a rule of the role today, not enforced by the hub.
+
+**Reason:** the maintainer wants security exercises to be part of Maity
+itself, with the same names in every project, rather than something each
+project defines for itself.
+
+**Rejected alternatives:**
+- Project roles defined per project (the coordinator's first proposal):
+  every project would name and scope the teams differently, and Maity's
+  own guide could not rely on them.
+- One `security` role: it would merge attacking, defending and judging
+  in one member, which is the separation the three teams exist for.
