@@ -435,6 +435,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Project settings: the name, a rename by a human owner, the old name kept as an earlier one.
   await go("#/maintainer/maity/inbox"); await projectSettings();
   const nsNames = () => main.querySelector(".project-names");
+  const nsTr0 = () => nsNames().querySelector("form.project-transfer");
   expect(nsNames() && text(nsNames()).includes("This project is maintainer/maity.") && !nsNames().querySelector(".project-aliases")
     && byId("project-rename").value === "maity", "namespace: settings name the project, its slug ready to rename");
   byId("project-rename").value = "tasks"; nsNames().querySelector("form.project-rename").dispatch("submit"); await nsSettle();
@@ -459,30 +460,58 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(nsFull && nsFull.code === "alias_limit" && nsBack.full_name === "maintainer/sample-old" && nsBack.aliases.length === 8
     && nsHome.full_name === "maintainer/sample" && nsHome.aliases.length === 8 && !nsHome.aliases.includes("maintainer/sample"),
     "namespace: at the alias limit a new name is refused, an earlier one of its own taken back");
-  // Transfer: only to another human owner; without one the way is said.
+  // Transfer: to another human owner, or into an organisation one owns or administers (§6.26); without either the way is said.
+  expect(nsTr0() && byId("project-transfer-to").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "org-oz00team0001"
+    && text(byId("project-transfer-to")).includes("@oz-team · OZ Team (organisation)"), "namespace: without another owner the transfer offers the organisation one owns");
+  const nsHasT = win.Maity.api.hubHas;
+  win.Maity.api.hubHas = (m, p) => (p === "/orgs" ? Promise.resolve(false) : nsHasT(m, p));
+  await go("#/maintainer/maity/inbox"); await projectSettings(); await nsSettle();
   expect(nsNames().querySelector(".project-transfer") && text(nsNames().querySelector(".project-transfer")).includes("make them an owner of it first"),
-    "namespace: without another owner the transfer says what comes first");
+    "namespace: without another owner or an organisation the transfer says what comes first");
+  win.Maity.api.hubHas = nsHasT;
   const nsGetT = win.Maity.api.get, nsPostT = win.Maity.api.post;
   const nsAnna = { id: "hum-anna", kind: "human", handle: "anna", display_name: "Anna", trust: "owner", role: "coder", areas: [], capabilities: [], presence: "offline" };
-  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/members" ? nsGetT(p).then((r) => Object.assign({}, r, { items: r.items.concat([nsAnna]) })) : nsGetT(p));
+  const nsAdminOrg = { id: "org-oz00guild001", handle: "guild", display_name: "Guild", avatar_url: null, aliases: [], my_role: "admin", members_create_projects: false, public_page: "off" };
+  const nsMemberOrg = Object.assign({}, nsAdminOrg, { id: "org-oz00club0001", handle: "club", display_name: "Club", my_role: "member" });
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/members" ? nsGetT(p).then((r) => Object.assign({}, r, { items: r.items.concat([nsAnna]) }))
+    : p === "/orgs" ? nsGetT(p).then((r) => ({ items: r.items.concat([nsAdminOrg, nsMemberOrg]) })) : nsGetT(p));
   const nsTransfers = [];
   win.Maity.api.post = (p, b) => {
-    if (p.endsWith("/transfer")) { nsTransfers.push([p, b]); return nsTransfers.length === 1 ? Promise.resolve({ id: "req-tr01", class: "consent", status: "open" })
-      : Promise.reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", { reason: "step_up_required" })); }
+    if (p.endsWith("/transfer")) {
+      nsTransfers.push([p, b]);
+      if (b.to === "org-oz00team0001") return Promise.resolve({ id: "prj-x", full_name: "oz-team/maity", slug: "maity" });
+      if (b.to === "org-oz00guild001") return Promise.resolve({ id: "req-tr02", class: "consent", status: "open" });
+      return nsTransfers.length === 1 ? Promise.resolve({ id: "req-tr01", class: "consent", status: "open" })
+        : Promise.reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", { reason: "step_up_required" }));
+    }
     if (/\/requests\/req-tr01\/withdraw$/.test(p)) { nsTransfers.push([p, b]); return Promise.resolve({ id: "req-tr01", status: "withdrawn" }); }
     return nsPostT(p, b);
   };
   await go("#/maintainer/maity/inbox"); await projectSettings();
   const nsTr = () => nsNames().querySelector("form.project-transfer");
-  expect(nsTr() && byId("project-transfer-to").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "hum-anna", "namespace: the transfer offers the other human owners");
+  await nsSettle();
+  expect(nsTr() && byId("project-transfer-to").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "hum-anna,org-oz00team0001,org-oz00guild001",
+    "namespace: the transfer offers the other human owners, then the organisations one owns or administers, not one one is only a member of");
+  const nsConfirm = win.confirm;
+  win.confirm = () => true;
   nsTr().dispatch("submit"); await nsSettle();
   expect(JSON.stringify(nsTransfers[0]) === JSON.stringify(["/projects/maintainer/maity/transfer", { to: "hum-anna" }]) && text(nsTr()).includes("moves when they accept"),
     "namespace: a transfer asks the receiver, the move waits for their go");
   btn(nsTr(), "Withdraw the request").click(); await nsSettle();
   expect(nsTransfers[1][0] === "/projects/maintainer/maity/requests/req-tr01/withdraw" && text(nsTr()).includes("Withdrawn."), "namespace: the request is withdrawn from where it was made");
   nsTr().dispatch("submit"); await nsSettle();
-  expect(text(nsTr()).includes("Not asked: the hub asks for your second factor first"), "namespace: a step-up the hub asks for is said");
+  expect(nsTr().querySelector("form.step-up") && text(nsTr()).includes("needs your second factor") && !text(nsTr()).includes("Not transferred"),
+    "namespace: a step-up the hub asks for is asked in place");
+  btn(nsTr(), "Cancel").click(); await nsSettle();
+  expect(!nsTr().querySelector("form.step-up") && !text(nsTr()).includes("Not transferred"), "namespace: Cancel ends the transfer quietly");
+  byId("project-transfer-to").value = "org-oz00guild001"; nsTr().dispatch("submit"); await nsSettle();
+  expect(JSON.stringify(nsTransfers[nsTransfers.length - 1]) === JSON.stringify(["/projects/maintainer/maity/transfer", { to: "org-oz00guild001" }])
+    && text(nsTr()).includes("Asked the owners of @guild. The project moves when one of them accepts"), "namespace: into an organisation one administers, its owners are asked");
+  byId("project-transfer-to").value = "org-oz00team0001"; nsTr().dispatch("submit"); await nsSettle();
+  expect(win.location.hash === "#/oz-team/maity/settings", "namespace: into an organisation one owns, the project moves at once and the page follows it");
+  win.confirm = nsConfirm;
   win.Maity.api.get = nsGetT; win.Maity.api.post = nsPostT;
+  await go("#/maintainer/maity/inbox"); await nsSettle();
   // The hub's limits in words; the namespace owner stays an owner.
   const nsSaid = win.Maity.projectNames.said;
   expect(nsSaid({ code: "alias_limit", details: { limit: 8 } }).message.includes("8 earlier names") && nsSaid({ code: "rate_limited" }).message.includes("3 renames and transfers a day")
@@ -1715,7 +1744,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.patch = (p, b) => (p === "/projects/maintainer/maity/members/hum-maintainer"
     ? Promise.reject(new win.Maity.api.ApiError("x", 409, p, "namespace_owner", { projects: ["maintainer/maity"] })) : noPatch(p, b));
   main.querySelector("tr.member-manage form.member-edit").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
-  expect(text(main).includes("Saving failed: the project lives in this person's namespace, so they stay an owner; transfer it to someone else first"),
+  expect(text(main).includes("Saving failed: the project lives in this person's namespace, or they own the organisation it belongs to, so they stay an owner; transfer the project first"),
     "members: the namespace owner is not demoted, said with the way out");
   win.Maity.api.patch = noPatch;
   btn(mRow("Maintainer"), "Done").click(); await tick();
@@ -3425,6 +3454,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("delete-account-confirm").value = "maintainer"; byId("delete-account-confirm").dispatch("input");
   ydBox().querySelector("form.account-delete").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(text(ydBox()).includes("Not asked: a project in your namespace is still open"), "your data: the hub's refusal in words");
+  win.Maity.api.post = (p, b) => (p === "/me/deletion" ? Promise.reject(new win.Maity.api.ApiError("x", 409, p, "org_last_owner", { orgs: ["oz-team", "guild"] })) : ydPost(p, b));
+  byId("delete-account-confirm").value = "maintainer"; byId("delete-account-confirm").dispatch("input");
+  ydBox().querySelector("form.account-delete").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(ydBox()).includes("Not asked: you are the last owner of @oz-team, @guild: make someone else an owner, or delete the organisation, first"),
+    "your data: the last owner of organisations is told which ones");
   // One slot, one question: a second question cancels the first, whose call then does not hang (the deletion's field free again).
   win.Maity.api.post = (p, b) => {
     if (p === "/auth/second-factor/verify" || p === "/auth/reauthenticate") ydProofs.push([p, b]);
@@ -3848,15 +3882,35 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const createLink = main.querySelectorAll("a").find((a) => a.textContent === "Create a project");
   expect(createLink && createLink.getAttribute("href") === "#/new", "empty state offers Create a project");
   expect(chip("+ New project") && chip("+ New project").getAttribute("href") === "#/new", "switcher links to #/new");
-  await go("#/new");
+  await go("#/new"); await tick();
+  const fieldError0 = (id) => text(byId(id + "-error"));
   expect(plainTitle() === "New project · Maity" && byId("project-slug"), "create-project view");
   expect(byId("project-slug").attrs.pattern && !badPatterns().length, "create: every pattern compiles with the v flag " + badPatterns());
+  // §6.26: the owner, the human or an organisation they may create projects in (acme, made under Organisations above).
+  expect(byId("project-owner") && byId("project-owner").value === "" && byId("project-owner").querySelectorAll("option").map((o) => o.getAttribute("value") + "=" + text(o)).join()
+    === "=@maintainer (you),acme=@acme · Acme", "create: the owner is the human, or an organisation of theirs");
+  const owPost = win.Maity.api.post, owBodies = [];
+  win.Maity.api.post = (p, b) => {
+    if (p !== "/projects") return owPost(p, b);
+    owBodies.push(b);
+    return Promise.reject(owBodies.length === 1 ? new win.Maity.api.ApiError("x", 403, p, "forbidden", { reason: "org_role" })
+      : new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { owner: "unknown" } }));
+  };
+  byId("project-owner").value = "acme"; byId("project-name").value = "Shop"; byId("project-slug").value = "shop";
+  main.querySelector("form").dispatch("submit"); for (let k = 0; k < 3; k++) await tick();
+  expect(owBodies[0] && owBodies[0].owner === "acme" && text(main).includes("Not created: this organisation lets only its owners and admins create projects"),
+    "create: the chosen organisation goes as owner; its role refusal in words");
+  main.querySelector("form").dispatch("submit"); for (let k = 0; k < 3; k++) await tick();
+  expect(fieldError0("project-owner") === "Not an organisation you are in." && byId("project-owner").getAttribute("aria-invalid") === "true",
+    "create: an owner the hub does not know is said at the field");
+  win.Maity.api.post = owPost;
+  await go("#/new");
   byId("project-name").value = "Dogfood Hub"; byId("project-name").dispatch("input");
   expect(byId("project-slug").value === "dogfood-hub", "slug proposed from the name");
   const posts = [];
   const realPost = win.Maity.api.post;
   win.Maity.api.post = (p, b) => { posts.push([p, b]); return realPost(p, b); };
-  const fieldError = (id) => text(byId(id + "-error"));
+  const fieldError = fieldError0;
   byId("project-slug").value = "-Bad"; byId("project-slug").dispatch("input");
   main.querySelector("form").dispatch("submit"); await tick();
   expect(text(main).includes("Lowercase letters, digits and -, 2–63 characters, starting with a letter or digit. Used in links") && byId("project-slug").getAttribute("aria-describedby") === "project-slug-hint project-slug-error",
@@ -4400,6 +4454,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.forgetRoutes();
   await go("#/maintainer/maity/inbox");
 
+  // A personal request without a project (§6.26: an organisation's invitation, a transfer into one) is listed without one.
+  const oiGetAll = win.Maity.api.getAll;
+  const oiReq = (id, title, org) => ({ id, class: "consent", title, summary: "", options: [], replies: [{ id: "go", label: "Go" }, { id: "no", label: "No" }],
+    priority: "normal", to: "human:hum-maintainer", asked_by: { member_id: "hum-anna", display_name: "Anna" }, task_id: null, task: null,
+    while_open: "wait", personal: true, status: "open", answer: null, project: null, org, created_at: "2026-10-29T10:00:00Z" });
+  win.Maity.api.getAll = (p) => (p === "/requests" ? oiGetAll(p).then((r) => Object.assign({}, r, { items: r.items.concat([
+    oiReq("req-oi01", "Join @oz-team as admin", undefined), oiReq("req-oi02", "Take over anna/shop into @guild as guild/shop", { id: "org-oz00guild001", handle: "guild" })]) })) : oiGetAll(p));
+  await go("#/all"); await hgSettle();
+  const oiLabels = main.querySelectorAll(".project-label.personal").map((el) => text(el));
+  expect(text(main).includes("Join @oz-team as admin") && oiLabels.includes("Personal") && oiLabels.includes("Personal · @guild") && !text(main).includes("undefined"),
+    "personal request: one without a project reads as Personal, a transfer into an organisation names it");
+  const oiHead = main.querySelectorAll(".entry-head").find((b) => b.textContent.includes("into @guild"));
+  if (oiHead.attrs["aria-expanded"] !== "true") { oiHead.click(); await tick(); }
+  expect(text(main.querySelector(".current")).includes("Organisation@guild — a personal request: for you, not for a project"),
+    "personal request: the organisation named among its facts, no project");
+  win.Maity.api.getAll = oiGetAll;
   // Personal requests (§7): in the cross-project inbox only, answered and withdrawn on /requests/{id}.
   const psCalls = [];
   const psPost = win.Maity.api.post;
