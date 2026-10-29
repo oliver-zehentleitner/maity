@@ -349,7 +349,7 @@ def _send(
     }
     links = {kind: f"{public_url}/mail/unsubscribe/{token}" for kind, token in tokens.items()}
     body += "\n" + "\n".join(words["stop"].format(kind=k, url=links[k]) for k in kinds)
-    body += "\n" + words["settings"].format(url=f"{public_url}/#/account/notifications")
+    body += "\n" + words["settings"].format(url=f"{public_url}/account/notifications")
     body += "\n\n" + words["only"].format(url=public_url) + "\n"
     outbox.enqueue(
         conn,
@@ -397,7 +397,7 @@ def compose(
                 lines.append(f"  {writer} {words['wrote']}: {quoted(text[:CONTENT_MAX])}")
         lines.append("")
     if len(chosen) > DIGEST_MAX:
-        lines.append(words["more"].format(n=len(chosen) - DIGEST_MAX, url=f"{public_url}/#/"))
+        lines.append(words["more"].format(n=len(chosen) - DIGEST_MAX, url=f"{public_url}/"))
     kinds = list(dict.fromkeys(i.kind for i in chosen))
     return subject, "\n".join(lines), kinds
 
@@ -447,7 +447,7 @@ def _sign_in_mail(
         browser=data.get("browser") or "?",
         os=data.get("os") or "?",
         ip=data.get("ip") or "?",
-        sessions=f"{public_url}/#/account/sessions",
+        sessions=f"{public_url}/account/sessions",
     )
     body += "\n" + words["stop"].format(kind="security", url=stop)
     body += "\n\n" + words["only"].format(url=public_url) + "\n"
@@ -483,7 +483,7 @@ def _two_factor_mail(
     body = words["two_factor_body"].format(
         title=item.title,
         time=record.at.astimezone(local.tzinfo).strftime("%Y-%m-%d %H:%M %Z"),
-        security=f"{public_url}/#/account/security",
+        security=f"{public_url}/account/security",
     )
     body += "\n" + words["stop"].format(kind="security", url=stop)
     body += "\n\n" + words["only"].format(url=public_url) + "\n"

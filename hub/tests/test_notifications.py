@@ -71,7 +71,7 @@ def test_a_request_to_the_human_is_an_inbox_item(
     item = next(i for i in got["items"] if i["kind"] == "inbox")
     assert item["title"].endswith("asks: Which?")
     assert item["target"] == {"type": "request", "id": asked.json()["id"]}
-    assert item["url"] == "https://hub.example/#/maintainer/maity/inbox"
+    assert item["url"] == "https://hub.example/maintainer/maity/inbox"
     assert item["actor"]["member_id"] == agent.id
 
 
@@ -285,7 +285,7 @@ def test_a_personal_request_is_one_inbox_item_from_its_record(
     got = bell(owner)
     inbox = [i for i in got["items"] if i["kind"] == "inbox"]
     assert len(inbox) == 1 and inbox[0]["record"].startswith("acr-")
-    assert inbox[0]["url"] == f"https://hub.example/#/requests/{request_id}"
+    assert inbox[0]["url"] == f"https://hub.example/requests/{request_id}"
     assert got["counts"]["inbox"] == 1
 
 
@@ -446,7 +446,7 @@ def test_a_group_chat_notifies_its_participants(
     item = next(i for i in got["items"] if i["kind"] == "chat")
     assert item["title"] == "Human someone in Release go/no-go"
     assert item["target"] == {"type": "conversation", "id": chat["id"]}
-    assert item["url"] == f"https://hub.example/#/maintainer/maity/chat/{chat['id']}"
+    assert item["url"] == f"https://hub.example/maintainer/maity/chat/{chat['id']}"
     marked = owner.post(f"{N}/read", {"ids": [item["id"]]}).json()
     assert marked["counts"]["chat"] == 0
     say(owner, chat["id"], "yes")  # the writer's own message notifies nobody but the others

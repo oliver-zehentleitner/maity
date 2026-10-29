@@ -15,6 +15,9 @@ window.Maity = window.Maity || {};
           // Handlers are functions; a string here would be inline script.
           if (typeof value !== "function") throw new TypeError("h(): " + key + " must be a function");
           el.addEventListener(key.slice(2), value);
+        } else if (key === "href" && M.route.isRoute(value)) {
+          // A path of the dashboard, as the address bar holds it (js/route.js).
+          el.setAttribute("href", M.route.href(value));
         } else if (key === "href" && !isLocalRef(value) && !safeUrl(value) && !isOwnFile(value)) {
           throw new TypeError("h(): href is neither a route nor an https URL");
         } else if (key === "src" && !isLocalRef(value) && !isOwnImage(value) && !isOwnFile(value)) {
@@ -51,9 +54,11 @@ window.Maity = window.Maity || {};
     return el;
   }
 
-  // Routes ("#/..."), the page's own query and relative files are local.
+  // A relative file of the dashboard (brand/…) is local. No anchor and no
+  // bare query: under the shell's <base href="/assets/"> (§16.11) they would
+  // lead into /assets/. A route is a path (js/route.js), never a fragment.
   function isLocalRef(value) {
-    return typeof value === "string" && /^(#|\?|[a-z0-9_-]+\/[a-z0-9_./-]+$)/i.test(value) && !/^[a-z]+:/i.test(value);
+    return typeof value === "string" && /^[a-z0-9_-]+\/[a-z0-9_./-]+$/i.test(value) && !/^[a-z]+:/i.test(value);
   }
 
   // An image the page itself points at: a project's logo or banner on the

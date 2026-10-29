@@ -534,6 +534,10 @@ def test_the_worker_backs_off_after_failures(
 def test_every_other_answer_is_still_no_store(owner: flow.Human) -> None:
     flow.project(owner, "maity")
     put(owner, "/projects/maintainer/maity/logo", PNG, "image/png")
-    for path in ("/api/v1/health", "/api/v1/projects/maintainer/maity", "/api/v1/me", "/"):
+    for path in ("/api/v1/health", "/api/v1/projects/maintainer/maity", "/api/v1/me"):
         answer = owner.client.get(path)
         assert answer.headers["cache-control"] == "no-store", path
+    # The app shell is the one answer that is `no-cache` (§16.11): small, and it follows a deploy.
+    shell = owner.client.get("/")
+    assert shell.headers["cache-control"] == "no-cache"
+    assert shell.headers["x-robots-tag"] == "noindex"  # the landing page is off here (§16.7)

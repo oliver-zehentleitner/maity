@@ -148,12 +148,12 @@ def test_the_request_is_mailed_and_shown_while_pending(
     mail = outbox_rows(migrated)[-1]
     assert (mail.kind, mail.recipient) == ("security", "pat@example.org")
     # The export link is the dashboard's account page, never the API route (§2.9).
-    assert "https://hub.example/#/account\n" in mail.body and "/api/v1/me/export" not in mail.body
+    assert "https://hub.example/account\n" in mail.body and "/api/v1/me/export" not in mail.body
     token = token_of(migrated)
     shown = page(pat, token)
     assert shown.status_code == 200
     assert "Delete my account" in shown.text and "pat" in shown.text
-    assert 'href="https://hub.example/#/account"' in shown.text
+    assert 'href="https://hub.example/account"' in shown.text
     assert shown.headers["Referrer-Policy"] == "no-referrer"
     assert deleted_at(migrated, pat.id) is None  # a GET changes nothing
     # Signing in still works until the link is pressed.

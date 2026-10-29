@@ -1,4 +1,4 @@
-// (9) Project → Runners (#/<owner>/<slug>/runners, project:admin): the runners
+// (9) Project → Runners (/<owner>/<slug>/runners, project:admin): the runners
 // allowed to start agents for this project (docs/api.md §15.4). Allowing
 // one is the grant; its own configuration still decides what it starts.
 // Detaching closes the agents it runs here. Capabilities are shown in the
@@ -62,9 +62,9 @@ window.Maity = window.Maity || {};
         h("p", { class: "muted" }, "Allowed here " + formatAgo(a.attached_at) + " · " + (shownN ? agents(shownN) + " running here" : "no agent running here")),
         // §15.3: revoked, or none (attached through an enrollment, never paired).
         r.credential_state === "revoked"
-          ? h("p", { class: "flag" }, "Its credential was revoked: it starts nothing until it is paired again, on the ", h("a", { href: "#/runners" }, "Runners page"), ".")
+          ? h("p", { class: "flag" }, "Its credential was revoked: it starts nothing until it is paired again, on the ", h("a", { href: "/runners" }, "Runners page"), ".")
           : r.credential_state && r.credential_state !== "active"
-            ? h("p", { class: "flag" }, "It has not been paired yet: it starts nothing until it is, on the ", h("a", { href: "#/runners" }, "Runners page"), ".")
+            ? h("p", { class: "flag" }, "It has not been paired yet: it starts nothing until it is, on the ", h("a", { href: "/runners" }, "Runners page"), ".")
             : null,
         notInConfig
           ? h("p", { class: "flag" }, "Its own configuration does not allow " + ctx.slug
@@ -111,7 +111,7 @@ window.Maity = window.Maity || {};
       if (!free.length) {
         append(allow, h("p", { class: "muted" },
           mine.some((r) => !r.removed_at && r.owner_id === ctx.me.id) ? "All your runners are allowed here. " : "You have no runner yet. ",
-          h("a", { href: "#/runners" }, "Pair one on the Runners page"), "."));
+          h("a", { href: "/runners" }, "Pair one on the Runners page"), "."));
         return;
       }
       const select = h("select", { id: "allow-runner", "data-focus": "allow" }, free.map((r) => h("option", { value: r.id }, r.name)));

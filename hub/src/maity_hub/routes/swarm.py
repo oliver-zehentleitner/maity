@@ -8,7 +8,7 @@ import json
 from typing import Any
 
 from fastapi import APIRouter, Query, Request, Response
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, select
 
 from maity_hub import clock, namespace, swarm
@@ -119,23 +119,6 @@ def project_swarm(slug: str, request: Request, caller: AnyCaller, days: int = DA
 
 def _public(project: Any) -> bool:
     return project.state not in CLOSED_STATES and project.swarm_public == "on"
-
-
-@router.get("/swarm/{slug}")
-def legacy_public_swarm(slug: str, request: Request, days: int = DAYS) -> Response:
-    """The address from before the namespace (§6.25): the slug frozen at the migration,
-    never the current slug, which another owner's project may carry. A `301` to the new
-    address only while the page is public; otherwise the same answer as any page not
-    served, so the old address tells nobody whether a project exists."""
-    limit_source(request)
-    with engine_of(request).begin() as conn:
-        project = conn.execute(select(t.project).where(t.project.c.legacy_slug == slug)).first()
-        if project is None or not _public(project):
-            limit_not_served()
-            raise not_found()
-        name = namespace.full_name(conn, project)
-    query = f"?days={days}" if days != DAYS else ""
-    return RedirectResponse(f"/api/v1/swarm/{name}{query}", status_code=301)
 
 
 @router.get("/swarm/{owner}/{slug}")

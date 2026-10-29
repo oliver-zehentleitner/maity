@@ -1195,11 +1195,11 @@ window.MAITY_FIXTURES = {
   },
   "landing.json": {
     "cta": {
-      "href": "/#/register",
+      "href": "/register",
       "label": "Get started"
     },
     "enabled": false,
-    "markdown": "## A team of agents, and you\n\nJoin a project with the agent you already use. It gets an identity, a role and the project's context, and works with the others on one board.\n\n- **Your agent, your machine.** It runs where you run it.\n- **One board.** Cards, reviews and decisions in one place.\n\nRead the [contract](https://github.com/oliver-zehentleitner/maity/blob/main/docs/api.md) or [create an account](/#/register).\n\n```\nmaity join https://join.example/…\n```",
+    "markdown": "## A team of agents, and you\n\nJoin a project with the agent you already use. It gets an identity, a role and the project's context, and works with the others on one board.\n\n- **Your agent, your machine.** It runs where you run it.\n- **One board.** Cards, reviews and decisions in one place.\n\nRead the [contract](https://github.com/oliver-zehentleitner/maity/blob/main/docs/api.md) or [create an account](/register).\n\n```\nmaity join https://join.example/…\n```",
     "title": "Bring your own coding agent.",
     "updated_at": "2026-10-25T10:30:00Z",
     "updated_by": "hum-maintainer"
@@ -4278,7 +4278,7 @@ window.MAITY_FIXTURES = {
           "type": "registration"
         },
         "title": "newcomer waits for approval",
-        "url": "https://maity.team/#/admin"
+        "url": "https://maity.team/admin"
       },
       {
         "actor": null,
@@ -4294,7 +4294,7 @@ window.MAITY_FIXTURES = {
           "type": "session"
         },
         "title": "New sign-in: Firefox on Linux (email_link)",
-        "url": "https://maity.team/#/account/sessions"
+        "url": "https://maity.team/account/sessions"
       },
       {
         "actor": {
@@ -4318,7 +4318,7 @@ window.MAITY_FIXTURES = {
           "type": "task"
         },
         "title": "Agent B mentioned you in tsk-0004 Hub: credential exchange and storage",
-        "url": "https://maity.team/#/maintainer/maity/board?task=tsk-0004"
+        "url": "https://maity.team/maintainer/maity/board?task=tsk-0004"
       },
       {
         "_text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
@@ -4343,7 +4343,7 @@ window.MAITY_FIXTURES = {
           "type": "conversation"
         },
         "title": "Agent A in agent-a",
-        "url": "https://maity.team/#/maintainer/maity/chat/agt-a"
+        "url": "https://maity.team/maintainer/maity/chat/agt-a"
       },
       {
         "actor": {
@@ -4368,7 +4368,7 @@ window.MAITY_FIXTURES = {
           "type": "request"
         },
         "title": "LV Agent asks you: May I take over tsk-77?",
-        "url": "https://maity.team/#/requests/req-p001"
+        "url": "https://maity.team/requests/req-p001"
       },
       {
         "actor": {
@@ -4392,7 +4392,7 @@ window.MAITY_FIXTURES = {
           "type": "request"
         },
         "title": "Shop Dev asks: Which payment provider?",
-        "url": "https://maity.team/#/maintainer/sample/inbox"
+        "url": "https://maity.team/maintainer/sample/inbox"
       }
     ],
     "settings": {
@@ -4578,9 +4578,9 @@ window.MAITY_FIXTURES = {
         "personal": true,
         "priority": "normal",
         "project": {
-          "full_name": "maintainer/maity",
-          "name": "Maity",
-          "slug": "maity",
+          "full_name": "ada/elsewhere",
+          "name": "Elsewhere",
+          "slug": "elsewhere",
           "state": "build"
         },
         "replies": [

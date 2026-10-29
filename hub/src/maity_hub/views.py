@@ -218,7 +218,6 @@ def project_view(
         "full_name": f"{owner_handle}/{project.slug}",
         "slug": project.slug,
         "aliases": aliases or [],
-        "legacy_slug": project.legacy_slug,
         "name": project.name,
         "state": project.state,
         "state_note": project.state_note,

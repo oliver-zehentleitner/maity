@@ -132,6 +132,31 @@ sanitiser — a dependency from a CDN, and the safety of the page would
 rest on the sanitiser's completeness. Plain text with `pre` wrapping, as
 before — code and lists from agents were unreadable.
 
+## Inline code copies itself on a click; no copy icon beside it
+
+**Id:** e544d587-2aa0-4658-8771-c75e57b29422
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer on the card tsk-rdx6gaqveygx, 2026-10-29 (code from chat messages copied with one click: blocks with a button, inline code by a click or an icon, "Copied" as feedback); the dashboard's implementation, 2026-10-29
+**Revisit when:** people report copying inline code they only meant to select, or a view needs inline code that is not copied
+
+Inline code in rendered Markdown is a button (`role="button"`, focusable,
+named "Copy <code>"): a click, Enter or Space puts its text on the
+clipboard, and "Copied" stands beside it for two seconds as a status. A
+click that ends a selection of text copies nothing, so selecting part of
+it still works. Fenced blocks keep their Copy button, which says
+"Copied" the same way. Both use one clipboard helper with one fallback
+("Copy failed — select the text").
+
+**Reason:** inline code in an agent's message is mostly a command, a
+path or an id, the things one copies; a click on the code itself is the
+shortest way, and it adds nothing to the line.
+
+**Rejected alternative:** a copy icon after every inline code: a button
+per span, which crowds a sentence with several commands and doubles what
+a screen reader reads.
+
 ## A picture is uploaded on the account, checked as the hub checks it, with no preview of the chosen file
 
 **Id:** 3ec853f0-4141-4e81-acdf-c0fee94c920b
@@ -249,14 +274,14 @@ back to following the system once a choice was made.
 
 `js/ids.js` turns `tsk-`, `req-`, `agt-` and `hum-` ids of the hub's
 exact shape, and `#n`, into links in every text the dashboard renders
-outside code: the card on the board (`#/p/<slug>/tasks/<id>`, a route
+outside code: the card on the board (`/<owner>/<slug>/tasks/<id>`, a route
 that is the board with the card marked), the request in the inbox
-(`#/p/<slug>/inbox/<id>`), the member in Members, and the repository's
+(`/<owner>/<slug>/inbox/<id>`), the member in Members, and the repository's
 `/issues/<n>` on GitHub. Nothing is looked up; the page an id opens says
 when it holds no such thing. An inbox entry's title sits inside its
 button, so its ids are repeated as links under **In the title** in the
 open entry. A text with no project of its own (a personal request from a
-project the human is not in, a chat read along from outside, `#/observe`)
+project the human is not in, a chat read along from outside, `/observe`)
 links none. Known false positive, accepted: a three-digit hex colour
 (`#123`) links as a number.
 
@@ -312,10 +337,10 @@ already turns every piece into a text node.
 **Revisit when:** the hub serves images to visitors, or the designer reworks the page
 
 Only the root without a session asks `GET /landing`; every other route
-without a session, and `#/login` always, is the login page. An answer
+without a session, and `/login` always, is the login page. An answer
 that is off, absent or a failure shows the login page and no error. The
 Markdown goes through the chat's renderer, in which a module flag set by
-`M.markdown.withRoutes` lets `[text](/#/…)` become an in-page link for
+`M.markdown.withRoutes` lets `[text](/…)` become an in-page link for
 this one call; the chat itself still shows such a link as written.
 
 **Reason:** a visitor who came to sign in must never meet an error or a

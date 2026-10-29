@@ -124,6 +124,14 @@ the chart.
       name: {{ . }}
       key: {{ $.Values.forge.github.key }}
 {{- end }}
+{{- if .Values.attachments.existingClaim }}
+- name: MAITY_ATTACHMENT_DIR
+  value: {{ .Values.attachments.mountPath | quote }}
+{{- with .Values.attachments.quotaBytes }}
+- name: MAITY_ATTACHMENT_QUOTA
+  value: {{ . | int64 | toString | quote }}
+{{- end }}
+{{- end }}
 {{- with .Values.secretKey.existingSecret }}
 - name: MAITY_SECRET_KEY
   valueFrom:

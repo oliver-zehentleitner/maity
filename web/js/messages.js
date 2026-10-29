@@ -1,4 +1,4 @@
-// (11) Messages (#/<owner>/<slug>/messages): the project's messages the reader
+// (11) Messages (/<owner>/<slug>/messages): the project's messages the reader
 // may see (docs/api.md §8.4, every type but chat), newest first, by type:
 // who wrote to whom, about which card, the text as Markdown, the members
 // it mentions as links, and its files (§8.7). The uploader or an admin
@@ -57,8 +57,8 @@ window.Maity = window.Maity || {};
   }
 
   M.views.messages = async function (ctx, root) {
-    const here = window.location.hash;
-    const read = await scan(ctx, () => window.location.hash === here);
+    const here = M.route.current().path;
+    const read = await scan(ctx, () => M.route.current().path === here);
     if (!read) return;
     const all = read.kept;
     const status = M.statusLine();

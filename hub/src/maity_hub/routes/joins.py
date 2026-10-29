@@ -47,9 +47,7 @@ from maity_hub.scopes import ROLES, has_scope
 from maity_hub.views import join_view, member_view, principal_id
 
 router = APIRouter(route_class=ProjectRoute)
-page_router = APIRouter(
-    route_class=ProjectRoute
-)  # /join/{token} and /j/{token}, outside the API prefix
+page_router = APIRouter(route_class=ProjectRoute)  # /join/{token}, outside the API prefix
 
 TTL_DEFAULT, TTL_MIN, TTL_MAX = 900, 60, 3600
 WRONG_CODES_BEFORE_BURN = 3
@@ -654,12 +652,6 @@ async def join_page(token: str, request: Request) -> Response:
 
 @page_router.get("/join/{token}")
 async def public_join_page(token: str, request: Request) -> Response:
-    return await _page(token, request)
-
-
-@page_router.get("/j/{token}")
-async def short_join_page(token: str, request: Request) -> Response:
-    """The links handed out before `/join/` (§3.2): an alias, not a redirect."""
     return await _page(token, request)
 
 
