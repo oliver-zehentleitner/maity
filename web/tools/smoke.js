@@ -2381,6 +2381,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && btn(mdBlock, "Copied").getAttribute("aria-label") === "Copy " + mdPre.getAttribute("aria-label")
     && mdBlock.querySelector(".md-code-bar .md-lang"), "markdown: a code block is a named region, its Copy names it, language and Copy in the block's corner");
   expect(thCss.includes(".md-code { margin: 0; padding: 36px 10px 8px;"), "markdown: the code block keeps a row of its own for language and Copy, no line runs under them");
+  // Inline code copies on a click or Enter (tsk-rdx6gaqveygx), "Copied" said beside it.
+  const mdInline = MD("Run `maity wait --batch` now");
+  const mdCode = mdInline.querySelector("code.md-inline-copy");
+  expect(mdCode && mdCode.getAttribute("role") === "button" && mdCode.getAttribute("tabindex") === "0" && mdCode.getAttribute("aria-label") === "Copy maity wait --batch"
+    && mdCode.textContent === "maity wait --batch", "markdown: inline code is a button that names what it copies");
+  ctx.copied = null;
+  mdCode.click(); await tick();
+  expect(ctx.copied === "maity wait --batch" && text(mdInline.querySelector(".md-copied")) === "Copied", "markdown: a click on inline code copies it and says Copied");
+  ctx.copied = null;
+  mdCode.dispatch("keydown", { key: "Enter" }); await tick();
+  expect(ctx.copied === "maity wait --batch", "markdown: Enter on inline code copies it too");
 
   // Ids in text become links (js/ids.js, tsk-dcj6qwjxc9cq): by shape only, the id as the link's text.
   const IDS = win.Maity.ids;

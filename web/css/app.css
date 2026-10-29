@@ -726,6 +726,9 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .md ul, .md ol { margin: 4px 0 6px; padding-inline-start: 20px; }
 .md blockquote { margin: 4px 0 6px; padding-inline-start: 10px; border-inline-start: 3px solid var(--border); color: var(--muted); }
 .md code { font-family: var(--mono); font-size: 0.88em; background: var(--surface-2); padding: 0 3px; border-radius: 3px; }
+.md code.md-inline-copy { cursor: copy; }
+.md code.md-inline-copy:hover { outline: 1px solid var(--border); }
+.md-copied:not(:empty) { margin-inline-start: 4px; font-size: 0.75rem; color: var(--ok); }
 .md .md-h { margin: 6px 0 4px; }
 .md .md-h1 { font-size: 1.05rem; }
 .md .md-h2 { font-size: 1rem; }
