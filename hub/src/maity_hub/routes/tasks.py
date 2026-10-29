@@ -495,7 +495,7 @@ def _check_label(label: str | None) -> None:
 
 
 def _require_open_project(mine: Membership, reason: str | None) -> dict[str, Any]:
-    """`project_closed` in accepted/archived; a reason in freeze/fixes-only (§6.1)."""
+    """`project_closed` in archived; a reason in plan and review (§6.1)."""
     state = mine.project.state
     if state in CLOSED_STATES:
         raise ApiError(409, "project_closed", f"the project is {state}")

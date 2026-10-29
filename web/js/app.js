@@ -51,12 +51,13 @@ window.Maity = window.Maity || {};
   ];
   const offered = (ctx, item) => (!item.admin || ctx.canAdmin) && (!item.when || item.when(ctx));
 
-  const STATES = ["build", "freeze", "fixes-only", "accepted", "archived"];
+  // docs/api.md §6.1; moving to launch is the owner's go.
+  const STATES = ["plan", "build", "review", "launch", "archived"];
   const STATE_LABELS = {
+    plan: "Plan",
     build: "Build",
-    freeze: "Freeze",
-    "fixes-only": "Fixes only",
-    accepted: "Accepted",
+    review: "Review",
+    launch: "Launch",
     archived: "Archived",
   };
 
@@ -464,7 +465,12 @@ window.Maity = window.Maity || {};
 
     if (ctx.canAdmin) {
       const state = h("select", { id: "state-select" },
-        STATES.map((s) => h("option", { value: s, selected: s === ctx.project.state }, STATE_LABELS[s])));
+        STATES.map((s) => h("option", {
+          value: s,
+          selected: s === ctx.project.state,
+          // Only the owner moves the project to launch; an admin may leave it.
+          disabled: s === "launch" && !ctx.isOwner && ctx.project.state !== "launch",
+        }, STATE_LABELS[s])));
       const note = h("input", { id: "state-note", value: ctx.project.state_note || "", placeholder: "What this state means right now" });
       const reason = h("input", { id: "state-reason", required: true, placeholder: "Why it changes (logged)" });
       append(panel, h("form", {

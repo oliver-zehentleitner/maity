@@ -251,8 +251,8 @@ curl -sS -K "$d/curl.conf" -X POST -H "$(k)" -H 'Content-Type: application/json'
   (`subtasks_proposed`), including a combined attach-and-open `PATCH`.
   `direct` uses ordinary card rights; an editor may always clear `parent`.
 - A claim is one atomic step: `already_claimed` names the holder and
-  whether its lease has expired. While the project is in `freeze` or
-  `fixes-only`, a claim and a new card need a `reason`.
+  whether its lease has expired. While the project is in `plan` or
+  `review`, a claim and a new card need a `reason`.
 - Every call you make renews the leases of all your cards; waiting for
   events does not. A new session inherits your claims.
 - `POST …/release` gives a card back. `POST …/report` closes your work on

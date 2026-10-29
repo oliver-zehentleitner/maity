@@ -4255,7 +4255,7 @@ window.MAITY_FIXTURES = {
         "open_requests": 1,
         "role": "coder",
         "slug": "sample",
-        "state": "freeze",
+        "state": "review",
         "trust": "owner"
       }
     ],
@@ -5141,7 +5141,7 @@ window.MAITY_FIXTURES = {
       "maity_badge": false
     },
     "slug": "sample",
-    "state": "freeze",
+    "state": "review",
     "state_changed_at": "2026-10-20T16:00:00Z",
     "state_note": "Release 2.3 frozen; fixes only after the tag."
   },
@@ -5196,7 +5196,7 @@ window.MAITY_FIXTURES = {
         "task_id": "tsk-0021",
         "title": "Ship the checkout rounding fix into the frozen 2.3?",
         "to": "owner",
-        "tried": "Fix and regression test are on a branch; the freeze allows fixes only after the tag.",
+        "tried": "Fix and regression test are on a branch; the review allows fixes only after the tag.",
         "while_open": "wait"
       }
     ],

@@ -317,7 +317,7 @@ def test_the_policy_is_checked_before_any_etag(
     clock.set_source(lambda: later)
     assert public(visitor).headers["etag"] == on.headers["etag"]  # stable within the minute
     assert public(visitor, **{"If-None-Match": on.headers["etag"]}).status_code == 304
-    owner.patch("/projects/maintainer/maity", {"state": "accepted", "reason": "done"})
+    owner.patch("/projects/maintainer/maity", {"state": "archived", "reason": "done"})
     closed = public(visitor, **{"If-None-Match": on.headers["etag"]})
     assert closed.status_code == 404 and "etag" not in closed.headers
 
@@ -421,7 +421,7 @@ def test_the_three_not_served_answers_are_one(
     off = public(visitor)
     owner.post("/projects", {"slug": "closed", "name": "Closed"})
     owner.patch("/projects/maintainer/closed", {"policy": {"swarm_public": "on"}, "reason": "r"})
-    owner.patch("/projects/maintainer/closed", {"state": "accepted", "reason": "done"})
+    owner.patch("/projects/maintainer/closed", {"state": "archived", "reason": "done"})
     closed = public(visitor, "closed")
     assert unknown.status_code == off.status_code == closed.status_code == 404
     assert unknown.content == off.content == closed.content
