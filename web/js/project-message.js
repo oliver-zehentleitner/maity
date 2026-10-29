@@ -20,7 +20,6 @@ window.Maity = window.Maity || {};
     ["review_result", "A review's result"],
     ["interface_change", "An interface changes"],
   ];
-  const ROLES = ["owner", "admin", "reviewer", "member", "proxy"];
   const CLOSED = new Set(["done", "cancelled"]);
   const BODY_CHARS = 16 * 1024;
 
@@ -38,7 +37,9 @@ window.Maity = window.Maity || {};
     const others = ctx.members.filter((m) => m.id !== ctx.me.id);
     const to = h("select", { id: "message-to" },
       h("option", { value: "all" }, "Everyone in the project"),
-      h("optgroup", { label: "A role" }, ROLES.map((r) => h("option", { value: "role:" + r }, "Every " + r))),
+      // §8.4: trust:owner, trust:admin or a role (§2.3).
+      h("optgroup", { label: "A trust" }, ["owner", "admin"].map((t) => h("option", { value: "trust:" + t }, "Every " + t))),
+      h("optgroup", { label: "A role" }, M.trust.ROLES.map((r) => h("option", { value: "role:" + r }, "Every " + r))),
       h("optgroup", { label: "One member" }, others.map((m) => h("option", { value: m.id }, m.display_name + " (@" + M.dom.handleOf(ctx, m) + ")"))));
     to.value = "all";
     const type = h("select", { id: "message-type" }, TYPES.map(([v, l]) => h("option", { value: v }, l)));
@@ -80,7 +81,7 @@ window.Maity = window.Maity || {};
           if (body.value.trim() === text) body.value = "";
           if (files) files.clear(ids);
           status.done();
-          const whom = message.to === "all" ? "everyone" : message.to.startsWith("role:") ? "every " + message.to.slice(5) : ctx.nameOf(message.to);
+          const whom = message.to === "all" ? "everyone" : /^(role|trust):/.test(message.to) ? M.trust.tokenWords(message.to) : ctx.nameOf(message.to);
           append(clear(result), h("p", { class: "ok" }, "Sent to " + whom
             + (mentioned.length ? "; mentioned and notified: " + [...new Set(mentioned)].join(", ") : "") + "."));
         } catch (err) {

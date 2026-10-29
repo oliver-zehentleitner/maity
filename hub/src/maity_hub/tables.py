@@ -99,12 +99,48 @@ human = Table(
     Column("limit_since", UtcDateTime),
     Column("limit_reason", MARKDOWN_TEXT),
     Column("limit_show_reason_in", JSON_VALUE),  # the slugs whose member view shows the reason
+    # "I am a meat proxy" (docs/api.md §5.2): the human's own switch.
+    Column("meat_proxy", Boolean, nullable=False, server_default=false()),
     # `active`, or `pending` while a registration waits for the operator (§2.7.5).
     Column("account_status", String(16), nullable=False, server_default="active"),
     Column("registered_at", UtcDateTime),  # set only for an account made by registration
     # The terms version accepted at registration, and when (§2.7.2); null otherwise.
     Column("terms_version", String(64)),
     Column("terms_accepted_at", UtcDateTime),
+    # Set when the human deleted the account (§2.9): the row stays, so every stored id
+    # resolves and the handle stays taken; everything about the person is gone.
+    Column("deleted_at", UtcDateTime),
+    **MYSQL_TABLE,
+)
+
+# A request to delete the account, waiting for its confirmation by mail (docs/api.md
+# §2.9). `id` is the sha256 of the mailed link's nonce; `live` is true while it may be
+# confirmed and NULL once withdrawn (`withdrawn_by` says what withdrew it), replaced or
+# used: at most one pending request per human, on every engine.
+account_deletion = Table(
+    "account_deletion",
+    metadata,
+    Column("id", String(HEX_SHA256), primary_key=True),
+    _ref("human_id", "human.id", nullable=False),
+    Column("requested_at", UtcDateTime, nullable=False),
+    Column("expires_at", UtcDateTime, nullable=False),
+    Column("withdrawn_at", UtcDateTime),
+    Column("withdrawn_by", String(32)),  # deletion_withdrawn, replaced, password, address
+    Column("used_at", UtcDateTime),
+    Column("live", Boolean),
+    UniqueConstraint("human_id", "live"),
+    CheckConstraint("live IS NOT FALSE", name="live_true_or_null"),
+    **MYSQL_TABLE,
+)
+
+# One row per human, never read for its content: the lock that orders a human caller's
+# transactions (shared, before their first locking statement) against the deletion of the
+# account (exclusive, first), `write_guard` (§2.9). Made by 0076 for existing humans and on
+# first need for later ones.
+account_lock = Table(
+    "account_lock",
+    metadata,
+    _ref("human_id", "human.id", primary_key=True),
     **MYSQL_TABLE,
 )
 
@@ -139,7 +175,9 @@ invitation = Table(
     metadata,
     _id(primary_key=True),
     _ref("project_id", "project.id", nullable=False),
-    Column("role", String(16), nullable=False),
+    # A built-in role, or a project role of up to 24 characters (#506).
+    Column("role", String(24), nullable=False),
+    Column("trust", String(16), nullable=False),  # with `role`: trust × role (§2.3)
     Column("address", String(254)),
     Column("address_normalized", String(254), index=True),
     Column("note", String(1024)),
@@ -410,9 +448,13 @@ project = Table(
     Column("swarm_public", String(8), nullable=False, server_default="off"),
     # What a merged pull request does to its card in review: notify or auto (§6.6).
     Column("merged_closes", String(8), nullable=False, server_default="notify"),
+    # Whether a human with trust member creates joins for agents of their own, and how
+    # many (§3.1 "Bringing your own agent", §6.1).
+    Column("member_agents", String(8), nullable=False, server_default="on"),
+    Column("member_agents_max", Integer, nullable=False, server_default="3"),
     Column("claim_policy", String(32), nullable=False),
     Column("done_authority", String(32), nullable=False),
-    Column("contract_arbiter", String(ID + 8), nullable=False),  # member id or role:admin
+    Column("contract_arbiter", String(ID + 8), nullable=False),  # member id or trust:admin
     Column("tag_authority", String(32), nullable=False),
     Column("steward_writes", String(32), nullable=False),
     Column("lease_seconds", Integer, nullable=False),
@@ -428,7 +470,7 @@ project = Table(
     Column("spawn_consent_by", String(16), nullable=False, server_default="human"),
     # Whose outage gates new assignments by agents, and who stands in for that role
     # alone (§6.1, §6.12); the defaults fill projects made before 0024.
-    Column("coordinator", String(ID + 8), nullable=False, server_default="role:admin"),
+    Column("coordinator", String(ID + 8), nullable=False, server_default="trust:admin"),
     Column("coordinator_substitute", String(ID)),
     # What revoking a runner does to its agents here: keep, stop or inherit (§6.1, §15.3).
     Column("on_runner_revoke", String(16), nullable=False, server_default="inherit"),
@@ -477,7 +519,9 @@ membership = Table(
     _ref("project_id", "project.id", nullable=False),
     _ref("human_id", "human.id"),
     _ref("agent_id", "agent_profile.id"),
-    Column("role", String(16), nullable=False),
+    # A built-in role, or a project role of up to 24 characters (#506).
+    Column("role", String(24), nullable=False),
+    Column("trust", String(16), nullable=False),  # with `role`: trust × role (§2.3)
     _membership_ref("reports_to"),
     Column("areas", JSON_VALUE, nullable=False),
     Column("capabilities", JSON_VALUE, nullable=False),
@@ -596,7 +640,9 @@ join_link = Table(
     _ref("agent_id", "agent_profile.id"),
     Column("new_agent_handle", String(HANDLE)),
     Column("new_agent_display_name", String(TITLE)),
-    Column("role", String(16), nullable=False),
+    # A built-in role, or a project role of up to 24 characters (#506).
+    Column("role", String(24), nullable=False),
+    Column("trust", String(16), nullable=False),  # with `role`: trust × role (§2.3)
     _membership_ref("reports_to"),
     Column("areas", JSON_VALUE, nullable=False),
     Column("capabilities", JSON_VALUE, nullable=False),
@@ -609,6 +655,9 @@ join_link = Table(
     Column("replaces", String(INSTANCE)),
     Column("instance", String(INSTANCE)),
     _ref("created_by", "human.id", nullable=False),
+    # Created under "Bringing your own agent" (§3.1) rather than `members:admin`: the
+    # exchange checks the creator and the limits again for such a join only (§3.3).
+    Column("member_rule", Boolean, nullable=False, server_default=false()),
     Column("created_at", UtcDateTime, nullable=False),
     Column("expires_at", UtcDateTime, nullable=False),
     Column("used_at", UtcDateTime),
@@ -1100,7 +1149,7 @@ request = Table(
     # owns an agent profile, member of the project or not: a personal request (§7).
     Column("to_kind", String(16), nullable=False),  # member, role, owner, profile_owner
     _membership_ref("to_member"),
-    Column("to_role", String(16)),
+    Column("to_role", String(32)),  # the whole token: `trust:admin`, `role:designer` (§2.3)
     _ref("to_profile", "agent_profile.id"),
     _ref("to_human", "human.id"),  # the profile's owner when the hub filed it
     Column("personal", Boolean, nullable=False, server_default=false()),
@@ -1746,5 +1795,52 @@ card_watch = Table(
     _membership_ref("membership_id", nullable=False),
     Column("created_at", UtcDateTime, nullable=False),
     PrimaryKeyConstraint("card_id", "membership_id"),
+    **MYSQL_TABLE,
+)
+
+# A human's link to an installation of the instance's GitHub App (docs/api.md §11.4):
+# one human at a time per installation. The installation's tokens are never stored.
+forge_link = Table(
+    "forge_link",
+    metadata,
+    _id(primary_key=True),
+    _ref("human_id", "human.id", nullable=False, index=True),
+    Column("forge", String(16), nullable=False),
+    Column("installation_id", BIG_ID, nullable=False),
+    Column("account_id", BIG_ID, nullable=False),
+    Column("account_login", String(HANDLE), nullable=False),
+    Column("account_type", String(16), nullable=False),
+    Column("repository_selection", String(16), nullable=False),  # all, selected
+    Column("status", String(16), nullable=False),  # active, suspended, removed
+    Column("linked_at", UtcDateTime, nullable=False),
+    Column("checked_at", UtcDateTime, nullable=False),
+    UniqueConstraint("forge", "installation_id"),
+    **MYSQL_TABLE,
+)
+
+# A link the human started and has not completed: the `state` handed to the forge, kept
+# as its hash, bound to the session that started it, valid 15 minutes, used once (§11.4).
+forge_link_state = Table(
+    "forge_link_state",
+    metadata,
+    Column("state_hash", String(HEX_SHA256), primary_key=True),
+    _ref("human_id", "human.id", nullable=False, index=True),
+    Column("session_hash", String(HEX_SHA256), nullable=False),
+    Column("expires_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# A human's own forge token, the second source after the App (docs/api.md §11.4):
+# fine-grained only, sealed with MAITY_SECRET_KEY (`secretbox`), never in an answer.
+forge_token = Table(
+    "forge_token",
+    metadata,
+    _ref("human_id", "human.id", primary_key=True),
+    Column("forge", String(16), nullable=False),
+    Column("login", String(HANDLE), nullable=False),
+    Column("token_sealed", LargeBinary, nullable=False),
+    Column("status", String(16), nullable=False),  # active, rejected
+    Column("set_at", UtcDateTime, nullable=False),
+    Column("checked_at", UtcDateTime, nullable=False),
     **MYSQL_TABLE,
 )

@@ -39,6 +39,7 @@ from maity_hub.views import principal_id
 log = logging.getLogger(__name__)
 
 MAX_AGE = 60  # seconds an observation answers a read without asking the forge (§11)
+FORCED_FLOOR = 30  # seconds before a `max_age=0` read asks the forge again (§11.4)
 LINKS = "links"  # a job `(LINKS, project id)`: read that project's card links
 INTERVAL = 300  # seconds between the worker's sweeps
 MERGE_INTERVAL = 120  # seconds between the ticker's merge reads (§17.4)
@@ -104,7 +105,13 @@ def _read(fg: forge.Forge, repository: str, kind: str, ref: str) -> dict[str, An
 
 
 def observe(
-    engine: Engine, fg: forge.Forge, project: Any, kind: str, ref: str, max_age: int = MAX_AGE
+    engine: Engine,
+    fg: forge.Forge,
+    project: Any,
+    kind: str,
+    ref: str,
+    max_age: int = MAX_AGE,
+    floor: int = 0,
 ) -> Observation:
     """The observation of one ref, from the cache when younger than `max_age`.
 
@@ -114,11 +121,14 @@ def observe(
     with engine.connect() as conn:
         row = _cached(conn, project.id, kind, ref)
     now = clock.now()
-    if row is not None and max_age > 0 and now - row.observed_at < timedelta(seconds=max_age):
+    # `floor`: a reader's forced fresh read (`max_age=0`) still waits FORCED_FLOOR, since
+    # one source serves all of an owner's projects and its budget at the forge (§11.4).
+    if row is not None and now - row.observed_at < timedelta(seconds=max(max_age, floor)):
         return Observation(dict(row.data), row.observed_at, fresh=False)
     # The time the read started: a slow read that began before a fast one is the
     # older observation, whenever it ends.
     observed_at = clock.now()
+    fg = fg.for_project(project.id)  # the source that covers this project (§11.4)
     data = _read(fg, forge.repository_of(project.repository_url), kind, ref)
     with transaction(engine) as conn:
         lock_project(conn, project.id)  # one writer per project: delete + insert is the upsert
@@ -195,7 +205,7 @@ def _project(engine: Engine, project_id: str) -> Any:
 def _audience(conn: Connection, card: Any) -> list[str]:
     holder = principal_id(conn, card.claim_holder)
     # The holding instance, which the observation wakes; its team reads it (§8.2).
-    return [*([token(holder, card.claim_instance)] if holder else []), "role:admin"]
+    return [*([token(holder, card.claim_instance)] if holder else []), "trust:admin"]
 
 
 # --- reports (§6.6) ---------------------------------------------------------------------------
@@ -208,6 +218,7 @@ def observe_report(engine: Engine, fg: forge.Forge, card_id: str, max_age: int =
     if card is None or not card.report or card.report.get("code") is False:
         return False
     project = _project(engine, card.project_id)
+    fg = fg.for_project(project.id)
     if not fg.configured_for(project.repository_url):
         return False
     report = card.report
@@ -284,7 +295,10 @@ def observe_release(
 ) -> bool:
     """Refresh the open release's pull requests and tag; True when anything changed."""
     project = _project(engine, project_id)
-    if project is None or not fg.configured_for(project.repository_url):
+    if project is None:
+        return False
+    fg = fg.for_project(project.id)
+    if not fg.configured_for(project.repository_url):
         return False
     with engine.connect() as conn:
         card = conn.execute(
@@ -332,7 +346,7 @@ def sweep(engine: Engine, fg: forge.Forge, stop: threading.Event | None = None) 
                 (t.card.c.closed_at.is_(None)) | (t.card.c.closed_at > since),
             )
         ).all()
-    observable = {p.id for p in projects if fg.configured_for(p.repository_url)}
+    observable = {p.id for p in projects if fg.for_project(p.id).configured_for(p.repository_url)}
     work: list[tuple[Callable[..., Any], tuple[Any, ...]]] = [
         (observe_report, (engine, fg, card.id, MAX_AGE))
         for card in cards
@@ -375,6 +389,7 @@ def announce_merges(
         project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
         scan = ticker.merge_scan(conn, project_id)
     conf = ticker.settings(project)
+    fg = fg.for_project(project.id)
     if not conf["enabled"] or scan is None or not fg.configured_for(project.repository_url):
         return 0
     since = scan.merges_since
@@ -453,6 +468,7 @@ def announce_deploy(
     its latest status are read from the forge, and only a successful one is announced."""
     with engine.connect() as conn:
         project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
+    fg = fg.for_project(project.id)
     if not ticker.settings(project)["enabled"] or not fg.configured_for(project.repository_url):
         return False
     found = fg.deployment(forge.repository_of(project.repository_url), deployment_id)
@@ -507,7 +523,7 @@ def merge_sweep(engine: Engine, fg: forge.Forge, stop: threading.Event | None = 
     for row in _rotated(sorted(rows, key=lambda r: r.id), "merges"):
         if stop is not None and stop.is_set():
             return
-        if fg.configured_for(row.repository_url) and not _guarded(
+        if fg.for_project(row.id).configured_for(row.repository_url) and not _guarded(
             announce_merges, engine, fg, row.id
         ):
             return
@@ -517,7 +533,7 @@ def observe_links(engine: Engine, fg: forge.Forge, project_id: str) -> int:
     """The project's card links (§6.13): its own repository's issues and pull requests."""
     from maity_hub.board import links  # board reads the views, which read the probe's rows
 
-    return links.observe(engine, fg, project_id)
+    return links.observe(engine, fg.for_project(project_id), project_id)
 
 
 def _guarded(work: Callable[..., Any], *args: Any) -> bool:

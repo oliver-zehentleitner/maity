@@ -25,12 +25,14 @@ from maity_hub import (
     availability,
     errors,
     forge,
+    forge_access,
     images,
     longpoll,  # noqa: F401  (subscribes the long-poll to new events)
     not_listening,
     probe,
     registration_accounts,
     takeovers,
+    write_guard,
 )
 from maity_hub.auth import device_codes as codes
 from maity_hub.auth import sign_in_settings as sign_in
@@ -53,6 +55,7 @@ from maity_hub.routes import (
     conversations,
     device_codes,
     email_sign_in,
+    forge_links,
     forge_webhook,
     joins,
     jour_fixe,
@@ -70,6 +73,7 @@ from maity_hub.routes import (
     project_images,
     project_messages,
     projects,
+    register_page,
     requests,
     runner,
     runners,
@@ -112,6 +116,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
             settings.db_pool_recycle,
         )
     )
+    write_guard.install(engine)  # no write of a deleted account commits (§2.9)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -135,8 +140,10 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
             sign_in.note_second_factor(
                 conn, settings, "environment" if source == "env" else "admin"
             )
-        reader = forge.Forge(settings.forge_github_token)
-        worker = probe.Worker(engine, reader) if reader.token is not None else None
+        reader = forge.Forge(settings.forge_github_token, access=_app.state.forge_access)
+        # The owner's grants read too (§11.4): an App, or tokens sealed with the key.
+        sources = (settings.forge_github_token, settings.github_app, settings.secret_key)
+        worker = probe.Worker(engine, reader) if any(s is not None for s in sources) else None
         _app.state.probe = worker
         if worker is not None:
             worker.start()
@@ -197,6 +204,9 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     )
     app.state.settings = settings
     app.state.engine = engine
+    app.state.forge_access = forge_access.ForgeAccess(
+        engine, settings.github_app, settings.secret_key
+    )
     app.state.probe = None  # the worker, from startup on when a forge token is set
     errors.install(app)
     prefix = f"/api/{API_VERSION}"
@@ -206,6 +216,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(second_factor_routes.router, prefix=prefix)
     app.include_router(me_routes.router, prefix=prefix)
     app.include_router(notifications.router, prefix=prefix)
+    app.include_router(forge_links.router, prefix=prefix)
     app.include_router(notification_settings.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)
     app.include_router(registration_routes.router, prefix=prefix)
@@ -245,6 +256,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(email_sign_in.router, prefix=prefix)
     app.include_router(email_sign_in.page_router)
     app.include_router(mail_links.page_router)  # /mail/*, likewise
+    app.include_router(register_page.page_router)  # the registration's link page, likewise
     app.include_router(badges.router)  # public /badge/*.svg, before the dashboard
     app.include_router(seo.router)  # /robots.txt and /sitemap.xml, before the dashboard
     app.include_router(swarm.router, prefix=prefix)  # the members' and the public swarm page

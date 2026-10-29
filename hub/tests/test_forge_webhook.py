@@ -117,7 +117,7 @@ def test_the_secret_is_answered_once_and_sealed_at_rest(
         secretbox.open_sealed(KEY, forge_webhook.field(row.project_id), row.secret_sealed)
         == body["secret"].encode()
     )
-    assert changed.audience == ["role:owner", "role:admin"]
+    assert changed.audience == ["trust:owner", "trust:admin"]
     assert (
         body["secret"] not in json.dumps(changed.payload) and changed.payload["action"] == "created"
     )

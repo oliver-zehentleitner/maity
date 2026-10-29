@@ -370,7 +370,7 @@ def test_a_rate_limit_is_no_refusal(seen: FakeOpener) -> None:
 def test_a_graphql_refusal_asks_again_whether_it_is_public(seen: FakeOpener) -> None:
     seen.answers["/repos/a/b"] = {"private": False}
     seen.answers["/graphql"] = {"data": {"repository": None}, "errors": [{"type": "NOT_FOUND"}]}
-    assert READER.items("a/b", [1]) == {1: None}
+    assert READER.items("a/b", [1]) == ({1: None}, False)
     seen.answers["/repos/a/b"] = {"private": True}
     with pytest.raises(forge.NotCoveredError):
         READER.items("a/b", [1])

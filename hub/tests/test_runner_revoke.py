@@ -269,7 +269,7 @@ def test_a_runner_revocation_is_announced_once(setup: Setup, due: bool) -> None:
         assert error(setup.agent.get("/me")) == "credential_revoked"
     [(payload, audience)] = _announced(setup)
     assert payload == {"credential_id": setup.agent.credential_id, "reason": "runner_revoked"}
-    assert set(audience) >= {f"member:{setup.agent.id}", "role:owner"}
+    assert set(audience) >= {f"member:{setup.agent.id}", "trust:owner"}
 
 
 def test_the_override_inside_a_policy_stops_grace_revokes_at_once(

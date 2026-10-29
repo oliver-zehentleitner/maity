@@ -33,9 +33,10 @@ def read_contract(slug: str, card_id: str, request: Request, caller: AnyCaller) 
     if section is None:
         raise _nothing("contract.section", "unset", "the card names no section")
     project = mine.project
-    fg = reader_of(request)
+    fg = reader_of(request).for_project(project.id)
     if not fg.configured_for(project.repository_url):
-        raise probe_not_configured("no_grant" if mine.may("project:admin") else None)
+        reason = fg.refused or "no_grant"
+        raise probe_not_configured(reason if mine.may("project:admin") else None)
     # Only the project's own repository (§6.13): the card names a path in it, never another.
     repository = forge.repository_of(project.repository_url)
     branch = project.repository_default_branch or "main"

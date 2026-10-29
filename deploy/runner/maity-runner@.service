@@ -1,0 +1,45 @@
+# systemd SYSTEM template unit (root-owned, /etc/systemd/system/maity-runner@.service). One instance per runner:
+# maity-runner@sqlite, maity-runner@pg, maity-runner@maria. Each runs as the runner user from its own directory
+# /opt/actions-runner-<instance>; the unit, the runner files and the hook are not the runner user's to change.
+# install-services.sh fills in <runner-user> and <uid>.
+[Unit]
+Description=GitHub Actions runner %i for the Maity database jobs
+After=network-online.target user@<uid>.service
+Wants=network-online.target
+Requires=user@<uid>.service
+
+[Service]
+User=<runner-user>
+# Into the runner user's slice, where the drop-in user-slice-limits.conf caps everything the user runs; a system service
+# with User= would otherwise sit in system.slice, outside that cap (the sums would be 3 x 150% + 400%).
+Slice=user-<uid>.slice
+WorkingDirectory=/opt/actions-runner-%i
+# The rootless Docker of the runner user (lingering keeps it running); all instances share it.
+Environment=DOCKER_HOST=unix:///run/user/<uid>/docker.sock
+Environment=ACTIONS_RUNNER_HOOK_JOB_COMPLETED=/opt/maity-runner-hooks/job-completed.sh
+# xdist workers per job: three jobs run side by side on the machine's cores (steps inherit the runner's environment;
+# hosted runners keep `-n auto`). Two, not three: the first run of three services at `-n 3` took the machine down within
+# minutes (see README, "What went wrong the first time").
+Environment="PYTEST_ARGS=-n 2"
+# bin/runsvc.sh is GitHub's entry point for systemd. run.sh copies run-helper.sh.template into its own
+# directory on every start, which a root-owned runner directory refuses: the unit would exit at once with
+# status 0 and restart in a loop.
+ExecStart=/opt/actions-runner-%i/bin/runsvc.sh
+# The machine is somebody's workstation as well as the runner: CI must never be able to starve it. A cap on the CPU time
+# of the whole instance (the runner, its jobs, the Docker clients; the containers of a rootless Docker run under the
+# user's dockerd, so they are limited by the cap on that daemon's slice, see README), a low priority and a memory ceiling.
+CPUQuota=150%
+Nice=10
+CPUWeight=20
+IOWeight=20
+MemoryMax=4G
+MemorySwapMax=0
+Restart=always
+RestartSec=10
+# A restart also ends the processes a job left behind.
+KillMode=control-group
+KillSignal=SIGTERM
+TimeoutStopSec=5min
+
+[Install]
+WantedBy=multi-user.target

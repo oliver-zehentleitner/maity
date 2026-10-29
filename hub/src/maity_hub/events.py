@@ -21,6 +21,7 @@ from sqlalchemy.exc import IntegrityError
 
 from maity_hub import clock, ticker_read
 from maity_hub import tables as t
+from maity_hub.scopes import in_admin_team, tokens_of
 
 _PENDING = "maity_pending_events"
 _UNDO = "maity_undo_on_rollback"
@@ -207,7 +208,8 @@ def emit(
     return seq
 
 
-SEE_ALL_ROLES = ("owner", "admin")
+# The trusts that read every event of the project, a proxy included (§2.3, §8.2).
+SEE_ALL_TRUSTS = ("owner", "admin")
 # Kinds no agent reads, whatever its role or audience (§8.2): one names who shares an
 # environment, which only the humans responsible may know; invitations are a human's
 # business from issue to use, and never wake an agent (§3.4).
@@ -296,7 +298,7 @@ def readable_by(
     if row.kind == "ticker_subscription_changed":
         # The member's own business, and the human owners' and admins' (§17.12).
         return (row.payload or {}).get("member_id") == principal or (
-            membership.agent_id is None and membership.role in SEE_ALL_ROLES
+            membership.agent_id is None and membership.trust in SEE_ALL_TRUSTS
         )
     if row.actor_membership == membership.id:
         return True
@@ -307,19 +309,19 @@ def readable_by(
         return (
             _names_team(audience, principal)
             or any(f"owns:{token.removeprefix('member:')}" in hidden for token in audience)
-            # A round's thread names `role:owner`: every human owner reads along (§20.5).
+            # A round's thread names `trust:owner`: every human owner reads along (§20.5).
             or (
-                "role:owner" in audience
+                "trust:owner" in audience
                 and membership.agent_id is None
-                and membership.role == "owner"
+                and membership.trust == "owner"
             )
         )
-    if membership.role in SEE_ALL_ROLES:
+    if membership.trust in SEE_ALL_TRUSTS:
         return True
     return (
         "all" in audience
         or _names_team(audience, principal)
-        or f"role:{membership.role}" in audience
+        or bool(tokens_of(membership.trust, membership.role) & set(audience))
     )
 
 
@@ -493,7 +495,9 @@ def wakes(
         return True
     if "all" in audience and (not supervised or row.kind in SUPERVISED_ALL_WAKES):
         return True
-    if f"member:{principal}" not in audience and f"role:{membership.role}" not in audience:
+    if f"member:{principal}" not in audience and not (
+        tokens_of(membership.trust, membership.role) & set(audience)
+    ):
         return False
     chosen = (row.wakes or {}).get(principal)
     return chosen is None or instance is None or instance in chosen
@@ -521,9 +525,11 @@ def _merge_wakes(row: Any, membership: Any, principal: str, instance: str | None
             return True
         allowed = f"member:{principal}" in audience
     elif authority == "admin":
-        allowed = membership.role in SEE_ALL_ROLES
-    else:
-        allowed = membership.role in _DONE_ROLES.get(str(authority), ())
+        allowed = in_admin_team(membership.trust, membership.role)
+    else:  # a guest holds none of its role's scopes (§2.3)
+        allowed = membership.trust != "guest" and membership.role in _DONE_ROLES.get(
+            str(authority), ()
+        )
     if not allowed:
         return False
     chosen = (row.wakes or {}).get(principal)

@@ -36,7 +36,7 @@ from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_foun
 from maity_hub.events import Actor, emit, lock_project
 from maity_hub.models import Strict, markdown
 from maity_hub.namespace import ProjectRoute
-from maity_hub.scopes import ROLES
+from maity_hub.scopes import ROLES, TRUSTS, in_admin_team
 from maity_hub.views import (
     credential_view,
     human_paused,
@@ -73,6 +73,7 @@ class MemberPatch(Strict):
     team: instances.TeamIn | None = None
     owner_preferences: bool | None = None
     availability_policy: AvailabilityPolicyIn | None = None
+    trust: str | None = None
     role: str | None = None
     reports_to: str | None = None
     areas: list[str] | None = Field(default=None, max_length=50)
@@ -131,24 +132,39 @@ def validate_assignment(
     areas: list[str] | None,
     capabilities: list[str] | None,
     member: int | None = None,
+    trust: str | None = None,
+    current: tuple[str, str] = ("member", "coder"),
 ) -> dict[str, Any]:
-    """Columns for role, reports_to, areas, capabilities; `invalid` naming every bad field.
-    `member` is the membership being assigned, for the cycle check; None for a new one."""
+    """Columns for trust, role, reports_to, areas, capabilities; `invalid` naming every
+    bad field. `member` is the membership being assigned, for the cycle check; None for
+    a new one. `current` is its trust and role now, which a field left out keeps."""
     errors: dict[str, str] = {}
     values: dict[str, Any] = {}
+    if trust is not None:
+        if trust not in TRUSTS:
+            errors["trust"] = "unknown"
+        elif trust == "owner" and kind != "human":
+            errors["trust"] = "humans_only"
+        values["trust"] = trust
     if role is not None:
         if role not in ROLES:
             errors["role"] = "unknown"
-        elif role == "owner" and kind != "human":
-            errors["role"] = "owner_is_human"
         values["role"] = role
+    # The proxy holds trust `admin`, the only trust it may hold (§2.3).
+    if "role" not in errors and "trust" not in errors:
+        new_trust, new_role = values.get("trust", current[0]), values.get("role", current[1])
+        if new_role == "proxy" and new_trust != "admin" and (role, trust) != (None, None):
+            errors["role"] = "proxy_needs_admin"
     if reports_to is not None:
         try:
-            values["reports_to"] = member_row(conn, project_id, reports_to).id
+            boss = member_row(conn, project_id, reports_to)
         except ApiError:
             errors["reports_to"] = "not_a_member"
         else:
-            if member is not None and member in chain(conn, values["reports_to"]):
+            values["reports_to"] = boss.id
+            if boss.trust == "guest":  # a guest is never a target (§2.3)
+                errors["reports_to"] = "guest"
+            elif member is not None and member in chain(conn, values["reports_to"]):
                 errors["reports_to"] = "cycle"
     if areas is not None:
         if any(not AREA.fullmatch(a) or a.startswith("..") or "/../" in f"/{a}/" for a in areas):
@@ -177,12 +193,31 @@ def chain(conn: Connection, membership_id: int) -> set[int]:
     return seen
 
 
+def owner_only(message: str) -> ApiError:
+    return ApiError(403, "forbidden", message, {"reason": "owner_only"})
+
+
+def _require_owner_for_change(mine: Membership, target: Any, values: dict[str, Any]) -> None:
+    """Only a caller with trust `owner` grants trust `owner` or `admin` or the role `proxy`,
+    and lowers an owner's trust (§2.3 "The owner's rights")."""
+    if mine.trust == "owner":
+        return
+    trust, role = values.get("trust", target.trust), values.get("role", target.role)
+    grants = (trust in ("owner", "admin") and trust != target.trust) or (
+        role == "proxy" and role != target.role
+    )
+    if grants:
+        raise owner_only("only an owner grants trust owner or admin, or the role proxy")
+    if target.trust == "owner" and trust != "owner":
+        raise owner_only("only an owner lowers an owner's trust")
+
+
 def _owners(conn: Connection, project_id: str) -> int:
     return len(
         conn.execute(
             select(t.membership.c.id).where(
                 t.membership.c.project_id == project_id,
-                t.membership.c.role == "owner",
+                t.membership.c.trust == "owner",
                 t.membership.c.active.is_(True),
             )
         ).all()
@@ -313,7 +348,7 @@ def apply_patch(
             view["changed"] = sorted(changed)
         if "briefing" in changed:
             view |= {"changed": sorted(changed), "briefing_version": row.briefing_version}
-        if {"role", "areas"} & changed.keys():
+        if {"trust", "role", "areas"} & changed.keys():
             # The member's role brief is part of the rules: a bump (§6.9).
             rules.bump(
                 conn,
@@ -368,7 +403,7 @@ def patch_member(
         if "owner_preferences" in given:
             return _owner_preferences(conn, caller, slug, member_id, body, given)
         mine = membership(conn, caller, slug)
-        agent_admin = mine.kind == "agent" and mine.role == "admin"
+        agent_admin = mine.kind == "agent" and in_admin_team(mine.trust, mine.role)
         target = member_row(conn, mine.project.id, member_id)
         if mine.kind == "agent" and target.agent_id is None:  # whatever the agent's role
             raise humans_only("an agent never changes a human's membership")
@@ -396,6 +431,8 @@ def patch_member(
             areas=body.areas,
             capabilities=body.capabilities,
             member=target.id,
+            trust=body.trust,
+            current=(target.trust, target.role),
         )
         if "reports_to" in given and body.reports_to is None:
             values["reports_to"] = None
@@ -403,9 +440,10 @@ def patch_member(
             values["briefing"] = body.briefing or None
         if new_policy is not None and new_policy != availability.policy_of(target):
             values["availability_policy"] = new_policy
-        demotes = values.get("role", "owner") != "owner" and target.role == "owner"
+        _require_owner_for_change(mine, target, values)
+        demotes = values.get("trust", "owner") != "owner" and target.trust == "owner"
         if demotes and _owners(conn, mine.project.id) <= 1:
-            raise invalid({"role": "last_owner"}, "the last owner cannot be demoted")
+            raise invalid({"trust": "last_owner"}, "the last owner cannot be demoted")
         if demotes and target.human_id is not None:  # the namespace owner stays (§6.25)
             namespace.namespace_owner_of(conn, target.human_id, [mine.project.id])
         if "instance" in given and ("paused" not in given or body.paused is not None):
@@ -431,8 +469,9 @@ def patch_member(
             return idempotency.Outcome(202, "request", request_id, _request(conn, request_id))
         change = change_of(mine, caller)
         old = apply_patch(conn, change, target, values, pause, instance=instance)
-        if agent_admin and "role" in old:
-            admin_agents.announce(conn, change, target, "role", old["role"], values["role"])
+        for field in ("trust", "role"):
+            if agent_admin and field in old:
+                admin_agents.announce(conn, change, target, field, old[field], values[field])
         return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
 
     return idempotency.run(engine_of(request), request, caller, action)
@@ -533,7 +572,7 @@ def set_paused(
     row = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
     view = member_view(conn, row)
     payload = {"session": view.get("session"), "paused": view["paused"]}
-    audience = [f"member:{view['id']}", "role:admin"]
+    audience = [f"member:{view['id']}", "trust:admin"]
     if instance is not None:
         shown = next(i for i in view["instances"] if i["id"] == instance)
         payload = {"session": shown["session"], "paused": shown["paused"], "instance": instance}
@@ -646,7 +685,7 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
 def remove_member(slug: str, member_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
-        agent_admin = mine.kind == "agent" and mine.role == "admin"
+        agent_admin = mine.kind == "agent" and in_admin_team(mine.trust, mine.role)
         target = member_row_or_removed(conn, mine.project.id, member_id)
         if mine.kind == "agent" and target.agent_id is None:  # whatever the agent's role
             raise humans_only("an agent never removes a human's membership")
@@ -662,7 +701,9 @@ def remove_member(slug: str, member_id: str, request: Request, caller: AnyCaller
             # An admin agent never removes on the call: the owner gives the go (§2.3 ᵃ).
             request_id = admin_agents.propose(conn, mine, caller, target, {"action": "remove"})
             return idempotency.Outcome(202, "request", request_id, _request(conn, request_id))
-        if target.role == "owner" and _owners(conn, mine.project.id) <= 1:
+        if target.trust == "owner" and mine.trust != "owner":
+            raise owner_only("only an owner removes an owner")
+        if target.trust == "owner" and _owners(conn, mine.project.id) <= 1:
             raise invalid({"member": "last_owner"}, "the last owner cannot be removed")
         if target.human_id is not None:  # the namespace owner stays a member (§6.25)
             namespace.namespace_owner_of(conn, target.human_id, [mine.project.id])
@@ -733,7 +774,7 @@ def revoke_credential(
                 conn,
                 mine.project.id,
                 "credential_revoked",
-                [f"member:{row.agent_id}", "role:owner"],
+                [f"member:{row.agent_id}", "trust:owner"],
                 {"credential_id": credential_id, "reason": reason},
                 actor=caller.actor(mine.id),
                 subject=("credential", credential_id),

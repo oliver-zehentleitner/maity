@@ -60,7 +60,7 @@ def _project(conn: Connection) -> str:
             policy_preset="hierarchical",
             claim_policy="self-claim",
             done_authority="reviewer",
-            contract_arbiter="role:admin",
+            contract_arbiter="trust:admin",
             tag_authority="human",
             steward_writes="cards_only",
             lease_seconds=7200,
@@ -76,7 +76,8 @@ def _membership(conn: Connection, project_id: str, **principal: Any) -> int:
     result = conn.execute(
         insert(t.membership).values(
             project_id=project_id,
-            role="owner",
+            trust="owner",
+            role="coder",
             areas=["/"],
             capabilities=[],
             joined_at=NOW,
@@ -227,7 +228,7 @@ def test_event_seq_increases_and_holds_json(conn: Connection) -> None:
                 project_id=project_id,
                 kind=kind,
                 at=NOW,
-                audience=["member:agt-b", "role:admin"],
+                audience=["member:agt-b", "trust:admin"],
                 payload={"reason": None, "nested": {"n": 1}},
                 redacted=False,
             )
@@ -353,7 +354,8 @@ def test_a_join_link_names_an_agent(conn: Connection) -> None:
                 project_id=project_id,
                 token_hash="a" * 64,
                 code_hash="b" * 64,
-                role="member",
+                trust="member",
+                role="coder",
                 areas=[],
                 capabilities=[],
                 created_by=_human(conn),

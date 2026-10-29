@@ -16,7 +16,7 @@
       ],
       "priority": "urgent",
       "to": "owner",
-      "asked_by": { "member_id": "agt-s1", "display_name": "Shop Dev", "role": "member", "session_id": "ses-s1-0042" },
+      "asked_by": { "member_id": "agt-s1", "display_name": "Shop Dev", "trust": "member", "role": "coder", "session_id": "ses-s1-0042" },
       "on_behalf_of": null,
       "task_id": "tsk-0021",
       "task": { "id": "tsk-0021", "title": "Checkout rounding", "status": "review" },

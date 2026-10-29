@@ -2,7 +2,7 @@
 
 A project the caller is not a member of does not exist for it: `not_found`,
 never `forbidden`, so that projects cannot be enumerated. Within a project
-the membership's role decides, by scope.
+the membership's trust and role decide, by scope.
 """
 
 from __future__ import annotations
@@ -39,12 +39,17 @@ class Membership:
         return role
 
     @property
+    def trust(self) -> str:
+        trust: str = self.row.trust
+        return trust
+
+    @property
     def principal_id(self) -> str:
         principal: str = self.row.agent_id or self.row.human_id
         return principal
 
     def may(self, scope: str) -> bool:
-        return has_scope(self.role, self.kind, scope)
+        return has_scope(self.trust, self.role, self.kind, scope)
 
     def require(self, scope: str) -> None:
         if not self.may(scope):

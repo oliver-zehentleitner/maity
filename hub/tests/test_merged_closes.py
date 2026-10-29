@@ -229,9 +229,9 @@ def test_it_wakes_the_done_authority_only_and_nobody_once_closed() -> None:
             wakes=None,
         )
 
-    reviewer = SimpleNamespace(id=1, agent_id="agt-r", role="reviewer")
-    holder = SimpleNamespace(id=2, agent_id="agt-h", role="member")
-    admin = SimpleNamespace(id=3, agent_id=None, role="admin")
+    reviewer = SimpleNamespace(id=1, agent_id="agt-r", trust="member", role="reviewer")
+    holder = SimpleNamespace(id=2, agent_id="agt-h", trust="member", role="coder")
+    admin = SimpleNamespace(id=3, agent_id=None, trust="admin", role="coder")
     assert events.wakes(row("reviewer", False), reviewer, "agt-r", instance="cd34")
     assert not events.wakes(row("reviewer", False), holder, "agt-h", instance="ab12")
     assert not events.wakes(row("reviewer", True), reviewer, "agt-r", instance="cd34")
@@ -254,6 +254,6 @@ def test_a_team_wake_rule_still_picks_the_instances() -> None:
         conversation_id=None,
         wakes={"agt-r": ["lead"]},
     )
-    reviewer = SimpleNamespace(id=1, agent_id="agt-r", role="reviewer")
+    reviewer = SimpleNamespace(id=1, agent_id="agt-r", trust="member", role="reviewer")
     assert events.wakes(row, reviewer, "agt-r", instance="lead")
     assert not events.wakes(row, reviewer, "agt-r", instance="other")

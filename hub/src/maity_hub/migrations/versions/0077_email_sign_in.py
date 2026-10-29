@@ -1,7 +1,7 @@
 """Single-use mailed sign-in links and browser-bound codes (§2.6.3).
 
 Revision ID: 0077
-Revises: 0070
+Revises: 0066
 Create Date: 2026-10-25
 """
 
@@ -13,7 +13,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql
 
 revision: str = "0077"
-down_revision: str | None = "0070"
+down_revision: str | None = "0066"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

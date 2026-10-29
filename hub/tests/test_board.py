@@ -320,7 +320,7 @@ def test_a_human_redacts_a_history_entry_and_the_events_values(
     notice = events(migrated, "event_redacted")
     assert len(notice) == 1
     assert notice[0].payload == {"history_id": entry["id"], "task_id": card["id"], "reason": "leak"}
-    assert notice[0].audience == ["role:owner", "role:admin"]
+    assert notice[0].audience == ["trust:owner", "trust:admin"]
     # Again: answered as it is, no second notice.
     assert owner.post(path, {"reason": "again"}).json()["before"]["reason"] == "leak"
     assert len(events(migrated, "event_redacted")) == 1
@@ -475,14 +475,17 @@ def test_a_note_is_at_most_4_kib_and_mentions_are_the_hubs(owner: flow.Human) ->
 
 
 class FakeForge(forge.Forge):
-    def __init__(self, answers: dict[int, dict[str, Any] | None]) -> None:
+    def __init__(self, answers: dict[int, dict[str, Any] | None], public: bool = True) -> None:
         super().__init__("token")
         self.answers = answers
+        self.public = public
         self.reads: list[tuple[str, list[int]]] = []
 
-    def items(self, repository: str, numbers: list[int]) -> dict[int, dict[str, Any] | None]:
+    def items(
+        self, repository: str, numbers: list[int]
+    ) -> tuple[dict[int, dict[str, Any] | None], bool]:
         self.reads.append((repository, numbers))
-        return {n: self.answers.get(n) for n in numbers}
+        return {n: self.answers.get(n) for n in numbers}, self.public
 
 
 def test_the_probe_reads_own_repository_links_in_one_batch(
@@ -521,6 +524,7 @@ def test_the_probe_reads_own_repository_links_in_one_batch(
     assert shown[foreign["id"]] is None  # not observed
     seen = events(migrated, "link_observed")
     assert {e.payload["link_id"] for e in seen} == {issue["id"], mismatch["id"], pull["id"]}
+    assert {e.payload["public"] for e in seen} == {True}  # the read said so (§11.4)
     # The holder too when the state changed; a kind mismatch has none.
     assert {e.payload["link_id"]: e.audience for e in seen} == {
         issue["id"]: ["all", f"member:{holder.id}"],

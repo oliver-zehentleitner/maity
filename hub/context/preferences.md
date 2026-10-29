@@ -28,3 +28,29 @@ proposal keeps one settlement path for every proposal kind.
   signature for one kind's need.
 - Apply preferences in the answer route itself, outside the registry: a
   second path for proposals, which the registry exists to avoid.
+
+## "I am a meat proxy" is a flag on the human with one fixed sentence, set by the human alone
+
+**Id:** c2f77cf7-91dc-4954-afe3-67ddb1bde91b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the owner's wish in the team chat (2026-10-28, a checkbox in the personal profile, default off, shown in the agents' briefing, the model's reading left to the model); the coordinator's constraints (a boolean on the human, only the human sets it, a short fixed sentence)
+**Revisit when:** agents are meant to act on it (a rule instead of a remark), or humans want to say more than yes or no
+
+`human.meat_proxy` (default `false`) is set with `PATCH /me` by the human for themselves. The resume packet
+carries it on `me.owner` (the agent's own human) and on every human in `peers` (the humans of its project),
+and while it is `true` adds `meat_proxy_note`, the one sentence "This person says: I am a meat proxy."
+Nothing explains it. An agent's `PATCH /me` with it is `forbidden` (`humans_only`); no admin sets it for another.
+
+**Reason:** the owner wants agents to know this about a person and to make of it what they will, so the hub
+says it and does not interpret it. A boolean with a fixed text keeps what reaches the briefing bounded and
+the same for everyone; it is context, like the preferences, and gives no right.
+
+**Rejected alternatives:**
+- A line in the free-text preferences (§19.4): reaches only the agents of projects that include them, is
+  capped and quoted as the author's prose, and cannot be read by a machine or switched in one click.
+- A note that tells the agent what to do ("treat this person as a relay"): the owner asked for no
+  interpretation, and an instruction from the hub would read as a rule.
+- Next to `language` in the notification settings: that is the mail and notification page, and the flag
+  is not about notifications.

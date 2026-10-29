@@ -179,13 +179,13 @@ def _announce(conn: Connection, project_id: str, pair: tuple[int, int], level: s
     admins = (
         row.human_id
         for row in conn.execute(
-            select(t.membership.c.human_id, t.membership.c.role).where(
+            select(t.membership.c.human_id, t.membership.c.trust, t.membership.c.role).where(
                 t.membership.c.project_id == project_id,
                 t.membership.c.active.is_(True),
                 t.membership.c.human_id.isnot(None),
             )
         )
-        if has_scope(row.role, "human", "members:admin")
+        if has_scope(row.trust, row.role, "human", "members:admin")
     )
     audience = [f"member:{h}" for h in sorted(owners | set(admins))]
     emit(

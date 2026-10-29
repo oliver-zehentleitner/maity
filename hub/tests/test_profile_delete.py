@@ -76,7 +76,14 @@ def test_a_profile_in_use_needs_cascade_and_nothing_changes(
     assert (refused.status_code, refused.headers["Maity-Error"]) == (409, "profile_in_use")
     details = refused.json()["error"]["details"]
     assert details == {
-        "memberships": [{"project": "maintainer/maity", "member_id": agent.id, "role": "member"}],
+        "memberships": [
+            {
+                "project": "maintainer/maity",
+                "member_id": agent.id,
+                "trust": "member",
+                "role": "coder",
+            }
+        ],
         "placements": [],
     }
     with migrated.connect() as conn:
@@ -213,7 +220,7 @@ def test_the_cascade_resets_the_seats_the_profile_held(
     assert created.status_code == 201, created.text
     card_id = created.json()["id"]
     assert delete(owner, agent.id, cascade=True).status_code == 200
-    fallback = "role:admin" if with_admin else owner.id
+    fallback = "trust:admin" if with_admin else owner.id
     assert owner.get("/projects/maintainer/maity").json()["policy"]["contract_arbiter"] == fallback
     assert (
         owner.get(f"/projects/maintainer/maity/tasks/{card_id}").json()["contract"]["arbiter"]

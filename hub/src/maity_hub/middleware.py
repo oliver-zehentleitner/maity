@@ -227,7 +227,10 @@ _TOKEN_PATHS = (
     re.compile(r"^(/r/)[^/]+"),
     re.compile(r"^(/api/v1/runners/pair/)[^/]+"),
     re.compile(r"^(/api/v1/invitations/)[^/]+"),  # the invitation's token (§3.4)
-    re.compile(r"^(/mail/(?:verify|unsubscribe|second-factor-reset|sign-in)/)[^/]+"),  # §18.6
+    re.compile(
+        r"^(/mail/(?:verify|unsubscribe|register|second-factor-reset|account-deletion|sign-in)/)"
+        r"[^/]+"
+    ),  # §18.6
 )
 
 
