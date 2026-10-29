@@ -490,7 +490,10 @@ window.Maity = window.Maity || {};
     // chat with them chosen (§9.2), where the hub has group chats.
     function chatLink(m) {
       if (m.id === ctx.me.id || m.removed_at || ctx.me.kind !== "human") return null;
-      const href = ownAgent(m) ? ctx.link("chat", m.id) : groupsServed ? ctx.link("chat", "new") + "?with=" + encodeURIComponent(m.id) : null;
+      // A group chat as the Chat list offers one (js/chat.js): not in a closed
+      // project, not for a human guest (§2.3, §9.2).
+      const groupOk = groupsServed && !M.trust.guest(ctx) && !["accepted", "archived"].includes(ctx.project.state);
+      const href = ownAgent(m) ? ctx.link("chat", m.id) : groupOk ? ctx.link("chat", "new") + "?with=" + encodeURIComponent(m.id) : null;
       return href ? h("a", { class: "button-link member-chat", href, "aria-label": "Chat with " + m.display_name }, "Chat") : null;
     }
 

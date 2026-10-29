@@ -1726,6 +1726,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const chatOf = (name) => mRow(name).querySelectorAll("a").find((a) => a.classList.contains("member-chat"));
   expect(chatOf("Agent A") && chatOf("Agent A").getAttribute("href") === "#/maintainer/maity/chat/agt-a" && !chatOf("Maintainer"),
     "members: one's own agent's Chat is its direct chat; oneself has none");
+  const chatOther = () => main.querySelectorAll("tr.member").map((tr) => tr.querySelectorAll("a").find((a) => a.classList.contains("member-chat")))
+    .find((a) => a && a.getAttribute("href").includes("chat/new?with="));
+  // agt-b another owner's here: its row offers a group chat, unless the project is closed or one is a guest.
+  const coGet = win.Maity.api.get, coAll = win.Maity.api.getAll;
+  const coOther = (r) => Object.assign({}, r, { items: r.items.map((x) => (x.id === "agt-b" ? Object.assign({}, x, { owner_id: "hum-other" }) : x)), next_cursor: null });
+  win.Maity.api.getAll = (p) => (p === "/projects/maintainer/maity/members" ? coAll(p).then(coOther) : coAll(p));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 4; k++) await tick();
+  expect(chatOther() && chatOther().getAttribute("href") === "#/maintainer/maity/chat/new?with=agt-b", "members: another owner's agent's Chat is a new group chat with it chosen");
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? coGet(p).then((x) => Object.assign({}, x, { state: "archived" })) : coGet(p));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 4; k++) await tick();
+  expect(!chatOther() && chatOf("Agent A"), "members: a closed project offers no new group chat from a row, one's own agent's chat stays");
+  win.Maity.api.get = (p) => (p === "/me" ? coGet(p).then((x) => { x.projects.find((y) => y.slug === "maity").trust = "guest"; return x; }) : coGet(p));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 4; k++) await tick();
+  expect(!chatOther(), "members: a human guest is offered no new group chat from a row");
+  win.Maity.api.get = coGet; win.Maity.api.getAll = coAll;
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 4; k++) await tick();
   const mWrites = [];
   const mPatch = win.Maity.api.patch, mDel = win.Maity.api.del;
   win.Maity.api.patch = (p, b) => { mWrites.push(["PATCH", p, b]); return mPatch(p, b); };
