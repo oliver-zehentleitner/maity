@@ -239,3 +239,36 @@ rights over the project and its agents (`trust.md`).
 - Reusable invitation links: convenient for a team, but a leaked link
   would keep admitting; a week-long single-use link is enough, and the
   inviter can issue more.
+
+## The join host reaches the hub through the chart's Ingress; the path-split Ingresses made by hand are gone
+
+**Id:** 7d25cf86-17e2-4bd2-b28b-aba6df20226f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the coordinator's order to make `join.maity.team` the hub's join host, 2026-10-29, on the operator's side of the contract in `docs/api.md` §1.1
+**Revisit when:** the join host is served by an edge other than the chart's Ingress, or the production cluster stops using Traefik
+**See:** join.md#an-optional-join-host-answers-only-the-agent-join-everything-else-on-it-goes-to-the-start-page — a749f1eb-f54f-4549-8113-2abee4e2d666 — as of 2026-10-29
+
+Until now production answered `join.maity.team` through two Ingresses
+and a Traefik redirect Middleware made with `kubectl`, outside the
+repository: a path list for the join and pairing routes, and a catch-all
+that redirected everything else to the apex with a 307. That was a
+stopgap from before the hub routed the join host itself. Now
+`ingress.joinHost` renders the host rule, the TLS host and
+`MAITY_JOIN_URL`, and the hub answers the whole host (the token path is
+the join, any other `GET` is a 302 to the public start page, any other
+method `not_found`). The hand-made objects are deleted first, then the
+chart is upgraded with the same image, so a host never has two owners;
+`cert.yaml` carries `join.` in its names for new installs.
+
+**Reason:** the path list in the Ingress duplicated what the hub already
+decides, and sent `/` and `/api/v1/health` on to the public app, which
+the contract says the join host must not do. One owner of the routing
+(the hub) and one of the objects (the chart) leaves nothing to drift.
+
+**Alternatives:**
+- Keep the path-split Ingresses beside the chart: two definitions of what
+  the join host serves, and the redirect keeps answering `/`.
+- A chart value for the Middleware: the hub's own 302 makes it
+  unnecessary.

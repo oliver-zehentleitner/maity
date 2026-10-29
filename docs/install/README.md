@@ -188,8 +188,9 @@ the hub itself comes from the Helm chart, whose
 - the hub chart with a NetworkPolicy that admits only Traefik
 
 **1. The instance.**
-- Create DNS A records for the host name and `www.` pointing at the
-  instance. **No AAAA records**: k3s here is IPv4 only, and an AAAA
+- Create DNS A records for the host name, `www.` and, if you use the
+  join host (`ingress.joinHost`, docs/api.md §1.1), `join.` pointing at
+  the instance. **No AAAA records**: k3s here is IPv4 only, and an AAAA
   record breaks every client that prefers IPv6.
 - Open the firewall for ssh, 80 and 443, and for k3s's own pod and
   service networks. Without the last two, pods cannot reach each other
@@ -240,7 +241,8 @@ rm pg-password database-url
 ```
 
 **5. The manifests.** Replace `maity.example.org` in `cert.yaml` and
-`hub-values.yaml` first:
+`hub-values.yaml` first (and drop the join host from both if you run
+without one):
 
 ```sh
 kubectl apply -f deploy/k3s-single/postgres.yaml -f deploy/k3s-single/postgres-netpol.yaml \
