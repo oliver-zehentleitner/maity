@@ -697,3 +697,31 @@ timer and prints the three effective settings in one command, so a rollback that
 - Changing `50-cloud-init.conf` or `sshd_config` in place: cloud-init may rewrite its file, and the rollback would have to restore an edit instead of
   removing one file.
 
+
+## Loopback is the job's own on a rented runner; ssh, the metadata service and the private networks stay closed
+
+**Id:** 41cea0a5-28af-4a1a-87ad-aad00c580b77
+**Type:** decision
+**Status:** open
+**Evidence:** confirmed
+**Source:** the first run of the database job on the rented server (2026-10-29): 69 of 3,241 tests failed that pass on the hosted runner, a probe as the runner user (a listener and a client on 127.0.0.1:34567 and :8025 were refused, :5432 worked, root worked), and the rules rebuilt in an unprivileged network namespace; the maintainer's decision is pending
+**See:** process.md#the-runner-user-is-fenced-by-an-owner-match-chain-on-output-replies-first-loopback-closed — ca3532c5-f8f1-4687-b467-ee1b129dc603 — as of 2026-10-29
+**Revisit when:** a job runs something that should not reach the machine's own services, or the servers carry anything besides sshd on loopback
+
+The chain for the runner user's uid rejects `ssh` (port 22) over loopback and over the machine's own address, lets the rest of loopback through, and
+keeps the metadata service, the private ranges and shared address space closed. This replaces "loopback closed except the database ports and the
+resolver" from the entry it points to; that entry becomes `superseded` when the maintainer agrees.
+
+**Reason:** the suite starts servers of its own on loopback on any port (outbound-request tests, a TLS server with a wrong certificate, a mail
+server for the notification tests), which the closed loopback refused: 69 tests failed that pass on a hosted runner. What the closed loopback
+protected was sshd on the machine's own address (key-only since step 3b), the only service on the machine besides the resolver and the job's own
+containers; the fence matters towards the provider's networks and the metadata service, which stay closed. A dedicated machine without secrets that is
+reinstalled after a malicious job has little behind loopback to protect.
+
+**Rejected alternatives:**
+- Opening more ports one by one (the database ports and the resolver, as before): the suite picks ports at random, and each new test server would be a new failure.
+- Leaving loopback closed and moving the suite's servers elsewhere: they are in the tests, and a runner that needs the tests changed is not a drop-in for the hosted one.
+- A network namespace per job: it would give the job its own loopback and keep the machine's closed, but rootless Docker already builds one, and a second layer would
+  have to reach the service containers' loopback ports.
+- Dropping the fence altogether: the metadata service and the provider's private networks are what a job must not reach.
+
