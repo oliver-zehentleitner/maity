@@ -49,8 +49,9 @@ dashboard already holds both for its header.
 **Source:** the contract owner's rulings of 2026-10-22 on the group-chat, attachment and card-link contracts (`docs/api.md` §6.1, §9.2)
 **Revisit when:** a project state is added that should refuse more than additions, or an operator needs an archived project frozen for an audit or legal hold
 
-In a project that is `accepted` or `archived`, a write that adds one of
-the following is refused with `project_closed`: a claim, a card, a group
+In a project that is `archived` (until 2026-10-27 also `accepted`, which
+migration 0094 maps to `archived`), a write that adds one of the
+following is refused with `project_closed`: a claim, a card, a group
 chat, a participant added to one, an upload, a card link, a note.
 Posting messages stays allowed, in project messages and in group chats
 alike (a message that names an attachment adds an upload and is refused
@@ -449,7 +450,10 @@ with the first release tag, and never cleared: from then on interfaces
 change only with versioning and a transition period, migrations stay
 backward compatible and the release checklist is mandatory. After a
 launch the project returns to build, still released. Moving to launch
-needs the owner's go.
+needs the owner's go. Only entering launch is gated: leaving it, back to
+build or into review or archived, is any admin's transition with a
+reason, as between every other pair of states (§6.1); the go is for
+taking the project live, not for stepping back from it.
 
 **Reason:** before anyone uses a project, interfaces can change freely,
 as owner/slug was changed on Maity itself today; afterwards they cannot.
