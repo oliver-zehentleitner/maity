@@ -73,6 +73,8 @@ def test_the_packet_counts_chats_and_carries_only_mentions(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
     agent = flow.agent(make_client, owner)
+    # The instance's first session starts at the head (§5.2): it is open before the chat.
+    agent.resume()
     guest = other_human(make_client, migrated, "guest")
     chat = create(owner, agent.id, guest.id).json()
     plain = say(guest, chat["id"], "just talking").json()["seq"]

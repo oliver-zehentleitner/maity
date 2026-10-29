@@ -13,8 +13,7 @@ or recovery code. What the document shows is picked field by field; where a row 
 whole for the hub's own read rules (`inbox.may_read`), only named fields leave it.
 
 Not in this hub yet, so not in the export: handle aliases (§6.24), languages, the public
-profile (§16.9), forge links (§11.4), abuse reports (§16.8) and card approvals (§6.4,
-`reviewer_and_tester`).
+profile (§16.9), abuse reports (§16.8) and card approvals (§6.4, `reviewer_and_tester`).
 """
 
 from __future__ import annotations
@@ -63,6 +62,7 @@ def build(conn: Connection, human_id: str, now: datetime) -> dict[str, Any]:
             "enrolled": second_factor.enrolled(second_factor.factor_of(conn, human_id)),
             "recovery_codes_left": second_factor.recovery_codes_left(conn, human_id),
         },
+        "forge_links": _forge_links(conn, human_id),
         "runners": _runners(conn, human_id),
         "agent_profiles": _agent_views(conn, agents, agent_memberships, names, member_ids),
         "memberships": [_membership_view(row, names, member_ids) for row in mine],
@@ -267,6 +267,50 @@ def _sessions(conn: Connection, human_id: str) -> list[dict[str, Any]]:
         }
         for row in rows
     ]
+
+
+def _forge_links(conn: Connection, human_id: str) -> list[dict[str, Any]]:
+    """The caller's forge access (§11.4): each App installation they linked and their own
+    token, as login, kind and when it was made, never a token (§2.9)."""
+    links = conn.execute(
+        select(
+            t.forge_link.c.forge,
+            t.forge_link.c.account_login,
+            t.forge_link.c.status,
+            t.forge_link.c.linked_at,
+        )
+        .where(t.forge_link.c.human_id == human_id)
+        .order_by(t.forge_link.c.linked_at, t.forge_link.c.id)
+    ).all()
+    found = [
+        {
+            "kind": "app",
+            "forge": row.forge,
+            "login": row.account_login,
+            "status": row.status,
+            "created": ts(row.linked_at),
+        }
+        for row in links
+    ]
+    token = conn.execute(
+        select(
+            t.forge_token.c.forge,
+            t.forge_token.c.login,
+            t.forge_token.c.status,
+            t.forge_token.c.set_at,
+        ).where(t.forge_token.c.human_id == human_id)
+    ).first()
+    if token is not None:
+        found.append(
+            {
+                "kind": "token",
+                "forge": token.forge,
+                "login": token.login,
+                "status": token.status,
+                "created": ts(token.set_at),
+            }
+        )
+    return found
 
 
 def _runners(conn: Connection, human_id: str) -> list[dict[str, Any]]:

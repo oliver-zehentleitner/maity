@@ -254,6 +254,9 @@ def test_resume_carries_memory_first_and_says_when_it_changed(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
     agent = flow.agent(make_client, owner)
+    # The first session starts at the head (§5.2): "changed after the resume's cursor"
+    # (§19.3) needs a session before the changes.
+    agent.resume()
     put_soul(owner, agent.id, "You prefer small pull requests.")
     for n in range(3):
         added(agent, f"{n} " + "x" * 2000)
