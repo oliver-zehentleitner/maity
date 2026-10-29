@@ -66,6 +66,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_abuse_report_status_created", table_name="abuse_report")
-    op.drop_index(op.f("ix_abuse_report_account_id"), table_name="abuse_report")
+    # The table goes with its indexes; MariaDB refuses to drop an index the foreign key on
+    # `account_id` still needs (as 0061 and 0077 do).
     op.drop_table("abuse_report")
