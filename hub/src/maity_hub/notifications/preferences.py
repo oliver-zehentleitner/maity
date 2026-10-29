@@ -97,7 +97,9 @@ def _merged(stored: dict[str, Any] | None) -> dict[str, Any]:
                     else:
                         result[side]["kinds"][kind] = setting
             elif key == "content" and isinstance(value, dict):
-                result[side]["content"].update({k: v for k, v in value.items() if k in KINDS})
+                result[side]["content"].update(
+                    {k: v for k, v in value.items() if k in CONTENT_KINDS}
+                )
             else:
                 result[side][key] = value
     return result
@@ -112,16 +114,20 @@ def row_of(conn: Connection, human_id: str, *, lock: bool = False) -> Any:
         return found
     if not lock:
         return _NONE
-    conn.execute(
-        insert(t.notification_settings).values(
-            human_id=human_id,
-            preferences={},
-            address_status="none",
-            epoch=0,
-            hard_failures=0,
-            updated_at=clock.now(),
-        )
-    )
+    try:
+        with conn.begin_nested():
+            conn.execute(
+                insert(t.notification_settings).values(
+                    human_id=human_id,
+                    preferences={},
+                    address_status="none",
+                    epoch=0,
+                    hard_failures=0,
+                    updated_at=clock.now(),
+                )
+            )
+    except IntegrityError:  # a first write of the same human committed between our read and insert
+        pass
     return conn.execute(query.with_for_update()).one()
 
 
@@ -269,19 +275,19 @@ def _check_modes(value: Any, errors: dict[str, str]) -> dict[str, Any] | None:
         return None
     for kind, setting in value.items():
         if not isinstance(setting, dict) or not set(setting) <= {"mode", "content"}:
-            errors["email.kinds"] = "invalid"
+            errors[f"email.kinds.{kind}"] = "invalid"
             return None
         # A missing `mode` is a partial change; one that is present must be a mode, `null`
         # included (§18.4).
         if "mode" in setting and setting["mode"] not in (
             ("immediate", "off") if kind == "security" else MODES
         ):
-            errors["email.kinds"] = "invalid"  # a delayed alert is no alert (§18.4)
+            errors[f"email.kinds.{kind}"] = "invalid"  # a delayed alert is no alert (§18.4)
             return None
         if "content" in setting and (
             kind not in CONTENT_KINDS or not isinstance(setting["content"], bool)
         ):
-            errors["email.kinds"] = "invalid"
+            errors[f"email.kinds.{kind}"] = "invalid"
             return None
     return value
 
