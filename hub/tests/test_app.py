@@ -86,7 +86,7 @@ def test_the_shell_carries_a_base_so_its_relative_files_load_from_assets_at_any_
 
 
 def test_a_page_without_a_head_is_served_as_it_is() -> None:
-    from maity_hub.app import shell_document
+    from maity_hub.shell import shell_document
 
     assert shell_document(b"<p>x</p>") == b"<p>x</p>"
     assert (

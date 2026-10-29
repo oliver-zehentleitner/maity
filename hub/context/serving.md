@@ -203,12 +203,18 @@ open until the numbers change.
 included before the dashboard mount, outside `/api/v1`, like the badge. The middleware lets
 them choose `public, max-age=3600`, the one caching it permits besides the landing page's 60
 seconds: the exception is now the cache value a path may choose, and no longer a flag, so a
-path cannot ask for the other path's. The root's `X-Robots-Tag: noindex` while the landing
-page is not enabled is added by the middleware too, on `GET` and `HEAD` of `/` only, because
-the root is the app shell (since 2026-10-29 the `ShellRoute`, which leaves the root's header to
-the middleware; every other shell path carries `noindex` itself); the setting
-is read per request, and an unreadable setting counts as off. The join host answers both
-files `not_found`, in `join_host.route`, before its redirect.
+path cannot ask for the other path's. Changed on 2026-10-29 (the hub renders the landing page
+itself, §16.7): the middleware no longer adds `noindex` to the root; the app shell carries it on
+every path including `/`, and the landing page, which answers `/` to a visitor while it is
+enabled, carries none, so the root is indexable exactly when the hub shows its own page. The
+files now follow the landing setting and the legal pages (`routes/seo.py`): `Allow` for the root
+and the legal pages that are set, a sitemap with the root and those pages, none when there is
+neither. The join host answers both files `not_found`, in `join_host.route`, before its redirect.
+
+The rendered pages answer `HEAD` as well as `GET`, and the middleware gives a `HEAD` of a public
+path the same cache value: otherwise the app shell's route matches a `HEAD` of `/` and answers
+`noindex` for a page that is meant to be indexed. **Rejected alternative:** leaving `HEAD` to the
+shell. Its headers then differ from `GET`'s on the same address.
 
 **Reason:** the dashboard's mount would otherwise answer `/robots.txt` from the web
 directory (or with its 404), and the root's header must follow a setting an admin changes

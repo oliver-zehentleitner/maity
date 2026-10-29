@@ -82,3 +82,79 @@ puts a section without a required field in front of the renderer.
 **Rejected alternatives:**
 - Filling the missing hero field with a placeholder: made-up words on the operator's public page.
 - Loosening the check for migrated pages: two rules of validity for one page.
+
+## The hub renders the landing page and the legal pages itself, as documents with no script, no image and a policy of their own
+
+**Id:** 7b1e4c52-5a86-4f0e-9d3b-0c2a6e8f1d47
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** `docs/api.md` §16.7 ("The page", "Content security"), §16.7.1; the implementation of tsk-2vv6h5jptvem, 2026-10-29
+**Revisit when:** a section needs a script or an image (the policy and the renderer change together), or public pages (§16.9) arrive and `profiles`, `explore` and `activity` get something to show
+
+`render.py` turns a page into one HTML string: a fixed header, the enabled sections in order,
+a fixed footer, one inline `<style>` element that follows `prefers-color-scheme`, and the
+operator's words only ever as escaped text. Markdown goes through a small renderer that knows
+exactly what the validator allows (headings, paragraphs, emphasis, lists, quotes, fenced code,
+links whose target passes the same check again at render time). The documents answer with
+`default-src 'none'; style-src 'unsafe-inline'` (the landing page adds `base-uri`, `form-action`
+and `frame-ancestors`), which is why there is no image and no logo file: the wordmark is text.
+`/` shows the landing page to a visitor (no live `maity_session`; `has_live_session` reads, renews
+nothing and never raises) while it is enabled, to anyone with `?as=public`, and the app shell
+otherwise. The language is `?lang=`, else the best `Accept-Language` match among the languages
+the page has, else the default language. The counters are computed at most every five minutes in
+the process and shared by every visitor. A draft is stored in `preview_draft` (session-bound,
+ten minutes, twenty per session), because the dashboard can only post with its CSRF token and
+HTML it fetched would run under the dashboard's policy, not the page's: the second step is a
+top-level `GET` that answers the page itself, in the language the `lang` query asks for or else the
+draft's own default language (the browser's `Accept-Language` is not read), with the page's policy in
+place of the API's. The `POST` answers the path under the API base, not an absolute address.
+
+**Reason:** a crawler and a visitor with a script blocker read the same words; a policy that
+forbids everything but one style element leaves no way for an operator's text to run anything,
+whatever it holds. The renderer repeats the validator's rules instead of trusting the stored
+value, since a row written by an older version or by hand is still shown to the public.
+
+**Rejected alternatives:**
+- Serving the dashboard's shell at `/` and letting its script draw the landing page: a crawler
+  would see nothing, and the page would need the dashboard's files and policy.
+- A Markdown library: the validator already limits the language to a handful of constructs, and
+  a general renderer would produce elements the policy and the validator never considered.
+- Keeping the drafts in the process: the preview's `GET` may reach another replica than the
+  `POST`; a row needs no sticky routing.
+- Giving the landing page the dashboard's `default-src 'self'` and its stylesheet: it would allow
+  the page to load files and make the policy depend on what the dashboard ships.
+
+## The terms of a registration come from the legal pages only when neither the environment nor the admin gave any
+
+**Id:** 94f2d0a6-1c3e-4b78-a5e9-6d7c0b8e3a21
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** `docs/api.md` §16.7.1 ("Terms at registration"), §16.4; the implementation of tsk-2vv6h5jptvem, 2026-10-29
+**Revisit when:** an acceptance of a version is recorded per person, or the terms page is edited so often that the version a registration offered is gone before it completes
+
+`registration.resolve` takes the environment's terms, else the admin's, else, when the legal
+`terms` page is set, `{url: <public url>/terms, version: <the page's current version>}` with
+`source: "legal_pages"`; unsetting the page returns to none. The version is the hub's RFC 3339 time
+of the change, so a person accepts exactly the text they could read at that address, and the
+earlier version stays readable (§16.7.1).
+
+**Reason:** an operator who writes the terms in the hub should not have to type their address and
+version a second time, and a value somebody set on purpose (the environment, the admin) must keep
+winning over an inference.
+
+**Rejected alternatives:**
+- The legal pages winning over the admin's value: the admin would lose a setting they made on
+  purpose without being told.
+- Storing the derived terms in the registration setting at each change of the page: two stores
+  that can differ, and an admin's explicit value could not be told apart from the copy.
+
+Every caller of `registration.resolve` passes the public URL (`public_url` has no default): the
+login page's `GET /auth/methods`, the registration's link page, `POST /registration`, the invitation
+page and the admin's view must name the same terms, or the form says nothing about terms the link
+page then requires.
+
+**Rejected alternative:** a default of `""` for `public_url`. It silently dropped
+`source: legal_pages` for `/auth/methods` (found in review of #635), the form showed no terms, and no
+test noticed.

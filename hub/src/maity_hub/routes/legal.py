@@ -6,15 +6,16 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from sqlalchemy import Connection
 
-from maity_hub import legal
+from maity_hub import clock, landing, legal, previews, render
 from maity_hub.admin import instance_admin_id
 from maity_hub.auth import second_factor
 from maity_hub.deps import HumanCaller, engine_of, settings_of
-from maity_hub.errors import forbidden
+from maity_hub.errors import forbidden, invalid
 from maity_hub.landing import etag
+from maity_hub.routes.pages import LEGAL_CSP
 
 router = APIRouter()
 
@@ -56,3 +57,65 @@ def get_legal(request: Request) -> Response:
     if tag in [part.strip() for part in wanted.split(",")]:
         return Response(status_code=304, headers=headers)
     return JSONResponse(body, headers=headers)
+
+
+@router.post("/admin/settings/legal/preview", status_code=201)
+def create_legal_preview(
+    request: Request, caller: HumanCaller, body: Annotated[dict[str, Any], Body()], page: str = ""
+) -> JSONResponse:
+    """A draft of one legal page, seen before it is saved (§16.7.1): the page's value as `PATCH`
+    takes it under its key, the languages `{"en": {…}, "de": {…}}`, not wrapped in the page's
+    name; nothing is saved and no limit is counted."""
+    if page not in legal.PAGES:
+        raise invalid({"page": "invalid"})
+    with engine_of(request).begin() as conn:
+        _require_admin(conn, caller)
+        change = legal.check({page: body})
+        if change.languages is None:
+            raise invalid({page: "invalid"})
+        draft_id, expires = previews.create(
+            conn, caller.human_session or "", "legal", change.languages, page
+        )
+    return JSONResponse(
+        {
+            "id": draft_id,
+            "url": f"/api/v1/admin/settings/legal/preview/{draft_id}",
+            "expires_at": clock.rfc3339(expires),
+        },
+        status_code=201,
+    )
+
+
+@router.get("/admin/settings/legal/preview/{draft_id}", response_class=HTMLResponse)
+def show_legal_preview(
+    draft_id: str, request: Request, caller: HumanCaller, lang: str | None = None
+) -> Response:
+    """The page the hub would serve for that draft, with "Draft" where it says "as of …"
+    and no list of earlier versions."""
+    with engine_of(request).begin() as conn:
+        _require_admin(conn, caller)
+        row = previews.read(conn, draft_id, caller.human_session or "", "legal")
+        texts = row.payload
+        setting = legal.stored(conn)
+        chosen = render.choose_language(list(texts), setting["default_language"], lang, None)
+        body = render.legal_document(
+            page=row.page,
+            lang=chosen,
+            title=texts[chosen]["title"],
+            source=texts[chosen]["markdown"],
+            version=None,
+            earlier=[],
+            current=None,
+            languages=list(texts),
+            legal=legal.public(setting),
+            setting=landing.stored(conn),
+            public_url=settings_of(request).public_url,
+        )
+    return HTMLResponse(
+        body,
+        headers={
+            "Content-Security-Policy": LEGAL_CSP,
+            "X-Robots-Tag": "noindex",
+            "Cache-Control": "no-store",
+        },
+    )

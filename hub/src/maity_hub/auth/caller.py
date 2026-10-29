@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -190,6 +191,21 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
                 .values(lease_until=availability.renewed_lease(conn, membership_id, now, lease))
             )
     return Caller(kind="human", via="cookie", human_id=row.human_id, human_session=id_hash)
+
+
+def has_live_session(conn: Connection, cookies: Mapping[str, str]) -> bool:
+    """Whether a `maity_session` cookie names a session that is alive: the test of §16.7 for
+    "a visitor without a session". It reads, it renews nothing, and it never raises."""
+    value = cookies.get(SESSION_COOKIE)
+    if not value or not value.isascii():
+        return False
+    row = conn.execute(
+        select(t.human_session).where(t.human_session.c.id_hash == session_id_hash(value))
+    ).first()
+    if row is None or row.ended_at is not None or not session_alive(row, clock.now()):
+        return False
+    deleted = conn.execute(select(t.human.c.deleted_at).where(t.human.c.id == row.human_id))
+    return deleted.scalar() is None
 
 
 def session_alive(row: Any, now: datetime) -> bool:
