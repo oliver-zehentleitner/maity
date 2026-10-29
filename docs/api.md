@@ -11685,8 +11685,9 @@ all languages.
 - **Control characters.** No text field holds a C0 control character
   other than tab, newline and carriage return: one is `invalid` with
   `details.fields.<path>: control_character`.
-- **Body cap.** `PATCH /admin/settings/landing` alone takes a request
-  body of up to 512 KiB (§1.7's 64 KiB elsewhere); the stored setting is
+- **Body cap.** `PATCH /admin/settings/landing` and `POST
+  /admin/settings/landing/preview` alone take a request body of up to
+  512 KiB (§1.7's 64 KiB elsewhere); the stored setting is
   at most 256 KiB of UTF-8.
 - **The stats.** Computed by the hub at most every **5 minutes** and
   shared by every visitor, never per request: `people` (active human
@@ -11773,22 +11774,38 @@ all languages.
   never set a cookie. The join host (§1.1) answers both `not_found`.
 
 **Seeing it as a visitor, and a draft.** A signed-in human sees the
-landing page as a visitor does with `GET /?as=public`: the static page
-whatever the session, while it is enabled, and the app shell otherwise,
-exactly as `?as=public` on a public page (§16.9); its canonical link
-stays the bare root. A draft is seen before it is saved with
+saved landing page as a visitor does with `GET /?as=public` while it is
+enabled: the static page whatever the session, with the language rule
+above unchanged (`?as=public&lang=<tag>` works); its canonical link
+stays the bare root. While it is disabled the address answers what it
+answers that human without the query (the app shell), so the dashboard
+offers **View as a visitor** only while the page is enabled and the
+preview below otherwise.
+
+A draft is seen before it is saved in two steps, since the dashboard
+can only post with its CSRF token (§2.1) and HTML it fetched would run
+under the dashboard's own Content-Security-Policy, not the page's:
 
 ```
-POST /admin/settings/landing/preview?lang=<tag>
+POST /admin/settings/landing/preview
+GET  /admin/settings/landing/preview/{id}?lang=<tag>
 ```
 
-instance admin only, the body the same as `PATCH`'s `pages`, validated
-the same way (the same `invalid` field paths), nothing stored: `200`
-with the HTML the hub would serve at `/` for that language, `text/html`,
-`Cache-Control: no-store`, `X-Robots-Tag: noindex` and the same
-`Content-Security-Policy` as the served page, so the preview cannot run
-what the page could not. `lang` must be a language the body has a page
-for (`invalid`, `details.fields.lang`, otherwise).
+Scope `instance:admin`, human only (§16.1), for both. The `POST` takes
+the body `PATCH` takes (`pages`, `footer`, `default_language`; a field it
+leaves out comes from the saved setting, `enabled` is ignored),
+validated the same way with the same `invalid` field paths and the same
+body cap (below), and stores the draft for 10 minutes, bound to the
+calling session and never to the setting: `201` with `{id, url,
+expires_at}`. The dashboard opens `url` in a new tab; that `GET` is a
+top-level navigation with the session cookie and answers the HTML the
+hub would serve at `/` for that language, `text/html`, `Cache-Control:
+no-store`, `X-Robots-Tag: noindex` and the served page's own
+`Content-Security-Policy`, so the preview shows exactly what the page
+would and can run nothing it could not. Another session, an expired id
+or an unknown one is `not_found`. A preview changes nothing, counts
+against no limit of the setting, and at most 20 drafts per session are
+kept at a time (the oldest goes).
 
 ### 16.7.1 Legal pages
 
@@ -11804,7 +11821,7 @@ Scope `instance:admin`, human only. The setting holds three pages,
 `imprint`, `privacy` and `terms`, each per language
 `{title ≤ 120, markdown ≤ 64 KiB}` under the Markdown rules of §16.7,
 plus the setting's `default_language` (default `"en"`); at most 8
-languages per page. `PATCH /admin/settings/legal` takes a request body
+languages per page. `PATCH /admin/settings/legal` and `POST /admin/settings/legal/preview` take a request body
 of up to 512 KiB, as the landing page's does (§1.7's 64 KiB
 elsewhere), and changes at most one page per call; the hub accepts at
 most 20 changes per page per 24 hours (`rate_limited`), so the kept
@@ -11832,11 +11849,15 @@ read-only.
   read. The order is: the environment (`source: "env"`), then a value
   the instance admin set in the registration setting (`source:
   "admin"`), then the legal pages (`source: "legal_pages"`), then none.
-- **Preview** with `POST /admin/settings/legal/preview?page=<imprint|privacy|terms>&lang=<tag>`,
-  instance admin only, the body the same as `PATCH`'s for that page:
-  `200` with the HTML the hub would serve at `/<page>`, nothing stored,
-  with the headers of the landing preview (§16.7). A legal page is read
-  as a visitor at its own path; it has no `?as=public` of its own.
+- **Preview** the same way as the landing page (§16.7): `POST
+  /admin/settings/legal/preview?page=<imprint|privacy|terms>` with the
+  body `PATCH` takes for that page (and its body cap), then `GET
+  /admin/settings/legal/preview/{id}?lang=<tag>`, with the same scope,
+  lifetime, binding and headers. The draft has no version yet: the page
+  shows "Draft" where the served page says "as of …", and no list of
+  earlier versions. A legal page is read as a visitor at its own path;
+  it has no `?as=public` of its own. A preview counts against none of
+  the page's change limits.
 - **Read** with `GET /legal` (unauthenticated): `{default_language,
   pages: {imprint|privacy|terms: {version, languages}}}` without the
   text, for the dashboard's links.

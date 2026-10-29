@@ -1,4 +1,4 @@
 ### Added
 
 - docs: `GET /?as=public` shows a signed-in human the landing page as a visitor sees it, and
-  `POST /admin/settings/landing/preview` and `/admin/settings/legal/preview` render a draft without storing it (§16.7, §16.7.1)
+  a draft of the landing page or a legal page is previewed through a short-lived id opened in its own tab (§16.7, §16.7.1)
