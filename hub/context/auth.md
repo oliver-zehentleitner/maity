@@ -265,11 +265,9 @@ Three choices of the implementation that the contract leaves open:
   every other limit of the hub in V1 (`ratelimit.Limiter`). A restart
   forgets the counts. With several worker processes the limits multiply,
   so the hub runs one worker per process.
-- **The admin's reset of someone's factor (§2.8.3) is not in this change.**
-  The table and column for it exist; part 2 of #380 adds the route, the
-  confirmation mail and `maity-hub second-factor reset`. Step-up for
-  address changes and held approvals is wired when those routes exist
-  (card tsk-9z1m4tcz1e98).
+- **The admin's reset of someone's factor (§2.8.3) is a decision of its own**
+  (the entry below); the step-up of address changes and held approvals is
+  in `notifications.md`.
 
 **Rejected alternatives:**
 - Writing the enrolment state when the policy or a role changes: every
@@ -281,3 +279,44 @@ Three choices of the implementation that the contract leaves open:
 - Counting wrong codes in the database: one replica is the V1 limit for
   every limiter; a durable count only for this one would buy little
   while the per-address and per-human limits elsewhere stay in memory.
+
+## A reset of a second factor takes effect when the human presses the button; the factor's generation is what kills the other links
+
+**Id:** 7d2b4c9e-3a15-4c6f-8e07-b9a1d5f06c42
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.8.3, §18.6; the implementation of #380, part 2, 2026-10-28
+**Revisit when:** the instance audit log exists (a request should be written there, §2.8.3), or the notification mail of `second_factor_changed` is derived and the effect's own mail is checked against it
+
+`POST /admin/users/{id}/second-factor/reset` (`auth/second_factor_reset.py`) writes one row of
+`second_factor_reset` and mails the human's verified address a link; nothing about the human
+changes. The row's id is the hash of the link's nonce, so the table holds nothing that opens a
+link. The page `/mail/second-factor-reset/{token}` (`routes/mail_links.py`, no cookie, like the other
+link pages) shows the account, the admin and the reason as quoted text; its `POST` is the effect:
+under the factor's row it claims the link with a conditional update of `used_at`, checks that the
+link's generation is still the factor's, and then removes the enrolment and the recovery codes
+with `reset_required`, moves the generation, ends every session of the human
+(`second_factor_reset`) and writes `second_factor_changed {change: reset, by: <admin handle>}`.
+The operator's `maity-hub second-factor reset --handle` runs the same effect at once with `by:
+operator`. A link is dead when it was used, expired, or the generation moved: a recovery code
+that was used, a new enrolment, turning the factor off and another reset all move it, so no list
+of links has to be voided. The request is limited to three an hour per human (in process, like
+the other limiters) and needs the admin's own step-up; the admin's own account is refused
+(`own_account`), a human without a verified address `address_unverified`, an instance
+without mail `mail_not_configured`.
+
+**Reason:** the mail proves the mailbox, not the person, so the admin alone must never strip a
+factor: the human's button is the second party. Tying the link to the generation reuses what
+every change of the factor already does, instead of a second bookkeeping that could miss a path.
+Storing only the hash of the nonce keeps a leaked table from holding a link that works. The
+effect and the operator's command share one function so that the record, the session end and
+`reset_required` cannot drift apart.
+
+**Rejected alternatives:**
+- The reset taking effect at the request: the contract forbids it, and a stolen admin session
+  would then remove every factor it names.
+- Marking the other links of the human as used when one takes effect: the generation already does
+  it, in the same transaction, for every way the factor can change.
+- Resetting a human who has no factor: nothing would change and a mail would go out for nothing;
+  it is a conflict.

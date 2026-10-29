@@ -14,6 +14,7 @@ from maity_hub import (
     clock,
     contract_text,
     forge,
+    forge_access,
     mentions,
     namespace,
     onboarding,
@@ -31,8 +32,88 @@ def ts(moment: datetime | None) -> str | None:
     return clock.rfc3339(moment) if moment is not None else None
 
 
+DELETED_NAME = "Deleted account"
+
+
+def deleted(row: Any) -> bool:
+    """Whether a human row is a deleted account (§2.9)."""
+    return getattr(row, "deleted_at", None) is not None
+
+
+def deleted_person() -> dict[str, Any]:
+    """What a payload shows of a deleted account where it shows a person (§2.9), merged
+    into the field's usual shape: no handle, the generated avatar (`avatar_url: null`
+    makes the client draw it, §6.10)."""
+    return {"display_name": DELETED_NAME, "handle": None, "avatar_url": None, "deleted": True}
+
+
+def _person_id(value: dict[str, Any]) -> str | None:
+    """The human a stored person object names, or None: a member view (`id` with `kind:
+    human`), or an object with a human's `member_id` that shows a name or a handle
+    (`asked_by`, `on_behalf_of`, a mention, a history or chat participant)."""
+    if value.get("kind") == "human" and isinstance(value.get("id"), str):
+        return str(value["id"])
+    member = value.get("member_id")
+    if (
+        isinstance(member, str)
+        and member.startswith("hum-")
+        and ("display_name" in value or "handle" in value)
+    ):
+        return member
+    return None
+
+
+def _person_ids(value: Any, found: set[str]) -> None:
+    if isinstance(value, dict):
+        named = _person_id(value)
+        if named is not None:
+            found.add(named)
+        for inner in value.values():
+            _person_ids(inner, found)
+    elif isinstance(value, list):
+        for inner in value:
+            _person_ids(inner, found)
+
+
+def _without_deleted(value: Any, gone: set[str]) -> Any:
+    if isinstance(value, list):
+        return [_without_deleted(inner, gone) for inner in value]
+    if not isinstance(value, dict):
+        return value
+    shaped = {key: _without_deleted(inner, gone) for key, inner in value.items()}
+    if _person_id(value) in gone:
+        if "display_name" in value:
+            shaped.update(deleted_person())
+        else:  # a handle-only reference: no name to replace
+            shaped.update(handle=None, deleted=True)
+    return shaped
+
+
+def shape_deleted(conn: Connection, values: Sequence[Any]) -> list[Any]:
+    """`values` (stored JSON: event payloads, a request's `needs_in_session`, mentions)
+    with every person object of a deleted account in the deleted shape (§2.9), at read
+    time: the stored rows stay as written (the log is append-only), ids, types and free
+    text unchanged. One query for the lot; without a deleted account among them the
+    values come back as they are."""
+    found: set[str] = set()
+    for value in values:
+        _person_ids(value, found)
+    if not found:
+        return list(values)
+    gone = set(
+        conn.execute(
+            select(t.human.c.id).where(t.human.c.id.in_(found), t.human.c.deleted_at.is_not(None))
+        ).scalars()
+    )
+    if not gone:
+        return list(values)
+    return [_without_deleted(value, gone) for value in values]
+
+
 def human_member(row: Any, *, avatar_url: str | None) -> dict[str, Any]:
     """`avatar_url` is the caller's to look up (`avatars.urls`), so a list costs one query."""
+    if deleted(row):
+        return {"id": row.id, "kind": "human", **deleted_person()}
     return {
         "id": row.id,
         "kind": "human",
@@ -40,6 +121,15 @@ def human_member(row: Any, *, avatar_url: str | None) -> dict[str, Any]:
         "display_name": row.display_name,
         "avatar_url": avatar_url,
     }
+
+
+MEAT_PROXY_NOTE = "This person says: I am a meat proxy."
+
+
+def meat_proxy_view(on: bool) -> dict[str, Any]:
+    """The resume packet's two fields (docs/api.md §5.2, "Meat proxy"): the flag, and while it is on
+    the one fixed sentence and nothing that says what it means."""
+    return {"meat_proxy": on, **({"meat_proxy_note": MEAT_PROXY_NOTE} if on else {})}
 
 
 def owner_handles(conn: Connection, owner_ids: Iterable[str]) -> dict[str, str]:
@@ -72,13 +162,13 @@ def git_identity(row: Any) -> dict[str, str] | None:
 def repository(project: Any, settings: Settings) -> dict[str, Any] | None:
     if project.repository_url is None:
         return None
+    via = forge_access.probe_via(project.id, project.repository_url, settings.forge_github_token)
     return {
         "url": project.repository_url,
         "default_branch": project.repository_default_branch,
         "forge": forge_of(project.repository_url),
-        "probe_configured": forge.Forge(settings.forge_github_token).configured_for(
-            project.repository_url
-        ),
+        "probe_configured": via is not None,
+        "probe_via": via,
         "owner_confirmed": bool(project.repository_owner_confirmed),
     }
 
@@ -376,6 +466,7 @@ def member_views(
         )
         view: dict[str, Any] = {
             **head,
+            "trust": row.trust,
             "role": row.role,
             "reports_to": principals.get(row.reports_to) if row.reports_to is not None else None,
             "areas": row.areas,
@@ -467,12 +558,16 @@ def _owners(conn: Connection, agents: dict[str, Any]) -> dict[str, dict[str, Any
         return {}
     pictures = avatars.urls(conn, owner_ids)
     humans = {
-        h.id: {
-            "id": h.id,
-            "handle": h.handle,
-            "display_name": h.display_name,
-            "avatar_url": pictures[h.id],
-        }
+        h.id: (
+            {"id": h.id, **deleted_person()}
+            if deleted(h)
+            else {
+                "id": h.id,
+                "handle": h.handle,
+                "display_name": h.display_name,
+                "avatar_url": pictures[h.id],
+            }
+        )
         for h in conn.execute(select(t.human).where(t.human.c.id.in_(owner_ids)))
     }
     return {agent_id: humans[a.owner_id] for agent_id, a in agents.items()}
@@ -520,7 +615,7 @@ def agent_view(
     """The agent profile (§6.3), for its owner; `picture` from `avatars.states` when a
     list has looked them up together."""
     memberships = conn.execute(
-        select(t.project.c.id, t.project.c.slug, t.membership.c.role)
+        select(t.project.c.id, t.project.c.slug, t.membership.c.trust, t.membership.c.role)
         .join(t.project, t.project.c.id == t.membership.c.project_id)
         .where(t.membership.c.agent_id == row.id, t.membership.c.active.is_(True))
         .order_by(t.project.c.slug)
@@ -537,7 +632,7 @@ def agent_view(
         "owner_id": row.owner_id,
         "git_identity": git_identity(row),
         "memberships": [
-            {"project": names[m.id], "role": m.role} for m in memberships
+            {"project": names[m.id], "trust": m.trust, "role": m.role} for m in memberships
         ],  # full names (§6.25)
         "created_at": ts(row.created_at),
         "deleted_at": ts(row.deleted_at),  # a tombstone: handle and name kept (§6.3)
@@ -589,6 +684,7 @@ def join_view(conn: Connection, row: Any) -> dict[str, Any]:
     return {
         "id": row.id,
         "agent_id": row.agent_id,
+        "trust": row.trust,
         "role": row.role,
         "created_by": row.created_by,
         "created_at": ts(row.created_at),
@@ -722,7 +818,8 @@ def _task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[
                 "closed_at": ts(row.closed_at),
             }
         )
-    return views
+    # A deleted account among the stored mentions is shown as one (§2.9).
+    return [dict(v) for v in shape_deleted(conn, views)]
 
 
 def event_view(conn: Connection, row: Any) -> dict[str, Any]:
@@ -733,7 +830,7 @@ def event_view(conn: Connection, row: Any) -> dict[str, Any]:
 def sees_reasons(reader: Any) -> bool:
     """A redaction's reason reaches the human owners and admins (§8.5); the redactor
     reads its own reason in any case."""
-    return reader is not None and reader.kind == "human" and reader.role in ("owner", "admin")
+    return reader is not None and reader.kind == "human" and reader.trust in ("owner", "admin")
 
 
 def sees_chat_reasons(reader: Any, group_readers: set[str] | None = None) -> bool:
@@ -774,12 +871,15 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
         conn, (r.actor_credential_id for r in rows if r.actor_membership is not None)
     )
     human_ids = {r.actor_human_id for r in rows if r.actor_human_id is not None}
-    human_handles = (
-        dict(
-            conn.execute(
-                select(t.human.c.id, t.human.c.handle).where(t.human.c.id.in_(human_ids))
-            ).all()
-        )
+    human_rows = (
+        {
+            h.id: h
+            for h in conn.execute(
+                select(t.human.c.id, t.human.c.handle, t.human.c.deleted_at).where(
+                    t.human.c.id.in_(human_ids)
+                )
+            )
+        }
         if human_ids
         else {}
     )
@@ -818,12 +918,15 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
                 "model": row.actor_model,
             }
         elif row.actor_human_id is not None:  # §8.1
+            who = human_rows.get(row.actor_human_id)
             actor = {
                 "kind": "human",
                 "id": row.actor_human_id,
-                "handle": human_handles.get(row.actor_human_id),
+                "handle": who.handle if who is not None else None,
                 "via": row.actor_via,
             }
+            if who is not None and deleted(who):
+                actor.update(deleted_person())
         elif row.actor_runner_id is not None:  # §15.10
             actor = {
                 "kind": "runner",
@@ -860,6 +963,11 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
                 "redacted": row.redacted,
             }
         )
+    # A deleted account in a stored payload is shown as one, for every reader (§2.9).
+    for view, payload in zip(
+        views, shape_deleted(conn, [v["payload"] for v in views]), strict=True
+    ):
+        view["payload"] = payload
     return views
 
 

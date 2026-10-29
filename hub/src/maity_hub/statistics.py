@@ -177,9 +177,12 @@ def _totals(conn: Connection, now: datetime) -> dict[str, int]:
     owners = select(func.count(func.distinct(t.agent_profile.c.owner_id)))
     if "deleted_at" in t.agent_profile.c:
         owners = owners.where(t.agent_profile.c.deleted_at.is_(None))
+    alive = t.human.c.deleted_at.is_(None)
     return {
         "humans": count(
-            select(func.count()).select_from(t.human).where(t.human.c.account_status == "active")
+            select(func.count())
+            .select_from(t.human)
+            .where(t.human.c.account_status == "active", alive)
         ),
         "humans_pending": count(
             select(func.count()).select_from(t.human).where(t.human.c.account_status == "pending")
@@ -190,6 +193,10 @@ def _totals(conn: Connection, now: datetime) -> dict[str, int]:
         ),
         "instances_online": _online(conn, now),
         "humans_with_an_agent": count(owners),
+        # The one thing the operator learns of a deletion (§2.9): how many there were.
+        "humans_deleted": count(
+            select(func.count()).select_from(t.human).where(t.human.c.deleted_at.is_not(None))
+        ),
     }
 
 
@@ -234,6 +241,11 @@ def _returning(conn: Connection, active: dict[str, set[str]], today: date) -> di
     ):
         day = _as_date(at)
         first[human] = min(day, first.get(human, day))
+    gone = set(
+        conn.execute(select(t.human.c.id).where(t.human.c.deleted_at.is_not(None))).scalars()
+    )
+    for human in gone:  # a deleted account is not counted (§16.6)
+        first.pop(human, None)
     answer = {}
     for span, key in ((7, "after_7_days"), (30, "after_30_days")):
         recent = {
@@ -242,7 +254,7 @@ def _returning(conn: Connection, active: dict[str, set[str]], today: date) -> di
             for human in active.get((today - timedelta(days=n)).isoformat(), set())
         }
         cutoff = today - timedelta(days=span)
-        answer[key] = sum(1 for h in recent if first.get(h, today) <= cutoff)
+        answer[key] = sum(1 for h in recent if h not in gone and first.get(h, today) <= cutoff)
     return answer
 
 

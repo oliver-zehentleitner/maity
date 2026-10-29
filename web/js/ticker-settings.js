@@ -16,8 +16,6 @@ window.Maity = window.Maity || {};
   const KEYS_MAX = 200;
   const TOKENS_MAX = 20;
   const TOKEN = /^(area:\S+|member:[A-Za-z0-9_-]+|role:[a-z_]+|trust:[a-z_]+)$/;
-  const ROLES = ["owner", "admin", "reviewer", "member", "proxy", "ops", "designer"];
-  const TRUSTS = ["owner", "admin", "member", "guest"];
 
   // "8: area:hub/ area:web/" per line, as the mapping is written to the hub.
   const linesOf = (map) => Object.keys(map || {}).map((k) => k + ": " + map[k].join(" ")).join("\n");
@@ -50,8 +48,9 @@ window.Maity = window.Maity || {};
     const [kind, value] = [token.slice(0, token.indexOf(":")), token.slice(token.indexOf(":") + 1)];
     const members = ctx.members || [];
     if (kind === "member") return !members.some((m) => m.id === value);
-    if (kind === "role") return !members.some((m) => m.role === value) || !ROLES.includes(value);
-    if (kind === "trust") return !TRUSTS.includes(value);
+    // A role names its members, a project role's base included (§2.3).
+    if (kind === "role") return !members.some((m) => M.trust.roleIs(m, value));
+    if (kind === "trust") return !M.trust.TRUSTS.includes(value) || !members.some((m) => m.trust === value);
     if (kind === "area") return !members.some((m) => (m.areas || []).some((a) => contains(a, value)));
     return true;
   }

@@ -122,6 +122,7 @@ def people(conn: Connection, membership_ids: Iterable[int]) -> dict[int, dict[st
             t.agent_profile.c.handle.label("agent_handle"),
             t.agent_profile.c.owner_id,
             t.human.c.handle.label("human_handle"),
+            t.human.c.deleted_at.label("human_deleted_at"),
             owner.c.handle.label("owner_handle"),
         )
         .select_from(t.membership)
@@ -137,6 +138,8 @@ def people(conn: Connection, membership_ids: Iterable[int]) -> dict[int, dict[st
             "handle": r.agent_handle or r.human_handle,
             **({"name": global_name(r.owner_handle, r.agent_handle)} if r.agent_id else {}),
             "owner_id": r.owner_id if r.agent_id else None,
+            # A deleted account shows no handle (§2.9).
+            **({"handle": None, "deleted": True} if r.human_deleted_at is not None else {}),
         }
         for r in rows
     }
@@ -155,6 +158,12 @@ def observers(conn: Connection, current: list[Any]) -> list[str]:
             )
         ).all()
     )
+    return observers_of(current, owners)
+
+
+def observers_of(current: list[Any], owners: dict[str, str]) -> list[str]:
+    """`observers` from the owners of the agents already read (agent id → owner id)."""
+    agents = [s.agent_id for s in current if s.agent_id]
     inside = {s.human_id for s in current if s.human_id}
     return list(dict.fromkeys(owners[a] for a in agents if owners[a] not in inside))
 
@@ -167,7 +176,7 @@ def access(conn: Connection, conversation_id: str, mine: Any) -> str | None:
         return "participant"
     if mine.kind == "human" and mine.principal_id in observers(conn, current):
         return "observer"
-    if mine.kind == "human" and mine.role == "owner" and _round_of(conn, conversation_id):
+    if mine.kind == "human" and mine.trust == "owner" and _round_of(conn, conversation_id):
         return "observer"  # every project owner reads a round's thread along (§20.5)
     return None
 
@@ -540,7 +549,7 @@ def _announce(
     """`conversation_created`/`_updated` to the participants after the change and whoever
     it removed (§8.2); a conversation's event, so no see-all reaches it."""
     current = stays(conn, conversation.id)
-    readers = ["role:owner"] if conversation.hub_thread else []  # they read along (§20.5)
+    readers = ["trust:owner"] if conversation.hub_thread else []  # they read along (§20.5)
     emit(
         conn,
         conversation.project_id,

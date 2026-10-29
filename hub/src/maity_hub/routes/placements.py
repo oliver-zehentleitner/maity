@@ -52,6 +52,7 @@ class WorkspaceIn(Strict):
 
 class PlacementCreate(Strict):
     agent: AgentRef
+    trust: str | None = None
     role: str | None = None
     reports_to: str | None = None
     areas: list[str] | None = Field(default=None, max_length=50)
@@ -337,6 +338,7 @@ def _agent_values(
 ) -> tuple[dict[str, Any], str]:
     """The membership a placement runs, or the profile it will create (humans only)."""
     join_fields = {
+        "trust": body.trust,
         "role": body.role,
         "reports_to": body.reports_to,
         "areas": body.areas,
@@ -395,10 +397,20 @@ def _agent_values(
         reports_to=body.reports_to,
         areas=body.areas,
         capabilities=body.capabilities,
+        trust=body.trust,
     )
+    trust, role = assignment.get("trust", "member"), assignment.get("role", "coder")
+    if (trust == "admin" or role == "proxy") and mine.trust != "owner":
+        raise ApiError(
+            403,
+            "forbidden",
+            "only an owner grants trust admin or the role proxy",
+            {"reason": "owner_only"},
+        )
     profile = {
         "display_name": body.agent.display_name,
-        "role": assignment.get("role", "member"),
+        "trust": trust,
+        "role": role,
         "reports_to": assignment.get("reports_to"),
         "areas": assignment.get("areas", []),
         "capabilities": assignment.get("capabilities", []),

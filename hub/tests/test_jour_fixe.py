@@ -148,7 +148,7 @@ def test_a_manual_start_invites_the_present_and_asks_once(
     assert reasons == {offline.id: "not_available", deaf.id: "no_listening_instance"}
     [opened] = events(migrated, "jour_fixe_opened")
     assert f"instance:{member.id}#{member.instance}" in opened.audience
-    assert f"member:{owner.id}" in opened.audience and "role:owner" in opened.audience
+    assert f"member:{owner.id}" in opened.audience and "trust:owner" in opened.audience
     woken = member.get(f"/projects/maintainer/maity/events?after={opened.seq - 1}&wait=1").json()
     assert [e["kind"] for e in woken["items"]][:1] == ["jour_fixe_opened"]  # its instance
     assert "Your answer goes to the moderator only." in opened.payload["questions"]
@@ -293,7 +293,7 @@ def test_at_the_window_close_the_key_and_tags_die_and_the_moderator_is_woken(
         assert conn.execute(select(t.jour_fixe_tag)).first() is None
         assert conn.execute(select(t.jour_fixe_answer.c.tag)).scalar() is None
     [closed] = events(migrated, "jour_fixe_answers_closed")
-    assert closed.audience == [f"instance:{lead.id}#{lead.instance}", "role:owner"]
+    assert closed.audience == [f"instance:{lead.id}#{lead.instance}", "trust:owner"]
     assert closed.payload["answers_received"] == 1
     assert member.get(path).json()["items"] == []  # nothing links it to its author now
     late = answer(member, round_id, went_well="late")
@@ -309,7 +309,7 @@ def test_the_close_wakes_the_moderator_where_it_listens_now_or_nobody(
     now[0] += timedelta(minutes=121)
     worker.sweep(migrated)
     [closed] = events(migrated, "jour_fixe_answers_closed")
-    assert closed.audience == ["role:owner"]  # no fallback to the stale instance
+    assert closed.audience == ["trust:owner"]  # no fallback to the stale instance
 
 
 def test_minutes_online_count_working_calls_not_only_long_polls(

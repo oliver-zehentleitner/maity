@@ -12,7 +12,7 @@ from maity_hub import tables as t
 from maity_hub.errors import invalid
 from maity_hub.mentions import global_name
 from maity_hub.models import Strict, markdown
-from maity_hub.scopes import ROLES
+from maity_hub.scopes import in_admin_team, token_known, tokens_of
 
 
 class OnboardingIn(Strict):
@@ -75,26 +75,28 @@ def target(conn: Connection, project: Any) -> Any | None:
     token = settings(project).get("check_in_with")
     if not token:
         return None
-    rows = members(conn, project.id)
+    # A guest is never whom a newcomer checks in with (§2.3): not by token, not by a
+    # stored id, not as the coordinator or the owner fallback.
+    rows = [row for row in members(conn, project.id) if row.trust != "guest"]
     ordered = sorted(rows, key=lambda row: (row.handle, principal(row)))
     if token != "coordinator":
-        if token.startswith("role:"):
-            matches = [row for row in ordered if row.role == token.removeprefix("role:")]
+        if token.startswith(("role:", "trust:")):
+            matches = [row for row in ordered if token in tokens_of(row.trust, row.role)]
         else:
             matches = [row for row in ordered if principal(row) == token]
         if matches:
             return matches[0]
-        if not token.startswith("role:"):
+        if not token.startswith(("role:", "trust:")):
             return None
-    coordinator = policy.of(project).get("coordinator", "role:admin")
-    if coordinator == "role:admin":
-        candidates = [row for row in ordered if row.agent_id and row.role == "admin"]
+    coordinator = policy.of(project).get("coordinator", "trust:admin")
+    if coordinator == "trust:admin":
+        candidates = [row for row in ordered if row.agent_id and in_admin_team(row.trust, row.role)]
     else:
         candidates = [row for row in ordered if principal(row) == coordinator]
     if candidates:
         return candidates[0]
     owners = sorted(
-        [row for row in rows if row.human_id and row.role == "owner"],
+        [row for row in rows if row.human_id and row.trust == "owner"],
         key=lambda row: (row.joined_at, principal(row)),
     )
     return owners[0] if owners else None
@@ -105,11 +107,15 @@ def validate(conn: Connection, project: Any, body: OnboardingIn) -> None:
     if not token or token == "coordinator":
         return
     field = "settings.onboarding.check_in_with"
-    if token.startswith("role:"):
-        if token.removeprefix("role:") not in ROLES:
+    if token.startswith(("role:", "trust:")):
+        if not token_known(token):
             raise invalid({field: "unknown_role"})
-    elif not any(principal(row) == token for row in members(conn, project.id)):
-        raise invalid({field: "not_a_member"})
+    else:
+        found = [row for row in members(conn, project.id) if principal(row) == token]
+        if not found:
+            raise invalid({field: "not_a_member"})
+        if found[0].trust == "guest":  # a guest is never a target (§2.3)
+            raise invalid({field: "guest"})
 
 
 def replace_setting(
@@ -208,7 +214,7 @@ def observe(
             return
         to = payload.get("to")
         # Direct chat payloads carry the real other party; group chats do not use a member to.
-        reaches = to in {principal(resolved), f"role:{resolved.role}"}
+        reaches = to in {principal(resolved), *tokens_of(resolved.trust, resolved.role)}
         if isinstance(to, str) and to.startswith(principal(resolved) + "#"):
             reaches = True
         if not reaches:

@@ -179,3 +179,32 @@ The voiding moment and the widened list row are written in the contract
 (confirmed). The mail condition on the page is derived from §3.4's "Mail
 must be complete and enabled as for every registration" and is not
 stated for the page itself (inferred).
+
+## A join remembers whether a member made it under "Bringing your own agent"
+
+**Id:** 2dc81770-9572-4124-b59a-0b90aabb57ca
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session, 2026-10-28 (tsk-ma408933n5qd); the flag agreed with the coordinator, who asked for its reason here
+**Revisit when:** the exchange needs to tell more kinds of join apart than an admin's and a member's
+**See:** https://github.com/oliver-zehentleitner/maity — cef4255e-ae62-4699-aa86-f4f2c36f8d55 — as of 2026-10-28
+
+`join_link.member_rule` is true for a join a human with trust `member`
+created under §3.1 "Bringing your own agent", false for every join made
+through `members:admin`. The exchange (§3.3) checks the creator, the
+target's limits and the count again only for a join with the flag.
+
+**Reason:** the contract has the exchange re-check "what may have changed
+since the join was issued" for a member's join, but a join row did not
+record which rule issued it. Reading it back from the creator's trust at
+the exchange is wrong in one direction: an admin who made a join and was
+lowered to `member` before the exchange would have an admin's join
+judged by a member's limits. The flag keeps the decision the creation
+made.
+
+**Rejected alternatives:**
+- Infer the rule from the creator's current trust at the exchange: wrong
+  for a creator whose trust changed in between, as above.
+- Infer it from the join's values (trust `member`/`guest`, no areas):
+  an admin's join can have the same values, so the two cannot be told apart.

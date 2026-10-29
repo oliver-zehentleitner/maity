@@ -13,8 +13,6 @@ window.Maity = window.Maity || {};
 
   const CLOSED = new Set(["done", "cancelled"]);
   // Scopes by role (docs/api.md §2.3).
-  const TASKS_ADMIN = new Set(["owner", "admin"]);
-  const TASKS_REVIEW = new Set(["owner", "admin", "reviewer"]);
   const LABELS = [["", "no label"], ["feature", "feature"], ["fix", "fix"], ["chore", "chore"]];
   const KINDS = [["task", "Task"], ["maintenance_round", "Context round"]];
 
@@ -51,7 +49,8 @@ window.Maity = window.Maity || {};
   }
 
   const holds = (ctx, c) => !!(c.claim && c.claim.holder === ctx.me.id);
-  const isAdmin = (ctx) => TASKS_ADMIN.has(ctx.role);
+  // tasks:admin: trust owner or admin (docs/api.md §2.3).
+  const isAdmin = (ctx) => M.trust.governs(ctx);
   // Who may edit a card's fields and edges (§6.4): its holder, its creator, tasks:admin.
   const editable = (ctx, c) => holds(ctx, c) || c.created_by === ctx.me.id || isAdmin(ctx);
   // Under policy.subtasks "proposed" (the default) a subtask of a member
@@ -61,7 +60,8 @@ window.Maity = window.Maity || {};
   function doneAuthority(ctx, c) {
     const a = (ctx.project.policy || {}).done_authority;
     if (a === "holder") return holds(ctx, c);
-    if (a === "reviewer") return TASKS_REVIEW.has(ctx.role);
+    if (a === "reviewer") return M.trust.reviews(ctx);
+    if (a === "tester") return M.trust.tests(ctx);
     return isAdmin(ctx);
   }
 
@@ -181,7 +181,8 @@ window.Maity = window.Maity || {};
     const menu = M.menuButton({
       label: word + " " + c.id,
       face: [word, h("span", { "aria-hidden": "true" }, " ▾")],
-      items: () => ctx.members.filter((m) => m.id !== c.assigned_to).map((m) => ({
+      // A guest is never assigned a card (§2.3).
+      items: () => ctx.members.filter((m) => m.id !== c.assigned_to && !M.trust.guest(m)).map((m) => ({
         label: [M.avatar(m, 16), " @" + M.dom.handleOf(ctx, m)],
         title: m.display_name,
         onSelect: () => assign(c, m.id, "assign:" + c.id),
@@ -213,7 +214,7 @@ window.Maity = window.Maity || {};
     if (locked) status.disabled = true;
     const assignee = isAdmin(ctx)
       ? h("select", { id: id("assigned") }, h("option", { value: "" }, "by area (the hub routes it)"),
-        ctx.members.map((m) => h("option", { value: m.id }, m.display_name)))
+        ctx.members.filter((m) => !M.trust.guest(m)).map((m) => h("option", { value: m.id }, m.display_name)))
       : null;
     if (assignee) assignee.value = "";
     // A release ships cards; it is never one of the cards shipped together

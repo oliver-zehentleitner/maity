@@ -260,7 +260,8 @@ def test_an_owner_outside_the_thread_reads_it_along_in_the_events(
     other = flow.human(make_client, migrated, "other")
     with migrated.connect() as conn:
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
-    factory.membership(migrated, project_id, "admin", human_id=other.id)
+    # A co-owner: only trust owner grants an agent trust admin (§2.3).
+    factory.membership(migrated, project_id, "owner", human_id=other.id)
     lead = flow.agent(make_client, other, role="admin")
     member = flow.agent(make_client, other)
     now[0] += timedelta(minutes=5)  # the owner's own calls are long past: not online

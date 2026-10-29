@@ -134,7 +134,7 @@ def test_a_removed_kind_is_invalid(owner: flow.Human) -> None:
 def test_a_request_opened_to_the_admins_reaches_an_admin(
     make_client: ClientFactory, owner: flow.Human, migrated: Engine
 ) -> None:
-    """§18.1: `request_forwarded` that opens the request to `role:admin` is an `inbox`
+    """§18.1: `request_forwarded` that opens the request to `trust:admin` is an `inbox`
     item for a human holding `admin`, though the request was not addressed to them."""
     agent = flow.agent(make_client, owner)
     admin = flow.human(make_client, migrated, "an-admin")
@@ -148,7 +148,7 @@ def test_a_request_opened_to_the_admins_reaches_an_admin(
     assert not [i for i in bell(admin)["items"] if i["kind"] == "inbox"]
     opened = owner.post(
         f"/projects/maintainer/maity/requests/{asked['id']}/forward",
-        {"to": "role:admin", "reason": "yours"},
+        {"to": "trust:admin", "reason": "yours"},
     )
     assert opened.status_code == 200, opened.text
     [found] = [i for i in bell(admin)["items"] if i["kind"] == "inbox"]  # one per request
@@ -160,7 +160,7 @@ def test_a_request_opened_to_the_admins_reaches_an_admin(
     assert not [i for i in bell(owner)["items"] if i["kind"] == "inbox"]  # no longer holds it
     with migrated.begin() as conn:  # the admin loses the role: the item goes with it
         conn.execute(
-            update(t.membership).where(t.membership.c.human_id == admin.id).values(role="member")
+            update(t.membership).where(t.membership.c.human_id == admin.id).values(trust="member")
         )
     assert not [i for i in bell(admin)["items"] if i["kind"] == "inbox"]
 
@@ -180,7 +180,7 @@ def test_a_claim_leaves_the_item_with_the_claiming_admin_only(
     ).json()
     owner.post(
         f"/projects/maintainer/maity/requests/{asked['id']}/forward",
-        {"to": "role:admin", "reason": "yours"},
+        {"to": "trust:admin", "reason": "yours"},
     )
     claimed = admins[0].post(f"/projects/maintainer/maity/requests/{asked['id']}/claim", {})
     assert claimed.status_code == 200, claimed.text

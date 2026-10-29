@@ -284,3 +284,108 @@ the incident of 2026-10-26 showed does not scale.
   per minute that grows with the humans' histories, the shape the incident was about.
 - Letting mails over the instance budget wait in the outbox: simpler, but it can mean two
   mails where §18.5 asks for one (the first version, changed before review).
+
+## A page of the bell is cut from items derived only as far as the page reaches; no cache
+
+**Id:** 24ca001c-ff28-4df3-8af1-ba6ef6d567b6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** tsk-svhatnxrtqn8; Traefik access log of 2026-10-28 17:51-18:21 UTC (`GET /me/notifications` p50 1.0 s, p95 1.9 s, n=482); the local measurement in `hub/scripts/measure_notifications.py`
+**Revisit when:** a listing needs the number of all matching items or a total over chat items, or `derive_page` and `derive` diverge in a test
+
+`GET /me/notifications` derived every item of 30 days on every call, and every message an
+agent sends its owner in a direct chat is one. The cost was linear in those messages (about
+80 ms per 1,000 items, 1.2 s at 30,000), not in the projects or the queries; the counts, the
+position and the twenty views together took under 100 ms. A page needs `limit` items and to
+know whether one more follows, and the counts read no chat item (`chat` comes from the chats'
+own marks). So `items.derive_page` derives everything that is not a plain chat message (requests,
+mentions, account records: few, and they feed the counts), and of the plain chat messages
+only the first `limit + 1` per project that the filters, the cursor or `after` accept, read
+from the database in the order the listing uses (`at`, then `seq`), in chunks that grow
+while a filter such as `unread` rejects them. A message whose payload text has a `member_id`
+and the human's id is derived with the rest, since it may mention them; the text test only
+selects, `_classify` decides. `scope` and the unread-chat count read their rows in one query
+each instead of one per membership and per agent, and a page reads each project and actor once.
+Measured on SQLite with 10 projects and 30,000 chat items: 1.16 s before, 0.1 s after.
+
+**Reason:** the answer is a function of the page, so the work should be too; a cache would
+answer from the past (a read mark, a claimed request or a rename that the stamp does not
+see) and only helps while nothing moves, which on a busy team is rarely. `tests/test_notifications_page.py`
+keeps the two honest: for every filter, page size and the cursor through items of one
+timestamp, and for `after` chains, the bounded pages equal the pages cut from `derive`.
+
+**Rejected alternatives:**
+- A cache of the derived items keyed by `listing.stamp`: the stamp does not see a request
+  claimed by another admin, a rename or the sliding 30-day window, and it misses on every new
+  message, which is when the bell is polled most.
+- Cheaper work per item (fewer JSON decodes, fewer lookups): at best a factor of two on a cost
+  that stays linear in the history.
+- Filtering chat messages by the human in SQL: a chat message names its addressee in `to`,
+  so every message of the human's own chats matches and nothing is saved.
+
+**Known limit:** a filter that rejects almost every chat (`unread` after everything was read)
+still reads all of a project's chat rows in the window, in chunks, as the old derivation did.
+
+## Changing or removing the verified address, and approving a held change, take the step-up the caller gives in
+
+**Id:** b4c0e7a3-61d8-4f29-9a5e-0d83f7b1c2e6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.8.4; the card tsk-9z1m4tcz1e98 (the follow-up of the review of #471), 2026-10-28
+**Revisit when:** another operation on the address becomes sensitive, or the held change moves to a place where `second_factor.require_step_up` cannot be given as a callable
+
+`preferences.patch` and `preferences.decide_held` take a `step_up` callable that the routes fill
+with `second_factor.require_step_up(conn, hub, caller)`. It is called where the change is known to
+move a verified address (`_change_address`: the address is verified, or disabled, and the wanted one
+differs, a removal included), and for the approval of a held change, first, so a refusal changes
+nothing and counts no wrong password. Rejecting a held change asks for nothing: it only
+withholds a change and §2.8.4 names the approval. Setting the first address, sending the same one
+again and every other setting are not sensitive. A human who is not enrolled is never asked (that
+is `require_step_up`'s own rule). The parameter has no default, so a caller that forgets it does not
+compile in the type check.
+
+**Reason:** the address is what a mailed reset and a mailed link are proved by, so whoever can move
+it with a stolen session can take the account's mail; the second factor is the one thing that
+session does not hold. The check lives where the change is decided rather than at the route because
+only there is it known that the address moves (a request with the same address does not). The
+callable keeps `preferences` free of the caller and the hub settings.
+
+**Rejected alternatives:**
+- A step-up on every `PATCH /me/notification-settings`: it would ask for the factor to switch a
+  mail mode, which §2.8.4 does not list.
+- Asking only on approval of the held change and on the removal: a change with the password from a
+  full session is the main way an address moves, and it is the first thing §2.8.4 lists.
+
+## A change of the second factor and wrong second-factor codes are security items, each mailed on its own
+
+**Id:** 3e9a6f12-8c47-4b05-a1d3-52c7e0b9f8a6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.8.1, §18.1 (the `security` row), §18.5; the implementation of #380, part 3, 2026-10-28
+**Revisit when:** a third kind of security record needs a mail (the list in `mailer.SECURITY_MAIL` and the titles in `items._two_factor_title` are the places), or the security mail of a sign-in and of these records should share one builder
+
+The account records `second_factor_changed` and `second_factor_failed` (`records.SECURITY`)
+become `security` items with the titles of §18.1 (`items._two_factor_title`; a `change` this
+hub does not know reads "Two-factor sign-in changed", never a guess), and the mail pass sends each
+of them as a security mail of its own, as it does a new sign-in: not batched, not held by quiet
+hours, one mail per item (`mail_item_sent`), only while the human's `security` mode is
+`immediate`, with the subject `[Maity] <title>`, the time, the link to Profile → Security and the
+unsubscribe line of the `security` kind. The bell confirms them like the other security items
+(`listing._may_mark`: from a session in good standing that is older than the item). The mail
+carries no code, no secret and no link that changes anything.
+
+**Reason:** the contract says every change of the factor "sends the security mail of §18.5" and
+that security mail is never batched, so the digest path (`_send`) is the wrong one; the sign-in
+alert already has the shape (one item, one mail, its own budget), and the two-factor mail reuses
+it with a different body. Keeping the title as the subject and the body's first line means a
+reader sees what happened without opening the dashboard, which is what these mails are for.
+
+**Rejected alternatives:**
+- Putting these items in the digest like `inbox` items: a change a human did not make would then
+  wait for an hour or a day to be told.
+- One generic security-mail builder for the sign-in and these records: the sign-in's body
+  carries method, browser, system and address and the others do not, so a shared builder would be
+  a switch inside; two short functions are clearer.

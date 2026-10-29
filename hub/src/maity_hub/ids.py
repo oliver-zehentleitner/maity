@@ -34,6 +34,7 @@ PREFIXES = {
     "device_code": "dvc",
     "notification_position": "npos",
     "link": "lnk",
+    "forge_link": "fgl",
     "history": "hst",
     "note": "nte",
     "pending_registration": "preg",

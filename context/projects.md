@@ -333,7 +333,9 @@ hands out instructions and a path, and the settings stay in
 A project is addressed as `<owner>/<slug>` — in the API
 (`/projects/{owner}/{slug}/…`), the dashboard, the badge, the swarm page
 and every reference shown outside the project. The namespace owner is
-one human, the creator; a slug is unique within that namespace only. A
+a human or an organisation (see 33f520b9-5aaa-4aed-96f4-e90bf3749c56),
+the creator or the organisation it names; a slug is unique within that
+namespace only. A
 rename or a transfer keeps the old full name as an alias that is never
 given away; a request on an alias is served like one on the current
 name. The one-segment API routes are dropped in the same release, hub
@@ -348,6 +350,9 @@ answer an unknown or unserved slug exactly as before, so they reveal no
 project. A transfer needs the receiver's consent, and the namespace
 owner cannot be demoted or removed while the project lives under their
 name.
+The revisit point on organisations was settled by the organisations
+decision of 2026-10-28: they share this namespace as a second kind of
+owner.
 
 **Reason:** with self-registration on maity.team an instance-wide slug
 would let the first comer own `shop` or `blog` for everyone, the
@@ -459,3 +464,49 @@ and security detail.
   public too: both offered as options and not chosen; no reason was
   given beyond the proposal's comparison with security advisories on a
   forge.
+
+## Organisations are a second kind of namespace owner beside humans, in the same owner/slug namespace; their owners own every project, admins and members only what they are added to
+
+**Id:** 33f520b9-5aaa-4aed-96f4-e90bf3749c56
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-10-28 (request req-nj9xa739bacm); the details are the contract owner's; contract in docs/api.md §6.26
+**See:** projects.md#projects-live-in-their-owners-namespace-ownerslug-as-on-a-forge-old-names-stay-aliases-the-change-is-made-once-in-v1-before-the-launch — 281820c9-2286-45c4-9389-603b7e8a3923 — as of 2026-10-29
+
+Any approved human may create an organisation (at most five as owner
+by default, an instance limit) and becomes its first owner. Its handle
+shares the namespace of human handles, with the same syntax, reserved
+words, uniqueness and aliases, so a project of an organisation is
+`<org>/<slug>` like any other. An organisation has owners, admins and
+members, all humans who joined by consenting to an invitation, and
+always at least one owner. Every owner holds trust owner in every
+project of the organisation, kept by the hub; admins add and remove
+members and admins and create projects; members create projects only
+when the organisation allows it. Projects move into and out of an
+organisation by the existing transfer; an owner of the receiving
+organisation speaks for it, an admin needs one owner's go. An
+organisation is deleted only while it owns no open project, and its
+handle is never released. Its page is public only by its owners' choice
+and never lists its members. A project of an organisation reads its
+repository with the forge grants of the owner who confirmed it, until
+that person stops being an owner; forge installations on organisations
+stay a follow-up. Moderation suspends the organisation, never its
+people's accounts. Private organisations come later as a paid feature.
+
+**Reason:** a team's projects should not hang on one person's account,
+and the namespace decision already foresaw organisations sharing the
+namespace of human handles, as on a forge, where users and
+organisations are both owners in one name space. Giving ownership to
+the organisation's owners alone keeps the strong project rights in few
+hands while the organisation can still grow.
+
+**Rejected alternatives:**
+- Organisations in a namespace of their own (`/orgs/<x>/…`): an
+  organisation's projects would either collide with a human's of the
+  same name or need a prefix in every address; the decision was one
+  shared namespace, as forges have.
+- Automatic project membership for every organisation member: it would
+  give every member of an organisation every one of its projects,
+  however large the organisation grows; only owners get it, everyone
+  else is added per project.

@@ -15,6 +15,7 @@
 #        [PYTHON_SERIES=3.12] install-python.sh      (once per runner directory)
 #        (FORCE=1 restarts the service even while a job runs; UV_VERSION pins the uv installer)
 set -euo pipefail
+cd /   # a neutral directory: uv looks for a config in the current one, which the runner user may not read (/root)
 RU=${RUNNER_USER:-gh-runner}
 HOME_RU=${RUNNER_HOME:-$(getent passwd "$RU" | cut -d: -f6)}
 RUNNER_DIR=${RUNNER_DIR:-/opt/actions-runner}
@@ -31,7 +32,8 @@ fi
 
 [ -x "$HOME_RU/.local/bin/uv" ] || as_ru sh -c "curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh"
 as_ru uv python install "$SERIES"
-PY=$(as_ru uv python find --managed-python "$SERIES")       # .../cpython-3.12.X-linux-x86_64-gnu/bin/python3.12
+PY=$(as_ru uv python find "$SERIES")                       # UV_PYTHON_PREFERENCE=only-managed (in as_ru) limits it to uv-managed Pythons;
+#                                                              # the flag --managed-python cannot be combined with that setting; .../cpython-3.12.X-linux-x86_64-gnu/bin/python3.12
 ROOT=$(as_ru sh -c 'dirname "$(dirname "$(readlink -f "$1")")"' sh "$PY")
 case "$ROOT" in "$HOME_RU"/.local/share/uv/python/*) ;; *) echo "refusing: $ROOT is not a uv-managed Python under $HOME_RU" >&2; exit 1;; esac
 VER=$(as_ru "$PY" -c 'import platform; print(platform.python_version())')
@@ -42,5 +44,5 @@ as_ru touch "$TOOL/Python/$VER/x64.complete"
 as_ru sh -c 'rm -f "$1"/lib/python3.*/EXTERNALLY-MANAGED' sh "$ROOT"
 as_ru "$TOOL/Python/$VER/x64/bin/python3" -m pip --version
 echo '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' > "$RUNNER_DIR/.path"
-systemctl restart "$SERVICE"
-echo "done: python $VER is in the tool cache, runner restarted"
+systemctl try-restart "$SERVICE"   # restarts a running service only; starting is a deliberate step (README)
+echo "done: python $VER is in the tool cache (a running $SERVICE was restarted)"
