@@ -550,7 +550,7 @@ def create_project(run: Run, page: Page, name: str, slug: str) -> None:
     page.get_by_label("Name").fill(name)
     expect(page.get_by_label("Slug")).to_have_value(slug)  # proposed from the name
     page.get_by_role("button", name="Create project", exact=True).click()
-    expect(page).to_have_url(re.compile(rf"/{OWNER}/{slug}/members$"))
+    expect(page).to_have_url(re.compile(rf"/{OWNER}/{slug}/agents$"))
     expect(page.locator("header .project")).to_have_text(name)
 
 
@@ -2351,14 +2351,10 @@ def members_step(run: Run, page: Page) -> None:
     expect(humans.locator("tr.member")).to_contain_text("owner")
     row = agents.locator("tr.member", has_text="E2E Agent")
     expect(row.locator("td").nth(0)).to_contain_text("member")
-    # Owner and credentials only where the hub sends them (members:admin).
-    listed = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/members").json()["items"]
+    # A neutral list: no credentials column (they are in Manage and on Agents), a Chat per entry.
     header = agents.locator("thead th")
-    if any("credentials" in m for m in listed):
-        expect(header.filter(has_text="Credentials")).to_have_count(1)
-        expect(row).to_contain_text("active")
-    else:
-        expect(header.filter(has_text="Credentials")).to_have_count(0)
+    expect(header.filter(has_text="Credentials")).to_have_count(0)
+    expect(row.locator("a.member-chat")).to_have_count(1)
     run.a11y(page, "members")
     row.get_by_role("button", name="Manage E2E Agent").click()
     manage = page.locator("tr.member-manage")
