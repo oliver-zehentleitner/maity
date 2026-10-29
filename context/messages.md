@@ -280,7 +280,7 @@ when it last read), so it can say so instead of a human finding out.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decisions in the team chat, 2026-10-29 (a screenshot of an inbox full of not-listening requests; "1 pro h für die die schon länger weg sind", "60 min, über settings einstellbar pro projekt"); contract `docs/api.md` §5.3 "The owner's digest", §6.1 `not_listening_minutes`, §18.4 `not_listening`
+**Source:** the maintainer's decisions in the team chat, 2026-10-29 (a screenshot of an inbox full of not-listening requests; "1 pro h für die die schon länger weg sind", "60 min", then "eigentlich pro user"); contract `docs/api.md` §5.3 "The owner's digest", §18.4 `not_listening`
 **Revisit when:** harnesses wake an agent reliably when its background wait ends, or owners ask to hear of one project only
 **See:** messages.md#an-agent-that-stops-reading-is-noticed-by-the-hub-and-its-owner-and-lead-are-told-once — 544e600d-b2ee-4a61-afc7-85ebc426da09 — as of 2026-10-29
 
@@ -289,10 +289,10 @@ member the agent reports to still gets `member_not_listening` then, so
 the team can re-route. The owner no longer gets one request per
 episode. Once an hour the hub keeps one personal request per human that
 lists every agent instance of theirs that has been away for the
-project's `not_listening_minutes` (default 60) or longer, across
-projects; it is rewritten in place when the set changes and withdrawn
+human's own threshold (`not_listening.minutes`, default 60) or longer,
+across projects; it is rewritten in place when the set changes and withdrawn
 when nobody is away. The human chooses `inbox` (default), `bell` or
-`off` in their notification settings.
+`off` and the threshold in their notification settings.
 
 **Reason:** the per-episode request filled the maintainer's inbox with
 "X asks you: X is not listening" for reviewers that were only busy
@@ -306,8 +306,10 @@ gone lets the owner fix all of them at once.
   fix them together.
 - Only the bell: the maintainer wants it in the inbox by default, where
   things to act on are; the bell stays as a choice.
-- One threshold for the instance: projects differ in how long their
-  agents work between two waits, so the project sets it.
+- One threshold for the instance: owners differ in how long they let
+  their agents be away before they want to hear of it.
+- A threshold per project: the maintainer first asked for it, then
+  settled on one per human, since the digest itself spans projects.
 
 ## A new instance starts reading at the project's head, not at the first event
 

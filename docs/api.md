@@ -3425,10 +3425,10 @@ cards already become reassignable when their leases run out (§2.4).
 
 **The owner's digest.** A human who owns agent profiles hears about
 their instances that are *away*: an episode that has lasted the
-project's `policy.not_listening_minutes` (§6.1, default 60) or longer.
+human's own `not_listening.minutes` (§18.4, default 60) or longer.
 Once an hour, on the hour (UTC), the hub's worker looks at every such
 instance of the human's profiles across all projects and, when there is
-at least one and the human's `not_listening` setting (§18.4) is
+at least one and the human's `not_listening.mode` (§18.4) is
 `inbox`, keeps one personal request (§7) open to the human (`to:
 "human:<id>"`): class `info`, one option `seen`, `asked_by` `null`,
 `filed_by: "hub"`, no `task_id`, no project; `title` `<n> of your agent
@@ -3855,7 +3855,6 @@ stay; `state_changed` is not emitted for the mapping.
 | `keep_the_why_defaults` | `adopt` (default), `ask` | whether a joining agent takes the personal Keep the Why settings the repository offers (the `personal-defaults` block of `.keep-the-why`) without asking its human (`adopt`), or runs the skill's personal wizard with its human (`ask`) (§6.23). Every preset fills `adopt`; a project that predates the field reads as `adopt`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
 | `keep_the_why` | `required`, `optional` | whether the hub makes sure every agent carries Keep the Why: the commitment at resume, the reminder, the owner's request and `why` on code reports (§6.23). Reads `required` while `memory.provider` is `keep-the-why` and nobody set it, `optional` under `none` (where `required` is `invalid`); a project that predates the field reads as `required` under `keep-the-why`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
 | `subtasks` | `proposed` (default), `direct` | whether a subtask (§6.4, `parent`) that a member without `tasks:admin` creates or attaches waits as `proposed` until an admin opens it, or is created, attached and opened as any card. Every preset fills `proposed`; a project that predates the field reads as `proposed`; a later preset change keeps it |
-| `not_listening_minutes` | 10–1440, default 60 | how long an agent instance's not-listening episode (§5.3) lasts before it counts as away and appears in its owner's hourly digest; the 10 minutes after which `member_not_listening` reaches the team stay fixed. Every preset fills 60; a project that predates the field reads as 60; a later preset change keeps it. Set by a human with `project:admin` |
 
 `hierarchical` = self-claim, reviewer done authority, admin arbiter,
 human tag, cards only. `solo` = self-claim, holder done authority, owner
@@ -13010,7 +13009,7 @@ class `info` that the hub files and withdraws itself.
 
 | `kind` | From | Who gets it | Title (the hub composes it; no body) |
 |---|---|---|---|
-| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and the hourly digest of agent instances that are not listening (§5.3); with `not_listening: bell` (§18.4) that digest is a bell item of this kind instead; the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7) | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `mail_disabled` the human | `<asker> asks: <request title>`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Mail to <address> disabled after 3 failures`, linking to the notification settings |
+| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and the hourly digest of agent instances that are not listening (§5.3); with `not_listening.mode: bell` (§18.4) that digest is a bell item of this kind instead; the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7) | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `mail_disabled` the human | `<asker> asks: <request title>`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Mail to <address> disabled after 3 failures`, linking to the notification settings |
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or from another participant of a group chat (§9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; a mention in a group chat (§9.2) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
 | `security` | the account records `session_created` (#169, §2.6.5) and `email_address_changed` (§18.4); `second_factor_changed` and `second_factor_failed` (§2.8); `forge_access_changed` with `change` `linked` or `token_set` (§11.4) | the human | `New sign-in: <browser> on <os> (<method>)`; `Sign-in address changed`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>`; `Forge access added: <account login> (<source>)` |
@@ -13352,7 +13351,7 @@ device; the browser's own permission is per browser and is not stored.
 ```json
 {
   "kinds": ["inbox", "chat", "mention", "security"],
-  "not_listening": "inbox",
+  "not_listening": { "mode": "inbox", "minutes": 60 },
   "browser": {
     "enabled": true,
     "kinds": { "inbox": true, "chat": true, "mention": true, "security": true },
@@ -13399,10 +13398,13 @@ device; the browser's own permission is per browser and is not stored.
   (or `email.kinds.<kind>`) `"unknown"`, and changes nothing. A value
   for a kind that is not what the field takes (a `browser.kinds` value
   that is not a boolean) is `"invalid"` at the same field.
-- **`not_listening`.** `inbox` (default), `bell` or `off`: how the
-  human hears that agent instances they own are not listening (§5.3,
-  "The owner's digest"). Any other value is `invalid` with
-  `details.fields.not_listening: "invalid"`.
+- **`not_listening`.** How the human hears that agent instances they own
+  are not listening (§5.3, "The owner's digest"): `mode` `inbox`
+  (default), `bell` or `off`; `minutes` 10–1440 (default 60), how long
+  an instance's episode lasts before it counts as away. A `PATCH` may
+  name either field. Any other value is `invalid` with
+  `details.fields["not_listening.mode"]` or
+  `["not_listening.minutes"]` `"invalid"`.
 - **`email.address`.** Setting it (`PATCH {"email": {"address": "…"}}`)
   puts it in `pending_address` and sends a verification mail with a
   link (§18.6), valid for 24 hours; the verified address in `address`
