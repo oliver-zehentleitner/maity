@@ -118,6 +118,7 @@ def _eligible(conn: Connection, hub: Settings, human_id: str, epoch: int | None 
     if (
         human is None
         or human.account_status != "active"
+        or human.suspended_at is not None  # no way in for a suspended account (§16.8)
         or row is None
         or row.address_status != "verified"
         or row.address is None

@@ -53,8 +53,7 @@ class RegistrationConfigError(ValueError):
 
 def normalized(value: str) -> str:
     """The form one account per address compares: trimmed and lower-cased (§2.6.3,
-    §18.4). The same as `mail.address.normalized` of the notification settings (#280),
-    which takes its place once that lands."""
+    §18.4). The same as `mail.address.normalized` of the notification settings."""
     return value.strip().lower()
 
 

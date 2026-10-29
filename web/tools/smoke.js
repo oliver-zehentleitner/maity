@@ -6789,6 +6789,52 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(adNav(), "Users").click(); await tick();
   const adUsers = adSections().find((x) => x.getAttribute("aria-label") === "Users");
   expect(!adUsers.hidden && stBox().hidden && btn(adNav(), "Users").getAttribute("aria-pressed") === "true", "admin: a button shows its section alone");
+  // Registration (§16.4): the mode, the lists, approval, terms and the limit with their sources, missing beside them,
+  // the accounts that wait and lifting a block.
+  btn(adNav(), "Registration").click(); for (let k = 0; k < 4; k++) await tick();
+  const rgBox = () => adSections().find((x) => x.getAttribute("aria-label") === "Registration");
+  const rgSave = () => rgBox().querySelector("form.reg-form").dispatch("submit");
+  const rgPatches = [];
+  const rgPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { if (p === "/admin/settings/registration") rgPatches.push(b); return rgPatch(p, b); };
+  expect(rgBox() && !rgBox().hidden && text(rgBox().querySelector(".reg-effective")) === "Registration now: closed."
+    && byId("reg-mode").value === "closed" && byId("reg-terms-url").attrs.disabled !== undefined && text(rgBox()).includes("(set by the environment)")
+    && text(rgBox().querySelector(".reg-counts")).startsWith("1 waiting for approval"),
+    "registration: the section shows the mode in effect, the terms the environment sets as not editable, and the counts");
+  expect(rgBox().querySelectorAll("li.reg-pending-item").length === 1 && text(rgBox().querySelector("li.reg-pending-item")).includes("new@example.org"),
+    "registration: an account waiting for approval is listed with its address");
+  byId("reg-mode").value = "allowlist"; rgSave(); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(rgPatches[0]) === JSON.stringify({ mode: "allowlist" }) && rgBox().querySelector('[data-missing="allowlist"]')
+    && text(rgBox().querySelector(".reg-effective")) === "Registration now: allowlist." && text(rgBox()).includes("Saved."),
+    "registration: only the mode is sent; an empty allowlist is said beside the fields");
+  byId("reg-domains").value = "example.com"; rgSave(); for (let k = 0; k < 6; k++) await tick();
+  expect(text(byId("reg-domains-error")) === "entry 1 is not valid", "registration: the hub's refusal of a list entry is said at the list, by its number");
+  // The hub's own shape (registration.py): `addresses.<index>` for a bad entry, the second here.
+  const rgReal = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => (p === "/admin/settings/registration"
+    ? Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { "addresses.1": "invalid" } })) : rgReal(p, b));
+  byId("reg-domains").value = ""; byId("reg-addresses").value = "ada@example.org\nnot an address"; rgSave(); for (let k = 0; k < 6; k++) await tick();
+  expect(text(byId("reg-addresses-error")) === "entry 2 is not valid" && text(rgBox().querySelector("form.reg-form")).includes("addresses: entry 2 is not valid"),
+    "registration: the hub's addresses.<index> is said at the addresses, by its number");
+  win.Maity.api.patch = rgReal;
+  byId("reg-addresses").value = "";
+  byId("reg-domains").value = "@Example.com\n@example.com"; rgSave(); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(rgPatches[rgPatches.length - 1]) === JSON.stringify({ domains: ["@example.com"] }) && !rgBox().querySelector('[data-missing="allowlist"]'),
+    "registration: a list is sent lower case without duplicates, and the gap is gone");
+  // Approve and reject; a decision redraws the counts only, so what is typed in the form and not saved stays.
+  byId("reg-domains").value = "@typed-not-saved.org";
+  const rgDomainsBefore = byId("reg-domains");
+  btn(rgBox().querySelector("li.reg-pending-item"), "Approve").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(text(rgBox().querySelector(".reg-pending-list")).includes("Nobody waits for approval") && text(rgBox()).includes("@newcomer is approved.")
+    && text(rgBox().querySelector(".reg-counts")).startsWith("0 waiting for approval"),
+    "registration: Approve decides the account, the list and counts follow");
+  expect(byId("reg-domains") === rgDomainsBefore && byId("reg-domains").value === "@typed-not-saved.org",
+    "registration: a decision keeps the settings form as typed, not saved");
+  byId("reg-domains").value = "@example.com";
+  byId("reg-block-address").value = "spam@example.org"; rgBox().querySelector("form.reg-block").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(rgBox().querySelector("form.reg-block")).includes("spam@example.org may register again"), "registration: a block is lifted by its address");
+  win.Maity.api.patch = rgPatch;
+  await win.Maity.api.patch("/admin/settings/registration", { mode: "closed", domains: [] });
   btn(adNav(), "Statistics").click(); await tick();
   expect(JSON.stringify(stTiles()) === JSON.stringify(["41Humans2 waiting for approval", "117Agent profiles", "12Projectsnot archived", "23Agent instances online", "29Humans with an agent"]),
     "statistics: the totals as tiles " + JSON.stringify(stTiles()));

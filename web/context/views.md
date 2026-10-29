@@ -1531,6 +1531,59 @@ were not asked for. The older Users page at `/admin/users` was removed
 before launch with the other compatibility routes, so that address is
 now no view at all.
 
+## Registration in the admin area: missing beside the fields, a block lifted by its typed address
+
+**Id:** 9e0abafa-9fb3-41ba-b9b0-648e7e9523c0
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §16.4, §2.7, §2.7.5; the card tsk-64tktcnndzk3 (the maintainer found no registration setting, 2026-10-29); the dashboard's implementation, 2026-10-29
+**Revisit when:** the hub lists blocked addresses, or approval gets mails of its own (#280)
+
+The Registration section says first what the hub does now
+(`effective_mode`) and, beside the fields, in words what keeps
+registration from working (`missing`: mail, an empty allowlist). A value
+the environment sets, or terms that come from the legal pages, is shown
+with its source and not offered. Lifting a block takes a typed address,
+since the hub has `DELETE /admin/registrations/blocks/{address}` but no
+list of blocks.
+
+**Reason:** a mode that is set but not in effect (no mail) looks like
+open registration that does not work; saying the gap where the admin is
+looking avoids searching for it. A field the hub would refuse
+(`set_by_environment`) is no choice. Without a list, a typed address is
+the only way to the endpoint.
+
+**Rejected alternative:** the mode alone, with the hub's refusal on
+saving: the admin would learn of missing mail only by trying. A list of
+blocked addresses kept by the dashboard: it would show only what this
+browser lifted or saw rejected, not what the hub holds.
+
+## A decision on a waiting account refreshes the counts, not the registration form
+
+**Id:** 3f98cded-98a8-45d6-9cff-b92b3f531275
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the review of #660 (P3), web/js/admin-registration.js, docs/api.md §16.4, 2026-10-29
+**See:** views.md — 9e0abafa-9fb3-41ba-b9b0-648e7e9523c0 — as of 2026-10-29
+**Revisit when:** the settings form and the pending list move to separate views, or the hub sends the counts with the decision's answer
+
+After Approve or Reject the Registration section reads
+`GET /admin/settings/registration` again for `pending` and the hour's
+counts, and redraws only those lines with the mode in effect and what is
+missing; the form under them keeps what the admin has typed and not
+saved.
+
+**Reason:** the form and the list share one section; redrawing the form
+from the hub's answer threw away unsaved edits without a word, while
+the only thing a decision changes there is the counts.
+
+**Rejected alternative:** redrawing the whole section after a decision,
+as first built: unsaved edits lost. Redrawing the form only when it is
+unchanged: it needs a comparison of every field with the hub's values
+for nothing the counts alone do not already give.
+
 ## On a phone an opened card is a page of its own; the panel is the card
 
 **Id:** 54f93a4f-7e91-4d69-9b51-ca562daaa9a3

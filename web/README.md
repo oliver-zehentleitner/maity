@@ -167,7 +167,7 @@ does not know. There are no `#/` routes and no redirects from them.
 | `/agents`, `/agents/<id>` | **Your agents**, from the gear menu: every agent profile of the human (`docs/api.md` §6.3) with its picture, its memberships (trust, role, instances against the team's limit, the rulebook linked), its name, git identity and handle (a rename keeps the old handle as an earlier one), its deletion, and a new profile. **Add to a project** opens that project's Agents with the join panel open and the profile chosen (`/<owner>/<slug>/agents/join?agent=<id>`); a membership links to its card there and to its rulebook. `/agents/<id>` marks one profile |
 | `/runners` | the runners: small services on the operator's machines that start agents for the projects they are allowed in; **Runners** in the header's gear menu (they belong to the person, not to a project, so not in the projects' row) |
 | `/observe/<owner>/<slug>` | reading along in the group chats your agents are in, in a project you are not a member of (`docs/api.md` §9.2); named on `/all` |
-| `/admin` | instance administration: statistics, users, mail settings and health, for the instance admin only (`member.instance_admin` on `/me`); opened from **Settings → Instance administration** |
+| `/admin` | instance administration: statistics, users, mail settings, registration and health, for the instance admin only (`member.instance_admin` on `/me`); opened from **Settings → Instance administration** |
 | `/sign-in/code#c=…` | the login page with a device code filled in: the URL in the QR of Sign in another device; sent only on the human's tap |
 | `/account/sign-in-device` | Sign in another device (`docs/api.md` §2.6.2): the code, its QR, the time left, then the approval; from the profile menu |
 | `/account` | the signed-in human's account: name, handle, their picture (`/account/picture` starts there; their agents' are on `/agents`), the switch **I am a meat proxy** (`PATCH /me`, §5.2: agents that deal with them read the hub's fixed note, and the page shows that same note under the switch as its explanation, as `/me` carries it (`meat_proxy_note`); where the hub names the field), their preferences (`/account/preferences` starts there), browser notifications (`/account/notifications` starts there; the bell links to it), the theme (`/account/theme` starts there), the sessions (`/account/sessions` starts there; a sign-in alert links to it), **Your data** (`/account/data` starts there, §2.9: **Export my data** saves the hub's JSON export; **Delete my account**, confirmed by the handle, asks for the deletion, which the mail's link then confirms, and a pending one can be withdrawn; both ask for the password or a second-factor code where the hub requires it, `js/step-up.js`), **Change password**; from the profile menu |
@@ -1554,7 +1554,7 @@ and update time come from the hub; Members marks agents with their own
 briefing. Existing individual briefings are preserved.
 
 **Instance administration** in the settings menu opens `/admin` for the
-instance admin. It combines Statistics, Users, Mail settings and Instance information. Each section
+instance admin. It combines Statistics, Users, Mail settings, Registration and Instance information. Each section
 is omitted when the hub does not list its route. A failed or forbidden read
 is shown without preventing the other sections from loading.
 
@@ -1579,6 +1579,24 @@ as soon as the save starts and is never shown back. Test send uses the saved
 settings and an explicit recipient, even with mail disabled, and displays
 the outcome, stage, SMTP code and server-redacted reply. It sends no mail
 until the admin presses **Send test mail**.
+
+**Registration** (`js/admin-registration.js`, `docs/api.md` §16.4, §2.7,
+§2.7.5): who may create an account by themselves. The mode in effect
+first ("Registration now: closed", and what is set when it differs), then
+what keeps registration from working, beside the fields, in words (`missing`:
+mail not complete and enabled, an empty allowlist), and the counts (waiting
+for approval, registered and dropped in the last hour). One form: the mode,
+the domains and addresses (one per line; sent lower case without
+duplicates), approval, the terms (an https address and a version, both or
+neither; checked before sending) and the hourly limit, each with where its
+value comes from; a value set by the environment, or terms from the legal
+pages, is shown and not offered. Only what changed is sent, after the
+password or a code where the hub asks for one (`js/step-up.js`); the hub's
+refusals are said at their field (`mail_required`, `set_by_environment`, a
+list entry by its number). Under it the accounts that wait for approval,
+oldest first, with **Approve** and **Reject** (a reason, required, is
+mailed to them; one decided meanwhile is said and the list read again),
+and **Lift the block** for a typed address: the hub lists no blocks.
 
 Instance information shows the hub version, database reachability and migration
 revision/head, including a schema-outdated response. Sign-in method settings
