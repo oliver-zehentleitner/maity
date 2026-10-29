@@ -9,18 +9,70 @@
       "created_at": "2026-10-29T09:00:00Z",
       "members_create_projects": false,
       "public_page": "off"
+    },
+    {
+      "id": "org-oz00crew0001",
+      "handle": "crew",
+      "display_name": "Crew",
+      "avatar_url": null,
+      "aliases": [],
+      "created_at": "2026-10-29T09:00:00Z",
+      "members_create_projects": false,
+      "public_page": "off"
     }
   ],
   "members": {
     "org-oz00team0001": [
-      { "id": "hum-maintainer", "handle": "maintainer", "display_name": "Maintainer", "avatar_url": null, "role": "owner", "joined_at": "2026-10-29T09:00:00Z" },
-      { "id": "hum-anna", "handle": "anna", "display_name": "Anna", "avatar_url": null, "role": "admin", "joined_at": "2026-10-29T09:30:00Z" }
+      {
+        "id": "hum-maintainer",
+        "handle": "maintainer",
+        "display_name": "Maintainer",
+        "avatar_url": null,
+        "role": "owner",
+        "joined_at": "2026-10-29T09:00:00Z"
+      },
+      {
+        "id": "hum-anna",
+        "handle": "anna",
+        "display_name": "Anna",
+        "avatar_url": null,
+        "role": "admin",
+        "joined_at": "2026-10-29T09:30:00Z"
+      }
+    ],
+    "org-oz00crew0001": [
+      {
+        "id": "hum-olga",
+        "handle": "olga",
+        "display_name": "Olga",
+        "avatar_url": null,
+        "role": "owner",
+        "joined_at": "2026-10-29T09:00:00Z"
+      },
+      {
+        "id": "hum-maintainer",
+        "handle": "maintainer",
+        "display_name": "Maintainer",
+        "avatar_url": null,
+        "role": "admin",
+        "joined_at": "2026-10-29T09:10:00Z"
+      }
     ]
   },
   "invitations": {
     "org-oz00team0001": [
-      { "id": "oinv-0001", "handle": "ben", "role": "member", "invited_by": { "id": "hum-maintainer", "handle": "maintainer" },
-        "created_at": "2026-10-29T10:00:00Z", "expires_at": "2026-11-12T10:00:00Z" }
-    ]
+      {
+        "id": "oinv-0001",
+        "handle": "ben",
+        "role": "member",
+        "invited_by": {
+          "id": "hum-maintainer",
+          "handle": "maintainer"
+        },
+        "created_at": "2026-10-29T10:00:00Z",
+        "expires_at": "2026-11-12T10:00:00Z"
+      }
+    ],
+    "org-oz00crew0001": []
   }
 }

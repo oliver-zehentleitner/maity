@@ -75,8 +75,12 @@ window.Maity = window.Maity || {};
     const p = req.project || { full_name: req.slug, name: names.project(req) };
     // A personal request (§7) is the human's, not the project's: no link to
     // a project inbox that never lists it, and maybe one is not a member of.
+    // One with a project (a transfer into an organisation, §6.26) names the
+    // project; one without (an organisation's invitation) the organisation
+    // where the request carries it, otherwise nothing more.
     if (req.personal) {
-      return h("span", { class: "project-label personal" }, "Personal", h("span", { class: "muted" }, " · " + p.name));
+      const of = p.name || (req.org ? "@" + req.org.handle : "");
+      return h("span", { class: "project-label personal" }, "Personal", of ? h("span", { class: "muted" }, " · " + of) : null);
     }
     return h("a", { class: "project-label", href: ctx.projectLink(p.full_name, "inbox") },
       M.projectMark(p.full_name, p.name, (ctx.projectViews || {})[p.full_name], "small"),
@@ -93,7 +97,7 @@ window.Maity = window.Maity || {};
     },
     // The project's badge stands before the entry, as a link; its name is
     // also the start of this button's name, for whom the badge is not seen.
-    ctx.scope === "all" ? h("span", { class: "visually-hidden" }, (req.personal ? "Personal, " : "") + names.project(req) + ": ") : null,
+    ctx.scope === "all" ? h("span", { class: "visually-hidden" }, (req.personal ? "Personal, " : "") + (names.project(req) || (req.org ? "@" + req.org.handle : "")) + (req.project && req.org ? ", into @" + req.org.handle : "") + ": ") : null,
     h("span", { class: "prio prio-" + req.priority }, req.priority),
     h("span", { class: "kind" }, CLASS_LABELS[req.class] || req.class),
     h("span", { class: "title" }, req.title),
@@ -145,7 +149,15 @@ window.Maity = window.Maity || {};
     const titleRefs = M.ids.refs(req.title, at);
 
     append(body, h("dl", { class: "facts" },
-      ctx.scope === "all" && req.personal
+      ctx.scope === "all" && req.personal && req.org && !req.project
+        ? [h("dt", null, "Organisation"), h("dd", null, "@" + req.org.handle + " — a personal request: for you, not for a project")]
+        : null,
+      // A transfer into an organisation: the project, and the organisation it would move into.
+      ctx.scope === "all" && req.personal && req.org && req.project
+        ? [h("dt", null, "Project"), h("dd", null, names.project(req) + " — a personal request: for you as an owner of @" + req.org.handle),
+          h("dt", null, "Into"), h("dd", null, "@" + req.org.handle)]
+        : null,
+      ctx.scope === "all" && req.personal && !req.org && names.project(req)
         ? [h("dt", null, "Project"), h("dd", null, names.project(req) + " — a personal request: for you as the owner of the agent, not for the project")]
         : null,
       ctx.scope === "all" && !req.personal
@@ -296,7 +308,8 @@ window.Maity = window.Maity || {};
       return requests.items;
     }
     const requests = await M.api.getAll("/requests");
-    requests.items.forEach((r) => { r.slug = r.project.full_name; });
+    // A personal request may have no project (an organisation's invitation, §6.26).
+    requests.items.forEach((r) => { r.slug = r.project ? r.project.full_name : null; });
     // A list shows no proposal (§7): an open personal request is read on its
     // own, so a preference proposal (§19.4) comes with its review's texts.
     // One that cannot be read is offered no reply until it is: it may be a
@@ -322,7 +335,7 @@ window.Maity = window.Maity || {};
     const names = {
       member: (id) => (ctx.nameOf ? ctx.nameOf(id) : id || "—"),
       project: (req) => (req.project && req.project.name)
-        || (ctx.projects.find((x) => x.full_name === req.slug) || { name: req.slug }).name,
+        || (req.slug ? (ctx.projects.find((x) => x.full_name === req.slug) || { name: req.slug }).name : ""),
     };
     const sorts = ctx.scope === "all" ? ["priority", "date", "agent", "project"] : ["priority", "date", "agent"];
     if (!sorts.includes(ui.sort)) ui.sort = "priority";
