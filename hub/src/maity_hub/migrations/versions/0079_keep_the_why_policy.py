@@ -6,8 +6,8 @@ provider `keep-the-why`, `optional` otherwise. `keep_the_why_defaults` (`adopt` 
 says whether a joining agent takes the repository's personal defaults; projects made
 before read `adopt`. The memory provider itself stays in `keep_the_why`.
 
-Revision ID: 0059
-Revises: 0060
+Revision ID: 0079
+Revises: 0077
 Create Date: 2026-10-27
 """
 
@@ -16,8 +16,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0059"
-down_revision: str | None = "0071"
+revision: str = "0079"
+down_revision: str | None = "0077"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
