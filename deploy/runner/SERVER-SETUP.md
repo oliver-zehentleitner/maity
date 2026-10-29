@@ -42,8 +42,9 @@ the system and sshd.
    (`00-` sorts before the provider's `50-cloud-init.conf`, and the first value of an option wins; the last command shows it on the machine.)
 4. **root, `/root`:** `curl -fsSLO <tarball-url> && echo "<sha256>  $(basename <tarball-url>)" | sha256sum -c`. It must
    print `OK`.
-5. **root, `/root/maity/deploy/runner`:** `RUNNER_TOKEN=<token> RUNNER_TARBALL=/root/<tarball-name> INSTANCES=<type> ./install-services.sh`
+5. **root, `/root/maity/deploy/runner`:** `RUNNER_TOKEN=<token> RUNNER_TARBALL=/root/<tarball-name> INSTANCES=<type> [RUNNER_NAME_PREFIX=<name>] ./install-services.sh`
    (`<type>`: `maria` on the first server), then `RUNNER_DIR=/opt/actions-runner-<type> SERVICE=maity-runner@<type> ./install-python.sh`.
+   A second machine for a type that already has a runner (more concurrent jobs of that type) uses the same label but needs its own name, because the name must be unique in the repository: `RUNNER_NAME_PREFIX=maity-srv2` registers `maity-srv2-<type>`. Before that, the registrations of the old workstation runners with the default names must be gone.
 6. **root, same directory:** `./dedicated-profile.sh <type>`. It refuses on a machine that is not exactly 8 cores and 16 GB, and prints the
    values it set.
 7. **root:** `systemctl enable --now maity-runner@<type>`; GitHub shows the runner as **Idle**. Then check the caps before any job:

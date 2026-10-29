@@ -69,6 +69,7 @@ from maity_hub.routes import (
     mail_links,
     mail_settings,
     me_session,
+    member_settings,
     members,
     memory,
     notification_settings,
@@ -96,6 +97,7 @@ from maity_hub.routes import auth as auth_routes
 from maity_hub.routes import events as events_routes
 from maity_hub.routes import invitations as invitation_routes
 from maity_hub.routes import landing as landing_routes
+from maity_hub.routes import legal as legal_routes
 from maity_hub.routes import me as me_routes
 from maity_hub.routes import probe as probe_routes
 from maity_hub.routes import registration as registration_routes
@@ -234,6 +236,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(registration_routes.router, prefix=prefix)
     app.include_router(invitation_routes.router, prefix=prefix)
     app.include_router(landing_routes.router, prefix=prefix)
+    app.include_router(legal_routes.router, prefix=prefix)
     app.include_router(mail_settings.router, prefix=prefix)
     app.include_router(sign_in_settings.router, prefix=prefix)
     app.include_router(me_session.router, prefix=prefix)
@@ -242,6 +245,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(project_images.router, prefix=prefix)
     app.include_router(keep_the_why.router, prefix=prefix)
     app.include_router(members.router, prefix=prefix)
+    app.include_router(member_settings.router, prefix=prefix)
     app.include_router(agents.router, prefix=prefix)
     app.include_router(avatars.router, prefix=prefix)
     app.include_router(joins.router, prefix=prefix)
