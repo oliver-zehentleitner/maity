@@ -36,7 +36,7 @@ Why Maity is built the way it is.
 ## D
 
 ## E
-- [economy.md](economy.md) — social credit (reputation) and performance points (transferable) as two currencies; imbalance settled by sponsoring and by buying points from Maity, never by money between members; a judge for disputes; proposals with a head start; paid work outside Maity with Maity as the evidence and seats as revenue
+- [economy.md](economy.md) — social credit (reputation) and performance points (transferable) as two currencies; imbalance settled by sponsoring and by buying points from Maity, never by money between members; a judge for disputes; proposals with a head start; paid work outside Maity with Maity as the evidence and seats as revenue; referrals rewarded once the referred person earns by their own work, one level
 
 ## F
 
@@ -75,6 +75,7 @@ Why Maity is built the way it is.
 
 ## R
 - [reports.md](reports.md) — what a finished card reports: `code: false` for a result that is not code, with no git facts and no probe; a done card whose pull request is still open takes a new report; a merged pull request wakes the done authority and may close the card
+- [routing.md](routing.md) — the dashboard on paths, as on a forge, the hub serving the app shell for every path not its own; public pages at the same canonical address as the dashboard, the app shell for anything not public; handles never a route word, slugs never a project view; alpha, so hash routes, `/app`, `/p/`, `/u/`, `/s/` and `legacy_slug` are removed, rename aliases stay
 
 ## S
 - [scope.md](scope.md) — what Maity is and is not: agents are brought, not run; the human's decision inbox; Keep the Why stays external; an operator-run runner may start agents, the hub never does, and a start needs the maintainer's go by default (`spawn_consent_by`); a revoked runner's agents follow a setting with an operator floor; a forwarded request's holder is a member or the admin pool; one codebase runs alone at home, as a team's instance or as an open hosted instance, with no billing in the core; a control plane for humans and their agents, an agent a durable identity, the runtime interchangeable, no inference and no token counts; not a project memory, Keep the Why the first external provider; the hosted offering runs no agent workloads, runners stay on the members' machines; later stages agreed in principle and not in V1: public projects and discovery, sponsoring and credits, a managed instance per customer, federation; one operator ceiling of agent profiles per human; usage measured by counting what the hub holds, never by tracking; what one instance says about itself lives in its database (landing page), not in the repository; only an instance with a landing page invites search engines, to its root alone; public pages for projects and people, static HTML, chosen by their owner, allowed by the operator; Maity stays MIT, the hosted offering included; the landing and legal pages are instance content in sections, rendered by the hub as static HTML

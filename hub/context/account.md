@@ -197,3 +197,71 @@ the deletion waits for.
 
 **Rejected alternative:** a stored counter: one more thing a failed
 transaction or a restore could leave out of step.
+
+## Every table that names a human is checked against the deletion and the export
+
+**Id:** b60df323-1007-4d28-bde6-a0df241f53c7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the review of #586, where forge links (#567) and mail sign-in links (#550) had landed after the deletion and were not removed by it; the coordinator's card for a schema check; the review of #607 (columns without a foreign key, the delegated removals, `project`)
+**Revisit when:** a column names a person under a name the pattern does not catch, a table behind `membership` or `agent_profile` holds a person's data that their removal does not reach, or the deletion or export moves its statements out of the modules the test reads
+
+`tests/test_per_human_tables.py` walks the schema. A table names a human
+through a foreign key to `human`, a column called `human_id`, or a column
+marked in `NAMES_A_HUMAN`: one without a foreign key that holds a
+human's id (often a `hum-…`/`agt-…` principal id) or an address. Every
+column without a foreign key whose name looks like a person's (`*human*`,
+`*_by`, `owner_id`, `caller`, `address*`) must be decided there, `True`
+or `False` (a reason, a deadline, a mode), so a new one fails until
+someone decides.
+
+Every table that names a human must then be named (`t.<table>`) in
+`account_deletion.py`, handed to the module that removes such a row
+anywhere (`DELETION_THROUGH`: `members.apply_remove`,
+`agents.delete_profile`, `runners.remove`, as §2.9 says the deletion
+removes them "as a removal does"), or listed in `DELETION_KEEPS` with a
+reason; and the same for `export.py`, `EXPORT_THROUGH` and
+`EXPORT_LEAVES_OUT`. A list entry for a column or table that is gone, no
+longer names a human, or that the code handles after all, fails as
+stale. `project` is kept on purpose, not covered because the deletion
+happens to read it: it is the one keep the deletion module also names
+(it reads projects to find what the human owns, for `namespace_owner`,
+but never deletes or blanks the row), so the stale check exempts exactly
+`project` by name (`KEPT_THOUGH_READ`) rather than dropping the "handled
+after all" check, and any other table the deletion starts to handle
+still fails while it sits in `DELETION_KEEPS`. "Named" means `t.<table>` as a whole name in the
+module's code, comments and docstrings left out: `t.email_sign_in` is
+not named by `t.email_sign_in_day`.
+
+The walk is one hop. Tables that reach a person only through
+`membership` (`card_watch`, `member_briefing`, `conversation_read`,
+`presence_minute`, …) or through `agent_profile` are not checked: they
+are the removal's (§6.2) and the profile deletion's (§6.3), which the
+deletion hands them to.
+
+The test checks that a table is decided, not that the decision is right:
+whether a statement covers the right column stays the reviewer's to see.
+Two entries were open at first: `address_lock` and `registration_lock`
+kept a row per address after the deletion, while §2.9 says the addresses
+are deleted. They are settled: the rows are keyed by the address's HMAC
+and the deletion removes the account's (`notifications.md`, "A lock row
+holds the address's HMAC, never the address", 25f27b8d), so neither
+table names a person any more.
+
+**Reason:** a feature that adds a table about a person is built without
+the deletion in view, and nothing failed when it was left out; the gap
+showed only in a later review. A failing test makes the author decide at
+the time the table is added.
+
+**Rejected alternatives:**
+- A marker on each column in `tables.py` (`info={"names_a_human": ...}`),
+  as the review proposed: the same enforcement, but about 45 column
+  definitions touched for it, against one registry next to the test that
+  reads it.
+- Dropping the "handled after all" check for every keep, to let
+  `project` pass: a handled table could then hide in `DELETION_KEEPS`
+  unnoticed.
+- Counting only foreign keys and `human_id`: principal ids in plain
+  strings (`paused_by`, `caller`, `actor_human_id`) and addresses passed
+  through unseen.

@@ -44,7 +44,7 @@ def claims(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
     """The verified-address store (#280) as a dict: one address, one account."""
     held: dict[str, str] = {}
 
-    def claim(conn: Any, normalized: str, human_id: str) -> bool:
+    def claim(conn: Any, normalized: str, human_id: str, *, secret_key: bytes | None) -> bool:
         if normalized in held:
             return False
         held[normalized] = human_id
@@ -85,6 +85,7 @@ def complete(engine: Engine, settings: Settings, pending_id: str, **given: Any) 
         "terms_seen": None,
         "terms_accepted": False,
         "source": "203.0.113.7",
+        "secret_key": settings.secret_key,
         **given,
     }
     with engine.begin() as conn:
@@ -155,7 +156,7 @@ def test_a_taken_address_makes_no_account(
     row = requested(make_client, migrated, settings)
     holder = flow.human(make_client, migrated, "holder")
     with migrated.begin() as conn:
-        assert preferences.claim_verified(conn, "ada@example.com", holder.id)
+        assert preferences.claim_verified(conn, "ada@example.com", holder.id, secret_key=None)
     assert complete(migrated, settings, row.id).kind == "gone"
     with migrated.connect() as conn:
         assert conn.execute(select(t.human).where(t.human.c.handle == "ada")).first() is None
@@ -271,6 +272,7 @@ def test_two_completions_at_once_create_one_account(
             done = registration_accounts.complete(
                 second, resolver(settings), two.id, password=PASSWORD, handle="ada2",
                 display_name="Ada", terms_seen=None, terms_accepted=False, source="203.0.113.8",
+                secret_key=settings.secret_key,
             )  # fmt: skip
             finished.set()
             return str(done.kind)
@@ -281,6 +283,7 @@ def test_two_completions_at_once_create_one_account(
         done = registration_accounts.complete(
             first, resolver(settings), one.id, password=PASSWORD, handle="ada", display_name="Ada",
             terms_seen=None, terms_accepted=False, source="203.0.113.7",
+            secret_key=settings.secret_key,
         )  # fmt: skip
         assert done.kind == "created"
         waiting = pool.submit(other)
@@ -430,6 +433,7 @@ def test_two_addresses_never_both_take_the_last_place_of_the_hour(
         assert registration_accounts.complete(
             conn, resolver(settings), ada.id, password=PASSWORD, handle="ada",
             display_name="Ada", terms_seen=None, terms_accepted=False, source="203.0.113.7",
+            secret_key=settings.secret_key,
         ).kind == "created"  # fmt: skip
 
     answer = _held(migrated, first, lambda: complete(migrated, settings, bob.id, handle="bob"))

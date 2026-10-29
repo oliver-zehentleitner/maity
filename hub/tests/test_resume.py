@@ -39,7 +39,7 @@ PACKET = {
 @pytest.fixture
 def owner(make_client: ClientFactory, migrated: Engine) -> flow.Human:
     owner = flow.human(make_client, migrated)
-    flow.project(owner, "maity", keep_the_why=True)
+    flow.project(owner, "maity", memory={"provider": "keep-the-why"})
     return owner
 
 
@@ -89,7 +89,9 @@ def test_the_packet_has_every_part_of_the_contract(
     assert packet["me"]["instance"] == agent.instance
     assert packet["me"]["address"] == f"{agent.id}#{agent.instance}"
     assert packet["team"] == []
-    assert packet["project"]["slug"] == "maity" and packet["project"]["keep_the_why"] is True
+    assert packet["project"]["slug"] == "maity" and packet["project"]["memory"] == {
+        "provider": "keep-the-why"
+    }
     assert packet["keep_the_why"]["enabled"] is True
     assert "keep-the-why" in packet["keep_the_why"]["instruction"]
     assert packet["areas"] == [
@@ -115,6 +117,7 @@ def test_the_packet_has_every_part_of_the_contract(
             "presence": "online",
             "paused": None,
             "covered_by": None,
+            "language": "en",
             "meat_proxy": False,
         }
     ]

@@ -17,6 +17,7 @@ from maity_hub.auth.caller import Caller
 from maity_hub.db import retrying
 from maity_hub.deps import AnyCaller, engine_of, origin_of, settings_of
 from maity_hub.errors import forbidden, humans_only, invalid, not_found
+from maity_hub.mail import address as addresses
 from maity_hub.mail import settings as mail_settings
 from maity_hub.notifications import preferences
 from maity_hub.routes.auth import LOGIN_BY_ADDRESS, LOGIN_BY_HANDLE
@@ -102,10 +103,16 @@ def verify_from_dashboard(
     if set(body) != {"token"} or not isinstance(token, str):
         raise invalid({"token": "required"})
     hub = settings_of(request)
+    addresses.prepare(engine_of(request), hub.secret_key)  # before the lock's transaction
     with engine_of(request).begin() as conn:
         # Another human's token is `not_found`, the same as an invalid one (§18.4).
         done = preferences.verify(
-            conn, token, hub.mail.signing_key, hub.public_url, human_id=caller.principal_id
+            conn,
+            token,
+            hub.mail.signing_key,
+            hub.public_url,
+            secret_key=hub.secret_key,
+            human_id=caller.principal_id,
         )
         if not done:
             raise not_found()

@@ -219,7 +219,8 @@ account_registration = Table(
 registration_lock = Table(
     "registration_lock",
     metadata,
-    Column("address_normalized", String(254), primary_key=True),
+    # The HMAC of the normalized address (`addresses.lock_key`), never the address (§2.9).
+    Column("digest", String(64), primary_key=True),
     **MYSQL_TABLE,
 )
 
@@ -1689,7 +1690,8 @@ notification_settings = Table(
 address_lock = Table(
     "address_lock",
     metadata,
-    Column("address", String(254), primary_key=True),
+    # The HMAC of the normalized address (`addresses.lock_key`), never the address (§2.9).
+    Column("digest", String(64), primary_key=True),
     **MYSQL_TABLE,
 )
 

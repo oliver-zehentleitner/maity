@@ -16,6 +16,7 @@ from maity_hub import clock
 from maity_hub import tables as t
 from maity_hub.config import Settings
 from maity_hub.errors import ApiError
+from maity_hub.mail import address as addresses
 from maity_hub.mail import outbox
 from maity_hub.notifications import preferences, tokens
 from tests import factory, flow
@@ -380,9 +381,16 @@ def test_a_registration_claims_its_address_once(migrated: Engine) -> None:
 
     first = factory.human(migrated, "first")
     second = factory.human(migrated, "second")
+    addresses.prepare(migrated, None)  # the claims below take the lock without a route
     with migrated.begin() as conn:
-        assert registration_accounts.claim_address(conn, "ada@example.com", first) is True
-        assert registration_accounts.claim_address(conn, "ada@example.com", second) is False
+        assert (
+            registration_accounts.claim_address(conn, "ada@example.com", first, secret_key=None)
+            is True
+        )
+        assert (
+            registration_accounts.claim_address(conn, "ada@example.com", second, secret_key=None)
+            is False
+        )
         assert preferences.has_verified_address(conn, "ada@example.com") is True
         assert preferences.has_verified_address(conn, "grace@example.com") is False
         view = preferences.view(conn, first, True)["email"]
@@ -403,8 +411,11 @@ def test_a_claimed_address_blocks_a_verification_for_another_account(
     from maity_hub import registration_accounts
 
     holder = factory.human(migrated, "holder")
+    addresses.prepare(migrated, None)  # the claim below takes the lock without a route
     with migrated.begin() as conn:
-        assert registration_accounts.claim_address(conn, "shared@example.org", holder)
+        assert registration_accounts.claim_address(
+            conn, "shared@example.org", holder, secret_key=None
+        )
     owner = with_mail(make_client, migrated)
     owner.patch(S, {"email": {"address": "Shared@Example.org"}})
     token = link(outbox_rows(migrated)[-1], "verify")
@@ -547,3 +558,47 @@ def test_the_confirmation_link_is_marked_and_the_mark_is_never_a_header(
     finally:
         server.close()
     assert "_purpose" not in server.record.data.decode(errors="replace")
+
+
+def test_a_claim_that_slips_past_the_lock_is_a_dead_link_not_an_error(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """Two callers on different lock keys (a key changed mid-rollout) serialise nothing; the
+    unique constraint catches the second claim, and the verification answers as a dead link
+    (§18.4), never 500."""
+    from sqlalchemy import event, insert
+
+    from maity_hub import clock
+
+    holder = factory.human(migrated, "holder")
+    owner = with_mail(make_client, migrated)
+    owner.patch(S, {"email": {"address": "race@example.org"}})
+    token = link(outbox_rows(migrated)[-1], "verify")
+    slipped = {"done": False}
+
+    def meanwhile(conn: Any, cursor: Any, statement: str, *_: Any) -> None:
+        # Another account claims the address after the check, just before the write.
+        if slipped["done"] or not statement.lstrip().upper().startswith("UPDATE NOTIFICATION"):
+            return
+        slipped["done"] = True
+        conn.execute(
+            insert(t.notification_settings).values(
+                human_id=holder,
+                preferences={},
+                address="race@example.org",
+                address_normalized="race@example.org",
+                address_status="verified",
+                verified_at=clock.now(),
+                epoch=0,
+                hard_failures=0,
+                updated_at=clock.now(),
+            )
+        )
+
+    event.listen(migrated, "before_cursor_execute", meanwhile)
+    try:
+        answer = owner.client.post(f"/mail/verify/{token}")
+    finally:
+        event.remove(migrated, "before_cursor_execute", meanwhile)
+    assert slipped["done"]
+    assert answer.status_code == 404, answer.text

@@ -107,6 +107,8 @@ window.Maity = window.Maity || {};
     if (parts[0] === "login") return { scope: "login" };
     if (parts[0] === "all") return { scope: "all" };
     if (parts[0] === "new") return { scope: "new" };
+    // #/account/orgs[/<handle>]: organisations (§6.26), under the account (views.md).
+    if (parts[0] === "account" && parts[1] === "orgs") return { scope: "orgs", args: parts.slice(2) };
     if (parts[0] === "account") return { scope: "account", args: parts.slice(1) };
     if (parts[0] === "runners") return { scope: "runners" };
     if (parts[0] === "observe" && parts[2]) return { scope: "observe", slug: parts[1] + "/" + parts[2], args: parts.slice(3) };
@@ -1037,6 +1039,10 @@ window.Maity = window.Maity || {};
     // Sign in another device (§2.6.2) where the hub's machine form has it.
     let deviceCodes = false;
     M.api.hubHas("POST", "/auth/device-codes").then((yes) => { deviceCodes = yes; }, () => {});
+    // Organisations (§6.26) where the hub has them; humans only.
+    let orgs = false;
+    // A machine form that cannot be read keeps the entry (views.md).
+    if (ctx.me.kind === "human") M.api.hubHas("GET", "/orgs").then((yes) => { orgs = yes; }, () => { orgs = true; });
     // The human: their picture, the account, signing out.
     const profile = M.menuButton({
       label: "Your profile: " + ctx.me.display_name,
@@ -1047,6 +1053,7 @@ window.Maity = window.Maity || {};
         { label: "Picture", href: "#/account/picture" },
         { label: "Preferences", href: "#/account/preferences" },
         { label: "Theme", href: "#/account/theme" },
+        orgs ? { label: "Organisations", href: "#/account/orgs", current: ctx.scope === "orgs" } : null,
         deviceCodes ? { label: "Sign in another device", href: "#/account/sign-in-device" } : null,
         { label: "Change password", href: "#/account" },
         { label: "Linked accounts", disabled: true, why: "later" },
@@ -1059,7 +1066,7 @@ window.Maity = window.Maity || {};
         brandTitle(),
         ctx.scope === "project"
           ? [projectMark(ctx.slug, ctx.project.name, ctx.project), h("span", { class: "project" }, ctx.project.name)]
-          : h("span", { class: "project" }, { new: "New project", account: "Your account", runners: "Runners", "instance-admin": "Instance administration", observe: "Read along", chats: "Chats" }[ctx.scope] || "Everything waiting for you"),
+          : h("span", { class: "project" }, { new: "New project", account: "Your account", orgs: "Organisations", runners: "Runners", "instance-admin": "Instance administration", observe: "Read along", chats: "Chats" }[ctx.scope] || "Everything waiting for you"),
         M.api.source === "fixtures"
           ? h("span", { class: "source", title: "Data from web/fixtures/, not from the hub. Changes are kept in this tab only." }, "Fixtures")
           : null,
@@ -1459,10 +1466,10 @@ window.Maity = window.Maity || {};
     const item = where.scope === "project" ? NAV.find((n) => n.route === where.route) : null;
     renderHeader(ctx, (item && item.current) || where.route);
     const empty = where.scope === "all" && !ctx.projects.length;
-    const known = ["all", "new", "account", "runners", "instance-admin", "observe", "notifications", "chats"].includes(where.scope)
+    const known = ["all", "new", "account", "orgs", "runners", "instance-admin", "observe", "notifications", "chats"].includes(where.scope)
       || (item && own(M.views, item.view || item.route) && offered(ctx, item));
     let viewName = "unknown";
-    if (["all", "new", "account", "runners", "instance-admin", "observe", "notifications", "chats"].includes(where.scope)) viewName = where.scope;
+    if (["all", "new", "account", "orgs", "runners", "instance-admin", "observe", "notifications", "chats"].includes(where.scope)) viewName = where.scope;
     else if (known) viewName = (item && item.current) || where.route;
     const root = h("section", { class: "view view-" + viewName });
     try {
@@ -1493,6 +1500,8 @@ window.Maity = window.Maity || {};
         await M.views.newProject(ctx, root);
       } else if (where.scope === "account") {
         await M.views.account(ctx, root, where.args);
+      } else if (where.scope === "orgs") {
+        await M.views.orgs(ctx, root, where.args);
       } else if (where.scope === "instance-admin") {
         await M.views.instanceAdmin(ctx, root);
       } else if (where.scope === "runners") {
@@ -1517,6 +1526,7 @@ window.Maity = window.Maity || {};
     else if (where.scope === "chats") label = "Chats";
     else if (where.scope === "new") label = "New project";
     else if (where.scope === "account") label = "Your account";
+    else if (where.scope === "orgs") label = where.args && where.args[0] ? "@" + M.orgs.handleOf(where.args[0]) + " · Organisations" : "Organisations";
     else if (where.scope === "runners") label = "Runners";
     else if (where.scope === "instance-admin") label = "Instance administration";
     else if (where.scope === "observe") label = "Read along · " + where.slug;
