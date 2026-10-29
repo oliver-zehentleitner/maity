@@ -13,6 +13,7 @@ from sqlalchemy import Engine, select
 from maity_hub import clock, registration_mail
 from maity_hub import instance_settings as store
 from maity_hub import tables as t
+from maity_hub.mail import address as addresses
 from maity_hub.mail import outbox
 from maity_hub.mail import settings as mail_settings
 from maity_hub.notifications import preferences, tokens
@@ -96,8 +97,9 @@ def test_an_address_with_an_account_gets_a_note_and_no_link(
 ) -> None:
     client = open_hub(make_client, migrated)
     holder = factory.human(migrated, "holder")
+    addresses.prepare(migrated, None)  # the claim below takes the lock without a route
     with migrated.begin() as conn:
-        assert preferences.claim_verified(conn, "ada@example.com", holder)
+        assert preferences.claim_verified(conn, "ada@example.com", holder, secret_key=None)
     client.post(
         "/api/v1/auth/register",
         json={"address": "Ada@Example.com", "password": "a long enough password 1"},

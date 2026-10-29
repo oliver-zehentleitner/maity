@@ -202,14 +202,14 @@ def deliver(
 
 
 def _complete(
-    conn: Connection, request: Request, row: Any
+    conn: Connection, request: Request, row: Any, method: str
 ) -> tuple[dict[str, Any], str, str, str | None]:
     auth.end_presented(conn, request.cookies.get(SESSION_COOKIE))
     sid, csrf, _, state = second_factor.begin(
         conn,
         settings_of(request),
         row.human_id,
-        method="email_link",
+        method=method,  # `email_link` or `email_code` (§2.6.5)
         address=origin_of(request).address,
         user_agent=request.headers.get("user-agent"),
         next_route=row.next_path,
@@ -253,7 +253,7 @@ def redeem_code(body: CodeRequest, request: Request) -> JSONResponse:
                 and hub.mail.signing_key is not None
                 and links.try_code(conn, row, body.code, hub.mail.signing_key)
             ):
-                result = _complete(conn, request, row)
+                result = _complete(conn, request, row, "email_code")
     # Wrong guesses must commit, so refusal is outside the transaction.
     if result is None:
         raise ApiError(403, "code_invalid", "this code does not work")
@@ -355,7 +355,7 @@ async def complete_link(token: str, request: Request) -> Response:
             conn, row
         ):
             return _dead()
-        answer, sid, csrf, device = _complete(conn, request, row)
+        answer, sid, csrf, device = _complete(conn, request, row, "email_link")
     response = RedirectResponse(answer.get("next", "/"), status_code=303)
     _cookies(response, request, sid, csrf, device)
     return response

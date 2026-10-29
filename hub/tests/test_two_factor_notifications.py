@@ -114,3 +114,46 @@ def test_a_security_item_is_confirmed_from_a_session_older_than_it(
     owner.post("/me/notifications/read", {"ids": [item["id"]]})
     [after] = [i for i in bell(owner) if i["id"] == item["id"]]
     assert after["read"] is True
+
+
+GERMAN = [
+    ({"change": "enrolled", "by": "maintainer"}, "Zwei-Faktor-Anmeldung eingeschaltet"),
+    ({"change": "disabled", "by": "maintainer"}, "Zwei-Faktor-Anmeldung ausgeschaltet"),
+    ({"change": "recovery_codes", "by": "maintainer"}, "Neue Wiederherstellungscodes"),
+    ({"change": "recovery_code_used", "by": "maintainer"}, "Wiederherstellungscode benutzt"),
+    ({"change": "reset", "by": "grace"}, "Zwei-Faktor-Anmeldung zurückgesetzt von grace"),
+    (
+        {"change": "instance_off", "by": "environment"},
+        "Zwei-Faktor-Anmeldung für diese Instanz ausgeschaltet",
+    ),
+    ({"change": "something-new", "by": "x"}, "Zwei-Faktor-Anmeldung geändert"),
+]
+
+
+@pytest.mark.parametrize(("data", "title"), GERMAN)
+def test_a_change_of_the_factor_reads_in_the_humans_language(
+    make_client: ClientFactory, migrated: Engine, at: Any, data: dict[str, Any], title: str
+) -> None:
+    owner, _ = setup(make_client, migrated)
+    assert owner.patch(S, {"email": {"language": "de"}}).status_code == 200
+    write(migrated, owner.id, "second_factor_changed", data)
+    assert [i for i in bell(owner) if i["title"] == title]
+
+
+def test_wrong_codes_read_in_the_humans_language_and_the_mail_follows(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    owner, _ = setup(make_client, migrated)
+    assert owner.patch(S, {"email": {"language": "de"}}).status_code == 200
+    write(migrated, owner.id, "second_factor_failed", FAILED)
+    write(migrated, owner.id, "second_factor_failed", {"method": "totp", "ip": None})
+    title = "Falsche Zwei-Faktor-Codes nach einer Anmeldung: Firefox auf Linux, 203.0.113.9"
+    unknown = (
+        "Falsche Zwei-Faktor-Codes nach einer Anmeldung: "
+        "ein Browser auf einem unbekannten System, ?"
+    )
+    assert {i["title"] for i in bell(owner)} >= {title, unknown}
+    at(minutes=1)
+    run(migrated)
+    subjects = {r.subject for r in outbox_rows(migrated) if r.kind == "security"}
+    assert f"[Maity] {title}" in subjects

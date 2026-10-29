@@ -28,6 +28,7 @@ from maity_hub import (
     project_names,
     releases,
     rules,
+    setup_cards,
     ticker,
 )
 from maity_hub import tables as t
@@ -142,28 +143,23 @@ class MemoryIn(Strict):
 PROVIDERS = ("none", "keep-the-why")
 
 
-def _provider(keep_the_why: bool | None, memory: MemoryIn | None) -> bool | None:
-    """The memory provider a body names as `keep_the_why`'s boolean, or None when it
-    names none (§6.1): `memory.provider` and its alias must agree."""
-    errors: dict[str, str] = {}
+def _provider(memory: MemoryIn | None) -> bool | None:
+    """Whether the body names `keep-the-why` as the memory provider, or None when it names
+    none (§6.1)."""
     named = None if memory is None else memory.provider
-    if named is not None and named not in PROVIDERS:
-        errors["memory.provider"] = "unknown_provider"
-    elif (
-        named is not None and keep_the_why is not None and (named == "keep-the-why") != keep_the_why
-    ):
-        errors["keep_the_why"] = "conflicts_with_memory"
-    if errors:
-        raise invalid(errors)
-    return keep_the_why if named is None else named == "keep-the-why"
+    if named is None:
+        return None
+    if named not in PROVIDERS:
+        raise invalid({"memory.provider": "unknown_provider"})
+    return named == "keep-the-why"
 
 
 class ProjectCreate(Strict):
     slug: str = Field(pattern=SLUG_PATTERN)
     name: str = title()
     repository: RepositoryIn | None = None
-    keep_the_why: bool | None = None
     memory: MemoryIn | None = None
+    setup: Any = None  # parsed by setup_cards.parse, for the reasons §6.21 names
     policy: PolicyIn | None = None
 
 
@@ -171,8 +167,8 @@ class ProjectPatch(Strict):
     slug: str | None = Field(default=None, pattern=SLUG_PATTERN)  # a rename (§6.25)
     name: str | None = title(default=None)
     repository: RepositoryIn | None = None
-    keep_the_why: bool | None = None
     memory: MemoryIn | None = None
+    setup: Any = None
     state: str | None = None
     state_note: str | None = markdown(default=None)
     policy: PolicyIn | None = None
@@ -229,6 +225,9 @@ def _apply_policy(
         if not 0 <= change.max_placements <= policy.MAX_PLACEMENTS_MAX:
             errors["policy.max_placements"] = "out_of_range"
         proposed["max_placements"] = change.max_placements
+    if "keep_the_why" in change.model_fields_set and change.keep_the_why is None:
+        # Only `required` or `optional` (§6.1): a null would clear the human's value.
+        errors["policy.keep_the_why"] = "unknown"
     if change.keep_the_why == "required" and not memory_on:
         errors["policy.keep_the_why"] = "no_memory_provider"
     if change.member_agents_max is not None:
@@ -397,8 +396,11 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
 @router.post("/projects")
 def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -> JSONResponse:
 
-    named = _provider(body.keep_the_why, body.memory)
+    named = _provider(body.memory)
     memory_on = True if named is None else named  # the default provider is keep-the-why (§6.1)
+    setup = setup_cards.parse(body.setup, memory_on)
+    if body.repository is not None:  # refuse a bad repository before anything is written
+        _repository_columns(body.repository)
     words = namespace.app_words(request.app)
     owner_id = caller.human_id
     assert owner_id is not None  # a human caller
@@ -414,6 +416,8 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
         now = clock.now()
         project_id = new_id("project")
         filled = policy.filled("hierarchical", caller.principal_id)
+        if setup["maity_badge"]:  # the creating human's choice, no policy_changed (§6.21)
+            filled["badge"] = "members"
         conn.execute(
             insert(t.project).values(
                 id=project_id,
@@ -423,6 +427,7 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
                 state="build",
                 state_changed_at=now,
                 keep_the_why=memory_on,
+                setup=setup_cards.stored(setup),
                 **_repository_columns(body.repository),
                 **policy.columns(filled),
                 settings={"release_checklist": []},
@@ -472,6 +477,16 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
             subject=("member", caller.principal_id),
         )
         project = _load(conn, project_id)
+        if project.repository_url is not None:
+            setup_cards.create(
+                conn,
+                project,
+                settings_of(request).public_url,
+                owner,
+                caller.actor(owner),
+                reader_of(request),
+            )
+            project = _load(conn, project_id)
         return idempotency.Outcome(201, "project", project_id, _view(conn, project, request))
 
     return idempotency.run(engine_of(request), request, caller, action)
@@ -493,6 +508,8 @@ def patch_project(
     words = namespace.app_words(request.app)
 
     def action(conn: Connection) -> idempotency.Outcome:
+        if "setup" in given:
+            raise invalid({"setup": "read_only"}, "the setup options are set at creation only")
         mine = membership(conn, caller, slug)
         # Membership's project snapshot may precede another writer's commit. Merge settings
         # and make policy/event decisions from the current row under the shared project lock.
@@ -558,7 +575,7 @@ def patch_project(
             # upgraded with the ticker on has no start yet): merges count from now.
             if now_on and (not was_on or ticker.merges_since(conn, project.id) is None):
                 ticker.switched_on(conn, project.id)
-        provider = _provider(body.keep_the_why, body.memory)
+        provider = _provider(body.memory)
         memory_on = project.keep_the_why if provider is None else provider
         new_policy = None
         if "policy" in given and body.policy is not None:
@@ -634,6 +651,20 @@ def patch_project(
                 .values(state_note=body.state_note)
             )
             rules_inputs_changed = True
+        if "repository" in given and project.repository_url is None:
+            # The first repository opens the setup cards (§6.21), judged by the state this
+            # PATCH leaves: a body that also archives opens none, one that also brings the
+            # project back opens them, and they come after its state_changed.
+            fresh = _load(conn, project.id)
+            if (
+                fresh.repository_url is not None
+                and fresh.state != "archived"
+                and isinstance(fresh.setup, dict)
+                and fresh.setup.get("cards") is None
+            ):
+                setup_cards.create(
+                    conn, fresh, settings_of(request).public_url, mine.id, actor, reader_of(request)
+                )
         if new_policy is None and explicit_changes:
             conn.execute(update(t.project).where(t.project.c.id == project.id).values(**explicit))
             # The view may not move (`optional` under a provider that is off reads the
@@ -804,6 +835,8 @@ HUMANS_ONLY_POLICY = {
     "merged_closes",  # set by a human with project:admin (§6.1)
     "member_agents",  # who may bring agents into the project (§3.1, §6.1)
     "member_agents_max",
+    "keep_the_why",  # whether the project requires Keep the Why (§6.23)
+    "keep_the_why_defaults",
 }
 
 

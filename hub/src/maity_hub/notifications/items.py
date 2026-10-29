@@ -17,16 +17,67 @@ from maity_hub import avatars, clock, events, inbox, namespace
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.notifications import records
+from maity_hub.views import human_languages
 
 WINDOW = timedelta(days=30)
 KINDS = ("inbox", "chat", "mention", "security")
-# The kinds the maintainer's decision of 2026-10-26 removed (§18.1): asked for, `invalid`.
-REMOVED_KINDS = ("card", "ticker", "jour_fixe", "keep_the_why", "agent", "system", "registration")
 REQUEST_EVENTS = ("request_created", "request_forwarded", "request_answered", "request_withdrawn")
 # The only event kinds that can make a notification; the derive reads no other row.
 EVENT_KINDS = (*REQUEST_EVENTS, "message", "mentioned")
 ADDRESSED = ("request_created", "request_forwarded")  # one item per request, the latest
 TITLE_MAX = 200
+
+# The texts the hub itself composes for a human, in that human's language (§6.2, §18.4).
+WORDS: dict[str, dict[str, str]] = {
+    "en": {
+        "asks": "{who} asks: {title}",
+        "answered": "{who} answered: {title}",
+        "withdrew": "{who} withdrew: {title}",
+        "asks_you": "{who} asks you: {title}",
+        "chat": "{who} in {chat}",
+        "mentioned": "{who} mentioned you in {chat}",
+        "waits": "{handle} waits for approval",
+        "sign_in": "New sign-in: {browser} on {os} ({method})",
+        "a_browser": "a browser",
+        "unknown_os": "an unknown system",
+        "address_changed": "Sign-in address changed",
+        "mail_disabled": "Mail to {address} disabled after 3 failures",
+        "tf_enrolled": "Two-factor sign-in turned on",
+        "tf_disabled": "Two-factor sign-in turned off",
+        "tf_recovery_codes": "New recovery codes",
+        "tf_recovery_code_used": "Recovery code used",
+        "tf_reset": "Two-factor sign-in reset by {by}",
+        "tf_instance_off": "Two-factor sign-in turned off for this instance",
+        "tf_changed": "Two-factor sign-in changed",
+        "tf_failed": "Wrong second-factor codes after a sign-in: {browser} on {os}, {ip}",
+        "forge_added": "Forge access added: {login} ({source})",
+        "an_account": "an account",
+    },
+    "de": {
+        "asks": "{who} fragt: {title}",
+        "answered": "{who} hat geantwortet: {title}",
+        "withdrew": "{who} hat zurückgezogen: {title}",
+        "asks_you": "{who} fragt dich: {title}",
+        "chat": "{who} in {chat}",
+        "mentioned": "{who} hat dich in {chat} erwähnt",
+        "waits": "{handle} wartet auf Freigabe",
+        "sign_in": "Neue Anmeldung: {browser} auf {os} ({method})",
+        "a_browser": "ein Browser",
+        "unknown_os": "einem unbekannten System",
+        "address_changed": "Anmeldeadresse geändert",
+        "mail_disabled": "Mail an {address} nach 3 Fehlern deaktiviert",
+        "tf_enrolled": "Zwei-Faktor-Anmeldung eingeschaltet",
+        "tf_disabled": "Zwei-Faktor-Anmeldung ausgeschaltet",
+        "tf_recovery_codes": "Neue Wiederherstellungscodes",
+        "tf_recovery_code_used": "Wiederherstellungscode benutzt",
+        "tf_reset": "Zwei-Faktor-Anmeldung zurückgesetzt von {by}",
+        "tf_instance_off": "Zwei-Faktor-Anmeldung für diese Instanz ausgeschaltet",
+        "tf_changed": "Zwei-Faktor-Anmeldung geändert",
+        "tf_failed": "Falsche Zwei-Faktor-Codes nach einer Anmeldung: {browser} auf {os}, {ip}",
+        "forge_added": "Forge-Zugang hinzugefügt: {login} ({source})",
+        "an_account": "ein Konto",
+    },
+}
 
 
 @dataclass
@@ -65,6 +116,10 @@ class Scope:
     public_url: str
     memberships: list[Membership] = field(default_factory=list)
     joined_seq: dict[str, int] = field(default_factory=dict)  # project id → highest seq then
+    language: str = "en"  # the human's own, for the texts the hub composes (§6.2)
+
+    def say(self, key: str, **values: object) -> str:
+        return WORDS.get(self.language, WORDS["en"])[key].format(**values)
 
     def membership(self, project_id: str) -> Membership | None:
         return next((m for m in self.memberships if m.project.id == project_id), None)
@@ -77,6 +132,7 @@ def scope(conn: Connection, human_id: str, public_url: str) -> Scope:
         )
     ).all()
     found = Scope(human_id, public_url)
+    found.language = human_languages(conn, {human_id}).get(human_id, "en")
     if not members:
         return found
     projects = {
@@ -302,7 +358,7 @@ def _classify(
         who = look.name(row.actor_membership) if row.actor_membership else "Maity"
         return Item(
             kind="inbox",
-            title=_cut(f"{who} {verb}: {request.title}"),
+            title=_cut(where.say(verb, who=who, title=request.title)),
             target={"type": "request", "id": request.id},
             url=_url(where, f"{home}/inbox"),
             **base,
@@ -315,9 +371,9 @@ def _classify(
             if room is not None and not look.inside(row):
                 return None  # a group chat notifies its participants, from their stay on
             chat = room if room is not None else look.handle(row.conversation_id)
-            title = f"{writer} in {chat}"
+            title = where.say("chat", who=writer, chat=chat)
             if mentioned:
-                title = f"{writer} mentioned you in {chat}"
+                title = where.say("mentioned", who=writer, chat=chat)
             return Item(
                 kind="mention" if mentioned else "chat",
                 title=None if row.redacted else _cut(title),
@@ -328,7 +384,11 @@ def _classify(
         if mentioned and payload.get("type") != "chat":
             return Item(
                 kind="mention",
-                title=None if row.redacted else _cut(f"{writer} mentioned you in {project.name}"),
+                title=(
+                    None
+                    if row.redacted
+                    else _cut(where.say("mentioned", who=writer, chat=project.name))
+                ),
                 target={"type": "project", "id": project.id},
                 url=_url(where, f"{home}/messages"),
                 **base,
@@ -339,8 +399,11 @@ def _classify(
         return Item(
             kind="mention",
             title=_cut(
-                f"{look.name(row.actor_membership)} mentioned you in "
-                f"{task.get('id')} {task.get('title')}"
+                where.say(
+                    "mentioned",
+                    who=look.name(row.actor_membership),
+                    chat=f"{task.get('id')} {task.get('title')}",
+                )
             ),
             target={"type": "task", "id": str(task.get("id"))},
             url=_url(where, f"{home}/board?task={task.get('id')}"),
@@ -361,18 +424,13 @@ def _request_concerns(look: Lookup, request: Any, mine: Membership, row: Any) ->
 # --- account records -----------------------------------------------------------------
 
 
-def _two_factor_title(data: dict[str, Any]) -> str:
+def _two_factor_title(where: Scope, data: dict[str, Any]) -> str:
     """The bell's line for a change of the second factor (§18.1); a change this hub does
     not know says that the sign-in changed, never a guess."""
-    change, by = data.get("change"), data.get("by")
-    return {
-        "enrolled": "Two-factor sign-in turned on",
-        "disabled": "Two-factor sign-in turned off",
-        "recovery_codes": "New recovery codes",
-        "recovery_code_used": "Recovery code used",
-        "reset": f"Two-factor sign-in reset by {by}",
-        "instance_off": "Two-factor sign-in turned off for this instance",
-    }.get(str(change), "Two-factor sign-in changed")
+    change = f"tf_{data.get('change')}"
+    if change not in WORDS["en"] or change in ("tf_changed", "tf_failed"):
+        change = "tf_changed"
+    return where.say(change, by=data.get("by"))
 
 
 def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
@@ -402,7 +460,7 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
                     at=row.at,
                     record=row.n,
                     project_id=request.project_id,
-                    title=_cut(f"{asker} asks you: {request.title}"),
+                    title=_cut(where.say("asks_you", who=asker, title=request.title)),
                     target={"type": "request", "id": request.id},
                     url=_url(where, f"/#/requests/{request.id}"),
                     read=row.read_at is not None,
@@ -418,8 +476,12 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
                     at=row.at,
                     record=row.n,
                     title=_cut(
-                        f"New sign-in: {data.get('browser') or 'a browser'} on "
-                        f"{data.get('os') or 'an unknown system'} ({method})"
+                        where.say(
+                            "sign_in",
+                            browser=data.get("browser") or where.say("a_browser"),
+                            os=data.get("os") or where.say("unknown_os"),
+                            method=method,
+                        )
                     ),
                     target={"type": "session", "id": str(data.get("session_id"))},
                     url=_url(where, "/#/account/sessions"),
@@ -434,7 +496,7 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
                     kind="security",
                     at=row.at,
                     record=row.n,
-                    title=_cut(_two_factor_title(data)),
+                    title=_cut(_two_factor_title(where, data)),
                     target={"type": "settings", "id": "security"},
                     url=_url(where, "/#/account/security"),
                     read=row.read_at is not None,
@@ -448,9 +510,12 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
                     at=row.at,
                     record=row.n,
                     title=_cut(
-                        "Wrong second-factor codes after a sign-in: "
-                        f"{data.get('browser') or 'a browser'} on "
-                        f"{data.get('os') or 'an unknown system'}, {data.get('ip') or '?'}"
+                        where.say(
+                            "tf_failed",
+                            browser=data.get("browser") or where.say("a_browser"),
+                            os=data.get("os") or where.say("unknown_os"),
+                            ip=data.get("ip") or "?",
+                        )
                     ),
                     target={"type": "settings", "id": "security"},
                     url=_url(where, "/#/account/security"),
@@ -464,7 +529,7 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
                     kind="security",
                     at=row.at,
                     record=row.n,
-                    title="Sign-in address changed",
+                    title=where.say("address_changed"),
                     target={"type": "settings", "id": "notifications"},
                     url=_url(where, "/#/account/notifications"),
                     read=row.read_at is not None,
@@ -480,8 +545,11 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
                     at=row.at,
                     record=row.n,
                     title=_cut(
-                        f"Forge access added: {data.get('login') or 'an account'}"
-                        f" ({data.get('source')})"
+                        where.say(
+                            "forge_added",
+                            login=data.get("login") or where.say("an_account"),
+                            source=data.get("source"),
+                        )
                     ),
                     target={"type": "settings", "id": "forge"},
                     url=_url(where, "/#/settings/forge"),
@@ -500,7 +568,7 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
                     kind="inbox",
                     at=row.at,
                     record=row.n,
-                    title=_cut(f"{data.get('handle')} waits for approval"),
+                    title=_cut(where.say("waits", handle=data.get("handle"))),
                     target={"type": "registration", "id": str(data.get("human"))},
                     url=_url(where, "/#/admin/registration"),
                     read=not pending,
@@ -518,7 +586,7 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
                     kind="inbox",
                     at=row.at,
                     record=row.n,
-                    title=_cut(f"Mail to {data.get('address')} disabled after 3 failures"),
+                    title=_cut(where.say("mail_disabled", address=data.get("address"))),
                     target={"type": "settings", "id": "notifications"},
                     url=_url(where, "/#/account/notifications"),
                     read=False,

@@ -143,6 +143,33 @@ reach.
 - A redirect to shields.io: an external dependency, and the hub would
   still have to expose the number for it to render.
 
+## Changing the project badge needs no reason
+
+**Id:** edccf213-6a0c-40e7-b448-ac1413eb3321
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** maintainer decision in the team chat, 2026-10-29; contract in `docs/api.md` §6.1, §6.20 (#617)
+**Revisit when:** another policy field turns out to be as purely presentational as the badge
+**See:** projects.md#the-project-badge-is-opt-in-and-shows-counts-only — c436ef08-627d-46c9-b3c9-92b1b0fdf3e4 — as of 2026-10-29
+
+A `PATCH` whose policy change is `badge` alone takes `reason`
+optionally; its `policy_changed` carries `reason: null` when none was
+sent. Every other policy field keeps its reason, and a badge change
+sent together with another policy field or with `state` still needs
+one. The event and the `rules_version` bump stay, so the switch is
+still visible to everyone.
+
+**Reason:** the maintainer found the reason prompt in the project
+settings a needless step for the badge. The badge only decides what a
+README shows; it changes nothing about how the project works, who may
+do what or how cards move.
+
+**Rejected alternatives:**
+- Keeping the reason for the badge like for every policy field (the
+  state before): it asked for an audit note on a choice that guards
+  nothing.
+
 ## The memory provider is chosen at creation, Keep the Why preselected; the setup is an agent's work through cards and pull requests
 
 **Id:** 822d63b0-99da-4092-aaef-93c0674934a2
@@ -338,21 +365,19 @@ the creator or the organisation it names; a slug is unique within that
 namespace only. A
 rename or a transfer keeps the old full name as an alias that is never
 given away; a request on an alias is served like one on the current
-name. The one-segment API routes are dropped in the same release, hub
-and CLI together, and an older CLI is told `client_outdated` instead of
-being misrouted. That works without guessing because a slug may never be
-one of the words that follow a project in a route, so an old path always
-shows a route word where a new one has a slug; for the same reason the
-dashboard's own route words are reserved as handles. Badges, the swarm
-page, the dashboard's `#/p/…` and the forge webhook keep their old
-addresses, because those sit where the hub cannot rewrite them, and
-answer an unknown or unserved slug exactly as before, so they reveal no
-project. A transfer needs the receiver's consent, and the namespace
-owner cannot be demoted or removed while the project lives under their
-name.
+name. The one-segment API routes are gone; an old path is simply
+`not_found` (the path-routing decision of 2026-10-29,
+e34ae588-4dbc-423c-8da8-29fc62436cb5, removed the `client_outdated`
+answer, the frozen `legacy_slug` and the old badge, swarm, `#/p/…` and
+webhook addresses that had been kept during the move). A slug may never
+be one of the words that follow a project in a route, and the
+dashboard's first path segments are reserved as handles (§16.11). A
+transfer needs the receiver's consent, and the namespace owner cannot be
+demoted or removed while the project lives under their name.
 The revisit point on organisations was settled by the organisations
 decision of 2026-10-28: they share this namespace as a second kind of
-owner.
+owner. The aliases from a rename or a transfer stay (see e34ae588 for
+why they are a feature, not legacy).
 
 **Reason:** with self-registration on maity.team an instance-wide slug
 would let the first comer own `shop` or `blog` for everyone, the
@@ -451,8 +476,9 @@ read-only board, the team with the org chart, the swarm and the ticker;
 cards labelled 'security' stay internal until done. Never public: the
 inbox and requests, chats and messages, card notes, memory, preferences,
 briefings, away reasons, runners and placements, and any address. The
-owner's address `#/<owner>` is a public profile: avatar, name, public
-projects and their own agents with presence.
+owner's address `/<owner>` (the path-routing decision of 2026-10-29,
+e34ae588-4dbc-423c-8da8-29fc62436cb5) is a public profile: avatar, name,
+public projects and their own agents with presence.
 
 **Reason:** the maintainer orients the hosted offering on the forge
 model, where public is the free default and privacy is paid for; the
