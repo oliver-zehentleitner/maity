@@ -517,3 +517,58 @@ settings and a second error code that told a client what it had asked for in the
   harmless while old clients and old rows existed, a standing special case once they do not.
 - Keeping `removed_kind` as an error code for the old names: it only helps a client that still
   sends them, which does not exist.
+
+## The hub's own texts for a human, the bell's titles and the notification mails, follow that human's language; members' text is never translated
+
+**Id:** f1bba221-bde0-4988-96a5-6b55368693d3
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.2, §18.1, §18.4; the implementation of #329 (`Scope.say`, `items.WORDS`) and its review, 2026-10-29
+**Revisit when:** a third language is added, a human asks for another language in the bell than in their mail, or the titles of an item kind outgrow the table in `items.WORDS`
+**See:** https://github.com/oliver-zehentleitner/maity — 8cfe80ae-02dd-4aef-818a-843126e23397 — as of 2026-10-29
+
+The titles the hub composes for a human (`sign_in`, `address_changed`, `mail_disabled`, the
+asks, the chat and mention lines, the waits) are written in the human's `email.language`, `en`
+or `de`, read live with the scope (`Scope.language`, `Scope.say`); the notification mails
+take the same language through the same table. What a member wrote (a message, a card, a request
+text, a reason) is shown as written, never translated. `messages.md` 8cfe80ae stays true for
+that: the hub translates no member's text. It does not cover text the hub composes itself, which
+is why this is a separate decision.
+
+**Reason:** the language of the notification settings already governs the mail and the link
+pages; a bell title that stayed English would be the one place that ignored it, and the
+title is the first thing the human reads. One table of words per language keeps the translation
+in one file (`items.WORDS`) and a missing key falls back to English, not to an error.
+
+**Rejected alternatives:**
+- Titles always in English: a human who chose `de` would read half of the mail in one language and
+  its subject in another.
+- The project's language: a title is addressed to one person, not to the project (8cfe80ae); one
+  human in several projects would read different languages in one bell.
+- Translating a member's text in the hub: nothing in the contract asks for it, it would be wrong
+  for names and quotations, and agents already write to a person in that person's language.
+
+## A human's `language` is read only on a member PATCH, and absent for agents and removed members
+
+**Id:** 3d12b0ae-23f0-4caa-9213-2a9e5d71bc52
+**Type:** constraint
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.2 ("Language"), §18.4; `routes/members.py` (`MemberPatch._language_read_only`), `views.human_languages`; the review of #329, 2026-10-29
+**Revisit when:** a second place may legitimately set a human's language, or agents get a language of their own (8cfe80ae says they do not)
+**See:** https://github.com/oliver-zehentleitner/maity — 8cfe80ae-02dd-4aef-818a-843126e23397 — as of 2026-10-29
+
+The member view of a human carries `language`, read from their notification settings on every
+read (`views.human_languages`); a human who never set it reads as `en`. Agents and removed
+members have none. A `PATCH` of a member that names `language` is refused as `read_only`
+(a field validator, so the answer is the same `422` shape as the other refusals): only the
+human sets it, in their own settings.
+
+**Reason:** the notification settings are the single source of the value (8cfe80ae: one field per
+human). A second writable copy on the member would need to be kept equal to it, and an admin or
+an agent could then change what a human reads in the bell and in mail.
+
+**Rejected alternatives:** a writable `language` on the member that writes through to the
+settings (an admin could change another person's language, which the contract keeps with the
+human); a stored copy on the membership (two values to keep equal, per project, for one person).

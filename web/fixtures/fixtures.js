@@ -4434,6 +4434,7 @@ window.MAITY_FIXTURES = {
   },
   "orgs.json": {
     "invitations": {
+      "org-oz00crew0001": [],
       "org-oz00team0001": [
         {
           "created_at": "2026-10-29T10:00:00Z",
@@ -4458,9 +4459,37 @@ window.MAITY_FIXTURES = {
         "id": "org-oz00team0001",
         "members_create_projects": false,
         "public_page": "off"
+      },
+      {
+        "aliases": [],
+        "avatar_url": null,
+        "created_at": "2026-10-29T09:00:00Z",
+        "display_name": "Crew",
+        "handle": "crew",
+        "id": "org-oz00crew0001",
+        "members_create_projects": false,
+        "public_page": "off"
       }
     ],
     "members": {
+      "org-oz00crew0001": [
+        {
+          "avatar_url": null,
+          "display_name": "Olga",
+          "handle": "olga",
+          "id": "hum-olga",
+          "joined_at": "2026-10-29T09:00:00Z",
+          "role": "owner"
+        },
+        {
+          "avatar_url": null,
+          "display_name": "Maintainer",
+          "handle": "maintainer",
+          "id": "hum-maintainer",
+          "joined_at": "2026-10-29T09:10:00Z",
+          "role": "admin"
+        }
+      ],
       "org-oz00team0001": [
         {
           "avatar_url": null,

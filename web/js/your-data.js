@@ -19,6 +19,12 @@ window.Maity = window.Maity || {};
   function said(err) {
     if (err.code === "invalid" && err.details && err.details.fields && err.details.fields.confirm) return { message: "that is not your handle" };
     if (err.code === "rate_limited") return { message: "an export at most every 10 minutes; try again later" };
+    // §6.26: an organisation always has an owner.
+    if (err.code === "org_last_owner") {
+      const orgs = ((err.details && err.details.orgs) || []).map((o) => "@" + o);
+      return { message: "you are the last owner of " + (orgs.length ? orgs.join(", ") : "an organisation")
+        + ": make someone else an owner, or delete the organisation, first (Organisations)" };
+    }
     return REFUSALS[err.code] ? { message: REFUSALS[err.code] } : err;
   }
 

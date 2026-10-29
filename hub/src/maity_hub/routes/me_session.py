@@ -365,6 +365,8 @@ def _packet(
                     "paused": view["paused"],
                     "availability": view["availability"],  # §6.12
                     "covered_by": view["covered_by"],
+                    # Write to a human in their language (§5.2, §6.2).
+                    **({"language": view["language"]} if "language" in view else {}),
                     **(
                         meat_proxy_view(meat_proxies[view["id"]]) if view["kind"] == "human" else {}
                     ),
