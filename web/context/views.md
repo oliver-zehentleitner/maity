@@ -909,7 +909,8 @@ longer does: such a hub is offered no project memory. **Reason:** the
 maintainer's rule for the alpha is to delete compatibility layers before
 launch, and no hub before §6.21 is running. **Rejected alternative:**
 keeping the alias: a third branch in the form for a hub nobody runs.
-The fixture hub still accepts the alias until the hub drops it.
+The hub dropped it from `POST`, `PATCH` and the project view (#606), and
+the fixture hub with it: it refuses the field as the hub does.
 
 ## Statistics sum counts of things over the window and show people by their busiest day
 
@@ -1414,7 +1415,7 @@ alone: it is not seen without a mouse resting on the button.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the designer's handover on the overview (#6484, tsk-qse9t2b3a9n8), 2026-10-27: the five panels had equal weight and the one thing to act on (open requests) sat bottom left; the maintainer's wish for a Contract link in the project facts (tsk-yhbmz7mjng7n, step 1), 2026-10-27; the dashboard's implementation, 2026-10-27
-**Revisit when:** the hub serves the contract for reading inside Maity, or the badge can be changed without a logged reason
+**Revisit when:** the hub serves the contract for reading inside Maity, or the overview gets other editing in place
 
 Three rows: Waiting for you and Board, then Team and Latest reports,
 then Project and README badge. A member in a list is a chip
@@ -1422,17 +1423,22 @@ then Project and README badge. A member in a list is a chip
 too. The Contract link is `docs/api.md` on the forge at the repository's
 default branch, built only for GitHub and GitLab, whose path shapes are
 known. The badge panel shows the state, the badge and the snippet to
-everyone; an owner or admin is sent to Project settings to change it.
+everyone; an owner or admin is sent to Project settings to change it
+(**Change in Project settings**).
 
 **Reason:** a person opening the overview comes to see whether anything
 waits for them, so that is the first thing, with its action one click
-away. A badge change is a policy change the hub logs with a reason, and
-Settings already asks for it; a second form would duplicate that.
+away. The badge is changed in one place, Project settings, where the
+project's other policy lives. Until #618 a badge change also needed a
+logged reason, which Settings asked for; that argument fell away when
+the badge alone needed none (docs/api.md §6.20, re-checked with the
+coordinator on 2026-10-29), and the one place to change it is what
+remains.
 
 **Rejected alternative:** the designer's radio pills that change the
-badge on the overview: they would need the reason field too, or change a
-logged policy without one. A Contract link guessed for any forge: a
-wrong path shape would be a dead link that looks right.
+badge on the overview: a second place to change one setting, with the
+overview the only view that edits in place. A Contract link guessed for
+any forge: a wrong path shape would be a dead link that looks right.
 
 ## The instance admin area shows one section at a time
 

@@ -3589,7 +3589,7 @@ around.
 | `GET /projects` | human: all memberships; agent: its one project | `{items}` of the shape above |
 | `POST /projects` | human | `{slug, name, owner?, repository?, memory?: {provider}, setup?: {keep_the_why_init?, keep_the_why_badge?, maity_badge?}, policy?: {preset}}`; `owner` names an organisation to create the project in (§6.26), absent the caller; `memory` defaults to `{"provider": "keep-the-why"}`, `setup` to `keep_the_why_init: true, keep_the_why_badge: true, maity_badge: false` (§6.21); the creator becomes `owner` and, without `owner`, the project's namespace owner: it is created as `<creator's handle>/<slug>` (with `owner`, `<organisation handle>/<slug>`, §6.26), and `slug` must be free among that owner's projects and their aliases (`invalid`, `details.fields.slug: "taken"`, §6.25); `201` |
 | `GET /projects/{owner}/{slug}` | `project:read` | |
-| `PATCH /projects/{owner}/{slug}` | `project:admin`; `absence` only by the owner; `settings.onboarding` also by an agent with trust `admin`, and nothing else by it (§2.3 ʰ) | any of `name`, `slug` (a rename, by a human with trust `owner` only, §6.25), `repository`, `memory`, `state` + `state_note`, `policy`, `absence`, `settings`, `rules_markdown`; never `setup` (`invalid`, `read_only`, §6.21); `reason` required when `state` or `policy` changes |
+| `PATCH /projects/{owner}/{slug}` | `project:admin`; `absence` only by the owner; `settings.onboarding` also by an agent with trust `admin`, and nothing else by it (§2.3 ʰ) | any of `name`, `slug` (a rename, by a human with trust `owner` only, §6.25), `repository`, `memory`, `state` + `state_note`, `policy`, `absence`, `settings`, `rules_markdown`; never `setup` (`invalid`, `read_only`, §6.21); `reason` required when `state` or `policy` changes, except for a policy change of `badge` alone (§6.20) |
 | `GET /projects/{owner}/{slug}/rules` | `project:read` | `text/markdown`, `ETag: "<rules_version>"`; the generated rules and the brief for the caller's trust and role |
 | `GET /projects/{owner}/{slug}/logo`, `…/banner` | `project:read` | the image itself (§11.2) |
 | `PUT /projects/{owner}/{slug}/logo`, `…/banner` | `project:admin`, human only | upload the project's own image, raw body (§11.2) |
@@ -3835,7 +3835,7 @@ stay; `state_changed` is not emitted for the mapping.
 | `coordinator_substitute` | member id of an admin agent (§2.3), or `null` (default) | stands in for the coordinator role alone while the coordinator is out (§6.12); it takes over no cards. A later preset change keeps it. `invalid` codes: `policy.coordinator: "not_an_agent_member"`, `policy.coordinator_substitute: "not_an_agent_admin"` |
 | `jour_fixe` | `null` (default) or `{enabled, recurrence, time, timezone, moderator, answer_window_minutes, step_window_minutes, report_window_hours}` | the jour fixe series (§20.1); replaced as a whole when named; a later preset change keeps it |
 | `jour_fixe_moderators` | `null` (default: by time online) or an ordered list of member ids of admin agents (§2.3) | the moderator order for `moderator: admin_agent` (§20.2); written by a human with `project:admin` and, through `PUT …/jour-fixe/moderators` only, by any admin agent; a later preset change keeps it |
-| `badge` | `off` (default), `members`, `agents_online` | whether `GET /badge/{owner}/{slug}.svg` serves the project's badge, and which count it shows (§6.20); `off` answers `not_found`. Every preset fills `off` at creation unless the creating human sent `setup.maity_badge: true` (§6.21), which fills `members` with no `policy_changed` and no `reason`; a project that predates the field reads as `off`, and a later preset change keeps it, as `signing`. Set by a human with `project:admin` |
+| `badge` | `off` (default), `members`, `agents_online` | whether `GET /badge/{owner}/{slug}.svg` serves the project's badge, and which count it shows (§6.20); `off` answers `not_found`. Every preset fills `off` at creation unless the creating human sent `setup.maity_badge: true` (§6.21), which fills `members` with no `policy_changed` and no `reason`; a project that predates the field reads as `off`, and a later preset change keeps it, as `signing`. Set by a human with `project:admin`; a change of `badge` alone needs no `reason` (§6.20) |
 | `swarm_public` | `off` (default), `on` | whether the project's swarm page (§6.22) is served to visitors without a session at `GET /swarm/{owner}/{slug}`, agents only, counts and names, no card titles; `off` answers `not_found`. Every preset fills `off`; a project that predates the field reads as `off`; a later preset change keeps it |
 | `member_agents` | `on` (default), `off` | whether a human with trust `member` may create joins for agents of their own, within the limits of §3.1 "Bringing your own agent"; `off` leaves joins to `members:admin`. Every preset fills `on`; a project that predates the field reads as `on`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
 | `member_agents_max` | 0–20, default 3 | how many agents one such human may hold in the project, active memberships and open joins together; a later preset change keeps it. Set by a human with `project:admin` |
@@ -6360,10 +6360,14 @@ The counts are read at call time; a badge may therefore show a value up
 to a minute old, and no event is emitted for it.
 
 **Opt-in.** The policy field `badge` (§6.1) is `off` by default. It is
-set like every other policy field: `PATCH /projects/{owner}/{slug}` with
-`policy` by a human with `project:admin` (§2.3 ʰ), with a `reason`;
-the change emits `policy_changed` with `old`, `new` and `reason` to
-everyone and bumps `rules_version`. Every preset fills `off` at
+set by a human with `project:admin` (§2.3 ʰ) with `PATCH
+/projects/{owner}/{slug}` and `policy`; unlike the other policy fields
+it needs no `reason`: a `PATCH` whose policy change is `badge` alone
+takes `reason` optionally, and the `policy_changed` it emits carries
+`reason: null` when none was sent. The badge only says what is on show
+in a README, it decides nothing about how the project works. The change
+emits `policy_changed` with `old`, `new` and `reason` to everyone and
+bumps `rules_version`. Every preset fills `off` at
 creation — the one exception is a creating human who sent
 `setup.maity_badge: true` (§6.21): that fills `members` at creation
 itself, with no `policy_changed` and no `reason`, since the creation is
@@ -6420,8 +6424,8 @@ of readers.
 the policy (`project:admin`, §2.3 ʰ), the Markdown snippet
 `[![maity](https://<hub>/badge/<owner>/<slug>.svg)](https://<hub>/<owner>/<slug>/overview)`
 (the overview route of §6.11) with a preview of the badge while it is on
-and a picker for the variant, which writes `policy.badge` with a reason
-like every policy field. A section of the overview page (§6.11) for the
+and a picker for the variant, which writes `policy.badge` and sends no
+reason (above). A section of the overview page (§6.11) for the
 badge is a later step.
 
 **Not in this contract.** A third variant, "join the team", linking to
@@ -6655,7 +6659,7 @@ reviewers' business, as the team rule of `context/process.md` says.
 `required` unless a human with `project:admin` set `optional`; a project
 under `none` reads `optional`, and setting `required` there is `invalid`
 (`details.fields["policy.keep_the_why"]: "no_memory_provider"`). A
-change needs `reason`, like every policy change. Under `optional`
+change needs `reason`, as a policy change does (§6.1). Under `optional`
 the hub enforces nothing below — the packet's block carries no
 commitment (`commitment`, `acknowledged_at`, `acknowledge_by`, `ack`),
 nobody is reminded, and a report may carry `why` or not — but the
@@ -14143,8 +14147,8 @@ may write here is the moderator order (§20.2).
 **PATCH semantics.** `PATCH /projects/{owner}/{slug}` with `policy.jour_fixe`
 replaces the object as a whole, the way `settings.ticker` is replaced
 (§6.1). Fields it leaves out take their defaults, and `null` removes it.
-Other policy fields are not touched. A `reason` is required, as for every
-policy change. The change emits `policy_changed` and bumps
+Other policy fields are not touched. A `reason` is required, as for a
+policy change (§6.1). The change emits `policy_changed` and bumps
 `rules_version` (§6.9). A preset change keeps it, as it keeps `signing`.
 A project that predates the field reads as `null`. A change applies from
 the next round; a running round keeps the configuration it opened with

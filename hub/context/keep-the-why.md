@@ -70,7 +70,9 @@ provider stays in the boolean column `keep_the_why`; `memory.provider` is derive
 from it, so no data migration and no second source of truth. The column is
 storage only: since the cleanup before launch (2026-10-29) the API no longer
 takes or shows a boolean `keep_the_why` next to `memory.provider`; only
-`memory` names the provider. A project's
+`memory` names the provider. It was removed rather than kept as a silent
+synonym because the maintainer's rule before launch is to drop legacy instead
+of keeping compatibility layers (Maity is alpha, with one user). A project's
 `keep_the_why_defaults` is a plain column with the default `adopt`.
 `MAITY_KTW_SKILL_SOURCE` must be an `https` URL and the hub stops at start
 otherwise: the three texts it produces are instructions that an agent reads.
@@ -254,3 +256,36 @@ mirrors its guide the same way, so one instance setting is enough.
   page of their choosing, and no project has asked for its own guide.
 - Accept any URL as configured: the check costs one function, shared with the
   skill source, and a wrong value is caught at start, not by an agent.
+
+## Setup options live in a column of the project; the setup cards are the hub's, found by their kind
+
+**Id:** 56fcd342-aa6a-4191-8701-e76fc49be399
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** implementation session of the setup-cards pull request of the memory-provider card, 2026-10-28; `docs/api.md` §6.21
+**Revisit when:** a project may change its setup options after creation, or setup cards need to be told apart by option
+
+`project.setup` is a JSON column holding the three booleans and `cards`: `null`
+before the cards exist, the list of ids after (`[]` when no option was on),
+and the whole column `NULL` for a project that predates it. The cards carry
+`kind: setup`, which only the hub creates (`POST …/tasks` answers `kind: hub_only`).
+The packet's `setup` is read from the cards by kind and status, not from the
+stored id list, so a cancelled or done card drops out without any bookkeeping.
+The body of `setup` is validated in code: the contract names the reasons
+`not_a_boolean` and `unknown_field`, which pydantic's own types would not give.
+The Maity badge card carries the §6.20 snippet with path addresses (§16.11),
+never a hash route: the snippet ends up in a README for good, and the hub serves
+no `/#/…` and no redirect from it.
+
+**Reason:** the options are chosen once at creation and the cards do not change
+them, so the column is the record of the choice, and `cards` being `null` is
+what tells "no repository yet" from "processed, nothing to create". The
+packet has to follow the board, where owners cancel and agents finish cards,
+and the board is the cards.
+
+**Rejected alternatives:**
+- Derive `setup` from the cards alone: a project with no repository has no
+  cards yet, so the choice would have to live somewhere else anyway.
+- Keep the options in `settings`: that object is merged and shown to clients
+  as editable, and `setup` is read-only after creation.

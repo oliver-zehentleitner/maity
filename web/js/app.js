@@ -802,7 +802,6 @@ window.Maity = window.Maity || {};
     const current = ctx.project.policy.badge;
     const select = h("select", { id: "badge-select" }, BADGES.map(([v, l]) => h("option", { value: v, selected: v === current }, l)));
     select.value = current;
-    const reason = h("input", { id: "badge-reason", required: true, placeholder: "Why it changes (logged)" });
     // As reached in this tab; a file:// page has no origin to name.
     const raw = window.location && window.location.origin;
     const origin = raw && raw !== "null" ? raw : "https://<hub>";
@@ -824,8 +823,8 @@ window.Maity = window.Maity || {};
       onsubmit: (e) => {
         e.preventDefault();
         if (select.value === current) return;
-        if (!reason.value.trim()) { reason.focus(); return; }
-        save({ policy: { badge: select.value }, reason: reason.value.trim() }, "Badge");
+        // The badge alone needs no reason (docs/api.md §6.20).
+        save({ policy: { badge: select.value } }, "Badge");
       },
     },
     h("h2", { class: "panel-title" }, "README badge"),
@@ -840,7 +839,6 @@ window.Maity = window.Maity || {};
         alt: "The project's badge as the hub serves it" }) : null,
     h("div", { class: "paste-row" }, h("code", { class: "paste-line" }, snippet), copy),
     current === "off" ? h("p", { class: "muted" }, "While the badge is off, its address answers not found.") : null,
-    h("label", { for: "badge-reason" }, "Reason"), reason,
     h("button", { type: "submit" }, "Change badge"));
   }
 

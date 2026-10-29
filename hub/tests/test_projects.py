@@ -50,6 +50,7 @@ def test_a_created_project_has_the_contract_shape(owner: flow.Human) -> None:
         "logo",
         "banner",
         "memory",
+        "setup",
         "keep_the_why_export",
         "attachments",
         "policy",

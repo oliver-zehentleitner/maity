@@ -1582,8 +1582,10 @@ window.Maity = window.Maity || {};
       }
       const preset = body.policy && body.policy.preset ? body.policy.preset : "hierarchical";
       if (!PRESETS[preset]) fields["policy.preset"] = "unknown";
-      // §6.1, §6.21: the provider (keep_the_why its alias) and the options.
-      const provider = body.memory ? body.memory.provider : body.keep_the_why === false ? "none" : "keep-the-why";
+      // §6.1, §6.21: the provider and the options; the old boolean alias is a
+      // field the hub does not know (#606), refused as every unknown one.
+      if ("keep_the_why" in body) fields.keep_the_why = "extra_forbidden";
+      const provider = body.memory ? body.memory.provider : "keep-the-why";
       if (!["keep-the-why", "none"].includes(provider)) fields["memory.provider"] = "unknown_provider";
       const given = body.setup || {};
       Object.keys(given).forEach((k) => {
@@ -1602,7 +1604,7 @@ window.Maity = window.Maity || {};
         repository: url === null ? null : {
           url, default_branch: body.repository.default_branch || "main", forge: "github", probe_configured: false,
         },
-        memory: { provider }, keep_the_why: ktw, setup,
+        memory: { provider }, setup,
         policy: Object.assign({}, PRESETS[preset], {
           preset, contract_arbiter: PRESETS[preset].contract_arbiter || owner.id,
           // The creator's Maity badge switches the badge on at creation (§6.20).
@@ -1653,6 +1655,8 @@ window.Maity = window.Maity || {};
     }],
     ["PATCH", /^\/projects\/([^/]+)$/, (m, body, path) => {
       const p = project(m[1], path);
+      // The old boolean alias of memory.provider is no field of the hub (#606).
+      if ("keep_the_why" in body) fail(400, "invalid", "the request does not validate", path, { fields: { keep_the_why: "extra_forbidden" } });
       // §6.25: a rename, by a human owner; the old full name an alias.
       if ("slug" in body && body.slug !== p.slug) {
         if (me().member.kind !== "human" || trustIn(m[1]) !== "owner") fail(403, "forbidden", "a project is renamed by a human owner", path, { reason: "humans_only" });
@@ -1722,8 +1726,11 @@ window.Maity = window.Maity || {};
         if (url && p.setup && p.setup.cards === null && !["accepted", "archived"].includes(p.state)) makeSetupCards(m[1], p.setup, me().member.id, url);
       }
       if ("policy" in body) {
-        // A policy change needs a reason; fields merge into the policy (docs/api.md §6.1).
-        if (!body.reason) fail(400, "invalid", "A policy change needs a reason", path, { fields: { reason: "required" } });
+        // A policy change needs a reason, except `badge` alone (§6.20); fields merge into the
+        // policy (docs/api.md §6.1).
+        const moved = Object.keys(body.policy).filter((k) => JSON.stringify(body.policy[k]) !== JSON.stringify((p.policy || {})[k]));
+        const badgeOnly = moved.length === 1 && moved[0] === "badge";
+        if (!body.reason && !badgeOnly) fail(400, "invalid", "A policy change needs a reason", path, { fields: { reason: "required" } });
         if ("signing" in body.policy && !["optional", "required"].includes(body.policy.signing)) {
           fail(400, "invalid", "unknown signing value", path, { fields: { "policy.signing": "unknown" } });
         }
@@ -1939,7 +1946,7 @@ window.Maity = window.Maity || {};
       "/api/v1/projects/{owner}/{slug}/placements": { get: {}, post: {} },
     },
     components: { schemas: { ProjectCreate: { properties: {
-      slug: {}, name: {}, repository: {}, memory: {}, setup: {}, keep_the_why: {}, policy: {}, owner: {},
+      slug: {}, name: {}, repository: {}, memory: {}, setup: {}, policy: {}, owner: {},
     } } } } })],
     // §17.6: a manual post by an owner or admin.
     ["POST", /^\/projects\/([^/]+)\/ticker$/, (m, body, path) => {
