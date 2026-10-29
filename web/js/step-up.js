@@ -21,32 +21,42 @@ window.Maity = window.Maity || {};
       hint: "This change needs your password again on this browser (it counts for 10 minutes).",
       label: "Password", type: "password", autocomplete: "current-password",
       prove: (value) => M.api.post("/auth/reauthenticate", { password: value }),
-      wrong: (err) => err.code === "invalid" && err.details && err.details.fields && err.details.fields.password
-        ? "That is not your password." : null,
+      wrong: (err) => (err.code === "invalid" && err.details && err.details.fields && err.details.fields.password
+        ? "That is not your password." : err.code === "rate_limited" ? "Too many wrong passwords; wait a few minutes." : null),
     },
     step_up_required: {
       title: "Confirm with your second factor",
       hint: "Enter the code from your authenticator app, or a recovery code (it counts for 10 minutes).",
       label: "Code", type: "text", autocomplete: "one-time-code",
-      prove: (value) => M.api.post("/auth/second-factor/verify", /^\d{6}$/.test(value) ? { code: value } : { recovery_code: value }),
+      // A code may be typed with spaces ("482 913"): six digits without them are a code (§2.8.1).
+      prove: (value) => {
+        const digits = value.replace(/\s+/g, "");
+        return M.api.post("/auth/second-factor/verify", /^\d{6}$/.test(digits) ? { code: digits } : { recovery_code: value });
+      },
       wrong: (err) => (err.code === "code_invalid" ? "That code is not valid." : err.code === "rate_limited" ? "Too many wrong codes; wait a few minutes." : null),
     },
   };
 
-  // Shows the question in slot; resolves once proven, rejects on Cancel.
+  // Shows the question in slot; resolves once proven, rejects on Cancel. A
+  // question still open in the slot (another call's) is cancelled first, so
+  // that call does not wait for an answer that can no longer come.
+  const open = new WeakMap();
   function ask(slot, reason) {
     const a = ASK[reason];
+    if (open.has(slot)) open.get(slot)();
     return new Promise((resolve, reject) => {
       const id = "step-up-" + reason;
       const input = h("input", { id, type: a.type, autocomplete: a.autocomplete, "aria-describedby": id + "-error" });
       const error = h("p", { class: "field-error", id: id + "-error", role: "alert" });
       const submit = h("button", { type: "submit" }, "Confirm");
-      const done = () => { clear(slot); slot.hidden = true; };
+      const done = () => { open.delete(slot); clear(slot); slot.hidden = true; };
+      open.set(slot, () => { done(); reject(new M.api.ApiError("Cancelled", 0, "", "cancelled")); });
       const form = h("form", {
         class: "step-up inline-form",
         onsubmit: async (e) => {
           e.preventDefault();
-          const value = input.value.trim();
+          // A password is sent as typed; a code is trimmed.
+          const value = a.type === "password" ? input.value : input.value.trim();
           if (!value) { input.focus(); return; }
           submit.disabled = true;
           error.textContent = "";

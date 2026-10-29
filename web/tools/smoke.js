@@ -3424,6 +3424,31 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("delete-account-confirm").value = "maintainer"; byId("delete-account-confirm").dispatch("input");
   ydBox().querySelector("form.account-delete").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(text(ydBox()).includes("Not asked: a project in your namespace is still open"), "your data: the hub's refusal in words");
+  // One slot, one question: a second question cancels the first, whose call then does not hang (the deletion's field free again).
+  win.Maity.api.post = (p, b) => {
+    if (p === "/auth/second-factor/verify" || p === "/auth/reauthenticate") ydProofs.push([p, b]);
+    if (p === "/me/deletion") return Promise.reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", { reason: "reauthentication_required" }));
+    return ydPost(p, b);
+  };
+  ydNeed = "step_up_required";
+  byId("delete-account-confirm").value = "@maintainer"; byId("delete-account-confirm").dispatch("input");
+  ydBox().querySelector("form.account-delete").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(byId("step-up-reauthentication_required") && byId("delete-account-confirm").disabled, "your data: the deletion's password is asked, its field locked");
+  btn(ydBox(), "Export my data").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(byId("step-up-step_up_required") && !byId("step-up-reauthentication_required") && !byId("delete-account-confirm").disabled
+    && !ydDel().disabled && !text(ydBox()).includes("Not asked"), "your data: a second question cancels the first; the deletion is free again, no failure said");
+  // A password goes as typed, spaces included; a code typed with a space is a code.
+  btn(ydForm(), "Cancel").click(); for (let k = 0; k < 4; k++) await tick();
+  ydBox().querySelector("form.account-delete").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  ydProofs.length = 0;
+  byId("step-up-reauthentication_required").value = "  spaced pass  "; ydForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(ydProofs[0]) === JSON.stringify(["/auth/reauthenticate", { password: "  spaced pass  " }]), "your data: a password is sent as typed, not trimmed");
+  btn(ydForm(), "Cancel").click(); for (let k = 0; k < 4; k++) await tick();
+  btn(ydBox(), "Export my data").click(); for (let k = 0; k < 4; k++) await tick();
+  ydProofs.length = 0;
+  byId("step-up-step_up_required").value = "482 913"; ydForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(ydProofs[0]) === JSON.stringify(["/auth/second-factor/verify", { code: "482913" }]), "your data: a code typed with a space goes as a code");
+  if (ydForm()) { btn(ydForm(), "Cancel").click(); for (let k = 0; k < 4; k++) await tick(); }
   win.Maity.api.get = ydGet; win.Maity.api.post = ydPost; win.Maity.yourData.save = ydSave;
   // Pictures (docs/api.md §6.10): one's own on the account, an agent's in its row on Members;
   // the account keeps only the agents no project of one's own shows (tsk-th1yq0jtk3yf).
