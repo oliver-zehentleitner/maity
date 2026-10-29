@@ -1347,3 +1347,7 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* Another instance's state directory, said before its join line (js/join.js). */
 .instance-note { border-left: 3px solid var(--warn); padding: 4px 0 4px 10px; margin: 8px 0; }
 .instance-note p { margin: 4px 0; }
+
+/* All notifications: unread in bold with a dot, as on the bell. */
+.waiting-items li.unread a { font-weight: 600; }
+.waiting-items li.unread::before { content: "●"; color: var(--accent); margin-inline-end: 6px; font-size: 0.7rem; }

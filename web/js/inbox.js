@@ -303,9 +303,16 @@ window.Maity = window.Maity || {};
 
   async function load(ctx) {
     if (ctx.scope === "project") {
-      const requests = await M.api.getAll(ctx.base + "/requests?status=all");
+      // The project's own requests, and the open personal requests about it
+      // (§7: a project's list never holds them, the tab's count does, §18.2):
+      // the list shows what the tab counts.
+      const [requests, personal] = await Promise.all([M.api.getAll(ctx.base + "/requests?status=all"),
+        M.api.getAll("/requests").then((r) => r.items.filter((x) => x.personal && x.status === "open" && x.project && x.project.full_name === ctx.slug),
+          () => [])]);
       requests.items.forEach((r) => { r.slug = ctx.slug; });
-      return requests.items;
+      personal.forEach((r) => { r.slug = ctx.slug; });
+      await Promise.all(personal.map(readInFull));
+      return requests.items.concat(personal);
     }
     const requests = await M.api.getAll("/requests");
     // A personal request may have no project (an organisation's invitation, §6.26).
@@ -349,7 +356,6 @@ window.Maity = window.Maity || {};
     const grouped = () => ctx.scope === "all" && ui.group;
     const list = h("div", { class: "entries-box" });
     const listStatus = M.statusLine();
-    let activity = null;
 
     // With no open entry on screen there is nothing being read or typed, so
     // a change of the counts reloads the list on its own (app.js, watch).
@@ -370,7 +376,6 @@ window.Maity = window.Maity || {};
     }
 
     function draw() {
-      if (activity) activity.draw();
       const shown = ordered();
       const open = shown.filter((r) => r.status === "open");
       if (!shown.some((r) => keyOf(r) === ui.current)) ui.current = open.length ? keyOf(open[0]) : null;
@@ -495,6 +500,5 @@ window.Maity = window.Maity || {};
         .map((li) => li.querySelector("button.entry-head"))[0];
       if (head) window.setTimeout(() => head.focus(), 0);
     }
-    activity = M.waiting.mount(ctx, root, items, () => ctx.scope === "project" ? ctx.slug : projectFilter());
   };
 })(window.Maity);
