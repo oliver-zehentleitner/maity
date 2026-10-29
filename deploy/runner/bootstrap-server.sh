@@ -119,8 +119,10 @@ fail=0
 # A refused connection looks like a blocked one, so root tries each address first: where root gets through and the runner user does
 # not, the chain did it; where nothing listens even for root, the probe proves nothing and says so.
 if runuser -u "$RU" -- sudo -n true 2>/dev/null; then echo "FAIL: $RU can sudo" >&2; fail=1; fi
-own=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i=1; i<NF; i++) if ($i == "src") {print $(i+1); exit}}')
-own6=$(ip -6 route get 2606:4700:4700::1111 2>/dev/null | awk '{for (i=1; i<NF; i++) if ($i == "src") {print $(i+1); exit}}')
+# A machine without a route (no IPv6 at the provider: "Network is unreachable", exit 2) gives an empty value; under set -e and pipefail
+# the failing lookup would otherwise end the whole bootstrap here, after everything was built and before it was tested.
+own=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i=1; i<NF; i++) if ($i == "src") {print $(i+1); exit}}') || own=
+own6=$(ip -6 route get 2606:4700:4700::1111 2>/dev/null | awk '{for (i=1; i<NF; i++) if ($i == "src") {print $(i+1); exit}}') || own6=
 for addr in 127.0.0.1 ::1 ${own:+"$own"} ${own6:+"$own6"}; do
   if bash -c "exec 3<>/dev/tcp/$addr/22" 2>/dev/null; then
     if runuser -u "$RU" -- bash -c "exec 3<>/dev/tcp/$addr/22" 2>/dev/null; then echo "FAIL: $RU reaches $addr:22" >&2; fail=1; fi

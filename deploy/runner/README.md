@@ -111,7 +111,7 @@ So the machine is capped, not trusted:
    selected instance (default `pg` only; `INSTANCES="sqlite maria"` adds others later) it unpacks the runner to `/opt/actions-runner-<type>`, runs `config.sh` **as the
    runner user** (as root it refuses: "Must not run with sudo"; with `--disableupdate`, because the runner's
    self-update would write into its own directory, which the runner user may not: update by hand, as root, when
-   GitHub asks for a newer version), registers it as `maity-vm-<type>` with the label `maity-hub-<type>`, hands the
+   GitHub asks for a newer version), registers it as `<RUNNER_NAME_PREFIX>-<type>` (default `maity-vm-<type>`; a second machine for the same type needs its own prefix, the name must be unique in the repository) with the label `maity-hub-<type>`, hands the
    files to root, and lets the runner user read only its registration (`chgrp <runner-user>` and `chmod 640` on
    `.runner`, `.credentials`, `.credentials_rsaparams`: a root-owned 0600 `.credentials_rsaparams` stops the
    runner from starting; the `chgrp` assumes a group named like the user, the default on Debian and Ubuntu).
