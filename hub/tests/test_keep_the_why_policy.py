@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine
 
-from maity_hub.config import KTW_SKILL_SOURCE, ConfigError, Settings
+from maity_hub.config import KTW_SKILL_GUIDE, KTW_SKILL_SOURCE, ConfigError, Settings
 from tests import flow
 from tests.conftest import ClientFactory
 
@@ -123,11 +123,12 @@ def test_the_packet_tells_the_agent_how_to_load_the_skill(
     assert block["enabled"] is True
     assert block["skill"]["name"] == "keep-the-why"
     assert block["skill"]["source"] == SOURCE
-    assert block["skill"]["install"][0] == f"npx skills add {SOURCE}"
+    assert block["skill"]["install"][0] == f"npx skills add {SOURCE} -g -y"
     assert block["skill"]["install"][1].startswith(
         "git clone --depth 1 --branch latest https://github.com/oliver-zehentleitner/keep-the-why"
     )
     assert "Skill tool" in block["skill"]["load"]
+    assert block["skill"]["guide"] == KTW_SKILL_GUIDE
     assert block["config"] == ".keep-the-why"
     assert block["personal_defaults"] == "adopt"
     assert packet["project"]["memory"] == {"provider": "keep-the-why"}
@@ -150,6 +151,15 @@ def test_a_mirror_is_set_by_the_environment() -> None:
     assert Settings.from_env({"MAITY_KTW_SKILL_SOURCE": mirror}).ktw_skill_source == mirror
     with pytest.raises(ConfigError):
         Settings.from_env({"MAITY_KTW_SKILL_SOURCE": "file:///etc/passwd"})
+
+
+def test_the_guide_is_set_by_the_environment() -> None:
+    assert Settings.from_env({}).ktw_skill_guide == "https://keepthewhy.com/installation/"
+    guide = "https://docs.example.org/ktw/install"
+    assert Settings.from_env({"MAITY_KTW_SKILL_GUIDE": guide}).ktw_skill_guide == guide
+    for bad in ("javascript:alert(1)", "http://keepthewhy.com/installation/", "https://a b"):
+        with pytest.raises(ConfigError, match="MAITY_KTW_SKILL_GUIDE"):
+            Settings.from_env({"MAITY_KTW_SKILL_GUIDE": bad})
 
 
 def test_an_optional_set_while_the_provider_is_off_is_kept(owner: flow.Human) -> None:
@@ -186,7 +196,7 @@ def test_no_agent_changes_the_keep_the_why_policy(
             "/projects/maintainer/maity", {"policy": policy, "reason": "x"}
         )
         assert response.status_code == 403, response.text
-        assert response.json()["error"]["details"] == {"scope": "project:admin"}
+        assert response.json()["error"]["details"]["reason"] == "humans_only"
 
 
 def test_a_set_policy_that_does_not_move_the_view_is_still_a_policy_change(
@@ -207,3 +217,12 @@ def test_a_set_policy_that_does_not_move_the_view_is_still_a_policy_change(
         ).first()
     assert event is not None and event.payload["reason"] == "own"
     assert event.payload["new"]["keep_the_why"] == "optional"
+
+
+def test_a_null_policy_is_refused_and_keeps_the_stored_value(owner: flow.Human) -> None:
+    flow.project(owner)
+    _patch(owner, "maity", {"policy": {"keep_the_why": "optional"}, "reason": "own"})
+    refused = _patch(owner, "maity", {"policy": {"keep_the_why": None}, "reason": "reset"})
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {"policy.keep_the_why": "unknown"}
+    assert owner.get("/projects/maintainer/maity").json()["policy"]["keep_the_why"] == "optional"

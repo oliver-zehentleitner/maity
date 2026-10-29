@@ -575,7 +575,9 @@ route a crawler does not fetch.
 
 A project whose namespace owner turns `public_page` on, and a person who
 turns `public_profile` on, get a page under `/p/<owner>/<slug>` or
-`/u/<handle>`: plain HTML rendered by the hub, no script, listed in the
+`/u/<handle>` (since the path-routing decision of 2026-10-29,
+e34ae588-4dbc-423c-8da8-29fc62436cb5, at `/<owner>/<slug>` and
+`/<handle>`, the dashboard's own addresses): plain HTML rendered by the hub, no script, listed in the
 sitemap. The operator chooses whether pages are rendered on every change
 (default) or only on an interval of 1–24 hours (default 6); either way
 anything taken off a page, any edit of a shown text included, is taken
@@ -634,7 +636,10 @@ of typed sections (hero, stats, steps, scales, FAQ, text, …) per
 language instead of one Markdown block, and the hub renders it itself
 as one static HTML page at the root for visitors without a session; the
 dashboard moves to `/app` for them, `/login` and `/register` always
-reach it, and a tiny script carries old `/#/…` links over. The imprint,
+reach it, and a tiny script carries old `/#/…` links over (both removed
+by the path-routing decision of 2026-10-29,
+e34ae588-4dbc-423c-8da8-29fc62436cb5: `/` serves the landing page or the
+app shell, and the page has no script). The imprint,
 privacy notice and terms of use are three more pages of the same kind,
 versioned, and the terms page feeds the acceptance at registration.
 Live numbers are computed every five minutes; online counts below five

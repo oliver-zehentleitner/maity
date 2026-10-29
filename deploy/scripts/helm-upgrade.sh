@@ -50,9 +50,32 @@ trap 'exit 130' INT TERM
 
 if [ -n "${DUMP_CRONJOB:-}" ]; then
   job="pre-upgrade-$(date +%H%M%S)"
-  { kubectl -n "$NAMESPACE" create job --from="cronjob/$DUMP_CRONJOB" "$job" &&
-      kubectl -n "$NAMESPACE" wait --for=condition=complete "job/$job" --timeout=300s; } ||
+  # Complete or Failed, whichever comes first: `kubectl wait` takes one condition and would sit out its whole timeout on a failed Job.
+  dump_finished() {
+    local end=$((SECONDS + 300)) done_ failed
+    while [ "$SECONDS" -lt "$end" ]; do
+      done_=$(kubectl -n "$NAMESPACE" get job "$job" -o 'jsonpath={.status.conditions[?(@.type=="Complete")].status}' 2>/dev/null)
+      failed=$(kubectl -n "$NAMESPACE" get job "$job" -o 'jsonpath={.status.conditions[?(@.type=="Failed")].status}' 2>/dev/null)
+      [ "$done_" = True ] && return 0
+      [ "$failed" = True ] && return 1
+      sleep 5
+    done
+    return 1
+  }
+  { kubectl -n "$NAMESPACE" create job --from="cronjob/$DUMP_CRONJOB" "$job" && dump_finished; } ||
     { echo "the dump failed, nothing was changed" >&2; restored=1; exit 1; }
+  # A Job whose pg_dump failed used to end as Complete (see deploy/k3s-single/backup.yaml). The fixed script ends with a line
+  # "dump ok: <file> <bytes>" that only a finished, non-empty dump produces, and it is asked for, not its opposite: errors that
+  # a later try fixed are in the log too, and a log that cannot be read or an old script without the line must stop the upgrade.
+  # The log is read from the pod that succeeded (a failed earlier try is another pod of the same Job).
+  dumppod=$(kubectl -n "$NAMESPACE" get pod -l "job-name=$job" --field-selector=status.phase=Succeeded -o name 2>/dev/null | head -1)
+  log=""
+  [ -n "$dumppod" ] && log=$(kubectl -n "$NAMESPACE" logs "$dumppod" 2>&1)
+  case "$log" in
+    *"dump ok: /backups/maity-"*) ;;
+    *) echo "the dump job's log has no 'dump ok' line (the log could not be read, or the CronJob still has the old script: apply deploy/k3s-single/backup.yaml first), nothing was changed" >&2
+       restored=1; exit 1;;
+  esac
   echo "dump job: $job"
 fi
 

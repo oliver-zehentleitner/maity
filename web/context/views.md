@@ -1990,9 +1990,9 @@ the view already says the organisation is suspended.
 **Source:** docs/api.md §6.24 (handles are lowercase; `{org}` resolves a handle or an alias); the review of the organisations page (#584), 2026-10-29
 **Revisit when:** the dashboard moves to real paths (the routing card after #601), where the route parser may normalise once for every handle
 
-`M.orgs.handleOf` decodes the handle from `#/account/orgs/<handle>`,
+`M.orgs.handleOf` decodes the handle from `/account/orgs/<handle>`,
 trims it, drops a leading `@` and writes it in lowercase, for the call
-and for the page title, so `#/account/orgs/%40OZ-Team` opens @oz-team.
+and for the page title, so `/account/orgs/%40OZ-Team` opens @oz-team.
 
 **Reason:** a link copied with an `@` or typed with capitals names the
 same organisation for a human.

@@ -229,6 +229,9 @@ def _apply_policy(
         if not 0 <= change.max_placements <= policy.MAX_PLACEMENTS_MAX:
             errors["policy.max_placements"] = "out_of_range"
         proposed["max_placements"] = change.max_placements
+    if "keep_the_why" in change.model_fields_set and change.keep_the_why is None:
+        # Only `required` or `optional` (§6.1): a null would clear the human's value.
+        errors["policy.keep_the_why"] = "unknown"
     if change.keep_the_why == "required" and not memory_on:
         errors["policy.keep_the_why"] = "no_memory_provider"
     if change.member_agents_max is not None:
@@ -804,6 +807,8 @@ HUMANS_ONLY_POLICY = {
     "merged_closes",  # set by a human with project:admin (§6.1)
     "member_agents",  # who may bring agents into the project (§3.1, §6.1)
     "member_agents_max",
+    "keep_the_why",  # whether the project requires Keep the Why (§6.23)
+    "keep_the_why_defaults",
 }
 
 
