@@ -9912,6 +9912,13 @@ contract; until then nothing else in this section changes.
 | POST, DELETE | `/projects/{owner}/{slug}/forge/webhook/secret` | `project:admin`, human only | 17.4 |
 | GET, PATCH | `/admin/settings/mail` | `instance:admin`, human only | 16.2 |
 | GET, PATCH | `/admin/settings/registration` | `instance:admin`, human only | 16.4 |
+| GET, PATCH | `/admin/settings/landing` | `instance:admin`, human only | 16.7 |
+| POST | `/admin/settings/landing/preview` | `instance:admin`, human only | 16.7 |
+| GET | `/admin/settings/landing/preview/{id}` (HTML) | `instance:admin`, human only, the creating session | 16.7 |
+| GET, PATCH | `/admin/settings/legal` | `instance:admin`, human only | 16.7.1 |
+| POST | `/admin/settings/legal/preview?page=…` | `instance:admin`, human only | 16.7.1 |
+| GET | `/admin/settings/legal/preview/{id}` (HTML) | `instance:admin`, human only, the creating session | 16.7.1 |
+| GET | `/legal` | none | 16.7.1 |
 | GET | `/admin/registrations` | `instance:admin`, human only | 16.4 |
 | POST | `/admin/registrations/{id}/approve`, `/admin/registrations/{id}/reject` | `instance:admin`, human only | 16.4 |
 | DELETE | `/admin/registrations/blocks/{address}` | `instance:admin`, human only | 16.4 |
@@ -11797,11 +11804,16 @@ leaves out comes from the saved setting, `enabled` is ignored),
 validated the same way with the same `invalid` field paths and the same
 body cap (below), and stores the draft for 10 minutes, bound to the
 calling session and never to the setting: `201` with `{id, url,
-expires_at}`. The dashboard opens `url` in a new tab; that `GET` is a
+expires_at}`, `url` the path under the API base
+(`/api/v1/admin/settings/landing/preview/<id>`). The dashboard opens
+`url` with `?lang=<tag>` in a new tab (without `lang` the draft's
+`default_language`; a language the draft has no page for falls back as
+on `/`); that `GET` is a
 top-level navigation with the session cookie and answers the HTML the
 hub would serve at `/` for that language, `text/html`, `Cache-Control:
 no-store`, `X-Robots-Tag: noindex` and the served page's own
-`Content-Security-Policy`, so the preview shows exactly what the page
+`Content-Security-Policy` in place of the API's JSON headers and
+policy, so the preview shows exactly what the page
 would and can run nothing it could not. Another session, an expired id
 or an unknown one is `not_found`. A preview changes nothing, counts
 against no limit of the setting, and at most 20 drafts per session are
@@ -11850,8 +11862,10 @@ read-only.
   the instance admin set in the registration setting (`source:
   "admin"`), then the legal pages (`source: "legal_pages"`), then none.
 - **Preview** the same way as the landing page (§16.7): `POST
-  /admin/settings/legal/preview?page=<imprint|privacy|terms>` with the
-  body `PATCH` takes for that page (and its body cap), then `GET
+  /admin/settings/legal/preview?page=<imprint|privacy|terms>` with that
+  page's value as `PATCH` takes it under its key — the languages
+  (`{"en": {…}, "de": {…}}`), not wrapped in the page's name — and its
+  body cap, then `GET
   /admin/settings/legal/preview/{id}?lang=<tag>`, with the same scope,
   lifetime, binding and headers. The draft has no version yet: the page
   shows "Draft" where the served page says "as of …", and no list of
