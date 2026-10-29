@@ -1411,7 +1411,7 @@ alone: it is not seen without a mouse resting on the button.
 
 **Id:** 057e7277-3eba-4267-93d2-c6b74a5e2ff1
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the designer's handover on the overview (#6484, tsk-qse9t2b3a9n8), 2026-10-27: the five panels had equal weight and the one thing to act on (open requests) sat bottom left; the maintainer's wish for a Contract link in the project facts (tsk-yhbmz7mjng7n, step 1), 2026-10-27; the dashboard's implementation, 2026-10-27
 **Revisit when:** the hub serves the contract for reading inside Maity, or the badge can be changed without a logged reason

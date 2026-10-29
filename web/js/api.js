@@ -1685,8 +1685,11 @@ window.Maity = window.Maity || {};
         if (url && p.setup && p.setup.cards === null && !["accepted", "archived"].includes(p.state)) makeSetupCards(m[1], p.setup, me().member.id, url);
       }
       if ("policy" in body) {
-        // A policy change needs a reason; fields merge into the policy (docs/api.md §6.1).
-        if (!body.reason) fail(400, "invalid", "A policy change needs a reason", path, { fields: { reason: "required" } });
+        // A policy change needs a reason, except `badge` alone (§6.20); fields merge into the
+        // policy (docs/api.md §6.1).
+        const moved = Object.keys(body.policy).filter((k) => JSON.stringify(body.policy[k]) !== JSON.stringify((p.policy || {})[k]));
+        const badgeOnly = moved.length === 1 && moved[0] === "badge";
+        if (!body.reason && !badgeOnly) fail(400, "invalid", "A policy change needs a reason", path, { fields: { reason: "required" } });
         if ("signing" in body.policy && !["optional", "required"].includes(body.policy.signing)) {
           fail(400, "invalid", "unknown signing value", path, { fields: { "policy.signing": "unknown" } });
         }
