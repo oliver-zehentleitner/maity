@@ -8,7 +8,7 @@
   `stats` section are computed at most every five minutes and published in `GET /landing`.
 - hub: a draft of the landing page or of a legal page can be seen before it is saved:
   `POST /admin/settings/landing/preview` and `POST /admin/settings/legal/preview?page=`, then the
-  address they return (migration 0091).
+  address they return (migration 0093).
 - hub: while the `terms` page is set and neither the environment nor the admin gave terms, the
   registration's terms are that page and its version (`source: legal_pages`).
 

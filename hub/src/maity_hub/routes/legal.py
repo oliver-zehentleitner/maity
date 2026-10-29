@@ -63,16 +63,15 @@ def get_legal(request: Request) -> Response:
 def create_legal_preview(
     request: Request, caller: HumanCaller, body: Annotated[dict[str, Any], Body()], page: str = ""
 ) -> JSONResponse:
-    """A draft of one legal page, seen before it is saved (§16.7.1): the body `PATCH` takes for
-    that page, or just the page's languages; nothing is saved and no limit is counted."""
+    """A draft of one legal page, seen before it is saved (§16.7.1): the body `PATCH` takes
+    for that page, `{"<page>": {…}}`; nothing is saved and no limit is counted."""
     if page not in legal.PAGES:
         raise invalid({"page": "invalid"})
-    languages = body.get(page) if page in body else body
     with engine_of(request).begin() as conn:
         _require_admin(conn, caller)
-        change = legal.check({page: languages})
-        if change.languages is None:
-            raise invalid({page: "invalid"})
+        change = legal.check(body)
+        if change.page != page or change.languages is None:
+            raise invalid({page: "required" if change.page != page else "invalid"})
         draft_id, expires = previews.create(
             conn, caller.human_session or "", "legal", change.languages, page
         )
