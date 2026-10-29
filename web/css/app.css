@@ -1366,6 +1366,10 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .agent-new { margin-top: 20px; }
 /* A project's Agents: what belongs to the membership, under the card. */
 /* Agents that stop listening, on the account (js/notify-settings.js). */
+/* My settings: each choice a row of at least 28 px, so the radios are targets of their own. */
+.my-nl { display: grid; gap: 6px; }
+.my-nl .check { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+.my-nl input[type="number"] { max-width: 8rem; }
 .not-listening-settings { display: grid; gap: 6px; max-width: 32rem; margin: 16px 0; }
 .not-listening-settings h3 { margin: 0; }
 .not-listening-settings button { justify-self: start; }
