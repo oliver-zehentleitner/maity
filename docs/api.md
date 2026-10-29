@@ -1793,7 +1793,8 @@ when either list matches.
 is complete and enabled, else `false` — also `false` under `allowlist`
 while both lists are empty, since nobody could register then (the admin
 sees it as `missing: ["allowlist"]`, §16.4); and `terms`: `{url, version}` or
-`null` (§16.4). It says nothing about the lists or any account. The
+`null` (§16.4). It says nothing about the lists' entries or any account;
+only whether an allowlist has any entry follows from `registration`. The
 login page shows "Create an account" only with `registration: true`.
 
 #### 2.7.1 The flow: the address is verified before an account exists

@@ -309,7 +309,7 @@ def complete_redemption(request: Request) -> JSONResponse:
 def methods(request: Request) -> JSONResponse:
     """What the login page may show (§2.6.1); nothing about any account. `registration`
     is the mode in effect (§2.7: `allowlist` with an entry or `open`, with complete, enabled
-    mail, which `effective_mode` already folds in), never the lists; `terms` the
+    mail, which `effective_mode` already folds in), never the entries of the lists; `terms` the
     instance's or `null`."""
     hub = settings_of(request)
     with engine_of(request).begin() as conn:

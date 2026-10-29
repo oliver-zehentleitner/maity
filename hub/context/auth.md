@@ -220,6 +220,33 @@ not stated in the contract itself (inferred). The `account_registration`
 row of a deleted account keeps the decision and a rejection's reason,
 not the address or the source.
 
+## The login page is offered registration only where someone could finish it
+
+**Id:** 01d0f6ab-e4f6-48c8-9a28-4e89f0b43c35
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's ruling on an empty allowlist, 2026-10-29 (follow-up to #652, card tsk-46vft0764kve); docs/api.md §2.7 "What the login page learns", §16.4; the review of #657
+**See:** web/context/views.md — 48c34360-b586-4e82-b21a-737b922f1734 — as of 2026-10-29
+**Revisit when:** registration gains a way in that needs no list entry (an invitation is already one, §3.4), or `missing` gains a reason that also makes registration impossible
+
+`GET /auth/methods` answers `registration: true` only when
+`effective_mode` is `allowlist` or `open` and `missing` does not name
+`allowlist`. So an allowlist with both lists empty answers `false`;
+the instance admin sees the gap in `GET /admin/settings/registration`
+as `missing: ["allowlist"]`. `POST /auth/register` is unchanged: it
+answers `202` and drops the request, as for any address not on the list.
+
+**Reason:** under an empty allowlist every visitor would get the form
+and then the silence of a dropped request, a dead end for everyone.
+Telling an anonymous visitor that the allowlist is empty reveals no
+entry and no account.
+
+**Rejected alternative:** `registration: true` under an empty
+allowlist, as the contract first said (the dead end above). Refusing a
+`PATCH` that leaves the allowlist empty: §16.4 calls it valid, and an
+admin may set the mode before the entries.
+
 ## Two-factor sign-in: whether a session must enrol is worked out per call, and the second step re-keys the session in place
 
 **Id:** ff8b8099-8384-4d68-906a-1b4d7b17bc47
