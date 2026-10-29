@@ -190,7 +190,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && refuses("/api/v1/projects/../logo?v=1") && !refuses("fixtures/maity/logo.png") && !refuses("/api/v1/projects/maintainer/maity/logo?v=%22f1%22"),
     "dom: an image is a local file or the hub's own image, never another origin, not even https");
   let cur = main.querySelector(".current");
-  expect(cur && text(cur).includes("rounding fix") && text(cur).includes("Freeze") && text(cur).includes("urgent"), "urgent first (Sample shop, with its state)");
+  expect(cur && text(cur).includes("rounding fix") && text(cur).includes("Review") && text(cur).includes("urgent"), "urgent first (Sample shop, with its state)");
   expect(cur && !btn(cur, "Later (stays open)") && btn(cur, "Later"), "local Later button present");
   btn(cur, "Later").click(); await tick();
   cur = main.querySelector(".current");
@@ -1695,12 +1695,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   try { await bPost("/projects/maintainer/maity/tasks", { title: "x", ships_with: ["rel-0001"] }); } catch (err) { relShip = err; }
   expect(relShip && relShip.details.fields.ships_with === "release_card", "board: the mock refuses shipping with a release, as the hub does");
   win.Maity.api.patch = bPatch; win.Maity.api.post = bPost;
-  // A frozen project asks for a reason.
+  // A project in review asks for a reason.
   await go("#/maintainer/sample/board");
   btn(main, "New card").click(); await tick();
-  byId("new-card-title").value = "Something during the freeze";
+  byId("new-card-title").value = "Something during the review";
   main.querySelector("form.new-card").dispatch("submit"); await tick();
-  expect(byId("new-card-reason") && text(main).includes("Not created: the project is in freeze"), "board: in freeze a new card needs a reason");
+  expect(byId("new-card-reason") && text(main).includes("Not created: the project is in review"), "board: in review a new card needs a reason");
   await go("#/maintainer/maity/inbox");
   // Members (docs/api.md §6.2): humans and agents, managed by an admin.
   const membersTab = header.querySelectorAll("nav.views a").find((a) => a.textContent === "Members");
@@ -3308,19 +3308,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
 
   // state and absence
   await projectSettings(); await tick();
-  const sel = byId("state-select"); sel.value = "freeze";
+  const sel = byId("state-select");
+  expect(sel.querySelectorAll("option").map((o) => o.getAttribute("value")).join(" ") === "plan build review launch archived"
+    && sel.querySelectorAll("option").find((o) => o.getAttribute("value") === "launch").getAttribute("disabled") == null,
+    "state: exactly the five states of §6.1; the owner may move to launch");
+  sel.value = "review";
   byId("state-reason").value = "release 0.1.0";
   // The 15-s count re-read replaces the switcher only; the open panel and what is typed stay.
   const switcherBefore = header.querySelector("nav.switcher");
   await fireIntervals(); await tick(); await tick();
-  expect(byId("state-reason") && byId("state-reason").value === "release 0.1.0" && byId("state-select").value === "freeze",
+  expect(byId("state-reason") && byId("state-reason").value === "release 0.1.0" && byId("state-select").value === "review",
     "the count re-read keeps the open Project settings panel and its input");
   expect(header.querySelector("nav.switcher") !== switcherBefore && header.querySelectorAll("nav.switcher").length === 1,
     "the count re-read replaces the switcher, once");
   byId("state-select").parentNode.dispatch("submit"); await tick(); await tick();
-  expect(text(header).includes("Freeze") && onSettings() && text(main).includes("State saved.")
+  expect(text(header).includes("Review") && onSettings() && text(main).includes("State saved.")
     && header.querySelectorAll("nav.views a").find((a) => a.textContent === "Settings").getAttribute("aria-current") === "page",
-    "state changed to freeze; the save stays on the Settings tab, says so, the tab marked current");
+    "state changed to review; the save stays on the Settings tab, says so, the tab marked current");
   byId("absence-until").value = "2026-10-25T08:00"; byId("absence-scope").value = "fixes only";
   byId("absence-until").parentNode.dispatch("submit"); await tick(); await tick();
   expect(text(header.querySelector(".project-state")).includes("Away until") && text(header.querySelector(".absence")).includes("While away: fixes only"), "absence set");
@@ -4594,7 +4598,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
 
   // A closed project: no new group chat.
   const gcMe = win.Maity.api.get;
-  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? gcMe(p).then((x) => Object.assign({}, x, { state: "accepted" })) : gcMe(p));
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? gcMe(p).then((x) => Object.assign({}, x, { state: "archived" })) : gcMe(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat");
   expect(!main.querySelector("a.new-group"), "group chat: a closed project offers no new group chat");
   await go("#/maintainer/maity/chat/new");

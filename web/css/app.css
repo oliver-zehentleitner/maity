@@ -15,6 +15,7 @@
   --normal: #8a5a00;
   --low: #4a5a6a;
   --ok: #1a7f37;
+  --plan: #7a45d6; /* the plan state: 5.36:1 on --bg, 5.75:1 on --surface (WCAG AA) */
   --warn: #9a6700;
   --bad: #b42318;
   --flag-bg: #fff6dd;
@@ -50,6 +51,7 @@
     --normal: #e3b341;
     --low: #9aa4ae;
     --ok: #3fb950;
+    --plan: #b392f0;
     --warn: #d29922;
     --bad: #ff7b72;
     --flag-bg: #2d2610;
@@ -75,6 +77,7 @@
   --normal: #e3b341;
   --low: #9aa4ae;
   --ok: #3fb950;
+  --plan: #b392f0;
   --warn: #d29922;
   --bad: #ff7b72;
   --flag-bg: #2d2610;
@@ -210,9 +213,10 @@ main:has(> .page-loading, > .page-failed) { flex: 1; display: flex; flex-directi
   white-space: nowrap;
 }
 
+.state-plan { color: var(--plan); }
 .state-build { color: var(--accent); }
-.state-freeze, .state-fixes-only { color: var(--warn); }
-.state-accepted { color: var(--ok); }
+.state-review { color: var(--warn); }
+.state-launch { color: var(--ok); }
 .state-archived { color: var(--muted); }
 .source { color: var(--warn); border-style: dashed; }
 
@@ -259,9 +263,10 @@ nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); 
 .switcher a[aria-current="page"] { border-color: var(--accent); background: var(--surface-2); }
 .switcher .count { margin-left: 0; }
 
+.dot.state-dot-plan { background: var(--plan); }
 .dot.state-dot-build { background: var(--accent); }
-.dot.state-dot-freeze, .dot.state-dot-fixes-only { background: var(--warn); }
-.dot.state-dot-accepted { background: var(--ok); }
+.dot.state-dot-review { background: var(--warn); }
+.dot.state-dot-launch { background: var(--ok); }
 .dot.state-dot-archived { background: var(--muted); }
 
 main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }

@@ -24,6 +24,7 @@ from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.config import Settings
 from maity_hub.errors import ApiError, invalid, rate_limited
+from maity_hub.policy import CLOSED_STATES
 from maity_hub.ratelimit import Limiter
 from maity_hub.views import principal_ids, ts
 
@@ -251,7 +252,6 @@ def view(conn: Connection, rows: list[Any], *, whole: bool = True) -> list[dict[
 
 
 MESSAGE_MAX = 10  # attachments one message may name (§1.7)
-CLOSED = ("accepted", "archived")
 
 
 def meta(row: Any) -> dict[str, Any]:
@@ -282,7 +282,7 @@ def bind(
             "attachments_not_configured",
             "this hub has no attachment store: the operator sets MAITY_ATTACHMENT_DIR",
         )
-    if mine.project.state in CLOSED:
+    if mine.project.state in CLOSED_STATES:
         raise ApiError(409, "project_closed", f"the project is {mine.project.state}")
     if len(ids) > MESSAGE_MAX:
         raise invalid({"attachments": "too_many"})

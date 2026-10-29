@@ -193,8 +193,8 @@ window.Maity = window.Maity || {};
     return menu.el;
   }
 
-  // The new card (POST /tasks). assigned_to needs tasks:admin; a frozen or
-  // fixes-only project needs a reason (docs/api.md §6.1).
+  // The new card (POST /tasks). assigned_to needs tasks:admin; a project in
+  // plan or review needs a reason (docs/api.md §6.1).
   // parent: the card a new subtask goes under, or none.
   function newCardForm(ctx, cards, create, onCancel, parent) {
     const id = (f) => (parent ? "new-subtask-" : "new-card-") + f;
@@ -223,7 +223,7 @@ window.Maity = window.Maity || {};
       cards.filter((x) => !CLOSED.has(x.status) && keep(x)).map((x) => h("option", { value: x.id }, x.id + " · " + x.title)));
     const deps = pick("depends", () => true);
     const ships = pick("ships", (x) => x.kind !== "release");
-    const closedState = ctx.project.state === "freeze" || ctx.project.state === "fixes-only";
+    const closedState = ctx.project.state === "plan" || ctx.project.state === "review";
     const reason = closedState ? h("input", { id: id("reason"), required: true, autocomplete: "off" }) : null;
     const status_ = M.statusLine();
     const chosen = (sel) => Array.from(sel.querySelectorAll("option")).filter((o) => o.selected).map((o) => o.getAttribute("value"));

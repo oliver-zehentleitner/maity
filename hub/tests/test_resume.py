@@ -197,7 +197,7 @@ def test_the_cursor_is_mirrored_and_the_own_start_is_skipped(
             select(t.event.c.seq).where(t.event.c.kind == "session_started")
         ).scalar_one()
     assert events["cursor"] >= started
-    owner.patch("/projects/maintainer/maity", {"state": "freeze", "reason": "release"})
+    owner.patch("/projects/maintainer/maity", {"state": "review", "reason": "release"})
     later = agent.resume(cursor=events["cursor"]).json()["events"]
     assert later["after"] == events["cursor"]
     assert [e["kind"] for e in later["items"]] == ["state_changed"]

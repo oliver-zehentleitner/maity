@@ -129,7 +129,7 @@ window.Maity = window.Maity || {};
         h("div", { class: "swarm-per-day" }, h("span", null, (t.cards_done == null ? "–" : t.cards_done) + " cards done"), sparkline(t.cards_done_per_day || [])),
         table(s.members || [], t, (r) => memberLink(r.member_id, "@" + (r.name || r.handle))),
         notes(s),
-        ctx.project && ctx.project.policy && ctx.project.policy.swarm_public === "on" && !["accepted", "archived"].includes(ctx.project.state)
+        ctx.project && ctx.project.policy && ctx.project.policy.swarm_public === "on" && ctx.project.state !== "archived"
           ? h("p", { class: "muted" }, "This project shows a public version of this page: ",
             h("a", { href: "/" + M.api.projectPath(ctx.slug) + "/swarm?as=public" }, "View public page"), ".")
           : null);
