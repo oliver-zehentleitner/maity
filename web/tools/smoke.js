@@ -853,11 +853,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const usersLink = header.querySelectorAll("a.menu-item").find((a) => a.textContent === "Instance administration");
   expect(usersLink && usersLink.getAttribute("href") === "#/admin", "users: in the settings menu for the instance admin");
   gearButton().click(); await tick();
+  // The users are the Users section of #/admin; the old #/admin/users is no view (tsk-qeh64f8gpvnd).
   await go("#/admin/users"); await tick();
+  expect(text(main).includes("No such view") && !main.querySelector("table.users"), "users: #/admin/users is no longer a route of its own");
+  const usersOpen = async () => {
+    await go("#/all"); await go("#/admin"); for (let k = 0; k < 6; k++) await tick();
+    const pickUsers = main.querySelectorAll("nav.admin-nav button").find((b) => b.textContent === "Users");
+    if (pickUsers) { pickUsers.click(); await tick(); }
+  };
+  await usersOpen();
   const userRows = () => main.querySelectorAll("table.users tbody tr");
   const userNames = () => userRows().map((tr) => tr.querySelector(".user-name").textContent);
-  expect(plainTitle() === "Users · Maity" && JSON.stringify(userNames()) === JSON.stringify(["Guest Reviewer", "Maintainer", "Ops on call"]),
-    "users: every human, by handle");
+  expect(plainTitle() === "Instance administration · Maity" && byId("admin-users") && !byId("admin-users").hidden
+    && JSON.stringify(userNames()) === JSON.stringify(["Guest Reviewer", "Maintainer", "Ops on call"]),
+    "users: every human, by handle, in the Users section of the instance administration");
   const meRow = userRows().find((tr) => text(tr).includes("Maintainer"));
   expect(text(meRow).includes("(you)") && text(meRow).includes("instance admin") && /Projects2|>2</.test(meRow.querySelectorAll("td").map((td) => td.attrs["data-label"] + td.textContent).join("")),
     "users: the admin's own row, its counts");
@@ -909,18 +918,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(sawOps && JSON.stringify(userNames()) === JSON.stringify(["Ops on call"]), "users: a delayed older search answer, arriving after the newer one, is dropped " + JSON.stringify(userNames()));
   // The endpoint itself refusing (403) is said, not hidden.
   win.Maity.api.get = (p) => (p.startsWith("/admin/users") ? Promise.reject(new win.Maity.api.ApiError("instance:admin needed", 403, p, "forbidden")) : uGet(p));
-  await go("#/all"); await go("#/admin/users"); await tick();
+  await usersOpen();
   expect(text(main).includes("The users could not be read: instance:admin needed"), "users: the endpoint's 403 is said");
   uq.value = "";
   // A hub without the list, and someone who is not the instance admin.
   win.Maity.api.forgetRoutes();
   win.Maity.api.get = (p) => p === "/openapi.json" ? Promise.resolve({ paths: {} }) : (p.startsWith("/admin/users") ? Promise.reject(new win.Maity.api.ApiError("nope", 404, p, "not_found")) : uGet(p));
-  await go("#/all"); await go("#/admin/users"); await tick();
-  expect(text(main).includes("This hub has no user list yet.") && !main.querySelector(".error"), "users: a hub without the list says so");
+  await usersOpen();
+  expect(!main.querySelector("table.users") && !main.querySelectorAll("nav.admin-nav button").some((b) => b.textContent === "Users") && !main.querySelector(".error"),
+    "users: a hub without the list has no Users section");
   win.Maity.api.get = (p) => (p === "/me" ? uGet(p).then((x) => { x.member.instance_admin = false; return x; }) : uGet(p));
-  await go("#/all"); await go("#/admin/users"); await tick();
-  expect(!header.querySelectorAll("a").some((a) => a.textContent === "Users") && text(main).includes("Only the instance admin sees the users of this hub."),
-    "users: no link and no list for anyone else");
+  await usersOpen();
+  expect(!header.querySelectorAll("a").some((a) => a.textContent === "Instance administration") && text(main).includes("Only the instance admin can open this area.")
+    && !main.querySelector("table.users"), "users: no link and no list for anyone else");
   win.Maity.api.get = uGet; win.Maity.api.forgetRoutes();
   await go("#/maintainer/maity/inbox");
   // Project → Runners (docs/api.md §15.4): the runners allowed in a project.
@@ -2958,6 +2968,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(main, "Copy").click(); await tick();
   expect(ctx.copied && ctx.copied.startsWith("maity join"), "copy puts the line on the clipboard");
   expect(main.querySelector(".join-result") && !main.querySelector("form.join-form"), "the line takes the form's place in the panel");
+  expect(!main.querySelector(".instance-note"), "a new agent's line has no note on another instance's state directory");
   btn(main.querySelector("article.seat"), "Revoke").click(); for (let k = 0; k < 4; k++) await tick();
   expect(text(main.querySelector("details.earlier-joins")).includes("revoked"), "open join revoked, now in the record");
   // A join for a new profile: Join another brings the form back; the new join is a seat, the select offers it.
@@ -3001,6 +3012,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const inBody = inPosts[0] && inPosts[0][1];
   expect(inPosts.length === 1 && inBody.replaces === "wle2" && !("new_instance" in inBody) && ["role", "reports_to", "areas", "capabilities", "briefing"].every((k) => !(k in inBody))
     && main.querySelector(".join-result"), "join: Replace instance sends replaces and leaves the membership's fields out " + JSON.stringify(inBody));
+  // An instance runs with a state directory of its own (tsk-axmb8dsyvrpb): said before the line, with the export to set.
+  const inNote = () => main.querySelector(".join-result .instance-note");
+  const inResult = main.querySelector(".join-result");
+  expect(inNote() && inResult.childNodes.indexOf(inNote()) < inResult.childNodes.indexOf(inResult.querySelector(".paste-row"))
+    && text(inNote().querySelector("code")) === 'export MAITY_STATE_DIR="$HOME/.local/state/maity/agent-b-<name>"'
+    && text(inNote()).includes("Do not run maity resume there to start it"),
+    "join: a replacing instance's line comes after the note on its own state directory, the export named, resume warned off");
   await inAgain(); inPick("agt-b"); inNew(); await inSubmit();
   expect(inPosts.length === 2 && inPosts[1][1].new_instance === true && !("replaces" in inPosts[1][1]) && !main.querySelector(".join-result")
     && text(main).includes("No join created: the team has as many instances as its rulebook allows"),
@@ -3013,6 +3031,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "join: a member's active instance offered, the team's count against its limit");
   inNew(); await inSubmit();
   expect(inPosts.length === 3 && inPosts[2][1].new_instance === true && main.querySelector(".join-result"), "join: Start another instance sends new_instance within the team's limit");
+  expect(inNote() && text(inNote().querySelector("code")).includes("/maity/agent-c-<name>"), "join: another instance's line has the note too, for its handle");
   // The maintainer's incident: the list on screen does not show the agent as a member; the hub's
   // refusal brings the choice, with the instances read again, and the next create carries it.
   await inAgain();
@@ -3915,18 +3934,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && text(main.querySelector("section.memory-panel")).includes("The cards are made when the project gets a repository."),
     "settings: options chosen without a repository wait for it");
   await projectSettings();
-  // A hub before §6.21 names only keep_the_why: the dropdown sends that alias, no setup options.
+  // The keep_the_why alias of a hub before §6.21 is gone (tsk-qeh64f8gpvnd): such a hub is offered neither memory nor the alias.
   const akGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.resolve({ paths: { "/api/v1/projects": { post: { requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/P" } } } } } } },
     components: { schemas: { P: { properties: { slug: {}, name: {}, repository: {}, keep_the_why: {}, policy: {} } } } } }) : akGet(p));
   win.Maity.api.forgetRoutes();
   await go("#/new"); await tick();
   byId("project-name").value = "Alias Hub"; byId("project-name").dispatch("input"); byId("project-preset").value = "hierarchical";
-  expect(byId("project-memory") && byId("project-memory").value === "keep-the-why" && !main.querySelector("fieldset.project-setup"),
-    "create: a hub that knows only keep_the_why offers the dropdown without setup options");
+  expect(!byId("project-memory") && !main.querySelector("fieldset.project-setup"),
+    "create: a hub that knows only the old keep_the_why is offered no project memory");
   main.querySelector("form").dispatch("submit"); await tick(); await tick();
-  expect(JSON.stringify(posts[posts.length - 1][1]) === JSON.stringify({ slug: "alias-hub", name: "Alias Hub", keep_the_why: true, policy: { preset: "hierarchical" } }),
-    "create: and sends keep_the_why");
+  expect(JSON.stringify(posts[posts.length - 1][1]) === JSON.stringify({ slug: "alias-hub", name: "Alias Hub", policy: { preset: "hierarchical" } }),
+    "create: and sends no keep_the_why");
   win.onhashchange(); for (let k = 0; k < 4; k++) await tick();
   // A machine form that cannot be read: no choice offered, and the form says the hub's defaults apply.
   win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.reject(new win.Maity.api.ApiError("bad gateway", 502, p, "unavailable")) : akGet(p));
@@ -6311,7 +6330,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const openMatterLeak = (await win.Maity.api.get("/me/notifications?limit=20")).items.some((x) => "open_matter" in x);
   expect(!openMatterLeak, "notifications: the mock answers no fixture-only field");
   const narrowRefused = await win.Maity.api.get("/me/notifications?kind=card").catch((err) => err);
-  expect(narrowRefused.code === "invalid" && narrowRefused.details.fields.kind === "removed_kind", "notifications: the mock refuses a removed kind as the hub does");
+  expect(narrowRefused.code === "invalid" && narrowRefused.details.fields.kind === "unknown", "notifications: a kind removed earlier is unknown to the mock, as to the hub");
+  const readRefused = await win.Maity.api.post("/me/notifications/read", { up_to: "999", kind: "ticker" }).catch((err) => err);
+  expect(readRefused.code === "invalid" && readRefused.details.fields.kind === "unknown", "notifications: marking read by a removed kind is unknown too");
   const waitCalls = [], waitWrites = [], waitDisposers = [];
   let waitFilter = "", waitVersion = 0, waitRelease = null, waitPolls = 0;
   win.Maity.notify.state.available = true;

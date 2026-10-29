@@ -1219,8 +1219,9 @@ one as **B** (the phone):
   dashboard path (§16.11) with the code in the fragment, which the
   browser never sends, so it reaches no request log, proxy or
   `Referer`; the hub answers the path with the app shell, and the
-  dashboard reads the code from the fragment on that path. The page
-  fills the field in and waits for the human's tap; it does not redeem
+  dashboard reads the code from the fragment on that path and removes
+  it from the address at once (`history.replaceState`), so it does not
+  stay in the browser's history either. The page fills the field in and waits for the human's tap; it does not redeem
   on its own.
 - **States.** `waiting` → `redeemed` (B entered it) → `approved` (A said
   yes) → `used` (B completed). `denied` and `expired` end it. A code is
@@ -12160,7 +12161,11 @@ default-src 'self'` (§1.1), `X-Robots-Tag: noindex`, and no cookie set.
 The shell names its files by absolute paths under `/assets/`, so they
 load at any depth of the address; how the dashboard's `file://` fixture
 mode, a development tool, finds them (a `<base>`, a development server)
-is the web owner's to settle in `web/`. The hub does not tell a dashboard
+is the web owner's to settle in `web/`. Only the built files under
+`/assets/` are served; the repository's `web/` tree as such is not, so
+an old file path (`/js/…`, `/css/…`) and the development files
+(`web/fixtures/`, `web/tools/`) are never reachable — such a path gets
+the shell like any other. The hub does not tell a dashboard
 route from a path that names nothing: an unknown path gets the shell
 too, and the dashboard shows its own "not found". Any other method on
 such a path is `not_found`. Two kinds of path are not always the
@@ -12217,6 +12222,10 @@ rename. The list:
 `invite`, `join`, `login`, `mail`, `new`, `notifications`, `observe`,
 `privacy`, `register`, `requests`, `runners`, `settings`, `sign-in`,
 `terms`
+
+`components`, `health` and `imprint` name no route today and are
+reserved so that they stay free for one (a component gallery, a health
+page, an English imprint address).
 
 One-letter segments (`r`) and names with a dot (`robots.txt`,
 `sitemap.xml`) cannot be handles anyway (§6.24's syntax). A release that adds a first segment adds it to
@@ -13193,9 +13202,13 @@ rules that make a position safe to resume from:
   `registration_pending` item whose registration is not yet decided,
   and for every human a `mail_disabled` item while the address is
   disabled (§18.1), each until the matter is closed, not until it is
-  read. `chat` is the sum of `unread` over the human's
-  conversations (§9) and group chats (§9.2), the same number the chat
-  list shows. `mention` and `security` count the unread items of that
+  read. `chat` is the sum of `unread` over the conversations the human takes
+  part in: its direct conversations with its agents and the group chats
+  it is a participant of (§9; group chats with #153), in every project
+  of its memberships. A group chat the human only reads along in as an
+  agent's owner counts nothing. It is the same number as
+  `totals.unread` of `GET /me/conversations` (§9.3), the hub computes
+  both with one function. `mention` and `security` count the unread items of that
   kind. `total` is `inbox + chat + mention` — everything but the
   security alerts; the dashboard shows
   it in the tab title as `(6) maity` and nothing when it is `0`.
@@ -13359,7 +13372,9 @@ device; the browser's own permission is per browser and is not stored.
   them in `browser.kinds` or `email.kinds` is `invalid` with
   `details.fields["browser.kinds.<kind>"]` (or `email.kinds.<kind>`)
   `"removed_kind"`, and changes nothing; any other unknown kind is
-  `"unknown"`.
+  `"unknown"`. A value for a kind that is not what the field takes (a
+  `browser.kinds` value that is not a boolean) is `"invalid"` at the
+  same field.
 - **`email.address`.** Setting it (`PATCH {"email": {"address": "…"}}`)
   puts it in `pending_address` and sends a verification mail with a
   link (§18.6), valid for 24 hours; the verified address in `address`

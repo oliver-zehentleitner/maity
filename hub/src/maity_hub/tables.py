@@ -701,6 +701,15 @@ credential = Table(
     # (§15.3): when, and on whose authority, until it is revoked.
     Column("revoke_due_at", UtcDateTime),
     Column("revoke_due_by", String(ID)),
+    # The Keep the Why commitment of the instance (§6.23): when it confirmed and in which
+    # session, its deadline (fixed by the first resume under `required`), and what the hub
+    # sent for an outstanding one: the reminder's time and the owner's request.
+    Column("ktw_acknowledged_at", UtcDateTime),
+    Column("ktw_acknowledged_session", String(ID)),
+    Column("ktw_acknowledge_by", UtcDateTime),
+    Column("ktw_session_id", String(ID)),
+    Column("ktw_reminded_at", UtcDateTime),
+    Column("ktw_request_id", String(ID)),
     # The instance's own pause (§5.3), as the membership's is stored.
     Column("paused_reason", MARKDOWN_TEXT),
     Column("paused_since", UtcDateTime),

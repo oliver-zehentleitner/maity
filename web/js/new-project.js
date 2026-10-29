@@ -61,12 +61,9 @@ window.Maity = window.Maity || {};
   M.views.newProject = async function (ctx, root) {
     // Memory and setup where the hub takes them (§6.21); an older hub
     // refuses a field it does not know, so then they are not offered.
-    // A hub before §6.21 knows the provider only as keep_the_why: the
-    // dropdown then sends that alias, without setup options.
     let fieldsRead = true;
     const fields = await M.api.hubBody("POST", "/projects").catch(() => { fieldsRead = false; return new Set(); });
     const knowsMemory = fields.has("memory") && fields.has("setup");
-    const knowsAlias = !knowsMemory && fields.has("keep_the_why");
     const field = (id, label, input, hint) => {
       const error = h("p", { class: "field-error", id: id + "-error", role: "alert" });
       input.setAttribute("aria-describedby", (hint ? id + "-hint " : "") + id + "-error");
@@ -126,7 +123,7 @@ window.Maity = window.Maity || {};
 
     // The hub's field names (details.fields) to the inputs they belong to.
     const byField = { name, slug, repository, "repository.url": repository, policy: preset, "policy.preset": preset,
-      memory, "memory.provider": memory, keep_the_why: memory };
+      memory, "memory.provider": memory };
     const all = [name, slug, repository, memory, preset];
     const status = M.statusLine();
 
@@ -165,7 +162,6 @@ window.Maity = window.Maity || {};
         showErrors({});
         const url = repository.input.value.trim();
         if (url) body.repository = { url };
-        if (knowsAlias) body.keep_the_why = memory.input.value === "keep-the-why";
         if (knowsMemory) {
           body.memory = { provider: memory.input.value };
           // §6.21: every option sent as it stands; under None the Keep the
@@ -195,7 +191,7 @@ window.Maity = window.Maity || {};
       },
     },
     name.nodes, slug.nodes, repository.nodes,
-    knowsMemory || knowsAlias ? memory.nodes : null,
+    knowsMemory ? memory.nodes : null,
     knowsMemory ? setupBox : null,
     // What the hub chooses is said where its machine form could not be read.
     fieldsRead ? null : h("p", { class: "hint" }, "Project memory: this hub's machine form could not be read, so its defaults apply."),

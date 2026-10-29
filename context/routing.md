@@ -46,6 +46,10 @@ dashboard's `file://` fixture mode, a development tool, has to find the
 files under `/assets/` (a `<base>`, a development server), settled in
 `web/`.
 
+The reserved first segments live in one place, `docs/api.md` §16.11;
+the hub's list and the dashboard's are derived from it, and a test
+compares them, so the three copies cannot drift apart.
+
 **Reason:** Maity is alpha and every caller is one of its own clients,
 so the maintainer chose the best practice outright over carrying
 compatibility layers. Paths give a public page and the dashboard one
