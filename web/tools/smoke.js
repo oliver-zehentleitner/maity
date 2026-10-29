@@ -199,7 +199,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(cur, "SHA-256 + pepper").click(); await tick(); await tick();
   expect(chipCount("All projects") === "6" && chipCount("Maity") === "4", "answer re-reads /me counts");
   const projSort = byId("inbox-sort"); projSort.value = "project"; projSort.dispatch("change"); await tick();
-  expect(main.querySelectorAll(".project-label")[0].textContent.startsWith("Personal") && main.querySelectorAll(".project-label")[1].textContent.startsWith("Maity"), "sort by project");
+  const sortLabels = main.querySelectorAll(".project-label").map((el) => el.textContent);
+  expect(sortLabels[0].startsWith("Personal") && sortLabels.find((t) => !t.startsWith("Personal")).startsWith("Maity"), "sort by project: the personal requests first, then the projects");
   // A project filter and grouping by project.
   const pf = byId("inbox-project");
   expect(pf.querySelectorAll("option").map((o) => o.textContent).join("|") === "every project|Maity|Sample shop", "inbox: the project options carry no counts that could go stale");
@@ -207,8 +208,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(main.querySelectorAll("li.entry").length === 1 && text(main.querySelector("li.entry")).includes("Sample shop"), "inbox: filtered to one project");
   // The filter is the cross-project view's: a project's own inbox shows its entries.
   await go("#/maintainer/maity/inbox");
-  const maityOpenNow = (await win.Maity.api.get("/me")).projects.find((x) => x.slug === "maity").open_requests;
-  expect(maityOpenNow > 0 && main.querySelectorAll("li.entry").length === maityOpenNow, "inbox: a project's inbox ignores the cross-project filter");
+  // A project's inbox: its own open requests and the open personal requests about it (§7, §18.2), as its tab counts them.
+  const maityOpenNow = (await win.Maity.api.get("/me")).projects.find((x) => x.slug === "maity").open_requests
+    + (await win.Maity.api.getAll("/requests")).items.filter((r) => r.personal && r.status === "open" && r.project && r.project.full_name === "maintainer/maity").length;
+  expect(maityOpenNow > 0 && main.querySelectorAll("li.entry").length === maityOpenNow, "inbox: a project's inbox ignores the cross-project filter, and holds its personal requests too");
   await go("#/all");
   expect(byId("inbox-project").value === "maintainer/sample" && main.querySelectorAll("li.entry").length === 1, "inbox: back in all projects, the filter is still set");
   byId("inbox-project").value = ""; byId("inbox-project").dispatch("change"); await tick();
@@ -6494,6 +6497,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // All notifications (/notifications): unread in bold with a dot, as on the bell, and Mark all read up to the first page's head.
   const waitWrites = [];
   win.Maity.api.post = (p, b) => { if (p === "/me/notifications/read") waitWrites.push(b); return waitPost(p, b); };
+  // Earlier cases read everything: one mention is unread again here, until Mark all read is sent.
+  win.Maity.api.get = (p) => (p.startsWith("/me/notifications?limit=50") && !waitWrites.length
+    ? waitGet(p).then((r) => Object.assign({}, r, { items: r.items.map((x) => (x.kind === "mention" ? Object.assign({}, x, { read: false }) : x)) })) : waitGet(p));
   await go("#/notifications"); for (let k = 0; k < 6; k++) await tick();
   const waitItems = () => main.querySelectorAll("li.waiting-item");
   expect(waitItems().some((li) => li.classList.contains("unread") && text(li).includes("(unread)")) && btn(main, "Mark all read"),
