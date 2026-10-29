@@ -138,3 +138,24 @@ def test_the_worker_runs_on_the_hour() -> None:
     due = not_listening_digest.next_hour(now)
     assert (due.minute, due.second, due.microsecond) == (0, 0, 0)
     assert timedelta(0) < due - now <= timedelta(hours=1)
+
+
+def test_a_closed_record_lists_nothing_until_the_next_hour_writes_a_new_one(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """After `{instances: 0}` the bell waits for the worker: neither a new episode nor
+    the switch back to `bell` lists the closed record again."""
+    agent = _agent(make_client, owner)
+    _episode(migrated, agent, timedelta(hours=2))
+    not_listening_digest.run(migrated)
+    owner.patch("/me/notification-settings", {"not_listening": {"mode": "off"}})
+    assert _records(migrated, owner)[-1] == {"instances": 0}
+    owner.patch("/me/notification-settings", {"not_listening": {"mode": "bell"}})
+    assert _bell(owner) == []  # back under bell, an instance away, the newest record closed
+    _episode(migrated, agent, None)
+    not_listening_digest.run(migrated)
+    _episode(migrated, agent, timedelta(hours=3))  # a new episode, before the next hour
+    assert _bell(owner) == []
+    not_listening_digest.run(migrated)
+    assert _records(migrated, owner)[-1] == {"instances": 1}
+    assert len(_bell(owner)) == 1

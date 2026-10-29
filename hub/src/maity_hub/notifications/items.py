@@ -591,7 +591,11 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
                     open=pending,
                 )
             )
-        elif row.type == "agents_not_listening" and row.n == newest_away_record:
+        elif (
+            row.type == "agents_not_listening"
+            and row.n == newest_away_record
+            and int(data.get("instances", 0)) > 0  # a closing record `{instances: 0}` lists nothing
+        ):
             # Listed while any instance is away, with the count as it is now (§5.3,
             # §18.1): the record marks only when it began, the rest is read live.
             from maity_hub import not_listening_digest
