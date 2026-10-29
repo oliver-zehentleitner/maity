@@ -59,6 +59,18 @@ window.Maity = window.Maity || {};
     let current = await M.api.get(SETTINGS);
     const canSave = await M.api.hubHas("PATCH", SETTINGS).catch(() => true);
     const stepSlot = h("div", { class: "step-up-slot" });
+    // What the hub does now, what is missing and the counts: redrawn on their
+    // own after a decision, so the form keeps what is typed and not saved.
+    const summary = h("div", { class: "reg-summary" });
+    function drawSummary() {
+      const set = (current.mode || {}).value, effective = current.effective_mode;
+      append(clear(summary),
+        h("p", { class: "reg-effective" }, "Registration now: ", h("strong", null, effective),
+          effective !== set ? " (set: " + set + ")" : "", "."),
+        (current.missing || []).map((m) => h("p", { class: "flag reg-missing", "data-missing": m }, MISSING[m] || "Missing: " + m)),
+        h("p", { class: "muted reg-counts" }, current.pending + " waiting for approval · " + current.registered_last_hour
+          + " registered in the last hour · " + current.requests_dropped_last_hour + " requests dropped in the last hour"));
+    }
 
     function draw(words) {
       const v = (name) => (current[name] || {}).value;
@@ -94,8 +106,6 @@ window.Maity = window.Maity || {};
       const save = h("button", { type: "submit", disabled: canSave ? null : true }, "Save");
       const formStatus = M.statusLine();
 
-      const effective = current.effective_mode;
-      const lines = (current.missing || []).map((m) => h("p", { class: "flag reg-missing", "data-missing": m }, MISSING[m] || "Missing: " + m));
       const form = h("form", {
         class: "project-form reg-form",
         novalidate: true,
@@ -165,19 +175,14 @@ window.Maity = window.Maity || {};
       save, formStatus.el, stepSlot);
       if (words) append(formStatus.el, h("span", { class: "ok" }, words));
 
-      append(clear(body),
-        h("p", { class: "reg-effective" }, "Registration now: ", h("strong", null, effective),
-          effective !== v("mode") ? " (set: " + v("mode") + ")" : "", "."),
-        lines,
-        h("p", { class: "muted reg-counts" }, current.pending + " waiting for approval · " + current.registered_last_hour
-          + " registered in the last hour · " + current.requests_dropped_last_hour + " requests dropped in the last hour"),
-        form);
+      drawSummary();
+      append(clear(body), summary, form);
     }
     draw();
     status.done();
     const pendingBox = h("div", { class: "reg-pending" });
     append(root, pendingBox);
-    if (await M.api.hubHas("GET", PENDING).catch(() => false)) await pendingPart(pendingBox, async () => { current = await M.api.get(SETTINGS); draw(); });
+    if (await M.api.hubHas("GET", PENDING).catch(() => false)) await pendingPart(pendingBox, async () => { current = await M.api.get(SETTINGS); drawSummary(); });
     if (await M.api.hubHas("DELETE", "/admin/registrations/blocks/{blocked}").catch(() => false)) append(root, blockPart());
   }
 
