@@ -38,14 +38,15 @@ the system and sshd.
    values it set.
 7. **root:** `systemctl enable --now maity-runner@<type>`; GitHub shows the runner as **Idle**. Then check the caps before any job:
    - `systemctl show -p ControlGroup maity-runner@<type>`: it must end under `user-<uid>.slice` (`<uid>`: `id -u gh-runner`).
-   - `systemctl show -p CPUQuotaPerSecUSec -p MemoryMax user-<uid>.slice`: `7.5s` and `13958643712`.
-   - `systemctl show -p CPUQuotaPerSecUSec -p MemoryMax maity-runner@<type>`: `7s` and `11811160064`.
-   - `systemctl show -p Environment maity-runner@<type>`: it ends with `PYTEST_ARGS=-n 8`.
+   - `systemctl show -p CPUQuotaPerSecUSec -p MemoryMax -p MemorySwapMax user-<uid>.slice`: `7.5s`, `13958643712` and `MemorySwapMax=0`.
+   - `systemctl show -p CPUQuotaPerSecUSec -p MemoryMax -p MemorySwapMax maity-runner@<type>`: `7s`, `11811160064` and `MemorySwapMax=0`.
+   - `systemctl show -p Environment maity-runner@<type>`: it ends with `PYTEST_ARGS=-n 8` (shown in quotes, so the line ends with `"`).
 8. **root, a second shell, kept open:** `vmstat 5`. **Web, the repository variables** (Settings → Secrets and variables →
-   Actions → Variables): `HUB_RUNNER_TYPES` = `<type>` first, then `HUB_RUNNER_LABEL` = `maity-hub`. Only the job of that type goes to
-   the machine; the other two stay hosted. Watch `vmstat` (`id` above 10, `wa` low, `si`/`so` zero) while the first job runs.
-9. **Taking a server away:** delete `HUB_RUNNER_LABEL` (and `HUB_RUNNER_TYPES`) first, **cancel and rerun** the runs still queued on its label
-   (deleting the variable does not re-route them), then remove the runner (Settings → Actions → Runners) and delete the server.
+   Actions → Variables): `HUB_RUNNER_TYPES`: add `<type>` to the list (space-separated; for the first server it is just `maria`), then, once, `HUB_RUNNER_LABEL` = `maity-hub`.
+   Only the jobs of the listed types go to the machines; the others stay hosted. Setting the list to `<type>` on a second server would silently
+   send the first server's job back to the hosted runner. Watch `vmstat` (`id` above 10, `wa` low, `si`/`so` zero) while the first job runs.
+9. **Taking a server away:** first remove its type from `HUB_RUNNER_TYPES` (delete `HUB_RUNNER_LABEL` only when it was the last server), then **cancel and rerun** the runs still
+   queued on its label (changing the variables does not re-route them), then remove the runner (Settings → Actions → Runners) and delete the server.
    A server a fork's job may have run on is deleted, not cleaned.
 
 ## What the bootstrap does and what it does not
