@@ -8,8 +8,9 @@
   arbiter or coordinator, and moving its `reports_to`, answer `202` with a consent request.
 - hub: a manager's pause is stored with `by` naming it, outlasts `resume`, is refused to the agent's
   `PATCH /me` with `paused_by_manager`, and is lifted by that manager, a manager above, an admin
-  agent, a human admin or the agent's owner (§5.3); ending a cross-owner edge or the boss losing the
-  role clears `line_consent` and lifts it (§6.2).
+  agent (not a human manager's), a human admin or the agent's owner (§5.3); ending a cross-owner
+  edge, the boss losing the role or the boss lowered to trust `guest` clears `line_consent` for good
+  and lifts it (§6.2).
 - hub: the member view carries `cross_owner` and `line_consent` (§6.2); migration 0078 adds
   `membership.line_consent` and `paused_line` on memberships and credentials.
 - hub: a `reports_to` chain is at most 8 members long: a `PATCH`, a join and a placement that

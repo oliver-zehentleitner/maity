@@ -20,7 +20,7 @@ from typing import Any
 
 from sqlalchemy import Connection, select
 
-from maity_hub import proposals
+from maity_hub import line, proposals
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth.caller import Caller
@@ -76,9 +76,14 @@ def check_patch(mine: Membership, target: Any, body: Any, given: set[str]) -> No
 
 def _check_pause(target: Any, agent_id: str, lifting: bool = False) -> None:
     """Who lifts or replaces a pause: a human's only a human, another agent's only that
-    agent or a human (§2.3 ᵃ). A manager's pause an admin agent lifts, but does not
-    replace (§5.3)."""
-    if target.paused_since is not None and target.paused_line and target.paused_by != agent_id:
+    agent or a human (§2.3 ᵃ). An agent manager's pause an admin agent lifts, but does not
+    replace (§5.3); a human manager's is a human's pause like any other."""
+    if (
+        target.paused_since is not None
+        and target.paused_line
+        and target.paused_by != agent_id
+        and not _paused_by_a_human(target)
+    ):
         if lifting:
             return
         raise forbidden("members:admin", "a pause a manager set is lifted, not replaced")
@@ -214,6 +219,8 @@ def _still_allowed(conn: Connection, proposer: Any, target: Any, proposal: dict[
     boss = proposal["values"].get("reports_to")
     if boss is not None and target.id in members.chain(conn, boss):
         raise invalid({"reports_to": "cycle"}, "the chain made a cycle in the meantime")
+    if boss is not None and not line.fits(conn, target.project_id, boss, target.id):
+        raise line.too_deep()  # the chain grew while the request waited (§2.3 "Depth")
     cover = proposal["values"].get("availability_policy")
     if cover is not None:
         from maity_hub import availability

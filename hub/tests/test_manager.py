@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import clock, line
+from maity_hub import clock, events, line
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -348,6 +348,42 @@ def test_who_lifts_a_managers_pause(
     assert _row(migrated, lent).paused_since is None
 
 
+def test_an_admin_agent_never_touches_a_human_managers_pause(
+    team: dict[str, Any], migrated: Engine, make_client: ClientFactory
+) -> None:
+    """A human manager's pause is a human's pause (§5.3), whatever right set it."""
+    friend = flow.human(make_client, migrated, "friend")
+    factory.membership(migrated, _project_id(migrated), "member", human_id=friend.id)
+    _set(migrated, friend.id, role="manager")
+    lent = factory.agent(migrated, _project_id(migrated), friend.id).agent_id
+    _set(migrated, lent, reports_to=friend.id)
+    paused = member(friend, lent, {"paused": {"reason": "x"}})
+    assert paused.status_code == 200, paused.text
+    assert _row(migrated, lent).paused_line is True
+    for body in ({"paused": None}, {"paused": {"reason": "mine"}}):
+        refused = member(team["admin"], lent, body)
+        assert refused.status_code == 403, refused.text
+    assert _row(migrated, lent).paused_by == friend.id
+
+
+def test_the_line_path_decides_on_the_row_under_the_lock(
+    owner: flow.Human, team: dict[str, Any], migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A human's pause written between the route's first read and the project lock is
+    the one the manager meets: it is not the manager's to replace."""
+    first = _mid(migrated, team["first"].id)
+    original = events.lock_project
+
+    def meanwhile(conn: Any, project_id: str) -> None:
+        original(conn, project_id)
+        paused = {"paused_since": clock.now(), "paused_by": owner.id, "paused_reason": "mine"}
+        conn.execute(update(t.membership).where(t.membership.c.id == first).values(paused))
+
+    monkeypatch.setattr("maity_hub.line.lock_project", meanwhile)
+    refused = member(team["manager"], team["first"].id, {"paused": {"reason": "x"}})
+    assert (refused.status_code, details(refused)) == (403, {"scope": "members:admin"})
+
+
 def test_a_manager_never_lifts_a_humans_or_an_admins_pause(
     owner: flow.Human, team: dict[str, Any]
 ) -> None:
@@ -375,6 +411,20 @@ def test_losing_the_role_ends_the_consent_and_lifts_the_pause(
     # Getting the role back does not bring the consent back (§6.2).
     assert member(owner, manager.id, {"role": "manager"}).status_code == 200
     assert _row(migrated, stranger).line_consent is False
+    assert stranger not in _reach(migrated, manager.id)
+
+
+def test_trust_guest_ends_the_consent_as_losing_the_role_does(
+    owner: flow.Human, team: dict[str, Any], migrated: Engine
+) -> None:
+    manager, stranger = team["manager"], team["stranger"]
+    _set(migrated, stranger, line_consent=True)
+    assert member(manager, stranger, {"paused": {"reason": "x"}}).status_code == 200
+    assert member(owner, manager.id, {"trust": "guest"}).status_code == 200
+    row = _row(migrated, stranger)
+    assert (row.line_consent, row.paused_since) == (False, None)
+    # Back at trust member, the old consent stays gone (§6.2).
+    assert member(owner, manager.id, {"trust": "member"}).status_code == 200
     assert stranger not in _reach(migrated, manager.id)
 
 
@@ -466,6 +516,20 @@ def test_a_patch_counts_the_chain_above_and_the_deepest_below(
     # An existing longer chain stays, and naming the same boss again is no move.
     _set(migrated, loose[0], reports_to=lower[-1])
     assert member(owner, loose[0], {"reports_to": lower[-1]}).status_code == 200
+
+
+def test_the_go_of_an_admin_agents_request_checks_the_depth(
+    owner: flow.Human, team: dict[str, Any], migrated: Engine
+) -> None:
+    chain = _chain(migrated, owner.id, 7)
+    boss = _chain(migrated, owner.id, 1)[0]
+    reviewer = factory.agent(migrated, _project_id(migrated), owner.id, "reviewer").agent_id
+    proposed = member(team["admin"], reviewer, {"role": "coder", "reports_to": boss})
+    assert proposed.status_code == 202, proposed.text
+    assert member(owner, boss, {"reports_to": chain[-1]}).status_code == 200  # boss at 8
+    go = owner.post(f"{PROJECT}/requests/{proposed.json()['id']}/answer", {"reply_id": "go"})
+    _too_deep(go)  # the reviewer would sit at 9
+    assert _row(migrated, reviewer).reports_to is None
 
 
 def test_a_join_checks_the_depth_and_its_exchange_drops_a_boss_too_deep(

@@ -398,7 +398,10 @@ def apply_patch(
             )
         if "reports_to" in changed:
             line.edge_ended(conn, change, target)
-        if old.get("role") == "manager":
+        # Trust guest ends a manager's rights as losing the role does: the consents go
+        # for good, a later return to member does not bring them back (§6.2).
+        held = target.role == "manager" and target.trust != "guest"
+        if held and not (row.role == "manager" and row.trust != "guest"):
             line.manager_lost(conn, change, target)
     given, reason = pause
     if given:
@@ -447,7 +450,7 @@ def patch_member(
         # A manager without members:admin acts on its reach alone (§2.3 "The manager").
         line_lead = not agent_admin and not mine.may("members:admin") and mine.may("line:lead")
         if line_lead and not (own_policy and mine.kind == "human"):
-            line.check_patch(conn, mine, target, body, given)
+            target = line.check_patch(conn, mine, target, body, given)
         elif not agent_admin and not (own_policy and mine.kind == "human"):
             # A human sets their own policy without members:admin (§6.12).
             mine.require("members:admin")

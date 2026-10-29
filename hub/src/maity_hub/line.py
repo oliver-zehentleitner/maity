@@ -21,7 +21,7 @@ from maity_hub import proposals
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row
 from maity_hub.auth.caller import Caller
-from maity_hub.errors import ApiError, forbidden, invalid
+from maity_hub.errors import ApiError, forbidden, invalid, not_found
 from maity_hub.events import Actor, lock_project
 from maity_hub.scopes import has_scope
 from maity_hub.views import principal_id
@@ -199,14 +199,19 @@ def _check_pause(
     )
 
 
-def check_patch(
-    conn: Connection, mine: Membership, target: Any, body: Any, given: set[str]
-) -> dict[int, str]:
+def check_patch(conn: Connection, mine: Membership, target: Any, body: Any, given: set[str]) -> Any:
     """The rules of a `PATCH …/members/{id}` by a caller holding only `line:lead`, under
-    the project lock it takes; returns the reach."""
+    the project lock it takes; returns the target as read under that lock."""
     if given - LINE_FIELDS:
         raise forbidden("members:admin", "a manager sets areas, paused and reports_to only")
     lock_project(conn, mine.project.id)
+    # Read again under the lock, and locked itself: a human's pause write does not take
+    # the project lock, and its pause, role and edge decide what follows.
+    target = conn.execute(
+        select(t.membership).where(t.membership.c.id == target.id).with_for_update()
+    ).one()
+    if target.active is not True:
+        raise not_found()  # removed meanwhile, as `member_row` answers
     found = require_reach(conn, mine, target.id)
     if target.id == mine.id:
         raise not_in_line("a manager is not in its own reach")
@@ -229,7 +234,7 @@ def check_patch(
         if instance is not None:
             row = instances.require_active(conn, target, instance, "instance")
         _check_pause(conn, mine, target, row, found)
-    return found
+    return target
 
 
 def needs_consent(project: Any, target: Any, values: dict[str, Any], pause: Any) -> bool:

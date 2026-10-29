@@ -72,12 +72,18 @@ The contract leaves these open; the hub does this:
   outside its reach) is `forbidden` with `details.scope: members:admin`, as
   ᵃ refuses another agent's pause; `not_in_line` stays for members outside
   the reach.
-- An admin agent lifts a manager's pause but does not replace it.
+- An admin agent lifts an agent manager's pause but does not replace it. A
+  human manager's pause is a human's pause: no admin agent lifts or
+  replaces it (§5.3), on the membership, on an instance, and at the `go`
+  of a consent request alike.
 - A pause set by a manager who was removed since is no longer lifted by the
   manager above (the setter is not in its reach any more); humans and the
   owner still lift it.
-- Only a change of the boss's role away from `manager` clears `line_consent`;
-  trust lowered to `guest` does not, but the guest manager's reach is empty.
+- A manager whose trust is lowered to `guest` loses its rights as if it
+  lost the role: every `line_consent` naming it is cleared for good and the
+  pauses it set over those edges are lifted. Back at trust `member`, it does
+  not get the old consents back, as the role coming back does not set them
+  again (§6.2).
 - The agent's owner lifts a manager's pause also when not a member of the
   project, answered `204` with no body, as `team` is.
 
