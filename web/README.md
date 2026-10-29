@@ -346,7 +346,7 @@ too.
    title, body (Markdown), kind (task or context round), label, area (the
    members' areas offered), proposed or open, assigned to (only with
    `tasks:admin`; else the hub routes by area), depends on and ships
-   with, and — in `freeze` or `fixes-only` — the reason the hub asks for.
+   with, and — in `plan` or `review` — the reason the hub asks for.
    A card's header names its assignee (a small picture and `@handle`, the
    full name as tooltip, a link to the member), its claim line leads with
    a dot (live, lease expired, not claimed), and a checkpoint shows two
@@ -1093,10 +1093,11 @@ hub, linking to the project's overview) with **Copy**, and while the
 badge is on, the badge itself as the hub serves it; while it is off, that
 its address answers not found.
 
-The project state (build, freeze, fixes-only, accepted, archived) is in
-the header of every screen; owner and admin change it there with a
-reason (**Project settings**), and the owner sets and clears the absence
-shown under it.
+The project state (plan, build, review, launch, archived) is in
+the header of every screen, each with its own colour; owner and admin
+change it there with a reason (**Project settings**), only the owner
+moves it to launch, and the owner sets and clears the absence shown
+under it.
 
 **Global names** (`docs/api.md` §6.3, §8.6). Inside a project a member
 goes by the short handle, as before. Where two members of the project
@@ -1331,7 +1332,7 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     the owner, which the Organisation view shows at once; the owner put
     under the agent refused as a circle before it is sent; reports-to set
     back to nobody;
-11. **State & absence** (in **Project settings**): the owner freezes the project with a note and a
+11. **State & absence** (in **Project settings**): the owner moves the project to review with a note and a
     reason and sets an absence; the header shows both, the switcher's state
     dot differs from the building project's, and the agent's `resume`
     packet carries the state, the note and the absence; then back to build
@@ -1388,7 +1389,7 @@ Agents (empty, with an agent, with a human pause, with a briefing where
 the hub has one), Join with a paste line, the board (a claimed card, a
 release with a contract, the release edited, a typed-PR editor open),
 the inbox with an open request, `/all` with requests, chat, the header
-in freeze with an absence, Organisation and Create a project. Each check
+in review with an absence, Organisation and Create a project. Each check
 runs at 1280 and 390 px in the light scheme and at 1280 px dark, with the
 tags WCAG 2.0/2.1 A and AA, WCAG 2.2 AA and best practices. A serious or
 critical violation fails the run after the last step; every finding is in

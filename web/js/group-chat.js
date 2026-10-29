@@ -13,7 +13,7 @@ window.Maity = window.Maity || {};
 
   const MAX_PEOPLE = 12;
   const EARLIER_PAGE = 50;
-  const CLOSED_STATES = ["accepted", "archived"];
+  const CLOSED_STATES = ["archived"];
 
   // The hub's refusals, in words.
   const REFUSED = {

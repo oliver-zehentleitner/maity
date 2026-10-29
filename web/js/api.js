@@ -577,7 +577,7 @@ window.Maity = window.Maity || {};
     if (!ids || !ids.length) return [];
     attachmentsOn(path);
     if (ids.length > 10) fail(400, "invalid", "at most 10 attachments", path, { fields: { attachments: "too_many" } });
-    if (["accepted", "archived"].includes(project(slug, path).state)) fail(409, "project_closed", "the project is closed", path);
+    if (project(slug, path).state === "archived") fail(409, "project_closed", "the project is closed", path);
     const list = attachmentsOf(slug);
     const bad = {};
     ids.forEach((id) => {
@@ -1391,7 +1391,7 @@ window.Maity = window.Maity || {};
     ["PATCH", /^\/projects\/([^/]+)\/placements\/([^/]+)$/, (m, body, path) => {
       const p = placementFor(m[1], m[2], path);
       if (!["running", "stopped"].includes(body.desired)) fail(400, "invalid", "desired is running or stopped", path, { fields: { desired: "unknown" } });
-      if (body.desired === "running" && ["accepted", "archived"].includes(project(m[1], path).state)) fail(409, "project_closed", "the project is closed", path);
+      if (body.desired === "running" && project(m[1], path).state === "archived") fail(409, "project_closed", "the project is closed", path);
       p.desired = body.desired;
       p.updated_by = me().member.id; p.updated_at = nowIso();
       return p;
@@ -1673,7 +1673,10 @@ window.Maity = window.Maity || {};
         if (mine) mine.full_name = p.full_name;
       }
       if ("state" in body) {
+        // §6.1: the five states; moving to launch is a human owner's go.
+        if (!["plan", "build", "review", "launch", "archived"].includes(body.state)) fail(400, "invalid", "unknown state", path, { fields: { state: "unknown" } });
         if (!body.reason) fail(400, "invalid", "A state change needs a reason", path, { fields: { reason: "required" } });
+        if (body.state === "launch" && p.state !== "launch" && (me().member.kind !== "human" || trustIn(m[1]) !== "owner")) fail(403, "forbidden", "moving to launch is the owner's go", path);
         p.state = body.state;
         p.state_note = body.state_note || null;
         p.state_changed_at = nowIso();
@@ -1723,7 +1726,7 @@ window.Maity = window.Maity || {};
           : url ? { url, default_branch: same ? p.repository.default_branch : "main", forge: "github", probe_configured: same ? p.repository.probe_configured : false } : null;
         if (!same && "keep_the_why_export" in p) p.keep_the_why_export = back ? back.export : null;
         // The repository first set: the setup cards chosen at creation (§6.21).
-        if (url && p.setup && p.setup.cards === null && !["accepted", "archived"].includes(p.state)) makeSetupCards(m[1], p.setup, me().member.id, url);
+        if (url && p.setup && p.setup.cards === null && p.state !== "archived") makeSetupCards(m[1], p.setup, me().member.id, url);
       }
       if ("policy" in body) {
         // A policy change needs a reason, except `badge` alone (§6.20); fields merge into the
@@ -1889,7 +1892,7 @@ window.Maity = window.Maity || {};
       const slug = slugOfFull(decodeURIComponent(m[1]) + "/" + decodeURIComponent(m[2]));
       const p = slug && fixtures()[slug + "/project.json"];
       const s = slug && fixtures()[slug + "/swarm.json"];
-      if (!p || !s || (p.policy || {}).swarm_public !== "on" || ["accepted", "archived"].includes(p.state)) fail(404, "not_found", "Not found", path);
+      if (!p || !s || (p.policy || {}).swarm_public !== "on" || p.state === "archived") fail(404, "not_found", "Not found", path);
       const agents = (list) => list.filter((x) => x.kind === "agent");
       const sum = (rows, k) => rows.reduce((a, r) => a + (r[k] || 0), 0);
       const rows = agents(s.members).map((r) => ({ handle: r.handle, name: r.name, cards_done: r.cards_done, reviews_given: r.reviews_given,
@@ -2187,7 +2190,7 @@ window.Maity = window.Maity || {};
     ["POST", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/notes$/, (m, body, path) => {
       const card = file(m[1], "tasks.json", path).items.find((c) => c.id === m[2]);
       if (!card) fail(404, "not_found", "Not found", path);
-      if (["accepted", "archived"].includes(project(m[1], path).state)) fail(409, "project_closed", "the project is closed", path);
+      if (project(m[1], path).state === "archived") fail(409, "project_closed", "the project is closed", path);
       const text = String(body.body || "");
       if (!text.trim()) fail(400, "invalid", "body: missing", path, { fields: { body: "missing" } });
       if (utf8Bytes(text) > 4096) fail(400, "invalid", "body: too_long", path, { fields: { body: "too_long" } });
@@ -2260,16 +2263,16 @@ window.Maity = window.Maity || {};
       if (entry.error) fail(entry.error.status, entry.error.code, entry.error.message, path, entry.error.fields ? { fields: entry.error.fields } : {});
       return Object.assign({ path: where, section: card.contract.section, fetched_at: nowIso() }, entry);
     }],
-    // §6.4: a new card. assigned_to needs tasks:admin; freeze and fixes-only need a reason.
+    // §6.4: a new card. assigned_to needs tasks:admin; plan and review need a reason.
     ["POST", /^\/projects\/([^/]+)\/tasks$/, (m, body, path) => {
       const proj = project(m[1], path);
-      if (["accepted", "archived"].includes(proj.state)) fail(409, "project_closed", "the project is closed", path);
+      if (proj.state === "archived") fail(409, "project_closed", "the project is closed", path);
       const list = file(m[1], "tasks.json", path).items;
       const errors = {};
       if (!body.title || !String(body.title).trim()) errors.title = "missing";
       if (body.label && !["fix", "feature", "chore"].includes(body.label)) errors.label = "unknown";
       if (body.status && !["proposed", "open"].includes(body.status)) errors.status = "unknown";
-      if (["freeze", "fixes-only"].includes(proj.state) && !(body.reason && body.reason.trim())) errors.reason = "missing";
+      if (["plan", "review"].includes(proj.state) && !(body.reason && body.reason.trim())) errors.reason = "missing";
       if (body.assigned_to) {
         if (!tasksAdmin(m[1])) fail(403, "forbidden", "assigning needs tasks:admin", path, { scope: "tasks:admin" });
         if (!file(m[1], "members.json", path).items.some((x) => x.id === body.assigned_to)) errors.assigned_to = "not_a_member";
@@ -2311,7 +2314,7 @@ window.Maity = window.Maity || {};
     // hub may at any time.
     ["POST", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/move$/, (m, body, path) => {
       if (!tasksAdmin(m[1])) fail(403, "forbidden", "ordering needs tasks:admin", path, { scope: "tasks:admin" });
-      if (["accepted", "archived"].includes(project(m[1], path).state)) fail(409, "project_closed", "the project is closed", path);
+      if (project(m[1], path).state === "archived") fail(409, "project_closed", "the project is closed", path);
       const all = file(m[1], "tasks.json", path).items;
       const card = all.find((x) => x.id === m[2]);
       if (!card) fail(404, "not_found", "no such card", path);
@@ -2685,7 +2688,7 @@ window.Maity = window.Maity || {};
     // §8.7 attachments: a raw upload, pending until a message names it.
     ["POST", /^\/projects\/([^/]+)\/attachments$/, (m, body, path, query) => {
       attachmentsOn(path);
-      if (["accepted", "archived"].includes(project(m[1], path).state)) fail(409, "project_closed", "the project is closed", path);
+      if (project(m[1], path).state === "archived") fail(409, "project_closed", "the project is closed", path);
       const name = query.get("name");
       if (!name) fail(400, "invalid", "a name is required", path, { fields: { name: "required" } });
       if (body.size > ATTACHMENT_MAX) fail(413, "payload_too_large", "larger than 10 MiB", path);
@@ -2800,7 +2803,7 @@ window.Maity = window.Maity || {};
     ["POST", /^\/projects\/([^/]+)\/conversations$/, (m, body, path) => {
       const chats = groupChats(m[1]);
       if (me().member.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
-      if (["accepted", "archived"].includes(project(m[1], path).state)) fail(409, "project_closed", "the project is closed", path);
+      if (project(m[1], path).state === "archived") fail(409, "project_closed", "the project is closed", path);
       const members = file(m[1], "members.json", path).items;
       const ids = [...new Set([me().member.id].concat(body.participants || []))];
       if (ids.some((id) => !members.some((x) => x.id === id))) fail(400, "invalid", "not a member", path, { fields: { participants: "not_a_member" } });
@@ -2829,7 +2832,7 @@ window.Maity = window.Maity || {};
     }],
     ["POST", /^\/projects\/([^/]+)\/conversations\/(cnv-[^/]+)\/participants$/, (m, body, path) => {
       const c = managed(m[1], m[2], path);
-      if (["accepted", "archived"].includes(project(m[1], path).state)) fail(409, "project_closed", "the project is closed", path);
+      if (project(m[1], path).state === "archived") fail(409, "project_closed", "the project is closed", path);
       const who = file(m[1], "members.json", path).items.find((x) => x.id === body.member_id);
       if (!who) fail(400, "invalid", "not a member", path, { fields: { member_id: "not_a_member" } });
       if (!c.view.participants.some((x) => x.member_id === who.id)) {

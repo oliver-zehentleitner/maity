@@ -18,13 +18,13 @@ the options it sees) and its answers (prepared replies, free text,
 "neither — let's talk"); answering moves on to the next. The chat with
 an agent the human owns is the channel beside the inbox, reachable from
 every inbox entry and every agent card, never the landing page. The
-project state (build, freeze, fixes-only, accepted, archived) sits in the
+project state (plan, build, review, launch, archived) sits in the
 header of every screen.
 
 **Reason:** the root decision makes the inbox the human's primary
 surface; the dashboard's order follows from it, and an entry has to carry
 its context because the point is that answering does not require a chat.
-The project state belongs on every screen because a freeze changes what
+The project state belongs on every screen because a review changes what
 any answer means.
 
 **Rejected alternative:** the board as the landing page, the default of

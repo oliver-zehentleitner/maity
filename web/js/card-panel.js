@@ -90,7 +90,7 @@ window.Maity = window.Maity || {};
           h("p", { class: "muted" }, byline(ctx, n.author), " · " + formatTime(n.created_at)),
           h("div", { class: "md" }, M.markdown(n.body, where)))))
         : h("p", { class: "muted" }, "No open notes."));
-      const closed = ctx.project && ["accepted", "archived"].includes(ctx.project.state);
+      const closed = ctx.project && ctx.project.state === "archived";
       if (closed) return;
       const text = noteField = M.dom.sendOnCtrlEnter(h("textarea", { id: "card-note-body", rows: "3", maxlength: "4096", placeholder: "A finding, a missing case, a pointer (Markdown)" }));
       const status = M.statusLine();
