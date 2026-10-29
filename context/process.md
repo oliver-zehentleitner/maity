@@ -792,8 +792,8 @@ The name of a runner must be unique in the repository (the first registration of
 **Id:** 3265e81c-616e-4c6d-9d27-5261e10d4691
 **Type:** decision
 **Status:** active
-**Evidence:** inferred
-**Source:** the coordinator's decision for the issue chooser, 2026-10-29
+**Evidence:** confirmed
+**Source:** the maintainer's request on card tsk-mj2arrc90pgj, 2026-10-29; the wording of the forms is the implementer's
 **Revisit when:** the public project page on Maity shows visitors more than the app shell, or outside contributors ask for a GitHub place for ideas
 
 `.github/ISSUE_TEMPLATE/` holds one issue form for bugs (component,
