@@ -946,6 +946,7 @@ def scenario(run: Run, page: Page) -> None:
     direct_removal_step(run, page, agent_id)
     attachments_step(run, page, agent_id)
     members_step(run, page)
+    my_settings_step(run, page)
     invitations_step(run, page)
     message_step(run, page, alpha, agent_id)
     release_contract(run, page, alpha, agent_id, task["id"])
@@ -2338,6 +2339,37 @@ def invitations_step(run: Run, page: Page) -> None:
     finally:
         other.close()
     no_problems(run, "invitations")
+
+
+def my_settings_step(run: Run, page: Page) -> None:
+    """Agents that stop listening (§5.3, §6.2, §18.4): the account's default, a project's own value."""
+    probe = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/me/settings")
+    if probe.status == 404:
+        run.step("my settings: this hub has none per project yet, so the tab says so")
+        page.goto(f"{run.base}/owner/e2e-alpha/my-settings")
+        expect(page.locator("main section.view-my-settings")).to_contain_text("no settings of your own per project")
+        return
+    run.step("my settings: the account's default, then a value for the project, then back to the default")
+    page.goto(f"{run.base}/account/notifications")
+    form = page.locator("form.not-listening-settings")
+    expect(page.locator("#not-listening-minutes")).to_have_value("60")
+    page.locator("#not-listening-minutes").fill("45")
+    form.get_by_role("button", name="Save", exact=True).click()
+    expect(form).to_contain_text("Saved.")
+    page.goto(f"{run.base}/owner/e2e-alpha/inbox")
+    view_tab(page, "My settings").click()
+    expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/my-settings$"))
+    effective = page.locator(".my-nl-effective")
+    expect(effective).to_have_text("Applies now: 45 minutes, your default.")
+    page.locator("#my-nl-here").check()
+    page.locator("#my-nl-minutes").fill("20")
+    page.locator("form.my-settings").get_by_role("button", name="Save", exact=True).click()
+    expect(effective).to_have_text("Applies now: 20 minutes, set here.")
+    run.a11y(page, "my settings")
+    page.locator("#my-nl-default").check()
+    page.locator("form.my-settings").get_by_role("button", name="Save", exact=True).click()
+    expect(effective).to_have_text("Applies now: 45 minutes, your default.")
+    no_problems(run, "my settings")
 
 
 def members_step(run: Run, page: Page) -> None:
