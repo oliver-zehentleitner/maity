@@ -8,23 +8,31 @@ or computed again on its next use. The caller holds the lock that guards the map
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from collections.abc import Callable
 
 
 def put[K, V](
-    kept: dict[K, V], key: K, value: V, most: int, stays: Callable[[V], bool] | None = None
+    kept: OrderedDict[K, V],
+    key: K,
+    value: V,
+    most: int,
+    stays: Callable[[K], bool] | None = None,
 ) -> list[K]:
     """`kept[key] = value` as the newest entry; beyond `most`, the oldest written go,
-    except `key` itself and those `stays` keeps (a lock held right now). Returns the
-    keys dropped."""
-    kept.pop(key, None)
+    except `key` itself and the keys `stays` keeps (one in use right now). Returns the
+    keys dropped.
+
+    A key written again keeps its value in place and moves to the end: a reader without
+    the lock never sees it missing in between, as a `pop` and a new insert would show."""
     kept[key] = value
+    kept.move_to_end(key)
     dropped: list[K] = []
     if len(kept) > most:
         for old in list(kept):
             if len(kept) <= most:
                 break
-            if old == key or (stays is not None and stays(kept[old])):
+            if old == key or (stays is not None and stays(old)):
                 continue
             del kept[old]
             dropped.append(old)

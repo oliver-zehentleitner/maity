@@ -59,7 +59,7 @@ each member's last good export.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-7865c6c2gszb (the hub's in-process structures without a bound), the lead's ruling, 2026-10-29; `hub/src/maity_hub/bounded.py`; `hub/tests/test_bounded.py`
+**Source:** card tsk-7865c6c2gszb (the hub's in-process structures without a bound), the lead's ruling, 2026-10-29; the review of #672 (the windows of a lock in use, a read without the lock); `hub/src/maity_hub/bounded.py`; `hub/tests/test_bounded.py`
 **Revisit when:** the load test (tsk-ryas52q9k53z) or prod's memory curve shows a bound too small (projects read anew too often) or too large; or projects can be deleted for good, so that their entries could go at once
 
 The hub keeps several caches per project in the process. Each gained a
@@ -77,12 +77,19 @@ oldest written beyond a bound:
 | the image read state per project and kind (`images`) | 4096 per map |
 
 What a dropped key held is read or computed again on its next use. For
-`_last_via` that means the default source shows until the next choice. A
-gate that a read holds right now is never dropped. The maps that were
-written without a lock (`ktw.last_good`, the image maps, `_last_via`) are
-now written under their module's lock, because dropping walks the map
-while other threads write it. `ktw.Cache.forget` drops the project's idle
-lock too.
+`_last_via` that means the default source shows until the next choice.
+
+- **In use is never dropped.** A Keep the Why project and an image gate
+  count their requests from asking for the lock until leaving
+  (`ktw.Cache.users`, `images._flying`). While one is counted, neither
+  its answer nor its last good reads nor its lock are dropped.
+- **Written in place.** The maps are `OrderedDict`s. A key written again
+  keeps its slot and moves to the end (`move_to_end`), so a reader
+  without the lock never sees it missing in between.
+- **Locks.** The maps that were written without a lock (`ktw.last_good`,
+  the image maps, `_last_via`) are now written under their module's
+  lock, because dropping walks the map while other threads write it.
+  `ktw.Cache.forget` drops the project's idle lock too.
 
 **Rejected alternatives:**
 - Forgetting a project when it is deleted, as first planned: the
@@ -90,6 +97,11 @@ lock too.
   nothing would ever call it.
 - An age limit alone: it bounds how old an entry is, not how many
   there are, so many projects viewed within the hour still grow the map.
+- Keeping only a lock that is held right now (`lock.locked()`), the
+  first version of #672: a request that has its lock but not yet taken
+  it, or a Keep the Why read that is still running, could lose the
+  lock or the last good reads. A second request would then get a new
+  lock and read the forge again.
 
 ## The Keep the Why policy stores only what a human set; the provider keeps its boolean column
 

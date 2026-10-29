@@ -16,6 +16,7 @@ from __future__ import annotations
 import re
 import statistics
 import threading
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -307,7 +308,7 @@ class _Cache:
     end of its UTC day, so that a new day has its row from its first minute."""
 
     def __init__(self) -> None:
-        self._kept: dict[str, Window] = {}
+        self._kept: OrderedDict[str, Window] = OrderedDict()
         self._lock = threading.Lock()
 
     def get(self, conn: Connection, project_id: str) -> Window:

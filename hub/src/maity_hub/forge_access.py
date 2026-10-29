@@ -22,6 +22,7 @@ from __future__ import annotations
 import hashlib
 import threading
 import time
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any
 
@@ -60,7 +61,7 @@ class ForgeAccess:
         self.secret_key = secret_key
         self._lock = threading.Lock()
         # project id -> (when chosen, what it depended on, the reader)
-        self._chosen: dict[str, tuple[float, tuple[Any, ...], forge.Forge]] = {}
+        self._chosen: OrderedDict[str, tuple[float, tuple[Any, ...], forge.Forge]] = OrderedDict()
 
     def reader(self, project_id: str, base: forge.Forge) -> forge.Forge:
         facts = self._facts(project_id)
@@ -248,7 +249,7 @@ def _digest(sealed: bytes) -> str:
 
 # project id -> the source the last choice found (§6.1 `probe_via`); a view reads it
 # without asking the forge
-_last_via: dict[str, str | None] = {}
+_last_via: OrderedDict[str, str | None] = OrderedDict()
 _via_lock = threading.Lock()
 # Projects whose source is known. One dropped shows the default below until its next
 # read chooses again, which the probe does within its interval.

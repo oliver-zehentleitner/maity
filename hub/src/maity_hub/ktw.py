@@ -20,6 +20,7 @@ import re
 import threading
 import time
 import urllib.parse
+from collections import OrderedDict
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
@@ -562,9 +563,12 @@ class Cache:
     """The answers per project, in memory; the last good read of each member until the hub
     restarts. One read of a project's family at a time."""
 
-    entries: dict[str, _Entry] = field(default_factory=dict)
+    entries: OrderedDict[str, _Entry] = field(default_factory=OrderedDict)
     last_good: dict[tuple[str, str], tuple[Read, str | None]] = field(default_factory=dict)
     locks: dict[str, threading.Lock] = field(default_factory=dict)
+    # Requests between taking a project's lock and leaving `get`: such a project is
+    # never dropped, so a read in progress keeps its last good reads and its lock.
+    users: dict[str, int] = field(default_factory=dict)
     guard: threading.Lock = field(default_factory=threading.Lock)
 
     def clear(self) -> None:
@@ -572,6 +576,7 @@ class Cache:
             self.entries.clear()
             self.last_good.clear()
             self.locks.clear()
+            self.users.clear()
 
     def forget(self, project_id: str) -> None:
         with self.guard:
@@ -579,13 +584,13 @@ class Cache:
             self._drop(project_id)
 
     def _drop(self, project_id: str) -> None:
-        """The project's last good reads, and its lock unless a read holds it now. The
+        """The project's last good reads and its lock, unless a request uses it now. The
         caller holds `guard`."""
+        if self.users.get(project_id, 0) > 0:
+            return
         for key in [k for k in self.last_good if k[0] == project_id]:
             del self.last_good[key]
-        lock = self.locks.get(project_id)
-        if lock is not None and not lock.locked():
-            del self.locks[project_id]
+        self.locks.pop(project_id, None)
 
     def cached(self, project_id: str) -> _Entry | None:
         with self.guard:
@@ -594,6 +599,20 @@ class Cache:
     def _lock(self, project_id: str) -> threading.Lock:
         with self.guard:
             return self.locks.setdefault(project_id, threading.Lock())
+
+    def _enter(self, project_id: str) -> threading.Lock:
+        """The project's lock, the request counted as its user first, until `_leave`."""
+        with self.guard:
+            self.users[project_id] = self.users.get(project_id, 0) + 1
+        return self._lock(project_id)
+
+    def _leave(self, project_id: str) -> None:
+        with self.guard:
+            left = self.users.get(project_id, 1) - 1
+            if left > 0:
+                self.users[project_id] = left
+            else:
+                self.users.pop(project_id, None)
 
     def get(
         self,
@@ -609,27 +628,33 @@ class Cache:
         request with nothing cached waits at most LOCK_WAIT before `Busy`: a waiter holds a
         request thread, and a family read may take FAMILY_DEADLINE."""
         current = self.cached(project_id)
-        lock = self._lock(project_id)
-        usable = current is not None and current.repository_url == repository_url
-        if not (lock.acquire(blocking=False) if usable else lock.acquire(timeout=LOCK_WAIT)):
-            if current is not None and usable:
-                return current, False
-            raise Busy
+        lock = self._enter(project_id)
         try:
-            entry = self.cached(project_id)
-            if (
-                entry is not None
-                and entry.repository_url == repository_url
-                and _now() - entry.at < max(max_age, FORCE_INTERVAL)
-            ):
-                return entry, False
-            entry = self._read(reader, project_id, repository_url, entry)
-            with self.guard:
-                for gone in bounded.put(self.entries, project_id, entry, PROJECTS_KEPT):
-                    self._drop(gone)
-            return entry, True
+            usable = current is not None and current.repository_url == repository_url
+            if not (lock.acquire(blocking=False) if usable else lock.acquire(timeout=LOCK_WAIT)):
+                if current is not None and usable:
+                    return current, False
+                raise Busy
+            try:
+                entry = self.cached(project_id)
+                if (
+                    entry is not None
+                    and entry.repository_url == repository_url
+                    and _now() - entry.at < max(max_age, FORCE_INTERVAL)
+                ):
+                    return entry, False
+                entry = self._read(reader, project_id, repository_url, entry)
+                with self.guard:
+                    in_use = self.users.get
+                    for gone in bounded.put(
+                        self.entries, project_id, entry, PROJECTS_KEPT, lambda p: in_use(p, 0) > 0
+                    ):
+                        self._drop(gone)
+                return entry, True
+            finally:
+                lock.release()
         finally:
-            lock.release()
+            self._leave(project_id)
 
     def _read(
         self, reader: forge.Forge, project_id: str, repository_url: str | None, last: _Entry | None

@@ -18,7 +18,9 @@ import hashlib
 import logging
 import threading
 import time
-from collections.abc import Iterable
+from collections import OrderedDict
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
@@ -269,9 +271,10 @@ def read_forge(reader: forge.Forge, repository: str, kind: str) -> tuple[bytes, 
 # after a failure; the worker backs off per (project, kind) after failures.
 NEGATIVE = 60.0
 BACKOFF_MAX = FRESH.total_seconds()
-_unavailable_until: dict[tuple[str, str], float] = {}
-_failures: dict[tuple[str, str], tuple[int, float]] = {}  # (count, next try)
-_flights: dict[tuple[str, str], threading.Lock] = {}
+_unavailable_until: OrderedDict[tuple[str, str], float] = OrderedDict()
+_failures: OrderedDict[tuple[str, str], tuple[int, float]] = OrderedDict()  # (count, next try)
+_flights: OrderedDict[tuple[str, str], threading.Lock] = OrderedDict()
+_flying: dict[tuple[str, str], int] = {}  # requests between asking for a gate and leaving it
 _guard = threading.Lock()
 # Per map, the (project, kind) kept, the newest written first. A dropped wait or
 # backoff costs one more read of the forge; a gate in use is never dropped.
@@ -287,15 +290,30 @@ def reset() -> None:
         _unavailable_until.clear()
         _failures.clear()
         _flights.clear()
+        _flying.clear()
 
 
-def _flight(key: tuple[str, str]) -> threading.Lock:
+@contextmanager
+def _flight(key: tuple[str, str]) -> Iterator[None]:
+    """One read through per key at a time. The request counts as the gate's user from
+    asking for it until it leaves, so the gate is never dropped in between, where a
+    second request would get a new one and read the forge a second time."""
     with _guard:
         gate = _flights.get(key)
         if gate is None:
             gate = threading.Lock()
-        bounded.put(_flights, key, gate, KEPT, stays=lambda held: held.locked())
-        return gate
+        _flying[key] = _flying.get(key, 0) + 1
+        bounded.put(_flights, key, gate, KEPT, stays=lambda k: _flying.get(k, 0) > 0)
+    try:
+        with gate:
+            yield
+    finally:
+        with _guard:
+            left = _flying.get(key, 1) - 1
+            if left > 0:
+                _flying[key] = left
+            else:
+                _flying.pop(key, None)
 
 
 def read_through(engine: Engine, reader: forge.Forge, project_id: str, kind: str) -> bool:
