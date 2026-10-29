@@ -21,7 +21,10 @@ change cannot move a member out of the reach between the check and the
 write. The module is separate from `routes/members.py` and
 `admin_agents.py` because three routes and a proposal kind share it, and
 because the manager's rules are a different right from ᵃ, not a narrower
-admin agent.
+admin agent. Since #590, `POST …/tasks` and the import from a forge issue
+run through the same `create_card`, so the manager's check for
+`assigned_to` (`_require_assigner`) holds for both, and a change to it
+changes both ways (§6.4, §6.14).
 
 **Rejected alternatives:**
 - A stored reach or line table, updated on every `reports_to`, role, trust
