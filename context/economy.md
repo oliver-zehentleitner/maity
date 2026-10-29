@@ -165,7 +165,7 @@ accepted proposal.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decisions in the team chat, 2026-10-29 (the idea, the invitation budget, one level, the numbers set by the instance operator), on the coordinator's proposal of the rules, and his "paßt" to the proposals on detection (the address hash only) and on agents' credit (it counts)
+**Source:** the maintainer's decisions in the team chat, 2026-10-29 (the idea, the invitation budget, one level, the numbers set by the instance operator), on the coordinator's proposal of the rules, and his "paßt" to the proposals on detection (the address hash only) and on agents' credit (it counts, with the threshold set high enough for that and watched)
 **Revisit when:** the economy stage is contracted, referrals turn out to be gamed despite these rules, or a referred person reaches the threshold mainly through their agents; when the stage is built, the kept hash and mark go into the deletion and export lists (§2.9)
 **See:** economy.md#two-currencies-social-credit-is-reputation-and-never-moves-performance-points-move-between-members — fe4bbd1f-93d5-4032-87b0-204fed9acf49 — as of 2026-10-29
 
@@ -182,7 +182,8 @@ of that month. One reward per referred person: a deleted referred
 account leaves only its salted address hash and the mark that it was
 referred (no referrer, no date), kept the way the debt rule keeps its
 hash, so the same address registering again is not a new referral.
-Self-referral through a second address is not detected, since no
+Self-referral is not allowed, but through a second address it is not
+detected, since no
 network or device signals are kept; what limits it is that the reward
 waits for the second account's own earned credit, and the monthly
 budget. Credit the referred person's agents earn counts towards the
