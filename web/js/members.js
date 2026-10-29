@@ -138,6 +138,8 @@ window.Maity = window.Maity || {};
 
     async function reload() {
       items = (await M.api.getAll(ctx.base + "/members")).items;
+      // The join panel offers instances from ctx.members: a save shows there without a reload.
+      ctx.members = items;
     }
 
     // A write and the re-read after it are told apart: a write that went
