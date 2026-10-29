@@ -390,3 +390,32 @@ def test_request_expiry_is_not_extended_by_delayed_background_job(
     )
     with migrated.connect() as conn:
         assert conn.execute(select(t.mail_outbox)).first() is None
+
+
+def test_the_session_names_the_link_or_the_code(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§2.6.5 tells the two apart: `email_link` for the link, `email_code` for the code."""
+    client, human = setup(make_client, migrated)
+    ask(client)
+    url, _ = mail(migrated)
+    assert client.get(url).status_code == 200  # the page sets the form cookie
+    form = client.cookies.get("maity_form")
+    done = client.post(
+        url, data={"form": form}, headers={"sec-fetch-site": "same-origin"}, follow_redirects=False
+    )
+    assert done.status_code == 303, done.text
+    other: Any = make_client(mail=client.app.state.settings.mail, secret_key=b"k" * 32)
+    ask(other)
+    _, code = mail(migrated)
+    signed = other.post(
+        "/api/v1/auth/email-code",
+        json={"code": code},
+        headers={"x-csrf-token": other.cookies.get("maity_csrf", "")},
+    )
+    assert signed.status_code == 200, signed.text
+    with migrated.connect() as conn:
+        methods = conn.execute(
+            select(t.human_session.c.method).where(t.human_session.c.human_id == human)
+        ).scalars()
+        assert sorted(methods) == ["email_code", "email_link"]
