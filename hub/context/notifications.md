@@ -496,6 +496,12 @@ that skipped the old kinds on read (`preferences._merged`), rewrote the value on
 is `unknown`, whichever kind it once was. The contract (§18.2, §18.3, §18.4, §1) says the
 same. The migration cannot be undone and does not need to be.
 
+`preferences._merged` lays only the kinds the hub knows over the defaults and ignores any other
+key in the stored value, without naming one: after 0084 and with the check in `PATCH` nothing
+writes such a key, but a read that raised on one would turn every read of that human's settings,
+and the mail planning for them, into a 500. Trusting the stored keys (the first version of this
+change) is right for every row the migration saw and a `KeyError` for any other.
+
 **Reason:** the maintainer's rule for the alpha is to delete what is old rather than keep a
 compatibility layer, and nobody reads the old settings or sends the old kinds any more. A
 migration over a few rows costs once; the layer cost a branch in every read and write of the

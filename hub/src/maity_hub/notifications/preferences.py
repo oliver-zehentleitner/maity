@@ -87,6 +87,8 @@ def _merged(stored: dict[str, Any] | None) -> dict[str, Any]:
         for key, value in given.items():
             if key == "kinds" and isinstance(value, dict):
                 for kind, setting in value.items():
+                    if kind not in KINDS:
+                        continue  # a key this hub does not know is not read, not an error
                     if side == "email" and isinstance(setting, dict):
                         result[side]["kinds"][kind].update(setting)
                     else:

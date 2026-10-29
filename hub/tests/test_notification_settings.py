@@ -154,3 +154,17 @@ def test_a_stored_content_of_another_kind_is_not_read() -> None:
     merged = preferences._merged({"browser": {"content": {"chat": True, "inbox": True}}})
     assert "inbox" not in merged["browser"]["content"]
     assert merged["browser"]["content"]["chat"] is True
+
+
+def test_a_stored_key_the_hub_does_not_know_is_ignored() -> None:
+    from maity_hub.notifications import preferences
+
+    merged = preferences._merged(
+        {
+            "browser": {"kinds": {"card": True, "chat": False}},
+            "email": {"kinds": {"card": {"mode": "off"}, "inbox": {"mode": "daily"}}},
+        }
+    )
+    assert "card" not in merged["browser"]["kinds"] and merged["browser"]["kinds"]["chat"] is False
+    assert "card" not in merged["email"]["kinds"]
+    assert merged["email"]["kinds"]["inbox"]["mode"] == "daily"
