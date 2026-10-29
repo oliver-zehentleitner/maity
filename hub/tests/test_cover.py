@@ -554,3 +554,28 @@ def test_a_forwarded_request_is_not_in_the_cover_set(
     limit(covered, now[0] + timedelta(hours=2))
     [started] = events(migrated, "cover_started")
     assert request["id"] not in started.payload["requests"] + started.payload["left"]
+
+
+def test_a_returned_assignment_gets_its_instance_by_the_teams_distribution(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    """Under `round_robin` a returned card is not left without an instance (§6.18)."""
+    covered = flow.agent(make_client, owner)
+    sub = flow.agent(make_client, owner)
+    for agent in (covered, sub):
+        agent.resume()
+    team = owner.patch(
+        f"/projects/maintainer/maity/members/{covered.id}",
+        {"team": {"distribution": "round_robin"}},
+    )
+    assert team.status_code == 200, team.text
+    card = task(owner)
+    owner.post(f"/projects/maintainer/maity/tasks/{card['id']}/assign", {"assignee": covered.id})
+    before = card_of(owner, card["id"])["assigned_instance"]
+    assert before is not None
+    policy(owner, covered.id, on_unavailable="substitute", substitutes=[sub.id], grace_minutes=0)
+    limit(covered, now[0] + timedelta(hours=2))
+    assert card_of(owner, card["id"])["assigned_to"] == sub.id
+    covered.resume()
+    back = card_of(owner, card["id"])
+    assert back["assigned_to"] == covered.id and back["assigned_instance"] == before

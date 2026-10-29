@@ -131,7 +131,9 @@ of that run are settled: what the substitute touched stays with it,
 everything else goes back, and `cover` is cleared on both. An item that
 left the substitute meanwhile (the card reassigned, or claimed by a
 third member) has its `cover` cleared and is never returned, so the
-return never overwrites somebody else's claim or assignment.
+return never overwrites somebody else's claim or assignment. A returned
+assignment gets its instance again by the member's team distribution
+(`assigned_for`), as every assignment does (§6.18).
 
 **Reason:** a kept card that kept its `cover` would look covered forever:
 the next cover of its new holder would skip it, and a later return of
@@ -147,6 +149,8 @@ from the next without a table of its own.
 - Checking only `cover.by` at the return: a card that had moved on to a
   third member still carried the run's `cover`, so the return took it
   from that member and overwrote an active claim.
+- Setting `assigned_instance` to null on the return: under `round_robin`
+  the card lost its instance and lay with the whole team.
 
 ## Only a substitute that took something hears cover_started; what nobody could take is named once
 

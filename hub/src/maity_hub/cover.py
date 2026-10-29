@@ -420,7 +420,12 @@ def end(conn: Connection, row: Any, actor: Actor | None) -> None:
                     lease_until=now + timedelta(seconds=project.lease_seconds),
                 )
             elif cover.get("moved") == "assignment":
-                values.update(assigned_to=row.id, assigned_instance=None)
+                from maity_hub.routes.tasks import _assigned_instance
+
+                # Back to the member's team distribution, as on every assignment (§6.18).
+                values.update(
+                    assigned_to=row.id, assigned_instance=_assigned_instance(conn, row.id)
+                )
         conn.execute(update(t.card).where(t.card.c.id == card.id).values(**values))
         if card.id in returned:
             _announce_card(conn, project, card.id, actor)
