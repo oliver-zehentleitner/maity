@@ -204,22 +204,45 @@ transaction or a restore could leave out of step.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the review of #586, where forge links (#567) and mail sign-in links (#550) had landed after the deletion and were not removed by it; the coordinator's card for a schema check
-**Revisit when:** a table names a human by a column without a foreign key to `human` and not called `human_id` (a principal id in a plain string or in JSON), or the deletion or export moves its statements out of their modules
+**Source:** the review of #586, where forge links (#567) and mail sign-in links (#550) had landed after the deletion and were not removed by it; the coordinator's card for a schema check; the review of #607 (columns without a foreign key, the delegated removals, `project`)
+**Revisit when:** a column names a person under a name the pattern does not catch, or the deletion or export moves its statements out of the modules the test reads
 
-`tests/test_per_human_tables.py` walks the schema. Every table with a
-foreign key to `human`, or a column called `human_id`, must be named
-(`t.<table>`) in `account_deletion.py` or listed in `DELETION_KEEPS`
-with a reason, and the same for `export.py`, `EXPORT_THROUGH` (a table
-the export reads through another module) and `EXPORT_LEAVES_OUT`. A list
-entry that names a table the code handles after all, or one that no
-longer names a human, fails as stale. The test checks that a table is
-decided, not that the decision is right: whether a statement covers the
-right column stays the reviewer's to see.
+`tests/test_per_human_tables.py` walks the schema. A table names a human
+through a foreign key to `human`, a column called `human_id`, or a column
+marked in `NAMES_A_HUMAN`: one without a foreign key that holds a
+human's id (often a `hum-…`/`agt-…` principal id) or an address. Every
+column without a foreign key whose name looks like a person's (`*human*`,
+`*_by`, `owner_id`, `caller`, `address*`) must be decided there, `True`
+or `False` (a reason, a deadline, a mode), so a new one fails until
+someone decides.
+
+Every table that names a human must then be named (`t.<table>`) in
+`account_deletion.py`, handed to the module that removes such a row
+anywhere (`DELETION_THROUGH`: `members.apply_remove`,
+`agents.delete_profile`, `runners.remove`, as §2.9 says the deletion
+removes them "as a removal does"), or listed in `DELETION_KEEPS` with a
+reason; and the same for `export.py`, `EXPORT_THROUGH` and
+`EXPORT_LEAVES_OUT`. A list entry for a column or table that is gone, no
+longer names a human, or that the code handles after all, fails as
+stale. `project` is kept on purpose, not covered because the deletion
+happens to read it.
+
+The test checks that a table is decided, not that the decision is right:
+whether a statement covers the right column stays the reviewer's to see.
+Two entries are open, not settled: `address_lock` and
+`registration_lock` keep a row per address after the deletion, while
+§2.9 says the addresses are deleted.
 
 **Reason:** a feature that adds a table about a person is built without
 the deletion in view, and nothing failed when it was left out; the gap
 showed only in a later review. A failing test makes the author decide at
 the time the table is added.
 
-**Rejected alternatives:** unknown.
+**Rejected alternatives:**
+- A marker on each column in `tables.py` (`info={"names_a_human": ...}`),
+  as the review proposed: the same enforcement, but about 45 column
+  definitions touched for it, against one registry next to the test that
+  reads it.
+- Counting only foreign keys and `human_id`: principal ids in plain
+  strings (`paused_by`, `caller`, `actor_human_id`) and addresses passed
+  through unseen.
