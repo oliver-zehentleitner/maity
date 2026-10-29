@@ -38,6 +38,7 @@ WORDS: dict[str, dict[str, str]] = {
         "mentioned": "{who} mentioned you in {chat}",
         "waits": "{handle} waits for approval",
         "reported": "Report: {reason} — {type}",
+        "moderated": "Moderation: {action} — {type}",
         "sign_in": "New sign-in: {browser} on {os} ({method})",
         "a_browser": "a browser",
         "unknown_os": "an unknown system",
@@ -63,6 +64,7 @@ WORDS: dict[str, dict[str, str]] = {
         "mentioned": "{who} hat dich in {chat} erwähnt",
         "waits": "{handle} wartet auf Freigabe",
         "reported": "Meldung: {reason} — {type}",
+        "moderated": "Moderation: {action} — {type}",
         "sign_in": "Neue Anmeldung: {browser} auf {os} ({method})",
         "a_browser": "ein Browser",
         "unknown_os": "einem unbekannten System",
@@ -99,6 +101,7 @@ class Item:
     record_type: str | None = None
     session_id: str | None = None  # a security item's session
     open: bool = False  # an inbox item from a record whose matter is not yet closed
+    urgent: bool = False  # mailed at once whatever the kind's mode (§18.5)
 
     @property
     def id(self) -> str:
@@ -441,7 +444,7 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
             t.account_record.c.human_id == where.human_id,
             t.account_record.c.at >= now - records.KEPT,
             t.account_record.c.type.in_(
-                (*records.SECURITY, *records.INBOX, "personal_request_created")
+                (*records.SECURITY, *records.INBOX, *records.NOTICES, "personal_request_created")
             ),
         )
     ).all()
@@ -608,6 +611,26 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
                     read=not pending,
                     record_type=row.type,
                     open=pending,
+                )
+            )
+        elif row.type == "moderation_applied" and row.at >= now - WINDOW:
+            # The affected account's notice of an action on its content (§16.8): the
+            # action and the note, never the reporter. Read by a read mark as any notice:
+            # nothing in it is the human's to act on.
+            title = where.say("moderated", action=data.get("action"), type=data.get("type"))
+            if data.get("note"):
+                title = f"{title}: {data['note']}"
+            items.append(
+                Item(
+                    kind="inbox",
+                    at=row.at,
+                    record=row.n,
+                    title=_cut(title),
+                    target={"type": "moderation", "id": str(data.get("report"))},
+                    url=_url(where, "/account"),
+                    read=row.read_at is not None,
+                    record_type=row.type,
+                    urgent=data.get("action") == "suspend",
                 )
             )
         elif row.type == "mail_disabled" and row.at >= now - WINDOW:

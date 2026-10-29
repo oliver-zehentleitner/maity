@@ -20,7 +20,16 @@ from sqlalchemy import Connection, and_, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import clock, events, idempotency, namespace, paging, placements, runner_revoke
+from maity_hub import (
+    clock,
+    events,
+    idempotency,
+    moderation,
+    namespace,
+    paging,
+    placements,
+    runner_revoke,
+)
 from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.auth import credentials, second_factor
@@ -419,6 +428,7 @@ async def pair(token: str, body: Pair, request: Request) -> Response:
 
 
 def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, list[str]]:
+    moderation.refuse_suspended(conn, row.created_by)  # no credential for it (§16.8)
     now = clock.now()
     consumed = conn.execute(
         update(t.runner_enrollment)

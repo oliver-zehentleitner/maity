@@ -25,7 +25,17 @@ from sqlalchemy import Connection, insert, select, update
 from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import briefings, clock, events, idempotency, instances, line, namespace, takeovers
+from maity_hub import (
+    briefings,
+    clock,
+    events,
+    idempotency,
+    instances,
+    line,
+    moderation,
+    namespace,
+    takeovers,
+)
 from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.auth import credentials, second_factor
@@ -784,6 +794,10 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
     ).rowcount
     if consumed != 1:  # a concurrent exchange won
         raise not_found()
+    # Nothing issues a suspended account a credential (§16.8): the profile's owner, or
+    # the creator for a profile the exchange creates.
+    owner = moderation.owner_account(conn, row.agent_id) if row.agent_id else row.created_by
+    moderation.refuse_suspended(conn, owner)
     if row.placement_id is not None:
         _require_pickup_holds(conn, row)
     project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()

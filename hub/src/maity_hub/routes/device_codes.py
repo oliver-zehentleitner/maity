@@ -19,7 +19,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import API_VERSION, clock, longpoll, paths, registration
+from maity_hub import API_VERSION, clock, longpoll, moderation, paths, registration
 from maity_hub.auth import device_codes, second_factor, sessions, sign_in_settings
 from maity_hub.auth.caller import SESSION_COOKIE, Caller, require_secure_transport
 from maity_hub.deps import AnyCaller, engine_of, origin_of, settings_of, wait_of
@@ -278,6 +278,7 @@ def complete_redemption(request: Request) -> JSONResponse:
             raise not_found()
         if device_codes.status(row, clock.now()) != "approved":
             raise ApiError(409, "conflict", "the code is not approved")
+        moderation.refuse_suspended(conn, row.human_id)  # §16.8
         end_presented(conn, request.cookies.get(SESSION_COOKIE))
         user_agent = request.headers.get("user-agent")
         session_id, csrf, _, state = device_codes.complete(

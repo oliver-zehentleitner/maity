@@ -25,6 +25,7 @@ from maity_hub import (
     line,
     mentions,
     merged,
+    moderation,
     namespace,
     paging,
     ranks,
@@ -39,7 +40,7 @@ from maity_hub.board import history
 from maity_hub.board import links as card_links
 from maity_hub.deps import AnyCaller, engine_of, reader_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
-from maity_hub.events import emit, lock_project
+from maity_hub.events import Actor, emit, lock_project
 from maity_hub.forge import Forge
 from maity_hub.ids import new_id
 from maity_hub.models import Strict, Written, markdown, title
@@ -382,6 +383,14 @@ def _refuse_paused(conn: Connection, membership_id: int, instance: str | None = 
     does an instance a human paused, while its siblings carry on. An agent's own pause
     is a declaration and refuses nothing."""
     row = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()
+    suspension = moderation.suspension_of(conn, row)
+    if suspension is not None:  # a suspended account's memberships act as paused (§16.8)
+        raise ApiError(
+            409,
+            "paused",
+            "this member's account is suspended; it takes no new work",
+            {"paused": suspension},
+        )
     if human_paused(row):
         raise ApiError(
             409,
@@ -1051,6 +1060,8 @@ def patch_task(
         if "status" in given and body.status is not None and body.status != card.status:
             if body.status not in cards.STATUSES:
                 raise invalid({"status": "unknown"})
+            if card.status == "cancelled":  # a card moderation cancelled stays so (§16.8)
+                moderation.refuse_held(conn, "card", card.id, "remove")
             cards.check_transition(mine, card, body.status)
             if body.status == "done":
                 cards.refuse_open_dependencies(conn, card.id)
@@ -1157,6 +1168,64 @@ def patch_task(
         )
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+def cancel_by_moderation(conn: Connection, card_id: str, actor: Actor, fg: Forge) -> None:
+    """`remove` on a card (§16.8): cancelled as a `PATCH {status: cancelled}` would cancel
+    it, whoever holds it; a closed card stays as it is."""
+    card = conn.execute(select(t.card).where(t.card.c.id == card_id)).first()
+    if card is None or card.status in cards.CLOSED:
+        return
+    project = lock_project(conn, card.project_id)
+    changed = {"status": "cancelled", **_closing(card)}
+    conn.execute(
+        update(t.card)
+        .where(t.card.c.id == card.id)
+        .values(**changed, updated_at=clock.now(), changed_by_credential=None, changed_via=None)
+    )
+    after = _card(conn, card.id)
+    view = task_view(conn, after, fg)
+    entries = history.record(conn, card, changed, actor)
+    seq = emit(
+        conn,
+        project.id,
+        "task_updated",
+        audience(conn, after),
+        {
+            **{k: view[k] for k in changed if k in view},
+            "id": card.id,
+            "fields": sorted(k for k in changed if k in view),
+            "history": entries,
+            "project_state": project.state,
+        },
+        actor=actor,
+        subject=("task", card.id),
+    )
+    history.stamp(conn, entries, seq)
+    if card.parent is not None:
+        conn.execute(
+            update(t.card).where(t.card.c.id == card.parent).values(updated_at=clock.now())
+        )
+        parent = _card(conn, card.parent)
+        emit(
+            conn,
+            project.id,
+            "task_updated",
+            audience(conn, parent),
+            {
+                "id": parent.id,
+                "fields": ["children"],
+                "children": task_view(conn, parent, fg)["children"],
+                "history": [],
+                "project_state": project.state,
+            },
+            actor=actor,
+            subject=("task", parent.id),
+        )
+    takeovers.reconcile(conn, card.id, actor, decided=False)
+    if card.kind == "release":
+        releases.close(conn, card.id, fg)
+    releases.recheck(conn, project.id, fg)
 
 
 def _ping(

@@ -10,10 +10,10 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, and_, case, or_, select
 
-from maity_hub import idempotency, paging, reports
+from maity_hub import attachment_store, idempotency, paging, reports
 from maity_hub import tables as t
 from maity_hub.admin import require_instance_admin
-from maity_hub.deps import AnyCaller, HumanCaller, engine_of
+from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
 from maity_hub.errors import forbidden, invalid, not_found
 from maity_hub.views import ts
 
@@ -56,14 +56,20 @@ def my_reports(
     limit: int = Query(default=PAGE_DEFAULT, ge=1, le=PAGE_MAX),
     cursor: str | None = None,
 ) -> JSONResponse:
-    """The caller's own reports, newest first: status and action only (§16.8)."""
+    """The caller's own reports, newest first: status and action only (§16.8). A human
+    reads its agents' reports too, as its export holds them; an agent reads its own."""
     if caller.kind not in ("human", "agent"):
         raise forbidden(message="a report is a human's or an agent's")
     bound = paging.scope(list="me/reports")
     with engine_of(request).begin() as conn:
         reports.expire(conn)
         r = t.abuse_report.c
-        query = select(t.abuse_report).where(r.reporter == caller.principal_id)
+        mine = (
+            r.reporter == caller.principal_id
+            if caller.kind == "agent"
+            else r.account_id == caller.principal_id
+        )
+        query = select(t.abuse_report).where(mine)
         if cursor is not None:
             at, after = paging.uncursor(cursor, bound)
             query = query.where(or_(r.created_at < at, and_(r.created_at == at, r.id < after)))
@@ -155,7 +161,13 @@ async def resolve_report(report_id: str, request: Request, caller: HumanCaller) 
     def action(conn: Connection) -> idempotency.Outcome:
         require_instance_admin(conn, caller.principal_id)
         shown = reports.resolve(
-            conn, caller.principal_id, report_id, body.get("action"), body.get("note")
+            conn,
+            caller.principal_id,
+            report_id,
+            body.get("action"),
+            body.get("note"),
+            reader_of(request),
+            attachment_store.optional_store(settings_of(request)),
         )
         return idempotency.Outcome(200, None, None, shown)
 

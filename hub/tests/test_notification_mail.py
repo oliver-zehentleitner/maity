@@ -464,6 +464,34 @@ def test_an_open_report_is_mailed_to_the_instance_admin(
     assert "zzz" not in mail.body
 
 
+def test_a_suspension_is_mailed_whatever_the_inbox_mode(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    """A suspended account reads no inbox: the mail is its only way to learn (§16.8)."""
+    owner, agent = setup(make_client, migrated)
+    owner.patch(S, {"email": {"kinds": {"inbox": {"mode": "off"}}}})
+    seq = agent.post(
+        "/projects/maintainer/maity/events",
+        {"kind": "message", "type": "notice", "to": "all", "body": "spam"},
+    ).json()["seq"]
+    made = owner.post(
+        "/reports",
+        {
+            "target": {"type": "message", "id": str(seq), "project": "maintainer/maity"},
+            "reason": "spam",
+        },
+    ).json()
+    resolved = owner.post(
+        f"/admin/reports/{made['id']}/resolve", {"action": "suspend", "note": "spam run"}
+    )
+    assert resolved.status_code == 200, resolved.text
+    at(minutes=5)
+    run(migrated)
+    [mail] = notifications(migrated)
+    assert mail.recipient == "me@example.org"
+    assert "Moderation: suspend — message: spam run" in mail.subject + mail.body
+
+
 def test_a_message_text_never_comes_from_a_redacted_event(
     make_client: ClientFactory, migrated: Engine, at: Any
 ) -> None:
