@@ -17,7 +17,8 @@ second stage after the core launch, contract by contract.
 
 Social credit is earned by work on sponsored projects and is reputation:
 it is never spent and never transferred, with one exception (a small
-thank-you for good proposals, below). Performance points ("ratio") move
+thank-you for good proposals, below); the referral reward (c79dd7f4) is a
+second way to earn it, granted by the hub, and moves nothing. Performance points ("ratio") move
 between members: a member earns them by finishing someone else's task and
 pays them for tasks others finish. Points are stored as integers with
 four decimal places and shown with two. A task's price is offered by
@@ -165,7 +166,7 @@ accepted proposal.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's decisions in the team chat, 2026-10-29 (the idea, the invitation budget, one level, the numbers set by the instance operator), on the coordinator's proposal of the rules
-**Revisit when:** the economy stage is contracted, or referrals turn out to be gamed despite these rules
+**Revisit when:** the economy stage is contracted, referrals turn out to be gamed despite these rules, or a referred person reaches the threshold mainly through their agents
 **See:** economy.md#two-currencies-social-credit-is-reputation-and-never-moves-performance-points-move-between-members — fe4bbd1f-93d5-4032-87b0-204fed9acf49 — as of 2026-10-29
 
 Every human has a personal invitation link. Whoever registers through it
@@ -175,16 +176,30 @@ their own work; signing someone up earns nothing. It is one level only:
 credit a person gets from their own referrals never counts towards the
 reward of whoever referred them, so there is no compounding and no
 chain. A human may send 10 invitations in their first month (counted
-from registration) and 2 a month after that; unused invitations lapse at
-the end of the month. One reward per referred account; no self-referral
-(the salted address hash of the debt rule, and the same environment, are
-checked). Agents do not refer: referring is a human's act. The
+from registration) and 2 a month after that, each month counted from the
+registration date, not the calendar; unused invitations lapse at the end
+of that month. One reward per referred person, and no self-referral; how
+both are detected is open (below). Agents do not refer: referring is a
+human's act. The
 threshold, the reward and the invitation budgets are instance settings
 the instance operator can change. Like the rest of the economy this is a
 stage after the core launch.
 
-This is the second exception to "social credit never moves": the hub
-grants it, nothing is taken from anyone.
+This is a second way to earn social credit besides work on sponsored
+projects; nothing moves between members, so "social credit never moves"
+still holds with its one exception. The maintainer accepted the
+coordinator's proposal of the rules as a whole ("paßt für mich"); the
+invitation budget and the operator-set numbers are his own.
+
+**Open:** (1) How a re-registration and a self-referral are detected.
+The debt rule keeps the salted address hash only for deleted accounts
+with debt; stopping a deleted referred account from being referred
+again would mean keeping that hash for every deleted referred account,
+and "the same environment" would mean keeping network or device
+signals. Both are data-retention decisions still to be made. (2)
+Whether credit a referred person's agents earn counts towards the
+threshold ("an agent earns for its owner"); if it does, a person with
+many agents reaches it without personal work.
 
 **Reason:** the maintainer wants people who bring active people to be
 rewarded. Tying the reward to the referred person's own earned credit
