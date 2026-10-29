@@ -23,7 +23,7 @@ from typing import Any
 from sqlalchemy import Connection, Engine, delete, func, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock, handle_register, invitations, namespace, registration
+from maity_hub import clock, handle_register, invitations, paths, registration
 from maity_hub import tables as t
 from maity_hub.admin import instance_admin_id
 from maity_hub.auth import passwords, sessions
@@ -36,7 +36,7 @@ PENDING_ACCOUNT_FOR = timedelta(days=30)  # undecided, then deleted (§2.7.5)
 BLOCK_FOR = timedelta(days=30)  # after a rejection or an expiry (§16.4)
 DISPLAY_NAME_MAX = 64
 REASON_MAX = 1024
-PENDING_PAGE = "/#/pending"
+PENDING_PAGE = "/account/pending"
 # A `registration_lock` key no address can be (it has no `@`): the instance-wide budget.
 BUDGET_LOCK = "*new-accounts-per-hour*"
 # The tables with a `human_id` that a removed pending account leaves alone: its decision
@@ -103,7 +103,7 @@ def check_names(conn: Connection, handle: str, display_name: str) -> dict[str, s
     errors: dict[str, str] = {}
     if not _HANDLE.fullmatch(handle):
         errors["handle"] = "invalid"
-    elif handle in namespace.DASHBOARD_WORDS:  # `#/invite/…` is never a namespace (§6.25)
+    elif handle in paths.RESERVED_FIRST:  # a first segment of the hub or the dashboard (§16.11)
         errors["handle"] = "reserved"
     elif (
         handle_register.taken(conn, handle)
@@ -256,7 +256,7 @@ def complete(
         "created",
         human_id=human_id,
         account_status=status,
-        next=PENDING_PAGE if status == "pending" else registration.safe_next(pending.next),
+        next=PENDING_PAGE if status == "pending" else paths.safe_next(pending.next),
         session_id=session_id,
         csrf=csrf,
     )

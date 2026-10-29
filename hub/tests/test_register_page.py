@@ -319,7 +319,7 @@ def test_a_pending_account_is_signed_in_to_the_pending_page(
     client, link = start(make_client, migrated, hub(MAITY_REGISTRATION_APPROVAL="operator"))
     page = client.get(link)
     done = answer(client, link, page)
-    assert done.status_code == 303 and done.headers["location"] == "/#/pending"
+    assert done.status_code == 303 and done.headers["location"] == "/account/pending"
     [created] = humans(migrated)
     assert created.account_status == "pending"
 

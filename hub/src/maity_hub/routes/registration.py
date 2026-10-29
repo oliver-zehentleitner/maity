@@ -22,6 +22,7 @@ from starlette.concurrency import run_in_threadpool
 from maity_hub import (
     clock,
     paging,
+    paths,
     registration,
     registration_accounts,
     registration_mail,
@@ -133,7 +134,7 @@ async def register(request: Request, background: BackgroundTasks) -> JSONRespons
         origin.address,
         request.headers.get("user-agent"),
         request.headers.get("accept-language"),
-        registration.safe_next(body.next),  # replaced by `/`, silently (§2.6.5)
+        paths.safe_next(body.next),  # replaced by `/`, silently (§2.6.5)
     )
     return JSONResponse({"expires_in": int(registration.PENDING_FOR.total_seconds())}, 202)
 

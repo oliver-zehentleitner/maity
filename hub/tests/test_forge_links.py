@@ -248,7 +248,7 @@ def setup(who: flow.Human, installation_id: int, state: str, code: str = "c0de")
     return location
 
 
-DONE = "https://hub.example/#/settings/forge"
+DONE = "https://hub.example/settings/forge"
 
 
 def links(who: flow.Human) -> list[dict[str, Any]]:

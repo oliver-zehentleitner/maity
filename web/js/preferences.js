@@ -1,5 +1,5 @@
 // Preferences (docs/api.md §19.4): how the human likes to work, one Markdown
-// text that they alone write. #/account/preferences edits it, with the
+// text that they alone write. /account/preferences edits it, with the
 // projects whose agents read it and the earlier versions. An agent only
 // proposes: the proposal is reviewed in the personal inbox (the current
 // text, the proposed one, a diff, the reason) and accepted as it is,
@@ -107,7 +107,7 @@ window.Maity = window.Maity || {};
     return err;
   }
 
-  // #/account/preferences: the editor, the projects, the earlier versions.
+  // /account/preferences: the editor, the projects, the earlier versions.
   async function section(ctx) {
     const heading = h("h3", { class: "preferences-heading", tabindex: "-1" }, "Your preferences");
     const el = h("section", { class: "preferences" }, heading);

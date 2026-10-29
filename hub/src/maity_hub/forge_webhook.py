@@ -34,10 +34,9 @@ from maity_hub.ratelimit import Limiter
 
 log = logging.getLogger(__name__)
 
-# `<owner>/<slug>` since the namespace (§6.25), or a project's frozen `legacy_slug` alone:
-# the address a forge was given before the migration keeps working.
+# `<owner>/<slug>` (§6.25): the address a forge is given.
 PATH = re.compile(
-    r"^/api/v1/projects/((?:[a-z0-9][a-z0-9-]{1,30}/)?[a-z0-9][a-z0-9-]{1,62})/forge/webhook$"
+    r"^/api/v1/projects/([a-z0-9][a-z0-9-]{1,30}/[a-z0-9][a-z0-9-]{1,62})/forge/webhook$"
 )
 BODY_CAP = 1024 * 1024
 FIELD = "forge_webhook.secret"
@@ -88,12 +87,9 @@ def _declared(scope: Scope) -> int | None:
 def _lookup(engine: Engine, slug: str, key: bytes) -> tuple[Any, bytes] | None:
     """The project and its opened secret; None for no project, no secret or a secret the
     key does not open, which all answer alike (§17.4). `slug` is a full name, current or an
-    alias, or a pre-namespace project's `legacy_slug` (§6.25)."""
+    alias (§6.25)."""
     with engine.connect() as conn:
-        if "/" in slug:
-            project = namespace.resolve(conn, slug)
-        else:
-            project = conn.execute(select(t.project).where(t.project.c.legacy_slug == slug)).first()
+        project = namespace.resolve(conn, slug)
         if project is None:
             return None
         hook = conn.execute(

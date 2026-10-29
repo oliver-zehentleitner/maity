@@ -3,7 +3,7 @@ sees at the dashboard's root, written by the instance admin and kept in the data
 
 The Markdown is checked against exactly what the dashboard renders: text, headings,
 emphasis, lists, quotes, fenced code and links whose target is an `https` URL or a
-dashboard route (`/#/…`). No image and no raw HTML outside fenced code; the first line
+dashboard path (`/login`). No image and no raw HTML outside fenced code; the first line
 that breaks a rule is named in the refusal.
 """
 
@@ -46,11 +46,12 @@ HOST_LABEL = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?")
 
 
 def safe_target(value: str) -> bool:
-    """An `https` URL with a host and no credentials, or a dashboard route `/#/…`."""
+    """An `https` URL with a host and no credentials, or a dashboard path of §16.11: one `/`,
+    no `//` and no fragment."""
     if any(c.isspace() or ord(c) < 32 or c == "\\" for c in value):
         return False
-    if value.startswith("/#/"):
-        return True
+    if value.startswith("/"):
+        return not value.startswith("//") and "#" not in value
     if not value.startswith("https://"):  # no http, javascript:, data:, //, lookalikes
         return False
     try:

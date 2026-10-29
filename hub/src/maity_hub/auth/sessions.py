@@ -11,7 +11,6 @@ from __future__ import annotations
 import hashlib
 import re
 import secrets
-import unicodedata
 from collections.abc import Iterable
 from datetime import datetime, timedelta
 from typing import Any
@@ -240,27 +239,6 @@ def approved_by_chain(conn: Connection, human_id: str, public_id: str) -> list[A
                 found.append(row)
                 queue.append(row.public_id)
     return found
-
-
-NEXT_MAX = 512
-_NEXT_BAD = re.compile(r"[\\\s\x00-\x1f\x7f]|//")
-
-
-def safe_next(value: str | None) -> str:
-    """A login's `next` (§2.6.5): `/` or a dashboard route `/#/…` on the public host,
-    at most 512 characters, without a backslash, whitespace, a control or format
-    character, a second `#` or `//`. Anything else becomes `/`, silently."""
-    if (
-        not value
-        or len(value) > NEXT_MAX
-        or not (value == "/" or value.startswith("/#/"))
-        or value.count("#") > 1
-        or _NEXT_BAD.search(value)
-        # C1 controls, bidi overrides, zero-width and other format characters.
-        or any(unicodedata.category(c) in ("Cc", "Cf") for c in value)
-    ):
-        return "/"
-    return value
 
 
 def create(

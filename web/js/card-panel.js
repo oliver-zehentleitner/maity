@@ -1,4 +1,4 @@
-// A card opened (#/<owner>/<slug>/tasks/<id>): a panel beside the board on a
+// A card opened (/<owner>/<slug>/tasks/<id>): a panel beside the board on a
 // wide screen and above it, full width, on a phone. It holds the card as
 // the board draws it, controls included, and what the board leaves out:
 // the body (Markdown), the links (§6.13), the open notes with a form to add
