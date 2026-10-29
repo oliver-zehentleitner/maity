@@ -4,7 +4,7 @@
 hub created (`null` until it did); projects made before it read `null`.
 
 Revision ID: 0081
-Revises: 0084
+Revises: 0085
 Create Date: 2026-10-28
 """
 
@@ -15,7 +15,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "0081"
-down_revision: str | None = "0084"
+down_revision: str | None = "0085"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
