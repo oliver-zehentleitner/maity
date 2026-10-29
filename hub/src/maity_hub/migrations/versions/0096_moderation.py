@@ -3,7 +3,7 @@ account's suspension, and the report an event's change was made for (actor
 `{kind: "moderation", report_id}`).
 
 Revision ID: 0096
-Revises: 0095
+Revises: 0097
 Create Date: 2026-10-29
 """
 
@@ -15,7 +15,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql
 
 revision: str = "0096"
-down_revision: str | None = "0095"
+down_revision: str | None = "0097"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

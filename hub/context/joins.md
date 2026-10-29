@@ -180,6 +180,43 @@ The voiding moment and the widened list row are written in the contract
 must be complete and enabled as for every registration" and is not
 stated for the page itself (inferred).
 
+## An address-bound invitation is accepted by the account's verified or disabled address, never a pending one
+
+**Id:** 310da1ed-b6ae-44bc-b6f3-bfc649186794
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** fix of the stub `invitations.account_address` (#662), docs/api.md §3.4, §18.4, §18.7, 2026-10-29
+**See:** joins.md — 59c15f35-08fc-4bb9-abf6-ae0dc4ac8ea9 — as of 2026-10-29
+**Revisit when:** the contract says in so many words whether a disabled address still counts as the account's address, or the accounts design adds a state of the address beyond none, pending, verified and disabled
+
+`invitations.account_address` gives the account's `address_normalized`
+when `address_status` is `verified` or `disabled`, and nothing
+otherwise; accept compares it with the invitation's normalized address
+(`routes/invitations.py`, `invitation_address_mismatch`).
+
+**Reason:** §3.4 lets only the account whose verified address is the
+invited one accept. A `disabled` address is still that account's
+verified address: §18.7 only stops mail to it after hard failures, the
+address keeps its place in the one-account-per-address constraint, and
+setting and verifying it again enables it. The rest of the hub treats
+`disabled` as verified too (`notifications/preferences.py`). A `pending`
+address was never confirmed by its mailbox, so accepting with it would
+let anyone bind an invitation to an address they only typed.
+Both sides normalize with `strip().lower()` (`registration.normalized`
+and `mail.address.normalized`), the comparison §2.6.3 uses.
+
+**Rejected alternatives:** `verified` only, as e-mail sign-in and the
+mailer use: those decide whether mail may go out, while accept asks
+whose address it is, and a bounced mailbox would lock its owner out of
+an invitation made for them. Reading `address` or `pending_address`
+instead of `address_normalized`: the first is not normalized, the second
+is unconfirmed.
+
+**Workaround:** before this fix the stub returned `None`, so every
+address-bound invitation refused with `invitation_address_mismatch`;
+tests monkeypatched `account_address`. The monkeypatch is gone.
+
 ## A join remembers whether a member made it under "Bringing your own agent"
 
 **Id:** 2dc81770-9572-4124-b59a-0b90aabb57ca

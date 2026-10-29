@@ -112,6 +112,32 @@ window.Maity = window.Maity || {};
   }
   const fixtureSlugs = () => [...new Set(Object.keys(fixtures()).filter((k) => k.includes("/")).map((k) => k.split("/")[0]))];
   // The fixture directory a full name (or one of its aliases) names, or null.
+  // §16.4: the fixture hub's registration settings and the accounts that wait.
+  const registration = {
+    values: {
+      mode: { value: "closed", source: "default" },
+      domains: { value: [], source: "default" },
+      addresses: { value: [], source: "default" },
+      approval: { value: "operator", source: "default" },
+      terms: { value: { url: "https://example.org/terms", version: "2026-10" }, source: "env" },
+      max_new_accounts_per_hour: { value: 20, source: "default" },
+    },
+    pending: [
+      { id: "hum-newcomer", handle: "newcomer", display_name: "New Comer", address: "new@example.org", created_at: "2026-10-29T08:00:00Z",
+        expires_at: "2026-11-28T08:00:00Z", source_ip: "192.0.2.10", terms: { version: "2026-10" } },
+    ],
+  };
+  const registrationMailReady = () => { const m = fixtures()["admin-mail.json"]; return !!(m.complete && m.enabled); };
+  function registrationView() {
+    const v = registration.values;
+    const ready = registrationMailReady();
+    const effective = v.mode.value === "closed" || ready ? v.mode.value : "closed";
+    const missing = [];
+    if (v.mode.value !== "closed" && !ready) missing.push("mail");
+    if (v.mode.value === "allowlist" && !v.domains.value.length && !v.addresses.value.length) missing.push("allowlist");
+    return Object.assign({}, JSON.parse(JSON.stringify(v)), { effective_mode: effective, missing, pending: registration.pending.length,
+      registered_last_hour: 1, requests_dropped_last_hour: 0 });
+  }
   function slugOfFull(full) {
     return fixtureSlugs().find((slug) => fullOf(slug) === full
       || ((fixtures()[slug + "/project.json"] || {}).aliases || []).includes(full)) || null;
@@ -1338,6 +1364,55 @@ window.Maity = window.Maity || {};
       Object.assign(agent, { deleted_at: at, memberships: [], avatar_url: null, avatar_source: null });
       return agent;
     }],
+    // §16.4 Registration: the settings with their sources, what is missing, the
+    // accounts that wait and lifting a block, for the instance admin.
+    ["GET", /^\/admin\/settings\/registration$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
+      return registrationView();
+    }],
+    ["PATCH", /^\/admin\/settings\/registration$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
+      const fields = {};
+      Object.keys(body).forEach((k) => {
+        if (!(k in registration.values)) fields[k] = "extra_forbidden";
+        else if (registration.values[k].source === "env") fields[k] = "set_by_environment";
+      });
+      if ("mode" in body && !["closed", "allowlist", "open"].includes(body.mode)) fields.mode = "invalid";
+      if (["allowlist", "open"].includes(body.mode) && !registrationMailReady()) fields.mode = "mail_required";
+      ["domains", "addresses"].forEach((k) => {
+        if (!(k in body)) return;
+        const shape = k === "domains" ? /^@[a-z0-9.-]+\.[a-z]{2,}$/i : /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i;
+        // As the hub: a list that is no list is `<field>`, a bad entry `<field>.<index>` (§16.4).
+        if (!Array.isArray(body[k])) { fields[k] = "invalid"; return; }
+        const bad = body[k].findIndex((x) => !shape.test(String(x)));
+        if (bad >= 0) fields[k + "." + bad] = "invalid";
+      });
+      if ("approval" in body && !["operator", "automatic"].includes(body.approval)) fields.approval = "invalid";
+      if ("terms" in body && body.terms !== null && !(body.terms && /^https:\/\/\S+$/.test(body.terms.url || "") && /^\S{1,64}$/.test(body.terms.version || ""))) fields.terms = "invalid";
+      if ("max_new_accounts_per_hour" in body && !(Number.isInteger(body.max_new_accounts_per_hour) && body.max_new_accounts_per_hour >= 1)) fields.max_new_accounts_per_hour = "invalid";
+      if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
+      Object.entries(body).forEach(([k, v]) => {
+        const value = k === "domains" || k === "addresses" ? [...new Set(v.map((x) => String(x).toLowerCase()))] : v;
+        registration.values[k] = { value, source: "admin" };
+      });
+      return registrationView();
+    }],
+    ["GET", /^\/admin\/registrations$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
+      return { items: registration.pending.slice(), next_cursor: null };
+    }],
+    ["POST", /^\/admin\/registrations\/([^/]+)\/(approve|reject)$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
+      const at = registration.pending.findIndex((r) => r.id === m[1]);
+      if (at < 0) fail(404, "not_found", "Not found", path);
+      if (m[2] === "reject" && !(body.reason && body.reason.length <= 1024)) fail(400, "invalid", "a reason is required", path, { fields: { reason: "invalid" } });
+      const item = registration.pending.splice(at, 1)[0];
+      return m[2] === "approve" ? Object.assign({}, item, { account_status: "active" }) : { id: item.id, status: "rejected" };
+    }],
+    ["DELETE", /^\/admin\/registrations\/blocks\/([^/]+)$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
+      return null;
+    }],
     ["GET", /^\/health$/, () => ({ status: "ok", version: "fixture", api: "v1", database: { reachable: true, revision: "fixture-head", head: "fixture-head" } })],
     ["GET", /^\/admin\/settings\/mail$/, (m, body, path) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
@@ -1913,6 +1988,11 @@ window.Maity = window.Maity || {};
       "/api/v1/admin/settings/landing": { get: {}, patch: {} },
       "/api/v1/landing": { get: {} },
       "/api/v1/admin/settings/mail": { get: {}, patch: {} },
+      "/api/v1/admin/settings/registration": { get: {}, patch: {} },
+      "/api/v1/admin/registrations": { get: {} },
+      "/api/v1/admin/registrations/{human_id}/approve": { post: {} },
+      "/api/v1/admin/registrations/{human_id}/reject": { post: {} },
+      "/api/v1/admin/registrations/blocks/{blocked}": { delete: {} },
       "/api/v1/admin/settings/mail/test": { post: {} },
       "/api/v1/health": { get: {} },
       "/api/v1/projects/{owner}/{slug}/ticker": { get: {}, post: {} },

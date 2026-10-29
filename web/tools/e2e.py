@@ -1014,6 +1014,7 @@ def scenario(run: Run, page: Page) -> None:
     no_problems(run, "phone width")
 
     users_step(run, page)
+    registration_admin_step(run, page)
     join_expiry_step(run, page)
     change_password(run, page)
     picture_step(run, page)
@@ -2251,6 +2252,34 @@ def users_step(run: Run, page: Page) -> None:
     run.shot(page, "users")
     run.a11y(page, "users")
     no_problems(run, "users")
+
+
+def registration_admin_step(run: Run, page: Page) -> None:
+    """Instance administration → Registration (docs/api.md §16.4): the mode needs mail."""
+    me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
+    if not me.get("instance_admin"):
+        return
+    run.step("registration: the admin opens the settings; allowlist needs mail, a list is saved")
+    page.goto(f"{run.base}/admin")
+    page.locator("nav.admin-nav").get_by_role("button", name="Registration", exact=True).click()
+    section = page.locator("section.admin-section[aria-label='Registration']")
+    expect(section.locator(".reg-effective")).to_have_text("Registration now: closed.")
+    form = section.locator("form.reg-form")
+    # This hub has no mail: the hub refuses the mode, said at its field.
+    page.locator("#reg-mode").select_option("allowlist")
+    form.get_by_role("button", name="Save", exact=True).click()
+    expect(page.locator("#reg-mode-error")).to_have_text("needs complete, enabled mail (Mail settings)")
+    # That refusal is the expected answer here, not a problem of the page.
+    refused = "PATCH /api/v1/admin/settings/registration answered 400"
+    run.problems = [p for p in run.problems if p != refused]
+    page.locator("#reg-mode").select_option("closed")
+    page.locator("#reg-domains").fill("@example.com")
+    form.get_by_role("button", name="Save", exact=True).click()
+    expect(form).to_contain_text("Saved.")
+    expect(page.locator("#reg-domains")).to_have_value("@example.com")
+    run.shot(page, "registration-admin")
+    run.a11y(page, "registration admin")
+    no_problems(run, "registration admin")
 
 
 def join_expiry_step(run: Run, page: Page) -> None:

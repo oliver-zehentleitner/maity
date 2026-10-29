@@ -1793,7 +1793,8 @@ when either list matches.
 is complete and enabled, else `false` — also `false` under `allowlist`
 while both lists are empty, since nobody could register then (the admin
 sees it as `missing: ["allowlist"]`, §16.4); and `terms`: `{url, version}` or
-`null` (§16.4). It says nothing about the lists or any account. The
+`null` (§16.4). It says nothing about the lists' entries or any account;
+only whether an allowlist has any entry follows from `registration`. The
 login page shows "Create an account" only with `registration: true`.
 
 #### 2.7.1 The flow: the address is verified before an account exists
@@ -3112,7 +3113,7 @@ Response `200`, bounded and deterministic:
               "presence": "online", "paused": null, "lead": false, "claims": 1 } ],
   "project": {
     "slug": "maity", "full_name": "oliver/maity", "name": "Maity",
-    "state": "build", "state_note": "…", "state_changed_at": "2026-10-21T09:00:00Z",
+    "state": "build", "released_at": null, "state_note": "…", "state_changed_at": "2026-10-21T09:00:00Z",
     "repository": { "url": "https://github.com/oliver-zehentleitner/maity", "default_branch": "main",
                     "forge": "github", "probe_configured": true, "probe_via": "app",
                     "owner_confirmed": true },
@@ -7849,7 +7850,7 @@ learns its content.
 | `cover_started`, `cover_ended` | the covered member, the substitute, the covered member's `reports_to`, `trust:admin` | `member_id`, `substitute_id`, `tasks`, `requests` (ids moved); `cover_started` adds `left` (ids it could not move), `cover_ended` `kept` and `returned` (§6.12) |
 | `member_limit_ended` | the coordinator (§6.12), the agent's owner | `member_id`, `until`, `harness`; only for an agent without an active placement |
 | `member_changed_by_agent` | `trust:owner` | `member_id`, `change` (`trust`, `role`, `removed`), `old`, `new`, `actor`, `request_id` when a consent preceded it (§2.3 ᵃ) |
-| `state_changed`, `policy_changed`, `absence_changed` | **all**; a `policy_changed` from a removal that reset a seat also `member:<id>` of every human owner and admin (§6.2) | `old`, `new`, `reason`; `state_changed` and `policy_changed` also carry `rules_version` |
+| `state_changed`, `policy_changed`, `absence_changed` | **all**; a `policy_changed` from a removal that reset a seat also `member:<id>` of every human owner and admin (§6.2) | `old`, `new`, `reason`; `state_changed` and `policy_changed` also carry `rules_version`; a `state_changed` from the released mark (§6.1) has `old == new`, `reason: null` and adds `released_at` |
 | `project_updated` | **all** | `fields`: the changed fields with their new values — `logo`, `banner` (`{available, source, etag}`, §11.2); `settings.<key>` for every changed settings key (its value without free text, `true` for `release_checklist`, `null` when removed; `settings.onboarding` as `{version, by, updated_at, check_in_with}`, `settings.language` as it is, §6.1); never image bytes, never free text |
 | `avatar_changed` | **all** — emitted, when the effective avatar's source or content changes, in every project where the member holds an active membership (§6.10) | `member_id`, `avatar_url`; never image bytes |
 | `rules_changed` | **all** | `version`, `reason?` — emitted on every `rules_version` bump that has no event of its own (`rules_markdown`, `memory.provider`) |

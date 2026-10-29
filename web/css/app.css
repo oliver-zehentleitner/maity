@@ -14,7 +14,7 @@
   --high: #b42318;
   --normal: #8a5a00;
   --low: #4a5a6a;
-  --ok: #1a7f37;
+  --ok: #177633; /* 5.33:1 on --bg, 5.71:1 on --surface, 5.0:1 on --surface-2 (WCAG AA, a panel's status line) */
   --plan: #7a45d6; /* the plan state: 5.36:1 on --bg, 5.75:1 on --surface (WCAG AA) */
   --warn: #9a6700;
   --bad: #b42318;
@@ -218,6 +218,7 @@ main:has(> .page-loading, > .page-failed) { flex: 1; display: flex; flex-directi
 .state-review { color: var(--warn); }
 .state-launch { color: var(--ok); }
 .state-archived { color: var(--muted); }
+.state.released { color: var(--text); border-style: double; border-width: 3px; }
 .source { color: var(--warn); border-style: dashed; }
 
 .state-note { margin: 4px 0 0; font-size: 0.85rem; color: var(--muted); }

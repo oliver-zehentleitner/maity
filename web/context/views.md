@@ -1531,6 +1531,34 @@ were not asked for. The older Users page at `/admin/users` was removed
 before launch with the other compatibility routes, so that address is
 now no view at all.
 
+## Registration in the admin area: missing beside the fields, a block lifted by its typed address
+
+**Id:** 9e0abafa-9fb3-41ba-b9b0-648e7e9523c0
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §16.4, §2.7, §2.7.5; the card tsk-64tktcnndzk3 (the maintainer found no registration setting, 2026-10-29); the dashboard's implementation, 2026-10-29
+**Revisit when:** the hub lists blocked addresses, or approval gets mails of its own (#280)
+
+The Registration section says first what the hub does now
+(`effective_mode`) and, beside the fields, in words what keeps
+registration from working (`missing`: mail, an empty allowlist). A value
+the environment sets, or terms that come from the legal pages, is shown
+with its source and not offered. Lifting a block takes a typed address,
+since the hub has `DELETE /admin/registrations/blocks/{address}` but no
+list of blocks.
+
+**Reason:** a mode that is set but not in effect (no mail) looks like
+open registration that does not work; saying the gap where the admin is
+looking avoids searching for it. A field the hub would refuse
+(`set_by_environment`) is no choice. Without a list, a typed address is
+the only way to the endpoint.
+
+**Rejected alternative:** the mode alone, with the hub's refusal on
+saving: the admin would learn of missing mail only by trying. A list of
+blocked addresses kept by the dashboard: it would show only what this
+browser lifted or saw rejected, not what the hub holds.
+
 ## On a phone an opened card is a page of its own; the panel is the card
 
 **Id:** 54f93a4f-7e91-4d69-9b51-ca562daaa9a3
@@ -2267,3 +2295,30 @@ words the agents no longer read, the drift this avoids. The price is a
 hint without the words on a hub that does not send the note yet.
 Copying the text into the page: the same drift with every change of
 the wording.
+
+## Released is a mark beside the state, never a state; Project settings say it is never cleared
+
+**Id:** 27ca6bd9-6e83-4a85-8620-f5e9f428362f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the released mark in the dashboard (PR #659, 2026-10-29) and the Grok review of it; contract in `docs/api.md` §6.1 and §6.9
+**See:** https://github.com/oliver-zehentleitner/maity — de8abccf-94dc-4947-9926-463aa13edd8f — as of 2026-10-29
+**Revisit when:** §6.1 lets the mark be cleared, or the hub's released rules text changes
+
+The hub sets `released_at` once and keeps it through every state. The
+dashboard therefore shows "Released" beside the state badge, in the
+header and in the overview's State row, not as a sixth state. The
+tooltip carries the released rules in the hub's words, so a reader sees
+what the mark binds. Project settings say the mark holds "for good"
+and offer no control for it. A project without `released_at`, or a hub
+that does not send it, shows no mark.
+
+**Reason:** no call clears the mark, so a control in the settings would
+promise something the hub refuses. The overview is where a reader looks
+up the state, so the mark belongs there as well as in the header.
+
+**Rejected alternatives:**
+- A `released` entry in the state select: it would be lost on the next
+  move back to build, which the maintainer's decision rules out.
+- The mark in the header alone: the overview is where the state is read.

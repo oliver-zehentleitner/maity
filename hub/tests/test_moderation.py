@@ -274,8 +274,9 @@ def test_an_exchange_takes_the_account_lock_before_any_other(
 def test_a_suspension_locks_projects_before_the_human(
     team: dict[str, Any], make_client: ClientFactory, migrated: Engine
 ) -> None:
-    """The credentials go first, which lock their projects; the human's sessions and row
-    last, the order project work takes (project, then human)."""
+    """The account lock first (§2.9); then the credentials, which lock their projects;
+    the human's sessions and row last, the order project work takes (project, then
+    human)."""
     pat = team["pat"]
     flow.agent(make_client, pat, PROJECT)
     runners.paired(make_client, pat)
@@ -286,6 +287,12 @@ def test_a_suspension_locks_projects_before_the_human(
     paired = [i for i, x in enumerate(statements) if x.startswith("UPDATE runner_credential")]
     human = [i for i, x in enumerate(statements) if x.startswith("UPDATE human")]
     assert revoked and paired and human, statements
+    # SQLite renders no lock clause: the account lock's read is what comes first.
+    first = next(i for i, x in enumerate(statements) if locking(x) and "account_lock" not in x)
+    assert "FROM account_lock" in statements[0], statements
+    assert any("FROM account_lock" in x and "FOR UPDATE" in x for x in statements[:first]) or (
+        migrated.dialect.name == "sqlite"
+    ), statements
     assert max(revoked + paired) < min(human), statements
 
 

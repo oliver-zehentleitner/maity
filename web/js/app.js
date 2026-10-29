@@ -180,6 +180,20 @@ window.Maity = window.Maity || {};
     return h("span", { class: "state state-" + state, title: note || "" }, STATE_LABELS[state] || state);
   }
 
+  // The released mark (docs/api.md §6.1): set once with the first release
+  // tag, never cleared; shown beside the state wherever the state is.
+  const RELEASED_RULES = "interfaces change only with versioning and a stated transition period, "
+    + "migrations stay backward compatible, and the release checklist is required";
+  function releasedDay(project) {
+    const d = new Date(project.released_at);
+    return Number.isNaN(d.getTime()) ? project.released_at
+      : d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  }
+  function releasedMark(project) {
+    if (!project || !project.released_at) return null;
+    return h("span", { class: "state released", title: "Released since " + releasedDay(project) + ": " + RELEASED_RULES + "." }, "Released");
+  }
+
   // ---- sign-in ------------------------------------------------------------
 
   // Where a sign-in goes on (/login?next=…, docs/api.md §2.6.5, §16.11): a
@@ -482,6 +496,9 @@ window.Maity = window.Maity || {};
         },
       },
       h("h2", { class: "panel-title" }, "Project state"),
+      ctx.project.released_at
+        ? h("p", { class: "released-note" }, "Released since " + releasedDay(ctx.project) + ", for good: " + RELEASED_RULES + ".")
+        : null,
       h("label", { for: "state-select" }, "State"), state,
       h("label", { for: "state-note" }, "Note"), note,
       h("label", { for: "state-reason" }, "Reason"), reason,
@@ -1084,6 +1101,7 @@ window.Maity = window.Maity || {};
         ctx.scope === "project"
           ? h("div", { class: "project-state", role: "group", "aria-label": "State and absence" },
             stateBadge(ctx.project.state, ctx.project.state_note),
+            releasedMark(ctx.project),
             absence ? h("span", { class: "state away", title: absence.scope }, "Away until " + formatTime(absence.until)) : null)
           : null),
       ctx.scope === "project" && ctx.project.state_note ? h("p", { class: "state-note" }, ctx.project.state_note) : null,
@@ -1177,6 +1195,8 @@ window.Maity = window.Maity || {};
       scope: where.scope,
       projectLink,
       stateLabel: (state) => STATE_LABELS[state] || state,
+      stateBadge,
+      releasedMark,
       refresh: render,
       markSeen: () => {},
       // Once the session ended, a view still drawing starts nothing more.
