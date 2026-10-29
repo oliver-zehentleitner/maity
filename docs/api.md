@@ -251,7 +251,7 @@ session of the same credential replays the same key — and kept for
 
 - Only a successful first call (2xx) is stored; a call that ended in an
   error changed nothing and may simply be repeated. A repeat with the same
-  key and the same body after a success returns the first call's
+  key and the same call after a success returns the first call's
   status and resource (the hub stores the call's hash (method, route, project id, path parameters
   and body), the status code and a reference to the resource, not the full
   response) with the header
