@@ -15,6 +15,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from itertools import islice
+from types import SimpleNamespace
 from typing import Any
 
 from sqlalchemy import Connection, String, and_, cast, func, or_, select
@@ -163,16 +164,14 @@ def owned_agents(conn: Connection, mines: Sequence[Any], caller: Any) -> dict[st
     return owned
 
 
-def direct_entries(
-    conn: Connection, mines: Sequence[Any], caller: Any, owned: dict[str, list[str]]
-) -> list[dict[str, Any]]:
-    """The caller's direct conversations with the agents `owned` per project: each needs
-    both parties active in the project (§9.1), so an agent whose owner is no member has
-    none."""
-    by_project = {m.project.id: m for m in mines}
+def _direct_chats(
+    conn: Connection, by_project: dict[str, Any], owned: dict[str, list[str]]
+) -> tuple[list[Key], dict[Key, Any], dict[Key, Any]]:
+    """The direct chats of the agents `owned` per project: each needs both parties active
+    in the project (§9.1). With them, per chat the agent's membership and its owner's."""
     pairs = [(p, a) for p, agents in owned.items() if p in by_project for a in agents]
     if not pairs:
-        return []
+        return [], {}, {}
     agent_ids = {a for _, a in pairs}
     agents = {
         (row.project_id, row.agent_id): row
@@ -202,19 +201,27 @@ def direct_entries(
         )
     }
     chats = [(p, a) for p, a in pairs if (p, a) in agents and (p, owners.get(a)) in humans]
+    return chats, {k: agents[k] for k in chats}, {k: humans[k[0], owners[k[1]]] for k in chats}
+
+
+def direct_entries(
+    conn: Connection, mines: Sequence[Any], caller: Any, owned: dict[str, list[str]]
+) -> list[dict[str, Any]]:
+    """The caller's direct conversations with the agents `owned` per project: each needs
+    both parties active in the project (§9.1), so an agent whose owner is no member has
+    none."""
+    by_project = {m.project.id: m for m in mines}
+    chats, agents, humans = _direct_chats(conn, by_project, owned)
     if not chats:
         return []
-    people = group_chats.people(
-        conn,
-        {agents[k].id for k in chats} | {humans[k[0], owners[k[1]]].id for k in chats},
-    )
+    people = group_chats.people(conn, {agents[k].id for k in chats} | {humans[k].id for k in chats})
     lasts = _latest(conn, dict.fromkeys(chats, 0))
     senders = principal_ids(conn, (row.actor_membership for row in lasts.values()))
     unread = _direct_unread(conn, by_project, caller, chats)
     entries = []
     for key in chats:
         project_id, agent_id = key
-        agent, human = agents[key], humans[project_id, owners[agent_id]]
+        agent, human = agents[key], humans[key]
         last = lasts.get(key)
         entries.append(
             {
@@ -424,6 +431,12 @@ def _windows(
     return windows
 
 
+def _seen(conn: Connection, mines: dict[str, Any], windows: dict[Key, int]) -> dict[Key, int]:
+    """Per chat the seq the caller counts from: its read mark, or its window if later."""
+    marks = _marks(conn, mines, windows)
+    return {k: max(window, marks.get(k, 0)) for k, window in windows.items()}
+
+
 def _unread(
     conn: Connection, mines: dict[str, Any], windows: dict[Key, int]
 ) -> tuple[dict[Key, int], dict[Key, int]]:
@@ -431,8 +444,7 @@ def _unread(
     and its window, and how many of them mention it."""
     if not windows:
         return {}, {}
-    marks = _marks(conn, mines, windows)
-    seen = {k: max(window, marks.get(k, 0)) for k, window in windows.items()}
+    seen = _seen(conn, mines, windows)
     unread = _counts(conn, mines, seen)
     mentioned: dict[Key, int] = {}
     for batch in _chunks(list(seen)):
@@ -461,6 +473,54 @@ def _unread(
     return unread, mentioned
 
 
+def unread_chats(conn: Connection, mines: Sequence[Any], human_id: str) -> dict[str, int]:
+    """Per project id the unread messages of the human's chats: the direct chats with its
+    agents and the group chats it takes part in, an observer's reading along counting
+    nothing. The number §18.2 gives as `counts.chat` and §9.3 as `totals.unread`: the
+    bell and the list both rest on it, and `tests/test_me_conversations.py` holds them
+    equal."""
+    by_project = {m.project.id: m for m in mines}
+    if not by_project:
+        return {}
+    caller = SimpleNamespace(kind="human", human_id=human_id, agent_id=None, session_id=None)
+    chats, _, _ = _direct_chats(conn, by_project, owned_agents(conn, mines, caller))
+    unread = _direct_unread(conn, by_project, caller, chats) if chats else {}
+    windows = _participations(conn, mines)
+    if windows:
+        unread |= _counts(conn, by_project, _seen(conn, by_project, windows))
+    totals: dict[str, int] = dict.fromkeys(by_project, 0)
+    for (project_id, _), n in unread.items():
+        totals[project_id] += n
+    return totals
+
+
+def _participations(conn: Connection, mines: Sequence[Any]) -> dict[Key, int]:
+    """The group chats the caller takes part in, with the seq its window starts after."""
+    return {
+        (row.project_id, row.conversation_id): int(row.window_after)
+        for row in conn.execute(
+            select(
+                t.membership.c.project_id,
+                t.conversation_participant.c.conversation_id,
+                t.conversation_participant.c.window_after,
+            )
+            .select_from(t.conversation_participant)
+            .join(t.membership, t.membership.c.id == t.conversation_participant.c.membership_id)
+            .join(
+                t.conversation,
+                and_(
+                    t.conversation.c.id == t.conversation_participant.c.conversation_id,
+                    t.conversation.c.project_id == t.membership.c.project_id,
+                ),
+            )
+            .where(
+                t.conversation_participant.c.membership_id.in_([m.id for m in mines]),
+                t.conversation_participant.c.here.is_(True),
+            )
+        )
+    }
+
+
 def _may_name(principals: set[str]) -> Any:
     """A payload whose text has a `member_id` and one of the principals' ids: a superset of
     the messages that mention one (the exact test is on the rows read). The id alone would
@@ -472,4 +532,12 @@ def _may_name(principals: set[str]) -> Any:
     )
 
 
-__all__ = ["direct_entries", "group_entries", "memberships", "owned_agents", "preview", "short"]
+__all__ = [
+    "direct_entries",
+    "group_entries",
+    "memberships",
+    "owned_agents",
+    "preview",
+    "short",
+    "unread_chats",
+]

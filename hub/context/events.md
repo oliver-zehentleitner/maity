@@ -267,7 +267,7 @@ for a default page of 50.
 **Status:** active
 **Evidence:** inferred
 **Source:** docs/api.md §9.3 "Across projects"; tsk-45vs1hdzswjs; the dashboard's `#/chats` read one list per project (p95 7.8 s, finding D of 2026-10-28)
-**Revisit when:** a human has more chats than one request can hold in memory, or §18.2's `counts.chat` and `totals.unread` are made to agree in another way
+**Revisit when:** a human has more chats than one request can hold in memory, or `counts.chat` and `totals.unread` are made to count by different rules again
 
 `conversation_list` takes the caller's memberships as a list and keys every lookup by
 (project id, chat id), because a direct conversation's id is its agent's and one agent in two
@@ -294,7 +294,11 @@ place where a chat's window, unread count and observer rules are decided.
 - Sorting ties by `id` descending as the per-project list does: a total order across projects
   needs the project name, and the contract names it.
 
-**Open:** §9.3 says `totals.unread` is the number §18.2 gives as `counts.chat`, and §18.2 says
-`chat` is the `unread` of the project's conversations; the bell's `counts.chat` counts only
-the direct conversations (`listing._unread_chats`), so a room with unread messages makes the
-two differ. `totals` here follow §9.3 (all items); the bell is unchanged.
+**Resolved (same change):** §9.3 says `totals.unread` is the number §18.2 gives as
+`counts.chat`, but the bell counted only the direct conversations (`listing._unread_chats`), so
+a room with unread messages made the two differ. Decided by the lead on 2026-10-28: both count
+the direct and the group chats the human takes part in, observers nothing, through one
+function, `conversation_list.unread_chats` (per project, from the same direct-chat and window
+helpers the list uses). `tests/test_me_conversations.py` holds the bell and `totals.unread`
+equal, also after a read mark. The old `_unread_chats` looped over the agents with two
+statements each and counted an agent whose owner had left; it is gone.

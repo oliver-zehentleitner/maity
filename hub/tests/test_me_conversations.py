@@ -262,3 +262,29 @@ def test_the_cost_does_not_grow_with_the_projects(
     many = count_statements(migrated, build)
     assert many == few, (few, many)
     assert len(owner.get(ME).json()["items"]) == 12
+
+
+def test_the_bell_counts_what_the_list_totals_rooms_included(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    people = talk(owner, make_client, migrated)
+    for who in (owner, people["guest"]):
+        listed = pages(who, observed=True, limit=200)[0]
+        bell = who.get("/me/notifications").json()["counts"]
+        assert bell["chat"] == listed["totals"]["unread"], (bell, listed["totals"])
+    owned = pages(owner, observed=True, limit=200)[0]["totals"]["unread"]
+    assert owned >= 6  # the owner's rooms count, not only the direct chats
+    # an observer's reading along counts nothing, on the bell either
+    watcher = people["watcher"]
+    assert (
+        watcher.get("/me/notifications").json()["counts"]["chat"]
+        == pages(watcher, observed=True, limit=200)[0]["totals"]["unread"]
+    )
+    # a read mark lowers both by the same amount
+    items = pages(owner, limit=200)[0]["items"]
+    room = next(i for i in items if i["kind"] == "group" and i["unread"])
+    slug = room["project"]["slug"]
+    assert owner.get(f"{base(slug)}/{room['id']}/messages").status_code == 200  # reading marks
+    after = owner.get("/me/notifications").json()["counts"]["chat"]
+    assert after < owned
+    assert after == pages(owner, observed=True, limit=200)[0]["totals"]["unread"]
