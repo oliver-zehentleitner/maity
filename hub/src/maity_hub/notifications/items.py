@@ -20,8 +20,6 @@ from maity_hub.notifications import records
 
 WINDOW = timedelta(days=30)
 KINDS = ("inbox", "chat", "mention", "security")
-# The kinds the maintainer's decision of 2026-10-26 removed (§18.1): asked for, `invalid`.
-REMOVED_KINDS = ("card", "ticker", "jour_fixe", "keep_the_why", "agent", "system", "registration")
 REQUEST_EVENTS = ("request_created", "request_forwarded", "request_answered", "request_withdrawn")
 # The only event kinds that can make a notification; the derive reads no other row.
 EVENT_KINDS = (*REQUEST_EVENTS, "message", "mentioned")

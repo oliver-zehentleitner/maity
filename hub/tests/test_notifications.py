@@ -117,10 +117,10 @@ def test_cards_and_watches_notify_nobody(
     assert all("reason" not in i for i in got["items"])
 
 
-def test_a_removed_kind_is_invalid(owner: flow.Human) -> None:
+def test_an_unknown_kind_is_invalid(owner: flow.Human) -> None:
     for asked, reason in (
-        ("card", "removed_kind"),
-        ("agent,chat", "removed_kind"),
+        ("card", "unknown"),
+        ("agent,chat", "unknown"),
         ("bogus", "unknown"),
     ):
         refused = owner.get(N, params={"kind": asked})
@@ -128,7 +128,7 @@ def test_a_removed_kind_is_invalid(owner: flow.Human) -> None:
         assert refused.json()["error"]["details"]["fields"] == {"kind": reason}
     head = bell(owner, limit=0)["next_after"]
     marked = owner.post(f"{N}/read", {"up_to": head, "kind": "ticker"})
-    assert marked.json()["error"]["details"]["fields"] == {"kind": "removed_kind"}
+    assert marked.json()["error"]["details"]["fields"] == {"kind": "unknown"}
 
 
 def test_a_request_opened_to_the_admins_reaches_an_admin(
