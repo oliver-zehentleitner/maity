@@ -173,3 +173,40 @@ def test_the_packet_names_the_waiting_setup_cards(
     owner.patch(f"{BASE}/tasks/{first}", {"status": "cancelled"})
     owner.patch(f"{BASE}/tasks/{second}", {"status": "cancelled"})
     assert "setup" not in agent.resume().json()
+
+
+def _kinds(engine: Engine) -> list[str]:
+    from sqlalchemy import select
+
+    from maity_hub import tables as t
+
+    with engine.connect() as conn:
+        return list(conn.execute(select(t.event.c.kind).order_by(t.event.c.seq)).scalars())
+
+
+def test_a_patch_that_archives_with_the_repository_opens_no_card(owner: flow.Human) -> None:
+    flow.project(owner)
+    both = owner.patch(BASE, {"repository": REPOSITORY, "state": "archived", "reason": "done"})
+    assert both.status_code == 200, both.text
+    assert both.json()["state"] == "archived"
+    assert both.json()["setup"]["cards"] is None  # judged by the state the PATCH leaves
+
+
+def test_a_patch_that_brings_the_project_back_with_the_repository_opens_the_cards(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    flow.project(owner)
+    assert owner.patch(BASE, {"state": "archived", "reason": "pause"}).status_code == 200
+    back = owner.patch(BASE, {"repository": REPOSITORY, "state": "build", "reason": "again"})
+    assert back.status_code == 200, back.text
+    cards = back.json()["setup"]["cards"]
+    assert cards is not None and len(cards) == 2  # not lost for good to the old state
+    assert [_card(owner, c)["title"] for c in cards] == [
+        TITLES["keep_the_why_init"],
+        TITLES["keep_the_why_badge"],
+    ]
+    # The project's state_changed comes first, then the cards it opens.
+    kinds = _kinds(migrated)
+    last_state = max(i for i, k in enumerate(kinds) if k == "state_changed")
+    created = [i for i, k in enumerate(kinds) if k == "task_created"]
+    assert len(created) == 2 and min(created) > last_state

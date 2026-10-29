@@ -631,17 +631,6 @@ def patch_project(
                 ktw.CACHE.forget(project.id)
             # whether the probe can observe it changed
             releases.recheck(conn, project.id, reader_of(request))
-            fresh = _load(conn, project.id)
-            if (
-                project.repository_url is None
-                and fresh.repository_url is not None
-                and fresh.state != "archived"
-                and isinstance(fresh.setup, dict)
-                and fresh.setup.get("cards") is None
-            ):
-                setup_cards.create(
-                    conn, fresh, settings_of(request).public_url, mine.id, actor, reader_of(request)
-                )
         if state_changes:
             now = clock.now()
             conn.execute(
@@ -666,6 +655,20 @@ def patch_project(
                 .values(state_note=body.state_note)
             )
             rules_inputs_changed = True
+        if "repository" in given and project.repository_url is None:
+            # The first repository opens the setup cards (§6.21), judged by the state this
+            # PATCH leaves: a body that also archives opens none, one that also brings the
+            # project back opens them, and they come after its state_changed.
+            fresh = _load(conn, project.id)
+            if (
+                fresh.repository_url is not None
+                and fresh.state != "archived"
+                and isinstance(fresh.setup, dict)
+                and fresh.setup.get("cards") is None
+            ):
+                setup_cards.create(
+                    conn, fresh, settings_of(request).public_url, mine.id, actor, reader_of(request)
+                )
         if new_policy is None and explicit_changes:
             conn.execute(update(t.project).where(t.project.c.id == project.id).values(**explicit))
             # The view may not move (`optional` under a provider that is off reads the
