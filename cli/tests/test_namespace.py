@@ -10,7 +10,7 @@ from typing import Any
 import fakehub
 import pytest
 
-from maity import cli, state
+from maity import cli, hub, state
 
 P = "/api/v1/projects/oliver/maity"
 CARD = {"id": "tsk-4", "status": "open", "title": "x"}
@@ -101,3 +101,159 @@ def test_a_malformed_full_name_is_not_used(joined: Path, fake: fakehub.FakeHub, 
     fake.routes[("GET", f"{P}/tasks/tsk-4")] = lambda s: (200, CARD)
     assert cli.main(["task", "show", "tsk-4", "--json"]) == cli.EXIT_OK
     assert fake.signed()[-1].path == f"{P}/tasks/tsk-4"
+
+
+# --- a project with a new full name is followed (§6.25) ----------------------------------------
+
+NEW = "/api/v1/projects/oliver-zehentleitner/maity"
+MOVED_ME = {"projects": [{"slug": "maity", "full_name": "oliver-zehentleitner/maity"}]}
+
+
+def test_a_moved_project_is_followed_once_and_kept(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("GET", "/api/v1/me")] = lambda s: (200, MOVED_ME)
+    fake.routes[("GET", f"{NEW}/tasks/tsk-4")] = lambda s: (200, CARD)
+    assert cli.main(["task", "show", "tsk-4", "--json"]) == cli.EXIT_OK
+    assert [s.path for s in fake.signed()] == [
+        f"{P}/tasks/tsk-4",
+        "/api/v1/me",
+        f"{NEW}/tasks/tsk-4",
+    ]
+    assert "project is now oliver-zehentleitner/maity; continuing there" in capsys.readouterr().err
+    saved = state.load_state(state.resolve_state_dir())
+    assert (saved["full_name"], saved["project"]) == ("oliver-zehentleitner/maity", "maity")
+    assert cli.main(["task", "show", "tsk-4", "--json"]) == cli.EXIT_OK  # kept: straight there
+    assert [s.path for s in fake.signed()][3:] == [f"{NEW}/tasks/tsk-4"]
+
+
+def test_a_write_is_repeated_at_the_new_name(joined: Path, fake: fakehub.FakeHub) -> None:
+    fake.routes[("GET", "/api/v1/me")] = lambda s: (200, MOVED_ME)
+    fake.routes[("POST", f"{NEW}/tasks/tsk-4/claim")] = lambda s: (200, CARD)
+    assert cli.main(["claim", "tsk-4", "--json"]) == cli.EXIT_OK
+    writes = [s for s in fake.signed() if s.method == "POST"]
+    assert [s.path for s in writes] == [f"{P}/tasks/tsk-4/claim", f"{NEW}/tasks/tsk-4/claim"]
+
+
+def test_a_missing_card_under_an_unchanged_name_stays_not_found(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    me = {"projects": [{"slug": "maity", "full_name": "oliver/maity"}]}
+    fake.routes[("GET", "/api/v1/me")] = lambda s: (200, me)
+    assert cli.main(["task", "show", "tsk-4"]) == cli.EXIT_ERROR
+    assert "GET /projects/oliver/maity/tasks/tsk-4" in capsys.readouterr().err
+    assert [s.path for s in fake.signed()] == [f"{P}/tasks/tsk-4", "/api/v1/me"]
+    assert state.load_state(state.resolve_state_dir())["full_name"] == "oliver/maity"
+
+
+def test_a_me_with_several_projects_is_not_a_guess(joined: Path, fake: fakehub.FakeHub) -> None:
+    me = {"projects": [MOVED_ME["projects"][0], {"slug": "x", "full_name": "oliver/x"}]}
+    fake.routes[("GET", "/api/v1/me")] = lambda s: (200, me)
+    assert cli.main(["task", "show", "tsk-4"]) == cli.EXIT_ERROR
+    assert state.load_state(state.resolve_state_dir())["full_name"] == "oliver/maity"
+
+
+def test_a_not_found_outside_the_project_asks_nothing(joined: Path, fake: fakehub.FakeHub) -> None:
+    assert cli.main(["api", "GET", "/me/nothing"]) == cli.EXIT_ERROR
+    assert [s.path for s in fake.signed()] == ["/api/v1/me/nothing"]
+
+
+def test_wait_follows_the_move_and_keeps_its_loop_there(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    pages = iter([{"items": [], "cursor": 0}, {"items": [{"seq": 5, "kind": "message"}]}])
+    fake.routes[("GET", "/api/v1/me")] = lambda s: (200, MOVED_ME)
+    gone = {"error": {"code": "not_found", "message": "not_found"}}
+    fake.routes[("GET", f"{P}/events")] = lambda s: (404, gone)
+    fake.routes[("GET", f"{NEW}/events")] = lambda s: (200, next(pages))
+    assert cli.main(["wait", "--timeout", "60"]) == cli.EXIT_OK
+    assert [s.path for s in fake.signed()] == [
+        f"{P}/events", "/api/v1/me", f"{NEW}/events", f"{NEW}/events"
+    ]  # fmt: skip
+    assert capsys.readouterr().err.count("project is now") == 1
+
+
+def test_wait_follows_a_second_move_from_where_the_first_led(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    third = "/api/v1/projects/oliver-zehentleitner/maity-hub"
+    gone = {"error": {"code": "not_found", "message": "not_found"}}
+    names = iter(["oliver-zehentleitner/maity", "oliver-zehentleitner/maity-hub"])
+    second = iter([(200, {"items": [], "cursor": 0})])
+    last = iter([{"items": [], "cursor": 0}, {"items": [{"seq": 5, "kind": "message"}]}])
+    fake.routes[("GET", "/api/v1/me")] = lambda s: (
+        200, {"projects": [{"slug": "x", "full_name": next(names)}]})  # fmt: skip
+    fake.routes[("GET", f"{P}/events")] = lambda s: (404, gone)
+    fake.routes[("GET", f"{NEW}/events")] = lambda s: next(second, (404, gone))
+    fake.routes[("GET", f"{third}/events")] = lambda s: (200, next(last))
+    assert cli.main(["wait", "--timeout", "60"]) == cli.EXIT_OK
+    assert [s.path for s in fake.signed()] == [
+        f"{P}/events", "/api/v1/me", f"{NEW}/events",
+        f"{NEW}/events", "/api/v1/me", f"{third}/events", f"{third}/events",
+    ]  # fmt: skip
+    assert capsys.readouterr().err.count("project is now") == 2
+    assert (
+        state.load_state(state.resolve_state_dir())["full_name"] == "oliver-zehentleitner/maity-hub"
+    )
+
+
+def test_a_name_that_is_current_again_is_not_rewritten(joined: Path, fake: fakehub.FakeHub) -> None:
+    names = iter(["oliver-zehentleitner/maity", "oliver/maity"])
+    fake.routes[("GET", "/api/v1/me")] = lambda s: (
+        200, {"projects": [{"slug": "maity", "full_name": next(names)}]})  # fmt: skip
+    gone = {"error": {"code": "not_found", "message": "not_found"}}
+    calls = {"old": 0}
+
+    def old_card(seen: fakehub.Seen) -> tuple[int, Any]:
+        calls["old"] += 1
+        return (404, gone) if calls["old"] == 1 else (200, CARD)
+
+    fake.routes[("GET", f"{P}/tasks/tsk-4")] = old_card
+    at_new = iter([(200, CARD)])
+    fake.routes[("GET", f"{NEW}/tasks/tsk-4")] = lambda s: next(at_new, (404, gone))
+    session = cli.Session()
+    session.client.call("GET", session.project_path("tasks", "tsk-4"))  # moved: a → b
+    assert session.client.call("GET", "/projects/oliver/maity/tasks/tsk-4") == CARD  # b → a
+    assert session.client.renamed == {
+        "/projects/oliver-zehentleitner/maity": "/projects/oliver/maity"
+    }
+
+
+class _Clock:
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+
+@pytest.mark.parametrize(("timeout", "repeated"), [(20.0, 9.0), (10.0, None)])
+def test_the_lookup_and_the_repeat_share_the_call_timeout(
+    monkeypatch: pytest.MonkeyPatch, timeout: float, repeated: float | None
+) -> None:
+    clock = _Clock()
+    monkeypatch.setattr(cli, "time", clock)
+    sent: list[tuple[str, float | None]] = []
+
+    def call(self: Any, method: str, path: str, *args: Any) -> Any:
+        sent.append((path, args[2]))
+        clock.now += 4
+        if path.startswith("/projects/oliver/"):
+            raise hub.HubError("gone", code="not_found", status=404)
+        return {"items": []}
+
+    def moved(path: str, left: float | None) -> str:
+        sent.append(("moved", left))
+        clock.now += 7
+        return "/projects/oliver-zehentleitner/maity/events"
+
+    monkeypatch.setattr(hub.Client, "call", call)
+    client = cli.ProjectClient("https://hub.test", None, moved=moved)  # type: ignore[arg-type]
+    path = "/projects/oliver/maity/events"
+    if repeated is None:
+        with pytest.raises(hub.HubError):
+            client.call("GET", path, timeout=timeout)
+        assert sent == [(path, timeout), ("moved", timeout - 4)]
+    else:
+        assert client.call("GET", path, timeout=timeout) == {"items": []}
+        assert sent[1:] == [("moved", 16.0), ("/projects/oliver-zehentleitner/maity/events", 9.0)]

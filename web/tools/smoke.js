@@ -2958,6 +2958,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(main, "Copy").click(); await tick();
   expect(ctx.copied && ctx.copied.startsWith("maity join"), "copy puts the line on the clipboard");
   expect(main.querySelector(".join-result") && !main.querySelector("form.join-form"), "the line takes the form's place in the panel");
+  expect(!main.querySelector(".instance-note"), "a new agent's line has no note on another instance's state directory");
   btn(main.querySelector("article.seat"), "Revoke").click(); for (let k = 0; k < 4; k++) await tick();
   expect(text(main.querySelector("details.earlier-joins")).includes("revoked"), "open join revoked, now in the record");
   // A join for a new profile: Join another brings the form back; the new join is a seat, the select offers it.
@@ -3001,6 +3002,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const inBody = inPosts[0] && inPosts[0][1];
   expect(inPosts.length === 1 && inBody.replaces === "wle2" && !("new_instance" in inBody) && ["role", "reports_to", "areas", "capabilities", "briefing"].every((k) => !(k in inBody))
     && main.querySelector(".join-result"), "join: Replace instance sends replaces and leaves the membership's fields out " + JSON.stringify(inBody));
+  // An instance runs with a state directory of its own (tsk-axmb8dsyvrpb): said before the line, with the export to set.
+  const inNote = () => main.querySelector(".join-result .instance-note");
+  const inResult = main.querySelector(".join-result");
+  expect(inNote() && inResult.childNodes.indexOf(inNote()) < inResult.childNodes.indexOf(inResult.querySelector(".paste-row"))
+    && text(inNote().querySelector("code")) === 'export MAITY_STATE_DIR="$HOME/.local/state/maity/agent-b-<name>"'
+    && text(inNote()).includes("Do not run maity resume there to start it"),
+    "join: a replacing instance's line comes after the note on its own state directory, the export named, resume warned off");
   await inAgain(); inPick("agt-b"); inNew(); await inSubmit();
   expect(inPosts.length === 2 && inPosts[1][1].new_instance === true && !("replaces" in inPosts[1][1]) && !main.querySelector(".join-result")
     && text(main).includes("No join created: the team has as many instances as its rulebook allows"),
@@ -3013,6 +3021,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "join: a member's active instance offered, the team's count against its limit");
   inNew(); await inSubmit();
   expect(inPosts.length === 3 && inPosts[2][1].new_instance === true && main.querySelector(".join-result"), "join: Start another instance sends new_instance within the team's limit");
+  expect(inNote() && text(inNote().querySelector("code")).includes("/maity/agent-c-<name>"), "join: another instance's line has the note too, for its handle");
   // The maintainer's incident: the list on screen does not show the agent as a member; the hub's
   // refusal brings the choice, with the instances read again, and the next create carries it.
   await inAgain();
@@ -3359,8 +3368,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const mpPatch = win.Maity.api.patch, mpSent = [];
   win.Maity.api.patch = (p, b) => { mpSent.push([p, b]); return mpPatch(p, b); };
   await go("#/account"); for (let k = 0; k < 4; k++) await tick();
-  expect(byId("meat-proxy") && !byId("meat-proxy").checked && text(main).includes("This person says: I am a meat proxy."),
-    "meat proxy: the account offers the switch, off, and says what agents read");
+  expect(byId("meat-proxy") && !byId("meat-proxy").checked && text(byId("meat-proxy-note")) === "This person says: I am a meat proxy. "
+    + "Lead me step by step rather than expecting me to explain; and when you need a human's hands, come to me first.",
+    "meat proxy: the account offers the switch, off, and shows exactly the note agents read (§5.2)");
   byId("meat-proxy").checked = true; byId("meat-proxy").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
   expect(JSON.stringify(mpSent[0]) === JSON.stringify(["/me", { meat_proxy: true }]) && byId("meat-proxy").checked
     && text(main).includes("Saved: your agents and the agents of your projects are told"), "meat proxy: switched on with PATCH /me, said so");
@@ -3374,6 +3384,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/account"); for (let k = 0; k < 4; k++) await tick();
   expect(!byId("meat-proxy"), "meat proxy: no switch on a hub whose machine form does not name it");
   win.Maity.api.hubBody = mpBody;
+  // The note is the hub's (/me member.meat_proxy_note), never a copy: a hub that does not send it shows none.
+  const mpGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/me" ? mpGet(p).then((m) => { m.member.meat_proxy_note = "This person says: a newer note."; return m; }) : mpGet(p));
+  await go("#/account"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(byId("meat-proxy-note")) === "This person says: a newer note.", "meat proxy: the note shown is the one /me carries");
+  win.Maity.api.get = (p) => (p === "/me" ? mpGet(p).then((m) => { delete m.member.meat_proxy_note; return m; }) : mpGet(p));
+  await go("#/account"); for (let k = 0; k < 4; k++) await tick();
+  expect(byId("meat-proxy") && !byId("meat-proxy-note") && !text(main).includes("This person says"), "meat proxy: a hub without the note shows the switch and no note of the page's own");
+  win.Maity.api.get = mpGet;
   // Your data (docs/api.md §2.9): the export and the deletion request, each a sensitive call (§2.8): the page asks for the
   // password or a code where the hub says so, proves it and makes the call again.
   const ydGet = win.Maity.api.get, ydPost = win.Maity.api.post, ydSave = win.Maity.yourData.save;

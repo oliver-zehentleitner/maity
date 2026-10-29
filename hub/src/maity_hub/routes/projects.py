@@ -17,6 +17,7 @@ from maity_hub import (
     attachments,
     availability,
     clock,
+    commitment,
     idempotency,
     images,
     ktw,
@@ -727,6 +728,9 @@ def patch_project(
         if rules_inputs_changed:
             payload = {"reason": body.reason} if body.reason else {}
             rules.bump(conn, project, "rules_changed", BROADCAST, payload, actor=actor)
+        if new_policy is not None or explicit_changes or provider is not None:
+            # An instance owes nothing once the policy is `optional` or the provider `none`.
+            commitment.reconcile(conn, _load(conn, project.id))
         return idempotency.Outcome(
             200, "project", project.id, _view(conn, _load(conn, project.id), request)
         )

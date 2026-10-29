@@ -12,6 +12,7 @@ from maity_hub import (
     availability,
     avatars,
     clock,
+    commitment,
     contract_text,
     forge,
     forge_access,
@@ -505,6 +506,9 @@ def member_views(
         if row.agent_id is not None:
             view["team"] = instances.team(conn, row)
             view["instances"] = team_of.get(row.id, [])
+            unconfirmed = commitment.unconfirmed(projects[row.project_id], view["instances"])
+            if unconfirmed is not None:
+                view["keep_the_why_unconfirmed"] = unconfirmed
             if view["instances"] and row.paused_since is None:
                 # The best of its instances' (§5.3).
                 view["presence"] = min(

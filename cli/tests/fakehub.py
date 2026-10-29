@@ -94,6 +94,7 @@ class FakeHub:
     openapi: dict[str, Any] = field(default_factory=lambda: {"paths": {}})  # GET openapi.json
     join_handle: str = "agent-b"  # the handle the join page (§3.2) names
     join_page_status: int = 0  # an error status for the join page, 0 for the page
+    join_instance: str | None = "wqe2"  # Maity-Instance answered by the join exchange
 
     def signed(self) -> list[Seen]:
         return [s for s in self.seen if s.headers.get("authorization", "").startswith("Maity-HMAC")]
@@ -208,16 +209,15 @@ def _handler(hub: FakeHub) -> type[BaseHTTPRequestHandler]:
                 if seen.json().get("code") != CODE:
                     return self._error(403, "code_invalid")
                 hub.join_used = True
-                return self._send(
-                    201,
-                    CREDENTIAL,
-                    {
-                        "Maity-Credential-Id": CREDENTIAL_ID,
-                        "Maity-Member-Id": "agt-b",
-                        "Maity-Project": "maity",
-                        "Maity-Hub": hub.hub_header or hub.url,
-                    },
-                )
+                facts = {
+                    "Maity-Credential-Id": CREDENTIAL_ID,
+                    "Maity-Member-Id": "agt-b",
+                    "Maity-Project": "maity",
+                    "Maity-Hub": hub.hub_header or hub.url,
+                }
+                if hub.join_instance is not None:
+                    facts["Maity-Instance"] = hub.join_instance
+                return self._send(201, CREDENTIAL, facts)
             if not self._verify(seen):
                 return None
             route = hub.routes.get((self.command, path))
