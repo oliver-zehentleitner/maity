@@ -13242,7 +13242,9 @@ device; the browser's own permission is per browser and is not stored.
   them in `browser.kinds` or `email.kinds` is `invalid` with
   `details.fields["browser.kinds.<kind>"]` (or `email.kinds.<kind>`)
   `"removed_kind"`, and changes nothing; any other unknown kind is
-  `"unknown"`.
+  `"unknown"`. A value for a kind that is not what the field takes (a
+  `browser.kinds` value that is not a boolean) is `"invalid"` at the
+  same field.
 - **`email.address`.** Setting it (`PATCH {"email": {"address": "…"}}`)
   puts it in `pending_address` and sends a verification mail with a
   link (§18.6), valid for 24 hours; the verified address in `address`

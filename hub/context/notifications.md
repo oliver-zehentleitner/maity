@@ -429,8 +429,10 @@ fallback of its own). Whether either was weighed when the code was written is un
 in a savepoint, and on an `IntegrityError` (another first write committed in between) it reads and
 locks the row that now exists. Two first `PATCH`es of one human therefore end one after the other,
 instead of the later one answering 500 on the primary key. The deadlock retry of
-`persistence.md` ("Concurrent writes") does not cover this: it runs again after a deadlock, not
-after a duplicate key.
+`persistence.md` ("Concurrent writes") does not cover the duplicate key itself, so the route also
+runs the whole `PATCH` in `db.retrying`: three first writes at once on MariaDB can end in a
+duplicate-key deadlock (1213), which that retry does cover; a refused change (an error raised) is
+not retried.
 
 **Reason:** the row is made by the first write only (a read of a human with no row sees the
 defaults and writes nothing), so two first writes are an ordinary case; select first because the
