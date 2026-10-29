@@ -327,5 +327,10 @@ listing it before the volume is emptied.
 - A second CronJob for the files: two time stamps, and no single marker for "the backup is complete".
 - Running the whole backup as the hub's user: it would change who owns the dumps and run `pg_dump` as a user the database setup does not know.
 - Opening up the hub's file modes for the group (a change in the hub for the backup's sake): the 0700 directories are deliberate.
+- Compressing the tar (`gzip`, which the postgres image has): attachments are mostly formats that are compressed already (images, PDFs, archives), so
+  it saves little, costs CPU on the node that also runs PostgreSQL and the hub, and changes the file name, the restore (`tar -z`) and every script that reads
+  the mark. The coordinating agent first asked for it and agreed to drop it for these reasons (2026-10-29).
+- Making the backup claim bigger: local-path cannot expand a bound claim (the apply of the manifest would fail) and does not enforce the 5 GiB anyway;
+  the node's disk is the limit, so the init container checks the room before it writes.
 - Backing up only when the volume changed: a cheap saving on a small volume, and a night without a tar breaks the "same time stamp" rule.
 
