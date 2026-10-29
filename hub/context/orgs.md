@@ -61,11 +61,15 @@ second call, running after the first, finds its caller no owner any more and get
 (`org_role`), not `org_last_owner`. A caller who is not a member gets `not_found` on every
 route, before and after the lock, and so does a handle that names nothing.
 The deletion of an account takes its place in that order: `account_deletion.confirm` locks
-the account first, then the projects of its namespace, then every organisation it belongs to
-in the order of their ids (`orgs.lock_all_of`), and only then checks `blocker`, which refuses
+the account first, then every organisation it belongs to in the order of their ids
+(`orgs.lock_all_of`), then the projects of its namespace, and only then checks `blocker`, which refuses
 with `org_last_owner` (`details.orgs`, the handles) for an organisation of which it is the only
 owner, at `POST /me/deletion` as at the link's `POST`. Its memberships in organisations end with
-the deletion; the organisations and their handles stay.
+the deletion, and the invitations it sent that are still open are withdrawn; the organisations
+and their handles stay.
+
+**Known limit:** the open invitations that name the deleted human as the invited one are
+withdrawn with part 2 of organisations, where the request they went to exists.
 
 **Reason:** a role read before the lock could be stale by the time the change commits, which is
 how two demotions would both succeed and leave an organisation with no owner. One order (a

@@ -100,8 +100,6 @@ DELETION_KEEPS = {
     "instance_secret": f"who changed an instance secret: {_RECORD}",
     "instance_setting": f"who changed an instance setting: {_RECORD}",
     "memory_entry": f"who confirmed a project memory entry: {_RECORD}",
-    "org_invitation": f"who invited to an organisation: {_RECORD}; the open ones are withdrawn "
-    "when the invited or the inviting human goes (§6.26)",
     "project": "an archived project of the namespace stays under its name (§2.9); "
     "the deletion reads projects for `namespace_owner` only",
     "project_alias": "an old project name stays reserved for good (§2.9, §6.25)",

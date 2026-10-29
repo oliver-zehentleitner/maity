@@ -285,8 +285,10 @@ def confirm(conn: Connection, hub: Settings, token: str) -> str | None:
         return None
     # The namespace's projects under their locks before the re-check: a state change
     # takes the same lock, so a reopen commits first (and this refuses) or waits.
+    # The organisations before any project, in the order of their ids (§6.26): a promotion or
+    # a transfer into an organisation takes the same order.
+    orgs.lock_all_of(conn, human.id)
     _lock_namespace(conn, human.id)
-    orgs.lock_all_of(conn, human.id)  # after the account's lock, before any change (§6.26)
     refusal = blocker(conn, human.id)
     if refusal is not None:
         return refusal.code
@@ -395,6 +397,11 @@ def delete_account(conn: Connection, hub: Settings, human_id: str) -> None:
     _leave_projects(conn, human_id)
     # Its memberships in organisations end (§2.9, §6.26); the check that it is nobody's last
     # owner is `blocker`, made under the organisations' locks.
+    conn.execute(
+        update(t.org_invitation)
+        .where(t.org_invitation.c.invited_by == human_id, t.org_invitation.c.live.is_(True))
+        .values(live=None, closed_at=now, closed_by="inviter_deleted")
+    )
     conn.execute(delete(t.org_member).where(t.org_member.c.human_id == human_id))
     # The personal requests last, once removing the profiles cannot file another.
     _withdraw_personal(conn, human_id)
