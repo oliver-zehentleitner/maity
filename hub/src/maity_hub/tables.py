@@ -56,6 +56,12 @@ HANDLE = 64
 TITLE = 200  # characters, docs/api.md §1.7
 MARKDOWN = 16384  # characters, docs/api.md §1.7; enforced by the API, see MARKDOWN_TEXT
 HEX_SHA256 = 64
+# A namespace owner is a human or an organisation: one of the two foreign keys, and
+# `owner_id` the same id (docs/api.md §6.25, §6.26).
+OWNER_SHAPE = (
+    "(owner_human_id IS NOT NULL AND owner_org_id IS NULL AND owner_id = owner_human_id)"
+    " OR (owner_human_id IS NULL AND owner_org_id IS NOT NULL AND owner_id = owner_org_id)"
+)
 
 
 def _id(name: str = "id", **kwargs: object) -> Column[str]:
@@ -498,7 +504,12 @@ project = Table(
     # The namespace owner, a human, and the slug: unique together, with the project's
     # aliases (§6.25). `legacy_slug` is the slug at the namespace migration, frozen, for the
     # addresses outside the API that predate it; null for every later project.
-    _ref("owner_id", "human.id", nullable=False),
+    # `owner_id` is the one id every reader uses, a `hum-…` or an `org-…`; the two columns
+    # below carry the foreign keys, exactly one set, and the check keeps the three in step
+    # (§6.26, hub/context/orgs.md).
+    Column("owner_id", String(ID), nullable=False),
+    _ref("owner_human_id", "human.id"),
+    _ref("owner_org_id", "org.id"),
     Column("slug", String(HANDLE), nullable=False),
     Column("legacy_slug", String(HANDLE)),
     Column("name", String(TITLE), nullable=False),
@@ -572,6 +583,7 @@ project = Table(
     Column("team_wake", Boolean, nullable=False, server_default=false()),
     Column("created_at", UtcDateTime, nullable=False),
     UniqueConstraint("owner_id", "slug", name="uq_project_owner_slug"),
+    CheckConstraint(OWNER_SHAPE, name="owner_shape"),
     **MYSQL_TABLE,
 )
 
@@ -583,10 +595,13 @@ project_alias = Table(
     metadata,
     Column("id", Integer, primary_key=True, autoincrement=True),
     _ref("project_id", "project.id", nullable=False),
-    _ref("owner_id", "human.id", nullable=False),
+    Column("owner_id", String(ID), nullable=False),  # a human's or an organisation's id
+    _ref("owner_human_id", "human.id"),
+    _ref("owner_org_id", "org.id"),
     Column("slug", String(HANDLE), nullable=False),
     Column("created_at", UtcDateTime, nullable=False),
     UniqueConstraint("owner_id", "slug", name="uq_project_alias_owner_slug"),
+    CheckConstraint(OWNER_SHAPE, name="owner_shape"),
     **MYSQL_TABLE,
 )
 
@@ -600,6 +615,11 @@ membership = Table(
     # A built-in role, or a project role of up to 24 characters (#506).
     Column("role", String(24), nullable=False),
     Column("trust", String(16), nullable=False),  # with `role`: trust × role (§2.3)
+    # A membership the hub keeps for an owner of the organisation that owns the project
+    # (§6.26): `created` (the hub made it: it ends with the ownership) or `raised` (it held
+    # a lower trust, kept in `org_keep_trust`, which it returns to); null for every other.
+    Column("org_keep", String(8)),
+    Column("org_keep_trust", String(16)),
     _membership_ref("reports_to"),
     Column("areas", JSON_VALUE, nullable=False),
     Column("capabilities", JSON_VALUE, nullable=False),
@@ -648,6 +668,12 @@ membership = Table(
     Column("outage_since", UtcDateTime),
     *_audit(),
     CheckConstraint("active IS NOT FALSE", name="active_true_or_null"),
+    CheckConstraint(
+        "(org_keep IS NULL AND org_keep_trust IS NULL)"
+        " OR (org_keep = 'created' AND org_keep_trust IS NULL)"
+        " OR (org_keep = 'raised' AND org_keep_trust IS NOT NULL)",
+        name="org_keep_shape",
+    ),
     CheckConstraint(
         "(human_id IS NULL AND agent_id IS NOT NULL)"
         " OR (human_id IS NOT NULL AND agent_id IS NULL)",

@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, insert, select, update
 
-from maity_hub import clock, forge, forge_access, github_app, probe, secretbox
+from maity_hub import clock, forge, forge_access, github_app, namespace, probe, secretbox
 from maity_hub import tables as t
 from maity_hub.config import Settings
 from tests import factory, flow
@@ -333,7 +333,7 @@ def test_a_refusal_after_a_transfer_marks_the_grant_it_was_read_with(
     anna = flow.human(make_client, migrated, "anna")
     _token(migrated, anna.id)
     with migrated.begin() as conn:
-        conn.execute(update(t.project).values(owner_id=anna.id))
+        conn.execute(update(t.project).values(**namespace.owner_values(anna.id)))
     fake.owner_token_status = 401
     with pytest.raises(forge.ForgeUnavailableError):
         reader.branch(REPO, "main")

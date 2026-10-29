@@ -20,7 +20,7 @@ from typing import Any
 
 from fastapi import Request, Response
 from fastapi.routing import APIRoute
-from sqlalchemy import Connection, delete, insert, select
+from sqlalchemy import Connection, delete, func, insert, select
 
 from maity_hub import clock
 from maity_hub import tables as t
@@ -129,10 +129,52 @@ def outdated_error(user_agent: str, install: str) -> ApiError:
     )
 
 
+def owner_values(owner_id: str) -> dict[str, Any]:
+    """The owner columns of a `project` or `project_alias` row for the namespace owner
+    `owner_id`, a human's or an organisation's: `owner_id` and the one foreign key of its kind
+    (§6.26, `tables.OWNER_SHAPE`)."""
+    human = owner_id.startswith("hum-")
+    return {
+        "owner_id": owner_id,
+        "owner_human_id": owner_id if human else None,
+        "owner_org_id": None if human else owner_id,
+    }
+
+
+def _owners(table: Any) -> Any:
+    """`table` with its owner, a human or an organisation, joined for the handle."""
+    return table.outerjoin(t.human, t.human.c.id == table.c.owner_human_id).outerjoin(
+        t.org, t.org.c.id == table.c.owner_org_id
+    )
+
+
+def _handle(table: Any) -> Any:
+    """The current handle of the row's namespace owner, whichever kind it is."""
+    return func.coalesce(t.human.c.handle, t.org.c.handle)
+
+
+def join_owner(query: Any) -> Any:
+    """`query`, which has `project` among its tables, with the project's owner joined: use
+    `owner_handle()` for its handle."""
+    return query.outerjoin(t.human, t.human.c.id == t.project.c.owner_human_id).outerjoin(
+        t.org, t.org.c.id == t.project.c.owner_org_id
+    )
+
+
+def owner_handle() -> Any:
+    """The handle of the namespace owner joined by `join_owner`: a human's or an organisation's."""
+    return func.coalesce(t.human.c.handle, t.org.c.handle)
+
+
 def resolve_owner(conn: Connection, handle: str) -> str | None:
-    """The human id a namespace owner's handle names (§6.25): the current handle. The hook
-    for handle aliases (§6.24): when the hub keeps aliases, an alias resolves here too."""
-    return conn.execute(select(t.human.c.id).where(t.human.c.handle == handle)).scalar()
+    """The id a namespace owner's handle names (§6.25): a human's or an organisation's
+    (§6.26), by the current handle; a deleted one's still names its archived projects. The
+    hook for handle aliases (§6.24): when the hub keeps aliases, an alias resolves here too."""
+    human = conn.execute(select(t.human.c.id).where(t.human.c.handle == handle)).scalar()
+    if human is not None:
+        return str(human)
+    org = conn.execute(select(t.org.c.id).where(t.org.c.handle == handle)).scalar()
+    return None if org is None else str(org)
 
 
 def resolve(conn: Connection, full_name: str) -> Any | None:
@@ -163,7 +205,9 @@ def resolve(conn: Connection, full_name: str) -> Any | None:
 def owner_of(conn: Connection, project: Any) -> dict[str, str]:
     """`{id, handle}` of the project's namespace owner, by its current handle."""
     handle = conn.execute(
-        select(t.human.c.handle).where(t.human.c.id == project.owner_id)
+        select(_handle(t.project))
+        .select_from(_owners(t.project))
+        .where(t.project.c.id == project.id)
     ).scalar_one()
     return {"id": project.owner_id, "handle": handle}
 
@@ -176,8 +220,8 @@ def full_name(conn: Connection, project: Any) -> str:
 def name_of(conn: Connection, project_id: str) -> str:
     """The full name of the project with this id (§6.25)."""
     row = conn.execute(
-        select(t.project.c.slug, t.human.c.handle)
-        .join(t.human, t.human.c.id == t.project.c.owner_id)
+        select(t.project.c.slug, _handle(t.project).label("handle"))
+        .select_from(_owners(t.project))
         .where(t.project.c.id == project_id)
     ).one()
     return f"{row.handle}/{row.slug}"
@@ -187,8 +231,8 @@ def aliases_of(conn: Connection, project_id: str) -> list[str]:
     """The project's earlier full names, oldest first, each with its owner's current handle
     (an owner's own handle aliases resolve anyway, §6.24)."""
     rows = conn.execute(
-        select(t.project_alias.c.slug, t.human.c.handle)
-        .join(t.human, t.human.c.id == t.project_alias.c.owner_id)
+        select(t.project_alias.c.slug, _handle(t.project_alias).label("handle"))
+        .select_from(_owners(t.project_alias))
         .where(t.project_alias.c.project_id == project_id)
         .order_by(t.project_alias.c.id)
     ).all()
@@ -201,8 +245,8 @@ def full_names(conn: Connection, project_ids: Iterable[str]) -> dict[str, str]:
     if not ids:
         return {}
     rows = conn.execute(
-        select(t.project.c.id, t.project.c.slug, t.human.c.handle)
-        .join(t.human, t.human.c.id == t.project.c.owner_id)
+        select(t.project.c.id, t.project.c.slug, _handle(t.project).label("handle"))
+        .select_from(_owners(t.project))
         .where(t.project.c.id.in_(ids))
     ).all()
     return {row.id: f"{row.handle}/{row.slug}" for row in rows}
@@ -215,7 +259,10 @@ def taken(conn: Connection, owner_id: str, slug: str, project_id: str | None = N
     Every caller is about to claim the slug, so the namespace owner's row is locked first:
     a project's slug and an alias live in two tables, and no constraint keeps a create of
     `s` from racing a rename away from `s`, which writes `s` as an alias."""
-    conn.execute(select(t.human.c.id).where(t.human.c.id == owner_id).with_for_update()).first()
+    if owner_id.startswith("org-"):  # an organisation's namespace: its row, as every change of it
+        conn.execute(select(t.org.c.id).where(t.org.c.id == owner_id).with_for_update()).first()
+    else:
+        conn.execute(select(t.human.c.id).where(t.human.c.id == owner_id).with_for_update()).first()
     current = conn.execute(
         select(t.project.c.id).where(t.project.c.owner_id == owner_id, t.project.c.slug == slug)
     ).scalar()
@@ -236,8 +283,12 @@ def aliases_by(conn: Connection, project_ids: Iterable[str]) -> dict[str, list[s
     if not ids:
         return found
     rows = conn.execute(
-        select(t.project_alias.c.project_id, t.project_alias.c.slug, t.human.c.handle)
-        .join(t.human, t.human.c.id == t.project_alias.c.owner_id)
+        select(
+            t.project_alias.c.project_id,
+            t.project_alias.c.slug,
+            _handle(t.project_alias).label("handle"),
+        )
+        .select_from(_owners(t.project_alias))
         .where(t.project_alias.c.project_id.in_(ids))
         .order_by(t.project_alias.c.id)
     ).all()
@@ -309,13 +360,15 @@ def move(conn: Connection, project: Any, owner_id: str, slug: str) -> None:
         conn.execute(
             insert(t.project_alias).values(
                 project_id=project.id,
-                owner_id=project.owner_id,
+                **owner_values(project.owner_id),
                 slug=project.slug,
                 created_at=clock.now(),
             )
         )
     conn.execute(
-        t.project.update().where(t.project.c.id == project.id).values(owner_id=owner_id, slug=slug)
+        t.project.update()
+        .where(t.project.c.id == project.id)
+        .values(**owner_values(owner_id), slug=slug)
     )
 
 
@@ -325,8 +378,16 @@ def namespace_owner_of(conn: Connection, human_id: str, project_ids: Iterable[st
     ids = list(project_ids)
     if not ids:
         return
+    # The namespace owner, or an owner of the organisation that owns the project (§6.26):
+    # the organisation's owners stay owners of its projects collectively, one by one.
+    owns_org = select(t.org_member.c.org_id).where(
+        t.org_member.c.human_id == human_id, t.org_member.c.role == "owner"
+    )
     rows = conn.execute(
-        select(t.project.c.id).where(t.project.c.owner_id == human_id, t.project.c.id.in_(ids))
+        select(t.project.c.id).where(
+            (t.project.c.owner_id == human_id) | t.project.c.owner_org_id.in_(owns_org),
+            t.project.c.id.in_(ids),
+        )
     ).scalars()
     names = sorted(full_names(conn, rows).values())
     if names:

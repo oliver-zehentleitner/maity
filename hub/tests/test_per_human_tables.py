@@ -70,7 +70,9 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
     ("preferences", "proposed_by"): True,
     ("preferences_version", "confirmed_by"): True,
     ("preferences_version", "proposed_by"): True,
+    ("project", "owner_id"): True,  # a human's or an organisation's id; the FK is the pair
     ("project", "spawn_consent_by"): False,  # a mode: `human`, `role`
+    ("project_alias", "owner_id"): True,  # likewise: a former namespace owner
     ("registration_block", "address_normalized"): True,
     ("request", "filed_by"): False,  # who filed: `agent`, `hub`, …
     ("request", "humans_only"): False,

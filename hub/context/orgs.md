@@ -153,3 +153,62 @@ the settlement of the request that follows a no-op, so nothing is closed twice.
 
 **Known limit:** an invitation names a human by their current handle only; the alias of §6.24
 joins it with #523, together with the duplicate-name case above.
+
+## A project's owner is a human or an organisation: `owner_id` for readers, two foreign keys for the database
+
+**Id:** 5332d7e2-c492-4083-8527-9cff0630e16a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §6.25, §6.26; the coordinator's ruling of 2026-10-29 on the card tsk-whe4wv1jpsae (no polymorphic column without a foreign key)
+**Revisit when:** a third kind of namespace owner exists, or the readers of `project.owner_id` are few enough to drop the redundant column
+
+`project` and `project_alias` keep `owner_id`, now a `hum-…` or an `org-…` id and no longer a
+foreign key, and gain `owner_human_id` (to `human`) and `owner_org_id` (to `org`), exactly one
+set; a check (`tables.OWNER_SHAPE`) holds that and that `owner_id` is the same id. Every
+reader, every join and the unique constraints on `(owner_id, slug)` stay as they were; every
+write goes through `namespace.owner_values(owner_id)`, and the handle of an owner of either kind
+is read by `namespace.join_owner` and `owner_handle`, outer joins on both tables. A project of an
+organisation is created with `owner` in `POST /projects`, under the organisation's lock.
+
+**Reason:** the database keeps a project from naming an owner that does not exist, which a
+single column holding two kinds of id cannot say, and a project's owner is read in a dozen
+places that need one id.
+
+**Rejected alternatives:**
+- One polymorphic `owner_id` with no foreign key: the integrity of the namespace owner would
+  live in code only (the coordinator's ruling).
+- Replacing `owner_id` by the two columns: every reader, the unique key `(owner_id, slug)` and
+  every test that inserts a project would change, for the same guarantee the check gives.
+- A generated `owner_id`: not portable across SQLite, PostgreSQL and MariaDB.
+
+## The hub keeps an organisation's owners owners of its projects, and says which memberships are its own
+
+**Id:** e8d259ff-3aa3-41fa-9258-8d9e3ddb3bf9
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §6.26 "Organisation owners in its projects"
+**Revisit when:** a membership may be kept for more than one organisation (a project owned by two), or an owner's seat should be visible apart from `org_owner`
+
+`org_projects` keeps every owner of the organisation a member with trust `owner` of every
+project it owns, archived ones included: one who is no member joins (`member_joined`, marked
+`org_keep = 'created'`), one with a lower trust is raised (`member_updated`, `changed:
+["trust"]`, `org_keep = 'raised'`, the earlier trust in `org_keep_trust`), one who holds `owner`
+already is not marked. Becoming an owner (a promotion, an invitation's `go`), ceasing to be one
+(a demotion, a removal, leaving, the organisation's deletion) and a project's creation call it,
+all under the organisation's row lock. The ending reverses what the hub did: a `created`
+membership ends as a removal does, a `raised` one returns to its trust, an own one stays. The
+member view says `org_owner` for a human from the organisation's owners, not from the mark, and
+no call demotes or removes such an owner while they own the organisation (`namespace_owner`).
+The organisation cannot be deleted while it owns a project that is not archived.
+
+**Reason:** the contract makes the organisation's owners the project's owners collectively, so
+the hub does the memberships rather than leaving every owner to be added by hand, and the mark is
+what lets it undo exactly that and nothing a person did themselves.
+
+**Rejected alternatives:**
+- Deriving the ownership from `org_member` at read time and giving no membership: the project's
+  rules (trust, areas, the member list, `reports_to`) all work on memberships.
+- Ending every owner's membership when they stop being an owner: it would remove seats they held
+  before, or kept for another reason.
