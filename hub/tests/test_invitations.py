@@ -21,6 +21,7 @@ from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_join_host import join_client
 from tests.test_registration import MAIL, PASSWORD, SIGNING, hub, pending
+from tests.test_registration_accounts import complete, requested, signed_in
 
 PATH = "/projects/maintainer/maity/invitations"
 
@@ -402,18 +403,84 @@ def test_a_closed_project_and_a_pending_account_accept_nothing(
     assert owner.get(PATH).json()["items"][0]["used_at"] is None  # it waits
 
 
+def hold(engine: Engine, human_id: str, address: str, status: str = "verified") -> None:
+    """The notification settings of `human_id`, with `address` in `status` (§18.4)."""
+    held = status in ("verified", "disabled")
+    with engine.begin() as conn:
+        conn.execute(
+            t.notification_settings.insert().values(
+                human_id=human_id,
+                preferences={},
+                address=address if held else None,
+                address_normalized=address.strip().lower() if held else None,
+                address_status=status,
+                pending_address=None if held else address,
+                epoch=0,
+                hard_failures=0,
+                updated_at=clock.now(),
+            )
+        )
+
+
 def test_an_address_bound_invitation_is_for_that_address(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    made = issue(owner, address="Anna@Example.org")
+    guest = flow.human(make_client, migrated, "guest")
+    mismatch = accept(guest, token_of(made))  # no address at all
+    assert (mismatch.status_code, reason(mismatch)) == (403, "invitation_address_mismatch")
+    hold(migrated, guest.id, "bob@example.org")
+    other = accept(guest, token_of(made))
+    assert (other.status_code, reason(other)) == (403, "invitation_address_mismatch")
+    with migrated.begin() as conn:  # the account's address changes to the invited one
+        conn.execute(
+            update(t.notification_settings)
+            .where(t.notification_settings.c.human_id == guest.id)
+            .values(address="Anna@Example.org ", address_normalized="anna@example.org")
+        )
+    assert accept(guest, token_of(made)).status_code == 201
+
+
+@pytest.mark.parametrize(
+    ("status", "address"),
+    [("verified", "anna@example.org"), ("disabled", "anna@example.org"), ("pending", None)],
+)
+def test_the_account_address_is_the_verified_one_only(
     owner: flow.Human,
-    make_client: ClientFactory,
     migrated: Engine,
-    monkeypatch: pytest.MonkeyPatch,
+    make_client: ClientFactory,
+    status: str,
+    address: str | None,
+) -> None:
+    guest = flow.human(make_client, migrated, "guest")
+    hold(migrated, guest.id, "anna@example.org", status)
+    with migrated.connect() as conn:
+        assert invitations.account_address(conn, guest.id) == address
+        assert invitations.account_address(conn, "hum-nobody") is None
+
+
+def test_an_unverified_address_does_not_accept_an_address_bound_invitation(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
     made = issue(owner, address="anna@example.org")
     guest = flow.human(make_client, migrated, "guest")
-    mismatch = accept(guest, token_of(made))
-    assert (mismatch.status_code, reason(mismatch)) == (403, "invitation_address_mismatch")
-    monkeypatch.setattr(invitations, "account_address", lambda conn, human_id: "anna@example.org")
-    assert accept(guest, token_of(made)).status_code == 201
+    hold(migrated, guest.id, "anna@example.org", "pending")  # asked for, not proven
+    refused = accept(guest, token_of(made))
+    assert (refused.status_code, reason(refused)) == (403, "invitation_address_mismatch")
+
+
+def test_registering_with_the_invited_address_then_accepting_runs_through(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    made = issue(owner, address="anna@example.org")
+    closed = hub(MAITY_MAIL_SIGNING_KEY=SIGNING, MAITY_REGISTRATION_APPROVAL="automatic", **MAIL)
+    row = requested(make_client, migrated, closed, address="anna@example.org")
+    done = complete(migrated, closed, row.id, handle="anna")
+    assert (done.kind, done.account_status) == ("created", "active")
+    anna = signed_in(make_client, done)
+    accepted = accept(anna, token_of(made))
+    assert accepted.status_code == 201, accepted.text
+    assert owner.get(PATH).json()["items"][0]["used_by"] == anna.id
 
 
 def test_a_member_already_and_two_invitations_for_one_person(
@@ -433,11 +500,10 @@ def test_an_address_bound_invitation_of_a_member_is_used_up(
     owner: flow.Human,
     make_client: ClientFactory,
     migrated: Engine,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     guest = member(make_client, migrated, "guest")
     made = issue(owner, address="guest@example.org")
-    monkeypatch.setattr(invitations, "account_address", lambda conn, human_id: "guest@example.org")
+    hold(migrated, guest.id, "guest@example.org")
     assert accept(guest, token_of(made)).status_code == 400
     assert owner.get(PATH).json()["items"][0]["used_by"] == guest.id
 

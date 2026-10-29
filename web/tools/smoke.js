@@ -1701,6 +1701,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("new-card-title").value = "Something during the review";
   main.querySelector("form.new-card").dispatch("submit"); await tick();
   expect(byId("new-card-reason") && text(main).includes("Not created: the project is in review"), "board: in review a new card needs a reason");
+  // The released mark (§6.1): beside the state in the header, on the overview and in Project settings; none where unset.
+  const relMark = () => header.querySelector(".project-state .released");
+  expect(relMark() && text(relMark()) === "Released" && relMark().getAttribute("title").startsWith("Released since ")
+    && relMark().getAttribute("title").includes("migrations stay backward compatible"), "released: the header marks a released project, the rules in its title");
+  await go("#/maintainer/sample/overview"); for (let k = 0; k < 4; k++) await tick();
+  expect(main.querySelector(".overview .released") && main.querySelector(".overview .state-review"), "released: the overview shows the state and the mark");
+  await projectSettings(); await tick();
+  expect(main.querySelector(".released-note") && text(main.querySelector(".released-note")).includes("for good"), "released: Project settings say it is never cleared");
+  await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+  expect(!relMark(), "released: no mark on a project that is not released");
   await go("#/maintainer/maity/inbox");
   // Members (docs/api.md §6.2): humans and agents, managed by an admin.
   const membersTab = header.querySelectorAll("nav.views a").find((a) => a.textContent === "Members");
@@ -3328,6 +3338,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("absence-until").value = "2026-10-25T08:00"; byId("absence-scope").value = "fixes only";
   byId("absence-until").parentNode.dispatch("submit"); await tick(); await tick();
   expect(text(header.querySelector(".project-state")).includes("Away until") && text(header.querySelector(".absence")).includes("While away: fixes only"), "absence set");
+  // An admin who is no owner: launch is offered disabled, until the project is in launch, which they may leave.
+  const lnGet = win.Maity.api.get;
+  let lnState = "build";
+  win.Maity.api.get = (p) => (p === "/me" ? lnGet(p).then((m) => { Object.assign(m.projects.find((x) => x.slug === "maity"), { trust: "admin", state: lnState }); return m; })
+    : p === "/projects/maintainer/maity" ? lnGet(p).then((x) => Object.assign({}, x, { state: lnState })) : lnGet(p));
+  const launchOption = () => byId("state-select").querySelectorAll("option").find((o) => o.getAttribute("value") === "launch");
+  await go("#/maintainer/maity/inbox"); await projectSettings(); await tick();
+  const lnBuild = launchOption() && launchOption().getAttribute("disabled") != null;
+  lnState = "launch";
+  await go("#/maintainer/maity/inbox"); await projectSettings(); await tick();
+  expect(lnBuild && launchOption().getAttribute("disabled") == null && launchOption().getAttribute("selected") != null,
+    "state: an admin who is no owner sees launch disabled, and selectable once the project is in launch");
+  win.Maity.api.get = lnGet;
 
   // policy.signing: before required, the agents a bearer token would cut off.
   const sigPatches = [];
@@ -3927,6 +3950,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.post = rgPost;
   await go("#/register"); for (let k = 0; k < 6; k++) await tick();
   expect(!rgForm() && text(main).includes("This hub does not create new accounts on request."), "register: a hub that does not register says so, with the way to sign in");
+  // A hub that registers on request (§2.7, GET /auth/methods): the form, and its terms named with their version.
+  const rgGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/auth/methods"
+    ? Promise.resolve({ password: true, device_code: true, email_link: true, registration: true, terms: { url: "https://example.org/terms", version: "2026-10" } }) : rgGet(p));
+  await go("#/login"); await go("#/register"); for (let k = 0; k < 6; k++) await tick();
+  const rgTerms = main.querySelector(".register-terms");
+  expect(rgForm() && rgTerms && text(rgTerms) === "When you complete your account you accept this hub's terms (version 2026-10)."
+    && rgTerms.querySelector("a").getAttribute("href") === "https://example.org/terms" && rgTerms.querySelector("a").getAttribute("rel") === "noopener noreferrer",
+    "register: where the hub registers, the form names its terms and their version, as a link");
+  win.Maity.api.get = (p) => (p === "/auth/methods"
+    ? Promise.resolve({ password: true, device_code: true, email_link: true, registration: true, terms: { url: "javascript:alert(1)", version: "1" } }) : rgGet(p));
+  await go("#/login"); await go("#/register"); for (let k = 0; k < 6; k++) await tick();
+  expect(main.querySelector(".register-terms") && !main.querySelector(".register-terms a"), "register: terms whose address is not plain https are named, not linked");
+  win.Maity.api.get = rgGet;
   // Signing in from the invitation returns to it, now with the button to join.
   await go("#/login?next=%2Finvite%2Fonly-xxxxxxxxxxxxxxxx2"); for (let k = 0; k < 4; k++) await tick();
   byId("login-handle").value = "maintainer"; byId("login-password").value = "a long new password";
@@ -5454,6 +5491,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const aProxy = await asAgent(() => win.Maity.api.patch("/projects/maintainer/maity/members/agt-b", { trust: "admin", role: "proxy" }));
   const aHuman = await asAgent(() => win.Maity.api.patch("/projects/maintainer/maity/members/hum-maintainer", { areas: ["x/"] }));
   const aSelf = await asAgent(() => win.Maity.api.patch("/projects/maintainer/maity/members/agt-a", { areas: ["x/"] }));
+  const aLaunch = await asAgent(() => win.Maity.api.patch("/projects/maintainer/maity", { state: "launch", reason: "go" }));
   const aAfter = (await win.Maity.api.getAll("/projects/maintainer/maity/members")).items;
   const humansOnly = (e) => e && e.code === "forbidden" && e.details.reason === "humans_only";
   expect(aRole.class === "consent" && aRole.to === "owner" && aRole.title === "Change reviewer to member · coder"
@@ -5463,6 +5501,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(aMember.id === "agt-b" && aMember.paused && aMember.areas.join() === "web/", "mock as an admin agent: a member agent's areas and pause apply at once");
   expect(humansOnly(aCaps) && humansOnly(aProxy) && humansOnly(aHuman) && humansOnly(aSelf),
     "mock as an admin agent: capabilities, proxy, a human's and its own membership are a human's");
+  expect(aLaunch && aLaunch.status === 403 && aLaunch.code === "forbidden", "mock as an admin agent: moving to launch is the owner's go (403)");
   win.location.search = "";
 
   // The Keep the Why commitment (docs/api.md §6.23): the policy in Settings, the Members mark, the why on a report,

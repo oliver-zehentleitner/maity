@@ -13,7 +13,7 @@ or recovery code. What the document shows is picked field by field; where a row 
 whole for the hub's own read rules (`inbox.may_read`), only named fields leave it.
 
 Not in this hub yet, so not in the export: handle aliases (§6.24), languages, the public
-profile (§16.9), abuse reports (§16.8) and card approvals (§6.4, `reviewer_and_tester`).
+profile (§16.9) and card approvals (§6.4, `reviewer_and_tester`).
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from typing import Any
 
 from sqlalchemy import Connection, select
 
-from maity_hub import avatars, clock, group_chats, inbox, namespace
+from maity_hub import avatars, clock, group_chats, inbox, namespace, reports
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth import second_factor
@@ -63,6 +63,7 @@ def build(conn: Connection, human_id: str, now: datetime) -> dict[str, Any]:
             "recovery_codes_left": second_factor.recovery_codes_left(conn, human_id),
         },
         "forge_links": _forge_links(conn, human_id),
+        "abuse_reports": _abuse_reports(conn, human_id),
         "runners": _runners(conn, human_id),
         "agent_profiles": _agent_views(conn, agents, agent_memberships, names, member_ids),
         "memberships": [_membership_view(row, names, member_ids) for row in mine],
@@ -271,6 +272,18 @@ def _sessions(conn: Connection, human_id: str) -> list[dict[str, Any]]:
         }
         for row in rows
     ]
+
+
+def _abuse_reports(conn: Connection, human_id: str) -> list[dict[str, Any]]:
+    """The abuse reports the account filed, its agents' included (§16.8): what was reported,
+    why, the caller's own text, status and action; never the copy of the target, which is
+    the reported member's content, nor the instance admin's note."""
+    rows = conn.execute(
+        select(t.abuse_report)
+        .where(t.abuse_report.c.account_id == human_id)
+        .order_by(t.abuse_report.c.created_at, t.abuse_report.c.id)
+    ).all()
+    return [{**reports.own_view(conn, row), "text": row.text} for row in rows]
 
 
 def _forge_links(conn: Connection, human_id: str) -> list[dict[str, Any]]:

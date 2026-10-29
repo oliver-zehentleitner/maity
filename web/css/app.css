@@ -218,6 +218,7 @@ main:has(> .page-loading, > .page-failed) { flex: 1; display: flex; flex-directi
 .state-review { color: var(--warn); }
 .state-launch { color: var(--ok); }
 .state-archived { color: var(--muted); }
+.state.released { color: var(--text); border-style: double; border-width: 3px; }
 .source { color: var(--warn); border-style: dashed; }
 
 .state-note { margin: 4px 0 0; font-size: 0.85rem; color: var(--muted); }

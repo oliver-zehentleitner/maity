@@ -102,6 +102,14 @@ def test_identity_project_rules_and_next_step() -> None:
     assert text.rstrip().endswith("Next: `maity wait` until something is addressed to you.")
 
 
+def test_a_released_project_says_so_beside_its_state() -> None:
+    project = {**packet()["project"], "released_at": "2026-09-14T10:00:00Z"}
+    assert "Project: Maity (oliver/maity), state build, released\n" in onboarding.render(
+        {**packet(), "project": project}
+    )
+    assert ", released" not in onboarding.render(packet())
+
+
 def test_unchanged_rules_are_a_version_line() -> None:
     text = onboarding.render(packet(rules={"version": 7, "changed": False}))
     assert "Rules version 7, unchanged since your last session." in text

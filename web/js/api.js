@@ -1676,7 +1676,9 @@ window.Maity = window.Maity || {};
         // §6.1: the five states; moving to launch is a human owner's go.
         if (!["plan", "build", "review", "launch", "archived"].includes(body.state)) fail(400, "invalid", "unknown state", path, { fields: { state: "unknown" } });
         if (!body.reason) fail(400, "invalid", "A state change needs a reason", path, { fields: { reason: "required" } });
-        if (body.state === "launch" && p.state !== "launch" && (me().member.kind !== "human" || trustIn(m[1]) !== "owner")) fail(403, "forbidden", "moving to launch is the owner's go", path);
+        const who = caller(m[1], path).member;
+        const owner = who.kind === "human" && (fixtureAs ? who.trust : trustIn(m[1])) === "owner";
+        if (body.state === "launch" && p.state !== "launch" && !owner) fail(403, "forbidden", "moving to launch is the owner's go", path);
         p.state = body.state;
         p.state_note = body.state_note || null;
         p.state_changed_at = nowIso();
