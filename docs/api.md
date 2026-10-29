@@ -11215,13 +11215,13 @@ fixed and not sections. The types and their fields:
 | `hero` | `eyebrow` (≤ 40), `title` (≤ 120), `subline` (≤ 300), `cta_primary` and `cta_secondary` (`{label ≤ 40, href}`, the second optional), `note` (Markdown ≤ 500) | always |
 | `stats` | `items`: the counters to show, any of `people`, `agents`, `public_projects`, `cards_done_week`, `people_online`, `agents_online` | always (below) |
 | `steps` | `title` (≤ 120), `items`: 1–6 × `{title ≤ 80, text ≤ 300, code? ≤ 300}` | always |
-| `scales` | `title`, `items`: 1–4 × `{tag ≤ 40, title ≤ 80, text ≤ 300, points: ≤ 5 × ≤ 120}` | always |
-| `faq` | `title`, `items`: 1–20 × `{q ≤ 200, a: Markdown ≤ 2000}` | always |
-| `cta_band` | `title`, `text` (≤ 300), `cta` (`{label, href}`) | always |
-| `text` | `title` (optional), `markdown` (≤ 16 KiB) | always |
-| `activity` | `title`, `count` (1–20) | only while public pages are on (§16.9); the latest events of public projects that this page may show, as §16.9 shows them |
-| `profiles` | `title`, `markdown`, `handles`: ≤ 2 handles of a person or agent with a public page | only while public pages are on; a handle without a public page is left out |
-| `explore` | `title`, `projects`: ≤ 3 project full names, or `[]` for the hub's own choice | only while public pages are on; projects without a public page are left out |
+| `scales` | `title` (≤ 120), `items`: 1–4 × `{tag ≤ 40, title ≤ 80, text ≤ 300, points: ≤ 5 × ≤ 120}` | always |
+| `faq` | `title` (≤ 120), `items`: 1–20 × `{q ≤ 200, a: Markdown ≤ 2000}` | always |
+| `cta_band` | `title` (≤ 120), `text` (≤ 300), `cta` (`{label ≤ 40, href}`) | always |
+| `text` | `title` (optional, ≤ 120), `markdown` (≤ 16 KiB) | always |
+| `activity` | `title`, `count` (1–20) | not in this version, like `collab`: a public project's page shows no event (§16.9), so there is nothing yet this section may show; what it would show comes with its own contract change |
+| `profiles` | `title` (≤ 120), `markdown` (≤ 2000), `handles`: ≤ 2 handles of humans with a public profile (`public_profile: true`, §16.9) | only while public pages are on; a handle without a public profile, and an agent's handle, is left out |
+| `explore` | `title` (≤ 120), `projects`: ≤ 3 project full names, or `[]` for the hub's own choice | only while public pages are on; projects without a public page are left out |
 | `collab` | `title`, `text`, `items`: 2 × `{tag, title, points, cta}`, `footnote` | not in this version: the hub keeps it and renders nothing until the feature it describes exists |
 
 Plain fields are text, rendered as text nodes; the `markdown`, `note`
@@ -11279,11 +11279,16 @@ all languages.
   `cards_done_week` are `null` and their counters are left out.
 - **Reading it.** `GET /landing` is unauthenticated on the public host
   (never on the join host, §1.1) and answers the setting without
-  `updated_by`, plus `stats` `{…, online_floor, computed_at}` —
+  `updated_by`, plus `stats` `{…, online_floor, computed_at}` holding
+  only the counters an enabled `stats` section of some language names
+  (`stats: null` when none does, so a counter the operator left off is
+  published nowhere) —
   `{enabled: false}` alone when disabled — the same body for every
   visitor, with `Cache-Control: public, max-age=60` and an ETag over the
   body. An edit or a disable is visible within 60 s.
-- **The page.** `GET /` for a visitor without a session cookie, while
+- **The page.** `GET /` for a visitor without a valid session (no
+  `maity_session` cookie, or one that names no live session; other
+  cookies such as `maity_device`, §2.6.5, do not count), while
   the landing page is enabled, answers the page rendered by the hub as
   HTML (`text/html`, the headers of §1.1, `Cache-Control: public,
   max-age=60`, `Vary: Cookie, Accept-Language`), in the visitor's
@@ -11300,6 +11305,15 @@ all languages.
   between a person and sign-in. The landing page changes nothing about
   §2.6.1: which sign-in methods the login page offers is that
   section's.
+- **Content security.** The landing page answers with
+  `Content-Security-Policy: default-src 'none'; script-src
+  'sha256-<hash>'; style-src 'unsafe-inline'; base-uri 'none';
+  form-action 'none'; frame-ancestors 'none'`, where `<hash>` is the
+  hash of the one fixed redirect script, which the hub ships and never
+  takes from the setting; the legal pages (§16.7.1) carry no script and
+  answer with §16.9's policy, `default-src 'none'; style-src
+  'unsafe-inline'`. Both replace §1.1's `default-src 'self'` for these
+  documents only.
 - **Changes** are recorded on the setting itself — `updated_at`,
   `updated_by` — which is the record in this version; they emit no
   project event and wake nobody.
@@ -11347,7 +11361,12 @@ GET, PATCH /admin/settings/legal
 Scope `instance:admin`, human only. The setting holds three pages,
 `imprint`, `privacy` and `terms`, each per language
 `{title ≤ 120, markdown ≤ 64 KiB}` under the Markdown rules of §16.7,
-plus the setting's `default_language` (default `"en"`). A `PATCH`
+plus the setting's `default_language` (default `"en"`); at most 8
+languages per page. `PATCH /admin/settings/legal` takes a request body
+of up to 512 KiB, as the landing page's does (§1.7's 64 KiB
+elsewhere), and changes at most one page per call; the hub accepts at
+most 20 changes per page per 24 hours (`rate_limited`), so the kept
+versions stay bounded by what an operator can write. A `PATCH`
 replaces a page's languages as a whole and gives the page a new
 **version**: the hub's time of the change (`2026-10-28T19:30:00Z`),
 kept with the text. The hub keeps every earlier version of a page,
@@ -11355,8 +11374,11 @@ read-only.
 
 - **Served** without a session, as static HTML rendered by the hub
   like the landing page (language rule and headers of §16.7), at
-  `/impressum`, `/privacy` and `/terms`; a page not set answers
-  `404`. Each shows its version ("as of …") and links to its earlier
+  `/impressum`, `/privacy` and `/terms` on the public host only
+  (never on the join host, §1.1, nor `GET /legal`); a page not set
+  answers `404`. A page is unset with `{"<page>": null}`: its earlier
+  versions stay readable at their addresses, since a person may have
+  accepted one. Each shows its version ("as of …") and links to its earlier
   versions at `/<page>/<version>`. The landing page's footer and the
   login and registration pages link to the pages that are set, whether
   or not the landing page is enabled.
@@ -11365,7 +11387,9 @@ read-only.
   setting's `terms` (§16.4, §2.7.2) is `{url: <MAITY_PUBLIC_URL>/terms,
   version: <the terms page's current version>}` with `source:
   "legal_pages"`, so a person accepts exactly the version they could
-  read. The environment, when set, wins as before.
+  read. The order is: the environment (`source: "env"`), then a value
+  the instance admin set in the registration setting (`source:
+  "admin"`), then the legal pages (`source: "legal_pages"`), then none.
 - **Read** with `GET /legal` (unauthenticated): `{default_language,
   pages: {imprint|privacy|terms: {version, languages}}}` without the
   text, for the dashboard's links.
@@ -11559,7 +11583,9 @@ Markdown goes through the same allow-list renderer the hub validates
 against (§16.7), a third renderer kept in step with the other two:
 text nodes and links only, `href` values escaped as attributes and
 limited to `https` and `/#/` routes, every link with `rel="nofollow
-ugc"`. Each page carries its own `<title>`, a `<meta
+ugc"`. The landing and legal pages (§16.7) use the same renderer with
+§16.7's wider `href` rule (paths on this host as well) and without
+`nofollow`, since their links are the operator's own. Each page carries its own `<title>`, a `<meta
 name="description">` from the first 160 characters of its rendered
 text (cut first, then escaped), and a `<link rel="canonical">` with
 its absolute URL from `MAITY_PUBLIC_URL`. Answers carry
