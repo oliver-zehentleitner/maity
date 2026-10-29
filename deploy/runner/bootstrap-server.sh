@@ -67,34 +67,30 @@ for _ in $(seq 1 30); do [ -S "/run/user/$UID_RU/docker.sock" ] && break; sleep 
 as_ru env DOCKER_HOST="unix:///run/user/$UID_RU/docker.sock" docker info --format '{{.SecurityOptions}}' | grep -q rootless \
   || { echo "the Docker of $RU is not rootless" >&2; exit 1; }
 
-# --- 5. the firewall: the runner user reaches the internet, not the machine's own services or an internal network ------------
-# Everything its jobs start (the rootless Docker, the containers behind slirp4netns) runs under its uid. Allowed first: the
-# two database ports of the jobs' service containers on loopback, and the local resolver. A chain of its own, rebuilt at boot.
+# --- 5. the firewall: the runner user reaches the internet and its own loopback, not ssh, the metadata service or an internal network --
+# Everything its jobs start (the rootless Docker, the containers behind slirp4netns) runs under its uid. Loopback is the job's own: its
+# test suite starts servers on any port (the first version closed loopback except the database ports and 69 tests failed). Only ssh stays
+# out of reach. A chain of its own, rebuilt at boot.
 cat > /usr/local/sbin/maity-runner-firewall.sh <<EOF
 #!/bin/bash
-# Written by bootstrap-server.sh. Rejects, for uid $UID_RU, loopback and the machine's own addresses (except replies, the database ports and the resolver), the private
-# ranges, link-local (the provider's metadata service is 169.254.169.254) and shared address space.
+# Written by bootstrap-server.sh. For uid $UID_RU: ssh (port 22) over loopback or the machine's own address is rejected, the rest of loopback is
+# allowed, and so are replies; the private ranges, link-local (the provider's metadata service is 169.254.169.254) and shared address space are rejected.
 set -eu
 for ipt in iptables ip6tables; do
   \$ipt -N MAITY_RUNNER 2>/dev/null || \$ipt -F MAITY_RUNNER
   \$ipt -C OUTPUT -m owner --uid-owner $UID_RU -j MAITY_RUNNER 2>/dev/null || \$ipt -I OUTPUT 1 -m owner --uid-owner $UID_RU -j MAITY_RUNNER
 done
-# Answers first: the reply of a listener of this uid (rootlesskit on 127.0.0.1:5432) is a packet of this uid to a loopback
-# address, and would meet the REJECT below. Only packets of a connection that already exists; a new one is judged by the rules after.
+# Answers first: only packets of a connection that already exists; a new one is judged by the rules after.
 for ipt in iptables ip6tables; do
   \$ipt -A MAITY_RUNNER -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
 done
-for port in 5432 3306; do
-  iptables  -A MAITY_RUNNER -o lo -d 127.0.0.1 -p tcp --dport \$port -j RETURN
-  ip6tables -A MAITY_RUNNER -o lo -d ::1 -p tcp --dport \$port -j RETURN
-done
-iptables -A MAITY_RUNNER -o lo -d 127.0.0.53 -p udp --dport 53 -j RETURN
-iptables -A MAITY_RUNNER -o lo -d 127.0.0.53 -p tcp --dport 53 -j RETURN
-# Anything else on loopback is rejected, the machine's own public address included (it is routed over lo): sshd on 0.0.0.0:22.
-iptables  -A MAITY_RUNNER -o lo -j REJECT
-ip6tables -A MAITY_RUNNER -o lo -j REJECT
-iptables  -A MAITY_RUNNER -d 127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16,100.64.0.0/10 -j REJECT
-ip6tables -A MAITY_RUNNER -d ::1/128,fc00::/7,fe80::/10 -j REJECT
+# ssh stays out of reach, on loopback and on the machine's own public address (routed over lo); then the rest of loopback is the job's own.
+iptables  -A MAITY_RUNNER -o lo -p tcp --dport 22 -j REJECT
+ip6tables -A MAITY_RUNNER -o lo -p tcp --dport 22 -j REJECT
+iptables  -A MAITY_RUNNER -o lo -j RETURN
+ip6tables -A MAITY_RUNNER -o lo -j RETURN
+iptables  -A MAITY_RUNNER -d 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16,100.64.0.0/10 -j REJECT
+ip6tables -A MAITY_RUNNER -d fc00::/7,fe80::/10 -j REJECT
 EOF
 chmod 755 /usr/local/sbin/maity-runner-firewall.sh
 # Before the user manager of the runner user: its rootless dockerd (slirp4netns) must not start before the rules. The runner
@@ -124,7 +120,8 @@ fail=0
 # not, the chain did it; where nothing listens even for root, the probe proves nothing and says so.
 if runuser -u "$RU" -- sudo -n true 2>/dev/null; then echo "FAIL: $RU can sudo" >&2; fail=1; fi
 own=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i=1; i<NF; i++) if ($i == "src") {print $(i+1); exit}}')
-for addr in 127.0.0.1 ::1 ${own:+"$own"}; do
+own6=$(ip -6 route get 2606:4700:4700::1111 2>/dev/null | awk '{for (i=1; i<NF; i++) if ($i == "src") {print $(i+1); exit}}')
+for addr in 127.0.0.1 ::1 ${own:+"$own"} ${own6:+"$own6"}; do
   if bash -c "exec 3<>/dev/tcp/$addr/22" 2>/dev/null; then
     if runuser -u "$RU" -- bash -c "exec 3<>/dev/tcp/$addr/22" 2>/dev/null; then echo "FAIL: $RU reaches $addr:22" >&2; fail=1; fi
   else
@@ -132,23 +129,33 @@ for addr in 127.0.0.1 ::1 ${own:+"$own"}; do
   fi
 done
 if runuser -u "$RU" -- curl -sS -m 4 -o /dev/null http://169.254.169.254/ 2>/dev/null; then echo "FAIL: $RU reaches 169.254.169.254" >&2; fail=1; fi
-# the jobs' own path must work: a listener of the runner user on a database port answers a client of the same user (the
-# replies are packets of that uid to loopback; the first version of the chain rejected them)
-for port in 5432 3306; do
-  runuser -u "$RU" -- python3 - "$port" <<'PY' &
+# the jobs' own path must work: a listener of the runner user answers a client of the same user, on the database ports of the service
+# containers and on an arbitrary port (the test suite's own servers; the first version closed those and 69 tests failed)
+for hp in "127.0.0.1 5432" "127.0.0.1 3306" "127.0.0.1 34567" "::1 34567"; do
+  set -- $hp; host=$1; port=$2
+  if [ "$host" = "::1" ] && ! ip -6 addr show lo 2>/dev/null | grep -q "::1"; then
+    echo "note: IPv6 is off on lo; the ::1 listener probe is skipped"; continue
+  fi
+  runuser -u "$RU" -- python3 - "$host" "$port" <<'PY' &
 import socket, sys
-s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-s.bind(("127.0.0.1", int(sys.argv[1]))); s.listen(1); s.settimeout(6)
+host, port = sys.argv[1], int(sys.argv[2])
+s = socket.socket(socket.AF_INET6 if ":" in host else socket.AF_INET); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind((host, port)); s.listen(1); s.settimeout(6)
 try:
     c, _ = s.accept(); c.sendall(b"hello"); c.close()
 except Exception:
     pass
 PY
   sleep 1
-  got=$(runuser -u "$RU" -- timeout 4 bash -c "exec 3<>/dev/tcp/127.0.0.1/$port; read -t 3 -u 3 l; echo \$l" 2>/dev/null || true)
+  got=$(runuser -u "$RU" -- timeout 4 bash -c "exec 3<>/dev/tcp/$host/$port; read -t 3 -u 3 l; echo \$l" 2>/dev/null || true)
   wait
-  [ "$got" = hello ] || { echo "FAIL: $RU gets no answer from a listener of its own on 127.0.0.1:$port" >&2; fail=1; }
+  [ "$got" = hello ] || { echo "FAIL: $RU gets no answer from a listener of its own on [$host]:$port" >&2; fail=1; }
 done
+# With loopback open for the runner user, a job reaches whatever else listens on loopback or on the machine's own address (that traffic goes
+# over lo as well). Today that is the resolver (:53) and sshd (:22, shut by the chain); anything else is shown here, as a note and not a failure,
+# so that a new service is seen at the next bootstrap.
+others=$(ss -H -ltnu 2>/dev/null | awk -v o4="${own:-none}" -v o6="${own6:-none}" '{n=split($5, a, ":"); port=a[n]; addr=substr($5, 1, length($5) - length(port) - 1); if (($5 ~ /^(127\.|\[::1\]|0\.0\.0\.0|\*|\[::\])/ || addr == o4 || addr == "[" o6 "]") && port != 22 && port != 53) print $1, $5}' | sort -u)
+[ -z "$others" ] || { echo "note: besides ssh (22, closed to $RU) and the resolver (53), this listens on loopback, on the machine's own address or on all addresses and is open to $RU:"; echo "$others" | sed 's/^/  /'; }
 # outbound to the internet and the resolver must still work (the runner downloads, uv installs Python)
 runuser -u "$RU" -- curl -fsS -m 10 -o /dev/null https://github.com || { echo "FAIL: $RU cannot reach github.com (resolver or firewall)" >&2; fail=1; }
 [ "$fail" = 0 ] || exit 1

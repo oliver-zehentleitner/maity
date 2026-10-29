@@ -48,7 +48,7 @@ PAGE_DEFAULT, PAGE_MAX = 50, 200
 
 class InvitationIn(Strict):
     trust: Literal["owner", "admin", "member", "guest"] = "member"
-    role: Literal["coder", "reviewer", "tester", "designer", "ops", "proxy"] = "coder"
+    role: Literal["coder", "reviewer", "tester", "designer", "ops", "proxy", "manager"] = "coder"
     address: str | None = None
     ttl_seconds: int = invitations.TTL_DEFAULT
     note: str | None = None
