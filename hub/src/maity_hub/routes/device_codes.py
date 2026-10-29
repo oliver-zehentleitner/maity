@@ -308,8 +308,9 @@ def complete_redemption(request: Request) -> JSONResponse:
 @router.get("/methods")
 def methods(request: Request) -> JSONResponse:
     """What the login page may show (§2.6.1); nothing about any account. `registration`
-    is the mode in effect (§2.7: `allowlist` or `open` with complete, enabled mail, which
-    `effective_mode` already folds in), never the lists; `terms` the instance's or `null`."""
+    is the mode in effect (§2.7: `allowlist` with an entry or `open`, with complete, enabled
+    mail, which `effective_mode` already folds in), never the lists; `terms` the
+    instance's or `null`."""
     hub = settings_of(request)
     with engine_of(request).begin() as conn:
         device_code = sign_in_settings.device_code_enabled(conn, hub)
@@ -322,7 +323,9 @@ def methods(request: Request) -> JSONResponse:
             "password": True,
             "device_code": device_code,
             "email_link": email_link,
-            "registration": resolved.effective_mode in ("allowlist", "open"),
+            # An allowlist with both lists empty admits nobody: no way in is shown (§2.7).
+            "registration": resolved.effective_mode in ("allowlist", "open")
+            and "allowlist" not in resolved.missing,
             "terms": terms if isinstance(terms, dict) else None,
         }
     )

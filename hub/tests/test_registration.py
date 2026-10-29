@@ -225,6 +225,21 @@ def test_the_login_page_learns_whether_it_offers_registration(
     assert set(answer) == {"password", "device_code", "email_link", "registration", "terms"}
 
 
+def test_an_empty_allowlist_offers_no_registration(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§2.7: under `allowlist` with both lists empty nobody may register, so the login
+    page is not offered a way that ends nowhere; the admin sees `missing`."""
+    settings = hub(MAITY_MAIL_SIGNING_KEY=SIGNING, MAITY_REGISTRATION="allowlist", **MAIL)
+    client = client_for(make_client, settings)
+    assert client.get("/api/v1/auth/methods").json()["registration"] is False
+    by = factory.human(migrated, "maintainer")
+    env = settings.registration or registration.RegistrationEnvironment()
+    with migrated.begin() as conn:
+        registration.patch(conn, env, True, {"addresses": ["ada@example.com"]}, by)
+    assert client.get("/api/v1/auth/methods").json()["registration"] is True
+
+
 def test_the_login_page_learns_the_terms(make_client: ClientFactory, migrated: Engine) -> None:
     settings = hub(
         MAITY_MAIL_SIGNING_KEY=SIGNING,
