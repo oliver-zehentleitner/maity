@@ -562,7 +562,9 @@ with the maintainer at the machine and a sampler running.
 **Reason:** the first run of three uncapped services (nine workers, three database containers, three installs on eight vCPUs)
 was followed within minutes by the stop of the machine, a VirtualBox guest on the maintainer's workstation, and by the loss of
 three jobs. Memory was not it (one job peaked at 5.2 GB of 19.9 GB). That the cause is CPU starvation of the host is an
-inference: the guest's own logs of the crashed boot cannot be read, and earlier crashes happened without CI. The caps make the
+inference: the guest's journal of the crashed boot, read afterwards, ends five minutes after the jobs started with no error at
+all, only two clocksource warnings of 3 s and 13 s gaps (the guest's CPUs did not run: a stall on the host, not a kill inside the
+guest), and earlier crashes happened without CI. The caps make the
 next test survivable whichever it is. The machine does other work: a second crash costs the agents their ops.
 
 **Rejected alternatives:**
@@ -570,3 +572,31 @@ next test survivable whichever it is. The machine does other work: a second cras
 - A cap on the units only: the containers of a rootless Docker run under the user's dockerd, outside the units' cgroups.
 - Running the three services unattended after the first green test: a green test on a quiet machine says little about the
   load of several pull requests at once.
+
+
+## Rented servers carry the runners for a week, one type each
+
+**Id:** d621283e-1580-4220-8c72-ca1d5804d0aa
+**Type:** decision
+**Status:** open
+**Evidence:** inferred
+**Source:** the maintainer's proposal as relayed by the coordinating agent, 2026-10-29 (the workstation stays for the agents; one to three rented servers act as runners for a week); his go is still to come
+**Revisit when:** the week is over, or a rented server stalls with the caps in place
+**See:** process.md#the-runner-is-capped-and-it-starts-with-one-service — a35df240-f14b-4468-8ab2-23b447a08175 — as of 2026-10-29
+
+Proposed, to run only on the maintainer's go: the database jobs move from the maintainer's workstation to up to three rented Ubuntu servers (8 vCPU, 16 GB), one job type
+per server, started with one server and `pg`. The machine is prepared by `deploy/runner/bootstrap-server.sh` (runner user,
+rootless Docker, a firewall chain for that uid) and the steps are in `deploy/runner/SERVER-SETUP.md`, run by the maintainer.
+The same caps as on the workstation apply.
+
+**Reason:** the stall of 2026-10-28 took down the machine the agents work on; a machine that does nothing else loses
+only CI when it stalls. One type per server keeps a stalled or compromised machine to one type, and each type binds its own host
+port anyway.
+
+**Rejected alternatives:**
+- All three types on one rented server: one stall or one malicious job takes all three, and the first test would again be
+  the full load.
+- A bigger or unlimited rented server: the cause of the stall is not established (see the entry above), so the caps stay until
+  a test shows what the machine holds.
+- A cloud autoscaling runner service: it needs a standing token with admin rights on the repository (see "Why not an ephemeral runner"
+  in the runner README).
