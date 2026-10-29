@@ -7,9 +7,9 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, func, select, update
+from sqlalchemy import Engine, func, insert, select, update
 
-from maity_hub import clock, org_invitations
+from maity_hub import clock, org_invitations, orgs
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -328,3 +328,100 @@ def test_a_deleted_inviter_is_shown_as_a_deleted_account(
     assert "Deleted account" in after[0]["title"] and "aintainer" not in after[0]["title"]
     [pending] = requests_of(guest)
     assert pending["asked_by"]["display_name"] == "Deleted account"
+
+
+def test_a_go_after_the_expiry_withdraws_the_invitation_as_expired(
+    make_client: ClientFactory, migrated: Engine, owner: flow.Human
+) -> None:
+    """The answer comes after `expires_at` and before the worker's run: a stale `go`, the
+    invitation `expired` (not `declined`), the request withdrawn, nobody a member."""
+    make_org(owner)
+    guest = flow.human(make_client, migrated, "guest")
+    invite(owner, "guest")
+    [pending] = requests_of(guest)
+    with migrated.begin() as conn:
+        conn.execute(update(t.org_invitation).values(expires_at=clock.now() - timedelta(seconds=1)))
+    stale = guest.post(f"/requests/{pending['id']}/answer", {"reply_id": "go"})
+    assert stale.status_code == 409, stale.text
+    assert stale.json()["error"]["details"] == {"reason": "invitation_stale"}
+    assert requests_of(guest) == [] and len(requests_of(guest, "withdrawn")) == 1
+    assert guest.get("/orgs").json() == {"items": []}
+    with migrated.connect() as conn:
+        closed = conn.execute(select(t.org_invitation)).one()
+        assert (closed.live, closed.closed_by) == (None, "expired")
+    # and a `no` after the expiry is no decline either
+    invite(owner, "guest")
+    [again] = requests_of(guest)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.org_invitation)
+            .where(t.org_invitation.c.live.is_(True))
+            .values(expires_at=clock.now() - timedelta(seconds=1))
+        )
+    assert guest.post(f"/requests/{again['id']}/answer", {"reply_id": "no"}).status_code == 200
+    with migrated.connect() as conn:
+        reasons = sorted(r.closed_by for r in conn.execute(select(t.org_invitation)).all())
+    assert reasons == ["expired", "expired"]
+
+
+def test_the_first_go_withdraws_the_other_open_invitations_to_the_same_human(
+    make_client: ClientFactory, migrated: Engine, owner: flow.Human
+) -> None:
+    """Two names reach one human (a handle and an alias, §6.24, which come with #523): two open
+    invitations, two requests. The first `go` makes them a member with its own role and
+    withdraws the other, so a later `go` finds nothing open."""
+    org = make_org(owner)
+    guest = flow.human(make_client, migrated, "guest")
+    invite(owner, "guest", "member")
+    with migrated.begin() as conn:  # the second, as an alias would have filed it
+        row = conn.execute(select(t.org).where(t.org.c.id == org["id"])).one()
+        other_id = "oiv-second"
+        request_id = org_invitations._file_request(conn, row, other_id, owner.id, guest.id, "admin")
+        conn.execute(
+            insert(t.org_invitation).values(
+                id=other_id,
+                org_id=org["id"],
+                handle="guest-alias",
+                role="admin",
+                invited_by=owner.id,
+                request_id=request_id,
+                created_at=clock.now(),
+                expires_at=clock.now() + timedelta(days=14),
+                live=True,
+            )
+        )
+    first, second = sorted(requests_of(guest), key=lambda r: r["title"])
+    assert "admin" in first["title"] and "member" in second["title"]
+    assert guest.post(f"/requests/{second['id']}/answer", {"reply_id": "go"}).status_code == 200
+    assert guest.get("/orgs/oz-team").json()["my_role"] == "member"  # the role it said go to
+    assert requests_of(guest) == []
+    again = guest.post(f"/requests/{first['id']}/answer", {"reply_id": "go"})
+    assert again.status_code == 409  # the other one was withdrawn with the first go
+    with migrated.connect() as conn:
+        closed = {r.id: r.closed_by for r in conn.execute(select(t.org_invitation)).all()}
+    assert (
+        sorted(closed.values()) == ["accepted", "superseded"]
+        and closed["oiv-second"] == "superseded"
+    )
+
+
+def test_the_workers_expiry_locks_the_organisations_it_touches(
+    migrated: Engine, owner: flow.Human, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    locked: list[str] = []
+    real = orgs.lock
+    make_org(owner)
+    make_org(owner, "second-org", "Second")
+    for url in (URL, "/orgs/second-org/members/invitations"):
+        assert owner.post(url, {"handle": "somebody", "role": "member"}).status_code == 202
+    with migrated.begin() as conn:
+        conn.execute(update(t.org_invitation).values(expires_at=clock.now() - timedelta(seconds=1)))
+
+    def spy(conn: Any, org_id: str) -> Any:
+        locked.append(org_id)
+        return real(conn, org_id)
+
+    monkeypatch.setattr(orgs, "lock", spy)
+    org_invitations.sweep(migrated)
+    assert len(locked) == 2 and locked == sorted(locked)  # both, in the order of their ids
+    assert owner.get(URL).json() == {"items": []}

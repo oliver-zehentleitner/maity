@@ -275,10 +275,18 @@ def withdraw_by_inviter_everywhere(conn: Connection, human_id: str, reason: str)
 
 
 def expire(conn: Connection, org_id: str | None = None) -> None:
-    """Withdraw the invitations that are 14 days old, with their requests."""
-    query = select(t.org_invitation).where(
-        t.org_invitation.c.live.is_(True), t.org_invitation.c.expires_at <= clock.now()
+    """Withdraw the invitations that are 14 days old, with their requests. The organisations
+    concerned are locked first, in the order of their ids, as every other change of one is
+    (§6.26): the minute worker holds no lock when it comes here."""
+    due = t.org_invitation.c.live.is_(True) & (t.org_invitation.c.expires_at <= clock.now())
+    ids = (
+        select(t.org_invitation.c.org_id).where(due).distinct().order_by(t.org_invitation.c.org_id)
     )
+    if org_id is not None:
+        ids = ids.where(t.org_invitation.c.org_id == org_id)
+    for locked_id in list(conn.execute(ids).scalars()):
+        orgs.lock(conn, locked_id)  # None for an organisation deleted meanwhile: nothing to lock
+    query = select(t.org_invitation).where(due)
     if org_id is not None:
         query = query.where(t.org_invitation.c.org_id == org_id)
     for invitation in conn.execute(query).all():
@@ -304,13 +312,14 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
         if s.outcome == "go":
             raise _stale(s.request.id, "the invitation is no longer open")
         return
+    expired = invitation.expires_at <= clock.now()
     if s.outcome != "go":  # the invited human's no, or their withdrawal, which counts as one
-        close(conn, invitation, "declined")
+        close(conn, invitation, "expired" if expired else "declined")
         return
     org = orgs.lock(conn, invitation.org_id)
     if org is None:
         raise _stale(s.request.id, "the organisation was deleted")
-    if invitation.expires_at <= clock.now():
+    if expired:  # the withdrawal that follows a stale `go` closes the row as `expired`
         raise _stale(s.request.id, "the invitation has expired")
     human_id = proposal["to"]
     closed = conn.execute(

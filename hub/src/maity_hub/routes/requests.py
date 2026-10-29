@@ -1759,7 +1759,14 @@ def answer_personal(
             )
         return idempotency.Outcome(200, "request", row.id, view)
 
-    return idempotency.run(engine_of(request), request, caller, action)
+    try:
+        return idempotency.run(engine_of(request), request, caller, action)
+    except proposals.Stale as stale:
+        # The go no longer applies (an expired invitation): the request is withdrawn and the
+        # kind's own clean-up runs, nothing else changes, as on the project route.
+        with events.transaction(engine_of(request)) as conn:
+            close_request(conn, stale.request_id, "withdrawn", None, reason=stale.reason)
+        raise stale.error from None
 
 
 @router.post("/requests/{request_id}/withdraw")
