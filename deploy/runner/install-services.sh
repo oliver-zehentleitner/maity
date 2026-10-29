@@ -19,7 +19,7 @@ RUNNER_TARBALL=$(realpath -- "$RUNNER_TARBALL")   # resolved before the cd below
 [ -f "$RUNNER_TARBALL" ] || { echo "no such tarball: $RUNNER_TARBALL" >&2; exit 1; }
 # Root works in directories that belong to the runner user for a moment (config.sh runs as that user). A process of that
 # user could leave a symlink there that a root chgrp, chmod or redirect would follow. So no runner of that user may run:
-# stop every maity-runner* service first (README, step 0).
+# stop every maity-runner* service first (systemctl stop 'maity-runner*').
 if pgrep -u "$RU" -f 'Runner\.(Listener|Worker)|runsvc\.sh' >/dev/null; then
   echo "a runner of $RU is running; stop all runner services first: systemctl stop 'maity-runner*'" >&2
   exit 1

@@ -474,6 +474,8 @@ window.Maity = window.Maity || {};
     return all[slug + "/ticker.json"];
   }
   const personalRequests = () => (fixtures()["personal-requests.json"] || { items: [] }).items;
+  // The owners' requests of one transfer into an organisation, by request id (§6.26).
+  const transferGroups = {};
   const prefs = () => fixtures()["preferences.json"];
   function utf8Bytes(text) {
     let n = 0;
@@ -1153,7 +1155,8 @@ window.Maity = window.Maity || {};
       orgNeeds(org, ["owner"], path);
       if (body.confirm !== org.handle) fail(400, "invalid", "the request does not validate", path, { fields: { confirm: "mismatch" } });
       const all = fixtures();
-      const owned = Object.keys(all).filter((k) => /\/project\.json$/.test(k) && all[k].owner && all[k].owner.id === org.id).map((k) => k.split("/")[0]);
+      const owned = Object.keys(all).filter((k) => /\/project\.json$/.test(k) && all[k].owner && all[k].owner.id === org.id && all[k].state !== "archived")
+        .map((k) => all[k].full_name);
       if (owned.length) fail(409, "namespace_owner", "the organisation still owns projects", path, { projects: owned });
       orgsData().items = orgsData().items.filter((o) => o !== org);
       return null;
@@ -1463,7 +1466,8 @@ window.Maity = window.Maity || {};
       items: me().projects.flatMap((p) => openFor(p.slug).map((r) => Object.assign(
         { project: { slug: project(p.slug, "").slug, full_name: p.full_name, name: p.name, state: project(p.slug, "").state } }, r)))
         // A list shows no proposal (§7, §19.4): GET /requests/{id} has it.
-        .concat(personalRequests().filter((r) => r.status === "open").map((r) => {
+        // A personal request addressed to another human is theirs, not this one's.
+        .concat(personalRequests().filter((r) => r.status === "open" && (!/^human:/.test(r.to || "") || r.to === "human:" + me().member.id)).map((r) => {
           const listed = Object.assign({}, r);
           delete listed.memory_proposal;
           return listed;
@@ -1471,12 +1475,19 @@ window.Maity = window.Maity || {};
       next_cursor: null,
     })],
     ["GET", /^\/requests\/([^/]+)$/, (m, body, path) => {
-      const req = personalRequests().find((r) => r.id === m[1]);
+      const req = personalRequests().find((r) => r.id === m[1] && (!/^human:/.test(r.to || "") || r.to === "human:" + me().member.id));
       if (!req) fail(404, "not_found", "Not found", path);
       return personalView(req);
     }],
     ["POST", /^\/requests\/([^/]+)\/(answer|withdraw)$/, (m, body, path) => {
-      const req = personalRequests().find((r) => r.id === m[1]);
+      // Its asker withdraws a transfer into an organisation, every owner's request with it.
+      const own = m[2] === "withdraw" && transferGroups[m[1]] && personalRequests().find((r) => r.id === m[1] && r.asked_by.member_id === me().member.id);
+      if (own) {
+        if (own.status !== "open") fail(409, "request_not_open", "Request is not open", path);
+        personalRequests().filter((r) => transferGroups[m[1]].includes(r.id) && r.status === "open").forEach((r) => { r.status = "withdrawn"; r.answered_at = nowIso(); });
+        return own;
+      }
+      const req = personalRequests().find((r) => r.id === m[1] && (!/^human:/.test(r.to || "") || r.to === "human:" + me().member.id));
       if (!req) fail(404, "not_found", "Not found", path);
       if (req.status !== "open") fail(409, "request_not_open", "Request is not open", path);
       const proposal = req.memory_proposal && req.memory_proposal.store === "preferences" ? req.memory_proposal : null;
@@ -1509,10 +1520,20 @@ window.Maity = window.Maity || {};
     // configured forge.
     ["POST", /^\/projects$/, (m, body, path) => {
       const fields = {};
+      // §6.26: `owner` names an organisation the caller may create projects in;
+      // absent, or the caller's own handle, the project is the caller's.
+      let org = null;
+      if (body.owner && body.owner !== me().member.handle) {
+        org = orgsData().items.find((o) => (o.handle === body.owner || (o.aliases || []).includes(body.owner)) && orgRole(o));
+        if (!org) fields.owner = "unknown";
+        else if (orgRole(org) === "member" && !org.members_create_projects) fail(403, "forbidden", "not for your role", path, { reason: "org_role" });
+        else if (org.moderation) fail(403, "forbidden", "the organisation is suspended", path, { reason: "moderation_hold" });
+      }
+      const space = org ? org.handle : me().member.handle;
       if (!SLUG.test(body.slug || "")) fields.slug = "string_pattern_mismatch";
       // §6.25: a slug is never a route word, and taken once in one's namespace.
       else if (ROUTE_WORDS.includes(body.slug)) fields.slug = "reserved";
-      else if (fixtures()[body.slug + "/project.json"] || slugOfFull(me().member.handle + "/" + body.slug)) fields.slug = "taken";
+      else if (fixtures()[body.slug + "/project.json"] || slugOfFull(space + "/" + body.slug)) fields.slug = "taken";
       if (!body.name || !body.name.trim()) fields.name = "string_too_short";
       const url = body.repository ? String(body.repository.url || "").replace(/\/+$/, "") : null;
       if (url !== null && !/^https:\/\/github\.com\/[^/\s]+\/[^/\s]+$/.test(url)) {
@@ -1534,7 +1555,7 @@ window.Maity = window.Maity || {};
         maity_badge: given.maity_badge === true, cards: null };
       const owner = me().member;
       const created = {
-        id: localId("prj"), slug: body.slug, owner: { id: owner.id, handle: owner.handle }, full_name: owner.handle + "/" + body.slug,
+        id: localId("prj"), slug: body.slug, owner: org ? { id: org.id, handle: org.handle } : { id: owner.id, handle: owner.handle }, full_name: space + "/" + body.slug,
         legacy_slug: null, aliases: [],
         name: body.name, state: "build", state_note: null, state_changed_at: nowIso(),
         repository: url === null ? null : {
@@ -1877,7 +1898,7 @@ window.Maity = window.Maity || {};
       "/api/v1/projects/{owner}/{slug}/placements": { get: {}, post: {} },
     },
     components: { schemas: { ProjectCreate: { properties: {
-      slug: {}, name: {}, repository: {}, memory: {}, setup: {}, keep_the_why: {}, policy: {},
+      slug: {}, name: {}, repository: {}, memory: {}, setup: {}, keep_the_why: {}, policy: {}, owner: {},
     } } } } })],
     // §17.6: a manual post by an owner or admin.
     ["POST", /^\/projects\/([^/]+)\/ticker$/, (m, body, path) => {
@@ -2414,7 +2435,51 @@ window.Maity = window.Maity || {};
     ["POST", /^\/projects\/([^/]+)\/transfer$/, (m, body, path) => {
       const p = project(m[1], path);
       if (me().member.kind !== "human") fail(403, "forbidden", "a project is transferred by a human", path, { reason: "humans_only" });
-      if (!p.owner || p.owner.id !== me().member.id) fail(403, "forbidden", "only the namespace owner transfers the project", path);
+      // §6.26: an organisation's project is transferred by any of its owners.
+      const from = p.owner && orgsData().items.find((o) => o.id === p.owner.id);
+      if (!p.owner || (from ? orgRole(from) !== "owner" : p.owner.id !== me().member.id)) fail(403, "forbidden", "only the namespace owner transfers the project", path);
+      // Into an organisation: its owner moves it at once, its admin asks the owners.
+      if (/^org-/.test(body.to || "")) {
+        const into = orgsData().items.find((o) => o.id === body.to);
+        if (!into || !["owner", "admin"].includes(orgRole(into))) fail(403, "forbidden", "not for your role", path, { reason: "org_role" });
+        if (into === from) fail(400, "invalid", "the project is here already", path, { fields: { to: "self" } });
+        if (into.moderation) fail(403, "forbidden", "the organisation is suspended", path, { reason: "moderation_hold" });
+        const full = into.handle + "/" + p.slug;
+        renameCheck(p, path, full);
+        if (slugOfFull(full)) fail(400, "invalid", "taken", path, { fields: { slug: "taken" } });
+        if (orgRole(into) === "owner") {
+          renamed(p, full);
+          p.owner = { id: into.id, handle: into.handle };
+          const mine = me().projects.find((x) => x.slug === m[1]);
+          if (mine) mine.full_name = p.full_name;
+          return p;
+        }
+        // §6.26: an admin speaks for themselves; each owner of the organisation
+        // gets a personal consent request carrying the project and the
+        // organisation, and nothing is filed in the project (an organisation is
+        // no addressee, §7). Withdrawn by the asker, they go together.
+        (fixtures()["personal-requests.json"] = fixtures()["personal-requests.json"] || { items: [] });
+        const asked = orgsData().members[into.id].filter((x) => x.role === "owner").map((owner) => ({
+          id: localId("req"), kind: "project_transfer", class: "consent", status: "open", personal: true, answer: null,
+          title: "Take over " + p.full_name + " into @" + into.handle + " as " + full,
+          summary: me().member.handle + " asks the owners of @" + into.handle + " to take over " + p.full_name + ".", options: [],
+          replies: [{ id: "go", label: "Go" }, { id: "no", label: "No" }], priority: "normal", to: "human:" + owner.id,
+          asked_by: { member_id: me().member.id, display_name: me().member.display_name }, task_id: null, task: null,
+          project: { full_name: p.full_name, name: p.name }, org: { id: into.id, handle: into.handle }, created_at: nowIso(), while_open: "wait" }));
+        asked.forEach((r) => { personalRequests().push(r); transferGroups[r.id] = asked.map((x) => x.id); });
+        return Object.assign({}, asked[0]);
+      }
+      // Out of an organisation to oneself: the caller's call is their word, the move is at once (§6.26).
+      if (from && body.to === me().member.id) {
+        const full = me().member.handle + "/" + p.slug;
+        renameCheck(p, path, full);
+        if (slugOfFull(full)) fail(400, "invalid", "taken", path, { fields: { slug: "taken" } });
+        renamed(p, full);
+        p.owner = { id: me().member.id, handle: me().member.handle };
+        const mine = me().projects.find((x) => x.slug === m[1]);
+        if (mine) mine.full_name = p.full_name;
+        return p;
+      }
       const to = file(m[1], "members.json", path).items.find((x) => x.id === body.to && x.kind === "human" && x.trust === "owner");
       if (body.to === me().member.id) fail(400, "invalid", "the project is here already", path, { fields: { to: "self" } });
       if (!to) fail(400, "invalid", "the receiver must be an owner", path, { fields: { to: "not_an_owner" } });

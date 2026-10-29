@@ -38,7 +38,6 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
     ("account_registration", "address_normalized"): True,
     ("account_registration", "decided_by"): True,
     ("account_registration", "human_id"): True,  # no foreign key on purpose (tables.py)
-    ("address_lock", "address"): True,
     ("attachment", "deleted_by"): True,
     ("avatar_image", "owner_id"): True,
     ("conversation_participant", "added_by"): True,
@@ -71,7 +70,6 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
     ("preferences_version", "proposed_by"): True,
     ("project", "spawn_consent_by"): False,  # a mode: `human`, `role`
     ("registration_block", "address_normalized"): True,
-    ("registration_lock", "address_normalized"): True,
     ("request", "filed_by"): False,  # who filed: `agent`, `hub`, …
     ("request", "humans_only"): False,
     ("runner_attachment", "detached_by"): True,
@@ -89,9 +87,7 @@ DELETION_THROUGH: dict[str, ModuleType] = {
 # Tables the deletion leaves as they are: their column points at the account row, which
 # stays, and every view shows it as `Deleted account` (§2.9).
 _RECORD = "the projects' or the instance's record, kept without the person (§2.9)"
-_OPEN = "open: the row keeps the address after the deletion; raised with the coordinator"
 DELETION_KEEPS = {
-    "address_lock": _OPEN,
     "attachment": f"who deleted an attachment: {_RECORD}",
     "conversation_participant": f"who added or removed a participant: {_RECORD}",
     "credential": f"who paused or revoked an agent's credential: {_RECORD}",
@@ -105,7 +101,6 @@ DELETION_KEEPS = {
     "the deletion reads projects for `namespace_owner` only",
     "project_alias": "an old project name stays reserved for good (§2.9, §6.25)",
     "registration_block": "the instance admin's block of an address (§16.4), not an account's",
-    "registration_lock": _OPEN,
     "runner_attachment": f"who attached a runner to a project: {_RECORD}",
     "runner_credential": f"who revoked a runner's credential: {_RECORD}",
 }
@@ -133,7 +128,6 @@ EXPORT_LEAVES_OUT = {
     "account_lock": _BOOKKEEPING,
     "account_record": _UNLISTED,
     "account_registration": _UNLISTED,
-    "address_lock": _BOOKKEEPING,
     "attachment": f"names a person only as who deleted it; {_UNLISTED}",
     "conversation_participant": f"names a person only as who added or removed; {_UNLISTED}",
     "credential": _SECRET,
@@ -159,7 +153,6 @@ EXPORT_LEAVES_OUT = {
     "preferences_version": f"the current preferences are exported; {_UNLISTED}",
     "project_alias": _UNLISTED,
     "registration_block": _INSTANCE,
-    "registration_lock": _BOOKKEEPING,
     "runner_attachment": _UNLISTED,
     "runner_credential": _SECRET,
     "runner_enrollment": _SECRET,

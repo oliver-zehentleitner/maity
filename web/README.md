@@ -45,9 +45,9 @@ narrow screen they go under it. At the top right are two menus, each a
 real button (`aria-haspopup`, `aria-expanded`): a **gear** with what is
 not the project's — **Runners** and, for the instance admin, **Users of
 this hub**; and the **profile**, the human's avatar and name, with
-**Profile**, **Picture** (`#/account/picture`), **Preferences**
-(`#/account/preferences`), **Theme** (`#/account/theme`), **Organisations** (`#/account/orgs`,
-for a human where the hub has them), **Sign in another device** (`#/account/sign-in-device`,
+**Profile**, **Picture** (`/account/picture`), **Preferences**
+(`/account/preferences`), **Theme** (`/account/theme`), **Organisations** (`/account/orgs`,
+for a human where the hub has them), **Sign in another device** (`/account/sign-in-device`,
 where the hub's machine form lists device codes), **Change password**, **Linked
 accounts** (later) and
 **Sign out**. Arrow keys, Home and End move in a
@@ -80,18 +80,18 @@ the page). `js/theme.js` sets `data-theme` on `<html>` from a script in
 start; the CSS gives the dark tokens to the system's choice unless Light
 is picked, and to an explicit Dark. Signed out (the sign-in page, the
 landing page, the public swarm page) a menu in the header picks it; signed
-in the header has none, and **Your account → Theme** (`#/account/theme`)
+in the header has none, and **Your account → Theme** (`/account/theme`)
 picks it with three radio buttons, saying that the choice is kept in this
 browser only. A pick made signed out stays after signing in.
 
 Left of the menus are **Chat** and the **bell**, in that order (Chat,
 Notifications, gear, profile, in one row on a phone too). **Chat** leads
-to `#/chats` with the hub's count of unread chat messages
+to `/chats` with the hub's count of unread chat messages
 (`counts.chat`); the **bell** has the count of every kind but the open
 requests. A badge is a number only, hidden at zero; the words are the
 button's name ("3 new notifications", "2 unread chat messages"). On a
 hub without notifications both stand without a count, the bell as a
-link to everything waiting (`#/all`). The bell reads the latest 20
+link to everything waiting (`/all`). The bell reads the latest 20
 items when it opens, unread ones marked, each a link to where it happened. The link is
 built from the item's `target`, never from its `url`. Opening an item
 marks it read, except a sign-in or address alert (`security`): that is
@@ -101,12 +101,12 @@ everything up to that answer's position (`next_after`, passed back
 unchanged) and leaves those alerts; it is not offered when they are all
 that is unread. The panel says they stay unread until **This was me**
 under Sessions. A sign-in or an address change leads to the account's
-sessions (`#/account/sessions`), a personal request of a project one is not in to everything waiting (the
-personal inbox, `#/requests/<id>`, is not in the page yet). Escape closes
+sessions (`/account/sessions`), a personal request of a project one is not in to everything waiting (the
+personal inbox, `/requests/<id>`, is not in the page yet). Escape closes
 the panel from the bell or inside it. The bell links to the settings.
 
 **Browser notifications** are opt-in on the account
-(`#/account/notifications`). Turning them on is the one place the
+(`/account/notifications`). Turning them on is the one place the
 browser's permission is asked, and its answer is shown beside the switch.
 After that:
 - **Delivery.** While a tab is open, also in the background, the page
@@ -147,28 +147,34 @@ A hub without the endpoints shows no bell and counts the open requests
 from `/me`, as before. A failed read is said in the notice and does not
 stop the page. Mail settings come with the hub's mail (stage 3).
 
+Every route is a path (`docs/api.md` §16.11): the hub answers the app
+shell for every path that is not one of its own, and the dashboard
+routes with the History API and shows its own "not found" for a path it
+does not know. There are no `#/` routes and no redirects from them.
+
 | Route | What |
 |---|---|
-| `#/chats` | every chat across one's projects (`js/chats.js`), laid out as a project's Chat tab: the list beside the open conversation (on a phone the list its own screen), merging each project's direct and group chats (one read across projects, `GET /me/conversations`, §9.3, or one per project on a hub without it, then every 30 s and after the notifications stream says something changed, never a project's events feed), unread first, then the newest, each with its project as a 14 px mark after the who line (name on hover), and in the open chat each agent message with the marks of the reader's projects it is in; from the header's **Chat** |
-| `#/chats/<owner>/<slug>/<id>` | one of those chats opened in place, with the Chat tab's messages, drafts and composer in its project's context; **← Conversations** goes back to `#/chats` |
-| `#/all` | the inbox across every project, each entry with its project's badge (logo or monogram, name, state) before it, as a link to the project; filterable by project and groupable by project (each group a heading with its own list; the filter holds in `#/all` only, and answering opens the next entry as it stands on screen); the landing page with more than one project, and with none (then it offers **Create a project**) |
-| `#/new` | create a project; also **+ New project** in the switcher |
-| `#/s/<owner>/<slug>` | a project's public swarm page, where its owner switched it on; for visitors with or without a session |
-| `#/login` | the login page, always; signed in, the dashboard's start (the root without a session shows the instance's landing page where it has one). `#/login?next=<route>` signs in and goes on to that dashboard route (`/#/…` only, §2.6.5), passed to the password, mail-link and device sign-in calls; the page offers **Create an account** where `GET /auth/methods` says the instance registers |
-| `#/invite/<token>` | an invitation (`js/invite.js`, §3.4), with or without a session, as one centred card like sign-in and register: the project's logo or monogram, who invites to which project as what, the note, until when, whether it is for one address; signed out **Sign in to accept** and, where the hub registers or the invitation admits, **Create one**, both returning here; signed in **Join <project> as <you>** (`POST …/accept`), then the way into the project; a refusal (address mismatch, already a member, void, project closed, account pending) said in the hub's words with its reason; an unknown, used, expired or revoked link one answer |
-| `#/register?next=<route>` | registration (`js/register.js`, §2.7.1): the address and a password (at least 12 characters, asked twice), `POST /auth/register` with the `next`, then "check your mail" — the same for every address; offered where the instance registers, or where the invitation in `next` admits (§3.4, `registration: sign_in_or_register`), else it says the hub does not create accounts on request. The account is made from the mailed link, which returns to `next`. An account that waits for approval (§2.7.5) sees one page, "Your account waits for the operator's approval", and Sign out |
-| `#/runners` | the runners: small services on the operator's machines that start agents for the projects they are allowed in; **Runners** in the header's gear menu (they belong to the person, not to a project, so not in the projects' row) |
-| `#/observe/<owner>/<slug>` | reading along in the group chats your agents are in, in a project you are not a member of (`docs/api.md` §9.2); named on `#/all` |
-| `#/admin` | instance administration: statistics, users, mail settings and health, for the instance admin only (`member.instance_admin` on `/me`); opened from **Settings → Instance administration** |
-| `#/sign-in/code?c=…` | the login page with a device code filled in: the URL in the QR of Sign in another device; sent only on the human's tap |
-| `#/account/sign-in-device` | Sign in another device (`docs/api.md` §2.6.2): the code, its QR, the time left, then the approval; from the profile menu |
-| `#/account` | the signed-in human's account: name, handle, their picture and the pictures of their agents in no project of theirs (`#/account/picture` starts there), the switch **I am a meat proxy** (`PATCH /me`, §5.2: agents that deal with them read the hub's fixed note, and the page shows that same note under the switch as its explanation, as `/me` carries it (`meat_proxy_note`); where the hub names the field), their preferences (`#/account/preferences` starts there), browser notifications (`#/account/notifications` starts there; the bell links to it), the theme (`#/account/theme` starts there), the sessions (`#/account/sessions` starts there; a sign-in alert links to it), **Your data** (`#/account/data` starts there, §2.9: **Export my data** saves the hub's JSON export; **Delete my account**, confirmed by the handle, asks for the deletion, which the mail's link then confirms, and a pending one can be withdrawn; both ask for the password or a second-factor code where the hub requires it, `js/step-up.js`), **Change password**; from the profile menu |
-| `#/account/orgs` | the human's organisations (`docs/api.md` §6.26), each with their role, and **New organisation** (handle and name; the creator is its first owner); from the profile menu. Under the account, not `#/orgs`: `web/context/views.md` |
-| `#/account/orgs/<handle>` | one organisation (its handle or an alias): **Members** with their roles, changed, removed or left as the caller's role allows; for an owner or admin **Invitations** (invite by handle with a role, withdraw; the invited person answers a request in their inbox); for an owner **Settings** (name, handle, members may create projects, public page), **Picture** and **Delete the organisation**, confirmed by the handle, with the password or a code where the hub asks. Not one's own: said as not found |
-| `#/<owner>/<slug>/<view>` | a view inside one project, addressed by its full name, owner's handle and slug (`docs/api.md` §6.25); `#/<owner>/<slug>/inbox` is the landing page with exactly one. An earlier full name of a project of one's own (an alias after a rename or a transfer) leads to the current one, as the hub answers it |
-| `#/p/<slug>/…` | the address before namespaces: leads to the project in one's own list whose `legacy_slug` it is, the rest of the path kept; never by the current slug, which another project may carry now; no such project is the same "not found" as any unknown project |
-| `#/<owner>/<slug>/chat/<agent-id>` | the chat with one agent |
-| `#/<owner>/<slug>/settings` | the project's **Settings**, its last tab (after Runners and Why), for every member: what one may change is a form, the rest is read only (the language, the project memory); language, state and absence, onboarding, repository, memory, Keep the Why commitment, badge, the change ticker (on or off, the contract files, who implements which section as lines `<section>: <token> …`, tokens that name nobody said as unresolved; read by every member, changed by a human admin; `js/ticker-settings.js`), the forge webhook (whether a secret is set and the last delivery; create, rotate after a confirm, remove; a new secret shown once with the payload URL; a human admin only), signing, public swarm, logo and banner, uploads, blind removal — each for whom it is; a save stays on the tab and says so |
+| `/<handle>` | a person's or an organisation's address: without a session the hub's static public page where one is served (`docs/api.md` §16.9), otherwise the dashboard; signed in, **View public page** opens it with `?as=public` where one is served |
+| `/<owner>/<slug>` | a project: without a session the hub's static public page where one is served, otherwise the dashboard (sign-in first); signed in, the project's inbox, with **View public page** (`?as=public`) where one is served |
+| `/chats` | every chat across one's projects (`js/chats.js`), laid out as a project's Chat tab: the list beside the open conversation (on a phone the list its own screen), merging each project's direct and group chats (one read across projects, `GET /me/conversations`, §9.3, or one per project on a hub without it, then every 30 s and after the notifications stream says something changed, never a project's events feed), unread first, then the newest, each with its project as a 14 px mark after the who line (name on hover), and in the open chat each agent message with the marks of the reader's projects it is in; from the header's **Chat** |
+| `/chats/<owner>/<slug>/<id>` | one of those chats opened in place, with the Chat tab's messages, drafts and composer in its project's context; **← Conversations** goes back to `/chats` |
+| `/all` | the inbox across every project, each entry with its project's badge (logo or monogram, name, state) before it, as a link to the project; filterable by project and groupable by project (each group a heading with its own list; the filter holds in `/all` only, and answering opens the next entry as it stands on screen); the landing page with more than one project, and with none (then it offers **Create a project**) |
+| `/new` | create a project; also **+ New project** in the switcher. Where the hub takes `owner` and the human is in an organisation that lets them create projects, **Owner** chooses between them and that organisation (`docs/api.md` §6.26); the address is then `<organisation>/<slug>` |
+| `/<owner>/<slug>/swarm` | without a session, and for anyone not a member, a project's public swarm page, where its owner switched it on; a member gets the Swarm tab there, and `?as=public` shows anyone the public page (`docs/api.md` §6.22) |
+| `/login` | the login page, always; signed in, the dashboard's start (the root without a session shows the instance's landing page where it has one). `/login?next=<route>` signs in and goes on to that dashboard path (a path on this host, not one of the hub's own, `docs/api.md` §2.6.5), passed to the password, mail-link and device sign-in calls; the page offers **Create an account** where `GET /auth/methods` says the instance registers |
+| `/invite/<token>` | an invitation (`js/invite.js`, §3.4), with or without a session, as one centred card like sign-in and register: the project's logo or monogram, who invites to which project as what, the note, until when, whether it is for one address; signed out **Sign in to accept** and, where the hub registers or the invitation admits, **Create one**, both returning here; signed in **Join <project> as <you>** (`POST …/accept`), then the way into the project; a refusal (address mismatch, already a member, void, project closed, account pending) said in the hub's words with its reason; an unknown, used, expired or revoked link one answer |
+| `/register?next=<route>` | registration (`js/register.js`, §2.7.1): the address and a password (at least 12 characters, asked twice), `POST /auth/register` with the `next`, then "check your mail" — the same for every address; offered where the instance registers, or where the invitation in `next` admits (§3.4, `registration: sign_in_or_register`), else it says the hub does not create accounts on request. The account is made from the mailed link, which returns to `next`. An account that waits for approval (§2.7.5) sees one page, "Your account waits for the operator's approval", and Sign out |
+| `/runners` | the runners: small services on the operator's machines that start agents for the projects they are allowed in; **Runners** in the header's gear menu (they belong to the person, not to a project, so not in the projects' row) |
+| `/observe/<owner>/<slug>` | reading along in the group chats your agents are in, in a project you are not a member of (`docs/api.md` §9.2); named on `/all` |
+| `/admin` | instance administration: statistics, users, mail settings and health, for the instance admin only (`member.instance_admin` on `/me`); opened from **Settings → Instance administration** |
+| `/sign-in/code#c=…` | the login page with a device code filled in: the URL in the QR of Sign in another device; sent only on the human's tap |
+| `/account/sign-in-device` | Sign in another device (`docs/api.md` §2.6.2): the code, its QR, the time left, then the approval; from the profile menu |
+| `/account` | the signed-in human's account: name, handle, their picture and the pictures of their agents in no project of theirs (`/account/picture` starts there), the switch **I am a meat proxy** (`PATCH /me`, §5.2: agents that deal with them read the hub's fixed note, and the page shows that same note under the switch as its explanation, as `/me` carries it (`meat_proxy_note`); where the hub names the field), their preferences (`/account/preferences` starts there), browser notifications (`/account/notifications` starts there; the bell links to it), the theme (`/account/theme` starts there), the sessions (`/account/sessions` starts there; a sign-in alert links to it), **Your data** (`/account/data` starts there, §2.9: **Export my data** saves the hub's JSON export; **Delete my account**, confirmed by the handle, asks for the deletion, which the mail's link then confirms, and a pending one can be withdrawn; both ask for the password or a second-factor code where the hub requires it, `js/step-up.js`), **Change password**; from the profile menu |
+| `/account/orgs` | the human's organisations (`docs/api.md` §6.26), each with their role, and **New organisation** (handle and name; the creator is its first owner); from the profile menu. Under the account, not `/orgs`: `web/context/views.md` |
+| `/account/orgs/<handle>` | one organisation (its handle or an alias): **Members** with their roles, changed, removed or left as the caller's role allows; for an owner or admin **Invitations** (invite by handle with a role, withdraw; the invited person answers a request in their inbox); for an owner **Settings** (name, handle, members may create projects, public page), **Picture** and **Delete the organisation**, confirmed by the handle, with the password or a code where the hub asks. Not one's own: said as not found |
+| `/<owner>/<slug>/<view>` | a view inside one project, addressed by its full name, owner's handle and slug (`docs/api.md` §6.25); `/<owner>/<slug>/inbox` is the landing page with exactly one. An earlier full name of a project of one's own (an alias after a rename or a transfer) leads to the current one, as the hub answers it |
+| `/<owner>/<slug>/chat/<agent-id>` | the chat with one agent |
+| `/<owner>/<slug>/settings` | the project's **Settings**, its last tab (after Runners and Why), for every member: what one may change is a form, the rest is read only (the language, the project memory); language, state and absence, onboarding, repository, memory, Keep the Why commitment, badge, the change ticker (on or off, the contract files, who implements which section as lines `<section>: <token> …`, tokens that name nobody said as unresolved; read by every member, changed by a human admin; `js/ticker-settings.js`), the forge webhook (whether a secret is set and the last delivery; create, rotate after a confirm, remove; a new secret shown once with the payload URL; a human admin only), signing, public swarm, logo and banner, uploads, blind removal — each for whom it is; a save stays on the tab and says so |
 
 ## Views
 
@@ -217,18 +223,18 @@ the member in Members, and `#123` the project repository's issue or pull
 request on GitHub (in a new tab; only for a GitHub repository). An id is
 linked by its shape alone, never looked up: a page it opens says when it
 holds no such thing. The link's text is the id as written, and no mention
-is made; outside the id's project (the global chat, `#/all`) a card's
+is made; outside the id's project (the global chat, `/all`) a card's
 or request's reads `<owner>/<slug>/tsk-…` (`docs/api.md` §6.25, display
 only, `M.ids.ref` the one place that writes it). In Markdown (messages, chats) ids in code spans and fenced code
 stay plain; the other texts are not Markdown, so backticks there are just
 characters and an id between them still links. A text read along from
-outside a project (`#/observe`) links no id, as it links no member. In
+outside a project (`/observe`) links no id, as it links no member. In
 **All projects** `#123` stays text: `/me` gives no project's repository.
 A ticker item whose own link is the pull request or issue leaves its
 numbers as text. Known: a three-digit hex colour such as `#123` links
 too.
 
-1. **Inbox** (`#/<owner>/<slug>/inbox`, the first screen; `#/<owner>/<slug>/inbox/<id>`
+1. **Inbox** (`/<owner>/<slug>/inbox`, the first screen; `/<owner>/<slug>/inbox/<id>`
    opens that request, among the answered if it is one): the requests waiting
    for the human, sortable by priority (urgent first), date and agent.
    The first open entry is expanded with what the request carries: class,
@@ -239,11 +245,11 @@ too.
    an entry down the list in this tab only and sends nothing: the hub has
    no deferred state, the request stays open. A **personal request**
    (`docs/api.md` §7: to you as the owner of an agent profile, not to the
-   project) is only in everything waiting (`#/all`): labelled
+   project) is only in everything waiting (`/all`): labelled
    **Personal** with its project's name and no link into the project, it
    is answered on `/requests/{id}/answer` and offers **Withdraw**
    (`/requests/{id}/withdraw`, the free text as its reason); grouped, the
-   personal ones come first. Without any membership, `#/all` still lists
+   personal ones come first. Without any membership, `/all` still lists
    them, before the way to create a project. A list shows no proposal, so
    every open personal request is read on its own (`GET /requests/{id}`);
    one that cannot be read is offered no reply, only **Try again**, since a
@@ -258,7 +264,7 @@ too.
    **Merge by hand** or Decline. A conflict while you look shows the review
    again against the newer version. Once answered, the entry says which
    version it became and whether it was edited.
-2. **Board** (`#/<owner>/<slug>/board`; `#/<owner>/<slug>/tasks/<id>` opens that
+2. **Board** (`/<owner>/<slug>/board`; `/<owner>/<slug>/tasks/<id>` opens that
    card, below): cards by status (`proposed` to
    `cancelled`, closed ones of the last 14 days), with claim holder,
    lease and expiry, assignment, dependencies and ships-with, checkpoint
@@ -381,8 +387,7 @@ too.
    notes, reports and older closed cards from the hub. Matching fields and
    closed cards outside the usual window are labelled. **Clear search**
    restores the board while keeping the column, member and area filters.
-3. **Agents** are in **Members** (no tab of their own; `#/<owner>/<slug>/agents`
-   leads there, `#/<owner>/<slug>/agents/join` with the join panel open). An
+3. **Agents** are in **Members** (no tab or path of their own). An
    agent's row opens with its membership form, its **briefing** (Markdown,
    at most 16,384 characters, `PATCH …/members/{id}`, offered only where
    the hub's member view has the field; sent as typed, "Set by @handle"
@@ -399,7 +404,7 @@ too.
    since stays chosen, marked revoked), which instance an event for the
    team wakes, and whether one instance may review another's work; only
    what changed is sent. A join refused with `instance_quota` links
-   there (`#/<owner>/<slug>/members/<id>/rulebook`: the row open, at the
+   there (`/<owner>/<slug>/members/<id>/rulebook`: the row open, at the
    limit). Without
    members:admin a human's own agents open as **Details** with their
    picture, credentials and the preferences switch; with it, **Manage**
@@ -426,7 +431,7 @@ too.
    there also before the project has an agent, for a placement that
    creates its profile. `placement_created`, `placement_updated`
    and `placement_reported` read the list again.
-4. **Members** (`#/<owner>/<slug>/members`, `docs/api.md` §6.2; `#/<owner>/<slug>/members/<id>`,
+4. **Members** (`/<owner>/<slug>/members`, `docs/api.md` §6.2; `/<owner>/<slug>/members/<id>`,
    a mention's link, marks that member's row and moves the focus to it): everyone in the
    project, humans first, then agents, each with name and handle, trust and role
    (`docs/api.md` §2.3, as "admin · reviewer"; a guest is never offered as an
@@ -473,9 +478,9 @@ too.
    30 s and updated in place; a redraw keeps the keyboard focus (Manage
    to the opened row's role, Done back to Manage). On a phone each row is
    a card with its cells labelled.
-5. **Organisation** (`#/<owner>/<slug>/org`): an indented tree computed from
+5. **Organisation** (`/<owner>/<slug>/org`): an indented tree computed from
    `reports_to` and area ownership on every render.
-6. **Chat** (`#/<owner>/<slug>/chat`, `#/<owner>/<slug>/chat/<agent-id>` or `/<group chat id>`, `/new`): two panes,
+6. **Chat** (`/<owner>/<slug>/chat`, `/<owner>/<slug>/chat/<agent-id>` or `/<group chat id>`, `/new`): two panes,
    like a messenger. On the left, under the heading and **New group
    chat**, the human's chats, one per agent they own in the project,
    unread ones first, then the newest: avatar with the presence as its
@@ -529,7 +534,7 @@ too.
      names) and the people in it. An `@` marks a chat that mentions you.
      The list reads `?observed=true`, so the chats you read along as an
      agent's owner are in it too.
-   - **New group chat** (`#/<owner>/<slug>/chat/new`, not in a closed project,
+   - **New group chat** (`/<owner>/<slug>/chat/new`, not in a closed project,
      and only on a hub whose `openapi.json` lists
      `POST /projects/{owner}/{slug}/conversations`; without it the list says
      "This hub has no group chats yet.", Project settings offers no blind
@@ -570,9 +575,9 @@ too.
      "closed_chat_message"`, so a mistyped number that names any other
      event removes nothing and is said (#206). The hub answers that the
      message is removed and nothing more.
-   - **Reading along from outside** (`#/observe/<owner>/<slug>`). When an agent of
+   - **Reading along from outside** (`/observe/<owner>/<slug>`). When an agent of
      yours is a member of a project you are not in, **everything waiting**
-     (`#/all`) names that project. Its page lists the group chats your
+     (`/all`) names that project. Its page lists the group chats your
      agents are in and opens them read only. It uses `GET /agents` for
      the projects and `?observed=true` for the chats; no member list, no
      project and no events are read, because none of them would be
@@ -626,8 +631,7 @@ too.
    is off at the limit; the hub's `member_join_limit` and
    `member_agents_max` said in words with the field; Project settings let
    a human admin turn it on or off and set how many, with a reason; no tab of its
-   own: `#/<owner>/<slug>/members/join`, and the old `#/<owner>/<slug>/agents/join`
-   and `#/<owner>/<slug>/join`, open it there). **+ Add an agent** at the head of
+   own: `/<owner>/<slug>/members/join` opens it there). **+ Add an agent** at the head of
    the agents' table opens a panel under it
    (a project without agents opens it at once); the panel has its own
    Close, and Cancel. The title's count line says how many agents, online
@@ -664,7 +668,7 @@ too.
    without a reload; for a minute after it expired it keeps **Revoke**,
    and the hub decides, then it moves to the record. A Revoke the hub refuses
    (`invalid_transition`) is said and the list re-read.
-8. **Why** (`#/<owner>/<slug>/why`, where the hub has the Keep the Why export,
+8. **Why** (`/<owner>/<slug>/why`, where the hub has the Keep the Why export,
    `docs/api.md` §11.3): the project's published Keep the Why dashboard
    state as the hub read it, read-only. A headline says how many entries
    need attention (open, needs review, pending confirmation) out of how
@@ -682,7 +686,7 @@ too.
    hub reads (the root `.keep-the-why`'s `dashboard-state` line). Every
    string from an export is text; a link is used only when it is plain
    `https`.
-9. **Runners** (`#/<owner>/<slug>/runners`, owner and admin, `docs/api.md`
+9. **Runners** (`/<owner>/<slug>/runners`, owner and admin, `docs/api.md`
    §15.4): the runners allowed to start agents for this project, by name,
    each in the words of the Runners view (presence, what it runs on, its
    tools, who can see what) with when it was allowed and how many agents
@@ -702,7 +706,7 @@ too.
    view. The tab is the project admin's; a runner's owner who is no admin
    here (possible once invitations exist; not in V1) cannot detach it
    from the dashboard although the hub would let them.
-10. **Overview** (`#/<owner>/<slug>/overview`, `docs/api.md` §6.11; its tab is
+10. **Overview** (`/<owner>/<slug>/overview`, `docs/api.md` §6.11; its tab is
     the second, next to the inbox): the project at a glance, in three
     rows: what needs you, then the state, then the facts; on a phone one
     column in the same order. A panel's heading is never a link; its way
@@ -743,7 +747,7 @@ too.
     link comes from. A hub without the endpoint
     still shows the links and members, and says that the counts are
     missing.
-11. **Messages** (`#/<owner>/<slug>/messages`, `docs/api.md` §8.4): the
+11. **Messages** (`/<owner>/<slug>/messages`, `docs/api.md` §8.4): the
     project's messages the reader may see, every type but chat, newest
     first, with a filter by type and **Message the project**.
     - Each says its type, who wrote to whom, the card it is about (linking
@@ -761,7 +765,7 @@ too.
       ones are not read. A cursor that does not move stops the read with
       an error. New messages, removals and deleted files arrive with the
       project's feed and change the list in place.
-12. **Ticker** (`#/<owner>/<slug>/ticker`, `docs/api.md` §17): the project's
+12. **Ticker** (`/<owner>/<slug>/ticker`, `docs/api.md` §17): the project's
     change feed (merges, decisions, deploys, releases, notes), newest
     first, from `GET …/ticker`.
     - **For me** (`for=me`, the default) and **Everything** as two tabs,
@@ -798,7 +802,7 @@ too.
       load.
     - Not here yet: the project settings' `settings.ticker` (sources,
       contract files, implementers).
-13. **Swarm** (`#/<owner>/<slug>/swarm`, `js/swarm.js`, `docs/api.md` §6.22): the
+13. **Swarm** (`/<owner>/<slug>/swarm`, `js/swarm.js`, `docs/api.md` §6.22): the
     team at work. **At work now**: every member, online or last seen, an
     agent's instances online, and the cards each holds as links to them.
     The window (**7 / 30 / 90 days**): cards done with a small line per
@@ -806,7 +810,7 @@ too.
     PRs merged, handovers, claim → done and review → done medians in
     words, – where fewer than three cards give a median; when reviews are
     counted from; when the hub counted. A hub without the swarm says so in
-    the tab. **The public page** `#/s/<owner>/<slug>`, with or without a session,
+    the tab. **The public page**, at the same path without a session or for anyone not a member, and at `/<owner>/<slug>/swarm?as=public` for everyone,
     where a human owner or admin switched `policy.swarm_public` on in
     **Project settings** (a policy change with its reason; the switch
     says what it exposes): agents only, by their global names where the
@@ -824,7 +828,7 @@ propose), the paste line of a join says where it goes (to the agent as a
 message, or run in a terminal in the agent's clone), and a tab row wider
 than the screen fades on the side where more entries are.
 
-**Runners** (`#/runners`, `docs/api.md` §15.2–§15.3). One card per runner
+**Runners** (`/runners`, `docs/api.md` §15.2–§15.3). One card per runner
 in plain words: online, away or offline with when it was last seen, or
 revoked; what it runs on (this machine, hosts, or pods in a namespace);
 for each host or pool how many agents run of how many, and whether it is
@@ -858,7 +862,7 @@ removing lists the agents that were still running on it, which are then
 the operator's to end on that machine (`maity runner stop-all`, available
 once the runner track lands).
 
-**Users of this hub** (the Users section of `#/admin`, `docs/api.md` §16.1) lists the
+**Users of this hub** (the Users section of `/admin`, `docs/api.md` §16.1) lists the
 instance's humans for the instance admin, by handle: name and handle
 ("(you)" for oneself), whether instance admin, active or disabled, when
 created, last signed in and last seen, and how many projects they are in
@@ -870,15 +874,15 @@ stops) and a filter by active or disabled ask the hub (`q`, `disabled`);
 anyone else gets neither the link nor the list. On a phone each row is a
 card.
 
-**Pictures** (`#/account/picture`, `docs/api.md` §6.10). The account
+**Pictures** (`/account/picture`, `docs/api.md` §6.10). The account
 shows the human's picture as it shows now, where it comes from (uploaded,
 the linked forge account, or generated from the member id), an upload and,
 for an upload, **Remove the upload**. An agent's picture is set in its row
 on Members (**Details** or **Manage**, for its owner;
-`#/<owner>/<slug>/members/<id>/picture` opens the row), read from
+`/<owner>/<slug>/members/<id>/picture` opens the row), read from
 `GET /agents`, set with `PUT`/`DELETE /agents/{id}/avatar`. The account
 keeps the same, under **Agents in other projects**, only for the owner's
-agents in no project the owner can open; `#/account/picture/<agent id>`
+agents in no project the owner can open; `/account/picture/<agent id>`
 for any other agent leads to its row. In the same places the owner
 deletes the profile (`DELETE /agents/{id}`, §6.3): the page names the
 projects it is a member of and what ending those memberships means, the
@@ -893,7 +897,7 @@ picture follows at once. There is no preview of a chosen file before the
 upload: the hub's CSP allows no `blob:` images, and what shows afterwards
 is what the hub made of it (a square of at most 256 pixels).
 
-**Preferences** (`#/account/preferences`, `docs/api.md` §19.4,
+**Preferences** (`/account/preferences`, `docs/api.md` §19.4,
 `js/preferences.js`): how you like to work and be treated, one Markdown text
 for all your projects, read by their agents in the resume, quoted as yours and
 ranked below the project's rules. The editor shows the version and who wrote,
@@ -911,7 +915,7 @@ line.
 page reads it and, below the password form, offers what the hub has on: **Have
 a code?** and **Email me a sign-in link**; a hub without the route is not asked
 and offers the password alone.
-- *Sign in another device* (profile menu, `#/account/sign-in-device`) makes a
+- *Sign in another device* (profile menu, `/account/sign-in-device`) makes a
   code (`POST /auth/device-codes`) and shows it in three groups (`K7QM-4XPR-9D2F`), a
   QR of its URL and the time left by the hub's clock, with **Cancel**. Once the
   other device entered it, the approval leads with what the hub saw (the
@@ -924,7 +928,7 @@ and offers the password alone.
   case ignored, hyphens and spaces dropped, I and L as 1, O as 0), shows the
   two-digit number to pick on the other device and nothing of the account, and
   after the approval the account and then the dashboard. The QR's URL
-  (`#/sign-in/code?c=…`) opens this form filled in; it is sent on the tap.
+  (`/sign-in/code#c=…`) opens this form filled in; it is sent on the tap.
 - *Email me a sign-in link* asks for an address, answers "If this address
   belongs to an account, a link is on its way" whatever the address, and takes
   the six-digit code from the mail for when it is read elsewhere.
@@ -938,7 +942,7 @@ and offers the password alone.
   device has been entered by a simulated phone (`203.0.113.24`, number 47) by
   the second read, and the mailed code is `482913`.
 
-**Sessions** (`#/account/sessions`, `docs/api.md` §2.6.5, `js/sessions.js`):
+**Sessions** (`/account/sessions`, `docs/api.md` §2.6.5, `js/sessions.js`):
 where the human is signed in, newest first, from `GET /auth/sessions?ended=true`.
 - Each says the browser and system it claimed, how it signed in, where
   from and when, which session approved a device code, and whether it is
@@ -981,14 +985,14 @@ where the human is signed in, newest first, from `GET /auth/sessions?ended=true`
   an hour or a day of age, which changes what it may do.
 - A hub without the list says so, and is asked once per page load.
 
-**Change password** (`#/account`) sends `POST /auth/password {current,
+**Change password** (`/account`) sends `POST /auth/password {current,
 new}` (`docs/api.md` §2.1): the new password twice, at least 12
 characters (counted as the hub counts them), checked before sending; a
 wrong current password is shown at its field (`current: mismatch`, which
 also counts against the sign-in limit), and success says that every other
 session of this human was signed out while this one stays signed in.
 
-**Create a project** (`#/new`) sends `POST /projects` (`docs/api.md`
+**Create a project** (`/new`) sends `POST /projects` (`docs/api.md`
 §6.1): name, a slug proposed from the name (`[a-z0-9][a-z0-9-]{1,62}`,
 its rule said under the field and checked before sending), an optional repository URL, the project
 memory (a dropdown `none` / `Keep the Why`, Keep the Why preselected; with it the three prefilled
@@ -1010,8 +1014,8 @@ said under the options.
 
 **Logo and banner** (`docs/api.md` §11.2). Each project shows its own
 logo next to its name: in its switcher chip, in the header, on its
-entries in `#/all`, and as the tab's icon of its pages. The image comes
-from the hub's own path (`/api/v1/projects/<slug>/logo?v=<etag>`), read
+entries in `/all`, and as the tab's icon of its pages. The image comes
+from the hub's own path (`/api/v1/projects/<owner>/<slug>/logo?v=<etag>`), read
 from `/me`'s projects where the hub puts `logo` there (`docs/api.md` §5.1), else from `GET /projects` alongside `/me`. Without one, a monogram stands
 there: the project's initials in white on one of twelve colours (each at
 least 5.2:1), chosen by the slug. The mark is decorative next to the
@@ -1045,12 +1049,17 @@ same panel for a human owner, where the hub's project view has
 asks first and follows the new address; the hub's `taken`, `reserved`,
 `alias_limit` (at most 8 earlier names) and `rate_limited` (3 renames
 and transfers a day) are said in words. **Transfer**, for the namespace
-owner only, asks another human owner of the project to take it over
-(`POST …/transfer`, a consent request in their inbox; the project moves
-on their go) and offers to withdraw the request; without another owner
-it says to make one first, and a step-up the hub asks for is said. In
+owner (for an organisation's project, any of its owners), asks another
+human owner of the project to take it over (`POST …/transfer`, a
+consent request in their inbox; the project moves on their go) and
+offers to withdraw the request. It also moves the project into an
+organisation the human owns, at once, or one they administer, by asking
+its owners (§6.26). Without another owner or such an organisation it
+says to make an owner first. The password or a code is asked in place
+where the hub wants the step-up (`js/step-up.js`). In
 Members, demoting or removing the namespace owner is refused with
-`namespace_owner`, said with the way out. The ticker names a `rename`
+`namespace_owner`, said with the way out (for an organisation's
+project, its owners stay owners the same way). The ticker names a `rename`
 item as such.
 
 **Agent signing** (`policy.signing`, `docs/api.md` §2.2, §6.1) is in the
@@ -1110,7 +1119,7 @@ and falls back to the generated one when the image does not load (a
 `404` once access has ended). On the agents' cards, in the
 organisation and in the chat list.
 
-**Message the project** (`#/<owner>/<slug>/message`, no tab: **Message the
+**Message the project** (`/<owner>/<slug>/message`, no tab: **Message the
 project** in the Chat tab's list beside **New group chat** and in the
 Messages view, no longer in the inbox, and from a chat: an `@name` typed there
 is said to notify nobody, with a link to a project message that has it
@@ -1126,7 +1135,7 @@ mention cap and rate are said in words.
 **Mentions** (`docs/api.md` §8.6). Where the dashboard shows a text the
 hub scans — a request's summary, what it tried and the answer's text,
 a report's summary — each mention the hub stored for that field is a
-link to the member (`#/<owner>/<slug>/members/<id>`), taken from the text at
+link to the member (`/<owner>/<slug>/members/<id>`), taken from the text at
 its offset (code points) only where it reads `@` and the stored handle,
 or `@` and the stored global name for a long mention, either followed by
 `#` and the stored instance for an instance mention (§6.17; it links to
@@ -1169,9 +1178,9 @@ The fixtures are in `fixtures/`: `me.json`, `auth-session.json`,
 one JSON file per endpoint, in the shapes of `docs/api.md`. The fixture
 hub reads `/projects/{owner}/{slug}/…` from the directory of that full
 name (`project.json`'s `full_name`, else the owner's handle and the
-directory), takes an alias in `aliases` as the current name, and refuses
-an old one-segment path (`/projects/maity/tasks`) with 410
-`project_path_outdated`, as the hub does:
+directory), takes an alias in `aliases` as the current name, and answers
+an old one-segment path (`/projects/maity/tasks`) `not_found`, as the hub
+does:
 
 | Endpoint (below `/api/v1`) | Fixture |
 |---|---|
@@ -1297,7 +1306,7 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
    and asks there, and asks once more in the first, with priority `high` (`urgent` needs `requests:answer`);
 7. the switcher counts both projects and **All projects**; switching
    lands in the other project with its request open;
-8. `#/all` lists both requests, the `high` one first, each with its project,
+8. `/all` lists both requests, the `high` one first, each with its project,
    and answers them there, one in free text, one with `go`; the agent's
    `maity resume` sees that answer;
 9. **Chat**: the agent writes with `maity say human`, the message appears in
@@ -1372,7 +1381,7 @@ runs on each view as the scenario reaches it: sign-in, the empty state,
 Agents (empty, with an agent, with a human pause, with a briefing where
 the hub has one), Join with a paste line, the board (a claimed card, a
 release with a contract, the release edited, a typed-PR editor open),
-the inbox with an open request, `#/all` with requests, chat, the header
+the inbox with an open request, `/all` with requests, chat, the header
 in freeze with an absence, Organisation and Create a project. Each check
 runs at 1280 and 390 px in the light scheme and at 1280 px dark, with the
 tags WCAG 2.0/2.1 A and AA, WCAG 2.2 AA and best practices. A serious or
@@ -1430,13 +1439,13 @@ web/
 ├── js/board.js       (2) board
 ├── js/card-panel.js  an opened card: body, links, notes, history
 ├── js/ticker-settings.js  Project settings: the change ticker and the forge webhook
-├── js/agents.js      an agent's credentials and briefing for its row in Members; #/agents leads there
+├── js/agents.js      an agent's credentials and briefing for its row in Members; /<owner>/<slug>/agents leads there
 ├── js/members.js     (4) members: humans and agents, managed by an admin
 ├── js/org.js         (5) organisation tree
 ├── js/project-message.js message the project (§8.4)
 ├── js/attachments.js  files on messages: attach, show, delete; the admin's pending list
 ├── js/chat.js        (6) chat
-├── js/chats.js       every chat across the projects (#/chats)
+├── js/chats.js       every chat across the projects (/chats)
 ├── js/group-chat.js  (6) group chats: create, open, manage, remove a message
 ├── js/observe.js     reading along in a project one is not in
 ├── js/join.js        (7) join an agent
@@ -1527,7 +1536,7 @@ the hint. Clearing the text removes the default briefing. Version, author
 and update time come from the hub; Members marks agents with their own
 briefing. Existing individual briefings are preserved.
 
-**Instance administration** in the settings menu opens `#/admin` for the
+**Instance administration** in the settings menu opens `/admin` for the
 instance admin. It combines Statistics, Users, Mail settings and Instance information. Each section
 is omitted when the hub does not list its route. A failed or forbidden read
 is shown without preventing the other sections from loading.
@@ -1565,10 +1574,10 @@ visitor without a session gets the instance's landing page when the hub's
 theme, at most 240 px wide), the page's one logo and its h1, the title
 (also the tab's), the button (`cta`), above the fold on a phone, then the
 operator's Markdown drawn by the chat's renderer with one addition for
-this page alone — links to dashboard routes (`/#/…`) stay in the page,
+this page alone — links to dashboard paths (`/…`, `docs/api.md` §16.11) stay in the page,
 `https` links open apart, anything else and raw HTML stay text. The
 header holds only the theme menu and **Sign in**, at its right edge. Off, absent or failing, the root is the login page as
-before, and `#/login` is the login page always (in fixture mode the page
+before, and `/login` is the login page always (in fixture mode the page
 is off, as on a fresh instance; `?landing=on` shows it and `?landing=fail`
 makes its read fail): the landing page never
 stands between a person and sign-in; no other route asks for it. In the

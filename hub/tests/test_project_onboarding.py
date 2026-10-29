@@ -89,7 +89,7 @@ def test_admin_agent_can_only_patch_onboarding(
     extras: list[dict[str, Any]] = [
         {"name": "changed"},
         {"reason": "mixed"},
-        {"keep_the_why": True},
+        {"memory": {"provider": "keep-the-why"}},
     ]
     for extra in extras:
         assert (

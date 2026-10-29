@@ -22,8 +22,9 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
 
 ### 1.1 Base path, media types, headers
 
-- Every endpoint lives under `/api/v1`. The dashboard is served at `/`,
-  the join page at `/join/{token}` and the project badge at
+- Every endpoint lives under `/api/v1`. The dashboard is served as the
+  app shell at every path that is not one of the hub's own (§16.11), the
+  join page at `/join/{token}` and the project badge at
   `/badge/{owner}/{slug}.svg` (§6.20); none of them is part of the API surface.
 - Hosts. The hub is reached under `MAITY_PUBLIC_URL`, and by default under
   nothing else: join links, pair links, `/help` and every `Maity-Hub`
@@ -48,7 +49,7 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   do — ask the person who sent it for a new join line, and that nobody
   needs to do anything else (Markdown for agents, HTML for browsers, as
   §3.2; it never says which of the reasons applies). Any other `GET` on
-  the join host — `/`, `/join/…`, `/j/…`, `/api/v1/…` including `/help` and
+  the join host — `/`, `/join/…`, `/api/v1/…` including `/help` and
   `/health`, the runner pairing (which stays on the public URL only,
   §15.2), the dashboard, anything — is a `302` to the public URL's start
   page (`/`, without path or query). Any other method is `not_found`.
@@ -86,12 +87,14 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   the logo and banner (§11.2) and the avatars (§6.10) — and the
   attachments (§8.7), which are revalidated by `ETag`, and the project
   badge (§6.20), the one answer with a public cache (`public,
-  max-age=60`), because it carries nothing but a count. The hub serves no
+  max-age=60`), because it carries nothing but a count, and the app
+  shell (§16.11), which is `no-cache`: it holds no data and must follow
+  a deploy. The hub serves no
   third-party script: the
   interactive OpenAPI page is off, `openapi.json` is the machine form.
 - The hub writes its own request log: method, path and status, never a
   query string or a header value, and the token segment of `/join/{token}`,
-  `/join/{token}`, `/r/{token}`, `/runners/pair/{token}`,
+  `/invite/{token}` (§16.11), `/r/{token}`, `/runners/pair/{token}`,
   `/mail/verify/{token}`, `/mail/unsubscribe/{token}` and
   `/mail/second-factor-reset/{token}` (§18.6), and the single
 segment of a join-host path (above), as `…`. The server's default access log is off.
@@ -206,8 +209,6 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `attachment_quota` | an attachment upload would take the project over its quota, or the uploading membership over its pending cap (§8.7); `details.scope` (`project` or `pending`), `details.used`, `details.quota`, and `details.count`, `details.max` for `pending` |
 | 409 | `attachments_not_configured` | an attachment upload, read or delete, or a message that names an attachment, while the instance has no attachment store: `MAITY_ATTACHMENT_STORE` is `local` and `MAITY_ATTACHMENT_DIR` is unset (§8.7) |
 | 413 | `payload_too_large` | body over the cap (§1.7) |
-| 410 | `project_path_outdated` | a project route in the form before the project namespace (`/projects/{slug}/…`) from a caller that is not an outdated CLI (§6.25); says nothing about the project |
-| 426 | `client_outdated` | a CLI older than the project-namespace release calls a project route (§6.25); `details.minimum` (the lowest CLI version that works), `details.install` (the install line, §3.2) |
 | 429 | `rate_limited` | `Retry-After` is set |
 | 500 | `internal` | an unexpected failure; `details` is `{}`, the message names no internals; the response still carries the envelope and every header of §1.1 |
 | 503 | `forge_unavailable` | the forge did not answer while linking a GitHub App installation (§11.4) |
@@ -902,7 +903,9 @@ include the scope. No call made with an agent credential may:
   (§16.2, §18);
 - change a policy field that governs what humans decide —
   `spawn_consent_by`, `signing`, `tag_authority`, `on_runner_revoke`,
-  `spawn_requests` (§6.1) — or the rules text (`rules_markdown`);
+  `spawn_requests`, `merged_closes`, `member_agents`, `member_agents_max`,
+  `swarm_public`, `keep_the_why`, `keep_the_why_defaults` (§6.1; the hub's
+  list is `HUMANS_ONLY_POLICY`) — or the rules text (`rules_markdown`);
 - set or change a human's `availability_policy`, or name a human in any
   member's `substitutes` (§6.12).
 - take over, assign away, release or end a card a human holds (§6.19),
@@ -1214,10 +1217,14 @@ one as **B** (the phone):
   as `1`, `O` as `0`. The hub stores `sha256` of the normalised code,
   never the code; the code appears in no response but the one that
   created it.
-- **The URL** is `<MAITY_PUBLIC_URL>/#/sign-in/code?c=K7QM4XPR9D2F`: the code
-  sits in the fragment, which the browser never sends, so it reaches no
-  request log, proxy or `Referer`. The page fills the field in and waits
-  for the human's tap; it does not redeem on its own.
+- **The URL** is `<MAITY_PUBLIC_URL>/sign-in/code#c=K7QM4XPR9D2F`, a
+  dashboard path (§16.11) with the code in the fragment, which the
+  browser never sends, so it reaches no request log, proxy or
+  `Referer`; the hub answers the path with the app shell, and the
+  dashboard reads the code from the fragment on that path and removes
+  it from the address at once (`history.replaceState`), so it does not
+  stay in the browser's history either. The page fills the field in and waits for the human's tap; it does not redeem
+  on its own.
 - **States.** `waiting` → `redeemed` (B entered it) → `approved` (A said
   yes) → `used` (B completed). `denied` and `expired` end it. A code is
   valid for 5 minutes from its creation; after `approved`, B has 60
@@ -1269,7 +1276,7 @@ Offered when `email_link` is `true` in §2.6.1. On the login page,
 "Email me a sign-in link" → an address:
 
 ```
-POST /auth/email-link   {"address": "maintainer@example.org", "next"?: "/#/oliver/maity/board"}
+POST /auth/email-link   {"address": "maintainer@example.org", "next"?: "/oliver/maity/board"}
 ```
 
 Unauthenticated. **Always** answers `202 {"expires_in": 900}` and sets
@@ -1482,12 +1489,13 @@ and is never affected by mail limits; the password is not either.
 - **`next`.** The login page passes its `next` to `POST /auth/login`,
   `POST /auth/device-login` and `POST /auth/email-link`; the hub
   stores it with the flow (never in a mail or a URL it sends) and
-  answers it back after checking. Allowed is only a dashboard route on
-  the public host: `/`, or a path that starts with `/#/`, at most 512
-  characters, without a backslash, a control or whitespace character, a
-  second `#`, or `//`. Anything else is replaced by `/` silently. The
-  hub never redirects to a host, a scheme or a path outside the
-  dashboard.
+  answers it back after checking. Allowed is only a dashboard path on
+  the public host (§16.11): a path on this host that starts with `/`, at
+  most 512 characters, without a backslash, a control or whitespace
+  character, a `#`, or `//`, whose first segment is not a hub path
+  (§16.11: not `/api/…`, `/assets/…`, `/mail/…` and the others there).
+  Anything else is replaced by `/` silently. The hub never redirects to
+  a host, a scheme or a path outside the dashboard.
 - **Transport.** Every endpoint here follows §2.5: over plain HTTP from
   a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` it is
   `insecure_transport`. On a join host none of them exists (§1.1).
@@ -1763,7 +1771,7 @@ login page shows "Create an account" only with `registration: true`.
 #### 2.7.1 The flow: the address is verified before an account exists
 
 ```
-POST /auth/register   {"address": "ada@example.com", "password": "…", "next"?: "/#/"}
+POST /auth/register   {"address": "ada@example.com", "password": "…", "next"?: "/"}
 ```
 
 Unauthenticated, on the public host only, with the rules of §2.6.5 for
@@ -1940,7 +1948,9 @@ A human's handle follows the agent profiles' syntax
 (`[a-z0-9][a-z0-9-]{1,30}`, §6.3) and is unique among human accounts
 and organisations, their aliases included (§6.24, §6.26), since the
 login takes it (§2.1) and a project's owner is named by it (§6.25);
-compared as written, it is lower case by the syntax. `display_name` is 1–64 characters, no control
+compared as written, it is lower case by the syntax. It is never a
+reserved first segment (§16.11): `invalid`, `details.fields.handle:
+"reserved"`. `display_name` is 1–64 characters, no control
 character. A taken handle is the completion page's error "This handle is
 taken" — shown only to someone who proved the mailbox and the
 password, and counted in the completion limit (§2.7.3). The human
@@ -2122,7 +2132,7 @@ included:
 - The first factor answers as it does today, with `member` replaced by
   `{"second_factor": "required", "expires_in": 300}` (the login and the
   code redemptions answer 200; the link page's `POST` answers its `303`
-  to the dashboard route `/#/sign-in/second-factor`, with `next` kept on
+  to the dashboard route `/sign-in/second-factor`, with `next` kept on
   the session). The cookies are set, the session exists, and its state
   is `second_factor`.
 - A second-factor session reaches only `GET /auth/session` (which
@@ -2611,9 +2621,6 @@ GET /join/{token}
 GET /api/v1/join/{token}
 ```
 
-`/j/{token}` serves the same document as `/join/{token}` — an alias, not a
-redirect — so links handed out before the page moved keep working; new
-links use `/join/`.
 
 Unauthenticated. Both paths serve the same document. `Accept: text/html`
 (a browser) gets an HTML rendering of the same text with a link to the
@@ -2852,20 +2859,20 @@ person, one project and one trust and role, it is used once, and it expires.
 - `ttl_seconds` defaults to 86 400 (a day), minimum 60, maximum 604 800 (a week).
   `note` is optional plain text, at most 1 KiB, shown on the page.
 - The token is 22 characters of `[A-Za-z0-9_-]`, shown once in `url`
-  (`https://<public host>/#/invite/<token>`) and stored hashed, as the
+  (`https://<public host>/invite/<token>`, §16.11) and stored hashed, as the
   join's is (§3.1); the `GET` list never shows it again.
 
 ```json
 { "id": "inv-0007", "project": "oliver/maity", "trust": "member", "role": "coder", "address": "anna@example.org",
   "note": "…", "created_by": "hum-maintainer", "created_at": "…", "expires_at": "…",
   "used_at": null, "used_by": null, "revoked_at": null, "voided_at": null,
-  "url": "https://maity.team/#/invite/9fK2…" }
+  "url": "https://maity.team/invite/9fK2…" }
 ```
 
 **The page.** `GET /invitations/{token}` answers `{project: {slug, full_name,
 name, logo_url?}, trust, role, invited_by: {display_name}, note, expires_at,
 address_bound: true|false, registration: "sign_in_or_register" |
-"sign_in_only"}` — enough for the dashboard's `/#/invite/<token>` to
+"sign_in_only"}` — enough for the dashboard's `/invite/<token>` to
 say who invites to what and which ways lead in. `registration` is
 computed from the instance and the invitation alone, never from who
 reads or whether an account exists: `sign_in_or_register` under
@@ -3086,7 +3093,6 @@ Response `200`, bounded and deterministic:
                 "lease_seconds": 7200, "signing": "optional" },
     "absence": null,
     "memory": { "provider": "keep-the-why" },
-    "keep_the_why": true,
     "language": "en",
     "rules_version": 7
   },
@@ -3097,7 +3103,7 @@ Response `200`, bounded and deterministic:
                     "instruction": "Load the keep-the-why skill and read context/index.md before working.",
                     "skill": { "name": "keep-the-why",
                                "source": "https://github.com/oliver-zehentleitner/keep-the-why/tree/latest/skills/keep-the-why",
-                               "install": [ "npx skills add https://github.com/oliver-zehentleitner/keep-the-why/tree/latest/skills/keep-the-why",
+                               "install": [ "npx skills add https://github.com/oliver-zehentleitner/keep-the-why/tree/latest/skills/keep-the-why -g -y",
                                             "git clone --depth 1 --branch latest https://github.com/oliver-zehentleitner/keep-the-why <tmp> and copy <tmp>/skills/keep-the-why into the harness's skills directory" ],
                                "load": "Claude Code: invoke the keep-the-why skill (Skill tool). Any other agent: read <skills directory>/keep-the-why/SKILL.md and follow it.",
                                "guide": "https://keepthewhy.com/installation/" },
@@ -3523,7 +3529,6 @@ around.
   "slug": "maity",
   "owner": { "id": "hum-mebxvnc20qeg", "kind": "human", "handle": "oliver" },
   "full_name": "oliver/maity",
-  "legacy_slug": "maity",
   "aliases": [],
   "name": "Maity",
   "state": "build",
@@ -3536,7 +3541,6 @@ around.
   "logo": { "available": true, "source": "uploaded", "etag": "\"9f2c41d0\"" },
   "banner": { "available": false, "source": null },
   "memory": { "provider": "keep-the-why" },
-  "keep_the_why": true,
   "setup": { "keep_the_why_init": true, "keep_the_why_badge": true, "maity_badge": true,
              "cards": ["tsk-0001", "tsk-0002", "tsk-0003"] },
   "keep_the_why_export": {
@@ -3583,9 +3587,9 @@ around.
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `GET /projects` | human: all memberships; agent: its one project | `{items}` of the shape above |
-| `POST /projects` | human | `{slug, name, owner?, repository?, memory?: {provider}, setup?: {keep_the_why_init?, keep_the_why_badge?, maity_badge?}, keep_the_why?, policy?: {preset}}`; `owner` names an organisation to create the project in (§6.26), absent the caller; `memory` defaults to `{"provider": "keep-the-why"}`, `setup` to `keep_the_why_init: true, keep_the_why_badge: true, maity_badge: false` (§6.21); `keep_the_why` is the alias of `memory.provider` (below); the creator becomes `owner` and, without `owner`, the project's namespace owner: it is created as `<creator's handle>/<slug>` (with `owner`, `<organisation handle>/<slug>`, §6.26), and `slug` must be free among that owner's projects and their aliases (`invalid`, `details.fields.slug: "taken"`, §6.25); `201` |
+| `POST /projects` | human | `{slug, name, owner?, repository?, memory?: {provider}, setup?: {keep_the_why_init?, keep_the_why_badge?, maity_badge?}, policy?: {preset}}`; `owner` names an organisation to create the project in (§6.26), absent the caller; `memory` defaults to `{"provider": "keep-the-why"}`, `setup` to `keep_the_why_init: true, keep_the_why_badge: true, maity_badge: false` (§6.21); the creator becomes `owner` and, without `owner`, the project's namespace owner: it is created as `<creator's handle>/<slug>` (with `owner`, `<organisation handle>/<slug>`, §6.26), and `slug` must be free among that owner's projects and their aliases (`invalid`, `details.fields.slug: "taken"`, §6.25); `201` |
 | `GET /projects/{owner}/{slug}` | `project:read` | |
-| `PATCH /projects/{owner}/{slug}` | `project:admin`; `absence` only by the owner; `settings.onboarding` also by an agent with trust `admin`, and nothing else by it (§2.3 ʰ) | any of `name`, `slug` (a rename, by a human with trust `owner` only, §6.25), `repository`, `memory` (or its alias `keep_the_why`), `state` + `state_note`, `policy`, `absence`, `settings`, `rules_markdown`; never `setup` (`invalid`, `read_only`, §6.21); `reason` required when `state` or `policy` changes |
+| `PATCH /projects/{owner}/{slug}` | `project:admin`; `absence` only by the owner; `settings.onboarding` also by an agent with trust `admin`, and nothing else by it (§2.3 ʰ) | any of `name`, `slug` (a rename, by a human with trust `owner` only, §6.25), `repository`, `memory`, `state` + `state_note`, `policy`, `absence`, `settings`, `rules_markdown`; never `setup` (`invalid`, `read_only`, §6.21); `reason` required when `state` or `policy` changes |
 | `GET /projects/{owner}/{slug}/rules` | `project:read` | `text/markdown`, `ETag: "<rules_version>"`; the generated rules and the brief for the caller's trust and role |
 | `GET /projects/{owner}/{slug}/logo`, `…/banner` | `project:read` | the image itself (§11.2) |
 | `PUT /projects/{owner}/{slug}/logo`, `…/banner` | `project:admin`, human only | upload the project's own image, raw body (§11.2) |
@@ -3647,12 +3651,11 @@ choice are §6.21.
 | Field | Values | Meaning |
 |---|---|---|
 | `memory.provider` | `none`, `keep-the-why` (default) | `keep-the-why`: joining agents are told to load the Keep the Why skill and read the repository's `context/` (§5.2 `keep_the_why`), the rules text carries the Keep the Why line (§6.9), and the project may use `ktw_ref` on cards and `steward_writes`; `none`: nothing of that, the project works completely without a memory provider. Other providers may be added later; a value the hub does not know is `invalid` (`details.fields["memory.provider"]: "unknown_provider"`) |
-| `keep_the_why` | boolean, read and written | the alias of `memory.provider`: `true` iff the provider is `keep-the-why`. In a `POST` or `PATCH` body it is accepted as before and means `{"provider": "keep-the-why"}` or `{"provider": "none"}`; a body that carries both with values that disagree is `invalid` (`details.fields.keep_the_why: "conflicts_with_memory"`). Every project view keeps the field, so no client breaks |
 | `setup` | `{keep_the_why_init, keep_the_why_badge, maity_badge, cards}` or `null` | the setup options chosen at creation, each a boolean, and `cards`: the ids of the setup cards the hub created for them (§6.21). Three shapes: a new project without a repository reads `{"keep_the_why_init": true, "keep_the_why_badge": true, "maity_badge": false, "cards": null}` (chosen, nothing created yet); once the cards exist, `cards` lists their ids, `[]` when every option was `false` (processed, nothing to create); a project that predates the field reads `setup: null` (nothing was chosen, nothing is created when its repository is set). Set on `POST /projects` only |
 
 A change of `memory.provider` by `PATCH` bumps `rules_version` and emits
-`rules_changed` (§6.9, §8.2), as a change of `keep_the_why` did; it
-creates and cancels no setup card (§6.21).
+`rules_changed` (§6.9, §8.2); it creates and cancels no setup card
+(§6.21).
 
 **Settings**: `language` (below); `release_checklist` (§6.7); `ticker` — `enabled`,
 `contract_files`, `contract_implementers` (§17.3). `PATCH` merges
@@ -5282,7 +5285,7 @@ place to get wrong.
 **Dashboard (web/).** A contract note for the view; the layout is the
 web owner's:
 
-- Route `#/<owner>/<slug>/overview`, a view of the project like the others
+- Route `/<owner>/<slug>/overview` (§16.11), a view of the project like the others
   (`web/README.md`, **Views**). The inbox stays the landing page
   (`web/context/views.md`).
 - On open: `GET /projects/{owner}/{slug}` and `…/members` (already held for the
@@ -6415,7 +6418,7 @@ of readers.
 
 **Dashboard (web/).** Project settings offer, to the humans who may set
 the policy (`project:admin`, §2.3 ʰ), the Markdown snippet
-`[![maity](https://<hub>/badge/<owner>/<slug>.svg)](https://<hub>/#/<owner>/<slug>/overview)`
+`[![maity](https://<hub>/badge/<owner>/<slug>.svg)](https://<hub>/<owner>/<slug>/overview)`
 (the overview route of §6.11) with a preview of the badge while it is on
 and a picker for the variant, which writes `policy.badge` with a reason
 like every policy field. A section of the overview page (§6.11) for the
@@ -6503,8 +6506,8 @@ badge to the README**, **Add the Maity badge to the README**), each of
 which may be unticked; under `none` only **Add the Maity badge to the
 README** is shown. The form sends them as `memory` and `setup`; the
 badge snippet itself is the overview page's (§6.20). *Hub
-implementation:* `memory`, the alias, `setup` with its cards, the
-packet's `setup`.
+implementation:* `memory`, `setup` with its cards, the packet's
+`setup`.
 
 ### 6.22 The swarm page
 
@@ -6623,9 +6626,11 @@ on it; no `member_id`. The public body carries no `live_at`, and its
 `as_of` is rounded down to the minute, so that its ETag holds for the 60
 seconds the page may be cached; presence on the public page may be up to
 a minute old, the delay this section accepts anyway. The members' page
-keeps `live_at` exact. The dashboard serves it at `/#/s/<owner>/<slug>` to
-visitors without a session, and the project page's Swarm tab shows
-members the full page. This is more than the badge shows — the badge
+keeps `live_at` exact. The dashboard draws it at `/<owner>/<slug>/swarm`
+(§16.11) for visitors without a session and for anyone who is not a
+member of the project, and for anyone at `/<owner>/<slug>/swarm?as=public`;
+a member at `/<owner>/<slug>/swarm` gets the Swarm tab, the full page,
+with a link to the public view. This is more than the badge shows — the badge
 is counts only (§6.20); the public swarm page names the agents, with
 their owners' handles (§6.3), and shows when they are at work — and
 that is why it is a human's deliberate switch per project, off by
@@ -6665,8 +6670,10 @@ machine has installed and wherever its session was started:
 
 - `skill` — `name` (`keep-the-why`), `source` (where the skill is
   published), `install` (the ways to get it onto a machine that has no
-  copy, in order: the skills installer, then a plain Git fallback for a
-  machine without Node) and `load` (how to load it, per harness). The
+  copy, in order: the skills installer, non-interactive (`-g -y`: for
+  every project of the user, no prompt, since an agent's shell has no
+  terminal to answer one), then a plain Git fallback for a machine without
+  Node) and `load` (how to load it, per harness). The
   three texts come from the instance setting `MAITY_KTW_SKILL_SOURCE`,
   by default the skill's published `latest` tree; an operator who
   mirrors the skill points it elsewhere. They are instructions to the
@@ -6838,7 +6845,11 @@ are not in it. Within that scope a handle is taken while it is the
 handle **or an alias** of another id — a deleted account's and a deleted
 organisation's included — and for an agent profile also while an active
 placement will create a profile of the same owner with it (§15.5):
-`invalid`, `details.fields.handle: "taken"`.
+`invalid`, `details.fields.handle: "taken"`. A human's or an
+organisation's handle is also never a reserved first segment of §16.11
+(`invalid`, `details.fields.handle: "reserved"`), since it is the first
+segment of its owner's address; agent profile handles are not
+addresses and are not checked against it.
 The check holds for every call that gives a handle — registration
 (§2.7.4), `maity-hub owner create`, `POST /orgs` (§6.26), `POST /agents`, a join or a
 placement that creates a profile (§3.1, §15.5, `handle_taken` at the
@@ -6929,7 +6940,7 @@ never free theirs.
 The maintainer's decision of 2026-10-27: projects live in their owner's
 namespace, as repositories do on a forge. A project is addressed as
 `<owner>/<slug>` — `oliver/maity` — in the API
-(`/projects/{owner}/{slug}/…`), in the dashboard (`#/oliver/maity`), on
+(`/projects/{owner}/{slug}/…`), in the dashboard (`/oliver/maity`, §16.11), on
 the badge and the swarm page, and in every reference to it outside its
 own pages. Two owners can both have a project `shop`; nobody can occupy
 a name for everyone else.
@@ -6953,13 +6964,15 @@ organisation's never collide.
 `slug` alone is unique only within its owner's namespace; a client keeps
 `full_name` or the pair, never `slug` alone.
 
-**The slug.** The syntax is unchanged (§1.1), and a slug is never one of
-the fixed words that follow a project in a route (`members`, `tasks`,
-`events`, `rules`, `forge`, `transfer`, … — every literal segment of a
-`/projects/{owner}/{slug}/<word>` route in §12, now and later): `invalid`,
-`details.fields.slug: "reserved"`. That keeps every old one-segment route
-(`/projects/maity/tasks/…`) from ever reading as a new two-segment one
-(below).
+**The slug.** The syntax is unchanged (§1.1), and a slug is never a
+reserved second segment (§16.11): one of the fixed words that follow a
+project in a route of the API (`members`, `tasks`, `events`, `rules`,
+`forge`, `transfer`, … — every literal segment of a
+`/projects/{owner}/{slug}/<word>` route in §12) or of the dashboard
+(`board`, `inbox`, `overview`, `chat`, `swarm`, `settings`, … — every
+project view of §16.11), now and later: `invalid`,
+`details.fields.slug: "reserved"`, at `POST /projects`, a rename and a
+transfer.
 
 **Uniqueness.** A full name, once used, belongs to one project forever.
 A slug is taken in a namespace while that namespace owner's id and the
@@ -7055,9 +7068,8 @@ limit's `show_reason_in` (§6.12), a runner enrollment's `attach`
 `Maity-Attached` header of a pairing lists full names. The forge
 webhook's buckets (§17.4) key on the path as sent, before anything is
 looked up, as before; a project reachable under several alias paths has
-a budget per path, at most 82 (the current handle and 8 aliases of the
-owner × the current slug and 8 aliases of the project, plus the frozen
-legacy path below) —
+a budget per path, at most 81 (the current handle and 8 aliases of the
+owner × the current slug and 8 aliases of the project) —
 accepted, since keying on the resolved project would tell a stranger
 which paths name the same project.
 
@@ -7089,7 +7101,7 @@ such human stops the migration and is named to the operator. Nobody's
 removed membership or lowered trust is restored by it. Slugs stay as
 they are, so no collision can arise
 (a slug that is now a reserved word, or a human handle that is now a
-reserved dashboard word, below, stops the migration and is named to the
+reserved first segment, §16.11, stops the migration and is named to the
 operator, who renames it first). Stored values that named a project by
 its slug are rewritten to the full name: open runner enrollments'
 `attach`, limits' `show_reason_in`, the preferences' `projects`, and
@@ -7097,54 +7109,25 @@ the `action.path` of open requests that carry an action (§7) — the
 call they are bound to is the same call under its new path, so the
 binding holds.
 
-**Old routes.** The one-segment API routes are not served next to the
-new ones. Since no slug is a reserved word, an old path always has a
-reserved word where the new form has a slug (`/projects/maity/tasks`:
-`tasks` cannot be a slug), so the hub recognises it without guessing and
-never routes it to another project: a CLI older than the release
-(`User-Agent: maity-cli/<version>`, §1.6) receives `client_outdated`
-(426, `details.minimum`, `details.install`), every other caller
-`project_path_outdated` (410). Both say nothing about the project: the
-same answer whether the first segment was ever a slug or not.
+**Old routes and addresses.** Nothing from before the namespace is
+served: a one-segment project route (`/projects/maity/tasks`), an old
+badge address (`/badge/{slug}.svg`), an old swarm read
+(`/swarm/{slug}`) and a webhook delivery to
+`/projects/{slug}/forge/webhook` answer as any path the hub does not
+know, `not_found` (§1.3), the same whether the segment was ever a slug
+or not; a reserved slug (above)
+keeps every such path from reaching a project. Maity is alpha (§16.11):
+there is no frozen old slug, no redirect and no answer of its own for an
+outdated caller. Aliases from a rename or a transfer (above) are not old
+addresses and stay.
 
-**Old addresses outside the API.** Badges sit in READMEs, the forge has
-the webhook URL, people have bookmarks; the hub cannot rewrite those.
-The old slug of a project that existed before the migration stays
-frozen to that project for these addresses, through any later rename or
-transfer:
-
-- `GET /badge/{slug}.svg` and `GET /swarm/{slug}` redirect (`301`) to the
-  new form only while the badge, or the public swarm page, is served
-  for that project (§6.20, §6.22); otherwise, and for a slug that never
-  existed, they answer exactly as an unserved badge or swarm page does
-  — the same `not_found`, from the same shared bucket — so the old
-  address tells nobody whether a project exists.
-- `POST /api/v1/projects/{slug}/forge/webhook` keeps accepting
-  deliveries for that project (`forge` is a reserved word, so the path
-  is never a new route). For any other slug it answers exactly as §17.4
-  answers a delivery for a project that does not exist or has no secret
-  — the same `401 webhook_signature` after the same buckets and the
-  same body read. The webhook view's `url` shows the new address to move
-  to.
-- A project that existed before the migration carries `legacy_slug`
-  (its slug at the migration, frozen; `null` for every later project) in
-  the project and in `GET /projects`. The dashboard rewrites
-  `#/p/{slug}/…` to the current `#/{owner}/{slug}/…` of the project in
-  the viewer's own list whose `legacy_slug` it is — never by the current
-  slug, which another project may carry by now; no match shows the same
-  "not found" as any unknown project, with no lookup. `#/s/{slug}`
-  follows the public `GET /swarm/{slug}` above, so a visitor without a
-  session reaches a public swarm page and learns nothing about any
-  other.
-
-**Dashboard routes and handles.** The dashboard's address for a project
-is `#/{owner}/{slug}`, next to its own top-level routes (`#/login`,
-`#/invite/…`, `#/requests/…`, `#/sign-in/…`, `#/all`, `#/s/…`,
-`#/p/…`, `#/admin`, `#/settings`, and every one added later). Those
-words are reserved as human and organisation handles from this change
-on (`invalid`, `details.fields.handle: "reserved"` at registration,
-`POST /orgs` and rename, §6.24, §6.26),
-so `#/invite/…` can never be read as the namespace `invite`.
+**Dashboard paths and handles.** The dashboard's address for a project
+is `/{owner}/{slug}` (§16.11), next to its own top-level routes and the
+hub's own paths. Every first segment of those is reserved as a human or
+organisation handle (`invalid`, `details.fields.handle: "reserved"` at
+registration, `maity-hub owner create`, `POST /orgs` and a rename,
+§6.24, §6.26), so `/invite/…` can never be read as the namespace
+`invite`; the list is §16.11's.
 
 **Why one release instead of `v2`.** §1.6 serves a breaking change as
 `v2` next to `v1`. This change is made before the launch, while every
@@ -7402,7 +7385,7 @@ names a human (`hum-…`) or an organisation (`org-…`).
 
 **Rename.** `PATCH /orgs/{org}` with `{"handle": "<new>"}`, by an
 organisation owner, under every rule of §6.24: the syntax, the reserved
-words (§6.25, "Dashboard routes and handles"), the uniqueness among
+words (§6.25, "Dashboard paths and handles"; §16.11), the uniqueness among
 human and organisation handles and their aliases, the old handle an
 alias of the organisation's id (at most 8, `alias_limit`; at most 3
 renames per 24 hours per organisation, `rate_limited`), an alias taken
@@ -7771,7 +7754,7 @@ learns its content.
 | `state_changed`, `policy_changed`, `absence_changed` | **all**; a `policy_changed` from a removal that reset a seat also `member:<id>` of every human owner and admin (§6.2) | `old`, `new`, `reason`; `state_changed` and `policy_changed` also carry `rules_version` |
 | `project_updated` | **all** | `fields`: the changed fields with their new values — `logo`, `banner` (`{available, source, etag}`, §11.2); `settings.<key>` for every changed settings key (its value without free text, `true` for `release_checklist`, `null` when removed; `settings.onboarding` as `{version, by, updated_at, check_in_with}`, `settings.language` as it is, §6.1); never image bytes, never free text |
 | `avatar_changed` | **all** — emitted, when the effective avatar's source or content changes, in every project where the member holds an active membership (§6.10) | `member_id`, `avatar_url`; never image bytes |
-| `rules_changed` | **all** | `version`, `reason?` — emitted on every `rules_version` bump that has no event of its own (`rules_markdown`, `memory.provider` and its alias `keep_the_why`) |
+| `rules_changed` | **all** | `version`, `reason?` — emitted on every `rules_version` bump that has no event of its own (`rules_markdown`, `memory.provider`) |
 | `release_ready` | **all** | release id, version |
 | `credential_revoked` | the credential's member, `trust:owner` | credential id, `reason` |
 | `credential_in_payload` | the credential's owner, `trust:owner`, `trust:admin` | credential id; never the value |
@@ -9688,7 +9671,7 @@ repository it includes.
   an installation by guessing or copying its id. A missing, expired, used or foreign `state` is
   refused with `details.reason: link_state`. Since the browser arrives
   here by the forge's redirect, every outcome is a `303` to the
-  dashboard's forge settings (`<MAITY_PUBLIC_URL>/#/settings/forge`): on
+  dashboard's forge settings (`<MAITY_PUBLIC_URL>/settings/forge`, §16.11): on
   success without a query, otherwise with `?error=<reason>`, the reason
   one of `link_state`, `installation_not_yours`,
   `organisation_installation`, `installation_linked` (below),
@@ -9780,7 +9763,7 @@ contract; until then nothing else in this section changes.
 | GET | `/health` | — | skeleton |
 | GET | `/help` | — | 4 |
 | GET | `/openapi.json` | — | 4 |
-| GET | `/join/{token}` (under `/api/v1` and, as the page, outside it; `/j/{token}` as an alias) | — | 3.2 |
+| GET | `/join/{token}` (under `/api/v1` and, as the page, outside it) | — | 3.2 |
 | POST | `/join/{token}` | — | 3.3 |
 | POST | `/auth/login`, `/auth/logout`, `/auth/password` | human | 2.1 |
 | GET | `/auth/session` | human | 2.1 |
@@ -9913,7 +9896,7 @@ contract; until then nothing else in this section changes.
 | GET | `/projects/{owner}/{slug}/keep-the-why` | `project:read` | 11.3 |
 | GET | `/projects/{owner}/{slug}/overview` | `project:read` | 6.11 |
 | GET | `/badge/{owner}/{slug}.svg` (outside the API) | — (served only while `policy.badge` is not `off`) | 6.20 |
-| GET | `/p/{owner}/{slug}`, `/u/{handle}` (outside the API) | — (served only with `MAITY_PUBLIC_PAGES` on and the page chosen public) | 16.9 |
+| GET | `/{owner}/{slug}`, `/{handle}` (outside the API) | — (the static page only without a valid session, with `MAITY_PUBLIC_PAGES` on and the page chosen public; otherwise the app shell) | 16.9, 16.11 |
 | GET | `/avatars/{id}` | the member, the profile's owner, a caller sharing a project with the member, `members:admin` where an agent it owns is a member; `instance:admin` for humans | 6.10 |
 | PUT, DELETE | `/me/avatar` | human for their account / agent for its profile | 6.10 |
 | PUT, DELETE | `/agents/{id}/avatar` | owner | 6.10 |
@@ -10106,7 +10089,7 @@ Every CLI request is signed (§2.2); every `POST`, `PATCH` and `PUT` carries
 (§1.5).
 
 **Where `maity join` sends the exchange.** The CLI derives it from the
-URL's shape: a `/join/{token}` or `/j/{token}` URL (or `/api/v1/join/{token}`) → `POST
+URL's shape: a `/join/{token}` URL (or `/api/v1/join/{token}`) → `POST
 /api/v1/join/{token}` on that host; a URL whose path is one segment (a
 join-host URL, §1.1) → `POST` to that same URL. Anything else is not a
 join URL (exit 1).
@@ -11662,9 +11645,9 @@ fixed and not sections. The types and their fields:
 
 Plain fields are text, rendered as text nodes; the `markdown`, `note`
 and FAQ answer fields follow the Markdown rules below. A `href` is an
-`https` URL, a path on this host (`/register`, `/login`, `/explore`,
-`/p/…`, `/u/…`, `/impressum`, `/privacy`, `/terms`) or a dashboard route
-(`/#/…`). A section of an unknown `type`, a field the type does not
+`https` URL or a path on this host that starts with `/` (`/register`,
+`/login`, `/explore`, a public page's `/<owner>/<slug>` or `/<handle>`,
+`/impressum`, `/privacy`, `/terms`, any dashboard path of §16.11). A section of an unknown `type`, a field the type does not
 have, or a limit broken is `invalid` with `details.fields` naming the
 path (`pages.de.sections.2.items.0.title`).
 
@@ -11730,23 +11713,19 @@ all languages.
   max-age=60`, `Vary: Cookie, Accept-Language`), in the visitor's
   language: `?lang=<tag>` if offered, else the best match of
   `Accept-Language`, else `default_language`; a missing field falls
-  back to the default language's page. It carries one small inline
-  script and nothing else that runs: when the address has a dashboard
-  route (`/#/…`), it moves to the dashboard at `/app` with the same
-  route, so that old links keep working; without script the page is
-  complete. With a session cookie, or while the landing page is
-  disabled, `GET /` is the dashboard as today. `/app`, `/login` and
-  `/register` always serve the dashboard (at `#/`, `#/login`,
-  `#/register`), whatever the setting: the landing page can never stand
+  back to the default language's page. It carries no script. With a
+  valid session, or while the landing page is disabled, `GET /` is the
+  app shell (§16.11): the dashboard's home with a session, the login
+  page without. `/login` and `/register` are always the app shell, the
+  dashboard's login and registration pages, whatever the setting, and
+  the landing page links to both: the landing page can never stand
   between a person and sign-in. The landing page changes nothing about
   §2.6.1: which sign-in methods the login page offers is that
   section's.
-- **Content security.** The landing page answers with
-  `Content-Security-Policy: default-src 'none'; script-src
-  'sha256-<hash>'; style-src 'unsafe-inline'; base-uri 'none';
-  form-action 'none'; frame-ancestors 'none'`, where `<hash>` is the
-  hash of the one fixed redirect script, which the hub ships and never
-  takes from the setting; the legal pages (§16.7.1) carry no script and
+- **Content security.** The landing page carries no script and answers
+  with `Content-Security-Policy: default-src 'none'; style-src
+  'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors
+  'none'`; the legal pages (§16.7.1) carry no script either and
   answer with §16.9's policy, `default-src 'none'; style-src
   'unsafe-inline'`. Both replace §1.1's `default-src 'self'` for these
   documents only.
@@ -11767,8 +11746,12 @@ all languages.
     `X-Robots-Tag: noindex`, which a crawler can only read because it
     may fetch the root. None of this is a guarantee against a crawler
     that ignores the rules.
-    With public pages on (§16.9) the file also allows `/p/` and `/u/`.
-    The `Sitemap:` line is there whenever the sitemap lists at least one
+    With public pages on (§16.9) the file reads differently, since a
+    public page has no prefix of its own (§16.11): `User-agent: *`,
+    `Disallow:` for every reserved first segment of §16.11 (`/api/`,
+    `/assets/`, `/login`, `/admin`, …), then `Allow: /`; whatever else a
+    crawler fetches that is not a public page is the app shell, which
+    answers `X-Robots-Tag: noindex` (§16.11). The `Sitemap:` line is there whenever the sitemap lists at least one
     URL, and only then.
   - `GET /sitemap.xml` (`application/xml`): the instance's root
     (`MAITY_PUBLIC_URL` with a trailing `/`, `<lastmod>` from the
@@ -11777,9 +11760,10 @@ all languages.
     public pages are on; `404` when
     there is neither. Nothing behind a sign-in, no badge or swarm page,
     no project or person that has not chosen a public page is ever
-    listed: the dashboard routes are fragments (`/#/…`) that a
-    crawler does not fetch, and the hub publishes nothing it would not
-    show a visitor without a session.
+    listed: a public page is listed at its canonical path
+    (`/<owner>/<slug>`, `/<handle>`, §16.11), every other dashboard path
+    is the app shell with `noindex`, and the hub publishes nothing it
+    would not show a visitor without a session.
 
   Both are answered with `Cache-Control: public, max-age=3600` and
   never set a cookie. The join host (§1.1) answers both `not_found`.
@@ -11969,13 +11953,22 @@ script, no session — so that an instance is found by what is on it. A
 page exists only by its owner's choice; nothing is public by default.
 Organisations (§6.26) have pages too, by the same choice.
 
+**The addresses.** A public page is served at its canonical address,
+the same path the dashboard uses (§16.11): a project's at
+`/{owner}/{slug}`, a person's or an organisation's at `/{handle}`. The
+static page is the answer to a `GET` without a valid session (§16.7's
+definition); with one, the same path is the app shell, and the
+dashboard links to the page where one exists. Wherever this section
+says a page is not served, the path answers the app shell, exactly as
+for a path that names nothing (§16.11).
+
 **The instance.** `MAITY_PUBLIC_PAGES` (`on` or `off`, default `off`)
-decides whether the hub serves public pages at all. Off, every route
-below answers `not_found` and the sitemap lists none, whatever projects
+decides whether the hub serves public pages at all. Off, every address
+below answers the app shell and the sitemap lists none, whatever projects
 and people have chosen, so a self-hosted instance publishes nothing
 unless its operator says so.
 
-**A project's page.** `GET /p/{owner}/{slug}`, while the project's
+**A project's page.** `GET /{owner}/{slug}`, while the project's
 `public_page` is `on`. Both fields are on the project (§6.1), not in
 its policy, and only the namespace owner (§6.25), a human — for a
 project of an organisation any of its owners (§6.26) — sets them
@@ -12001,7 +11994,7 @@ read from a repository through an owner's grant (§11.4). A transfer
 (§6.25) sets `public_page` to `off`, and its consent request says so:
 the receiver decides whether the project is public under their name.
 
-**A person's page.** `GET /u/{handle}`, while the human's
+**A person's page.** `GET /{handle}`, while the human's
 `public_profile` is `true`. `PATCH /me` (human only) sets
 `public_profile` (default `false`) and `public_bio` (`null` or plain
 text, at most 280 characters; every C0 control character and the
@@ -12011,9 +12004,9 @@ The page shows the `display_name`, the `handle`, `public_bio`, and the
 projects with a public page in which they are a member. No address, no
 session, no agent of theirs beyond those the project pages show.
 
-**An organisation's page.** `GET /u/{handle}` with an organisation's
+**An organisation's page.** `GET /{handle}` with an organisation's
 handle, while the organisation's `public_page` is `on` — human and
-organisation handles share one namespace (§6.24), so the route names
+organisation handles share one namespace (§6.24), so the address names
 one or the other. An owner of the organisation sets `public_page`
 (`off` by default, `on`) with `PATCH /orgs/{org}` (§6.26). The page
 shows the `display_name`, the `handle` and the organisation's projects
@@ -12021,11 +12014,12 @@ whose own `public_page` is `on`, each with a link to its page. The
 avatar is not on it, since a page carries no image (below). The
 organisation's members are never shown: who belongs to it is not
 public, whatever its page says; a project's page still shows its own
-members by their own choice (above). Without `public_page: on` the route
+members by their own choice (above). Without `public_page: on` the address
 answers as for an unknown handle (below).
 
-**What is never served.** A page answers one uniform `not_found`,
-before any ETag is considered, while it is off; for an unknown name;
+**What is never served.** A page answers the app shell (§16.11), the
+one answer of every path that names nothing, before any ETag of the
+page is considered, while it is off; for an unknown name;
 for an `archived` project; for a target hidden by moderation (§16.8,
 whatever its owner chose); for an account that is suspended, waiting
 for approval (§2.7.5) or deleted; for a suspended or deleted
@@ -12063,7 +12057,8 @@ font or image from anywhere (the hub has no public image store, §16.7).
 Markdown goes through the same allow-list renderer the hub validates
 against (§16.7), a third renderer kept in step with the other two:
 text nodes and links only, `href` values escaped as attributes and
-limited to `https` and `/#/` routes, every link with `rel="nofollow
+limited to `https` URLs and paths on this host that start with `/`
+(§16.11), every link with `rel="nofollow
 ugc"`. The landing and legal pages (§16.7) use the same renderer with
 §16.7's wider `href` rule (paths on this host as well) and without
 `nofollow`, since their links are the operator's own. Each page carries its own `<title>`, a `<meta
@@ -12073,25 +12068,32 @@ its absolute URL from `MAITY_PUBLIC_URL`. Answers carry
 `Cache-Control: public, max-age=60`, an `ETag`,
 `Content-Security-Policy: default-src 'none'; style-src
 'unsafe-inline'`, `X-Content-Type-Options: nosniff`, and never a
-cookie. When a page stops being public for any reason above, the hub
-deletes its stored file in the same transaction that changed the
-input, so the hub serves `not_found` at once; caches outside the hub
+cookie, and `Vary: Cookie`, as every answer on these addresses, the
+app shell's included (§16.11). When a page stops being public for any
+reason above, the hub deletes its stored file in the same transaction
+that changed the input, so the hub serves the app shell at once; caches outside the hub
 may keep it for up to 60 seconds, as for the public swarm page (§6.22).
 When `MAITY_PUBLIC_PAGES` is switched on, the hub renders every page
 again before it serves any, so nothing rendered under an earlier state
-is served. The rate limit is the badge's bucket (§6.20). The join host
-answers `not_found`.
+is served. The rate limit is the badge's bucket (§6.20), for the
+static page only. The join host answers `not_found`.
 
 **The dashboard** offers `public_page` and `public_about` in the
 project's settings to its namespace owner (to an organisation's owners
 for its projects), `public_page` in an organisation's settings to its
 owners, and `public_profile` and `public_bio` in Your account, each with a link to the page and the
-note that it is public to everyone. The CLI has no command of its own
+note that it is public to everyone; on a project's pages and an
+account's or organisation's own view the dashboard offers **View public
+page** while the page is served. That link opens the address with
+`?as=public`: a `GET` with that query answers the static page whatever
+the session, where the page is served, and the app shell otherwise; the
+page's canonical link stays the bare address. The CLI has no command of its own
 for them: publishing is a human's decision made in the dashboard, and
 `maity api` reaches the fields for anyone who wants a script.
 
-**Search engines.** With public pages on, `robots.txt` (§16.7) also
-allows `/p/` and `/u/`, and `sitemap.xml` lists every public page with
+**Search engines.** With public pages on, `robots.txt` (§16.7) allows
+every path but the reserved first segments of §16.11, and `sitemap.xml`
+lists every public page at its canonical address with
 `<lastmod>` from the last change of its inputs (not from the interval
 rebuild), next to the root. The robots file and the sitemap follow the
 landing page as before for the root; public pages are listed whether or
@@ -12132,6 +12134,131 @@ organisation goes through a report on one of its projects (§16.8,
   organisation.
 - A deleted organisation is not listed.
 - The read is not an event, as §16.1.
+
+### 16.11 Paths and the app shell
+
+The maintainer's decision of 2026-10-29 (`context/routing.md`): the
+dashboard is addressed by paths, as a forge is, and a public page has
+one canonical address, the same one a member opens. Maity is alpha, so
+the old forms are removed rather than carried: the hash routes
+(`/#/…`), `/app`, `/p/…`, `/u/…` and `/s/…` are not served, and no
+redirect or alias leads from them. This section is the one place for
+the rules; the sections that write a dashboard address point here.
+
+**Hub paths.** On the public host the hub answers these itself, as the
+sections named say; a path under one of them that names nothing is
+`not_found` (§1.3), never the app shell:
+
+| Path | What | § |
+|---|---|---|
+| `/api/…` | the API (`/api/v1/…`, including `/help`, `/openapi.json`, `/health`) | 1.1 |
+| `/assets/…` | the dashboard's static files: scripts, stylesheets, `brand/` | below |
+| `/join/{token}` | the join page | 3.2 |
+| `/r/{token}` | always `not_found`: there is no pairing page | 15.2 |
+| `/mail/…` | the pages behind the links in mails | 2.6.3, 2.7.1, 2.9, 18.6 |
+| `/badge/…` | the project badge | 6.20 |
+| `/robots.txt`, `/sitemap.xml`, `/sitemap-<n>.xml` | for search engines | 16.7, 16.9 |
+| `/impressum`, `/privacy`, `/terms`, each with `/<version>` | the legal pages | 16.7.1 |
+
+The join host is unchanged (§1.1): it serves no app shell.
+
+**The app shell.** Every other `GET` on the public host answers the
+dashboard's `index.html`, the app shell: `200`, `text/html`,
+`Cache-Control: no-cache` (it is small and must follow a deploy at
+once), `X-Content-Type-Options: nosniff`, `Content-Security-Policy:
+default-src 'self'` (§1.1), `X-Robots-Tag: noindex`, and no cookie set.
+The shell names its files by absolute paths under `/assets/`, so they
+load at any depth of the address; how the dashboard's `file://` fixture
+mode, a development tool, finds them (a `<base>`, a development server)
+is the web owner's to settle in `web/`. Only the built files under
+`/assets/` are served; the repository's `web/` tree as such is not, so
+an old file path (`/js/…`, `/css/…`) and the development files
+(`web/fixtures/`, `web/tools/`) are never reachable — such a path gets
+the shell like any other. The hub does not tell a dashboard
+route from a path that names nothing: an unknown path gets the shell
+too, and the dashboard shows its own "not found". Any other method on
+such a path is `not_found`. Two kinds of path are not always the
+shell: `/`, which is the landing page for a visitor without a valid
+session while the landing page is enabled (§16.7), and the public
+pages (below).
+
+**The dashboard's paths.** The dashboard routes with the History API
+(`pushState`, `popstate`); a link inside it is an ordinary `href` to a
+path. A project is `/<owner>/<slug>` (its inbox), and its views are
+`/<owner>/<slug>/<view>…`; the top-level routes stand beside them. The
+full table is `web/README.md`'s; these are the paths the hub writes or
+names:
+
+| Path | What |
+|---|---|
+| `/` | the dashboard's home with a valid session; without one the landing page or the login page (§16.7) |
+| `/login`, `/register` | the login and registration pages; both take `?next=<path>` (§2.6.5) |
+| `/sign-in/code#c=<code>` | the login page with a device code filled in; the code in the fragment, never sent to the hub (§2.6.2) |
+| `/sign-in/second-factor` | the second factor after a first one (§2.8.2) |
+| `/invite/<token>` | an invitation (§3.4) |
+| `/requests/<id>` | a personal request (§7, §18) |
+| `/settings/forge` | the account's forge settings (§11.4) |
+| `/account/…`, `/admin…`, `/all`, `/chats…`, `/new`, `/runners`, `/observe/<owner>/<slug>`, `/explore`, `/inbox`, `/notifications` | the dashboard's own pages |
+| `/<handle>` | a person's or an organisation's address; its public page where one is served (below) |
+| `/<owner>/<slug>` | a project; its public page where one is served (below) |
+| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview`, `members/<id>…`, `org`, `chat/<id>`, `messages`, `ticker`, `swarm` (§6.22), `runners`, `why`, `settings`, `jour-fixe/<round id>` (§20), `message`; a view added later joins this list |
+
+**Public pages at their canonical address.** `/<owner>/<slug>` and
+`/<handle>`, where the first segment is not reserved (below):
+
+- Without a valid session (§16.7's definition: a `maity_session` cookie
+  that names a live session), the hub answers the static page of §16.9
+  where that page is served — indexable, with its `<link
+  rel="canonical">` to this address and its meta description — and the
+  app shell everywhere else: a page that is not public, an unknown
+  name, an old name, a page off on the instance. Never another status,
+  so the answer does not tell whether a project or a person exists; the
+  dashboard then asks for sign-in.
+- With a valid session the path is always the app shell: the dashboard
+  shows the project, or its own view of the person or organisation, and
+  offers **View public page** where a page is served, which opens the
+  address with `?as=public` (§16.9).
+- Both answers carry `Vary: Cookie`.
+
+**Reserved first segments.** A human's or an organisation's handle
+(§6.24, §6.26) is never a first segment the hub or the dashboard uses,
+now or later: `invalid`, `details.fields.handle: "reserved"` at
+registration (§2.7.4), `maity-hub owner create`, `POST /orgs` and every
+rename. The list:
+
+`account`, `admin`, `agents`, `all`, `api`, `assets`, `badge`, `chats`,
+`components`, `explore`, `health`, `impressum`, `imprint`, `inbox`,
+`invite`, `join`, `login`, `mail`, `new`, `notifications`, `observe`,
+`privacy`, `register`, `requests`, `runners`, `settings`, `sign-in`,
+`terms`
+
+`agents`, `components`, `health` and `imprint` name no route today and
+are reserved so that they stay free for one (an agents directory, a
+component gallery, a health page, an English imprint address).
+
+One-letter segments (`r`) and names with a dot (`robots.txt`,
+`sitemap.xml`) cannot be handles anyway (§6.24's syntax). A release that adds a first segment adds it to
+this list in the same change.
+
+**Reserved second segments.** A slug is never one of the project views
+above (`board`, `inbox`, `overview`, `chat`, `swarm`, `settings`, …) or
+a literal word after `{slug}` in an API route (§6.25, "The slug"), so
+that `/<owner>/<word>` stays free for pages of an owner's own.
+
+**When the list grows.** A release that reserves a word a handle, an
+alias, a slug or a project alias already holds does not start: the hub
+names each holder to the operator, who renames it first, as the
+namespace migration did (§6.25).
+
+**Every address the hub writes** is a path of this section on
+`MAITY_PUBLIC_URL`, never a fragment: invitation URLs (§3.4), the
+device code URL (§2.6.2), the second-factor step (§2.8.2), the forge
+settings after linking an installation (§11.4), the badge snippet's
+link to `/<owner>/<slug>/overview` (§6.20), the `url` of notifications
+and mail items (§18), the ticker's jour fixe item (§20), the canonical
+link of a public page and the sitemap (§16.7, §16.9). A `next` is a
+path of this section (§2.6.5). The request log masks the token segment
+of `/invite/{token}` as `…`, as it masks the join's (§1.1).
 
 ## 17. The change ticker
 
@@ -12478,7 +12605,7 @@ narrow the audience a contract change must reach.
 
 ```json
 { "type": "note", "text": "Staging runs 0.3.0-rc.2 from now on; the old database is gone.",
-  "url": "https://maity.team/#/oliver/maity/board?task=tsk-0040",
+  "url": "https://maity.team/oliver/maity/board?task=tsk-0040",
   "to": "computed", "areas": ["hub/"] }
 ```
 
@@ -12506,7 +12633,7 @@ A field given for a type that does not take it is `invalid`
 
 ```json
 { "type": "release", "text": "Released 0.3.0: first public release",
-  "url": "https://maity.team/#/oliver/maity/board?task=tsk-0050", "release_task_id": "tsk-0050",
+  "url": "https://maity.team/oliver/maity/board?task=tsk-0050", "release_task_id": "tsk-0050",
   "to": ["trust:admin", "area:cli/"] }
 ```
 
@@ -12928,14 +13055,14 @@ no membership.
       "title": "Agent A in agent-a",
       "content": "The exchange now refuses a second redemption; tests are green, can you",
       "target": { "type": "conversation", "id": "agt-a" },
-      "url": "https://maity.team/#/oliver/maity/chat/agt-a",
+      "url": "https://maity.team/oliver/maity/chat/agt-a",
       "read": false, "redacted": false },
     { "id": "ntf-4231", "seq": 4231, "kind": "inbox", "at": "2026-10-22T12:41:12Z",
       "project": { "slug": "maity", "full_name": "oliver/maity", "name": "Maity" },
       "actor": { "member_id": "agt-b", "display_name": "Agent B", "avatar_url": "/api/v1/avatars/agt-b?v=e4d9" },
       "title": "Agent B asks: Which mail library for the hub?",
       "target": { "type": "request", "id": "req-0012" },
-      "url": "https://maity.team/#/oliver/maity/inbox/req-0012",
+      "url": "https://maity.team/oliver/maity/inbox/req-0012",
       "read": true, "redacted": false }
   ],
   "next_cursor": null,
@@ -13127,7 +13254,7 @@ rules that make a position safe to resume from:
   and `ntf-acr-<n>` for one from an account record; account-record
   items carry `record` (`acr-<n>`) instead of `seq`. A personal request's
   item has `target: {type: "request", id}`, `project: {slug, name,
-  member}` and the URL of the personal inbox (`/#/requests/<id>`), which
+  member}` and the URL of the personal inbox (`/requests/<id>`, §16.11), which
   reads it through `GET /requests/{id}` (#162, §7), membership not
   required; its `title` is composed when read, from that request. `title` is
   composed from fields the human may read, in the human's language (§6.2),
@@ -14641,7 +14768,7 @@ the work starts.
 **The ticker** (§17) gets one item when a report becomes final, of
 `type: "jour_fixe"`: `text` `Jour fixe <date>: <n> answers, <m>
 proposals (<d> decided, <o> to the owner)`, `url` the round's dashboard
-address relative to the hub (`/#/p/<slug>/jour-fixe/<round id>`), `dedupe_key` `jour_fixe:<round id>`, audience `all` alone, no
+address relative to the hub (`/<owner>/<slug>/jour-fixe/<round id>`, §16.11), `dedupe_key` `jour_fixe:<round id>`, audience `all` alone, no
 wake (§17.5). It is written only when the project's ticker is enabled.
 There is no item for the opening and none for a skipped or missed
 round.

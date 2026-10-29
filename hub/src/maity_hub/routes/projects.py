@@ -142,27 +142,21 @@ class MemoryIn(Strict):
 PROVIDERS = ("none", "keep-the-why")
 
 
-def _provider(keep_the_why: bool | None, memory: MemoryIn | None) -> bool | None:
-    """The memory provider a body names as `keep_the_why`'s boolean, or None when it
-    names none (§6.1): `memory.provider` and its alias must agree."""
-    errors: dict[str, str] = {}
+def _provider(memory: MemoryIn | None) -> bool | None:
+    """Whether the body names `keep-the-why` as the memory provider, or None when it names
+    none (§6.1)."""
     named = None if memory is None else memory.provider
-    if named is not None and named not in PROVIDERS:
-        errors["memory.provider"] = "unknown_provider"
-    elif (
-        named is not None and keep_the_why is not None and (named == "keep-the-why") != keep_the_why
-    ):
-        errors["keep_the_why"] = "conflicts_with_memory"
-    if errors:
-        raise invalid(errors)
-    return keep_the_why if named is None else named == "keep-the-why"
+    if named is None:
+        return None
+    if named not in PROVIDERS:
+        raise invalid({"memory.provider": "unknown_provider"})
+    return named == "keep-the-why"
 
 
 class ProjectCreate(Strict):
     slug: str = Field(pattern=SLUG_PATTERN)
     name: str = title()
     repository: RepositoryIn | None = None
-    keep_the_why: bool | None = None
     memory: MemoryIn | None = None
     policy: PolicyIn | None = None
 
@@ -171,7 +165,6 @@ class ProjectPatch(Strict):
     slug: str | None = Field(default=None, pattern=SLUG_PATTERN)  # a rename (§6.25)
     name: str | None = title(default=None)
     repository: RepositoryIn | None = None
-    keep_the_why: bool | None = None
     memory: MemoryIn | None = None
     state: str | None = None
     state_note: str | None = markdown(default=None)
@@ -229,6 +222,9 @@ def _apply_policy(
         if not 0 <= change.max_placements <= policy.MAX_PLACEMENTS_MAX:
             errors["policy.max_placements"] = "out_of_range"
         proposed["max_placements"] = change.max_placements
+    if "keep_the_why" in change.model_fields_set and change.keep_the_why is None:
+        # Only `required` or `optional` (§6.1): a null would clear the human's value.
+        errors["policy.keep_the_why"] = "unknown"
     if change.keep_the_why == "required" and not memory_on:
         errors["policy.keep_the_why"] = "no_memory_provider"
     if change.member_agents_max is not None:
@@ -397,7 +393,7 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
 @router.post("/projects")
 def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -> JSONResponse:
 
-    named = _provider(body.keep_the_why, body.memory)
+    named = _provider(body.memory)
     memory_on = True if named is None else named  # the default provider is keep-the-why (§6.1)
     words = namespace.app_words(request.app)
     owner_id = caller.human_id
@@ -558,7 +554,7 @@ def patch_project(
             # upgraded with the ticker on has no start yet): merges count from now.
             if now_on and (not was_on or ticker.merges_since(conn, project.id) is None):
                 ticker.switched_on(conn, project.id)
-        provider = _provider(body.keep_the_why, body.memory)
+        provider = _provider(body.memory)
         memory_on = project.keep_the_why if provider is None else provider
         new_policy = None
         if "policy" in given and body.policy is not None:
@@ -804,6 +800,8 @@ HUMANS_ONLY_POLICY = {
     "merged_closes",  # set by a human with project:admin (§6.1)
     "member_agents",  # who may bring agents into the project (§3.1, §6.1)
     "member_agents_max",
+    "keep_the_why",  # whether the project requires Keep the Why (§6.23)
+    "keep_the_why_defaults",
 }
 
 

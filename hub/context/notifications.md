@@ -241,6 +241,70 @@ answered `False` and failed closed).
   transaction.
 - A lock on the human's row: it would not serialize two accounts racing for one address.
 
+## A lock row holds the address's HMAC, never the address
+
+**Id:** 25f27b8d-6405-400f-b2f0-c561a4dce360
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the schema check of #607, which found that `address_lock` and `registration_lock` kept a row per address after the account deletion, while docs/api.md §2.9 says the addresses are deleted; the coordinator's ruling on the card (an HMAC, a stored pepper without an instance key, made as similar keys are; migration 0085)
+**Revisit when:** something has to read the address back from a lock row, or the hub runs replicas that may hold different instance keys
+
+`address_lock` and `registration_lock` are keyed by `digest`, the
+HMAC-SHA256 of the normalized address (`addresses.lock_key`). The key is
+derived from `MAITY_SECRET_KEY` (HKDF, purpose `address.lock`) when it is
+set, else it is the random pepper `address.lock_pepper` in
+`instance_secret`, which `addresses.prepare` makes at first use in a
+transaction of its own, as the notification positions' key is made; the
+routes that lock call it before their transaction. Every caller passes the
+instance's `secret_key`, with no default: two callers on different keys
+would give one address two rows, and the lock would serialize nothing.
+The instance-wide registration budget's key (`BUDGET_LOCK`) goes through
+the same function. In addition, an account deletion removes the lock rows
+of the account's addresses (`addresses.forget_locks`): the `address_lock`
+row of each, and the `registration_lock` row where no pending
+registration needs it; a row is made again at its next use. A deletion
+can remove a row between the insert that found it and another caller's
+lock, whose `SELECT … FOR UPDATE` then finds nothing under READ
+COMMITTED; `take_lock` runs the insert and the lock once more, and a
+second empty read fails loudly rather than going on unlocked. Keeping the
+rows instead was rejected: with the pepper in the same database a row
+confirms a guessed address.
+
+**Limit:** without `MAITY_SECRET_KEY` the pepper sits unsealed in
+`instance_secret`, in the same database as the digests. A dump of the
+lock tables alone gives no address back; a dump of the whole database
+does, for a guessed address, by trying. That is why the deletion removes
+the account's rows too: a remaining digest would be pseudonymous under
+the pepper, not anonymous. With the instance key set, the key never
+touches the database.
+
+**A key change:** setting, changing or removing `MAITY_SECRET_KEY` gives
+every address a new digest. The old rows are orphans and harmless, since
+nothing reads them; the pepper is removed once a key is set (`prepare`).
+While callers run on different keys (a rollout that mixes them), the lock
+serializes nothing and only the unique constraint on
+`notification_settings.address_normalized` catches a second claim: both
+`claim_verified` and `verify` answer it as a lost claim or a dead link,
+never an error.
+
+**Reason:** the rows are only locks. Nothing reads their value, so a
+digest serves equally, and no address outlives its account, nor stays
+for good because someone once started a registration. A missing key is
+an error, not a weaker key.
+
+**Rejected alternatives:**
+- Deleting the deleted account's lock rows instead of keying them by a
+  digest: the addresses of people who never got an account would stay in
+  clear. The deletion does it in addition.
+- A plain SHA-256 of the address: an address is guessable, so a dump of
+  the table would give the addresses back by trying.
+- Creating the pepper inside the lock: the lock runs in the caller's
+  transaction, and two first uses would make one of them fail.
+- Making the pepper in migration 0085: a row a migration makes is gone
+  after the table is emptied, and nothing would make it again; the
+  tests' server databases, emptied between tests, showed it at once.
+
 ## Notification mail is planned per human once a minute from the derived items, each item mailed once; a human whose notifications did not move is not derived again
 
 **Id:** de75f59b-21f5-4a26-8ab4-9819c23c6228
