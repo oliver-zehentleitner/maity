@@ -9918,7 +9918,7 @@ contract; until then nothing else in this section changes.
 | GET, PATCH | `/admin/settings/legal` | `instance:admin`, human only | 16.7.1 |
 | POST | `/admin/settings/legal/preview?page=…` | `instance:admin`, human only | 16.7.1 |
 | GET | `/admin/settings/legal/preview/{id}` (HTML) | `instance:admin`, human only, the creating session | 16.7.1 |
-| GET | `/legal` | none | 16.7.1 |
+| GET | `/legal` | — | 16.7.1 |
 | GET | `/admin/registrations` | `instance:admin`, human only | 16.4 |
 | POST | `/admin/registrations/{id}/approve`, `/admin/registrations/{id}/reject` | `instance:admin`, human only | 16.4 |
 | DELETE | `/admin/registrations/blocks/{address}` | `instance:admin`, human only | 16.4 |
@@ -11807,8 +11807,8 @@ calling session and never to the setting: `201` with `{id, url,
 expires_at}`, `url` the path under the API base
 (`/api/v1/admin/settings/landing/preview/<id>`). The dashboard opens
 `url` with `?lang=<tag>` in a new tab (without `lang` the draft's
-`default_language`; a language the draft has no page for falls back as
-on `/`); that `GET` is a
+`default_language`; a language the draft has no page for falls back to
+that `default_language`, without reading `Accept-Language`); that `GET` is a
 top-level navigation with the session cookie and answers the HTML the
 hub would serve at `/` for that language, `text/html`, `Cache-Control:
 no-store`, `X-Robots-Tag: noindex` and the served page's own
