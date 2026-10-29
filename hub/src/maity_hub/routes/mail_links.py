@@ -20,6 +20,7 @@ from maity_hub import tables as t
 from maity_hub.auth import second_factor_reset
 from maity_hub.db import retrying
 from maity_hub.deps import engine_of, settings_of
+from maity_hub.mail import address as addresses
 from maity_hub.notifications import preferences, tokens
 from maity_hub.notifications.preferences import KINDS
 
@@ -189,9 +190,12 @@ def verify_page(token: str, request: Request) -> HTMLResponse:
 @page_router.post("/mail/verify/{token}")
 def verify_confirm(token: str, request: Request) -> HTMLResponse:
     hub = settings_of(request)
+    addresses.prepare(engine_of(request), hub.secret_key)  # before the lock's transaction
     with engine_of(request).begin() as conn:
         words = _WORDS[_language(conn, request, token)]
-        if not preferences.verify(conn, token, hub.mail.signing_key, hub.public_url):
+        if not preferences.verify(
+            conn, token, hub.mail.signing_key, hub.public_url, secret_key=hub.secret_key
+        ):
             return _dead(words)
         return _page(words["verify_title"], words["verify_done"])
 

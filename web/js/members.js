@@ -50,9 +50,11 @@ window.Maity = window.Maity || {};
     if (err.code === "forbidden" && err.details && err.details.reason === "owner_only") {
       return { message: "only an owner may grant trust owner or admin or the role proxy, or lower or remove an owner" };
     }
-    // §6.25: the person whose namespace holds the project stays its owner.
+    // §6.25, §6.26: the person whose namespace holds the project, and every
+    // owner of the organisation that holds it, stays an owner here.
     if (err.code === "namespace_owner") {
-      return { message: "the project lives in this person's namespace, so they stay an owner; transfer it to someone else first (Project settings)" };
+      return { message: "the project lives in this person's namespace, or they own the organisation it belongs to, so they stay an owner; "
+        + "transfer the project first (Project settings), or change their role in the organisation" };
     }
     const fields = err.code === "invalid" && err.details && err.details.fields;
     if (!fields) return err;

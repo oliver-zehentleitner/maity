@@ -64,12 +64,14 @@ class Completion:
     csrf: str | None = None
 
 
-def claim_address(conn: Connection, normalized: str, human_id: str) -> bool:
+def claim_address(
+    conn: Connection, normalized: str, human_id: str, *, secret_key: bytes | None
+) -> bool:
     """Write the address as the account's verified address (§18.4), unique across the
     accounts; False when another account holds it."""
     from maity_hub.notifications import preferences
 
-    return preferences.claim_verified(conn, normalized, human_id)
+    return preferences.claim_verified(conn, normalized, human_id, secret_key=secret_key)
 
 
 def admitted(
@@ -131,6 +133,7 @@ def complete(
     terms_seen: str | None,
     terms_accepted: bool,
     source: str,
+    secret_key: bytes | None,
     user_agent: str | None = None,
 ) -> Completion:
     """§2.7.1 step 6, in its order. The caller has checked the link's signature and
@@ -147,7 +150,7 @@ def complete(
         return Completion("gone")
     from maity_hub.routes.registration import lock_address
 
-    lock_address(conn, found.address_normalized)  # first: the claim's lock (§2.7.1)
+    lock_address(conn, secret_key, found.address_normalized)  # first: the claim's lock (§2.7.1)
     pending = conn.execute(
         select(t.pending_registration).where(t.pending_registration.c.id == pending_id)
     ).first()
@@ -185,7 +188,7 @@ def complete(
         return Completion("invalid", fields=errors)
     # The instance's hourly budget: one lock every completion takes, after its address's
     # and held until the account exists, so two addresses never both take the last place.
-    lock_address(conn, BUDGET_LOCK)
+    lock_address(conn, secret_key, BUDGET_LOCK)
     if _registered_last_hour(conn, now) >= resolved.value("max_new_accounts_per_hour"):
         return Completion("later")
     human_id = new_id("human")
@@ -210,7 +213,7 @@ def complete(
     except IntegrityError:  # the handle taken meanwhile, after the check above
         made.rollback()
         return Completion("invalid", fields={"handle": "taken"})
-    if not claim_address(conn, normalized, human_id):
+    if not claim_address(conn, normalized, human_id, secret_key=secret_key):
         made.rollback()
         _void(conn, pending.id, now)  # a loser: as an expired link, never why (§2.7.1)
         return Completion("gone")
