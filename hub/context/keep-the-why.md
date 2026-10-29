@@ -106,8 +106,10 @@ reminder to an instance with an open session, files the owner's request 30
 minutes after the deadline, and withdraws that request when its cause has ended
 (the instance revoked or replaced, the membership ended, the profile deleted,
 the policy `optional`, the provider `none`). A change of the policy or the
-provider runs it at once. A new owner of the profile gets the request, the
-old owner's is withdrawn.
+provider runs it at once. A resume runs it for its own instance once the new
+session is open and any pause is cleared, so a reminder that fell due while no
+session was open comes at that resume, as §6.23 asks. A new owner of the
+profile gets the request, the old owner's is withdrawn.
 
 **Reason:** the causes that end a request live in many modules (credentials,
 memberships, profile deletion, ownership); one function that compares the
@@ -120,6 +122,10 @@ wait for the next sweep, at most a minute.
   missed one leaves the owner with a request about something that is over.
 - Remind at the next resume only: an agent that is already working would never
   hear of its deadline.
+- Leave a missed reminder to the sweep after the next resume: the agent would
+  read its packet and start working before the reminder woke it, up to a
+  minute later; the review of the commitment pull request asked for it at the
+  resume itself.
 
 ## The why on a report is validated by the hub in code, and only its shape is checked
 

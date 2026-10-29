@@ -168,6 +168,7 @@ def test_the_reminder_goes_to_the_open_session_once(
     [reminder] = _events(migrated, "keep_the_why_reminder")
     assert reminder.audience == [f"instance:{agent.id}#{agent.instance}"]
     assert reminder.payload["instance"] == agent.instance
+    assert reminder.payload["project"] == "maintainer/maity"  # the full name (§6.25)
     assert reminder.payload["acknowledge_by"] is not None
     assert _notices(owner) == []  # the owner hears 30 minutes later
 
@@ -251,3 +252,46 @@ def test_a_paused_agent_is_not_reminded(
     _due(migrated, agent, timedelta(minutes=1))
     commitment.sweep(migrated)
     assert _events(migrated, "keep_the_why_reminder") == []
+
+
+def test_the_acknowledgement_reaches_the_owner_and_the_admins(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    agent = flow.agent(make_client, owner)
+    _block(agent)
+    assert agent.post("/me/keep-the-why/ack", {}).status_code == 200
+    [acknowledged] = _events(migrated, "keep_the_why_acknowledged")
+    # The admins by trust since trust x role (§2.3, §8.2), never the retired role token.
+    assert acknowledged.audience == [f"member:{owner.id}", "trust:admin"]
+
+
+def test_a_reminder_missed_without_an_open_session_comes_at_the_next_resume(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    from maity_hub import commitment
+
+    agent = flow.agent(make_client, owner)
+    _block(agent)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.agent_session)
+            .where(t.agent_session.c.credential_id == agent.credential_id)
+            .values(live=None)  # an at-most-one marker: ended is null (persistence)
+        )
+    _due(migrated, agent, timedelta(minutes=1))
+    commitment.sweep(migrated)
+    assert _events(migrated, "keep_the_why_reminder") == []  # nobody to wake
+    _block(agent)  # the next resume
+    [reminder] = _events(migrated, "keep_the_why_reminder")
+    assert reminder.audience == [f"instance:{agent.id}#{agent.instance}"]
+    with migrated.connect() as conn:
+        live = conn.execute(
+            select(t.agent_session.c.id).where(
+                t.agent_session.c.credential_id == agent.credential_id,
+                t.agent_session.c.live.is_(True),
+            )
+        ).scalar()
+    assert reminder.payload["session_id"] == live  # the session that just started
+    _block(agent)
+    commitment.sweep(migrated)
+    assert len(_events(migrated, "keep_the_why_reminder")) == 1  # once per commitment

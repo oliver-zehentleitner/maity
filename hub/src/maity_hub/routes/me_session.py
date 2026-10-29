@@ -285,6 +285,9 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
             )
         availability.reconcile_ids(conn, [mine.id], actor)
         mine = _own_membership(conn, caller)  # with the pause cleared
+        if caller.credential_id:
+            # A reminder that fell due while no session was open comes now (§6.23).
+            commitment.reconcile(conn, mine.project, now, caller.credential_id)
         packet = _packet(conn, mine, caller, body, cursor, started, session, settings)
     return packet
 

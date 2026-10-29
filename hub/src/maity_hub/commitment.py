@@ -14,7 +14,7 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, select, update
 
-from maity_hub import clock, instances, policy
+from maity_hub import clock, instances, namespace, policy
 from maity_hub import tables as t
 from maity_hub.events import emit, lock_project, transaction
 
@@ -95,7 +95,7 @@ def unconfirmed(project: Any, instances: list[dict[str, Any]]) -> bool | None:
 
 def audience(conn: Connection, project_id: str, agent_id: str) -> list[str]:
     """`keep_the_why_acknowledged` (§8.2): the agent's owner when a member of the project,
-    and the admins."""
+    and the admins (`trust:admin`, §2.3)."""
     owner = conn.execute(
         select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == agent_id)
     ).scalar()
@@ -109,7 +109,7 @@ def audience(conn: Connection, project_id: str, agent_id: str) -> list[str]:
             )
         ).first()
     )
-    return ([f"member:{owner}"] if is_member else []) + ["role:admin"]
+    return ([f"member:{owner}"] if is_member else []) + ["trust:admin"]
 
 
 def confirmed(conn: Connection, project: Any, credential: Any, agent_id: str) -> None:
@@ -120,30 +120,31 @@ def confirmed(conn: Connection, project: Any, credential: Any, agent_id: str) ->
     withdraw_hub_notice(conn, credential.ktw_request_id, "the instance confirmed")
 
 
-def _outstanding(conn: Connection, project_id: str) -> list[Any]:
+def _outstanding(conn: Connection, project_id: str, credential_id: str | None) -> list[Any]:
     """The project's active instances that have not confirmed and have a deadline,
-    with what the hub needs to know about their member."""
-    return list(
-        conn.execute(
-            select(
-                t.credential,
-                t.membership.c.id.label("member_row"),
-                t.membership.c.agent_id.label("agent_id"),
-                t.membership.c.active.label("membership_active"),
-                t.membership.c.paused_since.label("member_paused"),
-                t.agent_profile.c.owner_id.label("owner_id"),
-                t.agent_profile.c.handle.label("handle"),
-                t.agent_profile.c.deleted_at.label("profile_deleted"),
-            )
-            .join(t.membership, t.membership.c.id == t.credential.c.membership_id)
-            .join(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
-            .where(
-                t.membership.c.project_id == project_id,
-                t.credential.c.ktw_acknowledged_at.is_(None),
-                t.credential.c.ktw_acknowledge_by.isnot(None),
-            )
+    with what the hub needs to know about their member; one instance when named."""
+    query = (
+        select(
+            t.credential,
+            t.membership.c.id.label("member_row"),
+            t.membership.c.agent_id.label("agent_id"),
+            t.membership.c.active.label("membership_active"),
+            t.membership.c.paused_since.label("member_paused"),
+            t.agent_profile.c.owner_id.label("owner_id"),
+            t.agent_profile.c.handle.label("handle"),
+            t.agent_profile.c.deleted_at.label("profile_deleted"),
+        )
+        .join(t.membership, t.membership.c.id == t.credential.c.membership_id)
+        .join(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
+        .where(
+            t.membership.c.project_id == project_id,
+            t.credential.c.ktw_acknowledged_at.is_(None),
+            t.credential.c.ktw_acknowledge_by.isnot(None),
         )
     )
+    if credential_id is not None:
+        query = query.where(t.credential.c.id == credential_id)
+    return list(conn.execute(query))
 
 
 def _request_owner(conn: Connection, request_id: str) -> tuple[str | None, str | None]:
@@ -153,16 +154,22 @@ def _request_owner(conn: Connection, request_id: str) -> tuple[str | None, str |
     return (None, None) if row is None else (row.status, row.to_human)
 
 
-def reconcile(conn: Connection, project: Any, now: datetime | None = None) -> None:
+def reconcile(
+    conn: Connection,
+    project: Any,
+    now: datetime | None = None,
+    credential_id: str | None = None,
+) -> None:
     """Bring the project's outstanding commitments in line with what the hub knows
     (§6.23): the reminder at the deadline, the owner's request 30 minutes later, and the
-    withdrawal of that request when what it reports has ended. Called by the sweep, and by
-    a change of the policy or the provider."""
+    withdrawal of that request when what it reports has ended. Called by the sweep, by a
+    change of the policy or the provider, and by a resume for its own instance, so that a
+    reminder missed while no session was open comes at the next resume (§6.23)."""
     from maity_hub.routes.requests import file_hub_notice, withdraw_hub_notice
 
     now = now or clock.now()
     on = required(project)
-    for row in _outstanding(conn, project.id):
+    for row in _outstanding(conn, project.id, credential_id):
         ended = (
             not on
             or row.revoked_at is not None
@@ -196,7 +203,7 @@ def reconcile(conn: Connection, project: Any, now: datetime | None = None) -> No
             and row.paused_since is None
         ):
             payload = {
-                "project": project.slug,
+                "project": namespace.full_name(conn, project),  # §6.25
                 "instance": row.instance,
                 "session_id": session,
                 "acknowledge_by": clock.rfc3339(due),
