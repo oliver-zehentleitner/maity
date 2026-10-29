@@ -73,6 +73,44 @@ forge:
     existingSecret: ""
     key: github-token
 
+secretKey:
+  # The instance key for secrets the hub stores at rest (MAITY_SECRET_KEY: 32 random bytes, base64; docs/api.md §16.2, §17.4):
+  # the forge webhook's secret, stored SMTP passwords, second-factor secrets. It comes from a Secret that already exists in the
+  # release namespace, and its value never passes through the chart. Empty: none is set, and the features that need it refuse
+  # (`secret_key_missing`). Keep a copy outside the cluster: a new key leaves everything sealed with the old one unreadable.
+  # When you move it here from `extraEnv`, drop it from `extraEnv` in the same upgrade (the chart renders both; the later wins).
+  # A Secret created with the first README holds the key as `MAITY_SECRET_KEY`: set `secretKey.key: MAITY_SECRET_KEY` then.
+  existingSecret: ""
+  key: secret-key
+
+mail:
+  # The instance's outgoing mail (docs/api.md §16.2). Nothing is rendered until a value is set: without
+  # `signingKeySecret` the hub sends no mail at all, and the settings below only take effect with it.
+  # The environment wins over the admin settings (`set_by_environment`).
+  #
+  # The signing key (MAITY_MAIL_SIGNING_KEY: 32 bytes or more, base64) signs the links in mails. It
+  # comes from a Secret that already exists in the release namespace, and its value never passes
+  # through the chart. Keep a copy: a new key makes every mailed link that is still out invalid.
+  signingKeySecret:
+    existingSecret: ""
+    key: mail-signing-key
+  # The SMTP server (MAITY_SMTP_*). Empty host: none of these is set, and the admin settings apply. With a host, port and
+  # tls always come from here (the defaults below included) and win over the admin settings (§16.2 `set_by_environment`).
+  # When you move these variables here from `extraEnv`, drop them from `extraEnv` in the same upgrade: the chart renders both,
+  # the names would appear twice in the container env, and the later one (`extraEnv`) wins.
+  host: ""
+  port: 587
+  # starttls, implicit or none (none only for a loopback host).
+  tls: starttls
+  username: ""
+  # Sender, optionally as `Name <address>` (MAITY_SMTP_FROM), and where replies go (MAITY_SMTP_REPLY_TO).
+  from: ""
+  replyTo: ""
+  # The Secret holding the SMTP password (MAITY_SMTP_PASSWORD). The password is never a value here.
+  passwordSecret:
+    existingSecret: ""
+    key: smtp-password
+
 migrate:
   # `maity-hub migrate` as a Helm hook Job before every install and upgrade;
   # the hub itself never migrates and refuses to serve an outdated schema.

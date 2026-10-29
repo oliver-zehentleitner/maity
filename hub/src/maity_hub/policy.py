@@ -40,6 +40,8 @@ CHOICES = {
     "badge": ("off", "members", "agents_online"),
     "subtasks": ("proposed", "direct"),
     "swarm_public": ("off", "on"),
+    "keep_the_why": ("required", "optional"),
+    "keep_the_why_defaults": ("adopt", "ask"),
     "merged_closes": ("notify", "auto"),
     "member_agents": ("off", "on"),
 }
@@ -75,6 +77,8 @@ KEPT_ON_PRESET = (
     "badge",
     "subtasks",
     "swarm_public",
+    "keep_the_why",
+    "keep_the_why_defaults",
     "jour_fixe",
     "jour_fixe_moderators",
     "takeover_window_minutes",
@@ -82,6 +86,14 @@ KEPT_ON_PRESET = (
     "member_agents",
     "member_agents_max",
 )
+
+
+def keep_the_why_effective(project: Any) -> str:
+    """`required` or `optional` (§6.23): what a human set, else `required` under the
+    provider `keep-the-why`; under `none` always `optional`."""
+    if not project.keep_the_why:
+        return "optional"
+    return str(project.keep_the_why_policy or "required")
 
 
 def filled(preset: str, owner_id: str) -> dict[str, Any]:
@@ -96,6 +108,8 @@ def filled(preset: str, owner_id: str) -> dict[str, Any]:
         "badge": "off",
         "subtasks": "proposed",
         "swarm_public": "off",
+        "keep_the_why": None,  # nobody set it: it follows the memory provider
+        "keep_the_why_defaults": "adopt",
         "jour_fixe": None,
         "jour_fixe_moderators": None,
         "takeover_window_minutes": WINDOW_DEFAULT,
@@ -128,6 +142,8 @@ def of(project: Any) -> dict[str, Any]:
         "badge": getattr(project, "badge", "off"),
         "subtasks": getattr(project, "subtasks", "proposed"),
         "swarm_public": getattr(project, "swarm_public", "off"),
+        "keep_the_why": keep_the_why_effective(project),
+        "keep_the_why_defaults": project.keep_the_why_defaults,
         "merged_closes": getattr(project, "merged_closes", "notify"),
         "jour_fixe": project.jour_fixe,
         "jour_fixe_moderators": project.jour_fixe_moderators,
@@ -138,7 +154,9 @@ def of(project: Any) -> dict[str, Any]:
 
 
 def columns(policy: dict[str, Any]) -> dict[str, Any]:
-    """The project columns of a policy object."""
+    """The project columns of a policy object. `keep_the_why_policy` is not one of them:
+    the object holds the effective value, and only a human's own setting is stored.
+    """
     return {
         "policy_preset": policy["preset"],
         "claim_policy": policy["claim_policy"],
@@ -157,6 +175,7 @@ def columns(policy: dict[str, Any]) -> dict[str, Any]:
         "badge": policy["badge"],
         "subtasks": policy["subtasks"],
         "swarm_public": policy["swarm_public"],
+        "keep_the_why_defaults": policy["keep_the_why_defaults"],
         "merged_closes": policy["merged_closes"],
         "jour_fixe": policy["jour_fixe"],
         "jour_fixe_moderators": policy["jour_fixe_moderators"],

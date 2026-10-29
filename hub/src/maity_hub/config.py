@@ -19,6 +19,10 @@ from maity_hub.mail.environment import MailEnvironment
 
 DEFAULT_DATABASE_URL = "sqlite:///maity-hub.db"
 DEFAULT_BIND = "127.0.0.1:8080"
+KTW_SKILL_SOURCE = (
+    "https://github.com/oliver-zehentleitner/keep-the-why/tree/latest/skills/keep-the-why"
+)
+KTW_SKILL_GUIDE = "https://keepthewhy.com/installation/"
 
 _WILDCARD_HOSTS = {"0.0.0.0", "::"}
 
@@ -83,6 +87,12 @@ class Settings:
     # says `inherit` (§15.3, §16): keep, stop, or stop_floor (stop, and a project's keep
     # is refused).
     on_runner_revoke: str = "keep"
+    # MAITY_KTW_SKILL_SOURCE: where the Keep the Why skill is published, as told to a
+    # joining agent (§6.23); an operator who mirrors the skill points it elsewhere.
+    ktw_skill_source: str = KTW_SKILL_SOURCE
+    # MAITY_KTW_SKILL_GUIDE: the skill's installation guide for every harness, the page an
+    # agent names to its human when `install` or `load` does not fit (§6.23).
+    ktw_skill_guide: str = KTW_SKILL_GUIDE
     # MAITY_REGISTRATION*, MAITY_TERMS_*: what the environment sets for registration
     # (§16.4); None where it leaves the instance admin to decide.
     registration: Any = None
@@ -148,9 +158,30 @@ class Settings:
             on_runner_revoke=parse_choice(
                 env, "MAITY_ON_RUNNER_REVOKE", ("keep", "stop", "stop_floor"), "keep"
             ),
+            ktw_skill_source=parse_skill_source(env.get("MAITY_KTW_SKILL_SOURCE", "")),
+            ktw_skill_guide=parse_skill_url(
+                "MAITY_KTW_SKILL_GUIDE", env.get("MAITY_KTW_SKILL_GUIDE", ""), KTW_SKILL_GUIDE
+            ),
             registration=parse_registration(env),
             sign_in_second_factor=parse_second_factor(env),
         )
+
+
+def parse_skill_source(value: str) -> str:
+    """Unset is the skill's published tree; anything but an https URL stops the hub."""
+    return parse_skill_url("MAITY_KTW_SKILL_SOURCE", value, KTW_SKILL_SOURCE)
+
+
+def parse_skill_url(name: str, value: str, default: str) -> str:
+    """Unset is `default`; anything but an https URL stops the hub. The value ends up in
+    an agent's instructions, so a `file:` or `javascript:` URL is refused."""
+    value = value.strip()
+    if not value:
+        return default
+    parts = urlsplit(value)
+    if parts.scheme != "https" or not parts.hostname or any(c.isspace() for c in value):
+        raise ConfigError(f"{name} must be an https URL")
+    return value
 
 
 def parse_github_app(env: dict[str, str]) -> GitHubApp | None:

@@ -14,7 +14,7 @@ from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.errors import ApiError, invalid
 
-KINDS = ("task", "maintenance_round", "release", "contract")
+KINDS = ("task", "maintenance_round", "release", "contract", "setup")
 LABELS = ("fix", "feature", "chore")
 STATUSES = ("proposed", "open", "in_progress", "blocked", "review", "done", "cancelled")
 CLOSED = ("done", "cancelled")

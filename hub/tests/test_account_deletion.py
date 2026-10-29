@@ -266,10 +266,10 @@ def test_a_newer_request_replaces_the_older(
     dead(pat, first, migrated)
     assert page(pat, second).status_code == 200
     with migrated.connect() as conn:
-        rows = conn.execute(
-            select(t.account_deletion).order_by(t.account_deletion.c.requested_at)
-        ).all()
-    assert [(r.live, r.withdrawn_by) for r in rows] == [(None, "replaced"), (True, None)]
+        rows = conn.execute(select(t.account_deletion)).all()
+    # Both requests carry the same frozen clock value, so no column orders them.
+    states = sorted(((r.live is True, r.withdrawn_by) for r in rows), key=lambda s: s[0])
+    assert states == [(False, "replaced"), (True, None)]
 
 
 def test_a_password_change_withdraws_the_request(
@@ -880,3 +880,55 @@ def test_a_profile_delete_racing_the_deletion_does_not_deadlock(
         assert finished(step) == "deleted"
         deletion.commit()
     assert deleted_at(migrated, pat.id) is not None
+
+
+def test_forge_links_and_sign_in_links_go_with_the_account(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """§2.9 "Ends access at once": the forge links with their pending state and token
+    (§11.4) and the pending sign-in links (§2.6.3), with the day's wrong-code count, go."""
+    admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    now = clock.now()
+    with migrated.begin() as conn:
+        conn.execute(
+            insert(t.email_sign_in).values(
+                nonce_hash="a" * 64, pending_hash="b" * 64, human_id=pat.id, address_epoch=1,
+                source="password", next_path="/", wrong_codes=0, created_at=now,
+                expires_at=now + timedelta(minutes=15),
+            )
+        )  # fmt: skip
+        conn.execute(
+            insert(t.email_sign_in_day).values(human_id=pat.id, day="2026-10-29", wrong_codes=2)
+        )
+        conn.execute(
+            insert(t.forge_link).values(
+                id="fgl-pat", human_id=pat.id, forge="github", installation_id=4711,
+                account_id=1, account_login="pat", account_type="User",
+                repository_selection="all", status="active", linked_at=now, checked_at=now,
+            )
+        )  # fmt: skip
+        conn.execute(
+            insert(t.forge_link_state).values(
+                state_hash="c" * 64, human_id=pat.id, session_hash="d" * 64,
+                expires_at=now + timedelta(minutes=10),
+            )
+        )  # fmt: skip
+        conn.execute(
+            insert(t.forge_token).values(
+                human_id=pat.id, forge="github", login="pat", token_sealed=b"sealed",
+                status="active", set_at=now, checked_at=now,
+            )
+        )  # fmt: skip
+    token = requested(pat, migrated)
+    assert press(pat, token).status_code == 200
+    with migrated.connect() as conn:
+        for table in (
+            t.email_sign_in,
+            t.email_sign_in_day,
+            t.forge_link,
+            t.forge_link_state,
+            t.forge_token,
+        ):
+            left = conn.execute(select(table).where(table.c.human_id == pat.id)).first()
+            assert left is None, table.name

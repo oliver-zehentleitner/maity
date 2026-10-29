@@ -16,11 +16,13 @@ from maity_hub import (
     avatars,
     briefings,
     clock,
+    commitment,
     environment,
     events,
     group_chats,
     idempotency,
     instances,
+    ktw_skill,
     memory,
     mentions,
     namespace,
@@ -28,6 +30,7 @@ from maity_hub import (
     preferences,
     ranks,
     rules,
+    setup_cards,
     ticker,
 )
 from maity_hub import tables as t
@@ -53,6 +56,7 @@ from maity_hub.views import (
     git_identity,
     meat_proxy_view,
     member_views,
+    memory_of,
     paused,
     principal_id,
     project_language,
@@ -98,6 +102,7 @@ OPERATIONS: list[tuple[str, str, str | tuple[str, ...] | None]] = [
     ("POST", "/me/resume", None),
     ("PATCH", "/me", None),
     ("POST", "/me/limit", None),
+    ("POST", "/me/keep-the-why/ack", None),
     ("GET", "/help", None),
     ("GET", "/projects", None),
     ("GET", "/projects/{owner}/{slug}", "project:read"),
@@ -213,11 +218,14 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
             )
             .values(live=None, ended_at=now)
         )
-        cursor = (
-            body.cursor
-            if body.cursor is not None
-            else (previous.acknowledged_seq if previous else 0)
-        )
+        if body.cursor is not None:
+            cursor = body.cursor
+        elif previous is not None:
+            cursor = previous.acknowledged_seq
+        else:
+            # A new instance (§6.17) starts at the project's head, not at 0: the handover
+            # replaces the backlog, and `GET …/events?after=` still serves the history (§8.3).
+            cursor = events.highest_readable(conn, mine.project.id, mine.row, caller.principal_id)
         session_id = new_id("session")
         conn.execute(
             insert(t.agent_session).values(
@@ -240,6 +248,7 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
             )
         )
         environment.refresh(conn, mine.project.id, mine.id)
+        commitment.start(conn, mine.project, caller.credential_id or "", session_id, now)
         conn.execute(
             update(t.card)
             .where(
@@ -278,6 +287,9 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
             )
         availability.reconcile_ids(conn, [mine.id], actor)
         mine = _own_membership(conn, caller)  # with the pause cleared
+        if caller.credential_id:
+            # A reminder that fell due while no session was open comes now (§6.23).
+            commitment.reconcile(conn, mine.project, now, caller.credential_id)
         packet = _packet(conn, mine, caller, body, cursor, started, session, settings)
     return packet
 
@@ -354,6 +366,8 @@ def _packet(
                     "paused": view["paused"],
                     "availability": view["availability"],  # §6.12
                     "covered_by": view["covered_by"],
+                    # Write to a human in their language (§5.2, §6.2).
+                    **({"language": view["language"]} if "language" in view else {}),
                     **(
                         meat_proxy_view(meat_proxies[view["id"]]) if view["kind"] == "human" else {}
                     ),
@@ -451,14 +465,21 @@ def _packet(
             "repository": repository(project, settings),
             "policy": policy_of(project),
             "absence": absence(project),
-            "keep_the_why": project.keep_the_why,
+            "memory": memory_of(project),
             "rules_version": project.rules_version,
         },
         "rules": rules_block,
         "preferences": preferences_block,
         "areas": areas,
+        **_setup_block(conn, project),
         "keep_the_why": {
-            "enabled": project.keep_the_why,
+            **ktw_skill.loading_block(
+                project,
+                settings,
+                conn.execute(
+                    select(t.credential).where(t.credential.c.id == caller.credential_id)
+                ).one(),
+            ),
             "instruction": KEEP_THE_WHY_INSTRUCTION if project.keep_the_why else None,
         },
         "claims": task_views(conn, held, fg),
@@ -508,6 +529,12 @@ def _placement_block(conn: Connection, membership_id: int) -> dict[str, Any] | N
         "mode": row.mode,
         "stop_grace_seconds": row.stop_grace_seconds,
     }
+
+
+def _setup_block(conn: Connection, project: Any) -> dict[str, Any]:
+    """`setup` of the packet (§5.2): present only while a setup card waits."""
+    waiting = setup_cards.waiting(conn, project.id)
+    return {"setup": waiting} if waiting else {}
 
 
 def _requests_block(conn: Connection, mine: Membership, cursor: int) -> dict[str, Any]:
@@ -561,6 +588,61 @@ def operations(project: Any, trust: str, role: str, full_name: str) -> list[str]
             continue
         allowed.append(f"{method} {path.replace('{owner}/{slug}', full_name)}")
     return allowed
+
+
+@router.post("/me/keep-the-why/ack")
+def acknowledge_keep_the_why(request: Request, caller: AgentCaller) -> JSONResponse:
+    """The calling instance confirms the Keep the Why commitment (§6.23): once, and a
+    second call answers the first record."""
+    return JSONResponse(retrying(lambda: _acknowledge(request, caller)))
+
+
+def _acknowledge(request: Request, caller: Caller) -> dict[str, Any]:
+    with events.transaction(engine_of(request)) as conn:
+        mine = _own_membership(conn, caller)
+        project = events.lock_project(conn, mine.project.id)
+        if not commitment.required(project):
+            raise ApiError(
+                409,
+                "keep_the_why_not_required",
+                "this project does not require the Keep the Why commitment",
+            )
+        credential = _credential(conn, caller)
+        if credential.ktw_acknowledged_at is not None:
+            return {
+                "acknowledged_at": ts(credential.ktw_acknowledged_at),
+                "instance": caller.instance,
+                "session_id": credential.ktw_acknowledged_session,
+            }
+        session_id = conn.execute(
+            select(t.agent_session.c.id).where(
+                t.agent_session.c.credential_id == caller.credential_id,
+                t.agent_session.c.live.is_(True),
+            )
+        ).scalar()
+        now = clock.now()
+        conn.execute(
+            update(t.credential)
+            .where(t.credential.c.id == caller.credential_id)
+            .values(ktw_acknowledged_at=now, ktw_acknowledged_session=session_id)
+        )
+        commitment.confirmed(conn, project, credential, caller.agent_id or "")
+        events.emit(
+            conn,
+            project.id,
+            "keep_the_why_acknowledged",
+            commitment.audience(conn, project.id, caller.agent_id or ""),
+            {
+                "member_id": principal_id(conn, mine.row.id),
+                "instance": caller.instance,
+                "session_id": session_id,
+                "acknowledged_at": ts(now),
+            },
+            actor=events.Actor(
+                mine.row.id, session_id, caller.credential_id, caller.via, None, None
+            ),
+        )
+        return {"acknowledged_at": ts(now), "instance": caller.instance, "session_id": session_id}
 
 
 def _credential(conn: Connection, caller: Caller) -> Any:

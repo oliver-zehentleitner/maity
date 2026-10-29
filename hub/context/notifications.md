@@ -167,21 +167,21 @@ one place. Evidence is inferred: measured locally, production to confirm.
 `notification_settings.preferences` holds the browser and mail preferences as one JSON
 value with only the keys the human set; `preferences._merged` lays it over the defaults
 key by key on every read. A human who never changed anything has no row: a `GET` shows
-the defaults and writes nothing, the first `PATCH` makes the row. A kind removed on
-2026-10-26 (§18.1) is skipped when the value is read, and `PATCH` rewrites the stored
-value without it, as §18.4 says.
+the defaults and writes nothing, the first `PATCH` makes the row. (Until migration 0084 a
+kind removed on 2026-10-26 (§18.1) was skipped when the value was read and dropped by the next
+`PATCH`; that layer is gone, see 2db93f62-3a99-4ee5-a997-e2e5018831aa.)
 
 **Reason:** a default that changes later (a new kind, another `daily_at`) reaches every
 human who did not choose otherwise, and a human's choice never has to be told apart from
-a copy of an old default. Dropping removed kinds on read needs no migration over the
-rows, and the contract wants them deleted with the next write anyway.
+a copy of an old default. (Dropping removed kinds on read needed no migration over the
+rows; that part was replaced by a migration, 2db93f62-3a99-4ee5-a997-e2e5018831aa.)
 
 **Rejected alternatives:**
 - Storing the full value at the first read: later defaults would reach nobody who had
   opened the settings once, and a `GET` would write.
 - Deleting the removed kinds from every row in a migration: a data migration over every
-  human's row for settings that already govern nothing, and §18.4 asks for the next
-  `PATCH`.
+  human's row for settings that already govern nothing, and §18.4 asked for the next
+  `PATCH`. Taken later, see 2db93f62-3a99-4ee5-a997-e2e5018831aa.
 
 ## A link in a mail is a signed token the hub stores nothing for; a page for a token that is not ours says nothing about anyone
 
@@ -241,6 +241,70 @@ answered `False` and failed closed).
   transaction.
 - A lock on the human's row: it would not serialize two accounts racing for one address.
 
+## A lock row holds the address's HMAC, never the address
+
+**Id:** 25f27b8d-6405-400f-b2f0-c561a4dce360
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the schema check of #607, which found that `address_lock` and `registration_lock` kept a row per address after the account deletion, while docs/api.md §2.9 says the addresses are deleted; the coordinator's ruling on the card (an HMAC, a stored pepper without an instance key, made as similar keys are; migration 0085)
+**Revisit when:** something has to read the address back from a lock row, or the hub runs replicas that may hold different instance keys
+
+`address_lock` and `registration_lock` are keyed by `digest`, the
+HMAC-SHA256 of the normalized address (`addresses.lock_key`). The key is
+derived from `MAITY_SECRET_KEY` (HKDF, purpose `address.lock`) when it is
+set, else it is the random pepper `address.lock_pepper` in
+`instance_secret`, which `addresses.prepare` makes at first use in a
+transaction of its own, as the notification positions' key is made; the
+routes that lock call it before their transaction. Every caller passes the
+instance's `secret_key`, with no default: two callers on different keys
+would give one address two rows, and the lock would serialize nothing.
+The instance-wide registration budget's key (`BUDGET_LOCK`) goes through
+the same function. In addition, an account deletion removes the lock rows
+of the account's addresses (`addresses.forget_locks`): the `address_lock`
+row of each, and the `registration_lock` row where no pending
+registration needs it; a row is made again at its next use. A deletion
+can remove a row between the insert that found it and another caller's
+lock, whose `SELECT … FOR UPDATE` then finds nothing under READ
+COMMITTED; `take_lock` runs the insert and the lock once more, and a
+second empty read fails loudly rather than going on unlocked. Keeping the
+rows instead was rejected: with the pepper in the same database a row
+confirms a guessed address.
+
+**Limit:** without `MAITY_SECRET_KEY` the pepper sits unsealed in
+`instance_secret`, in the same database as the digests. A dump of the
+lock tables alone gives no address back; a dump of the whole database
+does, for a guessed address, by trying. That is why the deletion removes
+the account's rows too: a remaining digest would be pseudonymous under
+the pepper, not anonymous. With the instance key set, the key never
+touches the database.
+
+**A key change:** setting, changing or removing `MAITY_SECRET_KEY` gives
+every address a new digest. The old rows are orphans and harmless, since
+nothing reads them; the pepper is removed once a key is set (`prepare`).
+While callers run on different keys (a rollout that mixes them), the lock
+serializes nothing and only the unique constraint on
+`notification_settings.address_normalized` catches a second claim: both
+`claim_verified` and `verify` answer it as a lost claim or a dead link,
+never an error.
+
+**Reason:** the rows are only locks. Nothing reads their value, so a
+digest serves equally, and no address outlives its account, nor stays
+for good because someone once started a registration. A missing key is
+an error, not a weaker key.
+
+**Rejected alternatives:**
+- Deleting the deleted account's lock rows instead of keying them by a
+  digest: the addresses of people who never got an account would stay in
+  clear. The deletion does it in addition.
+- A plain SHA-256 of the address: an address is guessable, so a dump of
+  the table would give the addresses back by trying.
+- Creating the pepper inside the lock: the lock runs in the caller's
+  transaction, and two first uses would make one of them fail.
+- Making the pepper in migration 0085: a row a migration makes is gone
+  after the table is emptied, and nothing would make it again; the
+  tests' server databases, emptied between tests, showed it at once.
+
 ## Notification mail is planned per human once a minute from the derived items, each item mailed once; a human whose notifications did not move is not derived again
 
 **Id:** de75f59b-21f5-4a26-8ab4-9819c23c6228
@@ -284,6 +348,50 @@ the incident of 2026-10-26 showed does not scale.
   per minute that grows with the humans' histories, the shape the incident was about.
 - Letting mails over the instance budget wait in the outbox: simpler, but it can mean two
   mails where §18.5 asks for one (the first version, changed before review).
+
+## A page of the bell is cut from items derived only as far as the page reaches; no cache
+
+**Id:** 24ca001c-ff28-4df3-8af1-ba6ef6d567b6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** tsk-svhatnxrtqn8; Traefik access log of 2026-10-28 17:51-18:21 UTC (`GET /me/notifications` p50 1.0 s, p95 1.9 s, n=482); the local measurement in `hub/scripts/measure_notifications.py`
+**Revisit when:** a listing needs the number of all matching items or a total over chat items, or `derive_page` and `derive` diverge in a test
+
+`GET /me/notifications` derived every item of 30 days on every call, and every message an
+agent sends its owner in a direct chat is one. The cost was linear in those messages (about
+80 ms per 1,000 items, 1.2 s at 30,000), not in the projects or the queries; the counts, the
+position and the twenty views together took under 100 ms. A page needs `limit` items and to
+know whether one more follows, and the counts read no chat item (`chat` comes from the chats'
+own marks). So `items.derive_page` derives everything that is not a plain chat message (requests,
+mentions, account records: few, and they feed the counts), and of the plain chat messages
+only the first `limit + 1` per project that the filters, the cursor or `after` accept, read
+from the database in the order the listing uses (`at`, then `seq`), in chunks that grow
+while a filter such as `unread` rejects them. A message whose payload text has a `member_id`
+and the human's id is derived with the rest, since it may mention them; the text test only
+selects, `_classify` decides. `scope` reads its rows in one query instead of one per membership
+and per agent, and a page reads each project and actor once. The unread-chat count (`counts.chat`)
+is no longer read here: it comes from `conversation_list.unread_chats`, shared with
+`totals.unread` of `GET /me/conversations` and counting group chats too (see events.md a7fca6c0).
+Measured on SQLite with 10 projects and 30,000 chat items: 1.16 s before, 0.1 s after.
+
+**Reason:** the answer is a function of the page, so the work should be too; a cache would
+answer from the past (a read mark, a claimed request or a rename that the stamp does not
+see) and only helps while nothing moves, which on a busy team is rarely. `tests/test_notifications_page.py`
+keeps the two honest: for every filter, page size and the cursor through items of one
+timestamp, and for `after` chains, the bounded pages equal the pages cut from `derive`.
+
+**Rejected alternatives:**
+- A cache of the derived items keyed by `listing.stamp`: the stamp does not see a request
+  claimed by another admin, a rename or the sliding 30-day window, and it misses on every new
+  message, which is when the bell is polled most.
+- Cheaper work per item (fewer JSON decodes, fewer lookups): at best a factor of two on a cost
+  that stays linear in the history.
+- Filtering chat messages by the human in SQL: a chat message names its addressee in `to`,
+  so every message of the human's own chats matches and nothing is saved.
+
+**Known limit:** a filter that rejects almost every chat (`unread` after everything was read)
+still reads all of a project's chat rows in the window, in chunks, as the old derivation did.
 
 ## Changing or removing the verified address, and approving a held change, take the step-up the caller gives in
 
@@ -347,3 +455,184 @@ reader sees what happened without opening the dashboard, which is what these mai
 - One generic security-mail builder for the sign-in and these records: the sign-in's body
   carries method, browser, system and address and the others do not, so a shared builder would be
   a switch inside; two short functions are clearer.
+
+## The browser switch defaults to off and the mail time zone to UTC; both are the contract's "the human decides" made concrete
+
+**Id:** 4847d0cc-4ed4-4b92-9efd-c3c98bade6a1
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §18.4 (`browser`, `timezone`); `preferences.DEFAULTS`; a review note on the settings card (tsk-32jx98jzne6z), 2026-10-29
+**Revisit when:** the dashboard asks for the browser's permission before the first `GET` of the settings, or an instance wants another default zone
+
+`DEFAULTS["browser"]["enabled"]` is `False` and `DEFAULTS["email"]["timezone"]` is `"UTC"`. The
+contract names neither value: §18.4 calls `enabled` "the account's wish", which the dashboard
+sets only when the human turns it on and the browser has said yes, and says only that the dashboard
+proposes the browser's zone. Why these two values won is read from that text, not recorded by
+whoever first wrote them.
+
+**Reason:** a `true` default would claim a wish nobody expressed and a permission the browser
+never gave, and the hub cannot know either; `false` is the one value that is never wrong, and the
+dashboard switches it on after the browser's answer. The hub knows no zone for a human who has not
+said one, and every mail time (`daily_at`, `quiet_hours`) needs one; `UTC` is the zone that needs
+no guess and shows in the settings, where the dashboard's proposal replaces it.
+
+**Rejected alternatives:** a `browser.enabled` default of `true`, as the §18.4 example shows (the
+example illustrates a human who already turned it on; as a default it would be a claim without a
+permission); no default for `timezone` (every read would need a "not set" case and the mail pass a
+fallback of its own). Whether either was weighed when the code was written is unknown.
+
+## A second first write of the same human's settings finds the row the first made
+
+**Id:** 7caa2c14-307e-461c-95c8-34aedab837c8
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** a review note on the settings card (tsk-32jx98jzne6z) and the review of #581, 2026-10-29; `tests/test_settings_race.py`
+**Revisit when:** a settings write runs at `REPEATABLE READ`, or the row is made at account creation
+
+`preferences.row_of(lock=True)` reads the row `FOR UPDATE` first; when there is none it inserts it
+in a savepoint, and on an `IntegrityError` (another first write committed in between) it reads and
+locks the row that now exists. Two first `PATCH`es of one human therefore end one after the other,
+instead of the later one answering 500 on the primary key. The deadlock retry of
+`persistence.md` ("Concurrent writes") does not cover the duplicate key itself, so the route also
+runs the whole `PATCH` in `db.retrying`: three first writes at once on MariaDB can end in a
+duplicate-key deadlock (1213), which that retry does cover; a refused change (an error raised) is
+not retried.
+
+**Reason:** the row is made by the first write only (a read of a human with no row sees the
+defaults and writes nothing), so two first writes are an ordinary case; select first because the
+row is almost always there and the common write should not start with a failing insert. The hub's
+server engines run at `READ COMMITTED` (`db.py`), where a `FOR UPDATE` on a missing key takes no
+gap lock; the race test on PostgreSQL and MariaDB in CI is what shows it.
+
+**Rejected alternatives:** insert first, then lock, as `landing.lock` does (safe at any isolation
+level, but every `PATCH` would run a failing insert in a savepoint for a row that nearly always
+exists; kept as the move if the CI race test shows a deadlock on MariaDB); making the row at
+account creation (a write and a migration over every human for a row the defaults make
+unnecessary, and it would end "a read writes nothing" only in name).
+
+## A group chat notifies its participants from their current stay; one who left gets nothing from it, what came before included
+
+**Id:** ccc4332d-30be-4bd0-9ccf-26d59194471f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §9.2, §18.1, §18.2; the implementation of #556 (`Lookup.inside`, `listing._unread_groups`) and its review, 2026-10-29
+**Revisit when:** a former participant may read the chat they left, or an observer should be told about a chat
+
+A message in a group chat becomes a `chat` item (or a `mention` item) for a participant whose
+stay in the chat is current (`here`) and whose stay began before the message (`seq > window_after`);
+never for the writer, never for an observer, who reads along and is not addressed (§9.2). Someone
+who has left gets nothing from the chat, what was said while they were in it included, and a
+rejoin does not bring back what was said while they were away. `counts.chat` adds the group chats
+to the direct ones (`listing._unread_groups`, per stay: the others' messages after both the stay
+began and the read mark, tombstones included), the number the chat list shows; a test compares
+the two. The count cost two queries per group chat; #560 replaced `_unread_groups` (and the direct
+count) by `conversation_list.unread_chats`, the chat list's batched `unread`, so the bell and
+`totals.unread` are one number computed once (events.md a7fca6c0).
+
+**Reason:** §18.1 names the participants as recipients. A former participant no longer reads the
+chat (`…/messages` answers `not_found`, the list does not show it, §9.2), so an item for an
+earlier message would link to a chat it cannot open, and `counts.chat` must equal the list's
+`unread`, which drops the chat too. The stay's `window_after` bounds the items the way it bounds
+the chat's own window.
+
+**Rejected alternatives:**
+- Keeping the earlier items until their 30 days run out: they would point at `not_found` and
+  disagree with the count.
+- Notifying the owner who reads along as an observer: §9.2 makes an observer a reader, not an
+  addressee.
+- Reusing the chat list's batched `conversation_list._unread` for the count right here: it would
+  make the number the list's by construction, but the bell's counts are being moved onto the
+  list's `unread_chats` in #560, so a second change to the same lines would only conflict.
+
+## The kinds removed on 2026-10-26 are deleted from the stored settings by a migration; the hub keeps no layer that knows them
+
+**Id:** 2db93f62-3a99-4ee5-a997-e2e5018831aa
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's principle of 2026-10-29 (alpha, one user: remove the old instead of keeping compatibility layers), carried by the lead agent on the cleanup card; docs/api.md §18.2, §18.4
+**Revisit when:** a notification kind is removed again (the same migration shape applies), or a second instance with data from before 2026-10-26 exists
+**See:** notifications.md#notification-settings-store-only-what-the-human-changed-the-defaults-fill-the-rest-on-read — 3e9a6b69-7715-4ce3-8c9d-a9194fbf9500 — as of 2026-10-29
+
+Migration 0084 deletes everything but `inbox`, `chat`, `mention` and `security` from
+`browser.kinds`, `browser.content` and `email.kinds` of every stored `preferences`. The code
+that skipped the old kinds on read (`preferences._merged`), rewrote the value on the next
+`PATCH` (`_without_removed`) and told `removed_kind` from `unknown` in `preferences`, in the
+`kind` filter of the bell and in the mark-read body is removed; a kind the hub does not know
+is `unknown`, whichever kind it once was. The contract (§18.2, §18.3, §18.4, §1) says the
+same. The migration cannot be undone and does not need to be.
+
+`preferences._merged` lays only the kinds the hub knows over the defaults and ignores any other
+key in the stored value, without naming one: after 0084 and with the check in `PATCH` nothing
+writes such a key, but a read that raised on one would turn every read of that human's settings,
+and the mail planning for them, into a 500. Trusting the stored keys (the first version of this
+change) is right for every row the migration saw and a `KeyError` for any other.
+
+**Reason:** the maintainer's rule for the alpha is to delete what is old rather than keep a
+compatibility layer, and nobody reads the old settings or sends the old kinds any more. A
+migration over a few rows costs once; the layer cost a branch in every read and write of the
+settings and a second error code that told a client what it had asked for in the past.
+
+**Rejected alternatives:**
+- Keeping the skip on read and the delete on the next `PATCH` (the earlier decision, 3e9a6b69):
+  harmless while old clients and old rows existed, a standing special case once they do not.
+- Keeping `removed_kind` as an error code for the old names: it only helps a client that still
+  sends them, which does not exist.
+
+## The hub's own texts for a human, the bell's titles and the notification mails, follow that human's language; members' text is never translated
+
+**Id:** f1bba221-bde0-4988-96a5-6b55368693d3
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.2, §18.1, §18.4; the implementation of #329 (`Scope.say`, `items.WORDS`) and its review, 2026-10-29
+**Revisit when:** a third language is added, a human asks for another language in the bell than in their mail, or the titles of an item kind outgrow the table in `items.WORDS`
+**See:** https://github.com/oliver-zehentleitner/maity — 8cfe80ae-02dd-4aef-818a-843126e23397 — as of 2026-10-29
+
+The titles the hub composes for a human (`sign_in`, `address_changed`, `mail_disabled`, the
+asks, the chat and mention lines, the waits, the changes of the second factor and its wrong codes, a forge access added) are written in the human's `email.language`, `en`
+or `de`, read live with the scope (`Scope.language`, `Scope.say`); the notification mails
+take the same language through the same table. What a member wrote (a message, a card, a request
+text, a reason) is shown as written, never translated. `messages.md` 8cfe80ae stays true for
+that: the hub translates no member's text. It does not cover text the hub composes itself, which
+is why this is a separate decision.
+
+**Reason:** the language of the notification settings already governs the mail and the link
+pages; a bell title that stayed English would be the one place that ignored it, and the
+title is the first thing the human reads. One table of words per language keeps the translation
+in one file (`items.WORDS`) and a missing key falls back to English, not to an error.
+
+**Rejected alternatives:**
+- Titles always in English: a human who chose `de` would read half of the mail in one language and
+  its subject in another.
+- The project's language: a title is addressed to one person, not to the project (8cfe80ae); one
+  human in several projects would read different languages in one bell.
+- Translating a member's text in the hub: nothing in the contract asks for it, it would be wrong
+  for names and quotations, and agents already write to a person in that person's language.
+
+## A human's `language` is read only on a member PATCH, and absent for agents and removed members
+
+**Id:** 3d12b0ae-23f0-4caa-9213-2a9e5d71bc52
+**Type:** constraint
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.2 ("Language"), §18.4; `routes/members.py` (`MemberPatch._language_read_only`), `views.human_languages`; the review of #329, 2026-10-29
+**Revisit when:** a second place may legitimately set a human's language, or agents get a language of their own (8cfe80ae says they do not)
+**See:** https://github.com/oliver-zehentleitner/maity — 8cfe80ae-02dd-4aef-818a-843126e23397 — as of 2026-10-29
+
+The member view of a human carries `language`, read from their notification settings on every
+read (`views.human_languages`); a human who never set it reads as `en`. Agents and removed
+members have none. A `PATCH` of a member that names `language` is refused as `read_only`
+(a field validator, so the answer is the same `422` shape as the other refusals): only the
+human sets it, in their own settings.
+
+**Reason:** the notification settings are the single source of the value (8cfe80ae: one field per
+human). A second writable copy on the member would need to be kept equal to it, and an admin or
+an agent could then change what a human reads in the bell and in mail.
+
+**Rejected alternatives:** a writable `language` on the member that writes through to the
+settings (an admin could change another person's language, which the contract keeps with the
+human); a stored copy on the membership (two values to keep equal, per project, for one person).

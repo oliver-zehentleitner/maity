@@ -34,9 +34,6 @@ from maity_hub.mail import outbox
 from maity_hub.notifications import records, tokens
 
 KINDS = ("inbox", "chat", "mention", "security")
-# Kinds removed on 2026-10-26 (§18.1): settings stored for them are dropped when read and
-# deleted with the account's next PATCH; a PATCH naming one is `removed_kind`.
-REMOVED_KINDS = ("card", "agent", "keep_the_why", "ticker", "jour_fixe", "system", "registration")
 MODES = ("immediate", "hourly", "daily", "off")
 CONTENT_KINDS = ("chat", "mention")
 VERIFY_FOR = timedelta(hours=24)
@@ -76,7 +73,7 @@ DEFAULTS: dict[str, Any] = {
 
 
 def _merged(stored: dict[str, Any] | None) -> dict[str, Any]:
-    """The stored preferences over the defaults, key by key, without the removed kinds."""
+    """The stored preferences over the defaults, key by key."""
     result: dict[str, Any] = {
         "browser": {**DEFAULTS["browser"], "kinds": dict(DEFAULTS["browser"]["kinds"])},
         "email": {
@@ -91,13 +88,15 @@ def _merged(stored: dict[str, Any] | None) -> dict[str, Any]:
             if key == "kinds" and isinstance(value, dict):
                 for kind, setting in value.items():
                     if kind not in KINDS:
-                        continue
+                        continue  # a key this hub does not know is not read, not an error
                     if side == "email" and isinstance(setting, dict):
                         result[side]["kinds"][kind].update(setting)
                     else:
                         result[side]["kinds"][kind] = setting
             elif key == "content" and isinstance(value, dict):
-                result[side]["content"].update({k: v for k, v in value.items() if k in KINDS})
+                result[side]["content"].update(
+                    {k: v for k, v in value.items() if k in CONTENT_KINDS}
+                )
             else:
                 result[side][key] = value
     return result
@@ -112,16 +111,20 @@ def row_of(conn: Connection, human_id: str, *, lock: bool = False) -> Any:
         return found
     if not lock:
         return _NONE
-    conn.execute(
-        insert(t.notification_settings).values(
-            human_id=human_id,
-            preferences={},
-            address_status="none",
-            epoch=0,
-            hard_failures=0,
-            updated_at=clock.now(),
-        )
-    )
+    try:
+        with conn.begin_nested():
+            conn.execute(
+                insert(t.notification_settings).values(
+                    human_id=human_id,
+                    preferences={},
+                    address_status="none",
+                    epoch=0,
+                    hard_failures=0,
+                    updated_at=clock.now(),
+                )
+            )
+    except IntegrityError:  # a first write of the same human committed between our read and insert
+        pass
     return conn.execute(query.with_for_update()).one()
 
 
@@ -178,7 +181,7 @@ def _held(row: Any) -> dict[str, Any] | None:
 
 
 def _kind_error(name: str, kind: str, errors: dict[str, str]) -> None:
-    errors[f"{name}.{kind}"] = "removed_kind" if kind in REMOVED_KINDS else "unknown"
+    errors[f"{name}.{kind}"] = "unknown"
 
 
 def _check_browser(given: Any, errors: dict[str, str]) -> dict[str, Any]:
@@ -197,7 +200,9 @@ def _check_browser(given: Any, errors: dict[str, str]) -> dict[str, Any]:
                 if all(isinstance(v, bool) for v in value.values()):
                     out[key] = value
                 else:
-                    errors["browser.kinds"] = "invalid"
+                    for kind, setting in value.items():
+                        if not isinstance(setting, bool):
+                            errors[f"browser.kinds.{kind}"] = "invalid"
         elif key == "content" and isinstance(value, dict) and set(value) <= set(CONTENT_KINDS):
             if all(isinstance(v, bool) for v in value.values()):
                 out[key] = value
@@ -269,19 +274,19 @@ def _check_modes(value: Any, errors: dict[str, str]) -> dict[str, Any] | None:
         return None
     for kind, setting in value.items():
         if not isinstance(setting, dict) or not set(setting) <= {"mode", "content"}:
-            errors["email.kinds"] = "invalid"
+            errors[f"email.kinds.{kind}"] = "invalid"
             return None
         # A missing `mode` is a partial change; one that is present must be a mode, `null`
         # included (§18.4).
         if "mode" in setting and setting["mode"] not in (
             ("immediate", "off") if kind == "security" else MODES
         ):
-            errors["email.kinds"] = "invalid"  # a delayed alert is no alert (§18.4)
+            errors[f"email.kinds.{kind}"] = "invalid"  # a delayed alert is no alert (§18.4)
             return None
         if "content" in setting and (
             kind not in CONTENT_KINDS or not isinstance(setting["content"], bool)
         ):
-            errors["email.kinds"] = "invalid"
+            errors[f"email.kinds.{kind}"] = "invalid"
             return None
     return value
 
@@ -345,8 +350,7 @@ def patch(
             step_up=step_up,
         )
         row = row_of(conn, human.id, lock=True)
-    # What was stored for a removed kind goes with this write (§18.4).
-    stored = _without_removed(dict(row.preferences or {}))
+    stored = dict(row.preferences or {})
     for side, given in (("browser", browser), ("email", email)):
         if given:
             merged = dict(stored.get(side) or {})
@@ -367,21 +371,11 @@ def patch(
         .where(t.notification_settings.c.human_id == human.id)
         .values(preferences=stored, updated_at=clock.now())
     )
+    if email.get("sign_in_link") is False:
+        from maity_hub.auth import email_links
+
+        email_links.void_human(conn, human.id)
     return status
-
-
-def _without_removed(stored: dict[str, Any]) -> dict[str, Any]:
-    out: dict[str, Any] = {}
-    for side, given in stored.items():
-        if not isinstance(given, dict):
-            out[side] = given
-            continue
-        kept = dict(given)
-        for key in ("kinds", "content"):
-            if isinstance(kept.get(key), dict):
-                kept[key] = {k: v for k, v in kept[key].items() if k in KINDS}
-        out[side] = kept
-    return out
 
 
 # --- the unsubscribe link (§18.6) ----------------------------------------------------
@@ -389,8 +383,8 @@ def _without_removed(stored: dict[str, Any]) -> dict[str, Any]:
 
 def unsubscribe(conn: Connection, token: str, signing_key: bytes | None) -> str | None:
     """Switch the token's kind off; the kind, or None for a link that does not work: a
-    token this hub did not sign, one for another purpose, for a kind removed on
-    2026-10-26, or from before the address changed (the `epoch` moved)."""
+    token this hub did not sign, one for another purpose, for a kind that does not exist,
+    or from before the address changed (the `epoch` moved)."""
     payload = tokens.read(signing_key, token)
     if payload is None or payload.get("p") != "unsubscribe" or payload.get("k") not in KINDS:
         return None
@@ -403,7 +397,7 @@ def unsubscribe(conn: Connection, token: str, signing_key: bytes | None) -> str 
     if row is None or payload.get("e") != row.epoch:
         return None
     kind = str(payload["k"])
-    stored = _without_removed(dict(row.preferences or {}))
+    stored = dict(row.preferences or {})
     email = dict(stored.get("email") or {})
     kinds = dict(email.get("kinds") or {})
     kinds[kind] = {**(kinds.get(kind) or {}), "mode": "off"}
@@ -570,6 +564,7 @@ def verify(
     signing_key: bytes | None,
     public_url: str,
     *,
+    secret_key: bytes | None,
     human_id: str | None = None,
 ) -> bool:
     """Confirm an address from its link; False for every link that does not work, never
@@ -603,7 +598,7 @@ def verify(
     # One account per address: the claim, under the per-address lock (§18.4). A link for
     # an address another account verified meanwhile is a dead link, never why.
     claimed = addresses.normalized(row.pending_address)
-    addresses.lock(conn, claimed)
+    addresses.lock(conn, secret_key, claimed)
     taken = conn.execute(
         select(t.notification_settings.c.human_id).where(
             t.notification_settings.c.address_normalized == claimed,
@@ -613,23 +608,27 @@ def verify(
     if taken is not None:
         return False
     previous = row.address if row.address_status in ("verified", "disabled") else None
-    conn.execute(
-        update(t.notification_settings)
-        .where(t.notification_settings.c.human_id == owner)
-        .values(
-            address_normalized=claimed,
-            address=row.pending_address,
-            address_status="verified",
-            verified_at=now,
-            pending_address=None,
-            pending_nonce=None,
-            pending_expires_at=None,
-            hard_failures=0,
-            disabled_at=None,
-            epoch=row.epoch + (1 if previous and previous != row.pending_address else 0),
-            updated_at=now,
-        )
-    )
+    try:
+        with conn.begin_nested():
+            conn.execute(
+                update(t.notification_settings)
+                .where(t.notification_settings.c.human_id == owner)
+                .values(
+                    address_normalized=claimed,
+                    address=row.pending_address,
+                    address_status="verified",
+                    verified_at=now,
+                    pending_address=None,
+                    pending_nonce=None,
+                    pending_expires_at=None,
+                    hard_failures=0,
+                    disabled_at=None,
+                    epoch=row.epoch + (1 if previous and previous != row.pending_address else 0),
+                    updated_at=now,
+                )
+            )
+    except IntegrityError:  # the unique constraint caught what the lock did not
+        return False
     if previous is not None and previous != row.pending_address:
         from maity_hub import account_deletion
 
@@ -638,11 +637,13 @@ def verify(
     return True
 
 
-def claim_verified(conn: Connection, normalized: str, human_id: str) -> bool:
+def claim_verified(
+    conn: Connection, normalized: str, human_id: str, *, secret_key: bytes | None
+) -> bool:
     """Write `normalized` as the human's verified address, as a registration's completion
     does (§2.7.1, §18.4), under the per-address lock: False when another account holds
     it. The human has no settings yet; the defaults apply."""
-    addresses.lock(conn, normalized)
+    addresses.lock(conn, secret_key, normalized)
     taken = conn.execute(
         select(t.notification_settings.c.human_id).where(
             t.notification_settings.c.address_normalized == normalized

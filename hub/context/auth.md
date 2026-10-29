@@ -128,7 +128,8 @@ text into the dashboard.
 
 **Id:** a6967e81-d77f-45dd-b5ab-dbd5628d7c8a
 **Type:** workaround
-**Status:** needs-review
+**Status:** superseded
+**Superseded by:** 36284c53-8139-4c41-99c0-9123e9e2c4f2
 **Evidence:** inferred
 **Source:** docs/api.md §2.6.5, §2.6.6; the implementation of tsk-bjmkt2akq5dn, 2026-10-23
 **Revisit when:** the device code (§2.6.2) or the sign-in link (§2.6.3) lands, or account records (§18.1) exist
@@ -320,3 +321,34 @@ effect and the operator's command share one function so that the record, the ses
   it, in the same transaction, for every way the factor can change.
 - Resetting a human who has no factor: nothing would change and a mail would go out for nothing;
   it is a conflict.
+
+## A human's cookie call renews the leases of the memberships that hold an open claim, and reads no others
+
+**Id:** 659d15cb-6c9b-4e06-8fec-164368951df4
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.5; tsk-dfatkddmt565; `hub/tests/test_human_lease.py` and the cost found while measuring `GET /me/conversations` (tsk-45vs1hdzswjs)
+**Revisit when:** a human's lease is to be renewed for something other than a claimed card, or a hold (`availability.hold_cap`) is to cover a membership with no claim
+
+`auth.caller._cookie` renewed, on every request of a human with a session, the leases of all the
+human's active memberships: per membership three reads in `availability.hold_cap` (the
+membership, the human, the project) and an `UPDATE` of the claimed cards, so four statements
+for each project the human is in, whether or not a card was held. A human holds a claim rarely.
+Measured with 1 and with 7 projects and no claim: 11 and 35 statements for the sign-in alone;
+now 11 and 11. The membership query got an `EXISTS` on open cards whose `claim_holder` is the
+membership, and the loop runs over those memberships only, with the same `renewed_lease`, hold
+and 24-hour cap as before, so a claim that exists is renewed exactly as it was.
+
+**Reason:** the cost was linear in the human's projects on every dashboard poll and bought
+nothing, because a renewal with no card to update changes no row. Narrowing the set where it is
+chosen keeps §6.5 untouched; nothing the contract says depends on the renewal of a membership
+without a claim.
+
+**Rejected alternatives:**
+- Renewing at most once a minute per session: it would shorten the visible renewal of a held
+  claim and change what §6.5 says an ordinary call does.
+- One `UPDATE` for all memberships: the lease length and the hold are per membership
+  (`hold_cap` reads the human's and the project's limit and absence), so the reads would stay.
+- Caching the memberships of a session: the answer is a function of rows another request can
+  change (a claim taken, a membership ended), and a stale set would skip a renewal.

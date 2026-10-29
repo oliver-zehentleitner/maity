@@ -219,7 +219,8 @@ account_registration = Table(
 registration_lock = Table(
     "registration_lock",
     metadata,
-    Column("address_normalized", String(254), primary_key=True),
+    # The HMAC of the normalized address (`addresses.lock_key`), never the address (§2.9).
+    Column("digest", String(64), primary_key=True),
     **MYSQL_TABLE,
 )
 
@@ -390,6 +391,34 @@ human_device = Table(
     **MYSQL_TABLE,
 )
 
+# A mail link and its browser-bound code share one single-use row (§2.6.3).
+email_sign_in = Table(
+    "email_sign_in",
+    metadata,
+    Column("nonce_hash", String(HEX_SHA256), primary_key=True),
+    Column("pending_hash", String(HEX_SHA256), nullable=False, unique=True),
+    _ref("human_id", "human.id", nullable=False, index=True),
+    Column("address_epoch", Integer, nullable=False),
+    Column("source", String(64), nullable=False),
+    Column("next_path", String(512), nullable=False),
+    Column("code_mac", String(HEX_SHA256)),
+    Column("wrong_codes", Integer, nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("expires_at", UtcDateTime, nullable=False),
+    Column("used_at", UtcDateTime),
+    **MYSQL_TABLE,
+)
+
+email_sign_in_day = Table(
+    "email_sign_in_day",
+    metadata,
+    _ref("human_id", "human.id", primary_key=True),
+    Column("day", String(10), primary_key=True),
+    Column("wrong_codes", Integer, nullable=False),
+    **MYSQL_TABLE,
+)
+
+
 # --- projects and memberships -------------------------------------------------
 
 project = Table(
@@ -446,6 +475,13 @@ project = Table(
     Column("coordinator_substitute", String(ID)),
     # What revoking a runner does to its agents here: keep, stop or inherit (§6.1, §15.3).
     Column("on_runner_revoke", String(16), nullable=False, server_default="inherit"),
+    # What a human set for the Keep the Why commitment (NULL: nobody did) and whether a
+    # joining agent adopts the repository's personal defaults (§6.1, §6.23).
+    Column("keep_the_why_policy", String(16)),
+    Column("keep_the_why_defaults", String(8), nullable=False, server_default="adopt"),
+    # The setup options chosen at creation and the ids of the cards made for them
+    # (§6.21); NULL for a project that predates the field.
+    Column("setup", JSON_VALUE),
     # The jour fixe (§20.1, §20.2): the schedule, the explicit moderator order, the day
     # its weekly interval counts from, and the last slot the hub handled.
     Column("jour_fixe", JSON_VALUE),
@@ -674,6 +710,15 @@ credential = Table(
     # (§15.3): when, and on whose authority, until it is revoked.
     Column("revoke_due_at", UtcDateTime),
     Column("revoke_due_by", String(ID)),
+    # The Keep the Why commitment of the instance (§6.23): when it confirmed and in which
+    # session, its deadline (fixed by the first resume under `required`), and what the hub
+    # sent for an outstanding one: the reminder's time and the owner's request.
+    Column("ktw_acknowledged_at", UtcDateTime),
+    Column("ktw_acknowledged_session", String(ID)),
+    Column("ktw_acknowledge_by", UtcDateTime),
+    Column("ktw_session_id", String(ID)),
+    Column("ktw_reminded_at", UtcDateTime),
+    Column("ktw_request_id", String(ID)),
     # The instance's own pause (§5.3), as the membership's is stored.
     Column("paused_reason", MARKDOWN_TEXT),
     Column("paused_since", UtcDateTime),
@@ -1012,6 +1057,8 @@ card = Table(
     Column("merge_report", String(64)),
     Column("merge_told", Boolean, nullable=False, server_default=false()),
     Column("contract", JSON_VALUE),
+    # The forge issue an import read (§6.14): set once, never changed; null otherwise.
+    Column("imported_from", JSON_VALUE),
     # Releases: the version is unique per project; `release_in_flight` is
     # True on the one release card that is neither done nor cancelled and
     # NULL on every other card, so the unique constraint allows one per project.
@@ -1652,7 +1699,8 @@ notification_settings = Table(
 address_lock = Table(
     "address_lock",
     metadata,
-    Column("address", String(254), primary_key=True),
+    # The HMAC of the normalized address (`addresses.lock_key`), never the address (§2.9).
+    Column("digest", String(64), primary_key=True),
     **MYSQL_TABLE,
 )
 

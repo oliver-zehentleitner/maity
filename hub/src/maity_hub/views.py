@@ -12,6 +12,7 @@ from maity_hub import (
     availability,
     avatars,
     clock,
+    commitment,
     contract_text,
     forge,
     forge_access,
@@ -191,6 +192,11 @@ def project_language(project: Any) -> str:
     return "de" if (project.settings or {}).get("language") == "de" else "en"
 
 
+def memory_of(project: Any) -> dict[str, str]:
+    """The project's memory provider (§6.1), stored as the boolean column `keep_the_why`."""
+    return {"provider": "keep-the-why" if project.keep_the_why else "none"}
+
+
 def project_view(
     project: Any,
     settings: Settings,
@@ -220,7 +226,8 @@ def project_view(
         "repository": repository(project, settings),
         "logo": shown.get("logo", NO_IMAGE),
         "banner": shown.get("banner", NO_IMAGE),
-        "keep_the_why": project.keep_the_why,
+        "memory": memory_of(project),
+        "setup": project.setup,
         "keep_the_why_export": export,
         "attachments": stored,
         "policy": policy.of(project),
@@ -392,6 +399,23 @@ def _owners_of(conn: Connection, membership_ids: set[int]) -> dict[int, str]:
     return {r.id: r.owner_id if r.agent_id is not None else r.human_id for r in rows}
 
 
+def human_languages(conn: Connection, human_ids: set[str]) -> dict[str, str]:
+    """Each human's language (`en` or `de`) from their notification settings (§6.2,
+    §18.4); a human who never set it reads as `en`."""
+    if not human_ids:
+        return {}
+    rows = conn.execute(
+        select(t.notification_settings.c.human_id, t.notification_settings.c.preferences).where(
+            t.notification_settings.c.human_id.in_(human_ids)
+        )
+    ).all()
+    found = {}
+    for human_id, stored in rows:
+        language = ((stored or {}).get("email") or {}).get("language")
+        found[human_id] = language if language in ("en", "de") else "en"
+    return found
+
+
 def member_views(
     conn: Connection,
     rows: Sequence[Any],
@@ -449,6 +473,7 @@ def member_views(
 
     briefed = {r.id: r for r in rows if (briefing(r) if callable(briefing) else briefing)}
     writers = briefings.writers(conn, {r.briefing_by for r in briefed.values() if r.briefing_by})
+    languages = human_languages(conn, human_ids)
     views = []
     for row in rows:
         head = (
@@ -518,6 +543,9 @@ def member_views(
         if row.agent_id is not None:
             view["team"] = instances.team(conn, row)
             view["instances"] = team_of.get(row.id, [])
+            unconfirmed = commitment.unconfirmed(projects[row.project_id], view["instances"])
+            if unconfirmed is not None:
+                view["keep_the_why_unconfirmed"] = unconfirmed
             if view["instances"] and row.paused_since is None:
                 # The best of its instances' (§5.3).
                 view["presence"] = min(
@@ -525,6 +553,9 @@ def member_views(
                 )
         if row.removed_at is not None:
             view["removed_at"] = ts(row.removed_at)
+        elif row.agent_id is None:
+            # The human's own language, read live from their notification settings (§6.2).
+            view["language"] = languages.get(row.human_id, "en")
         if row.id in briefed:
             view["briefing"] = row.briefing
             view.update(briefings.fields(row, writers))
@@ -809,6 +840,7 @@ def _task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[
                 "report": row.report,
                 "release": _release(conn, row, fg, release_tags),
                 "contract": view_contract(row.contract) if row.contract is not None else None,
+                "imported_from": row.imported_from,
                 "links": linked[row.id],
                 "notes": noted[row.id],
                 "created_at": ts(row.created_at),

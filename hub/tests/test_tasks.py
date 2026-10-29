@@ -37,6 +37,7 @@ TASK_KEYS = {
     "report",
     "release",
     "contract",
+    "imported_from",  # §6.14: null unless imported
     "links",  # §6.13
     "notes",  # §6.16: the counts
     "created_at",
@@ -271,6 +272,7 @@ def _report(**overrides: Any) -> dict[str, Any]:
         "pr": None,
         "pr_status": "none",
         "pr_unknown_reason": None,
+        "why": {"none": "a test report, nothing to keep"},  # §6.23: a new project requires it
     }
     return {**body, **overrides}
 

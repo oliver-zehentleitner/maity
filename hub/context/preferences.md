@@ -29,11 +29,34 @@ proposal keeps one settlement path for every proposal kind.
 - Apply preferences in the answer route itself, outside the registry: a
   second path for proposals, which the registry exists to avoid.
 
+## The meat-proxy note says both sides of it, and the dashboard shows the same words
+
+**Id:** 7ac44bcb-278a-4a26-bc55-5857a8666ae5
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the owner's decision in the team chat, 2026-10-29 (the two meanings, the wording, the hint in the dashboard); contract in `docs/api.md` §5.2 "Meat proxy"
+
+The flag stays as it was: a boolean on the human, set only by that human. What changes is the note: it is now
+"This person says: I am a meat proxy. Lead me step by step rather than expecting me to explain; and when you need a human's hands, come to me first." It names the two sides the owner means: a person who would rather be led than asked to explain, and a
+person agents may turn to first when they need a human's hands. The dashboard shows the same sentence under the
+switch, so the person sees what the agents read.
+
+**Reason:** the owner described the mode in both directions and wants agents to take it into account and
+people to understand the switch. It stays context about a person under the rank of §19.4, never a rule. The earlier "say nothing, let the model guess" left both sides to chance.
+
+**Rejected alternatives:**
+- Keep the bare sentence (the earlier decision): models read "meat proxy" in different ways, and only one of the
+  two meanings tends to come through.
+- Two separate switches: the owner sees it as one mode with two sides; two switches would ask people to split
+  what they mean as one.
+
 ## "I am a meat proxy" is a flag on the human with one fixed sentence, set by the human alone
 
 **Id:** c2f77cf7-91dc-4954-afe3-67ddb1bde91b
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 7ac44bcb-278a-4a26-bc55-5857a8666ae5
 **Evidence:** inferred
 **Source:** the owner's wish in the team chat (2026-10-28, a checkbox in the personal profile, default off, shown in the agents' briefing, the model's reading left to the model); the coordinator's constraints (a boolean on the human, only the human sets it, a short fixed sentence)
 **Revisit when:** agents are meant to act on it (a rule instead of a remark), or humans want to say more than yes or no

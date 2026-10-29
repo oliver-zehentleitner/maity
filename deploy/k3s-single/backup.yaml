@@ -33,9 +33,22 @@ spec:
               args:
                 - |
                   f=/backups/maity-$(date -u +%Y%m%dT%H%M%SZ).dump
-                  pg_dump -h maity-postgres -U maity -Fc maity -f "$f.part" && mv "$f.part" "$f"
+                  # One command per line: under `sh -e` a failure inside `a && b` does not stop the script, and
+                  # the Job then reported success for a dump that never happened (an empty .part and "Complete").
+                  trap 'rm -f "$f.part"' EXIT
+                  # A few tries: a dump pod that starts before its network is ready got "Connection refused" while the database was fine.
+                  n=0
+                  until pg_dump -h maity-postgres -U maity -Fc maity -f "$f.part"; do
+                    n=$((n + 1))
+                    [ "$n" -lt 5 ] || exit 1
+                    sleep 5
+                  done
+                  test -s "$f.part"
+                  mv "$f.part" "$f"
+                  find /backups -name 'maity-*.dump.part' -mmin +60 -delete
                   ls -1t /backups/maity-*.dump | tail -n +15 | xargs -r rm --
                   ls -l /backups
+                  echo "dump ok: $f $(stat -c %s "$f")"
               securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
               volumeMounts: [{name: b, mountPath: /backups}]
           volumes: [{name: b, persistentVolumeClaim: {claimName: maity-backups}}]

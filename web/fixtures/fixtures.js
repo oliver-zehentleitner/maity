@@ -2381,7 +2381,6 @@ window.MAITY_FIXTURES = {
     "created_at": "2026-10-21T07:50:00Z",
     "full_name": "maintainer/maity",
     "id": "prj-maity0000001",
-    "keep_the_why": true,
     "keep_the_why_export": {
       "error": null,
       "family_truncated": false,
@@ -4231,12 +4230,14 @@ window.MAITY_FIXTURES = {
   },
   "me.json": {
     "member": {
+      "deletion": null,
       "display_name": "Maintainer",
       "handle": "maintainer",
       "id": "hum-maintainer",
       "instance_admin": true,
       "kind": "human",
-      "meat_proxy": false
+      "meat_proxy": false,
+      "meat_proxy_note": "This person says: I am a meat proxy. Lead me step by step rather than expecting me to explain; and when you need a human's hands, come to me first."
     },
     "projects": [
       {
@@ -4428,6 +4429,84 @@ window.MAITY_FIXTURES = {
         "security"
       ],
       "mail_available": false
+    }
+  },
+  "orgs.json": {
+    "invitations": {
+      "org-oz00crew0001": [],
+      "org-oz00team0001": [
+        {
+          "created_at": "2026-10-29T10:00:00Z",
+          "expires_at": "2026-11-12T10:00:00Z",
+          "handle": "ben",
+          "id": "oinv-0001",
+          "invited_by": {
+            "handle": "maintainer",
+            "id": "hum-maintainer"
+          },
+          "role": "member"
+        }
+      ]
+    },
+    "items": [
+      {
+        "aliases": [],
+        "avatar_url": null,
+        "created_at": "2026-10-29T09:00:00Z",
+        "display_name": "OZ Team",
+        "handle": "oz-team",
+        "id": "org-oz00team0001",
+        "members_create_projects": false,
+        "public_page": "off"
+      },
+      {
+        "aliases": [],
+        "avatar_url": null,
+        "created_at": "2026-10-29T09:00:00Z",
+        "display_name": "Crew",
+        "handle": "crew",
+        "id": "org-oz00crew0001",
+        "members_create_projects": false,
+        "public_page": "off"
+      }
+    ],
+    "members": {
+      "org-oz00crew0001": [
+        {
+          "avatar_url": null,
+          "display_name": "Olga",
+          "handle": "olga",
+          "id": "hum-olga",
+          "joined_at": "2026-10-29T09:00:00Z",
+          "role": "owner"
+        },
+        {
+          "avatar_url": null,
+          "display_name": "Maintainer",
+          "handle": "maintainer",
+          "id": "hum-maintainer",
+          "joined_at": "2026-10-29T09:10:00Z",
+          "role": "admin"
+        }
+      ],
+      "org-oz00team0001": [
+        {
+          "avatar_url": null,
+          "display_name": "Maintainer",
+          "handle": "maintainer",
+          "id": "hum-maintainer",
+          "joined_at": "2026-10-29T09:00:00Z",
+          "role": "owner"
+        },
+        {
+          "avatar_url": null,
+          "display_name": "Anna",
+          "handle": "anna",
+          "id": "hum-anna",
+          "joined_at": "2026-10-29T09:30:00Z",
+          "role": "admin"
+        }
+      ]
     }
   },
   "personal-requests.json": {
@@ -5018,7 +5097,6 @@ window.MAITY_FIXTURES = {
     "created_at": "2026-09-02T10:00:00Z",
     "full_name": "maintainer/sample",
     "id": "prj-sample000001",
-    "keep_the_why": false,
     "keep_the_why_export": null,
     "legacy_slug": "sample",
     "logo": {

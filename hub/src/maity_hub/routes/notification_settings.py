@@ -14,8 +14,10 @@ from sqlalchemy import Connection, select
 from maity_hub import tables as t
 from maity_hub.auth import second_factor
 from maity_hub.auth.caller import Caller
+from maity_hub.db import retrying
 from maity_hub.deps import AnyCaller, engine_of, origin_of, settings_of
 from maity_hub.errors import forbidden, humans_only, invalid, not_found
+from maity_hub.mail import address as addresses
 from maity_hub.mail import settings as mail_settings
 from maity_hub.notifications import preferences
 from maity_hub.routes.auth import LOGIN_BY_ADDRESS, LOGIN_BY_HANDLE
@@ -59,30 +61,36 @@ def patch_settings(
     session_hash = _human(caller)
     hub = settings_of(request)
     address = origin_of(request).address
-    with engine_of(request).begin() as conn:
-        human, session = _context(conn, caller, session_hash)
 
-        def wrong_password() -> None:
-            # A wrong current password counts against the login limit (§2.1, §18.4).
-            LOGIN_BY_ADDRESS.hit(address)
-            LOGIN_BY_HANDLE.hit(human.handle)
+    def run() -> tuple[dict[str, Any], int]:
+        with engine_of(request).begin() as conn:
+            human, session = _context(conn, caller, session_hash)
 
-        def password_blocked() -> int:
-            return max(LOGIN_BY_ADDRESS.blocked(address), LOGIN_BY_HANDLE.blocked(human.handle))
+            def wrong_password() -> None:
+                # A wrong current password counts against the login limit (§2.1, §18.4).
+                LOGIN_BY_ADDRESS.hit(address)
+                LOGIN_BY_HANDLE.hit(human.handle)
 
-        status = preferences.patch(
-            conn,
-            human=human,
-            session=session,
-            body=body,
-            signing_key=hub.mail.signing_key,
-            public_url=hub.public_url,
-            mail_ready=_mail_ready(conn, request),
-            wrong_password=wrong_password,
-            password_blocked=password_blocked,
-            step_up=lambda: second_factor.require_step_up(conn, hub, caller),  # §2.8.4
-        )
-        answer = preferences.view(conn, human.id, _mail_ready(conn, request))
+            def password_blocked() -> int:
+                return max(LOGIN_BY_ADDRESS.blocked(address), LOGIN_BY_HANDLE.blocked(human.handle))
+
+            status = preferences.patch(
+                conn,
+                human=human,
+                session=session,
+                body=body,
+                signing_key=hub.mail.signing_key,
+                public_url=hub.public_url,
+                mail_ready=_mail_ready(conn, request),
+                wrong_password=wrong_password,
+                password_blocked=password_blocked,
+                step_up=lambda: second_factor.require_step_up(conn, hub, caller),  # §2.8.4
+            )
+            return preferences.view(conn, human.id, _mail_ready(conn, request)), status
+
+    # Three first writes at once can end in a duplicate-key deadlock on MariaDB; the whole
+    # transaction runs again (`db.retrying`), and a refusal (an error raised) is not retried.
+    answer, status = retrying(run)
     return JSONResponse(answer, status_code=status)
 
 
@@ -95,10 +103,16 @@ def verify_from_dashboard(
     if set(body) != {"token"} or not isinstance(token, str):
         raise invalid({"token": "required"})
     hub = settings_of(request)
+    addresses.prepare(engine_of(request), hub.secret_key)  # before the lock's transaction
     with engine_of(request).begin() as conn:
         # Another human's token is `not_found`, the same as an invalid one (§18.4).
         done = preferences.verify(
-            conn, token, hub.mail.signing_key, hub.public_url, human_id=caller.principal_id
+            conn,
+            token,
+            hub.mail.signing_key,
+            hub.public_url,
+            secret_key=hub.secret_key,
+            human_id=caller.principal_id,
         )
         if not done:
             raise not_found()

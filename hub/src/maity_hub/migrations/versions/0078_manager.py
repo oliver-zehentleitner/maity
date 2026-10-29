@@ -12,7 +12,7 @@ Re-chained at merge time on the coordinator's call: `down_revision` is the head 
 branch this one started from and follows whatever head `main` has when it lands.
 
 Revision ID: 0078
-Revises: 0066
+Revises: 0082
 Create Date: 2026-10-29
 """
 
@@ -22,7 +22,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0078"
-down_revision: str | None = "0066"
+down_revision: str | None = "0082"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

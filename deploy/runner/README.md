@@ -16,6 +16,9 @@ runner of its own type: `hub-sqlite` for `[self-hosted, maity-hub-sqlite]`, `hub
   once, both binding the host port 5432 for their service container (`ports: 127.0.0.1:5432`).
 - Each service sets `PYTEST_ARGS=-n 2` in its unit: two workers per job, six on the machine's
   eight cores. Hosted runners keep `-n auto`.
+- `HUB_RUNNER_TYPES` (optional, a space-separated list of `sqlite`, `pg`, `maria`) names the jobs that go to the machine; unset or empty means
+  all three. A job whose type is not listed stays hosted: with a runner for one type only, the other two jobs do not wait for a runner
+  that is not there.
 - Variable unset or empty: GitHub-hosted (`ubuntu-latest`). **Deleting the variable is the whole
   fallback**, no commit needed. Runs already queued for a self-hosted label keep it, so cancel and
   rerun them after deleting the variable.
@@ -94,13 +97,9 @@ So the machine is capped, not trusted:
 
 ## Install
 
-0. **Coming from the single runner of the first version?** First stop it, because the scripts below refuse while
-   any runner of the runner user runs: remove the runner in GitHub (Settings → Actions → Runners),
-   `systemctl disable --now maity-runner`, delete `/etc/systemd/system/maity-runner.service` and
-   `/opt/actions-runner`, and the repository variable `HUB_RUNNER` (no longer read). Containers a cut-off job left running
-   (`docker ps` as the runner user) hold the ports 5432 and 3306 for good once the runner is gone: remove them. A fresh install has nothing to do here.
 1. Create the user (`<runner-user>`, uid `<uid>`), enable lingering, install rootless Docker
-   for it (see above).
+   for it (see above). On a fresh rented server `bootstrap-server.sh` does this step and the firewall rules;
+   [SERVER-SETUP.md](SERVER-SETUP.md) has the whole procedure for such servers.
 2. Download the runner (Linux x64) from GitHub's "New self-hosted runner" page as a tarball and get a
    registration token from that page (Settings → Actions → Runners; valid for an hour).
 3. As root, with every `maity-runner*` service stopped and no container left in the runner user's Docker (stopping a

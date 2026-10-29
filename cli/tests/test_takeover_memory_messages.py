@@ -325,6 +325,16 @@ def test_messages_prints_one_block_per_message_and_the_next_page(
     )
 
 
+def test_messages_names_an_instance_address_by_its_handle(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    to_instance = {**MESSAGE, "to": "agt-b#k7mq", "attachments": []}
+    fake.routes[("GET", f"{P}/messages")] = lambda s: (200, {"items": [to_instance]})
+    fake.routes[("GET", f"{P}/members")] = lambda s: (200, MEMBERS)
+    assert cli.main(["messages"]) == cli.EXIT_OK
+    assert "blocker  agent-b -> agent-b#k7mq  tsk-0004" in capsys.readouterr().out
+
+
 def test_messages_json_is_the_page_ascii_escaped(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -73,6 +73,7 @@ def test_one_document_to_save(owner: flow.Human) -> None:
         "account",
         "sessions",
         "second_factor",
+        "forge_links",
         "runners",
         "agent_profiles",
         "memberships",
@@ -249,3 +250,33 @@ def test_what_the_hub_built_from_others_words_stays_out(
     )
     [made] = [c for c in body["cards_created"] if c["id"] == adopted["id"]]
     assert made["as_created"] is None
+
+
+def test_forge_links_are_login_kind_and_created_never_a_token(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    """§2.9: the forge links (§11.4) as login, kind and when made; never a token."""
+    now = clock.now()
+    with migrated.begin() as conn:
+        conn.execute(
+            t.forge_link.insert().values(
+                id="fgl-own", human_id=owner.id, forge="github", installation_id=4711,
+                account_id=1, account_login="maintainer-gh", account_type="User",
+                repository_selection="all", status="active", linked_at=now, checked_at=now,
+            )
+        )  # fmt: skip
+        conn.execute(
+            t.forge_token.insert().values(
+                human_id=owner.id, forge="github", login="maintainer-gh",
+                token_sealed=b"very-secret-sealed-bytes", status="active", set_at=now,
+                checked_at=now,
+            )
+        )  # fmt: skip
+    response = export(owner)
+    links = response.json()["forge_links"]
+    assert [(link["kind"], link["login"]) for link in links] == [
+        ("app", "maintainer-gh"),
+        ("token", "maintainer-gh"),
+    ]
+    assert all(set(link) == {"kind", "forge", "login", "status", "created"} for link in links)
+    assert "very-secret-sealed-bytes" not in response.text and "4711" not in response.text

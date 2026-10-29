@@ -19,7 +19,7 @@ RUNNER_TARBALL=$(realpath -- "$RUNNER_TARBALL")   # resolved before the cd below
 [ -f "$RUNNER_TARBALL" ] || { echo "no such tarball: $RUNNER_TARBALL" >&2; exit 1; }
 # Root works in directories that belong to the runner user for a moment (config.sh runs as that user). A process of that
 # user could leave a symlink there that a root chgrp, chmod or redirect would follow. So no runner of that user may run:
-# stop every maity-runner* service first (README, step 0).
+# stop every maity-runner* service first (systemctl stop 'maity-runner*').
 if pgrep -u "$RU" -f 'Runner\.(Listener|Worker)|runsvc\.sh' >/dev/null; then
   echo "a runner of $RU is running; stop all runner services first: systemctl stop 'maity-runner*'" >&2
   exit 1
@@ -68,5 +68,11 @@ for t in $INSTANCES; do
   echo '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' > "$d/.path"
   echo "registered maity-vm-$t with label $PREFIX-$t in $d"
 done
+# On a server prepared by bootstrap-server.sh the runner must not run without the firewall chain: start it after the firewall
+# unit and only with it. (Not in the template: the workstation has no such unit and would never start the runner.)
+if [ -f /etc/systemd/system/maity-runner-firewall.service ]; then
+  install -d /etc/systemd/system/maity-runner@.service.d
+  printf '[Unit]\nRequires=maity-runner-firewall.service\nAfter=maity-runner-firewall.service\n' > /etc/systemd/system/maity-runner@.service.d/firewall.conf
+fi
 systemctl daemon-reload
 echo "installed: now run install-python.sh for each instance, then: systemctl enable --now maity-runner@<type>"

@@ -23,6 +23,7 @@ from maity_hub import (
     attachment_store,
     attachments,
     availability,
+    commitment,
     errors,
     forge,
     forge_access,
@@ -54,6 +55,7 @@ from maity_hub.routes import (
     contract_text,
     conversations,
     device_codes,
+    email_sign_in,
     forge_links,
     forge_webhook,
     joins,
@@ -67,6 +69,7 @@ from maity_hub.routes import (
     memory,
     notification_settings,
     notifications,
+    overview,
     placements,
     preferences,
     project_images,
@@ -130,6 +133,10 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
             # A method the environment switched off voids its open codes at once (§2.6.5).
             if not sign_in.device_code_enabled(conn, settings):
                 codes.void_open(conn)
+            if not sign_in.email_link_enabled(conn, settings):
+                from maity_hub.auth import email_links
+
+                email_links.void_open(conn)
             # A second factor the environment switched off is told, once (§2.8.5).
             source = sign_in.resolve(conn, settings)["second_factor"][1]
             sign_in.note_second_factor(
@@ -152,6 +159,8 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         # A session that stopped reading is noticed without anybody asking (§5.3).
         not_listening_worker = not_listening.Worker(engine)
         not_listening_worker.start()
+        commitment_worker = commitment.Worker(engine)
+        commitment_worker.start()
         registrations_worker = registration_accounts.Worker(engine)
         registrations_worker.start()
         from maity_hub.jourfixe import worker as jour_fixe_worker
@@ -181,6 +190,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         takeover_worker.stop()
         jour_fixe_clock.stop()
         registrations_worker.stop()
+        commitment_worker.stop()
         availability_worker.stop()
         not_listening_worker.stop()
         image_worker.stop()
@@ -232,6 +242,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(board.router, prefix=prefix)
     app.include_router(contract_text.router, prefix=prefix)
     app.include_router(takeover_routes.router, prefix=prefix)
+    app.include_router(overview.router, prefix=prefix)
     app.include_router(requests.router, prefix=prefix)
     app.include_router(events_routes.router, prefix=prefix)
     app.include_router(conversations.router, prefix=prefix)
@@ -248,6 +259,8 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(forge_webhook.router, prefix=prefix)
     app.include_router(joins.page_router)  # /j/{token}, before the dashboard mount
     app.include_router(runners.page_router)  # /r/{token}, likewise
+    app.include_router(email_sign_in.router, prefix=prefix)
+    app.include_router(email_sign_in.page_router)
     app.include_router(mail_links.page_router)  # /mail/*, likewise
     app.include_router(register_page.page_router)  # the registration's link page, likewise
     app.include_router(badges.router)  # public /badge/*.svg, before the dashboard
