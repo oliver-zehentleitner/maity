@@ -304,7 +304,7 @@ gone lets the owner fix all of them at once.
 **Rejected alternatives:**
 - Keeping one request per episode with a longer threshold: still one
   line per instance and per pause, in the inbox of someone who wants to
-  fix them together.
+  fix them together; the digest keeps exactly one open entry per human.
 - Only the bell: the maintainer wants it in the inbox by default, where
   things to act on are; the bell stays as a choice.
 - One threshold for the instance: owners differ in how long they let

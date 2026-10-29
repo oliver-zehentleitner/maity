@@ -3450,7 +3450,11 @@ of kind `inbox` in the bell (§18.1) that stays listed while any instance
 is away and links to the human's agents (`/agents`); with `off` the
 human hears nothing of it. A change of `not_listening.mode` takes
 effect at the `PATCH`: an open digest request is withdrawn when the
-mode leaves `inbox`, and the next hour writes what the new mode says. The member the agent reports
+mode leaves `inbox`, an open `agents_not_listening` record is closed
+when it leaves `bell`, and the next hour writes what the new mode says.
+When this digest replaces the per-episode requests, the hub withdraws
+every open one of those (`<agent handle> (<instance>) is not
+listening`) at the first digest hour. The member the agent reports
 to keeps its `member_not_listening` either way, since the team needs it
 to re-route. When the profile's owner changes, the instance moves to
 the new owner's digest at the next hour.
@@ -7518,7 +7522,7 @@ events that exist: `member_joined` and `member_updated` (above) and
 | `priority` | `low`, `normal`, `high`, `urgent`; `urgent` only with `requests:answer` — the cap for workers |
 | `to` | a member id, an instance address (`agt-b#wqe2`, §6.17), `role:<role>`, `trust:admin`, or `owner` (the project's owner; `trust:owner` is the same). A guest, by id or as the only member a token resolves to, is `invalid` (`details.fields.to: "guest"`): a guest answers nothing (§2.3). A design question goes `to: role:designer` (§2.3). A member id reaches the team as its `wake` rule says (§6.18); an instance address that one instance, while the whole team may answer what it may answer. Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `trust:admin` or a member holding `requests:answer` that is not a proxy; a consent for the owner goes `to: owner`, and the proxy relays it (§2.3). `profile_owner:<agent id>` and `human:<human id>` are the hub's own addressing of a personal request (below) and are `invalid` from a caller. The consent for a cross-owner `reports_to` is filed by the hub as well and names the consenting human, who need not be a member (§6.2) |
 | `asked_by` | `{member_id, instance, display_name, avatar_url, trust, role, session_id}`, filled by the hub (trust, role, name and avatar at read time); `instance` is `null` for a human, and for a request the hub files on an agent's behalf (`filed_by`) |
-| `filed_by` | set by the hub only: `"hub"` on a request the hub files on an agent's behalf — the notice of an agent's outage (§15.7) and of an unconfirmed Keep the Why commitment (§6.23), whose `asked_by` is that agent's member with `instance: null`, and the owner's digest of agent instances that are not listening (§5.3), whose `asked_by` is `null`; absent (`null`) on every other request |
+| `filed_by` | set by the hub only: `"hub"` on a request the hub files itself — the notice of an agent's outage (§15.7) and of an unconfirmed Keep the Why commitment (§6.23), whose `asked_by` is that agent's member with `instance: null`, and the owner's digest of agent instances that are not listening (§5.3), whose `asked_by` is `null`; absent (`null`) on every other request |
 | `takeover_id`, `memory_proposal` | set by the hub only, on the request an escalated takeover files and on a cross-owner takeover's notice (§6.19), and on a soul, community-memory or preferences proposal (§19); `null` otherwise |
 | `takeover_outcome` | set by the hub only, on a cross-owner takeover's notice when the takeover closes: `{status, how, task_id, decided_at}` (§6.19); `null` otherwise |
 | `personal` | set by the hub only: `true` on a personal request (below), else `false` |
@@ -9873,6 +9877,7 @@ contract; until then nothing else in this section changes.
 | DELETE | `/projects/{owner}/{slug}/joins/{id}` | `members:admin` | 3.1 |
 | GET, PUT | `/projects/{owner}/{slug}/roles` | `project:read` / `project:admin`, human | 2.3 |
 | GET | `/projects/{owner}/{slug}/members` | `project:read` | 6.2 |
+| GET, PATCH | `/projects/{owner}/{slug}/me/settings` | human, the caller's own membership | 6.2 |
 | GET, PATCH, DELETE | `/projects/{owner}/{slug}/members/{id}` | `project:read` / `members:admin`; `team` only the human who owns the agent profile, member or not | 6.2, 6.18 |
 | GET | `/projects/{owner}/{slug}/members/{id}/credentials` | `credentials:admin` / owner of the agent | 10 |
 | POST | `/projects/{owner}/{slug}/credentials/{id}/revoke` | `credentials:admin` / owner of the agent | 10 |
