@@ -16,6 +16,7 @@ case "$*" in
   *"get deploy"*)           cat "$S/initial"; exit 0;;
   *"create job"*)           [ "$FAIL" = dump ] && exit 1; exit 0;;
   *"wait --for=condition"*) exit 0;;
+  *"logs"*)                 [ "$FAIL" = dump_error ] && echo "pg_dump: error: connection to server failed: Connection refused"; exit 0;;
   *"delete job"*)           exit 0;;
   *"scale"*)
     all="$*"; n=${all##*--replicas=}
@@ -62,6 +63,7 @@ run() { # name, FAIL value, initial replicas, expected exit, expect helm (yes/no
 
 run all_good   none       1 0 yes 1
 run dump       dump       1 1 no  1
+run dump_error dump_error 1 1 no  1
 run scale_down scale_down 1 1 no  1
 run pods_stay  pods_stay  1 1 no  1
 run list       list       1 1 no  1

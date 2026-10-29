@@ -281,3 +281,32 @@ and an agent that does not recognise it as such acts on stale
 instructions. Whether a fresh instance should start near the present
 with a short summary, and how long a join output may be, is not
 decided; it was raised with the coordinator as a possible card.
+
+
+## A dump Job that reported success for a dump that never happened
+
+**Id:** 19df9565-836c-4f23-a707-9c72d471b4d1
+**Type:** incident
+**Status:** active
+**Evidence:** inferred
+**Source:** the log of the backup Job run before a database change on 2026-10-29 (`pg_dump: error: … Connection refused`, the Job `Complete`), the volume listing with empty `.dump.part` files from 2026-10-22 to 2026-10-28, and the script in `deploy/k3s-single/backup.yaml`
+**Revisit when:** the backup moves off the instance (copies off the host), or the cause of the refused connection is found
+
+`pg_dump` and `mv` were joined by `&&` in a script run with `sh -e`. A failure inside an `&&` list does not stop `sh -e`, so after a failed
+`pg_dump` the script went on, the last commands (`ls`) succeeded, and the Job ended as `Complete`. Everything that trusted "the dump Job
+is complete" (the upgrade script, a person) trusted nothing: several nightly dumps and one dump before a change left an empty `.part` and no
+dump. Found because the Job's log was read after a change, not because anything failed.
+
+The script now has one command per line, tries `pg_dump` up to five times, requires a non-empty file, removes its own leftovers on any exit
+and stale `.part` files after an hour, so a failed dump is a failed Job. `deploy/scripts/helm-upgrade.sh` also refuses to go on when
+the Job's log contains `pg_dump: error`, because a CronJob in the cluster keeps its old script until the manifest is applied again.
+
+**Reason:** a safety net that cannot fail is worse than none, because it is trusted (the suite's fail-loud principle). The retry is a
+guess about the cause: the database was healthy at the time (no restart, normal checkpoints), the Job pod was seconds old, and the first
+dump ten minutes earlier worked, which fits a pod whose network was not ready yet; that is not proven.
+
+**Rejected alternatives:**
+- Only the log check in `helm-upgrade.sh`: it protects upgrades, but the nightly dumps would go on failing silently.
+- Only the fixed script: the CronJob in the cluster keeps the old one until someone applies the manifest, so the upgrade script checks too.
+- A separate monitor for empty `.part` files: another thing to run for what the Job's own exit status can say.
+

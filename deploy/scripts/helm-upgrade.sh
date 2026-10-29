@@ -53,6 +53,11 @@ if [ -n "${DUMP_CRONJOB:-}" ]; then
   { kubectl -n "$NAMESPACE" create job --from="cronjob/$DUMP_CRONJOB" "$job" &&
       kubectl -n "$NAMESPACE" wait --for=condition=complete "job/$job" --timeout=300s; } ||
     { echo "the dump failed, nothing was changed" >&2; restored=1; exit 1; }
+  # A Job whose pg_dump failed used to end as Complete (see deploy/k3s-single/backup.yaml); the log is checked as well, so that a
+  # CronJob that still has the old script cannot let an upgrade run without a dump.
+  if kubectl -n "$NAMESPACE" logs "job/$job" 2>&1 | grep -q 'pg_dump: error'; then
+    echo "the dump job completed but pg_dump reported an error, nothing was changed" >&2; restored=1; exit 1
+  fi
   echo "dump job: $job"
 fi
 
