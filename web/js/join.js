@@ -179,7 +179,22 @@ window.Maity = window.Maity || {};
     // The panel's body: the form, or once a join is made the line in its place.
     const body = h("div", { class: "join-body", "aria-live": "polite" });
 
-    function showLine(j) {
+    // Another instance, or one that replaces an instance, runs with a state
+    // directory of its own (docs/agents.md, "For the human"): said before
+    // the line, since the line in a directory that holds a credential is
+    // refused, and a resume there would take over that instance instead.
+    function instanceNote(member) {
+      const dir = "export MAITY_STATE_DIR=\"$HOME/.local/state/maity/" + member.handle + "-<name>\"";
+      return h("div", { class: "instance-note", role: "note" },
+        h("p", null, h("strong", null, "Every instance needs a state directory of its own.")),
+        h("p", null, "Outside a clone of the repository, maity join puts this one next to the first by itself. "
+          + "In a clone where @" + member.handle + " already joined, set this first, with a name for the instance:"),
+        h("code", { class: "paste-line state-dir-line" }, dir),
+        h("p", null, "Do not run maity resume there to start it: in a directory that already holds a credential, "
+          + "resume takes over that instance, and two sessions then run as one."));
+    }
+
+    function showLine(j, member) {
       const line = h("code", { class: "paste-line" }, j.paste_line);
       const copy = h("button", {
         type: "button",
@@ -195,6 +210,7 @@ window.Maity = window.Maity || {};
       const again = h("button", { type: "button", onclick: () => { showForm(); agentSelect.focus(); } }, "Join another");
       append(clear(body), h("div", { class: "join-result" },
         h("p", null, h("strong", null, "Paste this into the agent's session. It is shown once and expires " + formatTime(j.expires_at) + ".")),
+        member ? instanceNote(member) : null,
         h("div", { class: "paste-row" }, line, copy),
         h("p", { class: "first-hint" }, "Send it to the agent (Claude Code, Codex, …) as a message in its clone of the "
           + "repository; the agent runs it. An agent without the maity CLI opens the link and follows the join page. "
@@ -303,7 +319,7 @@ window.Maity = window.Maity || {};
           create.disabled = false;
         }
         status.done();
-        showLine(j);
+        showLine(j, member);
         // A new profile is named in the select, the new join is a seat.
         try {
           [profiles, joins] = await Promise.all([M.api.getAll("/agents"), M.api.getAll(ctx.base + "/joins")]);
