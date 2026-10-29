@@ -18,7 +18,6 @@
   "memory": {
     "provider": "keep-the-why"
   },
-  "keep_the_why": true,
   "setup": null,
   "policy": {
     "preset": "hierarchical",

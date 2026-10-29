@@ -1385,8 +1385,10 @@ window.Maity = window.Maity || {};
       }
       const preset = body.policy && body.policy.preset ? body.policy.preset : "hierarchical";
       if (!PRESETS[preset]) fields["policy.preset"] = "unknown";
-      // §6.1, §6.21: the provider (keep_the_why its alias) and the options.
-      const provider = body.memory ? body.memory.provider : body.keep_the_why === false ? "none" : "keep-the-why";
+      // §6.1, §6.21: the provider and the options; the old boolean alias is a
+      // field the hub does not know (#606), refused as every unknown one.
+      if ("keep_the_why" in body) fields.keep_the_why = "extra_forbidden";
+      const provider = body.memory ? body.memory.provider : "keep-the-why";
       if (!["keep-the-why", "none"].includes(provider)) fields["memory.provider"] = "unknown_provider";
       const given = body.setup || {};
       Object.keys(given).forEach((k) => {
@@ -1405,7 +1407,7 @@ window.Maity = window.Maity || {};
         repository: url === null ? null : {
           url, default_branch: body.repository.default_branch || "main", forge: "github", probe_configured: false,
         },
-        memory: { provider }, keep_the_why: ktw, setup,
+        memory: { provider }, setup,
         policy: Object.assign({}, PRESETS[preset], {
           preset, contract_arbiter: PRESETS[preset].contract_arbiter || owner.id,
           // The creator's Maity badge switches the badge on at creation (§6.20).
@@ -1456,6 +1458,8 @@ window.Maity = window.Maity || {};
     }],
     ["PATCH", /^\/projects\/([^/]+)$/, (m, body, path) => {
       const p = project(m[1], path);
+      // The old boolean alias of memory.provider is no field of the hub (#606).
+      if ("keep_the_why" in body) fail(400, "invalid", "the request does not validate", path, { fields: { keep_the_why: "extra_forbidden" } });
       // §6.25: a rename, by a human owner; the old full name an alias.
       if ("slug" in body && body.slug !== p.slug) {
         if (me().member.kind !== "human" || trustIn(m[1]) !== "owner") fail(403, "forbidden", "a project is renamed by a human owner", path, { reason: "humans_only" });
@@ -1735,7 +1739,7 @@ window.Maity = window.Maity || {};
       "/api/v1/projects/{owner}/{slug}/placements": { get: {}, post: {} },
     },
     components: { schemas: { ProjectCreate: { properties: {
-      slug: {}, name: {}, repository: {}, memory: {}, setup: {}, keep_the_why: {}, policy: {},
+      slug: {}, name: {}, repository: {}, memory: {}, setup: {}, policy: {},
     } } } } })],
     // §17.6: a manual post by an owner or admin.
     ["POST", /^\/projects\/([^/]+)\/ticker$/, (m, body, path) => {
