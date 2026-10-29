@@ -44,12 +44,12 @@ window.Maity = window.Maity || {};
   function build(ctx, hooks, panel, listStatus, profilesRead, joinsRead) {
     let profiles = profilesRead;
     let joins = joinsRead;
-    // The project's members as last read: an agent among them joins as an
-    // instance. Agents the hub said are members count as such even when
-    // the list on screen does not show them yet.
-    let members = ctx.members;
+    // The project's members as last read (ctx.members, which Members keeps
+    // current after each save): an agent among them joins as an instance.
+    // Agents the hub said are members count as such even when the list on
+    // screen does not show them yet.
     const saidMember = new Set();
-    const memberOf = (id) => members.find((m) => m.id === id)
+    const memberOf = (id) => ctx.members.find((m) => m.id === id)
       || (saidMember.has(id) ? { id, instances: null, team: null } : null);
     const profileName = (id) => {
       const p = profiles.items.find((x) => x.id === id);
@@ -141,7 +141,7 @@ window.Maity = window.Maity || {};
     replaced.addEventListener("change", () => { replaceOne.checked = true; another.checked = false; });
     // The project's members read again, for the instances a choice offers.
     async function rereadMembers() {
-      try { members = (await M.api.getAll(ctx.base + "/members")).items; } catch (ignored) { /* the refusal shown says enough */ }
+      try { ctx.members = (await M.api.getAll(ctx.base + "/members")).items; } catch (ignored) { /* the refusal shown says enough */ }
     }
 
     const own = !!hooks.member;
@@ -300,7 +300,7 @@ window.Maity = window.Maity || {};
             if (saysMember) saidMember.add(agent.id);
             if (notMember) saidMember.delete(agent.id);
             await rereadMembers();
-            if (notMember) members = members.filter((m) => m.id !== agent.id);
+            if (notMember) ctx.members = ctx.members.filter((m) => m.id !== agent.id);
             showAgent();
             if (saysMember) status.fail("No join created: ", { message: "this agent is already a member of the project. "
               + "Choose whether the line starts another instance or replaces one, then create it." });
@@ -363,11 +363,15 @@ window.Maity = window.Maity || {};
     append(clear(panel), panelHead(() => close(true), own), body);
 
     let opener = null;
+    // Opened, it reads the members again: an agent's instances and its team's
+    // limit may have changed since the view was drawn (a rulebook saved, an
+    // instance revoked), and the choice must offer what the hub has now.
     function open(from) {
       opener = from || null;
       panel.hidden = false;
       if (hooks.opened) hooks.opened(true);
       focusSoon(agentSelect);
+      rereadMembers().then(() => { if (!panel.hidden) showAgent(); });
     }
     function close(refocus) {
       panel.hidden = true;

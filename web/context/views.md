@@ -909,7 +909,8 @@ longer does: such a hub is offered no project memory. **Reason:** the
 maintainer's rule for the alpha is to delete compatibility layers before
 launch, and no hub before §6.21 is running. **Rejected alternative:**
 keeping the alias: a third branch in the form for a hub nobody runs.
-The fixture hub still accepts the alias until the hub drops it.
+The hub dropped it from `POST`, `PATCH` and the project view (#606), and
+the fixture hub with it: it refuses the field as the hub does.
 
 ## Statistics sum counts of things over the window and show people by their busiest day
 

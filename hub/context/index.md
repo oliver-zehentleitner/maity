@@ -29,7 +29,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 - [availability.md](availability.md) — availability computed on read, the announced state stored and reconciled under the project lock by requests and a one-minute sweep; an agent's first look a silent baseline; a limit only lengthens leases; a human's limit on the account
 
 ## B
-- [board.md](board.md) — batched forge reads; event-linked and authored-only mirror history; final-state subtask approval and graph checks; computed child counts; completion-error compatibility
+- [board.md](board.md) — batched forge reads; event-linked and authored-only mirror history; final-state subtask approval and graph checks; computed child counts; completion-error compatibility; the import is a create through the same path, its own rules before it; an import authorizes, replays, reads the forge, checks the forge's text, then creates; an imported issue is one issue in any case
 
 ## C
 
@@ -57,7 +57,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 - [jour-fixe.md](jour-fixe.md) — minutes online for the moderator order counted per agent membership and minute in their own table; a round's thread opens with the round, a pending further step waits in the steps list; the thread and its messages wake nobody; a proposal's decision request asked by the moderator; a later adopt opens the card, the report stays final; a card still carries the hub's text while it is exactly what the hub wrote
 
 ## K
-- [keep-the-why.md](keep-the-why.md) — the Keep the Why export in memory: read through on request, refreshed in the background for the project view, never stored; the policy stores only what a human set, the provider keeps its boolean column; the commitment's deadline is on the credential, one reconcile function (a minute-sweep, and at once on a policy change) decides what is owed; the why on a report is checked by its shape only, the hub reads no file; a human's explicit value is a policy change even when the view does not move; the installer line is non-interactive and names no agent; the policy fields are humans_only, not a scope; skill.guide is an instance setting, https only
+- [keep-the-why.md](keep-the-why.md) — the Keep the Why export in memory: read through on request, refreshed in the background for the project view, never stored; the policy stores only what a human set, the provider keeps its boolean column; the commitment's deadline is on the credential, one reconcile function (a minute-sweep, and at once on a policy change) decides what is owed; the why on a report is checked by its shape only, the hub reads no file; a human's explicit value is a policy change even when the view does not move; the installer line is non-interactive and names no agent; the policy fields are humans_only, not a scope; skill.guide is an instance setting, https only; the setup options are a column of the project, the setup cards the hub's, found by their kind
 - [kubernetes.md](kubernetes.md) — one pod with Recreate, no replica count; migrations as a pre-install/pre-upgrade hook Job; readiness on health, liveness on help; a plain Ingress with ingress-nginx defaults (retired upstream); serving only on its own schema head, no rollback downgrade; the mail signing key and the SMTP password come from Secrets by reference; the instance key is a chart value too (secretKey.existingSecret)
 
 ## L
@@ -72,6 +72,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 
 ## O
 - [outbound.md](outbound.md) — reads whose host comes from data resolve once and connect to the checked address; `routable()` beyond `is_global`; seams instead of a TLS server in tests
+- [overview.md](overview.md) — the project overview returns counts and facts only, each read through the path its list uses; reports from the card's `report`, no member view repeated, a deleted account shown as such
 
 ## P
 - [packaging.md](packaging.md) — `src/` layout with migrations and `/help` as package data; all three drivers by default; the image's SQLite data volume; the tested set pinned with hashes via `uv pip compile --universal`; Pillow 13 for the avatar decoder (the 12.x pin superseded), the size read before Pillow; cryptography held to one major release for the stored secrets; the wheel carries the dashboard; the image sets MALLOC_ARENA_MAX=2 because the process grew through fragmented arenas

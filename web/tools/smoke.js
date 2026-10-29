@@ -770,6 +770,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(tmLeadPatches.length === 1 && JSON.stringify(tmLeadPatches[0]) === JSON.stringify({ team: { max_instances: 5 } }),
     "team: saving the limit leaves a revoked lead alone " + JSON.stringify(tmLeadPatches[0]));
   win.Maity.api.patch = tmPatch; win.Maity.api.getAll = tmLeadAll; win.Maity.api.get = tmLeadGet;
+  // The maintainer's report (tsk-pj6n7sxertx5): the limit raised in the rulebook, + Add an agent offers the
+  // new instances at once, without a reload: the panel reads the members Members just saved.
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 4; k++) await tick();
+  const ibRow = await agOpen("agt-b");
+  byId("team-max-agt-b").value = "3"; ibRow.querySelector("form.member-team").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  main.querySelector("button.join-open").click(); for (let k = 0; k < 6; k++) await tick();
+  byId("join-agent").value = "agt-b"; byId("join-agent").dispatch("change");
+  expect(text(byId("join-quota")) === "1 of 3 instances active.", "team: a raised limit is offered under + Add an agent without a reload: " + text(byId("join-quota")));
+  await win.Maity.api.patch("/projects/maintainer/maity/members/agt-b", { team: { max_instances: 1 } });
+  // Changed elsewhere since the view was drawn: opening the panel reads the members again.
+  btn(main.querySelector(".join-panel"), "Cancel").click(); await tick();
+  main.querySelector("button.join-open").click(); for (let k = 0; k < 6; k++) await tick();
+  byId("join-agent").value = "agt-b"; byId("join-agent").dispatch("change");
+  expect(text(byId("join-quota")) === "1 of 1 instances active; another one is over the team's limit.",
+    "team: opening + Add an agent reads the members again, a limit changed elsewhere shows: " + text(byId("join-quota")));
+  btn(main.querySelector(".join-panel"), "Cancel").click(); await tick();
   // Another owner's agent: no rulebook, even for an admin.
   const tmOthers = win.Maity.api.getAll;
   const tmOthersGet = win.Maity.api.get;
@@ -3090,13 +3106,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await inSubmit();
   expect(inPosts.length === 5 && inPosts[4][1].replaces === "q2zz" && !("role" in inPosts[4][1]), "join: after the refusal the join is created as a replacement");
   // The hub checks the membership's fields first: its differs_from_membership says "member" as well.
-  win.Maity.api.getAll = (p) => (p === "/projects/maintainer/maity/members"
+  // The agent became a member after the panel read the members: the hub lists it from the refusal on.
+  let inSpareJoined = false;
+  win.Maity.api.getAll = (p) => (p === "/projects/maintainer/maity/members" && inSpareJoined
     ? inGetAll(p).then((r) => ({ items: r.items.concat([{ id: "agt-x", kind: "agent", handle: "spare", display_name: "Spare", trust: "member", role: "coder",
       team: { max_instances: 2 }, instances: [{ id: "q2zz", label: "spare#q2zz", presence: "offline", last_seen_at: null, claims: 0, revoked_at: null },
         { id: "r3yy", label: "spare#r3yy", presence: "online", last_seen_at: null, claims: 0, revoked_at: null }] }]), next_cursor: null }))
     : inGetAll(p));
   win.Maity.api.post = (p, b) => {
     inPosts.push([p, b]);
+    if (b.agent.id === "agt-x" && "areas" in b) inSpareJoined = true;
     return b.agent.id === "agt-x" && "areas" in b
       ? Promise.reject(new win.Maity.api.ApiError("the agent is a member; change its membership instead", 400, p, "invalid", { fields: { areas: "differs_from_membership" } }))
       : inPost(p, b);
@@ -4080,19 +4099,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && text(main.querySelector("section.memory-panel")).includes("The cards are made when the project gets a repository."),
     "settings: options chosen without a repository wait for it");
   await projectSettings();
-  // The keep_the_why alias of a hub before §6.21 is gone (tsk-qeh64f8gpvnd): such a hub is offered neither memory nor the alias.
+  // The boolean keep_the_why alias of memory.provider is gone from the hub (#606): the mock refuses it too.
   const akGet = win.Maity.api.get;
-  win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.resolve({ paths: { "/api/v1/projects": { post: { requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/P" } } } } } } },
-    components: { schemas: { P: { properties: { slug: {}, name: {}, repository: {}, keep_the_why: {}, policy: {} } } } } }) : akGet(p));
-  win.Maity.api.forgetRoutes();
-  await go("#/new"); await tick();
-  byId("project-name").value = "Alias Hub"; byId("project-name").dispatch("input"); byId("project-preset").value = "hierarchical";
-  expect(!byId("project-memory") && !main.querySelector("fieldset.project-setup"),
-    "create: a hub that knows only the old keep_the_why is offered no project memory");
-  main.querySelector("form").dispatch("submit"); await tick(); await tick();
-  expect(JSON.stringify(posts[posts.length - 1][1]) === JSON.stringify({ slug: "alias-hub", name: "Alias Hub", policy: { preset: "hierarchical" } }),
-    "create: and sends no keep_the_why");
-  win.onhashchange(); for (let k = 0; k < 4; k++) await tick();
+  const akRefused = await win.Maity.api.post("/projects", { slug: "alias-hub", name: "Alias Hub", keep_the_why: true }).catch((err) => err);
+  const akPatched = await win.Maity.api.patch("/projects/maintainer/maity", { keep_the_why: false }).catch((err) => err);
+  const akView = await win.Maity.api.get("/projects/maintainer/maity");
+  expect(akRefused.code === "invalid" && akRefused.details.fields.keep_the_why === "extra_forbidden"
+    && akPatched.code === "invalid" && akPatched.details.fields.keep_the_why === "extra_forbidden" && !("keep_the_why" in akView),
+    "create: the mock refuses the old keep_the_why alias in POST and PATCH, and the project view has none");
   // A machine form that cannot be read: no choice offered, and the form says the hub's defaults apply.
   win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.reject(new win.Maity.api.ApiError("bad gateway", 502, p, "unavailable")) : akGet(p));
   win.Maity.api.forgetRoutes();

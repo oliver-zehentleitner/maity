@@ -11,21 +11,31 @@ from typing import Any
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
+from pydantic import Field
 from sqlalchemy import Connection, and_, insert, or_, select, update
 
-from maity_hub import clock, idempotency, mentions, namespace, paging
+from maity_hub import clock, forge, idempotency, mentions, namespace, paging
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
+from maity_hub.auth import credentials
 from maity_hub.auth.caller import Caller
-from maity_hub.board import history, links, notes
-from maity_hub.deps import AnyCaller, engine_of
-from maity_hub.errors import ApiError, humans_only, invalid, not_found, rate_limited
-from maity_hub.events import emit, on_rollback
+from maity_hub.auth.leaks import revoke_leaked
+from maity_hub.board import history, importing, links, notes
+from maity_hub.deps import AnyCaller, engine_of, reader_of
+from maity_hub.errors import (
+    ApiError,
+    humans_only,
+    invalid,
+    not_found,
+    probe_not_configured,
+    rate_limited,
+)
+from maity_hub.events import emit, on_rollback, transaction
 from maity_hub.ids import new_id
 from maity_hub.models import Strict, Written, markdown
 from maity_hub.namespace import ProjectRoute
 from maity_hub.policy import CLOSED_STATES
-from maity_hub.routes.tasks import _locked, _project_card, audience
+from maity_hub.routes.tasks import TaskCreate, _locked, _project_card, audience, create_card
 from maity_hub.views import shape_deleted
 
 router = APIRouter(route_class=ProjectRoute)
@@ -478,5 +488,100 @@ def redact_note(
                 subject=("task", card.id),
             )
         return idempotency.Outcome(200, "note", row.id, load_note(conn, row.id))
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
+# --- the import (§6.14) --------------------------------------------------------------------
+
+
+class ImportIn(Strict):
+    issue_url: str = Field(max_length=links.URL_MAX)
+    area: str | None = None
+    label: str | None = None
+    status: str = "open"
+    assigned_to: str | None = None
+    reason: str | None = markdown(default=None)
+
+
+def _refuse_credentials(request: Request, issue: dict[str, Any]) -> None:
+    """What the forge says passes the check every request body passes (§1.3): a string
+    in the hub's credential format in the title, the body or the login is refused as
+    `credential_in_payload` before anything is stored, and revoked as a leak."""
+    text = "\n".join(str(issue.get(k) or "") for k in ("title", "body", "author_login"))
+    found = credentials.find_all(text.encode())
+    if not found:
+        return
+    with transaction(engine_of(request)) as conn:
+        revoke_leaked(conn, found)
+    raise ApiError(
+        400,
+        "credential_in_payload",
+        "the issue contains a string in the hub's credential format",
+    )
+
+
+@router.post("/projects/{owner}/{slug}/tasks/import")
+def import_issue(slug: str, body: ImportIn, request: Request, caller: AnyCaller) -> JSONResponse:
+    """The one write that reads the forge before it answers: the card cannot exist
+    without its title. The read runs before the transaction; nothing is stored when
+    it fails."""
+    with engine_of(request).begin() as conn:
+        mine = membership(conn, caller, slug)
+        mine.require("tasks:write")
+    # Only then a repeat answers from the first call's result, without reading the forge
+    # again (§1.5): a replay is never a way around membership or scope.
+    replayed = idempotency.replay_first(engine_of(request), request, caller)
+    if replayed is not None:
+        return replayed
+    project = mine.project
+    # The project's own reader (§11.4): the owner's grant for its repository, or the
+    # operator's token for a public one.
+    fg = reader_of(request).for_project(project.id)
+    try:
+        ref = links.parse_forge(body.issue_url, "issue", project.repository_url)
+    except links.LinkError as error:
+        raise invalid({"issue_url": error.code}) from None
+    if not links.is_own_repository(ref, project.repository_url):
+        raise invalid({"issue_url": "foreign_repository"})  # the hub reads only its own
+    admin = mine.may("project:admin")
+    if not fg.configured_for(project.repository_url):
+        raise probe_not_configured((fg.refused or "no_grant") if admin else None)
+    at = clock.rfc3339(clock.now())
+    try:
+        issue = fg.issue(ref.repository, ref.number)
+    except forge.NotCoveredError as error:
+        raise probe_not_configured(error.reason if admin else None) from None
+    except forge.ForgeUnavailableError as error:
+        # A spent budget says when the forge is read again (§11.4).
+        details = {"retry_at": clock.rfc3339(error.retry_at)} if error.retry_at else None
+        raise ApiError(503, "probe_unavailable", "the forge did not answer", details) from None
+    if issue is None:
+        raise invalid({"issue_url": "not_found_on_forge"})
+    if issue["is_pull_request"]:
+        raise invalid({"issue_url": "not_an_issue"})
+    _refuse_credentials(request, issue)
+    create = TaskCreate(
+        title=importing.title(issue),
+        body=importing.body(ref.url, issue),
+        area=body.area,
+        label=body.label,
+        status=body.status,
+        assigned_to=body.assigned_to,
+        reason=body.reason,
+        links=[links.LinkIn(kind="issue", forge_url=ref.url)],
+    )
+    imported_from = {
+        "forge_url": ref.url,
+        "number": ref.number,
+        "author_login": issue["author_login"],
+        "imported_at": at,
+    }
+    observed = links.observed("issue", {**issue, "type": "Issue", "merged": False}, at)
+
+    def action(conn: Connection) -> idempotency.Outcome:
+        return create_card(
+            conn, caller, slug, create, fg, imported_from=imported_from, observed=observed
+        )
 
     return idempotency.run(engine_of(request), request, caller, action)
