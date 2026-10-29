@@ -604,7 +604,7 @@ project defines for itself.
 For waking, done authority, cover and the owner's consent protection the
 teams count as the role whose scopes they have (red as tester, blue as
 coder, purple as reviewer); for `role:` tokens they do not, so a request
-to `role:reviewer` never lands with the red team.
+to `role:reviewer` never lands with the purple team.
 
 **Rejected alternatives:**
 - Running the teams through their scopes alone: a purple team would hold

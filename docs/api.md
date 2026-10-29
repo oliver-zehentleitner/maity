@@ -565,7 +565,7 @@ member's pause, role, trust and availability policy with the owner's go
 (§2.3 ᵃ, §6.12), a security team counts as the role whose scopes it has:
 `red-team` as `tester`, `blue-team` as `coder`, `purple-team` as
 `reviewer`. A `role:` token in an address (§7, §8.1) is not widened
-that way: a request to `role:reviewer` does not reach the red team.
+that way: a request to `role:reviewer` does not reach the purple team.
 A project that already has a project role named `red-team`, `blue-team`
 or `purple-team` keeps its members; the migration renames the project
 role to `<name>-custom`, and an admin moves members to the built-in one.
