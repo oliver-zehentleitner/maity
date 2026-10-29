@@ -267,3 +267,9 @@ def test_mariadb_and_sqlite_get_no_application_name(tmp_path: Any) -> None:
     assert "application_name" not in captured_connect_args(
         db.make_health_engine(mariadb) or mariadb, "pymysql"
     )
+
+
+def test_the_hubs_name_wins_over_one_in_the_database_url() -> None:
+    url = "postgresql+psycopg://u:p@localhost/h?application_name=ops-set"
+    seen = captured_connect_args(db.make_engine(url, application_name=db.APPLICATION_SERVING))
+    assert seen["application_name"] == "maity-hub"
