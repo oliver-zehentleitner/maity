@@ -193,7 +193,7 @@ def project_language(project: Any) -> str:
 
 
 def memory_of(project: Any) -> dict[str, str]:
-    """The project's memory provider (§6.1); `keep_the_why` is its boolean alias."""
+    """The project's memory provider (§6.1), stored as the boolean column `keep_the_why`."""
     return {"provider": "keep-the-why" if project.keep_the_why else "none"}
 
 
@@ -226,7 +226,6 @@ def project_view(
         "logo": shown.get("logo", NO_IMAGE),
         "banner": shown.get("banner", NO_IMAGE),
         "memory": memory_of(project),
-        "keep_the_why": project.keep_the_why,
         "keep_the_why_export": export,
         "attachments": stored,
         "policy": policy.of(project),

@@ -97,11 +97,6 @@ So the machine is capped, not trusted:
 
 ## Install
 
-0. **Coming from the single runner of the first version?** First stop it, because the scripts below refuse while
-   any runner of the runner user runs: remove the runner in GitHub (Settings → Actions → Runners),
-   `systemctl disable --now maity-runner`, delete `/etc/systemd/system/maity-runner.service` and
-   `/opt/actions-runner`, and the repository variable `HUB_RUNNER` (no longer read). Containers a cut-off job left running
-   (`docker ps` as the runner user) hold the ports 5432 and 3306 for good once the runner is gone: remove them. A fresh install has nothing to do here.
 1. Create the user (`<runner-user>`, uid `<uid>`), enable lingering, install rootless Docker
    for it (see above). On a fresh rented server `bootstrap-server.sh` does this step and the firewall rules;
    [SERVER-SETUP.md](SERVER-SETUP.md) has the whole procedure for such servers.

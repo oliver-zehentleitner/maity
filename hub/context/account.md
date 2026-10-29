@@ -242,9 +242,12 @@ deletion hands them to.
 
 The test checks that a table is decided, not that the decision is right:
 whether a statement covers the right column stays the reviewer's to see.
-Two entries are open, not settled: `address_lock` and
-`registration_lock` keep a row per address after the deletion, while
-§2.9 says the addresses are deleted.
+Two entries were open at first: `address_lock` and `registration_lock`
+kept a row per address after the deletion, while §2.9 says the addresses
+are deleted. They are settled: the rows are keyed by the address's HMAC
+and the deletion removes the account's (`notifications.md`, "A lock row
+holds the address's HMAC, never the address", 25f27b8d), so neither
+table names a person any more.
 
 **Reason:** a feature that adds a table about a person is built without
 the deletion in view, and nothing failed when it was left out; the gap

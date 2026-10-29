@@ -27,20 +27,18 @@ def _patch(owner: flow.Human, slug: str, body: dict[str, Any]) -> Any:
 def test_the_default_provider_is_keep_the_why(owner: flow.Human) -> None:
     body = flow.project(owner)
     assert body["memory"] == {"provider": "keep-the-why"}
-    assert body["keep_the_why"] is True
+    assert "keep_the_why" not in body  # the boolean alias is gone (before launch)
     assert body["policy"]["keep_the_why"] == "required"
     assert body["policy"]["keep_the_why_defaults"] == "adopt"
 
 
-def test_the_alias_and_the_provider_are_the_same_setting(owner: flow.Human) -> None:
-    off = flow.project(owner, "off", keep_the_why=False)
+def test_the_provider_switches_the_policy(owner: flow.Human) -> None:
+    off = flow.project(owner, "off", memory={"provider": "none"})
     assert off["memory"] == {"provider": "none"}
     assert off["policy"]["keep_the_why"] == "optional"
-    named = flow.project(owner, "named", memory={"provider": "none"})
-    assert named["keep_the_why"] is False
     response = _patch(owner, "off", {"memory": {"provider": "keep-the-why"}})
     assert response.status_code == 200, response.text
-    assert response.json()["keep_the_why"] is True
+    assert response.json()["memory"] == {"provider": "keep-the-why"}
     assert response.json()["policy"]["keep_the_why"] == "required"
 
 
@@ -51,22 +49,17 @@ def test_a_provider_the_hub_does_not_know_is_invalid(owner: flow.Human) -> None:
     assert response.json()["error"]["details"]["fields"] == {"memory.provider": "unknown_provider"}
 
 
-def test_both_spellings_must_agree(owner: flow.Human) -> None:
+def test_the_boolean_alias_is_no_longer_taken(owner: flow.Human) -> None:
     flow.project(owner)
-    response = _patch(owner, "maity", {"memory": {"provider": "none"}, "keep_the_why": True})
-    assert response.status_code == 400
-    assert response.json()["error"]["details"]["fields"] == {
-        "keep_the_why": "conflicts_with_memory"
-    }
-    created = owner.post(
-        "/projects",
-        {"slug": "x", "name": "X", "memory": {"provider": "keep-the-why"}, "keep_the_why": False},
-    )
-    assert created.status_code == 400
+    response = _patch(owner, "maity", {"keep_the_why": False})
+    assert response.status_code == 400, response.text
+    created = owner.post("/projects", {"slug": "x", "name": "X", "keep_the_why": False})
+    assert created.status_code == 400, created.text
+    assert owner.get("/projects/maintainer/maity").json()["memory"] == {"provider": "keep-the-why"}
 
 
 def test_required_needs_a_provider_and_a_reason(owner: flow.Human) -> None:
-    flow.project(owner, "bare", keep_the_why=False)
+    flow.project(owner, "bare", memory={"provider": "none"})
     refused = _patch(owner, "bare", {"policy": {"keep_the_why": "required"}, "reason": "r"})
     assert refused.status_code == 400
     assert refused.json()["error"]["details"]["fields"] == {
@@ -96,7 +89,7 @@ def test_a_set_policy_survives_a_preset_change_and_a_provider_round_trip(
 def test_an_unset_policy_follows_the_provider_after_an_unrelated_policy_change(
     owner: flow.Human,
 ) -> None:
-    flow.project(owner, "bare", keep_the_why=False)
+    flow.project(owner, "bare", memory={"provider": "none"})
     _patch(owner, "bare", {"policy": {"badge": "members"}, "reason": "badge"})
     back = _patch(owner, "bare", {"memory": {"provider": "keep-the-why"}})
     assert back.json()["policy"]["keep_the_why"] == "required"
@@ -163,7 +156,7 @@ def test_the_guide_is_set_by_the_environment() -> None:
 
 
 def test_an_optional_set_while_the_provider_is_off_is_kept(owner: flow.Human) -> None:
-    flow.project(owner, "bare", keep_the_why=False)
+    flow.project(owner, "bare", memory={"provider": "none"})
     set_ = _patch(owner, "bare", {"policy": {"keep_the_why": "optional"}, "reason": "own"})
     assert set_.status_code == 200, set_.text
     on = _patch(owner, "bare", {"memory": {"provider": "keep-the-why"}})
@@ -180,7 +173,7 @@ def test_a_stored_required_waits_while_the_provider_is_off(owner: flow.Human) ->
 
 
 def test_an_unchanged_optional_set_while_off_still_needs_a_reason(owner: flow.Human) -> None:
-    flow.project(owner, "bare", keep_the_why=False)
+    flow.project(owner, "bare", memory={"provider": "none"})
     refused = _patch(owner, "bare", {"policy": {"keep_the_why": "optional"}})
     assert refused.status_code == 400
     assert refused.json()["error"]["details"]["fields"] == {"reason": "required"}
@@ -206,7 +199,7 @@ def test_a_set_policy_that_does_not_move_the_view_is_still_a_policy_change(
 
     from maity_hub import tables as t
 
-    flow.project(owner, "bare", keep_the_why=False)
+    flow.project(owner, "bare", memory={"provider": "none"})
     before = owner.get("/projects/maintainer/bare").json()["rules_version"]
     done = _patch(owner, "bare", {"policy": {"keep_the_why": "optional"}, "reason": "own"})
     assert done.status_code == 200, done.text
