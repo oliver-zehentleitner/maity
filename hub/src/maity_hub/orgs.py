@@ -247,11 +247,14 @@ def set_role(
     if current == "owner" and role != "owner" and owners_count(conn, org.id) <= 1:
         raise last_owner(org.handle)
     if current != role:
+        from maity_hub import org_invitations
+
         conn.execute(
             update(t.org_member)
             .where(t.org_member.c.org_id == org.id, t.org_member.c.human_id == human_id)
             .values(role=role)
         )
+        org_invitations.withdraw_by_inviter(conn, org.id, human_id, role)
     return next(m for m in members(conn, org.id) if m["id"] == human_id)
 
 
@@ -269,11 +272,14 @@ def remove_member(
         raise org_role()
     if current == "owner" and owners_count(conn, org.id) <= 1:
         raise last_owner(org.handle)
+    from maity_hub import org_invitations
+
     conn.execute(
         delete(t.org_member).where(
             t.org_member.c.org_id == org.id, t.org_member.c.human_id == human_id
         )
     )
+    org_invitations.withdraw_by_inviter(conn, org.id, human_id, None)
 
 
 def delete_org(conn: Connection, org: Any, confirm: object) -> None:
@@ -281,11 +287,8 @@ def delete_org(conn: Connection, org: Any, confirm: object) -> None:
     stays with `deleted_at` and its handle stays taken for good (§6.26)."""
     if confirm != org.handle:
         raise invalid({"confirm": "mismatch"})
-    now = clock.now()
+    from maity_hub import org_invitations
+
+    org_invitations.withdraw_all(conn, org.id, "org_deleted")
     conn.execute(delete(t.org_member).where(t.org_member.c.org_id == org.id))
-    conn.execute(
-        update(t.org_invitation)
-        .where(t.org_invitation.c.org_id == org.id, t.org_invitation.c.live.is_(True))
-        .values(live=None, closed_at=now, closed_by="org_deleted")
-    )
-    conn.execute(update(t.org).where(t.org.c.id == org.id).values(deleted_at=now))
+    conn.execute(update(t.org).where(t.org.c.id == org.id).values(deleted_at=clock.now()))

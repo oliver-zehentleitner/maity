@@ -21,6 +21,7 @@ from maity_hub import (
     inbox,
     mentions,
     namespace,
+    orgs,
     placements,
     proposals,
     ticker,
@@ -133,10 +134,36 @@ def _person(conn: Connection, membership_id: int | None, session_id: str | None)
     }
 
 
+def _inviter(conn: Connection, human_id: str) -> dict[str, Any]:
+    """A human who asks without a membership: the one who invites to an organisation. The
+    shape of a member's, without a trust or a role: there is no project."""
+    human = conn.execute(
+        select(t.human.c.display_name, t.human.c.deleted_at).where(t.human.c.id == human_id)
+    ).one()
+    shown = (
+        deleted_person()
+        if deleted(human)
+        else {
+            "display_name": human.display_name,
+            "avatar_url": avatars.urls(conn, [human_id])[human_id],
+        }
+    )
+    return {
+        "member_id": human_id,
+        **shown,
+        "trust": None,
+        "role": None,
+        "session_id": None,
+        "instance": None,
+    }
+
+
 def _asker(conn: Connection, row: Any) -> Any:
     """`asked_by` with the agent instance that asked (§7, §6.17): the instance of the
     credential whose session filed it; `null` for a human, and for a request the hub
     files on an agent's behalf, which has no session."""
+    if row.asked_by is None and row.asked_by_human is not None:
+        return _inviter(conn, row.asked_by_human)  # an organisation's invitation (§6.26)
     person = _person(conn, row.asked_by, row.asked_session_id)
     instance = None
     if row.asked_session_id is not None:
@@ -508,8 +535,8 @@ def _asker_audience(conn: Connection, row: Any) -> list[str]:
     return audience
 
 
-def _member_of(conn: Connection, project_id: str, human_id: str | None) -> Any:
-    if human_id is None:
+def _member_of(conn: Connection, project_id: str | None, human_id: str | None) -> Any:
+    if human_id is None or project_id is None:
         return None
     return conn.execute(
         select(t.membership).where(
@@ -628,6 +655,13 @@ def _page(views: list[dict[str, Any]], sort: str, limit: int, cursor: str | None
 
 
 def _with_handle(conn: Connection, row: Any, view: dict[str, Any]) -> dict[str, Any]:
+    if row.asked_by is None:  # an organisation's invitation: the human who invites
+        inviter = conn.execute(
+            select(t.human.c.handle).where(t.human.c.id == row.asked_by_human)
+        ).scalar()
+        view["_asker_handle"] = inviter or ""
+        view["_created"] = row.created_at
+        return view
     member = conn.execute(select(t.membership).where(t.membership.c.id == row.asked_by)).one()
     if member.agent_id:
         handle = conn.execute(
@@ -1136,6 +1170,10 @@ def claim(slug: str, request_id: str, request: Request, caller: AnyCaller) -> JS
 
 def _talk_allowed(conn: Connection, row: Any, caller: Caller) -> str:
     """`talk` only from the human who owns the asking agent; the conversation is that agent."""
+    if row.asked_by is None:  # an organisation's invitation: no agent asked
+        raise invalid(
+            {"talk": "only_the_owner_of_the_agent"}, "only the agent's own human can talk"
+        )
     asker = conn.execute(select(t.membership).where(t.membership.c.id == row.asked_by)).one()
     if caller.kind == "human" and asker.agent_id is not None:
         owner = conn.execute(
@@ -1303,6 +1341,8 @@ def close_request(
         )
     closed = _row(conn, row.id)
     records.personal_request(conn, closed)
+    if row.project_id is None:  # an organisation's request: no project, no project event
+        return
     view = request_view(conn, closed)
     emit(
         conn,
@@ -1589,7 +1629,11 @@ def _human(caller: Caller) -> None:
 def _locked_personal(conn: Connection, caller: Caller, request_id: str) -> Any:
     """`_personal` under its project's lock, read again after locking, as the project
     routes do: an answer and a withdrawal at once cannot both change it."""
-    lock_project(conn, _personal(conn, caller, request_id).project_id)
+    row = _personal(conn, caller, request_id)
+    if row.project_id is None:  # an organisation's: its row, as every change of it (§6.26)
+        orgs.lock(conn, row.org_id)
+    else:
+        lock_project(conn, row.project_id)
     return _personal(conn, caller, request_id)
 
 
@@ -1605,6 +1649,19 @@ def _personal(conn: Connection, caller: Caller, request_id: str) -> Any:
     if row is None:
         raise not_found()
     return row
+
+
+def _scope_project(conn: Connection, row: Any) -> dict[str, Any] | None:
+    """The request's project inline, or None for one that concerns an organisation only."""
+    return None if row.project_id is None else _project_inline(conn, row.project_id)
+
+
+def _org_inline(conn: Connection, row: Any) -> dict[str, Any] | None:
+    """`{id, handle}` of the organisation a personal request concerns (§7, §6.26), else None."""
+    if row.org_id is None:
+        return None
+    handle = conn.execute(select(t.org.c.handle).where(t.org.c.id == row.org_id)).scalar_one()
+    return {"id": row.org_id, "handle": handle}
 
 
 def _project_inline(conn: Connection, project_id: str) -> dict[str, Any]:
@@ -1632,7 +1689,9 @@ def get_personal(request_id: str, request: Request, caller: AnyCaller) -> JSONRe
                 **view["memory_proposal"],
                 **preferences.review_view(conn, row),
             }
-        return JSONResponse({**view, "project": _project_inline(conn, row.project_id)})
+        return JSONResponse(
+            {**view, "project": _scope_project(conn, row), "org": _org_inline(conn, row)}
+        )
 
 
 @router.post("/requests/{request_id}/answer")
@@ -1688,15 +1747,16 @@ def answer_personal(
         closed = _row(conn, row.id)
         records.personal_request(conn, closed)
         view = request_view(conn, closed)
-        emit(
-            conn,
-            row.project_id,
-            "request_answered",
-            _asker_audience(conn, row),
-            _payload(row, view),
-            actor=caller.actor(member.id) if member is not None else None,
-            subject=("request", row.id),
-        )
+        if row.project_id is not None:  # an organisation's request has no project's events
+            emit(
+                conn,
+                row.project_id,
+                "request_answered",
+                _asker_audience(conn, row),
+                _payload(row, view),
+                actor=caller.actor(member.id) if member is not None else None,
+                subject=("request", row.id),
+            )
         return idempotency.Outcome(200, "request", row.id, view)
 
     return idempotency.run(engine_of(request), request, caller, action)
@@ -1727,18 +1787,30 @@ def withdraw_personal(
         if done != 1:
             _refuse_unless_open(_row(conn, row.id))
         _unblock(conn, row)
+        # A proposal is settled wherever its request closes (`proposals`): the invited
+        # human's own withdrawal of an organisation's invitation counts as their no.
+        if row.proposal is not None:
+            proposals.require_known(row)
+            proposals.settle(
+                conn,
+                _row(conn, row.id),
+                "withdrawn",
+                None,
+                caller.actor(member.id) if member is not None else None,
+            )
         closed = _row(conn, row.id)
         records.personal_request(conn, closed)
         view = request_view(conn, closed)
-        emit(
-            conn,
-            row.project_id,
-            "request_withdrawn",
-            _asker_audience(conn, row),
-            _payload(row, view),
-            actor=caller.actor(member.id) if member is not None else None,
-            subject=("request", row.id),
-        )
+        if row.project_id is not None:
+            emit(
+                conn,
+                row.project_id,
+                "request_withdrawn",
+                _asker_audience(conn, row),
+                _payload(row, view),
+                actor=caller.actor(member.id) if member is not None else None,
+                subject=("request", row.id),
+            )
         return idempotency.Outcome(200, "request", row.id, view)
 
     return idempotency.run(engine_of(request), request, caller, action)
@@ -1845,8 +1917,14 @@ def _personal_inbox(
         query = query.where(t.request.c["class"] == class_)
     views = []
     for row in conn.execute(query).all():
-        if asked_by is not None and principal_id(conn, row.asked_by) != asked_by:
-            continue  # `me`: a human never asks a personal request
-        inline = _project_inline(conn, row.project_id)
-        views.append({**_with_handle(conn, row, request_view(conn, row)), "project": inline})
+        asker = principal_id(conn, row.asked_by) if row.asked_by is not None else row.asked_by_human
+        if asked_by is not None and asker != asked_by:
+            continue  # `me`: a human never asks a personal request, but to an organisation
+        views.append(
+            {
+                **_with_handle(conn, row, request_view(conn, row)),
+                "project": _scope_project(conn, row),
+                "org": _org_inline(conn, row),
+            }
+        )
     return views

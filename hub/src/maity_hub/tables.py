@@ -1224,7 +1224,11 @@ request = Table(
     "request",
     metadata,
     _id(primary_key=True),
-    _ref("project_id", "project.id", nullable=False),
+    # Null only for a personal request that concerns an organisation and no project: an
+    # invitation (§7, §6.26); then `org_id` is set and `asked_by` is null, the inviter being
+    # `asked_by_human`.
+    _ref("project_id", "project.id"),
+    _ref("org_id", "org.id"),
     Column("class", String(16), nullable=False),
     Column("title", String(TITLE), nullable=False),
     Column("summary", MARKDOWN_TEXT),
@@ -1246,7 +1250,8 @@ request = Table(
     # A closed personal request's card as it was when it closed (§7): a non-member owner
     # does not follow the card after the outcome.
     Column("task_snapshot", JSON_VALUE),
-    _membership_ref("asked_by", nullable=False),
+    _membership_ref("asked_by"),  # null with `project_id`: the human is `asked_by_human`
+    _ref("asked_by_human", "human.id"),
     Column("asked_session_id", String(ID)),
     _membership_ref("on_behalf_of"),
     _ref("task_id", "card.id"),
@@ -1293,6 +1298,11 @@ request = Table(
         "(personal AND to_kind IN ('profile_owner', 'human'))"
         " OR (NOT personal AND to_kind NOT IN ('profile_owner', 'human'))",
         name="personal_shape",
+    ),
+    # No project: only a personal request that concerns an organisation (§7, §6.26).
+    CheckConstraint(
+        "project_id IS NOT NULL OR (org_id IS NOT NULL AND personal AND asked_by IS NULL)",
+        name="scope_known",
     ),
     Index("ix_request_project_status", "project_id", "status"),
     Index("ix_request_to_member_status", "to_member", "status"),

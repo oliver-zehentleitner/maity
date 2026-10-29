@@ -453,7 +453,11 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
             request = _request(conn, data.get("request_id"))
             if request is None:
                 continue
-            asker = _name(conn, request.asked_by) if request.asked_by else "Maity"
+            asker = (
+                _name(conn, request.asked_by)
+                if request.asked_by
+                else _human_name(conn, request.asked_by_human)
+            )
             items.append(
                 Item(
                     kind="inbox",
@@ -662,6 +666,15 @@ def _shared_actor(
         seen["actor", membership_id] = _actor(conn, membership_id)
     found: dict[str, Any] | None = seen["actor", membership_id]
     return None if found is None else dict(found)
+
+
+def _human_name(conn: Connection, human_id: str | None) -> str:
+    """The display name of the human who invites to an organisation; "Maity" for a request
+    the hub files on nobody's behalf."""
+    if human_id is None:
+        return "Maity"
+    name = conn.execute(select(t.human.c.display_name).where(t.human.c.id == human_id)).scalar()
+    return str(name) if name is not None else "Maity"
 
 
 def _actor(conn: Connection, membership_id: int | None) -> dict[str, Any] | None:

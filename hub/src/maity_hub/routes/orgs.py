@@ -10,7 +10,7 @@ from fastapi import APIRouter, Body, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict
 
-from maity_hub import orgs
+from maity_hub import org_invitations, orgs
 from maity_hub.auth import second_factor
 from maity_hub.deps import AnyCaller, engine_of, settings_of
 from maity_hub.errors import forbidden, humans_only, not_found
@@ -142,4 +142,52 @@ def delete_member(request: Request, caller: AnyCaller, org: str, member: str) ->
         if actor_role is None:
             raise not_found()
         orgs.remove_member(conn, locked, human_id, actor_role, member)
+        return Response(status_code=204)
+
+
+class Invite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    handle: str
+    role: str
+
+
+def _locked_actor(conn: Any, org_id: str, human_id: str) -> tuple[Any, str]:
+    """The organisation under its lock and the caller's role in it, read under the lock."""
+    locked = orgs.lock(conn, org_id)
+    if locked is None:
+        raise not_found()
+    role = orgs.role_of(conn, locked.id, human_id)
+    if role is None:
+        raise not_found()
+    return locked, role
+
+
+@router.get("/orgs/{org}/members/invitations")
+def list_invitations(request: Request, caller: AnyCaller, org: str) -> JSONResponse:
+    human_id = _human(caller)
+    with engine_of(request).begin() as conn:
+        row, role = orgs.find(conn, human_id, org)
+        if role == "member":
+            raise orgs.org_role()
+        locked, _ = _locked_actor(conn, row.id, human_id)
+        return JSONResponse({"items": org_invitations.open_items(conn, locked)})
+
+
+@router.post("/orgs/{org}/members/invitations", status_code=202)
+def invite(request: Request, caller: AnyCaller, org: str, body: Invite) -> JSONResponse:
+    human_id = _human(caller)
+    with engine_of(request).begin() as conn:
+        row, _ = orgs.find(conn, human_id, org)
+        locked, role = _locked_actor(conn, row.id, human_id)
+        item = org_invitations.create(conn, locked, human_id, role, body.handle, body.role)
+        return JSONResponse(item, status_code=202)
+
+
+@router.delete("/orgs/{org}/members/invitations/{invitation}")
+def revoke_invitation(request: Request, caller: AnyCaller, org: str, invitation: str) -> Response:
+    human_id = _human(caller)
+    with engine_of(request).begin() as conn:
+        row, _ = orgs.find(conn, human_id, org)
+        locked, role = _locked_actor(conn, row.id, human_id)
+        org_invitations.revoke(conn, locked, role, invitation)
         return Response(status_code=204)

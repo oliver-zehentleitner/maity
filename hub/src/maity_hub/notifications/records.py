@@ -66,7 +66,12 @@ def personal_request(conn: Connection, request: Any) -> None:
         conn,
         request.to_human,
         kind,
-        {"request_id": request.id, "project_id": request.project_id, "status": request.status},
+        {
+            "request_id": request.id,
+            "project_id": request.project_id,
+            "org_id": request.org_id,  # an organisation's invitation has no project (§6.26)
+            "status": request.status,
+        },
     )
 
 

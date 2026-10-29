@@ -30,6 +30,7 @@ from maity_hub import (
     images,
     longpoll,  # noqa: F401  (subscribes the long-poll to new events)
     not_listening,
+    org_invitations,
     probe,
     registration_accounts,
     takeovers,
@@ -163,6 +164,9 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         commitment_worker.start()
         registrations_worker = registration_accounts.Worker(engine)
         registrations_worker.start()
+        # An organisation's invitation expires without anybody calling (docs/api.md §6.26).
+        invitations_worker = org_invitations.Worker(engine)
+        invitations_worker.start()
         from maity_hub.jourfixe import worker as jour_fixe_worker
 
         jour_fixe_clock = jour_fixe_worker.Worker(engine)  # the schedule acts on its own
@@ -189,6 +193,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         mail_worker.stop()
         takeover_worker.stop()
         jour_fixe_clock.stop()
+        invitations_worker.stop()
         registrations_worker.stop()
         commitment_worker.stop()
         availability_worker.stop()
