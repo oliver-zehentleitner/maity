@@ -1444,8 +1444,10 @@ under each other hid all but the first below the fold.
 
 **Rejected alternative:** a sticky list of anchors over the whole page,
 the designer's other option: the scroll stays 5,000 px, only the jump is
-shorter. A route per section (`#/admin/users`): `#/admin/users` is the
-older Users page already, and links into a section were not asked for.
+shorter. A route per section (`#/admin/users`): links into a section
+were not asked for. The older Users page at `#/admin/users` was removed
+before launch with the other compatibility routes, so that address is
+now no view at all.
 
 ## On a phone an opened card is a page of its own; the panel is the card
 
