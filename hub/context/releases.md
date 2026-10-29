@@ -46,7 +46,7 @@ the card cannot drift from what the reader computes.
 **Status:** active
 **Evidence:** inferred
 **Source:** implementation of `released_at` (card "hub: released_at for the launch state, its probe hook and the rules text"), 2026-10-29; contract in `docs/api.md` §6.1
-**See:** ../../context/projects.md#a-project-moves-through-plan-build-review-and-launch-released-is-a-separate-mark-that-tightens-the-rules-for-good — de8abccf-94dc-4947-9926-463aa13edd8f — as of 2026-10-29
+**See:** https://github.com/oliver-zehentleitner/maity — de8abccf-94dc-4947-9926-463aa13edd8f — as of 2026-10-29
 
 `probe.observe` sets `released_at` in the same transaction that stores a
 tag observation with `found: true`, when the tag is `v<version>` of any
