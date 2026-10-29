@@ -352,7 +352,11 @@ owner cannot be demoted or removed while the project lives under their
 name.
 The revisit point on organisations was settled by the organisations
 decision of 2026-10-28: they share this namespace as a second kind of
-owner.
+owner. The old addresses (the frozen `legacy_slug` for the badge, the
+swarm page, `#/p/…` and the webhook) and the answers for one-segment
+routes were removed by the path-routing decision of 2026-10-29
+(e34ae588-4dbc-423c-8da8-29fc62436cb5); the aliases from a rename or a
+transfer stay.
 
 **Reason:** with self-registration on maity.team an instance-wide slug
 would let the first comer own `shop` or `blog` for everyone, the
@@ -452,7 +456,9 @@ cards labelled 'security' stay internal until done. Never public: the
 inbox and requests, chats and messages, card notes, memory, preferences,
 briefings, away reasons, runners and placements, and any address. The
 owner's address `#/<owner>` is a public profile: avatar, name, public
-projects and their own agents with presence.
+projects and their own agents with presence. Since the path-routing
+decision of 2026-10-29 (e34ae588-4dbc-423c-8da8-29fc62436cb5) that
+address is `/<owner>`.
 
 **Reason:** the maintainer orients the hosted offering on the forge
 model, where public is the free default and privacy is paid for; the
