@@ -197,3 +197,29 @@ the deletion waits for.
 
 **Rejected alternative:** a stored counter: one more thing a failed
 transaction or a restore could leave out of step.
+
+## Every table that names a human is checked against the deletion and the export
+
+**Id:** b60df323-1007-4d28-bde6-a0df241f53c7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the review of #586, where forge links (#567) and mail sign-in links (#550) had landed after the deletion and were not removed by it; the coordinator's card for a schema check
+**Revisit when:** a table names a human by a column without a foreign key to `human` and not called `human_id` (a principal id in a plain string or in JSON), or the deletion or export moves its statements out of their modules
+
+`tests/test_per_human_tables.py` walks the schema. Every table with a
+foreign key to `human`, or a column called `human_id`, must be named
+(`t.<table>`) in `account_deletion.py` or listed in `DELETION_KEEPS`
+with a reason, and the same for `export.py`, `EXPORT_THROUGH` (a table
+the export reads through another module) and `EXPORT_LEAVES_OUT`. A list
+entry that names a table the code handles after all, or one that no
+longer names a human, fails as stale. The test checks that a table is
+decided, not that the decision is right: whether a statement covers the
+right column stays the reviewer's to see.
+
+**Reason:** a feature that adds a table about a person is built without
+the deletion in view, and nothing failed when it was left out; the gap
+showed only in a later review. A failing test makes the author decide at
+the time the table is added.
+
+**Rejected alternatives:** unknown.
