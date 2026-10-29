@@ -1586,8 +1586,11 @@ remove; the items of steps, scales and questions the same way; the
 counters ticked), and the footer for every language (the operator line,
 up to eight social links). **Save the landing page** sends the whole
 draft in one `PATCH`, and each refusal of the hub is said at the field its
-path names (`pages.de.sections.2.items.0.title`). **View as a visitor**
-opens the saved page at `/?as=public` in a tab of its own. **Legal pages**
+path names (`pages.de.sections.2.items.0.title`). **Preview the draft**
+opens the unsaved draft as the hub renders it, in a new tab (the hub keeps
+it 10 minutes); **View as a visitor**, while the page is on, opens the
+saved page at `/?as=public`. **Legal pages**
 edits the imprint, the privacy notice and the terms per language; each
-save is one page and a new version, the earlier ones linked; **Take the
-page down** sends it as `null`.
+save is one page and a new version, the earlier ones linked, and each
+draft can be previewed the same way; **Take the page down** sends it as
+`null`.

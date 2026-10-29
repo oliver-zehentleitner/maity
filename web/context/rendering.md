@@ -336,8 +336,8 @@ on a failed landing read: it would stand between the person and sign-in.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** docs/api.md §16.7, §16.7.1, §16.11 (the hub renders the landing page at the root and the legal pages as static HTML, no script); the maintainer on the card tsk-ez7hpndp95bx, 2026-10-29 (the old Markdown editor goes); the coordinator's ruling on the preview, 2026-10-29; the hub owner's confirmation of the setting's shapes, 2026-10-29
-**Revisit when:** the hub's preview route (`POST …/landing/preview`, `…/legal/preview`) is served, or an instance wants the landing page drawn by the dashboard again
+**Source:** docs/api.md §16.7, §16.7.1, §16.11 (the hub renders the landing page at the root and the legal pages as static HTML, no script); the maintainer on the card tsk-ez7hpndp95bx, 2026-10-29 (the old Markdown editor goes); the coordinator's ruling on the preview and the contract for it (#628: a short-lived draft opened in its own tab), 2026-10-29; the hub owner's confirmation of the setting's shapes, 2026-10-29
+**Revisit when:** an instance wants the landing page drawn by the dashboard again, or a draft needs a preview without a tab of its own
 
 The dashboard draws neither page for a visitor: without a session the
 root is the hub's static page or, with the page off, the login page, and
@@ -354,7 +354,11 @@ that path, a path without a field in the status line. **Legal pages**
 edits each page per language and saves one page per call, which the hub
 keeps as a new version; a page is taken down with `null`. **View as a
 visitor** opens the saved landing page at `/?as=public` in a tab of its
-own; a preview of the unsaved draft waits for the hub's preview route.
+own, offered only while the page is on. **Preview the draft** posts the
+draft (`POST …/landing/preview`, `…/legal/preview?page=`), which the hub
+checks as a save and keeps for 10 minutes, and opens the `url` it answers
+in a new tab, opened at the click so no pop-up blocker stops it; the
+address is taken only when it is the hub's own preview path.
 The renderer's mode for path links (`M.markdown.withRoutes`) went with
 the dashboard's landing page.
 
@@ -364,7 +368,10 @@ paths let the editor say a refusal where it belongs, however deep in a
 section.
 
 **Rejected alternative:** a preview drawn by the dashboard's own
-renderer: it would look like the hub's page and drift from it. Saving a
+renderer: it would look like the hub's page and drift from it. The
+hub's HTML fetched and shown in a frame (`srcdoc`) or from a blob URL:
+it would run under the dashboard's policy, not the page's, the reason
+pictures are never previewed either (3ec853f0). Saving a
 section or a language at a time: the contract replaces the fields it
 names, and one draft keeps the order and the default language
 consistent across a save. Keeping the Markdown editor beside the

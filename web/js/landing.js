@@ -206,6 +206,29 @@ window.Maity = window.Maity || {};
     if (input && input.focus) input.focus();
   }
 
+  // A draft opened as the hub would serve it (§16.7, §16.7.1): stored by a
+  // POST with the CSRF token, then opened by its url in a tab of its own, a
+  // top-level page under the page's own policy. The tab is opened at the
+  // click, before the hub answers, so no pop-up blocker stops it.
+  const PREVIEW = /^(\/api\/v1)?\/admin\/settings\/(landing|legal)\/preview\/[A-Za-z0-9_-]+$/;
+  async function preview(path, body, lang, status, errors) {
+    const tab = window.open("about:blank", "_blank");
+    if (tab) tab.opener = null;
+    status.busy("Preparing the preview…");
+    try {
+      const answer = await M.api.post(path, body);
+      const at = new URL(String((answer && answer.url) || ""), window.location.href);
+      if (at.origin !== window.location.origin || !PREVIEW.test(at.pathname)) throw new Error("the hub answered no preview address of its own");
+      if (lang && !at.searchParams.has("lang")) at.searchParams.set("lang", lang);
+      if (tab) tab.location.href = at.href; else window.open(at.href, "_blank", "noopener");
+      status.done();
+      append(status.el, h("span", { class: "ok" }, "The preview opened in a new tab; it is kept for 10 minutes."));
+    } catch (err) {
+      if (tab) tab.close();
+      showErrors(errors, err, status);
+    }
+  }
+
   async function section(ctx, root) {
     const status = M.statusLine();
     const box = h("div", { class: "lp-editor" });
@@ -279,7 +302,9 @@ window.Maity = window.Maity || {};
       social, small("Add a social link", () => footer.social.push({ label: "", href: "" }), footer.social.length >= 8, draw),
       h("p", { class: "hint" }, "A Mastodon link gets rel=“me”. The legal pages set below are linked here too."),
       h("div", { class: "actions" }, h("button", { type: "submit", class: "primary" }, "Save the landing page"),
-        // The saved page as a visitor sees it (§16.11, ?as=public), in a tab of its own.
+        h("button", { type: "button", onclick: () => preview(LANDING + "/preview", { default_language: draft.default_language, pages: draft.pages, footer: draft.footer }, lang, status, errors) },
+          "Preview the draft"),
+        // The saved page as a visitor sees it (§16.7, ?as=public), only while it is on.
         saved.enabled ? h("a", { href: "/?as=public" + (lang ? "&lang=" + encodeURIComponent(lang) : ""), target: "_blank", rel: "noopener" }, "View as a visitor") : null),
       saved.updated_at ? h("p", { class: "muted" }, "Last saved " + formatTime(saved.updated_at) + ".") : null);
       append(clear(box), form);
@@ -337,7 +362,9 @@ window.Maity = window.Maity || {};
       lang ? [control(f("title", "Title", "text", 120), draft[lang], key + "." + lang + ".title", errors, draw),
         control(f("markdown", "Text (Markdown)", "md", 65536), draft[lang], key + "." + lang + ".markdown", errors, draw),
         small("Remove this language", () => { delete draft[lang]; }, false, draw)] : h("p", { class: "muted" }, "No language yet: add one to write the page."),
-      h("div", { class: "actions" }, save, unset), status.el);
+      h("div", { class: "actions" }, save,
+        lang ? h("button", { type: "button", onclick: () => preview(LEGAL + "/preview?page=" + key, { [key]: draft }, lang, status, errors) }, "Preview the draft") : null,
+        unset), status.el);
       append(clear(body), form);
     };
     draw();

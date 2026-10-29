@@ -1922,6 +1922,31 @@ window.Maity = window.Maity || {};
       v.updated_at = nowIso(); v.updated_by = me().member.id;
       return v;
     }],
+    // A draft seen before it is saved (§16.7, §16.7.1): checked as a save is,
+    // kept 10 minutes, opened by its url in a tab of its own. The fixture
+    // hub serves no HTML: the url only says what the hub would open.
+    ["POST", /^\/admin\/settings\/landing\/preview$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      const errors = {};
+      if ("pages" in body) Object.entries(body.pages || {}).forEach(([lang, pg]) => landingPage(pg, "pages." + lang, errors));
+      if ("footer" in body) landingFooter(body.footer || {}, errors);
+      if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
+      const id = localId("lpv");
+      return { id, url: "/api/v1/admin/settings/landing/preview/" + id, expires_at: new Date(Date.now() + 600000).toISOString().replace(/\.\d{3}Z$/, "Z") };
+    }],
+    ["POST", /^\/admin\/settings\/legal\/preview$/, (m, body, path, query) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      const page = query.get("page");
+      if (!["imprint", "privacy", "terms"].includes(page)) fail(400, "invalid", "the request does not validate", path, { fields: { page: "invalid" } });
+      const errors = {};
+      Object.entries(body[page] || {}).forEach(([lang, x]) => {
+        landingText(x && x.title, page + "." + lang + ".title", 120, true, errors);
+        landingMarkdown(x && x.markdown, page + "." + lang + ".markdown", 65536, true, errors);
+      });
+      if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
+      const id = localId("lgv");
+      return { id, url: "/api/v1/admin/settings/legal/preview/" + id, expires_at: new Date(Date.now() + 600000).toISOString().replace(/\.\d{3}Z$/, "Z") };
+    }],
     // Unauthenticated: which legal pages are set, for the dashboard's links.
     ["GET", /^\/legal$/, () => {
       const v = fixtures()["legal.json"];
@@ -1965,6 +1990,8 @@ window.Maity = window.Maity || {};
       "/api/v1/admin/statistics": { get: {} },
       "/api/v1/admin/settings/landing": { get: {}, patch: {} },
       "/api/v1/admin/settings/legal": { get: {}, patch: {} },
+      "/api/v1/admin/settings/landing/preview": { post: {} },
+      "/api/v1/admin/settings/legal/preview": { post: {} },
       "/api/v1/legal": { get: {} },
       "/api/v1/admin/settings/mail": { get: {}, patch: {} },
       "/api/v1/admin/settings/mail/test": { post: {} },

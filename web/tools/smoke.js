@@ -6751,6 +6751,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && leLast.pages.de.title === "Maity — bring deine Agents" && leLast.pages.en.sections[1].items.length === 1
     && leBox().querySelectorAll("a").some((a) => a.getAttribute("href") === "#/?as=public&lang=de" && a.getAttribute("target") === "_blank"),
     "landing editor: saved with both languages; View as a visitor opens the saved page in a tab of its own");
+  // A draft previewed (§16.7, #628): POSTed with the token, opened by the hub's url in a tab opened at the click.
+  const pvOpen = win.open, pvHref = win.location.href, pvOrigin = win.location.origin, pvTabs = [];
+  win.location.href = "file:///web/index.html"; win.location.origin = "null";
+  win.open = (url, target, features) => { const tab = { url, target, features, location: {}, close() { this.closed = true; } }; pvTabs.push(tab); return tab; };
+  const pvPosts = [];
+  const pvPost = win.Maity.api.post;
+  win.Maity.api.post = (p, b) => { if (/\/preview/.test(p)) pvPosts.push([p, JSON.parse(JSON.stringify(b))]); return pvPost(p, b); };
+  btn(leBox(), "Preview the draft").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(pvPosts.length === 1 && pvPosts[0][0] === "/admin/settings/landing/preview" && Object.keys(pvPosts[0][1]).join() === "default_language,pages,footer"
+    && pvTabs.length === 1 && pvTabs[0].url === "about:blank" && pvTabs[0].opener === null
+    && /^file:\/\/\/api\/v1\/admin\/settings\/landing\/preview\/[^?]+\?lang=de$/.test(pvTabs[0].location.href),
+    "landing editor: Preview the draft posts it and opens the hub's url in a tab opened at the click, in the language shown " + JSON.stringify(pvTabs[0] && pvTabs[0].location));
+  byId("lp-pages-de-title").value = ""; byId("lp-pages-de-title").dispatch("input");
+  btn(leBox(), "Preview the draft").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(pvTabs.length === 2 && pvTabs[1].closed && text(byId("lp-pages-de-title-error")) === "required", "landing editor: a refused preview closes its tab and says why at the field");
+  byId("lp-pages-de-title").value = "Maity — bring deine Agents"; byId("lp-pages-de-title").dispatch("input");
   // The legal pages (§16.7.1): one page per save, a new version; taking one down.
   const lgBox = () => main.querySelectorAll("section.lg-page");
   const lgImprint = () => lgBox().find((x) => x.attrs["aria-label"] === "Imprint");
@@ -6768,6 +6784,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(lgLast[0] === "/admin/settings/legal" && Object.keys(lgLast[1]).join() === "privacy" && lgLast[1].privacy.en.title === "Privacy"
     && text(main).includes("Saved as a new version of the privacy.") && text(lgPrivacy()).includes("Served at /privacy"),
     "legal: one page sent as a whole, served at once");
+  btn(lgImprint(), "Preview the draft").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(pvPosts.slice(-1)[0][0] === "/admin/settings/legal/preview?page=imprint" && Object.keys(pvPosts.slice(-1)[0][1]).join() === "imprint"
+    && /\/api\/v1\/admin\/settings\/legal\/preview\/[^?]+\?lang=en$/.test(pvTabs.slice(-1)[0].location.href), "legal: a page's draft previewed the same way, for its page");
+  win.open = pvOpen; win.location.href = pvHref; win.location.origin = pvOrigin; win.Maity.api.post = pvPost;
   btn(lgImprint(), "Take the page down").click(); for (let k = 0; k < 6; k++) await tick();
   expect(JSON.stringify(lePatches[lePatches.length - 1][1]) === JSON.stringify({ imprint: null }) && text(lgImprint()).includes("Not set"),
     "legal: taking a page down sends it as null");
