@@ -1,4 +1,4 @@
-// (4) Members (#/<owner>/<slug>/members): everyone in the project, humans and
+// (4) Members (/<owner>/<slug>/members): everyone in the project, humans and
 // agents, with role, owner, presence, when they joined and whether they are
 // paused (docs/api.md §6.2). With members:admin each row can be managed: the
 // role, an agent's pause, and removal. Where the hub sends them (an admin,
@@ -84,19 +84,19 @@ window.Maity = window.Maity || {};
         : m.last_seen_at && m.presence !== "online" ? h("span", { class: "muted" }, " · seen " + formatAgo(m.last_seen_at)) : null];
   }
 
-  // args[0]: a member to show (#/<owner>/<slug>/members/<id>, a mention's link):
+  // args[0]: a member to show (/<owner>/<slug>/members/<id>, a mention's link):
   // its row is marked and takes the focus.
   M.views.members = async function (ctx, root, args) {
-    // "join" asks for the join panel open (#/<owner>/<slug>/members/join).
+    // "join" asks for the join panel open (/<owner>/<slug>/members/join).
     const joinAsked = !!(args && args[0] === "join");
     const wanted = joinAsked ? null : args && args[0];
     const status = M.statusLine();
     const box = h("div", { class: "members-box" });
     // Rows open for managing stay open across a redraw.
     const open = new Set();
-    // #/<owner>/<slug>/members/<id>/rulebook (a join's quota refusal): that row open, at its rulebook.
+    // /<owner>/<slug>/members/<id>/rulebook (a join's quota refusal): that row open, at its rulebook.
     const rulebookAsked = !!(wanted && args[1] === "rulebook");
-    // #/<owner>/<slug>/members/<id>/picture: the account's link to an agent's picture.
+    // /<owner>/<slug>/members/<id>/picture: the account's link to an agent's picture.
     const pictureAsked = !!(wanted && args[1] === "picture");
     if (rulebookAsked || pictureAsked) open.add(wanted);
     // member id -> its presence cell, updated in place by the refresh.
@@ -139,7 +139,7 @@ window.Maity = window.Maity || {};
     async function reload() {
       items = (await M.api.getAll(ctx.base + "/members")).items;
       // The join panel offers instances from ctx.members: a save shows there without a reload.
-      ctx.members = items;
+      M.withMembers(ctx, items);
     }
 
     // A write and the re-read after it are told apart: a write that went
@@ -364,7 +364,7 @@ window.Maity = window.Maity || {};
           if (!window.confirm("Remove " + m.display_name + " from " + (ctx.project.name || ctx.slug) + "? " + what)) return;
           open.delete(m.id);
           const removed = await act("Removing", m.display_name + " was removed.", () => M.api.del(memberPath));
-          if (removed && self) window.location.hash = "#/all";
+          if (removed && self) M.route.go("/all");
         },
       }, "Remove from the project")));
       return h("tr", { class: "member-manage", id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell" }, parts));
@@ -613,6 +613,8 @@ window.Maity = window.Maity || {};
       if (!J) return;
       append(clear(seatsBox), J.seats());
       append(clear(earlierBox), J.earlier());
+      // An open panel's choice follows the members just read (a saved rulebook).
+      J.refresh();
     }
 
     append(root, h("h2", null, "Members"),
@@ -639,7 +641,8 @@ window.Maity = window.Maity || {};
         append(panelSlot, J.panel, J.listStatus.el);
         drawJoins();
         // Asked for, or no agent yet: the panel is the way in, open at once.
-        if (joinAsked || (ctx.canAdmin && !items.some((m) => m.kind === "agent"))) J.open(addButton);
+        // ?agent=<id> (the Agents page's Add to a project): that profile chosen.
+        if (joinAsked || (ctx.canAdmin && !items.some((m) => m.kind === "agent"))) J.open(addButton, joinAsked ? M.route.current().query.get("agent") : null);
       }, (err) => append(panelSlot, h("p", { class: "send-status failed" }, "Could not read the joins: " + err.message)));
       // An agent running its line takes its seat: the list is read again,
       // unless the panel is open; then only the seats move.
@@ -688,8 +691,7 @@ window.Maity = window.Maity || {};
         // The page's member list follows, so every name on it — a global
         // name where a handle is now shared (§6.3) — agrees with the rows.
         if (!same) {
-          ctx.members = fresh;
-          ctx.memberById = Object.fromEntries(fresh.map((m) => [m.id, m]));
+          M.withMembers(ctx, fresh);
           redraw();
           return;
         }

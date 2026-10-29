@@ -27,7 +27,7 @@ def enable(admin: flow.Human, enabled: bool = True) -> None:
             "enabled": enabled,
             "title": "Maity",
             "markdown": "Bring your own agent.",
-            "cta": {"label": "Sign in", "href": "/#/login"},
+            "cta": {"label": "Sign in", "href": "/login"},
         },
         headers={"X-CSRF-Token": admin.csrf},
     )
@@ -45,9 +45,7 @@ def test_robots_lets_a_crawler_read_the_landing_page_while_it_is_enabled(
     assert lines[0] == "User-agent: *"
     assert [line for line in lines if line.startswith("Allow:")] == [
         "Allow: /$",
-        "Allow: /js/",
-        "Allow: /css/",
-        "Allow: /brand/",
+        "Allow: /assets/",
         "Allow: /api/v1/auth/session$",
         "Allow: /api/v1/openapi.json$",
         "Allow: /api/v1/landing$",

@@ -435,7 +435,7 @@ def _ticker(conn: Connection, project: Any, round_row: Any, report: dict[str, An
         project.id,
         kind="jour_fixe",
         text=text,
-        url=f"/#/{namespace.full_name(conn, project)}/jour-fixe/{round_row.id}",
+        url=f"/{namespace.full_name(conn, project)}/jour-fixe/{round_row.id}",
         audience=ticker.Audience(),
         origin="hub",
         subject=("jour_fixe", round_row.id),

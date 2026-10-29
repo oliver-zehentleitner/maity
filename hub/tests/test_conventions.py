@@ -20,11 +20,16 @@ SERVER_TIME = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$")
 
 def test_every_response_carries_the_server_time_and_no_store(make_client: ClientFactory) -> None:
     client = make_client()
-    for path in ("/api/v1/health", "/api/v1/help", "/api/v1/nope", "/"):
+    for path in ("/api/v1/health", "/api/v1/help", "/api/v1/nope"):
         response = client.get(path)
         assert SERVER_TIME.match(response.headers["Maity-Server-Time"]), path
         assert response.headers["Cache-Control"] == "no-store", path
         assert response.headers["X-Content-Type-Options"] == "nosniff", path
+    # The app shell is the one answer that is `no-cache`: small, and it follows a deploy.
+    shell = client.get("/")
+    assert SERVER_TIME.match(shell.headers["Maity-Server-Time"])
+    assert shell.headers["Cache-Control"] == "no-cache"
+    assert shell.headers["X-Content-Type-Options"] == "nosniff"
 
 
 def test_html_gets_the_content_security_policy_and_json_does_not(
@@ -268,10 +273,12 @@ def test_the_request_log_has_method_path_status_and_nothing_else(
 
     with caplog.at_level(logging.INFO, logger="maity_hub.access"):
         make_client().get("/api/v1/join/SECRET-TOKEN?code=Q7MD-3XPL", headers={"X-Thing": "hdr"})
-        make_client().get("/j/SECRET-TOKEN")
+        make_client().get("/join/SECRET-TOKEN")
+        make_client().get("/invite/SECRET-TOKEN")
     lines = [r.getMessage() for r in caplog.records if r.name == "maity_hub.access"]
     assert lines[0] == "GET /api/v1/join/… 404"
-    assert lines[1].startswith("GET /j/… ")
+    assert lines[1].startswith("GET /join/… ")
+    assert lines[2] == "GET /invite/… 200"
     assert not any("SECRET" in line or "Q7MD" in line or "hdr" in line for line in lines)
 
 
