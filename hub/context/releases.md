@@ -66,3 +66,28 @@ the one place every read passes through sees all of them.
   a tag read for a closed release or through `GET /probe`.
 - Setting it when the release card moves to `done`: the contract says
   "whether or not the release card is `done` yet".
+
+## The resume packet carries released_at, so the CLI shows the mark beside the state
+
+**Id:** a6589bbb-c499-4a04-bd57-93ef42ee9a3f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the Grok review of PR #658 (the released mark, 2026-10-29), on how `maity resume` learns of the mark; the packet field agreed with the coordinator the same day; contract in `docs/api.md` §5 and §6.1
+**See:** releases.md#the-released-mark-is-set-where-the-probe-stores-a-found-tag-not-in-the-release-round — 953b2971-7942-42b1-a71a-7ff9c688213b — as of 2026-10-29
+**Revisit when:** the packet gets a project block of its own for state and marks
+
+The packet's `project` has `released_at` next to `state`, `null` until
+the probe sets it. `maity resume` prints `, released` after the state
+when the field is set.
+
+**Reason:** the rules text already tells agents that the project is
+released. `maity resume`, however, shows the state from the packet's
+project block. Without the field there, the CLI cannot show the mark
+beside the state the way the dashboard does.
+
+**Rejected alternatives:**
+- The CLI parsing "Released since" out of the rules text: that text is
+  prose and changes.
+- A separate `GET /projects/{owner}/{slug}` on resume: an extra request
+  for a field the packet can carry.
