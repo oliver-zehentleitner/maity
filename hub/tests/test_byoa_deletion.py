@@ -65,15 +65,15 @@ def test_a_members_joins_and_agents_go_with_the_account(
     assert deleted_at(migrated, pat.id) is not None
     for join in (unused, pending):
         assert _join(migrated, join["id"]).revoked_at is not None
-    assert flow.exchange(make_client(), unused).status_code == 404
+        assert flow.exchange(make_client(), join).status_code == 404
     with migrated.connect() as conn:
         membership = conn.execute(
-            select(t.membership.c.active).where(t.membership.c.agent_id == agent_id)
+            select(t.membership.c.removed_at).where(t.membership.c.agent_id == agent_id)
         ).one()
         profile = conn.execute(
             select(t.agent_profile.c.deleted_at).where(t.agent_profile.c.id == agent_id)
         ).one()
-    assert membership.active is None and profile.deleted_at is not None
+    assert membership.removed_at is not None and profile.deleted_at is not None
     members = boss.get(f"{PROJECT}/members").json()["items"]
     assert agent_id not in [m["id"] for m in members]
 
@@ -81,8 +81,10 @@ def test_a_members_joins_and_agents_go_with_the_account(
 def test_a_members_join_in_flight_does_not_outlive_the_deletion(
     make_client: ClientFactory, migrated: Engine, moment: Clock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The member path through `write_guard`: a join authenticated before the deletion and
-    written after it is refused and leaves no join behind."""
+    """A join authenticated before the deletion and handled after it is refused and leaves
+    no join behind. The deletion commits before the route's transaction, so the refusal
+    comes from the membership check; the race against `write_guard` itself (a write past
+    its checks when the deletion commits) is covered in test_account_deletion.py."""
     from maity_hub import events, idempotency
     from maity_hub.deps import settings_of
 
@@ -102,9 +104,8 @@ def test_a_members_join_in_flight_does_not_outlive_the_deletion(
     late = pat.post(JOINS, {"agent": {"handle": "too-late", "display_name": "Too late"}})
     monkeypatch.undo()
     # Refused before anything is written: the member's membership is gone with the
-    # account, so the route answers `not_found` as for any non-member (§1.3); a write that
-    # got past that check would meet `write_guard` and its 401.
-    assert late.status_code in (401, 404), late.text
+    # account, so the route answers `not_found` as for any non-member (§1.3).
+    assert late.status_code == 404, late.text
     with migrated.connect() as conn:
         assert not conn.execute(
             select(t.agent_profile).where(t.agent_profile.c.handle == "too-late")
