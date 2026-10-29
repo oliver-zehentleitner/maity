@@ -30,6 +30,7 @@ from maity_hub import (
     preferences,
     ranks,
     rules,
+    setup_cards,
     ticker,
 )
 from maity_hub import tables as t
@@ -468,6 +469,7 @@ def _packet(
         "rules": rules_block,
         "preferences": preferences_block,
         "areas": areas,
+        **_setup_block(conn, project),
         "keep_the_why": {
             **ktw_skill.loading_block(
                 project,
@@ -525,6 +527,12 @@ def _placement_block(conn: Connection, membership_id: int) -> dict[str, Any] | N
         "mode": row.mode,
         "stop_grace_seconds": row.stop_grace_seconds,
     }
+
+
+def _setup_block(conn: Connection, project: Any) -> dict[str, Any]:
+    """`setup` of the packet (§5.2): present only while a setup card waits."""
+    waiting = setup_cards.waiting(conn, project.id)
+    return {"setup": waiting} if waiting else {}
 
 
 def _requests_block(conn: Connection, mine: Membership, cursor: int) -> dict[str, Any]:
