@@ -148,7 +148,10 @@ def test_wrong_codes_read_in_the_humans_language_and_the_mail_follows(
     write(migrated, owner.id, "second_factor_failed", FAILED)
     write(migrated, owner.id, "second_factor_failed", {"method": "totp", "ip": None})
     title = "Falsche Zwei-Faktor-Codes nach einer Anmeldung: Firefox auf Linux, 203.0.113.9"
-    unknown = "Falsche Zwei-Faktor-Codes nach einer Anmeldung: ein Browser auf einem unbekannten System, ?"
+    unknown = (
+        "Falsche Zwei-Faktor-Codes nach einer Anmeldung: "
+        "ein Browser auf einem unbekannten System, ?"
+    )
     assert {i["title"] for i in bell(owner)} >= {title, unknown}
     at(minutes=1)
     run(migrated)
