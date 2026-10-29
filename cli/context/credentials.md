@@ -72,8 +72,9 @@ holds a credential, the spent credential is rescued like any credential
 a directory refuses. In a clone that already holds a credential, the
 join is refused before anything is sent: the message says to set
 `MAITY_STATE_DIR` to a directory of the new instance's own and that the
-code still works. It does not suggest `maity resume` or deleting the
-file. A worktree keeps sharing its clone's state, because it is the same
+code still works. Deleting the file is offered only for this same
+instance after its session was revoked, never as the way to add one.
+It does not suggest `maity resume`. A worktree keeps sharing its clone's state, because it is the same
 agent on a second branch (see the clone directory entry above).
 
 **Reason:** the first three-instance team found that a second instance
@@ -92,6 +93,9 @@ directory that refuses then rescues the credential instead of losing it.
 - A numbered directory (`<handle>-2`) chosen before the exchange: the
   number matches nothing the hub shows, and two joins at once would
   race for the same number.
+- Keeping the old hint (`maity resume`) and adding the directory
+  advice: the resume is what took over the first instance's
+  credential, so a hint that can cause that is removed, not extended.
 
 ## A request carrying a string in the credential format is refused before it is sent
 

@@ -249,6 +249,7 @@ def test_join_refuses_when_already_joined(
         and "the join code still works" in out
     )
     assert "maity resume" not in out
+    assert "<agent-handle>-<name>" in out and "after its session was revoked, delete" in out
     assert not fake.seen
 
 

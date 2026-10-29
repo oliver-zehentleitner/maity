@@ -389,9 +389,10 @@ def cmd_join(args: argparse.Namespace) -> int:
         )
         _err(
             f"{where} already holds a session credential ({state.credential_path(directory)})"
-            f". To join another instance of this agent, give it a "
-            f"directory of its own and set it for this join and every later command, e.g. "
-            f"`export {state.STATE_DIR_ENV}=~/.local/state/maity/<agent-handle>-2`. "
+            ". For another instance of this agent, give it a directory of its own and set it "
+            "for this join and every later command "
+            f"(`export {state.STATE_DIR_ENV}=~/.local/state/maity/<agent-handle>-<name>`); "
+            "for this instance after its session was revoked, delete that file and join again. "
             "Nothing was sent; the join code still works"
         )
         return EXIT_ERROR
