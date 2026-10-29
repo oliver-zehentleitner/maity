@@ -433,6 +433,8 @@ project = Table(
     Column("state", String(16), nullable=False),
     Column("state_note", MARKDOWN_TEXT),
     Column("state_changed_at", UtcDateTime, nullable=False),
+    # Set once, when the probe first finds a release's tag; never cleared (§6.1).
+    Column("released_at", UtcDateTime),
     Column("repository_url", String(255)),
     Column("repository_default_branch", String(255)),
     # Whether the namespace owner confirmed this URL for their own forge grants (§11.4);

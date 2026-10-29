@@ -38,3 +38,31 @@ the card cannot drift from what the reader computes.
   computation.
 - A background job comparing readiness periodically: a delay, a process
   to run, and a window in which the card says ready and nobody was told.
+
+## The released mark is set where the probe stores a found tag, not in the release round
+
+**Id:** 953b2971-7942-42b1-a71a-7ff9c688213b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation of `released_at` (card "hub: released_at for the launch state, its probe hook and the rules text"), 2026-10-29; contract in `docs/api.md` §6.1
+**See:** ../../context/projects.md#a-project-moves-through-plan-build-review-and-launch-released-is-a-separate-mark-that-tightens-the-rules-for-good — de8abccf-94dc-4947-9926-463aa13edd8f — as of 2026-10-29
+
+`probe.observe` sets `released_at` in the same transaction that stores a
+tag observation with `found: true`, when the tag is `v<version>` of any
+release card of the project, open, done or cancelled. Migration 0097
+fills older projects from the stored tag observations. The cache keeps
+only the latest read of each ref, so the time it takes is when the tag
+was last seen, not when it was first found. No earlier time is recorded
+anywhere.
+
+**Reason:** the contract ties the mark to the first time the probe finds
+a release tag, whether or not the release card is done. A tag can be read
+by the release round, by `GET /probe?tag=` or after its card closed. Only
+the one place every read passes through sees all of them.
+
+**Rejected alternatives:**
+- Setting it in `observe_release`, the open release's round: it never sees
+  a tag read for a closed release or through `GET /probe`.
+- Setting it when the release card moves to `done`: the contract says
+  "whether or not the release card is `done` yet".

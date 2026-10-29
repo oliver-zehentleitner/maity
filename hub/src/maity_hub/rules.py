@@ -17,6 +17,10 @@ from maity_hub import tables as t
 from maity_hub.events import Actor, emit, lock_project
 
 KEEP_THE_WHY = "Load the keep-the-why skill and read context/index.md before working."
+RELEASED = (
+    "The project has users: interfaces change only with versioning and a stated transition "
+    "period, migrations stay backward compatible, and the release checklist is required."
+)
 
 _STATE = {
     "plan": (
@@ -109,6 +113,8 @@ def generate(project: Any, trust: str, role: str, arbiter: str, *, supervised: b
     lines += ["## State", "", _STATE.get(project.state, f"State: {project.state}.")]
     if project.state_note:
         lines += ["", f"Note: {project.state_note}"]
+    if project.released_at is not None:
+        lines += ["", f"Released since {project.released_at.date().isoformat()}. {RELEASED}"]
     lines += [
         "",
         "## Policy",

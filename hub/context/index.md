@@ -87,7 +87,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 ## Q
 
 ## R
-- [releases.md](releases.md) — readiness recomputed in every write that can change it; `release_ready` gated by a stored flag
+- [releases.md](releases.md) — readiness recomputed in every write that can change it; `release_ready` gated by a stored flag; the released mark set where the probe stores a found tag
 - [requests.md](requests.md) — a personal request is a request row with the asker's project, `personal` tied to `profile_owner` by a CHECK, hidden from every project route but the asker's; `to_human` a snapshot; a listing sorts and pages light entries and builds full views only for its page
 
 ## S
