@@ -781,8 +781,32 @@ a job to whichever runner with that label is free, so two MariaDB jobs run at on
 **Reason:** a machine runs one job of a type at a time because the service containers bind the host ports 5432 and 3306; more concurrent jobs of a type need more machines.
 The name of a runner must be unique in the repository (the first registration of the same name failed on the old workstation runners), the label is meant to be shared.
 
+**Order:** the registrations of the old workstation runners with the default names (`maity-vm-<type>`) must be removed in the repository settings before a machine registers a name that collides; `config.sh` fails on a taken name and does not replace it. The default prefix stays `maity-vm`, so the first machine needs no new variable.
+
 **Rejected alternatives:**
 - A runner per job type on each machine, with the types spread over the machines (the first plan): it does not shorten the queue of the one slow job.
 - Two services of one type on one machine: both bind 3306; random host ports would need the connection URLs to follow, a change in the shared workflow.
 - A label per machine: the workflow would have to know the machines, and a job could not take whichever is free.
+
+
+## The bootstrap's self-test reads the machine's own addresses without failing when one is missing
+
+**Id:** fdcbc28e-c9ea-49ef-aa1b-c734e93c202a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the bootstrap of the second rented runner server, which stopped at the start of its self-test on a machine without IPv6 (2026-10-29, #648); the review of that change
+**See:** process.md#a-second-rented-machine-serves-the-same-job-type-under-the-same-label-and-its-own-name — 2020c6e7-f289-4d55-858a-5438c8bba239 — as of 2026-10-29
+**Revisit when:** the bootstrap also has to run on machines with IPv6 off in the kernel, where `ip6tables` in the firewall unit is the next thing to fail
+
+`ip -6 route get` exits 2 ("Network is unreachable") where the provider gives no IPv6 route. Under `set -euo pipefail` the failing command substitution ended the whole
+bootstrap at the start of its self-test, after everything was built and before it was tested, with neither a `FAIL` line nor a message, only the missing `ok:`. Both
+lookups of the machine's own addresses now end in `|| own=` / `|| own6=`: an empty value keeps the script going, and every later use already skips an empty address.
+
+**Reason:** the self-test is the last line of the bootstrap and a missing address is a normal case, not a failure of what was built. The earlier review of the IPv6 probe had named the case, but it had not been
+tried on a machine without IPv6; the second server was the first one.
+
+**Rejected alternatives:**
+- Dropping `pipefail` for the script: it guards every other step.
+- Checking for IPv6 first and skipping the lookup: a second test of the same condition, which can disagree with `ip route`.
 
