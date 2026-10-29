@@ -6,6 +6,7 @@ from typing import Any
 
 from sqlalchemy import Engine, select
 
+from maity_hub import clock
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -247,6 +248,33 @@ def test_a_deleted_profile_frees_its_handle_and_its_aliases_for_its_owner(
     assert owner.delete(f"/agents/{profile['id']}").status_code in (200, 204)
     for handle in ("bee", "wasp"):
         assert owner.post("/agents", {"handle": handle, "display_name": "New"}).status_code == 201
+
+
+def test_a_rename_of_a_profile_deleted_meanwhile_is_not_found(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    from maity_hub import events, handles
+    from maity_hub.errors import ApiError
+
+    owner = flow.human(make_client, migrated)
+    profile = owner.post("/agents", {"handle": "bee", "display_name": "Bee"}).json()
+    with migrated.begin() as conn:  # the delete, as it stands once it has the profile's lock
+        conn.execute(
+            t.agent_profile.update()
+            .where(t.agent_profile.c.id == profile["id"])
+            .values(deleted_at=clock.now(), live=None)
+        )
+        owner_id = conn.execute(
+            select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == profile["id"])
+        ).scalar_one()
+    with events.transaction(migrated) as conn:
+        try:
+            handles.rename(conn, profile["id"], owner_id, "wasp")
+        except ApiError as error:
+            assert error.status == 404 and error.code == "not_found"
+        else:
+            raise AssertionError("a deleted profile was renamed")
+    assert owner.post("/agents", {"handle": "wasp", "display_name": "New"}).status_code == 201
 
 
 def test_two_renames_to_one_handle_leave_one_winner(
