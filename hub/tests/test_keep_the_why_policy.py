@@ -217,3 +217,12 @@ def test_a_set_policy_that_does_not_move_the_view_is_still_a_policy_change(
         ).first()
     assert event is not None and event.payload["reason"] == "own"
     assert event.payload["new"]["keep_the_why"] == "optional"
+
+
+def test_a_null_policy_is_refused_and_keeps_the_stored_value(owner: flow.Human) -> None:
+    flow.project(owner)
+    _patch(owner, "maity", {"policy": {"keep_the_why": "optional"}, "reason": "own"})
+    refused = _patch(owner, "maity", {"policy": {"keep_the_why": None}, "reason": "reset"})
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {"policy.keep_the_why": "unknown"}
+    assert owner.get("/projects/maintainer/maity").json()["policy"]["keep_the_why"] == "optional"

@@ -86,3 +86,30 @@ text already read.
   that must agree, for one provider and one alias.
 - Accept any URL scheme for the skill source: the value ends up in an
   agent's instructions, so a `file:` or `javascript:` source is refused.
+
+## A human's `policy.keep_the_why` is a policy change even when the view does not move
+
+**Id:** 3ea58d8b-ccdd-41f7-8a15-f444565d803e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** review findings on the policy pull request (a P2, fixed in commit 3521a9d2; recorded after a P3 of the second review), 2026-10-28/29; `docs/api.md` §6.1, §6.23
+**See:** keep-the-why.md#the-keep-the-why-policy-stores-only-what-a-human-set-the-provider-keeps-its-boolean-column — a0966b9e-2263-44c1-9098-3c1f5d709911 — as of 2026-10-29
+**Revisit when:** the stored and the effective policy become one value, or §6.1 stops requiring a reason for every policy change
+
+An explicit `policy.keep_the_why` is compared with the stored column
+`keep_the_why_policy`, not with the policy as it reads. When it differs, the
+change needs `reason`, bumps `rules_version` and emits `policy_changed`, even
+when the policy reads the same before and after (`optional` set while
+`memory.provider` is `none`). An explicit `null` is refused (`unknown`): it
+would clear the human's value without naming one of the two §6.1 allows.
+
+**Reason:** the stored value decides what the project reads once the provider
+is switched back on. A human who sets `optional` under `none` changes what
+happens later, so it leaves the same audit trail (reason, version, event) as
+any other policy change.
+
+**Rejected alternative:** compare with the policy view, as every other field
+is compared. Under `none` the view already reads `optional`, so the change
+would have been dropped silently and the human's intent lost on the next
+switch to `keep-the-why`; this is how the first version behaved.
