@@ -1014,6 +1014,7 @@ def scenario(run: Run, page: Page) -> None:
     no_problems(run, "phone width")
 
     users_step(run, page)
+    registration_admin_step(run, page)
     join_expiry_step(run, page)
     change_password(run, page)
     picture_step(run, page)
@@ -1365,15 +1366,15 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
 
     briefing_step(run, page, alpha, agent_id)
 
-    run.step("state and absence: the owner freezes the project; the agent's resume shows it")
+    run.step("state and absence: the owner moves the project to review; the agent's resume shows it")
     cursor = run.api(alpha, "GET", "/projects/owner/e2e-alpha/events", after="latest", wait=0)["cursor"]
     project_settings(page)
-    page.locator("#state-select").select_option("freeze")
-    page.locator("#state-note").fill("e2e freeze: fixes only")
+    page.locator("#state-select").select_option("review")
+    page.locator("#state-note").fill("e2e review: fixes only")
     page.locator("#state-reason").fill("e2e: release candidate")
     page.get_by_role("button", name="Change state", exact=True).click()
-    expect(page.locator("header .state")).to_have_text("Freeze")
-    expect(page.locator("header .state-note")).to_have_text("e2e freeze: fixes only")
+    expect(page.locator("header .state")).to_have_text("Review")
+    expect(page.locator("header .state-note")).to_have_text("e2e review: fixes only")
     project_settings(page)
     # Availability caps an absence at 90 days. Choose next week in the browser's
     # local timezone so this scenario remains valid as the calendar moves on.
@@ -1417,20 +1418,20 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     expect(menu).to_be_hidden()
     expect(profile).to_be_focused()
     page.set_viewport_size({"width": 1280, "height": 900})
-    # The switcher's state dot: frozen Alpha differs from Beta, which builds.
+    # The switcher's state dot: Alpha in review differs from Beta, which builds.
     dots = page.evaluate("""() => ["E2E Alpha", "E2E Beta"].map(name => {
       const chip = Array.from(document.querySelectorAll("nav.switcher a")).find(a => a.textContent.includes(name));
       return getComputedStyle(chip.querySelector(".dot")).backgroundColor;
     })""")
-    assert dots[0] != dots[1], f"the switcher shows one colour for freeze and build: {dots}"
-    run.shot(page, "freeze-absence")
-    run.a11y(page, "header in freeze with absence")
+    assert dots[0] != dots[1], f"the switcher shows one colour for review and build: {dots}"
+    run.shot(page, "review-absence")
+    run.a11y(page, "header in review with absence")
     view_tab(page, "Overview").click()
     expect(page.locator("main section.view-overview .org-tree")).to_be_visible()
     run.a11y(page, "overview with the organisation")
     project = json.loads(run.maity(alpha, "resume", "--json"))["project"]
     print(f"   resume: state {project['state']}, absence {project['absence']}")
-    assert project["state"] == "freeze" and project["state_note"] == "e2e freeze: fixes only", (
+    assert project["state"] == "review" and project["state_note"] == "e2e review: fixes only", (
         project
     )
     assert (project.get("absence") or {}).get("scope") == "e2e: the admins decide merges", project
@@ -1441,7 +1442,7 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     payload = change["payload"]
     assert (payload["old"], payload["new"], payload["reason"]) == (
         "build",
-        "freeze",
+        "review",
         "e2e: release candidate",
     ), change
     project_settings(page)
@@ -2251,6 +2252,34 @@ def users_step(run: Run, page: Page) -> None:
     run.shot(page, "users")
     run.a11y(page, "users")
     no_problems(run, "users")
+
+
+def registration_admin_step(run: Run, page: Page) -> None:
+    """Instance administration → Registration (docs/api.md §16.4): the mode needs mail."""
+    me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
+    if not me.get("instance_admin"):
+        return
+    run.step("registration: the admin opens the settings; allowlist needs mail, a list is saved")
+    page.goto(f"{run.base}/admin")
+    page.locator("nav.admin-nav").get_by_role("button", name="Registration", exact=True).click()
+    section = page.locator("section.admin-section[aria-label='Registration']")
+    expect(section.locator(".reg-effective")).to_have_text("Registration now: closed.")
+    form = section.locator("form.reg-form")
+    # This hub has no mail: the hub refuses the mode, said at its field.
+    page.locator("#reg-mode").select_option("allowlist")
+    form.get_by_role("button", name="Save", exact=True).click()
+    expect(page.locator("#reg-mode-error")).to_have_text("needs complete, enabled mail (Mail settings)")
+    # That refusal is the expected answer here, not a problem of the page.
+    refused = "PATCH /api/v1/admin/settings/registration answered 400"
+    run.problems = [p for p in run.problems if p != refused]
+    page.locator("#reg-mode").select_option("closed")
+    page.locator("#reg-domains").fill("@example.com")
+    form.get_by_role("button", name="Save", exact=True).click()
+    expect(form).to_contain_text("Saved.")
+    expect(page.locator("#reg-domains")).to_have_value("@example.com")
+    run.shot(page, "registration-admin")
+    run.a11y(page, "registration admin")
+    no_problems(run, "registration admin")
 
 
 def join_expiry_step(run: Run, page: Page) -> None:

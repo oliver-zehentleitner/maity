@@ -225,9 +225,11 @@ def _project(packet: dict[str, Any]) -> list[str]:
     if not project:
         return []
     name = project.get("name") or project.get("slug")
+    # `released` only when the packet carries the mark (§6.1); it is never cleared.
+    released = ", released" if project.get("released_at") else ""
     lines = [
         f"Project: {inline(name)} ({inline(project.get('full_name') or project.get('slug'))}), "
-        f"state {inline(project.get('state'))}"
+        f"state {inline(project.get('state'))}{released}"
     ]
     repository = get(project, "repository", "url")
     if repository:
@@ -401,7 +403,7 @@ def _next_step(packet: dict[str, Any], paused: bool, board_empty: bool = False) 
         return f"`maity claim {inline(assigned[0].get('id'))}`, the card assigned to you."
     if board_empty and is_admin(packet):
         state = get(packet, "project", "state")
-        if state in {"accepted", "archived"}:
+        if state == "archived":
             return (
                 f"The board is empty and the project is {inline(state)}. "
                 "Ask your human whether to reopen it before creating work."

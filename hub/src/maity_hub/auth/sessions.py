@@ -256,9 +256,15 @@ def create(
     cookie value's hash is stored. A session that still owes the second step of a
     two-factor sign-in (`state` other than `full`, §2.8.2) is not a sign-in yet: no
     record, no `last_login_at`; `complete_sign_in` makes it one."""
-    deleted = conn.execute(select(t.human.c.deleted_at).where(t.human.c.id == human_id))
-    if deleted.scalar() is not None:  # every way in ends here: none for a deleted account
+    account = conn.execute(
+        select(t.human.c.deleted_at, t.human.c.suspended_at).where(t.human.c.id == human_id)
+    ).first()
+    if account is not None and account.deleted_at is not None:
+        # Every way in ends here: none for a deleted account,
         raise unauthenticated("this account was deleted")
+    if account is not None and account.suspended_at is not None:
+        # and none for a suspended one, answered as a wrong password is (§16.8).
+        raise unauthenticated("handle or password is wrong")
     now = clock.now()
     session_id, csrf = secrets.token_urlsafe(32), secrets.token_hex(32)
     browser, system = describe(user_agent)

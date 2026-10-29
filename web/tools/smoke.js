@@ -190,7 +190,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && refuses("/api/v1/projects/../logo?v=1") && !refuses("fixtures/maity/logo.png") && !refuses("/api/v1/projects/maintainer/maity/logo?v=%22f1%22"),
     "dom: an image is a local file or the hub's own image, never another origin, not even https");
   let cur = main.querySelector(".current");
-  expect(cur && text(cur).includes("rounding fix") && text(cur).includes("Freeze") && text(cur).includes("urgent"), "urgent first (Sample shop, with its state)");
+  expect(cur && text(cur).includes("rounding fix") && text(cur).includes("Review") && text(cur).includes("urgent"), "urgent first (Sample shop, with its state)");
   expect(cur && !btn(cur, "Later (stays open)") && btn(cur, "Later"), "local Later button present");
   btn(cur, "Later").click(); await tick();
   cur = main.querySelector(".current");
@@ -1695,12 +1695,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   try { await bPost("/projects/maintainer/maity/tasks", { title: "x", ships_with: ["rel-0001"] }); } catch (err) { relShip = err; }
   expect(relShip && relShip.details.fields.ships_with === "release_card", "board: the mock refuses shipping with a release, as the hub does");
   win.Maity.api.patch = bPatch; win.Maity.api.post = bPost;
-  // A frozen project asks for a reason.
+  // A project in review asks for a reason.
   await go("#/maintainer/sample/board");
   btn(main, "New card").click(); await tick();
-  byId("new-card-title").value = "Something during the freeze";
+  byId("new-card-title").value = "Something during the review";
   main.querySelector("form.new-card").dispatch("submit"); await tick();
-  expect(byId("new-card-reason") && text(main).includes("Not created: the project is in freeze"), "board: in freeze a new card needs a reason");
+  expect(byId("new-card-reason") && text(main).includes("Not created: the project is in review"), "board: in review a new card needs a reason");
+  // The released mark (§6.1): beside the state in the header, on the overview and in Project settings; none where unset.
+  const relMark = () => header.querySelector(".project-state .released");
+  expect(relMark() && text(relMark()) === "Released" && relMark().getAttribute("title").startsWith("Released since ")
+    && relMark().getAttribute("title").includes("migrations stay backward compatible"), "released: the header marks a released project, the rules in its title");
+  await go("#/maintainer/sample/overview"); for (let k = 0; k < 4; k++) await tick();
+  expect(main.querySelector(".overview .released") && main.querySelector(".overview .state-review"), "released: the overview shows the state and the mark");
+  await projectSettings(); await tick();
+  expect(main.querySelector(".released-note") && text(main.querySelector(".released-note")).includes("for good"), "released: Project settings say it is never cleared");
+  await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+  expect(!relMark(), "released: no mark on a project that is not released");
   await go("#/maintainer/maity/inbox");
   // Members (docs/api.md §6.2): humans and agents, managed by an admin.
   const membersTab = header.querySelectorAll("nav.views a").find((a) => a.textContent === "Members");
@@ -3308,22 +3318,39 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
 
   // state and absence
   await projectSettings(); await tick();
-  const sel = byId("state-select"); sel.value = "freeze";
+  const sel = byId("state-select");
+  expect(sel.querySelectorAll("option").map((o) => o.getAttribute("value")).join(" ") === "plan build review launch archived"
+    && sel.querySelectorAll("option").find((o) => o.getAttribute("value") === "launch").getAttribute("disabled") == null,
+    "state: exactly the five states of §6.1; the owner may move to launch");
+  sel.value = "review";
   byId("state-reason").value = "release 0.1.0";
   // The 15-s count re-read replaces the switcher only; the open panel and what is typed stay.
   const switcherBefore = header.querySelector("nav.switcher");
   await fireIntervals(); await tick(); await tick();
-  expect(byId("state-reason") && byId("state-reason").value === "release 0.1.0" && byId("state-select").value === "freeze",
+  expect(byId("state-reason") && byId("state-reason").value === "release 0.1.0" && byId("state-select").value === "review",
     "the count re-read keeps the open Project settings panel and its input");
   expect(header.querySelector("nav.switcher") !== switcherBefore && header.querySelectorAll("nav.switcher").length === 1,
     "the count re-read replaces the switcher, once");
   byId("state-select").parentNode.dispatch("submit"); await tick(); await tick();
-  expect(text(header).includes("Freeze") && onSettings() && text(main).includes("State saved.")
+  expect(text(header).includes("Review") && onSettings() && text(main).includes("State saved.")
     && header.querySelectorAll("nav.views a").find((a) => a.textContent === "Settings").getAttribute("aria-current") === "page",
-    "state changed to freeze; the save stays on the Settings tab, says so, the tab marked current");
+    "state changed to review; the save stays on the Settings tab, says so, the tab marked current");
   byId("absence-until").value = "2026-10-25T08:00"; byId("absence-scope").value = "fixes only";
   byId("absence-until").parentNode.dispatch("submit"); await tick(); await tick();
   expect(text(header.querySelector(".project-state")).includes("Away until") && text(header.querySelector(".absence")).includes("While away: fixes only"), "absence set");
+  // An admin who is no owner: launch is offered disabled, until the project is in launch, which they may leave.
+  const lnGet = win.Maity.api.get;
+  let lnState = "build";
+  win.Maity.api.get = (p) => (p === "/me" ? lnGet(p).then((m) => { Object.assign(m.projects.find((x) => x.slug === "maity"), { trust: "admin", state: lnState }); return m; })
+    : p === "/projects/maintainer/maity" ? lnGet(p).then((x) => Object.assign({}, x, { state: lnState })) : lnGet(p));
+  const launchOption = () => byId("state-select").querySelectorAll("option").find((o) => o.getAttribute("value") === "launch");
+  await go("#/maintainer/maity/inbox"); await projectSettings(); await tick();
+  const lnBuild = launchOption() && launchOption().getAttribute("disabled") != null;
+  lnState = "launch";
+  await go("#/maintainer/maity/inbox"); await projectSettings(); await tick();
+  expect(lnBuild && launchOption().getAttribute("disabled") == null && launchOption().getAttribute("selected") != null,
+    "state: an admin who is no owner sees launch disabled, and selectable once the project is in launch");
+  win.Maity.api.get = lnGet;
 
   // policy.signing: before required, the agents a bearer token would cut off.
   const sigPatches = [];
@@ -3923,6 +3950,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.post = rgPost;
   await go("#/register"); for (let k = 0; k < 6; k++) await tick();
   expect(!rgForm() && text(main).includes("This hub does not create new accounts on request."), "register: a hub that does not register says so, with the way to sign in");
+  // A hub that registers on request (§2.7, GET /auth/methods): the form, and its terms named with their version.
+  const rgGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/auth/methods"
+    ? Promise.resolve({ password: true, device_code: true, email_link: true, registration: true, terms: { url: "https://example.org/terms", version: "2026-10" } }) : rgGet(p));
+  await go("#/login"); await go("#/register"); for (let k = 0; k < 6; k++) await tick();
+  const rgTerms = main.querySelector(".register-terms");
+  expect(rgForm() && rgTerms && text(rgTerms) === "When you complete your account you accept this hub's terms (version 2026-10)."
+    && rgTerms.querySelector("a").getAttribute("href") === "https://example.org/terms" && rgTerms.querySelector("a").getAttribute("rel") === "noopener noreferrer",
+    "register: where the hub registers, the form names its terms and their version, as a link");
+  win.Maity.api.get = (p) => (p === "/auth/methods"
+    ? Promise.resolve({ password: true, device_code: true, email_link: true, registration: true, terms: { url: "javascript:alert(1)", version: "1" } }) : rgGet(p));
+  await go("#/login"); await go("#/register"); for (let k = 0; k < 6; k++) await tick();
+  expect(main.querySelector(".register-terms") && !main.querySelector(".register-terms a"), "register: terms whose address is not plain https are named, not linked");
+  win.Maity.api.get = rgGet;
   // Signing in from the invitation returns to it, now with the button to join.
   await go("#/login?next=%2Finvite%2Fonly-xxxxxxxxxxxxxxxx2"); for (let k = 0; k < 4; k++) await tick();
   byId("login-handle").value = "maintainer"; byId("login-password").value = "a long new password";
@@ -4594,7 +4635,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
 
   // A closed project: no new group chat.
   const gcMe = win.Maity.api.get;
-  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? gcMe(p).then((x) => Object.assign({}, x, { state: "accepted" })) : gcMe(p));
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? gcMe(p).then((x) => Object.assign({}, x, { state: "archived" })) : gcMe(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat");
   expect(!main.querySelector("a.new-group"), "group chat: a closed project offers no new group chat");
   await go("#/maintainer/maity/chat/new");
@@ -5450,6 +5491,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const aProxy = await asAgent(() => win.Maity.api.patch("/projects/maintainer/maity/members/agt-b", { trust: "admin", role: "proxy" }));
   const aHuman = await asAgent(() => win.Maity.api.patch("/projects/maintainer/maity/members/hum-maintainer", { areas: ["x/"] }));
   const aSelf = await asAgent(() => win.Maity.api.patch("/projects/maintainer/maity/members/agt-a", { areas: ["x/"] }));
+  const aLaunch = await asAgent(() => win.Maity.api.patch("/projects/maintainer/maity", { state: "launch", reason: "go" }));
   const aAfter = (await win.Maity.api.getAll("/projects/maintainer/maity/members")).items;
   const humansOnly = (e) => e && e.code === "forbidden" && e.details.reason === "humans_only";
   expect(aRole.class === "consent" && aRole.to === "owner" && aRole.title === "Change reviewer to member · coder"
@@ -5459,6 +5501,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(aMember.id === "agt-b" && aMember.paused && aMember.areas.join() === "web/", "mock as an admin agent: a member agent's areas and pause apply at once");
   expect(humansOnly(aCaps) && humansOnly(aProxy) && humansOnly(aHuman) && humansOnly(aSelf),
     "mock as an admin agent: capabilities, proxy, a human's and its own membership are a human's");
+  expect(aLaunch && aLaunch.status === 403 && aLaunch.code === "forbidden", "mock as an admin agent: moving to launch is the owner's go (403)");
   win.location.search = "";
 
   // The Keep the Why commitment (docs/api.md §6.23): the policy in Settings, the Members mark, the why on a report,
@@ -6746,6 +6789,52 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(adNav(), "Users").click(); await tick();
   const adUsers = adSections().find((x) => x.getAttribute("aria-label") === "Users");
   expect(!adUsers.hidden && stBox().hidden && btn(adNav(), "Users").getAttribute("aria-pressed") === "true", "admin: a button shows its section alone");
+  // Registration (§16.4): the mode, the lists, approval, terms and the limit with their sources, missing beside them,
+  // the accounts that wait and lifting a block.
+  btn(adNav(), "Registration").click(); for (let k = 0; k < 4; k++) await tick();
+  const rgBox = () => adSections().find((x) => x.getAttribute("aria-label") === "Registration");
+  const rgSave = () => rgBox().querySelector("form.reg-form").dispatch("submit");
+  const rgPatches = [];
+  const rgPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { if (p === "/admin/settings/registration") rgPatches.push(b); return rgPatch(p, b); };
+  expect(rgBox() && !rgBox().hidden && text(rgBox().querySelector(".reg-effective")) === "Registration now: closed."
+    && byId("reg-mode").value === "closed" && byId("reg-terms-url").attrs.disabled !== undefined && text(rgBox()).includes("(set by the environment)")
+    && text(rgBox().querySelector(".reg-counts")).startsWith("1 waiting for approval"),
+    "registration: the section shows the mode in effect, the terms the environment sets as not editable, and the counts");
+  expect(rgBox().querySelectorAll("li.reg-pending-item").length === 1 && text(rgBox().querySelector("li.reg-pending-item")).includes("new@example.org"),
+    "registration: an account waiting for approval is listed with its address");
+  byId("reg-mode").value = "allowlist"; rgSave(); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(rgPatches[0]) === JSON.stringify({ mode: "allowlist" }) && rgBox().querySelector('[data-missing="allowlist"]')
+    && text(rgBox().querySelector(".reg-effective")) === "Registration now: allowlist." && text(rgBox()).includes("Saved."),
+    "registration: only the mode is sent; an empty allowlist is said beside the fields");
+  byId("reg-domains").value = "example.com"; rgSave(); for (let k = 0; k < 6; k++) await tick();
+  expect(text(byId("reg-domains-error")) === "entry 1 is not valid", "registration: the hub's refusal of a list entry is said at the list, by its number");
+  // The hub's own shape (registration.py): `addresses.<index>` for a bad entry, the second here.
+  const rgReal = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => (p === "/admin/settings/registration"
+    ? Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { "addresses.1": "invalid" } })) : rgReal(p, b));
+  byId("reg-domains").value = ""; byId("reg-addresses").value = "ada@example.org\nnot an address"; rgSave(); for (let k = 0; k < 6; k++) await tick();
+  expect(text(byId("reg-addresses-error")) === "entry 2 is not valid" && text(rgBox().querySelector("form.reg-form")).includes("addresses: entry 2 is not valid"),
+    "registration: the hub's addresses.<index> is said at the addresses, by its number");
+  win.Maity.api.patch = rgReal;
+  byId("reg-addresses").value = "";
+  byId("reg-domains").value = "@Example.com\n@example.com"; rgSave(); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(rgPatches[rgPatches.length - 1]) === JSON.stringify({ domains: ["@example.com"] }) && !rgBox().querySelector('[data-missing="allowlist"]'),
+    "registration: a list is sent lower case without duplicates, and the gap is gone");
+  // Approve and reject; a decision redraws the counts only, so what is typed in the form and not saved stays.
+  byId("reg-domains").value = "@typed-not-saved.org";
+  const rgDomainsBefore = byId("reg-domains");
+  btn(rgBox().querySelector("li.reg-pending-item"), "Approve").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(text(rgBox().querySelector(".reg-pending-list")).includes("Nobody waits for approval") && text(rgBox()).includes("@newcomer is approved.")
+    && text(rgBox().querySelector(".reg-counts")).startsWith("0 waiting for approval"),
+    "registration: Approve decides the account, the list and counts follow");
+  expect(byId("reg-domains") === rgDomainsBefore && byId("reg-domains").value === "@typed-not-saved.org",
+    "registration: a decision keeps the settings form as typed, not saved");
+  byId("reg-domains").value = "@example.com";
+  byId("reg-block-address").value = "spam@example.org"; rgBox().querySelector("form.reg-block").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(rgBox().querySelector("form.reg-block")).includes("spam@example.org may register again"), "registration: a block is lifted by its address");
+  win.Maity.api.patch = rgPatch;
+  await win.Maity.api.patch("/admin/settings/registration", { mode: "closed", domains: [] });
   btn(adNav(), "Statistics").click(); await tick();
   expect(JSON.stringify(stTiles()) === JSON.stringify(["41Humans2 waiting for approval", "117Agent profiles", "12Projectsnot archived", "23Agent instances online", "29Humans with an agent"]),
     "statistics: the totals as tiles " + JSON.stringify(stTiles()));

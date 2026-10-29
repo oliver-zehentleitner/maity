@@ -83,7 +83,7 @@ def test_policy_requires_a_human_admin(
     assert changed.json()["policy"]["badge"] == "members"
 
 
-@pytest.mark.parametrize("state", ["off", "unknown", "accepted", "archived"])
+@pytest.mark.parametrize("state", ["off", "unknown", "archived"])
 def test_hidden_badges_never_validate_a_cache(
     setup: tuple[flow.Human, TestClient, str], migrated: Engine, state: str
 ) -> None:

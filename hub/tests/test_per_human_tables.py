@@ -32,6 +32,7 @@ LOOKS_LIKE_A_PERSON = re.compile(r"human|_by$|^owner_id$|^caller$|^address")
 # Whether each such column without a foreign key names a human (True), or is something
 # else that only looks like one (False): a reason, a time, a mode, a session's id.
 NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
+    ("abuse_report", "resolved_by"): True,  # the instance admin
     ("account_deletion", "withdrawn_by"): False,  # why: `replaced`, `password_change`, …
     ("account_record", "read_by"): True,
     ("account_registration", "address"): True,
@@ -53,8 +54,10 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
     ("human_session", "ended_by"): False,  # why: `logout`, `revoked`, …
     ("idempotency_key", "caller"): True,
     ("instance_landing", "updated_by"): True,
+    ("instance_legal", "updated_by"): True,
     ("invitation", "address"): True,
     ("invitation", "address_normalized"): True,
+    ("legal_version", "created_by"): True,
     ("membership", "briefing_by"): True,
     ("membership", "paused_by"): True,
     ("membership", "team_updated_by"): True,
@@ -90,6 +93,8 @@ DELETION_THROUGH: dict[str, ModuleType] = {
 # stays, and every view shows it as `Deleted account` (§2.9).
 _RECORD = "the projects' or the instance's record, kept without the person (§2.9)"
 DELETION_KEEPS = {
+    "abuse_report": "the instance's moderation record; its copy is emptied 90 days after the "
+    "report closes, a deleted author's included (§16.8)",
     "attachment": f"who deleted an attachment: {_RECORD}",
     "conversation_participant": f"who added or removed a participant: {_RECORD}",
     "credential": f"who paused or revoked an agent's credential: {_RECORD}",
@@ -97,8 +102,10 @@ DELETION_KEEPS = {
     "handle_register": "the handle of a deleted account stays taken for good (§2.9, §6.24)",
     "idempotency_key": "a key expires after 24 hours (§1.5) and holds no personal data",
     "instance_landing": f"who edited the landing page: {_RECORD}",
+    "instance_legal": f"who edited the legal pages: {_RECORD}",
     "instance_secret": f"who changed an instance secret: {_RECORD}",
     "instance_setting": f"who changed an instance setting: {_RECORD}",
+    "legal_version": f"who wrote a version of a legal page: {_RECORD}",
     "memory_entry": f"who confirmed a project memory entry: {_RECORD}",
     "project": "an archived project of the namespace stays under its name (§2.9); "
     "the deletion reads projects for `namespace_owner` only",
@@ -142,6 +149,8 @@ EXPORT_LEAVES_OUT = {
     "human_device": _SECRET,
     "idempotency_key": _BOOKKEEPING,
     "instance_landing": _INSTANCE,
+    "instance_legal": _INSTANCE,
+    "legal_version": _INSTANCE,
     "instance_secret": _INSTANCE,
     "instance_setting": _INSTANCE,
     "invitation": _UNLISTED,

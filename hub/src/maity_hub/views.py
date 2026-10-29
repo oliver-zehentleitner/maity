@@ -220,6 +220,7 @@ def project_view(
         "aliases": aliases or [],
         "name": project.name,
         "state": project.state,
+        "released_at": ts(project.released_at),
         "state_note": project.state_note,
         "state_changed_at": ts(project.state_changed_at),
         "repository": repository(project, settings),
@@ -473,6 +474,12 @@ def member_views(
     briefed = {r.id: r for r in rows if (briefing(r) if callable(briefing) else briefing)}
     writers = briefings.writers(conn, {r.briefing_by for r in briefed.values() if r.briefing_by})
     languages = human_languages(conn, human_ids)
+    from maity_hub import moderation  # moderation reads views; imported here, not at the top
+
+    suspended = moderation.suspensions(conn, rows, {a.id: a.owner_id for a in agents.values()})
+    profile_holds = moderation.holds_of(
+        conn, "profile", [r.agent_id or r.human_id for r in rows if r.agent_id or r.human_id]
+    )
     views = []
     for row in rows:
         head = (
@@ -519,11 +526,14 @@ def member_views(
         else:
             is_listening = False
         shown_presence = presence(row, session, is_listening)
+        stopped = paused(row) or suspended.get(row.id)
+        if stopped is not None:  # a suspended account's membership acts as paused (§16.8)
+            shown_presence = "paused"
         view.update(
             {
                 "last_seen_at": ts(row.last_seen_at),
                 "presence": shown_presence,
-                "paused": paused(row),
+                "paused": stopped,
                 "availability": availability.view(
                     row,
                     shown_presence,
@@ -545,7 +555,7 @@ def member_views(
             unconfirmed = commitment.unconfirmed(projects[row.project_id], view["instances"])
             if unconfirmed is not None:
                 view["keep_the_why_unconfirmed"] = unconfirmed
-            if view["instances"] and row.paused_since is None:
+            if view["instances"] and stopped is None:
                 # The best of its instances' (§5.3).
                 view["presence"] = min(
                     (i["presence"] for i in view["instances"]), key=PRESENCE_ORDER.index
@@ -565,6 +575,9 @@ def member_views(
             view["shared_environment"] = sharing.get(row.id, [])
             if row.agent_id is not None:  # given its owner's preferences (§19.4)
                 view["owner_preferences"] = bool(row.owner_preferences)
+        held = profile_holds.get(row.agent_id or row.human_id or "")
+        if held is not None:  # only while a hold stands on the profile (§16.8)
+            view["moderation"] = held
         views.append(view)
     return views
 
@@ -650,7 +663,7 @@ def agent_view(
     ).all()
     owner_handle = owner_handles(conn, [row.owner_id])[row.owner_id]
     names = namespace.full_names(conn, [m.id for m in memberships])
-    return {
+    shown = {
         "id": row.id,
         "handle": row.handle,
         "name": mentions.global_name(owner_handle, row.handle),  # §6.3, never stored
@@ -665,6 +678,12 @@ def agent_view(
         "created_at": ts(row.created_at),
         "deleted_at": ts(row.deleted_at),  # a tombstone: handle and name kept (§6.3)
     }
+    from maity_hub import moderation  # moderation reads views; imported here, not at the top
+
+    held = moderation.holds_of(conn, "profile", [row.id]).get(row.id)
+    if held is not None:  # only while a hold stands (§16.8)
+        shown["moderation"] = held
+    return shown
 
 
 def credential_view(conn: Connection, row: Any) -> dict[str, Any]:
@@ -751,6 +770,12 @@ def task_views(
     if not rows:
         return []
     views = _task_views(conn, rows, fg)
+    from maity_hub import moderation  # moderation reads views; imported here, not at the top
+
+    held = moderation.holds_of(conn, "card", [r.id for r in rows])
+    for view in views:
+        if view["id"] in held:  # only while a hold stands (§16.8)
+            view["moderation"] = held[view["id"]]
     if viewer is not None:
         watched = watching(conn, [r.id for r in rows], viewer)
         for view in views:
@@ -956,6 +981,8 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
             }
             if who is not None and deleted(who):
                 actor.update(deleted_person())
+        elif row.actor_report_id is not None:  # §16.8: the admin is named in the report only
+            actor = {"kind": "moderation", "report_id": row.actor_report_id}
         elif row.actor_runner_id is not None:  # §15.10
             actor = {
                 "kind": "runner",
@@ -997,6 +1024,15 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
         views, shape_deleted(conn, [v["payload"] for v in views]), strict=True
     ):
         view["payload"] = payload
+    from maity_hub import moderation  # moderation reads views; imported here, not at the top
+
+    held = moderation.holds_of(
+        conn, "message", [f"{r.project_id}/{r.seq}" for r in rows if r.kind == "message"]
+    )
+    for row, view in zip(rows, views, strict=True):
+        found = held.get(f"{row.project_id}/{row.seq}") if row.kind == "message" else None
+        if found is not None:  # only while a hold stands on the message (§16.8)
+            view["moderation"] = found
     return views
 
 

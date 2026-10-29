@@ -330,7 +330,7 @@ def test_an_import_says_why_the_projects_reader_refuses(
 def test_an_import_is_a_create(
     owner: flow.Human, forged: list[IssueForge], migrated: Engine
 ) -> None:
-    owner.patch("/projects/maintainer/maity", {"state": "freeze", "reason": "release"})
+    owner.patch("/projects/maintainer/maity", {"state": "review", "reason": "release"})
     assert imported(owner).json()["error"]["details"]["fields"] == {"reason": "required"}
     card = imported(owner, reason="the release needs it").json()
     with migrated.connect() as conn:

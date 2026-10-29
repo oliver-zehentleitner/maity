@@ -25,7 +25,18 @@ from sqlalchemy import Connection, insert, select, update
 from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import briefings, clock, events, idempotency, instances, line, namespace, takeovers
+from maity_hub import (
+    briefings,
+    clock,
+    events,
+    idempotency,
+    instances,
+    line,
+    moderation,
+    namespace,
+    takeovers,
+    write_guard,
+)
 from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.auth import credentials, second_factor
@@ -696,6 +707,11 @@ async def exchange(token: str, body: Exchange, request: Request) -> Response:
         """The credential facts, or None for a wrong code (recorded and committed)."""
         with events.transaction(engine) as conn:
             row = _usable(conn, token)
+            # The owner's account lock before any other (§2.9): a suspension or a
+            # deletion takes it first; `_consume` refuses a suspended account under it.
+            owner = _owner(conn, row)
+            if owner is not None:
+                write_guard.share(conn, owner)
             if row.agent_id is not None:  # a pickup's new profile does not exist yet (§15.9)
                 live_profile(conn, row.agent_id)  # first, as the deletion takes it (§6.3)
             # Take an attempt slot before comparing: one conditional UPDATE, so
@@ -767,7 +783,16 @@ def _boss_still_here(conn: Connection, reports_to: int | None) -> int | None:
     return reports_to
 
 
+def _owner(conn: Connection, row: Any) -> str | None:
+    """The account a join issues for: the profile's owner (None once the profile is
+    gone), or the creator for a profile the exchange creates."""
+    if row.agent_id:
+        return moderation.owner_account(conn, row.agent_id)
+    return str(row.created_by)
+
+
 def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, str, str, str]:
+    moderation.refuse_suspended(conn, _owner(conn, row))  # no credential for it (§16.8)
     # Serialise with every other write to the project: two first exchanges for
     # one new agent must not both insert its membership.
     lock_project(conn, row.project_id)

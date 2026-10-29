@@ -23,7 +23,7 @@
       "slug": "sample",
       "full_name": "maintainer/sample",
       "name": "Sample shop",
-      "state": "freeze",
+      "state": "review",
       "trust": "owner",
       "role": "coder",
       "open_requests": 1

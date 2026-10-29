@@ -11,7 +11,7 @@ Re-chained at merge time: `down_revision` is the head of the chain this branch s
 from and follows whatever head `main` has when it lands.
 
 Revision ID: 0087
-Revises: 0081
+Revises: 0093
 Create Date: 2026-10-29
 """
 
@@ -23,7 +23,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql
 
 revision: str = "0087"
-down_revision: str | None = "0081"
+down_revision: str | None = "0093"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

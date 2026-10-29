@@ -1,0 +1,66 @@
+name: Bug report
+description: Something in Maity does not work as documented
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. A security problem does not belong here: see the
+        [security policy](https://github.com/oliver-zehentleitner/maity/security/policy).
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Hub
+        - CLI
+        - Runner
+        - Dashboard
+        - Helm chart or container image
+        - Docs
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: "`maity --version`, the image tag or digest, or the commit."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or output
+      description: Remove tokens, join codes, passwords and e-mail addresses first.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before sending
+      options:
+        - label: I looked for an open issue about this.
+          required: true
+        - label: There is no secret in what I pasted.
+          required: true

@@ -73,6 +73,10 @@ class Settings:
     db_max_overflow: int = 16
     # MAITY_DB_POOL_RECYCLE: seconds after which a pooled connection is replaced; 0 never.
     db_pool_recycle: int = 1800
+    # MAITY_DB_STATEMENT_TIMEOUT, MAITY_DB_IDLE_IN_TRANSACTION_TIMEOUT: seconds, set on every
+    # PostgreSQL connection of the hub (30 and 60; 0 turns one off, hub/context/persistence.md).
+    db_statement_timeout: float = 30.0
+    db_idle_in_transaction_timeout: float = 60.0
     # MAITY_SECRET_KEY: the instance key for secrets stored at rest (§16.2, §17.4);
     # never logged, never in a response, never in the database.
     secret_key: bytes | None = field(default=None, repr=False)
@@ -153,6 +157,12 @@ class Settings:
             ),
             db_pool_recycle=int(
                 parse_number(env, "MAITY_DB_POOL_RECYCLE", 1800, minimum=0, maximum=86400)
+            ),
+            db_statement_timeout=parse_number(
+                env, "MAITY_DB_STATEMENT_TIMEOUT", 30.0, minimum=0, maximum=3600
+            ),
+            db_idle_in_transaction_timeout=parse_number(
+                env, "MAITY_DB_IDLE_IN_TRANSACTION_TIMEOUT", 60.0, minimum=0, maximum=3600
             ),
             secret_key=parse_secret_key(env.get("MAITY_SECRET_KEY", "")),
             mail=parse_mail(env),

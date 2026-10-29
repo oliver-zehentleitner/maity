@@ -45,6 +45,7 @@ PREFIXES = {
     "attachment": "att",
     "org": "org",
     "org_invitation": "oiv",
+    "abuse_report": "rpt",
 }
 
 

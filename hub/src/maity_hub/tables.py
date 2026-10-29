@@ -110,6 +110,10 @@ human = Table(
     # Set when the human deleted the account (§2.9): the row stays, so every stored id
     # resolves and the handle stays taken; everything about the person is gone.
     Column("deleted_at", UtcDateTime),
+    # Set while an instance admin's `suspend` stands (§16.8), with the report it came from;
+    # only the operator's `maity-hub account unsuspend` clears them.
+    Column("suspended_at", UtcDateTime),
+    Column("suspended_report", String(ID)),
     **MYSQL_TABLE,
 )
 
@@ -503,6 +507,8 @@ project = Table(
     Column("state", String(16), nullable=False),
     Column("state_note", MARKDOWN_TEXT),
     Column("state_changed_at", UtcDateTime, nullable=False),
+    # Set once, when the probe first finds a release's tag; never cleared (§6.1).
+    Column("released_at", UtcDateTime),
     Column("repository_url", String(255)),
     Column("repository_default_branch", String(255)),
     # Whether the namespace owner confirmed this URL for their own forge grants (§11.4);
@@ -640,6 +646,9 @@ membership = Table(
     # limit, the state the hub last announced and since when, and when the current
     # outage began (null while available).
     Column("availability_policy", JSON_VALUE),
+    # A human member's own settings in this project, each `null` for the personal default
+    # (§6.2, "A member's own settings in a project"): `{not_listening: {minutes}}`.
+    Column("own_settings", JSON_VALUE),
     Column("limit_until", UtcDateTime),
     Column("limit_since", UtcDateTime),
     Column("limit_source", String(16)),
@@ -1437,6 +1446,9 @@ event = Table(
     # A human who is no member of the project (§8.1: the owner deleting a profile with
     # `cascade`, §6.3), with `actor_membership` null; no foreign key either.
     Column("actor_human_id", String(ID)),
+    # The abuse report a moderation change was made for (§16.8), with every other actor
+    # column null; no foreign key either.
+    Column("actor_report_id", String(ID)),
     Column("subject_type", String(32)),
     # An id, or a deploy's `<environment>@<sha>` (§17.1).
     Column("subject_id", String(255)),
@@ -1525,18 +1537,69 @@ conversation_read = Table(
 )
 
 # The instance's landing page (docs/api.md §16.7): one row, written by the instance
-# admin; no row means the default, disabled. `updated_at` and `updated_by` are the record
-# of its changes in this version.
+# admin; no row means the default, disabled. `pages` is per language `{title,
+# description, sections}`, `footer` is shared by all languages. `updated_at` and
+# `updated_by` are the record of its changes in this version.
 instance_landing = Table(
     "instance_landing",
     metadata,
     Column("id", String(16), primary_key=True),
     Column("enabled", Boolean, nullable=False),
-    Column("title", String(120)),
-    Column("markdown", MARKDOWN_TEXT),
-    Column("cta", JSON_VALUE),
+    Column("default_language", String(8), nullable=False),
+    Column("pages", JSON_VALUE, nullable=False),
+    Column("footer", JSON_VALUE),
     Column("updated_at", UtcDateTime, nullable=False),
     Column("updated_by", String(ID)),
+    **MYSQL_TABLE,
+)
+
+# The legal pages (docs/api.md §16.7.1). `instance_legal` is the one row of the setting
+# (the default language and who last wrote it); `legal_version` keeps every text a page
+# ever had, read-only, since a person may have accepted one; `legal_page` says which
+# version is served now, none for a page that is not set.
+instance_legal = Table(
+    "instance_legal",
+    metadata,
+    Column("id", String(16), primary_key=True),
+    Column("default_language", String(8), nullable=False),
+    Column("updated_at", UtcDateTime, nullable=False),
+    Column("updated_by", String(ID)),
+    **MYSQL_TABLE,
+)
+legal_version = Table(
+    "legal_version",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("page", String(16), nullable=False),  # imprint, privacy, terms
+    Column("version", String(20), nullable=False),  # the hub's time of the change, RFC 3339
+    Column("languages", JSON_VALUE, nullable=False),  # {tag: {title, markdown}}
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("created_by", String(ID)),
+    UniqueConstraint("page", "version", name="uq_legal_version_page_version"),
+    **MYSQL_TABLE,
+)
+legal_page = Table(
+    "legal_page",
+    metadata,
+    Column("page", String(16), primary_key=True),
+    Column("current", String(20)),  # the served version; null while the page is not set
+    **MYSQL_TABLE,
+)
+
+# A draft of the landing page or of a legal page, seen before it is saved (docs/api.md
+# §16.7, §16.7.1): bound to the admin's session and never to the setting, kept for ten
+# minutes, at most twenty per session.
+preview_draft = Table(
+    "preview_draft",
+    metadata,
+    Column("id", String(32), primary_key=True),
+    Column("session", String(64), nullable=False),  # the id hash of the admin's session
+    Column("kind", String(8), nullable=False),  # landing, legal
+    Column("page", String(16)),  # the legal page; null for the landing page
+    Column("payload", JSON_VALUE, nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("expires_at", UtcDateTime, nullable=False),
+    Index("ix_preview_draft_session", "session", "created_at"),
     **MYSQL_TABLE,
 )
 
@@ -1936,5 +1999,51 @@ forge_token = Table(
     Column("status", String(16), nullable=False),  # active, rejected
     Column("set_at", UtcDateTime, nullable=False),
     Column("checked_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# An abuse report (docs/api.md §16.8): what someone signed in reported, kept with a copy
+# of the target as the reporter could read it then. `account_id` is the reporting account
+# (an agent's owner), the one the limits count; `reporter` the principal that reported.
+# `snapshot`, `text` and `note` are the report's content: emptied 90 days after it closes
+# (`purged_at`), the rest stays as the record.
+abuse_report = Table(
+    "abuse_report",
+    metadata,
+    _id(primary_key=True),
+    Column("reporter", String(ID), nullable=False),
+    _ref("account_id", "human.id", nullable=False, index=True),
+    Column("target_type", String(16), nullable=False),  # profile, project, message, card
+    Column("target_id", String(255), nullable=False),
+    Column("project_id", String(ID)),  # the target's project; null for a profile
+    Column("reason", String(32), nullable=False),
+    Column("text", Text),
+    Column("snapshot", JSON_VALUE),
+    Column("status", String(16), nullable=False),  # open, resolved, expired
+    Column("action", String(16)),  # dismiss, hide, remove, suspend
+    Column("note", MARKDOWN_TEXT),
+    Column("resolved_by", String(ID)),  # the instance admin who resolved it last
+    Column("resolved_at", UtcDateTime),
+    Column("closed_at", UtcDateTime),  # resolved or expired: the 90 days count from here
+    Column("purged_at", UtcDateTime),
+    Column("created_at", UtcDateTime, nullable=False),
+    Index("ix_abuse_report_status_created", "status", "created_at"),
+    **MYSQL_TABLE,
+)
+
+# What a report's `hide` or `remove` holds on its target (docs/api.md §16.8): ordinary
+# writes cannot undo it while the row exists; resolving the report again replaces or (with
+# `dismiss`) lifts it. `target_id` is the stable id: a project's id (not its full name, which
+# a rename changes), a card's id, `<project id>/<seq>` for a message, a principal's id for a
+# profile.
+moderation_hold = Table(
+    "moderation_hold",
+    metadata,
+    _ref("report_id", "abuse_report.id", primary_key=True),
+    Column("target_type", String(16), nullable=False),
+    Column("target_id", String(255), nullable=False),
+    Column("action", String(16), nullable=False),  # hide, remove
+    Column("at", UtcDateTime, nullable=False),
+    Index("ix_moderation_hold_target", "target_type", "target_id"),
     **MYSQL_TABLE,
 )

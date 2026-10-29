@@ -163,6 +163,46 @@ def test_the_admin_sets_lists_terms_and_approval(
     assert emptied["missing"] == ["allowlist"]
 
 
+def test_the_terms_come_from_the_environment_then_the_admin_then_the_legal_pages(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§16.7.1: while the `terms` page is set and neither the environment nor the admin gave
+    the terms, they are the page and its version, `source: legal_pages`."""
+    owner = admin(make_client, migrated, hub(MAITY_MAIL_SIGNING_KEY=SIGNING, **MAIL))
+    assert owner.get(SETTINGS).json()["terms"] == {"value": None, "source": "default"}
+    page = {"en": {"title": "Terms", "markdown": "Be kind."}}
+    saved = owner.patch("/admin/settings/legal", {"terms": page}).json()
+    version = saved["pages"]["terms"]["version"]
+    assert owner.get(SETTINGS).json()["terms"] == {
+        "value": {"url": "https://hub.example/terms", "version": version},
+        "source": "legal_pages",
+    }
+    shown = owner.client.get("/api/v1/auth/methods").json()["terms"]  # the login page's too
+    assert shown == {"url": "https://hub.example/terms", "version": version}
+    owner.patch(SETTINGS, {"terms": {"url": "https://example.com/terms", "version": "2026-10"}})
+    assert owner.get(SETTINGS).json()["terms"]["source"] == "admin"
+    owner.patch(SETTINGS, {"terms": None})
+    owner.patch("/admin/settings/legal", {"terms": None})  # unset: no terms again
+    assert owner.get(SETTINGS).json()["terms"] == {"value": None, "source": "default"}
+
+
+def test_the_environment_terms_win_over_the_legal_pages(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    settings = hub(
+        MAITY_TERMS_URL="https://example.com/t",
+        MAITY_TERMS_VERSION="v9",
+        **MAIL,
+        MAITY_MAIL_SIGNING_KEY=SIGNING,
+    )
+    owner = admin(make_client, migrated, settings)
+    owner.patch("/admin/settings/legal", {"terms": {"en": {"title": "T", "markdown": "x"}}})
+    assert owner.get(SETTINGS).json()["terms"] == {
+        "value": {"url": "https://example.com/t", "version": "v9"},
+        "source": "env",
+    }
+
+
 def test_the_environment_wins_and_cannot_be_patched(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
@@ -195,6 +235,75 @@ def test_only_the_instance_admin_reads_the_settings(
     other = flow.human(make_client, migrated, "someone")
     assert other.get(SETTINGS).status_code == 403
     assert other.patch(SETTINGS, {"mode": "closed"}).status_code == 403
+
+
+# --- GET /auth/methods: what the login page learns (§2.6.1, §2.7) -------------------------
+
+
+@pytest.mark.parametrize(
+    ("mode", "mail", "offered"),
+    [
+        ("closed", True, False),
+        ("closed", False, False),
+        ("allowlist", True, True),
+        ("allowlist", False, False),
+        ("open", True, True),
+        ("open", False, False),
+    ],
+)
+def test_the_login_page_learns_whether_it_offers_registration(
+    make_client: ClientFactory, migrated: Engine, mode: str, mail: bool, offered: bool
+) -> None:
+    """`registration` is true only for `allowlist` or `open` with complete, enabled mail;
+    nothing about the lists' entries or any account."""
+    env = {"MAITY_REGISTRATION": mode, "MAITY_REGISTRATION_DOMAINS": "@example.com"}
+    if mail:
+        env.update(MAITY_MAIL_SIGNING_KEY=SIGNING, **MAIL)
+    answer = client_for(make_client, hub(**env)).get("/api/v1/auth/methods").json()
+    assert answer["registration"] is offered
+    assert answer["terms"] is None
+    assert set(answer) == {"password", "device_code", "email_link", "registration", "terms"}
+
+
+def test_an_empty_allowlist_offers_no_registration(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§2.7: under `allowlist` with both lists empty nobody may register, so the login
+    page is not offered a way that ends nowhere; the admin sees `missing`."""
+    settings = hub(MAITY_MAIL_SIGNING_KEY=SIGNING, MAITY_REGISTRATION="allowlist", **MAIL)
+    client = client_for(make_client, settings)
+    assert client.get("/api/v1/auth/methods").json()["registration"] is False
+    by = factory.human(migrated, "maintainer")
+    env = settings.registration or registration.RegistrationEnvironment()
+    with migrated.begin() as conn:
+        registration.patch(conn, env, True, {"addresses": ["ada@example.com"]}, by)
+    assert client.get("/api/v1/auth/methods").json()["registration"] is True
+
+
+def test_the_login_page_learns_the_terms(make_client: ClientFactory, migrated: Engine) -> None:
+    settings = hub(
+        MAITY_MAIL_SIGNING_KEY=SIGNING,
+        MAITY_REGISTRATION="open",
+        MAITY_TERMS_URL="https://example.com/terms",
+        MAITY_TERMS_VERSION="2026-10",
+        **MAIL,
+    )
+    answer = client_for(make_client, settings).get("/api/v1/auth/methods").json()
+    assert answer["registration"] is True
+    assert answer["terms"] == {"url": "https://example.com/terms", "version": "2026-10"}
+
+
+def test_the_admins_mode_shows_at_once(make_client: ClientFactory, migrated: Engine) -> None:
+    """A mode set in the admin settings (§16.4), not only the environment, is what the
+    login page learns, on the next read."""
+    settings = hub(MAITY_MAIL_SIGNING_KEY=SIGNING, **MAIL)
+    client = client_for(make_client, settings)
+    assert client.get("/api/v1/auth/methods").json()["registration"] is False
+    by = factory.human(migrated, "maintainer")
+    env = settings.registration or registration.RegistrationEnvironment()
+    with migrated.begin() as conn:
+        registration.patch(conn, env, True, {"mode": "open"}, by)
+    assert client.get("/api/v1/auth/methods").json()["registration"] is True
 
 
 # --- POST /auth/register (§2.7.1, §2.7.3) -----------------------------------------------
