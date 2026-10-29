@@ -47,11 +47,15 @@ different handles; instances are for a team with the same role.
 
 A replacing instance's first session still starts at the project head,
 so it is not woken for the history. In addition, the resume packet
-carries `handover`: what was addressed to the replaced instance or the
-membership after the replaced instance's last acknowledged cursor, at
-most 50 events, read once and not waking anything. An address that
-names a replaced instance resolves to its successor when an event is
-written, so a message to the old address wakes the new one.
+carries `handover`: what was addressed to the replaced chain (the
+replaced instance and, while it never had a session, its own
+predecessors), to the new instance before its first resume, or to the
+membership, after the chain's last acknowledged cursor; instance-
+addressed events first, at most 50, delivered at least once and waking
+nothing. An address in a message, request or mention that names a
+replaced instance reaches its successor when the event is written, so
+a message to the old address wakes the new one; fields that need an
+active instance (assignment, claim, pause) still refuse it.
 
 **Reason:** a `replaces` join already moves claims, checkpoints and the
 lead role to the new instance. Direct messages to the predecessor
