@@ -639,7 +639,8 @@ window.Maity = window.Maity || {};
         append(panelSlot, J.panel, J.listStatus.el);
         drawJoins();
         // Asked for, or no agent yet: the panel is the way in, open at once.
-        if (joinAsked || (ctx.canAdmin && !items.some((m) => m.kind === "agent"))) J.open(addButton);
+        // ?agent=<id> (the Agents page's Add to a project): that profile chosen.
+        if (joinAsked || (ctx.canAdmin && !items.some((m) => m.kind === "agent"))) J.open(addButton, joinAsked ? M.route.current().query.get("agent") : null);
       }, (err) => append(panelSlot, h("p", { class: "send-status failed" }, "Could not read the joins: " + err.message)));
       // An agent running its line takes its seat: the list is read again,
       // unless the panel is open; then only the seats move.

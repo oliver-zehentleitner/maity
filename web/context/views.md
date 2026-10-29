@@ -1755,11 +1755,42 @@ contract takes only a current owner of the project, so the list offers
 exactly those. Parsing `owner/slug/tsk-…` back into a link: §6.25 makes
 the prefix display only.
 
+## One's agents have a page of their own in the gear menu; adding one to a project is that project's join panel
+
+**Id:** 1031c11b-7642-4ed9-87ce-de504b2044fc
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer on the card tsk-hn82893h9sdh, 2026-10-29 (agents belong to their owner and span projects; "add" means the join flow; the account keeps no agents section, one place); docs/api.md §6.3, §3.1, §16.11 (`agents` a reserved first segment)
+**Revisit when:** the hub can make a join for a profile without a project view (a join across projects), or the Team page's Members tab takes the profiles over
+
+`/agents`, in the gear menu beside Runners, lists every agent profile of
+the human (`GET /agents`): its picture, its memberships with trust, role
+and the instances against the team's limit, its name, git identity and
+handle, and its deletion; a new profile at the end. **Add to a project**
+leads to that project's Members with the join panel open and the
+profile chosen (`/<owner>/<slug>/members/join?agent=<id>`): the one join
+component, where the project's rules (who may bring agents, the
+member's limit, the team's) are known. `/agents/<id>` marks one profile.
+The account keeps the human's own picture and points to this page; an
+agent's picture stays settable in its row on Members as well.
+
+**Reason:** an agent is the owner's across projects, so its settings
+need one place that is not a project; and the join panel already knows
+each project's rules, which a second join flow on this page would have
+to repeat.
+
+**Rejected alternative:** a join form of its own on `/agents`: it would
+repeat the project's join rules (§3.1's member limits, the team's
+instance limit) apart from the panel and drift from it. Keeping the
+agents in no project on the account: two places for the same profile.
+
 ## A human's picture is set on the account, an agent's in its row on Members; the account keeps only agents no project shows
 
 **Id:** 59aaf51f-c63d-4cb6-966b-85eb8f2c682d
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 1031c11b-7642-4ed9-87ce-de504b2044fc
 **Evidence:** confirmed
 **Source:** the maintainer's wish on the card tsk-th1yq0jtk3yf (an agent's picture belongs to its management, personal settings keep only one's own), 2026-10-28; the coordinator's ruling on the fallback for agents in no project one is in, 2026-10-28
 **Revisit when:** the dashboard gets a page of one's agents outside any project, or §6.10 gives `members:admin` a say over pictures

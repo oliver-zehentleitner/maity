@@ -888,8 +888,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "theme: applied before the first paint, by a script in <head> without defer");
   // Users of this hub (docs/api.md §16.1), for the instance admin only.
   gearButton().click(); await tick();
-  expect(JSON.stringify(gearButton().parentNode.querySelectorAll(".menu-item").map((el) => el.textContent)) === JSON.stringify(["Runners", "Instance administration"])
-    && gearButton().attrs["aria-haspopup"] === "menu", "header: the gear menu has the hub's own: the runners and, for the instance admin, the users");
+  expect(JSON.stringify(gearButton().parentNode.querySelectorAll(".menu-item").map((el) => el.textContent)) === JSON.stringify(["Agents", "Runners", "Instance administration"])
+    && gearButton().attrs["aria-haspopup"] === "menu", "header: the gear menu has one's agents, the runners and, for the instance admin, the users");
   const tabNames = header.querySelectorAll("nav.views a").map((a) => a.textContent.replace(/\d+$/, ""));
   expect(tabNames[tabNames.length - 1] === "Settings" && tabNames.indexOf("Runners") < tabNames.indexOf("Settings")
     && tabNames.indexOf("Why") < tabNames.indexOf("Settings") && tabNames.indexOf("Why") > tabNames.indexOf("Runners"),
@@ -3624,12 +3624,40 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const avHeading = main.querySelector(".picture-heading");
   expect(avHeading && avHeading.getAttribute("tabindex") === "-1" && byId("avatar-file-hum-maintainer") && text(main).includes("Generated from the member id")
     && !btn(main, "Remove the upload"), "picture: the account shows the picture, where it comes from and an upload; nothing to remove yet");
-  const avAgents = main.querySelectorAll(".picture-list li");
-  // agt-x works only in guest/guestlab; an agent added earlier in this run is in no project yet.
-  const avX = avAgents.find((li) => li.getAttribute("data-agent") === "agt-x");
-  expect(avX && byId("avatar-file-agt-x") && text(avX).includes("Spare @maintainer/spare") && text(main).includes("Agents in other projects")
-    && !avAgents.some((li) => /^agt-(a|b|c|d|r|s1)$/.test(li.getAttribute("data-agent"))) && !byId("avatar-file-agt-b"),
-    "picture: the account lists only the agents in no project one is in, each with its upload and global name");
+  // The agents' pictures are on /agents now (tsk-hn82893h9sdh): the account only points there.
+  expect(!main.querySelector(".picture-list") && !byId("avatar-file-agt-x") && main.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/agents" && text(a) === "Your agents"),
+    "picture: the account has no agents of its own any more, a link to Your agents instead");
+  // Your agents (/agents): every profile across projects, its memberships with instances, Add to a project.
+  await go("#/agents"); for (let k = 0; k < 6; k++) await tick();
+  const agCards = () => main.querySelectorAll("li.agent-card");
+  const agCard = (id) => agCards().find((li) => li.getAttribute("data-agent") === id);
+  expect(plainTitle() === "Your agents · Maity" && agCard("agt-x") && agCard("agt-b") && text(agCard("agt-x")).includes("Spare @maintainer/spare")
+    && text(agCard("agt-x")).includes("guest/guestlab") && byId("avatar-file-agt-x") && byId("avatar-file-agt-b"),
+    "agents page: every profile of one's own, by global name, its memberships, each with its picture");
+  expect(text(agCard("agt-b")).includes("maintainer/maity · member · coder") && text(agCard("agt-b")).includes("1 of 1 instance active")
+    && agCard("agt-b").querySelectorAll("a").some((a) => a.getAttribute("href") === "#/maintainer/maity/members/agt-b/rulebook"),
+    "agents page: a membership with trust and role, the instances against the team's limit, the rulebook linked: " + text(agCard("agt-b")).slice(0, 200));
+  byId("agent-add-agt-b").value = "maintainer/maity"; agCard("agt-b").querySelector("form.agent-add").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(win.location.hash === "#/maintainer/maity/members/join?agent=agt-b", "agents page: Add to a project opens that project's join panel for the profile");
+  await go(win.location.hash); for (let k = 0; k < 8; k++) await tick();
+  expect(main.querySelector(".join-panel") && !main.querySelector(".join-panel").hidden && byId("join-agent").value === "agt-b"
+    && !main.querySelector("fieldset.join-instance").hidden, "agents page: there the panel is open with the profile chosen, as an instance where it is a member");
+  btn(main.querySelector(".join-panel"), "Cancel").click(); await tick();
+  // A new profile, a refused handle, then a rename that keeps the old handle as an earlier one.
+  await go("#/agents"); for (let k = 0; k < 6; k++) await tick();
+  byId("agent-new-handle").value = "Bad Handle"; byId("agent-new-name").value = "Bad"; main.querySelector("form.agent-new").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main.querySelector("form.agent-new")).includes("Not created: handle:"), "agents page: a handle the hub refuses is said at the form");
+  byId("agent-new-handle").value = "@helper"; byId("agent-new-name").value = " Helper "; main.querySelector("form.agent-new").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  const agHelper = agCards().find((li) => text(li).includes("Helper @maintainer/helper"));
+  expect(agHelper && text(main).includes("The profile @helper was created") && text(agHelper).includes("In no project yet."), "agents page: a new profile, in no project yet");
+  const agHelperId = agHelper.getAttribute("data-agent");
+  byId("agent-handle-" + agHelperId).value = "agent-b"; agHelper.querySelector("form.agent-edit").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(agHelper.querySelector("form.agent-edit")).includes("Not saved: handle: you have a profile with this handle already"), "agents page: a handle one's other profile has is refused");
+  byId("agent-handle-" + agHelperId).value = "helper-2"; byId("agent-git-name-" + agHelperId).value = "Helper";
+  byId("agent-git-email-" + agHelperId).value = "helper@example.org"; agHelper.querySelector("form.agent-edit").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(text(main).includes("Saved. The old handle @helper still names it as an earlier one.") && text(agCard(agHelperId)).includes("@maintainer/helper-2"),
+    "agents page: renamed with a git identity, the old handle kept as an earlier one");
+  await go("#/account/picture"); for (let k = 0; k < 4; k++) await tick();
   await pick("avatar-file-hum-maintainer", fakeFile(SVG, 0, "image/svg+xml"));
   expect(!avCalls.length && text(main).includes("Not uploaded: not a PNG, JPEG or WebP image"), "picture: an SVG is refused by its bytes, before sending");
   await pick("avatar-file-hum-maintainer", fakeFile(PNG, 1024 * 1024 + 1));
@@ -5404,13 +5432,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!("keep_the_why" in win.Maity.notify.KIND_WORDS), "keep the why: the owner's notice is a request in the inbox, no notification kind of its own");
   const ktProto = Object.getPrototypeOf(main), ktFocus = ktProto.focus;
   ktProto.focus = function () { document.activeElement = this; };
-  await go("#/account/picture/agt-x"); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
-  const ktAgent = main.querySelectorAll("li.wanted").find((li) => li.getAttribute("data-agent") === "agt-x");
-  expect(ktAgent && main.querySelectorAll("li.wanted").length === 1 && document.activeElement === ktAgent.querySelector(".picture-name"),
-    "keep the why: the account marks the agent the notice is about and starts there");
-  await go("#/account/picture/agt-b"); for (let k = 0; k < 6; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
-  expect(win.location.hash === "#/maintainer/maity/members/agt-b/picture" && main.querySelectorAll("tr.member-manage").some((r) => r.id === "member-manage-agt-b"),
-    "keep the why: an agent in one's own project is led to its row on Members, opened");
+  // /agents/<id>: one profile marked, its title focused, its settings open.
+  await go("#/agents/agt-x"); for (let k = 0; k < 6; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
+  const ktAgent = main.querySelectorAll("li.agent-card.wanted");
+  expect(ktAgent.length === 1 && ktAgent[0].getAttribute("data-agent") === "agt-x" && document.activeElement === ktAgent[0].querySelector(".agent-card-title")
+    && ktAgent[0].querySelector("details.agent-settings").attrs.open !== undefined, "agents page: /agents/<id> marks that profile, its title focused, its settings open");
   ktProto.focus = ktFocus; document.activeElement = undefined;
 
   // Subtasks (docs/api.md §6.4): children folded under their parent with the hub's counts, a child whose parent
@@ -7019,10 +7045,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   try { await pdDel("/agents/agt-c"); } catch (err) { pdInUse = err; }
   expect(pdInUse && pdInUse.code === "profile_in_use" && pdInUse.details.memberships[0].project === "maintainer/maity",
     "profile: the mock refuses a profile in use without cascade, naming the memberships");
-  // On the account, an agent in no project one is in is deleted there the same way.
-  await go("#/account"); for (let k = 0; k < 6; k++) await tick();
-  const pdX = main.querySelectorAll(".picture-list li").find((li) => li.getAttribute("data-agent") === "agt-x");
-  expect(pdX && pdX.querySelector(".profile-delete-box") && text(pdX).includes("guest/guestlab"), "profile: the account offers the deletion of an agent in other projects");
+  // On Your agents, every profile is deleted the same way.
+  await go("#/agents"); for (let k = 0; k < 6; k++) await tick();
+  const pdX = main.querySelectorAll("li.agent-card").find((li) => li.getAttribute("data-agent") === "agt-x");
+  expect(pdX && pdX.querySelector(".profile-delete-box") && text(pdX).includes("guest/guestlab"), "profile: Your agents offers the deletion of a profile");
   win.Maity.api.del = pdDel;
 
   // §6.26 at the end of fixture mode (it adds a project): out of an organisation into one's own namespace, at once.

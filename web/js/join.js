@@ -366,10 +366,15 @@ window.Maity = window.Maity || {};
     // Opened, it reads the members again: an agent's instances and its team's
     // limit may have changed since the view was drawn (a rulebook saved, an
     // instance revoked), and the choice must offer what the hub has now.
-    function open(from) {
+    // agentId: a profile to start from (the Agents page's Add to a project).
+    function open(from, agentId) {
       opener = from || null;
       panel.hidden = false;
       if (hooks.opened) hooks.opened(true);
+      if (agentId && Array.from(agentSelect.querySelectorAll("option")).some((o) => o.getAttribute("value") === agentId)) {
+        agentSelect.value = agentId;
+        showAgent();
+      }
       focusSoon(agentSelect);
       rereadMembers().then(() => { if (!panel.hidden) showAgent(); });
     }
@@ -526,9 +531,9 @@ window.Maity = window.Maity || {};
     return {
       panel,
       listStatus,
-      open: (from) => {
+      open: (from, agentId) => {
         opener = from || null;
-        if (impl) { impl.open(from); return; }
+        if (impl) { impl.open(from, agentId); return; }
         panel.hidden = false;
         if (hooks.opened) hooks.opened(true);
         const retry = panel.querySelector ? Array.from(panel.querySelectorAll("button")).find((b) => b.textContent === "Try again") : null;
