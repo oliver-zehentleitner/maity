@@ -793,13 +793,27 @@ def test_waiters_on_a_slow_family_do_not_starve_the_request_threadpool(
     web.routes[path] = doc()
     flow.project(owner, "widget", repository={"url": REPO})
     web.delay = 4.0
+    entered = [0]
+    entered_lock = threading.Lock()
+    lock_of = ktw.CACHE._lock
+
+    def counting_lock(project_id: str) -> threading.Lock:
+        with entered_lock:
+            entered[0] += 1
+        return lock_of(project_id)
+
+    monkeypatch.setattr(ktw.CACHE, "_lock", counting_lock)
     threads = [threading.Thread(target=lambda: get(owner)) for _ in range(45)]
     for t in threads:
         t.start()
-    # Not a fixed sleep: wait until the slow upstream read has really begun.
+    # Not a fixed sleep: wait until the slow upstream read has begun and at least 40
+    # requests (anyio's worker threads) have reached the per-project lock, so the pool
+    # is really held when the unrelated GET is sent.
     deadline = time.monotonic() + 10.0
-    while path not in web.requests:
-        assert time.monotonic() < deadline, "the family read never reached the upstream"
+    while path not in web.requests or entered[0] < 40:
+        assert (
+            time.monotonic() < deadline
+        ), f"upstream reached: {path in web.requests}, at the lock: {entered[0]} of 45"
         time.sleep(0.01)
     start = time.monotonic()
     status = owner.get("/projects/maintainer/widget").status_code
