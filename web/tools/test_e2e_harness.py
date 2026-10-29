@@ -50,13 +50,19 @@ class Request:
 class Answer:
     """A stand-in for Playwright's Response: method, url, status and a JSON body."""
 
-    def __init__(self, status: int, code: str | None, method: str = "GET", path: str = PENDING):
+    def __init__(self, status: int, code: str | None, method: str = "GET", path: str = PENDING,
+                 header: str | None = None, gone: bool = False):
         self.request = Request(method)
         self.url = BASE + path
         self.status = status
         self.code = code
+        # The Maity-Error header as read in the handler, and a body gone with a later page load.
+        self.header = header
+        self.gone = gone
 
     def json(self):
+        if self.gone:
+            raise RuntimeError("the body is gone with the page load")
         if self.code is None:
             raise ValueError("not JSON")
         return {"error": {"code": self.code, "message": "…", "details": {}}}
@@ -66,7 +72,7 @@ class FakeRun:
     def __init__(self, answers):
         self.base = BASE
         self.problems = []
-        self.off_answers = list(answers)
+        self.off_answers = [(a, a.header) for a in answers]
 
 
 def problems(ns: dict, answers) -> list[str]:
@@ -155,6 +161,10 @@ def main() -> int:
         ("off, then another conflict: the other one is a problem", [off(), other()], 1),
         ("another conflict, then off: the other one is a problem", [other(), off()], 1),
         ("a 409 without a JSON body is a problem", [Answer(409, None)], 1),
+        ("off, its body gone with a page load, by the header's code is no problem",
+         [Answer(409, None, header="attachments_not_configured", gone=True)], 0),
+        ("a body gone and no header is a problem", [Answer(409, None, gone=True)], 1),
+        ("a body gone and another code in the header is a problem", [Answer(409, None, header="other_conflict", gone=True)], 1),
         ("the code on another method is a problem", [Answer(409, "attachments_not_configured", method="POST")], 1),
         ("the code on another path is a problem",
          [Answer(409, "attachments_not_configured", path="/api/v1/projects/owner/e2e-alpha/attachments?name=a.png")], 1),

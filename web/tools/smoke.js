@@ -7059,6 +7059,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   R.go("/new", { replace: true });
   expect(rtListeners.popstate && rtDrawn === 2 && JSON.stringify(rtPushed.slice(1)) === JSON.stringify([["push", "/all"], ["replace", "/new"]]) && R.current().path === "/new",
     "route: go() pushes or replaces the path and draws the view; back and forward come as popstate");
+  R.go("/new");
+  expect(rtDrawn === 2 && rtPushed.length === 3, "route: going to the address one is at changes nothing, as a link to the same fragment did");
   const rtLink = (href, extra) => {
     let stopped = false;
     const a = { getAttribute: (k) => (k === "href" ? href : (extra || {})[k] || null), hasAttribute: (k) => !!(extra || {})[k] };

@@ -40,18 +40,25 @@ window.Maity = window.Maity || {};
   const href = (path) => (fixture ? "#" + path : path);
 
   let onChange = null;
+  // The address as go() and a link name it: path and query.
+  const here = () => (fixture ? window.location.hash.replace(/^#/, "") : window.location.pathname + window.location.search);
   // Go to a path: a new entry in the history, or with replace the current
   // one changed (a redirect, a removed query). The view follows at once.
+  // The address one is at already changes nothing, as a link to the same
+  // fragment did: no second entry, no view drawn again under a form.
+  // True when the address changed (and the view follows), false otherwise.
   function go(path, opts) {
     const replace = !!(opts && opts.replace);
+    if (path === here()) return false;
     if (fixture) {
-      // hashchange draws the view; a replace without a change draws nothing.
+      // hashchange draws the view.
       if (replace) window.location.replace("#" + path);
       else window.location.hash = "#" + path;
-      return;
+      return true;
     }
     window.history[replace ? "replaceState" : "pushState"](null, "", path);
     if (onChange) onChange();
+    return true;
   }
 
   // The view is drawn again on every change of the address: back and
