@@ -79,6 +79,8 @@ attachments:
   # configuration) and sets MAITY_ATTACHMENT_DIR. Empty: attachments are off, every attachment call answers `409 attachments_not_configured`.
   # The files are not in the database: back the volume up with it (docs/install/README.md), or a restore leaves messages with missing files.
   existingClaim: ""
+  # A ReadWriteOnce claim is mounted by the hub and by the migrate Job: on more than one node they must land on the same node (one node is
+  # what the k3s setup has).
   # Where the volume is mounted, an absolute path.
   mountPath: /var/lib/maity/attachments
   # MAITY_ATTACHMENT_QUOTA: bytes of attachments one project may store. Unset: the hub's default of 1 GiB.

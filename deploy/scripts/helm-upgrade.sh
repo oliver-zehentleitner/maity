@@ -10,7 +10,8 @@
 # Usage: deploy/scripts/helm-upgrade.sh -f values.yaml [more helm upgrade arguments]
 # Environment: NAMESPACE (maity), RELEASE (maity), DEPLOYMENT (<release>-maity-hub),
 #   CHART (the chart next to this script), HELM_TIMEOUT (10m), DUMP_CRONJOB (a CronJob to run as a
-#   dump first, e.g. maity-pg-dump; unset = no dump), STOP_TIMEOUT (seconds to wait for the hub's
+#   dump first, e.g. maity-pg-dump; unset = no dump), DUMP_REQUIRES_ATTACHMENTS (1: the dump's mark must carry the
+#   attachment tar; set it when the release has attachments.existingClaim), STOP_TIMEOUT (seconds to wait for the hub's
 #   pods to be gone, 180), KUBECONFIG as usual.
 #
 # helm upgrade only runs when the hub is verifiably stopped: a failed scale-down or pods still
@@ -71,8 +72,15 @@ if [ -n "${DUMP_CRONJOB:-}" ]; then
   dumppod=$(kubectl -n "$NAMESPACE" get pod -l "job-name=$job" --field-selector=status.phase=Succeeded -o name 2>/dev/null | head -1)
   log=""
   [ -n "$dumppod" ] && log=$(kubectl -n "$NAMESPACE" logs "$dumppod" 2>&1)
+  # With attachments the mark must also carry the tar ("... attachments <bytes>"): a CronJob that still has the script without it would
+  # let an upgrade run without the files being backed up.
   case "$log" in
-    *"dump ok: /backups/maity-"*) ;;
+    *"dump ok: /backups/maity-"*" attachments "[0-9]*) ;;
+    *"dump ok: /backups/maity-"*)
+      if [ "${DUMP_REQUIRES_ATTACHMENTS:-0}" = 1 ]; then
+        echo "the dump's mark has no attachments part (the CronJob still has the script without the tar: apply deploy/k3s-single/attachments.yaml and backup.yaml first), nothing was changed" >&2
+        restored=1; exit 1
+      fi;;
     *) echo "the dump job's log has no 'dump ok' line (the log could not be read, or the CronJob still has the old script: apply deploy/k3s-single/backup.yaml first), nothing was changed" >&2
        restored=1; exit 1;;
   esac

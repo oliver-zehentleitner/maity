@@ -294,7 +294,7 @@ that of the mail settings and cannot be repaired by setting the variable again.
 **Evidence:** inferred
 **Source:** the maintainer's request to switch attachments on in production, as passed on by the coordinating agent (2026-10-29), docs/api.md §8.7 and hub/README.md (`MAITY_ATTACHMENT_DIR`), the store's code (`attachment_store.py`: project directories 0700, files written whole)
 **See:** kubernetes.md#mail-the-signing-key-and-the-smtp-password-come-from-secrets-by-reference-the-rest-are-plain-values — f1c9c8ad-96ad-408d-b536-fdf027c5fe35 — as of 2026-10-29
-**Revisit when:** the store moves to an object store (`s3`), or the volume outgrows the node's disk
+**Revisit when:** the store moves to an object store (`s3`), or fourteen tars and dumps no longer fit comfortably on the node's disk (the volume holds more than a few GiB)
 
 `deploy/k3s-single/attachments.yaml` is a 10 GiB claim, `maity-attachments`. The chart takes it as `attachments.existingClaim` (with `mountPath` and
 an optional `quotaBytes`), mounts it into the hub **and** the migrate Job and sets `MAITY_ATTACHMENT_DIR`, because the hub checks the directory at every
@@ -302,15 +302,24 @@ start and the migrate Job reads the same configuration. The quota stays at the h
 
 The files are not in the database, so the nightly backup takes them along: an init container of the backup Job, running as the hub's user (10001), tars
 the volume into `maity-<time stamp>.attachments.tar` and hands the time stamp to the dump container, which writes `maity-<time stamp>.dump`, rotates
-both together and ends with `dump ok: <dump> <bytes> attachments <bytes>`. `helm-upgrade.sh` still asks for the `dump ok:` line, so a missing or empty
-tar stops an upgrade like a missing dump. `restore-attachments.yaml` puts one night's files back and replaces the volume's contents.
+both together and ends with `dump ok: <dump> <bytes> attachments <bytes>`. With `DUMP_REQUIRES_ATTACHMENTS=1` (set when the release has the claim) `helm-upgrade.sh` also demands the tar in that line; a tar that
+fails, is missing or has 0 bytes stops the dump Job, so there is no mark (a tar of an empty directory is about 10 KiB and passes: the check is
+that the tar was written, not that there are files). This holds only once the new `backup.yaml` is applied: an old CronJob writes the old mark
+without the tar, so for the release with attachments the order is `attachments.yaml`, `backup.yaml`, probe dump, then the upgrade. `restore-attachments.yaml` puts one night's files back and replaces the volume's contents.
 
 **Reason:** the hub creates the project directories with mode 0700 under its own user, which the dump's user (999) cannot enter; a second container of the
 hub's user is the way to read them without changing the hub or the ownership of the dumps. One run, one time stamp and one marker mean that a dump and
 the files of the same night belong together and that "the dump is ok" cannot be true with the files missing, which a restore without them would hide
 (messages that name files that are not there). `tar` exits 1 when a file changed or vanished while it was read (an upload that finished meanwhile);
 that is tolerated, any other exit fails the Job. The volume is on the node's disk like the database and the backups: copying the backups off the host
-stays necessary.
+stays necessary. Its size is not enforced either (local-path): fourteen nights keep fourteen tars, so the room is `14 × (the volume's size + a dump)`
+against the node's free disk, which the init container checks before it writes (it needs twice the volume's size plus 1 GiB free). Today the
+database is under 100 MB and the node has about 50 GB free; the backup claim's 5 GiB cannot be raised on local-path, and compressing would cost CPU for
+files that are mostly compressed already.
+
+The restore extracts with `--strip-components=1`: the tar's first entry, `./`, is the root of the volume, which belongs to the provisioner (root, 0777)
+and not to the restoring user, so tar's attempt to set its time and mode failed with exit 2 after the files were back. A cut-off tar is found by
+listing it before the volume is emptied.
 
 **Rejected alternatives:**
 - `extraVolumes`, `extraVolumeMounts` and `extraEnv` in the values file: it works, and it is how a release forgets the volume at the next upgrade

@@ -34,6 +34,11 @@ spec:
                   ts=$(date -u +%Y%m%dT%H%M%SZ)
                   t=/backups/maity-$ts.attachments.tar
                   trap 'rm -f "$t.part"' EXIT
+                  # The backup volume's size is not enforced (local-path): it is the node's disk, which Postgres is on. A tar that would
+                  # not fit twice (this night's and room to rotate) fails the Job before it writes, instead of filling the disk.
+                  need=$(du -sk /attachments | cut -f1)
+                  avail=$(df -Pk /backups | awk 'NR==2 {print $4}')
+                  [ "$avail" -gt $((need * 2 + 1048576)) ] || { echo "not enough room for the attachment tar: need about $((need / 1024)) MiB, $((avail / 1024)) MiB free" >&2; exit 1; }
                   # tar exits 1 when a file changed or vanished while it was read (an upload that finished meanwhile): that is no failure
                   tar -cf "$t.part" -C /attachments . || [ "$?" = 1 ]
                   test -s "$t.part"

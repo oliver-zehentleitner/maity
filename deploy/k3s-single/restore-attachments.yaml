@@ -3,7 +3,7 @@
 # attachment volume with the contents of that night's tar, so that the files match the restored database:
 #   sed 's/@TS@/20261029T135427Z/' deploy/k3s-single/restore-attachments.yaml | kubectl apply -f -
 #   kubectl -n maity wait --for=condition=complete job/restore-attachments --timeout=600s && kubectl -n maity delete job restore-attachments
-# With the placeholder left in, the Job fails at the first line and changes nothing.
+# With the placeholder left in, the Job fails at the first line and changes nothing. Scale the hub to 0 first (the install guide's step 1).
 apiVersion: batch/v1
 kind: Job
 metadata: {name: restore-attachments, namespace: maity}
@@ -22,8 +22,13 @@ spec:
             - |
               t=/backups/maity-@TS@.attachments.tar
               test -s "$t"
+              # a cut-off tar must not be found out after the volume was emptied
+              tar -tf "$t" > /dev/null
               find /attachments -mindepth 1 -delete
-              tar -xf "$t" -C /attachments
+              # --strip-components=1 skips the "./" entry: the root of the volume is the provisioner's (root, 0777), not ours, and
+              # tar would fail on setting its time and mode (exit 2) after the files were already back. A volume with a lost+found
+              # (root, 0700) would also fail here and in the nightly tar: that is not the case on k3s's local-path.
+              tar -xf "$t" -C /attachments --strip-components=1
               echo "restored: $t into /attachments"
           securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
           volumeMounts:
