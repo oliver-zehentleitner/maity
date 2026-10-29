@@ -559,15 +559,29 @@ window.Maity = window.Maity || {};
           : [h("h3", { id: "members-agent" }, "Agents (0)"), h("p", { class: "muted" }, "No agents yet.")]));
     }
 
-    // Whether the Chat button may start a group chat with anyone (§9.2).
-    const groupsServed = M.groupChat ? await M.groupChat.served().catch(() => false) : false;
+    // Whether the Chat button may start a group chat with anyone (§9.2):
+    // asked beside the list, never before it; the rows get it once known.
+    let groupsServed = false;
     const ownHere = ctx.me.kind === "human" && items.some(ownAgent);
     append(root, h("h2", null, "Members"),
       h("p", { class: "muted" }, "Everyone in " + (ctx.project.name || ctx.slug) + ", humans first, each with a chat."
         + (ctx.canAdmin ? " Manage a row to change its role, see and revoke an agent's credentials, edit its briefing, pause it or remove a member." : ""),
-      ownHere || ctx.me.kind === "human" ? [" ", h("a", { href: ctx.link("agents") }, ownHere ? "Your own agents here are on Agents." : "Adding an agent of yours is on Agents.")] : null),
+      // A guest brings no agent (§3.1): no way there said to them.
+      ownHere || (ctx.me.kind === "human" && !M.trust.guest(ctx))
+        ? [" ", h("a", { href: ctx.link("agents") }, ownHere ? "Your own agents here are on Agents." : "Adding an agent of yours is on Agents.")] : null),
       status.el, box);
     draw();
+    // A member marked by the URL keeps the focus across this redraw.
+    const wantedHead = () => { const tr = Array.from(box.querySelectorAll("tr.member")).find((x) => x.getAttribute("data-member") === wanted); return tr && tr.childNodes[0]; };
+    if (M.groupChat) {
+      M.groupChat.served().then((yes) => {
+        if (!yes) return;
+        const had = wanted && document.activeElement === wantedHead();
+        groupsServed = true;
+        redraw();
+        if (had && wantedHead()) wantedHead().focus();
+      }, () => {});
+    }
     // Inviting a person (§3.4), below the members, for a human with members:admin.
     if (M.invite) {
       const slot = h("div", { class: "invitations-slot" });
@@ -579,9 +593,8 @@ window.Maity = window.Maity || {};
     // A member asked for by the URL: its row takes the focus once the view is
     // in the page; an id that is no member here is said.
     if (wanted) {
-      const row = Array.from(box.querySelectorAll("tr.member")).find((tr) => tr.getAttribute("data-member") === wanted);
-      const th = row && row.childNodes[0];
-      if (th) window.setTimeout(() => th.focus(), 0);
+      // Looked up when focused: the Chat redraw may have drawn the row again.
+      if (wantedHead()) window.setTimeout(() => { if (wantedHead()) wantedHead().focus(); }, 0);
       else append(status.el, h("span", null, "No member with the id " + wanted + " in this project."));
     }
     ctx.every(PRESENCE_MS, async () => {

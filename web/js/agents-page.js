@@ -221,11 +221,12 @@ window.Maity = window.Maity || {};
     const focusables = new Map();
     const keyed = (key, el) => { focusables.set(key, el); el.setAttribute("data-focus", key); return el; };
     const edits = new Map(), open = new Set();
-    let items = ctx.members, profiles = [], views = {}, words = null;
+    let items = ctx.members, profiles = [], views = {}, words = null, unread = null;
     const renames = await M.api.hubBody("PATCH", "/agents/{agent_id}").then((fields) => fields.has("handle"), () => true);
     async function readProfiles() {
       profiles = (await M.api.getAll("/agents")).items.filter((a) => a.owner_id === ctx.me.id && !a.deleted_at);
       views = await memberViews(profiles);
+      unread = null;
     }
     async function reload() {
       items = (await M.api.getAll(ctx.base + "/members")).items;
@@ -264,9 +265,12 @@ window.Maity = window.Maity || {};
       if (words) append(note, h("p", { class: "ok", role: "status" }, words));
       words = null;
       const list = profiles.filter(memberOf);
-      append(clear(cards), list.length
-        ? h("ul", { class: "agent-cards" }, list.map((a) => profileCard(ctx, a, { wanted, views, renames, changed, here: here(memberOf(a)) })))
-        : h("p", { class: "muted" }, "None of your agents is in this project yet.", J || mayAdd ? " Add one: its join line is made here." : ""));
+      // Profiles not read are no "none": the failure is said where the cards go.
+      append(clear(cards), unread
+        ? h("p", { class: "send-status failed" }, "Your agents could not be read: " + unread.message)
+        : list.length
+          ? h("ul", { class: "agent-cards" }, list.map((a) => profileCard(ctx, a, { wanted, views, renames, changed, here: here(memberOf(a)) })))
+          : h("p", { class: "muted" }, "None of your agents is in this project yet.", J || mayAdd ? " Add one: its join line is made here." : ""));
       drawJoins();
     }
 
@@ -329,7 +333,7 @@ window.Maity = window.Maity || {};
     try {
       await readProfiles();
     } catch (err) {
-      status.fail("Could not read your agents: ", err);
+      unread = err;
     }
     draw();
     if (mayAdd) {
@@ -356,9 +360,10 @@ window.Maity = window.Maity || {};
         else reload().then(() => redraw(), () => {});
       });
     }
-    // Where the agents run (js/placements.js), where the hub has placements.
+    // Where the agents run (js/placements.js), where the hub has placements;
+    // the credentials (for a restart's new join) are read for one's own only.
     if (M.placements && M.agentParts) {
-      const agentsNow = items.filter((m) => m.kind === "agent");
+      const agentsNow = items.filter((m) => P.ownAgent(m) && !m.removed_at);
       Promise.all(agentsNow.map((m) => M.agentParts.loadCredentials(ctx, m)))
         .then((creds) => M.placements.section(ctx, Object.fromEntries(agentsNow.map((m, i) => [m.id, (creds[i].list && creds[i].list.items) || []]))))
         .then((placed) => { if (placed) append(placementsSlot, placed); }, () => {});

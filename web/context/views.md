@@ -607,13 +607,38 @@ features off the page for the rest of its life. Each view reading
 `openapi.json` on its own, as the Ticker did: the same read and the same
 two key forms in several places.
 
+## The inbox is the requests alone; activity is on the bell, the Chat button and /notifications
+
+**Id:** 2ff6afe9-ed47-4ffd-b12d-947cfb7774ca
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's report and decision on tsk-430dnt8s25a8 (the Request updates section slow and noisy, the tab's count against an empty list), relayed by the coordinator, 2026-10-29; docs/api.md §7, §18.2, §18.3
+**Revisit when:** the hub gives the inbox a kind of activity that asks for an answer, or the bell no longer lists everything unread
+
+The inbox, in a project and across them, lists the requests and nothing
+else: the block of unread activity under them (Request updates,
+Conversations, Mentions, Account) is gone. Its history is the Show filter
+(answered, closed). Unread notifications are on the bell, conversations
+on the Chat button, and every notification on `/notifications`, where an
+unread one is in bold with a dot as on the bell and **Mark all read**
+marks up to the head of the first page (§18.3).
+
+**Reason:** the block mostly repeated the hub's notices about agents not
+listening, held the page while it read up to four pages of 50, and made
+read and unread look alike; the inbox is for what asks for an answer.
+
+**Rejected alternative:** keeping the block with read and unread told
+apart: the activity would still sit under the requests and be read on
+every visit, while the bell already shows it.
+
 ## A personal request in the cross-project inbox is labelled Personal and links into no project
 
 **Id:** 2fd5910d-3233-4aca-a16e-8c1cc73d071a
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** docs/api.md §7 (personal requests, PR #232); the coordinator's card tsk-x995qwddkrk2, 2026-10-23; the dashboard's implementation, 2026-10-23
+**Source:** docs/api.md §7 (personal requests, PR #232); the coordinator's card tsk-x995qwddkrk2, 2026-10-23; the dashboard's implementation, 2026-10-23; the coordinator's choice of the count fix on tsk-430dnt8s25a8 (option a), 2026-10-29
 **Revisit when:** the dashboard gets a personal inbox of its own, apart from `/all`
 
 A personal request (`personal: true`, listed only by `GET /requests`) is
@@ -621,12 +646,22 @@ answered and withdrawn on `/requests/{id}/answer` and `…/withdraw`. Its
 badge says "Personal" and its project's name without a link, its card and
 its mentions are text, its free text has no @ picker, and it offers
 Withdraw, which only its human may do. Grouped by project, the personal
-ones come first under "Personal".
+ones come first under "Personal". Since 2026-10-29 a project's own inbox
+lists the open personal requests about that project too, read from
+`GET /requests`: its tab counts them (§18.2), so the list shows what the
+tab says; they keep the label and lead into nothing. The hub has no
+project filter on `GET /requests` (§7), so the project's inbox filters
+what it reads; a failed read is said in the list's status line, never
+shown as an empty list, since a list short of its tab is the bug this
+fixed. The list's own reload follows the inbox count of §18.2
+(`by_project`, `counts.inbox`), which counts those personal requests,
+not `/me`'s `open_requests`, which does not.
 
 **Reason:** the project's routes answer `not_found` for a personal
-request, its project's inbox never lists it, and its human need not be a
-member of that project: every link or member read into the project would
-lead nowhere.
+request, the project's own listing never holds one (§7), and its human
+need not be a member of that project: every link or member read into the
+project would lead nowhere. A tab that counts what its list leaves out
+reads as a bug (the maintainer's report).
 
 **Rejected alternative:** the project's badge and links as for every
 other entry: they lead to an inbox without the request, or to a project
@@ -1675,7 +1710,7 @@ views of the same people, with the actions split between them. Seats
 inside the agents' table as rows: a seat is no member yet, and the table
 is read by the hub's member list.
 
-## A member adds their own agents from Members, only where the hub sends the policy field
+## A member adds their own agents from Agents, only where the hub sends the policy field
 
 **Id:** 5cb62418-20f0-465f-b01e-be12e665a07e
 **Type:** decision
@@ -1708,7 +1743,7 @@ fails. The button off at the limit: it blocked the replacement §3.1
 keeps open. Counting every open join: an instance's join counted as a
 new agent.
 
-## The team rulebook is in the agent's row, for its owner only
+## The team rulebook is on the agent's card and in its row, for its owner only
 
 **Id:** 49804786-8704-4db6-a473-e348a12a77c5
 **Type:** decision
@@ -1717,13 +1752,14 @@ new agent.
 **Source:** docs/api.md §6.18 (only the human who owns the agent profile sets `team`); the card tsk-xzbk67raztm0, 2026-10-27; the review of PR #473, 2026-10-27
 **Revisit when:** §6.18 lets an admin set a team's rulebook, or the Team page gives teams a place of their own
 
-On Members, an agent's open row holds its **Team rulebook** when the
-viewer owns the agent; nobody else sees it, an admin included. The limit
+On the project's Agents, the card of one's own agent holds its **Team
+rulebook**, and so does its Manage row on Members (since 54a49af9; the row
+alone before); nobody else sees it, an admin included. The limit
 shows the active instances beside it and says that lowering it stops
 none. The lead is chosen among the active instances; one revoked since
 stays chosen, marked revoked. Only the fields that changed are sent. A
-join refused with `instance_quota` links to the row, opened at the
-limit (`/<owner>/<slug>/members/<id>/rulebook`), and does not edit the limit
+join refused with `instance_quota` links to the card, focused at the
+limit (`/<owner>/<slug>/agents/<id>/rulebook`), and does not edit the limit
 in the join panel.
 
 **Reason:** the contract gives the rulebook to the profile's owner
@@ -1825,7 +1861,10 @@ opens the panel, `…/agents/<id>/rulebook` the limit, and a new project
 lands on Agents. The parts the Members row and the Agents card share
 (rulebook, credentials, picture, pause, removal) are one code,
 `M.memberParts`. The organisation tree is a section of the Overview and
-is redrawn there when a member event arrives.
+is redrawn there when a member event arrives. The join panel and the
+placements belong to Agents because both are about one's own agents:
+a join makes one, and where they run is managed by their owner or the
+runner's; a list everybody reads is no place for either.
 
 **Reason:** Members is where one sees who is in the project and talks
 to them; managing one's own agents is a different job, the same one as

@@ -22,3 +22,8 @@
 
 - web: the **Organisation** tab and `/<owner>/<slug>/org`, the owner's **Details** on Members,
   `…/members/join` and `…/members/<id>/rulebook` and `/picture` (alpha: no redirect).
+
+### Fixed
+
+- web: a selection elsewhere on the page no longer swallows Enter or Space on inline code; only a
+  click that ends a selection inside the code copies nothing.

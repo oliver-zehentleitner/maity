@@ -1261,9 +1261,13 @@ window.Maity = window.Maity || {};
   let quietNote = null;
 
   function watch(ctx, where, item, main) {
+    // The inbox count as §18.2 keeps it (counts.inbox, by_project's inbox),
+    // which counts the personal requests the list holds; /me's open_requests
+    // does not. A hub without notifications: open_requests.
+    const notified = () => M.notify.state.available && M.notify.state.counts;
     const openNow = () => (where.scope === "all"
-      ? ctx.projects.reduce((n, p) => n + (p.open_requests || 0), 0)
-      : (ctx.projects.find((p) => p.full_name === ctx.slug) || {}).open_requests);
+      ? (notified() ? M.notify.state.counts.inbox || 0 : ctx.projects.reduce((n, p) => n + (p.open_requests || 0), 0))
+      : (() => { const p = ctx.projects.find((x) => x.full_name === ctx.slug); return p ? (notified() ? M.notify.projectCount(p).requests : p.open_requests) : undefined; })());
     let seen = openNow();
     const countLine = h("div");
     const changeLine = h("div");
@@ -1479,7 +1483,7 @@ window.Maity = window.Maity || {};
         // what waits comes first, the way to a project of one's own after it.
         const waiting = (await M.api.getAll("/requests")).items;
         if (seq !== renderSeq) return;
-        if (waiting.length || M.notify.state.available) await M.views.inbox(ctx, root, []);
+        if (waiting.length) await M.views.inbox(ctx, root, []);
         const start = h("div", { class: "no-projects" });
         M.views.noProjects(ctx, start);
         append(root, start);
