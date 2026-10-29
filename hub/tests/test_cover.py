@@ -505,3 +505,52 @@ def test_an_agents_new_takeover_waits_for_the_coordinator(
     )
     assert refused.status_code == 409, refused.text
     assert refused.json()["error"]["code"] == "coordinator_unavailable"
+
+
+def test_an_assignment_claimed_by_a_third_member_is_not_taken_back(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    """Still assigned to the substitute, but claimed by someone else: the return leaves the
+    claim alone."""
+    covered = flow.agent(make_client, owner)
+    sub = flow.agent(make_client, owner)
+    third = flow.agent(make_client, owner)
+    for agent in (covered, sub, third):
+        agent.resume()
+    assigned = task(owner)
+    owner.post(
+        f"/projects/maintainer/maity/tasks/{assigned['id']}/assign", {"assignee": covered.id}
+    )
+    policy(owner, covered.id, on_unavailable="substitute", substitutes=[sub.id], grace_minutes=0)
+    limit(covered, now[0] + timedelta(hours=2))
+    assert card_of(owner, assigned["id"])["assigned_to"] == sub.id
+    on_behalf = owner.post(
+        f"/projects/maintainer/maity/tasks/{assigned['id']}/claim", {"holder": third.id}
+    )
+    assert on_behalf.status_code == 200, on_behalf.text
+    covered.resume()
+    shown = card_of(owner, assigned["id"])
+    assert shown["claim"]["holder"] == third.id and shown["cover"] is None
+    assert shown["assigned_to"] != covered.id
+
+
+def test_a_forwarded_request_is_not_in_the_cover_set(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    """After a forward the request is its holder's (§7), not the addressee's to hand on."""
+    covered = flow.agent(make_client, owner)
+    sub = flow.agent(make_client, owner)
+    asker = flow.agent(make_client, owner)
+    for agent in (covered, sub, asker):
+        agent.resume()
+    admin = flow.agent(make_client, owner, role="admin")
+    admin.resume()
+    request = ask(asker, covered.id)
+    forwarded = covered.post(
+        f"/projects/maintainer/maity/requests/{request['id']}/forward", {"to": admin.id}
+    )
+    assert forwarded.status_code == 200, forwarded.text
+    policy(owner, covered.id, on_unavailable="substitute", substitutes=[sub.id], grace_minutes=0)
+    limit(covered, now[0] + timedelta(hours=2))
+    [started] = events(migrated, "cover_started")
+    assert request["id"] not in started.payload["requests"] + started.payload["left"]

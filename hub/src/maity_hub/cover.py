@@ -186,6 +186,9 @@ def _cover_set(conn: Connection, project: Any, row: Any) -> tuple[list[Any], lis
             t.request.c.status == "open",
             t.request.c.personal.is_(False),
             t.request.c.cover.is_(None),
+            # A forwarded request is its holder's now, not the addressee's (§7).
+            t.request.c.holder_member.is_(None),
+            or_(t.request.c.holder_pool.is_(None), t.request.c.holder_pool.is_(False)),
             or_(*addressed),
         )
         .order_by(t.request.c.created_at, t.request.c.id)
@@ -393,8 +396,11 @@ def end(conn: Connection, row: Any, actor: Actor | None) -> None:
         values: dict[str, Any] = {"cover": None}
         sub_id = members_by_principal.get(cover["by"])
         moved = cover.get("moved")
+        # An assignment is still the substitute's only while nobody else claimed the card.
         still_with_sub = (
-            card.claim_holder == sub_id if moved == "claim" else card.assigned_to == sub_id
+            card.claim_holder == sub_id
+            if moved == "claim"
+            else card.assigned_to == sub_id and card.claim_holder in (None, sub_id)
         )
         if not still_with_sub:
             # Reassigned or taken over since: the cover relation ended there, and a third
