@@ -86,6 +86,7 @@ def test_none_is_stored_with_its_reason(make_client: ClientFactory, migrated: En
         {"ref": "context/keep-the-why.txt#id"},
         {"ref": "/etc/x.md#id"},
         {"ref": "../x.md#id"},
+        {"ref": "context/" + "a" * 250 + ".md#id"},  # longer than the card's ktw_ref
         {"ref": 3},
         {"none": "too short"},
         {"other": "a long enough reason"},

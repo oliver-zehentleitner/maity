@@ -1830,6 +1830,7 @@ def _reporters(card: Any, mine: Membership) -> list[dict[str, Any]]:
 
 WHY_REF = re.compile(r"[^\s#]+\.md#[^\s#]+")
 WHY_NONE_MIN = 10
+WHY_REF_MAX = 255  # the card's `ktw_ref` column
 
 
 def _check_why(body: ReportIn, project: Any) -> None:
@@ -1845,7 +1846,12 @@ def _check_why(body: ReportIn, project: Any) -> None:
         ref, none = why.get("ref"), why.get("none")
         if isinstance(ref, str):
             path = ref.split("#", 1)[0]
-            if WHY_REF.fullmatch(ref) and not path.startswith("/") and ".." not in path.split("/"):
+            if (
+                len(ref) <= WHY_REF_MAX
+                and WHY_REF.fullmatch(ref)
+                and not path.startswith("/")
+                and ".." not in path.split("/")
+            ):
                 return
         elif isinstance(none, str) and len(none.strip()) >= WHY_NONE_MIN:
             return

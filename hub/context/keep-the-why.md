@@ -126,6 +126,10 @@ wait for the next sweep, at most a minute.
   read its packet and start working before the reminder woke it, up to a
   minute later; the review of the commitment pull request asked for it at the
   resume itself.
+- Keep revoked credentials in the sweep until a cleanup job: a credential that
+  owes nothing has nothing to reconcile. The sweep resets it when it withdraws,
+  so the sweep's cost follows the outstanding commitments, not the history of
+  instances.
 
 ## The why on a report is validated by the hub in code, and only its shape is checked
 

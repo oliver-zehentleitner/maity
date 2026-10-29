@@ -295,3 +295,70 @@ def test_a_reminder_missed_without_an_open_session_comes_at_the_next_resume(
     _block(agent)
     commitment.sweep(migrated)
     assert len(_events(migrated, "keep_the_why_reminder")) == 1  # once per commitment
+
+
+def _credential(engine: Engine, agent: flow.Agent) -> Any:
+    with engine.connect() as conn:
+        return conn.execute(
+            select(t.credential).where(t.credential.c.id == agent.credential_id)
+        ).one()
+
+
+@pytest.mark.parametrize("cause", ["revoked", "membership_ended", "profile_deleted"])
+def test_an_ended_cause_withdraws_the_request_and_leaves_the_sweep(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine, cause: str
+) -> None:
+    from maity_hub import commitment
+
+    agent = flow.agent(make_client, owner)
+    _block(agent)
+    _due(migrated, agent, timedelta(minutes=31))
+    commitment.sweep(migrated)
+    assert [n["status"] for n in _notices(owner)] == ["open"]
+    with migrated.begin() as conn:
+        if cause == "revoked":
+            conn.execute(
+                update(t.credential)
+                .where(t.credential.c.id == agent.credential_id)
+                .values(revoked_at=clock.now())
+            )
+        elif cause == "membership_ended":
+            conn.execute(
+                update(t.membership).where(t.membership.c.agent_id == agent.id).values(active=None)
+            )
+        else:
+            conn.execute(
+                update(t.agent_profile)
+                .where(t.agent_profile.c.id == agent.id)
+                .values(deleted_at=clock.now())
+            )
+    commitment.sweep(migrated)
+    assert [n["status"] for n in _notices(owner)] == ["withdrawn"]
+    # Nothing is owed any more, a revoked instance included: it leaves every later sweep.
+    assert _credential(migrated, agent).ktw_acknowledge_by is None
+    commitment.sweep(migrated)
+    assert len(_notices(owner)) == 1
+
+
+def test_a_new_owner_is_asked_and_the_old_ones_request_is_withdrawn(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    from maity_hub import commitment
+
+    agent = flow.agent(make_client, owner)
+    _block(agent)
+    _due(migrated, agent, timedelta(minutes=31))
+    commitment.sweep(migrated)
+    [old] = _notices(owner)
+    heir = flow.human(make_client, migrated, "heir")
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.agent_profile).where(t.agent_profile.c.id == agent.id).values(owner_id=heir.id)
+        )
+    commitment.sweep(migrated)
+    assert [n["status"] for n in _notices(owner)] == ["withdrawn"]
+    [new] = _notices(heir)
+    assert new["status"] == "open" and new["id"] != old["id"]
+    assert _credential(migrated, agent).ktw_request_id == new["id"]
+    commitment.sweep(migrated)
+    assert len(_notices(heir)) == 1

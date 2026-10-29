@@ -179,13 +179,14 @@ def reconcile(
         if ended:
             # Nothing is owed any more: withdraw an open request, and let a later
             # `required` start the clock afresh.
+            # A revoked instance is reset too: it owes nothing, and leaving its deadline
+            # would keep its project in every sweep for good.
             withdraw_hub_notice(conn, row.ktw_request_id, "the commitment no longer applies")
-            if row.revoked_at is None:
-                conn.execute(
-                    update(t.credential)
-                    .where(t.credential.c.id == row.id)
-                    .values(ktw_acknowledge_by=None, ktw_reminded_at=None, ktw_request_id=None)
-                )
+            conn.execute(
+                update(t.credential)
+                .where(t.credential.c.id == row.id)
+                .values(ktw_acknowledge_by=None, ktw_reminded_at=None, ktw_request_id=None)
+            )
             continue
         due = row.ktw_acknowledge_by
         if now < due:
