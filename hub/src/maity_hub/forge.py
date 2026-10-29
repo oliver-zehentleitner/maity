@@ -729,7 +729,8 @@ class Forge:
             return None
         title, body, created = found.get("title"), found.get("body"), found.get("created_at")
         login = (found.get("user") or {}).get("login")
-        if not isinstance(title, str) or not isinstance(created, str):
+        # A card needs a title: an empty one is an answer the hub cannot use.
+        if not isinstance(title, str) or not title.strip() or not isinstance(created, str):
             raise ForgeUnavailableError("the forge answered in an unexpected shape")
         return {
             "number": number,

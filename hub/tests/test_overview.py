@@ -58,6 +58,14 @@ def test_the_overview_counts_the_board_with_the_boards_window(
     assert refused.json()["error"]["details"]["fields"] == {"closed_after": "needs_a_zone"}
 
 
+def test_a_stranger_learns_nothing_from_a_query_without_a_zone(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    stranger = flow.human(make_client, migrated, "stranger")
+    path = "/projects/maintainer/maity/overview?closed_after=2026-01-01T00:00:00"
+    assert stranger.get(path).status_code == 404
+
+
 def test_the_overview_counts_only_requests_the_caller_may_see(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
@@ -224,6 +232,15 @@ def test_a_long_issue_is_cut_to_the_cap() -> None:
     body = importing.body(ISSUE, issue(body="\n".join("x" * 100 for _ in range(400))))
     assert len(body) <= importing.BODY_MAX
     assert body.endswith(importing.CUT)
+
+
+def test_an_empty_title_from_the_forge_is_no_answer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A card needs a title: the read fails like any other unexpected answer, and the
+    import answers `probe_unavailable` instead of a validation error."""
+    found = {"title": " ", "created_at": "2026-10-20T08:00:00Z", "user": {"login": "o"}}
+    monkeypatch.setattr(forge.Forge, "_get", lambda self, path: found)
+    with pytest.raises(forge.ForgeUnavailableError):
+        forge.Forge("token").issue("acme/widget", 1)
 
 
 @pytest.mark.parametrize(

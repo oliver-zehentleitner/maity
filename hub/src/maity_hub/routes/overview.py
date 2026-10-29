@@ -132,11 +132,12 @@ def overview(
     closed_after: datetime | None = None,
     limit: int = Query(default=REPORTS_DEFAULT, ge=1, le=REPORTS_MAX),
 ) -> JSONResponse:
-    if closed_after is not None and closed_after.tzinfo is None:
-        raise invalid({"closed_after": "needs_a_zone"})
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
+        # After the membership: a stranger learns nothing, not even about its query (§1.3).
+        if closed_after is not None and closed_after.tzinfo is None:
+            raise invalid({"closed_after": "needs_a_zone"})
         return JSONResponse(
             {
                 "server_time": clock.rfc3339(clock.now()),
