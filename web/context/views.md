@@ -68,11 +68,11 @@ drift above.
 One account holds many projects. The header of every screen carries a
 project switcher: each project with its state and the number of open
 requests waiting for this human, plus "All projects" with the total. The
-cross-project view (`#/all`) is the inbox across every project, each
+cross-project view (`/all`) is the inbox across every project, each
 entry labelled with its project and that project's state, answered in
 place. Opening the dashboard without a route lands there when the human
 belongs to more than one project, and on that project's inbox when there
-is only one. Everything else lives under `#/p/<slug>/...`.
+is only one. Everything else lives under `/<owner>/<slug>/...`.
 
 **Reason:** the requirement is that the human sees from anywhere that a
 project needs them; a count beside every project name does that on every
@@ -292,13 +292,13 @@ covers a regression.
 **Source:** the maintainer's feedback that entries of all projects were hard to tell apart, relayed by the coordinator, 2026-10-22; the dashboard's implementation, 2026-10-22
 **Revisit when:** the entry head is no longer one button, or the cross-project view gets a layout of its own per project
 
-Every entry of `#/all` has its project's badge (logo or monogram, name,
+Every entry of `/all` has its project's badge (logo or monogram, name,
 state) before it, as a link to the project's inbox; the entry's head
 button starts with the project's name, visually hidden, so that the
 button's own name says which project it is. A project filter and an
 optional grouping by project (sections in the switcher's order, each a
 heading with its own list) sit in the toolbar; both are kept only for
-this tab's session and apply to `#/all` only, never to a project's own
+this tab's session and apply to `/all` only, never to a project's own
 inbox. The entry opened first and the one opened after an answer follow
 the order on screen, filter and grouping included.
 
@@ -320,7 +320,7 @@ the visible text word for word (axe label-content-name-mismatch).
 **Source:** the overview contract (docs/api.md §6.11, PR #189) and its contract owner's rulings, 2026-10-22; the coordinator's card for the view (tsk-hha96xyqcpdd), 2026-10-22; the dashboard's implementation, 2026-10-22
 **Revisit when:** the overview gains merges from the change ticker (#180) or releases, or the inbox stops being the landing page
 
-`#/p/<slug>/overview` gets the tab right after **Inbox**, while the inbox
+`/<owner>/<slug>/overview` gets the tab right after **Inbox**, while the inbox
 stays the landing page. The view is five parts: links, members, board
 counts, open requests and the latest reports. Links and members come
 from what the header already holds. The counts come from one
@@ -358,7 +358,7 @@ page already has.
 
 Group chats are in the same list as the direct chats, newest first, and
 open in the same right-hand pane. A new one is made in that pane
-(`#/p/<slug>/chat/new`), so Back and the URL work as for any chat. The
+(`/<owner>/<slug>/chat/new`), so Back and the URL work as for any chat. The
 kind of a chat comes from the hub's list, never from the shape of its
 id. The open chat names its people and everyone who reads along. It
 shows the window since one joined; what came before is a button away,
@@ -397,10 +397,10 @@ the backlog the window keeps out.
 **See:** views.md#group-chats-live-in-the-chat-views-own-two-panes-the-hub-says-which-kind-a-chat-is-and-the-history-before-one-joined-is-read-on-demand — 46abbbf3-40b9-4802-a22f-1a85293a9b8f — as of 2026-10-23
 
 An owner whose agent is in a project the owner is not in reads that
-agent's group chats at `#/observe/<slug>`. The page is the chat view
+agent's group chats at `/observe/<slug>`. The page is the chat view
 itself, run in a context without a project: no header, no member list,
 no events. The projects come from the agents' memberships
-(`GET /agents`), and everything waiting (`#/all`) names them. Names in
+(`GET /agents`), and everything waiting (`/all`) names them. Names in
 those chats are the hub's handles, except for one's own agents.
 
 An owner or admin removes a reported message of a closed group chat by
@@ -585,7 +585,7 @@ tomorrow. Presence as a line of its own: the dot already says it.
 `M.api.hubHas(method, path)` reads `GET /openapi.json` once per page and
 says whether the hub serves a route, the `/api/v1` prefix and the
 parameters' names not compared. New group chat, the form at
-`#/p/<slug>/chat/new`, the blind removal in Project settings and reading
+`/<owner>/<slug>/chat/new`, the blind removal in Project settings and reading
 along from outside a project need `POST /projects/{slug}/conversations`;
 without it the chat list says "This hub has no group chats yet." instead
 of looking empty. Attach files needs `POST /projects/{slug}/attachments`
@@ -614,7 +614,7 @@ two key forms in several places.
 **Status:** active
 **Evidence:** confirmed
 **Source:** docs/api.md §7 (personal requests, PR #232); the coordinator's card tsk-x995qwddkrk2, 2026-10-23; the dashboard's implementation, 2026-10-23
-**Revisit when:** the dashboard gets a personal inbox of its own, apart from `#/all`
+**Revisit when:** the dashboard gets a personal inbox of its own, apart from `/all`
 
 A personal request (`personal: true`, listed only by `GET /requests`) is
 answered and withdrawn on `/requests/{id}/answer` and `…/withdraw`. Its
@@ -675,7 +675,7 @@ menu per press would make that slow.
 **Revisit when:** a member gets a view of their own apart from the Members row, or names appear inside a control that cannot hold a link
 
 `M.dom.memberRef(ctx, who, opts)` is the one way a view names a member:
-a link to `#/p/<slug>/members/<id>` (Members marks that row and focuses
+a link to `/<owner>/<slug>/members/<id>` (Members marks that row and focuses
 it), the full name as tooltip, `data-member` for tests. A member the
 project does not list (removed, outside), a personal request's people,
 whose project the human may not be in, and every member in a view read
@@ -786,7 +786,8 @@ other personal request before that.
 
 **Id:** d81c0a1a-0d4c-4176-9a85-a56ef9f5975e
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** b3982ae9-18ec-4e1a-b383-c8d68d817a71
 **Evidence:** inferred
 **Source:** docs/api.md §6.22 (the public body: agents only, no avatar, no card ids or titles, no member_id; served at #/s/<slug>), the card tsk-ejtazwt37dhp; the dashboard's implementation, 2026-10-25; the designer was not asked yet
 **Revisit when:** the hub serves pictures to visitors, or the designer reworks the page
@@ -870,7 +871,7 @@ a guessed choice: replacing revokes a credential, which the human picks.
 Keeping role and areas in the form and sending the membership's values:
 the human would see fields that do nothing.
 
-## Project memory is chosen on #/new and only shown afterwards; its fields are offered where the hub's machine form names them
+## Project memory is chosen on /new and only shown afterwards; its fields are offered where the hub's machine form names them
 
 **Id:** a8e479be-cb07-49cc-b7bd-b48500903ee1
 **Type:** decision
@@ -979,7 +980,7 @@ the hub for each credential to decide on `rejoin`: the view has them.
 **Source:** the maintainer's feedback of 2026-10-25 ("project settings da oben ist komisch, das muss eher runter auf die projekt ebene, z.B. nach Runners und Why ein Settings wäre logischer", tsk-r7qja01wwzvv) and bug report (a save in Project settings landed on the inbox, tsk-t407bnycxera); the dashboard's implementation, 2026-10-25
 **Revisit when:** the settings grow enough to need sub-pages, or the designer renames the tab
 
-The project's settings are a view, `#/p/<slug>/settings`, shown as the
+The project's settings are a view, `/<owner>/<slug>/settings`, shown as the
 last tab of the project's row, after Runners and Why, for every member:
 what one may change is a form, the rest read only. The gear menu keeps
 what is not the project's (runners, instance administration). A save
@@ -1008,7 +1009,7 @@ save: it fixes the jump but not the place the maintainer found odd.
 The theme menu (System, Light, Dark) shows in the header only on the
 pages one sees signed out: the sign-in page, the landing page, the
 public swarm page. Signed in, the header has none; Your account has a
-Theme section (`#/account/theme`, also in the profile menu) with the
+Theme section (`/account/theme`, also in the profile menu) with the
 same three choices as radio buttons and a line that the choice is kept
 in this browser only. It is the same per-browser value either way, so a
 pick made signed out holds after signing in.
@@ -1062,7 +1063,7 @@ length.
 **Source:** the maintainer's report of 2026-10-25 that a board card could not be opened on a phone (tsk-1tva2482j90b), and the coordinator's ruling the same day on the proposal; the dashboard's implementation, 2026-10-25
 **Revisit when:** a card needs more than one screen of its own (sub-cards, a long discussion), or the board stops being the place where cards are worked on
 
-A card's title links to `#/p/<slug>/tasks/<id>`, which was already the
+A card's title links to `/<owner>/<slug>/tasks/<id>`, which was already the
 board with that card marked. The board view now also opens the card
 there as a panel: beside the columns on a wide screen, full width above
 them on a phone. The panel holds the card as the board draws it,
@@ -1094,9 +1095,9 @@ same as the panel, on a desktop it hides the board the card belongs to.
 **Revisit when:** the hub counts conversations with unread messages (a per-conversation count on /me/notifications), or the message count proves misleading in practice
 
 Where the theme menu was, the signed-in header has Chat, then the bell,
-then the gear and the profile. Chat leads to `#/chats` and carries
+then the gear and the profile. Chat leads to `/chats` and carries
 `counts.chat` from `/me/notifications`, which the header already reads,
-worded "N unread chat messages". `#/chats` reads each project's
+worded "N unread chat messages". `/chats` reads each project's
 conversation list (§9.3) once when it opens, unread first. On a hub
 without notifications both buttons stand without a count, the bell as a
 link to everything waiting.
@@ -1200,7 +1201,7 @@ review with an open child would hide nothing, the common case.
 **Source:** the maintainer's card for the global chat (tsk-z8z8cg56y00s), 2026-10-26, after that day's incident of an events long-poll multiplied by open tabs; the dashboard's implementation, 2026-10-26; the list across projects (§9.3, GET /me/conversations) read once instead of per project, 2026-10-28
 **Revisit when:** the hub offers a per-user chat stream, or the notifications stream stops reporting chat messages
 
-`#/chats` shows every project's chats in the Chat tab's layout and opens
+`/chats` shows every project's chats in the Chat tab's layout and opens
 one in place with chat.js's own pane, in that project's context. It opens
 no events long-poll: the notifications stream (js/notify.js), which every
 signed-in page reads anyway, says that something changed; the global view
@@ -1236,7 +1237,7 @@ the lists every few seconds: more reads than the stream for slower news.
 **Source:** docs/api.md §2.7, §2.7.1 and §3.4; the coordinator's ruling of 2026-10-26 that the registration page is built with the invitation card (tsk-55xeem2xbht5); the dashboard's implementation, 2026-10-26
 **Revisit when:** `GET /auth/methods` starts to say something per invitation, or registration gains a way in that is not an address and a password (OAuth, §2.7.1)
 
-`#/register` shows its form where `GET /auth/methods` says
+`/register` shows its form where `GET /auth/methods` says
 `registration: true`, or where its `next` is an invitation whose page
 says `registration: sign_in_or_register`. Otherwise it says the hub does
 not create accounts on request and leads to sign in. After the request it
@@ -1296,7 +1297,7 @@ maintainer wants it seen without looking for it.
 **Source:** the maintainer's wish relayed by the coordinator (tsk-p94e7njrmg1p), 2026-10-27: in the global chat every agent message shows the projects the agent is in, as the project logo with the name on hover, never a project the reader may not read; docs/api.md §11.2 (the logo), §6.3 (the member list); the dashboard's implementation, 2026-10-27
 **Revisit when:** the hub lists an agent's memberships across projects for a reader, or the global chat shows chats of projects whose member list the page has not read
 
-`#/chats` reads every project of the reader's context anyway (members
+`/chats` reads every project of the reader's context anyway (members
 included, for the names); `projectsOf(memberId)` is those of the
 reader's projects whose member list names the agent, in the switcher's
 order, each drawn with `M.projectMark` (the logo, else the monogram),
@@ -1411,7 +1412,7 @@ alone: it is not seen without a mouse resting on the button.
 
 **Id:** 057e7277-3eba-4267-93d2-c6b74a5e2ff1
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the designer's handover on the overview (#6484, tsk-qse9t2b3a9n8), 2026-10-27: the five panels had equal weight and the one thing to act on (open requests) sat bottom left; the maintainer's wish for a Contract link in the project facts (tsk-yhbmz7mjng7n, step 1), 2026-10-27; the dashboard's implementation, 2026-10-27
 **Revisit when:** the hub serves the contract for reading inside Maity, or the badge can be changed without a logged reason
@@ -1443,7 +1444,7 @@ wrong path shape would be a dead link that looks right.
 **Source:** the designer's pass part 3 on #371 (tsk-w2xnkrwf147m), 2026-10-27: the admin page was one scroll of about 5,000 px (Statistics, Users, Mail settings, Landing page, Instance information)
 **Revisit when:** a section needs a link of its own (a route per section), or the area grows past one row of buttons
 
-`#/admin` reads every section the hub serves as before, then shows one:
+`/admin` reads every section the hub serves as before, then shows one:
 a row of buttons at the top names them (`aria-pressed` on the shown
 one), and the page opens on the first, Statistics. A section the hub
 turns out not to serve leaves the row with its section. The others stay
@@ -1454,8 +1455,8 @@ under each other hid all but the first below the fold.
 
 **Rejected alternative:** a sticky list of anchors over the whole page,
 the designer's other option: the scroll stays 5,000 px, only the jump is
-shorter. A route per section (`#/admin/users`): links into a section
-were not asked for. The older Users page at `#/admin/users` was removed
+shorter. A route per section (`/admin/users`): links into a section
+were not asked for. The older Users page at `/admin/users` was removed
 before launch with the other compatibility routes, so that address is
 now no view at all.
 
@@ -1599,7 +1600,7 @@ the room above the tabs on every page of a project.
 **Evidence:** confirmed
 **Source:** the maintainer's request (tsk-cb6myw32def0), 2026-10-27
 
-The link to `#/runners` sits in the header's gear menu, beside the
+The link to `/runners` sits in the header's gear menu, beside the
 instance administration, and no longer in the row that lists the
 projects. The menu marks it as the page shown.
 
@@ -1618,13 +1619,14 @@ project's.
 **Source:** docs/api.md §6.25 (projects in their owner's namespace; a client keeps `full_name` or the pair, never the slug alone), the card tsk-dbbcw9ccabfk and the hub's PR #483, 2026-10-27
 **Revisit when:** organisations become namespace owners, or the hub serves the one-segment routes again
 
-A project's address in the dashboard is `#/<owner>/<slug>/…`, and every
+A project's address in the dashboard is `/<owner>/<slug>/…` (§16.11), and every
 key the dashboard keeps for a project is its `full_name`: the API base,
 the switcher, the inbox's grouping and filter, the counts, the global
 chat, the read-along page, the lead button, the runners' configuration.
-`#/p/<slug>` is rewritten only through `legacy_slug` in one's own
-project list; a full name that is no project of one's own is asked of
-the hub once, which answers an alias with the current name. The fixture
+A full name that is no project of one's own is asked of the hub once,
+which answers an alias with the current name. The address before
+namespaces (`/p/<slug>`, rewritten through `legacy_slug`) is gone since
+2026-10-29 with the other old addresses (§16.11): no redirect. The fixture
 hub maps a full name to its fixture directory and refuses an old path
 with 410, as the hub does.
 
@@ -1634,8 +1636,8 @@ the same slug, and an old link could lead somewhere new.
 
 **Rejected alternative:** changing only the API paths and keeping the
 slug as the dashboard's key: two projects named `shop` would share
-counts, drafts and links. Rewriting `#/p/<slug>` by the current slug:
-§6.25 forbids it, since another project may carry that slug by now.
+counts, drafts and links. Rewriting the old `/p/<slug>` by the current
+slug: §6.25 forbade it, since another project may carry that slug by now.
 
 ## Agents are added in Members: Add at the head of the agents' table, open joins as seats under it
 
@@ -1649,13 +1651,13 @@ counts, drafts and links. Rewriting `#/p/<slug>` by the current slug:
 
 The agents' heading on Members has **+ Add an agent** (owner and admin),
 which opens the join panel under it: closed by default, open at once in a
-project without agents or at `#/p/<slug>/members/join` (the old
-`…/agents/join` and `…/join` lead there). The panel is read beside the
+project without agents or at `/<owner>/<slug>/members/join`. The panel is read beside the
 list, never before it, so the rows and a member asked for by the URL do
 not wait for the joins. Open joins stand as seats under the agents'
 table, the placements after it, the earlier joins at the end. A count
 line says how many agents, online and open joins there are.
-`#/p/<slug>/agents` shows Members; there is no Agents tab.
+There is no Agents tab; the old `…/agents` and `…/join` addresses are
+gone since 2026-10-29 with the other old addresses (§16.11).
 
 **Reason:** an agent is a member; adding one where the members are, and
 seeing its seat next to them, keeps one place for the team, as the Team
@@ -1714,7 +1716,7 @@ shows the active instances beside it and says that lowering it stops
 none. The lead is chosen among the active instances; one revoked since
 stays chosen, marked revoked. Only the fields that changed are sent. A
 join refused with `instance_quota` links to the row, opened at the
-limit (`#/p/<slug>/members/<id>/rulebook`), and does not edit the limit
+limit (`/<owner>/<slug>/members/<id>/rulebook`), and does not edit the limit
 in the join panel.
 
 **Reason:** the contract gives the rulebook to the profile's owner
@@ -1764,15 +1766,15 @@ the prefix display only.
 **Revisit when:** the dashboard gets a page of one's agents outside any project, or §6.10 gives `members:admin` a say over pictures
 **See:** rendering.md#a-picture-is-uploaded-on-the-account-checked-as-the-hub-checks-it-with-no-preview-of-the-chosen-file — 3ec853f0-4141-4e81-acdf-c0fee94c920b — as of 2026-10-28
 
-The account (`#/account/picture`) sets the human's own picture. An
+The account (`/account/picture`) sets the human's own picture. An
 agent's picture is set where the agent is managed: in its row on
 Members, under **Details** or **Manage**, for its owner only, as §6.10
 allows. The picture is read from one's agent profiles (`GET /agents`)
 when the first such row opens, since the member list carries no
 `avatar_source`. The account still lists, under **Agents in other
 projects**, the owner's agents that are in no project the owner can
-open, and only those. `#/account/picture/<agent id>` for an agent that
-Members reaches leads to `#/<owner>/<slug>/members/<agent id>/picture`,
+open, and only those. `/account/picture/<agent id>` for an agent that
+Members reaches leads to `/<owner>/<slug>/members/<agent id>/picture`,
 the row open. The checks before sending and the missing preview stay as
 the entry this one replaces describes them.
 
@@ -1784,7 +1786,7 @@ set from the dashboard, and a Keep the Why notice about it would lead
 nowhere.
 
 **Rejected alternative:** dropping the account's list entirely and
-sending such a notice to `#/all`. `#/all` says nothing about the agent,
+sending such a notice to `/all`. `/all` says nothing about the agent,
 and its picture would become unreachable. Keeping every agent's picture
 on the account: this is what the maintainer asked to move.
 
@@ -1933,7 +1935,7 @@ passwordless account. A modal dialog: the dashboard has none, and a
 slot in place keeps the focus and the context where the human was.
 
 
-## Organisations live under the account: `#/account/orgs`, not `#/orgs`
+## Organisations live under the account: `/account/orgs`, not `/orgs`
 
 **Id:** 73999dde-dbb6-4982-a448-e1441e7a5b6b
 **Type:** decision
@@ -1942,20 +1944,20 @@ slot in place keeps the focus and the context where the human was.
 **Source:** docs/api.md §6.25 (one namespace `<owner>/<slug>`, the dashboard's route words reserved as handles) and §6.26; `DASHBOARD_WORDS` in hub/src/maity_hub/namespace.py; the coordinator's approval of the route on the organisations card, 2026-10-29
 **Revisit when:** `orgs` is added to the hub's reserved dashboard words, or organisations get pages of their own beside the account (a public organisation page, §16.9)
 
-The dashboard addresses a project as `#/<owner>/<slug>`, and any first
+The dashboard addresses a project as `/<owner>/<slug>`, and any first
 word the dashboard does not use itself is read as an owner's handle.
 The organisations view therefore sits under a word the dashboard
-already owns: `#/account/orgs` lists them, `#/account/orgs/<handle>`
+already owns: `/account/orgs` lists them, `/account/orgs/<handle>`
 is one of them. It is reached from the profile menu.
 
 **Reason:** `orgs` is not among the hub's reserved handles
 (`DASHBOARD_WORDS`), so a human or an organisation may already be
-called `orgs`; `#/orgs/<x>` would then be that owner's project
+called `orgs`; `/orgs/<x>` would then be that owner's project
 `orgs/<x>` as much as an organisation page. Organisations are a
 human's own business (§6.26, humans only, members only), which is what
 the account holds.
 
-**Rejected alternative:** `#/orgs` and `#/orgs/<handle>`: shorter,
+**Rejected alternative:** `/orgs` and `/orgs/<handle>`: shorter,
 but ambiguous with a project of an owner named `orgs` unless the hub
 first reserves the word, a change to the hub and to handles that may
 already exist. Putting organisations into the Settings menu: that menu

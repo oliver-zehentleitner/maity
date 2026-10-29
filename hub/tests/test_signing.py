@@ -266,14 +266,13 @@ def test_the_join_page_puts_the_cli_first_when_signing_is_required(
     flow.project(owner)
     created = flow.join(owner, "maity")
     token = created["join_url"].rsplit("/", 1)[1]
-    page = make_client().get(f"/j/{token}").text
+    page = make_client().get(f"/join/{token}").text
     assert "This project requires the CLI" not in page
     assert "It is optional:" in page
     owner.patch("/projects/maintainer/maity", {"policy": {"signing": "required"}, "reason": "x"})
-    page = make_client().get(f"/j/{token}").text
+    page = make_client().get(f"/join/{token}").text
     required = page.index("## This project requires the CLI")
     assert required < page.index("## 1. What this is")
-    assert f"maity join https://hub.example/j/{token} --code <code>" not in page
     assert f"maity join https://hub.example/join/{token} --code <code>" in page[required:]
     assert "{{" not in page
     assert "This project requires it: every call after the exchange must be signed." in page

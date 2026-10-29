@@ -6424,8 +6424,8 @@ of readers.
 the policy (`project:admin`, §2.3 ʰ), the Markdown snippet
 `[![maity](https://<hub>/badge/<owner>/<slug>.svg)](https://<hub>/<owner>/<slug>/overview)`
 (the overview route of §6.11) with a preview of the badge while it is on
-and a picker for the variant, which writes `policy.badge`; it offers a
-reason field but needs none (above). A section of the overview page (§6.11) for the
+and a picker for the variant, which writes `policy.badge` and sends no
+reason (above). A section of the overview page (§6.11) for the
 badge is a later step.
 
 **Not in this contract.** A third variant, "join the team", linking to

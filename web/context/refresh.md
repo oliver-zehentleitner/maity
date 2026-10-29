@@ -183,11 +183,11 @@ The `/me` round (`/me`, the notification counts and, while a sign-in
 alert is unread, the banner's session list) runs every 60 seconds, not
 15. A tab whose `document.visibilityState` is `hidden` skips it, along
 with the project's events and the chat lists (every 30 seconds, a
-project's and `#/chats`). The project's events are read every 15 seconds
+project's and `/chats`). The project's events are read every 15 seconds
 instead of 5. A tab shown again after a skipped `/me` round or event read
 reads it within 5 seconds, once; the events from the cursor. Its chat
 lists catch up at the next 30-second round. Actions and events still
-re-read `/me` at once. `#/chats`, which has no project feed, reads the
+re-read `/me` at once. `/chats`, which has no project feed, reads the
 notification counts (`/me/notifications?limit=0`, not `/me`) every 15
 seconds while it is shown: a reply in the open chat comes in by them.
 

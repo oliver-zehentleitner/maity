@@ -1,4 +1,4 @@
-// (4) Members (#/<owner>/<slug>/members): everyone in the project, humans and
+// (4) Members (/<owner>/<slug>/members): everyone in the project, humans and
 // agents, with role, owner, presence, when they joined and whether they are
 // paused (docs/api.md §6.2). With members:admin each row can be managed: the
 // role, an agent's pause, and removal. Where the hub sends them (an admin,
@@ -84,19 +84,19 @@ window.Maity = window.Maity || {};
         : m.last_seen_at && m.presence !== "online" ? h("span", { class: "muted" }, " · seen " + formatAgo(m.last_seen_at)) : null];
   }
 
-  // args[0]: a member to show (#/<owner>/<slug>/members/<id>, a mention's link):
+  // args[0]: a member to show (/<owner>/<slug>/members/<id>, a mention's link):
   // its row is marked and takes the focus.
   M.views.members = async function (ctx, root, args) {
-    // "join" asks for the join panel open (#/<owner>/<slug>/members/join).
+    // "join" asks for the join panel open (/<owner>/<slug>/members/join).
     const joinAsked = !!(args && args[0] === "join");
     const wanted = joinAsked ? null : args && args[0];
     const status = M.statusLine();
     const box = h("div", { class: "members-box" });
     // Rows open for managing stay open across a redraw.
     const open = new Set();
-    // #/<owner>/<slug>/members/<id>/rulebook (a join's quota refusal): that row open, at its rulebook.
+    // /<owner>/<slug>/members/<id>/rulebook (a join's quota refusal): that row open, at its rulebook.
     const rulebookAsked = !!(wanted && args[1] === "rulebook");
-    // #/<owner>/<slug>/members/<id>/picture: the account's link to an agent's picture.
+    // /<owner>/<slug>/members/<id>/picture: the account's link to an agent's picture.
     const pictureAsked = !!(wanted && args[1] === "picture");
     if (rulebookAsked || pictureAsked) open.add(wanted);
     // member id -> its presence cell, updated in place by the refresh.
@@ -364,7 +364,7 @@ window.Maity = window.Maity || {};
           if (!window.confirm("Remove " + m.display_name + " from " + (ctx.project.name || ctx.slug) + "? " + what)) return;
           open.delete(m.id);
           const removed = await act("Removing", m.display_name + " was removed.", () => M.api.del(memberPath));
-          if (removed && self) window.location.hash = "#/all";
+          if (removed && self) M.route.go("/all");
         },
       }, "Remove from the project")));
       return h("tr", { class: "member-manage", id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell" }, parts));

@@ -1160,7 +1160,12 @@ opened from `file://` reads the fixtures, a page served over `http(s)`
 reads the API at `/api/v1`, and nothing switches between the two. The
 fixture bundle is not referenced from `index.html`; `api.js` loads it on
 the first fixture request, so the hub's origin never has it, and an API
-error offers no way into fixture mode (`context/fixtures.md`). Fixture
+error offers no way into fixture mode (`context/fixtures.md`). A page
+opened from disk cannot carry a path in its address, so in fixture mode
+the route travels in the fragment, `index.html#/maintainer/maity/board`;
+over `http(s)` it is the path itself. `js/route.js` alone knows the
+difference, and `make check` fails on a `#/`, `location.hash` or the
+History API anywhere else in `js/` (`context/routing.md`). Fixture
 mode is labelled **Fixtures** in the header. Every write in fixture mode (answers, messages, revocations,
 pauses, state, absence, joins, created projects) changes an in-memory copy and is gone on
 reload. `?signed_out=1` starts fixture mode without a session, to show
@@ -1425,6 +1430,7 @@ web/
 ├── brand/            the Maity mark, lockups, favicons, loader, social image (BRAND.md)
 ├── css/app.css       one stylesheet, light and dark tokens
 ├── js/theme.js       the theme picked per browser, on <html> before the first paint
+├── js/route.js       the address: paths over http(s), the fragment in fixture mode (§16.11)
 ├── js/dom.js         element builder, text only; https-only links
 ├── js/ids.js         ids in text as links (cards, requests, members, #n)
 ├── js/markdown.js    Markdown as DOM nodes, for chat messages; ids linked by js/ids.js

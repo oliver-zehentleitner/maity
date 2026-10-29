@@ -1,4 +1,4 @@
-// Registration (docs/api.md §2.7.1): #/register?next=…, signed out. The
+// Registration (docs/api.md §2.7.1): /register?next=…, signed out. The
 // form asks for the address and a password; the hub answers the same for
 // every address, and the account is made from the link it mails. Offered
 // where the instance registers (GET /auth/methods), or where the
@@ -19,12 +19,12 @@ window.Maity = window.Maity || {};
   async function register(main, header, next) {
     // Signed in, there is nothing to register: on to next, or the start.
     const session = await M.api.get("/auth/session").then(() => true, () => false);
-    if (session) { window.location.replace(next ? next.slice(1) : "#/all"); return; }
+    if (session) { M.route.go(next || "/all", { replace: true }); return; }
     bar(header);
     document.title = "Create an account · Maity";
     const box = h("article", { class: "register door" });
     append(clear(main), box);
-    const signIn = next ? "#/login?next=" + encodeURIComponent(next) : "#/login";
+    const signIn = next ? "/login?next=" + encodeURIComponent(next) : "/login";
     // May this person register here? The instance's mode (§2.6.1), or an
     // address-bound invitation that admits (§3.4) when they come from one.
     let methods = null;
@@ -32,7 +32,7 @@ window.Maity = window.Maity || {};
     try {
       if (await M.api.hubHas("GET", "/auth/methods")) methods = await M.api.get("/auth/methods");
       // Only a token of the hub's form (§3.4) is asked about.
-      const invited = next && /^\/#\/invite\/([A-Za-z0-9_-]{22})$/.exec(next);
+      const invited = next && /^\/invite\/([A-Za-z0-9_-]{22})$/.exec(next);
       if (invited) invitation = await M.api.get("/invitations/" + encodeURIComponent(invited[1])).catch(() => null);
     } catch (err) {
       append(box, h("p", { class: "send-status failed" }, "Could not read how this hub registers: " + err.message));

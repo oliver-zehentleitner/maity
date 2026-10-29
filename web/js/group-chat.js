@@ -77,7 +77,7 @@ window.Maity = window.Maity || {};
           const created = await M.api.post(ctx.base + "/conversations",
             { title: title.value.trim() || null, participants: chosen.map((m) => m.id) });
           status.done();
-          window.location.hash = ctx.link("chat", created.id);
+          M.route.go(ctx.link("chat", created.id));
         } catch (err) {
           status.fail("Not created: ", said(err));
         } finally {
@@ -358,7 +358,7 @@ window.Maity = window.Maity || {};
         const what = lastHuman ? " You are its last human: it closes, and no one writes in it any more." : "";
         if (!window.confirm("Leave this chat?" + what)) return;
         act("Leaving", "You left the chat.", () => M.api.del(base + "/participants/" + encodeURIComponent(ctx.me.id)),
-          () => { window.location.hash = ctx.link("chat"); });
+          () => { M.route.go(ctx.link("chat")); });
       } }, "Leave the chat"));
       return box;
     }

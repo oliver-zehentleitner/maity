@@ -82,7 +82,7 @@ window.Maity = window.Maity || {};
         if (visible.length) append(box, h("section", { class: "waiting-group", "aria-label": title },
           h("h3", null, title), h("ul", { class: "waiting-items" }, visible.map((row) => rowLink(ctx, row, null, status, more)))));
       });
-      if (total > SHOWN || more) append(box, h("p", { class: "hint" }, "Showing " + Math.min(total, SHOWN) + " activity rows. ", h("a", { href: "#/notifications" }, "More notifications")));
+      if (total > SHOWN || more) append(box, h("p", { class: "hint" }, "Showing " + Math.min(total, SHOWN) + " activity rows. ", h("a", { href: "/notifications" }, "More notifications")));
       if (focusId) {
         const replacement = Array.from(box.querySelectorAll(".waiting-item")).find((el) => el.getAttribute("data-notification") === focusId);
         if (replacement) replacement.querySelector("a").focus();

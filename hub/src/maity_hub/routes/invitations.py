@@ -70,7 +70,7 @@ def _check(body: InvitationIn) -> None:
 
 
 def _url(request: Request, token: str) -> str:
-    return f"{settings_of(request).public_url}/#/invite/{token}"
+    return f"{settings_of(request).public_url}/invite/{token}"
 
 
 def _load(conn: Connection, invitation_id: str) -> dict[str, Any]:
@@ -239,7 +239,7 @@ def _logo_url(conn: Connection, request: Request, project: Any) -> str | None:
 
 @router.get("/invitations/{token}")
 async def invitation_page(token: str, request: Request) -> JSONResponse:
-    """What the dashboard's `/#/invite/<token>` shows (§3.4), the same for every reader."""
+    """What the dashboard's `/invite/<token>` shows (§3.4), the same for every reader."""
     wait = EXCHANGE_BY_ADDRESS.hit(origin_of(request).address)
     if wait:
         raise rate_limited(wait)

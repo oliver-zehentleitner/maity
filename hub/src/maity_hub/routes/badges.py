@@ -6,11 +6,8 @@ import hashlib
 from typing import Any
 
 from fastapi import APIRouter, Request, Response
-from fastapi.responses import RedirectResponse
-from sqlalchemy import select
 
 from maity_hub import badges, namespace
-from maity_hub import tables as t
 from maity_hub.deps import engine_of, origin_of
 from maity_hub.errors import not_found, rate_limited
 from maity_hub.policy import CLOSED_STATES
@@ -62,21 +59,6 @@ def badge(owner: str, slug: str, request: Request) -> Response:
     if any(tag.strip() == "*" or tag.strip().removeprefix("W/") == etag for tag in candidates):
         return Response(status_code=304, headers=headers)
     return Response(document, media_type="image/svg+xml", headers=headers)
-
-
-@router.get("/badge/{slug}.svg")
-def legacy_badge(slug: str, request: Request) -> Response:
-    """The address from before the namespace (§6.25): the slug frozen at the migration, never
-    the current slug, which another owner's project may carry. A `301` to the new address
-    only while the badge is served; otherwise the same answer as any badge not served."""
-    limit_source(request)
-    with engine_of(request).begin() as conn:
-        project = conn.execute(select(t.project).where(t.project.c.legacy_slug == slug)).first()
-        if project is None or not _served(project):
-            limit_not_served()
-            raise not_found()
-        name = namespace.full_name(conn, project)
-    return RedirectResponse(f"/badge/{name}.svg", status_code=301)
 
 
 def _served(project: Any) -> bool:

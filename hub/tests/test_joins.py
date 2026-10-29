@@ -178,7 +178,7 @@ def test_the_page_is_markdown_for_an_agent(owner: flow.Human, make_client: Clien
         areas=["hub/"],
     )
     client = make_client()
-    for path in (f"/j/{_token(created)}", f"/api/v1/join/{_token(created)}"):
+    for path in (f"/join/{_token(created)}", f"/api/v1/join/{_token(created)}"):
         response = client.get(path)
         assert response.status_code == 200
         assert response.headers["content-type"] == "text/markdown; charset=utf-8"
@@ -207,7 +207,7 @@ def test_join_page_names_the_expected_repository(
         )
     created = flow.join(owner, "maity")
     for accept in ["text/markdown", "text/html"]:
-        response = make_client().get(f"/j/{_token(created)}", headers={"Accept": accept})
+        response = make_client().get(f"/join/{_token(created)}", headers={"Accept": accept})
         assert response.status_code == 200
         assert "Expected repository" in response.text
         assert (repository or "not configured") in response.text.replace("\\", "")
@@ -219,7 +219,7 @@ def test_the_page_is_html_for_a_browser_with_no_form(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
     created = flow.join(owner, "maity")
-    response = make_client().get(f"/j/{_token(created)}", headers={"Accept": "text/html"})
+    response = make_client().get(f"/join/{_token(created)}", headers={"Accept": "text/html"})
     assert response.headers["content-type"] == "text/html; charset=utf-8"
     assert response.headers["Content-Security-Policy"] == "default-src 'self'"
     page = response.text.lower()
@@ -234,7 +234,7 @@ def test_a_project_name_cannot_inject_html_or_markdown(
     owner = flow.human(make_client, migrated)
     flow.project(owner, "evil", name="<script>x</script> [click](javascript:alert(1))")
     created = flow.join(owner, "evil")
-    page = make_client().get(f"/j/{_token(created)}", headers={"Accept": "text/html"}).text
+    page = make_client().get(f"/join/{_token(created)}", headers={"Accept": "text/html"}).text
     assert "<script>x" not in page and 'href="javascript' not in page
 
 
@@ -247,7 +247,12 @@ def test_a_spent_or_unknown_token_has_no_page(
     start = clock.now()
     clock.set_source(lambda: start + timedelta(seconds=61))
     client = make_client()
-    for path in (f"/j/{_token(used)}", f"/j/{_token(expired)}", "/j/nope", "/api/v1/join/nope"):
+    for path in (
+        f"/join/{_token(used)}",
+        f"/join/{_token(expired)}",
+        "/join/nope",
+        "/api/v1/join/nope",
+    ):
         response = client.get(path)
         assert response.status_code == 404, path
         assert response.headers["Maity-Error"] == "not_found"
