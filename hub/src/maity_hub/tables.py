@@ -390,6 +390,34 @@ human_device = Table(
     **MYSQL_TABLE,
 )
 
+# A mail link and its browser-bound code share one single-use row (§2.6.3).
+email_sign_in = Table(
+    "email_sign_in",
+    metadata,
+    Column("nonce_hash", String(HEX_SHA256), primary_key=True),
+    Column("pending_hash", String(HEX_SHA256), nullable=False, unique=True),
+    _ref("human_id", "human.id", nullable=False, index=True),
+    Column("address_epoch", Integer, nullable=False),
+    Column("source", String(64), nullable=False),
+    Column("next_path", String(512), nullable=False),
+    Column("code_mac", String(HEX_SHA256)),
+    Column("wrong_codes", Integer, nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("expires_at", UtcDateTime, nullable=False),
+    Column("used_at", UtcDateTime),
+    **MYSQL_TABLE,
+)
+
+email_sign_in_day = Table(
+    "email_sign_in_day",
+    metadata,
+    _ref("human_id", "human.id", primary_key=True),
+    Column("day", String(10), primary_key=True),
+    Column("wrong_codes", Integer, nullable=False),
+    **MYSQL_TABLE,
+)
+
+
 # --- projects and memberships -------------------------------------------------
 
 project = Table(
@@ -446,6 +474,10 @@ project = Table(
     Column("coordinator_substitute", String(ID)),
     # What revoking a runner does to its agents here: keep, stop or inherit (§6.1, §15.3).
     Column("on_runner_revoke", String(16), nullable=False, server_default="inherit"),
+    # What a human set for the Keep the Why commitment (NULL: nobody did) and whether a
+    # joining agent adopts the repository's personal defaults (§6.1, §6.23).
+    Column("keep_the_why_policy", String(16)),
+    Column("keep_the_why_defaults", String(8), nullable=False, server_default="adopt"),
     # The jour fixe (§20.1, §20.2): the schedule, the explicit moderator order, the day
     # its weekly interval counts from, and the last slot the hub handled.
     Column("jour_fixe", JSON_VALUE),

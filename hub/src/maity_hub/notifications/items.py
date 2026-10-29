@@ -6,12 +6,12 @@ against what the human may read now.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Connection, func, select
+from sqlalchemy import Connection, String, and_, cast, func, or_, select
 
 from maity_hub import avatars, clock, events, inbox, namespace
 from maity_hub import tables as t
@@ -71,24 +71,40 @@ class Scope:
 
 
 def scope(conn: Connection, human_id: str, public_url: str) -> Scope:
-    rows = conn.execute(
-        select(t.membership, t.project)
-        .join(t.project, t.project.c.id == t.membership.c.project_id)
-        .where(t.membership.c.human_id == human_id, t.membership.c.active.is_(True))
+    members = conn.execute(
+        select(t.membership).where(
+            t.membership.c.human_id == human_id, t.membership.c.active.is_(True)
+        )
     ).all()
     found = Scope(human_id, public_url)
-    for row in rows:
-        member = conn.execute(select(t.membership).where(t.membership.c.id == row.id)).one()
-        project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
-        found.memberships.append(Membership(project, member, "human"))
-        # Joining never replays a project's history (§18.2).
-        found.joined_seq[project.id] = int(
-            conn.execute(
-                select(func.coalesce(func.max(t.event.c.seq), 0)).where(
-                    t.event.c.project_id == project.id, t.event.c.at <= member.joined_at
-                )
-            ).scalar_one()
+    if not members:
+        return found
+    projects = {
+        row.id: row
+        for row in conn.execute(
+            select(t.project).where(t.project.c.id.in_({m.project_id for m in members}))
         )
+    }
+    # Joining never replays a project's history (§18.2): the highest seq at the join.
+    joined = dict(
+        conn.execute(
+            select(t.membership.c.id, func.coalesce(func.max(t.event.c.seq), 0))
+            .select_from(t.membership)
+            .outerjoin(
+                t.event,
+                and_(
+                    t.event.c.project_id == t.membership.c.project_id,
+                    t.event.c.at <= t.membership.c.joined_at,
+                ),
+            )
+            .where(t.membership.c.id.in_([m.id for m in members]))
+            .group_by(t.membership.c.id)
+        ).all()
+    )
+    for member in members:
+        project = projects[member.project_id]
+        found.memberships.append(Membership(project, member, "human"))
+        found.joined_seq[project.id] = int(joined[member.id])
     return found
 
 
@@ -110,22 +126,31 @@ def derive(conn: Connection, where: Scope) -> list[Item]:
 def _from_events(conn: Connection, where: Scope, mine: Membership, now: datetime) -> list[Item]:
     rows = conn.execute(
         select(t.event)
-        .where(
-            t.event.c.project_id == mine.project.id,
-            t.event.c.seq > where.joined_seq[mine.project.id],
-            t.event.c.at >= now - WINDOW,
-            t.event.c.kind.in_(EVENT_KINDS),
-        )
+        .where(*_event_window(where, mine, now), t.event.c.kind.in_(EVENT_KINDS))
         .order_by(t.event.c.seq)
     ).all()
+    return _items_of(conn, where, mine, rows)
+
+
+def _event_window(where: Scope, mine: Membership, now: datetime) -> tuple[Any, ...]:
+    return (
+        t.event.c.project_id == mine.project.id,
+        t.event.c.seq > where.joined_seq[mine.project.id],
+        t.event.c.at >= now - WINDOW,
+    )
+
+
+def _items_of(conn: Connection, where: Scope, mine: Membership, rows: Sequence[Any]) -> list[Item]:
+    """The items of one project's event rows, in the order of `rows`."""
     if not rows:
         return []
+    marks_from, marks_to = min(r.seq for r in rows), max(r.seq for r in rows)
     hidden = events.hidden_redactions(conn, rows, mine.row)
     marks = set(  # by range, not a list of every seq: the rows bound it
         conn.execute(
             select(t.notification_read.c.seq).where(
                 t.notification_read.c.human_id == where.human_id,
-                t.notification_read.c.seq.between(rows[0].seq, rows[-1].seq),
+                t.notification_read.c.seq.between(marks_from, marks_to),
             )
         ).scalars()
     )
@@ -150,6 +175,102 @@ def _from_events(conn: Connection, where: Scope, mine: Membership, now: datetime
             item.read = row.seq in marks
         items.append(item)
     return items
+
+
+# --- the page of a listing, derived without every chat ---------------------------------
+
+CHUNK = 200  # the most message rows read at a time while a page is filled
+
+
+def derive_page(
+    conn: Connection,
+    where: Scope,
+    *,
+    count: int,
+    newest_first: bool,
+    wanted: Callable[[Item], bool],
+) -> list[Item]:
+    """What `derive` returns, less the chat items no page of `count` items can reach:
+    every item that is not a plain chat message (they feed the counts and are few), and
+    of the plain chat messages only the first `count` that `wanted` accepts per project,
+    newest first or oldest first as the page is read. A page cut from it equals the one
+    cut from `derive`, which holds every chat of 30 days and costs that much per call.
+
+    A message row whose payload text names the human may be a mention, so it is derived
+    with the rest; the text test only selects (a false hit is classified like any row)."""
+    now = clock.now()
+    found: list[Item] = []
+    for mine in where.memberships:
+        window = _event_window(where, mine, now)
+        named = _names(where.human_id)
+        rows = conn.execute(
+            select(t.event)
+            .where(
+                *window,
+                t.event.c.kind.in_(EVENT_KINDS),
+                or_(t.event.c.kind != "message", named),
+            )
+            .order_by(t.event.c.seq)
+        ).all()
+        found += _items_of(conn, where, mine, rows)
+        found += _chats(conn, where, mine, window, count, newest_first, wanted)
+    found += _from_records(conn, where, now)
+    found.sort(key=lambda item: item.order, reverse=True)
+    return found
+
+
+def _names(human_id: str) -> Any:
+    """A message row whose payload text has a `member_id` and the human's id: a superset
+    of the rows that mention them (the exact test is `_classify`). The id alone would not
+    do, a chat message names its addressee in `to`."""
+    text = cast(t.event.c.payload, String)
+    return and_(
+        text.contains("member_id", autoescape=True), text.contains(human_id, autoescape=True)
+    )
+
+
+def _chats(
+    conn: Connection,
+    where: Scope,
+    mine: Membership,
+    window: tuple[Any, ...],
+    count: int,
+    newest_first: bool,
+    wanted: Callable[[Item], bool],
+) -> list[Item]:
+    """The first `count` plain chat items of one project that `wanted` accepts, read in
+    chunks of the order the listing uses (`at`, then `seq`) until they are found."""
+    taken: list[Item] = []
+    last: tuple[datetime, int] | None = None
+    size = max(count, 1)  # as many as are wanted, then more while a filter rejects them
+    sort = (
+        (t.event.c.at.desc(), t.event.c.seq.desc())
+        if newest_first
+        else (t.event.c.at, t.event.c.seq)
+    )
+    while len(taken) < count:
+        beyond: tuple[Any, ...] = ()
+        if last is not None:
+            before = (t.event.c.at < last[0]) if newest_first else (t.event.c.at > last[0])
+            tie = (t.event.c.seq < last[1]) if newest_first else (t.event.c.seq > last[1])
+            beyond = (or_(before, and_(t.event.c.at == last[0], tie)),)
+        rows = conn.execute(
+            select(t.event)
+            .where(*window, t.event.c.kind == "message", ~_names(where.human_id), *beyond)
+            .order_by(*sort)
+            .limit(size)
+        ).all()
+        if not rows:
+            break
+        last = (rows[-1].at, rows[-1].seq)
+        for item in _items_of(conn, where, mine, sorted(rows, key=lambda r: r.seq)):
+            if item.kind == "chat" and wanted(item):
+                taken.append(item)
+        if len(rows) < size:
+            break
+        size = min(size * 4, CHUNK)
+    taken.sort(key=lambda item: item.order, reverse=newest_first)
+    return taken[:count]
 
 
 def _classify(
@@ -190,9 +311,13 @@ def _classify(
         mentioned = principal in [m.get("member_id") for m in payload.get("mentions") or []]
         writer = look.name(row.actor_membership)
         if row.conversation_id is not None and f"member:{principal}" in (row.audience or []):
-            title = f"{writer} in {look.handle(row.conversation_id)}"
+            room = look.room(row.conversation_id)
+            if room is not None and not look.inside(row):
+                return None  # a group chat notifies its participants, from their stay on
+            chat = room if room is not None else look.handle(row.conversation_id)
+            title = f"{writer} in {chat}"
             if mentioned:
-                title = f"{writer} mentioned you in {look.handle(row.conversation_id)}"
+                title = f"{writer} mentioned you in {chat}"
             return Item(
                 kind="mention" if mentioned else "chat",
                 title=None if row.redacted else _cut(title),
@@ -425,14 +550,25 @@ def _waiting_registrations(conn: Connection, rows: Sequence[Any]) -> set[str]:
 # --- views ---------------------------------------------------------------------------
 
 
-def view(conn: Connection, where: Scope, item: Item) -> dict[str, Any]:
+def view(
+    conn: Connection, where: Scope, item: Item, seen: dict[Any, Any] | None = None
+) -> dict[str, Any]:
+    """`seen` holds what the items of one answer share, the project and the actor, so a
+    page of twenty reads each once."""
+    seen = {} if seen is None else seen
     project = None
     if item.project_id is not None:
-        row = conn.execute(
-            select(t.project.c.slug, t.project.c.name).where(t.project.c.id == item.project_id)
-        ).one()
-        full_name = namespace.name_of(conn, item.project_id)
-        project = {"slug": row.slug, "full_name": full_name, "name": row.name}
+        if ("project", item.project_id) not in seen:
+            row = conn.execute(
+                select(t.project.c.slug, t.project.c.name).where(t.project.c.id == item.project_id)
+            ).one()
+            full_name = namespace.name_of(conn, item.project_id)
+            seen["project", item.project_id] = {
+                "slug": row.slug,
+                "full_name": full_name,
+                "name": row.name,
+            }
+        project = dict(seen["project", item.project_id])
         if item.record_type == "personal_request_created":
             project["member"] = item.member
     answer: dict[str, Any] = {
@@ -441,7 +577,7 @@ def view(conn: Connection, where: Scope, item: Item) -> dict[str, Any]:
         "kind": item.kind,
         "at": clock.rfc3339(item.at),
         "project": project,
-        "actor": _actor(conn, item.actor_membership),
+        "actor": _shared_actor(conn, item.actor_membership, seen),
         "title": None if item.redacted else item.title,
         "target": item.target,
         "url": item.url,
@@ -449,6 +585,15 @@ def view(conn: Connection, where: Scope, item: Item) -> dict[str, Any]:
         "redacted": item.redacted,
     }
     return answer
+
+
+def _shared_actor(
+    conn: Connection, membership_id: int | None, seen: dict[Any, Any]
+) -> dict[str, Any] | None:
+    if ("actor", membership_id) not in seen:
+        seen["actor", membership_id] = _actor(conn, membership_id)
+    found: dict[str, Any] | None = seen["actor", membership_id]
+    return None if found is None else dict(found)
 
 
 def _actor(conn: Connection, membership_id: int | None) -> dict[str, Any] | None:
@@ -473,6 +618,7 @@ class Lookup:
 
     def __init__(self, conn: Connection, mine: Membership, rows: list[Any]) -> None:
         self.conn = conn
+        self.mine = mine
         # The dashboard's address of the project is `#/<owner>/<slug>` (§6.25).
         self.home = f"/#/{namespace.full_name(conn, mine.project)}"
         self.request_ids = {r.subject_id for r in rows if r.kind in REQUEST_EVENTS and r.subject_id}
@@ -491,7 +637,10 @@ class Lookup:
             )
         }
         principals = {h or a for h, a in self.members.values() if h or a}
-        principals |= {r.conversation_id for r in rows if r.conversation_id is not None}
+        self.conversation_ids = {r.conversation_id for r in rows if r.conversation_id is not None}
+        self._rooms: dict[str, str] | None = None
+        self._stays: dict[str, int] | None = None
+        principals |= self.conversation_ids
         self.human_ids = {p for p in principals if p.startswith("hum-")}
         self.agent_ids = principals - self.human_ids
         self.humans = dict(
@@ -510,6 +659,46 @@ class Lookup:
             if self.agent_ids
             else []
         )
+
+    def _group_chats(self) -> None:
+        """The batch's group chats, read once: their names, and the member's stays in them."""
+        if self._rooms is not None:
+            return
+        ids = {c for c in self.conversation_ids if c.startswith("cnv-")}
+        self._rooms, self._stays = {}, {}
+        if not ids:
+            return
+        for found, title in self.conn.execute(
+            select(t.conversation.c.id, t.conversation.c.title).where(t.conversation.c.id.in_(ids))
+        ):
+            self._rooms[found] = str(title or found)
+        for found, window in self.conn.execute(
+            select(
+                t.conversation_participant.c.conversation_id,
+                t.conversation_participant.c.window_after,
+            ).where(
+                t.conversation_participant.c.conversation_id.in_(ids),
+                t.conversation_participant.c.membership_id == self.mine.id,
+                t.conversation_participant.c.here.is_(True),
+            )
+        ):
+            self._stays[found] = window
+
+    def room(self, conversation_id: str) -> str | None:
+        """A group chat's name (its title, else its id); None for a direct chat (§9.2)."""
+        if not conversation_id.startswith("cnv-"):
+            return None
+        self._group_chats()
+        assert self._rooms is not None
+        return self._rooms.get(conversation_id, conversation_id)
+
+    def inside(self, row: Any) -> bool:
+        """The member is a participant of the group chat now, and the message falls into
+        their current stay; an observer, who only reads along, never is (§9.2)."""
+        self._group_chats()
+        assert self._stays is not None
+        window = self._stays.get(row.conversation_id)
+        return window is not None and row.seq > window
 
     def request(self, request_id: str | None) -> Any:
         if request_id is None or request_id not in self.request_ids:

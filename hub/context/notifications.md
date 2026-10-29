@@ -285,6 +285,48 @@ the incident of 2026-10-26 showed does not scale.
 - Letting mails over the instance budget wait in the outbox: simpler, but it can mean two
   mails where §18.5 asks for one (the first version, changed before review).
 
+## A page of the bell is cut from items derived only as far as the page reaches; no cache
+
+**Id:** 24ca001c-ff28-4df3-8af1-ba6ef6d567b6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** tsk-svhatnxrtqn8; Traefik access log of 2026-10-28 17:51-18:21 UTC (`GET /me/notifications` p50 1.0 s, p95 1.9 s, n=482); the local measurement in `hub/scripts/measure_notifications.py`
+**Revisit when:** a listing needs the number of all matching items or a total over chat items, or `derive_page` and `derive` diverge in a test
+
+`GET /me/notifications` derived every item of 30 days on every call, and every message an
+agent sends its owner in a direct chat is one. The cost was linear in those messages (about
+80 ms per 1,000 items, 1.2 s at 30,000), not in the projects or the queries; the counts, the
+position and the twenty views together took under 100 ms. A page needs `limit` items and to
+know whether one more follows, and the counts read no chat item (`chat` comes from the chats'
+own marks). So `items.derive_page` derives everything that is not a plain chat message (requests,
+mentions, account records: few, and they feed the counts), and of the plain chat messages
+only the first `limit + 1` per project that the filters, the cursor or `after` accept, read
+from the database in the order the listing uses (`at`, then `seq`), in chunks that grow
+while a filter such as `unread` rejects them. A message whose payload text has a `member_id`
+and the human's id is derived with the rest, since it may mention them; the text test only
+selects, `_classify` decides. `scope` and the unread-chat count read their rows in one query
+each instead of one per membership and per agent, and a page reads each project and actor once.
+Measured on SQLite with 10 projects and 30,000 chat items: 1.16 s before, 0.1 s after.
+
+**Reason:** the answer is a function of the page, so the work should be too; a cache would
+answer from the past (a read mark, a claimed request or a rename that the stamp does not
+see) and only helps while nothing moves, which on a busy team is rarely. `tests/test_notifications_page.py`
+keeps the two honest: for every filter, page size and the cursor through items of one
+timestamp, and for `after` chains, the bounded pages equal the pages cut from `derive`.
+
+**Rejected alternatives:**
+- A cache of the derived items keyed by `listing.stamp`: the stamp does not see a request
+  claimed by another admin, a rename or the sliding 30-day window, and it misses on every new
+  message, which is when the bell is polled most.
+- Cheaper work per item (fewer JSON decodes, fewer lookups): at best a factor of two on a cost
+  that stays linear in the history.
+- Filtering chat messages by the human in SQL: a chat message names its addressee in `to`,
+  so every message of the human's own chats matches and nothing is saved.
+
+**Known limit:** a filter that rejects almost every chat (`unread` after everything was read)
+still reads all of a project's chat rows in the window, in chunks, as the old derivation did.
+
 ## Changing or removing the verified address, and approving a held change, take the step-up the caller gives in
 
 **Id:** b4c0e7a3-61d8-4f29-9a5e-0d83f7b1c2e6
@@ -347,3 +389,91 @@ reader sees what happened without opening the dashboard, which is what these mai
 - One generic security-mail builder for the sign-in and these records: the sign-in's body
   carries method, browser, system and address and the others do not, so a shared builder would be
   a switch inside; two short functions are clearer.
+
+## The browser switch defaults to off and the mail time zone to UTC; both are the contract's "the human decides" made concrete
+
+**Id:** 4847d0cc-4ed4-4b92-9efd-c3c98bade6a1
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §18.4 (`browser`, `timezone`); `preferences.DEFAULTS`; a review note on the settings card (tsk-32jx98jzne6z), 2026-10-29
+**Revisit when:** the dashboard asks for the browser's permission before the first `GET` of the settings, or an instance wants another default zone
+
+`DEFAULTS["browser"]["enabled"]` is `False` and `DEFAULTS["email"]["timezone"]` is `"UTC"`. The
+contract names neither value: §18.4 calls `enabled` "the account's wish", which the dashboard
+sets only when the human turns it on and the browser has said yes, and says only that the dashboard
+proposes the browser's zone. Why these two values won is read from that text, not recorded by
+whoever first wrote them.
+
+**Reason:** a `true` default would claim a wish nobody expressed and a permission the browser
+never gave, and the hub cannot know either; `false` is the one value that is never wrong, and the
+dashboard switches it on after the browser's answer. The hub knows no zone for a human who has not
+said one, and every mail time (`daily_at`, `quiet_hours`) needs one; `UTC` is the zone that needs
+no guess and shows in the settings, where the dashboard's proposal replaces it.
+
+**Rejected alternatives:** a `browser.enabled` default of `true`, as the §18.4 example shows (the
+example illustrates a human who already turned it on; as a default it would be a claim without a
+permission); no default for `timezone` (every read would need a "not set" case and the mail pass a
+fallback of its own). Whether either was weighed when the code was written is unknown.
+
+## A second first write of the same human's settings finds the row the first made
+
+**Id:** 7caa2c14-307e-461c-95c8-34aedab837c8
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** a review note on the settings card (tsk-32jx98jzne6z) and the review of #581, 2026-10-29; `tests/test_settings_race.py`
+**Revisit when:** a settings write runs at `REPEATABLE READ`, or the row is made at account creation
+
+`preferences.row_of(lock=True)` reads the row `FOR UPDATE` first; when there is none it inserts it
+in a savepoint, and on an `IntegrityError` (another first write committed in between) it reads and
+locks the row that now exists. Two first `PATCH`es of one human therefore end one after the other,
+instead of the later one answering 500 on the primary key. The deadlock retry of
+`persistence.md` ("Concurrent writes") does not cover this: it runs again after a deadlock, not
+after a duplicate key.
+
+**Reason:** the row is made by the first write only (a read of a human with no row sees the
+defaults and writes nothing), so two first writes are an ordinary case; select first because the
+row is almost always there and the common write should not start with a failing insert. The hub's
+server engines run at `READ COMMITTED` (`db.py`), where a `FOR UPDATE` on a missing key takes no
+gap lock; the race test on PostgreSQL and MariaDB in CI is what shows it.
+
+**Rejected alternatives:** insert first, then lock, as `landing.lock` does (safe at any isolation
+level, but every `PATCH` would run a failing insert in a savepoint for a row that nearly always
+exists; kept as the move if the CI race test shows a deadlock on MariaDB); making the row at
+account creation (a write and a migration over every human for a row the defaults make
+unnecessary, and it would end "a read writes nothing" only in name).
+
+## A group chat notifies its participants from their current stay; one who left gets nothing from it, what came before included
+
+**Id:** ccc4332d-30be-4bd0-9ccf-26d59194471f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §9.2, §18.1, §18.2; the implementation of #556 (`Lookup.inside`, `listing._unread_groups`) and its review, 2026-10-29
+**Revisit when:** a former participant may read the chat they left, or an observer should be told about a chat
+
+A message in a group chat becomes a `chat` item (or a `mention` item) for a participant whose
+stay in the chat is current (`here`) and whose stay began before the message (`seq > window_after`);
+never for the writer, never for an observer, who reads along and is not addressed (§9.2). Someone
+who has left gets nothing from the chat, what was said while they were in it included, and a
+rejoin does not bring back what was said while they were away. `counts.chat` adds the group chats
+to the direct ones (`listing._unread_groups`, per stay: the others' messages after both the stay
+began and the read mark, tombstones included), the number the chat list shows; a test compares
+the two. The count costs two queries per group chat, which the bell's counts will take from the
+chat list's batched `unread` instead (#560).
+
+**Reason:** §18.1 names the participants as recipients. A former participant no longer reads the
+chat (`…/messages` answers `not_found`, the list does not show it, §9.2), so an item for an
+earlier message would link to a chat it cannot open, and `counts.chat` must equal the list's
+`unread`, which drops the chat too. The stay's `window_after` bounds the items the way it bounds
+the chat's own window.
+
+**Rejected alternatives:**
+- Keeping the earlier items until their 30 days run out: they would point at `not_found` and
+  disagree with the count.
+- Notifying the owner who reads along as an observer: §9.2 makes an observer a reader, not an
+  addressee.
+- Reusing the chat list's batched `conversation_list._unread` for the count right here: it would
+  make the number the list's by construction, but the bell's counts are being moved onto the
+  list's `unread_chats` in #560, so a second change to the same lines would only conflict.
