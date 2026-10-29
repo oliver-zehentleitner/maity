@@ -4,7 +4,7 @@
 admin's session, kept ten minutes, at most twenty per session. It is not part of the setting.
 
 Revision ID: 0093
-Revises: 0097
+Revises: 0096
 Create Date: 2026-10-29
 """
 
@@ -16,7 +16,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql, postgresql
 
 revision: str = "0093"
-down_revision: str | None = "0097"
+down_revision: str | None = "0096"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
