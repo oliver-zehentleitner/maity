@@ -456,7 +456,6 @@ def _packet(
             "policy": policy_of(project),
             "absence": absence(project),
             "memory": memory_of(project),
-            "keep_the_why": project.keep_the_why,
             "rules_version": project.rules_version,
         },
         "rules": rules_block,
