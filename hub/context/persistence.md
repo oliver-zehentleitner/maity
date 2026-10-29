@@ -593,8 +593,9 @@ inferred from the log categories, not reproduced.
 
 On a server database `GET /api/v1/health` reads the revision over an engine of its own
 (`db.make_health_engine`): the same URL, no pool, a connection per check that is closed after it,
-the 5 s connect timeout and a 5 s `statement_timeout` (on MariaDB the driver's 5 s `read_timeout`). SQLite keeps one engine, since there is no
-pool wait to escape and a second in-memory engine would be a second, empty database. Every
+the 5 s connect timeout and a 5 s `statement_timeout` (on MariaDB the driver's 5 s
+`read_timeout`). SQLite keeps one engine, since there is no pool wait to escape and a second
+in-memory engine would be a second, empty database. Every
 PostgreSQL connection of the serving hub is opened with `statement_timeout` 30 s and
 `idle_in_transaction_session_timeout` 60 s, as the `options` startup parameter
 (`MAITY_DB_STATEMENT_TIMEOUT`, `MAITY_DB_IDLE_IN_TRANSACTION_TIMEOUT`; 0 turns one off). They are set
