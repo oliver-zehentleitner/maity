@@ -6,16 +6,17 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from importlib.resources import files
+from pathlib import Path
 from string import Template
 
 from fastapi import APIRouter, FastAPI, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import Engine
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.exceptions import HTTPException
-from starlette.routing import Match, Mount
-from starlette.types import Scope
+from starlette.routing import BaseRoute, Match, Mount
+from starlette.types import Receive, Scope, Send
 
 from maity_hub import (
     API_VERSION,
@@ -29,7 +30,9 @@ from maity_hub import (
     forge_access,
     images,
     longpoll,  # noqa: F401  (subscribes the long-poll to new events)
+    namespace,
     not_listening,
+    paths,
     probe,
     registration_accounts,
     takeovers,
@@ -123,6 +126,9 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         require_current_schema(engine)
         with engine.connect() as conn:
+            holders = namespace.reserved_holders(conn)
+            if holders:  # `maity-hub migrate` refuses these; a hub started past it says so
+                log.error("words that docs/api.md §16.11 reserves are held: %s", ", ".join(holders))
             try:
                 mail.check_at_startup(conn, settings.mail, settings.secret_key)
             except MailConfigError as error:
@@ -255,7 +261,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(preferences.router, prefix=prefix)
     app.include_router(jour_fixe.router, prefix=prefix)
     app.include_router(forge_webhook.router, prefix=prefix)
-    app.include_router(joins.page_router)  # /j/{token}, before the dashboard mount
+    app.include_router(joins.page_router)  # /join/{token}, before the app shell
     app.include_router(runners.page_router)  # /r/{token}, likewise
     app.include_router(email_sign_in.router, prefix=prefix)
     app.include_router(email_sign_in.page_router)
@@ -336,50 +342,62 @@ def _api_router() -> APIRouter:
     return router
 
 
-# Parts of web/ that belong to the dashboard's development, not to the page:
-# the fixture data it is tested against and its tools.
-NOT_SERVED = {"api", "fixtures", "tools"}
+# The built files the dashboard names under `/assets/` (§16.11): web/'s three directories of
+# scripts, stylesheets and brand files. Everything else in web/ (the page itself, fixtures,
+# tools, the README, context/) is not served as a file.
+ASSET_DIRS = frozenset({"brand", "css", "js"})
+SHELL_HEADERS = {
+    "Cache-Control": "no-cache",  # small, and it must follow a deploy at once (§16.11)
+    "X-Robots-Tag": "noindex",
+}
 
 
-class DashboardFiles(StaticFiles):
-    """Static files without dotfiles, the API prefix, or web/'s development parts.
-
-    A `.env`, `.git/` or `.htaccess` that ends up in the dashboard directory is
-    never served, no file can answer for an API path, and `fixtures/` and
-    `tools/` stay in the repository.
-    """
+class AssetFiles(StaticFiles):
+    """The files under `/assets/`: scripts, stylesheets and brand files, no dotfiles."""
 
     async def get_response(self, path: str, scope: Scope) -> Response:
         # `path` is normalised; the root arrives as ".".
         parts = [part for part in path.replace("\\", "/").split("/") if part != "."]
-        if any(part.startswith(".") for part in parts) or parts[:1] and parts[0] in NOT_SERVED:
+        if len(parts) < 2 or parts[0] not in ASSET_DIRS or any(p.startswith(".") for p in parts):
             raise HTTPException(status_code=404)
         return await super().get_response(path, scope)
 
 
-class WebMount(Mount):
-    """The dashboard at `/`, which never claims a path under `/api`.
+class ShellRoute(BaseRoute):
+    """The app shell for every path the hub does not answer itself (§16.11).
 
-    A plain mount at `/` fully matches every path, so the router would never
-    fall back to a route that matched the path but not the method: a wrong
-    method on an API path would be the mount's 404 instead of `405` with
-    `Allow` (docs/api.md §1.3).
+    A route of its own, matching last, so that a wrong method on a hub path is still the
+    router's `405` and an unknown hub path is `not_found`, not the shell. Any method but
+    `GET` and `HEAD` on a path that is the shell's is `not_found`.
     """
 
+    def __init__(self, index: Path) -> None:
+        self.index = index
+        self.name = "shell"
+
     def matches(self, scope: Scope) -> tuple[Match, Scope]:
-        path = scope.get("path", "")
-        if path == "/api" or path.startswith("/api/"):
+        if scope["type"] != "http" or paths.is_hub_path(scope.get("path", "")):
             return Match.NONE, {}
-        return super().matches(scope)
+        return Match.FULL, {}
+
+    async def handle(self, scope: Scope, receive: Receive, send: Send) -> None:
+        response: Response
+        if scope["method"] in ("GET", "HEAD"):
+            headers = dict(SHELL_HEADERS)
+            if scope.get("path") == "/":
+                del headers["X-Robots-Tag"]  # the root's is the middleware's (§16.7)
+            response = FileResponse(self.index, media_type="text/html", headers=headers)
+        else:
+            response = error_response(404, "not_found", "no such resource")
+        await response(scope, receive, send)
 
 
 def _mount_web(app: FastAPI, settings: Settings) -> None:
     web_dir = settings.web_dir
     if web_dir is not None and web_dir.is_dir():
         # Mounted last: the API routes above take precedence over files.
-        app.router.routes.append(
-            WebMount("/", app=DashboardFiles(directory=web_dir, html=True), name="web")
-        )
+        app.router.routes.append(Mount("/assets", app=AssetFiles(directory=web_dir), name="assets"))
+        app.router.routes.append(ShellRoute(web_dir / "index.html"))
     elif settings.web_dir_required:
         raise ConfigError(f"MAITY_WEB_DIR {web_dir} is not a directory")
     elif web_dir is None:

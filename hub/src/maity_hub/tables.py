@@ -425,11 +425,9 @@ project = Table(
     metadata,
     _id(primary_key=True),
     # The namespace owner, a human, and the slug: unique together, with the project's
-    # aliases (§6.25). `legacy_slug` is the slug at the namespace migration, frozen, for the
-    # addresses outside the API that predate it; null for every later project.
+    # aliases (§6.25).
     _ref("owner_id", "human.id", nullable=False),
     Column("slug", String(HANDLE), nullable=False),
-    Column("legacy_slug", String(HANDLE)),
     Column("name", String(TITLE), nullable=False),
     Column("state", String(16), nullable=False),
     Column("state_note", MARKDOWN_TEXT),

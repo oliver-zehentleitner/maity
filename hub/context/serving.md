@@ -21,6 +21,10 @@ and `tools/` out; that rule and its rejected
 alternative came from the review, the rest from the implementation
 session.
 
+Changed on 2026-10-29: the directory is no longer mounted at `/`. Its scripts, stylesheets and
+brand files are served under `/assets/` and every other path is the app shell, see 261f1ce2-819b-4aac-ae4a-387bb83d0907; the
+rules for dotfiles, `fixtures/` and `tools/` hold, now as "only `css/`, `js/` and `brand/`".
+
 **Reason:** the dashboard and the hub are built by different hands at
 different speeds; the API must be testable and deployable before `web/`
 exists, and an API-only hub is a legitimate setup for agents. A path the
@@ -195,7 +199,8 @@ them choose `public, max-age=3600`, the one caching it permits besides the landi
 seconds: the exception is now the cache value a path may choose, and no longer a flag, so a
 path cannot ask for the other path's. The root's `X-Robots-Tag: noindex` while the landing
 page is not enabled is added by the middleware too, on `GET` and `HEAD` of `/` only, because
-the root is a static file the dashboard mount serves and no route of the hub; the setting
+the root is the app shell (since 2026-10-29 the `ShellRoute`, which leaves the root's header to
+the middleware; every other shell path carries `noindex` itself); the setting
 is read per request, and an unreadable setting counts as off. The join host answers both
 files `not_found`, in `join_host.route`, before its redirect.
 
@@ -208,3 +213,43 @@ without a restart.
   `MAITY_PUBLIC_URL`.
 - A `noindex` meta tag in `index.html`: the dashboard's page is also the signed-in page, and
   a header is what a crawler reads without rendering.
+
+## The app shell is one route that matches last; the hub's own paths and the reserved words have one list in code
+
+**Id:** 261f1ce2-819b-4aac-ae4a-387bb83d0907
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** `docs/api.md` §16.11 and the maintainer's decision of 2026-10-29 behind it (the contract owner's `context/routing.md`, root context); the way to serve it is the implementer's
+**Revisit when:** the hub renders a dashboard page itself beyond the public pages, a handle may legitimately be a first segment the hub uses, or the dashboard gets a build step that changes which files it ships
+**See:** https://github.com/oliver-zehentleitner/maity — e34ae588-4dbc-423c-8da8-29fc62436cb5 — as of 2026-10-29
+
+`app._mount_web` mounts `/assets` on the dashboard directory (`AssetFiles`: only `css/`, `js/` and `brand/`,
+no dotfile, so `index.html`, `fixtures/`, `tools/`, `context/` and the README are never files) and appends
+`ShellRoute` last. The route matches every path that `paths.is_hub_path` does not name (`/api/…`, `/assets/…`,
+`/join/…`, `/r/…`, `/mail/…`, `/badge/…`, the crawler files and the legal pages) and answers `index.html` to `GET`
+and `HEAD` with `Cache-Control: no-cache` and `X-Robots-Tag: noindex`; any other method is `not_found`. A hub path
+that names nothing is therefore the router's `not_found`, a wrong method on one its `405`, and never the shell.
+`paths.RESERVED_FIRST` is the list of first segments no handle may take, `paths.PROJECT_VIEWS` the views no slug
+may be; `tests/test_paths.py` compares both with §16.11, and registration, `maity-hub owner create` and the
+`next` of a login (`paths.safe_next`) use them. `maity-hub migrate` stops, before it changes anything, when a
+handle, slug or project alias already holds a reserved word and names each holder (the contract: a release that
+reserves a held word does not go on); a hub started past it logs the same list at the error level.
+
+**Reason:** the old mount at `/` answered every path with a file or a 404 and needed a subclass to stay out of
+`/api`; the shell must be the answer for exactly the paths nothing else claims. A route of its own, not a
+catch-all `/{path:path}` on the app, because Starlette prefers a full match to a partial one, so a catch-all
+would turn the `405` of a wrong method on an API path into the shell's `404`; `matches` returns no match for the
+hub's paths instead. One list in code that a test ties to the document keeps the contract and the hub from
+drifting; the gate at `migrate`, not at startup, because the deployment migrates first and the test fixtures
+create humans with handles such as `admin` without going through the CLI.
+
+**Rejected alternatives:**
+- Keeping the `StaticFiles(html=True)` mount at `/` and answering `index.html` for its 404s: it would still serve
+  `web/`'s whole tree as files (`fixtures/`, `tools/`, `README.md`) at their old paths, and the "only built
+  files under `/assets/`" rule would need the same exclusions in two places.
+- A middleware that rewrites unknown paths to `/index.html`: it hides the shell from the router, from the 404
+  envelope and from the tests that read routes, and would have to know the hub's paths as well.
+- Refusing to start on a held reserved word, as the contract words it: right for a release, but it would stop
+  every test database that holds a human named `admin`, and the operator is told at `migrate` anyway; confirm with
+  the contract owner whether the stricter reading is wanted.

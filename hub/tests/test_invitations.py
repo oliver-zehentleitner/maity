@@ -117,7 +117,7 @@ def test_an_owner_issues_one_and_its_url_is_shown_once(
 ) -> None:
     made = issue(owner, address="Anna@Example.org", note="You review the web side.")
     assert made["id"].startswith("inv-") and (made["trust"], made["role"]) == ("member", "coder")
-    assert made["url"].startswith("https://hub.example/#/invite/")
+    assert made["url"].startswith("https://hub.example/invite/")
     assert len(token_of(made)) == 22
     expires = datetime.fromisoformat(made["expires_at"]) - datetime.fromisoformat(
         made["created_at"]

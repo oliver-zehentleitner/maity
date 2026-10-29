@@ -19,7 +19,7 @@ from tests.test_join_host import join_client
 
 ADMIN_PATH = "/admin/settings/landing"
 OFF = {"enabled": False, "title": None, "markdown": None, "cta": None}
-GOOD = "# Bring your own agent\n\nRead [the docs](https://example.com/docs) or [sign in](/#/login)."
+GOOD = "# Bring your own agent\n\nRead [the docs](https://example.com/docs) or [sign in](/login)."
 
 
 @pytest.fixture
@@ -61,7 +61,7 @@ def test_the_admin_publishes_it_and_the_etag_follows(
             "enabled": True,
             "title": "Bring your own coding agent.",
             "markdown": GOOD,
-            "cta": {"label": "Sign in", "href": "/#/login"},
+            "cta": {"label": "Sign in", "href": "/login"},
         },
     )
     assert saved.status_code == 200, saved.text
@@ -72,7 +72,7 @@ def test_the_admin_publishes_it_and_the_etag_follows(
         "enabled": True,
         "title": "Bring your own coding agent.",
         "markdown": GOOD,
-        "cta": {"label": "Sign in", "href": "/#/login"},
+        "cta": {"label": "Sign in", "href": "/login"},
         "updated_at": saved.json()["updated_at"],
     }
     tag = page.headers["etag"]
@@ -99,7 +99,7 @@ def test_the_admin_publishes_it_and_the_etag_follows(
         "[x](https:/example.com)",
         "[x](https//example.com)",
         "[x](/#evil)",
-        "[x](/admin)",
+        "[x](//evil.example/x)",
         "see https://user@evil.example/",
         "[x](https://[example.com)",  # no parse: invalid, never a 500
         "[x](https://example.com:bad/)",
@@ -122,7 +122,7 @@ def test_what_the_markdown_may_not_hold(owner: flow.Human, markdown: str) -> Non
 
 
 def test_html_in_fenced_code_is_text(owner: flow.Human) -> None:
-    text = "Install:\n\n```html\n<script>not run</script>\n```\n\nThen [sign in](/#/login)."
+    text = "Install:\n\n```html\n<script>not run</script>\n```\n\nThen [sign in](/login)."
     assert owner.patch(ADMIN_PATH, {"markdown": text}).status_code == 200
     second = owner.patch(ADMIN_PATH, {"markdown": "one\n\nline three <b>"})
     assert field(second) == {"markdown": "line 3"}
@@ -170,8 +170,8 @@ def test_a_page_at_the_markdown_limit_passes_the_body_cap(owner: flow.Human) -> 
         ({"markdown": "a\x01b"}, {"markdown": "control_character"}),
         ({"markdown": "a\x1b[31mred"}, {"markdown": "control_character"}),
         ({"title": "a\x00b"}, {"title": "control_character"}),
-        ({"cta": {"label": "Go\x07", "href": "/#/login"}}, {"cta": "control_character"}),
-        ({"cta": {"label": "Go", "href": "/#/login\x0b"}}, {"cta.href": "control_character"}),
+        ({"cta": {"label": "Go\x07", "href": "/login"}}, {"cta": "control_character"}),
+        ({"cta": {"label": "Go", "href": "/login\x0b"}}, {"cta.href": "control_character"}),
     ],
 )
 def test_control_characters_are_refused(
@@ -206,7 +206,7 @@ def test_the_other_fields_and_enabled_without_markdown(owner: flow.Human) -> Non
     assert field(owner.patch(ADMIN_PATH, {"cta": {"label": "Go", "href": "http://x.com"}})) == {
         "cta.href": "invalid"
     }
-    assert field(owner.patch(ADMIN_PATH, {"cta": {"label": "x" * 41, "href": "/#/login"}})) == {
+    assert field(owner.patch(ADMIN_PATH, {"cta": {"label": "x" * 41, "href": "/login"}})) == {
         "cta": "invalid"
     }
     for href in ("https://[example.com", "https://example.com:bad/", "https://example.com:0/"):
@@ -277,7 +277,7 @@ def test_two_edits_at_once_keep_both_fields(owner: flow.Human, migrated: Engine)
     with migrated.begin() as conn:
         conn.execute(delete(t.instance_landing))
     for title, label in (("First", "Made"), ("Second", "Existing")):
-        cta = {"label": label, "href": "/#/login"}
+        cta = {"label": label, "href": "/login"}
         _race(migrated, owner, title, cta)
         got = owner.get(ADMIN_PATH).json()
         assert (got["title"], got["cta"]) == (title, cta)

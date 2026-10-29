@@ -178,8 +178,8 @@ def insert_membership(project_id: str, human_id: str, joined: object, active: ob
 
 
 def test_the_namespace_owner_is_the_oldest_active_owner(engine: Engine) -> None:
-    """0060: the creator left, so the next oldest active owner holds the namespace; the
-    slug is kept as `legacy_slug`; a limit's `show_reason_in` names full names."""
+    """0060: the creator left, so the next oldest active owner holds the namespace; a
+    limit's `show_reason_in` names full names."""
     from sqlalchemy import select
 
     from maity_hub import tables as t
@@ -191,7 +191,7 @@ def test_the_namespace_owner_is_the_oldest_active_owner(engine: Engine) -> None:
         shown = conn.execute(
             select(t.human.c.limit_show_reason_in).where(t.human.c.id == ids["b"])
         ).scalar()
-    assert (project.owner_id, project.legacy_slug) == (ids["b"], "shop")
+    assert project.owner_id == ids["b"]
     assert shown == ["b/shop"]
 
 

@@ -44,11 +44,14 @@ what clients read: the CLI matches its routes against `openapi.json`.
 **Source:** `docs/api.md` §6.25 "Old routes"; FastAPI 0.159 keeps included routers behind `_IncludedRouter` objects, found while building this
 **Revisit when:** a project route is left out of the schema, or the hub serves the old routes as `v1` next to a `v2`
 
-The middleware answers a project path from before the namespace
+Until 2026-10-29 the middleware answered a project path from before the namespace
 (`/projects/<slug>` alone, or `/projects/<slug>/<word>/…`) before the body
-is read, before authentication and without a lookup: `client_outdated`
+was read, before authentication and without a lookup: `client_outdated`
 (426) to a `maity-cli/…` User-Agent, `project_path_outdated` (410) to
-everyone else. The words are the literal segments that follow `{owner}/{slug}`
+everyone else. That answer, the pre-migration addresses of the badge, the public swarm
+page and the forge webhook (`legacy_slug`) and the column itself (migration 0085) are
+removed: the maintainer's alpha rule is to keep no compatibility layer, so an old path is
+`not_found` like any path, see 261f1ce2-819b-4aac-ae4a-387bb83d0907. The words below stay, as the slug check. The words are the literal segments that follow `{owner}/{slug}`
 in the app's schema paths, joined with the set at this change as a floor.
 The same set refuses a slug at `POST /projects` (`reserved`). The
 dashboard's top-level route words are refused as human handles, at
@@ -111,7 +114,7 @@ ties by id. The creator's membership is the first of every project, so
 while the creator is still an active owner it is the creator. A project
 without such a human, a slug that is a route word, or a human handle that
 is a dashboard word stops the migration. The message names each one for
-the operator. Every existing project keeps its slug as `legacy_slug`. A
+the operator. Every existing project keeps its slug as `legacy_slug` (the column was dropped by 0085). A
 limit's `show_reason_in` is rewritten to full names. The downgrade appends
 the project id to slugs that two owners share (all but the oldest), as
 0032's downgrade does for handles, so that the old instance-wide key holds

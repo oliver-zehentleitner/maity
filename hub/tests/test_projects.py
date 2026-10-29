@@ -42,7 +42,6 @@ def test_a_created_project_has_the_contract_shape(owner: flow.Human) -> None:
         "full_name",
         "slug",
         "aliases",
-        "legacy_slug",
         "name",
         "state",
         "state_note",

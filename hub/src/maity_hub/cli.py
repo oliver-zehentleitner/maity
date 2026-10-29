@@ -15,7 +15,7 @@ import uvicorn
 from sqlalchemy import exists, insert, inspect, literal, select
 from sqlalchemy.exc import SQLAlchemyError
 
-from maity_hub import __version__, clock, longpoll, namespace
+from maity_hub import __version__, clock, longpoll, namespace, paths
 from maity_hub import tables as t
 from maity_hub.app import SchemaNotCurrentError, create_app, require_current_schema
 from maity_hub.auth import second_factor_reset
@@ -137,8 +137,8 @@ def _owner_create(
                         EXIT_FAILURE,
                     )
             else:
-                if handle in namespace.DASHBOARD_WORDS:  # never a namespace (§6.25)
-                    return _fail(f"the handle {handle!r} is a dashboard route", EXIT_FAILURE)
+                if handle in paths.RESERVED_FIRST:  # a first segment of the hub (§16.11)
+                    return _fail(f"the handle {handle!r} is a reserved first segment", EXIT_FAILURE)
                 if conn.execute(select(t.human.c.id).where(t.human.c.handle == handle)).first():
                     return _fail(f"a human with the handle {handle!r} exists", EXIT_FAILURE)
                 conn.execute(insert(t.human).values(**values))
@@ -196,6 +196,14 @@ def _migrate(settings: Settings) -> int:
     except (SQLAlchemyError, ImportError) as error:
         return _database_error(settings, error)
     try:
+        with engine.connect() as conn:
+            holders = namespace.reserved_holders(conn)
+        if holders:  # a release that reserves a held word does not go on (docs/api.md §16.11)
+            return _fail(
+                "a word that docs/api.md §16.11 reserves is already held, rename it first: "
+                + ", ".join(holders),
+                EXIT_FAILURE,
+            )
         before = current_revision(engine)
         migrate(engine)
         print(f"maity-hub: schema {before or 'empty'} -> {head_revision(engine)}")

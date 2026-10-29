@@ -447,7 +447,7 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
                     project_id=request.project_id,
                     title=_cut(where.say("asks_you", who=asker, title=request.title)),
                     target={"type": "request", "id": request.id},
-                    url=_url(where, f"/#/requests/{request.id}"),
+                    url=_url(where, f"/requests/{request.id}"),
                     read=row.read_at is not None,
                     member=where.membership(request.project_id) is not None,
                     record_type=row.type,
@@ -469,7 +469,7 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
                         )
                     ),
                     target={"type": "session", "id": str(data.get("session_id"))},
-                    url=_url(where, "/#/account/sessions"),
+                    url=_url(where, "/account/sessions"),
                     read=row.read_at is not None,
                     record_type=row.type,
                     session_id=data.get("session_id"),
@@ -483,7 +483,7 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
                     record=row.n,
                     title=_cut(_two_factor_title(data)),
                     target={"type": "settings", "id": "security"},
-                    url=_url(where, "/#/account/security"),
+                    url=_url(where, "/account/security"),
                     read=row.read_at is not None,
                     record_type=row.type,
                 )
@@ -500,7 +500,7 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
                         f"{data.get('os') or 'an unknown system'}, {data.get('ip') or '?'}"
                     ),
                     target={"type": "settings", "id": "security"},
-                    url=_url(where, "/#/account/security"),
+                    url=_url(where, "/account/security"),
                     read=row.read_at is not None,
                     record_type=row.type,
                 )
@@ -513,7 +513,7 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
                     record=row.n,
                     title=where.say("address_changed"),
                     target={"type": "settings", "id": "notifications"},
-                    url=_url(where, "/#/account/notifications"),
+                    url=_url(where, "/account/notifications"),
                     read=row.read_at is not None,
                     record_type=row.type,
                 )
@@ -531,7 +531,7 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
                         f" ({data.get('source')})"
                     ),
                     target={"type": "settings", "id": "forge"},
-                    url=_url(where, "/#/settings/forge"),
+                    url=_url(where, "/settings/forge"),
                     read=row.read_at is not None,
                     record_type=row.type,
                 )
@@ -549,7 +549,7 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
                     record=row.n,
                     title=_cut(where.say("waits", handle=data.get("handle"))),
                     target={"type": "registration", "id": str(data.get("human"))},
-                    url=_url(where, "/#/admin/registration"),
+                    url=_url(where, "/admin/registration"),
                     read=not pending,
                     record_type=row.type,
                     open=pending,
@@ -567,7 +567,7 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
                     record=row.n,
                     title=_cut(where.say("mail_disabled", address=data.get("address"))),
                     target={"type": "settings", "id": "notifications"},
-                    url=_url(where, "/#/account/notifications"),
+                    url=_url(where, "/account/notifications"),
                     read=False,
                     record_type=row.type,
                     open=True,
@@ -666,8 +666,8 @@ class Lookup:
     def __init__(self, conn: Connection, mine: Membership, rows: list[Any]) -> None:
         self.conn = conn
         self.mine = mine
-        # The dashboard's address of the project is `#/<owner>/<slug>` (§6.25).
-        self.home = f"/#/{namespace.full_name(conn, mine.project)}"
+        # The dashboard's address of the project is `/<owner>/<slug>` (§6.25, §16.11).
+        self.home = f"/{namespace.full_name(conn, mine.project)}"
         self.request_ids = {r.subject_id for r in rows if r.kind in REQUEST_EVENTS and r.subject_id}
         self.requests = _by_id(conn, t.request, self.request_ids)
         self.member_ids = {r.actor_membership for r in rows if r.actor_membership is not None}

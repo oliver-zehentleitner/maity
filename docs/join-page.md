@@ -1,5 +1,5 @@
 <!--
-Template for the join page the hub serves at /join/{token}, /j/{token} and
+Template for the join page the hub serves at /join/{token} and
 /api/v1/join/{token} (docs/api.md §3.2). The hub fills the {{…}} fields from the join
 record and its own settings: {{join_link}} is the link as it was handed out and
 {{exchange_url}} where the exchange posts (both https://join.…/{token} on the join host,

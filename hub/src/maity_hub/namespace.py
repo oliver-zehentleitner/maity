@@ -6,9 +6,8 @@ project route is `/projects/{owner}/{slug}/…`; `ProjectRoute` hands the route 
 project from one value. `resolve` finds the project by the owner, then the pair of the
 owner's id and the slug among every project's current name and aliases.
 
-Old one-segment paths (`/projects/maity/tasks`) always have a reserved word where the new form
-has a slug (`tasks` cannot be a slug), so `outdated` recognises them without a lookup and
-answers them the same whether the first segment was ever a slug or not.
+A slug is never a literal word after `{slug}` in a route (`ROUTE_WORDS`) nor a project view of
+the dashboard (§16.11), so that `/<owner>/<word>` stays free.
 """
 
 from __future__ import annotations
@@ -20,9 +19,9 @@ from typing import Any
 
 from fastapi import Request, Response
 from fastapi.routing import APIRoute
-from sqlalchemy import Connection, delete, insert, select
+from sqlalchemy import Connection, delete, insert, inspect, select
 
-from maity_hub import clock
+from maity_hub import clock, paths
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, rate_limited
 
@@ -33,18 +32,6 @@ ALIAS_LIMIT = 8
 CHANGES_PER_DAY = 3
 DAY_SECONDS = 24 * 3600
 FULL_NAME = re.compile(r"^([a-z0-9][a-z0-9-]{1,30})/([a-z0-9][a-z0-9-]{1,62})$")
-# The lowest CLI that addresses projects as <owner>/<slug> (§6.25): what `client_outdated`
-# names. Any CLI that calls an old path is older than that by construction.
-CLI_MINIMUM = "0.1.0a2"
-# The dashboard's top-level routes (§6.25): never a human handle, so that `#/invite/…` cannot
-# be read as the namespace `invite`. Every route the dashboard adds later goes here too.
-DASHBOARD_WORDS = frozenset(
-    {
-        "account", "admin", "agents", "all", "chats", "components", "invite", "join", "login",
-        "new", "notifications", "observe", "p", "register", "requests", "runners", "s",
-        "settings", "sign-in",
-    }
-)  # fmt: skip
 
 
 class ProjectRoute(APIRoute):
@@ -96,37 +83,9 @@ def app_words(app: Any) -> frozenset[str]:
     included routers behind its own objects; the schema lists every path flat)."""
     words = getattr(app.state, "namespace_words", None)
     if words is None:
-        words = ROUTE_WORDS | route_words(app.openapi().get("paths", {}))
+        words = ROUTE_WORDS | paths.PROJECT_VIEWS | route_words(app.openapi().get("paths", {}))
         app.state.namespace_words = words
     return words
-
-
-def outdated(path: str, words: frozenset[str]) -> bool:
-    """A project path in the form before the namespace: `/projects/<slug>` alone, or
-    `/projects/<slug>/<word>/…` with a word that follows a project in a route."""
-    if not path.startswith(PREFIX):
-        return False
-    parts = path[len(PREFIX) :].split("/")
-    if len(parts) == 1:
-        return parts[0] != ""
-    return parts[1] in words
-
-
-def outdated_error(user_agent: str, install: str) -> ApiError:
-    """`client_outdated` (426) for the CLI, `project_path_outdated` (410) for everyone else
-    (§6.25); neither says anything about the project."""
-    if user_agent.startswith("maity-cli/"):
-        return ApiError(
-            426,
-            "client_outdated",
-            "this maity is older than the hub needs: projects are addressed as <owner>/<slug>",
-            {"minimum": CLI_MINIMUM, "install": install},
-        )
-    return ApiError(
-        410,
-        "project_path_outdated",
-        "projects are addressed as /projects/{owner}/{slug} (docs/api.md §6.25)",
-    )
 
 
 def resolve_owner(conn: Connection, handle: str) -> str | None:
@@ -336,3 +295,27 @@ def namespace_owner_of(conn: Connection, human_id: str, project_ids: Iterable[st
             "the project's namespace owner stays an owner: transfer the project first",
             {"projects": names},
         )
+
+
+def reserved_holders(conn: Connection) -> list[str]:
+    """Who already holds a word that §16.11 reserves: a handle that is a reserved first
+    segment, a slug or a project alias that is a project view or a route word. A release
+    that reserves such a word does not go on; the operator renames the holder first. Tables
+    an older schema does not have yet are skipped."""
+    present = set(inspect(conn).get_table_names())
+    found: list[str] = []
+    if "human" in present:
+        found += [
+            f"handle {handle!r}"
+            for handle in conn.execute(select(t.human.c.handle)).scalars()
+            if handle in paths.RESERVED_FIRST
+        ]
+    slugs = ROUTE_WORDS | paths.PROJECT_VIEWS
+    for table, label in ((t.project, "slug"), (t.project_alias, "project alias")):
+        if table.name in present:
+            found += [
+                f"{label} {slug!r}"
+                for slug in conn.execute(select(table.c.slug)).scalars()
+                if slug in slugs
+            ]
+    return sorted(found)
