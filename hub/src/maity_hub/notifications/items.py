@@ -61,7 +61,7 @@ WORDS: dict[str, dict[str, str]] = {
         "waits": "{handle} wartet auf Freigabe",
         "sign_in": "Neue Anmeldung: {browser} auf {os} ({method})",
         "a_browser": "ein Browser",
-        "unknown_os": "ein unbekanntes System",
+        "unknown_os": "einem unbekannten System",
         "address_changed": "Anmeldeadresse geändert",
         "mail_disabled": "Mail an {address} nach 3 Fehlern deaktiviert",
         "tf_enrolled": "Zwei-Faktor-Anmeldung eingeschaltet",
