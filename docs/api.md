@@ -7252,7 +7252,10 @@ for `member` and `admin`. Two open invitations may reach the same human
 under two of their names (a handle and an alias); the first `go` makes
 them a member, and in the same transaction the hub withdraws every other
 open invitation of the organisation whose request went to that human,
-so a later `go` finds nothing open. An invitation expires after 14 days; the hub withdraws it
+so a later `go` finds nothing open. The role is the one of the
+invitation they said `go` to, whatever the others offered; the others
+leave the list of open invitations like any withdrawn one, and nobody
+is notified of it (below, "Events and the inbox"). An invitation expires after 14 days; the hub withdraws it
 and its request then, when the invited human's account is deleted, when
 the organisation is deleted, and when the inviter loses the role that
 allowed it: an owner demoted to `admin` loses only their open
@@ -7315,9 +7318,15 @@ they are members of a project exactly when someone added them to it.
 the organisation or what it owns runs under the lock on the
 organisation's row, held until commit, as the project lock serialises a
 project's writes (§6.2): a role change, a leaving or a removal, an
-invitation's `go`, the creation of a project in the organisation, and a
+invitation's `go`, the creation of a project in the organisation, a
 transfer into or out of it (for a transfer between two organisations,
-both rows, in the order of their ids). Under that lock the hub checks
+both rows, in the order of their ids), the organisation's deletion
+(`DELETE /orgs/{org}`), its suspension (§16.8, `suspend`), and the
+deletion of an owner's account (§2.9), which locks the rows of every
+organisation it belongs to, in the order of their ids. The
+organisation's row is always locked before any project's: a promotion
+writes into every project of the organisation and a transfer into one,
+and one fixed order keeps the two from waiting on each other. Under that lock the hub checks
 that the organisation keeps at least one `owner` (`org_last_owner`)
 and makes every owner a member with trust `owner` of every project it
 owns (above), in the same transaction as the change. So two owners who

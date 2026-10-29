@@ -515,7 +515,16 @@ promotion is someone else's word as well. An admin's transfer in needs
 one owner's go, because only owners carry the rights an organisation's
 projects confer. Every change of owners or projects runs under one
 lock on the organisation, so the last owner and the owners' memberships
-cannot be lost to two changes at once.
+cannot be lost to two changes at once. Two open invitations may reach
+one human under a handle and an alias; the first `go` withdraws the
+others in the same transaction rather than the second being refused
+when it is made, because refusing it would mean resolving the typed
+value to a human and telling the inviter so, the very probe the uniform
+answer exists to prevent. Invitations for the role `owner` are revoked
+by owners only, as only owners issue them. A human who owns both
+organisations keeps their membership through a transfer between them,
+as a receiving human does, so the move is not a removal with its
+consequences followed by a join of the same person.
 
 **Rejected alternatives:**
 - Organisations in a namespace of their own (`/orgs/<x>/…`): an
@@ -533,3 +542,9 @@ cannot be lost to two changes at once.
 - Suspending the accounts of an organisation's owners with it: it
   punishes people for a project report without a decision on each of
   them.
+- Refusing a second invitation that reaches an already invited human
+  under another name (`invited` resolved through aliases): it tells the
+  inviter that two names are one account.
+- Ending and re-creating a shared owner's membership on a transfer
+  between organisations: the removal's consequences (§6.2) and a
+  `member_joined` for someone who never left.
