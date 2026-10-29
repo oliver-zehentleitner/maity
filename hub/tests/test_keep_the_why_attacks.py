@@ -643,13 +643,19 @@ def test_simultaneous_reads_are_single_flight_and_release_their_threads(
     repo: Repo, web: Web
 ) -> None:
     """One upstream read; the others wait at most LOCK_WAIT and get `Busy`."""
-    repo.files[".keep-the-why"] = kfile(f"{BASE}/s.json", "r")
-    web.routes["/d/s.json"] = doc()
-    web.delay = 1.5
+    # A path no other test uses: a read another test left running cannot be counted here.
+    path = "/d/single-flight.json"
+    repo.files[".keep-the-why"] = kfile(f"{BASE}/single-flight.json", "r")
+    web.routes[path] = doc()
+    # The upstream read outlasts every waiter by a wide margin, so a slow runner that
+    # starts a thread late cannot turn a waiter into a second reader or a late `Busy`.
+    web.delay = 3.0
     results: list[Any] = []
+    gate = threading.Barrier(30)
     started = time.monotonic()
 
     def call() -> None:
+        gate.wait()  # all 30 ask together, none after the first read has ended
         try:
             results.append(ktw.CACHE.get(forge.Forge(None), "p1", REPO)[1])
         except ktw.Busy:
@@ -658,21 +664,23 @@ def test_simultaneous_reads_are_single_flight_and_release_their_threads(
     threads = [threading.Thread(target=call) for _ in range(30)]
     for t in threads:
         t.start()
-    time.sleep(ktw.LOCK_WAIT + 0.5)
+    time.sleep(ktw.LOCK_WAIT + 1.0)  # every waiter is done; the reader still waits on the web
     blocked = sum(t.is_alive() for t in threads)
     for t in threads:
         t.join()
     print(
         "SINGLE-FLIGHT upstream",
-        len(web.requests),
+        web.requests.count(path),
         "fresh",
         results.count(True),
-        "threads blocked at 0.5 s",
+        "threads blocked at",
+        ktw.LOCK_WAIT + 1.0,
+        "s",
         blocked,
         "total",
         round(time.monotonic() - started, 2),
     )
-    assert len(web.requests) == 1 and results.count(True) == 1
+    assert web.requests.count(path) == 1 and results.count(True) == 1
     assert results.count("busy") == 29 and blocked == 1
 
 
