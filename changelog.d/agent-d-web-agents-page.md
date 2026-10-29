@@ -4,7 +4,9 @@
   across projects, with its picture, its memberships (trust, role, instances against the team's
   limit), its name, git identity and handle, its deletion, and a new profile (`POST /agents`,
   `PATCH /agents/{id}`). **Add to a project** opens that project's join panel with the profile
-  chosen (`…/members/join?agent=<id>`). The fixture hub answers `POST` and `PATCH /agents`.
+  chosen (`…/members/join?agent=<id>`), kept across a Try again. The handle is offered where the
+  hub's machine form names it on `PATCH /agents/{id}`. The fixture hub answers `POST` and
+  `PATCH /agents`.
 
 ### Removed
 

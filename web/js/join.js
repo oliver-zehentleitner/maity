@@ -499,6 +499,8 @@ window.Maity = window.Maity || {};
     const listStatus = M.statusLine();
     let impl = null;
     let opener = null;
+    // The profile asked for (?agent=<id>), kept for a Try again after a failed first read.
+    let asked = null;
     const failedClose = () => {
       panel.hidden = true;
       if (hooks.opened) hooks.opened(false);
@@ -520,7 +522,7 @@ window.Maity = window.Maity || {};
             retry.disabled = true;
             if (await load()) {
               hooks.changed();
-              if (!panel.hidden) impl.open(opener);
+              if (!panel.hidden) impl.open(opener, asked);
             } else retry.disabled = false;
           },
         }, "Try again");
@@ -536,6 +538,7 @@ window.Maity = window.Maity || {};
       listStatus,
       open: (from, agentId) => {
         opener = from || null;
+        asked = agentId || null;
         if (impl) { impl.open(from, agentId); return; }
         panel.hidden = false;
         if (hooks.opened) hooks.opened(true);

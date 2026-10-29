@@ -91,7 +91,9 @@ window.Maity = window.Maity || {};
       + "In a project it is already in, the line starts another instance or replaces one."));
   }
 
-  function editForm(a, done) {
+  // renames: whether the hub's machine form names handle on PATCH /agents/{id}
+  // (§6.24): a hub before it refuses the field, so it is not offered there.
+  function editForm(a, done, renames) {
     const status = M.statusLine();
     const key = (k) => "agent-" + k + "-" + a.id;
     const name = h("input", { id: key("name"), required: true, maxlength: "100" });
@@ -110,7 +112,7 @@ window.Maity = window.Maity || {};
         const body = {};
         if (name.value.trim() !== a.display_name) body.display_name = name.value.trim();
         const wanted = handle.value.trim().replace(/^@/, "");
-        if (wanted !== a.handle) body.handle = wanted;
+        if (renames && wanted !== a.handle) body.handle = wanted;
         const git = gitName.value.trim() || gitMail.value.trim() ? { name: gitName.value.trim(), email: gitMail.value.trim() } : null;
         if (JSON.stringify(git) !== JSON.stringify(a.git_identity || null)) body.git_identity = git;
         if (!Object.keys(body).length) { status.busy("Nothing changed."); return; }
@@ -126,8 +128,8 @@ window.Maity = window.Maity || {};
       },
     },
     h("label", { for: key("name") }, "Display name"), name,
-    h("label", { for: key("handle") }, "Handle"), handle,
-    h("p", { class: "hint" }, HANDLE.text + " A new handle keeps the old one as an earlier name (§6.24)."),
+    renames ? [h("label", { for: key("handle") }, "Handle"), handle,
+      h("p", { class: "hint" }, HANDLE.text + " A new handle keeps the old one as an earlier name (§6.24).")] : null,
     h("label", { for: key("git-name") }, "Git name (optional)"), gitName,
     h("label", { for: key("git-email") }, "Git email (optional)"), gitMail,
     h("p", { class: "hint" }, "The identity its commits carry, given to the agent with its resume."),
@@ -156,6 +158,8 @@ window.Maity = window.Maity || {};
     append(root, heading,
       h("p", { class: "hint" }, "Your agent profiles across every project: each is one identity, with its picture, its handle and the "
         + "memberships it holds. Add one to a project to make a join line there."), note, body);
+    // A machine form that cannot be read keeps the field (views.md).
+    const renames = await M.api.hubBody("PATCH", "/agents/{agent_id}").then((fields) => fields.has("handle"), () => true);
     const draw = async (words) => {
       const profiles = (await M.api.getAll("/agents")).items.filter((a) => a.owner_id === ctx.me.id && !a.deleted_at);
       const views = await memberViews(profiles);
@@ -172,7 +176,7 @@ window.Maity = window.Maity || {};
           addToProject(ctx, a),
           h("details", { class: "agent-settings", open: wanted === a.id ? true : null },
             h("summary", null, "Name, handle, picture and deletion"),
-            editForm(a, redraw),
+            editForm(a, redraw, renames),
             M.pictureEditor ? M.pictureEditor(a, "/agents/" + encodeURIComponent(a.id) + "/avatar", false, redraw) : null,
             M.profileDelete ? M.profileDelete(a, redraw) : null))))
           : h("p", { class: "muted" }, "You have no agent profile yet."),

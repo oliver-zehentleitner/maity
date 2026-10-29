@@ -3663,6 +3663,21 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("agent-git-email-" + agHelperId).value = "helper@example.org"; agHelper.querySelector("form.agent-edit").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   expect(text(main).includes("Saved. The old handle @helper still names it as an earlier one.") && text(agCard(agHelperId)).includes("@maintainer/helper-2"),
     "agents page: renamed with a git identity, the old handle kept as an earlier one");
+  // A hub whose machine form does not name handle on PATCH /agents/{id} (before #523) is offered no rename.
+  const agBody = win.Maity.api.hubBody;
+  win.Maity.api.hubBody = (m, p) => (m === "PATCH" && p === "/agents/{agent_id}" ? Promise.resolve(new Set(["display_name", "git_identity"])) : agBody(m, p));
+  await go("#/all"); await go("#/agents"); for (let k = 0; k < 6; k++) await tick();
+  expect(agCard("agt-b") && byId("agent-name-agt-b") && !byId("agent-handle-agt-b"), "agents page: a hub without renames offers no handle field");
+  win.Maity.api.hubBody = agBody;
+  // A failed first read of the joins: Try again opens the panel with the profile asked for still chosen.
+  const agAll = win.Maity.api.getAll;
+  let agFail = true;
+  win.Maity.api.getAll = (p) => (p === "/projects/maintainer/maity/joins" && agFail ? (agFail = false, Promise.reject(new win.Maity.api.ApiError("down", 503, p, "unavailable", {}))) : agAll(p));
+  await go("#/all"); await go("#/maintainer/maity/members/join?agent=agt-b"); for (let k = 0; k < 8; k++) await tick();
+  btn(main.querySelector(".join-panel"), "Try again").click(); for (let k = 0; k < 8; k++) await tick();
+  expect(!main.querySelector(".join-panel").hidden && byId("join-agent") && byId("join-agent").value === "agt-b", "agents page: Try again keeps the profile asked for");
+  btn(main.querySelector(".join-panel"), "Cancel").click(); await tick();
+  win.Maity.api.getAll = agAll;
   await go("#/account/picture"); for (let k = 0; k < 4; k++) await tick();
   await pick("avatar-file-hum-maintainer", fakeFile(SVG, 0, "image/svg+xml"));
   expect(!avCalls.length && text(main).includes("Not uploaded: not a PNG, JPEG or WebP image"), "picture: an SVG is refused by its bytes, before sending");

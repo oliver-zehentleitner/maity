@@ -1777,7 +1777,11 @@ handle, and its deletion; a new profile at the end. **Add to a project**
 leads to that project's Members with the join panel open and the
 profile chosen (`/<owner>/<slug>/members/join?agent=<id>`): the one join
 component, where the project's rules (who may bring agents, the
-member's limit, the team's) are known. `/agents/<id>` marks one profile.
+member's limit, the team's) are known. The profile asked for
+(`?agent=<id>`) is kept across a failed first read of the joins, so
+**Try again** opens the panel with it chosen, as the first open would
+have. The handle is offered only where the hub's machine form names it
+on `PATCH /agents/{id}` (§6.24). `/agents/<id>` marks one profile.
 The account keeps the human's own picture and points to this page; an
 agent's picture stays settable in its row on Members as well.
 

@@ -1926,7 +1926,7 @@ window.Maity = window.Maity || {};
       "/api/v1/me/export": { get: {} },
       "/api/v1/me/deletion": { post: {}, delete: {} },
       "/api/v1/agents": { get: {}, post: {} },
-      "/api/v1/agents/{agent_id}": { get: {}, patch: {}, delete: {} },
+      "/api/v1/agents/{agent_id}": { get: {}, patch: { requestBody: { content: { "application/json": { schema: { properties: { display_name: {}, git_identity: {}, handle: {} } } } } } }, delete: {} },
       "/api/v1/me": { get: {}, patch: { requestBody: { content: { "application/json": { schema: { properties: { meat_proxy: {} } } } } } } },
       "/api/v1/projects/{owner}/{slug}/attachments": { get: {}, post: {} },
       "/api/v1/requests/{request_id}/answer": { post: {} },
