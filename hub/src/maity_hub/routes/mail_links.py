@@ -67,6 +67,11 @@ _WORDS = {
             "Nothing was deleted: you are the instance's last admin. This link keeps "
             "working until it expires."
         ),
+        "org_last_owner": (
+            "Nothing was deleted: you are the last owner of an organisation. Make another "
+            "member an owner or delete the organisation first; this link keeps working "
+            "until it expires."
+        ),
     },
     "de": {
         "verify_title": "Adresse bestätigen",
@@ -112,6 +117,11 @@ _WORDS = {
         ),
         "last_instance_admin": (
             "Nichts wurde gelöscht: du bist der letzte Admin der Instanz. Dieser Link "
+            "funktioniert, bis er abläuft."
+        ),
+        "org_last_owner": (
+            "Nichts wurde gelöscht: du bist der letzte Owner einer Organisation. Mach "
+            "zuerst jemand anderen zum Owner oder lösche die Organisation; dieser Link "
             "funktioniert, bis er abläuft."
         ),
     },
@@ -299,6 +309,8 @@ def account_deletion_confirm(token: str, request: Request) -> HTMLResponse:
     outcome = retrying(run)
     if outcome is None:
         return _dead(words)
-    if outcome != "deleted":  # `namespace_owner`, `last_instance_admin`: nothing changed
+    if (
+        outcome != "deleted"
+    ):  # `namespace_owner`, `org_last_owner`, `last_instance_admin`: nothing changed
         return _page(words["delete_title"], words[outcome], status=409)
     return _page(words["delete_title"], words["delete_done"])
