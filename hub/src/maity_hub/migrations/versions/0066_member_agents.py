@@ -5,7 +5,7 @@ Projects that predate the fields read `on` and 3, as the contract says; every jo
 before reads as an admin's.
 
 Revision ID: 0066
-Revises: 0075
+Revises: 0076
 """
 
 from collections.abc import Sequence
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0066"
-down_revision: str | None = "0075"
+down_revision: str | None = "0076"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
