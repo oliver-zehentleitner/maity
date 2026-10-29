@@ -7,10 +7,12 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine
+from sqlalchemy import Engine, create_engine
+from sqlalchemy.exc import TimeoutError as PoolTimeout
 from sqlalchemy.pool import NullPool
 
 from maity_hub import db
+from maity_hub.app import create_app
 from maity_hub.config import ConfigError, Settings
 from maity_hub.errors import connection_cause
 
@@ -192,15 +194,35 @@ def test_mariadb_probe_stops_waiting_for_a_hung_statement() -> None:
     assert seen["read_timeout"] == db.HEALTH_STATEMENT_SECONDS and "options" not in seen
 
 
-def test_the_health_check_reads_the_probes_engine_not_the_apps(
-    client: TestClient, engine: Engine
-) -> None:
-    """`/health` asks `app.state.health_engine`: with the app's own engine unusable it still
-    answers. (The pool itself is not exhausted here; a pooled engine needs a server.)"""
+def test_sqlite_has_one_engine_and_the_probe_uses_it(client: TestClient, engine: Engine) -> None:
     app: Any = client.app
-    assert app.state.health_engine is engine  # SQLite: one engine
-    app.state.engine = db.make_engine("postgresql+psycopg://u:p@localhost/h", 1, 0)
-    assert client.get("/api/v1/health").status_code == 200
+    if engine.dialect.name != "sqlite":
+        pytest.skip("a server database has an engine of its own for the probe")
+    assert app.state.health_engine is engine
+
+
+def test_the_probe_answers_while_the_pool_is_used_up(
+    client: TestClient, engine: Engine, settings: Settings
+) -> None:
+    """The incident of 2026-10-26: every pooled connection taken, the readiness probe failing
+    with them. An app whose pool is one connection, held, still answers `/health`; a call that
+    needs the pool does not (SQLite has one engine and nothing to escape to)."""
+    if engine.dialect.name == "sqlite":
+        pytest.skip("SQLite probes through the one engine")
+    small = create_engine(engine.url, pool_size=1, max_overflow=0, pool_timeout=0.3)
+    app = create_app(settings, small)
+    probe: Engine = app.state.health_engine
+    held = small.connect()
+    try:
+        with pytest.raises(PoolTimeout):
+            small.connect()  # the pool is used up
+        assert probe is not small and isinstance(probe.pool, NullPool)
+        answer = TestClient(app).get("/api/v1/health")
+        assert answer.status_code == 200 and answer.json()["status"] == "ok"
+    finally:
+        held.close()
+        small.dispose()
+        probe.dispose()
 
 
 def test_settings_read_the_two_timeouts() -> None:
