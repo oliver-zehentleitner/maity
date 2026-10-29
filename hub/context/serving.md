@@ -266,3 +266,34 @@ create humans with handles such as `admin` without going through the CLI.
   every test database that holds a human named `admin`, and the operator is told at `migrate` anyway. The contract
   owner (oz-agent-a) decided on 2026-10-29 that `migrate` refuses and the start only logs, and aligns the
   contract text with it.
+
+## The request log carries `ms=` and the route's pattern, and one `stats` line a minute says how loaded the hub is
+
+**Id:** 8c9025ea-d9d4-449e-a343-ecd802ddbdfd
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-ftnk7d1p5117, PR 1 of the plan the lead decided on 2026-10-29 (the plan is note nte-b5yq1r1xv4c4 on the card); the incident of 2026-10-26
+**Revisit when:** the cluster gets a log or metrics stack that scrapes or parses something better than `key=value` lines, or the pool line needs the number of callers waiting for a connection
+
+Each request is logged as `METHOD path status ms=<n> route=<pattern>` (`middleware._access`): how
+long the hub took from the middleware's first line, and the route's pattern, which is the path with
+each value the router took from it put back as its `{name}` (`request_stats.route_of`; the route
+object's own `path` leaves the `/api/v1` prefix out). Once a minute `maity_hub.stats` logs `stats
+window=60s requests=<n> 5xx=<n> max_ms=<n> pool_open=<n> pool_checked_out=<n> pool_max=<n>`
+(`request_stats.Reporter`); the pool part is `pool=none` where the pool cannot be counted.
+
+**Reason:** in the incident the pool was used up at a low request rate and nothing in the log said
+how long requests took or how many connections were out; the diagnosis worked from Traefik's log.
+The cluster runs k3s with `kubectl logs` and no log stack, so the lines are plain `key=value`, to
+be read with `grep`, and an alarm built on them needs nothing from the hub. The pattern, not the
+path, so that a count by route is not one line per project slug or id, and so that nothing from the
+request reaches the log that the path masking (§1.1) does not already cover.
+
+**Rejected alternatives:**
+- JSON lines: the lead decided against it; with `kubectl logs` and no parser it is harder to read.
+- A `/metrics` endpoint: no scraper is known in the cluster, and an endpoint is a new surface with
+  its own access rule; the log needs neither.
+- The number of callers waiting for a pool connection: SQLAlchemy's `QueuePool` does not expose it,
+  so the line shows open and checked-out connections and the ceiling, from which a full pool reads.
+
