@@ -11251,7 +11251,7 @@ environment wins, is shown with `source: "env"`, and a `PATCH` of it is
   is set) and the password comes from the database, the admin view
   carries `warnings: ["smtp_password_in_database"]` and the hub logs the
   same warning at startup: a cluster has Secrets, and the password
-  belongs in one (`mail.smtp.existingSecret`, below). `GET /health`
+  belongs in one (`mail.passwordSecret`, below). `GET /health`
   does not carry it: it tells anonymous callers nothing about the
   configuration.
 
@@ -11273,11 +11273,19 @@ environment wins, is shown with `source: "env"`, and a `PATCH` of it is
 | — | `enabled` | `false` stops every mail — notification, verification and security — without losing the settings; the test send still works |
 | `MAITY_MAIL_SIGNING_KEY` | — | 32 bytes or more, base64; signs the links of §18.6. Without it the hub sends no mail (`complete: false`, `missing: ["signing_key"]`). Never returned |
 
-In the Helm chart the password, the signing key and the instance key
-come from a Secret by reference, as the database URL does
-(`mail.smtp.existingSecret` with the keys `smtp-password`,
-`mail-signing-key` and `secret-key`), and the other values from
-`config.mail.*`; they never pass through the chart's values.
+In the Helm chart the password and the signing key come from a Secret
+by reference, as the database URL does (`mail.passwordSecret` and
+`mail.signingKeySecret`, each with `existingSecret` and `key`, the keys
+defaulting to `smtp-password` and `mail-signing-key`), and the other
+values from `mail.host`, `port`, `tls`, `username`, `from` and
+`replyTo`; the secrets never pass through the chart's values. With a
+host set, port and TLS always come from the chart (its defaults
+included) and win over the admin settings (`set_by_environment`). The
+instance key comes from a Secret through the chart's `extraEnv`
+(`secretKeyRef`, see the chart's README). A release that moves these
+variables from `extraEnv` into `mail.*` removes them from `extraEnv` in
+the same upgrade: the chart does not deduplicate, and the later entry
+wins.
 
 ```
 GET /admin/settings/mail

@@ -51,6 +51,7 @@ grep -q "kind: NetworkPolicy" <<<"$out_np" && bad "networkPolicy.enabled=false s
     || ok "no NetworkPolicy when disabled"
 grep -q "kind: Ingress" <<<"$out" && bad "minimal: an Ingress without ingress.enabled" || ok "minimal: no Ingress"
 grep -q "MAITY_FORGE_GITHUB_TOKEN" <<<"$out" && bad "minimal: a token without a Secret" || ok "minimal: no forge token"
+grep -q "MAITY_SMTP\|MAITY_MAIL_SIGNING_KEY" <<<"$out" && bad "minimal: mail env without mail values" || ok "minimal: no mail env"
 grep -q "MAITY_TRUSTED_PROXIES" <<<"$out" && bad "minimal: trusted proxies unset but rendered" || ok "minimal: no trusted proxies"
 
 out="$(render -f "$ingress")"
@@ -61,6 +62,19 @@ expect "ingress: TLS host, defaults merged with the operator's annotation, diges
     "name: MAITY_FORGE_GITHUB_TOKEN" 'value: "10.244.0.0/16"'
 grep -q "helm.sh/hook: pre-install" <<<"$out" && bad "ingress: migrate Job with migrate.enabled false" \
     || ok "ingress: no migrate Job when disabled"
+expect "ingress: mail from Secrets by reference and plain values" "$out" \
+    "name: MAITY_MAIL_SIGNING_KEY" "name: MAITY_SMTP_PASSWORD" "key: smtp-pass" 'value: "smtp.example.org"' \
+    'value: "465"' 'value: "implicit"' 'value: "noreply@example.org"' 'value: "Maity <noreply@example.org>"' \
+    'value: "info@example.org"'
+out_mig="$(render -f "$minimal" --set mail.host=smtp.example.org --set mail.passwordSecret.existingSecret=s \
+    --set mail.signingKeySecret.existingSecret=s)"
+[ "$(grep -c 'name: MAITY_SMTP_PASSWORD' <<<"$out_mig")" = 2 ] && [ "$(grep -c 'name: MAITY_MAIL_SIGNING_KEY' <<<"$out_mig")" = 2 ] \
+    && ok "mail env reaches the hub and the migrate Job, once each" || bad "mail env is not in both the hub and the migrate Job"
+out_nopw="$(render -f "$ingress" --set mail.passwordSecret.existingSecret=)"
+grep -q "MAITY_SMTP_PASSWORD" <<<"$out_nopw" && bad "ingress: a password without a Secret" || ok "ingress: no password env without a Secret"
+out_nohost="$(render -f "$ingress" --set mail.host=)"
+grep -q "MAITY_SMTP" <<<"$out_nohost" && bad "ingress: SMTP env without a host" || ok "ingress: no SMTP env without a host"
+render -f "$ingress" --set mail.tls=ssl >/dev/null 2>&1 && bad "mail.tls=ssl is accepted" || ok "mail.tls=ssl is refused by the schema"
 expect "ingress: pull secret, service annotation, extra volume, own policy peer" "$out" \
     "- name: registry" "example.org/owner: maity" "secretName: maity-hub-db-ca" \
     "mountPath: /etc/maity/db-ca" "kubernetes.io/metadata.name: traefik"
