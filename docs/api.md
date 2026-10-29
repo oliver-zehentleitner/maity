@@ -6424,8 +6424,8 @@ of readers.
 the policy (`project:admin`, §2.3 ʰ), the Markdown snippet
 `[![maity](https://<hub>/badge/<owner>/<slug>.svg)](https://<hub>/<owner>/<slug>/overview)`
 (the overview route of §6.11) with a preview of the badge while it is on
-and a picker for the variant, which writes `policy.badge` with a reason
-like every policy field. A section of the overview page (§6.11) for the
+and a picker for the variant, which writes `policy.badge`; it offers a
+reason field but needs none (above). A section of the overview page (§6.11) for the
 badge is a later step.
 
 **Not in this contract.** A third variant, "join the team", linking to
@@ -6659,7 +6659,7 @@ reviewers' business, as the team rule of `context/process.md` says.
 `required` unless a human with `project:admin` set `optional`; a project
 under `none` reads `optional`, and setting `required` there is `invalid`
 (`details.fields["policy.keep_the_why"]: "no_memory_provider"`). A
-change needs `reason`, like every policy change. Under `optional`
+change needs `reason`, as a policy change does (§6.1). Under `optional`
 the hub enforces nothing below — the packet's block carries no
 commitment (`commitment`, `acknowledged_at`, `acknowledge_by`, `ack`),
 nobody is reminded, and a report may carry `why` or not — but the
@@ -14147,8 +14147,8 @@ may write here is the moderator order (§20.2).
 **PATCH semantics.** `PATCH /projects/{owner}/{slug}` with `policy.jour_fixe`
 replaces the object as a whole, the way `settings.ticker` is replaced
 (§6.1). Fields it leaves out take their defaults, and `null` removes it.
-Other policy fields are not touched. A `reason` is required, as for every
-policy change. The change emits `policy_changed` and bumps
+Other policy fields are not touched. A `reason` is required, as for a
+policy change (§6.1). The change emits `policy_changed` and bumps
 `rules_version` (§6.9). A preset change keeps it, as it keeps `signing`.
 A project that predates the field reads as `null`. A change applies from
 the next round; a running round keeps the configuration it opened with

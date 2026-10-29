@@ -143,6 +143,33 @@ reach.
 - A redirect to shields.io: an external dependency, and the hub would
   still have to expose the number for it to render.
 
+
+## Changing the project badge needs no reason
+
+**Id:** edccf213-6a0c-40e7-b448-ac1413eb3321
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** maintainer decision in the team chat, 2026-10-29; contract in `docs/api.md` §6.1, §6.20 (#617)
+**Revisit when:** another policy field turns out to be as purely presentational as the badge
+**See:** projects.md#the-project-badge-is-opt-in-and-shows-counts-only — c436ef08-627d-46c9-b3c9-92b1b0fdf3e4 — as of 2026-10-29
+
+A `PATCH` whose policy change is `badge` alone takes `reason`
+optionally; its `policy_changed` carries `reason: null` when none was
+sent. Every other policy field keeps its reason, and a badge change
+sent together with another policy field or with `state` still needs
+one. The event and the `rules_version` bump stay, so the switch is
+still visible to everyone.
+
+**Reason:** the maintainer found the reason prompt in the project
+settings a needless step for the badge. The badge only decides what a
+README shows; it changes nothing about how the project works, who may
+do what or how cards move.
+
+**Rejected alternatives:**
+- Keeping the reason for the badge like for every policy field (the
+  state before): it asked for an audit note on a choice that guards
+  nothing.
 ## The memory provider is chosen at creation, Keep the Why preselected; the setup is an agent's work through cards and pull requests
 
 **Id:** 822d63b0-99da-4092-aaef-93c0674934a2
