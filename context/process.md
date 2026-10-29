@@ -450,7 +450,7 @@ the runner user's home, where a job could replace them. It is not ephemeral, and
 job-completed hook tidies containers, images, volumes and the workspace.
 Install steps and the trust boundary: `deploy/runner/README.md`.
 
-The condition in `ci.yml` that sends fork pull requests to the hosted runners is **not** a
+The condition in `ci.yml` that sends fork pull requests to the hosted runners (since the entry "Only a push to main goes to the rented runner", every pull request) is **not** a
 protection: a fork's pull request runs the fork's own `ci.yml` and can name the runner
 itself. The protection is the repository setting that requires approval for every outside
 collaborator's workflow run, and the rule to read `.github/` in the diff before approving.
@@ -520,7 +520,7 @@ only from a copy that belongs to the runner, so no system Python is changed.
 
 The three database jobs run on three runner services of the machine, `maity-runner@sqlite`, `@pg` and `@maria`, each in
 its own directory with its own registration and the label `<prefix>-<type>`. `ci.yml` asks each job for its own label
-through the repository variable `HUB_RUNNER_LABEL` (the prefix); unset, and for forks, the jobs run hosted. Each service
+through the repository variable `HUB_RUNNER_LABEL` (the prefix); unset, and for every pull request (all of them since the entry "Only a push to main goes to the rented runner"), the jobs run hosted. Each service
 sets `PYTEST_ARGS=-n 2` (it was `-n 3` at first, nine workers on eight cores; lowered after the machine went down, see the entry
 on the cap below), so six workers share the eight cores.
 
@@ -734,4 +734,33 @@ own addresses goes over `lo` and meets the same rule; the `::1` listener probe i
 - A network namespace per job: it would give the job its own loopback and keep the machine's closed, but rootless Docker already builds one, and a second layer would
   have to reach the service containers' loopback ports.
 - Dropping the fence altogether: the metadata service and the provider's private networks are what a job must not reach.
+
+
+## Only a push to main goes to the rented runner; pull requests stay hosted
+
+**Id:** 2f1a3417-3e68-4241-a9b2-c113b7d2b93b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the queue at 16:15 UTC on 2026-10-29: one MariaDB job ran on the rented server, eleven waited, the oldest since 14:42, and four of the waiting runs were on `main`; the coordinating agent's decision for this option, the same day
+**See:** process.md#one-runner-service-per-database-job-type-a-label-each-three-workers-per-job — c2713d54-e602-42a3-8636-693ff3fd2c0b — as of 2026-10-29
+**See:** process.md#the-database-ci-jobs-may-run-on-the-maintainers-machine-a-forks-code-reaches-it-only-through-an-approval — 405c762c-11a2-4a95-a23b-0b2657a7aa8d — as of 2026-10-29
+**Revisit when:** there are enough rented runners per job type for the queue of pull requests (one machine per concurrent job), or the jobs get random host ports
+
+In `ci.yml` the three database jobs go to the rented machine only when the event is a `push` (to `main`); a `pull_request`, from this repository or from a fork, runs on a
+hosted runner. The old condition (a pull request from this repository goes to the machine, one from a fork does not) is gone.
+
+**Reason:** a runner does one job at a time and a job type has one runner, because the services bind the host ports 5432 and 3306. With pull requests on it
+the queue of the MariaDB job reached eleven (about two hours of work) and `main`, whose checks are what a deploy waits for, queued behind pull requests
+for over an hour. Hosted runners run pull requests in parallel, at about twice the time per job. The check that a merge is green is the one worth having
+faster. This does not change the trust boundary: a pull request can change `ci.yml` and ask for the machine itself, so the approval setting for outside
+contributors stays.
+
+**Rejected alternatives:**
+- Deleting the runner variable (everything hosted): safe, and it removes the queue, but the machine would do nothing.
+- More runners for the same job type on one machine: two MariaDB jobs would both bind 3306 (random host ports would need the connection URLs to follow, a change in the shared workflow).
+- A priority for `main` over pull requests: GitHub's queue has none for self-hosted runners; the split by event is what the workflow can say.
+- Pull requests from this repository stay on the machine and `main` is brought forward (with `concurrency` or a runner group for `main`): `concurrency` orders within one group
+  and does not prioritise across groups, and a second runner group for `main` needs a second runner per job type with ports of its own, the same problem as more runners on one machine.
+- More rented machines: one more concurrent job each, at a cost; reasonable once the measured gain is clear and the pull request queue is the problem.
 
