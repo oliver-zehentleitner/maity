@@ -34,9 +34,6 @@ from maity_hub.mail import outbox
 from maity_hub.notifications import records, tokens
 
 KINDS = ("inbox", "chat", "mention", "security")
-# Kinds removed on 2026-10-26 (§18.1): settings stored for them are dropped when read and
-# deleted with the account's next PATCH; a PATCH naming one is `removed_kind`.
-REMOVED_KINDS = ("card", "agent", "keep_the_why", "ticker", "jour_fixe", "system", "registration")
 MODES = ("immediate", "hourly", "daily", "off")
 CONTENT_KINDS = ("chat", "mention")
 VERIFY_FOR = timedelta(hours=24)
@@ -76,7 +73,7 @@ DEFAULTS: dict[str, Any] = {
 
 
 def _merged(stored: dict[str, Any] | None) -> dict[str, Any]:
-    """The stored preferences over the defaults, key by key, without the removed kinds."""
+    """The stored preferences over the defaults, key by key."""
     result: dict[str, Any] = {
         "browser": {**DEFAULTS["browser"], "kinds": dict(DEFAULTS["browser"]["kinds"])},
         "email": {
@@ -90,8 +87,6 @@ def _merged(stored: dict[str, Any] | None) -> dict[str, Any]:
         for key, value in given.items():
             if key == "kinds" and isinstance(value, dict):
                 for kind, setting in value.items():
-                    if kind not in KINDS:
-                        continue
                     if side == "email" and isinstance(setting, dict):
                         result[side]["kinds"][kind].update(setting)
                     else:
@@ -184,7 +179,7 @@ def _held(row: Any) -> dict[str, Any] | None:
 
 
 def _kind_error(name: str, kind: str, errors: dict[str, str]) -> None:
-    errors[f"{name}.{kind}"] = "removed_kind" if kind in REMOVED_KINDS else "unknown"
+    errors[f"{name}.{kind}"] = "unknown"
 
 
 def _check_browser(given: Any, errors: dict[str, str]) -> dict[str, Any]:
@@ -351,8 +346,7 @@ def patch(
             step_up=step_up,
         )
         row = row_of(conn, human.id, lock=True)
-    # What was stored for a removed kind goes with this write (§18.4).
-    stored = _without_removed(dict(row.preferences or {}))
+    stored = dict(row.preferences or {})
     for side, given in (("browser", browser), ("email", email)):
         if given:
             merged = dict(stored.get(side) or {})
@@ -380,27 +374,13 @@ def patch(
     return status
 
 
-def _without_removed(stored: dict[str, Any]) -> dict[str, Any]:
-    out: dict[str, Any] = {}
-    for side, given in stored.items():
-        if not isinstance(given, dict):
-            out[side] = given
-            continue
-        kept = dict(given)
-        for key in ("kinds", "content"):
-            if isinstance(kept.get(key), dict):
-                kept[key] = {k: v for k, v in kept[key].items() if k in KINDS}
-        out[side] = kept
-    return out
-
-
 # --- the unsubscribe link (§18.6) ----------------------------------------------------
 
 
 def unsubscribe(conn: Connection, token: str, signing_key: bytes | None) -> str | None:
     """Switch the token's kind off; the kind, or None for a link that does not work: a
-    token this hub did not sign, one for another purpose, for a kind removed on
-    2026-10-26, or from before the address changed (the `epoch` moved)."""
+    token this hub did not sign, one for another purpose, for a kind that does not exist,
+    or from before the address changed (the `epoch` moved)."""
     payload = tokens.read(signing_key, token)
     if payload is None or payload.get("p") != "unsubscribe" or payload.get("k") not in KINDS:
         return None
@@ -413,7 +393,7 @@ def unsubscribe(conn: Connection, token: str, signing_key: bytes | None) -> str 
     if row is None or payload.get("e") != row.epoch:
         return None
     kind = str(payload["k"])
-    stored = _without_removed(dict(row.preferences or {}))
+    stored = dict(row.preferences or {})
     email = dict(stored.get("email") or {})
     kinds = dict(email.get("kinds") or {})
     kinds[kind] = {**(kinds.get(kind) or {}), "mode": "off"}

@@ -167,21 +167,21 @@ one place. Evidence is inferred: measured locally, production to confirm.
 `notification_settings.preferences` holds the browser and mail preferences as one JSON
 value with only the keys the human set; `preferences._merged` lays it over the defaults
 key by key on every read. A human who never changed anything has no row: a `GET` shows
-the defaults and writes nothing, the first `PATCH` makes the row. A kind removed on
-2026-10-26 (§18.1) is skipped when the value is read, and `PATCH` rewrites the stored
-value without it, as §18.4 says.
+the defaults and writes nothing, the first `PATCH` makes the row. (Until migration 0084 a
+kind removed on 2026-10-26 (§18.1) was skipped when the value was read and dropped by the next
+`PATCH`; that layer is gone, see 2db93f62-3a99-4ee5-a997-e2e5018831aa.)
 
 **Reason:** a default that changes later (a new kind, another `daily_at`) reaches every
 human who did not choose otherwise, and a human's choice never has to be told apart from
-a copy of an old default. Dropping removed kinds on read needs no migration over the
-rows, and the contract wants them deleted with the next write anyway.
+a copy of an old default. (Dropping removed kinds on read needed no migration over the
+rows; that part was replaced by a migration, 2db93f62-3a99-4ee5-a997-e2e5018831aa.)
 
 **Rejected alternatives:**
 - Storing the full value at the first read: later defaults would reach nobody who had
   opened the settings once, and a `GET` would write.
 - Deleting the removed kinds from every row in a migration: a data migration over every
-  human's row for settings that already govern nothing, and §18.4 asks for the next
-  `PATCH`.
+  human's row for settings that already govern nothing, and §18.4 asked for the next
+  `PATCH`. Taken later, see 2db93f62-3a99-4ee5-a997-e2e5018831aa.
 
 ## A link in a mail is a signed token the hub stores nothing for; a page for a token that is not ours says nothing about anyone
 
@@ -477,3 +477,32 @@ the chat's own window.
 - Reusing the chat list's batched `conversation_list._unread` for the count right here: it would
   make the number the list's by construction, but the bell's counts are being moved onto the
   list's `unread_chats` in #560, so a second change to the same lines would only conflict.
+
+## The kinds removed on 2026-10-26 are deleted from the stored settings by a migration; the hub keeps no layer that knows them
+
+**Id:** 2db93f62-3a99-4ee5-a997-e2e5018831aa
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's principle of 2026-10-29 (alpha, one user: remove the old instead of keeping compatibility layers), carried by the lead agent on the cleanup card; docs/api.md §18.2, §18.4
+**Revisit when:** a notification kind is removed again (the same migration shape applies), or a second instance with data from before 2026-10-26 exists
+**See:** notifications.md#notification-settings-store-only-what-the-human-changed-the-defaults-fill-the-rest-on-read — 3e9a6b69-7715-4ce3-8c9d-a9194fbf9500 — as of 2026-10-29
+
+Migration 0084 deletes everything but `inbox`, `chat`, `mention` and `security` from
+`browser.kinds`, `browser.content` and `email.kinds` of every stored `preferences`. The code
+that skipped the old kinds on read (`preferences._merged`), rewrote the value on the next
+`PATCH` (`_without_removed`) and told `removed_kind` from `unknown` in `preferences`, in the
+`kind` filter of the bell and in the mark-read body is removed; a kind the hub does not know
+is `unknown`, whichever kind it once was. The contract (§18.2, §18.3, §18.4, §1) says the
+same. The migration cannot be undone and does not need to be.
+
+**Reason:** the maintainer's rule for the alpha is to delete what is old rather than keep a
+compatibility layer, and nobody reads the old settings or sends the old kinds any more. A
+migration over a few rows costs once; the layer cost a branch in every read and write of the
+settings and a second error code that told a client what it had asked for in the past.
+
+**Rejected alternatives:**
+- Keeping the skip on read and the delete on the next `PATCH` (the earlier decision, 3e9a6b69):
+  harmless while old clients and old rows existed, a standing special case once they do not.
+- Keeping `removed_kind` as an error code for the old names: it only helps a client that still
+  sends them, which does not exist.

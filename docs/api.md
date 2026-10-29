@@ -129,7 +129,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 
 | HTTP | `code` | When |
 |---|---|---|
-| 400 | `invalid` | body or query does not validate; `details.fields` maps field → reason. Among the reasons: `set_by_environment` (§16.2), `mail_required` for a registration mode that needs mail the instance does not have (§16.4), `required` on `why` for a code report under `policy.keep_the_why: required` (§6.23), `removed_kind` for a notification kind removed on 2026-10-26 (§18.2, §18.3, §18.4) |
+| 400 | `invalid` | body or query does not validate; `details.fields` maps field → reason. Among the reasons: `set_by_environment` (§16.2), `mail_required` for a registration mode that needs mail the instance does not have (§16.4), `required` on `why` for a code report under `policy.keep_the_why: required` (§6.23) |
 | 400 | `credential_in_payload` | the body or query string contains a string in the hub's credential format (§2.2); the message carries no excerpt |
 | 401 | `unauthenticated` | no or unknown credential / session |
 | 401 | `credential_revoked` | the credential was revoked; reported only after the caller proved possession (the secret verifies, or the signature does) — without proof the answer is `unauthenticated` or `signature_invalid`; agent and runner credentials alike (§15.1) |
@@ -12902,7 +12902,7 @@ no membership.
 | `limit` | 0–50, default 20; `0` lists no item and answers the counts, `by_project` and `next_after` only (below) |
 | `cursor` | §1.4, older items |
 | `unread` | `true`: unread items only |
-| `kind`, `project` | filters; comma lists. `kind` takes `inbox`, `chat`, `mention`, `security`; a kind removed on 2026-10-26 (§18.1) is `invalid` with `details.fields.kind: "removed_kind"`, any other value `"unknown"` |
+| `kind`, `project` | filters; comma lists. `kind` takes `inbox`, `chat`, `mention`, `security`; any other value is `invalid` with `details.fields.kind: "unknown"` |
 | `after` | an opaque position (below), the `next_after` of an earlier answer passed back unchanged: only items past it, oldest first — for the browser notifications (§18.8) |
 | `wait` | 0–55 with `after`: hold the request until an item past `after` exists, as §8.3. A cookie session holds one such long-poll beside its one events long-poll; a second one supersedes the first (`superseded: true`) |
 
@@ -13163,7 +13163,7 @@ item's `seq`, never backwards — the same as reading the conversation
 (§9); an observer has no chat items and moves no mark. `inbox` items
 other than the two open matters below are marked read, and the open
 requests stay open (§18.2). A `kind`
-removed on 2026-10-26 is `invalid` as in §18.2. A `security` item about a
+that is not one of them is `invalid` as in §18.2. A `security` item about a
 new session (`session_created`, #169 §2.6.5) is marked read only from a
 session that existed before that sign-in and is itself in good
 standing (signed in by password, or its own `session_created` item
@@ -13234,15 +13234,9 @@ device; the browser's own permission is per browser and is not stored.
   pop-up; the item is always in the bell (§18.1).
 - **The kinds.** `kinds` at the top, `browser.kinds` and `email.kinds`
   name exactly `inbox`, `chat`, `mention` and `security` (§18.1).
-  Settings stored before 2026-10-26 may still hold `card`, `agent`,
-  `keep_the_why`, `ticker`, `jour_fixe`, `system` or `registration`: the
-  hub drops them when it reads the settings — a `GET` never shows them
-  and they govern nothing — and deletes them from storage with the
-  account's next `PATCH` of the settings. A `PATCH` that names one of
-  them in `browser.kinds` or `email.kinds` is `invalid` with
-  `details.fields["browser.kinds.<kind>"]` (or `email.kinds.<kind>`)
-  `"removed_kind"`, and changes nothing; any other unknown kind is
-  `"unknown"`.
+  A `PATCH` that names any other kind in `browser.kinds` or
+  `email.kinds` is `invalid` with `details.fields["browser.kinds.<kind>"]`
+  (or `email.kinds.<kind>`) `"unknown"`, and changes nothing.
 - **`email.address`.** Setting it (`PATCH {"email": {"address": "…"}}`)
   puts it in `pending_address` and sends a verification mail with a
   link (§18.6), valid for 24 hours; the verified address in `address`
@@ -13448,8 +13442,7 @@ withdrawn or replaced (§2.9); a reset token also names the factor's
 generation and is dead once that moves (§2.8.1, §2.8.3); an
 unsubscribe token stays valid until the human's `epoch` moves, which
 happens when the address changes or is removed. An unsubscribe token
-for a kind removed on 2026-10-26 (§18.1), from a mail sent before,
-counts as invalid: those mails are no longer sent. An invalid, expired
+for a kind this hub does not know counts as invalid. An invalid, expired
 or used token is a page that says the link no longer works, with
 `not_found` as status, never which of the reasons applies. The pages
 are rendered in the human's `language`, carry the headers of §1.1, and
