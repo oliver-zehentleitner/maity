@@ -1790,7 +1790,9 @@ when either list matches.
 
 **What the login page learns.** `GET /auth/methods` (§2.6.1) gains
 `registration`: `true` while the mode is `allowlist` or `open` and mail
-is complete and enabled, else `false`; and `terms`: `{url, version}` or
+is complete and enabled, else `false` — also `false` under `allowlist`
+while both lists are empty, since nobody could register then (the admin
+sees it as `missing: ["allowlist"]`, §16.4); and `terms`: `{url, version}` or
 `null` (§16.4). It says nothing about the lists or any account. The
 login page shows "Create an account" only with `registration: true`.
 
