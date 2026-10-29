@@ -1,4 +1,4 @@
-// The project at a glance (#/<owner>/<slug>/overview, docs/api.md §6.11): its
+// The project at a glance (/<owner>/<slug>/overview, docs/api.md §6.11): its
 // repository and Keep the Why links, members and roles, the board's counts
 // per column, open requests, and the latest reports. The project and its
 // members are what the header already read; the counts come from one call,
@@ -102,7 +102,7 @@ window.Maity = window.Maity || {};
     const raw = window.location && window.location.origin;
     const origin = raw && raw !== "null" ? raw : "https://<hub>";
     const path = "/badge/" + M.api.projectPath(ctx.slug) + ".svg";
-    const snippet = "[![maity](" + origin + path + ")](" + origin + "/" + ctx.link("overview") + ")";
+    const snippet = "[![maity](" + origin + path + ")](" + origin + ctx.link("overview") + ")";
     const copy = h("button", { type: "button", class: "small", "data-key": "badge-copy", "aria-label": "Copy the badge snippet" }, "Copy");
     copy.addEventListener("click", async () => {
       try { await navigator.clipboard.writeText(snippet); copy.textContent = "Copied"; } catch (err) { copy.textContent = "Copy failed: select the line"; }

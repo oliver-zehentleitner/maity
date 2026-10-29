@@ -1,5 +1,5 @@
 // Personal language and browser notifications on the account
-// (#/account/notifications, docs/api.md §18.4): the account's wish, the browser's own permission beside
+// (/account/notifications, docs/api.md §18.4): the account's wish, the browser's own permission beside
 // it, the kinds, and whether a chat's or mention's text may be shown. The
 // browser's permission is asked only when the human turns them on. Mail
 // settings follow with the hub's mail (stage 3).

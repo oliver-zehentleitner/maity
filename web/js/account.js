@@ -1,8 +1,8 @@
-// The signed-in human's account (#/account): who they are, their picture
+// The signed-in human's account (/account): who they are, their picture
 // and the pictures of their agents no project of theirs shows
-// (#/account/picture, docs/api.md §6.10), their
-// preferences (#/account/preferences, js/preferences.js), your data
-// (#/account/data, js/your-data.js), and
+// (/account/picture, docs/api.md §6.10), their
+// preferences (/account/preferences, js/preferences.js), your data
+// (/account/data, js/your-data.js), and
 // changing the password (§2.1, POST /auth/password). A password change
 // ends every other session of this human; this one stays signed in.
 "use strict";
@@ -192,7 +192,7 @@ window.Maity = window.Maity || {};
   let pictureNote = null;
 
   M.views.account = async function (ctx, root, args) {
-    // #/account/sign-in-device (the profile menu's Sign in another device).
+    // /account/sign-in-device (the profile menu's Sign in another device).
     if (args && args[0] === "sign-in-device" && M.deviceSignIn) { await M.deviceSignIn.anotherDevice(ctx, root); return; }
     const field = (id, label, autocomplete, hint) => {
       const input = h("input", { id, type: "password", autocomplete, required: true, "aria-describedby": id + "-error" });
@@ -271,7 +271,7 @@ window.Maity = window.Maity || {};
     // A link to an agent's picture that Members reaches goes there.
     const wantedThere = wantedAgent && mine && mine.find((a) => a.id === wantedAgent && reachable(a));
     if (wantedThere) {
-      window.location.replace("#/" + M.api.projectPath(reachable(wantedThere).project) + "/members/" + encodeURIComponent(wantedThere.id) + "/picture");
+      M.route.go("/" + M.api.projectPath(reachable(wantedThere).project) + "/members/" + encodeURIComponent(wantedThere.id) + "/picture", { replace: true });
       return;
     }
     const agents = mine && mine.filter((a) => !reachable(a));
@@ -303,7 +303,7 @@ window.Maity = window.Maity || {};
       agents && agents.length ? [h("h3", null, "Agents in other projects"),
         h("p", { class: "muted" }, "Your agents' pictures are set on Members, in each agent's row. These agents are in no project you are a member of, "
           + "so their pictures are set here. Each agent can also set its own; the last change wins."),
-        // #/account/picture/<agent id> (a Keep the Why notice about an agent
+        // /account/picture/<agent id> (a Keep the Why notice about an agent
         // in a project one is not in) marks that agent and starts there.
         h("ul", { class: "picture-list" }, agents.map((a) => h("li", { class: wantedAgent === a.id ? "wanted" : null, "data-agent": a.id },
           h("h4", { class: "picture-name", tabindex: wantedAgent === a.id ? "-1" : null }, a.display_name, h("span", { class: "muted" }, " @" + (a.name || a.handle))),
@@ -318,20 +318,20 @@ window.Maity = window.Maity || {};
       h("h3", null, "Change password"),
       h("p", { class: "muted" }, "Changing it signs out every other browser and device where you are signed in."),
       form);
-    // #/account/picture (the profile menu's Picture) starts at the picture.
+    // /account/picture (the profile menu's Picture) starts at the picture.
     if (args && args[0] === "picture") {
       const marked = wantedAgent && Array.from(root.querySelectorAll("li.wanted")).find((li) => li.getAttribute("data-agent") === wantedAgent);
       window.setTimeout(() => (marked ? marked.querySelector(".picture-name") : pictureHeading).focus(), 0);
     }
-    // #/account/theme (the profile menu's Theme) starts there.
+    // /account/theme (the profile menu's Theme) starts there.
     if (themeBox && args && args[0] === "theme") window.setTimeout(() => themeHeading.focus(), 0);
-    // #/account/notifications (the bell's settings link) starts there.
+    // /account/notifications (the bell's settings link) starts there.
     if (notify && args && args[0] === "notifications") window.setTimeout(() => notify.heading.focus(), 0);
-    // #/account/preferences (the profile menu's Preferences) starts there.
+    // /account/preferences (the profile menu's Preferences) starts there.
     if (preferences && args && args[0] === "preferences") window.setTimeout(() => preferences.heading.focus(), 0);
-    // #/account/sessions (a sign-in alert's link) starts at the sessions.
+    // /account/sessions (a sign-in alert's link) starts at the sessions.
     if (sessions && args && args[0] === "sessions") window.setTimeout(() => sessions.heading.focus(), 0);
-    // #/account/data (the mail's link to the export, §2.9) starts at Your data.
+    // /account/data (the mail's link to the export, §2.9) starts at Your data.
     if (yourData && args && args[0] === "data") window.setTimeout(() => yourData.heading.focus(), 0);
   };
 })(window.Maity);

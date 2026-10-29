@@ -861,7 +861,7 @@ window.Maity = window.Maity || {};
         created_by: me().member.id, created_at: at, expires_at: new Date(Date.now() + ttl * 1000).toISOString().replace(/\.\d{3}Z$/, "Z"),
         used_at: null, used_by: null, revoked_at: null, voided_at: null };
       list.push(made);
-      return Object.assign({}, made, { url: window.location.origin + window.location.pathname + "#/invite/" + token });
+      return Object.assign({}, made, { url: window.location.origin + window.location.pathname + M.route.href("/invite/" + token) });
     }],
     ["DELETE", /^\/projects\/([^/]+)\/invitations\/([^/]+)$/, (m, body, path) => {
       if (!["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "members:admin", path, { scope: "members:admin" });
@@ -877,7 +877,7 @@ window.Maity = window.Maity || {};
       const code = "K7QM4XPR9D2F";
       deviceSim = { id: "dvc-" + (++deviceSerial), code, status: "waiting", reads: 0, match: 47,
         expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString().replace(/\.\d{3}Z$/, "Z") };
-      return { id: deviceSim.id, code: "K7QM-4XPR-9D2F", url: window.location.origin + window.location.pathname + "#/sign-in/code?c=" + code, expires_at: deviceSim.expires_at };
+      return { id: deviceSim.id, code: "K7QM-4XPR-9D2F", url: window.location.origin + window.location.pathname + M.route.href("/sign-in/code?c=" + code), expires_at: deviceSim.expires_at };
     }],
     ["GET", /^\/auth\/device-codes\/([^/]+)$/, (m, body, path) => {
       const d = deviceOf(m[1], path);
@@ -1794,7 +1794,7 @@ window.Maity = window.Maity || {};
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
       const v = Object.assign({}, fixtures()["landing.json"]);
       const errors = {};
-      const target = (t) => /^\/#\/[A-Za-z0-9._~%\/?=&-]*$/.test(t) || /^https:\/\/[^\s/@]+(\/[^\s]*)?$/.test(t);
+      const target = (t) => (/^\/(?!\/)[A-Za-z0-9._~%\/?=&-]*$/.test(t) && M.route.isRoute(t)) || /^https:\/\/[^\s/@]+(\/[^\s]*)?$/.test(t);
       Object.entries(body).forEach(([k, x]) => {
         if (!["enabled", "title", "markdown", "cta"].includes(k)) errors[k] = "extra_forbidden";
         else if (k === "enabled") { if (typeof x === "boolean") v.enabled = x; else errors.enabled = "invalid"; }
@@ -1836,11 +1836,9 @@ window.Maity = window.Maity || {};
         // Oldest first, as swarm.py sends them: the window is the last n days.
         totals: Object.assign({}, s.totals, { cards_done_per_day: (s.totals.cards_done_per_day || []).slice(-n) }) });
     }],
-    // §6.25: /swarm/{owner}/{slug}; the old /swarm/{slug} redirects by the
-    // frozen legacy_slug (followed here), answering as an unserved page else.
-    ["GET", /^\/swarm\/([^/]+)(?:\/([^/]+))?$/, (m, body, path, query) => {
-      const slug = m[2] ? slugOfFull(decodeURIComponent(m[1]) + "/" + decodeURIComponent(m[2]))
-        : fixtureSlugs().find((x) => (fixtures()[x + "/project.json"] || {}).legacy_slug === decodeURIComponent(m[1]));
+    // §6.22, §6.25: /swarm/{owner}/{slug}.
+    ["GET", /^\/swarm\/([^/]+)\/([^/]+)$/, (m, body, path, query) => {
+      const slug = slugOfFull(decodeURIComponent(m[1]) + "/" + decodeURIComponent(m[2]));
       const p = slug && fixtures()[slug + "/project.json"];
       const s = slug && fixtures()[slug + "/swarm.json"];
       if (!p || !s || (p.policy || {}).swarm_public !== "on" || ["accepted", "archived"].includes(p.state)) fail(404, "not_found", "Not found", path);
@@ -1891,7 +1889,7 @@ window.Maity = window.Maity || {};
       "/api/v1/projects/{owner}/{slug}/invitations": { get: {}, post: {} },
       "/api/v1/invitations/{token}": { get: {} },
       "/api/v1/auth/register": { post: {} },
-      "/api/v1/projects": { get: {}, post: { requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/ProjectCreate" } } } } } },
+      "/api/v1/projects": { get: {}, post: { requestBody: { content: { "application/json": { schema: { $ref: "/components/schemas/ProjectCreate" } } } } } },
       "/api/v1/projects/{owner}/{slug}/tasks/{task_id}/contract": { get: {} },
       "/api/v1/projects/{owner}/{slug}/tasks/{task_id}/notes": { get: {}, post: {} },
       "/api/v1/projects/{owner}/{slug}/tasks/{task_id}/history": { get: {} },

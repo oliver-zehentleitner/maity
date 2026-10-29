@@ -607,7 +607,7 @@ window.Maity = window.Maity || {};
   // them; a title opening its card keeps them too.
   let lastBoard = null;
 
-  // args[0]: a card to open (#/<owner>/<slug>/tasks/<id>, a title's or an id's
+  // args[0]: a card to open (/<owner>/<slug>/tasks/<id>, a title's or an id's
   // link, js/ids.js): its panel, and the card marked on the board; one the
   // board does not hold is read by itself, and said when there is none.
   M.views.board = async function (ctx, root, args) {
@@ -840,7 +840,7 @@ window.Maity = window.Maity || {};
     const boardBody = h("div", { class: "board-body" }, columnsBox);
     function openPanel(c) {
       lastBoard = { slug: ctx.slug, id: c.id, fromTitle: false, snapshot };
-      panel = M.cardPanel.render(ctx, c, card(ctx, c, byId, manage, true), () => window.location.replace(ctx.link("board")));
+      panel = M.cardPanel.render(ctx, c, card(ctx, c, byId, manage, true), () => M.route.go(ctx.link("board"), { replace: true }));
       boardBody.className = "board-body has-panel";
       append(boardBody, panel.el);
       window.setTimeout(() => panel.focus(), 0);
