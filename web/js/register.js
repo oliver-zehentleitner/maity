@@ -23,7 +23,8 @@ window.Maity = window.Maity || {};
     bar(header);
     document.title = "Create an account · Maity";
     const box = h("article", { class: "register door" });
-    append(clear(main), box);
+    // The legal pages that are set, under the form (§16.7.1).
+    append(clear(main), box, M.legal ? M.legal.links() : null);
     const signIn = next ? "/login?next=" + encodeURIComponent(next) : "/login";
     // May this person register here? The instance's mode (§2.6.1), or an
     // address-bound invitation that admits (§3.4) when they come from one.
