@@ -607,6 +607,11 @@ so none of the pool settings (`MAITY_DB_POOL_*`) reached a served hub, and the t
 have either (found in review of #667); a test now reads the pool and the options off the engine
 that `serve` runs the app on.
 
+**Rejected alternative:** building the engine only inside `create_app` and dropping `_serve`'s:
+`_serve` needs the engine before the app, to check the schema (`require_current_schema`) and to
+answer with an exit code. The other CLI commands keep `make_engine(url)` on purpose, so a migration
+or an admin command is never cut short by the serving timeouts.
+
 On MariaDB there is no server-side statement timeout to set per session, so the probe's 5 s bound is the driver's `read_timeout`; without it a hung statement on `alembic_version` would hold the probe's thread for good.
 
 **Reason:** in the incident the pool was used up and the readiness probe, which took a pooled
