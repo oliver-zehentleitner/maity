@@ -7248,7 +7248,11 @@ current handle or an alias), or the very value of an open invitation of
 this organisation, is `invalid` (`details.fields.handle`: `member`,
 `invited`) — the inviter reads both lists anyway. Only an `owner`
 revokes an invitation for the role `owner`; an `admin` revokes those
-for `member` and `admin`. An invitation expires after 14 days; the hub withdraws it
+for `member` and `admin`. Two open invitations may reach the same human
+under two of their names (a handle and an alias); the first `go` makes
+them a member, and in the same transaction the hub withdraws every other
+open invitation of the organisation whose request went to that human,
+so a later `go` finds nothing open. An invitation expires after 14 days; the hub withdraws it
 and its request then, when the invited human's account is deleted, when
 the organisation is deleted, and when the inviter loses the role that
 allowed it: an owner demoted to `admin` loses only their open
