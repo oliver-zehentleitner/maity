@@ -227,7 +227,7 @@ not the address or the source.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the coordinator's ruling on an empty allowlist, 2026-10-29 (follow-up to #652, card tsk-46vft0764kve); docs/api.md §2.7 "What the login page learns", §16.4; the review of #657
-**See:** web/context/views.md — 48c34360-b586-4e82-b21a-737b922f1734 — as of 2026-10-29
+**See:** https://github.com/oliver-zehentleitner/maity — 48c34360-b586-4e82-b21a-737b922f1734 — as of 2026-10-29
 **Revisit when:** registration gains a way in that needs no list entry (an invitation is already one, §3.4), or `missing` gains a reason that also makes registration impossible
 
 `GET /auth/methods` answers `registration: true` only when
