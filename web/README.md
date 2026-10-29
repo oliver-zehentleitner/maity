@@ -1337,6 +1337,9 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
 9. **Chat**: the agent writes with `maity say human`, the message appears in
    the open conversation; the owner answers there, the agent's `maity wait`
    wakes with that message, and after a reload it is "reached a session";
+   the owner then attaches an image (the e2e hub has a local attachment
+   store, `MAITY_ATTACHMENT_DIR`), sends it, and it shows inline from the
+   hub's own path;
 10. **Pause**: the owner pauses the agent with a reason; the agent's own
     `PATCH /me` is refused (`forbidden`, a human paused it), its `resume`
     does not lift it and its packet shows it (`membership.paused`, by the owner); the owner
@@ -1394,7 +1397,7 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
 16. **Why**, where the hub has the export: the e2e project has no
     repository, so the view says it needs one (the hub's
     `ktw_not_configured`); without the field, no Why tab;
-17. at phone width (390 px) the inbox, board, agents, members, organisation, join and (where offered) Why
+17. at phone width (390 px) the inbox, overview, board, members, agents and (where offered) Why
     and Runners views, each reached through its tab, and the instance's Runners view load without an error, none of
     them scrolls sideways, the current tab and project stay visible in
     their rows, the tab row shows its scroll fade (and at 1280 px neither
