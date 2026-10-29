@@ -1,5 +1,5 @@
 """docs/api.md §6.5: a human's calls renew the leases of the claims it holds, and only those
-cost anything: a human of many projects who holds no claim pays one statement for it."""
+cost anything: a human of many projects who holds no claim pays no extra statement per project."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from maity_hub.net import Origin
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.factory import at
-from tests.test_conversation_list import count_statements
+from tests.statements import count_statements
 
 LEASE = 7200  # the default lease of a project (§6.5)
 
@@ -61,7 +61,7 @@ def test_the_calls_of_a_human_renew_each_claim_it_holds_in_every_project(
     assert lease_of(owner, "gamma", theirs["id"]) == agents_before
 
 
-def test_a_human_without_a_claim_pays_one_statement_however_many_projects(
+def test_a_human_without_a_claim_costs_no_extra_statement_per_project(
     owner: flow.Human, migrated: Engine
 ) -> None:
     flow.project(owner, "alpha")

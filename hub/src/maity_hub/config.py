@@ -99,6 +99,9 @@ class Settings:
     # MAITY_SIGN_IN_SECOND_FACTOR: off, optional or required_admins (§2.8.5); None
     # leaves it to the instance admin.
     sign_in_second_factor: str | None = None
+    # MAITY_MAX_ORGS_PER_HUMAN: the organisations one human may own (§16.5, §6.26): a number
+    # from 1 to 10000, or None for `unlimited`. The admin's value (§16.5) is not built yet.
+    max_orgs_per_human: int | None = 5
 
     @property
     def join_host(self) -> str | None:
@@ -164,6 +167,7 @@ class Settings:
             ),
             registration=parse_registration(env),
             sign_in_second_factor=parse_second_factor(env),
+            max_orgs_per_human=parse_limit(env, "MAITY_MAX_ORGS_PER_HUMAN", 5),
         )
 
 
@@ -268,6 +272,19 @@ def parse_number(
     if not minimum <= number <= maximum:
         raise ConfigError(f"{name} must be between {minimum:g} and {maximum:g}")
     return number
+
+
+def parse_limit(env: dict[str, str], name: str, default: int) -> int | None:
+    """A cap (§16.5): a whole number from 1 to 10000, or `unlimited` (None); an unset or
+    empty variable is the default, anything else stops the hub."""
+    value = env.get(name, "").strip()
+    if not value:
+        return default
+    if value == "unlimited":
+        return None
+    if not value.isdigit() or not 1 <= int(value) <= 10000:
+        raise ConfigError(f"{name} must be a number from 1 to 10000, or unlimited")
+    return int(value)
 
 
 def parse_cli_install(value: str) -> str:
