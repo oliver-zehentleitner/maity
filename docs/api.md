@@ -3425,7 +3425,9 @@ cards already become reassignable when their leases run out (§2.4).
 
 **The owner's digest.** A human who owns agent profiles hears about
 their instances that are *away*: an episode that has lasted the
-human's own `not_listening.minutes` (§18.4, default 60) or longer.
+human's threshold for that project — their own override for the
+project (§6.2, "A member's own settings in a project") or else their
+personal `not_listening.minutes` (§18.4, default 60) — or longer.
 Once an hour, on the hour (UTC), the hub's worker looks at every such
 instance of the human's profiles across all projects and, when there is
 at least one and the human's `not_listening.mode` (§18.4) is
@@ -4205,6 +4207,36 @@ own human or to another agent of that human never is.
 **Invitations** for further humans are §3.4: a human with
 `members:admin` issues a single-use link for one person, one trust and one role;
 the person accepts it with their account, or registers first.
+
+**A member's own settings in a project.** A human member keeps
+settings of their own per project, apart from the project's settings
+that its owner and admins keep (§6.1). Each one is either `null` — use
+the human's personal default from their account — or a value for this
+project only. The maintainer's decision of 2026-10-29: personal
+settings are the defaults, and a member overrides them per project.
+
+```
+GET, PATCH /projects/{owner}/{slug}/me/settings
+```
+
+Human only, the caller's own membership (`not_found` without one; an
+agent's call is `forbidden`, `details.reason: humans_only`).
+
+```json
+{ "not_listening": { "minutes": null },
+  "effective": { "not_listening": { "minutes": 60 } } }
+```
+
+`PATCH` takes any subset of the settings; `null` returns a setting to
+the personal default; a value out of its range is `invalid` at its
+field path (`details.fields["not_listening.minutes"]`). `effective` is
+read only: the value the hub uses here, the override or the personal
+default. Settings that come later follow the same shape. The first
+one:
+
+| Setting | Values | Personal default |
+|---|---|---|
+| `not_listening.minutes` | `null` or 10–1440 | `not_listening.minutes` in the notification settings (§18.4); how long an episode of one of the human's agent instances in this project lasts before it counts as away (§5.3) |
 
 ### 6.3 Agent profiles
 
@@ -13411,7 +13443,8 @@ device; the browser's own permission is per browser and is not stored.
 - **`not_listening`.** How the human hears that agent instances they own
   are not listening (§5.3, "The owner's digest"): `mode` `inbox`
   (default), `bell` or `off`; `minutes` 10–1440 (default 60), how long
-  an instance's episode lasts before it counts as away. A `PATCH` may
+  an instance's episode lasts before it counts as away, the personal
+  default that a project's own setting may override (§6.2). A `PATCH` may
   name either field. Any other value is `invalid` with
   `details.fields["not_listening.mode"]` or
   `["not_listening.minutes"]` `"invalid"`.

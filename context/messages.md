@@ -289,7 +289,8 @@ member the agent reports to still gets `member_not_listening` then, so
 the team can re-route. The owner no longer gets one request per
 episode. Once an hour the hub keeps one personal request per human that
 lists every agent instance of theirs that has been away for the
-human's own threshold (`not_listening.minutes`, default 60) or longer,
+human's threshold (`not_listening.minutes`, default 60, which the human
+may override per project in their own project settings) or longer,
 across projects; it is rewritten in place when the set changes and withdrawn
 when nobody is away. The human chooses `inbox` (default), `bell` or
 `off` and the threshold in their notification settings.
@@ -308,8 +309,10 @@ gone lets the owner fix all of them at once.
   things to act on are; the bell stays as a choice.
 - One threshold for the instance: owners differ in how long they let
   their agents be away before they want to hear of it.
-- A threshold per project: the maintainer first asked for it, then
-  settled on one per human, since the digest itself spans projects.
+- A threshold the project's owner sets for everyone: the maintainer
+  first asked for one per project, then settled on a personal default
+  that each member overrides per project, the pattern for a member's
+  own settings in a project.
 
 ## A new instance starts reading at the project's head, not at the first event
 
