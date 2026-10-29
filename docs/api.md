@@ -3291,9 +3291,12 @@ Response `200`, bounded and deterministic:
   `meat_proxy` are `true` or `false`: whether that human has switched on
   "I am a meat proxy" in their profile (`PATCH /me`, §5.3 table; default
   `false`). While it is `true` the same object carries
-  `meat_proxy_note`, always the one sentence `"This person says: I am a
-  meat proxy."`, and nothing more: the hub does not say what it means,
-  and what an agent makes of it is the agent's. It reaches the agents
+  `meat_proxy_note`, always the same text, `"This person says: I am a meat proxy. Lead me step by step rather than expecting me to explain; and when you need a human's hands, come to me first."`: the
+  person's own words for both sides of it — they would rather be led
+  than asked to explain, and they offer themselves first when an agent
+  needs a human's hands. Beyond that the hub interprets nothing, and the
+  dashboard shows the same text next to the switch, so the person reads
+  exactly what the agents read. It reaches the agents
   that deal with that human: their own agents (`me.owner`) and the
   agents of every project they are an active member of (`peers`). It is
   context about a person, never a permission and never a rule (the rank
