@@ -876,7 +876,7 @@ the human would see fields that do nothing.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision on project memory and setup cards (docs/api.md §6.1, §6.21, contract #339), 2026-10-25; the card tsk-c8jt63tnztqj (provider read only after creation, the badge policy editable with its snippet in Project settings); hub/src/maity_hub/models.py (`extra="forbid"`: a hub refuses a body field it does not know); the dashboard's implementation, 2026-10-25
+**Source:** the maintainer's decision on project memory and setup cards (docs/api.md §6.1, §6.21, contract #339), 2026-10-25; the card tsk-c8jt63tnztqj (provider read only after creation, the badge policy editable with its snippet in Project settings); hub/src/maity_hub/models.py (`extra="forbid"`: a hub refuses a body field it does not know); the dashboard's implementation, 2026-10-25; the before-launch cleanup (tsk-wgg2t8ngx9xg, tsk-qeh64f8gpvnd), 2026-10-29
 **Revisit when:** a second provider arrives, the hub sets something up on a provider change, or the overview gets its badge section (§6.20 names the overview for the snippet)
 
 The create form has **Project memory** (Keep the Why preselected, None)
@@ -901,6 +901,14 @@ would invite a change whose consequences the hub does not carry out.
 Sending `memory` and `setup` always: a creation on an older hub would
 fail. Inferring support from a project's view having `memory`: a human
 without projects has no view to look at.
+
+Until 2026-10-29 the form also sent the `keep_the_why` boolean to a hub
+that knew the provider only under that alias (before §6.21). It no
+longer does: such a hub is offered no project memory. **Reason:** the
+maintainer's rule for the alpha is to delete compatibility layers before
+launch, and no hub before §6.21 is running. **Rejected alternative:**
+keeping the alias: a third branch in the form for a hub nobody runs.
+The fixture hub still accepts the alias until the hub drops it.
 
 ## Statistics sum counts of things over the window and show people by their busiest day
 
@@ -1133,7 +1141,8 @@ an anchor. Waiting for a hub-made URL: none is in the contract.
 
 **Id:** be999be7-325a-4fcf-954a-2bdadb6e6f84
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** none — the notification kind `keep_the_why` was removed on 2026-10-26 (docs/api.md §18.2, "No longer notifications"), so the dashboard has no such item to link anywhere; an unconfirmed commitment now reaches the owner as a request in the inbox (§6.23), linked like every request
 **Evidence:** confirmed
 **Source:** docs/api.md §6.23 and §18.2; the coordinator's ruling of 2026-10-25 on the item's target and the interim place (tsk-bq6q65910g13); the dashboard's implementation, 2026-10-26
 **Revisit when:** the dashboard gets a page of one's agents outside any project
@@ -1444,8 +1453,10 @@ under each other hid all but the first below the fold.
 
 **Rejected alternative:** a sticky list of anchors over the whole page,
 the designer's other option: the scroll stays 5,000 px, only the jump is
-shorter. A route per section (`#/admin/users`): `#/admin/users` is the
-older Users page already, and links into a section were not asked for.
+shorter. A route per section (`#/admin/users`): links into a section
+were not asked for. The older Users page at `#/admin/users` was removed
+before launch with the other compatibility routes, so that address is
+now no view at all.
 
 ## On a phone an opened card is a page of its own; the panel is the card
 
@@ -1918,3 +1929,27 @@ sensitive call: needless right after a sign-in, and wrong for a
 passwordless account. A modal dialog: the dashboard has none, and a
 slot in place keeps the focus and the context where the human was.
 
+
+## The meat-proxy hint quotes the hub's note as /me carries it, and no text of its own
+
+**Id:** 8eb486bb-357a-477c-aaf5-2a4d51024cc4
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2 `GET /me` ("the dashboard shows it under the switch from here and keeps no copy of its own") and §5.2 "Meat proxy"; the change that replaced the page's own sentence with `meat_proxy_note`
+**Revisit when:** the note gets text per human or a translation, or `/me` stops carrying it
+
+Under the switch **I am a meat proxy** the account quotes
+`meat_proxy_note` from `/me` as text, never through HTML. A hub that
+does not send the field gets the switch and its hint without a quote.
+
+**Reason:** the human should read exactly what the agents that deal
+with them read. Any wording of the page's own drifts from the hub's as
+soon as the note changes, as it did once already.
+
+**Rejected alternative:** keeping the old sentence as a fallback where
+the field is missing: on a hub whose note has changed, it would show
+words the agents no longer read, the drift this avoids. The price is a
+hint without the words on a hub that does not send the note yet.
+Copying the text into the page: the same drift with every change of
+the wording.

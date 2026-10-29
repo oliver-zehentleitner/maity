@@ -129,7 +129,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 
 | HTTP | `code` | When |
 |---|---|---|
-| 400 | `invalid` | body or query does not validate; `details.fields` maps field → reason. Among the reasons: `set_by_environment` (§16.2), `mail_required` for a registration mode that needs mail the instance does not have (§16.4), `required` on `why` for a code report under `policy.keep_the_why: required` (§6.23), `removed_kind` for a notification kind removed on 2026-10-26 (§18.2, §18.3, §18.4) |
+| 400 | `invalid` | body or query does not validate; `details.fields` maps field → reason. Among the reasons: `set_by_environment` (§16.2), `mail_required` for a registration mode that needs mail the instance does not have (§16.4), `required` on `why` for a code report under `policy.keep_the_why: required` (§6.23) |
 | 400 | `credential_in_payload` | the body or query string contains a string in the hub's credential format (§2.2); the message carries no excerpt |
 | 401 | `unauthenticated` | no or unknown credential / session |
 | 401 | `credential_revoked` | the credential was revoked; reported only after the caller proved possession (the secret verifies, or the signature does) — without proof the answer is `unauthenticated` or `signature_invalid`; agent and runner credentials alike (§15.1) |
@@ -175,7 +175,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `last_instance_admin` | a deletion of their own account by the instance's last admin (§2.9) |
 | 409 | `project_closed` | claim or task creation while the project is `archived`, an import included; there also creating a group chat or adding a participant to one (§9.2), adding a card link and posting a note (§6.13, §6.16), an attachment upload and a message that names one (§8.7) |
 | 409 | `already_linked` | the same forge item or URL is linked on the card already (`details.link`), or the issue is imported on a card that is not closed (`details.task`) (§6.13, §6.14) |
-| 409 | `idempotency_mismatch` | same `Idempotency-Key`, different body |
+| 409 | `idempotency_mismatch` | same `Idempotency-Key`, a different call (method, route, project, path parameters or body) |
 | 409 | `probe_not_configured` | no grant covers the project's repository (§11, §11.4); `details.reason` (`no_grant`, `private_without_grant`, `installation_suspended`, `installation_removed`, `token_rejected`, `unconfirmed`, `repository_moved`) for `project:admin` only; also an import (§6.14) |
 | 409 | `placement_exists` | a second active placement for a membership, or for (runner, clone) in a project (§15.5); `details.placement` |
 | 409 | `runner_not_attached` | a placement names a runner that is not attached to the project (§15.4) |
@@ -251,11 +251,16 @@ session of the same credential replays the same key — and kept for
 
 - Only a successful first call (2xx) is stored; a call that ended in an
   error changed nothing and may simply be repeated. A repeat with the same
-  key and the same body after a success returns the first call's
-  status and resource (the hub stores the body hash, the status code and
-  a reference to the resource, not the full response) with the header
+  key and the same call after a success returns the first call's
+  status and resource (the hub stores the call's hash (method, route, project id, path parameters
+  and body), the status code and a reference to the resource, not the full
+  response) with the header
   `Idempotent-Replayed: true`.
-- A repeat with the same key and a different body is `idempotency_mismatch`.
+- A repeat with the same key and a different call — another method, route, project or
+  path parameter, or another body — is `idempotency_mismatch`. The project counts by its
+  id, so a call through an alias of the same project (§6.24, §6.25) is the same call. A
+  key stored before this rule answers `idempotency_mismatch` on every repeat until it
+  expires (24 hours).
 
 `DELETE` is idempotent by itself, and so is every `PUT` (an avatar,
 §6.10; a watch, §6.4): the key is optional there for every caller. The dashboard may send the header; it
@@ -11246,7 +11251,7 @@ environment wins, is shown with `source: "env"`, and a `PATCH` of it is
   is set) and the password comes from the database, the admin view
   carries `warnings: ["smtp_password_in_database"]` and the hub logs the
   same warning at startup: a cluster has Secrets, and the password
-  belongs in one (`mail.smtp.existingSecret`, below). `GET /health`
+  belongs in one (`mail.passwordSecret`, below). `GET /health`
   does not carry it: it tells anonymous callers nothing about the
   configuration.
 
@@ -11268,11 +11273,19 @@ environment wins, is shown with `source: "env"`, and a `PATCH` of it is
 | — | `enabled` | `false` stops every mail — notification, verification and security — without losing the settings; the test send still works |
 | `MAITY_MAIL_SIGNING_KEY` | — | 32 bytes or more, base64; signs the links of §18.6. Without it the hub sends no mail (`complete: false`, `missing: ["signing_key"]`). Never returned |
 
-In the Helm chart the password, the signing key and the instance key
-come from a Secret by reference, as the database URL does
-(`mail.smtp.existingSecret` with the keys `smtp-password`,
-`mail-signing-key` and `secret-key`), and the other values from
-`config.mail.*`; they never pass through the chart's values.
+In the Helm chart the password and the signing key come from a Secret
+by reference, as the database URL does (`mail.passwordSecret` and
+`mail.signingKeySecret`, each with `existingSecret` and `key`, the keys
+defaulting to `smtp-password` and `mail-signing-key`), and the other
+values from `mail.host`, `port`, `tls`, `username`, `from` and
+`replyTo`; the secrets never pass through the chart's values. With a
+host set, port and TLS always come from the chart (its defaults
+included) and win over the admin settings (`set_by_environment`). The
+instance key comes from a Secret through the chart's `extraEnv`
+(`secretKeyRef`, see the chart's README). A release that moves these
+variables from `extraEnv` into `mail.*` removes them from `extraEnv` in
+the same upgrade: the chart does not deduplicate, and the later entry
+wins.
 
 ```
 GET /admin/settings/mail
@@ -12897,7 +12910,7 @@ no membership.
 | `limit` | 0–50, default 20; `0` lists no item and answers the counts, `by_project` and `next_after` only (below) |
 | `cursor` | §1.4, older items |
 | `unread` | `true`: unread items only |
-| `kind`, `project` | filters; comma lists. `kind` takes `inbox`, `chat`, `mention`, `security`; a kind removed on 2026-10-26 (§18.1) is `invalid` with `details.fields.kind: "removed_kind"`, any other value `"unknown"` |
+| `kind`, `project` | filters; comma lists. `kind` takes `inbox`, `chat`, `mention`, `security`; any other value is `invalid` with `details.fields.kind: "unknown"` |
 | `after` | an opaque position (below), the `next_after` of an earlier answer passed back unchanged: only items past it, oldest first — for the browser notifications (§18.8) |
 | `wait` | 0–55 with `after`: hold the request until an item past `after` exists, as §8.3. A cookie session holds one such long-poll beside its one events long-poll; a second one supersedes the first (`superseded: true`) |
 
@@ -13071,9 +13084,13 @@ rules that make a position safe to resume from:
   `registration_pending` item whose registration is not yet decided,
   and for every human a `mail_disabled` item while the address is
   disabled (§18.1), each until the matter is closed, not until it is
-  read. `chat` is the sum of `unread` over the human's
-  conversations (§9) and group chats (§9.2), the same number the chat
-  list shows. `mention` and `security` count the unread items of that
+  read. `chat` is the sum of `unread` over the conversations the human takes
+  part in: its direct conversations with its agents and the group chats
+  it is a participant of (§9; group chats with #153), in every project
+  of its memberships. A group chat the human only reads along in as an
+  agent's owner counts nothing. It is the same number as
+  `totals.unread` of `GET /me/conversations` (§9.3), the hub computes
+  both with one function. `mention` and `security` count the unread items of that
   kind. `total` is `inbox + chat + mention` — everything but the
   security alerts; the dashboard shows
   it in the tab title as `(6) maity` and nothing when it is `0`.
@@ -13159,7 +13176,7 @@ item's `seq`, never backwards — the same as reading the conversation
 (§9); an observer has no chat items and moves no mark. `inbox` items
 other than the two open matters below are marked read, and the open
 requests stay open (§18.2). A `kind`
-removed on 2026-10-26 is `invalid` as in §18.2. A `security` item about a
+that is not one of them is `invalid` as in §18.2. A `security` item about a
 new session (`session_created`, #169 §2.6.5) is marked read only from a
 session that existed before that sign-in and is itself in good
 standing (signed in by password, or its own `session_created` item
@@ -13230,15 +13247,11 @@ device; the browser's own permission is per browser and is not stored.
   pop-up; the item is always in the bell (§18.1).
 - **The kinds.** `kinds` at the top, `browser.kinds` and `email.kinds`
   name exactly `inbox`, `chat`, `mention` and `security` (§18.1).
-  Settings stored before 2026-10-26 may still hold `card`, `agent`,
-  `keep_the_why`, `ticker`, `jour_fixe`, `system` or `registration`: the
-  hub drops them when it reads the settings — a `GET` never shows them
-  and they govern nothing — and deletes them from storage with the
-  account's next `PATCH` of the settings. A `PATCH` that names one of
-  them in `browser.kinds` or `email.kinds` is `invalid` with
-  `details.fields["browser.kinds.<kind>"]` (or `email.kinds.<kind>`)
-  `"removed_kind"`, and changes nothing; any other unknown kind is
-  `"unknown"`.
+  A `PATCH` that names any other kind in `browser.kinds` or
+  `email.kinds` is `invalid` with `details.fields["browser.kinds.<kind>"]`
+  (or `email.kinds.<kind>`) `"unknown"`, and changes nothing. A value
+  for a kind that is not what the field takes (a `browser.kinds` value
+  that is not a boolean) is `"invalid"` at the same field.
 - **`email.address`.** Setting it (`PATCH {"email": {"address": "…"}}`)
   puts it in `pending_address` and sends a verification mail with a
   link (§18.6), valid for 24 hours; the verified address in `address`
@@ -13444,8 +13457,7 @@ withdrawn or replaced (§2.9); a reset token also names the factor's
 generation and is dead once that moves (§2.8.1, §2.8.3); an
 unsubscribe token stays valid until the human's `epoch` moves, which
 happens when the address changes or is removed. An unsubscribe token
-for a kind removed on 2026-10-26 (§18.1), from a mail sent before,
-counts as invalid: those mails are no longer sent. An invalid, expired
+for a kind this hub does not know counts as invalid. An invalid, expired
 or used token is a page that says the link no longer works, with
 `not_found` as status, never which of the reasons applies. The pages
 are rendered in the human's `language`, carry the headers of §1.1, and

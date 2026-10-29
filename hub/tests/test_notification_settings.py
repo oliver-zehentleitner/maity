@@ -8,7 +8,6 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select
 
-from maity_hub import clock
 from maity_hub import tables as t
 from maity_hub.config import Settings
 from tests import factory, flow
@@ -67,11 +66,11 @@ def test_the_defaults_and_who_reads_them(make_client: ClientFactory, migrated: E
         ({"email": {"daily_at": "25:00"}}, {"email.daily_at": "invalid"}),
         ({"email": {"quiet_hours": {"from": "22:00"}}}, {"email.quiet_hours": "invalid"}),
         ({"email": {"language": "fr"}}, {"email.language": "invalid"}),
-        ({"browser": {"kinds": {"inbox": "yes"}}}, {"browser.kinds": "invalid"}),
+        ({"browser": {"kinds": {"inbox": "yes"}}}, {"browser.kinds.inbox": "invalid"}),
         ({"browser": {"content": {"inbox": True}}}, {"browser.content": "invalid"}),
-        ({"browser": {"kinds": {"card": True}}}, {"browser.kinds.card": "removed_kind"}),
+        ({"browser": {"kinds": {"card": True}}}, {"browser.kinds.card": "unknown"}),
         ({"browser": {"kinds": {"nope": True}}}, {"browser.kinds.nope": "unknown"}),
-        ({"email": {"kinds": {"ticker": {"mode": "off"}}}}, {"email.kinds.ticker": "removed_kind"}),
+        ({"email": {"kinds": {"ticker": {"mode": "off"}}}}, {"email.kinds.ticker": "unknown"}),
         ({"email": {"kinds": {"nope": {"mode": "off"}}}}, {"email.kinds.nope": "unknown"}),
         ({"push": True}, {"push": "extra_forbidden"}),
     ],
@@ -128,42 +127,6 @@ def test_the_settings_are_per_human(make_client: ClientFactory, migrated: Engine
     assert second.get(S).json()["email"]["language"] == "en"
 
 
-def test_kinds_removed_on_2026_10_26_are_dropped_on_read_and_deleted_on_patch(
-    make_client: ClientFactory, migrated: Engine
-) -> None:
-    owner = signed_in(make_client, migrated)
-    stored = {
-        "browser": {"kinds": {"card": True, "chat": False}, "content": {"chat": True}},
-        "email": {"kinds": {"ticker": {"mode": "off"}, "inbox": {"mode": "daily"}}},
-    }
-    with migrated.begin() as conn:
-        conn.execute(
-            t.notification_settings.insert().values(
-                human_id=owner.id,
-                preferences=stored,
-                address_status="none",
-                epoch=0,
-                hard_failures=0,
-                updated_at=clock.now(),
-            )
-        )
-    got = owner.get(S).json()
-    assert "card" not in got["browser"]["kinds"] and got["browser"]["kinds"]["chat"] is False
-    assert (
-        "ticker" not in got["email"]["kinds"] and got["email"]["kinds"]["inbox"]["mode"] == "daily"
-    )
-    assert got["kinds"] == ["inbox", "chat", "mention", "security"]
-    with migrated.begin() as conn:  # a GET writes nothing
-        kept = conn.execute(select(t.notification_settings.c.preferences)).scalar_one()
-    assert "card" in kept["browser"]["kinds"] and "ticker" in kept["email"]["kinds"]
-    owner.patch(S, {"email": {"language": "de"}})
-    with migrated.begin() as conn:
-        kept = conn.execute(select(t.notification_settings.c.preferences)).scalar_one()
-    assert kept["browser"]["kinds"] == {"chat": False}
-    assert kept["email"]["kinds"] == {"inbox": {"mode": "daily"}}
-    assert kept["email"]["language"] == "de"
-
-
 def test_mail_available_follows_the_instance_settings(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
@@ -191,3 +154,43 @@ def test_a_stored_content_of_another_kind_is_not_read() -> None:
     merged = preferences._merged({"browser": {"content": {"chat": True, "inbox": True}}})
     assert "inbox" not in merged["browser"]["content"]
     assert merged["browser"]["content"]["chat"] is True
+
+
+def test_a_patch_hit_by_a_deadlock_runs_again(
+    make_client: ClientFactory, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sqlalchemy.exc import OperationalError
+
+    from maity_hub.notifications import preferences
+
+    class Deadlock(Exception):
+        sqlstate = "40001"
+
+    owner = flow.human(make_client, migrated)
+    real = preferences.patch
+    calls: list[int] = []
+
+    def flaky(*args: Any, **kwargs: Any) -> int:
+        calls.append(1)
+        if len(calls) == 1:
+            raise OperationalError("stmt", {}, Deadlock())
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(preferences, "patch", flaky)
+    answer = owner.patch(S, {"browser": {"enabled": True}})
+    assert answer.status_code == 200 and answer.json()["browser"]["enabled"] is True
+    assert len(calls) == 2
+
+
+def test_a_stored_key_the_hub_does_not_know_is_ignored() -> None:
+    from maity_hub.notifications import preferences
+
+    merged = preferences._merged(
+        {
+            "browser": {"kinds": {"card": True, "chat": False}},
+            "email": {"kinds": {"card": {"mode": "off"}, "inbox": {"mode": "daily"}}},
+        }
+    )
+    assert "card" not in merged["browser"]["kinds"] and merged["browser"]["kinds"]["chat"] is False
+    assert "card" not in merged["email"]["kinds"]
+    assert merged["email"]["kinds"]["inbox"]["mode"] == "daily"

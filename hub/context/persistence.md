@@ -580,3 +580,37 @@ inferred from the log categories, not reproduced.
 - Retry without limit or with long back-off: it holds a request thread while the database is really down.
 - A DNS cache inside the hub: the address can change with the database's failover, and a stale cache would turn a blip into an outage.
 - A connection pooler (pgbouncer): one more component to run for a problem that reuse mostly solves.
+
+## A briefing keeps every version in `member_briefing`; the membership row holds only the current one
+
+**Id:** 1db3938a-aaf1-4095-b168-6dc4cc541e08
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** `docs/api.md` §6.2 (`briefing_version`, `GET …/members/{id}/briefings`); migration 0031 (`0031_briefing_history.py`); recorded after the review of the briefing-history card, 2026-10-29
+**Revisit when:** §6.2 stops requiring past versions to be readable, or briefings get an edit history of another kind
+
+A briefing starts at version 1 with the join and gets a new version on every
+change. The membership row carries the current text, who wrote it, its
+version and when; every version, the current one included, is a row of
+`member_briefing`, read newest first through `GET …/members/{id}/briefings`.
+Migration 0031 gave each existing agent membership a version 1 with its
+current text, written by an unknown writer at its `joined_at`; a human
+membership has no briefing and stays at version 0.
+
+**Reason:** the contract (§6.2) requires it: a version number that starts at
+1 and grows by one per change, and past versions the agent's owner and
+`members:admin` can read. The versions are kept, never overwritten.
+
+The next version number is read with `FOR UPDATE` on the membership row
+(`briefings.record`): under MariaDB's repeatable read a plain read sees the
+transaction's snapshot, so two admins changing one member's briefing at once
+would both write the same version, and the second insert would fail on
+`member_briefing`'s primary key `(membership_id, version)`.
+
+Which part stands how: the model itself is confirmed by §6.2; the reason for
+the lock is inferred from the code's docstring and the key; why the contract
+chose versions over another form is not recorded.
+
+**Alternatives:** unknown. The weighing at the time is not recorded; this
+entry only follows the contract.

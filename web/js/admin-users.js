@@ -1,4 +1,5 @@
-// Users of this hub (#/admin/users, docs/api.md §16.1): the humans of the
+// Users of this hub, the Users section of #/admin (docs/api.md §16.1;
+// js/instance-admin.js shows it to the instance admin only): the humans of the
 // instance for its admin — counts and times, never content. Searchable by
 // handle or name and filterable by disabled; paged by the hub's cursor.
 // Being the instance admin opens no project: this view links nowhere into
@@ -13,11 +14,7 @@ window.Maity = window.Maity || {};
   const PAGE = 50;
   const SEARCH_MS = 300;
 
-  M.views.adminUsers = async function (ctx, root) {
-    if (!ctx.me.instance_admin) {
-      append(root, h("h2", null, "Users of this hub"), h("p", null, "Only the instance admin sees the users of this hub."));
-      return;
-    }
+  async function section(ctx, root) {
     const status = M.statusLine();
     const box = h("div", { class: "users-box" });
     const more = h("div", { class: "actions" });
@@ -116,5 +113,7 @@ window.Maity = window.Maity || {};
         h("label", { for: "users-disabled" }, "Show"), disabled),
       status.el, box, more);
     await load(filterNow(), null);
-  };
+  }
+
+  M.adminUsers = { section };
 })(window.Maity);

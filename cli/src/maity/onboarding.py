@@ -185,10 +185,15 @@ def _who(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
     shown = names.get(member_id) if isinstance(member_id, str) else None
     handle = inline(shown or me.get("handle") or me.get("member_id") or "?")
     name = me.get("display_name")
-    line = f"You are {handle}" + (f" ({inline(name)})" if name and inline(name) != handle else "")
+    instance = me.get("instance")  # §6.17; absent until the hub has instances
+    line = f"You are {handle}" + (f"#{inline(instance)}" if instance else "")
+    line += f" ({inline(name)})" if name and inline(name) != handle else ""
     if me.get("member_id"):
         line += f", member id {inline(me['member_id'])}"
     lines = [line + "."]
+    others = [_sibling(handle, i) for i in _items(packet.get("team"))]
+    if others:
+        lines.append("Other instances of you: " + "; ".join(others))
     if ms.get("trust") or ms.get("role"):
         role = _trust_role(ms, "Trust: {trust}, role: {role}", "Role: {role}")
         if ms.get("reports_to"):
@@ -201,6 +206,18 @@ def _who(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
     if owner:
         lines.append(f"Your human: {inline(owner)}")
     return lines
+
+
+def _sibling(handle: str, item: dict[str, Any]) -> str:
+    """Another active instance of the caller's membership (`team`, §6.17), as
+    `<handle>#<id>` with what tells them apart."""
+    facts = [inline(item[k]) for k in ("harness", "model", "presence") if item.get(k)]
+    claims = item.get("claims")
+    if isinstance(claims, int) and not isinstance(claims, bool):
+        facts.append(f"{claims} claim" + ("" if claims == 1 else "s"))
+    facts += ["lead"] if item.get("lead") is True else []
+    facts += ["paused"] if item.get("paused") else []
+    return f"{handle}#{inline(item.get('id') or '?')}" + (f" ({', '.join(facts)})" if facts else "")
 
 
 def _project(packet: dict[str, Any]) -> list[str]:

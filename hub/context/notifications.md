@@ -167,21 +167,21 @@ one place. Evidence is inferred: measured locally, production to confirm.
 `notification_settings.preferences` holds the browser and mail preferences as one JSON
 value with only the keys the human set; `preferences._merged` lays it over the defaults
 key by key on every read. A human who never changed anything has no row: a `GET` shows
-the defaults and writes nothing, the first `PATCH` makes the row. A kind removed on
-2026-10-26 (§18.1) is skipped when the value is read, and `PATCH` rewrites the stored
-value without it, as §18.4 says.
+the defaults and writes nothing, the first `PATCH` makes the row. (Until migration 0084 a
+kind removed on 2026-10-26 (§18.1) was skipped when the value was read and dropped by the next
+`PATCH`; that layer is gone, see 2db93f62-3a99-4ee5-a997-e2e5018831aa.)
 
 **Reason:** a default that changes later (a new kind, another `daily_at`) reaches every
 human who did not choose otherwise, and a human's choice never has to be told apart from
-a copy of an old default. Dropping removed kinds on read needs no migration over the
-rows, and the contract wants them deleted with the next write anyway.
+a copy of an old default. (Dropping removed kinds on read needed no migration over the
+rows; that part was replaced by a migration, 2db93f62-3a99-4ee5-a997-e2e5018831aa.)
 
 **Rejected alternatives:**
 - Storing the full value at the first read: later defaults would reach nobody who had
   opened the settings once, and a `GET` would write.
 - Deleting the removed kinds from every row in a migration: a data migration over every
-  human's row for settings that already govern nothing, and §18.4 asks for the next
-  `PATCH`.
+  human's row for settings that already govern nothing, and §18.4 asked for the next
+  `PATCH`. Taken later, see 2db93f62-3a99-4ee5-a997-e2e5018831aa.
 
 ## A link in a mail is a signed token the hub stores nothing for; a page for a token that is not ours says nothing about anyone
 
@@ -305,8 +305,10 @@ only the first `limit + 1` per project that the filters, the cursor or `after` a
 from the database in the order the listing uses (`at`, then `seq`), in chunks that grow
 while a filter such as `unread` rejects them. A message whose payload text has a `member_id`
 and the human's id is derived with the rest, since it may mention them; the text test only
-selects, `_classify` decides. `scope` and the unread-chat count read their rows in one query
-each instead of one per membership and per agent, and a page reads each project and actor once.
+selects, `_classify` decides. `scope` reads its rows in one query instead of one per membership
+and per agent, and a page reads each project and actor once. The unread-chat count (`counts.chat`)
+is no longer read here: it comes from `conversation_list.unread_chats`, shared with
+`totals.unread` of `GET /me/conversations` and counting group chats too (see events.md a7fca6c0).
 Measured on SQLite with 10 projects and 30,000 chat items: 1.16 s before, 0.1 s after.
 
 **Reason:** the answer is a function of the page, so the work should be too; a cache would
@@ -429,8 +431,10 @@ fallback of its own). Whether either was weighed when the code was written is un
 in a savepoint, and on an `IntegrityError` (another first write committed in between) it reads and
 locks the row that now exists. Two first `PATCH`es of one human therefore end one after the other,
 instead of the later one answering 500 on the primary key. The deadlock retry of
-`persistence.md` ("Concurrent writes") does not cover this: it runs again after a deadlock, not
-after a duplicate key.
+`persistence.md` ("Concurrent writes") does not cover the duplicate key itself, so the route also
+runs the whole `PATCH` in `db.retrying`: three first writes at once on MariaDB can end in a
+duplicate-key deadlock (1213), which that retry does cover; a refused change (an error raised) is
+not retried.
 
 **Reason:** the row is made by the first write only (a read of a human with no row sees the
 defaults and writes nothing), so two first writes are an ordinary case; select first because the
@@ -460,8 +464,9 @@ who has left gets nothing from the chat, what was said while they were in it inc
 rejoin does not bring back what was said while they were away. `counts.chat` adds the group chats
 to the direct ones (`listing._unread_groups`, per stay: the others' messages after both the stay
 began and the read mark, tombstones included), the number the chat list shows; a test compares
-the two. The count costs two queries per group chat, which the bell's counts will take from the
-chat list's batched `unread` instead (#560).
+the two. The count cost two queries per group chat; #560 replaced `_unread_groups` (and the direct
+count) by `conversation_list.unread_chats`, the chat list's batched `unread`, so the bell and
+`totals.unread` are one number computed once (events.md a7fca6c0).
 
 **Reason:** §18.1 names the participants as recipients. A former participant no longer reads the
 chat (`…/messages` answers `not_found`, the list does not show it, §9.2), so an item for an
@@ -477,6 +482,41 @@ the chat's own window.
 - Reusing the chat list's batched `conversation_list._unread` for the count right here: it would
   make the number the list's by construction, but the bell's counts are being moved onto the
   list's `unread_chats` in #560, so a second change to the same lines would only conflict.
+
+## The kinds removed on 2026-10-26 are deleted from the stored settings by a migration; the hub keeps no layer that knows them
+
+**Id:** 2db93f62-3a99-4ee5-a997-e2e5018831aa
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's principle of 2026-10-29 (alpha, one user: remove the old instead of keeping compatibility layers), carried by the lead agent on the cleanup card; docs/api.md §18.2, §18.4
+**Revisit when:** a notification kind is removed again (the same migration shape applies), or a second instance with data from before 2026-10-26 exists
+**See:** notifications.md#notification-settings-store-only-what-the-human-changed-the-defaults-fill-the-rest-on-read — 3e9a6b69-7715-4ce3-8c9d-a9194fbf9500 — as of 2026-10-29
+
+Migration 0084 deletes everything but `inbox`, `chat`, `mention` and `security` from
+`browser.kinds`, `browser.content` and `email.kinds` of every stored `preferences`. The code
+that skipped the old kinds on read (`preferences._merged`), rewrote the value on the next
+`PATCH` (`_without_removed`) and told `removed_kind` from `unknown` in `preferences`, in the
+`kind` filter of the bell and in the mark-read body is removed; a kind the hub does not know
+is `unknown`, whichever kind it once was. The contract (§18.2, §18.3, §18.4, §1) says the
+same. The migration cannot be undone and does not need to be.
+
+`preferences._merged` lays only the kinds the hub knows over the defaults and ignores any other
+key in the stored value, without naming one: after 0084 and with the check in `PATCH` nothing
+writes such a key, but a read that raised on one would turn every read of that human's settings,
+and the mail planning for them, into a 500. Trusting the stored keys (the first version of this
+change) is right for every row the migration saw and a `KeyError` for any other.
+
+**Reason:** the maintainer's rule for the alpha is to delete what is old rather than keep a
+compatibility layer, and nobody reads the old settings or sends the old kinds any more. A
+migration over a few rows costs once; the layer cost a branch in every read and write of the
+settings and a second error code that told a client what it had asked for in the past.
+
+**Rejected alternatives:**
+- Keeping the skip on read and the delete on the next `PATCH` (the earlier decision, 3e9a6b69):
+  harmless while old clients and old rows existed, a standing special case once they do not.
+- Keeping `removed_kind` as an error code for the old names: it only helps a client that still
+  sends them, which does not exist.
 
 ## The hub's own texts for a human, the bell's titles and the notification mails, follow that human's language; members' text is never translated
 

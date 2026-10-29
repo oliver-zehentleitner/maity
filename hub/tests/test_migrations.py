@@ -418,3 +418,53 @@ def test_a_placement_profile_splits_its_role() -> None:
     assert up == {"display_name": "X", "trust": "admin", "role": "coder", "areas": []}
     assert module._profile_down(up) == {"display_name": "X", "role": "admin", "areas": []}
     assert module._profile_up(None) is None
+
+
+def test_settings_stored_for_removed_notification_kinds_are_deleted(engine: Engine) -> None:
+    """0084 (§18.4): the kinds removed on 2026-10-26 leave `browser.kinds`,
+    `browser.content` and `email.kinds`; the four that exist, and a row with nothing to
+    delete, stay as they were."""
+    from sqlalchemy import insert, select
+
+    from maity_hub import clock
+    from maity_hub import tables as t
+    from tests import factory
+
+    migrate(engine, _before(engine, "0084"))
+    old = {
+        "browser": {
+            "enabled": True,
+            "kinds": {"card": True, "chat": False},
+            "content": {"chat": True, "agent": True},
+        },
+        "email": {
+            "kinds": {"ticker": {"mode": "off"}, "inbox": {"mode": "daily"}},
+            "language": "de",
+        },
+    }
+    clean = {"email": {"kinds": {"security": {"mode": "off"}}}}
+    owners = {"old": factory.human(engine, "old"), "clean": factory.human(engine, "clean")}
+    with engine.begin() as conn:
+        for name, stored in (("old", old), ("clean", clean)):
+            conn.execute(
+                insert(t.notification_settings).values(
+                    human_id=owners[name],
+                    preferences=stored,
+                    address_status="none",
+                    epoch=0,
+                    hard_failures=0,
+                    updated_at=clock.now(),
+                )
+            )
+    migrate(engine)
+    with engine.connect() as conn:
+        rows = dict(
+            conn.execute(
+                select(t.notification_settings.c.human_id, t.notification_settings.c.preferences)
+            ).all()
+        )
+    assert rows[owners["old"]] == {
+        "browser": {"enabled": True, "kinds": {"chat": False}, "content": {"chat": True}},
+        "email": {"kinds": {"inbox": {"mode": "daily"}}, "language": "de"},
+    }
+    assert rows[owners["clean"]] == clean

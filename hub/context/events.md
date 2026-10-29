@@ -259,3 +259,47 @@ for a default page of 50.
 - Building only the entries of the page after sorting by a cheaper key: the key is the newest
   message of each chat, which is most of the work, and a page of 50 is most callers' whole list.
 - A cache of the list: a read mark, a message or a rename would have to invalidate it.
+
+## `GET /me/conversations` is the per-project list built for all memberships at once, ordered by activity, project name, id
+
+**Id:** a7fca6c0-d692-4a54-9f92-666073c5faf4
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §9.3 "Across projects"; tsk-45vs1hdzswjs; the dashboard's `#/chats` read one list per project (p95 7.8 s, finding D of 2026-10-28)
+**Revisit when:** a human has more chats than one request can hold in memory, or `counts.chat` and `totals.unread` are made to count by different rules again
+
+`conversation_list` takes the caller's memberships as a list and keys every lookup by
+(project id, chat id), because a direct conversation's id is its agent's and one agent in two
+of the caller's projects has two chats of one id. `GET /me/conversations` reads the
+memberships in two statements, the owned agents in one, and then the same grouped
+statements as the per-project list for all projects together; a project more costs no
+statement. The sign-in itself renews a lease per project and is not part of that count. Items
+are sorted by activity, newest first, and where the moment is equal by `project.full_name`
+and `id` ascending (the contract's wording; the per-project list breaks a tie by `id`
+descending, which it cannot do across projects without making the same agent's two chats
+swap places). The cursor carries (activity, `full_name` + `id`) and the list's scope, so it
+is valid for one `observed` only. `totals` are summed over all items, not the page, and an
+observer's `null` counts add nothing. An archived project's chats are listed, a project the
+caller left is not.
+
+**Reason:** one read for the overview is what the dashboard needed; looping the per-project
+list would have kept the cost proportional to the projects, which the contract excludes.
+Reusing the per-project builders (the same statements, with a list of memberships) keeps one
+place where a chat's window, unread count and observer rules are decided.
+
+**Rejected alternatives:**
+- Calling the per-project list for each membership and merging: simple, but a statement set per
+  project, the shape the contract rules out.
+- Sorting ties by `id` descending as the per-project list does: a total order across projects
+  needs the project name, and the contract names it.
+
+**Resolved (same change):** §9.3 says `totals.unread` is the number §18.2 gives as
+`counts.chat`, but the bell counted only the direct conversations, so a room with unread
+messages made the two differ. Decided by the lead on 2026-10-28: both count the direct and the
+group chats the human takes part in, observers nothing, through one function,
+`conversation_list.unread_chats` (per project, from the same direct-chat and window helpers
+the list uses). #556 meanwhile added the groups to the bell with `listing._unread_groups`, two
+statements per stay; that and the per-agent direct count are replaced by `unread_chats`.
+`tests/test_me_conversations.py` holds the bell and `totals.unread` equal, also after a read
+mark.
