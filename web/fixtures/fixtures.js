@@ -2543,6 +2543,7 @@ window.MAITY_FIXTURES = {
       "swarm_public": "on",
       "tag_authority": "human"
     },
+    "released_at": null,
     "repository": {
       "default_branch": "main",
       "forge": "github",
@@ -5121,6 +5122,7 @@ window.MAITY_FIXTURES = {
       "steward_writes": "cards_only",
       "tag_authority": "human"
     },
+    "released_at": "2026-09-14T10:00:00Z",
     "repository": {
       "default_branch": "main",
       "forge": "github",

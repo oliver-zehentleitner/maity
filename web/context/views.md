@@ -2267,3 +2267,30 @@ words the agents no longer read, the drift this avoids. The price is a
 hint without the words on a hub that does not send the note yet.
 Copying the text into the page: the same drift with every change of
 the wording.
+
+## Released is a mark beside the state, never a state; Project settings say it is never cleared
+
+**Id:** 27ca6bd9-6e83-4a85-8620-f5e9f428362f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the released mark in the dashboard (PR #659, 2026-10-29) and the Grok review of it; contract in `docs/api.md` §6.1 and §6.9
+**See:** https://github.com/oliver-zehentleitner/maity — de8abccf-94dc-4947-9926-463aa13edd8f — as of 2026-10-29
+**Revisit when:** §6.1 lets the mark be cleared, or the hub's released rules text changes
+
+The hub sets `released_at` once and keeps it through every state. The
+dashboard therefore shows "Released" beside the state badge, in the
+header and in the overview's State row, not as a sixth state. The
+tooltip carries the released rules in the hub's words, so a reader sees
+what the mark binds. Project settings say the mark holds "for good"
+and offer no control for it. A project without `released_at`, or a hub
+that does not send it, shows no mark.
+
+**Reason:** no call clears the mark, so a control in the settings would
+promise something the hub refuses. The overview is where a reader looks
+up the state, so the mark belongs there as well as in the header.
+
+**Rejected alternatives:**
+- A `released` entry in the state select: it would be lost on the next
+  move back to build, which the maintainer's decision rules out.
+- The mark in the header alone: the overview is where the state is read.

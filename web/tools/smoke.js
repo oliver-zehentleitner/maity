@@ -1701,6 +1701,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("new-card-title").value = "Something during the review";
   main.querySelector("form.new-card").dispatch("submit"); await tick();
   expect(byId("new-card-reason") && text(main).includes("Not created: the project is in review"), "board: in review a new card needs a reason");
+  // The released mark (§6.1): beside the state in the header, on the overview and in Project settings; none where unset.
+  const relMark = () => header.querySelector(".project-state .released");
+  expect(relMark() && text(relMark()) === "Released" && relMark().getAttribute("title").startsWith("Released since ")
+    && relMark().getAttribute("title").includes("migrations stay backward compatible"), "released: the header marks a released project, the rules in its title");
+  await go("#/maintainer/sample/overview"); for (let k = 0; k < 4; k++) await tick();
+  expect(main.querySelector(".overview .released") && main.querySelector(".overview .state-review"), "released: the overview shows the state and the mark");
+  await projectSettings(); await tick();
+  expect(main.querySelector(".released-note") && text(main.querySelector(".released-note")).includes("for good"), "released: Project settings say it is never cleared");
+  await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+  expect(!relMark(), "released: no mark on a project that is not released");
   await go("#/maintainer/maity/inbox");
   // Members (docs/api.md §6.2): humans and agents, managed by an admin.
   const membersTab = header.querySelectorAll("nav.views a").find((a) => a.textContent === "Members");
