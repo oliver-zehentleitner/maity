@@ -1290,6 +1290,37 @@ on a closed hub every visitor would fill it in for a mail that never
 comes. Only `GET /auth/methods`: an invited person on a closed hub could
 not register at all, which §3.4 allows.
 
+## The registration form names the instance's terms before the mail is sent
+
+**Id:** 48c34360-b586-4e82-b21a-737b922f1734
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §2.6.1, §2.7 and §2.7.2; the card tsk-46vft0764kve (the terms from `terms`), the review of #652, 2026-10-29; the coordinator's ruling on an empty allowlist, 2026-10-29
+**Revisit when:** acceptance moves from the link's page to the form, or terms gain more than a URL and a version (§16.4)
+
+Where `GET /auth/methods` answers `terms`, `/register` says that
+completing the account accepts this hub's terms, with their version. It
+links the terms only when `M.dom.safeUrl` passes the address (plain
+`https`, no user info); otherwise it names them without a link. The
+hub answers `registration: false` under `allowlist` while both lists
+are empty, so neither the login page nor `/register` offers a way in
+that nobody could finish; the instance admin sees the gap as
+`missing: ["allowlist"]` (§16.4).
+
+**Reason:** the terms are accepted on the link's page, where their
+version is signed with the registration token (§2.7.2). Without a word
+on the form, a person would meet them only after the mail, and might
+find out only there that they do not want to accept them.
+
+**Rejected alternative:** a checkbox on the form: it would record
+nothing, since acceptance and its version belong to the completion's
+`POST` (§2.7.2), and it would suggest a second acceptance. Linking any
+URL the hub returns: the hub checks `https`, but the dashboard does not
+rely on that alone. `registration: true` under an empty allowlist, as
+the contract first said: every address would get the form and the mail
+silence of a request that is dropped, a dead end for everyone.
+
 ## An agent is named with the instance that wrote or did it, as <handle>#<id>
 
 **Id:** 0b6d2a5f-32ba-4979-8c18-1567498ecbac

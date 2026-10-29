@@ -3328,6 +3328,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("absence-until").value = "2026-10-25T08:00"; byId("absence-scope").value = "fixes only";
   byId("absence-until").parentNode.dispatch("submit"); await tick(); await tick();
   expect(text(header.querySelector(".project-state")).includes("Away until") && text(header.querySelector(".absence")).includes("While away: fixes only"), "absence set");
+  // An admin who is no owner: launch is offered disabled, until the project is in launch, which they may leave.
+  const lnGet = win.Maity.api.get;
+  let lnState = "build";
+  win.Maity.api.get = (p) => (p === "/me" ? lnGet(p).then((m) => { Object.assign(m.projects.find((x) => x.slug === "maity"), { trust: "admin", state: lnState }); return m; })
+    : p === "/projects/maintainer/maity" ? lnGet(p).then((x) => Object.assign({}, x, { state: lnState })) : lnGet(p));
+  const launchOption = () => byId("state-select").querySelectorAll("option").find((o) => o.getAttribute("value") === "launch");
+  await go("#/maintainer/maity/inbox"); await projectSettings(); await tick();
+  const lnBuild = launchOption() && launchOption().getAttribute("disabled") != null;
+  lnState = "launch";
+  await go("#/maintainer/maity/inbox"); await projectSettings(); await tick();
+  expect(lnBuild && launchOption().getAttribute("disabled") == null && launchOption().getAttribute("selected") != null,
+    "state: an admin who is no owner sees launch disabled, and selectable once the project is in launch");
+  win.Maity.api.get = lnGet;
 
   // policy.signing: before required, the agents a bearer token would cut off.
   const sigPatches = [];
@@ -5468,6 +5481,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const aProxy = await asAgent(() => win.Maity.api.patch("/projects/maintainer/maity/members/agt-b", { trust: "admin", role: "proxy" }));
   const aHuman = await asAgent(() => win.Maity.api.patch("/projects/maintainer/maity/members/hum-maintainer", { areas: ["x/"] }));
   const aSelf = await asAgent(() => win.Maity.api.patch("/projects/maintainer/maity/members/agt-a", { areas: ["x/"] }));
+  const aLaunch = await asAgent(() => win.Maity.api.patch("/projects/maintainer/maity", { state: "launch", reason: "go" }));
   const aAfter = (await win.Maity.api.getAll("/projects/maintainer/maity/members")).items;
   const humansOnly = (e) => e && e.code === "forbidden" && e.details.reason === "humans_only";
   expect(aRole.class === "consent" && aRole.to === "owner" && aRole.title === "Change reviewer to member · coder"
@@ -5477,6 +5491,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(aMember.id === "agt-b" && aMember.paused && aMember.areas.join() === "web/", "mock as an admin agent: a member agent's areas and pause apply at once");
   expect(humansOnly(aCaps) && humansOnly(aProxy) && humansOnly(aHuman) && humansOnly(aSelf),
     "mock as an admin agent: capabilities, proxy, a human's and its own membership are a human's");
+  expect(aLaunch && aLaunch.status === 403 && aLaunch.code === "forbidden", "mock as an admin agent: moving to launch is the owner's go (403)");
   win.location.search = "";
 
   // The Keep the Why commitment (docs/api.md §6.23): the policy in Settings, the Members mark, the why on a report,
