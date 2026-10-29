@@ -87,6 +87,7 @@ class Web:
         self.delay = 0.0
         self.in_flight = 0
         self.most = 0
+        self.active: dict[str, int] = {}  # requests still being served, per path
         self.lock = threading.Lock()
         self.sock = socket.socket()
         self.sock.bind(("127.0.0.1", 0))
@@ -118,6 +119,7 @@ class Web:
         with self.lock:
             self.in_flight += 1
             self.most = max(self.most, self.in_flight)
+        target = None
         try:
             data = b""
             conn.settimeout(15)
@@ -128,6 +130,8 @@ class Web:
                 data += chunk
             target = data.split(b" ", 2)[1].decode()
             self.requests.append(target)
+            with self.lock:
+                self.active[target] = self.active.get(target, 0) + 1
             if self.delay:
                 time.sleep(self.delay)
             found = self.routes.get(target)
@@ -146,6 +150,8 @@ class Web:
         finally:
             with self.lock:
                 self.in_flight -= 1
+                if target is not None:
+                    self.active[target] -= 1
             with contextlib.suppress(OSError):
                 conn.close()
 
@@ -821,7 +827,7 @@ def test_waiters_on_a_slow_family_do_not_starve_the_request_threadpool(
     # An order, not a wall-clock bound: the unrelated GET has its answer while the family
     # read is still waiting on the upstream, so it did not queue behind the waiters. The
     # 4 s upstream leaves a slow runner seconds for the GET, not a fraction of one.
-    reading = web.in_flight >= 1 and any(t.is_alive() for t in threads)
+    reading = web.active.get(path, 0) >= 1 and any(t.is_alive() for t in threads)
     for t in threads:
         t.join()
     print("STARVATION unrelated GET waited", round(waited, 2), "s, status", status)
