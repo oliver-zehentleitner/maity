@@ -305,8 +305,10 @@ only the first `limit + 1` per project that the filters, the cursor or `after` a
 from the database in the order the listing uses (`at`, then `seq`), in chunks that grow
 while a filter such as `unread` rejects them. A message whose payload text has a `member_id`
 and the human's id is derived with the rest, since it may mention them; the text test only
-selects, `_classify` decides. `scope` and the unread-chat count read their rows in one query
-each instead of one per membership and per agent, and a page reads each project and actor once.
+selects, `_classify` decides. `scope` reads its rows in one query instead of one per membership
+and per agent, and a page reads each project and actor once. The unread-chat count (`counts.chat`)
+is no longer read here: it comes from `conversation_list.unread_chats`, shared with
+`totals.unread` of `GET /me/conversations` and counting group chats too (see events.md a7fca6c0).
 Measured on SQLite with 10 projects and 30,000 chat items: 1.16 s before, 0.1 s after.
 
 **Reason:** the answer is a function of the page, so the work should be too; a cache would
@@ -429,8 +431,10 @@ fallback of its own). Whether either was weighed when the code was written is un
 in a savepoint, and on an `IntegrityError` (another first write committed in between) it reads and
 locks the row that now exists. Two first `PATCH`es of one human therefore end one after the other,
 instead of the later one answering 500 on the primary key. The deadlock retry of
-`persistence.md` ("Concurrent writes") does not cover this: it runs again after a deadlock, not
-after a duplicate key.
+`persistence.md` ("Concurrent writes") does not cover the duplicate key itself, so the route also
+runs the whole `PATCH` in `db.retrying`: three first writes at once on MariaDB can end in a
+duplicate-key deadlock (1213), which that retry does cover; a refused change (an error raised) is
+not retried.
 
 **Reason:** the row is made by the first write only (a read of a human with no row sees the
 defaults and writes nothing), so two first writes are an ordinary case; select first because the
@@ -443,3 +447,38 @@ level, but every `PATCH` would run a failing insert in a savepoint for a row tha
 exists; kept as the move if the CI race test shows a deadlock on MariaDB); making the row at
 account creation (a write and a migration over every human for a row the defaults make
 unnecessary, and it would end "a read writes nothing" only in name).
+
+## A group chat notifies its participants from their current stay; one who left gets nothing from it, what came before included
+
+**Id:** ccc4332d-30be-4bd0-9ccf-26d59194471f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §9.2, §18.1, §18.2; the implementation of #556 (`Lookup.inside`, `listing._unread_groups`) and its review, 2026-10-29
+**Revisit when:** a former participant may read the chat they left, or an observer should be told about a chat
+
+A message in a group chat becomes a `chat` item (or a `mention` item) for a participant whose
+stay in the chat is current (`here`) and whose stay began before the message (`seq > window_after`);
+never for the writer, never for an observer, who reads along and is not addressed (§9.2). Someone
+who has left gets nothing from the chat, what was said while they were in it included, and a
+rejoin does not bring back what was said while they were away. `counts.chat` adds the group chats
+to the direct ones (`listing._unread_groups`, per stay: the others' messages after both the stay
+began and the read mark, tombstones included), the number the chat list shows; a test compares
+the two. The count cost two queries per group chat; #560 replaced `_unread_groups` (and the direct
+count) by `conversation_list.unread_chats`, the chat list's batched `unread`, so the bell and
+`totals.unread` are one number computed once (events.md a7fca6c0).
+
+**Reason:** §18.1 names the participants as recipients. A former participant no longer reads the
+chat (`…/messages` answers `not_found`, the list does not show it, §9.2), so an item for an
+earlier message would link to a chat it cannot open, and `counts.chat` must equal the list's
+`unread`, which drops the chat too. The stay's `window_after` bounds the items the way it bounds
+the chat's own window.
+
+**Rejected alternatives:**
+- Keeping the earlier items until their 30 days run out: they would point at `not_found` and
+  disagree with the count.
+- Notifying the owner who reads along as an observer: §9.2 makes an observer a reader, not an
+  addressee.
+- Reusing the chat list's batched `conversation_list._unread` for the count right here: it would
+  make the number the list's by construction, but the bell's counts are being moved onto the
+  list's `unread_chats` in #560, so a second change to the same lines would only conflict.

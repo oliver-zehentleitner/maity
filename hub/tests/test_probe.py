@@ -125,6 +125,7 @@ def _report(**overrides: Any) -> dict[str, Any]:
         },
         "pr_status": "found",
         "pr_unknown_reason": None,
+        "why": {"none": "a test report, nothing to keep"},  # §6.23
     }
     return {**body, **overrides}
 

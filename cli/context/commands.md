@@ -620,6 +620,40 @@ the contract: the full name is computed and follows renames.
 - Keeping the slug as the only stored name: a slug is unique only
   within its owner's namespace now (§6.25).
 
+## A project that answers `not_found` is looked up once with `GET /me` and followed
+
+**Id:** f502c036-d109-46e5-a25a-ffc793bc08bd
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Revisit when:** the hub keeps an alias for the old full name (#523) that makes the old path answer, or an agent's credential is no longer bound to one project
+
+A `not_found` on a path under the project asks `GET /me` once. When the
+one project listed there has a different full name, the CLI keeps it,
+says `project is now <owner>/<slug>` and repeats the call at the new
+path. Later paths under the old name go to the new one without being
+tried first. This covers the path `maity wait` built before its loop.
+In a call with a timeout, the lookup and the repeat share what is left
+of it. A path outside the project, an unchanged name, or a `/me` with
+no single project leaves the original error as it was.
+
+**Reason:** after the owner's handle was renamed, every running
+`maity wait` stopped with `not_found`. Each agent needed a manual
+`maity resume`, and an agent that does not watch its wait loop stays
+deaf until someone notices. `GET /me` is a read with no side effects
+and already serves as the CLI's source for the full name (entry
+156050f1). A `not_found` for a card that really does not exist costs one
+read more.
+
+**Rejected alternatives:**
+- `POST /me/resume` as the lookup (the first proposal): it opens a new
+  session and moves the event cursor, which is a side effect in the
+  middle of an unrelated command.
+- Matching `/me` by slug: a project rename changes the slug too. The
+  credential is bound to one project, so the one listed is the answer.
+- Repeating the whole command: a command with several writes could
+  repeat the ones that had already gone through.
+
 ## Free text from standard input or a file; inline text that the shell ate is warned about, not refused
 
 **Id:** 1be5edbf-e53f-407f-b5b1-e4836ba195a8

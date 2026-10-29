@@ -67,7 +67,7 @@ def test_the_defaults_and_who_reads_them(make_client: ClientFactory, migrated: E
         ({"email": {"daily_at": "25:00"}}, {"email.daily_at": "invalid"}),
         ({"email": {"quiet_hours": {"from": "22:00"}}}, {"email.quiet_hours": "invalid"}),
         ({"email": {"language": "fr"}}, {"email.language": "invalid"}),
-        ({"browser": {"kinds": {"inbox": "yes"}}}, {"browser.kinds": "invalid"}),
+        ({"browser": {"kinds": {"inbox": "yes"}}}, {"browser.kinds.inbox": "invalid"}),
         ({"browser": {"content": {"inbox": True}}}, {"browser.content": "invalid"}),
         ({"browser": {"kinds": {"card": True}}}, {"browser.kinds.card": "removed_kind"}),
         ({"browser": {"kinds": {"nope": True}}}, {"browser.kinds.nope": "unknown"}),
@@ -191,3 +191,29 @@ def test_a_stored_content_of_another_kind_is_not_read() -> None:
     merged = preferences._merged({"browser": {"content": {"chat": True, "inbox": True}}})
     assert "inbox" not in merged["browser"]["content"]
     assert merged["browser"]["content"]["chat"] is True
+
+
+def test_a_patch_hit_by_a_deadlock_runs_again(
+    make_client: ClientFactory, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sqlalchemy.exc import OperationalError
+
+    from maity_hub.notifications import preferences
+
+    class Deadlock(Exception):
+        sqlstate = "40001"
+
+    owner = flow.human(make_client, migrated)
+    real = preferences.patch
+    calls: list[int] = []
+
+    def flaky(*args: Any, **kwargs: Any) -> int:
+        calls.append(1)
+        if len(calls) == 1:
+            raise OperationalError("stmt", {}, Deadlock())
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(preferences, "patch", flaky)
+    answer = owner.patch(S, {"browser": {"enabled": True}})
+    assert answer.status_code == 200 and answer.json()["browser"]["enabled"] is True
+    assert len(calls) == 2

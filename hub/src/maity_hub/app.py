@@ -23,6 +23,7 @@ from maity_hub import (
     attachment_store,
     attachments,
     availability,
+    commitment,
     errors,
     forge,
     forge_access,
@@ -158,6 +159,8 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         # A session that stopped reading is noticed without anybody asking (§5.3).
         not_listening_worker = not_listening.Worker(engine)
         not_listening_worker.start()
+        commitment_worker = commitment.Worker(engine)
+        commitment_worker.start()
         registrations_worker = registration_accounts.Worker(engine)
         registrations_worker.start()
         from maity_hub.jourfixe import worker as jour_fixe_worker
@@ -187,6 +190,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         takeover_worker.stop()
         jour_fixe_clock.stop()
         registrations_worker.stop()
+        commitment_worker.stop()
         availability_worker.stop()
         not_listening_worker.stop()
         image_worker.stop()
