@@ -450,7 +450,7 @@ the runner user's home, where a job could replace them. It is not ephemeral, and
 job-completed hook tidies containers, images, volumes and the workspace.
 Install steps and the trust boundary: `deploy/runner/README.md`.
 
-The condition in `ci.yml` that sends fork pull requests to the hosted runners (since 2f1a3417-… every pull request) is **not** a
+The condition in `ci.yml` that sends fork pull requests to the hosted runners (since the entry "Only a push to main goes to the rented runner", every pull request) is **not** a
 protection: a fork's pull request runs the fork's own `ci.yml` and can name the runner
 itself. The protection is the repository setting that requires approval for every outside
 collaborator's workflow run, and the rule to read `.github/` in the diff before approving.
