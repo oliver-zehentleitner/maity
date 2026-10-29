@@ -10,7 +10,7 @@
 # Usage: deploy/scripts/helm-upgrade.sh -f values.yaml [more helm upgrade arguments]
 # Environment: NAMESPACE (maity), RELEASE (maity), DEPLOYMENT (<release>-maity-hub),
 #   CHART (the chart next to this script), HELM_TIMEOUT (10m), DUMP_CRONJOB (a CronJob to run as a
-#   dump first, e.g. maity-pg-dump; unset = no dump), STOP_TIMEOUT (seconds to wait for the hub's
+#   dump first, e.g. maity-pg-dump; unset = no dump), DUMP_TIMEOUT (seconds to wait for it, 300), STOP_TIMEOUT (seconds to wait for the hub's
 #   pods to be gone, 180), KUBECONFIG as usual.
 #
 # helm upgrade only runs when the hub is verifiably stopped: a failed scale-down or pods still
@@ -52,7 +52,7 @@ if [ -n "${DUMP_CRONJOB:-}" ]; then
   job="pre-upgrade-$(date +%H%M%S)"
   # Complete or Failed, whichever comes first: `kubectl wait` takes one condition and would sit out its whole timeout on a failed Job.
   dump_finished() {
-    local end=$((SECONDS + 300)) done_ failed
+    local end=$((SECONDS + ${DUMP_TIMEOUT:-300})) done_ failed
     while [ "$SECONDS" -lt "$end" ]; do
       done_=$(kubectl -n "$NAMESPACE" get job "$job" -o 'jsonpath={.status.conditions[?(@.type=="Complete")].status}' 2>/dev/null)
       failed=$(kubectl -n "$NAMESPACE" get job "$job" -o 'jsonpath={.status.conditions[?(@.type=="Failed")].status}' 2>/dev/null)

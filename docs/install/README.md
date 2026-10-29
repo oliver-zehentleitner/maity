@@ -278,7 +278,8 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
   volume under `/var/lib/rancher/k3s/storage/pvc-…_maity_maity-backups/`.
 - **A failed dump fails the Job.** `pg_dump` is retried a few times; if it still fails, the Job fails and no empty `.part` stays behind
   (an older version of the script reported "Complete" for a dump that never happened). After a dump you rely on, the Job's log lists
-  the line `dump ok: /backups/maity-<UTC time>.dump <bytes>`: `kubectl -n maity logs job/<job>`.
+  the line `dump ok: /backups/maity-<UTC time>.dump <bytes>`. Read the log of the pod that succeeded, not of a failed earlier try:
+  `kubectl -n maity logs -l job-name=<job> --field-selector=status.phase=Succeeded`.
 - **To restore:**
   1. Scale the hub to 0 (`kubectl -n maity scale deploy/maity-maity-hub --replicas=0`).
   2. Feed the dump to `pg_restore --clean --if-exists -d maity` inside

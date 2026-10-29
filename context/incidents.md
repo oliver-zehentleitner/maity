@@ -306,6 +306,10 @@ and stale `.part` files after an hour, so a failed dump is a failed Job, and end
 reads the log of the pod that succeeded and goes on only when that line is there: a CronJob in the cluster keeps its old script until the
 manifest is applied again, and that script has no such line, so the upgrade stops with the hint to apply the manifest.
 
+The first run of the fixed Job on the production cluster (2026-10-29, `maity-20261029T135427Z.dump`, 4,558,971 bytes, verdict `DUMP FIX OK`) got
+`Connection refused` on its first try again and succeeded on the retry. That makes the refused connection a thing that happens to a fresh dump pod,
+not a one-off, and the retry is what saved this dump; why the pod's first connection is refused is still not established.
+
 **Reason:** a safety net that cannot fail is worse than none, because it is trusted (the suite's fail-loud principle). A check that lets an unreadable log or an old script through is the same problem one level up, so the upgrade script asks for the positive mark and not for the absence of an error: errors that a later try fixed are in the log of a good dump too. The retry is a
 guess about the cause: the database was healthy at the time (no restart, normal checkpoints), the Job pod was seconds old, and the first
 dump ten minutes earlier worked, which fits a pod whose network was not ready yet; that is not proven.
