@@ -7164,8 +7164,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && R.href("/new") === "/new", "route: over https the address is the path, its query and the fragment apart; a link's href is the path itself");
   expect(R.isRoute("/maintainer/maity/board") && R.isRoute("/login?next=%2Fall") && ["//evil", "/a#b", "https://x/y", "/api/v1/me", "/assets/js/app.js",
     "/join/abc", "/r/x", "/mail/x", "/badge/a/b.svg", "/robots.txt", "/sitemap-2.xml", "#/new", "/ x", "/\\evil.example", "/a\\b", "/a//b",
-    "/a\u0007b", "/a\u007fb"].every((x) => !R.isRoute(x)),
-  "route: a dashboard path is a route; another origin, a backslash, a doubled slash, a fragment, a hub path, a space or a control character is not");
+    "/a\u0007b", "/a\u007fb", "/a\u0085b", "/a\u202eb", "/a\u200bb", "/a\ufeffb", "/a\u2066b", "/a\u00adb"].every((x) => !R.isRoute(x))
+    && R.isRoute("/a/\u00e4\u00f6\u00fc-caf\u00e9"),
+  "route: a dashboard path is a route, letters of any script included; another origin, a backslash, a doubled slash, a fragment, a hub path, a space, a control or a format character is not");
   R.dropFragment();
   expect(rtPushed.length === 1 && rtPushed[0][0] === "replace" && rtPushed[0][1] === "/maintainer/maity/board?q=x" && R.current().fragment === "",
     "route: the device code's fragment is dropped with replaceState, path and query kept");

@@ -19,12 +19,15 @@ window.Maity = window.Maity || {};
   const hubPath = (path) => HUB.includes(firstOf(path)) || /^sitemap(-\d+)?\.xml$/.test(firstOf(path));
 
   // A path of the dashboard: one "/", no "//" anywhere, no backslash (a
-  // browser reads "/\\x" as "//x", another origin), no fragment, no space or
-  // control character, not under a hub path. This is the boundary for every
-  // link the views write and for a sign-in's next (§2.6.5).
+  // browser reads "/\\x" as "//x", another origin), no fragment, no space,
+  // no control or format character (Unicode Cc and Cf: C0, DEL, C1, bidi
+  // overrides, zero-width), not under a hub path: the hub's own rules for a
+  // next (paths.safe_next). This is the boundary for every link the views
+  // write and for a sign-in's next (§2.6.5).
+  const UNSAFE = /[\s\p{Cc}\p{Cf}]/u;
   function isRoute(value) {
     return typeof value === "string" && value.startsWith("/") && !value.includes("//") && !value.includes("\\")
-      && !value.includes("#") && !/[\s\u0000-\u001f\u007f]/.test(value) && !hubPath(value);
+      && !value.includes("#") && !UNSAFE.test(value) && !hubPath(value);
   }
 
   // Where the page is: its path, its query and, over http(s), its fragment
