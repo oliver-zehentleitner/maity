@@ -586,7 +586,7 @@ inferred from the log categories, not reproduced.
 **Id:** 1db3938a-aaf1-4095-b168-6dc4cc541e08
 **Type:** decision
 **Status:** active
-**Evidence:** confirmed
+**Evidence:** inferred
 **Source:** `docs/api.md` §6.2 (`briefing_version`, `GET …/members/{id}/briefings`); migration 0031 (`0031_briefing_history.py`); recorded after the review of the briefing-history card, 2026-10-29
 **Revisit when:** §6.2 stops requiring past versions to be readable, or briefings get an edit history of another kind
 
@@ -601,6 +601,16 @@ membership has no briefing and stays at version 0.
 **Reason:** the contract (§6.2) requires it: a version number that starts at
 1 and grows by one per change, and past versions the agent's owner and
 `members:admin` can read. The versions are kept, never overwritten.
+
+The next version number is read with `FOR UPDATE` on the membership row
+(`briefings.record`): under MariaDB's repeatable read a plain read sees the
+transaction's snapshot, so two admins changing one member's briefing at once
+would both write the same version, and the second insert would fail on
+`member_briefing`'s primary key `(membership_id, version)`.
+
+Which part stands how: the model itself is confirmed by §6.2; the reason for
+the lock is inferred from the code's docstring and the key; why the contract
+chose versions over another form is not recorded.
 
 **Alternatives:** unknown. The weighing at the time is not recorded; this
 entry only follows the contract.
