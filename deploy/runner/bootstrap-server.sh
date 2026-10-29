@@ -25,7 +25,7 @@ install -d -m 755 /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
 # signed-by= trusts every key in the file, so the file must hold exactly one, and it must be Docker's.
 [ "$(gpg --show-keys --with-colons /etc/apt/keyrings/docker.asc | grep -c '^pub:')" = 1 ] \
-  || { echo "the Docker key file holds more than one key" >&2; rm -f /etc/apt/keyrings/docker.asc; exit 1; }
+  || { echo "the Docker key file does not hold exactly one key" >&2; rm -f /etc/apt/keyrings/docker.asc; exit 1; }
 fpr=$(gpg --show-keys --with-colons /etc/apt/keyrings/docker.asc | awk -F: '/^fpr:/ {print $10; exit}')
 [ "$fpr" = "9DC858229FC7DD38854AE2D88D81803C0EBFCD88" ] || { echo "unexpected Docker key fingerprint: $fpr" >&2; rm -f /etc/apt/keyrings/docker.asc; exit 1; }
 chmod 644 /etc/apt/keyrings/docker.asc
@@ -119,10 +119,18 @@ systemctl enable --now maity-runner-firewall.service >/dev/null
 
 # --- 6. check what was just built, loudly ---------------------------------------------------------------------------------
 fail=0
-# the user must not become root, and must not reach loopback services or the metadata address
+# the user must not become root, and must not reach loopback services, its own address or the metadata address.
+# A refused connection looks like a blocked one, so root tries each address first: where root gets through and the runner user does
+# not, the chain did it; where nothing listens even for root, the probe proves nothing and says so.
 if runuser -u "$RU" -- sudo -n true 2>/dev/null; then echo "FAIL: $RU can sudo" >&2; fail=1; fi
-if runuser -u "$RU" -- bash -c 'exec 3<>/dev/tcp/127.0.0.1/22' 2>/dev/null; then echo "FAIL: $RU reaches 127.0.0.1:22" >&2; fail=1; fi
-if runuser -u "$RU" -- bash -c 'exec 3<>/dev/tcp/::1/22' 2>/dev/null; then echo "FAIL: $RU reaches [::1]:22" >&2; fail=1; fi
+own=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i=1; i<NF; i++) if ($i == "src") {print $(i+1); exit}}')
+for addr in 127.0.0.1 ::1 ${own:+"$own"}; do
+  if bash -c "exec 3<>/dev/tcp/$addr/22" 2>/dev/null; then
+    if runuser -u "$RU" -- bash -c "exec 3<>/dev/tcp/$addr/22" 2>/dev/null; then echo "FAIL: $RU reaches $addr:22" >&2; fail=1; fi
+  else
+    echo "note: nothing listens on $addr:22 even for root; that probe proves nothing"
+  fi
+done
 if runuser -u "$RU" -- curl -sS -m 4 -o /dev/null http://169.254.169.254/ 2>/dev/null; then echo "FAIL: $RU reaches 169.254.169.254" >&2; fail=1; fi
 # the jobs' own path must work: a listener of the runner user on a database port answers a client of the same user (the
 # replies are packets of that uid to loopback; the first version of the chain rejected them)
@@ -141,9 +149,6 @@ PY
   wait
   [ "$got" = hello ] || { echo "FAIL: $RU gets no answer from a listener of its own on 127.0.0.1:$port" >&2; fail=1; }
 done
-# the machine's own public address is routed over loopback: sshd on 0.0.0.0:22 must stay out of reach as well
-own=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i=1; i<NF; i++) if ($i == "src") {print $(i+1); exit}}')
-if [ -n "$own" ] && runuser -u "$RU" -- bash -c "exec 3<>/dev/tcp/$own/22" 2>/dev/null; then echo "FAIL: $RU reaches $own:22 (the machine's own address)" >&2; fail=1; fi
 # outbound to the internet and the resolver must still work (the runner downloads, uv installs Python)
 runuser -u "$RU" -- curl -fsS -m 10 -o /dev/null https://github.com || { echo "FAIL: $RU cannot reach github.com (resolver or firewall)" >&2; fail=1; }
 [ "$fail" = 0 ] || exit 1
