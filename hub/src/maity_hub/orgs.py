@@ -346,8 +346,10 @@ def delete_org(conn: Connection, org: Any, confirm: object) -> None:
             {"projects": sorted(namespace.full_names(conn, open_projects).values())},
         )
     org_invitations.withdraw_all(conn, org.id, "org_deleted")
-    for human_id in org_projects.owners_of(conn, org.id):
-        org_projects.release_in_all(conn, org.id, human_id)
+    owners = org_projects.owners_of(conn, org.id)
+    # The members go first: the `member_updated` of a seat that ends must not say `org_owner`.
     conn.execute(delete(t.org_member).where(t.org_member.c.org_id == org.id))
+    for human_id in owners:
+        org_projects.release_in_all(conn, org.id, human_id)
     avatars.remove_upload(conn, org.id)  # the avatar goes with the organisation (§6.26)
     conn.execute(update(t.org).where(t.org.c.id == org.id).values(deleted_at=clock.now()))
