@@ -4428,7 +4428,11 @@ window.MAITY_FIXTURES = {
         "mention",
         "security"
       ],
-      "mail_available": false
+      "mail_available": false,
+      "not_listening": {
+        "minutes": 60,
+        "mode": "inbox"
+      }
     }
   },
   "orgs.json": {

@@ -6121,6 +6121,72 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = nGet;
   delete win.Notification;
 
+  // Agents that stop listening (§5.3, §18.4): the mode and the minutes, the personal default; checked before sending.
+  const nlPatches = [];
+  const nlPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { nlPatches.push([p, b]); return nlPatch(p, b); };
+  await go("#/account/notifications"); for (let k = 0; k < 4; k++) await tick();
+  const nlForm = () => main.querySelector("form.not-listening-settings");
+  expect(nlForm() && byId("not-listening-mode").value === "inbox" && byId("not-listening-minutes").value === "60"
+    && byId("not-listening-mode").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "inbox,bell,off",
+    "not listening: the account shows the mode and the minutes, inbox and 60 by default");
+  byId("not-listening-minutes").value = "5"; nlForm().dispatch("submit"); await tick();
+  expect(!nlPatches.length && text(byId("not-listening-minutes-error")) === "A whole number of minutes from 10 to 1440."
+    && byId("not-listening-minutes").getAttribute("aria-invalid") === "true", "not listening: minutes out of range are refused before sending");
+  byId("not-listening-minutes").value = "90"; byId("not-listening-mode").value = "bell"; nlForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(nlPatches.length === 1 && JSON.stringify(nlPatches[0]) === JSON.stringify(["/me/notification-settings", { not_listening: { mode: "bell", minutes: 90 } }])
+    && text(nlForm()).includes("Saved."), "not listening: only what changed is sent, both together here");
+  // The hub's refusal at its field path is said at the field.
+  win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("x", 400, "/me/notification-settings", "invalid", { fields: { "not_listening.mode": "invalid" } }));
+  byId("not-listening-mode").value = "off"; nlForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(byId("not-listening-mode-error")) === "Not a choice of this hub.", "not listening: the hub's refusal of the mode is said at the field");
+  win.Maity.api.patch = nlPatch;
+  // A project's My settings (§6.2): the personal default or a value for the project, with what applies now.
+  nlPatches.length = 0;
+  win.Maity.api.patch = (p, b) => { nlPatches.push([p, b]); return nlPatch(p, b); };
+  await go("#/maintainer/maity/inbox");
+  const msTab = header.querySelectorAll("nav.views a").find((a) => a.textContent.startsWith("My settings"));
+  expect(msTab && msTab.getAttribute("href") === "#/maintainer/maity/my-settings", "my settings: a tab of every human member's");
+  await go("#/maintainer/maity/my-settings"); for (let k = 0; k < 4; k++) await tick();
+  const msForm = () => main.querySelector("form.my-settings");
+  expect(msForm() && byId("my-nl-default").checked && byId("my-nl-minutes").disabled && byId("my-nl-minutes").value === "90"
+    && text(main.querySelector(".my-nl-effective")) === "Applies now: 90 minutes, your default.", "my settings: the default applies, its value shown");
+  // The test DOM keeps no radio group: the other one is unchecked by hand.
+  byId("my-nl-default").checked = false; byId("my-nl-here").checked = true; byId("my-nl-here").dispatch("change");
+  expect(!byId("my-nl-minutes").disabled, "my settings: choosing For this project frees the minutes");
+  byId("my-nl-minutes").value = "2000"; msForm().dispatch("submit"); await tick();
+  expect(!nlPatches.length && text(byId("my-nl-minutes-error")).includes("10 to 1440"), "my settings: an override out of range is refused before sending");
+  byId("my-nl-minutes").value = "30"; msForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(nlPatches[0]) === JSON.stringify(["/projects/maintainer/maity/me/settings", { not_listening: { minutes: 30 } }])
+    && text(main.querySelector(".my-nl-effective")) === "Applies now: 30 minutes, set here." && text(msForm()).includes("Saved for this project."),
+    "my settings: a value for the project is sent and applies");
+  byId("my-nl-here").checked = false; byId("my-nl-default").checked = true; byId("my-nl-default").dispatch("change"); msForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(nlPatches[1] && nlPatches[1][1]) === JSON.stringify({ not_listening: { minutes: null } })
+    && text(main.querySelector(".my-nl-effective")) === "Applies now: 90 minutes, your default.", "my settings: back to the default sends null");
+  win.Maity.api.patch = nlPatch;
+  await win.Maity.api.patch("/me/notification-settings", { not_listening: { mode: "inbox", minutes: 60 } });
+  // The bell's agents_not_listening item leads to one's agents (§18.2 target agents).
+  expect(win.Maity.notify.linkOf({ kind: "inbox", record: "acr-9", target: { type: "agents" }, project: null }) === "/agents",
+    "not listening: the bell's item links to /agents");
+  // The digest (§5.3): a personal request the hub files, about no project; named as Maity's, leading to one's agents.
+  const dgAll = win.Maity.api.getAll, dgGet = win.Maity.api.get;
+  const dgReq = { id: "req-dg01", class: "info", title: "2 of your agent instances are not listening",
+    summary: "agent-b (wqe2) in maintainer/maity, since 2026-10-29 14:00 (UTC)\nagent-c (k3pa) in maintainer/maity, since 2026-10-29 14:20 (UTC)\n\nTheir harness may have stopped its wait loop.",
+    tried: null, options: [{ id: "seen", label: "Seen" }], replies: [{ id: "seen", label: "Seen" }], priority: "normal", to: "human:hum-maintainer",
+    asked_by: null, filed_by: "hub", on_behalf_of: null, task_id: null, task: null, while_open: "proceed", needs_in_session: null, ktw_ref: null,
+    personal: true, status: "open", answer: null, created_at: "2026-10-29T15:00:00Z", answered_at: null, project: null, org: null };
+  win.Maity.api.getAll = (p) => (p === "/requests" ? dgAll(p).then((r) => Object.assign({}, r, { items: [dgReq].concat(r.items) })) : dgAll(p));
+  win.Maity.api.get = (p) => (p === "/requests/req-dg01" ? Promise.resolve(dgReq) : dgGet(p));
+  await go("#/maintainer/maity/inbox"); await go("#/all"); for (let k = 0; k < 6; k++) await tick();
+  const dgEntry = main.querySelectorAll("li.entry").find((li) => li.getAttribute("data-request") === "req-dg01");
+  if (dgEntry && !dgEntry.classList.contains("current")) { dgEntry.querySelector("button.entry-head").click(); for (let k = 0; k < 4; k++) await tick(); }
+  const dgOpen = main.querySelectorAll("li.entry").find((li) => li.getAttribute("data-request") === "req-dg01");
+  expect(dgOpen && text(dgOpen.querySelector(".entry-head")).includes("Maity") && text(dgOpen).includes("Maity, on its own")
+    && dgOpen.querySelectorAll("a").some((a) => a.classList.contains("digest-agents") && a.getAttribute("href") === "#/agents")
+    && !text(dgOpen).includes("the agent waits") && text(dgOpen).includes("agent-c (k3pa) in maintainer/maity"),
+    "not listening: the digest is Maity's, lists the instances, links to one's agents, and says no agent waits");
+  win.Maity.api.getAll = dgAll; win.Maity.api.get = dgGet;
+
   // Sessions (docs/api.md §2.6.5, §2.6.7): where one is signed in, This was me, End, a held address change.
   await go("#/account/sessions"); for (let k = 0; k < 6; k++) await tick();
   const sesRow = (id) => main.querySelectorAll("li.session").find((li) => li.getAttribute("data-session") === id);

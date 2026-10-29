@@ -112,6 +112,16 @@ window.Maity = window.Maity || {};
   }
   const fixtureSlugs = () => [...new Set(Object.keys(fixtures()).filter((k) => k.includes("/")).map((k) => k.split("/")[0]))];
   // The fixture directory a full name (or one of its aliases) names, or null.
+  // A member's own settings per project (§6.2), kept for the page's life.
+  const projectSettings = {};
+  function mySettings(slug, path) {
+    if (me().member.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
+    file(slug, "members.json", path);
+    const own = projectSettings[slug] || { not_listening: { minutes: null } };
+    const personal = fixtures()["notifications.json"].settings.not_listening || { minutes: 60 };
+    return { not_listening: { minutes: own.not_listening.minutes },
+      effective: { not_listening: { minutes: own.not_listening.minutes === null ? personal.minutes : own.not_listening.minutes } } };
+  }
   function slugOfFull(full) {
     return fixtureSlugs().find((slug) => fullOf(slug) === full
       || ((fixtures()[slug + "/project.json"] || {}).aliases || []).includes(full)) || null;
@@ -1262,6 +1272,14 @@ window.Maity = window.Maity || {};
         if (!["en", "de"].includes(body.email.language)) fail(400, "invalid", "unknown language", path);
         set.email.language = body.email.language;
       }
+      // §18.4: not_listening's mode and its minutes, each checked at its path.
+      if (body.not_listening) {
+        const nl = body.not_listening, fields = {};
+        if ("mode" in nl && !["inbox", "bell", "off"].includes(nl.mode)) fields["not_listening.mode"] = "invalid";
+        if ("minutes" in nl && !(Number.isInteger(nl.minutes) && nl.minutes >= 10 && nl.minutes <= 1440)) fields["not_listening.minutes"] = "invalid";
+        if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
+        set.not_listening = Object.assign({}, set.not_listening, nl);
+      }
       const b = body.browser || {};
       if ("enabled" in b && typeof b.enabled !== "boolean") fail(400, "invalid", "enabled is a boolean", path, { fields: { "browser.enabled": "invalid" } });
       if ("enabled" in b) set.browser.enabled = b.enabled;
@@ -2111,6 +2129,20 @@ window.Maity = window.Maity || {};
         conversation_id: body.talk ? req.asked_by.member_id : null,
       };
       return req;
+    }],
+    // §6.2 a member's own settings in a project: an override or null (the
+    // personal default of §18.4), and what applies; humans only.
+    ["GET", /^\/projects\/([^/]+)\/me\/settings$/, (m, body, path) => mySettings(m[1], path)],
+    ["PATCH", /^\/projects\/([^/]+)\/me\/settings$/, (m, body, path) => {
+      mySettings(m[1], path);
+      const nl = body.not_listening || {};
+      if ("minutes" in nl) {
+        if (nl.minutes !== null && !(Number.isInteger(nl.minutes) && nl.minutes >= 10 && nl.minutes <= 1440)) {
+          fail(400, "invalid", "the request does not validate", path, { fields: { "not_listening.minutes": "invalid" } });
+        }
+        projectSettings[m[1]] = { not_listening: { minutes: nl.minutes } };
+      }
+      return mySettings(m[1], path);
     }],
     // §6.11 the overview: counts per column (closed ones after closed_after),
     // open requests as this caller would list them, the latest reports.

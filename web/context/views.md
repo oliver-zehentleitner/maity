@@ -1878,6 +1878,58 @@ Organisation tab. It mixed managing one's agents into the team's list,
 and the list looked different to each viewer. A redirect from `…/org`
 to the Overview: the alpha rule, no compatibility routes.
 
+## A member's own settings in a project are a tab of their own, My settings, at `my-settings`
+
+**Id:** df54f284-212c-4eab-995d-778dce37f7fb
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-10-29 in docs/api.md §6.2 (personal settings are the defaults, a member overrides them per project); the card tsk-32g2cjbm52ft; the coordinator's ruling on the path, 2026-10-29
+**Revisit when:** a member's own settings for a project grow beyond a few, or the project's Settings tab is offered to every member as their own
+
+**My settings** (`/<owner>/<slug>/my-settings`, a project view in
+§16.11) shows every human member their own settings for the project:
+each either **Use my default**, the value from the account sent as
+`null`, or a value for this project, with what applies now. The first
+is how long one of one's agent instances here may stop listening
+before one hears of it. The account's notification settings hold the
+default and its mode (inbox, bell or off).
+
+**Reason:** the project's Settings are kept by its owner and admins;
+one member's own choices are not the project's and must not sit under
+them. A tab of its own makes them reachable from inside the project,
+where one thinks of that project's agents.
+
+**Rejected alternative:** `settings/me`, under the project's Settings:
+no new word for the slugs to avoid, but its tab would be marked as the
+one shown and mix the owner's page with a member's own. One list of
+per-project overrides on the account: far from the project it is about.
+
+## A request the hub files itself is Maity's; the not-listening digest leads to one's agents
+
+**Id:** 967ed0c0-9e46-42cc-bd45-4fbc4ceae370
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §5.3 (the owner's digest: `asked_by` null, `filed_by` "hub", no project), §7, §18.1–§18.2 (`agents_not_listening`, target `agents`, linking to `/agents`, the coordinator's ruling of 2026-10-29); the card tsk-32g2cjbm52ft
+**Revisit when:** the hub files requests of its own that are about one project and should lead into it, or the dashboard gets a personal inbox
+
+A request with `asked_by: null` and `filed_by: "hub"` names its asker
+**Maity** (in the list) and **Maity, on its own** (in its facts), and
+says nothing about an agent waiting, since none does. The hourly digest
+of agent instances that are not listening — personal, about no project
+and no organisation — adds a link to one's agents (`/agents`); its
+summary lists the instances. The bell's `agents_not_listening` item
+(target `agents`) leads to `/agents` too.
+
+**Reason:** "—" as an asker reads as a missing name, not as the hub;
+and "the agent waits for the answer" would be false. The instances
+named in the digest can be resumed or ended only from one's agents.
+
+**Rejected alternative:** the item's `url` as the link: the dashboard
+builds every bell link from the target (the entries above), so one
+item built otherwise would be the exception.
+
 ## A human's picture is set on the account, an agent's in its row on Members; the account keeps only agents no project shows
 
 **Id:** 59aaf51f-c63d-4cb6-966b-85eb8f2c682d

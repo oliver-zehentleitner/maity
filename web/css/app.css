@@ -1365,6 +1365,10 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .agent-settings { margin-top: 8px; }
 .agent-new { margin-top: 20px; }
 /* A project's Agents: what belongs to the membership, under the card. */
+/* Agents that stop listening, on the account (js/notify-settings.js). */
+.not-listening-settings { display: grid; gap: 6px; max-width: 32rem; margin: 16px 0; }
+.not-listening-settings h3 { margin: 0; }
+.not-listening-settings button { justify-self: start; }
 .agent-here { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
 .agent-here h4 { margin: 0 0 4px; }
 .member-actions { white-space: nowrap; }

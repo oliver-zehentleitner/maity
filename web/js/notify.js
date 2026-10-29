@@ -45,6 +45,8 @@ window.Maity = window.Maity || {};
     const t0 = item.target || {};
     if (t0.type === "session" || item.kind === "security") return "/account/sessions";
     if (t0.type === "settings") return "/account/notifications";
+    // Agent instances not listening (agents_not_listening, §5.3): one's agents.
+    if (t0.type === "agents") return "/agents";
     // A registration waiting for the instance admin (§16.4): Admin.
     if (t0.type === "registration") return "/admin";
     const full = item.project && item.project.full_name;

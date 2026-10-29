@@ -12349,7 +12349,7 @@ names:
 | `/account/…`, `/admin…`, `/all`, `/chats…`, `/new`, `/runners`, `/observe/<owner>/<slug>`, `/explore`, `/inbox`, `/notifications` | the dashboard's own pages |
 | `/<handle>` | a person's or an organisation's address; its public page where one is served (below) |
 | `/<owner>/<slug>` | a project; its public page where one is served (below) |
-| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview`, `members/<id>`, `chat/<id>`, `messages`, `ticker`, `swarm` (§6.22), `agents/<id>…` (the caller's own agents here), `runners`, `why`, `settings`, `jour-fixe/<round id>` (§20), `message`; a view added later joins this list |
+| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview`, `members/<id>`, `chat/<id>`, `messages`, `ticker`, `swarm` (§6.22), `agents/<id>…` (the caller's own agents here), `runners`, `why`, `my-settings` (the caller's own settings here, §6.2), `settings`, `jour-fixe/<round id>` (§20), `message`; a view added later joins this list |
 
 **Public pages at their canonical address.** `/<owner>/<slug>` and
 `/<handle>`, where the first segment is not reserved (below):
@@ -13423,7 +13423,9 @@ rules that make a position safe to resume from:
   item links to — `request`, `task` (a mention in a card's thread),
   `conversation`, `project` (a mention in a
   project message), `registration` (a `registration_pending` record:
-  the waiting human's id, linking to Admin → Registration), and for
+  the waiting human's id, linking to Admin → Registration), `agents`
+  (an `agents_not_listening` record, linking to the human's agents,
+  `/agents`), and for
   the other account records `session` or `settings` (`mail_disabled`
   included), `project` `null`
   on those (a personal request's record targets its `request`, above)
