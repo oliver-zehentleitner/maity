@@ -266,10 +266,10 @@ def test_a_newer_request_replaces_the_older(
     dead(pat, first, migrated)
     assert page(pat, second).status_code == 200
     with migrated.connect() as conn:
-        rows = conn.execute(
-            select(t.account_deletion).order_by(t.account_deletion.c.requested_at)
-        ).all()
-    assert [(r.live, r.withdrawn_by) for r in rows] == [(None, "replaced"), (True, None)]
+        rows = conn.execute(select(t.account_deletion)).all()
+    # Both requests carry the same frozen clock value, so no column orders them.
+    states = sorted(((r.live is True, r.withdrawn_by) for r in rows), key=lambda s: s[0])
+    assert states == [(False, "replaced"), (True, None)]
 
 
 def test_a_password_change_withdraws_the_request(

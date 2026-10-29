@@ -3374,6 +3374,93 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/account"); for (let k = 0; k < 4; k++) await tick();
   expect(!byId("meat-proxy"), "meat proxy: no switch on a hub whose machine form does not name it");
   win.Maity.api.hubBody = mpBody;
+  // Your data (docs/api.md §2.9): the export and the deletion request, each a sensitive call (§2.8): the page asks for the
+  // password or a code where the hub says so, proves it and makes the call again.
+  const ydGet = win.Maity.api.get, ydPost = win.Maity.api.post, ydSave = win.Maity.yourData.save;
+  const ydSaved = [], ydProofs = [];
+  win.Maity.yourData.save = (name, textOf) => { ydSaved.push([name, textOf]); };
+  let ydNeed = "step_up_required";
+  win.Maity.api.get = (p) => {
+    if (p === "/me/export" && ydNeed) { const r = ydNeed; return Promise.reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", { reason: r })); }
+    return ydGet(p);
+  };
+  win.Maity.api.post = (p, b) => {
+    if (p === "/auth/second-factor/verify" || p === "/auth/reauthenticate") ydProofs.push([p, b]);
+    if ((p === "/auth/second-factor/verify" && b.code === "123456") || (p === "/auth/reauthenticate" && b.password === "correct horse")) ydNeed = null;
+    if (p === "/me/deletion" && ydNeed) { const r = ydNeed; return Promise.reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", { reason: r })); }
+    return ydPost(p, b);
+  };
+  await go("#/account/data"); for (let k = 0; k < 4; k++) await tick();
+  const ydBox = () => main.querySelector("section.your-data");
+  expect(ydBox() && btn(ydBox(), "Export my data") && text(ydBox()).includes("Delete my account"), "your data: the account has the export and the deletion");
+  btn(ydBox(), "Export my data").click(); for (let k = 0; k < 4; k++) await tick();
+  const ydForm = () => ydBox().querySelector("form.step-up");
+  expect(ydForm() && text(ydForm()).includes("Exporting your data needs your second factor") && !ydSaved.length,
+    "your data: the export asks for a code where the hub wants the step-up, naming the action");
+  byId("step-up-step_up_required").value = "000000"; ydForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(ydForm() && text(ydForm()).includes("That code is not valid.") && !ydSaved.length, "your data: a wrong code is said, nothing exported");
+  byId("step-up-step_up_required").value = "123456"; ydForm().dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(!ydForm() && ydSaved.length === 1 && /^maity-export-maintainer-\d{4}-\d{2}-\d{2}\.json$/.test(ydSaved[0][0]) && JSON.parse(ydSaved[0][1]).format === 1
+    && text(ydBox()).includes("Your export was saved."), "your data: proven, the call is made again and the file saved under the hub's name");
+  ydNeed = "step_up_required";
+  btn(ydBox(), "Export my data").click(); for (let k = 0; k < 4; k++) await tick();
+  btn(ydForm(), "Cancel").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(!ydForm() && ydSaved.length === 1 && !text(ydBox()).includes("Not exported"), "your data: Cancel exports nothing and says no failure");
+  // The deletion: confirmed by the handle, the password asked where the hub wants it, then pending until the mail's link.
+  ydNeed = "reauthentication_required";
+  const ydDel = () => btn(ydBox(), "Delete my account");
+  expect(ydDel() && ydDel().disabled, "your data: Delete my account is off until the handle is typed");
+  byId("delete-account-confirm").value = "@maintainer"; byId("delete-account-confirm").dispatch("input");
+  ydBox().querySelector("form.account-delete").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(ydForm() && text(ydForm()).includes("password"), "your data: the deletion asks for the password where the hub wants it");
+  expect(byId("delete-account-confirm").disabled && ydDel().disabled, "your data: while it is asked, the handle is locked and the button off");
+  byId("step-up-reauthentication_required").value = "wrong"; ydForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(ydForm()).includes("That is not your password."), "your data: a wrong password is said");
+  byId("step-up-reauthentication_required").value = "correct horse"; ydForm().dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(text(ydBox()).includes("We sent a mail to your verified address") && btn(ydBox(), "Withdraw the deletion") && text(ydBox()).includes("follow the link in the mail"),
+    "your data: requested, the page says it waits for the mail's link and offers to withdraw");
+  btn(ydBox(), "Withdraw the deletion").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(text(ydBox()).includes("The deletion was withdrawn") && ydDel(), "your data: withdrawn, the account stays");
+  win.Maity.api.post = (p, b) => (p === "/me/deletion" ? Promise.reject(new win.Maity.api.ApiError("x", 409, p, "namespace_owner", {})) : ydPost(p, b));
+  byId("delete-account-confirm").value = "maintainer"; byId("delete-account-confirm").dispatch("input");
+  ydBox().querySelector("form.account-delete").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(ydBox()).includes("Not asked: a project in your namespace is still open"), "your data: the hub's refusal in words");
+  // One slot, one question: a second question cancels the first, whose call then does not hang (the deletion's field free again).
+  win.Maity.api.post = (p, b) => {
+    if (p === "/auth/second-factor/verify" || p === "/auth/reauthenticate") ydProofs.push([p, b]);
+    if (p === "/me/deletion") return Promise.reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", { reason: "reauthentication_required" }));
+    return ydPost(p, b);
+  };
+  ydNeed = "step_up_required";
+  byId("delete-account-confirm").value = "@maintainer"; byId("delete-account-confirm").dispatch("input");
+  ydBox().querySelector("form.account-delete").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(byId("step-up-reauthentication_required") && byId("delete-account-confirm").disabled, "your data: the deletion's password is asked, its field locked");
+  btn(ydBox(), "Export my data").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(byId("step-up-step_up_required") && !byId("step-up-reauthentication_required") && !byId("delete-account-confirm").disabled
+    && !ydDel().disabled && !text(ydBox()).includes("Not asked"), "your data: a second question cancels the first; the deletion is free again, no failure said");
+  // A password goes as typed, spaces included; a code typed with a space is a code.
+  btn(ydForm(), "Cancel").click(); for (let k = 0; k < 4; k++) await tick();
+  ydBox().querySelector("form.account-delete").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  ydProofs.length = 0;
+  byId("step-up-reauthentication_required").value = "  spaced pass  "; ydForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(ydProofs[0]) === JSON.stringify(["/auth/reauthenticate", { password: "  spaced pass  " }]), "your data: a password is sent as typed, not trimmed");
+  btn(ydForm(), "Cancel").click(); for (let k = 0; k < 4; k++) await tick();
+  btn(ydBox(), "Export my data").click(); for (let k = 0; k < 4; k++) await tick();
+  ydProofs.length = 0;
+  byId("step-up-step_up_required").value = "482 913"; ydForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(ydProofs[0]) === JSON.stringify(["/auth/second-factor/verify", { code: "482913" }]), "your data: a code typed with a space goes as a code");
+  if (ydForm()) { btn(ydForm(), "Cancel").click(); for (let k = 0; k < 4; k++) await tick(); }
+  win.Maity.api.get = ydGet; win.Maity.api.post = ydPost; win.Maity.yourData.save = ydSave;
+  // A hub whose machine form lists neither route (§2.9 not deployed yet): said quietly, nothing offered.
+  const ydHas = win.Maity.api.hubHas;
+  win.Maity.api.hubHas = (m, p) => (p === "/me/export" || p === "/me/deletion" ? Promise.resolve(false) : ydHas(m, p));
+  await go("#/account/data"); for (let k = 0; k < 4; k++) await tick();
+  expect(ydBox() && !btn(ydBox(), "Export my data") && !btn(ydBox(), "Delete my account") && text(ydBox()).includes("This hub cannot export your data yet.")
+    && text(ydBox()).includes("This hub cannot delete an account yet."), "your data: a hub without the routes offers neither, said quietly");
+  win.Maity.api.hubHas = () => Promise.reject(new Error("unreadable"));
+  await go("#/account/data"); for (let k = 0; k < 4; k++) await tick();
+  expect(btn(ydBox(), "Export my data") && btn(ydBox(), "Delete my account"), "your data: a machine form that cannot be read keeps both");
+  win.Maity.api.hubHas = ydHas;
   // Pictures (docs/api.md §6.10): one's own on the account, an agent's in its row on Members;
   // the account keeps only the agents no project of one's own shows (tsk-th1yq0jtk3yf).
   const avCalls = [];
