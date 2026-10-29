@@ -115,19 +115,21 @@ class SchemaNotCurrentError(RuntimeError):
     """The database is not at the migration head; `maity-hub migrate` has not run."""
 
 
-def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
-    engine = (
-        engine
-        if engine is not None
-        else make_engine(
-            settings.database_url,
-            settings.db_pool_size,
-            settings.db_max_overflow,
-            settings.db_pool_recycle,
-            settings.db_statement_timeout,
-            settings.db_idle_in_transaction_timeout,
-        )
+def serving_engine(settings: Settings) -> Engine:
+    """The engine of a serving hub: the pool and the PostgreSQL timeouts of the settings.
+    `maity-hub serve` builds it here too, so a setting reaches the engine the hub runs on."""
+    return make_engine(
+        settings.database_url,
+        settings.db_pool_size,
+        settings.db_max_overflow,
+        settings.db_pool_recycle,
+        settings.db_statement_timeout,
+        settings.db_idle_in_transaction_timeout,
     )
+
+
+def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
+    engine = engine if engine is not None else serving_engine(settings)
     health_engine = make_health_engine(engine)  # the probe's own connection, outside the pool
     write_guard.install(engine)  # no write of a deleted account commits (§2.9)
 

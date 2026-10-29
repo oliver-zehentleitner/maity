@@ -601,6 +601,12 @@ PostgreSQL connection of the serving hub is opened with `statement_timeout` 30 s
 per connection from the settings, and only where the hub serves: `maity-hub migrate` and the other
 commands take none, so a migration is never cut short. MariaDB gets neither.
 
+The serving engine is built in one place, `app.serving_engine(settings)`, which `create_app` and
+`maity-hub serve` both call. `serve` had built its own engine from the URL alone and passed it in,
+so none of the pool settings (`MAITY_DB_POOL_*`) reached a served hub, and the timeouts would not
+have either (found in review of #667); a test now reads the pool and the options off the engine
+that `serve` runs the app on.
+
 **Reason:** in the incident the pool was used up and the readiness probe, which took a pooled
 connection like every call, failed with it; the only pod left the network because of the load it
 could have reported. A probe that does not queue for the pool answers 503 for what is wrong with the
