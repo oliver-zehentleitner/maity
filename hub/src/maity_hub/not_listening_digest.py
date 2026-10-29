@@ -102,11 +102,18 @@ def away_of(conn: Connection, owner_id: str, now: datetime | None = None) -> lis
     return _away(conn, _episodes(conn, owner_id), owner_id, now or clock.now())
 
 
-def latest(conn: Connection, owner_id: str) -> Any | None:
-    """The owner's newest `agents_not_listening` record, open when its count is not 0."""
+def latest(conn: Connection, owner_id: str, now: datetime | None = None) -> Any | None:
+    """The owner's newest `agents_not_listening` record within the window the bell reads
+    (`records.KEPT`), open when its count is not 0. An open record that left the window is
+    not seen, so `reconcile` writes a new one and the bell keeps listing it."""
+    since = (now or clock.now()) - records.KEPT
     return conn.execute(
         select(t.account_record)
-        .where(t.account_record.c.human_id == owner_id, t.account_record.c.type == RECORD)
+        .where(
+            t.account_record.c.human_id == owner_id,
+            t.account_record.c.type == RECORD,
+            t.account_record.c.at >= since,
+        )
         .order_by(t.account_record.c.n.desc())
         .limit(1)
     ).first()
@@ -120,7 +127,7 @@ def reconcile(conn: Connection, owner_id: str, now: datetime | None = None) -> N
     """Bring one owner's record in line with their mode and their away instances."""
     mode = preferences.preferences(conn, owner_id)["not_listening"]["mode"]
     count = len(away_of(conn, owner_id, now)) if mode == "bell" else 0
-    open_ = _is_open(latest(conn, owner_id))
+    open_ = _is_open(latest(conn, owner_id, now))
     if count and not open_:
         records.write(conn, owner_id, RECORD, {"instances": count})
     elif not count and open_:
@@ -167,7 +174,9 @@ class Worker:
         self._due = next_hour(clock.now())
 
     def start(self) -> None:
-        self._thread = threading.Thread(target=self._run, name="maity-not-listening", daemon=True)
+        self._thread = threading.Thread(
+            target=self._run, name="maity-not-listening-digest", daemon=True
+        )
         self._thread.start()
 
     def stop(self) -> None:

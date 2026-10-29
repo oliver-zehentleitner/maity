@@ -6,3 +6,9 @@
   `<n> of your agent instances are not listening`), listed and counted while one is
   away; the hourly worker runs on the hour (UTC) and a change of the mode takes effect
   at the `PATCH` (§5.3, §18.1, §18.2)
+
+### Changed
+
+- hub: the request per not-listening episode goes only to an owner under
+  `not_listening.mode: inbox`; under `bell` the bell item replaces it, under `off`
+  nothing is sent (§5.3, §18.4)

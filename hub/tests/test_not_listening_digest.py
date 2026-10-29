@@ -159,3 +159,43 @@ def test_a_closed_record_lists_nothing_until_the_next_hour_writes_a_new_one(
     not_listening_digest.run(migrated)
     assert _records(migrated, owner)[-1] == {"instances": 1}
     assert len(_bell(owner)) == 1
+
+
+def test_an_open_record_older_than_the_bell_reads_is_written_anew(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The bell reads records of the last 90 days (`records.KEPT`); an away phase that
+    outlasts them gets a new record at the next hour, so it stays listed."""
+    from maity_hub.notifications import records
+
+    agent = _agent(make_client, owner)
+    _episode(migrated, agent, timedelta(hours=2))
+    not_listening_digest.run(migrated)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.account_record)
+            .where(t.account_record.c.type == "agents_not_listening")
+            .values(at=clock.now() - records.KEPT - timedelta(days=1))
+        )
+    assert _bell(owner) == []  # out of the window the bell reads
+    not_listening_digest.run(migrated)
+    assert _records(migrated, owner) == [{"instances": 1}, {"instances": 1}]
+    assert len(_bell(owner)) == 1
+
+
+def test_marking_it_read_leaves_it_unread_while_an_instance_is_away(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The third open matter (§18.2, §18.3): no caller marks it read; it reads as read
+    once no instance is away any more."""
+    agent = _agent(make_client, owner)
+    _episode(migrated, agent, timedelta(hours=2))
+    not_listening_digest.run(migrated)
+    [item] = _bell(owner)
+    marked = owner.post("/me/notifications/read", {"ids": [item["id"]]})
+    assert marked.status_code == 200, marked.text
+    assert marked.json()["counts"]["inbox"] == 1
+    [again] = _bell(owner)
+    assert again["read"] is False
+    unread = owner.get("/me/notifications", params={"limit": 50, "unread": "true"}).json()
+    assert any((i.get("target") or {}).get("type") == "agents" for i in unread["items"])

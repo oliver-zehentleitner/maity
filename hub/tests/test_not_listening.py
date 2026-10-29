@@ -313,3 +313,20 @@ def test_the_membership_is_read_again_under_the_projects_lock(
     monkeypatch.setattr(not_listening, "lock_project", paused_while_waiting)
     s.sweep()
     assert s.session().not_listening_since is None and s.events() == [] and s.notices() == []
+
+
+@pytest.mark.parametrize(("mode", "requests"), [("inbox", 1), ("bell", 0), ("off", 0)])
+def test_only_an_owner_under_inbox_gets_a_request_per_episode(
+    setup: Setup, mode: str, requests: int
+) -> None:
+    """§5.3, §18.4: `bell` hears of it through the digest's bell item, `off` not at all;
+    until the digest request comes, `inbox` keeps one request per episode."""
+    s = setup
+    changed = s.owner.patch("/me/notification-settings", {"not_listening": {"mode": mode}})
+    assert changed.status_code == 200, changed.text
+    s.message()
+    s.at(11)
+    s.sweep()
+    assert s.session().not_listening_since is not None  # the episode starts in every mode
+    assert len(s.events()) == 1  # and the member it reports to is told, whatever the mode
+    assert len(s.notices()) == requests

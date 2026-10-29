@@ -689,6 +689,11 @@ first instance becomes away, `{instances: 0}` when none is away any more, and al
 `PATCH` that leaves `bell`. The bell lists only the newest such record, and only while
 the owner is under `bell` and an instance is away when the bell is read; the count in its
 title is read then too. A later away phase writes a new record, so it is a new, unread item.
+Only an owner under `inbox` still gets a request per episode until the digest request
+comes; under `bell` the bell item is the only notice and under `off` there is none, so
+the modes never add up. Reading the count live costs the bell a fixed few queries (the
+owner's episodes, notification settings and project overrides), and only while that
+newest record is open; it does not grow with the number of items.
 
 **Reason:** `account_record` is append-only; read marks are its only change after the
 write. Deriving the open state and the count on read keeps that, lists the item exactly
