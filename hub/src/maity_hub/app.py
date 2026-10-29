@@ -36,6 +36,7 @@ from maity_hub import (
     paths,
     probe,
     registration_accounts,
+    reports,
     takeovers,
     write_guard,
 )
@@ -101,6 +102,7 @@ from maity_hub.routes import legal as legal_routes
 from maity_hub.routes import me as me_routes
 from maity_hub.routes import probe as probe_routes
 from maity_hub.routes import registration as registration_routes
+from maity_hub.routes import reports as report_routes
 from maity_hub.routes import second_factor as second_factor_routes
 from maity_hub.routes import takeovers as takeover_routes
 
@@ -172,6 +174,9 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         commitment_worker.start()
         registrations_worker = registration_accounts.Worker(engine)
         registrations_worker.start()
+        # An open report expires and a closed one's content goes on time (§16.8).
+        reports_worker = reports.Worker(engine)
+        reports_worker.start()
         from maity_hub.jourfixe import worker as jour_fixe_worker
 
         jour_fixe_clock = jour_fixe_worker.Worker(engine)  # the schedule acts on its own
@@ -198,6 +203,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         mail_worker.stop()
         takeover_worker.stop()
         jour_fixe_clock.stop()
+        reports_worker.stop()
         registrations_worker.stop()
         commitment_worker.stop()
         availability_worker.stop()
@@ -233,6 +239,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(forge_links.router, prefix=prefix)
     app.include_router(notification_settings.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)
+    app.include_router(report_routes.router, prefix=prefix)
     app.include_router(registration_routes.router, prefix=prefix)
     app.include_router(invitation_routes.router, prefix=prefix)
     app.include_router(landing_routes.router, prefix=prefix)

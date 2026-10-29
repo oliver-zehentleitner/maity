@@ -1905,3 +1905,32 @@ forge_token = Table(
     Column("checked_at", UtcDateTime, nullable=False),
     **MYSQL_TABLE,
 )
+
+# An abuse report (docs/api.md §16.8): what someone signed in reported, kept with a copy
+# of the target as the reporter could read it then. `account_id` is the reporting account
+# (an agent's owner), the one the limits count; `reporter` the principal that reported.
+# `snapshot`, `text` and `note` are the report's content: emptied 90 days after it closes
+# (`purged_at`), the rest stays as the record.
+abuse_report = Table(
+    "abuse_report",
+    metadata,
+    _id(primary_key=True),
+    Column("reporter", String(ID), nullable=False),
+    _ref("account_id", "human.id", nullable=False, index=True),
+    Column("target_type", String(16), nullable=False),  # profile, project, message, card
+    Column("target_id", String(255), nullable=False),
+    Column("project_id", String(ID)),  # the target's project; null for a profile
+    Column("reason", String(32), nullable=False),
+    Column("text", Text),
+    Column("snapshot", JSON_VALUE),
+    Column("status", String(16), nullable=False),  # open, resolved, expired
+    Column("action", String(16)),  # dismiss (PR2: hide, remove, suspend)
+    Column("note", MARKDOWN_TEXT),
+    Column("resolved_by", String(ID)),  # the instance admin who resolved it last
+    Column("resolved_at", UtcDateTime),
+    Column("closed_at", UtcDateTime),  # resolved or expired: the 90 days count from here
+    Column("purged_at", UtcDateTime),
+    Column("created_at", UtcDateTime, nullable=False),
+    Index("ix_abuse_report_status_created", "status", "created_at"),
+    **MYSQL_TABLE,
+)

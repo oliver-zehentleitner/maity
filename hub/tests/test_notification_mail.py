@@ -446,6 +446,24 @@ def test_the_open_matters_are_never_mailed(
     assert notifications(migrated) == []
 
 
+def test_an_open_report_is_mailed_to_the_instance_admin(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    """Unlike the other open matters (§18.1, §16.8): its reason and type, never its text."""
+    owner, agent = setup(make_client, migrated)  # the earliest account: the instance admin
+    made = agent.post(
+        "/reports",
+        {"target": {"type": "project", "id": "maintainer/maity"}, "reason": "spam", "text": "zzz"},
+    )
+    assert made.status_code == 201, made.text
+    at(minutes=5)
+    run(migrated)
+    [mail] = notifications(migrated)
+    assert mail.recipient == "me@example.org"
+    assert "Report: spam — project" in mail.subject + mail.body
+    assert "zzz" not in mail.body
+
+
 def test_a_message_text_never_comes_from_a_redacted_event(
     make_client: ClientFactory, migrated: Engine, at: Any
 ) -> None:
