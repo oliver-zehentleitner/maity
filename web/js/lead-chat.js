@@ -12,14 +12,18 @@ window.Maity = window.Maity || {};
   });
   const available = (m) => m && m.availability && m.availability.state === "available";
 
+  // An admin agent: trust admin, not the owner's proxy (§2.3).
+  const adminAgent = (m) => m.trust === "admin" && m.role !== "proxy";
+
   function resolve(project, members) {
     const agents = ordered(members.filter((m) => m.kind === "agent" && !m.removed_at));
     const policy = project.policy || {};
     // Older hubs cannot tell us which admin or substitute holds the seat now.
     if (!("coordinator" in policy)) return null;
     let lead;
-    if (policy.coordinator === "role:admin") {
-      const admins = agents.filter((m) => m.role === "admin");
+    // trust:admin (role:admin on a hub before trust × role, §2.3): the admin agents, the proxy aside.
+    if (policy.coordinator === "trust:admin" || policy.coordinator === "role:admin") {
+      const admins = agents.filter(adminAgent);
       if (admins.some((m) => !m.availability)) return null;
       lead = admins.find(available) || admins[0];
     } else lead = agents.find((m) => m.id === policy.coordinator);
@@ -43,9 +47,9 @@ window.Maity = window.Maity || {};
       return [lead].concat(ordered(members.filter((m) => live(m) && m.role === "proxy" && m.owner_id === ctx.me.id && m.id !== lead.id)));
     }
     const policy = ctx.project.policy || {};
-    const routingKnown = "coordinator" in policy && members.filter((m) => live(m) && m.role === "admin").every((m) => !!m.availability);
+    const routingKnown = "coordinator" in policy && members.filter((m) => live(m) && adminAgent(m)).every((m) => !!m.availability);
     return ordered(members.filter((m) => live(m) && (routingKnown || m.owner_id === ctx.me.id)
-      && (m.role === "admin" || (m.role === "proxy" && m.owner_id === ctx.me.id))));
+      && (adminAgent(m) || (m.role === "proxy" && m.owner_id === ctx.me.id))));
   }
 
   // Into the chat with `member`: one's own agent's direct chat; another

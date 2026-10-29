@@ -126,6 +126,7 @@ def members(conn: Connection, membership_ids: Iterable[int | None]) -> dict[int,
             t.membership.c.human_id,
             t.agent_profile.c.handle.label("agent_handle"),
             t.human.c.handle.label("human_handle"),
+            t.human.c.deleted_at.label("human_deleted_at"),
         )
         .select_from(t.membership)
         .outerjoin(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
@@ -137,6 +138,8 @@ def members(conn: Connection, membership_ids: Iterable[int | None]) -> dict[int,
             "member_id": row.agent_id or row.human_id,
             "handle": row.agent_handle or row.human_handle,
             "kind": "agent" if row.agent_id else "human",
+            # A deleted account shows no handle (§2.9).
+            **({"handle": None, "deleted": True} if row.human_deleted_at is not None else {}),
         }
         for row in found
     }

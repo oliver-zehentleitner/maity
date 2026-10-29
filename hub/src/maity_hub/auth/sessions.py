@@ -27,7 +27,7 @@ from maity_hub.auth.caller import (
     session_expires_at,
     session_id_hash,
 )
-from maity_hub.errors import ApiError
+from maity_hub.errors import ApiError, unauthenticated
 from maity_hub.notifications import records
 from maity_hub.views import ts
 
@@ -278,6 +278,9 @@ def create(
     cookie value's hash is stored. A session that still owes the second step of a
     two-factor sign-in (`state` other than `full`, §2.8.2) is not a sign-in yet: no
     record, no `last_login_at`; `complete_sign_in` makes it one."""
+    deleted = conn.execute(select(t.human.c.deleted_at).where(t.human.c.id == human_id))
+    if deleted.scalar() is not None:  # every way in ends here: none for a deleted account
+        raise unauthenticated("this account was deleted")
     now = clock.now()
     session_id, csrf = secrets.token_urlsafe(32), secrets.token_hex(32)
     browser, system = describe(user_agent)
@@ -351,6 +354,9 @@ def complete_sign_in(conn: Connection, row: Any, second_factor: str | None) -> t
     factor), becomes `full`, and only now counts as a sign-in. Conditional on the row
     still owing that step, so of two concurrent completions one wins; the other raises
     `LookupError`."""
+    deleted = conn.execute(select(t.human.c.deleted_at).where(t.human.c.id == row.human_id))
+    if deleted.scalar() is not None:  # every way in ends here: none for a deleted account
+        raise unauthenticated("this account was deleted")
     now = clock.now()
     session_id, csrf = secrets.token_urlsafe(32), secrets.token_hex(32)
     values: dict[str, Any] = {

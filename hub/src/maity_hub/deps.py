@@ -8,7 +8,7 @@ from fastapi import Depends, Request
 from sqlalchemy import Connection, Engine, select
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import events, namespace, runner_revoke
+from maity_hub import events, namespace, runner_revoke, write_guard
 from maity_hub import tables as t
 from maity_hub.auth import second_factor, sessions
 from maity_hub.auth.caller import Caller, RequestFacts, authenticate
@@ -30,8 +30,9 @@ def settings_of(request: Request) -> Settings:
 
 
 def reader_of(request: Request) -> Forge:
-    """The forge reader with the operator's token; the token lives in the settings only."""
-    return Forge(settings_of(request).forge_github_token)
+    """The forge reader with the operator's token; the token lives in the settings only.
+    `for_project` on it chooses a project's source (§11.4)."""
+    return Forge(settings_of(request).forge_github_token, access=request.app.state.forge_access)
 
 
 def origin_of(request: Request) -> Origin:
@@ -95,6 +96,8 @@ async def _resolve(request: Request, renew_leases: bool) -> Caller:
         await run_in_threadpool(_end_session, engine, ended)
         raise unauthenticated("the sign-in has to start again") from None
     request.state.caller = caller
+    if caller.kind == "human" and caller.human_id is not None:
+        write_guard.bind(caller.human_id)  # its writes commit only while it exists (§2.9)
     return caller
 
 

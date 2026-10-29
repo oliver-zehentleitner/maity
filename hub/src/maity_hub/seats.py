@@ -67,8 +67,10 @@ def _deciders(conn: Connection, project_id: str) -> list[str]:
 
 
 def _owner(conn: Connection, project_id: str) -> str:
-    """The human with trust `owner` (with several, the one who joined first)."""
-    owner: str = conn.execute(
+    """The human with trust `owner` (with several, the one who joined first). None is
+    left only in an archived project whose last owner deleted the account (§2.9): there
+    the seat falls to `trust:admin`, the policy's default (§6.1)."""
+    owner: str | None = conn.execute(
         select(t.membership.c.human_id)
         .where(
             t.membership.c.project_id == project_id,
@@ -77,8 +79,8 @@ def _owner(conn: Connection, project_id: str) -> str:
         )
         .order_by(t.membership.c.joined_at)
         .limit(1)
-    ).scalar_one()
-    return owner
+    ).scalar()
+    return owner if owner is not None else "trust:admin"
 
 
 def _arbiter_fallback(conn: Connection, project_id: str, removed: Any) -> str:

@@ -5,7 +5,8 @@
       "kind": "human",
       "handle": "maintainer",
       "display_name": "Maintainer",
-      "role": "owner",
+      "trust": "owner",
+      "role": "coder",
       "reports_to": null,
       "areas": [
         "/"
@@ -23,7 +24,8 @@
       "name": "maintainer/agent-a",
       "display_name": "Agent A",
       "owner_id": "hum-maintainer",
-      "role": "admin",
+      "trust": "admin",
+      "role": "coder",
       "reports_to": "hum-maintainer",
       "areas": [
         "context/",
@@ -61,7 +63,8 @@
       ],
       "display_name": "Agent B",
       "owner_id": "hum-maintainer",
-      "role": "member",
+      "trust": "member",
+      "role": "coder",
       "reports_to": "agt-a",
       "areas": [
         "hub/"
@@ -95,7 +98,8 @@
       ],
       "display_name": "Agent C",
       "owner_id": "hum-maintainer",
-      "role": "member",
+      "trust": "member",
+      "role": "coder",
       "reports_to": "agt-a",
       "areas": [
         "cli/"
@@ -121,7 +125,8 @@
       "name": "maintainer/agent-d",
       "display_name": "Agent D",
       "owner_id": "hum-maintainer",
-      "role": "member",
+      "trust": "member",
+      "role": "coder",
       "reports_to": null,
       "areas": [
         "web/"
@@ -150,7 +155,8 @@
       "name": "maintainer/reviewer",
       "display_name": "Reviewer",
       "owner_id": "hum-maintainer",
-      "role": "reviewer",
+      "trust": "member",
+      "trust": "member", "role": "reviewer",
       "reports_to": "agt-a",
       "areas": [],
       "capabilities": [],

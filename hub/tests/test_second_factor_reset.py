@@ -149,6 +149,8 @@ def test_what_the_request_needs(
         == 404
     )
     assert ask(admin, grace, "").status_code == 400
+    for bad in ("a\x00b", "a\x1bb", "a\x7fb"):  # no control character in a reason
+        assert ask(admin, grace, bad).status_code == 400, repr(bad)
     assert ask(admin, grace, "x" * 2000).status_code == 400
     # No verified address: the mail cannot reach them.
     nobody = factory.human(migrated, "ada")
@@ -258,13 +260,7 @@ def test_a_link_that_does_not_work_is_one_page(
     link = f"/mail/second-factor-reset/{token}"
     if how == "recovered":
         used = grace.post("/auth/second-factor/verify", {"recovery_code": codes[0]})
-        assert used.status_code == 200
-        with migrated.begin() as conn:  # the recovery code does not move the factor itself
-            conn.execute(
-                t.second_factor.update()
-                .where(t.second_factor.c.human_id == grace.id)
-                .values(generation=t.second_factor.c.generation + 1)
-            )
+        assert used.status_code == 200  # a used recovery code moves the generation itself
     elif how == "turned_off":
         with migrated.begin() as conn:
             second_factor.remove(conn, grace.id)

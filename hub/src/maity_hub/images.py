@@ -326,6 +326,7 @@ def refresh(engine: Engine, reader: forge.Forge, project_id: str, kind: str) -> 
         return True
     repository = forge.repository_of(repository_url)
     try:
+        reader = reader.for_project(project_id)  # the source that covers it (§11.4)
         found = read_forge(reader, repository, kind)
     except Unavailable:
         _failed((project_id, kind))
