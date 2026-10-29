@@ -764,3 +764,25 @@ contributors stays.
   and does not prioritise across groups, and a second runner group for `main` needs a second runner per job type with ports of its own, the same problem as more runners on one machine.
 - More rented machines: one more concurrent job each, at a cost; reasonable once the measured gain is clear and the pull request queue is the problem.
 
+
+## A second rented machine serves the same job type under the same label and its own name
+
+**Id:** 2020c6e7-f289-4d55-858a-5438c8bba239
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's decision to add a second runner machine (2026-10-29), after the queue of the MariaDB job (eleven waiting, the oldest for an hour and a half) showed one runner per job type to be the bottleneck
+**See:** process.md#only-a-push-to-main-goes-to-the-rented-runner-pull-requests-stay-hosted — 2f1a3417-3e68-4241-a9b2-c113b7d2b93b — as of 2026-10-29
+**Revisit when:** the queue is short again, or a job gets random host ports so that two jobs can share a machine
+
+A second machine registers the same label (`maity-hub-maria`) and a name of its own (`RUNNER_NAME_PREFIX`, for example `maity-srv2` giving `maity-srv2-maria`). GitHub hands
+a job to whichever runner with that label is free, so two MariaDB jobs run at once, one per machine.
+
+**Reason:** a machine runs one job of a type at a time because the service containers bind the host ports 5432 and 3306; more concurrent jobs of a type need more machines.
+The name of a runner must be unique in the repository (the first registration of the same name failed on the old workstation runners), the label is meant to be shared.
+
+**Rejected alternatives:**
+- A runner per job type on each machine, with the types spread over the machines (the first plan): it does not shorten the queue of the one slow job.
+- Two services of one type on one machine: both bind 3306; random host ports would need the connection URLs to follow, a change in the shared workflow.
+- A label per machine: the workflow would have to know the machines, and a job could not take whichever is free.
+
