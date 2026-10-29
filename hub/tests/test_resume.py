@@ -125,6 +125,21 @@ def test_the_packet_has_every_part_of_the_contract(
     assert not any("joins" in op for op in packet["operations"])
 
 
+def test_the_packet_carries_the_released_mark(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§6.1: `released_at` in the packet's project, `null` until the probe sets it."""
+    from datetime import UTC, datetime
+
+    from sqlalchemy import update
+
+    agent = flow.agent(make_client, owner)
+    assert agent.resume().json()["project"]["released_at"] is None
+    with migrated.begin() as conn:
+        conn.execute(update(t.project).values(released_at=datetime(2026, 9, 14, 10, tzinfo=UTC)))
+    assert agent.resume().json()["project"]["released_at"] == "2026-09-14T10:00:00Z"
+
+
 def test_the_harness_fields_are_optional_and_client_is_not(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
