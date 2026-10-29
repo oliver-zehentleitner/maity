@@ -1,4 +1,4 @@
-"""`maity-hub serve` and `maity-hub migrate`."""
+"""`maity-hub serve` and `maity-hub migrate`, and the operator's account commands."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ import uvicorn
 from sqlalchemy import exists, insert, inspect, literal, select
 from sqlalchemy.exc import SQLAlchemyError
 
-from maity_hub import __version__, clock, longpoll, namespace, paths
+from maity_hub import __version__, clock, longpoll, moderation, namespace, paths
 from maity_hub import tables as t
 from maity_hub.app import SchemaNotCurrentError, create_app, require_current_schema
 from maity_hub.auth import second_factor_reset
@@ -50,6 +50,12 @@ def main(argv: list[str] | None = None) -> int:
         help="reset a human's second factor at once, the last way in (docs/api.md §2.8.3)",
     )
     reset.add_argument("--handle", required=True)
+    account = commands.add_parser("account", help="an account's moderation (docs/api.md §16.8)")
+    account_commands = account.add_subparsers(dest="account_command", required=True)
+    unsuspend = account_commands.add_parser(
+        "unsuspend", help="lift an instance admin's suspension of a human account"
+    )
+    unsuspend.add_argument("--handle", required=True)
     quick = commands.add_parser(
         "quickstart",
         help="a personal hub on SQLite: set up a new database, the first account, then serve",
@@ -73,6 +79,8 @@ def main(argv: list[str] | None = None) -> int:
         return _owner_create(settings, args.handle, args.display_name)
     if args.command == "second-factor":
         return _second_factor_reset(settings, args.handle)
+    if args.command == "account":
+        return _unsuspend(settings, args.handle)
     if args.command == "quickstart":
         return _quickstart(settings, args.handle, args.display_name)
     return _serve(settings)
@@ -174,6 +182,32 @@ def _second_factor_reset(settings: Settings, handle: str) -> int:
     if not done:
         return _fail(f"{handle} has no second factor enrolled", EXIT_FAILURE)
     print(f"maity-hub: reset the second factor of {handle}; every session of theirs has ended")
+    return 0
+
+
+def _unsuspend(settings: Settings, handle: str) -> int:
+    """The operator lifts a suspension (§16.8); nothing comes back by itself: the account
+    signs in again, and its agents and runners join and pair again."""
+    try:
+        engine = make_engine(settings.database_url)
+        require_current_schema(engine)
+    except SchemaNotCurrentError as error:
+        return _fail(str(error), EXIT_FAILURE)
+    except (SQLAlchemyError, ImportError) as error:
+        return _database_error(settings, error)
+    try:
+        with engine.begin() as conn:
+            human_id = conn.execute(select(t.human.c.id).where(t.human.c.handle == handle)).scalar()
+            if human_id is None:
+                return _fail(f"no human with the handle {handle!r}", EXIT_FAILURE)
+            lifted = moderation.unsuspend(conn, human_id)
+    except SQLAlchemyError as error:
+        return _database_error(settings, error)
+    finally:
+        engine.dispose()
+    if not lifted:
+        return _fail(f"{handle} is not suspended", EXIT_FAILURE)
+    print(f"maity-hub: lifted the suspension of {handle}; they can sign in again")
     return 0
 
 

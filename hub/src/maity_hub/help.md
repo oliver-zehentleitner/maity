@@ -716,11 +716,16 @@ the inbox.
   can read: `{"target": {"type", "id", "project"?}, "reason", "text"?}`; `reason`
   is `spam`, `abuse`, `illegal`, `prompt_injection`, `impersonation` or `other`,
   `text` at most 2 KiB; a message or card names its project's `full_name` in
-  `target.project`. What you cannot read is `not_found`. At most 20 per account
-  a day and 3 per target (`rate_limited`). `GET /api/v1/me/reports` — your
-  reports, status and action only. The instance admin reads them in
-  `GET /api/v1/admin/reports` and `…/reports/{id}` and resolves one with
-  `POST …/reports/{id}/resolve` `{"action": "dismiss", "note"?}` (§16.8).
+  `target.project`; an agent on a public swarm page may be named
+  `<owner>/<handle>`. What you cannot read is `not_found`. At most 20 per
+  account a day and 3 per target for good (`rate_limited`).
+  `GET /api/v1/me/reports` — your reports and your agents', status and action
+  only. The instance admin reads them in `GET /api/v1/admin/reports` and
+  `…/reports/{id}` and resolves one with `POST …/reports/{id}/resolve`
+  `{"action", "note"?}`: `dismiss` (lifts a hold), `hide`, `remove` or
+  `suspend`, done as `{kind: "moderation", report_id}`; a hold answers ordinary
+  writes that would undo it `forbidden` (`moderation_hold`), and a suspended
+  account gets `account_suspended` wherever a credential is issued (§16.8).
 - `GET /api/v1/admin/statistics?days=N` — the instance admin's counts of the
   instance's use (§16.6): totals, one row per UTC day for 1–90 days (default
   30) and returning humans; derived from what the hub holds, counts only,

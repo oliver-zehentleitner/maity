@@ -17,14 +17,16 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, func, insert, select, update
 
-from maity_hub import clock, events, namespace
+from maity_hub import attachment_store, clock, events, moderation, namespace
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.admin import instance_admin_id
 from maity_hub.auth.caller import Caller
 from maity_hub.errors import ApiError, invalid, not_found, rate_limited
+from maity_hub.forge import Forge
 from maity_hub.ids import new_id
 from maity_hub.notifications import records
+from maity_hub.policy import CLOSED_STATES
 from maity_hub.views import principal_id, ts
 
 TYPES = ("profile", "project", "message", "card")
@@ -99,7 +101,43 @@ def _shares_a_project(conn: Connection, caller: Caller, principal: str) -> bool:
     )
 
 
+def _on_a_public_swarm(conn: Connection, agent_id: str) -> bool:
+    """Whether a project's public swarm page shows the agent (§6.22): an active member of
+    a project that is open and has `swarm_public: on`, readable by anyone."""
+    m, p = t.membership.c, t.project.c
+    return (
+        conn.execute(
+            select(m.id)
+            .join(t.project, p.id == m.project_id)
+            .where(
+                m.agent_id == agent_id,
+                m.active.is_(True),
+                p.swarm_public == "on",
+                p.state.not_in(CLOSED_STATES),
+            )
+            .limit(1)
+        ).first()
+        is not None
+    )
+
+
+def _agent_by_name(conn: Connection, name: str) -> str:
+    """An agent's id from its global name `<owner>/<handle>`, as the public swarm page
+    shows it (§6.3, §6.22); `not_found` for none."""
+    owner, _, handle = name.partition("/")
+    found = conn.execute(
+        select(t.agent_profile.c.id)
+        .join(t.human, t.human.c.id == t.agent_profile.c.owner_id)
+        .where(t.human.c.handle == owner, t.agent_profile.c.handle == handle)
+    ).scalar()
+    if found is None:
+        raise not_found()
+    return str(found)
+
+
 def _profile(conn: Connection, caller: Caller, profile_id: str) -> dict[str, Any]:
+    if "/" in profile_id:
+        profile_id = _agent_by_name(conn, profile_id)
     if profile_id.startswith("agt-"):
         row = conn.execute(
             select(t.agent_profile).where(
@@ -110,11 +148,15 @@ def _profile(conn: Connection, caller: Caller, profile_id: str) -> dict[str, Any
             raise not_found()
         own = caller.kind != "agent" and row.owner_id == caller.human_id
         if not (
-            own or profile_id == caller.principal_id or _shares_a_project(conn, caller, profile_id)
+            own
+            or profile_id == caller.principal_id
+            or _shares_a_project(conn, caller, profile_id)
+            or _on_a_public_swarm(conn, profile_id)
         ):
             raise not_found()
         return {
             "type": "profile",
+            "id": profile_id,
             "kind": "agent",
             "handle": row.handle,
             "display_name": row.display_name,
@@ -131,6 +173,7 @@ def _profile(conn: Connection, caller: Caller, profile_id: str) -> dict[str, Any
             raise not_found()
         return {
             "type": "profile",
+            "id": profile_id,
             "kind": "human",
             "handle": human.handle,
             "display_name": human.display_name,
@@ -220,10 +263,13 @@ def target(
         raise invalid({"target.id": "required"})
     project = given.get("project")
     if kind == "profile":
-        return kind, target_id, None, _profile(conn, caller, target_id)
+        shot = _profile(conn, caller, target_id)
+        return kind, shot["id"], None, shot
     if kind == "project":
+        # Keyed by its id, not its full name: the limit and the admin's view outlast a
+        # rename or a transfer (§6.25).
         project_id, shot = _project(conn, caller, target_id)
-        return kind, shot["full_name"], project_id, shot
+        return kind, project_id, project_id, shot
     if kind == "card":
         project_id, shot = _card(conn, caller, target_id, project)
         return kind, target_id, project_id, shot
@@ -257,7 +303,9 @@ def _limit(conn: Connection, account: str, kind: str, target_id: str, now: datet
         )
     ).scalar_one()
     if same >= PER_TARGET:
-        raise rate_limited(int(DAY.total_seconds()))
+        # For good, not for a day: no `Retry-After` that would have a client try again
+        # in vain (§16.8).
+        raise ApiError(429, "rate_limited", "this target was reported 3 times already")
 
 
 def create(conn: Connection, caller: Caller, body: dict[str, Any]) -> dict[str, Any]:
@@ -304,9 +352,14 @@ def create(conn: Connection, caller: Caller, body: dict[str, Any]) -> dict[str, 
 
 
 def _target_view(row: Any, conn: Connection) -> dict[str, Any]:
+    """A project by its full name as it is now (§6.25), the rest by its id."""
     shown: dict[str, Any] = {"type": row.target_type, "id": row.target_id}
-    if row.target_type in ("message", "card") and row.project_id is not None:
-        shown["project"] = namespace.full_names(conn, [row.project_id]).get(row.project_id)
+    if row.project_id is not None:
+        name = namespace.full_names(conn, [row.project_id]).get(row.project_id)
+        if row.target_type == "project":
+            shown["id"] = name
+        else:
+            shown["project"] = name
     return shown
 
 
@@ -340,14 +393,18 @@ def admin_view(conn: Connection, row: Any, *, snapshot: bool) -> dict[str, Any]:
 
 
 def resolve(
-    conn: Connection, admin_id: str, report_id: str, action: Any, note: Any
+    conn: Connection,
+    admin_id: str,
+    report_id: str,
+    action: Any,
+    note: Any,
+    fg: Forge,
+    store: attachment_store.LocalStore | None = None,
 ) -> dict[str, Any]:
-    """Resolve the report, or replace the action of a resolved one (§16.8). Only `dismiss`
-    exists yet; `hide`, `remove` and `suspend` come with the moderation actions."""
+    """Resolve the report and make its action's change, or replace the action of a
+    resolved one (§16.8): its hold is replaced, `dismiss` lifts it."""
     if action not in ACTIONS:
         raise invalid({"action": "unknown"})
-    if action != "dismiss":
-        raise invalid({"action": "not_available"}, "only dismiss is available yet")
     if note is not None and not isinstance(note, str):
         raise invalid({"note": "not_text"})
     expire(conn)
@@ -360,6 +417,7 @@ def resolve(
         raise ApiError(
             409, "invalid_transition", "the report expired", {"from": "expired", "to": "resolved"}
         )
+    moderation.apply(conn, row, action, note, fg, store)
     now = clock.now()
     conn.execute(
         update(t.abuse_report)

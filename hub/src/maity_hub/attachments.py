@@ -334,7 +334,7 @@ def attach(conn: Connection, rows: list[Any], seq: int) -> None:
 
 
 def redact_message(
-    conn: Connection, seq: int, by: str, store: attachment_store.LocalStore | None
+    conn: Connection, seq: int, by: str | None, store: attachment_store.LocalStore | None
 ) -> None:
     """A redacted message has no attachments (§8.7, §8.5): the rows become tombstones in the
     redaction's transaction, `deleted_reason` `redacted`, and the bytes go once it commits.

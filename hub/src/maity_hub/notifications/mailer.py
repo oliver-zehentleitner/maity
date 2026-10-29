@@ -201,10 +201,10 @@ def for_human(
     due: list[Item] = []
     clocks: dict[str, datetime | None] = {}
     if state.held_since is not None:
-        due = [i for i in mailable if modes.get(i.kind) in ("immediate", "hourly", "daily")]
+        due = [i for i in mailable if _mode(i, modes) in ("immediate", "hourly", "daily")]
         clocks = {"hourly_at": now, "daily_at": now}
     else:
-        immediate = [i for i in mailable if modes.get(i.kind) == "immediate"]
+        immediate = [i for i in mailable if _mode(i, modes) == "immediate"]
         capped = _immediate_this_hour(conn, human_id, now) >= IMMEDIATE_PER_HOUR
         if immediate and not capped and min(i.at for i in immediate) <= now - WINDOW:
             due += immediate
@@ -214,13 +214,13 @@ def for_human(
             clocks["hourly_at"] = hour
         elif state.hourly_at < hour:
             # The capped immediate items of the hour go with the hour's digest (§18.5).
-            due += [i for i in mailable if modes.get(i.kind) == "hourly"] + immediate
+            due += [i for i in mailable if _mode(i, modes) == "hourly"] + immediate
             clocks["hourly_at"] = now
         today = datetime.combine(local.date(), time.fromisoformat(prefs["daily_at"]), tzinfo=zone)
         if state.daily_at is None:
             clocks["daily_at"] = now
         elif local >= today and state.daily_at < today:
-            due += [i for i in mailable if modes.get(i.kind) == "daily"]
+            due += [i for i in mailable if _mode(i, modes) == "daily"]
             clocks["daily_at"] = now
     if due:
         if _instance_full(conn, budget):
@@ -245,10 +245,16 @@ def for_human(
     return queued
 
 
+def _mode(item: Item, modes: dict[str, str]) -> str:
+    """The item's kind's mode; an `urgent` item goes at once whatever it says (§18.5): a
+    suspended account's notice, which it can read nowhere else (§16.8)."""
+    return "immediate" if item.urgent else modes.get(item.kind, "off")
+
+
 def _waiting(mailable: list[Item], modes: dict[str, str]) -> bool:
     """Whether an item is left that a mode will mail some time: an `off` kind never is,
     so it does not keep the human's passes deriving."""
-    return any(modes.get(i.kind, "off") != "off" for i in mailable)
+    return any(_mode(i, modes) != "off" for i in mailable)
 
 
 def _quiet(hours: Any, local: datetime) -> bool:

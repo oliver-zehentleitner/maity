@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import clock
+from maity_hub import clock, moderation
 from maity_hub import tables as t
 from maity_hub.auth import email_links
 from maity_hub.config import Settings
@@ -436,3 +436,32 @@ def test_the_access_log_masks_the_sign_in_token(
     lines = [r.getMessage() for r in caplog.records if r.name == "maity_hub.access"]
     assert lines and all(token not in line for line in lines)
     assert any("/mail/sign-in/…" in line for line in lines)
+
+
+def test_a_suspended_account_gets_no_link_and_its_link_and_code_die(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§16.8: the link page and the code answer as for any dead link, and no new one goes out."""
+    client, human = setup(make_client, migrated)
+    ask(client)
+    url, code = mail(migrated)
+    with migrated.begin() as conn:
+        moderation.suspend(conn, human, "rpt-000000000000")
+    assert client.get(url).status_code == 404
+    redeemed = client.post(
+        "/api/v1/auth/email-code",
+        json={"code": code},
+        headers={"x-csrf-token": client.cookies.get("maity_csrf", "")},
+    )
+    assert redeemed.status_code == 403, redeemed.text
+
+    def sent() -> int:
+        with migrated.connect() as conn:
+            rows = conn.execute(
+                select(t.mail_outbox.c.id).where(t.mail_outbox.c.kind == "sign_in")
+            ).all()
+        return len(rows)
+
+    before = sent()
+    assert ask(client).status_code == 202  # the same answer as for anyone
+    assert sent() == before
